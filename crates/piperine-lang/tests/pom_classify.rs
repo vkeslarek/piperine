@@ -218,9 +218,9 @@ module Top() {
     assert_eq!(r1.connections().iter().map(|c| c.text()).collect::<Vec<_>>(), ["a", "b"]);
     let params = r1.param_bindings();
     assert_eq!(params.len(), 1);
-    assert_eq!(params[0].name.text, "r");
+    assert_eq!(params[0].name(), "r");
     // The param binding links to the param it names.
-    assert_eq!(params[0].res, Resolution::Decl(resistor.param("r").unwrap().decl().id()));
+    assert_eq!(params[0].node().res, Resolution::Decl(resistor.param("r").unwrap().decl().id()));
     // A named connection links to its port.
     let ExprKind::Call { args, .. } = r1.expr().kind() else { panic!("an instance is a call") };
     assert!(args.iter().all(|a| a.res == Resolution::Unresolved));
@@ -828,8 +828,8 @@ module Top() {
     let fields = inst.param_bindings();
     assert_eq!(fields.len(), 1);
     assert!(fields[0].is_shorthand());
-    assert_eq!(fields[0].res, Resolution::Decl(design.module("R").unwrap().param("r").unwrap().decl().id()));
-    let ExprKind::Path(p) = design.expr(fields[0].value).kind() else { panic!("a path value") };
+    assert_eq!(fields[0].node().res, Resolution::Decl(design.module("R").unwrap().param("r").unwrap().decl().id()));
+    let ExprKind::Path(p) = fields[0].value().kind() else { panic!("a path value") };
     assert_eq!(design.path(*p).segments()[0].res, Resolution::Decl(top.param("r").unwrap().decl().id()));
     let parsed = piperine_lang::msl::parser::parse(src).file;
     let files = design.files();
@@ -1031,4 +1031,73 @@ module M(arr: [Bit; 2], one: Bit, grid: [[Bit; 2]; 2]) {
         assert!(matches!(member_res(&design, call), Resolution::Decl(_)), "{call}");
     }
     assert!(matches!(member_res(&design, "arr[0].rise()"), Resolution::Decl(d) if design.decl_data(d).name.as_ref().unwrap().text == "rise"));
+}
+
+#[test]
+fn arg_and_field_handles_expose_name_value_target() {
+    let src = "\
+module Resistor(p: Electrical, n: Electrical, tc: Option<f64>) { r: f64 = 1.0; }
+struct P { x: f64, y: f64 }
+module Top() {
+    signal a: Electrical;
+    signal b: Electrical;
+    r: f64 = 2.0;
+    let r1 = Resistor(a, b, tc: 0.5) { r };
+    let r2 = Resistor(a, b) { r: 3.0 };
+    let p = P { x: 1.0, y: 2.0 };
+}
+";
+    let design = with_prelude(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let top = design.module("Top").unwrap();
+    let resistor = design.module("Resistor").unwrap();
+    let r1 = top.instance("r1").unwrap();
+    let r2 = top.instance("r2").unwrap();
+
+    // Arguments: positional ones have no name and no target; a named one targets its port.
+    let args = r1.expr().args();
+    assert_eq!(args.iter().map(|a| a.name()).collect::<Vec<_>>(), [None, None, Some("tc")]);
+    assert_eq!(args.iter().map(|a| a.value().text()).collect::<Vec<_>>(), ["a", "b", "0.5"]);
+    assert_eq!(args[0].target(), None);
+    assert_eq!(args[2].target(), Some(resistor.port("tc").unwrap().decl()));
+
+    // Param bindings: handles, with the shorthand kept and the param as the target.
+    let shorthand = r1.param_bindings();
+    assert_eq!(shorthand.len(), 1);
+    assert_eq!(shorthand[0].name(), "r");
+    assert!(shorthand[0].is_shorthand());
+    assert_eq!(shorthand[0].value().text(), "r");
+    assert_eq!(shorthand[0].target(), Some(resistor.param("r").unwrap().decl()));
+    let full = r2.param_bindings();
+    assert!(!full[0].is_shorthand());
+    assert_eq!(full[0].value().text(), "3.0");
+    assert_eq!(full[0].target(), Some(resistor.param("r").unwrap().decl()));
+    assert_eq!(r1.expr().fields().len(), 1, "an instance's param block is the call's fields");
+
+    // A struct literal's fields target the struct's fields.
+    let lit = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == "P { x: 1.0, y: 2.0 }").unwrap();
+    let fields = lit.fields();
+    assert_eq!(fields.iter().map(|f| f.name()).collect::<Vec<_>>(), ["x", "y"]);
+    let p = design.struct_named("P").unwrap();
+    assert_eq!(fields[1].target(), Some(p.fields()[1].decl()));
+    // Anything else has none.
+    assert!(lit.args().is_empty());
+    assert!(r1.callee().args().is_empty() && r1.callee().fields().is_empty());
+    // A name the callee does not declare targets nothing.
+    let design = with_prelude("module R(p: Electrical) {}\nmodule T() { signal a: Electrical; let x = R(a, zz: a); }\n");
+    let x = design.module("T").unwrap().instance("x").unwrap();
+    assert_eq!(x.expr().args()[1].target(), None);
+}
+
+#[test]
+fn builtin_instance_names_its_primitive() {
+    let design = with_prelude("module T() { let c = cross(1.0); let d = ddt(1.0); }\nmodule U() { signal a: Electrical; }\nmodule V() { let u = U(); }\n");
+    let top = design.module("T").unwrap();
+    let c = top.instance("c").unwrap();
+    assert_eq!(c.builtin().map(|b| b.info().name), Some("cross"));
+    assert_eq!(top.instance("d").unwrap().builtin().map(|b| b.info().name), Some("ddt"));
+    assert!(c.module().is_none());
+    let user = design.module("V").unwrap().instance("u").unwrap();
+    assert_eq!(user.module(), design.module("U"));
+    assert_eq!(user.builtin(), None);
 }

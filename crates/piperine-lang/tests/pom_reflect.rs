@@ -645,3 +645,35 @@ fn design_has_a_collection_and_lookup_per_item_kind() {
     assert!(design.struct_named("Nope").is_none());
     assert!(design.function("Nope").is_none());
 }
+
+#[test]
+fn types_list_their_impls_and_methods() {
+    let src = "\
+struct S { a: f64 }
+enum E { A, B }
+trait Tr { fn go(self) -> f64; }
+impl S { fn one(self) -> f64 { 1.0 } }
+impl Tr for S { fn go(self) -> f64 { 2.0 } }
+impl E { fn two(self) -> f64 { 2.0 } fn three(self) -> f64 { 3.0 } }
+impl Tr for E { fn go(self) -> f64 { 4.0 } }
+struct Lone { z: f64 }
+";
+    let design = Design::builder().source("top.msl", src).build();
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let s = design.struct_named("S").unwrap();
+    assert_eq!(s.impls().len(), 2);
+    assert_eq!(s.impls()[0].trait_path().map(|p| p.text()), None);
+    assert_eq!(s.impls()[1].trait_path().map(|p| p.text()), Some("Tr"));
+    assert_eq!(s.method("one").unwrap().name(), Some("one"));
+    assert_eq!(s.method("go").unwrap().name(), Some("go"), "a method of a trait impl is found too");
+    assert!(s.method("two").is_none());
+    let e = design.enums()[0];
+    assert_eq!(e.impls().len(), 2);
+    assert_eq!(e.method("three").unwrap().name(), Some("three"));
+    assert!(e.method("one").is_none());
+    let tr = design.traits()[0];
+    let implementors: Vec<_> = tr.impls().iter().map(|i| i.self_ty().text()).collect();
+    assert_eq!(implementors, ["S", "E"], "implementors in source order");
+    assert!(design.struct_named("Lone").unwrap().impls().is_empty());
+    assert!(design.struct_named("Lone").unwrap().method("go").is_none());
+}

@@ -2,13 +2,14 @@
 //! with their ports and body items, generation, behavior blocks and
 //! reactions.
 
-use super::body::{BlockHandle, Commit, Contribution, Expr, Pat, Path, Type, nested_stmts};
+use super::body::{BlockHandle, FieldBinding, Commit, Contribution, Expr, Pat, Path, Type, nested_stmts};
 use super::{Decl, Reflect};
 use crate::pom::body::{BehaviorKind, ExprKind, FieldInit, QuantityRole, StmtKind, TypeKind};
 use crate::pom::decl::{
     BehaviorData, BindingData, BindingOrigin, DeclKind, DefinitionData, Dir, GenElseNode, GenerationData, LetData,
     ModuleData, NatureData, NatureFieldNode, ParamData, PortData, QuantityData, ReactionData, SignalData,
 };
+use crate::pom::builtin::{BuiltinId, BuiltinKind};
 use crate::pom::design::Design;
 use crate::pom::ids::DeclId;
 use crate::pom::resolution::{CallClass, NatureKind, PortKind, Resolution};
@@ -1076,8 +1077,17 @@ impl<'d> Instance<'d> {
     }
 
     /// The `{ name: value }` param bindings as written.
-    pub fn param_bindings(self) -> &'d [FieldInit] {
-        self.call().2.map_or(&[], |p| p.as_slice())
+    pub fn param_bindings(self) -> Vec<FieldBinding<'d>> {
+        self.expr().fields()
+    }
+
+    /// The core module this call places (`cross(x)`, `ddt(x)`); none for a
+    /// user module and for a call the classifier could not place.
+    pub fn builtin(self) -> Option<BuiltinId> {
+        match self.callee().resolution() {
+            Resolution::Builtin(b) if b.info().kind == BuiltinKind::Module => Some(b),
+            _ => None,
+        }
     }
 }
 

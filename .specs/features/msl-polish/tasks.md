@@ -1179,13 +1179,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `arg_and_field_handles_expose_name_value_target` passes in `pom_classify.rs` (C115: POL-20 AC 7)
-- [ ] Test `builtin_instance_names_its_primitive` passes in `pom_classify.rs` (C116: POL-20 AC 8)
-- [ ] Test `types_list_their_impls_and_methods` passes in `pom_reflect.rs` (C117: POL-20 AC 9)
-- [ ] `target()` reads the slots the classifier already fills; this task resolves nothing new
-- [ ] `nature_impls_lists_its_impl_blocks` still passes unchanged
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `arg_and_field_handles_expose_name_value_target` passes in `pom_classify.rs` (C115: POL-20 AC 7)
+- [x] Test `builtin_instance_names_its_primitive` passes in `pom_classify.rs` (C116: POL-20 AC 8)
+- [x] Test `types_list_their_impls_and_methods` passes in `pom_reflect.rs` (C117: POL-20 AC 9)
+- [x] `target()` reads the slots the classifier already fills; this task resolves nothing new
+- [x] `nature_impls_lists_its_impl_blocks` still passes unchanged
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

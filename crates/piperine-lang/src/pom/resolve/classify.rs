@@ -131,6 +131,11 @@ impl Design {
         }
     }
 
+    /// Every `impl` block, in source order.
+    pub(crate) fn impls_in_order(&self) -> Vec<DeclId> {
+        (0..self.decl_count()).map(|i| DeclId(i as u32)).filter(|id| matches!(self.decl_data(*id).kind, DeclKind::Impl(_))).collect()
+    }
+
     /// The `impl` blocks whose self type names `target`, in source order.
     pub(crate) fn impls_of(&self, target: DeclId) -> Vec<DeclId> {
         (0..self.decl_count())

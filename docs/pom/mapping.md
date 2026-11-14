@@ -195,7 +195,7 @@ assert_eq!((def.place().text(), def.value().text(), def.after().unwrap().text())
 assert_eq!(top.lets().len(), 1);
 let inv = top.named("inv").unwrap().instance().unwrap();
 assert_eq!(inv.module(), design.module("Inverter"));
-assert_eq!(inv.param_bindings()[0].name.text, "tpd");
+assert_eq!(inv.param_bindings()[0].name(), "tpd");
 assert_eq!(inv.connection(design.module("Inverter").unwrap().port("a").unwrap()).unwrap().text(), "n");
 ```
 

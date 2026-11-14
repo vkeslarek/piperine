@@ -3,7 +3,7 @@
 
 use std::path::Path as FsPath;
 
-use super::super::body::{ExprKind, ExprNode, PatKind, PatNode, PathNode, PathSegment, StmtKind, StmtNode, TypeKind, TypeNode};
+use super::super::body::{Arg, ExprKind, FieldInit, ExprNode, PatKind, PatNode, PathNode, PathSegment, StmtKind, StmtNode, TypeKind, TypeNode};
 use super::super::design::Design;
 use super::super::ids::{ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::super::resolution::Resolution;
@@ -144,6 +144,26 @@ impl<'d> Expr<'d> {
         None
     }
 
+    /// The call arguments of a call or a method call, in source order; empty
+    /// for every other expression.
+    pub fn args(self) -> Vec<Argument<'d>> {
+        match self.kind() {
+            ExprKind::Call { args, .. } | ExprKind::MethodCall { args, .. } => args.iter().map(|node| Argument { design: self.design, node }).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The `name: value` initializers of a struct expression, of an `emit!`
+    /// and of a call's param block (`R(a, b) { r: 1k }`), in source order;
+    /// empty for every other expression.
+    pub fn fields(self) -> Vec<FieldBinding<'d>> {
+        match self.kind() {
+            ExprKind::Struct { fields, .. } | ExprKind::Emit { fields, .. } => fields.iter().map(|node| FieldBinding { design: self.design, node }).collect(),
+            ExprKind::Call { params: Some(fields), .. } => fields.iter().map(|node| FieldBinding { design: self.design, node }).collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// The path this expression is, when it is a path expression (`s`, `a::X`).
     pub fn as_path(self) -> Option<Path<'d>> {
         match self.kind() {
@@ -179,6 +199,107 @@ impl<'d> Expr<'d> {
             ExprKind::Call { class: crate::pom::resolution::CallClass::Instance { .. }, .. } => Some(super::Instance::new(self.design, self.id)),
             _ => None,
         }
+    }
+}
+
+/// A call argument: positional, or `name: value`.
+#[derive(Clone, Copy)]
+pub struct Argument<'d> {
+    design: &'d Design,
+    node: &'d Arg,
+}
+
+impl<'d> Argument<'d> {
+    /// The raw storage node.
+    pub fn node(self) -> &'d Arg {
+        self.node
+    }
+
+    /// The written name; none for a positional argument.
+    pub fn name(self) -> Option<&'d str> {
+        self.node.name.as_ref().map(|n| n.text.as_str())
+    }
+
+    pub fn value(self) -> Expr<'d> {
+        self.design.expr(self.node.value)
+    }
+
+    /// The port, param or field the name links to, as classification set it;
+    /// none for a positional argument and for a name nothing declares.
+    pub fn target(self) -> Option<Decl<'d>> {
+        match self.node.res {
+            Resolution::Decl(id) => Some(self.design.decl(id)),
+            _ => None,
+        }
+    }
+
+    pub fn span(self) -> Span {
+        self.node.span
+    }
+}
+
+/// `name: value` of a struct expression, an `emit!` or an instance's param
+/// block.
+#[derive(Clone, Copy)]
+pub struct FieldBinding<'d> {
+    design: &'d Design,
+    node: &'d FieldInit,
+}
+
+impl<'d> FieldBinding<'d> {
+    /// The raw storage node.
+    pub fn node(self) -> &'d FieldInit {
+        self.node
+    }
+
+    pub fn name(self) -> &'d str {
+        self.node.name.text.as_str()
+    }
+
+    pub fn value(self) -> Expr<'d> {
+        self.design.expr(self.node.value)
+    }
+
+    /// The param, field or port the name links to, as classification set it;
+    /// none for a name nothing declares.
+    pub fn target(self) -> Option<Decl<'d>> {
+        match self.node.res {
+            Resolution::Decl(id) => Some(self.design.decl(id)),
+            _ => None,
+        }
+    }
+
+    /// Whether the field was written `name` for `name: name`.
+    pub fn is_shorthand(self) -> bool {
+        self.node.shorthand
+    }
+
+    pub fn span(self) -> Span {
+        self.node.span
+    }
+}
+
+impl PartialEq for Argument<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.design, other.design) && std::ptr::eq(self.node, other.node)
+    }
+}
+
+impl std::fmt::Debug for Argument<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Argument({:?})", self.node.span)
+    }
+}
+
+impl PartialEq for FieldBinding<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.design, other.design) && std::ptr::eq(self.node, other.node)
+    }
+}
+
+impl std::fmt::Debug for FieldBinding<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FieldBinding({})", self.node.name.text)
     }
 }
 

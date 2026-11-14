@@ -110,6 +110,17 @@ impl<'d> Function<'d> {
     }
 }
 
+/// The `impl` blocks whose self type names `target`, in source order.
+fn impls_named<'d>(decl: Decl<'d>) -> Vec<Impl<'d>> {
+    let design = decl.design();
+    design.impls_of(decl.id()).into_iter().filter_map(|i| Decl::new(design, i).as_impl()).collect()
+}
+
+/// The function called `name` in any of `impls`, in source order.
+fn method_of<'d>(impls: Vec<Impl<'d>>, name: &str) -> Option<Function<'d>> {
+    impls.into_iter().flat_map(|i| i.items()).filter_map(Decl::as_function).find(|f| f.name() == Some(name))
+}
+
 /// One parameter of a function.
 #[derive(Clone, Copy)]
 pub struct FnParam<'d> {
@@ -292,6 +303,17 @@ impl<'d> Struct<'d> {
     pub fn fields(self) -> Vec<Field<'d>> {
         self.decl.children().into_iter().filter_map(|c| c.as_field()).collect()
     }
+
+    /// The `impl` blocks written for this struct, inherent and trait impls,
+    /// in source order.
+    pub fn impls(self) -> Vec<Impl<'d>> {
+        impls_named(self.decl)
+    }
+
+    /// The function called `name` in one of [`Struct::impls`].
+    pub fn method(self, name: &str) -> Option<Function<'d>> {
+        method_of(self.impls(), name)
+    }
 }
 
 /// A field of a struct or of a variant.
@@ -324,6 +346,17 @@ pub struct Enum<'d> {
 }
 
 impl<'d> Enum<'d> {
+    /// The `impl` blocks written for this enum, inherent and trait impls,
+    /// in source order.
+    pub fn impls(self) -> Vec<Impl<'d>> {
+        impls_named(self.decl)
+    }
+
+    /// The function called `name` in one of [`Enum::impls`].
+    pub fn method(self, name: &str) -> Option<Function<'d>> {
+        method_of(self.impls(), name)
+    }
+
     pub fn generics(self) -> Vec<GenericParam<'d>> {
         self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
     }
@@ -458,6 +491,17 @@ pub struct Trait<'d> {
 }
 
 impl<'d> Trait<'d> {
+    /// The `impl Trait for Type` blocks of this trait, in source order.
+    pub fn impls(self) -> Vec<Impl<'d>> {
+        let design = self.decl.design();
+        design
+            .impls_in_order()
+            .into_iter()
+            .filter_map(|i| Decl::new(design, i).as_impl())
+            .filter(|i| i.trait_path().is_some_and(|p| p.resolution() == crate::pom::resolution::Resolution::Decl(self.decl.id())))
+            .collect()
+    }
+
     fn data(self) -> &'d TraitData {
         match self.decl.kind() {
             DeclKind::Trait(t) => t,

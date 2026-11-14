@@ -51,6 +51,6 @@ pub use design::{Design, DesignBuilder, DesignDiagnostic, SourceFileData, Source
 pub use index::{Index, ReferenceId, WriterId};
 pub use ids::{DeclId, ExprId, FileId, PathId, PatId, StmtId, TypeId};
 pub use meta::{AttrArgNode, AttrInputNode, AttrNode, Doc, Meta};
-pub use reflect::{Attr, BlockHandle, Behavior, Binding, Commit, Const, Contribution, Definition, GenArm, Generation, Instance, Let, Reference, Writer, Module, Nature, Param, Port, Quantity, Reaction, Signal, Decl, Enum, Expr, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Path, Pat, Reflect, SourceFile, Stmt, Struct, Trait, Type, Use, Variant};
+pub use reflect::{Argument, Attr, BlockHandle, FieldBinding, Behavior, Binding, Commit, Const, Contribution, Definition, GenArm, Generation, Instance, Let, Reference, Writer, Module, Nature, Param, Port, Quantity, Reaction, Signal, Decl, Enum, Expr, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Path, Pat, Reflect, SourceFile, Stmt, Struct, Trait, Type, Use, Variant};
 pub use resolution::*;
 pub use source::{DiskSources, MemorySources, SourceProvider};

@@ -480,6 +480,8 @@ One parameter of a function.
 | `is_bundle(self)` | `bool` | Whether a field is a carrier, an array of carriers or a bundle. |
 | `generics(self)` | `Vec<GenericParam<'d>>` | The generic parameters of the struct. |
 | `fields(self)` | `Vec<Field<'d>>` | The fields in source order. |
+| `impls(self)` | `Vec<Impl<'d>>` | The `impl` blocks written for this struct, inherent and trait impls, in source order. |
+| `method(self, name: &str)` | `Option<Function<'d>>` | The function called `name` in one of `impls()`. |
 
 A struct whose field is a carrier (a nature, an array of one, or another bundle) is a *bundle*;
 the classification is written into `bundle()` after name resolution.
@@ -521,6 +523,8 @@ A field of a struct or of a variant.
 | --- | --- | --- |
 | `generics(self)` | `Vec<GenericParam<'d>>` | The generic parameters of the enum. |
 | `variants(self)` | `Vec<Variant<'d>>` | The variants in source order. |
+| `impls(self)` | `Vec<Impl<'d>>` | The `impl` blocks written for this enum, inherent and trait impls, in source order. |
+| `method(self, name: &str)` | `Option<Function<'d>>` | The function called `name` in one of `impls()`. |
 
 ```rust
 use piperine_lang::pom::{Design, FieldsForm, Reflect};
@@ -552,6 +556,7 @@ A variant of an enum.
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `generics(self)` | `Vec<GenericParam<'d>>` | The generic parameters of the trait. |
+| `impls(self)` | `Vec<Impl<'d>>` | The `impl Trait for Type` blocks of this trait (its implementors), in source order. |
 | `supertraits(self)` | `Vec<Path<'d>>` | The `: Super` bounds, as paths. |
 | `items(self)` | `Vec<Decl<'d>>` | The functions and constants, in source order. |
 
@@ -1035,7 +1040,8 @@ A placement: a view over a call expression classified as an instance. It is not 
 | `declared_in(self)` | `Decl<'d>` | The declaration the placement is written in: the module body or generation for a `let`, the block or reaction otherwise. |
 | `connections(self)` | `Vec<Expr<'d>>` | The connection arguments, in order. |
 | `connection(self, port: Port<'d>)` | `Option<Expr<'d>>` | The argument written for `port`: the connection named after it, else the unnamed one at its position. None when the instance's module is unknown, is not the port's module, or no argument is written there. |
-| `param_bindings(self)` | `&'d [FieldInit]` | The `{ name: value }` param bindings as written. |
+| `param_bindings(self)` | `Vec<FieldBinding<'d>>` | The `{ name: value }` param bindings as written, as handles (the same as `expr().fields()`). |
+| `builtin(self)` | `Option<BuiltinId>` | The core module this call places (`cross(x)`, `ddt(x)`); none for a user module and for a call the classifier could not place. |
 
 An instance is a view over a call classified as a module instantiation. It is never a node of its
 own: `Instance::expr()` is the call expression, and its name is the `let` around it.
@@ -1067,7 +1073,7 @@ assert_eq!(r1.callee().text(), "Resistor");
 assert_eq!(r1.declared_in(), top.decl());
 let conns: Vec<_> = r1.connections().iter().map(|c| c.text()).collect();
 assert_eq!(conns, ["a", "b"]);
-assert_eq!(r1.param_bindings()[0].name.text, "r");
+assert_eq!(r1.param_bindings()[0].name(), "r");
 
 // `connection(port)` finds the argument for a port by name or by position.
 let (p, tc) = (resistor.port("p").unwrap(), resistor.port("tc").unwrap());
@@ -1099,6 +1105,8 @@ An expression node.
 | `target(self)` | `Option<Decl<'d>>` | The declaration `resolution()` names, as a handle; none for an unresolved name, a built-in or a deferred one. |
 | `children(self)` | `Vec<Expr<'d>>` | The direct sub-expressions in source order (a call: callee, argument values, param-block values; an `if`: the condition, the expressions of the `then` statements, the `else`). A form holding a block lists the expressions of the block's statements. Types, patterns and generic arguments are not expressions and are not entered. |
 | `stmt(self)` | `Option<Stmt<'d>>` | The nearest statement that holds this expression or an expression above it: its own statement when a statement lists it among its `children()`, else the one of its nearest ancestor that has one. |
+| `args(self)` | `Vec<Argument<'d>>` | The call arguments of a call or a method call, in source order; empty for every other expression. |
+| `fields(self)` | `Vec<FieldBinding<'d>>` | The `name: value` initializers of a struct expression, of an `emit!` and of a call's param block, in source order; empty for every other expression. |
 | `parent(self)` | `Option<Expr<'d>>` | The expression that lists this one among its `children()`; none when no expression contains it (a statement's own expression, a declaration's value). A side table filled after lowering and verified against `children()` by `Design::check`. |
 
 Body nodes are read through `Expr`, `Stmt`, `Pat`, `Type` and `Path`. Each gives the node
@@ -1167,6 +1175,56 @@ assert_eq!(body.stmts().len(), 2);
 assert_eq!(body.value().unwrap().text(), "a + 2.0");
 assert_eq!(body.value().unwrap().stmt(), body.stmts().last().copied());
 assert_eq!(body.node().stmts.len(), 2);
+```
+
+### `Argument`
+
+A call argument, positional or `name: value`. Reached from `Expr::args`.
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `node(self)` | `&'d Arg` | The raw storage node. |
+| `name(self)` | `Option<&'d str>` | The written name; none for a positional argument. |
+| `value(self)` | `Expr<'d>` | The argument's expression. |
+| `target(self)` | `Option<Decl<'d>>` | The port, param or field the name links to, as classification set it; none for a positional argument and for a name nothing declares. |
+| `span(self)` | `Span` | The byte range of the argument. |
+
+```rust
+use piperine_lang::pom::{Design, Reflect};
+
+let src = "module R(p: Bit, tc: Option<f64>) {}\nmodule T() { signal a: Bit; let x = R(a, tc: 0.5); }";
+let design = Design::builder().prelude("p.msl", "pub nature Bit { value: bool }").source("top.msl", src).build();
+let x = design.module("T").unwrap().instance("x").unwrap();
+let args = x.expr().args();
+assert_eq!(args[0].name(), None);
+assert_eq!(args[1].name(), Some("tc"));
+assert_eq!(args[1].value().text(), "0.5");
+assert_eq!(args[1].target(), design.module("R").unwrap().port("tc").map(|p| p.decl()));
+```
+
+### `FieldBinding`
+
+`name: value` of a struct expression, an `emit!` or an instance's param block. Reached from `Expr::fields` and `Instance::param_bindings`.
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `node(self)` | `&'d FieldInit` | The raw storage node. |
+| `name(self)` | `&'d str` | The field's name. |
+| `value(self)` | `Expr<'d>` | The initializer's expression. |
+| `target(self)` | `Option<Decl<'d>>` | The param, field or port the name links to, as classification set it; none for a name nothing declares. |
+| `is_shorthand(self)` | `bool` | Whether the field was written `name` for `name: name`. |
+| `span(self)` | `Span` | The byte range of the initializer. |
+
+```rust
+use piperine_lang::pom::{Design, Reflect};
+
+let src = "module R() { r: f64 = 1.0; }\nmodule T() { r: f64 = 2.0; let x = R() { r }; }";
+let design = Design::builder().source("top.msl", src).build();
+let x = design.module("T").unwrap().instance("x").unwrap();
+let binding = x.param_bindings()[0];
+assert_eq!(binding.name(), "r");
+assert!(binding.is_shorthand());
+assert_eq!(binding.target(), design.module("R").unwrap().param("r").map(|p| p.decl()));
 ```
 
 ### `Pat`
