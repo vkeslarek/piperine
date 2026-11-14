@@ -178,6 +178,33 @@ fn an_invalid_lockfile_is_e0176() {
 }
 
 #[test]
+fn a_lockfile_commit_must_be_forty_lowercase_hex_digits() {
+    let (_tmp, base) = workspace();
+    let (util, first) = named_repo(&base.join("util-repo"), "util", "");
+    let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util))], "");
+    let source = format!("git+{}", url(&util));
+    let upper = first.to_string().to_uppercase();
+    let short = first.to_string()[..39].to_string();
+    for bad in ["zz", "main", "..", "", upper.as_str(), short.as_str()] {
+        let text = format!("version = 1\n\n[[package]]\nname = \"util\"\nversion = \"1.0.0\"\nsource = \"{source}\"\ncommit = \"{bad}\"\n");
+        write(&app.join("Piperine.lock"), &text);
+        for options in [Options::default(), Options { update: true }] {
+            let mut errors = resolve(&app, options).err().expect("the lockfile was accepted");
+            assert_eq!(errors.len(), 1, "{bad}: {errors:?}");
+            let error = errors.remove(0);
+            assert_eq!(error.code(), "E0176", "{bad}");
+            assert_eq!(error.file, app.join("Piperine.lock"));
+            assert_eq!(&error.text[error.diagnostic.span().range()], format!("\"{bad}\""), "{bad}");
+            assert!(!app.join("target/deps").exists(), "{bad}: something was fetched");
+        }
+    }
+    // A good one is accepted.
+    let text = format!("version = 1\n\n[[package]]\nname = \"util\"\nversion = \"1.0.0\"\nsource = \"{source}\"\ncommit = \"{first}\"\n");
+    write(&app.join("Piperine.lock"), &text);
+    ok(&app);
+}
+
+#[test]
 fn a_locked_checkout_needs_no_repository() {
     let (_tmp, base) = workspace();
     let (util, first) = named_repo(&base.join("util-repo"), "util", "// kept\n");

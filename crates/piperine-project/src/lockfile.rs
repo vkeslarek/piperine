@@ -86,6 +86,10 @@ impl Lockfile {
                         let (name, version, source, commit) = (field("name")?, field("version")?, field("source")?, field("commit")?);
                         let at = entry_table.get("version").map_or(0..0, |v| v.span());
                         let version = crate::manifest::parse_version(&version).ok_or_else(|| fail(at, format!("`{version}` is not a version"), "expected `MAJOR.MINOR.PATCH`"))?;
+                        if commit.len() != 40 || !commit.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+                            let at = entry_table.get("commit").map_or(0..0, |v| v.span());
+                            return Err(fail(at, format!("`{commit}` is not a commit: 40 lowercase hexadecimal digits"), "expected a full commit id"));
+                        }
                         packages.push(LockedPackage { name, version, source, commit });
                     }
                 }

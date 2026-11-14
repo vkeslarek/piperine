@@ -703,7 +703,7 @@ A **package** is a directory with a manifest. It holds one crate.
   resolves again. A lockfile inside a dependency is not read.
 - **§3.6.14** The lockfile is TOML: `version = 1`, then one `[[package]]` per git package with
   `name`, `version`, `source` (`git+<url>`, then `?branch=<b>`, `?tag=<t>` or `?rev=<r>` when
-  one is given) and `commit` (40 hexadecimal digits), sorted by `name`, then `source`.
+  one is given) and `commit` (40 hexadecimal digits, lowercase), sorted by `name`, then `source`.
 
 Manifest keys:
 
@@ -742,7 +742,7 @@ Requirement table (Cargo's caret rule):
 | `E0173` | a located package that is not the one asked for: another name, or a version that does not satisfy `version` | package |
 | `E0174` | a cycle among the dependencies | package |
 | `E0175` | a package without its crate root `src/lib.msl` | package |
-| `E0176` | a lockfile that is not valid TOML or whose `version` is not `1` | package |
+| `E0176` | a lockfile that cannot be used: not readable or not valid TOML, no `version` or one that is not `1`, an entry that is no table, has an unknown key, lacks one of its four keys or gives a value of the wrong form (a `commit` that is not 40 lowercase hexadecimal digits included), or one that cannot be written | package |
 
 **Examples**
 
