@@ -72,6 +72,7 @@ impl Names<'_, '_> {
         let design = self.ctx.design;
         let data = design.decl_data(id);
         self.frames.push(Frame::Generics(id));
+        self.derives(&data.meta, data.file);
         match &data.kind {
             DeclKind::Namespace(_) => {
                 let saved = std::mem::replace(&mut self.ns, id);
@@ -230,6 +231,37 @@ impl Names<'_, '_> {
             | DeclKind::Error => {}
         }
         self.frames.pop();
+    }
+
+    /// The names of `#[derive(..)]` resolve like a bound (App. H): to a
+    /// built-in or a user trait; any other name is `E0161` at the name.
+    fn derives(&mut self, meta: &crate::pom::meta::Meta, file: crate::pom::FileId) {
+        use crate::pom::meta::{AttrArgNode, AttrInputNode};
+        let design = self.ctx.design;
+        for attr in &meta.attrs {
+            let AttrInputNode::List(args) = &attr.input else { continue };
+            if !matches!(design.path_node(attr.path).segments.as_slice(), [only] if only.name.text == "derive") {
+                continue;
+            }
+            for arg in args {
+                let AttrArgNode::Path(p) = arg else { continue };
+                let node = design.path_node(*p);
+                let found = self.path(*p, Prefer::Types);
+                let is_trait = match found {
+                    Resolution::Builtin(b) => b.info().kind == BuiltinKind::Trait,
+                    Resolution::Decl(d) => matches!(design.decl_data(d).kind, DeclKind::Trait(_)),
+                    _ => continue,
+                };
+                if !is_trait {
+                    let name = node.segments.last().map_or("", |s| s.name.text.as_str());
+                    self.out.diagnostics.push((
+                        file,
+                        crate::msl::Diagnostic::new("E0161", format!("`{name}` is not a trait that can be derived"), node.span, "not a trait")
+                            .with_help("derive one of the traits of Appendix H, `Repr`, or a trait you declare"),
+                    ));
+                }
+            }
+        }
     }
 
     fn children(&mut self, id: DeclId) {

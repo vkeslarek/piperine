@@ -771,9 +771,30 @@ fn catalogue_traits_and_types_resolve() {
     let traits = appendix_h_names("## H.8");
     let types = appendix_h_names("## H.9");
     assert!(traits.len() >= 9 && types.len() >= 6, "{traits:?} {types:?}");
-    // A derive names its traits as written and reports nothing (attribute paths are never resolved).
-    let derived = build("#[derive(Default)]\nstruct S { a: f64 }\n#[derive(PartialOrd, Debug, Hash, Clone)]\nstruct U;\n");
+    // A derive name resolves like a bound: to the trait row it names (D2).
+    let derived = build("#[derive(Default)]\nstruct S { a: f64 }\n#[derive(PartialOrd, Debug, Hash, Clone, Repr)]\nstruct U;\ntrait Mine {}\n#[derive(Mine)]\nstruct V;\n");
     assert!(derived.diagnostics().is_empty(), "{:?}", derived.diagnostics());
+    for (item, want) in [("S", vec!["Default"]), ("U", vec!["PartialOrd", "Debug", "Hash", "Clone", "Repr"]), ("V", vec!["Mine"])] {
+        let decl = derived.find(item).unwrap();
+        let attr = decl.attr("derive").unwrap();
+        let got: Vec<_> = attr.paths().iter().map(|p| (p.segments()[0].name.text.clone(), p.segments()[0].res)).collect();
+        assert_eq!(got.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), want);
+        for (name, res) in got {
+            match res {
+                Resolution::Builtin(b) => assert_eq!(b.info().kind, BuiltinKind::Trait, "{name}"),
+                Resolution::Decl(d) => assert_eq!(d, derived.find("Mine").unwrap().id(), "{name}"),
+                other => panic!("derive `{name}` is {other:?}"),
+            }
+        }
+    }
+    // Anything else is E0161 at the name: an unknown word, a type, a value.
+    for name in ["Bogus", "Iterator", "Option", "PI"] {
+        let src = format!("#[derive(Clone, {name})]\nstruct S;\n");
+        let bad = build(&src);
+        let at = src.find(name).unwrap();
+        let found: Vec<_> = bad.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.span().start)).collect();
+        assert_eq!(found, vec![("E0161".to_string(), at)], "derive({name})");
+    }
     let mut src = String::new();
     for (i, t) in traits.iter().enumerate() {
         src.push_str(&format!("fn t{i}<T: {t}>(a: T) {{}}\n"));

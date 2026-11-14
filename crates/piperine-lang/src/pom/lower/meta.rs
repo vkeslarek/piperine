@@ -1,6 +1,6 @@
 //! Doc comments and attributes: one helper for every construct that carries
 //! them. Attribute paths and arguments are lowered like any path or
-//! expression and are never resolved.
+//! expression and are never resolved, except the names in `#[derive(..)]`, which `resolve` looks up as traits (E0161).
 
 use super::Lowerer;
 use super::body::name;
