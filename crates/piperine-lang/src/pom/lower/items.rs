@@ -165,15 +165,22 @@ impl Lowerer<'_> {
         prefix.truncate(depth);
     }
 
+    /// One leaf. Its path holds every segment from the root of the tree, but
+    /// its span covers only the segments the leaf itself writes (a leaf of a
+    /// group never includes the braces around it). A `self` leaf names the
+    /// namespace its prefix names, so it drops the `self` segment.
     fn import(&mut self, path: &[crate::pom::decl::Name], leaf: &UseTreeNode, alias: Option<crate::pom::decl::Name>, glob: bool) -> Import {
-        let start = path.first().map_or(leaf.span.start, |n| n.span.start);
-        let end = path.last().map_or(leaf.span.end, |n| n.span.end);
-        let segments = path
+        let own = match (leaf.path.first(), leaf.path.last()) {
+            (Some(first), Some(last)) => crate::msl::Span::new(first.span.start, last.span.end),
+            _ => leaf.span,
+        };
+        let takes_prefix = !glob && path.len() > 1 && leaf.path.last().is_some_and(|n| n.text == "self");
+        let kept = if takes_prefix { &path[..path.len() - 1] } else { path };
+        let segments = kept
             .iter()
             .map(|n| PathSegment { name: n.clone(), args: None, res: Resolution::Unresolved })
             .collect();
-        let span = crate::msl::Span::new(start, end);
-        let path = self.design.push_path(PathNode { segments, span, owner: self.owner });
+        let path = self.design.push_path(PathNode { segments, span: own, owner: self.owner });
         Import { path, alias, glob }
     }
 }

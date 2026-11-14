@@ -351,7 +351,7 @@ What follows the path at one level of a `use` tree.
 
 *struct* in `src/pom/decl.rs`.
 
-One leaf of a `use` tree with its full path. The path node spans from the first written segment to the last, so for a group leaf its text includes the braces in between.
+One leaf of a `use` tree with its full path (every segment from the root of the tree; a `self` leaf names its prefix, so it has no `self` segment). The path node spans only the segments the leaf itself writes, never the braces or the other leaves around it.
 
 | Field | Type | Meaning |
 | --- | --- | --- |

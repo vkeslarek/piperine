@@ -821,3 +821,47 @@ fn builtin_table_matches_appendix_h() {
 fn catalogue_trait(name: &str) -> bool {
     appendix_h_names("## H.8").iter().any(|t| t == name)
 }
+
+// ---- `use a::{self}` and leaf spans (POL-17) ---------------------------------------------------
+
+#[test]
+fn use_self_imports_the_namespace() {
+    let src = "mod a { pub const K: f64 = 1.0; }\nuse a::{self, K};\nconst Z: f64 = a::K + K;\n";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let k = decl(&design, "a::K");
+    let ns_a = decl(&design, "a");
+    // The `a::K` of the import and the one of the expression, and the bare `K`.
+    for path in resolutions(&design, "a::K") {
+        assert_eq!(path, [ns_a, k]);
+    }
+    assert_eq!(one(&design, "K"), [k]);
+}
+
+#[test]
+fn use_self_with_alias_and_nesting() {
+    let src = "\
+mod a { pub const K: f64 = 1.0; pub mod n { pub const J: f64 = 2.0; } }
+use a::{self as aa, n::{self, J as JJ}};
+const Z: f64 = aa::K + n::J + JJ;
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(one(&design, "aa::K"), [decl(&design, "a"), decl(&design, "a::K")]);
+    assert_eq!(one(&design, "JJ"), [decl(&design, "a::n::J")]);
+    for path in resolutions(&design, "n::J") {
+        assert_eq!(path, [decl(&design, "a::n"), decl(&design, "a::n::J")]);
+    }
+}
+
+#[test]
+fn use_leaf_text_is_its_own_segments() {
+    let src = "mod a { pub mod c { pub fn d() {} } pub fn b() {} pub mod e {} }\nuse a::{b, c::d, e::*, self as s};\nuse a::b as bb;\n";
+    let design = build(src);
+    let uses: Vec<_> = design.root().children().into_iter().filter_map(|c| c.as_use()).collect();
+    let leaves: Vec<_> = uses.iter().flat_map(|u| u.imports()).map(|i| (i.path.text(), &src[i.path.span().range()])).collect();
+    assert_eq!(leaves, [("b", "b"), ("c::d", "c::d"), ("e", "e"), ("self", "self"), ("a::b", "a::b")].to_vec());
+    for (text, _) in &leaves {
+        assert!(!text.contains(['{', '}', ',']), "{text}");
+    }
+}

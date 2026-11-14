@@ -837,12 +837,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `use_self_imports_the_namespace` passes in `pom_resolve.rs` (C93: POL-17 AC 1)
-- [ ] Test `use_self_with_alias_and_nesting` passes in `pom_resolve.rs` (C94: POL-17 AC 2)
-- [ ] Test `use_leaf_text_is_its_own_segments` passes in `pom_resolve.rs` (C95: POL-17 AC 3)
-- [ ] `use_and_qualified_paths_resolve` and `use_tree_flattens_to_imports` still pass unchanged
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `use_self_imports_the_namespace` passes in `pom_resolve.rs` (C93: POL-17 AC 1)
+- [x] Test `use_self_with_alias_and_nesting` passes in `pom_resolve.rs` (C94: POL-17 AC 2)
+- [x] Test `use_leaf_text_is_its_own_segments` passes in `pom_resolve.rs` (C95: POL-17 AC 3)
+- [x] `use_and_qualified_paths_resolve` and `use_tree_flattens_to_imports` still pass unchanged
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
