@@ -149,15 +149,15 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `s22_says_std_is_the_normative_source` passes in `spec_text.rs` (C1: STD-01 AC 1)
-- [ ] Test `s22_maps_sections_to_namespaces` passes in `spec_text.rs` (C2: STD-01 AC 2)
-- [ ] Test `s22_drops_the_implied_pub_resolution` passes in `spec_text.rs` (C3: STD-01 AC 3)
-- [ ] Test `s22_lists_the_engine_items` passes in `spec_text.rs` (C14: STD-02 AC 4)
-- [ ] Test `s22_rule_4_names_extern_intrinsic` passes in `spec_text.rs` (C15: STD-02 AC 5)
-- [ ] No fence of Part VII is edited in this task (fences travel with their `std` file, T9 to T16)
-- [ ] The Resolution that an implementation MAY implement an item natively stays
-- [ ] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `s22_says_std_is_the_normative_source` passes in `spec_text.rs` (C1: STD-01 AC 1)
+- [x] Test `s22_maps_sections_to_namespaces` passes in `spec_text.rs` (C2: STD-01 AC 2)
+- [x] Test `s22_drops_the_implied_pub_resolution` passes in `spec_text.rs` (C3: STD-01 AC 3)
+- [x] Test `s22_lists_the_engine_items` passes in `spec_text.rs` (C14: STD-02 AC 4)
+- [x] Test `s22_rule_4_names_extern_intrinsic` passes in `spec_text.rs` (C15: STD-02 AC 5)
+- [x] No fence of Part VII is edited in this task (fences travel with their `std` file, T9 to T16)
+- [x] The Resolution that an implementation MAY implement an item natively stays
+- [x] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

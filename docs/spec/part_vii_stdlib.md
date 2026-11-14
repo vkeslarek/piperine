@@ -4,15 +4,36 @@
 
 ## 22. Standard library
 
-The **standard library** is the set of items below, written in the language over the core primitives of §14.
+The **standard library** is the crate `std`, shipped with the implementation; its source files are normative, and each `rust` fence of this part is an excerpt of one of them.
 
-1. The prelude (§3.4) imports every item of this section. No `use` is needed.
-2. A standard-library item has no semantics beyond its definition here. Its behavior in each analysis follows from §16.2 applied to that definition.
+1. The prelude (§3.4.2) re-exports every `pub` item of the namespaces of `std`. No `use` is needed.
+2. A standard-library item has no semantics beyond its definition. Its behavior in each analysis follows from §16.2 applied to that definition.
 3. A project **MAY** replace any item of this section by declaring an item of the same name in scope. The replacement is an ordinary item, with no privilege of the item it replaces (§3.3.7). The core names of §14 are not replaceable (§14 rule 1).
-4. Where this part gives a definition, the definition is normative. Where it gives only a signature and a contract, the contract is normative.
+4. Where this part gives a definition, the definition is normative. Where it gives only a signature and a contract, the item is declared `extern "intrinsic"` (§3 rule 10) and the contract is normative.
 5. The per-analysis tables in this part are derived from the definitions. If a table and a definition disagree, the definition governs.
 
-> **Resolution.** Listings that omit `pub` (for example `Tribuf`, `D2A`) are prelude exports like the others. They are read as if written with `pub`.
+**Sources.**
+
+| Section | Namespace | File |
+| --- | --- | --- |
+| §1 | `std::constants` | `constants.msl` |
+| §4, §11 | `std::carriers` | `carriers.msl` |
+| §22.1 | `std::values` | `values.msl` |
+| §22.2 | `std::analog` | `analog.msl` |
+| §22.3 | `std::nets` | `nets.msl` |
+| §22.4 | `std::convert` | `convert.msl` |
+| §22.5 | `std::monitor` | `monitor.msl` |
+| §22.6 | `std::io` | `io.msl` |
+
+**Implemented by the engine.**
+
+| Item | Entry | Reason |
+| --- | --- | --- |
+| `matches_bits` | §22.1.4 | reads the characters of a `str` |
+| `logic` | §22.1.4 | reads the characters of a `str` |
+| `table_model` | §22.2.15 | reads the characters of a `str` |
+| `parse_table` | §22.6.4 | reads the characters of a `str` |
+| `parse_hex` | §22.6.4 | reads the characters of a `str` |
 
 > **Resolution.** An implementation **MAY** implement an item natively when the result is observably equal to the definition: same values, same events, same time points, same records.
 

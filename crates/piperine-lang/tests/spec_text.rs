@@ -1174,3 +1174,79 @@ fn e0125_covers_intrinsic_outside_std() {
     assert!(row.contains("the ABI `\"intrinsic\"` outside the crate `std`"), "{row}");
     assert!(row.contains("an `extern` function with a body"), "{row}");
 }
+
+/// Part VII from the heading `## 22.` to the first `### Index`: the preamble of §22.
+fn s22_preamble() -> String {
+    let p7 = spec("part_vii_stdlib.md");
+    let start = p7.find("## 22. Standard library").expect("§22 heading");
+    let end = p7.find("### Index").expect("§22 Index");
+    p7[start..end].to_string()
+}
+
+#[test]
+fn s22_says_std_is_the_normative_source() {
+    // STD-01 AC 1.
+    let p = one_line(&s22_preamble());
+    assert!(p.contains("The **standard library** is the crate `std`"), "{p}");
+    assert!(p.contains("its source files are normative"), "{p}");
+    assert!(p.contains("each `rust` fence of this part is an excerpt of one of them"), "{p}");
+}
+
+#[test]
+fn s22_maps_sections_to_namespaces() {
+    // STD-01 AC 2: the table "Sources".
+    let pre = s22_preamble();
+    let at = pre.find("Sources").expect("a table named Sources");
+    let end = pre.find("Implemented by the engine").unwrap_or(pre.len());
+    assert!(at < end, "Sources comes before Implemented by the engine");
+    let rows = table_rows(&pre[at..end]);
+    let expect = [
+        ("§22.1", "std::values", "values.msl"),
+        ("§22.2", "std::analog", "analog.msl"),
+        ("§22.3", "std::nets", "nets.msl"),
+        ("§22.4", "std::convert", "convert.msl"),
+        ("§22.5", "std::monitor", "monitor.msl"),
+        ("§22.6", "std::io", "io.msl"),
+        ("§1", "std::constants", "constants.msl"),
+        ("§4", "std::carriers", "carriers.msl"),
+    ];
+    assert_eq!(rows.len(), expect.len(), "{rows:?}");
+    for (sec, ns, file) in expect {
+        let row = rows.iter().find(|r| r[0].starts_with(sec)).unwrap_or_else(|| panic!("no row for {sec}: {rows:?}"));
+        assert!(row[1].contains(ns) && row[2].contains(file), "{sec}: {row:?}");
+    }
+    assert!(rows.iter().find(|r| r[0].starts_with("§4")).unwrap()[0].contains("§11"), "{rows:?}");
+}
+
+#[test]
+fn s22_drops_the_implied_pub_resolution() {
+    // STD-01 AC 3.
+    let p = one_line(&s22_preamble());
+    assert!(!p.contains("as if written with `pub`"), "{p}");
+    assert!(!p.contains("Listings that omit `pub`"), "{p}");
+    // The permission to implement natively stays.
+    assert!(p.contains("**MAY** implement an item natively"), "{p}");
+}
+
+#[test]
+fn s22_lists_the_engine_items() {
+    // STD-02 AC 4: exactly five rows, each with an entry and a reason.
+    let pre = s22_preamble();
+    let at = pre.find("Implemented by the engine").expect("a table named Implemented by the engine");
+    let rows = table_rows(&pre[at..]);
+    let names: Vec<&str> = rows.iter().map(|r| r[0].trim_matches('`')).collect();
+    assert_eq!(names, ["matches_bits", "logic", "table_model", "parse_table", "parse_hex"], "{rows:?}");
+    for r in &rows {
+        assert_eq!(r.len(), 3, "Item | Entry | Reason: {r:?}");
+        assert!(r[1].starts_with('§') && !r[2].is_empty(), "{r:?}");
+    }
+}
+
+#[test]
+fn s22_rule_4_names_extern_intrinsic() {
+    // STD-02 AC 5.
+    let pre = s22_preamble();
+    let rule4 = one_line(pre.split("\n4. ").nth(1).expect("rule 4").split("\n5. ").next().unwrap());
+    assert!(rule4.contains("signature and a contract"), "{rule4}");
+    assert!(rule4.contains("declared `extern \"intrinsic\"`"), "{rule4}");
+}
