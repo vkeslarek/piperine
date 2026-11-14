@@ -502,3 +502,113 @@ fn function_pointer_type_round_trips() {
     assert_eq!(ptrs.len(), 4);
     assert!(ptrs.contains(&(1, true)) && ptrs.contains(&(0, false)));
 }
+
+/// One source per expression form, written in positions that make every form a node of a body.
+const WALK_SOURCES: [&str; 12] = [
+    "fn f(a: f64, b: f64) -> f64 { let c = a + -b; let d = (a, b)[0]; c as f64 }",
+    "fn f(a: f64) -> f64 { g(a, x: 1.0) + a.m(2.0, y: a)[0] }",
+    "fn f(a: f64) -> f64 { if a > 0.0 { a } else if a < 1.0 { 2.0 } else { 3.0 } }",
+    "fn f(a: f64) -> f64 { match a { x if x > 0.0 => x, _ => 0.0 } }",
+    "fn f(a: f64) -> f64 { let mut t = 0.0; for i in 0..4 { t += a; } while t < 3.0 { t = t + 1.0; } loop { break t; } }",
+    "fn f(a: f64) -> f64 { let h = |x: f64| x + a; let v = [a; 4]; let w = [a, a]; let s = S { x: a, y: 2.0 }; h(a)? }",
+    "fn f(a: f64) -> f64 { let Some(x) = g(a) else { return a + 1.0 }; if let Some(y) = g(x) { y } else { x.0 } }",
+    "fn f(a: f64) -> f64 { { a }; return a; }",
+    "fn f(a: f64) { loop { continue; } }",
+    "const X: f64 = emit_free(1.0) + 2.0;",
+    "module M(a: Bit) { signal s: Bit = 1.0; let k = 2.0 + 3.0; s = a after 1.0 + 2.0; if k > 1.0 { signal t: Bit; t = a; } }",
+    "module M(a: Bit) {}\ndigital for M { on a.rise() { let q = 1.0 + 2.0; a <- q; } }",
+];
+
+#[test]
+fn expr_children_and_parent_are_inverse() {
+    let mut with_children = 0;
+    for src in WALK_SOURCES {
+        let design = build(src);
+        let mut parented = 0;
+        for i in 0..design.expr_count() {
+            let e = design.expr(ExprId(i as u32));
+            for c in e.children() {
+                assert_eq!(c.parent(), Some(e), "`{}` must report `{}` as its parent in {src}", c.text(), e.text());
+            }
+            if !e.children().is_empty() {
+                with_children += 1;
+            }
+            if let Some(p) = e.parent() {
+                parented += 1;
+                assert!(p.children().contains(&e), "`{}` names `{}` as its parent, which does not list it, in {src}", e.text(), p.text());
+            }
+        }
+        assert!(parented > 0, "{src}: no expression has a parent");
+        assert!(design.check().is_empty(), "{:?}", design.check());
+    }
+    assert!(with_children > 30);
+
+    // Direct sub-expressions, in source order, for the forms with a known shape.
+    let design = build("const X: f64 = f(a + b, c: d) { p: e };");
+    let call = design.find("X").and_then(|d| d.as_const()).and_then(|c| c.value()).unwrap();
+    let texts: Vec<_> = call.children().iter().map(|c| c.text()).collect();
+    assert_eq!(texts, ["f", "a + b", "d", "e"]);
+    assert_eq!(call.parent(), None, "nothing contains the whole value");
+    let sum = call.children()[1];
+    assert_eq!(sum.parent(), Some(call));
+    assert_eq!(sum.children().iter().map(|c| c.text()).collect::<Vec<_>>(), ["a", "b"]);
+    assert!(sum.children()[0].children().is_empty());
+
+    // A block form lists the expressions of its statements; the condition comes first, `else` last.
+    let design = build("fn f(a: f64) -> f64 { if a > 0.0 { a; 1.0 } else { 2.0 } }");
+    let body = design.function("f").unwrap().exprs();
+    let iff = body[0];
+    assert_eq!(iff.children().iter().map(|c| c.text()).collect::<Vec<_>>(), ["a > 0.0", "a", "1.0", "{ 2.0 }"]);
+    assert_eq!(iff.children()[1].parent(), Some(iff));
+    assert_eq!(iff.parent(), None, "a statement's expression has no expression above it");
+}
+
+#[test]
+fn decl_exprs_is_preorder_over_the_body() {
+    let src = "\
+fn f(x: f64) -> f64 {
+    let y = g(1.0);
+    fn inner() -> f64 { k(2.0) }
+    if y > 0.0 { h(y) } else { 0.0 }
+}
+";
+    let design = build(src);
+    let texts = |d: &Design, name: &str| d.function(name).unwrap().exprs().iter().map(|e| e.text().to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        texts(&design, "f"),
+        ["g(1.0)", "g", "1.0", "if y > 0.0 { h(y) } else { 0.0 }", "y > 0.0", "y", "0.0", "h(y)", "h", "y", "{ 0.0 }", "0.0"],
+    );
+    let inner = design.decls().into_iter().find(|d| d.name() == Some("inner")).unwrap();
+    assert_eq!(inner.exprs().iter().map(|e| e.text()).collect::<Vec<_>>(), ["k(2.0)", "k", "2.0"]);
+    // Pre-order: a node comes before its children and after its previous sibling's subtree.
+    let all = design.function("f").unwrap().exprs();
+    for (at, e) in all.iter().enumerate() {
+        for c in e.children() {
+            assert!(all.iter().position(|x| *x == c).unwrap() > at);
+        }
+    }
+
+    // A module, a behavior block and a reaction list their own expressions.
+    let design = build("module M(a: Bit) { let k = 1.0 + 2.0; s = a; signal s: Bit = 4.0; }\nanalog for M { let z = 5.0; }\n");
+    let m = design.module("M").unwrap();
+    assert_eq!(m.exprs().iter().map(|e| e.text()).collect::<Vec<_>>(), ["1.0 + 2.0", "1.0", "2.0", "s", "a", "4.0"]);
+    let block = m.behaviors()[0];
+    assert_eq!(block.exprs().iter().map(|e| e.text()).collect::<Vec<_>>(), ["5.0"]);
+    let design = build("module M(a: Bit) {}\ndigital for M { on a.rise() { let q = 1.0 + 2.0; } }\n");
+    let reaction = design.module("M").unwrap().behaviors()[0].reactions()[0];
+    assert_eq!(reaction.exprs().iter().map(|e| e.text()).collect::<Vec<_>>(), ["a.rise()", "a", "1.0 + 2.0", "1.0", "2.0"]);
+}
+
+#[test]
+fn check_reports_a_broken_parent_table() {
+    let design = build("const X: f64 = a + b;");
+    assert!(design.check().is_empty());
+    let mut json: serde_json::Value = serde_json::to_value(&design).unwrap();
+    let table = json["expr_parent"].as_array_mut().expect("the parent table serializes with the design");
+    assert_eq!(table.len(), design.expr_count());
+    // `a` (index 1) is a child of the sum; claim it is nobody's child.
+    let at = table.iter().position(|p| !p.is_null()).unwrap();
+    table[at] = serde_json::Value::Null;
+    let broken: Design = serde_json::from_value(json).unwrap();
+    assert!(!broken.check().is_empty());
+}

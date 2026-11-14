@@ -116,6 +116,20 @@ impl<'d> Expr<'d> {
         text_in(self.enclosing(), self.span())
     }
 
+    /// The direct sub-expressions, in source order. A form that holds a block
+    /// lists the expressions of the block's statements; types, patterns and
+    /// generic arguments are not expressions.
+    pub fn children(self) -> Vec<Expr<'d>> {
+        crate::pom::body::expr_children(self.kind(), self.design).into_iter().map(|c| Expr::new(self.design, c)).collect()
+    }
+
+    /// The expression that lists this one among its [`Expr::children`]; none
+    /// when no expression contains it (a statement's own expression, a
+    /// declaration's value).
+    pub fn parent(self) -> Option<Expr<'d>> {
+        self.design.expr_parent.get(self.id.index()).copied().flatten().map(|p| Expr::new(self.design, p))
+    }
+
     /// The path this expression is, when it is a path expression (`s`, `a::X`).
     pub fn as_path(self) -> Option<Path<'d>> {
         match self.kind() {

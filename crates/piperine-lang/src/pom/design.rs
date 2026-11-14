@@ -74,6 +74,11 @@ pub struct Design {
     pub(super) paths: Vec<PathNode>,
     diagnostics: Vec<DesignDiagnostic>,
     pub(super) index: super::index::Index,
+    /// The expression that contains each expression (see `Expr::parent`), by `ExprId`; filled once
+    /// after lowering.
+    pub(super) expr_parent: Vec<Option<ExprId>>,
+    /// The statement that holds each expression directly, by `ExprId`; filled with `expr_parent`.
+    pub(super) expr_stmt: Vec<Option<StmtId>>,
 }
 
 impl Design {
@@ -186,6 +191,27 @@ impl Design {
     /// for the rest).
     pub(super) fn sort_diagnostics(&mut self) {
         self.diagnostics.sort_by(|a, b| (a.file, a.diagnostic.span().start, &a.diagnostic.code).cmp(&(b.file, b.diagnostic.span().start, &b.diagnostic.code)));
+    }
+
+    /// Fill the parent and statement tables from the nodes: the one child
+    /// enumeration, inverted.
+    pub(super) fn fill_parents(&mut self) {
+        let n = self.exprs.len();
+        let mut parent = vec![None; n];
+        let mut stmt = vec![None; n];
+        for (i, node) in self.exprs.iter().enumerate() {
+            for c in super::body::expr_children(&node.kind, self) {
+                parent[c.index()] = Some(ExprId(i as u32));
+            }
+        }
+        for i in 0..self.stmts.len() {
+            let id = StmtId(i as u32);
+            for e in super::body::stmt_own_exprs(self, id) {
+                stmt[e.index()] = Some(id);
+            }
+        }
+        self.expr_parent = parent;
+        self.expr_stmt = stmt;
     }
 
     /// Bind a behavior block to its module, both ways.
@@ -365,7 +391,7 @@ impl DesignBuilder {
     /// recovered tree is kept and each diagnostic is listed with its file.
     pub fn build(self) -> Design {
         let mut design =
-            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new(), index: Default::default() };
+            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new(), index: Default::default(), expr_parent: Vec::new(), expr_stmt: Vec::new() };
         if let Some(path) = &self.root_file {
             let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
             let bytes = DiskSources.read(path);

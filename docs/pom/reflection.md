@@ -213,6 +213,7 @@ The trait every declaration handle implements. Only `decl()` is required; everyt
 | `is_pub(self)` | `bool` | Whether the item is written `pub`. |
 | `module(self)` | `Option<Module<'d>>` | The module this declaration belongs to: itself for a module, else the nearest enclosing module (through generation). None outside any module, and for a `signal` written outside a module body (the parser reported it). |
 | `declared_in(self)` | `Option<Decl<'d>>` | The declaration that lexically contains this one; none for a file's root namespace. |
+| `exprs(self)` | `Vec<Expr<'d>>` | Every expression of the declaration's own body in pre-order source order, each followed by its descendants; none that belongs to a nested item. A function lists its body, a module its lets, signal initializers, definitions, generation conditions and result, a behavior block its statements, a reaction its event and body; a `const`, `signal`, `let` or definition its value; every other kind nothing. |
 | `references(self)` | `Vec<Reference<'d>>` | Every path with a segment, every member expression and every identifier pattern that resolved to this declaration, in source order. |
 | `qualified_name(self)` | `String` | The namespace path joined by `::`, then the member chain joined by `.`: signal `w` of module `M` in `mod a` is `a::M.w`. An `impl` adds its header (`impl S`, `impl Tr for S`) and a behavior block its own (`analog for M`), so their items do not share a name with another impl's or the module's: `impl Tr for S.X`, `analog for M.z`. A generation, a `use` and a file's root namespace add no segment. |
 
@@ -1096,6 +1097,8 @@ An expression node.
 | `as_path(self)` | `Option<Path<'d>>` | The path this expression is, when it is a path expression (`s`, `a::X`). |
 | `resolution(self)` | `Resolution` | What this expression names: a path's last segment, a struct literal's path, a field access or method call's member, a call's callee. Every other expression names nothing and answers `Unresolved`. |
 | `target(self)` | `Option<Decl<'d>>` | The declaration `resolution()` names, as a handle; none for an unresolved name, a built-in or a deferred one. |
+| `children(self)` | `Vec<Expr<'d>>` | The direct sub-expressions in source order (a call: callee, argument values, param-block values; an `if`: the condition, the expressions of the `then` statements, the `else`). A form holding a block lists the expressions of the block's statements. Types, patterns and generic arguments are not expressions and are not entered. |
+| `parent(self)` | `Option<Expr<'d>>` | The expression that lists this one among its `children()`; none when no expression contains it (a statement's own expression, a declaration's value). A side table filled after lowering and verified against `children()` by `Design::check`. |
 
 Body nodes are read through `Expr`, `Stmt`, `Pat`, `Type` and `Path`. Each gives the node
 (`kind()`), its range (`span()`), its authored text and the declaration that owns it.

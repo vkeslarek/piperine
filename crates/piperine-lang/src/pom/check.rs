@@ -361,7 +361,38 @@ impl Design {
         self.check_links(&mut problems);
         self.check_nodes(&mut problems);
         self.check_reachability(&mut problems);
+        // The parent table is read through the nodes, so it is checked once every id is known to be in range.
+        if problems.is_empty() {
+            self.check_parents(&mut problems);
+        }
         problems
+    }
+
+    /// `parent()` is the inverse of `children()`: the tables have one entry
+    /// per node, and an expression's parent lists it among its children.
+    fn check_parents(&self, problems: &mut Vec<String>) {
+        if self.expr_parent.len() != self.exprs.len() || self.expr_stmt.len() != self.exprs.len() {
+            problems.push(format!("the parent tables hold {} and {} entries for {} expressions", self.expr_parent.len(), self.expr_stmt.len(), self.exprs.len()));
+            return;
+        }
+        for (i, node) in self.exprs.iter().enumerate() {
+            let id = ExprId(i as u32);
+            for c in super::body::expr_children(&node.kind, self) {
+                if self.expr_parent[c.index()] != Some(id) {
+                    problems.push(format!("expression {} is a child of expression {i} but names {:?} as its parent", c.0, self.expr_parent[c.index()]));
+                }
+            }
+            if let Some(p) = self.expr_parent[i] {
+                if !super::body::expr_children(&self.exprs[p.index()].kind, self).contains(&id) {
+                    problems.push(format!("expression {i} names expression {} as its parent, which does not list it", p.0));
+                }
+            }
+            if let Some(s) = self.expr_stmt[i] {
+                if !super::body::stmt_own_exprs(self, s).contains(&id) {
+                    problems.push(format!("expression {i} names statement {} as its statement, which does not hold it", s.0));
+                }
+            }
+        }
     }
 
     /// Parent and child links, spans and files of the declarations.

@@ -1133,12 +1133,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `expr_children_and_parent_are_inverse` passes in `pom_body.rs` (C112: POL-20 AC 4)
-- [ ] Test `decl_exprs_is_preorder_over_the_body` passes in `pom_body.rs` (C113: POL-20 AC 5)
-- [ ] One function enumerates the children of an `ExprKind`; `parent()` is checked against it by `check()`
-- [ ] The parent table serializes with the design (`gallery_design_round_trips_through_json` still passes)
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `expr_children_and_parent_are_inverse` passes in `pom_body.rs` (C112: POL-20 AC 4)
+- [x] Test `decl_exprs_is_preorder_over_the_body` passes in `pom_body.rs` (C113: POL-20 AC 5)
+- [x] One function enumerates the children of an `ExprKind`; `parent()` is checked against it by `check()`
+- [x] The parent table serializes with the design (`gallery_design_round_trips_through_json` still passes)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

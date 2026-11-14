@@ -9,7 +9,7 @@ mod items;
 use super::body::Lit;
 use super::decl::{DeclData, DeclKind};
 use super::design::Design;
-use super::ids::DeclId;
+use super::ids::{DeclId, ExprId};
 use super::index::ReferenceId;
 use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
@@ -161,6 +161,23 @@ pub trait Reflect<'d>: Copy {
             .collect()
     }
 
+    /// Every expression of this declaration's own body in pre-order source
+    /// order, each followed by its descendants; none that belongs to a nested
+    /// item (a `fn`, a `const`, a reaction written inside a block). A function
+    /// lists its body, a module its lets, signal initializers, definitions,
+    /// generation conditions and result, a behavior block its statements, a
+    /// reaction its event and body; a `const`, `signal`, `let` or definition
+    /// its value. Every other kind lists nothing.
+    fn exprs(self) -> Vec<Expr<'d>> {
+        let d = self.decl();
+        let design = d.design();
+        let mut ids = Vec::new();
+        for root in decl_roots(design, d.id()) {
+            crate::pom::body::preorder(design, root, &mut ids);
+        }
+        ids.into_iter().map(|e| design.expr(e)).collect()
+    }
+
     /// The namespace path joined by `::`, then the member chain joined by
     /// `.`: signal `w` of module `M` in `mod a` is `a::M.w`. An `impl` adds
     /// its header (`impl S`, `impl Tr for S`) and a behavior block its own
@@ -190,6 +207,53 @@ pub trait Reflect<'d>: Copy {
         }
         out
     }
+}
+
+/// The root expressions of one declaration's own body, in source order (see
+/// [`Reflect::exprs`]): each is walked pre-order by the caller.
+fn decl_roots(design: &Design, id: DeclId) -> Vec<ExprId> {
+    use crate::pom::body::{block_exprs, stmt_children};
+    use crate::pom::decl::GenerationData;
+    let data = design.decl_data(id);
+    let body_items = |roots: &mut Vec<ExprId>| {
+        for c in &data.children {
+            if matches!(design.decl_data(*c).kind, DeclKind::Let(_) | DeclKind::Signal(_) | DeclKind::Definition(_) | DeclKind::Generation(_)) {
+                roots.extend(decl_roots(design, *c));
+            }
+        }
+    };
+    let mut roots = Vec::new();
+    match &data.kind {
+        DeclKind::Fn(f) => roots.extend(f.body.iter().flat_map(|b| block_exprs(design, b))),
+        DeclKind::Reaction(r) => {
+            roots.push(r.event);
+            roots.extend(block_exprs(design, &r.body));
+        }
+        DeclKind::Behavior(b) => {
+            roots.extend(b.body.iter().flat_map(|s| stmt_children(design, *s)));
+            body_items(&mut roots);
+        }
+        DeclKind::Module(m) => {
+            body_items(&mut roots);
+            roots.extend(m.result);
+        }
+        DeclKind::Generation(g) => {
+            roots.push(match g {
+                GenerationData::For { iter, .. } => *iter,
+                GenerationData::If { cond, .. } => *cond,
+            });
+            body_items(&mut roots);
+        }
+        DeclKind::Const(c) => roots.extend(c.value),
+        DeclKind::Signal(s) => roots.extend(s.init),
+        DeclKind::Let(l) => roots.push(l.value),
+        DeclKind::Definition(d) => {
+            roots.extend([d.place, d.value]);
+            roots.extend(d.after);
+        }
+        _ => {}
+    }
+    roots
 }
 
 /// What one declaration adds to a qualified name, if anything.

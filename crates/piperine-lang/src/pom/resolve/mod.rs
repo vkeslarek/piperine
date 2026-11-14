@@ -54,6 +54,7 @@ pub(super) struct Ctx<'a> {
 
 /// Run every resolution stage over a freshly lowered design.
 pub(super) fn run(design: &mut Design) {
+    design.fill_parents();
     let out = {
         let mut ctx = Ctx {
             design,
