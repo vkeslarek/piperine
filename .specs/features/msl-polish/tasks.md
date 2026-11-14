@@ -1737,8 +1737,9 @@ Proof: run pomcorpus | test every_spec_block_round_trips_to_its_ast ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** B1 (Phase 1) Sonnet worker at 8700cc5f - returned (HEAD d6591429, T1–T6); B2 (Phase 2) Sonnet worker at 6778bd6a
+**Dispatched:** B1 (Phase 1) Sonnet worker at 8700cc5f - returned (HEAD d6591429, T1–T6); B2 (Phase 2) Sonnet worker at 6778bd6a - returned (HEAD 47f5fc3e, T7–T10)
 **B1 notes:** B.3.6 assigns codes for removed Rust forms: E0903 type aliases/associated types/static, E0905 loop labels, E0900 the rest — T22 must match. §14 rule 1 reworded (core names). T3–T6 spec edits written before tests (no red run).
+**B2 notes:** B.3.3 shorthand note is an unnumbered paragraph after item 7 (items 8–14 referenced by number).
 **Walked:** no screen in this feature; the stories' Independent Tests are the checks above
 
 ---
