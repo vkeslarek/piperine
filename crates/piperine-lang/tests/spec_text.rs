@@ -958,6 +958,10 @@ fn s36_lists_every_manifest_key() {
     ] {
         assert!(key_rows.iter().any(|r| r[0] == table && r[1].contains(key)), "no row for {table} {key}: {keys}");
     }
+    // "Exactly those eleven": nine rows, and eleven keys (`branch`, `tag`, `rev` share one row).
+    assert_eq!(key_rows.len(), 9, "{keys}");
+    let key_count: usize = key_rows.iter().map(|r| r[1].matches('`').count() / 2).sum();
+    assert_eq!(key_count, 11, "{keys}");
     let refs = key_rows.iter().find(|r| r[1].contains("`branch`")).expect("branch, tag, rev row");
     assert!(refs[1].contains("`tag`") && refs[1].contains("`rev`"), "{refs:?}");
     let s = one_line(&sec);

@@ -538,6 +538,10 @@ fn a_use_path_that_names_a_local_and_a_dependency_is_e0163() {
         let design = two(app, util, "util", None);
         assert_eq!(codes(&design), ["E0163"], "{app}: {:?}", design.diagnostics());
         let d = &design.diagnostics()[0].diagnostic;
+        // The span is the `use` path: the text of `util` (or `util::K`) in the `use` line.
+        let text = design.files()[design.diagnostics()[0].file.index()].text();
+        let at = &text[d.span().range()];
+        assert!(at.starts_with("util") && app.contains(&format!("use {at}")), "the span is the `use` path: {at:?}");
         let help = d.help.as_deref().unwrap_or("");
         assert!(help.contains("package = \"") && help.contains("crate::util"), "{help}");
         for res in path_res(&design, "util::K").into_iter().chain(path_res(&design, "util")).chain(path_res(&design, "util::*")) {
@@ -689,6 +693,8 @@ fn a_private_item_of_another_crate_is_e0161() {
 fn a_pub_item_in_a_private_namespace_is_e0161() {
     let design = chain("const X: u32 = util::inner::K;\n", "mod inner { pub const K: u32 = 1; }\n", "");
     assert_eq!(codes(&design), ["E0161"]);
+    let message = &design.diagnostics()[0].diagnostic.message;
+    assert!(message.contains("`inner`") && message.contains("private"), "the message names `inner`: {message}");
 }
 
 #[test]
@@ -935,7 +941,7 @@ fn from_json_rejects_a_dependency_cycle() {
     // b -> app closes app -> b -> app.
     let two = edited(&good, |v| v["crates"][1]["dependencies"] = serde_json::json!([{ "name": "back", "krate": 0 }]));
     let problems = two.err().expect("a two-crate cycle was accepted");
-    assert!(problems.iter().any(|p| p.contains("cycle") && p.contains("app") && p.contains('b')), "{problems:?}");
+    assert!(problems.iter().any(|p| p == "dependency cycle: app -> b -> app"), "{problems:?}");
     // A crate that depends on itself.
     let one = edited(&good, |v| v["crates"][2]["dependencies"] = serde_json::json!([{ "name": "me", "krate": 2 }]));
     assert!(one.err().expect("a self dependency was accepted").iter().any(|p| p.contains("cycle")));
