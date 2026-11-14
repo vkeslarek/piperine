@@ -263,3 +263,14 @@ fn instructions_have_no_entry_for_a_retired_crate() {
         );
     }
 }
+
+#[test]
+fn state_records_the_solver_structure_decision() {
+    let text = std::fs::read_to_string(repo_root().join(".specs/STATE.md")).expect("read STATE.md");
+    let heading = "### MD-60: the solver is three crates; events are the only boundary";
+    let body = text.split(heading).nth(1).expect("STATE.md records the decision heading");
+    let section = body.split("\n### ").next().unwrap_or(body);
+    for name in ["piperine-solver", "piperine-analog-solver", "piperine-digital-solver"] {
+        assert!(section.contains(name), "the decision does not name {name}");
+    }
+}

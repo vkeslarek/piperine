@@ -660,11 +660,11 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] A new entry `### MD-58: the solver is three crates; events are the only boundary` under "Macro Decisions", with: the three crate names and the dependency direction; the event-only boundary as the target of `solver-event-boundary`; opaque byte carriers; the kept discontinuity algorithm and tolerance mapping with the spec amendments owed; the five removed crates; the user's words quoted for each; status Locked, date 2026-11-14
-- [ ] The handoff snapshot gains a short entry for `solver-restructure`
-- [ ] `workspace_shape.rs` gains `state_records_the_solver_structure_decision` (C36): the heading exists and its section names the three crates
-- [ ] `cargo test` on the three solver crates is green; `cargo build --all-targets` on `piperine-lang` and the three solver crates prints no warning (C33)
-- [ ] Gate: full
+- [x] A new entry `### MD-58: the solver is three crates; events are the only boundary` under "Macro Decisions", with: the three crate names and the dependency direction; the event-only boundary as the target of `solver-event-boundary`; opaque byte carriers; the kept discontinuity algorithm and tolerance mapping with the spec amendments owed; the five removed crates; the user's words quoted for each; status Locked, date 2026-11-14
+- [x] The handoff snapshot gains a short entry for `solver-restructure`
+- [x] `workspace_shape.rs` gains `state_records_the_solver_structure_decision` (C36): the heading exists and its section names the three crates
+- [x] `cargo test` on the three solver crates is green; `cargo build --all-targets` on `piperine-lang` and the three solver crates prints no warning (C33)
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full
