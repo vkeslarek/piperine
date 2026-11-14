@@ -9,7 +9,7 @@ use piperine_lang::msl::{Diagnostic, Span};
 use piperine_lang::pom::{CrateGraph, CrateId, GraphError};
 
 use crate::error::PackageError;
-use crate::git::{GitError, source_text, sync_and_checkout};
+use crate::git::{GitError, normalize_url, source_text, sync_and_checkout};
 use crate::lockfile::{LOCKFILE, LockedPackage, Lockfile};
 use crate::manifest::{Dependency, GitRef, MANIFEST, Manifest, Source};
 
@@ -138,8 +138,8 @@ impl Walk {
     /// cloned or fetched into `<deps>/<url>/db`, and the commit checked out into
     /// `<deps>/<url>/<commit>`.
     fn checkout(&mut self, url: &str, reference: &GitRef) -> Result<(PathBuf, String), GitError> {
-        let home = self.deps.join(sanitize(url));
-        let source = source_text(url, reference);
+        let home = self.deps.join(sanitize(&normalize_url(url)));
+        let source = source_text(&normalize_url(url), reference);
         let commit = match self.resolved.get(&source) {
             Some(commit) => commit.clone(),
             None => {
@@ -196,7 +196,7 @@ impl Walk {
                     let message = format!("dependency `{}` is not at `{url}`: no `{MANIFEST}` at the root of commit {commit}", dependency.name);
                     return Err(vec![fault(dir, dependency.name_span, "E0172", message, "no package in this repository", None)]);
                 }
-                let identity = Identity::Git(url.clone(), commit.clone());
+                let identity = Identity::Git(normalize_url(url), commit.clone());
                 (target, identity, Some(commit))
             }
         };
@@ -215,7 +215,7 @@ impl Walk {
         }
         if let (Source::Git { url, reference }, Some(commit)) = (&dependency.source, &commit) {
             let (name, version) = (manifest.package.name.clone(), manifest.package.version);
-            self.recorded.insert(LockedPackage { name, version, source: source_text(url, reference), commit: commit.clone() });
+            self.recorded.insert(LockedPackage { name, version, source: source_text(&normalize_url(url), reference), commit: commit.clone() });
         }
         if let Some(at) = self.stack.iter().position(|(on_stack, _)| *on_stack == identity) {
             let mut chain: Vec<&str> = self.stack[at..].iter().map(|(_, name)| name.as_str()).collect();

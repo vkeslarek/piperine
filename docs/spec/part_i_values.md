@@ -693,7 +693,8 @@ A **package** is a directory with a manifest. It holds one crate.
 - **§3.6.9** `version` is a requirement the located package's version **MUST** satisfy
   (`E0173`), in one of the forms of the requirement table.
 - **§3.6.10** Two dependencies that locate the same package (one directory; one repository at
-  one commit) name the same crate.
+  one commit) name the same crate. A repository URL is compared without a trailing `/` and a
+  trailing `.git`, so one repository spelled two ways is one repository.
 - **§3.6.11** Dependencies are followed transitively. The graph **MUST NOT** hold a cycle
   (`E0174`).
 - **§3.6.12** A crate is reached through a dependency and in no other way: an implementation

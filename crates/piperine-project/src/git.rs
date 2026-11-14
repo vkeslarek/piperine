@@ -25,6 +25,13 @@ impl fmt::Display for GitError {
 
 impl std::error::Error for GitError {}
 
+/// A repository URL as identity: without a trailing `/` and a trailing `.git`, so that one
+/// repository spelled two ways is one.
+pub fn normalize_url(url: &str) -> String {
+    let url = url.trim_end_matches('/');
+    url.strip_suffix(".git").unwrap_or(url).trim_end_matches('/').to_string()
+}
+
 /// The text of a dependency's source: `git+<url>`, then `?branch=<b>`, `?tag=<t>` or `?rev=<r>`
 /// when one was given.
 pub fn source_text(url: &str, reference: &GitRef) -> String {

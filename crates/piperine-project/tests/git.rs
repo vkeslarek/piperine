@@ -148,6 +148,23 @@ fn one_commit_of_one_repository_is_one_crate() {
 }
 
 #[test]
+fn one_repository_spelled_two_ways_is_one_crate() {
+    let (_tmp, base) = workspace();
+    let (repo, _) = util_repo(&base.join("util-repo.git"), "");
+    let plain = url(&repo);
+    let spellings = [plain.clone(), format!("{plain}/")];
+    package(&base.join("mid"), "mid", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", spellings[1])], "");
+    let app = package(&base.join("app"), "app", "1.0.0", &["mid = { path = \"../mid\" }", &format!("util = {{ git = \"{}\" }}", spellings[0])], "");
+    let graph = ok(&app);
+    // app, mid and one util.
+    assert_eq!(graph.graph.crates().len(), 3, "{:?}", graph.graph.crates().iter().map(|c| &c.name).collect::<Vec<_>>());
+    // Every spelling of the repository is the same lockfile source: no `/`, no `.git`.
+    let lock = fs::read_to_string(app.join("Piperine.lock")).unwrap();
+    assert_eq!(lock.matches("[[package]]").count(), 1, "{lock}");
+    assert!(lock.contains(&format!("source = \"git+{}\"", plain.trim_end_matches(".git"))), "{lock}");
+}
+
+#[test]
 fn a_git_package_resolves_its_own_dependencies() {
     let (_tmp, base) = workspace();
     let repo = repo(&base.join("util-repo"));
