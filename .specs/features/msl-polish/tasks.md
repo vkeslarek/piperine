@@ -813,12 +813,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `catalogue_traits_and_types_resolve` passes in `pom_resolve.rs` (C8: POL-02 AC 5)
-- [ ] Test `builtin_table_matches_appendix_h` passes in `pom_resolve.rs` (C9: POL-02 AC 6)
-- [ ] Methods of the catalogue get no row: a method on a value needs the receiver's type and stays `Deferred(ReceiverTypeUnknown)`
-- [ ] The existing rows `Clone`, `Copy` move under the `App. H` section label
-- [ ] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `catalogue_traits_and_types_resolve` passes in `pom_resolve.rs` (C8: POL-02 AC 5)
+- [x] Test `builtin_table_matches_appendix_h` passes in `pom_resolve.rs` (C9: POL-02 AC 6)
+- [x] Methods of the catalogue get no row: a method on a value needs the receiver's type and stays `Deferred(ReceiverTypeUnknown)`
+- [x] The existing rows `Clone`, `Copy` move under the `App. H` section label
+- [x] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

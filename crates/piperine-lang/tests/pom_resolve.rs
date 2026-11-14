@@ -746,3 +746,78 @@ fn fixture_prelude_declares_no_core_name() {
     }
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
 }
+
+// ---- the catalogue of Appendix H (POL-02) ------------------------------------------------------
+
+/// The first cell of every row of the table under the heading starting `heading` in Appendix H,
+/// without its backticks and generic arguments (`UInt<N>` gives `UInt`).
+fn appendix_h_names(heading: &str) -> Vec<String> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec/appendix_h_library.md");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let start = text.find(heading).unwrap_or_else(|| panic!("heading `{heading}`"));
+    let body = &text[start + heading.len()..];
+    let body = &body[..body.find("\n## ").unwrap_or(body.len())];
+    body.lines()
+        .filter(|l| l.starts_with("| `"))
+        .map(|l| {
+            let cell = l.trim_start_matches('|').split('|').next().unwrap().trim().trim_matches('`');
+            cell.split('<').next().unwrap().to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn catalogue_traits_and_types_resolve() {
+    let traits = appendix_h_names("## H.8");
+    let types = appendix_h_names("## H.9");
+    assert!(traits.len() >= 9 && types.len() >= 6, "{traits:?} {types:?}");
+    // A derive names its traits as written and reports nothing (attribute paths are never resolved).
+    let derived = build("#[derive(Default)]\nstruct S { a: f64 }\n#[derive(PartialOrd, Debug, Hash, Clone)]\nstruct U;\n");
+    assert!(derived.diagnostics().is_empty(), "{:?}", derived.diagnostics());
+    let mut src = String::new();
+    for (i, t) in traits.iter().enumerate() {
+        src.push_str(&format!("fn t{i}<T: {t}>(a: T) {{}}\n"));
+    }
+    for (i, t) in types.iter().enumerate() {
+        let written = if matches!(t.as_str(), "UInt" | "Int" | "Float" | "Option") { format!("{t}<f64>") } else { t.clone() };
+        src.push_str(&format!("fn y{i}(a: {written}) {{}}\n"));
+    }
+    let design = build(&src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    for t in &traits {
+        let kinds = builtin_kinds(&design, t);
+        assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == Some(BuiltinKind::Trait)), "trait `{t}`: {kinds:?}");
+    }
+    for t in &types {
+        let kinds = builtin_kinds(&design, t);
+        assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == Some(BuiltinKind::Type)), "type `{t}`: {kinds:?}");
+    }
+}
+
+#[test]
+fn builtin_table_matches_appendix_h() {
+    use std::collections::BTreeSet;
+    let rows = |kind: BuiltinKind| -> BTreeSet<String> {
+        piperine_lang::pom::BUILTINS.iter().filter(|b| b.kind == kind).map(|b| b.name.to_string()).collect()
+    };
+    let own = |names: &[&str]| -> BTreeSet<String> { names.iter().map(|s| s.to_string()).collect() };
+    // Traits: Appendix H's list, plus the language's own `Repr`, `Nature` and `Fn`.
+    let mut traits: BTreeSet<String> = appendix_h_names("## H.8").into_iter().collect();
+    traits.extend(own(&["Repr", "Nature", "Fn"]));
+    assert_eq!(rows(BuiltinKind::Trait), traits);
+    // Types: every H.9 type has a row; the others are the sized families, `usize`/`isize`, `Event` and `Analysis`.
+    let types = rows(BuiltinKind::Type);
+    let catalogue: BTreeSet<String> = appendix_h_names("## H.9").into_iter().collect();
+    assert!(catalogue.is_subset(&types), "missing: {:?}", catalogue.difference(&types).collect::<Vec<_>>());
+    let extra = own(&["uN", "iN", "fN", "usize", "isize", "Event", "Analysis"]);
+    let unexplained: Vec<_> = types.iter().filter(|t| !catalogue.contains(*t) && !extra.contains(*t)).collect();
+    assert!(unexplained.is_empty(), "{unexplained:?}");
+    // Every row of the catalogue is under the `App. H` label, apart from the §1 types.
+    for b in piperine_lang::pom::BUILTINS.iter().filter(|b| b.kind == BuiltinKind::Trait && catalogue_trait(b.name)) {
+        assert_eq!(b.section, "App. H", "{}", b.name);
+    }
+}
+
+fn catalogue_trait(name: &str) -> bool {
+    appendix_h_names("## H.8").iter().any(|t| t == name)
+}
