@@ -1,0 +1,121 @@
+# Solver Completeness Context
+
+**Gathered:** 2026-11-14
+**Spec:** `.specs/features/solver-completeness/spec.md`
+**Status:** Waiting for the user's answers (Q1 to Q10). Nothing below is decided; each question carries a recommendation.
+
+---
+
+## Feature Boundary
+
+Give the solver an engine for every dynamic rule of the MSL specification (Parts II to VI, VIII) and remove what MSL does not use. The solver stays the numeric and event core: it evaluates no model expression, knows no MSL type, formats nothing. The elaborator, codegen and the host are other features. Evidence: `analysis.md`.
+
+---
+
+## Open Questions
+
+### Q1. Where does the discrete engine live?
+
+MSL's discrete side is: carriers, drives, `resolve`, commits with transport delay, the microstep loop, settle. Something must own it.
+
+- **A (recommended). The event kernel lives in the solver; evaluation lives in elements.** The solver owns ticks, the queue, the carrier store, commit ordering, transport removal, the microstep loop, checkpoint and rollback. Elements (generated code) are called to evaluate a definition, a `resolve` or a reaction. Why: the invariants I1 to I8 of §15 (determinism, snapshot, order, no trace of rejection) are engine properties, and the jump and settle rules need the kernel and the analog driver in one loop. This is the "core do negócio".
+- B. The solver owns only time and the analog system and calls one pluggable `DiscreteEngine` trait per instant; the engine itself is a new crate or part of codegen. Smaller solver, but the ordering and rollback rules leave the crate that owns time, and two crates must agree on every instant.
+- C. Keep the present `DigitalDevice` seq/comb contract and bolt MSL on top in codegen. Least work now; rows 4, 5, 6, 17 of the analysis cannot be met.
+
+### Q2. How does the solver store a carrier value?
+
+- **A (recommended). Opaque bytes.** Each carrier and each drive is a fixed-size byte slot whose layout codegen chooses (levels, known flags). A change is a bytewise difference; codegen keeps unknown levels in a canonical form so that §5.3.4 to §5.3.6 hold bitwise (`0.0` to `-0.0` is a change, the same NaN is not). The solver never learns a type.
+- B. A closed value enum in the solver (`Bool`, `Int`, `Real`, `Unknown`, aggregates). Easier to debug and to show to a host; the solver then mirrors the MSL type system and grows with it.
+
+Consequence of A: the host reads carriers as bytes plus metadata from the elaborator. Is that acceptable for `piperine-api`?
+
+### Q3. Remove the Verilog-AMS digital and IO surface now?
+
+`analysis.md` S1 to S5, S8 to S12: stratified regions, the strength table, `specify` delays and timing checks, four-state `LogicValue`, `$display`/file IO, `$discontinuity`, `@initial` seeds, `initial_step`/`final_step`, `$simprobe`, the seq/comb contract.
+
+- **A (recommended). Remove all of it in the first sub-feature**, with the tests that cover only it. No consumer compiles, MSL has no construct for any of it, and the new kernel replaces `digital/`.
+- B. Keep it beside the new kernel until codegen is rebuilt. Two digital engines in a crate that must be minimal.
+
+This deletes passing-in-principle tests (`vams_stratified_regions`, `digital_driver_segregation`, `specify_timing_check_enforcement`, `scheduler_region_queue_parity`, parts of `digital_topology`, `mixed_signal`). The skill's rule is that a test is never deleted without the user's word, so this needs an explicit yes.
+
+### Q4. Remove the constraint, margin and coverage channels?
+
+S6: `ValidationReport`, `MarginReport`, `CoverageReport`, `CheckPosture`, `RequireScope`, `evaluate_constraints` and the rest (the dv-core and dv-tester work).
+
+- **A (recommended). Remove.** In MSL `require`, `cover` and `target` are stdlib functions that emit records on `checks`, and the host counts them (§19, §22.6, §23.2). The solver needs one record sink (SCH-05), not three report channels.
+- B. Keep them as the transport under the `checks` stream. Faster for the host; the solver then knows what a margin is.
+
+### Q5. What happens to the analyses the spec calls host procedures?
+
+§16.3: transfer function, poles and zeros, S-parameters, DC sensitivity, distortion and periodic steady state are built by the host from the four solves.
+
+- **A (recommended). Delete `disto`; keep `tf`, `pz`, `sp`, `sens`, `adjoint`, `pss` in the solver for now**, marked as host procedures to move when `piperine-api` is rebuilt. `disto` needs second and third derivative kernels in the `Element` ABI, overruns Cranelift on MOS2/MOS3, and the spec defines distortion as a transient plus Fourier. The others need the assembled linearization and re-entry internals, and no host crate builds today to receive them.
+- B. Move all of them out now behind a small "linearization" API. Truly minimal solver; cannot be verified until a host crate compiles.
+- C. Keep everything, `disto` included.
+
+### Q6. The five test targets that depend on `piperine-codegen`
+
+`adjoint_dc`, `adjoint_vs_sens`, `pss`, `sens`, `transient_reentry` build their circuits by compiling Verilog-A. They are why no solver test runs.
+
+- **A (recommended). Rewrite them against hand-written Rust `Element`s with the same assertions and drop both dev-dependencies.** The solver is then testable alone, for good.
+- B. Gate them behind a feature until codegen exists again. The repo's hygiene guard forbids switched-off tests, and the coverage is lost meanwhile.
+
+### Q7. The jump solve: reference algorithm or something else?
+
+- **A (recommended). Appendix C.2 as written**: backward Euler with `h` equal to one tick, time not advanced, started from the left value, repeated once, `1/h` rows scaled by `h`. It reuses the companion-model path with a third integration phase.
+- B. A dedicated consistent-initialization solve (charge-conservation constraints assembled explicitly). Exact in the limit; needs a new device contract for states.
+
+### Q8. Who decides which scheduled times are time points (§17.2.2)?
+
+- **A (recommended). The elaborator computes the static reachability and gives the solver one flag per reaction and per carrier ("touches analog"); the kernel applies the dynamic test** at `(t, 0)`. The solver has no dependency graph and should not grow one.
+- B. The solver derives reachability from the read and write sets elements declare. Self-contained; duplicates analysis the elaborator has already done.
+
+### Q9. The residual test's tolerances (analysis row 42)
+
+Today `Tolerances::residual_test` checks a node row against `vntol` (1 µV) and a branch row against `abstol` (1 pA). §17.1.2 says the reverse: a node row is a flow imbalance and uses the flow `abstol`.
+
+- **A (recommended). Follow the spec**, with tolerances per row given at build time. This tightens node rows by six orders of magnitude and will move iteration counts; the ngspice-parity numbers were tuned on the present behavior.
+- B. Keep the present mapping and record a deviation from §17.1.2.
+
+### Q10. Should the solver depend on `piperine-ir`?
+
+It uses one function, `predict_crossing` (a secant step).
+
+- **A (recommended). Drop the dependency** and keep the 20 lines in the solver's crossing locator. The solver becomes a leaf crate, which is what "core" means in a workspace where everything else is being rebuilt.
+- B. Keep it; `piperine-ir` may become the AIR v2 of Appendix C.1.
+
+### Scope confirmations
+
+- **Split.** Six ordered sub-features: `solver-baseline`, `solver-instants`, `solver-time-point`, `solver-crossings`, `solver-host-seam`, `solver-numerics` (`analysis.md` section 6). Recommended: approve the umbrella spec once, then design and task each sub-feature in order. Is that the pace you want?
+- **Deferred.** Trajectory sensitivities across events (§23.3) and periodic small-signal (§16.3, G.37) are left out. Recommended: yes, both after a design runs end to end.
+
+---
+
+## Implementation Decisions
+
+None yet. Each answer is written here, in the spec's Assumptions table, and when it sets a project rule, as a decision in `.specs/STATE.md`.
+
+### Agent's Discretion
+
+None granted yet.
+
+### Declined / Undiscussed Gray Areas → Assumptions
+
+None yet. The spec's Assumptions table already carries the recommended default of every question above, marked unconfirmed.
+
+---
+
+## Specific References
+
+- User, 2026-11-14: "o solver tem que ser mínimo, tem que ser o core do negócio"; "ver o que falta desenvolver no solver para depois só conectar um ao outro".
+- Appendix C.2 of `docs/spec/` is the reference algorithm for every numeric choice; C.2.3 is the conformance set.
+
+---
+
+## Deferred Ideas
+
+- Trajectory sensitivities and the saltation correction (§23.3).
+- Periodic small-signal and periodic noise (§16.3).
+- The C interface of `extern "cosim"` (G.65), once the spec fixes it.
+- Moving `tf`, `pz`, `sp`, `sens`, `adjoint`, `pss` into the rebuilt host crate.
+- A fused or compiled discrete kernel for speed (the old digital-JIT notes); the kernel of this feature is the reference, not the fast path.
