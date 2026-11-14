@@ -2,14 +2,15 @@
 //! returns the crate graph. A package is identified by where it is, so a package reached twice
 //! is one crate.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use piperine_lang::msl::{Diagnostic, Span};
 use piperine_lang::pom::{CrateGraph, CrateId, GraphError};
 
 use crate::error::PackageError;
-use crate::git::{GitError, sync_and_checkout};
+use crate::git::{GitError, source_text, sync_and_checkout};
+use crate::lockfile::{LOCKFILE, LockedPackage, Lockfile};
 use crate::manifest::{Dependency, GitRef, MANIFEST, Manifest, Source};
 
 /// What a resolution may do beyond reading.
@@ -58,12 +59,16 @@ pub fn resolve(dir: &Path, _options: Options) -> Result<PackageGraph, Vec<Packag
         let message = format!("cannot read the package directory `{}`: {e}", dir.display());
         vec![fault(dir, Span::new(0, 0), "E0170", message, "a package holds a `Piperine.toml`", None)]
     })?;
-    let mut walk = Walk { deps: root.join("target").join("deps"), graph: CrateGraph::new(), packages: Vec::new(), ids: HashMap::new(), stack: Vec::new(), resolved: HashMap::new() };
+    let lock = Lockfile::load(&root).map_err(|e| vec![e])?.unwrap_or_default();
+    let mut walk = Walk {
+        lock: lock.packages.iter().map(|p| (p.source.clone(), p.commit.clone())).collect(),
+        recorded: BTreeSet::new(), deps: root.join("target").join("deps"), graph: CrateGraph::new(), packages: Vec::new(), ids: HashMap::new(), stack: Vec::new(), resolved: HashMap::new() };
     if !crate_root(&root).is_file() {
         let message = format!("the package `{}` has no crate root `{}`", manifest.package.name, crate_root(&root).display());
         return Err(vec![fault(&root, Span::new(0, 0), "E0175", message, "the crate root is `src/lib.msl`", None)]);
     }
     walk.enter(&root, Identity::Path(root.clone()), manifest, None)?;
+    write_lockfile(&root, &Lockfile { packages: walk.recorded.into_iter().collect() })?;
     Ok(PackageGraph { graph: walk.graph, packages: walk.packages })
 }
 
@@ -76,7 +81,29 @@ fn fault(dir: &Path, span: Span, code: &'static str, message: String, label: &st
     PackageError { file, text, diagnostic }
 }
 
+/// Write `Piperine.lock` beside the root manifest when its text changes; none is made for a
+/// graph without a git package.
+fn write_lockfile(root: &Path, lockfile: &Lockfile) -> Result<(), Errors> {
+    let file = root.join(LOCKFILE);
+    let existing = std::fs::read_to_string(&file).ok();
+    if lockfile.packages.is_empty() && existing.is_none() {
+        return Ok(());
+    }
+    let text = lockfile.render();
+    if existing.as_deref() != Some(text.as_str()) {
+        std::fs::write(&file, &text).map_err(|e| {
+            let message = format!("cannot write the lockfile `{}`: {e}", file.display());
+            vec![crate::lockfile::error(&file, String::new(), Span::new(0, 0), message, "unwritable")]
+        })?;
+    }
+    Ok(())
+}
+
 struct Walk {
+    /// The commit the lockfile records for each git source.
+    lock: HashMap<String, String>,
+    /// The git packages of this run: what the lockfile will say.
+    recorded: BTreeSet<LockedPackage>,
     /// `<root package>/target/deps`: the repositories and checkouts of git dependencies.
     deps: PathBuf,
     /// The commit each git source resolved to in this run.
@@ -109,11 +136,16 @@ impl Walk {
     /// `<deps>/<url>/<commit>`.
     fn checkout(&mut self, url: &str, reference: &GitRef) -> Result<(PathBuf, String), GitError> {
         let home = self.deps.join(sanitize(url));
-        let source = crate::git::source_text(url, reference);
+        let source = source_text(url, reference);
         let commit = match self.resolved.get(&source) {
             Some(commit) => commit.clone(),
             None => {
-                let commit = sync_and_checkout(url, &home.join("db"), reference)?;
+                let commit = match self.lock.get(&source) {
+                    // Pinned, and checked out already: the repository is not opened.
+                    Some(locked) if home.join(locked).is_dir() => locked.clone(),
+                    Some(locked) => sync_and_checkout(url, &home.join("db"), &GitRef::Rev(locked.clone()))?,
+                    None => sync_and_checkout(url, &home.join("db"), reference)?,
+                };
                 self.resolved.insert(source, commit.clone());
                 commit
             }
@@ -177,6 +209,10 @@ impl Walk {
                 let message = format!("dependency `{}` requires version `{requirement}`, but the package `{}` is `{}`", dependency.name, manifest.package.name, manifest.package.version);
                 return Err(vec![fault(dir, dependency.name_span, "E0173", message, "the version does not satisfy the requirement", None)]);
             }
+        }
+        if let (Source::Git { url, reference }, Some(commit)) = (&dependency.source, &commit) {
+            let (name, version) = (manifest.package.name.clone(), manifest.package.version);
+            self.recorded.insert(LockedPackage { name, version, source: source_text(url, reference), commit: commit.clone() });
         }
         if let Some(at) = self.stack.iter().position(|(on_stack, _)| *on_stack == identity) {
             let mut chain: Vec<&str> = self.stack[at..].iter().map(|(_, name)| name.as_str()).collect();

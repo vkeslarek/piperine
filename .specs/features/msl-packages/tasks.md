@@ -717,14 +717,14 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `the_lockfile_records_each_git_package` passes in `lock.rs` (C102: PKG-13 AC 1)
-- [ ] Test `a_locked_commit_is_kept_when_the_branch_moves` passes in `lock.rs` (C103: PKG-13 AC 2)
-- [ ] Test `no_git_package_no_lockfile` passes in `lock.rs` (C104: PKG-13 AC 3)
-- [ ] Test `the_lockfile_is_deterministic` passes in `lock.rs` (C105: PKG-13 AC 4)
-- [ ] `source` is `git+<url>` followed by `?branch=<b>`, `?tag=<t>` or `?rev=<r>` when one was given
-- [ ] Entries are sorted by `name`, then `source`; the file ends with one newline
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `the_lockfile_records_each_git_package` passes in `lock.rs` (C102: PKG-13 AC 1)
+- [x] Test `a_locked_commit_is_kept_when_the_branch_moves` passes in `lock.rs` (C103: PKG-13 AC 2)
+- [x] Test `no_git_package_no_lockfile` passes in `lock.rs` (C104: PKG-13 AC 3)
+- [x] Test `the_lockfile_is_deterministic` passes in `lock.rs` (C105: PKG-13 AC 4)
+- [x] `source` is `git+<url>` followed by `?branch=<b>`, `?tag=<t>` or `?rev=<r>` when one was given
+- [x] Entries are sorted by `name`, then `source`; the file ends with one newline
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

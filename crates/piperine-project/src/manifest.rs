@@ -430,7 +430,7 @@ impl Walk<'_> {
 }
 
 /// Three decimal integers separated by dots.
-fn parse_version(text: &str) -> Option<Version> {
+pub(crate) fn parse_version(text: &str) -> Option<Version> {
     let mut parts = text.split('.');
     let mut next = || {
         let part = parts.next()?;

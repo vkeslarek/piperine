@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 
 pub mod error;
 pub mod git;
+pub mod lockfile;
 pub mod manifest;
 pub mod resolver;
 
 pub use error::PackageError;
+pub use lockfile::{LockedPackage, Lockfile};
 pub use manifest::{Dependency, GitRef, Manifest, Package, Requirement, Source, Version};
 pub use resolver::{Options, PackageGraph, ResolvedPackage, resolve};
 
