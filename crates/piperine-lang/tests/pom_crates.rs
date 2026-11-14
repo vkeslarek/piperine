@@ -258,3 +258,119 @@ fn declarations_and_files_know_their_crate() {
     let std_decl = design.decls().into_iter().find(|d| d.name() == Some("P")).unwrap();
     assert_eq!(std_decl.krate(), design.std_crate());
 }
+
+// ---- PKG-04 AC 3 to 7: a design over a crate graph (T9) ----
+
+/// `app -> util` with the roots `app/lib.msl` and `util/lib.msl`, under `base`.
+fn app_util(base: &std::path::Path) -> CrateGraph {
+    let mut g = CrateGraph::new();
+    let app = g.add_crate("app", base.join("app/lib.msl")).unwrap();
+    let util = g.add_crate("util", base.join("util/lib.msl")).unwrap();
+    g.add_dependency(app, "util", util).unwrap();
+    g
+}
+
+fn util_sources(builder: piperine_lang::pom::DesignBuilder) -> piperine_lang::pom::DesignBuilder {
+    builder
+        .source("app/lib.msl", "mod local;\n")
+        .source("app/local.msl", "pub module Local() {}\n")
+        .source("util/lib.msl", "pub mod cells;\n")
+        .source("util/cells.msl", "pub module Cell() {}\nmod deep;\n")
+        .source("util/cells/deep.msl", "pub module Deep() {}\n")
+}
+
+fn file_names(c: piperine_lang::pom::Crate<'_>) -> Vec<String> {
+    c.files().iter().map(|f| f.name().to_string()).collect()
+}
+
+#[test]
+fn graph_crates_become_design_crates_in_order() {
+    let design = util_sources(Design::builder()).crates(app_util(std::path::Path::new(""))).build();
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let crates = design.crates();
+    assert_eq!(crates.iter().map(|c| c.name()).collect::<Vec<_>>(), ["app", "util", "std"]);
+    assert!(crates[0].is_root() && !crates[1].is_root() && crates[2].is_std());
+    // Files are numbered crate by crate in graph order, std last.
+    assert_eq!(file_names(crates[0]), ["app/lib.msl", "local.msl"]);
+    assert_eq!(file_names(crates[1]), ["util/lib.msl", "cells.msl", "deep.msl"]);
+    let json = serde_json::to_value(&design).unwrap();
+    assert_eq!(json["crates"][0]["dependencies"], serde_json::json!([{ "name": "util", "krate": 1 }]));
+    assert_eq!(json["crates"][1]["dependencies"], serde_json::json!([]));
+    assert_eq!(json["crates"][0]["name"], "app");
+    // An empty graph is no graph.
+    let plain = Design::builder().crates(CrateGraph::new()).source("top.msl", "").build();
+    assert_eq!(plain.crates().iter().map(|c| c.name()).collect::<Vec<_>>(), ["top", "std"]);
+}
+
+#[test]
+fn mod_files_load_beside_their_own_crate_root() {
+    let design = util_sources(Design::builder()).crates(app_util(std::path::Path::new(""))).build();
+    assert_eq!(codes(&design), Vec::<String>::new());
+    for (module, file, krate) in [("Local", "local.msl", "app"), ("Cell", "cells.msl", "util"), ("Deep", "deep.msl", "util")] {
+        let m = design.module(module).unwrap();
+        assert_eq!((m.file().name(), m.krate().name()), (file, krate), "{module}");
+    }
+}
+
+#[test]
+fn an_unreadable_crate_root_is_one_e0161() {
+    let design = Design::builder().source("app/lib.msl", "module A() {}\n").crates(app_util(std::path::Path::new(""))).build();
+    let found: Vec<_> = design.diagnostics().iter().collect();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].diagnostic.code, "E0161");
+    assert!(found[0].diagnostic.message.contains("util/lib.msl"), "{}", found[0].diagnostic.message);
+    let util = design.crates()[1];
+    assert_eq!(found[0].file, util.root().file().id());
+    assert_eq!(util.name(), "util");
+    assert!(util.root().items().is_empty());
+    assert!(design.module("A").is_some(), "the other crates still build");
+    // The same fault from disk.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("app")).unwrap();
+    std::fs::write(dir.path().join("app/lib.msl"), "module A() {}\n").unwrap();
+    let disk = Design::load_crates(app_util(dir.path()));
+    assert_eq!(codes(&disk), ["E0161"]);
+    assert!(disk.diagnostics()[0].diagnostic.message.contains("util"));
+}
+
+#[test]
+fn every_crate_keeps_its_authored_tree() {
+    let design = util_sources(Design::builder()).crates(app_util(std::path::Path::new(""))).build();
+    for file in design.files() {
+        assert_eq!(file.to_ast(), piperine_lang::msl::parser::parse(file.text()).file, "{}", file.name());
+    }
+    // The declarations of each crate hang under that crate's own root namespace.
+    let (app, util) = (design.crates()[0], design.crates()[1]);
+    let names = |c: piperine_lang::pom::Crate<'_>| c.root().items().iter().filter_map(|d| d.name().map(str::to_string)).collect::<Vec<_>>();
+    assert_eq!(names(app), ["local"]);
+    assert_eq!(names(util), ["cells"]);
+    for module in ["Local", "Cell", "Deep"] {
+        let mut at = design.module(module).unwrap().decl();
+        while let Some(parent) = at.declared_in() {
+            at = parent;
+        }
+        let root_of_its_crate = at.krate().root().decl();
+        assert_eq!(at, root_of_its_crate, "{module}");
+    }
+    assert_eq!(design.module("Cell").unwrap().decl().declared_in().unwrap().declared_in().unwrap(), util.root().decl());
+}
+
+#[test]
+fn disk_and_memory_graphs_build_the_same_design() {
+    let dir = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("app/lib.msl", "mod local;\n"),
+        ("app/local.msl", "pub module Local() {}\n"),
+        ("util/lib.msl", "pub mod cells;\n"),
+        ("util/cells.msl", "pub module Cell() {}\nmod deep;\n"),
+        ("util/cells/deep.msl", "pub module Deep() {}\n"),
+    ] {
+        std::fs::create_dir_all(dir.path().join(path).parent().unwrap()).unwrap();
+        std::fs::write(dir.path().join(path), text).unwrap();
+    }
+    let disk = Design::load_crates(app_util(dir.path()));
+    let memory = util_sources(Design::builder()).crates(app_util(std::path::Path::new(""))).build();
+    assert_eq!(disk.dump(), memory.dump());
+    assert_eq!(disk.crates().iter().map(|c| (c.name().to_string(), c.files().len())).collect::<Vec<_>>(), memory.crates().iter().map(|c| (c.name().to_string(), c.files().len())).collect::<Vec<_>>());
+    assert_eq!(codes(&disk), codes(&memory));
+}

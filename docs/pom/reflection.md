@@ -33,6 +33,7 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `check(&self)` | `Vec<String>` | The internal inconsistencies of the arenas, one message each; empty when the design is well formed. |
 | `builder()` | `DesignBuilder` | A builder with no sources. |
 | `load(root: impl Into<PathBuf>)` | `Design` | Read the tree rooted at `root` from disk: `mod b;` follows Rust's layout. An unreadable root gives an empty root and one `E0161`. |
+| `load_crates(graph: CrateGraph)` | `Design` | Read every crate of the graph from disk, `std` last: each crate root and the files its `mod` items name. An unreadable root gives an empty crate and one `E0161`. |
 | `from_json(text: &str)` | `Result<Design, Vec<String>>` | Read a design back from its JSON and validate it: `Err` lists the problems when the text is not a design or `check()` rejects what it holds; never panics. The derived `Deserialize` is unvalidated, so `from_json` is the entry point for text that did not come from `build`. |
 | `diagnostics(&self)` | `&[DesignDiagnostic]` | Every diagnostic of the build, every diagnostic sorted by file, offset and code. |
 | `expr_node(&self, id: ExprId)` | `&ExprNode` | The expression with this id. Ids come from this design. |
@@ -134,6 +135,7 @@ Collects sources and builds. `build()` never fails.
 | --- | --- | --- |
 | `std_source(self, path: impl Into<String>, text: impl Into<String>)` | `Self` | A virtual file of the standard library, replacing the embedded one: the first is its root, the others are found by `mod`. The `pub` items of the namespace `prelude` of the root are visible in every file. |
 | `source(self, path: impl Into<String>, text: impl Into<String>)` | `Self` | A virtual source file. The first one is the root; the others are found by the `mod` items of the files that name them. |
+| `crates(self, graph: CrateGraph)` | `Self` | The crates to build, the first being the root crate. Each crate root is read from the virtual sources when any `source` was given, else from disk; a graph replaces `root_file`. An empty graph is no graph. |
 | `root_file(self, path: impl Into<PathBuf>)` | `Self` | The root file, read from disk with the files its `mod` items name. A root file replaces the virtual sources. |
 | `build(self)` | `Design` | Parse every file and assemble the design. Files are numbered the project's first (the root, then the files it loads), then the standard library's. A parse error never stops the build: the recovered tree is kept and each diagnostic is listed with its file. |
 

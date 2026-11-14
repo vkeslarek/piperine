@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
-use super::crates::{CrateData, DependencyData};
+use super::crates::{CrateData, CrateGraph, DependencyData};
 use super::ids::{CrateId, DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::lower::lower_file;
 use super::source::{DiskSources, MemorySources, SourceProvider};
@@ -156,6 +156,12 @@ impl Design {
     /// layout. An unreadable root gives an empty root and one `E0161`.
     pub fn load(root: impl Into<PathBuf>) -> Design {
         Design::builder().root_file(root).build()
+    }
+
+    /// Read every crate of `graph` from disk, `std` last: each crate root and the files its `mod`
+    /// items name. An unreadable root gives an empty crate and one `E0161`.
+    pub fn load_crates(graph: CrateGraph) -> Design {
+        Design::builder().crates(graph).build()
     }
 
     /// Read a design back from its JSON and validate it. The derived
@@ -442,6 +448,7 @@ impl Design {
 /// Collects sources, then builds the [`Design`]. `build` never fails.
 #[derive(Debug, Clone, Default)]
 pub struct DesignBuilder {
+    graph: CrateGraph,
     std_sources: Vec<(String, String)>,
     sources: Vec<(String, String)>,
     root_file: Option<PathBuf>,
@@ -460,6 +467,14 @@ impl DesignBuilder {
     /// by the `mod` items of the files that name them.
     pub fn source(mut self, path: impl Into<String>, text: impl Into<String>) -> Self {
         self.sources.push((path.into(), text.into()));
+        self
+    }
+
+    /// The crates to build, the first being the root crate. Each crate root is read from the
+    /// virtual sources when any `source` was given, else from disk; a graph replaces `root_file`.
+    /// An empty graph is no graph.
+    pub fn crates(mut self, graph: CrateGraph) -> Self {
+        self.graph = graph;
         self
     }
 
@@ -491,7 +506,22 @@ impl DesignBuilder {
             expr_stmt: Vec::new(),
             names: NameTables::default(),
         };
-        if let Some(path) = &self.root_file {
+        if !self.graph.crates().is_empty() {
+            let mut memory = MemorySources::new();
+            for (path, text) in &self.sources {
+                memory.insert(path, text.as_str());
+            }
+            let from_memory = !self.sources.is_empty();
+            let provider: &dyn SourceProvider = if from_memory { &memory } else { &DiskSources };
+            for node in self.graph.crates() {
+                let file_name = if from_memory {
+                    node.root.display().to_string()
+                } else {
+                    node.root.file_name().map_or_else(|| node.root.display().to_string(), |n| n.to_string_lossy().into_owned())
+                };
+                design.add_crate(&node.name, &file_name, node.root.clone(), provider.read(&node.root), provider, node.dependencies.clone());
+            }
+        } else if let Some(path) = &self.root_file {
             let bytes = DiskSources.read(path);
             let file_name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
             design.add_crate(&crate_name(path), &file_name, path.clone(), bytes, &DiskSources, Vec::new());

@@ -342,16 +342,16 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `graph_crates_become_design_crates_in_order` passes in `pom_crates.rs` (C30: PKG-04 AC 3)
-- [ ] Test `mod_files_load_beside_their_own_crate_root` passes in `pom_crates.rs` (C31: PKG-04 AC 4)
-- [ ] Test `an_unreadable_crate_root_is_one_e0161` passes in `pom_crates.rs` (C32: PKG-04 AC 5)
-- [ ] Test `every_crate_keeps_its_authored_tree` passes in `pom_crates.rs` (C33: PKG-04 AC 6)
-- [ ] Test `disk_and_memory_graphs_build_the_same_design` passes in `pom_crates.rs` (C34: PKG-04 AC 7)
-- [ ] An empty graph is treated as no graph
-- [ ] Resolution of dependency names is not part of this task: a path into another crate is still `E0161` here
-- [ ] The `E0161` of an unreadable crate root has the message form of today's unreadable root file
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `graph_crates_become_design_crates_in_order` passes in `pom_crates.rs` (C30: PKG-04 AC 3)
+- [x] Test `mod_files_load_beside_their_own_crate_root` passes in `pom_crates.rs` (C31: PKG-04 AC 4)
+- [x] Test `an_unreadable_crate_root_is_one_e0161` passes in `pom_crates.rs` (C32: PKG-04 AC 5)
+- [x] Test `every_crate_keeps_its_authored_tree` passes in `pom_crates.rs` (C33: PKG-04 AC 6)
+- [x] Test `disk_and_memory_graphs_build_the_same_design` passes in `pom_crates.rs` (C34: PKG-04 AC 7)
+- [x] An empty graph is treated as no graph
+- [x] Resolution of dependency names is not part of this task: a path into another crate is still `E0161` here
+- [x] The `E0161` of an unreadable crate root has the message form of today's unreadable root file
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

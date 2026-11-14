@@ -196,6 +196,7 @@ Collects virtual sources and the standard library's, then builds the [`Design`](
 | Storage (private) | Type | Meaning |
 | --- | --- | --- |
 | `std_sources` | `Vec<(String, String)>` | Virtual files of `std`, replacing the embedded ones; the first is its root. |
+| `graph` | `CrateGraph` | The crates to build; empty means one root crate from `sources` or `root_file`. |
 | `sources` | `Vec<(String, String)>` | Virtual files; the first is the root. |
 | `root_file` | `Option<PathBuf>` | A root file on disk; replaces the virtual sources. |
 
