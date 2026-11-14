@@ -108,6 +108,14 @@ fn declared_in(design: &Design, res: Resolution) -> String {
 
 const STD: &str = "pub mod prelude { pub const P: u32 = 1; const HIDDEN: u32 = 2; }\npub const TOP: u32 = 3;\npub mod other { pub const D: u32 = 4; }\n";
 
+/// A prelude that declares the nature `Bit`.
+const STD_BIT: &str = "pub mod prelude { pub nature Bit { value: f64 } }\n";
+
+fn decl_of(res: Resolution) -> DeclId {
+    let Resolution::Decl(d) = res else { panic!("{res:?} is not a declaration") };
+    d
+}
+
 fn with_std(project: &str) -> Design {
     Design::builder().std_source("lib.msl", STD).source("top.msl", project).build()
 }
@@ -135,6 +143,15 @@ fn prelude_items_resolve_without_an_import() {
     assert_eq!(found.len(), 2);
     for res in found {
         assert_eq!(declared_in(&design, res), "lib.msl");
+    }
+    // The type namespace: a port `p: Bit` resolves to the prelude's `pub nature Bit`.
+    let design = Design::builder().std_source("lib.msl", STD_BIT).source("top.msl", "module M(p: Bit) {}\nmod m { module N(q: Bit) {} }\n").build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let found = resolutions(&design, "Bit");
+    assert_eq!(found.len(), 2);
+    for res in found {
+        assert_eq!(declared_in(&design, res), "lib.msl");
+        assert_eq!(design.decl(decl_of(res)).name(), Some("Bit"));
     }
 }
 
@@ -169,6 +186,14 @@ fn a_namespace_item_hides_a_prelude_item() {
     for res in found {
         assert_eq!(declared_in(&design, res), "top.msl");
     }
+    // A local `nature Bit` wins over the prelude's, in a port type, with no diagnostic.
+    let design = Design::builder().std_source("lib.msl", STD_BIT).source("top.msl", "nature Bit { value: f64 }\nmodule M(p: Bit) {}\nmod m { nature Bit { value: f64 } module N(q: Bit) {} }\n").build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let found = resolutions(&design, "Bit");
+    assert_eq!(found.len(), 2);
+    for res in found {
+        assert_eq!(declared_in(&design, res), "top.msl");
+    }
 }
 
 #[test]
@@ -188,6 +213,14 @@ fn std_files_see_the_prelude() {
     let found = resolutions(&design, "P");
     assert_eq!(found.len(), 1);
     assert_eq!(declared_in(&design, found[0]), "lib.msl");
+    // A module in `std`'s own `lib.msl` with a port `p: Bit` sees the prelude's nature.
+    let std = "pub mod prelude { pub nature Bit { value: f64 } }\npub module Mine(p: Bit) {}\n";
+    let design = Design::builder().std_source("lib.msl", std).source("top.msl", "").build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let found = resolutions(&design, "Bit");
+    assert_eq!(found.len(), 1);
+    assert_eq!(declared_in(&design, found[0]), "lib.msl");
+    assert!(design.decl(decl_of(found[0])).name() == Some("Bit"));
 }
 
 // ---- PKG-04 AC 1 and 2, PKG-07 AC 1 and 2: the design holds its crates (T8) ----
@@ -592,6 +625,15 @@ fn the_prelude_reaches_every_crate() {
     let design = two("const X: u32 = P;\n", "pub const Y: u32 = P;\nmod deep { pub const Z: u32 = P; }\n", "util", Some(STD_P));
     assert_eq!(codes(&design), Vec::<String>::new());
     let found = path_res(&design, "P");
+    assert_eq!(found.len(), 3);
+    for res in found {
+        assert_eq!(krate_of(&design, res[0]), "std");
+    }
+    // A port `p: Bit` in the root crate, in a dependency and deep in a module reaches the nature.
+    let std = "pub mod prelude { pub nature Bit { value: f64 } }\n";
+    let design = two("module A(p: Bit) {}\n", "pub module B(p: Bit) {}\nmod deep { pub module C(p: Bit) {} }\n", "util", Some(std));
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let found = path_res(&design, "Bit");
     assert_eq!(found.len(), 3);
     for res in found {
         assert_eq!(krate_of(&design, res[0]), "std");
