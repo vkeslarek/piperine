@@ -662,13 +662,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `removed_rust_forms_report_targeted_messages` passes in `msl_errors.rs` (C52: POL-09 AC 5)
-- [ ] Test `every_b36_row_has_a_fixture` passes in `msl_errors.rs` (C53: POL-09 AC 6)
-- [ ] Test `body_let_annotation_has_its_own_message` passes in `msl_errors.rs` (C54: POL-09 AC 7)
-- [ ] The table of removed forms is a `const` slice of plain rows; the guard reads B.3.6's first cells from the spec
-- [ ] The existing `E0903` fixtures for `type` and `static` still hold (same code, same span)
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `removed_rust_forms_report_targeted_messages` passes in `msl_errors.rs` (C52: POL-09 AC 5)
+- [x] Test `every_b36_row_has_a_fixture` passes in `msl_errors.rs` (C53: POL-09 AC 6)
+- [x] Test `body_let_annotation_has_its_own_message` passes in `msl_errors.rs` (C54: POL-09 AC 7)
+- [x] The table of removed forms is a `const` slice of plain rows; the guard reads B.3.6's first cells from the spec
+- [x] The existing `E0903` fixtures for `type` and `static` still hold (same code, same span)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

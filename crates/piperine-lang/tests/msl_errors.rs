@@ -873,3 +873,112 @@ fn forms_outside_the_grammar_are_parse_errors() {
     // Carrier types stay clean.
     assert!(faults("module M() { signal a: Bit; signal b: flip Stream<T>; signal c: [Bit; 4]; }").is_empty());
 }
+
+// ---- the removed Rust forms of B.3.6 (POL-09 AC 5 to 7) ---------------------------------------
+
+/// One removed form: the start of its B.3.6 first cell, a source that uses it
+/// once, the code of its row, a phrase its message holds (it names the form)
+/// and a phrase its help holds (it names what to write instead).
+struct Removed {
+    row: &'static str,
+    src: &'static str,
+    code: &'static str,
+    message: &'static str,
+    help: &'static str,
+}
+
+const fn removed(row: &'static str, src: &'static str, code: &'static str, message: &'static str, help: &'static str) -> Removed {
+    Removed { row, src, code, message, help }
+}
+
+const REMOVED: &[Removed] = &[
+    removed("type aliases", "type T = f64;", "E0903", "type aliases are not part of the language", "write the type out"),
+    removed("associated types", "trait Tr { type X; }", "E0903", "associated types are not part of the language", "name the type where it is used"),
+    removed("associated types", "impl Tr for S { type X = u8; }", "E0903", "associated types are not part of the language", "name the type where it is used"),
+    removed("`static` items", "static X: u8 = 1;", "E0903", "`static` items are not part of the language", "`const`"),
+    removed("trait-bound `where` clauses", "fn f<T>(x: T) where T: Tr { }", "E0900", "trait-bound `where` clauses are not part of the language", "<T: Tr>"),
+    removed("`impl Trait` types", "fn f(x: impl Tr) { }", "E0900", "`impl Trait` types are not part of the language", "<T: Tr>"),
+    removed("qualified paths", "fn f() { let x: <T as Tr>::X = 1; }", "E0900", "qualified paths are not part of the language", "T::X"),
+    removed("qualified paths", "fn f() { let x = <T as Tr>::g(); }", "E0900", "qualified paths are not part of the language", "T::X"),
+    removed("restricted visibility", "pub(crate) fn f() { }", "E0900", "restricted visibility is not part of the language", "`pub`"),
+    removed("restricted visibility", "pub(super) struct S;", "E0900", "restricted visibility is not part of the language", "`pub`"),
+    removed("loop labels", "fn f() { 'a: loop { } }", "E0905", "loop labels are not part of the language", "restructure the loop"),
+    removed("loop labels", "fn f() { loop { break 'a; } }", "E0905", "loop labels are not part of the language", "restructure the loop"),
+    removed("`&self` and `&mut self` receivers", "impl S { fn h(&self) { } }", "E0900", "`&self` and `&mut self` receivers are not part of the language", "write `self`"),
+    removed("`&self` and `&mut self` receivers", "impl S { fn h(&mut self) { } }", "E0900", "`&self` and `&mut self` receivers are not part of the language", "write `self`"),
+    removed("`mut` and pattern parameters", "fn f(mut x: u8) { }", "E0900", "`mut` and pattern parameters are not part of the language", "a plain name"),
+    removed("`mut` and pattern parameters", "fn f((a, b): (u8, u8)) { }", "E0900", "`mut` and pattern parameters are not part of the language", "a plain name"),
+    removed("half-open range patterns", "fn f() { match x { ..5 => { } _ => { } } }", "E0900", "half-open range patterns are not part of the language", "`..=x`"),
+    removed("a leading `::`", "fn f() { let x = ::a::b; }", "E0900", "a leading `::` is not part of the language", "a path from a name in scope"),
+    removed("inner attributes", "#![allow(x)] fn f() { }", "E0900", "inner attributes are not part of the language", "an outer attribute"),
+    removed("the never type", "fn f() -> ! { }", "E0900", "the never type is not part of the language", "a unit return type"),
+    removed("raw-pointer types", "fn f(p: *const u8) { }", "E0900", "raw-pointer types are not part of the language", "a value or an array"),
+    removed("raw-pointer types", "fn f(p: *mut u8) { }", "E0900", "raw-pointer types are not part of the language", "a value or an array"),
+    removed("`union` items", "union U { a: u8 }", "E0900", "`union` items are not part of the language", "`struct`"),
+    removed("`extern` blocks", "extern \"C\" { fn f(); }", "E0900", "`extern` blocks are not part of the language", "`extern \"C\" fn`"),
+];
+
+#[test]
+fn removed_rust_forms_report_targeted_messages() {
+    // POL-09 AC 5: one diagnostic per use, the code of its row, a message that
+    // names the form and a help that names what to write instead.
+    for r in REMOVED {
+        let parsed = parse(r.src);
+        assert_eq!(parsed.diagnostics.len(), 1, "{}: {:?}", r.src, parsed.diagnostics);
+        let d = &parsed.diagnostics[0];
+        assert_eq!(d.code, r.code, "{}", r.src);
+        assert!(d.message.contains(r.message), "{}: message {:?} lacks {:?}", r.src, d.message, r.message);
+        assert!(d.help.as_deref().is_some_and(|h| h.contains(r.help)), "{}: help {:?} lacks {:?}", r.src, d.help, r.help);
+    }
+    // The existing spans of `type` and `static` hold: the keyword.
+    assert_eq!(codes("type A = u8;"), [("E0903", Span::new(0, 4))]);
+    assert_eq!(codes("static X: u8 = 1;"), [("E0903", Span::new(0, 6))]);
+    // Forms next to a removed one stay accepted.
+    for src in [
+        "impl S { fn h(self) { } }",
+        "pub fn f() { }",
+        "fn f(x: u8) -> f64 { 1.0 }",
+        "fn f() { match x { 1..=5 => { } _ => { } } }",
+        "fn f() { let x = a::b; }",
+        "#[derive(Repr)] struct S;",
+        "extern \"C\" fn f();",
+        "fn f<T: Tr>(x: T) { }",
+        "fn f() { let a = 1 - 1; let g = x * 2; }",
+    ] {
+        let found = faults(src);
+        assert!(found.is_empty(), "{src}: {found:?}");
+    }
+}
+
+#[test]
+fn every_b36_row_has_a_fixture() {
+    // POL-09 AC 6: one fixture at least per row of B.3.6, matched by the first cell.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec/appendix_b_grammar.md");
+    let text = std::fs::read_to_string(path).expect("appendix B is UTF-8");
+    let sec = text.split("### B.3.6").nth(1).and_then(|s| s.split("\n## ").next()).expect("B.3.6");
+    let cells: Vec<&str> = sec
+        .lines()
+        .filter(|l| l.starts_with("| ") && !l.starts_with("| Removed") && !l.starts_with("| ---"))
+        .filter_map(|l| l.trim_matches('|').split('|').next())
+        .map(str::trim)
+        .collect();
+    assert_eq!(cells.len(), 17, "{cells:?}");
+    for cell in &cells {
+        assert!(REMOVED.iter().any(|r| cell.starts_with(r.row)), "B.3.6 row `{cell}` has no fixture");
+    }
+    for r in REMOVED {
+        assert!(cells.iter().any(|c| c.starts_with(r.row)), "fixture `{}` matches no row", r.row);
+    }
+}
+
+#[test]
+fn body_let_annotation_has_its_own_message() {
+    // POL-09 AC 7: one E0900 that says a body `let` takes no type annotation.
+    let src = "module M() { let y: f64 = 1.0; }";
+    let found = faults(src);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "E0900");
+    assert!(found[0].2.contains("body `let` takes no type annotation"), "{}", found[0].2);
+    // A `let` in a function keeps its annotation.
+    assert!(faults("fn f() { let y: f64 = 1.0; }").is_empty());
+}

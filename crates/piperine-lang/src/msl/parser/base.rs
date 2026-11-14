@@ -19,6 +19,67 @@ pub struct Custom {
     pub help: Option<String>,
 }
 
+/// One row of B.3.6: a form Rust has and the language removes.
+pub(crate) struct RemovedForm {
+    /// The start of the row's first cell.
+    pub row: &'static str,
+    pub code: &'static str,
+    pub message: &'static str,
+    pub help: &'static str,
+}
+
+/// The rows of B.3.6, in the order of the spec's table.
+pub(crate) const REMOVED_FORMS: &[RemovedForm] = &[
+    RemovedForm { row: "type aliases", code: "E0903", message: "type aliases are not part of the language", help: "write the type out" },
+    RemovedForm { row: "associated types", code: "E0903", message: "associated types are not part of the language", help: "name the type where it is used" },
+    RemovedForm { row: "`static` items", code: "E0903", message: "`static` items are not part of the language", help: "write a `const` item; state lives in signals" },
+    RemovedForm { row: "trait-bound `where` clauses", code: "E0900", message: "trait-bound `where` clauses are not part of the language", help: "write the bound in the generic list: `<T: Tr>`" },
+    RemovedForm { row: "`impl Trait` types", code: "E0900", message: "`impl Trait` types are not part of the language", help: "write a named generic: `<T: Tr>`" },
+    RemovedForm { row: "qualified paths", code: "E0900", message: "qualified paths are not part of the language", help: "write a path through the type: `T::X`" },
+    RemovedForm { row: "restricted visibility", code: "E0900", message: "restricted visibility is not part of the language", help: "write `pub` or no visibility" },
+    RemovedForm { row: "loop labels", code: "E0905", message: "loop labels are not part of the language", help: "restructure the loop" },
+    RemovedForm { row: "`&self` and `&mut self` receivers", code: "E0900", message: "`&self` and `&mut self` receivers are not part of the language", help: "write `self`" },
+    RemovedForm { row: "`mut` and pattern parameters", code: "E0900", message: "`mut` and pattern parameters are not part of the language", help: "write a plain name, then `let`" },
+    RemovedForm { row: "half-open range patterns", code: "E0900", message: "half-open range patterns are not part of the language", help: "write `..=x` or a guard" },
+    RemovedForm { row: "a leading `::`", code: "E0900", message: "a leading `::` is not part of the language", help: "write a path from a name in scope" },
+    RemovedForm { row: "inner attributes", code: "E0900", message: "inner attributes are not part of the language", help: "write an outer attribute on the item" },
+    RemovedForm { row: "the never type", code: "E0900", message: "the never type is not part of the language", help: "write a unit return type" },
+    RemovedForm { row: "raw-pointer types", code: "E0900", message: "raw-pointer types are not part of the language", help: "write a value or an array" },
+    RemovedForm { row: "`union` items", code: "E0900", message: "`union` items are not part of the language", help: "write a `struct` or an `enum`" },
+    RemovedForm { row: "`extern` blocks", code: "E0900", message: "`extern` blocks are not part of the language", help: "write an `extern \"C\" fn` item" },
+];
+
+/// The diagnostic of a removed form, by the start of its B.3.6 row.
+pub(crate) fn removed(row: &str, span: Span) -> Err<'static> {
+    let f = REMOVED_FORMS.iter().find(|f| f.row == row).unwrap_or_else(|| panic!("B.3.6 has no row `{row}`"));
+    Rich::custom(span, Custom { code: f.code, message: f.message.into(), help: Some(f.help.into()) })
+}
+
+/// Tokens up to, not including, the next `;`, `{` or `}`: the rest of a form
+/// whose own diagnostic says all there is to say.
+pub(crate) fn skip_to_end<'a, I: In<'a>>() -> impl Parser<'a, I, (), Extra<'a>> + Clone {
+    any()
+        .filter(|t: &Token| !matches!(t, Token::Punct(Punct::Semi | Punct::LBrace | Punct::RBrace)))
+        .repeated()
+        .ignored()
+}
+
+/// `pub`, or `pub(crate)`, `pub(super)`, `pub(self)`, `pub(in path)`: the span
+/// of `pub`. The restricted forms are removed (B.3.6) and reported once.
+pub(crate) fn visibility<'a, I: In<'a>>() -> impl Parser<'a, I, Span, Extra<'a>> + Clone {
+    let restriction = any()
+        .filter(|t: &Token| matches!(t, Token::Kw(Kw::Crate | Kw::Super | Kw::SelfLower | Kw::In)))
+        .then(any().filter(|t: &Token| !matches!(t, Token::Punct(Punct::RParen))).repeated())
+        .delimited_by(punct(Punct::LParen), punct(Punct::RParen))
+        .map_with(|_, e| e.span());
+    kw(Kw::Pub).map_with(|_, e| e.span()).then(restriction.or_not()).validate(|(at, restricted): (Span, Option<Span>), _, emitter| {
+        if let Some(group) = restricted {
+            emitter.emit(removed("restricted visibility", Span::new(at.start, group.end)));
+        }
+        at
+    })
+}
+
 /// Whether `e` is a `place` (B.3.3): a carrier path followed by `[expr]` and
 /// `.name` steps. A parenthesized place is not one. The one decision for the
 /// definition and the commit alike.

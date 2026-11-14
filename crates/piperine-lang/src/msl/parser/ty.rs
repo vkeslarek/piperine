@@ -21,10 +21,16 @@ fn path_with<'a, I: In<'a>>(h: &Handles<'a, I>, in_expr: bool, sugar: bool) -> P
         generic_args(h, in_expr).or_not().boxed()
     };
     let seg = path_ident().then(args).map(|(ident, args)| PathSeg { ident, args });
-    seg.separated_by(punct(Punct::ColonColon))
-        .at_least(1)
-        .collect::<Vec<_>>()
-        .map_with(|segments, e| Path { segments, span: Loc(e.span()) })
+    // A leading `::` is removed (B.3.6): reported at the `::`, the path kept.
+    let leading = just(Token::Punct(Punct::ColonColon)).map_with(|_, e| e.span()).or_not();
+    leading
+        .then(seg.separated_by(punct(Punct::ColonColon)).at_least(1).collect::<Vec<_>>())
+        .validate(|(leading, segments), e, emitter| {
+            if let Some(at) = leading {
+                emitter.emit(removed("a leading `::`", at));
+            }
+            Path { segments, span: Loc(e.span()) }
+        })
         .labelled("path")
         .boxed()
 }
@@ -117,6 +123,18 @@ pub(crate) fn generics<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Generics> 
         .boxed()
 }
 
+/// `<T as Tr>::X`: a qualified path, a removed form (B.3.6); the caller reports it.
+pub(crate) fn qualified_path<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ()> {
+    punct(Punct::Lt)
+        .ignore_then(h.ty.clone())
+        .ignore_then(kw(Kw::As))
+        .ignore_then(bound(h))
+        .ignore_then(punct(Punct::Gt))
+        .ignore_then(punct(Punct::ColonColon).ignore_then(path_ident()).repeated().at_least(1))
+        .ignored()
+        .boxed()
+}
+
 /// A `sigtype` (B.3.3): `flip`, a path and an array of them. Only a `signal`
 /// declaration takes one; a tuple, a reference or a function pointer there is
 /// reported (`E0900`) and the declaration is kept.
@@ -204,9 +222,44 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
         });
 
     let infer = punct(Punct::Underscore).map_with(move |_, e| mk(TypeKind::Infer, e.span()));
+
+    // Removed forms (B.3.6): each is reported once and stands as an inferred type.
+    let impl_trait = kw(Kw::Impl)
+        .ignore_then(bound(h).separated_by(punct(Punct::Plus)).at_least(1).collect::<Vec<_>>())
+        .validate(move |_, e, emitter| {
+            emitter.emit(removed("`impl Trait` types", e.span()));
+            mk(TypeKind::Infer, e.span())
+        });
+    let never = punct(Punct::Not).validate(move |_, e, emitter| {
+        emitter.emit(removed("the never type", e.span()));
+        mk(TypeKind::Infer, e.span())
+    });
+    let raw_pointer = punct(Punct::Star)
+        .ignore_then(kw(Kw::Const).or(kw(Kw::Mut)))
+        .ignore_then(ty.clone())
+        .validate(move |_, e, emitter| {
+            emitter.emit(removed("raw-pointer types", e.span()));
+            mk(TypeKind::Infer, e.span())
+        });
+    let qualified = qualified_path(h).validate(move |_, e, emitter| {
+        emitter.emit(removed("qualified paths", e.span()));
+        mk(TypeKind::Infer, e.span())
+    });
     let path_ty = path(h, false).map_with(move |p, e| mk(TypeKind::Path(p), e.span()));
 
-    first_of(vec![flip.boxed(), fn_ptr.boxed(), reference.boxed(), array_or_slice.boxed(), tuple_or_paren.boxed(), infer.boxed(), path_ty.boxed()])
+    first_of(vec![
+        flip.boxed(),
+        fn_ptr.boxed(),
+        reference.boxed(),
+        array_or_slice.boxed(),
+        tuple_or_paren.boxed(),
+        infer.boxed(),
+        impl_trait.boxed(),
+        never.boxed(),
+        raw_pointer.boxed(),
+        qualified.boxed(),
+        path_ty.boxed(),
+    ])
         .labelled("type")
         .boxed()
 }

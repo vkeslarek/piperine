@@ -352,6 +352,12 @@ pub(crate) fn build<'a, I: In<'a>>(
             mk(ExprKind::Error, e.span())
         });
 
+    // `<T as Tr>::f`: a removed form (B.3.6), reported once.
+    let qualified = ty::qualified_path(h).validate(|_, e, emitter| {
+        emitter.emit(removed("qualified paths", e.span()));
+        mk(ExprKind::Error, e.span())
+    });
+
     // A malformed token already reported by the lexer.
     let error_atom = just(Token::Error).map_with(|_, e| mk(ExprKind::Error, e.span()));
 
@@ -410,6 +416,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         closure.boxed(),
         error_atom.boxed(),
         macro_call.boxed(),
+        qualified.boxed(),
         path_atom,
     ])
     .labelled("expression")
@@ -739,7 +746,7 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
     let item_keyword = any().filter(|t: &Token| {
         matches!(
             t,
-            Token::Kw(Kw::Const | Kw::Fn | Kw::Use | Kw::Struct | Kw::Enum | Kw::Impl | Kw::Trait | Kw::Mod | Kw::Module | Kw::Pub | Kw::Extern)
+            Token::Kw(Kw::Const | Kw::Fn | Kw::Use | Kw::Struct | Kw::Enum | Kw::Impl | Kw::Trait | Kw::Mod | Kw::Module | Kw::Pub | Kw::Extern | Kw::Type | Kw::Static)
         )
     });
     let item_stmt = item::meta(h)

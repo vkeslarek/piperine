@@ -378,6 +378,16 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                 }
             }
             Ok(Raw::Lifetime) if text == "'static" => tokens.push((Token::StaticLifetime, span)),
+            Ok(Raw::Lifetime) if loop_label(&tokens, lexer.remainder()).is_some() => {
+                // A loop label (`'a: loop`, `break 'a`): one E0905, and the label and its
+                // colon leave no token, so the parse goes on.
+                let colon = loop_label(&tokens, lexer.remainder()).unwrap_or(0);
+                lexer.bump(colon);
+                diags.push(
+                    Diagnostic::new("E0905", "loop labels are not part of the language", span, "dropped token class")
+                        .with_help("restructure the loop: a labelled `break` or `continue` has no equivalent"),
+                );
+            }
             Ok(Raw::ByteStr | Raw::ByteChar | Raw::Char | Raw::Lifetime) => {
                 diags.push(dropped_class(text, span));
                 tokens.push((Token::Error, span));
@@ -441,6 +451,24 @@ fn raw_ident(word: &str, span: Span) -> Result<Token, Diagnostic> {
         "not a raw identifier",
     )
     .with_help("write the word without `r#`; Rust's own keywords stay reserved"))
+}
+
+/// Whether the lifetime just lexed is a loop label: it follows `break` or
+/// `continue`, or it is followed by `:` and a loop (`'a: loop`, `'a: while`,
+/// `'a: for`, `'a: {`). The number of bytes of `rest` to skip: the label's
+/// colon, or zero.
+fn loop_label(tokens: &[(Token, Span)], rest: &str) -> Option<usize> {
+    if matches!(tokens.last(), Some((Token::Kw(Kw::Break | Kw::Continue), _))) {
+        return Some(0);
+    }
+    let after_space = rest.trim_start();
+    let colon = rest.len() - after_space.len();
+    let body = after_space.strip_prefix(':').filter(|b| !b.starts_with(':'))?;
+    let word = body.trim_start();
+    let starts_loop = ["loop", "while", "for"].iter().any(|k| {
+        word.strip_prefix(k).is_some_and(|r| !r.starts_with(|c: char| c.is_alphanumeric() || c == '_'))
+    }) || word.starts_with('{');
+    starts_loop.then_some(colon + 1)
 }
 
 fn dropped_class(text: &str, span: Span) -> Diagnostic {

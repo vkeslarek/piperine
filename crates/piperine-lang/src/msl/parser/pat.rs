@@ -60,6 +60,7 @@ pub(crate) fn build<'a, I: In<'a>>(
     });
     // `lo`, `lo..`, `lo..hi`, `lo..=hi` starting from a literal.
     let lit_or_range = neg_lit
+        .clone()
         .then(range_op.clone().then(bound.clone().or_not()).or_not())
         .map_with(move |(lo, tail), e| match tail {
             None => mk(PatKind::Lit(Box::new(lo)), e.span()),
@@ -156,8 +157,17 @@ pub(crate) fn build<'a, I: In<'a>>(
         }
     });
 
+    // `..x`: a half-open range pattern is removed (B.3.6); reported, stands as `_`.
+    let half_open = punct(Punct::DotDot).ignore_then(neg_lit.clone().map(|_| ()).or(ty::path(h, true).map(|_| ()))).validate(
+        move |_, e, emitter| {
+            emitter.emit(removed("half-open range patterns", e.span()));
+            mk(PatKind::Wild, e.span())
+        },
+    );
+
     let no_alt = first_of(vec![
         wild.boxed(),
+        half_open.boxed(),
         rest.boxed(),
         reference.boxed(),
         tuple.boxed(),

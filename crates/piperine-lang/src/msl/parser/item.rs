@@ -9,6 +9,8 @@ pub(crate) fn meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Meta> {
     enum One {
         Doc(Doc),
         Attr(Attr),
+        /// An inner attribute `#![..]`: removed, reported, dropped.
+        Inner,
     }
     let doc = select! { Token::DocOuter(text) => (text, false), Token::DocOuterBlock(text) => (text, true) }
         .map_with(|(text, block), e| One::Doc(Doc { text, block, span: Loc(e.span()) }));
@@ -35,7 +37,14 @@ pub(crate) fn meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Meta> {
         )
         .map_with(|(path, input), e| One::Attr(Attr { path, input, span: Loc(e.span()) }));
 
-    choice((doc, attr))
+    let inner = punct(Punct::Pound)
+        .ignore_then(punct(Punct::Not))
+        .ignore_then(skip_group())
+        .validate(|_, e, emitter| {
+            emitter.emit(removed("inner attributes", e.span()));
+            One::Inner
+        });
+    choice((doc, inner, attr))
         .repeated()
         .collect::<Vec<_>>()
         .map(|all| {
@@ -44,6 +53,7 @@ pub(crate) fn meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Meta> {
                 match one {
                     One::Doc(d) => m.docs.push(d),
                     One::Attr(a) => m.attrs.push(a),
+                    One::Inner => {}
                 }
             }
             m
@@ -70,8 +80,33 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
         )
     };
     let default_value = punct(Punct::Eq).ignore_then(h.expr.clone()).map_with(|_, e| e.span());
+    // `&self` and `&mut self` receivers are removed: reported, kept as an error parameter.
+    let ref_receiver = punct(Punct::And)
+        .ignore_then(kw(Kw::Mut).or_not())
+        .ignore_then(kw(Kw::SelfLower))
+        .validate(|_, e, emitter| {
+            emitter.emit(removed("`&self` and `&mut self` receivers", e.span()));
+            FnParam::Error(Loc(e.span()))
+        });
+    // `mut x: T` and `(a, b): T`: a parameter is a plain name.
+    let pattern_param = any()
+        .filter(|t: &Token| {
+            matches!(
+                t,
+                Token::Kw(Kw::Mut | Kw::Ref) | Token::Punct(Punct::LParen | Punct::LBracket | Punct::And | Punct::Underscore)
+            )
+        })
+        .rewind()
+        .ignore_then(h.pat1.clone())
+        .then_ignore(punct(Punct::Colon))
+        .then_ignore(h.ty.clone())
+        .validate(|_, e, emitter| {
+            emitter.emit(removed("`mut` and pattern parameters", e.span()));
+            FnParam::Error(Loc(e.span()))
+        });
     let param = first_of(vec![
         kw(Kw::SelfLower).map_with(|_, e| FnParam::SelfValue(Loc(e.span()))).boxed(),
+        ref_receiver.boxed(),
         ident()
             .then_ignore(punct(Punct::Colon))
             .then(h.ty.clone())
@@ -89,6 +124,7 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
                 FnParam::Error(Loc(e.span()))
             })
             .boxed(),
+        pattern_param.boxed(),
     ]);
     kw(Kw::Const)
         .or_not()
@@ -104,7 +140,7 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
                 .delimited_by(punct(Punct::LParen), punct(Punct::RParen)),
         )
         .then(punct(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
-        .then(kw(Kw::Where).ignore_then(h.expr_ns.clone()).or_not())
+        .then(where_clause(h))
         .then(choice((h.block.clone().map(Some), punct(Punct::Semi).to(None))))
         .map(|(((((((is_const, abi), name), generics), params), ret), where_), body)| FnDecl {
             is_const: is_const.is_some(),
@@ -116,6 +152,23 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
             where_,
             body,
         })
+        .boxed()
+}
+
+/// `where cond` after a head; a trait-bound clause (`where T: Tr`) is removed
+/// (B.3.6): reported at `where`, the bounds skipped, `T` kept as the condition.
+pub(crate) fn where_clause<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Option<Expr>> {
+    kw(Kw::Where)
+        .map_with(|_, e| e.span())
+        .then(h.expr_ns.clone())
+        .then(punct(Punct::Colon).ignore_then(skip_to_end()).or_not())
+        .validate(|((at, cond), bounds), _, emitter| {
+            if bounds.is_some() {
+                emitter.emit(removed("trait-bound `where` clauses", at));
+            }
+            cond
+        })
+        .or_not()
         .boxed()
 }
 
@@ -133,19 +186,28 @@ fn const_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ConstItem> {
 
 fn impl_items<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Vec<ImplItem>> {
     let item = meta(h)
-        .then(kw(Kw::Pub).or_not())
+        .then(visibility().or_not())
         .then(choice((
             fn_decl(h).map(ImplItemKind::Fn),
             const_item(h).map(ImplItemKind::Const),
         )))
-        .map_with(|((meta, public), kind), e| ImplItem {
-            meta,
-            public: public.is_some(),
-            kind,
-            span: Loc(e.span()),
+        .map_with(|((meta, public), kind), e| {
+            Some(ImplItem { meta, public: public.is_some(), kind, span: Loc(e.span()) })
         });
-    item.repeated()
+    // `type X;` and `type X = T;` are removed (B.3.6): reported, dropped.
+    let associated_type = meta(h)
+        .then(visibility().or_not())
+        .ignore_then(kw(Kw::Type).map_with(|_, e| e.span()))
+        .then_ignore(skip_to_end())
+        .then_ignore(punct(Punct::Semi).or_not())
+        .validate(|at, _, emitter| {
+            emitter.emit(removed("associated types", at));
+            None
+        });
+    first_of(vec![item.boxed(), associated_type.boxed()])
+        .repeated()
         .collect::<Vec<_>>()
+        .map(|items| items.into_iter().flatten().collect())
         .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
         .boxed()
 }
@@ -153,7 +215,7 @@ fn impl_items<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Vec<ImplItem>> {
 /// `{ fields }`, `( fields );` or `;`.
 fn fields<'a, I: In<'a>>(h: &Handles<'a, I>, unit_semi: bool) -> P<'a, I, Fields> {
     let named_field = meta(h)
-        .then(kw(Kw::Pub).or_not())
+        .then(visibility().or_not())
         .then(dir().or_not())
         .then(ident())
         .then_ignore(punct(Punct::Colon))
@@ -173,7 +235,7 @@ fn fields<'a, I: In<'a>>(h: &Handles<'a, I>, unit_semi: bool) -> P<'a, I, Fields
         .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
         .map(Fields::Named);
     let tuple_field = meta(h)
-        .then(kw(Kw::Pub).or_not())
+        .then(visibility().or_not())
         .then(h.ty.clone())
         .map_with(|((meta, public), ty), e| Field {
             meta,
@@ -313,6 +375,40 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
             ItemKind::Error
         });
 
+    // `type`, `static`, `union` and `extern` blocks are removed (B.3.6): each is
+    // reported once at its keyword, its rest skipped, and the item kept as an error.
+    let skipped = |first: P<'a, I, Span>, row: &'static str| {
+        first
+            .then_ignore(skip_to_end())
+            .then_ignore(punct(Punct::Semi).or_not())
+            .validate(move |at, _, emitter| {
+                emitter.emit(removed(row, at));
+                ItemKind::Error
+            })
+            .boxed()
+    };
+    let type_alias = skipped(kw(Kw::Type).map_with(|_, e| e.span()).boxed(), "type aliases");
+    let static_item = skipped(kw(Kw::Static).map_with(|_, e| e.span()).boxed(), "`static` items");
+    let union_item = select! { Token::Ident(s) if s == "union" => () }
+        .map_with(|_, e| e.span())
+        .then_ignore(ident())
+        .then_ignore(ty::generics(h).or_not())
+        .then_ignore(skip_group())
+        .validate(|at, _, emitter| {
+            emitter.emit(removed("`union` items", at));
+            ItemKind::Error
+        })
+        .boxed();
+    let extern_block = kw(Kw::Extern)
+        .map_with(|_, e| e.span())
+        .then_ignore(string_lit().or_not())
+        .then_ignore(skip_group())
+        .validate(|at, _, emitter| {
+            emitter.emit(removed("`extern` blocks", at));
+            ItemKind::Error
+        })
+        .boxed();
+
     let kind = first_of(vec![
         fn_decl(h).map(ItemKind::Fn).boxed(),
         const_item(h).map(|c| ItemKind::Const(c)).boxed(),
@@ -326,9 +422,13 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         msl::module_decl(h),
         msl::behavior_block(h),
         macro_rules.boxed(),
+        type_alias,
+        static_item,
+        union_item,
+        extern_block,
     ]);
     let item = meta(h)
-        .then(kw(Kw::Pub).map_with(|_, e| e.span()).or_not())
+        .then(visibility().or_not())
         .then(kind)
         .validate(|((meta, public), kind), e, emitter| {
             // A behavior block has no visibility: the block is kept, `pub` reported.

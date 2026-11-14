@@ -227,12 +227,26 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         .map(|(((name, ty), default), where_)| ModuleItemKind::Param { name, ty, default, where_ })
         .boxed();
     // `let pat = expr;`: a body `let` takes no type annotation.
+    let annotation = punct(Punct::Colon).ignore_then(h.ty.clone()).map_with(|_, e| e.span()).or_not();
     let let_item = kw(Kw::Let)
         .ignore_then(pat::binding(h))
+        .then(annotation)
         .then_ignore(punct(Punct::Eq))
         .then(h.expr.clone())
         .then_ignore(punct(Punct::Semi))
-        .map(|(pat, value)| ModuleItemKind::Let { pat, value })
+        .validate(|((pat, annotation), value), _, emitter| {
+            if let Some(span) = annotation {
+                emitter.emit(Rich::custom(
+                    span,
+                    Custom {
+                        code: "E0900",
+                        message: "a body `let` takes no type annotation".into(),
+                        help: Some("its type is that of its expression: write `let y = 1.0;`".into()),
+                    },
+                ));
+            }
+            ModuleItemKind::Let { pat, value }
+        })
         .boxed();
     // `place = expr [after expr];`
     let def = place(h)
@@ -261,7 +275,7 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         .boxed();
     let declared = first_of(vec![signal_decl(h), param, let_item, nested]);
     let leaf = item::meta(h)
-        .then(kw(Kw::Pub).or_not())
+        .then(visibility().or_not())
         .then(declared)
         .map_with(|((meta, public), kind), e| ModuleItem {
             meta,
@@ -361,7 +375,7 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .then(ty::generics(h).or_not())
         .then(ports)
         .then(punct(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
-        .then(kw(Kw::Where).ignore_then(h.expr_ns.clone()).or_not())
+        .then(item::where_clause(h))
         .then(body)
         .map(|((((((abi, name), generics), ports), ret), where_), (body, result))| {
             ItemKind::Module(ModuleDecl { abi, name, generics, ports, ret, where_, body, result })
