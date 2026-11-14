@@ -248,11 +248,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `shared_borrow_of_any_argument_is_allowed` passes in `spec_text.rs` (C31: POL-06 AC 1)
-- [ ] Test `identifier_pattern_rule_is_stated` passes in `spec_text.rs` (C32: POL-06 AC 2)
-- [ ] The two `(0.1..=10.0).contains(&n)` examples (§8, §23) are left as written: they are now conforming
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `shared_borrow_of_any_argument_is_allowed` passes in `spec_text.rs` (C31: POL-06 AC 1)
+- [x] Test `identifier_pattern_rule_is_stated` passes in `spec_text.rs` (C32: POL-06 AC 2)
+- [x] The two `(0.1..=10.0).contains(&n)` examples (§8, §23) are left as written: they are now conforming
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

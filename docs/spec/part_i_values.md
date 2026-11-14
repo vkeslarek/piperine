@@ -29,7 +29,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
   in Rust. The methods a model may call are those of [Appendix H](appendix_h_library.md).
 - **§1 rule 2.** These are left out, because a model is fixed at elaboration: mutable
   references, heap types, `unsafe`, threads, `async`, `dyn`. `&` appears only as a shared,
-  read-only borrow of an array, slice or string in a function parameter.
+  read-only borrow: of an array, slice or string in a function parameter, and of any value as
+  a call argument (`(0.1..=10.0).contains(&n)`).
 - **§1 rule 3.** Constants are `const` items. The prelude has `Q`, `K_B`, `EPS0`, `PI`, `E`
   and `inf` (table below).
 - **§1 rule 4.** Only a type with `Repr` can be carried: it is the `T` of `Bit<T>` and the
@@ -86,6 +87,13 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
   ([§17.1](part_v_execution.md#171-convergence)).
 - **§1 rule 13.** A panic on a path taken under unknown control ([§3.3.3](#33-unknown-values))
   is not an error. Every effect of that merge becomes unknown.
+- **§1 rule 14.** A plain identifier pattern, with no `mut`, `ref` or `@`, whose name resolves
+  to a constant, a unit variant or a unit struct is a path to that item and binds nothing.
+  Any other identifier pattern binds a new name, as in Rust.
+
+> **Resolution.** Rule 14 is Rust's rule. `match o { None => 0, Some(x) => x }` tests for
+> `None`; it does not bind a name `None`. A name that resolves to a local or a `fn` is a
+> binding that shadows it.
 
 > **Resolution.** Rules 11–13 are not in the design, which is silent on panics. Rule 13
 > follows the unknown rule: whether the failing path runs is not known, so nothing it could
@@ -97,7 +105,7 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0101` | a syntactic form left out by rule 2: a mutable reference, `unsafe`, `async`, `dyn`. A heap type or a thread API is a path that does not resolve (`E0161`) | parse |
-| `E0102` | `&` other than a shared borrow of an array, slice or string in a function parameter | elaboration |
+| `E0102` | `&` other than a shared borrow of an array, slice or string in a function parameter, or of any value as a call argument | elaboration |
 | `E0103` | an integer width that is not a const expression `>= 1`, or a float width outside {16, 32, 64, 128} | elaboration |
 | `E0104` | a panic while evaluating a const expression, a param default, a `where` or generation | elaboration |
 | `E0105` | a panic under known control during a run | run |

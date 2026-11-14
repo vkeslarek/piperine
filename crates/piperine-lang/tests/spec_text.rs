@@ -400,3 +400,35 @@ fn glob_shadowing_and_e0143_are_stated() {
     let row = r.lines().find(|l| l.starts_with("| `E0143`")).unwrap();
     assert!(row.contains("a second `fn` of the same name"), "{row}");
 }
+
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[test]
+fn shared_borrow_of_any_argument_is_allowed() {
+    // POL-06 AC 1: §1 rule 2 and the E0102 row.
+    let part = spec("part_i_values.md");
+    let rule2 = one_line(part.split("- **§1 rule 2.**").nth(1).unwrap().split("- **§1 rule 3.**").next().unwrap());
+    assert!(rule2.contains("and of any value as a call argument"), "{rule2}");
+    let row = part.lines().find(|l| l.starts_with("| `E0102`")).expect("E0102 row");
+    assert!(row.contains("or of any value as a call argument"), "{row}");
+    assert!(row.contains("`&` other than"), "{row}");
+}
+
+#[test]
+fn identifier_pattern_rule_is_stated() {
+    // POL-06 AC 2: a rule of Part I, with its Resolution.
+    let part = spec("part_i_values.md");
+    let rule = one_line(part.split("- **§1 rule 14.**").nth(1).expect("§1 rule 14").split("\n\n").next().unwrap());
+    for needle in [
+        "plain identifier pattern",
+        "no `mut`, `ref` or `@`",
+        "a constant, a unit variant or a unit struct",
+        "is a path to that item and binds nothing",
+    ] {
+        assert!(rule.contains(needle), "{needle}: {rule}");
+    }
+    let after = part.split("- **§1 rule 14.**").nth(1).unwrap();
+    assert!(after.split("**Errors**").next().unwrap().contains("> **Resolution.** Rule 14"), "a Resolution note");
+}
