@@ -1014,13 +1014,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `extern_module_shape_is_e0370` passes in `pom_classify.rs` (C103: POL-18 AC 5)
-- [ ] Test `function_body_rule_is_e0125` passes in `pom_classify.rs` (C104: POL-18 AC 6)
-- [ ] Test `nature_field_errors_are_e0201` passes in `pom_classify.rs` (C105: POL-18 AC 7)
-- [ ] The pass reads declarations only: no types, no const evaluation
-- [ ] A trait's bodiless `fn` is not reported
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `extern_module_shape_is_e0370` passes in `pom_classify.rs` (C103: POL-18 AC 5)
+- [x] Test `function_body_rule_is_e0125` passes in `pom_classify.rs` (C104: POL-18 AC 6)
+- [x] Test `nature_field_errors_are_e0201` passes in `pom_classify.rs` (C105: POL-18 AC 7)
+- [x] The pass reads declarations only: no types, no const evaluation
+- [x] A trait's bodiless `fn` is not reported
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

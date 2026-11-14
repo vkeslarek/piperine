@@ -305,7 +305,8 @@ impl Tr for S { fn f(self); }
 trait Tr: Base + Other { const C: u32; fn f(self); }
 ";
     let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    // `impl Tr for S { fn f(self); }`: a bodiless function outside a trait is E0125 (D11).
+    assert_eq!(lowering_codes(&design), ["E0125"], "{:?}", design.diagnostics());
     let items = design.root().children();
     assert_eq!(items.iter().map(|d| d.kind().label()).collect::<Vec<_>>(), ["Struct", "Impl", "Impl", "Trait"]);
 
@@ -385,7 +386,8 @@ nature Mixed { potential: A { access: a }, value: f64 }
 nature Empty { flow: F { access: f } }
 ";
     let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    // The three invalid natures below are `E0201` (D11), one each.
+    assert_eq!(lowering_codes(&design), ["E0201"; 3], "{:?}", design.diagnostics());
     let kind = |n: &str| design.nature(n).unwrap_or_else(|| panic!("nature {n}")).kind();
     assert_eq!(kind("Electrical"), NatureKind::Conservative);
     assert_eq!(kind("Signalf"), NatureKind::SignalFlow);

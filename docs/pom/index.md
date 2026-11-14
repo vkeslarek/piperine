@@ -79,7 +79,7 @@ pub nature Electrical {
 }
 pub nature Bit { value: bool }
 impl Bit { pub fn rise(self) -> Event { 0 } }
-pub extern "builtin" module above(level: f64) -> Event {}
+pub module above(level: f64) -> Event {}
 "#;
 let src = r#"
 /// A comparator with hysteresis that drives a flip-flop.

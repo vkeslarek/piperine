@@ -898,3 +898,74 @@ mod b { analog for super::a::M { } }
     let m = design.find("a::M").and_then(|d| d.as_module()).unwrap();
     assert_eq!(m.behaviors().len(), 2);
 }
+
+/// POL-18 AC 5: an `extern` module lists params only, has no result and no
+/// value input: one `E0370` for each offender, at the item, the result type or
+/// the port.
+#[test]
+fn extern_module_shape_is_e0370() {
+    let src = "\
+extern \"osdi\" module Fine(p: Electrical, q: Electrical) { r: f64 = 1.0; }
+extern \"cosim\" module Bad(in a: f64, p: Electrical) -> f64 {
+    k: f64 = 1.0;
+    signal s: Electrical;
+    let w = Fine(p, p);
+}
+module Plain(in a: f64, p: Electrical) -> f64 { signal s: Electrical; }
+";
+    let design = with_prelude(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0370").map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let texts: Vec<&str> = at.iter().map(|(_, t)| *t).collect();
+    assert_eq!(texts.len(), 4, "{:?}", design.diagnostics());
+    // In source order: the value input, the result type, then each body item.
+    assert!(texts[0].starts_with("in a") && texts[0].contains("f64"), "{texts:?}");
+    assert_eq!(texts[1], "f64");
+    assert!(texts[2].starts_with("signal s"), "{texts:?}");
+    assert!(texts[3].starts_with("let w"), "{texts:?}");
+    // The result type is the one after `->`.
+    assert_eq!(design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0370").nth(1).unwrap().diagnostic.span().range().start, src.find("-> f64").unwrap() + 3);
+    // Nothing else is reported: a plain module may have all of it.
+    assert_eq!(support::codes(&design), ["E0370"; 4], "{:?}", design.diagnostics());
+}
+
+/// POL-18 AC 6: an `extern "C" fn` with a body, or a function that is neither
+/// `extern` nor a trait item without one, is one `E0125` at the function's name.
+#[test]
+fn function_body_rule_is_e0125() {
+    let src = "\
+extern \"C\" fn with_body(x: f64) -> f64 { x }
+fn without_body(x: f64) -> f64;
+extern \"C\" fn fine_extern(x: f64) -> f64;
+fn fine(x: f64) -> f64 { x }
+trait Tr { fn in_trait(self) -> f64; }
+struct S { a: f64 }
+impl Tr for S { fn in_impl(self) -> f64; }
+";
+    let design = with_prelude(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    assert_eq!(at, [("E0125", "with_body"), ("E0125", "without_body"), ("E0125", "in_impl")], "{:?}", design.diagnostics());
+}
+
+/// POL-18 AC 7: a nature that repeats a field, mixes discrete and continuous
+/// fields, or has neither `value` nor `potential` is one `E0201` at its name
+/// and `kind() == NatureKind::Invalid`.
+#[test]
+fn nature_field_errors_are_e0201() {
+    use piperine_lang::pom::NatureKind;
+    let src = "\
+nature Good { potential: P { access: pv, units: \"V\", abstol: 1u }, flow: F { access: pi, units: \"A\", abstol: 1p } }
+nature Rep { potential: P2 { access: v2, units: \"V\", abstol: 1u }, potential: P3 { access: v3, units: \"V\", abstol: 1u } }
+nature Mix { potential: P4 { access: v4, units: \"V\", abstol: 1u }, value: f64 }
+nature Nil { flow: F5 { access: i5, units: \"A\", abstol: 1p } }
+nature Disc { value: f64 }
+";
+    let design = build(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    assert_eq!(at, [("E0201", "Rep"), ("E0201", "Mix"), ("E0201", "Nil")], "{:?}", design.diagnostics());
+    let kind = |n: &str| design.nature(n).unwrap().kind();
+    assert_eq!(kind("Good"), NatureKind::Conservative);
+    assert_eq!(kind("Disc"), NatureKind::Discrete);
+    for bad in ["Rep", "Mix", "Nil"] {
+        assert_eq!(kind(bad), NatureKind::Invalid, "{bad}");
+    }
+}

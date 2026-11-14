@@ -1,4 +1,4 @@
-//! Stage 8: the reverse tables. Everything here is derived from the resolved
+//! Stage 9: the reverse tables. Everything here is derived from the resolved
 //! design: where a declaration is named, who writes it, who instantiates it.
 //! The tables are computed once at the end of the build and only read after.
 
