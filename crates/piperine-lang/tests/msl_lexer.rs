@@ -266,3 +266,22 @@ fn inherited_lexical_forms_lex() {
     assert!(diags.is_empty());
     assert_eq!(toks, vec![(Token::Ident("x".into()), Span::new(3, 4))]);
 }
+
+#[test]
+fn raw_identifier_of_an_added_keyword_is_an_identifier() {
+    // POL-10 AC 1 / A.1 rule 6: `r#word` for each of the seven added keywords
+    // is one raw identifier token holding the word without the prefix.
+    for word in ["module", "nature", "signal", "on", "out", "flip", "after"] {
+        let src = format!("r#{word}");
+        let (toks, diags) = lex(&src);
+        assert!(diags.is_empty(), "{src}: {diags:?}");
+        assert_eq!(toks.len(), 1, "{src}: {toks:?}");
+        assert_eq!(toks[0].0, Token::RawIdent(word.to_string()), "{src}");
+        assert_eq!(toks[0].1, Span::new(0, src.len()), "{src}");
+    }
+    // The raw-string openers keep lexing as strings.
+    assert_eq!(one_token("r#\"a\"#"), Token::Str("a".into()));
+    assert_eq!(one_token("r\"a\""), Token::Str("a".into()));
+    // A bare added keyword is still a keyword.
+    assert!(matches!(one_token("out"), Token::Kw(_)));
+}

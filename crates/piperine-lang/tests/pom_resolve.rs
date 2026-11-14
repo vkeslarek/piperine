@@ -619,3 +619,21 @@ fn access_name_resolves_to_its_quantity() {
     assert!(!access.is_empty());
     assert!(access.iter().all(|p| p.resolution() == Resolution::Decl(quantity)), "{access:?}");
 }
+
+#[test]
+fn raw_identifier_names_drop_the_prefix() {
+    // POL-10 AC 4: `signal r#out: Bit;` is named `out`; the read `r#out`
+    // resolves to it; `r#out` and `out`-less lookups agree; to_ast restores
+    // the prefix.
+    let src = "nature Bit { value: bool }\nmodule M() {\n    signal r#out: Bit;\n    let x = r#out;\n}\n";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", codes(&design));
+    let m = design.module("M").expect("module M");
+    let sig = m.signal("out").expect("the signal is named `out`");
+    assert_eq!(sig.name(), Some("out"));
+    let read = one(&design, "out");
+    assert!(matches!(read[0], Resolution::Decl(d) if d == sig.decl().id()), "{read:?}");
+    let parsed = piperine_lang::msl::parser::parse(src).file;
+    assert_eq!(design.files()[0].to_ast(), parsed);
+    assert_eq!(format!("{:?}", design.files()[0].to_ast()), format!("{parsed:?}"));
+}

@@ -706,3 +706,23 @@ fn comparisons_do_not_chain() {
         assert!(diags.is_empty(), "{src:?}: {diags:?}");
     }
 }
+
+#[test]
+fn raw_identifier_of_another_word_is_e0900() {
+    // POL-10 AC 2: `r#` before any word but the seven added keywords is one
+    // E0900 that lists the seven; `r#out` itself is accepted.
+    for word in ["type", "in", "foo"] {
+        let src = format!("const X: u8 = r#{word};");
+        let r = parse(&src);
+        assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
+        let d = &r.diagnostics[0];
+        assert_eq!(d.code, "E0900", "{src}");
+        for seven in ["module", "nature", "signal", "on", "out", "flip", "after"] {
+            assert!(d.message.contains(seven), "{src}: {}", d.message);
+        }
+        let at = src.find("r#").unwrap();
+        assert_eq!(d.span().start, at, "{src}");
+    }
+    let ok = parse("const r#out: u8 = 1;");
+    assert!(ok.diagnostics.is_empty(), "{:?}", ok.diagnostics);
+}

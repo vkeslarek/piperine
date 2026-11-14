@@ -41,7 +41,7 @@ fn loc(span: Span) -> ast::Loc {
 }
 
 fn ident(name: &Name) -> ast::Ident {
-    ast::Ident { name: name.text.clone(), span: loc(name.span) }
+    ast::Ident { name: name.text.clone(), raw: name.raw, span: loc(name.span) }
 }
 
 impl<'d> Rebuild<'d> {

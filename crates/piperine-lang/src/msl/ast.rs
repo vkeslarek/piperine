@@ -75,8 +75,18 @@ pub struct Doc {
 /// An identifier with its range. Contextual keywords are identifiers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ident {
+    /// The name, without any `r#` prefix.
     pub name: String,
+    /// Written `r#name`.
+    pub raw: bool,
     pub span: Loc,
+}
+
+impl Ident {
+    /// The name as written: `r#out` for a raw identifier.
+    pub fn spelled(&self) -> String {
+        if self.raw { format!("r#{}", self.name) } else { self.name.clone() }
+    }
 }
 
 /// Doc comments and attributes in front of an item, field, port or variant.

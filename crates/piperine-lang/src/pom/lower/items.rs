@@ -46,7 +46,7 @@ impl Lowerer<'_> {
     fn fn_param(&mut self, p: &ast::FnParam) {
         match p {
             ast::FnParam::SelfValue(loc) => {
-                let name = ast::Ident { name: "self".to_string(), span: *loc };
+                let name = ast::Ident { name: "self".to_string(), raw: false, span: *loc };
                 self.new_decl(DeclKind::FnParam(FnParamData::SelfValue), Some(&name), loc.0, false);
             }
             ast::FnParam::Named { name, ty, span } => {

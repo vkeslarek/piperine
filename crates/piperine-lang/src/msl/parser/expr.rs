@@ -426,7 +426,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         .collect::<Vec<_>>()
         .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
     let tuple_index = select! { Token::Int(s) => s }
-        .map_with(|name, e| Ident { name, span: Loc(e.span()) });
+        .map_with(|name, e| Ident { name, raw: false, span: Loc(e.span()) });
     // `0.1` after a dot: two tuple indexes lexed as one float.
     let nested_tuple_index = select! { Token::Float { raw, .. } => raw }.try_map(|raw: String, span: Span| {
         match raw.split_once('.') {
@@ -437,8 +437,8 @@ pub(crate) fn build<'a, I: In<'a>>(
             {
                 let mid = span.start + a.len();
                 Ok((
-                    Ident { name: a.to_string(), span: Loc(Span::new(span.start, mid)) },
-                    Ident { name: b.to_string(), span: Loc(Span::new(mid + 1, span.end)) },
+                    Ident { name: a.to_string(), raw: false, span: Loc(Span::new(span.start, mid)) },
+                    Ident { name: b.to_string(), raw: false, span: Loc(Span::new(mid + 1, span.end)) },
                 ))
             }
             _ => Err(Rich::custom(

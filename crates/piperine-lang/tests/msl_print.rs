@@ -256,3 +256,18 @@ fn inherited_lexical_forms_roundtrip() {
     );
     assert!(text.contains("café") && text.contains("else") && text.contains("1."), "{text}");
 }
+
+#[test]
+fn raw_identifiers_print_with_their_prefix() {
+    // POL-10 AC 3: `r#out` prints as `r#out`; the reparse equals the first
+    // tree (the `raw` flag is part of tree equality) and a second print is the same.
+    let src = "module M() {\n    signal r#out: Bit;\n    let x = r#out;\n    r#out = x;\n}\nfn r#on(r#flip: u8) -> u8 { r#flip }";
+    let first = parsed("raw", src);
+    let text = print(&first);
+    for word in ["r#out", "r#on", "r#flip"] {
+        assert!(text.contains(word), "{word} missing from:\n{text}");
+    }
+    let second = parsed("raw (printed)", &text);
+    assert!(first == second, "reparse differs:\n{text}");
+    assert_eq!(print(&second), text);
+}

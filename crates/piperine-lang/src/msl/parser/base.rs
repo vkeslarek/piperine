@@ -86,8 +86,8 @@ pub(crate) fn kw<'a, I: In<'a>>(k: Kw) -> impl Parser<'a, I, (), Extra<'a>> + Cl
 }
 
 pub(crate) fn ident<'a, I: In<'a>>() -> impl Parser<'a, I, Ident, Extra<'a>> + Clone {
-    select! { Token::Ident(name) => name }
-        .map_with(|name, e| Ident { name, span: Loc(e.span()) })
+    select! { Token::Ident(name) => (name, false), Token::RawIdent(name) => (name, true) }
+        .map_with(|(name, raw), e| Ident { name, raw, span: Loc(e.span()) })
         .labelled("identifier")
 }
 
@@ -99,7 +99,7 @@ pub(crate) fn path_ident<'a, I: In<'a>>() -> impl Parser<'a, I, Ident, Extra<'a>
         Token::Kw(Kw::Super) => "super",
         Token::Kw(Kw::Crate) => "crate",
     }
-    .map_with(|name, e| Ident { name: name.to_string(), span: Loc(e.span()) });
+    .map_with(|name, e| Ident { name: name.to_string(), raw: false, span: Loc(e.span()) });
     ident().or(kw_seg).labelled("identifier")
 }
 

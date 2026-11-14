@@ -14,7 +14,10 @@ pub use crate::msl::ast::Dir;
 /// An identifier as written, with its range.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Name {
+    /// The name, without any `r#` prefix.
     pub text: String,
+    /// Written `r#name`.
+    pub raw: bool,
     pub span: Span,
 }
 

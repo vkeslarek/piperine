@@ -66,7 +66,7 @@ impl Lowerer<'_> {
     ) -> DeclId {
         let data = DeclData {
             kind,
-            name: name.map(|n| super::decl::Name { text: n.name.clone(), span: n.span.0 }),
+            name: name.map(|n| super::decl::Name { text: n.name.clone(), raw: n.raw, span: n.span.0 }),
             parent: Some(self.owner),
             children: Vec::new(),
             file: self.file,

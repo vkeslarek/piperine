@@ -56,6 +56,14 @@ lexer and the grammar are the language's own.
 > `after`, `flip`, `signal`, `module` and `nature`. `r#in` and `r#extern` stay errors: they are
 > Rust keywords with a new use, reserved as in Rust.
 
+```rust
+nature Bit { value: bool }
+module Gate() {
+    signal r#out: Bit;
+    let y = r#out;
+}
+```
+
 > **Resolution.** Only the lifetime `'static` is accepted, and only in `&'static str`. Any
 > other lifetime token is an error. `char` is not a value type
 > ([§1](part_i_values.md#1-value-types)): character literals, byte literals and byte strings

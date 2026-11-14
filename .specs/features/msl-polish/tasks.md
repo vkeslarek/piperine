@@ -437,14 +437,14 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `raw_identifier_of_an_added_keyword_is_an_identifier` passes in `msl_lexer.rs` (C55: POL-10 AC 1)
-- [ ] Test `raw_identifier_of_another_word_is_e0900` passes in `msl_errors.rs` (C56: POL-10 AC 2)
-- [ ] Test `raw_identifiers_print_with_their_prefix` passes in `msl_print.rs` (C57: POL-10 AC 3)
-- [ ] Test `raw_identifier_names_drop_the_prefix` passes in `pom_resolve.rs` (C58: POL-10 AC 4)
-- [ ] A bare added keyword is still `E0903` (`keyword_as_identifier_reports_e0903` unchanged)
-- [ ] Name lookup compares names without the prefix: `r#out` and a path segment `r#out` are the same name
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `raw_identifier_of_an_added_keyword_is_an_identifier` passes in `msl_lexer.rs` (C55: POL-10 AC 1)
+- [x] Test `raw_identifier_of_another_word_is_e0900` passes in `msl_errors.rs` (C56: POL-10 AC 2)
+- [x] Test `raw_identifiers_print_with_their_prefix` passes in `msl_print.rs` (C57: POL-10 AC 3)
+- [x] Test `raw_identifier_names_drop_the_prefix` passes in `pom_resolve.rs` (C58: POL-10 AC 4)
+- [x] A bare added keyword is still `E0903` (`keyword_as_identifier_reports_e0903` unchanged)
+- [x] Name lookup compares names without the prefix: `r#out` and a path segment `r#out` are the same name
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

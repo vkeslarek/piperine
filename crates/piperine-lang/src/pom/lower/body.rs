@@ -12,7 +12,7 @@ use crate::pom::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use crate::pom::resolution::{CallClass, Resolution, StructClass};
 
 pub(super) fn name(i: &ast::Ident) -> Name {
-    Name { text: i.name.clone(), span: i.span.0 }
+    Name { text: i.name.clone(), raw: i.raw, span: i.span.0 }
 }
 
 impl Lowerer<'_> {

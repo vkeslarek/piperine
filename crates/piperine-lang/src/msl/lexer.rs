@@ -94,6 +94,8 @@ impl Punct {
 pub enum Token {
     /// An identifier, contextual keywords included.
     Ident(String),
+    /// `r#word` for one of the seven added keywords: the word, no prefix.
+    RawIdent(String),
     Kw(Kw),
     /// The `Unknown` literal (A.3).
     Unknown,
@@ -122,6 +124,7 @@ impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Token::Ident(s) => write!(f, "identifier `{s}`"),
+            Token::RawIdent(s) => write!(f, "identifier `r#{s}`"),
             Token::Kw(k) => write!(f, "`{}`", k.as_str()),
             Token::Unknown => f.write_str("`Unknown`"),
             Token::Int(s) => write!(f, "`{s}`"),
@@ -158,6 +161,9 @@ enum Raw {
     // Rust's identifiers: `XID_Start` or `_`, then `XID_Continue`.
     #[regex(r"[\p{XID_Start}_][\p{XID_Continue}]*")]
     Ident,
+    // `r#word`: a raw identifier (only the seven added keywords are accepted).
+    #[regex(r"r#[\p{XID_Start}_][\p{XID_Continue}]*")]
+    RawIdent,
     // `r"..."`, `r#"..."#`: the callback finds the closing quote and hashes.
     #[regex(r##"r#*""##, raw_string)]
     RawStr,
@@ -305,6 +311,13 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
             }
             Ok(Raw::Punct(p)) => tokens.push((Token::Punct(p), span)),
             Ok(Raw::Ident) => tokens.push((classify_ident(text), span)),
+            Ok(Raw::RawIdent) => match raw_ident(&text[2..], span) {
+                Ok(tok) => tokens.push((tok, span)),
+                Err(d) => {
+                    diags.push(d);
+                    tokens.push((Token::Error, span));
+                }
+            },
             Ok(Raw::Number) => match classify_number(text, span) {
                 Ok(tok) => tokens.push((tok, span)),
                 Err(d) => {
@@ -387,6 +400,24 @@ fn classify_ident(text: &str) -> Token {
     } else {
         Token::Ident(text.to_string())
     }
+}
+
+/// The seven keywords A.1 adds: the only words `r#` can spell as identifiers.
+const ADDED_KEYWORDS: [&str; 7] = ["module", "nature", "signal", "on", "out", "flip", "after"];
+
+/// `r#word`: an identifier for an added keyword, `E0900` for any other word.
+fn raw_ident(word: &str, span: Span) -> Result<Token, Diagnostic> {
+    if ADDED_KEYWORDS.contains(&word) {
+        return Ok(Token::RawIdent(word.to_string()));
+    }
+    let list = ADDED_KEYWORDS.map(|w| format!("`{w}`")).join(", ");
+    Err(Diagnostic::new(
+        "E0900",
+        format!("`r#{word}` is not a raw identifier: `r#` is accepted only for {list}"),
+        span,
+        "not a raw identifier",
+    )
+    .with_help("write the word without `r#`; Rust's own keywords stay reserved"))
 }
 
 fn dropped_class(text: &str, span: Span) -> Diagnostic {

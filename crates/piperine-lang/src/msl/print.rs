@@ -110,7 +110,7 @@ fn braces(lines: &[String]) -> String {
 }
 
 fn ident(i: &Ident) -> String {
-    i.name.clone()
+    i.spelled()
 }
 
 fn meta(m: &Meta) -> String {
@@ -134,7 +134,7 @@ fn attr(a: &Attr) -> String {
                 .map(|a| match a {
                     AttrArg::Path(p) => path(p),
                     AttrArg::Lit(l) => lit(l),
-                    AttrArg::NameValue(n, l) => format!("{} = {}", n.name, lit(l)),
+                    AttrArg::NameValue(n, l) => format!("{} = {}", n.spelled(), lit(l)),
                 })
                 .collect();
             format!("({})", items.join(", "))
@@ -148,7 +148,7 @@ fn attr(a: &Attr) -> String {
 fn path(p: &Path) -> String {
     p.segments
         .iter()
-        .map(|s| format!("{}{}", s.ident.name, s.args.as_ref().map_or(String::new(), generic_args)))
+        .map(|s| format!("{}{}", s.ident.spelled(), s.args.as_ref().map_or(String::new(), generic_args)))
         .collect::<Vec<_>>()
         .join("::")
 }
@@ -182,7 +182,7 @@ fn generics(g: &Option<Generics>) -> String {
         .iter()
         .map(|p| match &p.kind {
             GenericParamKind::Type { bounds, default } => {
-                let mut s = p.name.name.clone();
+                let mut s = p.name.spelled();
                 if !bounds.is_empty() {
                     s.push_str(&format!(": {}", bounds.iter().map(path).collect::<Vec<_>>().join(" + ")));
                 }
@@ -192,7 +192,7 @@ fn generics(g: &Option<Generics>) -> String {
                 s
             }
             GenericParamKind::Const { ty: t, default } => {
-                let mut s = format!("const {}: {}", p.name.name, ty(t));
+                let mut s = format!("const {}: {}", p.name.spelled(), ty(t));
                 if let Some(d) = default {
                     s.push_str(&format!(" = {}", expr(d)));
                 }
@@ -246,7 +246,7 @@ fn pat(p: &Pat) -> String {
             if *mutable {
                 s.push_str("mut ");
             }
-            s.push_str(&name.name);
+            s.push_str(&name.spelled());
             if let Some(sub) = sub {
                 s.push_str(&format!(" @ {}", pat1(sub)));
             }
@@ -265,8 +265,8 @@ fn pat(p: &Pat) -> String {
             let mut items: Vec<String> = fields
                 .iter()
                 .map(|f| match &f.pat {
-                    Some(q) => format!("{}: {}", f.name.name, pat(q)),
-                    None => f.name.name.clone(),
+                    Some(q) => format!("{}: {}", f.name.spelled(), pat(q)),
+                    None => f.name.spelled(),
                 })
                 .collect();
             if *rest {
@@ -321,7 +321,7 @@ fn binop(op: BinOp) -> &'static str {
 fn args(a: &[Arg]) -> Vec<String> {
     a.iter()
         .map(|a| match &a.name {
-            Some(n) => format!("{}: {}", n.name, expr(&a.value)),
+            Some(n) => format!("{}: {}", n.spelled(), expr(&a.value)),
             None => expr(&a.value),
         })
         .collect()
@@ -331,7 +331,7 @@ fn field_inits(f: &[FieldInit]) -> String {
     if f.is_empty() {
         return "{}".to_string();
     }
-    let items: Vec<String> = f.iter().map(|f| format!("{}: {}", f.name.name, expr(&f.value))).collect();
+    let items: Vec<String> = f.iter().map(|f| format!("{}: {}", f.name.spelled(), expr(&f.value))).collect();
     let inline = format!("{{ {} }}", items.join(", "));
     if inline.len() <= WIDTH && !inline.contains('\n') {
         inline
@@ -375,12 +375,12 @@ fn expr(e: &Expr) -> String {
             format!(
                 "{}.{}{}{}",
                 expr(recv),
-                method.name,
+                method.spelled(),
                 g.as_ref().map_or(String::new(), generic_args),
                 list("(", &args(a), ")")
             )
         }
-        ExprKind::Field { expr: x, name } => format!("{}.{}", expr(x), name.name),
+        ExprKind::Field { expr: x, name } => format!("{}.{}", expr(x), name.spelled()),
         ExprKind::Index { expr: x, index } => format!("{}[{}]", expr(x), expr(index)),
         ExprKind::Range { lo, hi, inclusive } => format!(
             "{}{}{}",
@@ -435,7 +435,7 @@ fn expr(e: &Expr) -> String {
         ExprKind::Try(x) => format!("{}?", expr(x)),
         ExprKind::Emit { stream, fields } => {
             let mut items = vec![lit(stream)];
-            items.extend(fields.iter().map(|f| format!("{} = {}", f.name.name, expr(&f.value))));
+            items.extend(fields.iter().map(|f| format!("{} = {}", f.name.spelled(), expr(&f.value))));
             format!("emit!{}", list("(", &items, ")"))
         }
         ExprKind::IncludeStr(l) => format!("include_str!({})", lit(l)),
@@ -501,7 +501,7 @@ fn stmt(s: &Stmt) -> String {
 
 fn signal(name: &Ident, t: &Type, init: &Option<Expr>) -> String {
     let init = init.as_ref().map_or(String::new(), |e| format!(" = {}", expr(e)));
-    format!("signal {}: {}{init};", name.name, ty(t))
+    format!("signal {}: {}{init};", name.spelled(), ty(t))
 }
 
 fn reaction(r: &Reaction) -> String {
@@ -529,10 +529,10 @@ fn item(i: &Item) -> String {
 fn item_kind(k: &ItemKind) -> String {
     match k {
         ItemKind::Fn(f) => fn_decl(f),
-        ItemKind::Struct(s) => format!("struct {}{}{}", s.name.name, generics(&s.generics), fields(&s.fields, true)),
+        ItemKind::Struct(s) => format!("struct {}{}{}", s.name.spelled(), generics(&s.generics), fields(&s.fields, true)),
         ItemKind::Enum(e) => {
             let lines: Vec<String> = e.variants.iter().map(variant).collect();
-            format!("enum {}{} {}", e.name.name, generics(&e.generics), braces(&lines))
+            format!("enum {}{} {}", e.name.spelled(), generics(&e.generics), braces(&lines))
         }
         ItemKind::Impl(i) => {
             let head = match &i.trait_ {
@@ -547,18 +547,18 @@ fn item_kind(k: &ItemKind) -> String {
             } else {
                 format!(": {}", t.supertraits.iter().map(path).collect::<Vec<_>>().join(" + "))
             };
-            format!("trait {}{}{supers} {}", t.name.name, generics(&t.generics), braces(&impl_items(&t.items)))
+            format!("trait {}{}{supers} {}", t.name.spelled(), generics(&t.generics), braces(&impl_items(&t.items)))
         }
         ItemKind::Const(c) => const_item(c),
         ItemKind::Use(u) => format!("use {};", use_tree(u)),
         ItemKind::Mod(m) => match &m.items {
-            None => format!("mod {};", m.name.name),
+            None => format!("mod {};", m.name.spelled()),
             Some(items) => {
                 let blocks: Vec<String> = items.iter().map(item).collect();
                 if blocks.is_empty() {
-                    format!("mod {} {{}}", m.name.name)
+                    format!("mod {} {{}}", m.name.spelled())
                 } else {
-                    format!("mod {} {{\n{}\n}}", m.name.name, indent(&blocks.join("\n\n")))
+                    format!("mod {} {{\n{}\n}}", m.name.spelled(), indent(&blocks.join("\n\n")))
                 }
             }
         },
@@ -577,13 +577,13 @@ fn fn_decl(f: &FnDecl) -> String {
     if let Some(abi) = &f.abi {
         s.push_str(&format!("extern {} ", lit(abi)));
     }
-    s.push_str(&format!("fn {}{}", f.name.name, generics(&f.generics)));
+    s.push_str(&format!("fn {}{}", f.name.spelled(), generics(&f.generics)));
     let params: Vec<String> = f
         .params
         .iter()
         .filter_map(|p| match p {
             FnParam::SelfValue(_) => Some("self".to_string()),
-            FnParam::Named { name, ty: t, .. } => Some(format!("{}: {}", name.name, ty(t))),
+            FnParam::Named { name, ty: t, .. } => Some(format!("{}: {}", name.spelled(), ty(t))),
             FnParam::Error(_) => None,
         })
         .collect();
@@ -603,7 +603,7 @@ fn fn_decl(f: &FnDecl) -> String {
 
 fn const_item(c: &ConstItem) -> String {
     let value = c.value.as_ref().map_or(String::new(), |v| format!(" = {}", expr(v)));
-    format!("const {}: {}{value};", c.name.name, ty(&c.ty))
+    format!("const {}: {}{value};", c.name.spelled(), ty(&c.ty))
 }
 
 fn impl_items(items: &[ImplItem]) -> Vec<String> {
@@ -621,7 +621,7 @@ fn impl_items(items: &[ImplItem]) -> Vec<String> {
 
 fn field(f: &Field) -> String {
     let body = match &f.name {
-        Some(n) => format!("{}: {}", n.name, ty(&f.ty)),
+        Some(n) => format!("{}: {}", n.spelled(), ty(&f.ty)),
         None => ty(&f.ty),
     };
     format!("{}{}{}{body}", meta(&f.meta), vis(f.public), dir(&f.dir))
@@ -645,15 +645,15 @@ fn fields(f: &Fields, unit_semi: bool) -> String {
 
 fn variant(v: &Variant) -> String {
     let disc = v.discriminant.as_ref().map_or(String::new(), |d| format!(" = {}", expr(d)));
-    format!("{}{}{}{disc},", meta(&v.meta), v.name.name, fields(&v.fields, false))
+    format!("{}{}{}{disc},", meta(&v.meta), v.name.spelled(), fields(&v.fields, false))
 }
 
 fn use_tree(u: &UseTree) -> String {
-    let prefix: Vec<&str> = u.path.iter().map(|i| i.name.as_str()).collect();
+    let prefix: Vec<String> = u.path.iter().map(|i| i.spelled()).collect();
     let joined = prefix.join("::");
     match &u.kind {
         UseKind::Simple { alias } => match alias {
-            Some(a) => format!("{joined} as {}", a.name),
+            Some(a) => format!("{joined} as {}", a.spelled()),
             None => joined,
         },
         UseKind::Glob => if joined.is_empty() { "*".to_string() } else { format!("{joined}::*") },
@@ -675,13 +675,13 @@ fn nature(n: &NatureDecl) -> String {
                     Quantity::Flow => "flow",
                 };
                 let block = if attrs.is_empty() { String::new() } else { format!(" {}", field_inits(attrs)) };
-                format!("{w}: {}{block},", name.name)
+                format!("{w}: {}{block},", name.spelled())
             }
             NatureFieldKind::Value(t) => format!("value: {},", ty(t)),
             NatureFieldKind::Resolve(e) => format!("resolve: {},", expr(e)),
         })
         .collect();
-    format!("nature {}{} {}", n.name.name, generics(&n.generics), braces(&lines))
+    format!("nature {}{} {}", n.name.spelled(), generics(&n.generics), braces(&lines))
 }
 
 fn module(m: &ModuleDecl) -> String {
@@ -689,13 +689,13 @@ fn module(m: &ModuleDecl) -> String {
     if let Some(abi) = &m.abi {
         s.push_str(&format!("extern {} ", lit(abi)));
     }
-    s.push_str(&format!("module {}{}", m.name.name, generics(&m.generics)));
+    s.push_str(&format!("module {}{}", m.name.spelled(), generics(&m.generics)));
     let ports: Vec<String> = m
         .ports
         .iter()
         .map(|p| {
             let default = p.default.as_ref().map_or(String::new(), |d| format!(" = {}", expr(d)));
-            format!("{}{}{}: {}{default}", meta(&p.meta), dir(&p.dir), p.name.name, ty(&p.ty))
+            format!("{}{}{}: {}{default}", meta(&p.meta), dir(&p.dir), p.name.spelled(), ty(&p.ty))
         })
         .collect();
     s.push_str(&list("(", &ports, ")"));
@@ -716,7 +716,7 @@ fn module(m: &ModuleDecl) -> String {
 fn module_item(i: &ModuleItem) -> String {
     let body = match &i.kind {
         ModuleItemKind::Param { name, ty: t, default, where_ } => {
-            let mut s = format!("{}: {}", name.name, ty(t));
+            let mut s = format!("{}: {}", name.spelled(), ty(t));
             if let Some(d) = default {
                 s.push_str(&format!(" = {}", expr(d)));
             }
