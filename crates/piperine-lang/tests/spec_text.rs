@@ -372,3 +372,31 @@ fn gnd_and_the_implicit_params_are_core_names() {
         }
     }
 }
+
+fn s34() -> String {
+    section(&spec("part_i_values.md"), "### 3.4 ")
+}
+
+#[test]
+fn e0162_is_defined_in_3_4() {
+    // POL-04 AC 1: the row, its phase and its three conditions.
+    let rows = table_rows(&s34());
+    let row = rows.iter().find(|r| r[0] == "`E0162`").expect("§3.4 defines E0162");
+    assert_eq!(row[2], "elaboration", "{row:?}");
+    assert!(row[1].contains("declared twice in one table of one namespace"), "{row:?}");
+    assert!(row[1].contains("explicit `use`") && row[1].contains("collides"), "{row:?}");
+    assert!(row[1].contains("two glob imports") && row[1].contains("used"), "{row:?}");
+    assert_eq!(defining_rows()["E0162"], ["part_i_values.md"], "one defining row");
+}
+
+#[test]
+fn glob_shadowing_and_e0143_are_stated() {
+    // POL-04 AC 2.
+    let s = s34().split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(s.contains("An item or an explicit `use` shadows a glob import"), "{s}");
+    assert!(s.contains("A hardware module and a unit struct occupy both tables"), "{s}");
+    assert!(s.contains("Two `fn` items of one name are `E0143`, not `E0162`"), "{s}");
+    let r = spec("part_i_values.md");
+    let row = r.lines().find(|l| l.starts_with("| `E0143`")).unwrap();
+    assert!(row.contains("a second `fn` of the same name"), "{row}");
+}

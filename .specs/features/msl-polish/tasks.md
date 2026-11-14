@@ -224,12 +224,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `e0162_is_defined_in_3_4` passes in `spec_text.rs` (C19: POL-04 AC 1)
-- [ ] Test `glob_shadowing_and_e0143_are_stated` passes in `spec_text.rs` (C20: POL-04 AC 2)
-- [ ] `E0162` is phase `elaboration` (no parse-phase fixture is owed)
-- [ ] `E0330` (module members) is left as it is
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `e0162_is_defined_in_3_4` passes in `spec_text.rs` (C19: POL-04 AC 1)
+- [x] Test `glob_shadowing_and_e0143_are_stated` passes in `spec_text.rs` (C20: POL-04 AC 2)
+- [x] `E0162` is phase `elaboration` (no parse-phase fixture is owed)
+- [x] `E0330` (module members) is left as it is
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

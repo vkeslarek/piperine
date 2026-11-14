@@ -398,7 +398,7 @@ call           ::= path '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')'           
 | `E0140` | a named argument that names no optional parameter, or one already bound | elaboration |
 | `E0141` | too few positional arguments for the required parameters, or too many arguments | elaboration |
 | `E0142` | a positional argument after a named one | parse |
-| `E0143` | a default value, an overload or a variadic parameter in a function signature | parse |
+| `E0143` | a default value or a variadic parameter in a function signature, or a second `fn` of the same name in one namespace (an overload) | parse |
 
 **Examples**
 
@@ -560,6 +560,18 @@ scope, `pub` controls visibility, and a package of models is a crate.
   ([§8.4](part_iii_structure.md#84-templates-and-swappable-modules)).
 - **§3.4.6** `pub` on an item of a module body has its own meaning: visibility to the parent
   instance ([§8.2](part_iii_structure.md#82-the-body)).
+- **§3.4.7** A namespace has two tables, one of types and one of values, as in Rust. A name is
+  declared once in each table. A hardware module and a unit struct occupy both tables. A
+  `struct` with fields and a `fn` of one name occupy different tables and do not collide.
+- **§3.4.8** An item or an explicit `use` shadows a glob import of the same name without a
+  diagnostic. Two explicit `use` items, or an explicit `use` and an item, of one name in one
+  table collide.
+- **§3.4.9** Two glob imports that provide one name for different declarations are an error
+  only where the name is used. Two that provide the same declaration are not. Two `fn` items of
+  one name are `E0143`, not `E0162`.
+
+> **Resolution.** Rules 7 to 9 are Rust's rules for names, stated because the design is
+> silent on duplicates. `E0162` is the one code for a collision; `E0143` keeps the overload.
 
 > **Resolution.** Rule 5 places module names as Rust places a tuple struct's. Rule 1 fixes the
 > vocabulary, since the design uses "module" for both.
@@ -570,3 +582,4 @@ scope, `pub` controls visibility, and a package of models is a crate.
 | --- | --- | --- |
 | [§10](part_iv_behavior.md#10-behavior-blocks) | a behavior block for a module declared in another file (`E0401`) | elaboration |
 | `E0161` | a path, `use` or `mod` that does not resolve, or names a private item | elaboration |
+| `E0162` | a name declared twice in one table of one namespace; an explicit `use` whose name collides with an item or with another explicit `use` of the same table; a name that is used while only two glob imports provide it, for different declarations | elaboration |
