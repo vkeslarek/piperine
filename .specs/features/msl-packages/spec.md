@@ -1,5 +1,7 @@
 # MSL Packages Specification
 
+**Approved**: 2026-11-14 - user: "Dispara o fable para especificar o project e despachar"
+
 ## Problem Statement
 
 A model cannot use code from another package. `docs/spec/` §3.4 says only "a package of models is a crate"; `Design::load(root)` reads one tree of files plus prelude sources a host injects by hand; `piperine-project` still carries the retired Verilog-AMS pipeline (`SourceMap`, plugin sections, release-binary fetch) and does not build. The standard library (`msl-stdlib`, next) needs a crate to live in and a way to be found.
