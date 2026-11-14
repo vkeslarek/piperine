@@ -3,7 +3,8 @@
 //! dev-dependency and none of the dependencies the restructure removed.
 //! Covers SR-02: retired crates have no directory and no manifest names them,
 //! the root `tests/` holds no Verilog-AMS end-to-end target, and `examples/`
-//! holds no Verilog-AMS or Python source.
+//! holds no Verilog-AMS or Python source, `default-members` lists the green
+//! crates and the CI workflows name no retired crate.
 
 use std::path::PathBuf;
 
@@ -20,6 +21,10 @@ const RETIRED_CRATES: &[&str] = &[
     "piperine-plugin",
     "piperine-plugin-macros",
 ];
+
+/// The workspace's `default-members`: the crates that build and test green.
+/// Later tasks extend this list as the sub-solver crates appear.
+const DEFAULT_MEMBERS: &[&str] = &["crates/piperine-lang", "crates/piperine-solver"];
 
 /// The root manifest and every `crates/*/Cargo.toml`.
 fn all_manifests() -> Vec<PathBuf> {
@@ -146,4 +151,36 @@ fn examples_hold_no_vams_or_python() {
     for kept in ["Piperine.toml", "Piperine.lock"] {
         assert!(repo_root().join("examples").join(kept).exists(), "examples/{kept} was removed");
     }
+}
+
+#[test]
+fn default_members_are_the_green_crates() {
+    let root = std::fs::read_to_string(repo_root().join("Cargo.toml")).expect("read the root manifest");
+    let workspace = section(&root, "workspace");
+    let line = workspace
+        .lines()
+        .find(|l| l.trim_start().starts_with("default-members"))
+        .expect("the root manifest has no default-members");
+    let listed: Vec<&str> = line
+        .split('"')
+        .enumerate()
+        .filter(|(i, _)| i % 2 == 1)
+        .map(|(_, s)| s)
+        .collect();
+    assert_eq!(listed, DEFAULT_MEMBERS, "default-members drifted");
+}
+
+#[test]
+fn workflows_name_no_retired_crate() {
+    let dir = repo_root().join(".github/workflows");
+    for entry in std::fs::read_dir(&dir).expect("read .github/workflows") {
+        let path = entry.expect("dir entry").path();
+        let text = std::fs::read_to_string(&path).expect("read a workflow");
+        for name in RETIRED_CRATES {
+            assert!(!text.contains(name), "{} names retired crate {name}", path.display());
+        }
+    }
+    let ci = std::fs::read_to_string(dir.join("ci.yml")).expect("read ci.yml");
+    assert!(!ci.contains("--workspace"), "ci.yml passes --workspace");
+    assert!(!ci.contains("requirements.txt"), "ci.yml installs Python requirements");
 }

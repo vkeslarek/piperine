@@ -8,6 +8,8 @@ members = [
     "crates/piperine-solver",
 ]
 
+default-members = ["crates/piperine-lang", "crates/piperine-solver"]
+
 [workspace.package]
 version = "0.2.0"
 edition = "2024"

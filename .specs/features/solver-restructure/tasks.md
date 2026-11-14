@@ -343,11 +343,11 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] `default-members = ["crates/piperine-lang", "crates/piperine-solver"]` (T19 and T22 add the two sub-solver crates)
-- [ ] `ci.yml` builds and tests with no `--workspace` (it runs the default members) and installs no Python requirements; `release.yml` has no step that names `piperine-python`
-- [ ] `workspace_shape.rs` gains `default_members_are_the_green_crates` (C12), whose expected list is one `const`, and `workflows_name_no_retired_crate` (C13), which also rejects `--workspace` in `ci.yml`
-- [ ] `cargo build` and `cargo test` with no `-p`, at the root, are green
-- [ ] Gate: build
+- [x] `default-members = ["crates/piperine-lang", "crates/piperine-solver"]` (T19 and T22 add the two sub-solver crates)
+- [x] `ci.yml` builds and tests with no `--workspace` (it runs the default members) and installs no Python requirements; `release.yml` has no step that names `piperine-python`
+- [x] `workspace_shape.rs` gains `default_members_are_the_green_crates` (C12), whose expected list is one `const`, and `workflows_name_no_retired_crate` (C13), which also rejects `--workspace` in `ci.yml`
+- [x] `cargo build` and `cargo test` with no `-p`, at the root, are green
+- [x] Gate: build
 
 **Tests**: integration
 **Gate**: build
