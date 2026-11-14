@@ -1004,6 +1004,7 @@ Why a member was left `Deferred` instead of resolved.
 | `ReceiverTypeUnknown` | — | The receiver type cannot be read from a declaration. |
 | `AmbiguousAccess` | — | An access call (`v(x)`) whose access name several natures declare and the argument does not decide. |
 | `InferredGenerics` | — | Reserved: needs inference of generic arguments. The resolver does not produce it yet. |
+| `BuiltinTraitMember` | — | An associated name written through a generic bounded by a catalogue trait of Appendix H (`T: PartialOrd`, `T::foo`). |
 
 ### `CallClass`
 
@@ -1184,6 +1185,7 @@ What a built-in is.
 | `Statement` | — | A built-in statement (`bound_step`). |
 | `Node` | — | A reference node (`gnd`). |
 | `ImplicitParam` | — | `m` and `dtemp`: names only inside a module body and the blocks bound to a module (`builtin_implicit`; `builtin` never returns one). |
+| `Member` | — | An associated item of a built-in trait (`Repr::WIDTH`, `Repr::encode`, `Repr::decode`); reached only through a generic bounded by the trait (`builtin_member`), never as a name. |
 
 ### `BuiltinInfo`
 

@@ -45,7 +45,7 @@ mod source;
 mod to_ast;
 
 pub use body::*;
-pub use builtin::{BUILTINS, BuiltinId, BuiltinInfo, BuiltinKind, builtin, builtin_implicit, builtin_method};
+pub use builtin::{BUILTINS, BuiltinId, BuiltinInfo, BuiltinKind, builtin, builtin_implicit, builtin_member, builtin_method};
 pub use decl::*;
 pub use design::{Design, DesignBuilder, DesignDiagnostic, SourceFileData, SourceFileRepr};
 pub use index::{Index, ReferenceId, WriterId};

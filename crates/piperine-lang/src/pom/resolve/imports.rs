@@ -5,7 +5,8 @@
 use std::collections::BTreeMap;
 
 use super::super::body::{PathSegment, TypeKind};
-use super::super::decl::DeclKind;
+use super::super::builtin::builtin_member;
+use super::super::decl::{DeclKind, GenericParamData};
 use super::super::design::Design;
 use super::super::ids::{DeclId, PathId};
 use super::super::resolution::{DeferReason, Resolution};
@@ -284,8 +285,40 @@ impl Ctx<'_> {
             DeclKind::Struct(_) | DeclKind::Nature(_) | DeclKind::Trait(_) | DeclKind::Module(_) => {
                 self.associated(owner, name).map(|v| (Resolution::Decl(v), true))
             }
+            DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => self.through_bounds(bounds, name, from, visiting),
             _ => None,
         }
+    }
+
+    /// `name` after a generic: an item of a user trait it is bounded by, a
+    /// member row of `Repr`, or - through any other built-in bound - left for
+    /// inference. A generic bounded by `Repr` alone has no other member.
+    fn through_bounds(&self, bounds: &[PathId], name: &str, from: DeclId, visiting: &mut Vec<Visit>) -> Option<(Resolution, bool)> {
+        let mut only_repr = !bounds.is_empty();
+        let mut deferred = false;
+        for bound in bounds {
+            let node = self.design.path_node(*bound);
+            let walked = self.walk(&node.segments, from, Prefer::Types, visiting, &mut |this, n, visiting| this.scope_lookup(from, n, Prefer::Types, visiting));
+            match walked.res.last() {
+                Some(Resolution::Decl(t)) if matches!(self.design.decl_data(*t).kind, DeclKind::Trait(_)) => {
+                    if let Some(item) = self.associated(*t, name) {
+                        return Some((Resolution::Decl(item), true));
+                    }
+                    only_repr = false;
+                }
+                Some(Resolution::Builtin(b)) if b.info().name == "Repr" => {
+                    if let Some(member) = builtin_member("Repr", name) {
+                        return Some((Resolution::Builtin(member), true));
+                    }
+                }
+                Some(Resolution::Builtin(_)) => {
+                    only_repr = false;
+                    deferred = true;
+                }
+                _ => only_repr = false,
+            }
+        }
+        (deferred && !only_repr).then_some((Resolution::Deferred(DeferReason::BuiltinTraitMember), true))
     }
 
     /// The associated constant or function `name` of `owner`: an item of one

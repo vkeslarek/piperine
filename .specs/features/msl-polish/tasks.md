@@ -861,13 +861,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `repr_members_resolve_through_a_bound` passes in `pom_resolve.rs` (C96: POL-17 AC 4)
-- [ ] Test `unknown_repr_member_is_e0161` passes in `pom_resolve.rs` (C97: POL-17 AC 5)
-- [ ] Test `member_through_a_builtin_bound_is_deferred` passes in `pom_resolve.rs` (C98: POL-17 AC 6)
-- [ ] A user trait bound still resolves to the trait's own item, as today
-- [ ] `level` stays a `Method` row (it is a value method, §3.3.4)
-- [ ] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `repr_members_resolve_through_a_bound` passes in `pom_resolve.rs` (C96: POL-17 AC 4)
+- [x] Test `unknown_repr_member_is_e0161` passes in `pom_resolve.rs` (C97: POL-17 AC 5)
+- [x] Test `member_through_a_builtin_bound_is_deferred` passes in `pom_resolve.rs` (C98: POL-17 AC 6)
+- [x] A user trait bound still resolves to the trait's own item, as today
+- [x] `level` stays a `Method` row (it is a value method, §3.3.4)
+- [x] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

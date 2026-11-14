@@ -865,3 +865,53 @@ fn use_leaf_text_is_its_own_segments() {
         assert!(!text.contains(['{', '}', ',']), "{text}");
     }
 }
+
+// ---- members of `Repr` and of built-in bounds (POL-17) -----------------------------------------
+
+#[test]
+fn repr_members_resolve_through_a_bound() {
+    let src = "fn cast<A: Repr, B: Repr>(a: A) -> B where A::WIDTH == B::WIDTH { B::decode(a.encode()).unwrap() }\n";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let member = |joined: &str, name: &str| {
+        let res = one(&design, joined);
+        assert!(matches!(res[0], Resolution::Decl(_)), "{joined}: {res:?}");
+        let Resolution::Builtin(b) = res[1] else { panic!("{joined}: {res:?}") };
+        assert_eq!((b.info().kind, b.info().name), (BuiltinKind::Member, name), "{joined}");
+    };
+    member("B::decode", "Repr::decode");
+    for width in resolutions(&design, "A::WIDTH").into_iter().chain(resolutions(&design, "B::WIDTH")) {
+        let Resolution::Builtin(b) = width[1] else { panic!("{width:?}") };
+        assert_eq!(b.info().name, "Repr::WIDTH");
+    }
+    // `encode` is a method on a value: it needs the receiver's type.
+    assert!(builtin("Repr::WIDTH").is_none(), "a member row is not a name");
+}
+
+#[test]
+fn unknown_repr_member_is_e0161() {
+    let src = "fn f<A: Repr>(a: A) { A::NOPE; }\n";
+    let design = build(src);
+    let found = with_code(&design, "E0161");
+    assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(design.diagnostics().len(), 1);
+    assert_eq!(primary_text(&design, found[0]), "A::NOPE");
+    assert_eq!(one(&design, "A::NOPE")[1], Resolution::Unresolved);
+}
+
+#[test]
+fn member_through_a_builtin_bound_is_deferred() {
+    use piperine_lang::pom::DeferReason;
+    let src = "trait Tr { fn run() {} }\nfn f<T: PartialOrd>(a: T) { T::foo; }\nfn g<T: Repr + Clone>(a: T) { T::foo; T::WIDTH; }\nfn h<T: Tr>() { T::run(); }\n";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let foo = resolutions(&design, "T::foo");
+    assert_eq!(foo.len(), 2);
+    for res in &foo {
+        assert_eq!(res[1], Resolution::Deferred(DeferReason::BuiltinTraitMember));
+    }
+    // A member `Repr` has still resolves, beside another built-in bound.
+    assert!(matches!(one(&design, "T::WIDTH")[1], Resolution::Builtin(_)));
+    // A user trait bound resolves to the trait's own item.
+    assert_eq!(one(&design, "T::run")[1], decl(&design, "Tr::run"));
+}

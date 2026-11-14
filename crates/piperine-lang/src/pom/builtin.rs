@@ -22,6 +22,9 @@ pub enum BuiltinKind {
     /// A name every module instance carries (`m`, `dtemp`, §8.5): in scope
     /// only inside a module body and the blocks bound to a module.
     ImplicitParam,
+    /// An associated item of a built-in trait (`Repr::WIDTH`), reached only
+    /// through a generic bounded by that trait (`builtin_member`), never as a name.
+    Member,
 }
 
 /// One row of [`BUILTINS`].
@@ -79,6 +82,9 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("gnd", BuiltinKind::Node, "§6"),
     row("m", BuiltinKind::ImplicitParam, "§8.5"),
     row("dtemp", BuiltinKind::ImplicitParam, "§8.5"),
+    row("Repr::WIDTH", BuiltinKind::Member, "§2"),
+    row("Repr::encode", BuiltinKind::Member, "§2"),
+    row("Repr::decode", BuiltinKind::Member, "§2"),
     row("Q", BuiltinKind::Const, "§1"),
     row("K_B", BuiltinKind::Const, "§1"),
     row("EPS0", BuiltinKind::Const, "§1"),
@@ -148,7 +154,7 @@ pub fn builtin(name: &str) -> Option<BuiltinId> {
     if let Some(id) = sized(name) {
         return Some(id);
     }
-    let row = BUILTINS.iter().position(|b| b.name == name && !matches!(b.kind, BuiltinKind::Method | BuiltinKind::ImplicitParam))?;
+    let row = BUILTINS.iter().position(|b| b.name == name && !matches!(b.kind, BuiltinKind::Method | BuiltinKind::ImplicitParam | BuiltinKind::Member))?;
     // The family rows `uN`, `iN`, `fN` are spellings of no name.
     if row <= FLOAT_ROW {
         return None;
@@ -159,6 +165,13 @@ pub fn builtin(name: &str) -> Option<BuiltinId> {
 /// The method row named `name` (`prev`, `others`, `level`, `inflow`, `changed`).
 pub fn builtin_method(name: &str) -> Option<BuiltinId> {
     let row = BUILTINS.iter().position(|b| b.name == name && b.kind == BuiltinKind::Method)?;
+    Some(BuiltinId::new(row, 0))
+}
+
+/// The member row `owner::name` (`Repr::WIDTH`).
+pub fn builtin_member(owner: &str, name: &str) -> Option<BuiltinId> {
+    let full = format!("{owner}::{name}");
+    let row = BUILTINS.iter().position(|b| b.name == full && b.kind == BuiltinKind::Member)?;
     Some(BuiltinId::new(row, 0))
 }
 
