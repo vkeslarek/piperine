@@ -686,7 +686,8 @@ A **package** is a directory with a manifest. It holds one crate.
   It has exactly one source: `path` or `git`.
 - **§3.6.7** `path` is a directory, relative to the directory of the manifest that names it, or
   absolute. `git` is a repository URL; it takes at most one of `branch`, `tag` and `rev`, and
-  none means the repository's default branch. The package is at the root of the repository.
+  none means the repository's default branch. A `rev` is a commit id, 7 to 40
+  hexadecimal digits (`E0171`), never a branch, tag or other revision expression. The package is at the root of the repository.
 - **§3.6.8** `package` gives the located package's own name when it differs from the key. The
   located package's name **MUST** equal `package`, or the key when there is none (`E0173`).
 - **§3.6.9** `version` is a requirement the located package's version **MUST** satisfy
@@ -737,7 +738,7 @@ Requirement table (Cargo's caret rule):
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0170` | a package directory without `Piperine.toml`, or a manifest that is not UTF-8 or not valid TOML | package |
-| `E0171` | a manifest entry rules 3 to 9 do not allow: an unknown table or key, a missing `name` or `version`, a value of the wrong type, a name that breaks rule 4, a version or requirement of another form, a dependency without exactly one source, a `branch`, `tag` or `rev` beside another or beside `path` | package |
+| `E0171` | a manifest entry rules 3 to 9 do not allow: an unknown table or key, a missing `name` or `version`, a value of the wrong type, a name that breaks rule 4, a version or requirement of another form, a dependency without exactly one source, a `branch`, `tag` or `rev` beside another or beside `path`, a `rev` that is not 7 to 40 hexadecimal digits | package |
 | `E0172` | a dependency that cannot be located: a `path` with no manifest, a repository that cannot be fetched, a reference the repository does not hold | package |
 | `E0173` | a located package that is not the one asked for: another name, or a version that does not satisfy `version` | package |
 | `E0174` | a cycle among the dependencies | package |

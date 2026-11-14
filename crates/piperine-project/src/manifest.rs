@@ -193,6 +193,11 @@ fn entries<'a, 'i>(table: &'a DeTable<'i>) -> Vec<(&'a Key<'i>, &'a Value<'i>)> 
 
 const MANIFEST_KEYS: &[&str] = &["package", "dependencies"];
 const PACKAGE_KEYS: &[&str] = &["name", "version", "authors", "description"];
+/// A `rev`: a full or abbreviated commit id.
+fn is_commit_id(text: &str) -> bool {
+    (7..=40).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 const DEPENDENCY_KEYS: &[&str] = &["path", "git", "branch", "tag", "rev", "version", "package"];
 
 /// The faults of one manifest, found by walking its spanned table.
@@ -289,6 +294,11 @@ impl Walk<'_> {
                     match k_name {
                         "path" => path = Some(s.to_string()),
                         "git" => git = Some(s.to_string()),
+                        "rev" if !is_commit_id(s) => {
+                            let help = "a `rev` is a commit id: 7 to 40 hexadecimal digits; use `branch` or `tag` for a name".to_string();
+                            self.fault(v.span(), format!("`{s}` is not a commit id for `rev`"), "expected 7 to 40 hexadecimal digits", Some(help));
+                            ok = false;
+                        }
                         "branch" | "tag" | "rev" => refs.push((k_name, k.span(), s.to_string())),
                         "version" => match parse_requirement(s) {
                             Some(r) => requirement = Some(r),

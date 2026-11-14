@@ -287,21 +287,35 @@ fn a_dependency_needs_exactly_one_source() {
 #[test]
 fn git_refs_are_exclusive_and_git_only() {
     for line in [
-        "a = { git = \"u\", branch = \"b\", rev = \"r\" }",
+        "a = { git = \"u\", branch = \"b\", rev = \"abcdef0\" }",
         "a = { git = \"u\", branch = \"b\", tag = \"t\" }",
-        "a = { git = \"u\", tag = \"t\", rev = \"r\" }",
-        "a = { git = \"u\", branch = \"b\", tag = \"t\", rev = \"r\" }",
+        "a = { git = \"u\", tag = \"t\", rev = \"abcdef0\" }",
+        "a = { git = \"u\", branch = \"b\", tag = \"t\", rev = \"abcdef0\" }",
         "a = { path = \"p\", tag = \"t\" }",
         "a = { path = \"p\", branch = \"b\" }",
-        "a = { path = \"p\", rev = \"r\" }",
+        "a = { path = \"p\", rev = \"abcdef0\" }",
     ] {
         let (error, _) = one_e0171(&with_deps(&format!("{line}\n")));
         let message = &error.diagnostic.message;
         assert!(message.contains("`branch`") || message.contains("`tag`") || message.contains("`rev`"), "{line}: {message}");
     }
     // One reference beside `git` is fine.
-    for line in ["a = { git = \"u\", branch = \"b\" }", "a = { git = \"u\", tag = \"t\" }", "a = { git = \"u\", rev = \"r\" }"] {
+    for line in ["a = { git = \"u\", branch = \"b\" }", "a = { git = \"u\", tag = \"t\" }", "a = { git = \"u\", rev = \"abcdef0\" }"] {
         Manifest::parse(&with_deps(&format!("{line}\n"))).unwrap_or_else(|e| panic!("{line}: {e:?}"));
+    }
+}
+
+#[test]
+fn a_rev_is_a_commit_id_of_seven_to_forty_hex_digits() {
+    let long = "0123456789abcdef0123456789abcdef01234567";
+    for bad in ["main", "HEAD", "abc12", "0123456789abcdef0123456789abcdef012345678", "g123456", "abc123!", "", "v1.0.0"] {
+        let (error, at) = one_e0171(&with_deps(&format!("a = {{ git = \"u\", rev = \"{bad}\" }}\n")));
+        assert_eq!(at, format!("\"{bad}\""), "the error is at the string");
+        assert!(error.diagnostic.message.contains("`rev`") && error.diagnostic.message.contains("commit"), "{}", error.diagnostic.message);
+    }
+    for good in ["abcdef0", "ABCDEF0", long, &long[..12]] {
+        let manifest = Manifest::parse(&with_deps(&format!("a = {{ git = \"u\", rev = \"{good}\" }}\n"))).unwrap_or_else(|e| panic!("{good}: {e:?}"));
+        assert!(matches!(&manifest.dependencies[0].source, Source::Git { reference: GitRef::Rev(r), .. } if r == good));
     }
 }
 
