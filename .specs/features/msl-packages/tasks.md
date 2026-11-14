@@ -181,16 +181,16 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `s36_states_the_dependency_sources` passes in `spec_text.rs` (C15: PKG-02 AC 5)
-- [ ] Test `s36_gives_the_version_requirement_table` passes in `spec_text.rs` (C16: PKG-02 AC 6)
-- [ ] Test `s36_has_no_search_path_and_no_cycle` passes in `spec_text.rs` (C17: PKG-02 AC 7)
-- [ ] Test `s36_states_the_lockfile_rule` passes in `spec_text.rs` (C18: PKG-02 AC 8)
-- [ ] Test `s36_defines_the_package_codes` passes in `spec_text.rs` (C19: PKG-02 AC 9)
-- [ ] Every row of the error table ends in `| package |`; none ends in `| parse |`
-- [ ] "Terms defined here" gains dependency and lockfile
-- [ ] §3.5's section-keyed row for `E0174` now has its defining row
-- [ ] Gate passes: run spec; `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test pom_docs --test msl_errors`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `s36_states_the_dependency_sources` passes in `spec_text.rs` (C15: PKG-02 AC 5)
+- [x] Test `s36_gives_the_version_requirement_table` passes in `spec_text.rs` (C16: PKG-02 AC 6)
+- [x] Test `s36_has_no_search_path_and_no_cycle` passes in `spec_text.rs` (C17: PKG-02 AC 7)
+- [x] Test `s36_states_the_lockfile_rule` passes in `spec_text.rs` (C18: PKG-02 AC 8)
+- [x] Test `s36_defines_the_package_codes` passes in `spec_text.rs` (C19: PKG-02 AC 9)
+- [x] Every row of the error table ends in `| package |`; none ends in `| parse |`
+- [x] "Terms defined here" gains dependency and lockfile
+- [x] §3.5's section-keyed row for `E0174` now has its defining row
+- [x] Gate passes: run spec; `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test pom_docs --test msl_errors`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

@@ -639,7 +639,7 @@ through a dependency.
 - **§3.5.8** From another crate an item is visible only when it is `pub` and every namespace on
   the path from its crate root to it is `pub`. `pub use` re-exports, as in Rust.
 - **§3.5.9** The prelude is implied in every file of every crate, the files of `std` included.
-- **§3.5.10** The dependencies of the crates form no cycle ([§3.6](#36-packages)).
+- **§3.5.10** The dependencies of the crates form no cycle ([§3.6](#36-packages), `E0174`).
 - **§3.5.11** `extern crate` is not part of the language
   ([Appendix B.3.6](appendix_b_grammar.md)).
 
@@ -656,7 +656,7 @@ through a dependency.
 | --- | --- | --- |
 | `E0163` | a `use` path whose first segment names both a dependency and an item or an import of the enclosing namespace | elaboration |
 | [§3.4](#34-files-and-imports) | a first segment that names no item, import, dependency, prelude item or core name, or an item not visible from the crate (`E0161`) | elaboration |
-| [§3.6](#36-packages) | a cycle among the dependencies | package |
+| [§3.6](#36-packages) | a cycle among the dependencies (`E0174`) | package |
 
 **Examples**
 
@@ -677,10 +677,32 @@ A **package** is a directory with a manifest. It holds one crate.
 - **§3.6.2** The crate root is `src/lib.msl`. A source file has the extension `.msl`.
   `mod name;` loads `name.msl` or `name/mod.msl` below the declaring file, as Rust places
   `name.rs` and `name/mod.rs`; neither or both is `E0161`.
-- **§3.6.3** The manifest holds the tables and keys of the table below and no other.
+- **§3.6.3** The manifest holds the tables and keys of the table below and no other (`E0171`).
 - **§3.6.4** A package name and a dependency name are identifiers (A.1) that are no keyword of
   the language and not `std`. The package name is the crate's name.
 - **§3.6.5** A version is `MAJOR.MINOR.PATCH`, three decimal integers.
+- **§3.6.6** A **dependency** is an entry of `[dependencies]`; its key is the dependency name.
+  It has exactly one source: `path` or `git`.
+- **§3.6.7** `path` is a directory, relative to the directory of the manifest that names it, or
+  absolute. `git` is a repository URL; it takes at most one of `branch`, `tag` and `rev`, and
+  none means the repository's default branch. The package is at the root of the repository.
+- **§3.6.8** `package` gives the located package's own name when it differs from the key. The
+  located package's name **MUST** equal `package`, or the key when there is none (`E0173`).
+- **§3.6.9** `version` is a requirement the located package's version **MUST** satisfy
+  (`E0173`), in one of the forms of the requirement table.
+- **§3.6.10** Two dependencies that locate the same package (one directory; one repository at
+  one commit) name the same crate.
+- **§3.6.11** Dependencies are followed transitively. The graph **MUST NOT** hold a cycle
+  (`E0174`).
+- **§3.6.12** A crate is reached through a dependency and in no other way: an implementation
+  **MUST NOT** find a crate through a search path, a registry or an environment variable.
+- **§3.6.13** The **lockfile** is `Piperine.lock` beside the root package's manifest. It
+  records the commit each git package resolved to. While an entry's source (URL and requested
+  reference) equals a dependency's, the recorded commit **MUST** be used. An explicit update
+  resolves again. A lockfile inside a dependency is not read.
+- **§3.6.14** The lockfile is TOML: `version = 1`, then one `[[package]]` per git package with
+  `name`, `version`, `source` (`git+<url>`, then `?branch=<b>`, `?tag=<t>` or `?rev=<r>` when
+  one is given) and `commit` (40 hexadecimal digits), sorted by `name`, then `source`.
 
 Manifest keys:
 
@@ -695,6 +717,31 @@ Manifest keys:
 | `[dependencies]` entry | `branch`, `tag`, `rev` | string | no, at most one, with `git` only |
 | `[dependencies]` entry | `version` | string | no |
 | `[dependencies]` entry | `package` | string | no |
+
+Requirement table (Cargo's caret rule):
+
+| Requirement | Admits |
+| --- | --- |
+| `1.2.3` | `>=1.2.3, <2.0.0` |
+| `1.2` | `>=1.2.0, <2.0.0` |
+| `1` | `>=1.0.0, <2.0.0` |
+| `0.2.3` | `>=0.2.3, <0.3.0` |
+| `0.2` | `>=0.2.0, <0.3.0` |
+| `0.0.3` | `>=0.0.3, <0.0.4` |
+| `0.0` | `>=0.0.0, <0.1.0` |
+| `0` | `>=0.0.0, <1.0.0` |
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0170` | a package directory without `Piperine.toml`, or a manifest that is not UTF-8 or not valid TOML | package |
+| `E0171` | a manifest entry rules 3 to 9 do not allow: an unknown table or key, a missing `name` or `version`, a value of the wrong type, a name that breaks rule 4, a version or requirement of another form, a dependency without exactly one source, a `branch`, `tag` or `rev` beside another or beside `path` | package |
+| `E0172` | a dependency that cannot be located: a `path` with no manifest, a repository that cannot be fetched, a reference the repository does not hold | package |
+| `E0173` | a located package that is not the one asked for: another name, or a version that does not satisfy `version` | package |
+| `E0174` | a cycle among the dependencies | package |
+| `E0175` | a package without its crate root `src/lib.msl` | package |
+| `E0176` | a lockfile that is not valid TOML or whose `version` is not `1` | package |
 
 **Examples**
 

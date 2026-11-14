@@ -940,7 +940,7 @@ fn s36_fixes_the_package_layout() {
 
 #[test]
 fn s36_lists_every_manifest_key() {
-    // PKG-02 AC 3: one table; each key has a row; `E0171` joins the wording in T3, with its defining row.
+    // PKG-02 AC 3: one table; each key has a row; any other is `E0171`.
     let sec = s36();
     let rows = table_rows(&sec);
     let key_rows: Vec<&Vec<String>> = rows.iter().filter(|r| r.len() == 4 && r[0].starts_with("`[")).collect();
@@ -960,7 +960,7 @@ fn s36_lists_every_manifest_key() {
     let refs = key_rows.iter().find(|r| r[1].contains("`branch`")).expect("branch, tag, rev row");
     assert!(refs[1].contains("`tag`") && refs[1].contains("`rev`"), "{refs:?}");
     let s = one_line(&sec);
-    assert!(s.contains("holds the tables and keys of the table below and no other"), "{s}");
+    assert!(s.contains("holds the tables and keys of the table below and no other (`E0171`)"), "{s}");
 }
 
 #[test]
@@ -973,4 +973,85 @@ fn s36_names_are_identifiers() {
     );
     assert!(s.contains("The package name is the crate's name"), "{s}");
     assert!(s.contains("A version is `MAJOR.MINOR.PATCH`, three decimal integers"), "{s}");
+}
+
+// ---- msl-packages: §3.6 dependencies, requirements, lockfile, errors (PKG-02 AC 5 to 9) ----
+
+#[test]
+fn s36_states_the_dependency_sources() {
+    // PKG-02 AC 5.
+    let s = s36_text();
+    assert!(s.contains("A **dependency** is an entry of `[dependencies]`"), "{s}");
+    assert!(s.contains("It has exactly one source: `path` or `git`"), "{s}");
+    assert!(s.contains("it takes at most one of `branch`, `tag` and `rev`"), "{s}");
+    assert!(s.contains("none means the repository's default branch"), "{s}");
+    assert!(s.contains("relative to the directory of the manifest that names it"), "{s}");
+    assert!(s.contains("`package` gives the located package's own name when it differs from the key"), "{s}");
+    assert!(s.contains("Two dependencies that locate the same package"), "{s}");
+}
+
+#[test]
+fn s36_gives_the_version_requirement_table() {
+    // PKG-02 AC 6: the eight forms and the range each admits.
+    let rows = table_rows(&s36());
+    let expect = [
+        ("`1.2.3`", "`>=1.2.3, <2.0.0`"),
+        ("`1.2`", "`>=1.2.0, <2.0.0`"),
+        ("`1`", "`>=1.0.0, <2.0.0`"),
+        ("`0.2.3`", "`>=0.2.3, <0.3.0`"),
+        ("`0.2`", "`>=0.2.0, <0.3.0`"),
+        ("`0.0.3`", "`>=0.0.3, <0.0.4`"),
+        ("`0.0`", "`>=0.0.0, <0.1.0`"),
+        ("`0`", "`>=0.0.0, <1.0.0`"),
+    ];
+    for (req, range) in expect {
+        let row = rows.iter().find(|r| r.len() == 2 && r[0] == req).unwrap_or_else(|| panic!("no requirement row {req}"));
+        assert_eq!(row[1], range, "{req}");
+    }
+    assert!(s36_text().contains("`version` is a requirement the located package's version **MUST** satisfy (`E0173`)"));
+}
+
+#[test]
+fn s36_has_no_search_path_and_no_cycle() {
+    // PKG-02 AC 7, and §3.5 rule 10 now carries the code.
+    let s = s36_text();
+    assert!(s.contains("The graph **MUST NOT** hold a cycle (`E0174`)"), "{s}");
+    assert!(s.contains("an implementation **MUST NOT** find a crate through a search path, a registry or an environment variable"), "{s}");
+    let c = s35_text();
+    assert!(c.contains("The dependencies of the crates form no cycle ([§3.6](#36-packages), `E0174`)"), "{c}");
+    let rows = table_rows(&s35());
+    let row = rows.iter().find(|r| r[0].starts_with("[§3.6]")).expect("§3.5 keyed row for §3.6");
+    assert!(row[1].contains("`E0174`") && row[2] == "package", "{row:?}");
+}
+
+#[test]
+fn s36_states_the_lockfile_rule() {
+    // PKG-02 AC 8.
+    let s = s36_text();
+    assert!(s.contains("The **lockfile** is `Piperine.lock` beside the root package's manifest"), "{s}");
+    assert!(s.contains("the recorded commit **MUST** be used"), "{s}");
+    assert!(s.contains("An explicit update resolves again"), "{s}");
+    assert!(s.contains("A lockfile inside a dependency is not read"), "{s}");
+    assert!(s.contains("`version = 1`"), "{s}");
+    for key in ["`name`", "`version`", "`source`", "`commit`"] {
+        assert!(s.contains(key), "{key}");
+    }
+    assert!(s.contains("`git+<url>`") && s.contains("`?branch=<b>`") && s.contains("`?tag=<t>`") && s.contains("`?rev=<r>`"), "{s}");
+    assert!(s.contains("40 hexadecimal digits"), "{s}");
+}
+
+#[test]
+fn s36_defines_the_package_codes() {
+    // PKG-02 AC 9: E0170 to E0176, each defined once, in phase `package`, none in `parse`.
+    let rows = table_rows(&s36());
+    let defs = defining_rows();
+    for n in 170..=176 {
+        let code = format!("`E0{n}`");
+        let row = rows.iter().find(|r| r[0] == code).unwrap_or_else(|| panic!("§3.6 does not define {code}"));
+        assert_eq!(row[2], "package", "{row:?}");
+        assert_eq!(defs[&format!("E0{n}")], ["part_i_values.md"], "{code} is defined once");
+    }
+    let table: Vec<_> = rows.iter().filter(|r| r.len() == 3 && r[0].starts_with("`E017")).collect();
+    assert_eq!(table.len(), 7);
+    assert!(table.iter().all(|r| r[2] != "parse"));
 }
