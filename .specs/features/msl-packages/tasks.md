@@ -665,12 +665,12 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_dependency_cycle_is_e0174_with_its_chain` passes in `paths.rs` (C94: PKG-11 AC 10)
-- [ ] Test `a_package_that_depends_on_itself_is_e0174` passes in `paths.rs` (C95: PKG-11 AC 11)
-- [ ] Resolution terminates on every cyclic input the tests give (two, three packages, a self-dependency)
-- [ ] The chain reads `a -> b -> c -> a`
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_dependency_cycle_is_e0174_with_its_chain` passes in `paths.rs` (C94: PKG-11 AC 10)
+- [x] Test `a_package_that_depends_on_itself_is_e0174` passes in `paths.rs` (C95: PKG-11 AC 11)
+- [x] Resolution terminates on every cyclic input the tests give (two, three packages, a self-dependency)
+- [x] The chain reads `a -> b -> c -> a`
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

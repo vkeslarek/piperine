@@ -184,3 +184,39 @@ fn an_unsatisfied_requirement_is_e0173() {
     package(&base.join("util"), "util", "1.9.0", &[], "");
     ok(&app);
 }
+
+#[test]
+fn a_dependency_cycle_is_e0174_with_its_chain() {
+    let (_tmp, base) = workspace();
+    let a = package(&base.join("a"), "a", "1.0.0", &["b = { path = \"../b\" }"], "");
+    package(&base.join("b"), "b", "1.0.0", &["c = { path = \"../c\" }"], "");
+    package(&base.join("c"), "c", "1.0.0", &["a = { path = \"../a\" }"], "");
+    let error = only(&a);
+    assert_eq!(error.code(), "E0174");
+    assert_eq!(error.file, base.join("c/Piperine.toml"));
+    assert_eq!(&error.text[error.diagnostic.span().range()], "a");
+    assert!(error.diagnostic.message.contains("a -> b -> c -> a"), "{}", error.diagnostic.message);
+    // Two packages.
+    let x = package(&base.join("x"), "x", "1.0.0", &["y = { path = \"../y\" }"], "");
+    package(&base.join("y"), "y", "1.0.0", &["x = { path = \"../x\" }"], "");
+    let error = only(&x);
+    assert_eq!(error.code(), "E0174");
+    assert!(error.diagnostic.message.contains("x -> y -> x"), "{}", error.diagnostic.message);
+    // A cycle that does not pass through the root names only the cycle.
+    let r = package(&base.join("r"), "r", "1.0.0", &["p = { path = \"../p\" }"], "");
+    package(&base.join("p"), "p", "1.0.0", &["q = { path = \"../q\" }"], "");
+    package(&base.join("q"), "q", "1.0.0", &["p = { path = \"../p\" }"], "");
+    let error = only(&r);
+    assert_eq!(error.code(), "E0174");
+    assert!(error.diagnostic.message.contains("p -> q -> p") && !error.diagnostic.message.contains("r ->"), "{}", error.diagnostic.message);
+}
+
+#[test]
+fn a_package_that_depends_on_itself_is_e0174() {
+    let (_tmp, base) = workspace();
+    let me = package(&base.join("me"), "me", "1.0.0", &["me = { path = \".\" }"], "");
+    let error = only(&me);
+    assert_eq!(error.code(), "E0174");
+    assert_eq!(&error.text[error.diagnostic.span().range()], "me");
+    assert!(error.diagnostic.message.contains("me -> me"), "{}", error.diagnostic.message);
+}

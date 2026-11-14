@@ -131,6 +131,12 @@ impl Walk {
                 return Err(vec![fault(dir, dependency.name_span, "E0173", message, "the version does not satisfy the requirement", None)]);
             }
         }
+        if let Some(at) = self.stack.iter().position(|(on_stack, _)| *on_stack == identity) {
+            let mut chain: Vec<&str> = self.stack[at..].iter().map(|(_, name)| name.as_str()).collect();
+            chain.push(&self.stack[at].1);
+            let message = format!("the dependencies form a cycle: {}", chain.join(" -> "));
+            return Err(vec![fault(dir, dependency.name_span, "E0174", message, "closes the cycle", None)]);
+        }
         if !crate_root(&target).is_file() {
             let message = format!("the package `{}` has no crate root `{}`", manifest.package.name, crate_root(&target).display());
             return Err(vec![fault(dir, dependency.name_span, "E0175", message, "this package has no `src/lib.msl`", None)]);
