@@ -238,7 +238,7 @@ pub fn parse_type(src: &str) -> Parsed<Type> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(ty::build(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
+    finish(crate::stack::deep(|| ty::build(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one pattern.
@@ -246,7 +246,7 @@ pub fn parse_pat(src: &str) -> Parsed<Pat> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(h.pat.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
+    finish(crate::stack::deep(|| h.pat.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as generic parameters (`<T: Repr = bool, const N: u32>`).
@@ -254,7 +254,7 @@ pub fn parse_generics(src: &str) -> Parsed<Generics> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(ty::generics(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
+    finish(crate::stack::deep(|| ty::generics(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one expression.
@@ -262,7 +262,7 @@ pub fn parse_expr(src: &str) -> Parsed<Expr> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(h.expr.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
+    finish(crate::stack::deep(|| h.expr.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one item of a module body.
@@ -270,7 +270,7 @@ pub fn parse_module_item(src: &str) -> Parsed<ModuleItem> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(msl::module_item(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
+    finish(crate::stack::deep(|| msl::module_item(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one braced block `{ stmt* }`.
@@ -278,7 +278,7 @@ pub fn parse_block(src: &str) -> Parsed<Block> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(h.block.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
+    finish(crate::stack::deep(|| h.block.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// The deepest nesting the parser descends into (E0910).
@@ -569,6 +569,33 @@ fn drop_dangling_docs(tokens: Vec<(Token, Span)>, diags: &mut Vec<Diagnostic>) -
     out
 }
 
+/// For each `<` token, whether a `>` of the same delimiter level and statement
+/// closes it: only then can it open a generic argument list. A `<` that no `>`
+/// closes is a comparison, so a list of comparisons never accumulates levels.
+fn angle_pairs(tokens: &[(Token, Span)]) -> Vec<bool> {
+    let mut paired = vec![false; tokens.len()];
+    let mut open: Vec<Vec<usize>> = vec![Vec::new()];
+    for (i, (t, _)) in tokens.iter().enumerate() {
+        match t {
+            t if is_open(t) => open.push(Vec::new()),
+            t if is_close(t) => {
+                if open.len() > 1 {
+                    open.pop();
+                }
+            }
+            Token::Punct(Punct::Semi) => open.last_mut().expect("the outermost level").clear(),
+            Token::Punct(Punct::Lt) => open.last_mut().expect("the outermost level").push(i),
+            Token::Punct(Punct::Gt) => {
+                if let Some(lt) = open.last_mut().expect("the outermost level").pop() {
+                    paired[lt] = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    paired
+}
+
 /// Lex `src`, then bound the tree: a nesting level is a delimiter, a prefix
 /// form or a type argument list; a chain link is an infix or postfix token
 /// (see [`classify`]), counted since the last `;`, `,` or end of a statement.
@@ -584,6 +611,7 @@ fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
     if !diags.iter().any(|d| d.message.starts_with("unterminated")) {
         diags.extend(unclosed_delimiters(&tokens, src.len()));
     }
+    let closes_a_list = angle_pairs(&tokens);
     let mut out = Vec::with_capacity(tokens.len());
     let mut depth = Depth::new();
     let mut i = 0;
@@ -630,8 +658,9 @@ fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
             depth.top().eq_seen = true;
         } else if matches!(tok, Token::Punct(Punct::Gt)) && depth.close_angle() {
         } else if matches!(tok, Token::Punct(Punct::Lt)) {
-            let type_args = !prev.is_some_and(ends_operand)
-                || matches!(prev, Some(Token::Ident(_) | Token::RawIdent(_) | Token::Kw(Kw::SelfUpper)));
+            let type_args = closes_a_list[i]
+                && (!prev.is_some_and(ends_operand)
+                    || matches!(prev, Some(Token::Ident(_) | Token::RawIdent(_) | Token::Kw(Kw::SelfUpper))));
             if type_args {
                 if depth.nest + 1 > MAX_DEPTH {
                     i = cut(&mut depth, &mut diags, true);
@@ -718,7 +747,7 @@ pub fn parse(src: &str) -> ParseResult {
         .then(first_of(vec![h.item.clone().boxed(), stray.boxed()]).repeated().collect::<Vec<_>>())
         .then_ignore(end())
         .map_with(|(inner_docs, items), e| File { inner_docs, items, span: Loc(e.span()) });
-    let (file, mut diagnostics) = finish(file.parse(input).into_output_errors(), diags, &tokens);
+    let (file, mut diagnostics) = finish(crate::stack::deep(|| file.parse(input).into_output_errors()), diags, &tokens);
     let file = file.unwrap_or(File {
         inner_docs: Vec::new(),
         items: Vec::new(),

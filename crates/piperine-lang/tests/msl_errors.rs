@@ -1126,3 +1126,50 @@ fn a_bad_port_keeps_the_module() {
     let ItemKind::Module(m) = &r.file.items[0].kind else { panic!() };
     assert_eq!(m.ports.iter().map(|p| p.name.name.as_str()).collect::<Vec<_>>(), ["a", "c"]);
 }
+
+#[test]
+fn comparison_lists_are_not_nesting() {
+    // POL-15 / D8: a `<` only counts as nesting when a `>` closes it as a
+    // generic list; N comma-separated comparisons never do.
+    let n = 1000;
+    let cmp = |sep: &str| vec!["a < b"; n].join(sep);
+    let sources = [
+        format!("fn f() {{ let v = [{}]; }}", cmp(", ")),
+        format!("fn f() {{ g({}); }}", cmp(", ")),
+        format!("fn f() {{ let t = ({}); }}", cmp(", ")),
+        format!("fn f() {{ let s = S {{ {} }}; }}", (0..n).map(|i| format!("a{i}: x < 1")).collect::<Vec<_>>().join(", ")),
+        format!("fn f() {{ match x {{ {} }} }}", (0..n).map(|i| format!("{i} => a < b,")).collect::<String>()),
+        format!("module M() {{ let v = [{}]; }}", cmp(", ")),
+        format!("fn f() {{ let v = [{}]; }}", vec!["a < b, c > d"; n].join(", ")),
+    ];
+    for src in &sources {
+        let r = parse(src);
+        assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics.iter().take(2).collect::<Vec<_>>());
+    }
+    // Real generic nesting is still bounded.
+    let deep = format!("fn f() -> {}u8{} {{ 1 }}", "Option<".repeat(300), ">".repeat(300));
+    assert!(parse(&deep).diagnostics.iter().any(|d| d.code == "E0910"));
+}
+
+#[test]
+fn flat_chains_survive_a_default_2_mib_thread() {
+    // POL-15 AC 2: the bound must hold on spawned threads, not only an 8 MiB
+    // main stack: parse, build and print of a 4096-term sum.
+    let handle = std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(|| {
+            for kind in FLAT {
+                let src = flat_source(kind, 4096);
+                let r = parse(&src);
+                assert!(r.diagnostics.is_empty(), "{kind}: {:?}", r.diagnostics.iter().take(2).collect::<Vec<_>>());
+                let printed = piperine_lang::msl::print(&r.file);
+                assert!(printed.len() > 4096, "{kind}");
+                let design = piperine_lang::pom::Design::builder().source("f.msl", src.as_str()).build();
+                for file in design.files() {
+                    let _ = file.to_ast();
+                }
+            }
+        })
+        .expect("spawn the 2 MiB test thread");
+    handle.join().expect("no stack overflow, no panic");
+}

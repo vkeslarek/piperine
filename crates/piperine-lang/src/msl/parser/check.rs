@@ -340,6 +340,10 @@ fn stmt(s: &Stmt, ctx: Ctx, out: &mut Vec<Diagnostic>) {
 }
 
 fn expr(e: &Expr, ctx: Ctx, out: &mut Vec<Diagnostic>) {
+    crate::stack::deep(|| expr_inner(e, ctx, out))
+}
+
+fn expr_inner(e: &Expr, ctx: Ctx, out: &mut Vec<Diagnostic>) {
     let mut sub = |x: &Expr| expr(x, ctx, out);
     match &e.kind {
         ExprKind::Lit(_) | ExprKind::Path(_) | ExprKind::Continue | ExprKind::Error | ExprKind::IncludeStr(_) => {}
