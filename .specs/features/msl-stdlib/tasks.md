@@ -304,17 +304,17 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `every_part_vii_fence_is_in_its_file` passes in `std_excerpts.rs` (C66: STD-11 AC 1)
-- [ ] Test `a_missing_fence_is_named` passes in `std_excerpts.rs` (C69: STD-11 AC 4)
-- [ ] Test `a_fence_one_character_off_is_not_found` passes in `std_excerpts.rs` (C70: STD-11 AC 5)
-- [ ] Test `every_std_item_is_in_a_fence` passes in `std_excerpts.rs` (C71: STD-12 AC 1)
-- [ ] Test `every_std_behavior_block_is_in_a_fence` passes in `std_excerpts.rs` (C72: STD-12 AC 2)
-- [ ] Test `a_missing_item_is_named` passes in `std_excerpts.rs` (C74: STD-12 AC 4)
-- [ ] The guards are plain functions returning a list of failures (spec line, first unmatched line; file, line, item); the tests assert the list is empty and the controls assert its content on text written in the test
-- [ ] With the placeholder library both guards pass over zero rows and zero items; no floor is asserted yet (T17)
-- [ ] `spec_text` and `msl_corpus` pass with the same number of tests as before
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `every_part_vii_fence_is_in_its_file` passes in `std_excerpts.rs` (C66: STD-11 AC 1)
+- [x] Test `a_missing_fence_is_named` passes in `std_excerpts.rs` (C69: STD-11 AC 4)
+- [x] Test `a_fence_one_character_off_is_not_found` passes in `std_excerpts.rs` (C70: STD-11 AC 5)
+- [x] Test `every_std_item_is_in_a_fence` passes in `std_excerpts.rs` (C71: STD-12 AC 1)
+- [x] Test `every_std_behavior_block_is_in_a_fence` passes in `std_excerpts.rs` (C72: STD-12 AC 2)
+- [x] Test `a_missing_item_is_named` passes in `std_excerpts.rs` (C74: STD-12 AC 4)
+- [x] The guards are plain functions returning a list of failures (spec line, first unmatched line; file, line, item); the tests assert the list is empty and the controls assert its content on text written in the test
+- [x] With the placeholder library both guards pass over zero rows and zero items; no floor is asserted yet (T17)
+- [x] `spec_text` and `msl_corpus` pass with the same number of tests as before
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

@@ -3,6 +3,8 @@
 
 use std::path::PathBuf;
 
+use piperine_lang::msl::parser::{parse, parse_block, parse_expr};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Class {
     Valid,
@@ -85,4 +87,31 @@ pub fn extract(name: &str, text: &str) -> Vec<Block> {
     }
     assert!(open.is_none(), "{name}: a code fence is never closed");
     blocks
+}
+
+/// Diagnostics of a fragment, or none when some entry accepts it. A fragment
+/// is a piece of a file, so it is tried as a whole file, as the body of a
+/// block (statements), as the body of a module (params, signals, `let`s,
+/// definitions), and as a list of expressions, one per line.
+#[allow(dead_code)] // shared by the targets that classify fences; not every includer does
+pub fn fragment_diagnostics(text: &str) -> Vec<String> {
+    let as_file = parse(text);
+    if as_file.diagnostics.is_empty() {
+        return Vec::new();
+    }
+    if parse_block(&format!("{{\n{text}\n}}")).1.is_empty() {
+        return Vec::new();
+    }
+    if parse(&format!("module Fragment() {{\n{text}\n}}")).diagnostics.is_empty() {
+        return Vec::new();
+    }
+    let lines: Vec<&str> = text
+        .lines()
+        .map(|l| l.split("//").next().unwrap_or("").trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if !lines.is_empty() && lines.iter().all(|l| parse_expr(l).1.is_empty()) {
+        return Vec::new();
+    }
+    as_file.diagnostics.iter().map(|d| format!("{}: {}", d.code, d.message)).collect()
 }
