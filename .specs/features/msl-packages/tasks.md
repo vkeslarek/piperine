@@ -1147,7 +1147,7 @@ Proof: `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 (T1-T5, Sonnet) at 5e0b75f3
 **Walked:** no screen in this feature; the stories' Independent Tests are the checks above
 
 ---
