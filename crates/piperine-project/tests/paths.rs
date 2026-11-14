@@ -174,21 +174,28 @@ fn version_requirements_follow_the_caret_table() {
 fn a_requirement_at_the_integer_limit_does_not_overflow() {
     let max = u64::MAX;
     let v = |major, minor, patch| Version { major, minor, patch };
-    // The caret's upper bound would overflow: no upper bound.
+    // The caret's upper bound would overflow: it is the end of the kept part's range, never dropped.
     let major = Requirement { major: max, minor: None, patch: None };
     assert!(major.admits(v(max, 0, 0)) && major.admits(v(max, max, max)));
     assert!(!major.admits(v(1, 0, 0)));
     let minor = Requirement { major: 0, minor: Some(max), patch: None };
-    assert!(minor.admits(v(0, max, max)) && !minor.admits(v(0, 1, 0)));
+    assert!(minor.admits(v(0, max, 0)) && minor.admits(v(0, max, max)));
+    assert!(!minor.admits(v(0, 1, 0)) && !minor.admits(v(1, 0, 0)) && !minor.admits(v(max, max, max)));
     let patch = Requirement { major: 0, minor: Some(0), patch: Some(max) };
     assert!(patch.admits(v(0, 0, max)) && !patch.admits(v(0, 0, 1)));
+    assert!(!patch.admits(v(0, 1, 0)) && !patch.admits(v(1, 0, 0)) && !patch.admits(v(0, max, max)));
     // Through the manifest reader, the resolver's path.
     for text in ["18446744073709551615", "0.18446744073709551615", "0.0.18446744073709551615"] {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("Piperine.toml"), format!("[package]\nname = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nx = {{ path = \".\", version = \"{text}\" }}\n")).unwrap();
         let requirement = Manifest::load(dir.path()).unwrap().dependencies[0].requirement.expect("a requirement");
-        assert!(requirement.admits(v(max, max, max)), "{text}");
-        assert!(!requirement.admits(v(0, 0, 0)), "{text}");
+        let (inside, outside) = match text.matches('.').count() {
+            0 => (v(max, max, max), v(0, 0, 0)),
+            1 => (v(0, max, max), v(1, 0, 0)),
+            _ => (v(0, 0, max), v(0, 1, 0)),
+        };
+        assert!(requirement.admits(inside), "{text}");
+        assert!(!requirement.admits(outside), "{text}");
     }
 }
 
