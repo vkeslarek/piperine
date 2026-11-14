@@ -1066,3 +1066,69 @@ fn b36_lists_extern_crate() {
     assert!(row[2].contains("[dependencies]"), "{row:?}");
     assert_eq!(rows.iter().filter(|r| r[0].starts_with("`extern`")).count(), 1, "the `extern` blocks row is its own");
 }
+
+// ---- msl-packages: Appendix G, glossary and file map (PKG-02 AC 10 and 11) ----
+
+/// What each package decision cites as its deciding sections: substrings of the `Where` cell.
+const PACKAGE_DECISIONS: [(&str, &[&str]); 6] = [
+    ("P1", &["§3.6 rule 2"]),
+    ("P2", &["§3.5 rules 4, 5, 11"]),
+    ("P3", &["§3.5 rules 3 and 9", "§3.4.2"]),
+    ("P4", &["§3.6 rule 3"]),
+    ("P5", &["§3.6 rules 7, 13, 14"]),
+    ("P6", &["§0.3"]),
+];
+
+#[test]
+fn appendix_g_records_the_package_decisions() {
+    // PKG-02 AC 10: G.0 lists the two exclusions; P1 to P6 are closed rows citing §3.5, §3.6 or §0.3.
+    let g = spec("appendix_g_scope.md");
+    let g0 = table_rows(&section(&g, "## G.0"));
+    let search = g0.iter().find(|r| r[0].contains("source search paths")).expect("G.0 lists source search paths");
+    assert!(search[0].contains("`-I`") && search[1].contains("§3.6 rule 12"), "{search:?}");
+    let registry = g0.iter().find(|r| r[0].contains("a package registry")).expect("G.0 lists a package registry");
+    assert!(registry[1].contains("`path`") && registry[1].contains("`git`") && registry[1].contains("§3.6"), "{registry:?}");
+    let closed = section(&g, "### Closed in this specification");
+    let rows = table_rows(&closed);
+    for (id, cited) in PACKAGE_DECISIONS {
+        let row = rows.iter().find(|r| r[0] == id).unwrap_or_else(|| panic!("no row for {id}"));
+        assert_eq!(row.len(), 4, "{id}: Item, Question, Decision, Where: {row:?}");
+        assert!(!row[1].is_empty() && !row[2].is_empty(), "{id}: {row:?}");
+        for c in cited {
+            assert!(row[3].contains(c), "{id} cites {c}: {}", row[3]);
+        }
+    }
+    assert_eq!(rows.iter().filter(|r| r[0].starts_with('P')).count(), 6);
+    let closing = one_line(&closed);
+    assert!(closing.contains("P1 to P6 number the decisions of the crate and package model"), "{closing}");
+    // G.38 is untouched: the library as a source stays open.
+    assert!(one_line(&section(&g, "### G.38")).contains("**Status: Open.**"));
+}
+
+#[test]
+fn glossary_and_file_map_name_crates_and_packages() {
+    // PKG-02 AC 11: a row for each term, linked to its defining section; `prelude` stays at §3.4.
+    let index = spec("index.md");
+    let rows = table_rows(&section(&index, "### 0.9 "));
+    let expect = [
+        ("crate", "§3.5", "#35-crates"),
+        ("crate root", "§3.5", "#35-crates"),
+        ("dependency name", "§3.5", "#35-crates"),
+        ("dependency", "§3.6", "#36-packages"),
+        ("package", "§3.6", "#36-packages"),
+        ("manifest", "§3.6", "#36-packages"),
+        ("lockfile", "§3.6", "#36-packages"),
+        ("prelude", "§3.4", "#34-files-and-imports"),
+    ];
+    for (term, sec, anchor) in expect {
+        let row = rows
+            .iter()
+            .find(|r| r[0].split(", ").any(|t| t == term))
+            .unwrap_or_else(|| panic!("§0.9 has no row for {term}"));
+        assert!(row[1].contains(sec) && row[1].contains(anchor), "{term}: {row:?}");
+    }
+    let map = table_rows(&section(&index, "### 0.8 "));
+    let part_i = map.iter().find(|r| r[0].contains("part_i_values.md")).expect("Part I row");
+    assert!(part_i[1].contains("crates") && part_i[1].contains("packages"), "{part_i:?}");
+    assert!(part_i[2].contains("§1–3"), "{part_i:?}");
+}

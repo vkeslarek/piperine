@@ -232,12 +232,12 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `appendix_g_records_the_package_decisions` passes in `spec_text.rs` (C20: PKG-02 AC 10)
-- [ ] Test `glossary_and_file_map_name_crates_and_packages` passes in `spec_text.rs` (C21: PKG-02 AC 11)
-- [ ] Each glossary row links to the defining section (§3.5 or §3.6); `prelude` still points at §3.4
-- [ ] G.38 is untouched (the library as a source is `msl-stdlib`)
-- [ ] Gate passes: run spec; `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test pom_docs --test msl_errors`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `appendix_g_records_the_package_decisions` passes in `spec_text.rs` (C20: PKG-02 AC 10)
+- [x] Test `glossary_and_file_map_name_crates_and_packages` passes in `spec_text.rs` (C21: PKG-02 AC 11)
+- [x] Each glossary row links to the defining section (§3.5 or §3.6); `prelude` still points at §3.4
+- [x] G.38 is untouched (the library as a source is `msl-stdlib`)
+- [x] Gate passes: run spec; `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test pom_docs --test msl_errors`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

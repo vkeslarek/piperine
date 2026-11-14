@@ -8,7 +8,8 @@ Error codes of this part: `E01xx`.
 
 **Terms defined here:** value, value type, level, `Repr`, function class, closure, handle,
 known, unknown, known flag, merge, flag-total function, panic, optional parameters, namespace
-module, prelude, crate, crate root, dependency name, package, manifest.
+module, prelude, crate, crate root, dependency name, package, manifest, dependency,
+lockfile.
 
 ## 1. Value types
 
