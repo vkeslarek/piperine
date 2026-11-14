@@ -158,10 +158,35 @@ fn one_repository_spelled_two_ways_is_one_crate() {
     let graph = ok(&app);
     // app, mid and one util.
     assert_eq!(graph.graph.crates().len(), 3, "{:?}", graph.graph.crates().iter().map(|c| &c.name).collect::<Vec<_>>());
-    // Every spelling of the repository is the same lockfile source: no `/`, no `.git`.
+    // Every spelling of the repository is the same lockfile source: no `/`; a local path keeps its `.git`.
     let lock = fs::read_to_string(app.join("Piperine.lock")).unwrap();
     assert_eq!(lock.matches("[[package]]").count(), 1, "{lock}");
-    assert!(lock.contains(&format!("source = \"git+{}\"", plain.trim_end_matches(".git"))), "{lock}");
+    assert!(lock.contains(&format!("source = \"git+{}\"", plain)), "{lock}");
+}
+
+#[test]
+fn local_repositories_util_and_util_dot_git_stay_two_crates() {
+    let (_tmp, base) = workspace();
+    let (plain, _) = util_repo(&base.join("util"), "// plain\n");
+    let (dotgit, _) = util_repo(&base.join("util.git"), "// dotgit\n");
+    let line = |name: &str, repo: &git2::Repository| format!("{name} = {{ git = \"{}\", package = \"util\" }}", url(repo));
+    let app = package(&base.join("app"), "app", "1.0.0", &[&line("u1", &plain), &line("u2", &dotgit)], "");
+    let graph = ok(&app);
+    assert_eq!(graph.graph.crates().len(), 3, "{:?}", graph.graph.crates().iter().map(|c| &c.name).collect::<Vec<_>>());
+    let texts: Vec<String> = graph.graph.crates()[1..].iter().map(|c| fs::read_to_string(&c.root).unwrap()).collect();
+    assert!(texts.contains(&"// plain\n".to_string()) && texts.contains(&"// dotgit\n".to_string()), "{texts:?}");
+}
+
+#[test]
+fn a_trailing_dot_git_is_stripped_only_from_remote_urls() {
+    use piperine_project::git::normalize_url;
+    for remote in ["https://h.org/a/util", "http://h.org/a/util", "ssh://git@h.org/a/util", "git://h.org/a/util", "git@h.org:a/util"] {
+        assert_eq!(normalize_url(&format!("{remote}.git")), remote);
+        assert_eq!(normalize_url(&format!("{remote}.git/")), remote);
+    }
+    for local in ["/srv/util.git", "../util.git", "file:///srv/util.git", "util.git"] {
+        assert_eq!(normalize_url(local), local);
+    }
 }
 
 #[test]

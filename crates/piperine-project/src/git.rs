@@ -25,11 +25,28 @@ impl fmt::Display for GitError {
 
 impl std::error::Error for GitError {}
 
-/// A repository URL as identity: without a trailing `/` and a trailing `.git`, so that one
+/// A repository URL as identity: without a trailing `/`, and for a remote URL without a trailing `.git`, so that one
 /// repository spelled two ways is one.
 pub fn normalize_url(url: &str) -> String {
     let url = url.trim_end_matches('/');
+    if !is_remote(url) {
+        return url.to_string();
+    }
     url.strip_suffix(".git").unwrap_or(url).trim_end_matches('/').to_string()
+}
+
+/// A remote URL: scheme `https://`, `http://`, `ssh://`, `git://`, or scp-like `user@host:path`.
+/// Only there does a trailing `.git` name the same repository; a local path (or `file://`) with
+/// and without it are two repositories.
+fn is_remote(url: &str) -> bool {
+    if ["https://", "http://", "ssh://", "git://"].iter().any(|scheme| url.starts_with(scheme)) {
+        return true;
+    }
+    // scp-like: `user@host:path`, with no `/` before the `:` and no scheme.
+    match (url.find('@'), url.find(':'), url.find('/')) {
+        (Some(at), Some(colon), slash) => at > 0 && at < colon && slash.is_none_or(|slash| colon < slash) && !url.contains("://"),
+        _ => false,
+    }
 }
 
 /// The text of a dependency's source: `git+<url>`, then `?branch=<b>`, `?tag=<t>` or `?rev=<r>`
