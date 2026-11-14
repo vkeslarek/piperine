@@ -969,3 +969,36 @@ nature Disc { value: f64 }
         assert_eq!(kind(bad), NatureKind::Invalid, "{bad}");
     }
 }
+
+/// POL-19 AC 1: the first argument of an access call has a declared nature
+/// that declares no access of that name: the callee stays `Unresolved`, the
+/// call is not a `Probe`, and one `E0206` is reported at the callee.
+#[test]
+fn access_of_another_nature_is_e0206() {
+    let src = "\
+nature El { potential: V1 { access: v }, flow: I1 { access: i } }
+nature Th { potential: V2 { access: v }, flow: P2 { access: pwr } }
+module M(a: El, t: Th) {}
+analog for M {
+    let x = i(t);
+    let y = v(t);
+    let z = i(a);
+    let w = pwr(t);
+}
+";
+    let design = build(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    assert_eq!(at, [("E0206", "i")], "{:?}", design.diagnostics());
+    assert_eq!(design.diagnostics()[0].diagnostic.span().range().start, src.find("i(t)").unwrap());
+    let callee_res = |call: &str| -> Resolution {
+        let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == call).unwrap();
+        let ExprKind::Call { callee, class, .. } = e.kind() else { panic!("a call") };
+        let ExprKind::Path(p) = design.expr(*callee).kind() else { panic!("a path callee") };
+        assert_eq!(*class == CallClass::Probe, call != "i(t)", "{call}");
+        design.path(*p).segments()[0].res
+    };
+    assert_eq!(callee_res("i(t)"), Resolution::Unresolved);
+    for call in ["v(t)", "i(a)", "pwr(t)"] {
+        assert!(matches!(callee_res(call), Resolution::Decl(_)), "{call}");
+    }
+}

@@ -1039,11 +1039,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `access_of_another_nature_is_e0206` passes in `pom_classify.rs` (C106: POL-19 AC 1)
-- [ ] `access_alias_resolves_by_first_argument` and `access_name_resolves_to_its_quantity` still pass unchanged
-- [ ] An argument whose nature needs inference still gives `Deferred(AmbiguousAccess)` and no diagnostic
-- [ ] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `access_of_another_nature_is_e0206` passes in `pom_classify.rs` (C106: POL-19 AC 1)
+- [x] `access_alias_resolves_by_first_argument` and `access_name_resolves_to_its_quantity` still pass unchanged
+- [x] An argument whose nature needs inference still gives `Deferred(AmbiguousAccess)` and no diagnostic
+- [x] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

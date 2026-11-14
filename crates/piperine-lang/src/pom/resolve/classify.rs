@@ -458,24 +458,36 @@ fn nature_of_expr(design: &Design, mut expr: ExprId) -> Option<DeclId> {
     }
 }
 
+/// What an access call's callee decided.
+enum Probed {
+    /// A probe: the callee names this.
+    Probe(PathId, Resolution),
+    /// The first argument's declared nature declares no such access: the
+    /// callee stays unresolved and the call is no probe (`E0206`).
+    WrongNature(PathId),
+}
+
 /// A call whose callee is the access name of a quantity, or the built-in
-/// `potential` / `flow`: the callee's resolution, when this call decides it.
-/// A declaration in scope with that name already resolved the path and wins.
-fn probe_callee(design: &Design, callee: ExprId, first: Option<ExprId>, access: &BTreeMap<String, Vec<DeclId>>) -> Option<(PathId, Resolution)> {
+/// `potential` / `flow`: what this call decides about the callee. A
+/// declaration in scope with that name already resolved the path and wins. An
+/// access never falls back to a quantity of another nature.
+fn probe_callee(design: &Design, callee: ExprId, first: Option<ExprId>, access: &BTreeMap<String, Vec<DeclId>>) -> Option<Probed> {
     let ExprKind::Path(path) = &design.expr_node(callee).kind else { return None };
     let node = design.path_node(*path);
     let [segment] = node.segments.as_slice() else { return None };
     match segment.res {
-        Resolution::Builtin(b) if matches!(b.info().name, "potential" | "flow") => Some((*path, segment.res)),
+        Resolution::Builtin(b) if matches!(b.info().name, "potential" | "flow") => Some(Probed::Probe(*path, segment.res)),
         Resolution::Unresolved if segment.args.is_none() => {
             let candidates = access.get(&segment.name.text)?;
             let nature = first.and_then(|e| nature_of_expr(design, e));
             let by_nature = nature.and_then(|n| candidates.iter().copied().find(|q| design.decl_data(*q).parent == Some(n)));
-            let res = match (by_nature, candidates.as_slice()) {
-                (Some(q), _) | (None, &[q]) => Resolution::Decl(q),
+            let res = match (by_nature, nature, candidates.as_slice()) {
+                (Some(q), _, _) => Resolution::Decl(q),
+                (None, Some(_), _) => return Some(Probed::WrongNature(*path)),
+                (None, None, &[q]) => Resolution::Decl(q),
                 _ => Resolution::Deferred(super::super::resolution::DeferReason::AmbiguousAccess),
             };
-            Some((*path, res))
+            Some(Probed::Probe(*path, res))
         }
         _ => None,
     }
@@ -529,10 +541,20 @@ fn call_expressions(design: &Design, templates: &BTreeMap<ExprId, StructClass>, 
         let expr = ExprId(i as u32);
         let node = design.expr_node(expr);
         let ExprKind::Call { callee, args, params, .. } = &node.kind else { continue };
-        if let Some((path, res)) = probe_callee(design, *callee, args.first().map(|a| a.value), access) {
-            out.segments.push((path, 0, res));
-            out.calls.push(CallFacts { expr, class: CallClass::Probe, args: Vec::new(), params: Vec::new() });
-            continue;
+        match probe_callee(design, *callee, args.first().map(|a| a.value), access) {
+            Some(Probed::Probe(path, res)) => {
+                out.segments.push((path, 0, res));
+                out.calls.push(CallFacts { expr, class: CallClass::Probe, args: Vec::new(), params: Vec::new() });
+                continue;
+            }
+            Some(Probed::WrongNature(path)) => {
+                let segment = &design.path_node(path).segments[0];
+                let message = format!("the nature of the first argument declares no access `{}`", segment.name.text);
+                out.diagnostics.push((design.decl_data(node.owner).file, Diagnostic::new("E0206", message, segment.name.span, "not an access of that nature")));
+                out.calls.push(CallFacts { expr, class: CallClass::Function, args: Vec::new(), params: Vec::new() });
+                continue;
+            }
+            None => {}
         }
         let (class, target) = callee_class(design, *callee, templates);
         let from = node.owner;
