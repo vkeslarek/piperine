@@ -176,7 +176,9 @@ rl: f64 = 1T;
 1. A doc comment, like an attribute, attaches to the node that follows it, as in Rust: a module,
    a port, a param, a signal, a `let`, a nature, a type, a function. Beyond these, an attribute may precede
    every statement, a reaction, a definition, a generation `for` or `if`, a nature field, a
-   contribution and a commit; a doc comment is an attribute and goes in the same places.
+   contribution and a commit; a doc comment is an attribute and goes in the same places. Neither goes on a parameter, a generic
+   parameter or a struct-literal field ([B.3.6](appendix_b_grammar.md#b36-removed-from-rusts-grammar)). A doc comment
+   followed by `}`, by `else` or by the end of input documents nothing and is `E0900`.
 2. The text is kept verbatim in the metadata of that node. Of the docs, the doc comments of a quantity and of
    a reaction are metadata ([§21](part_vi_io.md#21-metadata)); those of a statement are kept in
    the tree and have no other effect.

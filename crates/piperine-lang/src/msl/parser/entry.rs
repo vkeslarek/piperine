@@ -537,7 +537,7 @@ fn unclosed_delimiters(tokens: &[(Token, Span)], src_len: usize) -> Vec<Diagnost
     out
 }
 
-/// A run of outer doc comments followed by `}` or the end of input documents
+/// A run of outer doc comments followed by `}`, `else` or the end of input documents
 /// nothing: one `E0900` at the run, and the comments leave the stream so the
 /// parser reports nothing more.
 fn drop_dangling_docs(tokens: Vec<(Token, Span)>, diags: &mut Vec<Diagnostic>) -> Vec<(Token, Span)> {
@@ -554,7 +554,7 @@ fn drop_dangling_docs(tokens: Vec<(Token, Span)>, diags: &mut Vec<Diagnostic>) -
         while end < tokens.len() && is_doc(&tokens[end].0) {
             end += 1;
         }
-        let dangling = tokens.get(end).is_none_or(|(t, _)| matches!(t, Token::Punct(Punct::RBrace)));
+        let dangling = tokens.get(end).is_none_or(|(t, _)| matches!(t, Token::Punct(Punct::RBrace) | Token::Kw(Kw::Else)));
         if dangling {
             let span = Span::new(tokens[i].1.start, tokens[end - 1].1.end);
             diags.push(
@@ -772,6 +772,12 @@ fn unused_keyword(k: Kw) -> bool {
     )
 }
 
+/// The seven keywords the language adds, the only words with a raw identifier (A.1 rule 6).
+fn added_keyword(k: Kw) -> bool {
+    use Kw::*;
+    matches!(k, Module | Nature | Signal | On | Out | Flip | After)
+}
+
 /// A keyword or `Unknown` found where a name was expected.
 fn names_expected(e: &Err<'_>, found: &Token) -> bool {
     matches!(found, Token::Kw(_) | Token::Unknown)
@@ -794,12 +800,18 @@ fn name_error(found: &Token, span: Span) -> Diagnostic {
             "a syntactic form left out of the language",
         )
         .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out"),
-        other => Diagnostic::new(
-            "E0903",
-            format!("{other} is a reserved keyword and cannot be used as an identifier"),
-            span,
-            "reserved keyword",
-        )
-        .with_help("choose another name; raw identifiers (`r#name`) are not supported"),
+        other => {
+            let help = match other {
+                Token::Kw(k) if added_keyword(*k) => format!("choose another name, or write the keyword as a raw identifier: `r#{}`", other.to_string().trim_matches('`')),
+                _ => "choose another name".to_string(),
+            };
+            Diagnostic::new(
+                "E0903",
+                format!("{other} is a reserved keyword and cannot be used as an identifier"),
+                span,
+                "reserved keyword",
+            )
+            .with_help(help)
+        }
     }
 }

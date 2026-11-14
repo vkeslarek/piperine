@@ -299,6 +299,7 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
     let starts_behavior = first_of(vec![
         any().filter(|t: &Token| matches!(t, Token::Kw(Kw::On))).rewind().ignored().boxed(),
         statement_with_arrow().boxed(),
+        select! { Token::Ident(s) if s == "bound_step" => () }.then(punct(Punct::LParen)).rewind().ignored().boxed(),
     ]);
     let stray = starts_behavior
         .ignore_then(expr::stmt(h))
@@ -306,14 +307,15 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
             let what = match &s.kind {
                 StmtKind::Commit { .. } => "a commit (`<-`)",
                 StmtKind::Contribution { .. } => "a contribution (`+>`)",
-                _ => "`on`",
+                StmtKind::Reaction(_) => "`on`",
+                _ => "`bound_step`",
             };
             let d = check::misplaced(
                 check::Ctx::Module,
                 what,
                 s.span.0,
                 "",
-                "a commit belongs in a reaction (`on event { .. }`) of a `digital` block, a contribution in an `analog` block; a module body holds declarations and definitions",
+                "a commit belongs in a reaction (`on event { .. }`) of a `digital` block, a contribution or a `bound_step` call in an `analog` block; a module body holds declarations and definitions",
             );
             emitter.emit(Rich::custom(
                 s.span.0,

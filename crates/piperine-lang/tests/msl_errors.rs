@@ -758,8 +758,8 @@ fn faults(src: &str) -> Vec<(String, String, String)> {
 
 #[test]
 fn commit_target_must_be_a_place() {
-    // POL-14 AC 1: six non-places give one E0900 over the left side; four places are clean.
-    for lhs in ["-q", "a + b", "f(q)", "q.x()", "*q", "q as u8"] {
+    // POL-14 AC 1: eight non-places (a tuple index is none: B.3.2 `place` has `.IDENT` only) give one E0900 over the left side; four places are clean.
+    for lhs in ["-q", "a + b", "f(q)", "q.x()", "*q", "q as u8", "q.0", "a.b.1"] {
         let src = format!("digital for M {{ on e {{ {lhs} <- 1; }} }}");
         let found = faults(&src);
         assert_eq!(found.len(), 1, "{lhs}: {found:?}");
@@ -795,6 +795,8 @@ fn parenthesized_place_is_rejected_in_both_forms() {
         assert!(found[0].2.starts_with("expected a place"), "{}", found[0].2);
     }
     assert!(faults("module M() { q.f[1] = 1; }").is_empty());
+    // The definition rejects a tuple index too, so both forms agree.
+    assert_eq!(faults("module M() { q.0 = 1; }").len(), 1);
 }
 
 /// Exactly one diagnostic: its code, the text its span covers, whether it has a help.
@@ -820,7 +822,7 @@ fn signal_outside_a_module_body_is_e0404() {
 #[test]
 fn behavior_statements_in_a_module_body_are_e0404() {
     // POL-14 AC 4: one diagnostic each, over the statement, with a help.
-    for stmt in ["q <- 1;", "i(a) +> 1.0;", "on e { }"] {
+    for stmt in ["q <- 1;", "i(a) +> 1.0;", "on e { }", "bound_step(1.0);", "q.0 <- 1;"] {
         let src = format!("module M() {{ {stmt} }}");
         assert_eq!(only(&src), ("E0404".into(), stmt.into(), true), "{src}");
     }
@@ -1191,4 +1193,28 @@ fn flat_chains_survive_a_default_2_mib_thread() {
         })
         .expect("spawn the 2 MiB test thread");
     handle.join().expect("no stack overflow, no panic");
+}
+
+#[test]
+fn reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing() {
+    // D15: an added keyword used as a name is told to write `r#word`; another
+    // reserved word is not told raw identifiers are unsupported (A.1 rule 6).
+    let help = |src: &str| {
+        let r = parse(src);
+        assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
+        assert_eq!(r.diagnostics[0].code, "E0903", "{src}");
+        r.diagnostics[0].help.clone().unwrap_or_default()
+    };
+    let out = help("fn f() { let out = 1; }");
+    assert!(out.contains("r#out"), "{out}");
+    let yielded = help("fn f() { let yield = 1; }");
+    assert!(!yielded.contains("not supported"), "{yielded}");
+    assert!(yielded.contains("choose another name"), "{yielded}");
+    // A doc comment before `else` documents nothing: one E0900, no keyword fault.
+    let src = "fn f() { if a { } /// x\nelse { } }";
+    let r = parse(src);
+    assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
+    assert_eq!(r.diagnostics[0].code, "E0900");
+    assert!(r.diagnostics[0].message.contains("documents nothing"), "{}", r.diagnostics[0].message);
+    assert_eq!(&src[r.diagnostics[0].span().start..r.diagnostics[0].span().end], "/// x");
 }

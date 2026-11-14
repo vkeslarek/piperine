@@ -101,7 +101,9 @@ pub(crate) fn visibility<'a, I: In<'a>>() -> impl Parser<'a, I, Span, Extra<'a>>
 pub(crate) fn is_place(e: &Expr) -> bool {
     match &e.kind {
         ExprKind::Path(_) => true,
-        ExprKind::Index { expr, .. } | ExprKind::Field { expr, .. } => is_place(expr),
+        ExprKind::Index { expr, .. } => is_place(expr),
+        // `.IDENT` only: a tuple index (`q.0`) names no carrier member.
+        ExprKind::Field { expr, name } => !name.name.starts_with(|c: char| c.is_ascii_digit()) && is_place(expr),
         _ => false,
     }
 }
