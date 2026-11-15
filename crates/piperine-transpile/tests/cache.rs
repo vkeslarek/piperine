@@ -1,12 +1,21 @@
 //! The cache (feature `ir-rust`, RS-04 AC 1 to 5 and 8, RS-Q3; checks C18, C19, C22): racing
-//! builds of one key leave one complete entry and no staging; a directory that cannot be used is
-//! named; the key changes with any part; a new cache directory is private. Entries here hold
-//! stand-in files, no compiler runs.
+//! builds of one key leave one complete entry and no staging, through `Cache::build` and through
+//! `Transpiler::compile` itself; a directory that cannot be used is named; the key changes with
+//! any part; a new cache directory is private. Entries here hold stand-in files and no compiler
+//! runs, except in the race of `Transpiler::compile`, which builds the resistor with `rustc`.
 
 use std::path::Path;
 use std::sync::{Arc, Barrier};
+use std::time::Duration;
 
-use piperine_transpile::{Cache, Entry, Error, Key};
+use piperine_ir::IrBuilder;
+use piperine_transpile::{Cache, Entry, Error, Key, Settings, Transpiler};
+
+#[allow(dead_code)]
+#[path = "../../piperine-ir/tests/support/devices.rs"]
+mod devices;
+
+use devices::Devices;
 
 /// Fills a staging directory the way a build does, with `tag` as the library's bytes.
 fn fill(staging: &Path, tag: &str) -> Result<(), Error> {
@@ -61,6 +70,33 @@ fn two_racing_builds_leave_one_entry_and_no_staging() {
     assert_eq!(manifest.rustc, "rustc 1.98.0");
     assert!(String::from_utf8(library).unwrap().starts_with("library built by thread"));
     assert_eq!(manifest.library_sha256, piperine_transpile::Manifest::hash(&std::fs::read(entry.library()).unwrap()));
+
+    // verification F5: the same race through `Transpiler::compile`, eight builds of one design on
+    // one empty cache, their starts spread over the build so lookups fall before, during and after
+    // another's rename; a build that finds no entry removes nothing, so each one completes and
+    // loads, and one complete entry stays
+    let root = tempfile::tempdir().unwrap();
+    let settings = Settings { rustc: None, cache: root.path().to_path_buf() };
+    let mut b = IrBuilder::new();
+    let body = Devices::resistor(&mut b);
+    let top = Devices::alone(&mut b, body, "R", 1, vec![1000.0]);
+    let transpiler = Arc::new(Transpiler::new(Arc::new(b.finish(top))).unwrap_or_else(|e| panic!("{e}")));
+    let handles: Vec<_> = (0..8u64)
+        .map(|i| {
+            let (transpiler, settings) = (transpiler.clone(), settings.clone());
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(150 * i));
+                transpiler.compile(&settings).map(|compiled| compiled.report().cache_hit)
+            })
+        })
+        .collect();
+    for (i, h) in handles.into_iter().enumerate() {
+        h.join().unwrap().unwrap_or_else(|e| panic!("compile {i} of 8 completes and loads: {e}"));
+    }
+    let rust = Cache::at(root.path()).unwrap();
+    let left: Vec<String> = names(rust.rust_dir()).into_iter().filter(|n| !n.starts_with("abi-")).collect();
+    assert_eq!(left.len(), 1, "one design entry, no staging directory: {left:?}");
+    assert!(names(rust.rust_dir()).iter().all(|n| !n.starts_with('.')), "no staging directory left");
 }
 
 // RS-04 AC 8: a directory that cannot be created or written fails with an error naming it.

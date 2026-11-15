@@ -44,11 +44,15 @@ impl Transpiler {
         let key = Key::of(&parts);
         let abi_key = Key::of(&parts[2..]);
 
+        // RS-04 AC 5: an entry that is incomplete or fails to open is not what it recorded; it
+        // is removed and rebuilt. Only what was there at this look is removed: an entry is placed
+        // complete in one rename, so a build that found nothing must not delete the entry a
+        // concurrent build of the same design has placed since (RS-04 AC 4).
+        let present = cache.rust_dir().join(key.as_str()).exists();
         let hit = cache.entry(&key).and_then(|entry| {
             let at = Instant::now();
             let opened = Loaded::open(&entry);
             report.load += at.elapsed();
-            // RS-04 AC 5: an entry that fails to open is not what it recorded; it is rebuilt.
             opened.ok().map(|loaded| (entry, loaded))
         });
         let (entry, loaded) = match hit {
@@ -57,7 +61,9 @@ impl Transpiler {
                 found
             }
             None => {
-                cache.remove(&key)?;
+                if present {
+                    cache.remove(&key)?;
+                }
                 self.build_and_open(&cache, &key, &abi_key, &rustc, &source, &mut report)?
             }
         };

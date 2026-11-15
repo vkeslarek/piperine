@@ -552,6 +552,7 @@ T42 → T43 → T44 → T45 → T46
 
 - [x] The divider's `Dc` gives `mid` = half of `vin` to 1e-12 relative, as `ir-interp`'s circuit test does
 - [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test compiled`: `modules_come_through_the_symbol_and_bind_like_the_interpreter`, `loaded_shapes_equal_the_plans_entry_by_entry`, `a_shape_that_differs_from_its_plan_is_refused`, `the_compiled_divider_solves`
+- [x] Verification F5 (T16, C19): `Transpiler::compile` removes a cache entry only when something stood at the key's path when it looked (an incomplete entry or one that fails to open), never on a plain miss; `two_racing_builds_leave_one_entry_and_no_staging` also races eight `Transpiler::compile` calls of the resistor, starts spread over the build
 - [x] Verification F1 (C105): `a_panic_in_compiled_code_is_a_fault_and_the_instance_survives` passes in the same target; a `rustc` wrapper injects a conditional `panic!` into the resistor's `terms`, the call faults with the message and the next call on the instance returns its value
 - [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 - [x] Test count: the 4 test(s) named above, and no existing test removed or edited
@@ -1297,7 +1298,7 @@ Proof: run compile | test a_changed_ir_is_another_entry ... ok
 **C18** - A different `rustc -vV` gives another entry. (RS-04, AC 3; T16)
 Proof: run compile | test another_compiler_version_is_another_entry ... ok
 
-**C19** - Eight builds racing on an empty cache all complete and leave one complete entry. (RS-04, AC 4; T14)
+**C19** - Eight builds racing on an empty cache all complete and leave one complete entry, through `Cache::build` and through `Transpiler::compile` (verification F5). (RS-04, AC 4; T14)
 Proof: run cache | test two_racing_builds_leave_one_entry_and_no_staging ... ok
 
 **C20** - A cached library whose bytes changed is not loaded. (RS-04, AC 5; T15)
