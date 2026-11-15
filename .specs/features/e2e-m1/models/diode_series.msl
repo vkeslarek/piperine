@@ -1,0 +1,13 @@
+//! Twin of `tests/ngspice/diode_series.cir`: operating point of two series diodes.
+mod devices;
+use devices::*;
+
+module DiodeSeries() {
+    signal vin: Electrical;
+    signal a: Electrical;
+    signal b: Electrical;
+    let v1 = Vsource { dc: 5.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, a);
+    let d1 = Diode { is: 1e-14, n: 1.0 }(a, b);
+    let d2 = Diode { is: 1e-14, n: 1.0 }(b, gnd);
+}

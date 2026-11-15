@@ -1,0 +1,12 @@
+//! Twin of `tests/ngspice/tran_rc.cir`: RC charging curve. ngspice starts the capacitor
+//! discharged with `uic`; MSL has no `uic` (§16 H6), so `out` is a held node (§16 H1).
+mod devices;
+use devices::*;
+
+module TranRc() {
+    signal vin: Electrical;
+    signal r#out: Electrical = 0.0;
+    let v1 = Vsource { dc: 1.0 }(vin, gnd);
+    let r1 = Resistor { r: 1000.0 }(vin, r#out);
+    let c1 = Capacitor { c: 1.5915494309189535e-9 }(r#out, gnd);
+}

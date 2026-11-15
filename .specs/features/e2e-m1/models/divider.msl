@@ -1,0 +1,11 @@
+//! Twin of `tests/ngspice/divider.cir`: operating point of a resistive divider.
+mod devices;
+use devices::*;
+
+module Divider() {
+    signal vin: Electrical;
+    signal mid: Electrical;
+    let v1 = Vsource { dc: 10.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, mid);
+    let r2 = Resistor { r: 3k }(mid, gnd);
+}

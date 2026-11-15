@@ -1,0 +1,11 @@
+//! Twin of `tests/ngspice/ac_rc.cir`: RC low-pass, corner at exactly 100 kHz.
+mod devices;
+use devices::*;
+
+module AcRc() {
+    signal vin: Electrical;
+    signal r#out: Electrical;
+    let v1 = Vsource { dc: 0.0, ac: 1.0 }(vin, gnd);
+    let r1 = Resistor { r: 1000.0 }(vin, r#out);
+    let c1 = Capacitor { c: 1.5915494309189535e-9 }(r#out, gnd);
+}

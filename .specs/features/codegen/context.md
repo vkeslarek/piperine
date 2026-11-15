@@ -56,3 +56,41 @@ These spec edits land in their own small feature (`spec-abi-amendments`), not ye
 ## Lesson from solver-abi-integration T5 (2026-11-15)
 
 The analog assembly builds a term's RHS as `-(v - Σ g·x)` from the partials. A device whose value is not the same floating-point expression as `Σ g·x` (e.g. a resistor writing `(vp-vn)/r` instead of `g·vp - g·vn`) leaves a last-bit RHS residue every solve; the step controller amplified it to 1e-12 relative drift after a zero crossing. Open item for msl-ir / ir-interp / ir-rust: for terms linear in their reads, emit the value as the exact `Σ partial·read` products the assembly uses (or have the assembly treat declared-linear terms as RHS-free), so generated devices match the hand-written ones bit for bit and ngspice parity holds.
+
+## The first end-to-end slice (user, 2026-11-15)
+
+The orchestrator proposed a vertical slice from MSL to the solver instead of finishing each stage in full, with the recommendations below. The user's answer, verbatim: "Concordo e pode disparar". The rows are decided by that answer.
+
+| # | Decision | Closes |
+| - | -------- | ------ |
+| S1 | **M1, analog parity.** Devices: resistor, capacitor, voltage and current sources, diode with `limit` and `pnjlim`. Analyses: OP, DC, AC, transient. Fixtures: `divider`, `diode_iv`, `diode_series`, `ac_rc`, and an RC transient. The path is `.msl` → parse and POM → type check (subset) → IR → elaboration → interpreter (one generic `Device` over the IR, through the ABI) → solver, and the result is compared with the `.cir` twin run by ngspice. | O6, ELAB-Q5 |
+| S2 | **M2** is digital and mixed-signal: the galleries of Appendices E and F and the conformance set of Appendix C.2.3. | ELAB-Q5 |
+| S3 | **M3** is `ir-rust`: the transpiler, with the interpreter as its oracle. | O6 |
+| S4 | Jacobians come from forward-mode dual numbers, in the interpreter and later in generated Rust. No symbolic differentiation pass exists on the IR. | O1, IR-Q2, INT-Q1, RS-Q5 |
+| S5 | Type checking is its own feature, `msl-typeck`, scoped to the M1 subset. | ELAB-Q1 |
+| S6 | The IR holds one body per monomorphized module and a flat instance table. | O3, IR-Q3, ELAB-Q2 |
+| S7 | Elaboration produces one body per distinct variant and keeps functions as functions. Nothing is inlined in full. | ELAB-Q3 |
+| S8 | Two backends are compared bit for bit on the discrete side and within the session tolerances on the analog side. | INT-Q3 |
+| S9 | Parity is its own small feature, `msl-parity`: a `.msl` file and its `.cir` twin, one `ToleranceContract` per domain as the only place a numeric tolerance is written, one test per fixture. | - |
+| S10 | Model roles for the implementation: Sonnet implements and Opus verifies; Opus implements directly when the work is delicate and not large; Fable plans. | amends C10 for this slice |
+
+The five features of M1 (`msl-typeck`, `msl-ir`, `msl-elab`, `ir-interp`, `msl-parity`) are specified and designed in one pass. Their map is `.specs/features/e2e-m1/overview.md`; what is still the user's to decide is `.specs/features/e2e-m1/questions.md`. None of the five specs is approved yet.
+
+## Closed by the M1 design pass (2026-11-15)
+
+Closed from code and spec evidence, not by a user answer. Each is argued in the design named.
+
+| Open item | Closed as | Where |
+| --------- | --------- | ----- |
+| O2, IR-Q1 (node set) | value nodes mirror the POM's expression forms; the analog forms are dedicated nodes: probe, environment read, `limit` site, `ac_stim` site, and a contribution split into addends, each direct or under `ddt` | `msl-ir/design.md` |
+| IR-Q5 (POM properties) | all four: immutable after build, `Send + Sync`, deterministic ids, `check()` | `msl-ir/design.md` |
+| IR-Q7 (`docs/ir/`) | not in M1; rustdoc only until the node set covers the digital side | `msl-ir/spec.md` |
+| ELAB-Q4 (lowered forms) | follows the node set above | `msl-elab/design.md` |
+| ELAB-Q6 (`extern` modules) | rejected with a diagnostic | `msl-elab/spec.md` |
+| ELAB-Q7 (crate) | `piperine_lang::elab`; `piperine-lang` depends on the IR crate | `msl-elab/design.md` |
+| INT-Q2 (debug mode) | not in M1: the printed IR and the solver's trace flags are the debug surface | `ir-interp/spec.md` |
+| INT-Q4 (default backend) | not applicable while one backend exists | `ir-interp/spec.md` |
+| INT-Q5 (ABI fit) | one generic device; the shape is derived from the body, see the mapping table | `ir-interp/design.md` |
+| INT-Q6 (crate) | `piperine-interp`, depending on the IR crate, `piperine-abi` and `piperine-solver` | `ir-interp/design.md` |
+| INT-Q7 (wide numerics) | not in M1: the subset has `f64` and `bool` only | `msl-typeck/spec.md` |
+| The linear-term lesson of `solver-abi-integration` T5 | a term affine in its continuous reads is written as `c + Σ partial·read`, the products the assembly subtracts | `ir-interp/design.md` |

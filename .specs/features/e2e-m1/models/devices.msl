@@ -1,0 +1,42 @@
+//! The M1 device library: the models the five parity twins place. Everything not declared here
+//! comes from `std`: `Electrical` (§4), `vt`, `pnjlim` (§22.2), `K_B`, `Q` (§1 rule 3).
+
+/// Ideal resistor (§8, without the temperature coefficient).
+pub module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// Ideal capacitor (§11).
+pub module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c >= 0.0;
+}
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+/// Independent voltage source: a DC value scaled by source stepping, plus a small-signal stimulus.
+pub module Vsource(p: Electrical, n: Electrical) {
+    dc: f64 = 0.0;
+    ac: f64 = 0.0;
+}
+analog for Vsource { v(p, n) +> dc * source_scale() + ac_stim(ac); }
+
+/// Independent current source, flowing from `p` to `n` through the source.
+pub module Isource(p: Electrical, n: Electrical) {
+    dc: f64 = 0.0;
+    ac: f64 = 0.0;
+}
+analog for Isource { i(p, n) +> dc * source_scale() + ac_stim(ac); }
+
+/// Junction diode (§18, without series resistance and noise), with the junction shunt of ngspice.
+pub module Diode(a: Electrical, k: Electrical) {
+    is: f64 = 1e-14 where is > 0.0;
+    n: f64 = 1.0 where n > 0.0;
+    cj0: f64 = 0.0 where cj0 >= 0.0;
+}
+analog for Diode {
+    let nvt   = n * vt();
+    let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
+    let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
+    let id    = is * ((vd / nvt).exp() - 1.0);
+    i(a, k) +> id + gmin() * vd + ddt(cj0 * vd);
+}
