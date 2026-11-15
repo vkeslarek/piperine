@@ -136,10 +136,12 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 
     /// The last tick not after `t` (a step never ends past what was proposed).
     /// A time a few ulps short of a tick (a sum of controller steps) is that
-    /// tick: the slack is relative, as the error of the sum is.
+    /// tick: the slack is relative, as the error of the sum is, and stays
+    /// under half a tick, so a step never ends a tick or more past the
+    /// proposal (nor past the `CAP` bound the proposal honors).
     fn floor_tick(&self, t: f64) -> Tick {
         let ticks = t / self.options.seconds_per_tick;
-        (ticks + 1e-9 + ticks.abs() * 1e-13).floor() as Tick
+        (ticks + (1e-9 + ticks.abs() * 1e-13).min(0.5)).floor() as Tick
     }
 
     pub(super) fn time(&self, tick: Tick) -> f64 {

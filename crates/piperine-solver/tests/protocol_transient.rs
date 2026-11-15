@@ -313,6 +313,26 @@ fn attempts_and_instants(log: &Log) -> Vec<Call> {
 }
 
 #[test]
+fn a_step_never_ends_a_tick_or_more_past_the_proposal_at_one_second() {
+    // One femtosecond per tick (the default) at t ~ 1 s: the proposal lies 0.4
+    // tick past a tick. A relative slack would round it up by ~100 ticks.
+    let spt = 1.0e-15;
+    for proposal in [1.0 + 1.0e-9 + 0.4e-15, 1.0 + 1.0e-9 + 0.9e-15, 0.999_999_999_999_9] {
+        let (log, d, mut a) = sides();
+        a.proposals.extend([proposal, 2.0]);
+        let mut p = Protocol::new(d, a, ProtocolOptions::new(spt));
+        p.transient(2.0).unwrap();
+        let Call::Attempt { to, .. } = attempts(&log)[0].clone() else { unreachable!() };
+        assert!(
+            to < proposal + spt,
+            "proposal {proposal:e}: the step ended {:e} s ({:.1} ticks) past it",
+            to - proposal,
+            (to - proposal) / spt
+        );
+    }
+}
+
+#[test]
 fn an_off_grid_step_lands_on_the_tick_grid() {
     let run = |at: i64| Call::RunInstant { at, samples: vec![], limit: horizon(0, 0), mode: InstantMode { is_static: false, settle: false } };
     // One second per tick; the analog side proposes 1.6 s, then 2.4 s.
