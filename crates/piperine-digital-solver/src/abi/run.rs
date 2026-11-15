@@ -456,10 +456,164 @@ pub struct Fired {
     pub ran: u32,
 }
 
+/// One commit a reaction made, validated and waiting to be applied to the queue.
+struct Planned {
+    statement: u32,
+    offset: u32,
+    bytes: Vec<u8>,
+    net: Option<NetId>,
+    /// `None`: it never comes due.
+    due: Option<Instant>,
+    replace: bool,
+    record: Option<String>,
+}
+
+/// What one call of a reaction made.
+struct Ran {
+    plan: Vec<Planned>,
+    finish: bool,
+}
+
+/// A reaction of the microstep.
+struct Job {
+    instance: usize,
+    reaction: usize,
+    on_settle: bool,
+    crossing: bool,
+    irreversible: bool,
+}
+
+/// Calls reaction `job` once with `ambient` and `samples`, validating each commit it makes (statement
+/// range, `LATER` bound, `Resolution::due`, the settle refusal). Nothing of the engine changes.
+fn call_reaction(
+    plan: &mut DigitalPlan,
+    store: &Store,
+    samples: &[f64],
+    ambient: &Ambient,
+    at: Instant,
+    job: &Job,
+) -> Result<Ran, DigitalError> {
+    let DigitalPlan { nets, instances, resolution, analysis, .. } = plan;
+    let inst = &mut instances[job.instance];
+    let path = inst.path.clone();
+    let pins = inst.pins.clone();
+    let (statements, pin_names, inputs) = {
+        let shape = inst.handle.shape();
+        let reaction = shape.reactions.get(job.reaction).expect("listed from this shape");
+        let lens = cell_lens(shape, &reaction.reads, Access::ReactionRead).expect("bind validated the shape");
+        let inputs: Vec<Aligned> = reaction
+            .reads
+            .iter()
+            .zip(&lens)
+            .map(|(c, len)| cell_bytes(&pins, c, *len, store, ambient, samples))
+            .collect();
+        (
+            reaction.writes.iter().copied().collect::<Vec<Statement>>(),
+            shape.pins.iter().map(|p| p.name.as_str().to_string()).collect::<Vec<String>>(),
+            inputs,
+        )
+    };
+    let refs: Vec<&[u8]> = inputs.iter().map(|b| b.bytes()).collect();
+    let mut made: Vec<Planned> = Vec::new();
+    let mut failure: Option<DigitalError> = None;
+    let mut sink = |c: Commit<'_>| -> u32 {
+        if failure.is_some() {
+            return status::FAULT;
+        }
+        let reject = |message: String| DigitalError::Fault { code: 0, message, tick: at.0.0, instance: path.clone() };
+        let Some(s) = statements.get(c.statement as usize) else {
+            failure = Some(reject(format!("reaction {} committed through statement {}, which it does not have", job.reaction, c.statement)));
+            return status::FAULT;
+        };
+        let end = c.offset as u64 + c.bytes.len() as u64;
+        if c.offset < s.offset || end > s.offset as u64 + s.len as u64 {
+            failure = Some(reject(format!(
+                "reaction {} statement {} committed bytes {}..{} outside its declared range {}..{}",
+                job.reaction,
+                c.statement,
+                c.offset,
+                end,
+                s.offset,
+                s.offset as u64 + s.len as u64
+            )));
+            return status::FAULT;
+        }
+        let later = analysis.later(job.instance as u32, job.reaction as u32, c.statement);
+        if later && c.after < s.min_after {
+            failure = Some(reject(format!(
+                "reaction {} statement {} is LATER with a bound of {} s and committed after {} s",
+                job.reaction, c.statement, s.min_after, c.after
+            )));
+            return status::FAULT;
+        }
+        let due = match resolution.due(at.0, c.after) {
+            Ok(d) => d,
+            Err(DigitalError::NanDelay { code, .. }) => {
+                failure = Some(DigitalError::NanDelay { code, instance: path.clone(), statement: c.statement });
+                return status::FAULT;
+            }
+            Err(e) => {
+                failure = Some(e);
+                return status::FAULT;
+            }
+        };
+        if job.on_settle && due == Due::NextMicrostep {
+            failure = Some(DigitalError::Unsupported { what: "settle commit" });
+            return status::FAULT;
+        }
+        let due = match due {
+            Due::NextMicrostep => Some((at.0, at.1 + 1)),
+            Due::At(t) => Some((t, 0)),
+            Due::Never => None,
+        };
+        let net = match pins[s.pin as usize] {
+            Binding::Net(n) => Some(n),
+            _ => None,
+        };
+        let record = net
+            .filter(|n| nets[n.0 as usize].record)
+            .map(|_| format!("{path}.{}", pin_names[s.pin as usize]));
+        made.push(Planned {
+            statement: c.statement,
+            offset: c.offset,
+            bytes: c.bytes.to_vec(),
+            net,
+            due,
+            replace: s.flags & statement_flag::REPLACE != 0,
+            record,
+        });
+        status::OK
+    };
+    let result = inst.handle.react(job.reaction as u32, &refs, &mut sink);
+    let finish = match result {
+        Ok(Flow::Finish) => true,
+        Ok(Flow::Continue) => false,
+        Err(e) => return Err(failure.take().unwrap_or_else(|| fault(e, at.0, &path))),
+    };
+    if let Some(e) = failure.take() {
+        return Err(e);
+    }
+    Ok(Ran { plan: made, finish })
+}
+
+/// The earliest tick a commit of any reaction but `except` is due at.
+fn earliest_other(ran: &[Option<Ran>], except: usize) -> Option<Tick> {
+    ran.iter()
+        .enumerate()
+        .filter(|(k, _)| *k != except)
+        .filter_map(|(_, r)| r.as_ref())
+        .flat_map(|r| r.plan.iter().filter_map(|p| p.due.map(|d| d.0)))
+        .min()
+}
+
 /// R: runs, once each, the reactions with an event pin in `on` that fired in this microstep.
-/// Every one reads the same snapshot (R2: frames are built before the first call). Each commit goes
-/// through the range check, the `LATER` bound check, `Resolution::due` and the queue (abi.md §6),
-/// and is observed. `call` numbers the commits of the microstep (C2).
+/// Every one reads the same snapshot (R2). `HORIZON` is bounded by what the other reactions of the
+/// microstep commit (abi.md R5 "other than as a consequence of the commits this call makes"): a
+/// reaction is called again with a smaller horizon while another's commits are due before it (a
+/// reaction has no memory, R3, so that is sound); an `IRREVERSIBLE` one runs last and once, with
+/// the horizon the others leave it (the instant itself when several are irreversible). Each commit
+/// then goes through the queue and is observed. `call` numbers the commits of the microstep (C2).
+#[allow(clippy::too_many_arguments)]
 pub fn run_reactions(
     plan: &mut DigitalPlan,
     store: &Store,
@@ -470,148 +624,105 @@ pub fn run_reactions(
     at: Instant,
     call: &mut u32,
 ) -> Result<Fired, DigitalError> {
-    let DigitalPlan { nets, instances, resolution, analysis, .. } = plan;
-    let settle = analysis.settle_nets();
-    let mut fired = Fired::default();
+    let settle = plan.analysis().settle_nets().to_vec();
+    let jobs: Vec<Job> = fired_reactions(&plan.instances, &settle, store)
+        .into_iter()
+        .map(|f| Job {
+            instance: f.instance,
+            reaction: f.reaction,
+            on_settle: f.on_settle,
+            crossing: plan.analysis().crossing_reach(f.instance as u32, f.reaction as u32),
+            irreversible: plan.instances[f.instance]
+                .handle
+                .shape()
+                .reactions
+                .get(f.reaction)
+                .is_some_and(|r| r.flags & reaction_flag::IRREVERSIBLE != 0),
+        })
+        .collect();
+    let with = |horizon: Tick| Ambient { horizon, ..*ambient };
+    let base = |j: &Job| if j.crossing { ambient.crossing_horizon } else { ambient.horizon };
+    let reversible: Vec<usize> = (0..jobs.len()).filter(|j| !jobs[*j].irreversible).collect();
+    let irreversible: Vec<usize> = (0..jobs.len()).filter(|j| jobs[*j].irreversible).collect();
+    let mut horizon: Vec<Tick> = jobs.iter().map(base).collect();
+    let mut ran: Vec<Option<Ran>> = (0..jobs.len()).map(|_| None).collect();
 
-    // which reactions run, and what each reads
-    struct Job {
-        instance: usize,
-        reaction: usize,
-        inputs: Vec<Aligned>,
-        on_settle: bool,
+    for j in &reversible {
+        ran[*j] = Some(call_reaction(plan, store, samples, &with(horizon[*j]), at, &jobs[*j])?);
     }
-    let mut jobs: Vec<Job> = Vec::new();
-    for f in fired_reactions(instances, settle, store) {
-        let inst = &instances[f.instance];
-        let shape = inst.handle.shape();
-        let reaction = shape.reactions.get(f.reaction).expect("listed from this shape");
-        let mut seen = *ambient;
-        if analysis.crossing_reach(f.instance as u32, f.reaction as u32) {
-            seen.horizon = ambient.crossing_horizon;
+    // another reaction's commit due before a horizon cuts it down; a cut can move a commit, so repeat
+    let mut settled = false;
+    for _ in 0..=reversible.len() {
+        let mut changed = false;
+        for j in &reversible {
+            let Some(e) = earliest_other(&ran, *j) else { continue };
+            let cap = Tick(e.0.saturating_sub(1)).max(at.0);
+            if cap < horizon[*j] {
+                horizon[*j] = cap;
+                ran[*j] = Some(call_reaction(plan, store, samples, &with(cap), at, &jobs[*j])?);
+                changed = true;
+            }
         }
-        let lens = cell_lens(shape, &reaction.reads, Access::ReactionRead).expect("bind validated the shape");
-        let inputs = reaction
-            .reads
-            .iter()
-            .zip(&lens)
-            .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, &seen, samples))
-            .collect();
-        jobs.push(Job { instance: f.instance, reaction: f.reaction, inputs, on_settle: f.on_settle });
+        if !changed {
+            settled = true;
+            break;
+        }
+    }
+    if !settled {
+        // no fixed point within the bound: the instant itself is always sound
+        for j in &reversible {
+            if horizon[*j] > at.0 {
+                horizon[*j] = at.0;
+                ran[*j] = Some(call_reaction(plan, store, samples, &with(at.0), at, &jobs[*j])?);
+            }
+        }
+    }
+    for j in &irreversible {
+        let cap = match irreversible.len() {
+            1 => earliest_other(&ran, *j).map_or(base(&jobs[*j]), |e| base(&jobs[*j]).min(Tick(e.0.saturating_sub(1)).max(at.0))),
+            _ => at.0,
+        };
+        ran[*j] = Some(call_reaction(plan, store, samples, &with(cap), at, &jobs[*j])?);
     }
 
-    for job in jobs {
-        let inst = &mut instances[job.instance];
-        let path = inst.path.clone();
-        let pins = inst.pins.clone();
-        let (statements, pin_names, irreversible) = {
-            let shape = inst.handle.shape();
-            let reaction = shape.reactions.get(job.reaction).expect("listed above");
-            (
-                reaction.writes.iter().copied().collect::<Vec<Statement>>(),
-                shape.pins.iter().map(|p| p.name.as_str().to_string()).collect::<Vec<String>>(),
-                reaction.flags & reaction_flag::IRREVERSIBLE != 0,
-            )
-        };
-        fired.irreversible |= irreversible;
+    let mut fired = Fired::default();
+    for (job, result) in jobs.iter().zip(ran) {
+        let result = result.expect("every job ran");
         fired.ran += 1;
-        let refs: Vec<&[u8]> = job.inputs.iter().map(|b| b.bytes()).collect();
-        let mut failure: Option<DigitalError> = None;
-        let mut sink = |c: Commit<'_>| -> u32 {
-            if failure.is_some() {
-                return status::FAULT;
-            }
-            let reject = |message: String| DigitalError::Fault { code: 0, message, tick: at.0.0, instance: path.clone() };
-            let Some(s) = statements.get(c.statement as usize) else {
-                failure = Some(reject(format!("reaction {} committed through statement {}, which it does not have", job.reaction, c.statement)));
-                return status::FAULT;
-            };
-            let end = c.offset as u64 + c.bytes.len() as u64;
-            if c.offset < s.offset || end > s.offset as u64 + s.len as u64 {
-                failure = Some(reject(format!(
-                    "reaction {} statement {} committed bytes {}..{} outside its declared range {}..{}",
-                    job.reaction,
-                    c.statement,
-                    c.offset,
-                    end,
-                    s.offset,
-                    s.offset as u64 + s.len as u64
-                )));
-                return status::FAULT;
-            }
-            let later = analysis.later(job.instance as u32, job.reaction as u32, c.statement);
-            if later && c.after < s.min_after {
-                failure = Some(reject(format!(
-                    "reaction {} statement {} is LATER with a bound of {} s and committed after {} s",
-                    job.reaction, c.statement, s.min_after, c.after
-                )));
-                return status::FAULT;
-            }
-            let due = match resolution.due(at.0, c.after) {
-                Ok(d) => d,
-                Err(DigitalError::NanDelay { code, .. }) => {
-                    failure = Some(DigitalError::NanDelay { code, instance: path.clone(), statement: c.statement });
-                    return status::FAULT;
-                }
-                Err(e) => {
-                    failure = Some(e);
-                    return status::FAULT;
-                }
-            };
-            if job.on_settle && due == Due::NextMicrostep {
-                failure = Some(DigitalError::Unsupported { what: "settle commit" });
-                return status::FAULT;
-            }
-            let due_at = match due {
-                Due::NextMicrostep => Some((at.0, at.1 + 1)),
-                Due::At(t) => Some((t, 0)),
-                Due::Never => None,
-            };
+        fired.irreversible |= job.irreversible;
+        fired.finish |= result.finish;
+        let path = plan.instances[job.instance].path.clone();
+        for p in result.plan {
             obs.push(Observation::Commit {
                 instance: path.clone(),
                 reaction: job.reaction as u32,
-                statement: c.statement,
+                statement: p.statement,
                 made: at,
-                due: due_at,
+                due: p.due,
             });
-            let Binding::Net(net) = pins[s.pin as usize] else { return status::OK };
-            if nets[net.0 as usize].record {
-                obs.push(Observation::Record {
-                    stream: format!("{path}.{}", pin_names[s.pin as usize]),
-                    at,
-                    bytes: c.bytes.to_vec(),
-                });
+            let Some(net) = p.net else { continue };
+            if let Some(stream) = p.record {
+                obs.push(Observation::Record { stream, at, bytes: p.bytes.clone() });
             }
             *call += 1;
-            let replace = s.flags & statement_flag::REPLACE != 0;
             let mut pending = Pending {
                 net,
-                offset: c.offset,
-                bytes: c.bytes.to_vec(),
+                offset: p.offset,
+                bytes: p.bytes,
                 writer: Writer::Reaction { instance: job.instance as u32, reaction: job.reaction as u32 },
-                statement: c.statement,
+                statement: p.statement,
                 made: at,
                 call: *call,
                 due: (at.0, 0),
             };
-            match due_at {
+            match p.due {
                 Some(due) => {
                     pending.due = due;
-                    queue.push(pending, replace);
+                    queue.push(pending, p.replace);
                 }
-                None if replace => queue.cancel(&pending),
+                None if p.replace => queue.cancel(&pending),
                 None => {}
             }
-            status::OK
-        };
-        let result = inst.handle.react(job.reaction as u32, &refs, &mut sink);
-        match result {
-            Ok(Flow::Finish) => fired.finish = true,
-            Ok(Flow::Continue) => {}
-            Err(e) => return Err(failure.take().unwrap_or_else(|| fault(e, at.0, &path))),
-        }
-        if let Some(e) = failure.take() {
-            return Err(e);
         }
     }
     Ok(fired)

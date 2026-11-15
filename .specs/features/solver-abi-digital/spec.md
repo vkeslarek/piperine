@@ -132,6 +132,7 @@ The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a st
 8. IF a commit is due later than the tick the engine is advanced to THEN it SHALL stay pending.
 9. WHEN two commits are due at times that round to the same tick THEN they SHALL apply in one instant.
 10. ~~WHEN the owner asks for the boundary values of a landing instant THEN the engine SHALL return ... computed on a copy~~ SUPERSEDED (user decision, 2026-11-15, solver-completeness context.md "Orchestrator note": "ABI order: solve, then react (Recommended)"): at a scheduled instant the owner solves at t on the left value first, then runs the instant; there is no microstep-0 preview and `preview_boundary` is removed from the seam and from this engine.
+11. WHEN several reactions run in one microstep THEN the `HORIZON` each reads SHALL be no later than the tick before the earliest commit due that another reaction of the microstep made (abi.md R5, "other than as a consequence of the commits this call makes"; round-1 verification finding 1), whatever the order the reactions are called in.
 
 **Independent Test**: a divider clock that no analog-read net depends on runs 1000 edges inside one `advance`; the same clock driving a net flagged analog-read stops `advance` before its first edge.
 
@@ -193,8 +194,9 @@ The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a st
 | SAD-20 | P2: Host, AC 6, 7 (observations) | Tasks | In Tasks |
 | SAD-21 | Goals: the old engine and its tests are untouched | Tasks | In Tasks |
 | SAD-22 | P1: Checkpoint, AC 10 (boundary preview of a landing) | superseded (see AC 10) | Superseded |
+| SAD-23 | P1: Checkpoint, AC 11 (`HORIZON` sees the other reactions' commits; round-1 finding 1) | Tasks | In Tasks |
 
-**Coverage:** 22 total, 22 mapped to tasks, 0 unmapped. Umbrella requirements met here: SCI-01 to SCI-05, SCI-07 to SCI-09, SCE-02, and the digital half of SCE-01, SCE-03, SCE-04; SCI-06 is met by D1 (see Assumptions).
+**Coverage:** 23 total (SAD-22 superseded), 22 mapped to tasks, 0 unmapped. Umbrella requirements met here: SCI-01 to SCI-05, SCI-07 to SCI-09, SCE-02, and the digital half of SCE-01, SCE-03, SCE-04; SCI-06 is met by D1 (see Assumptions).
 
 ---
 

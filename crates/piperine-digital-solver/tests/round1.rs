@@ -136,3 +136,27 @@ fn a_non_canonical_write_is_a_fault_through_a_function_a_commit_and_the_host() {
     instant(&mut d, Tick(1));
     instant(&mut d, Tick(2));
 }
+
+/// What the clockwatch of the instant at 10 ns read as `HORIZON`, with a timer re-arming the event it
+/// listens to in the same microstep. `watch_first` puts the clockwatch first among the instances.
+fn horizon_with_a_rearming_timer(watch_first: bool) -> i64 {
+    let clock: Placed<'_> = ("clock", timer(), vec![("out", "clk"), ("tick", "t")]);
+    let watch: Placed<'_> = ("cw", clockwatch(), vec![("go", "t")]);
+    let mut d = engine(if watch_first { vec![watch, clock] } else { vec![clock, watch] });
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    assert_eq!(d.next_due(), Some(Tick(10 * NS)));
+    instant(&mut d, Tick(10 * NS));
+    let seen = d.read(net(&d, "cw.seen")).to_vec();
+    assert_eq!(i64::from_le_bytes(seen[..8].try_into().unwrap()), 10 * NS, "TICK");
+    i64::from_le_bytes(seen[8..].try_into().unwrap())
+}
+
+#[test]
+fn horizon_counts_the_commits_other_reactions_make_in_the_same_microstep() {
+    // finding 1, abi.md R5: the timer fires `t` again at 20 ns in the microstep in which the clockwatch,
+    // listening to `t`, runs; the clockwatch may not run its clock through 20 ns, whatever the order
+    // the two reactions are called in
+    assert_eq!(horizon_with_a_rearming_timer(false), 20 * NS - 1);
+    assert_eq!(horizon_with_a_rearming_timer(true), 20 * NS - 1);
+}

@@ -327,6 +327,7 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 - [x] Test `a_landing_found_at_a_later_microstep_restores_the_whole_instant` passes (abi.md §5 step 2: a firing at microstep `n > 0`)
 - [x] Test `horizon_is_before_the_earliest_pending_commit_and_the_limit` and test `tick_is_the_instants_tick` pass (C35)
 - [x] Test `a_commit_due_after_the_target_stays_pending` and test `times_that_round_to_one_tick_are_one_instant` pass (C36)
+- [x] Test `horizon_counts_the_commits_other_reactions_make_in_the_same_microstep` passes (C46, added by the round-1 fix: `tests/round1.rs`)
 - [x] Test `advance_returns_final_at_a_finish` passes
 - [x] Gate: full
 
@@ -487,7 +488,7 @@ Proof: run digital | test an_instant_reports_boundary_fired_and_final ... ok
 **C34** - Each clause of the time-point test stops `advance`, and an instant that reaches nothing analog does not (SAD-15, AC 4 and 5)
 Proof: run digital | test each_clause_of_the_time_point_test_stops_advance ... ok
 
-**C35** - `TICK` is the instant's tick and `HORIZON` is before the earliest pending commit and the owner's limit (SAD-17, AC 7)
+**C35** - `TICK` is the instant's tick and `HORIZON` is before the earliest pending commit and the owner's limit, with one reaction in the microstep (SAD-17, AC 7; the behaviour with several reactions is C46)
 Proof: run digital | test horizon_is_before_the_earliest_pending_commit_and_the_limit ... ok
 
 **C36** - A commit due after the target stays pending; times that round to one tick are one instant (SAD-15, AC 8 and 9)
@@ -518,6 +519,9 @@ Proof: run digital | test abi_modules_name_no_analog_or_owner_item ... ok
 
 **C45** - The old engine's unit tests pass unchanged (SAD-21)
 Proof: `cargo test -p piperine-digital-solver --lib 2>&1 | grep -E '^test result: ok\. 27 passed'`
+
+**C46** - `HORIZON` is bounded by the commits other reactions make in the same microstep, whatever the call order (SAD-23, AC 11; round-1 finding 1)
+Proof: run digital | test horizon_counts_the_commits_other_reactions_make_in_the_same_microstep ... ok
 
 ---
 
