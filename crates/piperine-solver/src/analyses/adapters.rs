@@ -10,7 +10,9 @@
 //! no file of `src/protocol/` names a sub-solver item; the adapters name both,
 //! so they live with the drivers that call them.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
@@ -24,8 +26,8 @@ use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::limits::DigitalLimits;
 
 use crate::protocol::{
-    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Observation, ObservationKind,
-    Outcome, Restart, Shadow, Tick,
+    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, HostCx, InstantMode, Observation,
+    ObservationKind, Outcome, Protocol, Restart, Shadow, Sink, Tick, Waiter,
 };
 use crate::analyses::dc::DcSolver;
 use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
@@ -117,7 +119,8 @@ impl DiscreteSide for DigitalSide {
                 boundary.push(Boundary { slot, bytes });
             }
         }
-        Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events: Vec::new() })
+        let host_events = out.host_events.iter().map(|n| n.0).collect();
+        Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events })
     }
 
     fn mark(&self) -> Checkpoint {
@@ -144,8 +147,8 @@ impl DiscreteSide for DigitalSide {
         self.digital.net_name(self.slot_nets[slot as usize])
     }
 
-    fn wait(&mut self, _net: u32) {
-        unimplemented!("host waiters on the digital engine")
+    fn wait(&mut self, net: u32) {
+        self.digital.wait(NetId(net));
     }
 
     fn drain(&mut self, out: &mut Vec<Observation>) {
@@ -314,5 +317,49 @@ impl AnalogSide for TransientSide<'_, '_> {
     fn drain_traces(&mut self, out: &mut Vec<Observation>) {
         let time = self.run.attempted();
         traces(self.tran.device_bound(), time, out);
+    }
+}
+
+/// The host's sink and waiters (`Solver::with_sink`, `Solver::on_event`),
+/// shared by every analysis a solver runs and forwarded to each run's protocol.
+#[derive(Clone, Default)]
+pub(crate) struct HostHooks {
+    pub(crate) sink: Option<Rc<RefCell<Box<dyn Sink>>>>,
+    /// Waiters by event net name.
+    pub(crate) waiters: Vec<(String, Rc<RefCell<Waiter>>)>,
+}
+
+/// A sink every run shares.
+struct SharedSink(Rc<RefCell<Box<dyn Sink>>>);
+
+impl Sink for SharedSink {
+    fn observe(&mut self, o: &Observation) {
+        self.0.borrow_mut().observe(o);
+    }
+}
+
+impl HostHooks {
+    /// The net of each waiter, by name.
+    pub(crate) fn nets(&self, bound: &Bound) -> Result<Vec<u32>> {
+        self.waiters
+            .iter()
+            .map(|(name, _)| {
+                bound.names.nets.get(&format!("net:{name}")).map(|n| n.0).ok_or_else(|| {
+                    Error::simple(SolverDomain::Digital, format!("a host waiter names no event net `{name}`"))
+                })
+            })
+            .collect()
+    }
+
+    /// Installs the sink and the waiters (on `nets`, from `nets`) on a run's protocol.
+    pub(crate) fn install<D: DiscreteSide, A: AnalogSide>(&self, mut p: Protocol<D, A>, nets: &[u32]) -> Protocol<D, A> {
+        if let Some(sink) = &self.sink {
+            p = p.with_sink(Box::new(SharedSink(Rc::clone(sink))));
+        }
+        for ((_, waiter), net) in self.waiters.iter().zip(nets) {
+            let waiter = Rc::clone(waiter);
+            p.on_event(*net, Box::new(move |cx: &mut HostCx<'_>| (waiter.borrow_mut())(cx)));
+        }
+        p
     }
 }

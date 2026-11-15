@@ -337,6 +337,8 @@ pub struct DcSolver<'a> {
     analysis_kind: crate::analyses::AnalysisKind,
     /// The homotopy that converged the first equilibrium of a circuit of devices.
     homotopy_strategy: Option<&'static str>,
+    /// The host's sink and waiters, for a circuit of devices.
+    pub(crate) host: crate::analyses::adapters::HostHooks,
 }
 
 impl<'a> DcSolver<'a> {
@@ -388,6 +390,7 @@ impl<'a> DcSolver<'a> {
             assembly_checkpoint: None,
             analysis_kind: crate::analyses::AnalysisKind::Dc,
             homotopy_strategy: None,
+            host: Default::default(),
         })
     }
 
@@ -446,9 +449,12 @@ impl<'a> DcSolver<'a> {
         let spt = bound.digital.plan().resolution.seconds_per_tick;
         let digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
         let side = DigitalSide::new(digital, bound, piperine_abi::raw::global::DC);
-        let mut protocol =
+        let hooks = self.host.clone();
+        let nets = hooks.nets(bound);
+        let protocol =
             Protocol::new(side, EquilibriumSide { dc: self, solution: None }, ProtocolOptions::new(spt));
-        let ran = protocol.operating_point();
+        let mut protocol = hooks.install(protocol, nets.as_deref().unwrap_or(&[]));
+        let ran = nets.and_then(|_| protocol.operating_point());
         let (side, analog) = protocol.into_sides();
         let solution = analog.solution;
         if let Some(bound) = self.system.circuit.abi.as_mut() {

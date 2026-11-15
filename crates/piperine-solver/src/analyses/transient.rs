@@ -618,6 +618,8 @@ pub struct TransientSolver<'a> {
     /// the LRM's perspective, so `final_step` must not fire for them.
     /// Gates [`Self::solve`]'s `Element::finish_analysis` call.
     top_level: bool,
+    /// The host's sink and waiters, for a circuit of devices.
+    pub(crate) host: crate::analyses::adapters::HostHooks,
 }
 
 impl<'a> TransientSolver<'a> {
@@ -679,6 +681,7 @@ impl<'a> TransientSolver<'a> {
             sets: SetQueue::default(),
             reentry_state: None,
             top_level: true,
+            host: Default::default(),
         })
     }
 
@@ -1747,9 +1750,12 @@ impl TransientSolver<'_> {
             spt,
         };
         let stop = self.options.stop_time;
-        let mut protocol = Protocol::new(side, TransientSide { tran: self, run }, ProtocolOptions::new(spt));
-        let ran = protocol
-            .operating_point()
+        let hooks = self.host.clone();
+        let nets = hooks.nets(bound);
+        let protocol = Protocol::new(side, TransientSide { tran: self, run }, ProtocolOptions::new(spt));
+        let mut protocol = hooks.install(protocol, nets.as_deref().unwrap_or(&[]));
+        let ran = nets
+            .and_then(|_| protocol.operating_point())
             .and_then(|_| protocol.analog_mut().begin())
             .and_then(|_| protocol.transient(stop));
         let (side, analog) = protocol.into_sides();

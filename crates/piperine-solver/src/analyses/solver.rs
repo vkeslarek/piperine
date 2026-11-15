@@ -15,6 +15,7 @@ pub struct Solver {
     context: Context,
     policy: Policy,
     tran_opts: transient::TransientAnalysisOptions,
+    host: crate::analyses::adapters::HostHooks,
 }
 
 impl Solver {
@@ -24,6 +25,7 @@ impl Solver {
             context: Context::default(),
             policy: Policy::default(),
             tran_opts: transient::TransientAnalysisOptions::new(1e-3, 1e-6),
+            host: Default::default(),
         }
     }
 
@@ -42,6 +44,23 @@ impl Solver {
         self
     }
 
+    /// Sends every observation of the analyses of a circuit of devices to
+    /// `sink` (abi.md C5, A5): changes, commits, fired crossings, records and
+    /// traces, in instant order, each with its path, analysis kind and time.
+    pub fn with_sink(mut self, sink: Box<dyn crate::protocol::Sink>) -> Self {
+        self.host.sink = Some(std::rc::Rc::new(std::cell::RefCell::new(sink)));
+        self
+    }
+
+    /// Calls `waiter` once each time the event net `net` fires at an accepted
+    /// instant of an analysis of a circuit of devices (abi.md §5 R7): the
+    /// owner lands there, and what the waiter writes is due at the next
+    /// microstep.
+    pub fn on_event(&mut self, net: &str, waiter: crate::protocol::Waiter) -> &mut Self {
+        self.host.waiters.push((net.to_string(), std::rc::Rc::new(std::cell::RefCell::new(waiter))));
+        self
+    }
+
     /// Initializes process globals (tracing, faer) via `Context::init_global`
     /// — guarded by `Once`, so repeated builds are free. Returns self (moves on).
     pub fn build(self) -> Self {
@@ -52,12 +71,14 @@ impl Solver {
     pub fn dc(&mut self) -> crate::core::result::Result<dc::DcSolver<'_>> {
         let mut solver = self.circuit.dc(self.context.clone())?;
         solver.policy = self.policy.clone();
+        solver.host = self.host.clone();
         Ok(solver)
     }
 
     pub fn tran(&mut self) -> crate::core::result::Result<transient::TransientSolver<'_>> {
         let mut solver = self.circuit.transient(self.tran_opts.clone(), self.context.clone())?;
         solver.policy = self.policy.clone();
+        solver.host = self.host.clone();
         Ok(solver)
     }
 

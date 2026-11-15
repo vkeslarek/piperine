@@ -681,3 +681,203 @@ impl Device for SettleTime {
 pub fn settle_time() -> &'static Module {
     module_of::<SettleTime>(&SETTLE_TIME, "SettleTime")
 }
+
+// ─── Delay ──────────────────────────────────────────────────────────────────
+
+const ONE_US: [u8; 8] = 1e-6f64.to_le_bytes();
+
+/// Fires `out` once, `at` seconds after `START`.
+/// pins: at=0 (PARAM F64, default 1 µs); start=1 (GLOBAL START event); out=2 (PORT event)
+/// reaction 0: on [start] reads [at] writes [S0 {out}]; fires `out` after `at`
+pub struct Delay;
+static DELAY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static DELAY: OnceLock<Module> = OnceLock::new();
+
+fn delay_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let at = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_US, ..PinSpec::discrete("at", role::PARAM, &F64) });
+    let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
+    let out = s.pin(PinSpec::event("out", role::PORT));
+    s.reaction(ReactionSpec {
+        name: "arm",
+        origin: ORIGIN,
+        on: vec![start],
+        reads: vec![pin(at)],
+        writes: vec![statement(out, 0, 0)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Delay {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&DELAY_SHAPE, delay_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Delay, Arc::clone(shared(&DELAY_SHAPE, delay_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("delay");
+        let at = cx.f64(0);
+        cx.commit(0, &[], at)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn delay() -> &'static Module {
+    module_of::<Delay>(&DELAY, "Delay")
+}
+
+// ─── Finisher ───────────────────────────────────────────────────────────────
+
+/// Ends the analysis when `go` fires.
+/// pins: go=0 (PORT event)   reaction 0: on [go]; returns FINISH
+pub struct Finisher;
+static FINISHER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static FINISHER: OnceLock<Module> = OnceLock::new();
+
+fn finisher_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let go = s.pin(PinSpec::event("go", role::PORT));
+    s.reaction(ReactionSpec { name: "finish", origin: ORIGIN, on: vec![go], ..ReactionSpec::default() });
+    s.freeze()
+}
+
+impl Device for Finisher {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&FINISHER_SHAPE, finisher_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Finisher, Arc::clone(shared(&FINISHER_SHAPE, finisher_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        bump("finisher");
+        Ok(Flow::Finish)
+    }
+}
+
+pub fn finisher() -> &'static Module {
+    module_of::<Finisher>(&FINISHER, "Finisher")
+}
+
+// ─── Tracer ─────────────────────────────────────────────────────────────────
+
+/// A 1 mS conductance to ground that writes a `TRACE` record at every evaluation.
+/// pins: p=0 (PORT continuous)   terms: T0 FLOW{p, GROUND}   watches: W0 TRACE (BYTE)
+/// fn 0: reads [p] writes [T0, W0] partials (0<-0); W0 <- [1, known]
+pub struct Tracer;
+static TRACER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static TRACER: OnceLock<Module> = OnceLock::new();
+const TRACER_G: f64 = 1.0e-3;
+
+fn tracer_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let t0 = s.term(flow("i", p, GROUND));
+    let w0 = s.watch(WatchSpec { layout: &BYTE, ..watch_spec("seen", watch::TRACE, DEFAULT) });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![pin(p)],
+        writes: vec![term(t0), watch_cell(w0)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Tracer {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&TRACER_SHAPE, tracer_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Tracer, Arc::clone(shared(&TRACER_SHAPE, tracer_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        cx.set(0, TRACER_G * cx.f64(0));
+        cx.out_bytes(1).copy_from_slice(&[1, 1]);
+        cx.jac()[0] = TRACER_G;
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn tracer() -> &'static Module {
+    module_of::<Tracer>(&TRACER, "Tracer")
+}
+
+// ─── FlakyG ─────────────────────────────────────────────────────────────────
+
+thread_local! {
+    static FAULT_WINDOW: std::cell::Cell<Option<(f64, f64)>> = const { std::cell::Cell::new(None) };
+    static FAULTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Arms this thread's `FlakyG`s: the first evaluation with a time inside `window` faults.
+pub fn arm_fault(window: (f64, f64)) {
+    FAULT_WINDOW.with(|w| w.set(Some(window)));
+    FAULTED.with(|f| f.set(false));
+}
+
+/// Whether an armed `FlakyG` has faulted on this thread.
+pub fn faulted() -> bool {
+    FAULTED.with(|f| f.get())
+}
+
+/// A 1 mS conductance whose function faults once (a Newton failure) when armed (`arm_fault`).
+/// pins: p=0, n=1 (PORT)   terms: T0 FLOW{p, n}
+/// fn 0: reads [p, n, TIME] writes [T0] partials (0<-0) (0<-1)
+pub struct FlakyG;
+static FLAKY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static FLAKY: OnceLock<Module> = OnceLock::new();
+
+fn flaky_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(flow("i", p, n));
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![pin(p), pin(n), Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE }],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for FlakyG {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&FLAKY_SHAPE, flaky_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((FlakyG, Arc::clone(shared(&FLAKY_SHAPE, flaky_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let t = cx.f64(2);
+        let inside = FAULT_WINDOW.with(|w| w.get()).is_some_and(|(a, b)| t > a && t < b);
+        if inside && !FAULTED.with(|f| f.replace(true)) {
+            return Err(Fault::new(7, "once"));
+        }
+        let g = 1.0e-3;
+        cx.set(0, g * cx.f64(0) - g * cx.f64(1));
+        cx.jac().copy_from_slice(&[g, -g]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn flaky_g() -> &'static Module {
+    module_of::<FlakyG>(&FLAKY, "FlakyG")
+}

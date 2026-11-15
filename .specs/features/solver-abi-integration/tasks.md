@@ -394,12 +394,12 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `the_sink_receives_everything_in_instant_order` passes on a real mixed run: changes, commits, a fired crossing and records carry path, analysis kind and time; a `TRACE` record carries its Newton iteration
-- [ ] Test `records_of_an_undone_instant_do_not_reach_the_sink` passes with a forced rejection
-- [ ] Test `an_irreversible_reaction_runs_once_at_an_accepted_time` passes with the `Stub` device across a rejected step
-- [ ] Test `finish_ends_the_analysis_at_an_accepted_time` passes: the last recorded time is the instant of the `FINISH`
-- [ ] Test `a_host_waiter_is_called_once_and_its_write_is_due_next_microstep` passes
-- [ ] Gate: full
+- [x] Test `the_sink_receives_everything_in_instant_order` passes on a real mixed run: changes, commits, a fired crossing and records carry path, analysis kind and time; a `TRACE` record carries its Newton iteration
+- [x] Test `records_of_an_undone_instant_do_not_reach_the_sink` passes with a forced rejection
+- [x] Test `an_irreversible_reaction_runs_once_at_an_accepted_time` passes with the `Stub` device across a rejected step
+- [x] Test `finish_ends_the_analysis_at_an_accepted_time` passes: the last recorded time is the instant of the `FINISH`
+- [x] Test `a_host_waiter_is_called_once_and_its_write_is_due_next_microstep` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
