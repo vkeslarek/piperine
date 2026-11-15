@@ -3,7 +3,10 @@
 
 use std::mem::size_of;
 
-use piperine_ir::{BodyId, ExprId, FunctionId, InstanceId, Ir, NatureId, NodeId, StmtId};
+use piperine_ir::{
+    BodyId, BodySpec, ExprId, FunctionId, InstanceId, InstanceSpec, Ir, IrBuilder, NatureId,
+    NodeId, NodeSpec, Origin, Quantity, Real, StmtId,
+};
 
 #[test]
 fn ids_are_u32_newtypes_one_per_arena() {
@@ -30,4 +33,82 @@ struct Bounds<T: Send + Sync>(std::marker::PhantomData<T>);
 #[test]
 fn ir_is_send_and_sync() {
     let _ = Bounds::<Ir>(std::marker::PhantomData);
+}
+
+/// Every Rust source file of the crate, as text.
+struct Sources;
+
+impl Sources {
+    fn all() -> Vec<(String, String)> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("read src") {
+            let path = entry.expect("dir entry").path();
+            let text = std::fs::read_to_string(&path).expect("read a source");
+            out.push((path.display().to_string(), text));
+        }
+        out
+    }
+}
+
+#[test]
+fn a_finished_ir_has_no_mutating_operation() {
+    // A `&mut self` method may exist only inside an `impl` of the builder.
+    for (path, text) in Sources::all() {
+        let mut owner_is_builder = false;
+        for (n, line) in text.lines().enumerate() {
+            if line.starts_with("impl") {
+                owner_is_builder = line.contains("IrBuilder");
+            }
+            if line.contains("&mut self") && !owner_is_builder {
+                panic!("{path}:{}: a mutating method outside IrBuilder: {line}", n + 1);
+            }
+        }
+    }
+}
+
+fn origin() -> Origin {
+    Origin { file: "t.msl".into(), line: 1, col: 1 }
+}
+
+/// One fixed sequence of builder calls.
+struct Sequence;
+
+impl Sequence {
+    fn build() -> Ir {
+        let mut b = IrBuilder::new();
+        let nature = b.nature(
+            "Electrical",
+            Quantity { name: "voltage".into(), access: "v".into(), units: "V".into(), abstol: Real::new(1e-6) },
+            None,
+        );
+        let body = b.body(BodySpec {
+            name: "Empty".into(),
+            origin: origin(),
+            params: vec![],
+            nodes: vec![],
+            branches: vec![],
+            limits: vec![],
+            stims: vec![],
+            locals: vec![],
+            analog: None,
+            children: vec![],
+        });
+        let top = b.instance(InstanceSpec {
+            path: "Empty".into(),
+            name: "Empty".into(),
+            body,
+            parent: None,
+            nodes: vec![],
+            params: vec![],
+            origin: origin(),
+        });
+        b.node(NodeSpec { path: "Empty.n".into(), nature, declared_by: top, init: None, origin: origin() });
+        b.finish(top)
+    }
+}
+
+#[test]
+fn equal_builder_sequences_give_equal_irs() {
+    assert_eq!(Sequence::build(), Sequence::build());
 }

@@ -135,11 +135,11 @@ T8
 
 **Done when**:
 
-- [ ] `finish` consumes the builder and returns an `Ir`
-- [ ] `a_finished_ir_has_no_mutating_operation` scans `crates/piperine-ir/src` and finds no `&mut self` method on `Ir` or a handle
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test model`: `a_finished_ir_has_no_mutating_operation`, `equal_builder_sequences_give_equal_irs`
-- [ ] Gate check passes: `cargo test -p piperine-ir`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `finish` consumes the builder and returns an `Ir`
+- [x] `a_finished_ir_has_no_mutating_operation` scans `crates/piperine-ir/src` and finds no `&mut self` method on `Ir` or a handle
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test model`: `a_finished_ir_has_no_mutating_operation`, `equal_builder_sequences_give_equal_irs`
+- [x] Gate check passes: `cargo test -p piperine-ir`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
