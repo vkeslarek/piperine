@@ -273,6 +273,13 @@ fn instruction_text_places_the_moved_code_and_states_the_boundary_as_target() {
     }
     assert!(!claude.contains("analyses/convergence.rs"), "CLAUDE.md cites the old convergence path");
     assert!(!claude.contains("`math/integration.rs`") || claude.contains("analog crate, `math/integration.rs`"));
+    assert!(owner.contains("`piperine-abi`"), "the owner row omits its `piperine-abi` dependency");
+    for (name, text) in [("CLAUDE.md", &claude), ("AGENTS.md", &agents)] {
+        let flat = text.replace('\n', " ");
+        let at = flat.find("owner `piperine-solver` depends on").unwrap_or_else(|| panic!("{name} states no owner dependency"));
+        let sentence = flat[at..].split_once(". ").map_or(&flat[at..], |(s, _)| s);
+        assert!(sentence.contains("piperine-abi"), "{name}: the owner's dependency sentence omits `piperine-abi`: {sentence}");
+    }
     let agents_owner = agents.lines().find(|l| l.contains("piperine-solver/")).expect("map row");
     assert!(!agents_owner.contains("math/"), "AGENTS.md owner map row still lists math/");
     for (name, text) in [("CLAUDE.md", &claude), ("AGENTS.md", &agents)] {

@@ -26,8 +26,9 @@ source ──► piperine-lang ──► Design (POM) ──► device compiler 
                   hosts: piperine-api (Rust) / piperine-cli
 ```
 
-Dependency direction: the owner `piperine-solver` depends on both sub-solvers; the
-sub-solvers depend on neither the owner nor each other; events at an instant are the boundary.
+Dependency direction: the owner `piperine-solver` depends on both sub-solvers and on
+`piperine-abi`; the sub-solvers depend on neither the owner nor each other; events at an
+instant are the boundary.
 `piperine-abi` (the device ABI, MD-61) depends on no crate and is the only in-tree crate a
 solver crate may depend on besides those arrows. Breaking either arrow is a regression.
 

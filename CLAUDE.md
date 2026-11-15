@@ -36,8 +36,8 @@ source ──parse_and_elaborate──► Design (POM)        crate: piperine-la
                     hosts: piperine-api (Rust), piperine-cli
 ```
 
-The owner `piperine-solver` depends on both sub-solvers; the sub-solvers depend on neither
-the owner nor each other. `piperine-abi` is the one in-tree crate any of the three may
+The owner `piperine-solver` depends on both sub-solvers and on `piperine-abi`; the sub-solvers
+depend on neither the owner nor each other. `piperine-abi` is the one in-tree crate any of the three may
 depend on (MD-61). Events at an instant, run by the owner protocol, are the boundary between them.
 
 ### UNBREAKABLE RULE — POM navigability mirrors the source
@@ -72,7 +72,7 @@ compile). Never pass `--workspace`: the root shell and the other four crates do 
 |-------|------|
 | `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`). Spec: `docs/spec/`; POM guide: `docs/pom/`. |
 | `piperine-abi` | The device ABI (MD-61, `.specs/features/device-abi/abi.md`): the `#[repr(C)]` shape, frames and `u32` constants (`raw.rs`), the shipped layouts `BIT`/`REAL`/`BYTE`/`F64`/`NONE` (`layout.rs`), the owned shape builder `ShapeBuf`/`ShapeRef` (`shape.rs`), the `Device` trait and its `Eval`/`React` lenses (`device.rs`), the generic `extern "C"` thunks `module::<D>`/`library` (`thunk.rs`), the solver-side `caller::Handle`, shape-local `validate` and the finite-difference `verify_partials`. Depends on no crate; `unsafe` only in `raw.rs`, `thunk.rs`, `caller.rs`. |
-| `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the owner protocol (`protocol/`) and its adapters (`analyses/adapters.rs`), the bind of device instances (`core/bind.rs`, `core/builder.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
+| `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the owner protocol (`protocol/`) and its adapters (`analyses/adapters.rs`), the bind of device instances (`core/bind.rs`, `core/builder.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-abi` (the device ABI), `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
 | `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors, the device `Assembly` (`device/`: terms, partials, histories, limit iterates, checkpoints) and the secant step of crossing location (`crossing.rs`). Depends only on `piperine-abi`; it names no digital type. |
 | `piperine-digital-solver` | The digital sub-solver: the byte-net engine of the device ABI (`engine.rs`, `plan.rs`, `queue.rs`, `dag.rs`, `instant.rs`, `advance.rs`, `tick.rs`, `observe.rs`, `DigitalLimits`). Depends only on `piperine-abi`; it names no analog type. |
 | `piperine-api` | The library face (MD-20): the one host entry point `Session` + `SessionBuilder`, the sweep drivers, and `SolverConfig` (`session/`), result objects (`results.rs`, `waveform.rs`, `fourier.rs`, `units.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
