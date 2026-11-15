@@ -125,12 +125,12 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] `reached()` lists modules, functions and constants in first-reach order
-- [ ] A `const` is typed by its declared type and its initializer checked once however many readers
-- [ ] Two calls on the same design give equal tables
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_entry`: `checking_twice_gives_equal_tables`, `a_const_is_typed_once_by_its_declared_type`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `reached()` lists modules, functions and constants in first-reach order
+- [x] A `const` is typed by its declared type and its initializer checked once however many readers
+- [x] Two calls on the same design give equal tables
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_entry`: `checking_twice_gives_equal_tables`, `a_const_is_typed_once_by_its_declared_type`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

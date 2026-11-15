@@ -1,0 +1,267 @@
+//! The declaration worklist: from the top module, every module it places, every function it
+//! calls and every constant it reads is checked once, in first-reach order.
+
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use crate::msl::{Diagnostic, Span};
+use crate::pom::{BehaviorKind, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, Resolution, TypeId, TypeKind, CallClass, BlockNode, FnParamData};
+
+use super::{Callee, Method, Ty, Types};
+
+/// One pass over the reachable set. Everything it learns goes into side tables; the design is
+/// only read.
+pub(super) struct Checker<'d> {
+    pub(super) design: &'d Design,
+    pub(super) exprs: Vec<Option<Ty>>,
+    pub(super) locals: BTreeMap<DeclId, Ty>,
+    pub(super) methods: BTreeMap<ExprId, Method>,
+    pub(super) callees: BTreeMap<ExprId, Callee>,
+    pub(super) reached: Vec<DeclId>,
+    queued: BTreeSet<DeclId>,
+    queue: VecDeque<DeclId>,
+    diagnostics: Vec<DesignDiagnostic>,
+    /// The spans already reported: one diagnostic per construct.
+    reported: BTreeSet<(FileId, usize, usize)>,
+}
+
+impl<'d> Checker<'d> {
+    pub(super) fn new(design: &'d Design) -> Self {
+        Checker {
+            design,
+            exprs: vec![None; design.expr_count()],
+            locals: BTreeMap::new(),
+            methods: BTreeMap::new(),
+            callees: BTreeMap::new(),
+            reached: Vec::new(),
+            queued: BTreeSet::new(),
+            queue: VecDeque::new(),
+            diagnostics: Vec::new(),
+            reported: BTreeSet::new(),
+        }
+    }
+
+    /// Check `top` and everything it reaches: the table, or the diagnostics in source order.
+    pub(super) fn run(mut self, top: DeclId) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
+        self.reach(top);
+        while let Some(decl) = self.queue.pop_front() {
+            self.declaration(decl);
+        }
+        if !self.diagnostics.is_empty() {
+            let mut diagnostics = self.diagnostics;
+            diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
+            return Err(diagnostics);
+        }
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached })
+    }
+
+    /// Put a declaration on the worklist the first time it is reached.
+    pub(super) fn reach(&mut self, decl: DeclId) {
+        if self.queued.insert(decl) {
+            self.reached.push(decl);
+            self.queue.push_back(decl);
+        }
+    }
+
+    fn declaration(&mut self, decl: DeclId) {
+        match &self.design.decl_data(decl).kind {
+            DeclKind::Module(_) => self.module(decl),
+            DeclKind::Fn(_) => self.function(decl),
+            DeclKind::Const(_) => self.constant(decl),
+            other => self.unsupported_decl(decl, other.label()),
+        }
+    }
+
+    // ---- reporting -------------------------------------------------------------------------
+
+    /// One diagnostic per construct: a second one at the same span is dropped.
+    pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {
+        let span = diagnostic.span();
+        if self.reported.insert((file, span.start, span.end)) {
+            self.diagnostics.push(DesignDiagnostic { file, diagnostic });
+        }
+    }
+
+    pub(super) fn file_of_expr(&self, expr: ExprId) -> FileId {
+        self.design.decl_data(self.design.expr_node(expr).owner).file
+    }
+
+    /// `P0001`: a construct outside the M1 subset, named.
+    pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
+        self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
+    }
+
+    fn unsupported_decl(&mut self, decl: DeclId, what: &str) {
+        let data = self.design.decl_data(decl);
+        let (file, span) = (data.file, data.span);
+        self.unsupported(file, span, &format!("{} declaration", what.to_lowercase()));
+    }
+
+    /// `P0002`: a plain type mismatch at `span`, naming both types.
+    pub(super) fn mismatch(&mut self, file: FileId, span: Span, expected: &Ty, found: &Ty) {
+        let (expected, found) = (expected.name(self.design), found.name(self.design));
+        self.report(file, Diagnostic::new("P0002", format!("mismatched types: expected `{expected}`, found `{found}`"), span, format!("expected `{expected}`, found `{found}`")));
+    }
+
+    // ---- types as written ------------------------------------------------------------------
+
+    /// The type a type node writes, or a `P0001` and `None` for one outside the subset.
+    pub(super) fn lower_type(&mut self, ty: TypeId) -> Option<Ty> {
+        let node = self.design.type_node(ty).clone();
+        let file = self.design.decl_data(node.owner).file;
+        match &node.kind {
+            TypeKind::Path(_) => match self.design.type_resolution(ty) {
+                Resolution::Builtin(id) => match (id.info().name, id.width()) {
+                    ("fN", Some(64)) => Some(Ty::F64),
+                    ("bool", _) => Some(Ty::Bool),
+                    ("uN" | "iN" | "usize" | "isize", _) => {
+                        self.unsupported(file, node.span, &format!("integer type `{}`", id.name()));
+                        None
+                    }
+                    _ => {
+                        self.unsupported(file, node.span, &format!("type `{}`", id.name()));
+                        None
+                    }
+                },
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
+                _ => {
+                    self.unsupported(file, node.span, "this type");
+                    None
+                }
+            },
+            TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
+            TypeKind::Tuple(_) => {
+                self.unsupported(file, node.span, "tuple type");
+                None
+            }
+            TypeKind::FnPtr { params, ret } => {
+                let params: Option<Vec<Ty>> = params.iter().map(|p| self.lower_type(*p)).collect();
+                let ret = match ret {
+                    Some(r) => self.lower_type(*r),
+                    None => Some(Ty::Unit),
+                };
+                Some(Ty::Fn(params?, Box::new(ret?)))
+            }
+            TypeKind::Array { .. } => {
+                self.unsupported(file, node.span, "array type");
+                None
+            }
+            TypeKind::Slice(_) => {
+                self.unsupported(file, node.span, "slice type");
+                None
+            }
+            TypeKind::Ref { .. } => {
+                self.unsupported(file, node.span, "reference type");
+                None
+            }
+            TypeKind::Flip(_) => {
+                self.unsupported(file, node.span, "`flip` type");
+                None
+            }
+            TypeKind::Infer => {
+                self.unsupported(file, node.span, "inferred type `_`");
+                None
+            }
+        }
+    }
+
+    // ---- declarations ----------------------------------------------------------------------
+
+    /// `const NAME: T = value;`: typed by its declared type, its initializer checked once.
+    fn constant(&mut self, decl: DeclId) {
+        let DeclKind::Const(data) = self.design.decl_data(decl).kind.clone() else { return };
+        let Some(ty) = self.lower_type(data.ty) else { return };
+        match data.value {
+            Some(value) => self.check(value, &ty),
+            None => {
+                let d = self.design.decl_data(decl);
+                let (file, span) = (d.file, d.span);
+                self.unsupported(file, span, "`const` without a value");
+            }
+        }
+    }
+
+    /// The declared parameter types and result of a function, or `None` after a `P0001`.
+    pub(super) fn signature(&mut self, decl: DeclId) -> Option<(Vec<Ty>, Ty)> {
+        let data: DeclData = self.design.decl_data(decl).clone();
+        let DeclKind::Fn(f) = &data.kind else { return None };
+        let mut ok = true;
+        if data.generics_span.is_some() {
+            self.unsupported(data.file, data.span, "generic function");
+            ok = false;
+        }
+        if f.abi.is_some() {
+            self.unsupported(data.file, data.span, "`extern` function");
+            ok = false;
+        }
+        let mut params = Vec::new();
+        for child in data.children.iter().copied() {
+            let DeclKind::FnParam(p) = &self.design.decl_data(child).kind else { continue };
+            match p {
+                FnParamData::Named { ty } => match self.lower_type(*ty) {
+                    Some(t) => params.push(t),
+                    None => ok = false,
+                },
+                FnParamData::SelfValue | FnParamData::Error => {
+                    let d = self.design.decl_data(child);
+                    self.unsupported(d.file, d.span, "`self` parameter");
+                    ok = false;
+                }
+            }
+        }
+        let ret = match f.ret {
+            Some(r) => self.lower_type(r),
+            None => Some(Ty::Unit),
+        };
+        match (ok, ret) {
+            (true, Some(ret)) => Some((params, ret)),
+            _ => None,
+        }
+    }
+
+    /// A function of the reachable set: its body against its declared result. A call to it is
+    /// typed from the signature alone, so a recursive function never loops.
+    fn function(&mut self, decl: DeclId) {
+        let Some((params, ret)) = self.signature(decl) else { return };
+        let data = self.design.decl_data(decl).clone();
+        let DeclKind::Fn(f) = &data.kind else { return };
+        let named = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
+        for (param, ty) in named.zip(params) {
+            self.locals.insert(param, ty);
+        }
+        match &f.body {
+            Some(body) => self.function_body(body, &ret, data.file),
+            None => self.unsupported(data.file, data.span, "function without a body"),
+        }
+    }
+
+    fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
+        if let Some(found) = self.statements(&body.stmts, Some(ret))
+            && found != *ret
+        {
+            self.mismatch(file, body.span, ret, &found);
+        }
+    }
+
+    /// A module of the reachable set: the modules it places are reached, and its analog blocks
+    /// are checked.
+    fn module(&mut self, decl: DeclId) {
+        let data = self.design.decl_data(decl).clone();
+        let DeclKind::Module(m) = &data.kind else { return };
+        for instance in m.instances.iter().copied() {
+            if let crate::pom::ExprKind::Call { class: CallClass::Instance { module: Some(placed), .. }, .. } = &self.design.expr_node(instance).kind {
+                self.callees.insert(instance, Callee::Module(*placed));
+                self.reach(*placed);
+            }
+        }
+        for behavior in m.behaviors.iter().copied() {
+            let b = self.design.decl_data(behavior).clone();
+            let DeclKind::Behavior(bd) = &b.kind else { continue };
+            match bd.kind {
+                BehaviorKind::Analog => {
+                    self.statements(&bd.body, None);
+                }
+                BehaviorKind::Digital => self.unsupported(b.file, b.span, "`digital` block"),
+            }
+        }
+    }
+}

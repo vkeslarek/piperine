@@ -7,7 +7,10 @@
 //!
 //! The result is a table or the reasons there is none, never both.
 
+mod check;
+mod expr;
 mod ty;
+mod unsupported;
 
 use std::collections::BTreeMap;
 
@@ -62,11 +65,11 @@ impl<'d> Types<'d> {
         if !design.diagnostics().is_empty() {
             return Err(design.diagnostics().to_vec());
         }
-        let Some(_module) = design.module(top).filter(|m| m.krate().is_root()) else {
+        let Some(module) = design.module(top).filter(|m| m.krate().is_root()) else {
             let diagnostic = Diagnostic::new("P0003", format!("`{top}` is not a module of the root crate"), Span::new(0, 0), "no such top module");
             return Err(vec![DesignDiagnostic { file: FileId(0), diagnostic }]);
         };
-        Ok(Types { design, exprs: vec![None; design.expr_count()], locals: BTreeMap::new(), methods: BTreeMap::new(), callees: BTreeMap::new(), reached: Vec::new() })
+        check::Checker::new(design).run(module.decl().id())
     }
 
     /// The design the table was built over.
