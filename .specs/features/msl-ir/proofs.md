@@ -1,6 +1,6 @@
 # msl-ir proofs
 
-**HEAD**: c96af47a
+**HEAD**: 3d50f2ba
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 46 pass, 0 fail
@@ -59,20 +59,20 @@
 `Run model` - exit 0
 
 ```
+test every_expression_records_its_type ... ok
 test instances_are_stored_in_pre_order ... ok
-test handles_are_copy ... ok
-test ir_is_send_and_sync ... ok
 test limit_and_stim_sites_are_indexed ... ok
 test path_lookup_finds_instances_and_nodes ... ok
 test one_body_serves_every_instance_of_it ... ok
+test the_node_table_names_nature_declarer_and_init ... ok
 test value_code_of_the_subset_is_representable ... ok
 test the_authored_tree_is_walkable ... ok
-test the_node_table_names_nature_declarer_and_init ... ok
 test a_finished_ir_has_no_mutating_operation ... ok
 
 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
      Running tests/model.rs (/var/tmp/piperine-target/debug/deps/model-37b4b500b758490e)
 ```
 
@@ -85,36 +85,36 @@ test text_that_is_no_ir_fails_to_deserialize ... ok
 test json_round_trip_gives_an_equal_ir ... ok
 test reals_survive_bit_for_bit ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
      Running tests/serde.rs (/var/tmp/piperine-target/debug/deps/serde-ac60f5b7bbf7b790)
 ```
 
 `Run print` - exit 0
 
 ```
-running 9 tests
 test no_parser_of_the_text_exists ... ok
-test printed_text_shows_every_item ... ok
-test structural_text_is_the_tree_with_types ... ok
 test structural_text_shows_forms_and_types ... ok
-test printing_twice_is_byte_identical ... ok
+test printed_text_shows_every_item ... ok
 test display_stays_the_full_form ... ok
+test structural_text_is_the_tree_with_types ... ok
+test printing_twice_is_byte_identical ... ok
 test unequal_irs_print_different_texts ... ok
 test structural_text_ignores_origins_and_arena_order ... ok
 test a_cyclic_deep_or_shared_ir_prints ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s
      Running tests/print.rs (/var/tmp/piperine-target/debug/deps/print-15cc330508aed8f3)
 ```
 
 `Run check` - exit 0
 
 ```
-running 9 tests
 test a_top_alone_prints_and_checks ... ok
 test a_recursive_call_or_an_unbound_local_is_named ... ok
 test a_cyclic_expression_is_named_without_hanging ... ok
@@ -127,7 +127,8 @@ test a_built_ir_checks_clean ... ok
 
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
      Running tests/check.rs (/var/tmp/piperine-target/debug/deps/check-74c101b8702f60de)
 ```
 
@@ -135,16 +136,17 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 7 tests
-test dependency_sets_have_a_fixed_order ... ok
 test a_shared_expression_is_walked_once ... ok
-test affine_means_probes_meet_only_linear_operators ... ok
-test a_limit_read_and_a_constant_if_keep_the_class ... ok
 test a_doubling_call_chain_is_walked_once_per_signature ... ok
+test dependency_sets_have_a_fixed_order ... ok
+test a_limit_read_and_a_constant_if_keep_the_class ... ok
 test dependencies_follow_locals_and_calls ... ok
+test affine_means_probes_meet_only_linear_operators ... ok
 test a_deep_expression_is_walked_without_native_stack ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
      Running tests/deps.rs (/var/tmp/piperine-target/debug/deps/deps-0fbf51e077f2aa9a)
 ```
