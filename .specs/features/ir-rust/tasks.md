@@ -222,11 +222,11 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The first test sweeps every operator and method over 200 points against `piperine_interp::Dual`: values with equal bits, tangents equal as `f64`
-- [ ] The file uses `core` only and compiles alone: `rustc --edition 2024 --crate-type rlib` on it exits 0
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `rt::real::tests::dual_gives_the_interpreters_values_and_tangents`, `rt::real::tests::abs_has_the_derivative_of_sign`, `rt::real::tests::f64_is_a_real`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+- [x] The first test sweeps every operator and method over 200 points against `piperine_interp::Dual`: values with equal bits, tangents equal as `f64`
+- [x] The file uses `core` only and compiles alone: `rustc --edition 2024 --crate-type rlib` on it exits 0
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `rt::real::tests::dual_gives_the_interpreters_values_and_tangents`, `rt::real::tests::abs_has_the_derivative_of_sign`, `rt::real::tests::f64_is_a_real`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full
