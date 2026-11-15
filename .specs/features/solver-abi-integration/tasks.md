@@ -650,11 +650,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `removed_tests_are_listed_with_their_item` reads `removed.txt`: every line is `name<TAB>item`, and no test function of that name exists in the tree
-- [ ] `analog_sources_name_no_digital_type` and `digital_sources_name_no_analog_type` scan the final trees (C1, C46)
-- [ ] Test `owner_depends_on_the_abi_and_both_sub_solvers_only` passes
-- [ ] The scan's self-test still catches a planted name
-- [ ] Gate: full
+- [x] Test `removed_tests_are_listed_with_their_item` reads `removed.txt`: every line is `name<TAB>item`, and no test function of that name exists in the tree
+- [x] `analog_sources_name_no_digital_type` and `digital_sources_name_no_analog_type` scan the final trees (C1, C46)
+- [x] Test `owner_depends_on_the_abi_and_both_sub_solvers_only` passes
+- [x] The scan's self-test still catches a planted name
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

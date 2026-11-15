@@ -160,7 +160,7 @@ fn owner_depends_on_the_abi_and_both_sub_solvers_only() {
 fn analog_sources_name_no_digital_type() {
     let found = names_in_crate(
         ANALOG,
-        &["LogicValue", "DigitalNet", "DigitalEvent", "DigitalState", "DigitalDevice"],
+        &["LogicValue", "DigitalNet", "DigitalEvent", "DigitalState", "DigitalDevice", "DigitalPlan", "NetId"],
     );
     assert!(found.is_empty(), "analog crate names digital types:\n{}", found.join("\n"));
 }
@@ -169,7 +169,7 @@ fn analog_sources_name_no_digital_type() {
 fn digital_sources_name_no_analog_type() {
     let found = names_in_crate(
         DIGITAL,
-        &["Stamp", "Netlist", "AnalogReference", "Tolerances", "NewtonRaphsonSolver"],
+        &["Stamp", "Netlist", "AnalogReference", "Tolerances", "NewtonRaphsonSolver", "AnalogPlan", "Assembly"],
     );
     assert!(found.is_empty(), "digital crate names analog types:\n{}", found.join("\n"));
 }

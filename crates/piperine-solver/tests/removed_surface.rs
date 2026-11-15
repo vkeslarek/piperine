@@ -235,6 +235,55 @@ fn the_old_digital_engine_is_gone() {
     assert!(found.is_empty(), "removed old digital engine still named: {found:#?}");
 }
 
+/// The tests `solver-abi-integration` removed, by name and the item each was
+/// about (`removed.txt`): every line is `name<TAB>item`, and no function of
+/// that name is left in a crate of the solver (the removal list is the audit
+/// trail of design "Test disposition").
+#[test]
+fn removed_tests_are_listed_with_their_item() {
+    let list = repo_root().join(".specs/features/solver-abi-integration/removed.txt");
+    let text = std::fs::read_to_string(&list).expect("read removed.txt");
+    let (names, malformed) = removed_names(&text);
+    assert!(malformed.is_empty(), "removed.txt lines that are not `name<TAB>item`: {malformed:#?}");
+    assert!(!names.is_empty(), "removed.txt lists nothing");
+
+    let mut files = Vec::new();
+    for name in ["piperine-abi", "piperine-analog-solver", "piperine-digital-solver", "piperine-solver"] {
+        rust_files(&repo_root().join("crates").join(name), &mut files);
+    }
+    let mut left = Vec::new();
+    for file in files {
+        let text = std::fs::read_to_string(&file).expect("read source");
+        for name in &names {
+            if defines_fn(&text, name) {
+                left.push(format!("{}: {name}", file.display()));
+            }
+        }
+    }
+    assert!(left.is_empty(), "removed tests still defined:\n{}", left.join("\n"));
+}
+
+/// The names of a removal list, and its lines that are not `name<TAB>item`
+/// (a blank line is skipped).
+fn removed_names(list: &str) -> (Vec<String>, Vec<String>) {
+    let (mut names, mut malformed) = (Vec::new(), Vec::new());
+    for line in list.lines().filter(|l| !l.trim().is_empty()) {
+        match line.split_once('\t') {
+            Some((name, item)) if !name.trim().is_empty() && !item.trim().is_empty() && !item.contains('\t') => {
+                names.push(name.trim().to_string());
+            }
+            _ => malformed.push(line.to_string()),
+        }
+    }
+    (names, malformed)
+}
+
+/// Whether `text` defines a function called `name`.
+fn defines_fn(text: &str, name: &str) -> bool {
+    let needle = format!("fn {name}(");
+    text.match_indices(&needle).any(|(i, _)| !text[..i].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_'))
+}
+
 #[test]
 fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";
@@ -247,4 +296,10 @@ fn the_scan_catches_a_planted_name() {
     assert!(words_in("struct RegionQueueless; fn channels() {}", &["Region", "Channel"]).is_empty());
     assert_eq!(words_in("impl Element for Resistor {}", &["Element", "Introspect"]), vec!["Element"]);
     assert!(words_in("struct ElementCount; fn elements() {}", &["Element"]).is_empty());
+    // The removal list's parser and its scan.
+    let (names, malformed) = removed_names("a_test\tthe item\n\nno_item\nb_test\t\n");
+    assert_eq!(names, vec!["a_test"]);
+    assert_eq!(malformed, vec!["no_item", "b_test\t"]);
+    assert!(defines_fn("#[test]\nfn a_test() {}", "a_test"));
+    assert!(!defines_fn("fn not_a_test() {}", "a_test"));
 }
