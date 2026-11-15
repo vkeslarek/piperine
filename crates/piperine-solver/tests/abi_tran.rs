@@ -2,7 +2,8 @@
 //! `1 - e^-1` with the literal and tolerance of `helper_devices.rs`; a
 //! continuous pin's `init` starts Newton and is held through a transient's
 //! operating point only; a rejected stage leaves the term histories as they
-//! were; a stop off the tick grid is reached exactly once, by a step that integrates.
+//! were; a stop off the tick grid is reached exactly once, by a step that integrates; the
+//! step whose target is the stop ends at the stop bit for bit.
 
 use std::sync::{Arc, OnceLock};
 
@@ -183,6 +184,12 @@ fn rc_step_reads_one_minus_exp_on_devices() {
 /// The RC of `rc_step_reads_one_minus_exp_on_devices` with the corner of the `ac_rc`/`tran_rc`
 /// twins: `tau = 1 kohm * 1.5915494309189535e-9 F`, 1591549430.92 ticks of the default 1 fs grid.
 fn rc_to(stop: f64) -> (f64, Vec<(f64, f64)>) {
+    let options = TransientAnalysisOptions::new(stop, stop / 400.0);
+    rc_with(options)
+}
+
+/// `rc_to` under the given options.
+fn rc_with(options: TransientAnalysisOptions) -> (f64, Vec<(f64, f64)>) {
     let (r, c) = (1.0e3, 1.5915494309189535e-9);
     let tau = r * c;
     let mut b = CircuitBuilder::new("rc");
@@ -193,9 +200,7 @@ fn rc_to(stop: f64) -> (f64, Vec<(f64, f64)>) {
     add_resistor(&mut b, "r1", r, &top, &out);
     add_capacitor(&mut b, "c1", c, &out, &gnd);
     let mut circuit = b.build().expect("build");
-    let mut solver = circuit
-        .transient(TransientAnalysisOptions::new(stop, stop / 400.0), Context::default())
-        .expect("tran");
+    let mut solver = circuit.transient(options, Context::default()).expect("tran");
     solver.apply_initial_conditions(vec![InitialValue { reference: out.clone(), value: 0.0 }]);
     let result = solver.solve().expect("solve");
     let id = node_id(&out);
@@ -233,6 +238,33 @@ fn a_stop_on_the_tick_grid_ends_on_its_own_step() {
     assert!((t - stop).abs() < 1.0e-12 * stop, "stopped at t = {t:e}");
     let analytic = 1.0 - (-stop / tau).exp();
     assert!((v - analytic).abs() < 1.0e-3, "v(out) at the stop = {v} vs {analytic}");
+}
+
+/// The step whose target is the stop ends at the stop bit for bit, on the tick grid or off it,
+/// and records it once: a non-landing step ends at the controller's proposal only short of the stop.
+#[test]
+fn the_stop_is_reached_bit_exactly_and_recorded_once() {
+    let off_grid: f64 = 1.0e3 * 1.5915494309189535e-9;
+    // The `tran_rc` twin's run: 10 us with the step capped at 10 ns.
+    let mut capped = TransientAnalysisOptions::new(1.0e-5, 1.0e-8);
+    capped.dt_max = 1.0e-8;
+    let mut off_grid_capped = TransientAnalysisOptions::new(off_grid * 6.0, 1.0e-8);
+    off_grid_capped.dt_max = 1.0e-8;
+    let runs = [
+        TransientAnalysisOptions::new(off_grid, off_grid / 400.0),
+        TransientAnalysisOptions::new(1.6e-6, 1.6e-6 / 400.0),
+        capped,
+        off_grid_capped,
+    ];
+    for options in runs {
+        let stop = options.stop_time;
+        let (_, steps) = rc_with(options);
+        assert_strictly_increasing(&steps);
+        let (t, _) = *steps.last().expect("steps");
+        assert_eq!(t.to_bits(), stop.to_bits(), "stop {stop:e}: the last record is at t = {t:e}");
+        let at_stop = steps.iter().filter(|(s, _)| *s == stop).count();
+        assert_eq!(at_stop, 1, "stop {stop:e}: one record at the stop");
+    }
 }
 
 /// A capacitor of `module` (seeded to `INITIAL_VOLTAGE`) over a resistor to

@@ -1210,6 +1210,8 @@ impl TransientSolver<'_> {
     /// One step to `to`. The protocol puts every step's end on the tick grid;
     /// a step that is not a landing ends at this side's own proposal, which
     /// lies within one tick of `to`, so the time grid is the controller's.
+    /// The step whose target is the stop ends at the stop itself, bit for bit,
+    /// as a landing ends at its tick: a sum of controller steps falls ulps short.
     // SPEC_DEVIATION: the step solves to its own proposal, not to `to`, when
     // the two are less than one tick apart and the step is not a landing.
     // Reason: the parity oracles pin the controller's time grid (`parity_baseline`
@@ -1253,7 +1255,16 @@ impl TransientSolver<'_> {
                 ),
             ));
         }
-        let t_next = if !exempt && (run.proposed - to).abs() < run.spt { run.proposed } else { to };
+        let stop = self.options.stop_time;
+        let t_next = if exempt {
+            to
+        } else if (stop - to).abs() < run.spt {
+            stop
+        } else if (run.proposed - to).abs() < run.spt {
+            run.proposed
+        } else {
+            to
+        };
         run.attempted = t_next;
         let st = &mut run.st;
         if t_next <= st.current_time {
