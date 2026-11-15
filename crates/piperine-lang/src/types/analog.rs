@@ -18,7 +18,7 @@ impl Checker<'_> {
         let target = self.design.expr_node(lhs).clone();
         let is_probe = matches!(&target.kind, ExprKind::Call { class: crate::pom::CallClass::Probe, .. });
         if is_probe {
-            self.probe(lhs, true);
+            self.exprs[lhs.index()] = self.probe(lhs, true);
         } else {
             let message = "the left side of `+>` is not a potential or flow probe of a branch".to_string();
             self.coded(file, "E0410", target.span, message, "not a probe");

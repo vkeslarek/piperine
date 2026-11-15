@@ -199,7 +199,263 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] `method(expr)` of `(vd / nvt).exp()` in `tests/ngspice/devices.msl` is `Method::Exp` (SPEC_DEVIATION: the `Diode` of devices.msl also needs `limit`, `v(a, k)`, contributions and params (T6, T7), so the test proves the same expression form `(vd / nvt).exp()` in a function; the devices.msl instance is proven in T9)
+- [x] `method(expr)` of `(vd / nvt).exp()` in `tests/ngspice/devices.msl` is `Method::Exp` (SPEC_DEVIATION: the `Diode` of devices.msl also needs `limit`, `v(a, k)`, contributions and params (T6, T7), so the test proves the same expression form `(vd / nvt).exp()` in a function; the devices.msl instance is proven in T9 by `the_reachable_set_of_a_twin_is_typed`)
+- [x] A method outside the table (`powf`) is `P0001` naming it
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_deferred_method_is_resolved`, `catalogue_methods_on_f64_are_f64`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(lang): Appendix H method catalogue of the M1 subset`
+
+---
+
+## Phase 2 tasks
+
+### T6: Modules, params, nodes and placements
+
+**What**: `Checker::module` and `Checker::placement`: params `f64`/`bool` with default and `where`, ports and signals as nodes of a conservative nature, `gnd`, node initial values, placements with node arguments and a param block.
+**Where**: `crates/piperine-lang/src/types/module.rs`
+**Depends on**: None
+**Reuses**: `pom/reflect/hardware.rs` (`Module::ports`, `params`, `signals`, `Instance`), `PortKind`, `NatureKind`
+**Requirement**: TYP-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `E0210`, `E0251`, `E0312`, `E0318`, `E0320` each asserted with the span of the offending construct
+- [x] A placement of a user module records `Callee::Module(decl)`; a placement of a core module is routed to T7's table by its `Resolution::Builtin`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_modules`: `params_are_f64_or_bool`, `a_default_of_the_wrong_type_is_rejected`, `a_where_that_is_not_bool_is_e0318`, `ports_and_signals_are_nodes_and_gnd_fits_any`, `a_node_init_that_is_not_f64_is_e0210`, `a_placement_checks_nodes_count_and_params`, `a_node_of_another_nature_is_e0251`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(lang): type checking of modules, params and placements`
+
+---
+
+### T7: Analog forms and the core table
+
+**What**: `Core::signature(BuiltinId)` for `ddt`, `limit`, `ac_stim`, `temperature`, `gmin`, `source_scale`, `potential`; probes through `access` aliases; contributions.
+**Where**: `crates/piperine-lang/src/types/analog.rs`
+**Depends on**: T6
+**Reuses**: `pom/builtin.rs` (`BUILTINS`), `CallClass::Probe`, `StmtKind::Contribution`
+**Requirement**: TYP-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `limit(x, f)` and `limit(x, f, seed)`, `ac_stim(mag)` and `ac_stim(mag, phase)` all check
+- [x] A core built-in with no row in `Core` (`delay`, `noise`, `ddx`, `cross`, `at`, `now`, `freq`, `analysis`, `simparam`) is `P0001`
+- [x] `E0240`, `E0410`, `E0417`, `E0450` each asserted with its span
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_analog`: `potential_probes_are_f64`, `probe_nodes_of_two_natures_are_e0240`, `a_contribution_target_that_is_no_probe_is_e0410`, `a_contribution_that_is_not_f64_is_e0417`, `ddt_ac_stim_and_environment_are_f64`, `limit_checks_its_input_function_and_seed`, `a_core_primitive_in_a_fn_is_e0450`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(lang): type checking of probes, contributions and core primitives`
+
+---
+
+### T8: The subset classifier
+
+**What**: `Unsupported` with exhaustive `expr`, `stmt`, `pat`, `ty`, `item` functions and no wildcard arm; every construct outside TYP-02 to TYP-04 is one `P0001` that names it as the specification does.
+**Where**: `crates/piperine-lang/src/types/unsupported.rs`
+**Depends on**: T7
+**Reuses**: `pom/body.rs`, `pom/decl.rs` enums
+**Requirement**: TYP-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] One test row per language construct of the spec's Out of Scope table (integers, `match`, `struct`, loops, `let mut`, generics, `digital`, `Option`, tuples, arrays, references, templates, value inputs, module results, `extern`)
+- [x] An item holding such a construct that the top does not reach raises nothing
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_subset`: `a_construct_outside_the_subset_is_p0001`, `p0001_names_the_construct`, `unreached_items_are_not_reported`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(lang): exhaustive classifier of constructs outside the M1 subset`
+
+---
+
+## Checks` cites. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
+- Zero warnings on every crate the `**Build**` line names. Cargo only with `-p <crate>`: never `--workspace`, never `cargo clean`, never set `CARGO_TARGET_DIR`.
+- A numeric assertion or tolerance of an existing test is never edited. A number you cannot explain: stop and report, never retune.
+- One atomic commit per task, message as given, with the `Co-Authored-By:` trailer the session gives. No push, no merge.
+- If `lessons.py` is run, `git status` afterwards and restore `.specs/lessons.json` and `.specs/LESSONS.md` if they changed.
+
+---
+
+## Test Coverage Matrix
+
+> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `CLAUDE.md` and `AGENTS.md` (zero warnings; fail loud; the five Rust idiom rules of MD-13; test placement MD-28; every target opens with a `//!` scope header), `crates/piperine-lang/tests/suite_hygiene.rs` (no `#[ignore]`, no file-scope lint suppression), `.specs/features/codegen/context.md` (S1 to S10; ngspice parity is the proof of M1).
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| Entry point, reach, determinism, the corpus | unit | each AC of TYP-01 and TYP-06; the six twins check clean | `crates/piperine-lang/tests/types_entry.rs` | `cargo test -p piperine-lang --test types_entry` |
+| Value expressions, functions, closures, catalogue | unit | each AC of TYP-02 and the four edge cases; one positive and one negative source per rule | `crates/piperine-lang/tests/types_values.rs` | `cargo test -p piperine-lang --test types_values` |
+| Modules, params, nodes, placements | unit | each AC of TYP-03, each spec code asserted with its span | `crates/piperine-lang/tests/types_modules.rs` | `cargo test -p piperine-lang --test types_modules` |
+| Probes, contributions, core primitives | unit | each AC of TYP-04, both arities of `limit` and `ac_stim` | `crates/piperine-lang/tests/types_analog.rs` | `cargo test -p piperine-lang --test types_analog` |
+| The subset classifier | unit | each AC of TYP-05; one `P0001` test row per construct of the spec's Out of Scope table | `crates/piperine-lang/tests/types_subset.rs` | `cargo test -p piperine-lang --test types_subset` |
+
+## Gate Check Commands
+
+> Generated from codebase - confirm before Execute.
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | while iterating on one target | `cargo test -p piperine-lang --test <the task's target>` |
+| Full | every task | `cargo test -p piperine-lang` |
+| Build | the last task of each phase | `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene` |
+
+---
+
+## Execution Plan
+
+Two phases, run in order. Two batches, one per phase (5 and 4 tasks), both Sonnet.
+
+### Phase 1: Tables, reach and value code
+
+Executor: Sonnet.
+
+```
+T1 → T2 → T3 → T4 → T5
+```
+
+### Phase 2: Modules, analog, the subset, the corpus
+
+Executor: Sonnet.
+
+```
+T6 → T7 → T8 → T9
+```
+
+---
+
+## Task Breakdown
+
+## Phase 1 tasks
+
+### T1: `Ty`, the `Types` table and the entry point
+
+**What**: `Ty` (design "Ty"), `Types<'d>` with its accessors, and `Types::check(design, top)` returning the design's own diagnostics or one diagnostic for an unknown top; the module `piperine_lang::types` is exported.
+**Where**: `crates/piperine-lang/src/types/mod.rs`
+**Depends on**: None
+**Reuses**: `msl/diag.rs` (`Diagnostic`), `pom/design.rs` (`DesignDiagnostic`, `Design::module`)
+**Requirement**: TYP-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `Types::check` on a design with diagnostics returns exactly those and no table
+- [x] An unknown top, or a top outside the root crate, is one diagnostic naming it
+- [x] `ty`, `method`, `callee`, `local`, `reached` exist with the signatures of design "Types" (returning nothing yet for an empty reachable set)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_entry`: `a_design_with_diagnostics_gives_them_back`, `an_unknown_top_is_one_diagnostic`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(lang): types module, Ty and the Types::check entry point`
+
+---
+
+### T2: The declaration worklist
+
+**What**: `Checker` walks from the top: modules through placements, functions through calls, `const` items through paths; each declaration checked once, in first-reach order; recursion typed from the declared signature.
+**Where**: `crates/piperine-lang/src/types/check.rs`
+**Depends on**: T1
+**Reuses**: `pom/reflect/` handles (`Module`, `Function`, `Const`), `pom/resolution.rs` (`Resolution::Decl`, `CallClass`)
+**Requirement**: TYP-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `reached()` lists modules, functions and constants in first-reach order
+- [x] A `const` is typed by its declared type and its initializer checked once however many readers
+- [x] Two calls on the same design give equal tables
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_entry`: `checking_twice_gives_equal_tables`, `a_const_is_typed_once_by_its_declared_type`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(lang): demand-driven declaration worklist of the type checker`
+
+---
+
+### T3: Value expressions
+
+**What**: `check(expr, expected)` and `infer(expr)` for literals, operators, `if`/`else`, blocks and `let`; a mismatch is one `P0002` at the expression naming both types, and the expression takes the expected type.
+**Where**: `crates/piperine-lang/src/types/expr.rs`
+**Depends on**: T2
+**Reuses**: `pom/body.rs` (`ExprKind`, `StmtKind`), `src/stack.rs` (`stack::deep`)
+**Requirement**: TYP-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] SI-suffixed and `_f64` literals are `f64`; an unsuffixed integer literal where `f64` is required is `P0002`
+- [x] Diagnostics of one call come ordered by file then span start, at most one per expression
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `literals_are_f64_or_bool`, `operators_type_as_rust_types_them`, `if_and_block_take_their_value_type`, `a_let_takes_its_initializer_type`, `a_mismatch_names_both_types`, `diagnostics_come_in_source_order_one_per_expression`, `a_let_without_type_or_value_is_p0001`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(lang): bidirectional checking of value expressions`
+
+---
+
+### T4: Function calls and closures
+
+**What**: Calls of reached functions (declared result, each argument checked, optional trailing parameters left out per §3.2) and closures typed from the function type of the parameter they are passed to.
+**Where**: `crates/piperine-lang/src/types/call.rs`
+**Depends on**: T3
+**Reuses**: T2 worklist, T3 checker
+**Requirement**: TYP-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `callee(expr)` is `Callee::Function(decl)` for a call of a function
+- [x] A closure anywhere but as an argument whose parameter has a function type is `P0001`
+- [x] `pnjlim` and `vt` of the embedded `std` check with no diagnostic (SPEC_DEVIATION: `pnjlim` calls `.abs()`/`.ln()` (T5 catalogue) and `vt` calls `temperature()` (T7 core table), so neither can check clean at T4; `pnjlim` is proven in T5 by `the_std_pnjlim_checks_clean`, `vt` in T7 by `the_std_vt_checks_clean`)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_call_takes_its_declared_result`, `a_closure_takes_its_types_from_the_parameter`, `a_recursive_function_is_typed_from_its_signature`, `a_closure_outside_an_argument_is_p0001`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(lang): typed function calls and closures`
+
+---
+
+### T5: The method catalogue
+
+**What**: `Catalogue::method(recv, name)` over the `const` table of `exp`, `ln`, `sqrt`, `abs` on `f64`; a `Deferred` method call records its `Method`; any other method is `P0001`.
+**Where**: `crates/piperine-lang/src/types/catalogue.rs`
+**Depends on**: T4
+**Reuses**: `docs/spec/appendix_h_library.md` H.2 (the rows)
+**Requirement**: TYP-01, TYP-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `method(expr)` of `(vd / nvt).exp()` in `tests/ngspice/devices.msl` is `Method::Exp` (SPEC_DEVIATION: the `Diode` of devices.msl also needs `limit`, `v(a, k)`, contributions and params (T6, T7), so the test proves the same expression form `(vd / nvt).exp()` in a function; the devices.msl instance is proven in T9 by `the_reachable_set_of_a_twin_is_typed`)
 - [x] A method outside the table (`powf`) is `P0001` naming it
 - [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_deferred_method_is_resolved`, `catalogue_methods_on_f64_are_f64`
 - [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
