@@ -75,6 +75,18 @@ fn a_site_or_contribution_under_if_is_p0001() {
             names: "an `ac_stim` under an `if` or in a closure",
             at: "ac_stim(1.0)",
         },
+        Row {
+            form: "contribution in a bare block",
+            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { { i(p, n) +> 1.0; } }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
+            names: "a contribution in a nested block",
+            at: "i(p, n) +> 1.0;",
+        },
+        Row {
+            form: "contribution in a let block",
+            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let x = { i(p, n) +> 1.0; 2.0 }; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
+            names: "a contribution in a nested block",
+            at: "i(p, n) +> 1.0;",
+        },
     ] {
         row.check();
     }
@@ -159,4 +171,10 @@ fn a_site_on_the_left_of_a_short_circuit_still_lowers() {
         let text = ir.to_string();
         assert!(text.contains("limit L0") && text.contains("stim"), "{op}: {text}");
     }
+}
+
+#[test]
+fn a_contribution_in_the_analog_blocks_own_list_still_lowers() {
+    let src = "module M(p: Electrical, n: Electrical) { }\nanalog for M { i(p, n) +> 1.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }";
+    Elab::run(src, "Top").expect("a top-level contribution lowers");
 }

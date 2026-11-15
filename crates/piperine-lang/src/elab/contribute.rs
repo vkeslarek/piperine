@@ -32,6 +32,10 @@ impl Elaboration<'_, '_> {
             self.refuse(scope.file, span, Unlowered::ConditionalContribution);
             return false;
         }
+        if scope.block_depth > 0 {
+            self.refuse(scope.file, span, Unlowered::NestedContribution);
+            return false;
+        }
         let Some((role, plus, minus)) = self.contribution_target(scope, lhs) else { return false };
         if plus == minus {
             let at = self.design.expr_node(lhs).span;

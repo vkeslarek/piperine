@@ -30,13 +30,16 @@ pub(super) struct Scope {
     /// How many `if` branches and closure bodies the code being lowered sits in: a site there
     /// is not unconditional, which `Ir::check` and the model both forbid.
     pub(super) nesting: u32,
+    /// Plain blocks entered below the analog block's own statement list: a contribution there
+    /// is not a top-level statement (Part IV §10 rule 8 makes it legal; M1 refuses it).
+    pub(super) block_depth: u32,
     /// The name the `let` being lowered gives the `limit` call that is its whole initializer.
     pub(super) limit_name: Option<(ExprId, String)>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, limit_name: None }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None }
     }
 }
 
@@ -135,7 +138,12 @@ impl Elaboration<'_, '_> {
                 scope.nesting -= 1;
                 Some(self.emit(Expr::If { cond: cond?, then: then?, otherwise: otherwise? }, ty, origin))
             }
-            ExprKind::Block(block) => self.lower_block(scope, file, &block.stmts, node.span),
+            ExprKind::Block(block) => {
+                scope.block_depth += 1;
+                let lowered = self.lower_block(scope, file, &block.stmts, node.span);
+                scope.block_depth -= 1;
+                lowered
+            }
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
             ExprKind::MethodCall { recv, .. } => {
                 let Some(method) = self.types.method(expr) else {

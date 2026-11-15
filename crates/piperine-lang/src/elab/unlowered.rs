@@ -13,6 +13,8 @@ use crate::pom::FileId;
 pub(super) enum Unlowered<'a> {
     /// A contribution under an `if` or in a closure.
     ConditionalContribution,
+    /// A contribution in a plain block nested in the analog block.
+    NestedContribution,
     /// A `limit` under an `if`, in a function or in a closure.
     ConditionalLimit,
     /// An `ac_stim` under an `if`, in a function or in a closure.
@@ -34,6 +36,7 @@ impl Unlowered<'_> {
     fn name(&self) -> String {
         match self {
             Unlowered::ConditionalContribution => "a contribution under an `if` or in a closure".to_string(),
+            Unlowered::NestedContribution => "a contribution in a nested block".to_string(),
             Unlowered::ConditionalLimit => "a `limit` under an `if` or in a closure".to_string(),
             Unlowered::ConditionalStim => "an `ac_stim` under an `if` or in a closure".to_string(),
             Unlowered::DdtOffTop => "a `ddt` that is not a whole addend of a flow contribution".to_string(),
