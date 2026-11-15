@@ -259,7 +259,9 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => {}
+            Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
+            Expr::IsKnown(value) | Expr::High(value) => exprs.push(*value),
             Expr::Cast { expr, .. } => exprs.push(*expr),
             Expr::Method { receiver, args, .. } => {
                 exprs.push(*receiver);
@@ -401,6 +403,10 @@ impl<'a> Checker<'a> {
                 ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => {
                     return Some(format!("type {t} has a width outside 1..=64"));
                 }
+                ValueType::Flagged(inner) if !Typing::scalar(inner) => {
+                    return Some(format!("type {t}: only `bool`, `f64` and an integer type may be unknown"));
+                }
+                ValueType::Flagged(inner) => stack.push(inner),
                 ValueType::Fn(params, ret) => {
                     stack.extend(params);
                     stack.push(ret);
@@ -698,6 +704,19 @@ impl<'a> Checker<'a> {
                 let short = matches!(op, BinaryOp::And | BinaryOp::Or);
                 next.push(Task::Expr(*rhs, Ctx { conditional: ctx.conditional || short, ..ctx }));
             }
+            Expr::If { cond, then, otherwise } if [*cond, *then, *otherwise].iter().any(|e| self.ty(*e).is_some_and(|t| matches!(t, ValueType::Flagged(_)))) => {
+                if first {
+                    let want = match (self.ty(*cond), self.ty(*then), self.ty(*otherwise)) {
+                        (Some(c), Some(t), Some(o)) => Typing::if_(c, t, o),
+                        _ => None,
+                    };
+                    self.typed(w, &origin, ty, want, "an `if`");
+                }
+                next.push(Task::Expr(*cond, ctx));
+                let arm = Ctx { conditional: true, ..ctx };
+                next.push(Task::Expr(*then, arm));
+                next.push(Task::Expr(*otherwise, arm));
+            }
             Expr::If { cond, then, otherwise } => {
                 if first {
                     self.want(w, *cond, &ValueType::Bool, "condition of an `if`");
@@ -857,6 +876,30 @@ impl<'a> Checker<'a> {
                 }
                 next.push(Task::Expr(*receiver, ctx));
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
+            }
+            Expr::Unknown => {
+                if first && !matches!(ty, ValueType::Flagged(_)) {
+                    self.wrong(w, origin, format!("the literal `Unknown` must have a flagged type, found {ty}"));
+                }
+            }
+            Expr::KnownOr { value, default } => {
+                if first {
+                    let want = match (self.ty(*value), self.ty(*default)) {
+                        (Some(v), Some(d)) => Typing::known_or(v, d),
+                        _ => None,
+                    };
+                    self.typed(w, &origin, ty, want, "`known_or`");
+                }
+                next.push(Task::Expr(*value, ctx));
+                next.push(Task::Expr(*default, ctx));
+            }
+            Expr::IsKnown(value) | Expr::High(value) => {
+                if first {
+                    let high = matches!(data.kind, Expr::High(_));
+                    let what = if high { "`high`" } else { "`is_known`" };
+                    self.typed(w, &origin, ty, self.ty(*value).and_then(|v| Typing::flag_read(high, v)), what);
+                }
+                next.push(Task::Expr(*value, ctx));
             }
         }
         next.push(Task::Exit(id));

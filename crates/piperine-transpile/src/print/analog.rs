@@ -197,7 +197,8 @@ impl<'a> AnalogPrinter<'a> {
                     sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().map(Self::env_source));
                     stack.extend(args);
                 }
-                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack.push(*expr),
+                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
+                Expr::KnownOr { value, default } => stack.extend([*value, *default]),
                 Expr::Method { receiver, args, .. } => stack.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
                 Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
@@ -213,7 +214,7 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Expr::Math { args, .. } => stack.extend(args),
                 Expr::Closure { body, .. } => stack.push(*body),
-                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) => {}
+                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => {}
             }
         }
     }

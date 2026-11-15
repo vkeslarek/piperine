@@ -175,6 +175,14 @@ pub enum Expr {
     Cast { expr: ExprId, to: ValueType },
     /// `receiver.method(args)`: one of the closed set of value methods.
     Method { method: Method, receiver: ExprId, args: Vec<ExprId> },
+    /// The literal `Unknown` (§3.3.1): every level unknown; its type is `Flagged`.
+    Unknown,
+    /// `value.known_or(default)` (§3.3.4): the value when known, `default` otherwise.
+    KnownOr { value: ExprId, default: ExprId },
+    /// `value.is_known()`: the known flag, itself always known.
+    IsKnown(ExprId),
+    /// `value.high()` of a `bool`: known and true.
+    High(ExprId),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -269,6 +277,9 @@ pub enum ValueType {
     UInt(u32),
     /// `Int<N>` (`iN`): `N` bits, two's complement, arithmetic modulo `2^N`.
     Int(u32),
+    /// A value that may be unknown (§3.3): the type of a carrier read and of everything computed
+    /// from one. The inner type is `bool`, `f64` or an integer type.
+    Flagged(Box<ValueType>),
 }
 
 impl ValueType {

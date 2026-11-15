@@ -72,6 +72,7 @@ impl Display for ValueType {
             }
             ValueType::UInt(n) => write!(f, "u{n}"),
             ValueType::Int(n) => write!(f, "i{n}"),
+            ValueType::Flagged(inner) => write!(f, "flagged<{inner}>"),
         }
     }
 }
@@ -550,6 +551,12 @@ impl<'a> Printer<'a> {
                 Printer::list(next, args);
                 next.push(text(")".into()));
             }
+            Expr::Unknown => next.push(text("Unknown".into())),
+            Expr::KnownOr { value, default } => {
+                next.extend([Piece::Expr(*value), text(".known_or(".into()), Piece::Expr(*default), text(")".into())]);
+            }
+            Expr::IsKnown(value) => next.extend([Piece::Expr(*value), text(".is_known()".into())]),
+            Expr::High(value) => next.extend([Piece::Expr(*value), text(".high()".into())]),
         }
         if note {
             next.push(text(format!(" : {})", data.ty)));
@@ -588,6 +595,13 @@ impl<'a> Printer<'a> {
                 let args = args?;
                 Typing::method(*method, &ty(receiver)?, &args.iter().collect::<Vec<_>>())
             }
+            Expr::Unknown => None,
+            Expr::KnownOr { value, default } => Typing::known_or(&ty(value)?, &ty(default)?),
+            Expr::IsKnown(value) => Typing::flag_read(false, &ty(value)?),
+            Expr::High(value) => Typing::flag_read(true, &ty(value)?),
+            Expr::If { cond, then, otherwise } if [cond, then, otherwise].iter().any(|e| ty(e).is_some_and(|t| matches!(t, ValueType::Flagged(_)))) => {
+                Typing::if_(&ty(cond)?, &ty(then)?, &ty(otherwise)?)
+            }
             Expr::Unary { op, expr } if ty(expr).is_some_and(|t| Typing::digital(&t)) => Typing::unary(*op, &ty(expr)?),
             Expr::Binary { op, lhs, rhs }
                 if Typing::digital_op(*op) || [lhs, rhs].iter().any(|e| ty(e).is_some_and(|t| Typing::digital(&t))) =>
@@ -622,6 +636,7 @@ impl<'a> Printer<'a> {
                 Some(ValueType::Fn(params?, Box::new(ty(body)?)))
             }
             Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
+            Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) => None,
         }
     }
 
@@ -735,6 +750,10 @@ impl<'a> Printer<'a> {
             Expr::Int(v) => format!("int {v}"),
             Expr::Cast { expr, to } => format!("cast {} to {to}", e(expr)),
             Expr::Method { method, receiver, args } => format!("{} {} ({})", Printer::method_name(*method), e(receiver), ids(args)),
+            Expr::Unknown => "unknown".to_string(),
+            Expr::KnownOr { value, default } => format!("known_or {} {}", e(value), e(default)),
+            Expr::IsKnown(value) => format!("is_known {}", e(value)),
+            Expr::High(value) => format!("high {}", e(value)),
         }
     }
 

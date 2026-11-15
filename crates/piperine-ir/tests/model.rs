@@ -233,8 +233,12 @@ impl Reach {
         out.push(id);
         match ir.expr(id) {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) => {}
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => Reach::expr(ir, *expr, out),
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => {}
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => Reach::expr(ir, *expr, out),
+            Expr::KnownOr { value, default } => {
+                Reach::expr(ir, *value, out);
+                Reach::expr(ir, *default, out);
+            }
             Expr::Method { receiver, args, .. } => {
                 Reach::expr(ir, *receiver, out);
                 for a in args {

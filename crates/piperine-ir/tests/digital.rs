@@ -307,3 +307,179 @@ fn integers_and_their_operators_print() {
     // A node typed other than its form gives prints its type in the structural form.
     assert!(ir.print_structural().contains("((((8u3 + 3u9) : u3) & 1u3) : u9)"), "{}", ir.print_structural());
 }
+
+/// Functions over values that may be unknown, each beside the MSL it transcribes.
+struct Unknowns;
+
+impl Unknowns {
+    fn function(b: &mut IrBuilder, name: &str, file: &str, line: u32, params: Vec<Local>, ret: ValueType, extra: Vec<Local>, body: piperine_ir::ExprId) -> FunctionId {
+        let mut locals = params.clone();
+        locals.extend(extra);
+        b.function(FunctionSpec { name: name.into(), origin: Design::origin(file, line, 1), params, ret, locals, body })
+    }
+
+    /// `control.msl:12-14`, `SetpointReg`'s step written as a value, `data.known()` and
+    /// `if let Some(d)` in msl-digital's lowering (`(x.is_known(), x.known_or(zero))`):
+    /// `fn setpoint_next(data: Bit<u8>, code: Bit<u8>) -> u8 { if data.is_known() { let d = data.known_or(0); d.min(SETPOINT_MAX) } else { code } }`.
+    fn setpoint_next(b: &mut IrBuilder) -> FunctionId {
+        let u8_ = Ty::u(8);
+        let mut x = Dx::new(b, "control.msl", 13, 9);
+        let data = x.local(0, Ty::flagged(u8_.clone()));
+        let cond = x.is_known(data);
+        let data = x.local(0, Ty::flagged(u8_.clone()));
+        let zero = x.int(0, u8_.clone());
+        let d = x.known_or(data, zero, u8_.clone());
+        let let_d = x.let_(2, d);
+        let d = x.local(2, u8_.clone());
+        let max = x.int(168, u8_.clone());
+        let min = x.method(Method::Min, d, vec![max], u8_.clone());
+        let then = x.block(vec![let_d], Some(min), u8_.clone());
+        let code = x.local(1, Ty::flagged(u8_.clone()));
+        let body = x.if_(cond, then, code, Ty::flagged(u8_.clone()));
+        let params = vec![Design::local("data", Ty::flagged(u8_.clone())), Design::local("code", Ty::flagged(u8_.clone()))];
+        Unknowns::function(b, "setpoint_next", "control.msl", 12, params, Ty::flagged(u8_.clone()), vec![Design::local("d", u8_)], body)
+    }
+
+    /// `power.msl:57`, the gate level of `PowerSwitch`: `fn gate_level(g: Bit) -> f64 { if g.high() { 1.0 } else { 0.0 } }`.
+    fn gate_level(b: &mut IrBuilder) -> FunctionId {
+        let mut x = Dx::new(b, "power.msl", 57, 31);
+        let g = x.local(0, Ty::flagged(ValueType::Bool));
+        let cond = x.high(g);
+        let on = x.real(1.0);
+        let off = x.real(0.0);
+        let body = x.if_(cond, on, off, ValueType::F64);
+        Unknowns::function(b, "gate_level", "power.msl", 57, vec![Design::local("g", Ty::flagged(ValueType::Bool))], ValueType::F64, vec![], body)
+    }
+
+    /// `power.msl:85`, the interlock of `GateDriver` over levels that may be unknown:
+    /// `fn interlock(hs_cmd: Bit, ls_cmd: Bit) -> Bit { hs_cmd & !ls_cmd }`.
+    fn interlock(b: &mut IrBuilder) -> FunctionId {
+        let level = Ty::flagged(ValueType::Bool);
+        let mut x = Dx::new(b, "power.msl", 85, 15);
+        let hs = x.local(0, level.clone());
+        let ls = x.local(1, level.clone());
+        let not_ls = x.un(UnaryOp::Not, ls, level.clone());
+        let body = x.bin(BinaryOp::BitAnd, hs, not_ls, level.clone());
+        let params = vec![Design::local("hs_cmd", level.clone()), Design::local("ls_cmd", level.clone())];
+        Unknowns::function(b, "interlock", "power.msl", 85, params, level, vec![], body)
+    }
+
+    /// §3.3.1 and §3.3.3: the literal `Unknown`, under a condition that may itself be unknown:
+    /// `fn clear(run: Bit, x: Bit<u9>) -> Bit<u9> { if run { x } else { Unknown } }`.
+    fn clear(b: &mut IrBuilder) -> FunctionId {
+        let word = Ty::flagged(Ty::u(9));
+        let mut x = Dx::new(b, "unknown.msl", 1, 45);
+        let run = x.local(0, Ty::flagged(ValueType::Bool));
+        let v = x.local(1, word.clone());
+        let unknown = x.unknown(word.clone());
+        let body = x.if_(run, v, unknown, word.clone());
+        let params = vec![Design::local("run", Ty::flagged(ValueType::Bool)), Design::local("x", word.clone())];
+        Unknowns::function(b, "clear", "unknown.msl", 1, params, word, vec![], body)
+    }
+}
+
+#[test]
+fn unknown_values_and_their_reads_print() {
+    let mut b = IrBuilder::new();
+    let rev3 = Buck::rev3_flagged(&mut b);
+    Buck::dithered_width_flagged(&mut b, rev3);
+    Unknowns::setpoint_next(&mut b);
+    Unknowns::gate_level(&mut b);
+    Unknowns::interlock(&mut b);
+    Unknowns::clear(&mut b);
+    let ir = Design::finish(b);
+    assert_eq!(ir.check(), vec![]);
+
+    // An unknown operand makes the result unknown (§3.3.2): the flagged frame index flags the
+    // comparison and the width; the known `duty` keeps `coarse` and `fine` known.
+    Printed::holds(&ir, &["fn \"rev3~1\"(k: flagged<u3>) -> flagged<u3>", "  local k: flagged<u3>", "  ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))"]);
+    Printed::holds(
+        &ir,
+        &[
+            "fn \"dithered_width~01\"(duty: u12, frame: flagged<u3>) -> flagged<u9>",
+            "  local coarse: u9",
+            "  local duty: u12",
+            "  local fine: u3",
+            "  local frame: flagged<u3>",
+            "  let coarse = ((duty >> 3i32) as u9)",
+            "  let fine = ((duty & 7u12) as u3)",
+            "  if (\"rev3~1\"(frame) < fine) { (coarse + 1u9) } else { coarse }",
+        ],
+    );
+    // `known_or` and `is_known` are known whatever their operand (§3.3.4); an arm that may be
+    // unknown flags the `if`.
+    Printed::holds(
+        &ir,
+        &[
+            "fn setpoint_next(data: flagged<u8>, code: flagged<u8>) -> flagged<u8>",
+            "  local code: flagged<u8>",
+            "  local d: u8",
+            "  local data: flagged<u8>",
+            "  if data.is_known() { let d = data.known_or(0u8); d.min(168u8) } else { code }",
+        ],
+    );
+    Printed::holds(&ir, &["fn gate_level(g: flagged<bool>) -> f64", "  local g: flagged<bool>", "  if g.high() { 1.0 } else { 0.0 }"]);
+    Printed::holds(&ir, &["fn interlock(hs_cmd: flagged<bool>, ls_cmd: flagged<bool>) -> flagged<bool>"]);
+    Printed::holds(&ir, &["  (hs_cmd & (!ls_cmd))"]);
+    // `Unknown` has no type of its own: the structural form writes the one it is given.
+    Printed::holds(&ir, &["fn clear(run: flagged<bool>, x: flagged<u9>) -> flagged<u9>"]);
+    Printed::holds(&ir, &["  if run { x } else { (Unknown : flagged<u9>) }"]);
+
+    let full = ir.to_string();
+    for form in [": flagged<u9> = unknown  @unknown.msl:1:45", ": u8 = known_or e", ": bool = is_known e", ": bool = high e", ": flagged<bool> = bitand e"] {
+        assert!(full.contains(form), "{form} missing from:\n{full}");
+    }
+
+    // Each misuse is one entry at its origin.
+    let mut b = IrBuilder::new();
+    let level = Ty::flagged(ValueType::Bool);
+    let mut x = Dx::new(&mut b, "bad.msl", 1, 1);
+    // `&&` decides control: an operand that may be unknown is lowered to `&` (§3.3.12).
+    let a = x.local(0, level.clone());
+    let c = x.local(0, level.clone());
+    let and = x.bin(BinaryOp::And, a, c, ValueType::Bool);
+    let s1 = x.stmt(and);
+    // `known_or`'s default must be a known value of the base type.
+    x.at(2, 1);
+    let a = x.local(0, level.clone());
+    let d = x.local(0, level.clone());
+    let ko = x.known_or(a, d, ValueType::Bool);
+    let s2 = x.stmt(ko);
+    // `Unknown` must have a flagged type.
+    x.at(3, 1);
+    let u = x.unknown(Ty::u(9));
+    let s3 = x.stmt(u);
+    // `high()` reads a `bool`.
+    x.at(4, 1);
+    let w = x.int(3, Ty::u(8));
+    let h = x.high(w);
+    let s4 = x.stmt(h);
+    // An `if` on a condition that may be unknown is itself unknown.
+    x.at(5, 1);
+    let a = x.local(0, level.clone());
+    let one = x.int(1, Ty::u(9));
+    let two = x.int(2, Ty::u(9));
+    let dropped = x.if_(a, one, two, Ty::u(9));
+    let s5 = x.stmt(dropped);
+    x.at(6, 1);
+    let unit = x.unit();
+    let body = x.block(vec![s1, s2, s3, s4, s5], Some(unit), ValueType::Unit);
+    b.function(FunctionSpec {
+        name: "bad".into(),
+        origin: Design::origin("bad.msl", 9, 1),
+        params: vec![Design::local("a", level.clone())],
+        ret: ValueType::Unit,
+        locals: vec![Design::local("a", level), Design::local("nothing", Ty::flagged(ValueType::Unit))],
+        body,
+    });
+    let ir = Design::finish(b);
+    let broken = ir.check();
+    let at = |line: u32, what: &str| broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).count();
+    assert_eq!(at(1, "the operands of a binary operator do not fit its types"), 1, "{broken:#?}");
+    assert_eq!(at(2, "the operands of `known_or` do not fit its types"), 1, "{broken:#?}");
+    assert_eq!(at(3, "the literal `Unknown` must have a flagged type, found u9"), 1, "{broken:#?}");
+    assert_eq!(at(4, "the operands of `high` do not fit its types"), 1, "{broken:#?}");
+    assert_eq!(at(5, "expression is typed u9, its form gives flagged<u9>"), 1, "{broken:#?}");
+    assert_eq!(at(9, "type flagged<()>: only `bool`, `f64` and an integer type may be unknown"), 1, "{broken:#?}");
+    assert_eq!(broken.len(), 6, "{broken:#?}");
+}

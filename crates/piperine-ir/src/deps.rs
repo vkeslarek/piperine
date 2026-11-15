@@ -438,7 +438,7 @@ impl<'a> Walk<'a> {
         }
         let in_body = self.scope().in_body;
         match &ir.exprs[id.index()].kind {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) => return self.done(id, Value::constant()),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => return self.done(id, Value::constant()),
             Expr::Local(i) => {
                 let value = match self.scope().locals.get(*i as usize) {
                     Some(Some(value)) => value.clone(),
@@ -472,7 +472,8 @@ impl<'a> Walk<'a> {
                 }
                 return self.done(id, Value::of(sources, Class::Affine));
             }
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => next.push(Task::Expr(*expr)),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Task::Expr(*expr)),
+            Expr::KnownOr { value, default } => next.extend([Task::Expr(*value), Task::Expr(*default)]),
             Expr::Method { receiver, args, .. } => {
                 next.push(Task::Expr(*receiver));
                 next.extend(args.iter().map(|&a| Task::Expr(a)));
@@ -552,9 +553,13 @@ impl<'a> Walk<'a> {
                 let values = self.pop_n(args.len());
                 Value::nonlinear(&values)
             }
-            Expr::Cast { .. } => {
+            Expr::Cast { .. } | Expr::IsKnown(_) | Expr::High(_) => {
                 let value = self.pop();
                 Value::nonlinear([&value])
+            }
+            Expr::KnownOr { .. } => {
+                let values = self.pop_n(2);
+                Value::nonlinear(&values)
             }
             Expr::Method { args, .. } => {
                 let values = self.pop_n(1 + args.len());
@@ -587,7 +592,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

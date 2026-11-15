@@ -218,7 +218,8 @@ impl<'a> ValuePrinter<'a> {
     /// The expressions `expr` holds, statements included.
     pub(crate) fn children(ir: &Ir, expr: &Expr, out: &mut Vec<ExprId>) {
         match expr {
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => out.push(*expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => out.push(*expr),
+            Expr::KnownOr { value, default } => out.extend([*value, *default]),
             Expr::Method { receiver, args, .. } => out.extend([*receiver].into_iter().chain(args.iter().copied())),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
             Expr::If { cond, then, otherwise } => out.extend([*cond, *then, *otherwise]),
@@ -243,7 +244,8 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Param(_)
             | Expr::Probe { .. }
             | Expr::Env(_)
-            | Expr::Int(_) => {}
+            | Expr::Int(_)
+            | Expr::Unknown => {}
         }
     }
 
@@ -271,8 +273,8 @@ impl<'a> ValuePrinter<'a> {
                 path: path.to_string(),
                 origin: self.origin.clone(),
             }),
-            ValueType::UInt(_) | ValueType::Int(_) => Err(Error::Unsupported {
-                form: format!("the integer type {ty}"),
+            ValueType::UInt(_) | ValueType::Int(_) | ValueType::Flagged(_) => Err(Error::Unsupported {
+                form: format!("the type {ty}"),
                 path: path.to_string(),
                 origin: self.origin.clone(),
             }),
@@ -356,6 +358,10 @@ impl<'a> ValuePrinter<'a> {
             Expr::Int(_) => Err(self.unsupported(e, "an integer literal")),
             Expr::Cast { .. } => Err(self.unsupported(e, "a cast")),
             Expr::Method { .. } => Err(self.unsupported(e, "a value method")),
+            Expr::Unknown => Err(self.unsupported(e, "the literal `Unknown`")),
+            Expr::KnownOr { .. } => Err(self.unsupported(e, "`known_or`")),
+            Expr::IsKnown(_) => Err(self.unsupported(e, "`is_known`")),
+            Expr::High(_) => Err(self.unsupported(e, "`high`")),
         }
     }
 

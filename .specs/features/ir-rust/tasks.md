@@ -746,9 +746,9 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `unknown_values_and_their_reads_print`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `unknown_values_and_their_reads_print`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full

@@ -280,6 +280,10 @@ impl<'a> Walk<'a> {
             Expr::Int(_) => "Int",
             Expr::Cast { .. } => "Cast",
             Expr::Method { .. } => "Method",
+            Expr::Unknown => "Unknown",
+            Expr::KnownOr { .. } => "KnownOr",
+            Expr::IsKnown(_) => "IsKnown",
+            Expr::High(_) => "High",
         }
     }
 

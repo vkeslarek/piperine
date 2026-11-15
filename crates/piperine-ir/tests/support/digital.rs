@@ -19,6 +19,16 @@ impl Ty {
     pub fn i(n: u32) -> ValueType {
         ValueType::Int(n)
     }
+
+    /// A value that may be unknown: the type of a carrier read and what is computed from one.
+    pub fn flagged(t: ValueType) -> ValueType {
+        ValueType::Flagged(Box::new(t))
+    }
+
+    /// `t` flagged when `flagged` holds.
+    pub fn maybe(t: ValueType, flagged: bool) -> ValueType {
+        if flagged { Ty::flagged(t) } else { t }
+    }
 }
 
 /// Expression construction at one source position; every node takes its type from the caller.
@@ -108,6 +118,22 @@ impl<'b> Dx<'b> {
     pub fn stmt(&mut self, e: ExprId) -> StmtId {
         self.b.stmt(Stmt::Expr(e))
     }
+
+    pub fn unknown(&mut self, ty: ValueType) -> ExprId {
+        self.emit(Expr::Unknown, ty)
+    }
+
+    pub fn known_or(&mut self, value: ExprId, default: ExprId, ty: ValueType) -> ExprId {
+        self.emit(Expr::KnownOr { value, default }, ty)
+    }
+
+    pub fn is_known(&mut self, value: ExprId) -> ExprId {
+        self.emit(Expr::IsKnown(value), ValueType::Bool)
+    }
+
+    pub fn high(&mut self, value: ExprId) -> ExprId {
+        self.emit(Expr::High(value), ValueType::Bool)
+    }
 }
 
 /// The buck-slice bodies and the functions they call, each beside the MSL text it transcribes.
@@ -121,29 +147,40 @@ impl Buck {
     /// `dpwm.msl:14`: `fn rev3(k: u3) -> u3 { ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1) }`. A shift
     /// amount literal is `i32`, Rust's fallback for an unconstrained shift operand.
     pub fn rev3(b: &mut IrBuilder) -> FunctionId {
+        Buck::rev3_with(b, "rev3", false)
+    }
+
+    /// `rev3` lowered for an argument that may be unknown (msl-digital's variant `rev3~1`): every
+    /// operator over `k` may be unknown too.
+    pub fn rev3_flagged(b: &mut IrBuilder) -> FunctionId {
+        Buck::rev3_with(b, "rev3~1", true)
+    }
+
+    fn rev3_with(b: &mut IrBuilder, name: &str, flagged: bool) -> FunctionId {
+        let k_ty = Ty::maybe(Ty::u(3), flagged);
         let mut x = Dx::new(b, "dpwm.msl", 14, 24);
-        let k = x.local(0, Ty::u(3));
+        let k = x.local(0, k_ty.clone());
         let one = x.int(1, Ty::u(3));
-        let k_and_1 = x.bin(BinaryOp::BitAnd, k, one, Ty::u(3));
+        let k_and_1 = x.bin(BinaryOp::BitAnd, k, one, k_ty.clone());
         let two = x.int(2, Ty::i(32));
-        let shifted = x.bin(BinaryOp::Shl, k_and_1, two, Ty::u(3));
-        let k = x.local(0, Ty::u(3));
+        let shifted = x.bin(BinaryOp::Shl, k_and_1, two, k_ty.clone());
+        let k = x.local(0, k_ty.clone());
         let two_mask = x.int(2, Ty::u(3));
-        let middle = x.bin(BinaryOp::BitAnd, k, two_mask, Ty::u(3));
-        let high_low = x.bin(BinaryOp::BitOr, shifted, middle, Ty::u(3));
-        let k = x.local(0, Ty::u(3));
+        let middle = x.bin(BinaryOp::BitAnd, k, two_mask, k_ty.clone());
+        let high_low = x.bin(BinaryOp::BitOr, shifted, middle, k_ty.clone());
+        let k = x.local(0, k_ty.clone());
         let two = x.int(2, Ty::i(32));
-        let down = x.bin(BinaryOp::Shr, k, two, Ty::u(3));
+        let down = x.bin(BinaryOp::Shr, k, two, k_ty.clone());
         let one = x.int(1, Ty::u(3));
-        let low = x.bin(BinaryOp::BitAnd, down, one, Ty::u(3));
-        let body = x.bin(BinaryOp::BitOr, high_low, low, Ty::u(3));
+        let low = x.bin(BinaryOp::BitAnd, down, one, k_ty.clone());
+        let body = x.bin(BinaryOp::BitOr, high_low, low, k_ty.clone());
         let origin = Origin { file: "dpwm.msl".into(), line: 14, col: 1 };
         b.function(piperine_ir::FunctionSpec {
-            name: "rev3".into(),
+            name: name.into(),
             origin,
-            params: vec![Buck::local("k", Ty::u(3))],
-            ret: Ty::u(3),
-            locals: vec![Buck::local("k", Ty::u(3))],
+            params: vec![Buck::local("k", k_ty.clone())],
+            ret: k_ty.clone(),
+            locals: vec![Buck::local("k", k_ty)],
             body,
         })
     }
@@ -158,6 +195,19 @@ impl Buck {
     /// }
     /// ```
     pub fn dithered_width(b: &mut IrBuilder, rev3: FunctionId) -> FunctionId {
+        Buck::dithered_width_with(b, "dithered_width", rev3, false)
+    }
+
+    /// `dithered_width` lowered for a frame index that may be unknown (msl-digital's variant
+    /// `dithered_width~01`, reached by `dithered_width(duty.known_or(0), frame + 1)`), calling
+    /// `rev3~1`: the comparison, and so the width, may be unknown.
+    pub fn dithered_width_flagged(b: &mut IrBuilder, rev3_flagged: FunctionId) -> FunctionId {
+        Buck::dithered_width_with(b, "dithered_width~01", rev3_flagged, true)
+    }
+
+    fn dithered_width_with(b: &mut IrBuilder, name: &str, rev3: FunctionId, flagged: bool) -> FunctionId {
+        let frame_ty = Ty::maybe(Ty::u(3), flagged);
+        let width_ty = Ty::maybe(Ty::u(9), flagged);
         let mut x = Dx::new(b, "dpwm.msl", 19, 18);
         let duty = x.local(0, Ty::u(12));
         let three = x.int(3, Ty::i(32));
@@ -171,26 +221,26 @@ impl Buck {
         let fine = x.cast(fine, Ty::u(3), Ty::u(3));
         let let_fine = x.let_(3, fine);
         x.at(21, 5);
-        let frame = x.local(1, Ty::u(3));
-        let rev = x.call(rev3, vec![frame], Ty::u(3));
+        let frame = x.local(1, frame_ty.clone());
+        let rev = x.call(rev3, vec![frame], frame_ty.clone());
         let fine = x.local(3, Ty::u(3));
-        let cond = x.bin(BinaryOp::Lt, rev, fine, ValueType::Bool);
+        let cond = x.bin(BinaryOp::Lt, rev, fine, Ty::maybe(ValueType::Bool, flagged));
         let coarse = x.local(2, Ty::u(9));
         let one = x.int(1, Ty::u(9));
         let wider = x.bin(BinaryOp::Add, coarse, one, Ty::u(9));
         let coarse = x.local(2, Ty::u(9));
-        let width = x.if_(cond, wider, coarse, Ty::u(9));
+        let width = x.if_(cond, wider, coarse, width_ty.clone());
         x.at(18, 52);
-        let body = x.block(vec![let_coarse, let_fine], Some(width), Ty::u(9));
+        let body = x.block(vec![let_coarse, let_fine], Some(width), width_ty.clone());
         let origin = Origin { file: "dpwm.msl".into(), line: 18, col: 1 };
         b.function(piperine_ir::FunctionSpec {
-            name: "dithered_width".into(),
+            name: name.into(),
             origin,
-            params: vec![Buck::local("duty", Ty::u(12)), Buck::local("frame", Ty::u(3))],
-            ret: Ty::u(9),
+            params: vec![Buck::local("duty", Ty::u(12)), Buck::local("frame", frame_ty.clone())],
+            ret: width_ty,
             locals: vec![
                 Buck::local("duty", Ty::u(12)),
-                Buck::local("frame", Ty::u(3)),
+                Buck::local("frame", frame_ty),
                 Buck::local("coarse", Ty::u(9)),
                 Buck::local("fine", Ty::u(3)),
             ],

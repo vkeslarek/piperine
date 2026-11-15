@@ -14,17 +14,21 @@ pub(crate) struct Typing;
 impl Typing {
     /// The type of a value with its unknown flag removed.
     pub(crate) fn base(t: &ValueType) -> &ValueType {
-        t
+        match t {
+            ValueType::Flagged(inner) => inner,
+            other => other,
+        }
     }
 
     /// Whether a value of this type may be unknown.
-    pub(crate) fn flagged(_t: &ValueType) -> bool {
-        false
+    pub(crate) fn flagged(t: &ValueType) -> bool {
+        matches!(t, ValueType::Flagged(_))
     }
 
-    /// `base`, flagged when `flagged` holds and the base can carry a flag.
-    pub(crate) fn flag(base: ValueType, _flagged: bool) -> ValueType {
-        base
+    /// `base`, flagged when `flagged` holds and the base can carry a flag (§3.3.2: one unknown
+    /// operand makes the result unknown).
+    pub(crate) fn flag(base: ValueType, flagged: bool) -> ValueType {
+        if flagged && Typing::scalar(&base) { ValueType::Flagged(Box::new(base)) } else { base }
     }
 
     /// A type outside the M1 pair `f64`, `bool`: an operand that selects these rules.
@@ -79,6 +83,27 @@ impl Typing {
         let from = Typing::base(t);
         let fits = Typing::numeric(to) && (Typing::numeric(from) || (*from == ValueType::Bool && to.is_integer()));
         fits.then(|| Typing::flag(to.clone(), Typing::flagged(t)))
+    }
+
+    /// `if cond { then } else { otherwise }` once a part is flagged: a `bool` condition, arms of
+    /// one base type; the value is unknown when the condition or an arm may be (§3.3.3).
+    pub(crate) fn if_(cond: &ValueType, then: &ValueType, otherwise: &ValueType) -> Option<ValueType> {
+        let fits = *Typing::base(cond) == ValueType::Bool && Typing::base(then) == Typing::base(otherwise);
+        let flagged = [cond, then, otherwise].iter().any(|t| Typing::flagged(t));
+        fits.then(|| Typing::flag(Typing::base(then).clone(), flagged))
+    }
+
+    /// `value.known_or(default)`: a known `default` of the value's base type; the result is known.
+    pub(crate) fn known_or(value: &ValueType, default: &ValueType) -> Option<ValueType> {
+        let fits = Typing::scalar(default) && Typing::base(value) == default;
+        fits.then(|| default.clone())
+    }
+
+    /// `value.is_known()` of any carried value, `value.high()` of a `bool`: a known `bool`.
+    pub(crate) fn flag_read(high: bool, value: &ValueType) -> Option<ValueType> {
+        let base = Typing::base(value);
+        let fits = if high { *base == ValueType::Bool } else { Typing::scalar(base) };
+        fits.then_some(ValueType::Bool)
     }
 
     pub(crate) fn method(method: Method, receiver: &ValueType, args: &[&ValueType]) -> Option<ValueType> {
