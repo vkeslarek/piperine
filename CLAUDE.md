@@ -8,10 +8,11 @@ Piperine MSL surface described in `docs/spec/`) into the POM `Design`. The nativ
 solver is three crates: `piperine-solver` (the analysis engine and the `Element` ABI) and
 two sub-solvers, `piperine-analog-solver` and `piperine-digital-solver`, which the
 solver owner combines. Events are the only boundary between the analog and the digital
-side. Rust workspace, edition 2024.
+side is the target boundary (MD-60); today the digital snapshot (`&[LogicValue]`) is still
+shared until feature B. Rust workspace, edition 2024.
 
-**Today only `piperine-lang` and the three solver crates compile.** `piperine-project`,
-`piperine-api`, `piperine-cli` and `piperine-lang-server` are kept in the tree but do not
+**Today only `piperine-lang` and the three solver crates compile.** The root `piperine`
+shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` are kept in the tree but do not
 build yet: they depended on crates that were retired (codegen, ir, python, plugin,
 plugin-macros) and wait for the new device compiler. The root `Cargo.toml` lists the four
 green crates as `default-members`.
@@ -33,7 +34,7 @@ source ──parse_and_elaborate──► Design (POM)        crate: piperine-la
 ```
 
 The owner `piperine-solver` depends on both sub-solvers; the sub-solvers depend on neither
-the owner nor each other. They meet through events only.
+the owner nor each other. Events are the target boundary between them (the digital snapshot is shared until feature B).
 
 ### UNBREAKABLE RULE — POM navigability mirrors the source
 
@@ -59,16 +60,16 @@ cargo test -- --nocapture         # see solver output
 ```
 
 At the root, `cargo build` / `cargo test` run the `default-members` (the crates that
-compile). Never pass `--workspace`: the other four crates do not build yet.
+compile). Never pass `--workspace`: the root shell and the other four crates do not build yet.
 
 ## Crate responsibilities
 
 | Crate | Role |
 |-------|------|
 | `piperine-lang` | Parser **and** elaborator for Verilog-AMS (LRM 2.4) in one crate (MD-47 — merged from the former `piperine-vams` + `piperine-lang` split, MD-43's purity-gate boundary retired as a cost with no independent consumer). Lexer/preprocessor/grammar (`` `define``/`` `include``/`` `ifdef`` in `preprocessor.rs`, the Annex A grammar in `grammar/`) into `ast::SourceFile`, then the elaborator over that AST: source → POM `Design` (`elab/`, `pom/`), a const evaluator over `ast::Expr` directly (`elab/const_eval.rs` — no PHDL-era tree-walking `Interpreter`/`Host`, see `eval/mod.rs`'s own `//!`), and pure ch. 9 system-task/VPI-registration helpers in `eval/tasks.rs`. `parse_and_elaborate` is the entry point. Grammar/semantics come from `VAMS-LRM-2-4.md` Annex A only, never a third-party Verilog-A compiler. Builtin stdlib headers in `headers/` (Annex D: `constants.vams`, `disciplines.vams`) and `headers/spice/` (the ngspice-faithful `.va` device models — `` `include "spice/<file>.va" `` resolves in any project with no dependency, via the builtin `spice` namespace `SourceMap` seeds). |
-| `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), MNA/linear algebra (`math/`), the `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming, `ConvergencePlan`, `TrBdf2` + LTE, `prelude.rs`. Depends on `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
-| `piperine-analog-solver` | The analog sub-solver. Depends on no in-tree crate; talks to the digital side through events only. |
-| `piperine-digital-solver` | The digital sub-solver (event-driven scheduler). Depends on no in-tree crate; talks to the analog side through events only. |
+| `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
+| `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors. Depends on no in-tree crate; the events-only boundary to the digital side is the target (the digital snapshot is shared until feature B). |
+| `piperine-digital-solver` | The digital sub-solver (event-driven scheduler `scheduler.rs`, drivers, topology, `DigitalLimits`). Depends on no in-tree crate; the events-only boundary to the analog side is the target. |
 | `piperine-api` | The library face (MD-20): the one host entry point `Session` + `SessionBuilder`, the sweep drivers, and `SolverConfig` (`session/`), result objects (`results.rs`, `waveform.rs`, `fourier.rs`, `units.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
 | `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
 | `piperine-project` | `Piperine.toml` discovery, git dependency resolver (a dependency that declares contributions **is** a plugin — MD-30), `SourceMap` recipe, GitHub-release device-binary fetch + cache (`release.rs`), plugin lockfile. |
@@ -82,15 +83,15 @@ compile). Never pass `--workspace`: the other four crates do not build yet.
   No `Device` wrapper, no downcast.
 - **Naming:** `Net` (`core/net.rs`) unifies analog nodes, branch currents, digital nets,
   and pseudo variables under one public identity with stable labels.
-- **Convergence:** `ConvergencePlan` (`analyses/convergence.rs`) composes `HomotopyStrategy`
+- **Convergence:** `ConvergencePlan` (analog crate, `convergence.rs`) composes `HomotopyStrategy`
   (gmin stepping, source stepping), `NewtonStrategy`, `StepperStrategy`, and `PlanLimits`
   (caps extracted from magic numbers).
-- **Integration:** `TrBdf2` (`math/integration.rs`) — the sole transient scheme (a
+- **Integration:** `TrBdf2` (analog crate, `math/integration.rs`) — the sole transient scheme (a
   Trapezoidal stage over `γh` then a BDF2 stage over `(1−γ)h`, γ = 2−√2); no
   method-selection surface. LTE-driven timestep via
   `Element::suggest_transient_step` + the plan's PI controller.
 - **Errors:** `SolverDomain` enum — typed domains, no free strings.
-- **Scheduler:** Returns `Result<(), Error>` instead of `log::warn!`.
+- **Scheduler:** the generic digital scheduler returns `Result<(), DigitalError>`; the owner maps it to `Error` at its one call site.
 - **Prelude:** `prelude.rs` exports the host-facing surface.
 
 ## Known gaps
@@ -116,23 +117,14 @@ production and was deleted in full with `piperine-lang/src/parse/` (T21) — the
 (`callables`/`types`/`operators`/`constraint_helpers`/`impl_methods`) that backed it.
 
 **What's real today:** primitive types, math/libm functions, system tasks, and runtime
-operators are LRM builtins the parser/elaborator/codegen recognize natively (Annex A
+operators are LRM builtins the parser/elaborator recognize natively (Annex A
 grammar productions, ch. 4/9 tables) — no textual declaration step, because Verilog-A
 never had one either. The **only** surviving declared-surface mechanism is
 `@device`/`@port`: `ElabContext::schemas` (T35, VAMS-12/13) is a name-only registry,
-seeded before elaboration by `piperine_lang::seed_device_port_schemas`/
-`PluginHost::seed_schemas` (the plugin *system's* own schema authority, MD-21/D2, so two
-device plugins never collide), and consulted by `elab::lower::vams`'s `(* device = ...
+seeded before elaboration by `piperine_lang::seed_device_port_schemas`, and consulted by `elab::lower::vams`'s `(* device = ...
 *)`/`(* port = ... *)` attribute-instance lowering — an unrecognized schema still fails
 loud (`ElabErrorKind::UnknownAttrSchema`), MD-24's "no silent fallback" rule carried over
-verbatim even though its declaration vehicle changed. **Plugins contribute no
-declarations** — no attribute schemas, no per-plugin stub (the PHDL-era `extern.phdl`
-stub mechanism is deleted; `crates/piperine-plugin/tests/extern_stub.rs` is the guard
-proving a plugin shipping such a file is inert).
-
-Known gap: four analog operators (`idtmod`, `absdelay`, `table`, `ac_stim`) resolve
-through codegen's own operator registry rather than a language-level declaration —
-tracked in `ROADMAP.md`.
+verbatim even though its declaration vehicle changed. The PHDL-era `extern.phdl` stub mechanism is deleted.
 
 Regression guard (rewritten for VAMS, T36, design R9 "rewritten, never deleted"):
 `crates/piperine-lang/tests/extern_coverage_guard.rs`.
@@ -162,6 +154,7 @@ no list here — the tree is the list, and a guard keeps it honest.
   and fails on switched-off test code, `#[ignore]`d tests, unregistered
   ```` ```ignore ```` doc fences, a target with no `//!` scope header, file-scope
   lint suppression (MD-33), and dead-architecture identifiers (MD-35).
+
 ## Documentation
 
 - Verilog-AMS language reference: `VAMS-LRM-2-4.md` (LRM 2.4, the sole grammar/semantics

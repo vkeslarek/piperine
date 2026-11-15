@@ -9,11 +9,11 @@ A mixed-signal language and simulator. `piperine-lang` parses and elaborates the
 (Verilog-AMS LRM 2.4, `.vams`/`.va`, Annex A grammar only, C7 — never a third-party
 Verilog-A compiler) into a POM `Design`. The native solver is three crates:
 `piperine-solver` (analyses and the `Element` ABI) owning `piperine-analog-solver` and
-`piperine-digital-solver`, which meet through events only. PHDL was retired in full
+`piperine-digital-solver`, which meet through events as the target boundary (the digital snapshot stays shared until feature B). PHDL was retired in full
 (MD-44/MD-45).
 
-**Only `piperine-lang` and the three solver crates compile today.** `piperine-project`,
-`piperine-api`, `piperine-cli` and `piperine-lang-server` stay in the tree but do not
+**Only `piperine-lang` and the three solver crates compile today.** The root `piperine`
+shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` stay in the tree but do not
 build until the new device compiler lands.
 
 ```
@@ -27,7 +27,7 @@ source ──► piperine-lang ──► Design (POM) ──► device compiler 
 ```
 
 Dependency direction: the owner `piperine-solver` depends on both sub-solvers; the
-sub-solvers depend on neither the owner nor each other; events are the only boundary.
+sub-solvers depend on neither the owner nor each other; events are the target boundary.
 `piperine-solver` depends on no other in-tree crate. Breaking either arrow is a
 regression.
 
@@ -45,8 +45,8 @@ cargo test      # their whole suite; never `--workspace` (four crates do not bui
 ```
 crates/
 ├── piperine-lang/            parser + elaborator: grammar/ elab/ pom/ eval/ (+ headers/)
-├── piperine-solver/          owner: Element ABI (core/), analyses/, math/, Net naming, prelude
-├── piperine-analog-solver/   analog sub-solver
+├── piperine-solver/          owner: Element ABI (core/), analyses/, Net naming, prelude
+├── piperine-analog-solver/   analog sub-solver: math/, convergence, TrBdf2
 ├── piperine-digital-solver/  digital sub-solver (event-driven scheduler)
 ├── piperine-api/             the library face: session, results, waveform (does not build yet)
 ├── piperine-cli/             `piperine` CLI (does not build yet)

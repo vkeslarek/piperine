@@ -243,6 +243,42 @@ fn instructions_list_the_kept_crates() {
     kept.sort();
     assert_eq!(table, kept, "CLAUDE.md crate table");
     assert_eq!(map, kept, "AGENTS.md workspace map");
+    instruction_text_places_the_moved_code_and_states_the_boundary_as_target();
+}
+
+/// The row of the `CLAUDE.md` crate table for `name`.
+fn claude_row(name: &str) -> String {
+    let text = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
+    let prefix = format!("| `{name}` |");
+    text.lines()
+        .find(|l| l.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("CLAUDE.md has no row for {name}"))
+        .to_string()
+}
+
+/// The role text of both instruction files; run by `instructions_list_the_kept_crates`.
+fn instruction_text_places_the_moved_code_and_states_the_boundary_as_target() {
+    let claude = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
+    let agents = std::fs::read_to_string(repo_root().join("AGENTS.md")).expect("read AGENTS.md");
+    let owner = claude_row("piperine-solver");
+    let analog = claude_row("piperine-analog-solver");
+    for moved in ["math/", "ConvergencePlan", "TrBdf2"] {
+        assert!(!owner.contains(moved), "the owner row still claims {moved}");
+        assert!(analog.contains(moved), "the analog row does not hold {moved}");
+    }
+    assert!(!claude.contains("analyses/convergence.rs"), "CLAUDE.md cites the old convergence path");
+    assert!(!claude.contains("`math/integration.rs`") || claude.contains("analog crate, `math/integration.rs`"));
+    let agents_owner = agents.lines().find(|l| l.contains("piperine-solver/")).expect("map row");
+    assert!(!agents_owner.contains("math/"), "AGENTS.md owner map row still lists math/");
+    for (name, text) in [("CLAUDE.md", &claude), ("AGENTS.md", &agents)] {
+        assert!(!text.contains("meet through events only"), "{name} states the events-only boundary as current");
+        assert!(!text.contains("through events only."), "{name} states the events-only boundary as current");
+        assert!(text.contains("target"), "{name} does not call the events-only boundary the target");
+        assert!(text.contains("root `piperine`"), "{name} omits the root shell from the non-building list");
+        for gone in ["crates/piperine-plugin", "PluginHost", "codegen's own"] {
+            assert!(!text.contains(gone), "{name} still references {gone}");
+        }
+    }
 }
 
 #[test]
