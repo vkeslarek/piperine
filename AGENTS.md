@@ -56,6 +56,8 @@ crates/
 ├── piperine-cli/             `piperine` CLI (does not build yet)
 ├── piperine-project/         Piperine.toml + dependency resolver (does not build yet)
 ├── piperine-lang-server/     LSP server (does not build yet)
+├── piperine-plan/             the plan both backends share: BodyPlan (shape + function table), Netlist::circuit (MD-63)
+├── piperine-transpile/       the compiled backend: IR printed as Rust, built by rustc, cached, loaded (MD-63)
 └── piperine-parity/          M1 parity harness: ngspice goldens vs the MSL twins (test-only)
 ```
 

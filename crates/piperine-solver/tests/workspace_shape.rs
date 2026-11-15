@@ -36,6 +36,7 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-parity",
     "crates/piperine-plan",
     "crates/piperine-solver",
+    "crates/piperine-transpile",
 ];
 
 /// The root manifest and every `crates/*/Cargo.toml`.
@@ -202,6 +203,8 @@ const KEPT_CRATES: &[&str] = &[
     "piperine-cli",
     "piperine-lang-server",
     "piperine-parity",
+    "piperine-plan",
+    "piperine-transpile",
 ];
 
 /// The crate names in the rows of the table under `## Crate responsibilities`

@@ -1,0 +1,16 @@
+[package]
+name = "piperine-transpile"
+version.workspace = true
+edition.workspace = true
+description = "The compiled backend: a Piperine IR printed as Rust, built by rustc into a cdylib, cached by hash and loaded through the device ABI"
+
+[dependencies]
+piperine-ir = { path = "../piperine-ir" }
+piperine-abi = { path = "../piperine-abi" }
+piperine-plan = { path = "../piperine-plan" }
+sha2 = "0.10"
+libloading.workspace = true
+
+[dev-dependencies]
+piperine-interp = { path = "../piperine-interp" }
+tempfile.workspace = true

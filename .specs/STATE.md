@@ -1321,6 +1321,27 @@ engine are deleted; `tests/removed_surface.rs` guards each name and
 **Status:** Accepted (2026-11-15), under the user's go-ahead "Ok, deixo tu ir tocando,
 pode ir disparando implementações em seguida ok?" and the settled boundary order above.
 
+### MD-63: the compiled backend is `piperine-transpile`; the shared plan is `piperine-plan`
+
+`ir-rust` (2026-11-15). The production path from the IR to the solver is Rust:
+`piperine-transpile` prints a design as one Rust source text, builds it with `rustc`
+into a `cdylib` exporting `piperine_abi_1`, caches it by hash and loads it. The plan of
+a body (its ABI shape and what each function computes) and the circuit of a design live
+in `piperine-plan`, which both the interpreter and the transpiler read, so the two
+backends give the solver the same pins, read order, partial order and affine flags.
+
+1. **Generated code links `piperine-abi` and nothing else.** Besides that crate it uses
+   only the embedded runtime source `rt.rs`; it holds no `unsafe` and no macro.
+2. **`rustc` is invoked directly and only at build.** Never `cargo`; never during an
+   analysis or a `set` (C7, MD-18). A missing compiler fails the build and leaves the
+   interpreter usable.
+
+**Scope:** `crates/piperine-plan`, `crates/piperine-transpile`, `crates/piperine-interp`,
+`CLAUDE.md`, `AGENTS.md`.
+**Status:** Accepted (2026-11-15), under the user's standing delegation "Pode ir rodando os
+grandes passos" (`.specs/features/codegen/context.md`, R4) and the approved
+`.specs/features/ir-rust/design.md`.
+
 ---
 
 ## Handoff Snapshot

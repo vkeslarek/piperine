@@ -85,6 +85,8 @@ compile). Never pass `--workspace`: the root shell and the other four crates do 
 | `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
 | `piperine-project` | `Piperine.toml` discovery, git dependency resolver (a dependency that declares contributions **is** a plugin — MD-30), `SourceMap` recipe, GitHub-release device-binary fetch + cache (`release.rs`), plugin lockfile. |
 | `piperine-lang-server` | LSP server. Handlers share `RequestExt::parse`/`ConnectionExt::respond` (every request id gets a response), `DocumentState::{analyze,resolve_at,word_occurrences}`, `ProjectContext::discover`. |
+| `piperine-plan` | What the two backends of an `Ir` share (MD-63): `BodyPlan` (a body's ABI shape and the table of what each function computes: `FunctionPlan`, `Mode`, `Source`, `Target`, `Term`) and `Netlist::circuit`, the design's instance table bound to whatever implements `Modules`. Depends on `piperine-ir`, `piperine-abi`, `piperine-solver`. |
+| `piperine-transpile` | The compiled backend (MD-63): `Transpiler::new` checks and plans an `Ir`; the IR is printed as one readable Rust source, built by `rustc` into a `cdylib` exporting `piperine_abi_1`, cached by hash and loaded. Generated code links only `piperine-abi` and the embedded runtime `rt`. |
 | `piperine-parity` | The M1 parity harness (`publish = false`): runs ngspice on `tests/ngspice/*.cir` at test time and compares the MSL twins under one `ToleranceContract`. Builds and tests green. |
 
 ## Solver architecture (current state)
