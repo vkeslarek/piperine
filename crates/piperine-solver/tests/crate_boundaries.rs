@@ -44,13 +44,24 @@ fn manifest(crate_name: &str) -> String {
         .unwrap_or_else(|e| panic!("read the manifest of {crate_name}: {e}"))
 }
 
-/// The `piperine-*` dependency keys of a manifest, in any table.
+/// The `piperine-*` dependency keys of a manifest, in any table: a key line
+/// (`piperine-x = ...`) and a table header (`[dependencies.piperine-x]`,
+/// `[dev-dependencies.piperine-x]`, `[build-dependencies.piperine-x]`).
 fn workspace_dependencies(text: &str) -> Vec<String> {
-    text.lines()
-        .map(str::trim_start)
-        .filter(|l| l.starts_with("piperine-"))
-        .map(|l| l.split(['=', ' ', '.']).next().unwrap_or("").to_string())
-        .collect()
+    let mut out = Vec::new();
+    for line in text.lines().map(str::trim) {
+        if line.starts_with("piperine-") {
+            out.push(line.split(['=', ' ', '.']).next().unwrap_or("").to_string());
+        } else if let Some(header) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            let table_key = ["dependencies.", "dev-dependencies.", "build-dependencies."]
+                .iter()
+                .find_map(|t| header.rsplit_once(t).filter(|(_, k)| k.starts_with("piperine-")));
+            if let Some((_, key)) = table_key {
+                out.push(key.trim_matches('"').to_string());
+            }
+        }
+    }
+    out
 }
 
 const ANALOG: &str = "piperine-analog-solver";
@@ -142,4 +153,12 @@ fn each_sub_solver_holds_its_modules() {
         let path = crate_dir(OWNER).join("src").join(gone);
         assert!(!path.exists(), "the owner still has src/{gone}");
     }
+}
+
+#[test]
+fn the_manifest_scan_reads_table_form_dependencies() {
+    let planted = "[package]\nname = \"x\"\n\n[dependencies.piperine-lang]\npath = \"../piperine-lang\"\n\n[dev-dependencies.piperine-ir]\nworkspace = true\n";
+    assert_eq!(workspace_dependencies(planted), vec!["piperine-lang", "piperine-ir"]);
+    assert_eq!(workspace_dependencies("[dependencies]\npiperine-a = { path = \"a\" }\n"), vec!["piperine-a"]);
+    assert!(workspace_dependencies("[dependencies]\nfaer = \"1\"\n").is_empty());
 }
