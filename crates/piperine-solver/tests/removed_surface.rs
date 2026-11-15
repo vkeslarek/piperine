@@ -30,8 +30,34 @@ fn names_in(text: &str, names: &[&str]) -> Vec<String> {
         .collect()
 }
 
+/// The names of `words` that occur in `text` as whole identifiers, so a short
+/// removed name (`Region`) does not trip on `RegionQueue`-free unrelated words.
+fn words_in(text: &str, words: &[&str]) -> Vec<String> {
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    words
+        .iter()
+        .filter(|w| {
+            text.match_indices(**w).any(|(i, m)| {
+                let before = text[..i].chars().next_back();
+                let after = text[i + m.len()..].chars().next();
+                !before.is_some_and(ident) && !after.is_some_and(ident)
+            })
+        })
+        .map(|w| w.to_string())
+        .collect()
+}
+
 /// `file: name` for every removed name found in a solver crate's `src/`.
 fn names_found(names: &[&str]) -> Vec<String> {
+    scan(|text| names_in(text, names))
+}
+
+/// Like [`names_found`], matching whole identifiers only.
+fn words_found(words: &[&str]) -> Vec<String> {
+    scan(|text| words_in(text, words))
+}
+
+fn scan(matcher: impl Fn(&str) -> Vec<String>) -> Vec<String> {
     let crates = repo_root().join("crates");
     let mut files = Vec::new();
     for entry in std::fs::read_dir(&crates).expect("read crates/") {
@@ -44,7 +70,7 @@ fn names_found(names: &[&str]) -> Vec<String> {
     let mut found = Vec::new();
     for file in files {
         let text = std::fs::read_to_string(&file).expect("read source");
-        for n in names_in(&text, names) {
+        for n in matcher(&text) {
             found.push(format!("{}: {n}", file.display()));
         }
     }
@@ -86,6 +112,8 @@ fn text_io_is_gone() {
         "io: std::rc::Rc",
     ]);
     assert!(found.is_empty(), "removed text/file output surface still named: {found:#?}");
+    let found = words_found(&["Channel", "FileId", "FileError"]);
+    assert!(found.is_empty(), "removed text/file output type still named: {found:#?}");
 }
 
 #[test]
@@ -154,6 +182,8 @@ fn regions_are_gone() {
         "region: Region",
     ]);
     assert!(found.is_empty(), "removed region surface still named: {found:#?}");
+    let found = words_found(&["Region"]);
+    assert!(found.is_empty(), "removed Region type still named: {found:#?}");
 }
 
 #[test]
@@ -167,4 +197,9 @@ fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";
     assert_eq!(names_in(planted, &["DistoSolver", "HAS_DISTO2"]), vec!["DistoSolver"]);
     assert!(names_in("fn clean() {}", &["DistoSolver"]).is_empty());
+    assert_eq!(
+        words_in("pub use removed::{Region, Channel, FileId, FileError};", &["Region", "Channel", "FileId", "FileError"]),
+        vec!["Region", "Channel", "FileId", "FileError"]
+    );
+    assert!(words_in("struct RegionQueueless; fn channels() {}", &["Region", "Channel"]).is_empty());
 }
