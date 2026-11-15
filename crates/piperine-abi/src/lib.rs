@@ -3,9 +3,10 @@
 //! with their byte rules (`layout`), the owned shape builder (`shape`), the
 //! shape-local checks of abi.md §9 (`validate`) and the Rust side of §7: the
 //! `Device` trait and its lenses (`device`) and the generic `extern "C"`
-//! thunks over it (`thunk`). The crate depends on no other
-//! crate; `unsafe` lives only in `raw`, `thunk` and `caller`.
+//! thunks over it (`thunk`), and the solver-side call path (`caller`). The
+//! crate depends on no other crate; `unsafe` lives only in `raw`, `thunk` and `caller`.
 
+pub mod caller;
 pub mod device;
 pub mod layout;
 pub mod raw;

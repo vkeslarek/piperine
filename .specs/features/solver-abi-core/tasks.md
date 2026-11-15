@@ -235,11 +235,11 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Test `handle_builds_the_frames_and_returns_results` evaluates a function and runs a reaction through `Handle` (C16)
-- [ ] Test `handle_reports_fault_and_reshape_as_errors` passes for both statuses with code and message
-- [ ] Test `dropping_a_handle_destroys_the_instance` passes
-- [ ] `Handle` is `Send` and not `Sync` (compile-time assertion in the test for `Send`; a doc comment states why not `Sync`)
-- [ ] Gate: full
+- [x] Test `handle_builds_the_frames_and_returns_results` evaluates a function and runs a reaction through `Handle` (C16)
+- [x] Test `handle_reports_fault_and_reshape_as_errors` passes for both statuses with code and message
+- [x] Test `dropping_a_handle_destroys_the_instance` passes
+- [x] `Handle` is `Send` and not `Sync` (compile-time assertion in the test for `Send`; a doc comment states why not `Sync`)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
