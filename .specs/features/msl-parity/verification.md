@@ -1,6 +1,6 @@
 # MSL Parity verification
 
-**Verdict**: FAIL - the M1 parity claim holds (every fixture goes red under a real disagreement); four Minor findings on tests looser than their criterion
+**Verdict**: PASS - the M1 parity claim holds (every fixture goes red under a real disagreement); the four Minor findings of round 1 are closed by commits (fix author's judgement of the new checks below)
 **Proofs**: `proofs.md` at bd4c1ed8 (HEAD f890b3bb adds only proofs.md)
 **Verifier**: independent sub-agent (author != verifier), Opus, round 1, ngspice-47 at /usr/bin/ngspice
 
@@ -13,7 +13,7 @@
 | C3 | `twins` `top_nodes_carry_the_cir_names` | yes | exact sorted set of top signals equals the .cir node set |
 | C4 | `twins` `the_cir_fixtures_are_byte_identical` | yes | length plus FNV-1a hash of all six .cir |
 | C5 | `bench` `a_twin_loads_into_a_bound_circuit` | yes | solves the loaded divider and reads 7.5 V |
-| C6 | `bench` `a_failing_stage_is_named_with_its_diagnostics` | partly | stage and fixture asserted; the span is never asserted and the code check accepts any `E0` substring (F3) |
+| C6 | `bench` `a_failing_stage_is_named_with_its_diagnostics` | yes | fixed (F3): three plants (parse E0900, typeck P0002, elaborate E0317) assert stage, exact code and the span of the covered text; Bench runs `Types::check` itself so the stage is known at the call site; judged by fix author |
 | C7 | `bench` `nodes_and_sources_are_reached_by_cir_names` | yes | v(vin) and the source flow by .cir names; sign of the flow is held by C25 instead |
 | C8 | `harness` `ngspice_runs_in_batch_in_an_empty_scratch_directory` | yes | real ngspice-47 run; empty cwd asserted; the absolute path comes from `canonicalize` in `Ngspice::fixture_path` |
 | C9 | `harness` `each_run_has_its_own_scratch_removed_on_drop` | yes | distinct paths, both gone after drop |
@@ -24,12 +24,12 @@
 | C14 | `lib` `ngspice::tests::the_binary_comes_from_the_variable_or_the_path` | yes | variable wins over PATH, empty variable is unset, bad path fails |
 | C15 | `lib` `ngspice::tests::a_missing_binary_fails_naming_the_opt_out` | yes | confirmed live: PATH without ngspice turns parity_op red naming PIPERINE_NGSPICE=skip |
 | C16 | `lib` `ngspice::tests::skip_passes_and_prints_one_line` | yes | the printed line itself is not captured by the test; `--nocapture` run shows one `SKIP <fixture>` line per parity test |
-| C17 | `bench` `a_skipped_reference_still_solves_the_msl_side` | partly | does not go through a parity test's skip path; `compared` is vacuous (F2); live M19/M20 show today's parity tests do fail under skip |
+| C17 | `bench` `a_skipped_reference_still_solves_the_msl_side` | yes | fixed (F2): `OperatingPoint::compare` is the parity test's own path; skip gives solved 2 / compared 0, a real run solved 2 / compared 2, a missing twin panics under skip; returning early on Skipped turns it red; judged by fix author |
 | C18 | `lib` `contract::tests::the_five_contracts_carry_bounds_and_rationale` | yes | exact values 1e-3/1e-6, 1e-3/1e-12, 1e-3/1e-12, 0/1e-4, 1e-3/1e-6 |
 | C19 | `lib` `contract::tests::holds_is_abstol_plus_reltol_of_the_larger` | yes | bisects the edge to one ulp and checks it against the formula with max(abs) of both sides; symmetric |
 | C20 | `lib` `contract::tests::a_rejection_names_point_values_bound_and_rationale` | yes | fixture, quantity, all four coordinates, both values, abstol, reltol, rationale |
 | C21 | `lib` `contract::tests::phase_is_gated_on_the_magnitude_floor` | yes | at the floor not compared, one ulp above compared |
-| C22 | `corpus` `no_parity_target_compares_against_a_literal` | partly | the matcher sees only `<x>.abs() <op> <digit>`; `1e-3 > (a - b).abs()` escapes (F4) |
+| C22 | `corpus` `no_parity_target_compares_against_a_literal` | yes | fixed (F4): the matcher reads every `.abs()` and both operand orders; judged by fix author |
 | C23 | `op` `divider` | yes | M1 (R1 x1.01) red on v(mid) |
 | C24 | `op` `diode_series` | yes | M4 (D2 reversed) red on v(a) |
 | C25 | `diode_iv` in `parity_dc` | yes | M5 (is x1.01), M6 (diode reversed), M8 (n=1.001) red; all 37 rows compared; reverse half sits under the 1 pA floor (F1) |
@@ -38,7 +38,7 @@
 | C28 | `tran` `tran_rc` | yes | M12 (C x1.01), M13 (C x1.001), M14 (no held node) red; stop 9.95 us red naming 1e-5 s |
 | C29 | `tran` `the_transient_step_cap_is_a_tenth_of_the_print_step` | yes | same `TranRun::options` the fixture test uses |
 | C30 | `corpus` `every_twin_has_a_cir_and_a_test` | yes | six twins counted; a commented-out `fn <name>()` would still satisfy it (noted, not a finding) |
-| C31 | `corpus` `a_literal_tolerance_in_a_parity_target_is_reported` | partly | proves the forward form only (F4) |
+| C31 | `corpus` `a_literal_tolerance_in_a_parity_target_is_reported` | yes | fixed (F4): plants the forward form, the reversed form, a second `.abs()` on a line, and three non-reports (identifier, `x1` identifier, closure arrow); judged by fix author |
 | C32 | `corpus` `the_guards_report_planted_text` | yes | missing .cir and missing test both reported |
 | C33 | `twins` `the_current_source_twin_exists` | yes | the values are held by C34's comparison |
 | C34 | `op` `isrc_r` | yes | M2 (R x1.01) and M3 (source reversed) red |
@@ -46,6 +46,7 @@
 | C36 | `lib` `golden::tests::a_wrong_row_count_names_both_counts` | yes | fixture, 3 and 37 named |
 | C37 | `lib` `waveform::tests::a_time_outside_the_result_is_none` | yes | both ends, one ps outside |
 | C38 | `harness` `parallel_runs_do_not_share_a_scratch_directory` | yes | four threads, pairwise distinct |
+| C39 | `parity_dc` `diode_rev` | yes | judged by fix author: 20 rows -1 V to -20 V compared under `DC_CURRENT`, worst error 5.9e-21 A; removing `gmin() * vd` from `Diode` turns it red (difference 2.0e-12 A over a bound of 1.0e-12 A at -1 V) |
 
 ## Mutations
 
@@ -72,7 +73,8 @@ Each mutation was applied to the working tree, the named target run with ngspice
 | M13 tran_rc C x1.001 | parity_tran | red | v(out) at 0.1 us |
 | M14 tran_rc without the held node | parity_tran | red | v(out) at 0.1 us |
 | M18 transient stopped at 9.95 us | parity_tran | red | time 1e-5 s outside the result |
-| M22 diode plus a constant 1 pA | parity_dc | green | below the 1 pA floor (F1) |
+| M22 diode plus a constant 1 pA | parity_dc | green | `diode_iv` below the 1 pA floor (F1); `diode_rev` is the check that holds gmin |
+| M23 diode without the gmin shunt (fix, F1) | parity_dc `diode_rev` | red | i(v1) at -1 V, 2.0e-12 A over 1.0e-12 A |
 | M19 diode_iv type error, skip set | parity_dc | red | stage typeck, after the SKIP line |
 | M20 tran_rc duplicate signal, skip set | parity_tran | red | stage parse, after the SKIP line |
 | PATH without ngspice | parity_op | red x3 | `ngspice not found ... PIPERINE_NGSPICE=skip` |
@@ -104,7 +106,7 @@ Each mutation was applied to the working tree, the named target run with ngspice
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| F1 (Minor) The reverse half of `diode_iv` is not resolved: a diode without the gmin shunt, or with a constant 1 pA added, stays green, so the spec's assumption that the model must carry `gmin() * vd` is held by no test | M7 and M22 green; at -1 V golden 1.01e-12 A vs the 1e-12 A floor of `DC_CURRENT` (`crates/piperine-parity/src/contract.rs:66`) | record the resolution limit in spec.md's diode assumption row; holding gmin needs a point where gmin current clears the floor (a new fixture, since .cir files are frozen) or a user decision on the floor | |
-| F2 (Minor) C17's test does not run a parity test's skip path: it calls `Ngspice::run` and `Bench::load` side by side, and `compared` is always 0 by construction; a parity test that returned on `Skipped` before `Bench::load` would keep it green | `crates/piperine-parity/tests/bench.rs:56-73`; M19/M20 show today's parity tests do fail under skip | drive the skip path through the parity tests' own code (e.g. with `Lookup::Skip` and a broken twin) and assert the stage failure | |
-| F3 (Minor) C6's test asserts neither the span nor an exact code: `contains("P0002") or contains("E0")` | `crates/piperine-parity/tests/bench.rs:38`; the stage name is also a heuristic (`P0004` means elaborate, anything else typeck) at `crates/piperine-parity/src/bench.rs:45` | assert the exact code and the rendered span of the planted error | |
-| F4 (Minor) The literal-tolerance guard catches one textual form only: `1e-3 > (a - b).abs()` and a second `.abs()` on a line pass it | `crates/piperine-parity/tests/parity_corpus.rs:30-41` (`find` takes the first `.abs()`, only the text after it is read) | match both operand orders and every occurrence; plant the reversed form in `a_literal_tolerance_in_a_parity_target_is_reported` | |
+| F1 (Minor) The reverse half of `diode_iv` is not resolved: a diode without the gmin shunt, or with a constant 1 pA added, stays green, so the spec's assumption that the model must carry `gmin() * vd` is held by no test | M7 and M22 green; at -1 V golden 1.01e-12 A vs the 1e-12 A floor of `DC_CURRENT` (`crates/piperine-parity/src/contract.rs:66`) | record the resolution limit in spec.md's diode assumption row; holding gmin needs a point where gmin current clears the floor (a new fixture, since .cir files are frozen) or a user decision on the floor | d44b292a (C39) |
+| F2 (Minor) C17's test does not run a parity test's skip path: it calls `Ngspice::run` and `Bench::load` side by side, and `compared` is always 0 by construction; a parity test that returned on `Skipped` before `Bench::load` would keep it green | `crates/piperine-parity/tests/bench.rs:56-73`; M19/M20 show today's parity tests do fail under skip | drive the skip path through the parity tests' own code (e.g. with `Lookup::Skip` and a broken twin) and assert the stage failure | 2a619575 (C17) |
+| F3 (Minor) C6's test asserts neither the span nor an exact code: `contains("P0002") or contains("E0")` | `crates/piperine-parity/tests/bench.rs:38`; the stage name is also a heuristic (`P0004` means elaborate, anything else typeck) at `crates/piperine-parity/src/bench.rs:45` | assert the exact code and the rendered span of the planted error | 72a94c2e (C6) |
+| F4 (Minor) The literal-tolerance guard catches one textual form only: `1e-3 > (a - b).abs()` and a second `.abs()` on a line pass it | `crates/piperine-parity/tests/parity_corpus.rs:30-41` (`find` takes the first `.abs()`, only the text after it is read) | match both operand orders and every occurrence; plant the reversed form in `a_literal_tolerance_in_a_parity_target_is_reported` | 284a8bff (C22, C31) |

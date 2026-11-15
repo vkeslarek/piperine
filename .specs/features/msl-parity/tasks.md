@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/msl-parity/design.md`
-**Status**: Approved
+**Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-parity || cargo build -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run lib**: `cargo test -p piperine-parity --lib`
 **Run twins**: `cargo test -p piperine-parity --test twins`
@@ -477,6 +477,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** 2026-11-15 orchestrator, under the user's standing delegation: T8 unblocked by amending PAR-06 AC 5 (the grid is compared at the export's print precision, f9165f89); T9 unblocked by a solver fix (the step whose target is the stop ends at the stop bit for bit, 9b6a38e2). No tolerance, fixture or `.cir` changed.
 **Dispatched:** 2026-11-15 batch 1 (T1-T4, Sonnet) done 432b4763; main (ir, typeck, elab, interp) merged in 54263820; batch 2 (T5-T10, Sonnet) in ../piperine-msl-parity
+**Verification round 1 fixes:** 2026-11-15 F1 d44b292a, F4 284a8bff, F3 72a94c2e, F2 2a619575; verification.md Verdict PASS. No tolerance, existing fixture or `.cir` touched; `diode_rev` is new.
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---
