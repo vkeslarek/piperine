@@ -135,11 +135,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] `R`, `ROpt`, `C`, `D`, `Vsrc`, `Vsine`, `Vramp` exist as `Device`s; each keeps the quoted source comment of its `Element` twin; params have the same names and defaults; `ROpt`'s rebuild-class param is `STRUCTURAL`
-- [ ] Partials are declared against continuous pins and against every param the sensitivity tests differentiate
-- [ ] Test `every_device_function_passes_the_partials_verifier` walks a plain table of (device, function, operating points)
-- [ ] Test `every_device_shape_is_valid` passes
-- [ ] Gate: full
+- [x] `R`, `ROpt`, `C`, `D`, `Vsrc`, `Vsine`, `Vramp` exist as `Device`s; each keeps the quoted source comment of its `Element` twin; params have the same names and defaults; `ROpt`'s rebuild-class param is `STRUCTURAL`
+- [x] Partials are declared against continuous pins and against every param the sensitivity tests differentiate
+- [x] Test `every_device_function_passes_the_partials_verifier` walks a plain table of (device, function, operating points)
+- [x] Test `every_device_shape_is_valid` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
