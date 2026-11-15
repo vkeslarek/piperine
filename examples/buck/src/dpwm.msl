@@ -1,0 +1,80 @@
+//! The clock and the digital PWM (SPEC §5, §9).
+
+use crate::spec::{DEAD_COUNTS, N_PERIOD, SAMPLE_COUNT};
+
+/// The 200 MHz control clock (SPEC §2): a free-running oscillator, the `ClockGen` idiom with no
+/// jitter. Its first change is its initial value at `(0, 0)`.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// The bit-reversed 3-bit frame index: the dither order 0, 4, 2, 6, 1, 5, 3, 7 spreads the
+/// extended periods over the frame (SPEC §5.2).
+fn rev3(k: u3) -> u3 { ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1) }
+
+/// The width, in counts, of the period with frame index `frame` for the duty word `duty`:
+/// `duty / 8` counts, plus one in `duty % 8` periods of every 8 (SPEC §5.2).
+fn dithered_width(duty: u12, frame: u3) -> u9 {
+    let coarse = (duty >> 3) as u9;
+    let fine = (duty & 7) as u3;
+    if rev3(frame) < fine { coarse + 1 } else { coarse }
+}
+
+/// Counter-based trailing-edge DPWM with dead time and cycle-by-cycle current limits
+/// (SPEC §5, §8.2, §8.3).
+///
+/// One reaction per clock edge computes the next count and both commands from registered state,
+/// so `hs` and `ls` are glitch-free registers. Per period:
+///
+/// | count                         | high side | low side |
+/// | ----------------------------- | --------- | -------- |
+/// | `0 .. width`                  | on        | off      |
+/// | `width .. width + 4`          | off       | off      |
+/// | `width + 4 .. 396`            | off       | on       |
+/// | `396 .. 400`                  | off       | off      |
+///
+/// `width` is latched at the wrap from the duty word, so a duty change never splits a pulse. A
+/// trip of `oc` during the high-side pulse ends it at once and moves the start of the low side to
+/// four counts after the real turn-off. A trip of `sink_oc` during the low-side pulse ends it.
+pub module Dpwm(in clk: Bit, in run: Bit, in duty: Bit<u12>, in oc: Bit, in sink_oc: Bit,
+                out hs: Bit = false, out ls: Bit = false, out sample: Bit, out cut: Bit = false) {
+    signal count: Bit<u9> = 0;
+    signal width: Bit<u9> = 0;
+    signal frame: Bit<u3> = 0;
+    /// The count at which the high side went off in this period.
+    signal hs_off: Bit<u9> = 0;
+    /// The high side, the low side, was cut by a current limit in this period.
+    signal hs_cut: Bit = false;
+    signal ls_cut: Bit = false;
+    /// The ADC conversion starts at the period start (SPEC §9).
+    sample = count == SAMPLE_COUNT;
+    /// The two commands are never on together (SPEC §5.3, §10 S10).
+    let no_shoot_through = Never(clk, hs & ls);
+}
+digital for Dpwm {
+    on clk.rise() {
+        let wrap = count == N_PERIOD - 1;
+        let next = if wrap { 0 } else { count + 1 };
+        let enabled = run.known_or(false);
+        // The wrap latches the dithered width of the new period and clears the cut flags.
+        let w = if wrap { dithered_width(duty.known_or(0), frame + 1) } else { width };
+        let hs_trip = !wrap && (hs_cut || (hs && oc.known_or(true)));     // unknown `oc`: assume a trip
+        let ls_trip = !wrap && (ls_cut || (ls && sink_oc.known_or(true)));
+        let hs_next = enabled && !hs_trip && next < w;
+        let off_at = if wrap { w } else if hs && !hs_next { next } else { hs_off };
+        let ls_next = enabled && !hs_next && !ls_trip
+            && next >= off_at + DEAD_COUNTS && next < N_PERIOD - DEAD_COUNTS;
+        count <- next;
+        width <- w;
+        hs_off <- off_at;
+        hs_cut <- hs_trip;
+        ls_cut <- ls_trip;
+        hs <- hs_next;
+        ls <- ls_next;
+        if wrap {
+            frame <- frame + 1;
+            cut <- hs_cut;                    // the period that just ended was current-limited
+        }
+    }
+}

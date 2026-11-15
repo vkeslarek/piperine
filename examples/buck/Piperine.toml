@@ -1,0 +1,7 @@
+[package]
+name = "buck"
+version = "0.1.0"
+authors = ["Piperine"]
+description = "A digitally controlled buck converter: the flagship mixed-signal prototype"
+
+[dependencies]

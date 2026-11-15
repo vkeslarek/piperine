@@ -399,8 +399,8 @@ criteria; the model column is the averaged-model prediction.
 
 | Section | MSL item |
 | --- | --- |
-| §2, §3 | `power.msl`: `Supply`, `PowerSwitch`, `GateDriver`, `Inductor`, `Capacitor`, `CurrentSense`, `Load`, `PowerStage` |
-| §4, §8.1 to §8.3 | `sense.msl`: `Resistor`, `Divider`, `Adc`, `Sensing` (dividers, ADC, three `A2D` comparators) |
+| §2, §3 | `power.msl`: `Resistor`, `Capacitor`, `Inductor`, `Supply`, `PowerSwitch`, `GateDriver`, `CurrentSense`, `Load`, `PowerStage` |
+| §4, §8.1 to §8.3 | `sense.msl`: `Divider`, `Adc`, `Sensing` (dividers, ADC, three `A2D` comparators) |
 | §5 | `dpwm.msl`: `Osc`, `Dpwm` |
 | §6, §7 | `control.msl`: `SetpointReg`, `RefRamp`, `Pid` |
 | §8 | `supervisor.msl`: `Mode`, `Fault`, `Supervisor` |
