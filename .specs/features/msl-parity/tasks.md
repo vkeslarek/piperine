@@ -155,14 +155,14 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `ngspice -b <absolute .cir>` runs with the scratch directory as its working directory; `divider.cir` yields stdout holding `v(mid) = 7.500000e+00`
-- [ ] Lookup: a path in the variable wins; else `ngspice` on the given `PATH`; `skip` gives `Reference::Skipped`; nothing found panics naming what was looked for and `PIPERINE_NGSPICE=skip`
-- [ ] Two runs started from two threads have different directories, both gone after drop
-- [ ] The first line of `ngspice --version` is kept on the `Golden`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test harness`: `ngspice_runs_in_batch_in_an_empty_scratch_directory`, `each_run_has_its_own_scratch_removed_on_drop`, `a_failed_run_or_missing_export_names_the_fixture`, `parallel_runs_do_not_share_a_scratch_directory`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --lib`: `ngspice::tests::the_binary_comes_from_the_variable_or_the_path`, `ngspice::tests::a_missing_binary_fails_naming_the_opt_out`, `ngspice::tests::skip_passes_and_prints_one_line`
-- [ ] Gate check passes: `cargo test -p piperine-parity`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `ngspice -b <absolute .cir>` runs with the scratch directory as its working directory; `divider.cir` yields stdout holding `v(mid) = 7.500000e+00`
+- [x] Lookup: a path in the variable wins; else `ngspice` on the given `PATH`; `skip` gives `Reference::Skipped`; nothing found panics naming what was looked for and `PIPERINE_NGSPICE=skip`
+- [x] Two runs started from two threads have different directories, both gone after drop
+- [x] The first line of `ngspice --version` is kept on the `Golden`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test harness`: `ngspice_runs_in_batch_in_an_empty_scratch_directory`, `each_run_has_its_own_scratch_removed_on_drop`, `a_failed_run_or_missing_export_names_the_fixture`, `parallel_runs_do_not_share_a_scratch_directory`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --lib`: `ngspice::tests::the_binary_comes_from_the_variable_or_the_path`, `ngspice::tests::a_missing_binary_fails_naming_the_opt_out`, `ngspice::tests::skip_passes_and_prints_one_line`
+- [x] Gate check passes: `cargo test -p piperine-parity`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
