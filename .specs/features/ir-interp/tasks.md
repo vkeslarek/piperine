@@ -572,6 +572,9 @@ Proof: run terms | test an_undeclared_read_never_steers_the_walk ... ok
 **C46** - IF a value or a decision is taken from a cell the function does not read THEN the system SHALL give `Unread` through operators, `if`, `&&`, `||` and calls, run no arm it decides, and fault (`Walk::UNDECLARED`) where a number or a decision is needed; a comparison over an unread real SHALL NOT choose an arm. (INT edge case 5, verification F4)
 Proof: run lib | test walk::tests::an_unread_value_steers_nothing ... ok
 
+**C47** - WHEN a transient's stop time is off the solver's tick grid THEN the run SHALL end with exactly one record at the stop, the integrated trajectory point, and no two records SHALL share a time. (verification F1; the solver's own proof is `abi_tran.rs` `a_stop_off_the_tick_grid_is_reached_once_by_an_integrating_step`)
+Proof: run circuit | test a_held_node_starts_the_transient ... ok
+
 ---
 
 ## Handoff

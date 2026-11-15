@@ -254,6 +254,7 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/`, by `abi.md`
 - WHEN a param is not given at a placement THEN the system SHALL pass no value for it and the pin SHALL hold its default.
   - Reading (verification F2): the IR binds a value to every param of an instance and cannot tell "not given" from "given equal to the default"; a param is "not given" when its bound value equals its body's default. The check asserts the values the instance is created with (`CircuitInstance::given`).
 - IF a contribution evaluates to a non-finite value THEN the system SHALL write it as it is; the solver fails the solve (abi.md A4, `E0507`).
+- WHEN a transient's stop time is off the solver's tick grid THEN the run SHALL end with exactly one record at the stop, the integrated trajectory point, and no two records SHALL share a time. (verification F1)
 - WHEN a function's walk passes code over a param or a cell the function does not read (its `Body::dependencies` leave it out) THEN the system SHALL run no arm of an `if`, `&&` or `||` decided by it and SHALL write the function's declared values exactly; IF a value the function writes or a decision it needs is taken from such a cell THEN the system SHALL fault (`Walk::UNDECLARED`). (verification F4)
 
 ---
