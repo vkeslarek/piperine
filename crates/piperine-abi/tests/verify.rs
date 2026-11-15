@@ -50,7 +50,7 @@ static FLOW_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static DDT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 
 impl Device for Resistor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&FLOW_SHAPE, op::FLOW).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -74,7 +74,7 @@ fn capacitor_eval(cx: &mut Eval<'_>, skew: f64) {
 }
 
 impl Device for Capacitor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&DDT_SHAPE, op::DDT).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -90,7 +90,7 @@ impl Device for Capacitor {
 }
 
 impl Device for SkewedCapacitor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&DDT_SHAPE, op::DDT).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -132,7 +132,7 @@ fn limiter_shape() -> &'static ShapeRef {
 }
 
 impl Device for Limiter {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         limiter_shape().shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -216,7 +216,7 @@ fn one_port() -> &'static ShapeRef {
 }
 
 impl Device for NanJac {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         one_port().shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -234,7 +234,7 @@ impl Device for NanJac {
 }
 
 impl Device for WrongLog {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         one_port().shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {

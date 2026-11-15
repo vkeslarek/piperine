@@ -101,7 +101,7 @@ impl Drop for Probe {
 }
 
 impl Device for Probe {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         static PROTO: OnceLock<ShapeRef> = OnceLock::new();
         PROTO.get_or_init(probe_shape).shape()
     }
@@ -218,7 +218,7 @@ fn destroy(m: &Module, inst: &Created) {
     unsafe { (m.destroy())(inst.instance) }
 }
 
-fn gain_value(bytes: &'static [u8; 8]) -> Value {
+fn gain_value(bytes: &'static [u8; 8]) -> Value<'static> {
     Value { pin: 0, bytes: Bytes::from_static(bytes) }
 }
 

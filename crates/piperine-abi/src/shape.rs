@@ -5,6 +5,7 @@
 //! view is valid at every moment; once frozen into a `ShapeRef` nothing is
 //! added and nothing moves until the last clone is dropped.
 
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::raw::{
@@ -24,7 +25,7 @@ pub struct PinSpec<'a> {
     pub role: u32,
     pub global: u32,
     pub flags: u32,
-    pub layout: &'a Layout,
+    pub layout: &'a Layout<'a>,
     pub unit: &'a str,
     pub init: &'a [u8],
     pub check: u32,
@@ -90,7 +91,7 @@ pub struct WatchSpec<'a> {
     pub name: &'a str,
     pub origin: &'a str,
     pub kind: u32,
-    pub layout: &'a Layout,
+    pub layout: &'a Layout<'a>,
     pub event: u32,
     pub ttol: u32,
     pub etol: u32,
@@ -121,16 +122,18 @@ pub struct ReactionSpec<'a> {
 /// A shape and the storage of everything it points to.
 #[derive(Debug)]
 pub struct ShapeBuf {
-    shape: Shape,
-    pins: Vec<Pin>,
-    terms: Vec<Term>,
-    inputs: Vec<Input>,
-    watches: Vec<Watch>,
-    functions: Vec<Function>,
-    reactions: Vec<Reaction>,
+    // Every view below points into the boxes of this struct; the `'static`
+    // never leaves it but as a borrow of `self` (`shape`).
+    shape: Shape<'static>,
+    pins: Vec<Pin<'static>>,
+    terms: Vec<Term<'static>>,
+    inputs: Vec<Input<'static>>,
+    watches: Vec<Watch<'static>>,
+    functions: Vec<Function<'static>>,
+    reactions: Vec<Reaction<'static>>,
     strings: Vec<Box<str>>,
     bytes: Vec<Box<[u8]>>,
-    fields: Vec<Box<[Field]>>,
+    fields: Vec<Box<[Field<'static>]>>,
     cells: Vec<Box<[Cell]>>,
     partials: Vec<Box<[Partial]>>,
     statements: Vec<Box<[Statement]>>,
@@ -177,42 +180,49 @@ impl ShapeBuf {
         }
     }
 
-    fn str(&mut self, s: &str) -> Str {
+    fn str(&mut self, s: &str) -> Str<'static> {
         if s.is_empty() {
             return Str::EMPTY;
         }
         let owned: Box<str> = s.into();
-        let raw = Str { ptr: owned.as_ptr(), len: owned.len() };
+        let raw = Str { ptr: owned.as_ptr(), len: owned.len(), life: PhantomData };
         self.strings.push(owned);
         raw
     }
 
-    fn bytes(&mut self, b: &[u8]) -> Bytes {
+    fn bytes(&mut self, b: &[u8]) -> Bytes<'static> {
         if b.is_empty() {
             return Bytes::EMPTY;
         }
         let owned: Box<[u8]> = b.into();
-        let raw = Bytes { ptr: owned.as_ptr(), len: owned.len() };
+        let raw = Bytes { ptr: owned.as_ptr(), len: owned.len(), life: PhantomData };
         self.bytes.push(owned);
         raw
     }
 
-    fn layout(&mut self, l: &Layout) -> Layout {
+    fn layout(&mut self, l: &Layout<'_>) -> Layout<'static> {
         assert!(l.fields.is_readable(), "ShapeBuf: a layout whose field list is unreadable (stride {})", l.fields.stride());
-        let fields: Vec<Field> = l
+        let fields: Vec<Field<'static>> = l
             .fields
             .iter()
-            .map(|f| Field { name: self.str(f.name.as_str()), ..*f })
+            .map(|f| Field {
+                name: self.str(f.name.as_str()),
+                leaf: f.leaf,
+                offset: f.offset,
+                count: f.count,
+                flags: f.flags,
+                known: f.known,
+            })
             .collect();
-        let owned: Box<[Field]> = fields.into();
-        let list = List::from_slice(&owned);
+        let owned: Box<[Field<'static>]> = fields.into();
+        let list = List::detached(&owned);
         self.fields.push(owned);
         Layout { size: l.size, align: l.align, fields: list }
     }
 
-    fn list<T: Copy>(store: &mut Vec<Box<[T]>>, items: &[T]) -> List<T> {
+    fn list<T: Copy>(store: &mut Vec<Box<[T]>>, items: &[T]) -> List<'static, T> {
         let owned: Box<[T]> = items.into();
-        let list = List::from_slice(&owned);
+        let list = List::detached(&owned);
         store.push(owned);
         list
     }
@@ -234,7 +244,7 @@ impl ShapeBuf {
         };
         let i = index(self.pins.len());
         self.pins.push(pin);
-        self.shape.pins = List::from_slice(&self.pins);
+        self.shape.pins = List::detached(&self.pins);
         i
     }
 
@@ -251,7 +261,7 @@ impl ShapeBuf {
         };
         let i = index(self.terms.len());
         self.terms.push(term);
-        self.shape.terms = List::from_slice(&self.terms);
+        self.shape.terms = List::detached(&self.terms);
         i
     }
 
@@ -260,7 +270,7 @@ impl ShapeBuf {
         let input = Input { name: self.str(x.name), origin: self.str(x.origin), kind: x.kind };
         let i = index(self.inputs.len());
         self.inputs.push(input);
-        self.shape.inputs = List::from_slice(&self.inputs);
+        self.shape.inputs = List::detached(&self.inputs);
         i
     }
 
@@ -277,7 +287,7 @@ impl ShapeBuf {
         };
         let i = index(self.watches.len());
         self.watches.push(watch);
-        self.shape.watches = List::from_slice(&self.watches);
+        self.shape.watches = List::detached(&self.watches);
         i
     }
 
@@ -293,7 +303,7 @@ impl ShapeBuf {
         };
         let i = index(self.functions.len());
         self.functions.push(function);
-        self.shape.functions = List::from_slice(&self.functions);
+        self.shape.functions = List::detached(&self.functions);
         i
     }
 
@@ -309,7 +319,7 @@ impl ShapeBuf {
         };
         let i = index(self.reactions.len());
         self.reactions.push(reaction);
-        self.shape.reactions = List::from_slice(&self.reactions);
+        self.shape.reactions = List::detached(&self.reactions);
         i
     }
 
@@ -321,12 +331,23 @@ impl ShapeBuf {
 
     /// The raw shape. Valid while this `ShapeBuf` neither moves nor changes;
     /// behind a `ShapeRef`, until its last clone is dropped.
-    pub fn as_raw(&self) -> *const Shape {
+    pub fn as_raw(&self) -> *const Shape<'static> {
         &self.shape
     }
 
     /// The raw shape, borrowed.
-    pub fn shape(&self) -> &Shape {
+    ///
+    /// A copy of it cannot outlive this `ShapeBuf` (or the last `ShapeRef`):
+    ///
+    /// ```compile_fail
+    /// use piperine_abi::shape::ShapeBuf;
+    /// let shape = {
+    ///     let frozen = ShapeBuf::new().freeze();
+    ///     *frozen.shape() // `frozen` does not live long enough
+    /// };
+    /// let _ = shape.pins.len();
+    /// ```
+    pub fn shape(&self) -> &Shape<'_> {
         &self.shape
     }
 }

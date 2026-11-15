@@ -576,7 +576,7 @@ Proof: run abi | test a_non_finite_partial_is_a_mismatch ... ok
 **C41** - A list whose stride is below its element is refused, never read past (SAC-20)
 Proof: run abi | test a_list_whose_stride_is_below_its_element_is_refused ... ok
 
-**C42** - The raw views have no public pointer field and one unsafe constructor each (SAC-21)
+**C42** - The raw views have no public pointer field and one unsafe constructor each (and, round 2 N2, carry the lifetime of what they borrow: check C52) (SAC-21)
 Proof: run abi | test raw_views_have_no_public_pointer_field ... ok
 
 **C43** - No unsafe outside raw.rs, thunk.rs and caller.rs (SAC-22)
@@ -605,6 +605,9 @@ Proof: run abi | test an_unreadable_value_list_is_a_fault ... ok
 
 **C51** - A crossing within half a tick of the target, or at or past it, never loops (SAC-32)
 Proof: run owner | test a_crossing_within_half_a_tick_of_the_target_does_not_loop ... ok
+
+**C52** - A list from a dropped slice does not compile (SAC-33)
+Proof: run abi | from_slice (line - compile fail ... ok
 
 ---
 

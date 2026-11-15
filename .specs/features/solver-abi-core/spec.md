@@ -196,6 +196,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-32** (14). WHEN an attempt reports a crossing (`LandedEarlier`) THEN the protocol SHALL retry at the nearest tick at least one tick short of the target, SHALL take the step at its end when the crossing is at or past the target or rounds to the end of a one-tick step, and SHALL count every retry toward `max_rejections`, so no identical step is retried and no loop is unbounded (N1).
 
+- **SAC-33** (15). `Str`, `Bytes` and `List` (and so `Shape` and every struct holding them) SHALL carry the lifetime of the memory they point to, so safe code cannot keep a view past its owner: a list from a dropped slice, or a shape copied out of a dropped `ShapeRef`, SHALL NOT compile; this makes SAC-21's claim hold (N2, F9).
+
 ---
 
 ## Edge Cases
@@ -243,6 +245,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-30 | P1: Verification round 1, AC 12 | Execute | Done |
 | SAC-31 | P1: Verification round 1, AC 13 | Execute | Done |
 | SAC-32 | P1: Verification round 1, AC 14 | Execute | Done |
+| SAC-33 | P1: Verification round 1, AC 15 | Execute | Done |
 
 **Coverage:** 30 total (SAC-19 to SAC-30 from verification round 1), 30 mapped to tasks or checks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 

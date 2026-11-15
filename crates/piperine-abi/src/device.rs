@@ -15,7 +15,7 @@ use crate::validate::{CellBytes, cell_bytes};
 /// A device written in Rust. `module::<D>` turns it into the C entry points.
 pub trait Device: Sized + Send + 'static {
     /// The shape at default values (abi.md §2, `Module.prototype`).
-    fn prototype() -> &'static Shape;
+    fn prototype() -> &'static Shape<'static>;
     /// An instance and its shape for these param values.
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault>;
     /// Runs function `k`.

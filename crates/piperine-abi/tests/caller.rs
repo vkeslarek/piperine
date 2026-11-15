@@ -61,7 +61,7 @@ impl Drop for Amp {
 }
 
 impl Device for Amp {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         static PROTO: OnceLock<ShapeRef> = OnceLock::new();
         PROTO.get_or_init(amp_shape).shape()
     }
