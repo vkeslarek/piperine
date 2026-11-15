@@ -75,3 +75,30 @@ fn replace_with_an_infinite_delay_removes_the_pending_commits() {
         "the tick (a REPLACE statement) was removed by the never-due commit: {seen:?}"
     );
 }
+
+#[test]
+fn a_host_write_outside_its_net_fails_loud_and_changes_nothing() {
+    // finding 5: it used to be accepted and to panic inside the store at the instant
+    use piperine_digital_solver::abi::net::NetSpec;
+    use piperine_digital_solver::abi::plan::DigitalPlan;
+    use piperine_digital_solver::error::DigitalError;
+    let plan = DigitalPlan::bind(
+        vec![NetSpec::discrete("n", 2, 1), NetSpec::event("ev")],
+        vec![],
+        Resolution::default(),
+    )
+    .unwrap();
+    let mut d = Digital::new(plan, DigitalLimits::default());
+    d.start().unwrap();
+    let before = d.checkpoint();
+    for (net, offset, bytes) in [(0u32, 1u32, &[1u8, 1, 1][..]), (0, 3, &[1][..]), (0, u32::MAX, &[1, 1][..]), (1, 0, &[1][..]), (9, 0, &[][..])] {
+        match d.host_commit(NetId(net), offset, bytes, Tick(1)) {
+            Err(DigitalError::HostWrite { .. }) => {}
+            other => panic!("net {net} offset {offset} len {}: expected a refusal, got {other:?}", bytes.len()),
+        }
+    }
+    assert_eq!(d.checkpoint(), before, "nothing was queued");
+    d.host_commit(NetId(0), 1, &[1], Tick(1)).expect("the last byte of the net is in range");
+    d.host_commit(NetId(0), 0, &[1, 1], Tick(1)).expect("the whole net is in range");
+    instant(&mut d, Tick(1));
+}

@@ -161,7 +161,16 @@ impl Digital {
     ///
     /// A write to a `STRUCTURAL` net while a run is in progress is refused, and nothing changes (P5).
     pub fn host_commit(&mut self, net: NetId, offset: u32, bytes: &[u8], at: Tick) -> Result<(), DigitalError> {
-        let spec = &self.plan.nets[net.0 as usize];
+        let Some(spec) = self.plan.nets.get(net.0 as usize) else {
+            return Err(DigitalError::HostWrite { net: format!("#{}", net.0), reason: "no such net" });
+        };
+        let end = offset as u64 + bytes.len() as u64;
+        if end > spec.size as u64 || (spec.kind == NetKind::Event && !bytes.is_empty()) {
+            return Err(DigitalError::HostWrite {
+                net: spec.name.clone(),
+                reason: "the bytes lie outside the net (an event net holds none)",
+            });
+        }
         if spec.structural && self.running {
             return Err(DigitalError::HostWrite { net: spec.name.clone(), reason: "a STRUCTURAL pin cannot change during a run" });
         }
