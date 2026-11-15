@@ -234,11 +234,22 @@ solution at `t` for a change made after it. The **right value** is the solution 
 transient step that reads the change. One rule defines the jump:
 
 **A jump has no solve of its own.** The change is read by a transient step (§17.2) and by
-nothing else. The solver lands exactly on the time `t` of the change (§17.2.2). What is due at
-microstep 0 of `t` is applied before the step that arrives at `t` is solved (§15 step 3.4), so
-that step reads it. A change made after that solve is read by the first step after `t`. The step
-that lands on a jump is exempt from the truncation-error test (§17.2.1), and the step after it
-restarts the integrator (rule 6).
+nothing else. The solver lands exactly on the time `t` of the change (§17.2.2). Which step reads
+it, and how, depends on when the change is made:
+
+- **Before the solve of `t`.** What is due at microstep 0 of `t` (a commit, an `at`), and every
+  change the microsteps before §15 step 3.4 make from it through commits with no delay,
+  definitions and `resolve`s, is applied before the step that arrives at `t` is solved, so
+  that step reads it. The solver landed on `t` because something was due there, so that step
+  is exempt from the truncation-error test (§17.2.1), and the step after it restarts the
+  integrator (rule 6).
+- **After the solve of `t`.** A change made by a reaction that reads the solution at `t` (a
+  crossing found by that solve, a converter's threshold, a probe after step 3.4), and by the
+  microsteps that follow from it, is read by the first step after `t`. That step is an
+  ordinary one: it is tested for truncation error and the integrator does not restart. A
+  settle commit is read the same way (§15 S3).
+- **A host `set`** is read by the first step after `t`, with the exemption and the restarts
+  of the paragraph below.
 
 When several changes occur at one `t`, in successive microsteps, the step that reads the first
 of them reads them all, unless step 3.4 solves `t` between two of them.
@@ -273,10 +284,13 @@ of its own.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
-6. **The integrator restarts after the jump.** The step after the step that lands on a jump
-   restarts the integrator: its trapezoidal stage drops the previous derivative and runs as
-   backward Euler. After a host `set` the step size also restarts (Appendix C.2); after any
-   other jump the controller's proposal is kept.
+6. **The integrator restarts after a landing and after a host `set`.** Two steps restart the
+   integrator: the step after one that landed on `t` because something was due there, and
+   the step that reads a host `set`. Restarting, the trapezoidal stage drops the previous
+   derivative and runs as backward Euler over its sub-step. A change made after the solve of
+   `t`, and a settle commit, restart nothing. After a host `set` the step size also restarts
+   at 10⁻³ of the last step (Appendix C.2); in every other case the controller's proposal is
+   kept.
 7. The step that reads a jump converges under §17.1. Each primitive has in it the meaning of
    the "Jump solve" column of §16.2, which is the meaning in a transient step.
    `analysis(Static)` is false and `now()` is the time of the step.
@@ -286,6 +300,10 @@ of its own.
    fails as a singular solve (`E0503`).
 10. Sensitivities across a jump are those of the states carried and of the step that reads it
     (§23.3.2).
+
+> **Note.** The device ABI (`piperine_abi_1`) runs the instant `t_c` after accepting the
+> solution there, so a change due at `t_c` is read by the next step after a boundary event;
+> the present solver reads it in the step that arrives at `t_c`. `solver-abi` resolves it.
 
 **Errors**
 
