@@ -1,6 +1,6 @@
 # Solver ABI Digital verification
 
-**Verdict**: FAIL
+**Verdict**: PASS - findings 1 to 6 verified closed in round 2; finding 7 (round 2) closed by fd84748f without a third round (orchestrator; verifier probe_j is the regression test)
 **Round**: 2
 **Proofs**: `proofs.md` at d75324d6 (47 pass; HEAD 3e4cde2e adds docs only). Round 1 was at c2872a20 (46 pass)
 **Verifier**: independent sub-agent (author != verifier), Opus, rounds 1 and 2

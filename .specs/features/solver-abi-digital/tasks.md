@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/solver-abi-digital/design.md`
-**Status**: Draft
+**Status**: Done
 **Build**: `cargo build -p piperine-digital-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run digital**: `cargo test -p piperine-digital-solver`
 
@@ -528,7 +528,7 @@ Proof: run digital | test horizon_counts_the_commits_other_reactions_make_in_the
 ## Handoff
 
 **Settled mid-build:** round-2 finding 7 (orchestrator, fix + merge without a third round): when an IRREVERSIBLE reaction fires in a microstep together with others, every reaction of that microstep gets the current tick as HORIZON (the verifier's sound fix); C46 gains an irreversible case; round-1 fix (orchestrator 2026-11-15): HORIZON after the reactions of the microstep (new SAD requirement + check); RELAX rule = every directed cycle must pass through at least one RELAX net, checked per cycle (graph with RELAX nets removed is acyclic), not per component; never-due REPLACE still removes pending commits; host_commit range-checked; P3 canonical check on every write (functions and commits), release builds included, with tests; none
-**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported); B2 (Sonnet) at f2000f5f - returned (T7-T13 771e775a..f438e312; advance strictly before 'to'; HostWrite error; fixtures Succ..Clockwatch) - returned (core seam adapted 3d000240..28b73be3; preview_boundary + C43 superseded; NetSpec.crossing for integration); Verifier (Opus) at ada78474 - returned (FAIL: 6 findings); Fix pass (Sonnet) + core N2 adapt at 79d28c66 - returned (adapt a7e34a77 + fixes e01e8c0b..dba31035, Closed fbd89891; HORIZON as re-call fixed point (SAD-23/C46)); Verifier round 2 at 7da5885d
+**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported); B2 (Sonnet) at f2000f5f - returned (T7-T13 771e775a..f438e312; advance strictly before 'to'; HostWrite error; fixtures Succ..Clockwatch) - returned (core seam adapted 3d000240..28b73be3; preview_boundary + C43 superseded; NetSpec.crossing for integration); Verifier (Opus) at ada78474 - returned (FAIL: 6 findings); Fix pass (Sonnet) + core N2 adapt at 79d28c66 - returned (adapt a7e34a77 + fixes e01e8c0b..dba31035, Closed fbd89891; HORIZON as re-call fixed point (SAD-23/C46)); Verifier round 2 at 7da5885d - returned (finding 7 closed fd84748f)
 **Walked:** not applicable - no screen
 
 ---
