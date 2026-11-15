@@ -13,6 +13,7 @@ use crate::print::LibraryPrinter;
 mod abi_source;
 mod cache;
 mod error;
+mod load;
 pub mod print;
 pub mod rt;
 mod rustc;
@@ -21,6 +22,7 @@ mod settings;
 pub use abi_source::AbiSource;
 pub use cache::{Cache, Entry, Key, Manifest};
 pub use error::Error;
+pub use load::Loaded;
 pub use rustc::Rustc;
 pub use settings::Settings;
 

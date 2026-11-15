@@ -502,11 +502,11 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The test libraries are small sources compiled by T12's `Rustc` into a `tempdir`
-- [ ] `unsafe_lives_in_load_only` scans `src/` of the crate and the golden files
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test load`: `a_file_that_is_no_library_is_named`, `a_library_without_the_symbol_is_named`, `a_library_of_a_newer_minor_is_refused`, `a_library_whose_bytes_changed_is_not_loaded`, `unsafe_lives_in_load_only`
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+- [x] The test libraries are small sources compiled by T12's `Rustc` into a `tempdir`
+- [x] `unsafe_lives_in_load_only` scans `src/` of the crate and the golden files
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test load`: `a_file_that_is_no_library_is_named`, `a_library_without_the_symbol_is_named`, `a_library_of_a_newer_minor_is_refused`, `a_library_whose_bytes_changed_is_not_loaded`, `unsafe_lives_in_load_only`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 5 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build
