@@ -69,6 +69,12 @@ pub struct BodyData {
     /// The definitions `c = value;` and `c = value after d;`, in source order.
     #[serde(default)]
     pub(crate) drives: Vec<Drive>,
+    /// The events the body's reactions wait on, by index.
+    #[serde(default)]
+    pub(crate) events: Vec<Event>,
+    /// The `on` blocks of the body's `digital` blocks, in source order.
+    #[serde(default)]
+    pub(crate) reactions: Vec<Reaction>,
     /// The memo of `Body::dependencies`: derived, so outside equality and serialization.
     #[serde(skip)]
     pub(crate) deps: DepsMemo,
@@ -146,6 +152,35 @@ pub struct Drive {
     pub carrier: u32,
     pub value: ExprId,
     pub after: Option<ExprId>,
+    pub origin: Origin,
+}
+
+/// An event of a body (§13): what fires it, and a `bool` read at the microstep that must hold
+/// for it to fire. `clk.rise()` is `Changed(clk)` guarded by `clk.high()`; `above(e)` is
+/// `Cross(e)`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Event {
+    pub source: EventSource,
+    pub guard: Option<ExprId>,
+    pub origin: Origin,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EventSource {
+    /// `c.changed()`: carrier `c` of the body took a new value.
+    Changed(u32),
+    /// `cross(e)`: the real `e` went from `<= 0` to `> 0`, located by the solver.
+    Cross(ExprId),
+}
+
+/// `on <events> { … }`: statements run when any of the events fires. Its `let`s bind `locals`,
+/// its commits (`Stmt::Commit`) write carriers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Reaction {
+    /// Indices into the body's events.
+    pub on: Vec<u32>,
+    pub stmts: Vec<StmtId>,
+    pub locals: Vec<Local>,
     pub origin: Origin,
 }
 
@@ -230,6 +265,8 @@ pub enum Stmt {
     Let { local: u32, init: ExprId },
     Expr(ExprId),
     Contribute { branch: u32, quantity: QuantityRole, addends: Vec<Addend> },
+    /// `carrier <- value;` or `carrier <- value after delay;`, in a reaction.
+    Commit { carrier: u32, value: ExprId, after: Option<ExprId> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

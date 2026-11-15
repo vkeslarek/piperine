@@ -3,8 +3,8 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, Constant, Drive, Expr, FunctionData, InstanceData, Ir, Local,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Site, Stmt, ValueType,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, Constant, Drive, Event, Expr, FunctionData, InstanceData, Ir, Local,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, ValueType,
 };
 
 impl Ir {
@@ -172,6 +172,16 @@ impl<'a> Body<'a> {
     /// The definitions of carriers, in source order.
     pub fn drives(&self) -> &'a [Drive] {
         &self.data().drives
+    }
+
+    /// The events the reactions wait on, by index.
+    pub fn events(&self) -> &'a [Event] {
+        &self.data().events
+    }
+
+    /// The reactions of the body's `digital` blocks, in source order.
+    pub fn reactions(&self) -> &'a [Reaction] {
+        &self.data().reactions
     }
 }
 

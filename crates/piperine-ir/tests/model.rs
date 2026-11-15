@@ -226,6 +226,12 @@ impl Reach {
                     Reach::expr(ir, a.value, out);
                 }
             }
+            Stmt::Commit { value, after, .. } => {
+                Reach::expr(ir, *value, out);
+                if let Some(a) = after {
+                    Reach::expr(ir, *a, out);
+                }
+            }
         }
     }
 

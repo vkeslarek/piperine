@@ -5,9 +5,9 @@
 //! `piperine-transpile` through `#[path]`.
 
 use piperine_ir::{
-    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Drive, Expr,
-    ExprId, FunctionId, IrBuilder, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Real,
-    Stmt, StmtId, Terminal, UnaryOp, ValueType,
+    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Drive, Event,
+    EventSource, Expr, ExprId, FunctionId, IrBuilder, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity,
+    QuantityRole, Reaction, Real, Stmt, StmtId, Terminal, UnaryOp, ValueType,
 };
 
 /// The value types of the MSL source, by their aliases.
@@ -145,6 +145,21 @@ impl<'b> Dx<'b> {
     pub fn probe(&mut self, plus: Terminal, minus: Terminal) -> ExprId {
         self.emit(Expr::Probe { plus, minus }, ValueType::F64)
     }
+
+    /// `carrier <- value;`, or `carrier <- value after delay;`.
+    pub fn commit(&mut self, carrier: u32, value: ExprId, after: Option<ExprId>) -> StmtId {
+        self.b.stmt(Stmt::Commit { carrier, value, after })
+    }
+
+    /// `if cond { stmts }` with no `else`: the `else` is `()`, as `piperine-lang` lowers it.
+    pub fn when(&mut self, cond: ExprId, stmts: Vec<StmtId>, otherwise: Option<ExprId>) -> ExprId {
+        let then = self.block(stmts, None, ValueType::Unit);
+        let otherwise = match otherwise {
+            Some(e) => e,
+            None => self.unit(),
+        };
+        self.if_(cond, then, otherwise, ValueType::Unit)
+    }
 }
 
 /// The buck-slice bodies and the functions they call, each beside the MSL text it transcribes.
@@ -212,6 +227,229 @@ impl Buck {
         let voltage = Quantity { name: "Voltage".into(), access: "v".into(), units: "V".into(), abstol: Real::new(1e-6) };
         let current = Quantity { name: "Current".into(), access: "i".into(), units: "A".into(), abstol: Real::new(1e-12) };
         b.nature("Electrical", voltage, Some(current))
+    }
+
+    /// `c.rise()` of a `Bit` carrier: `Changed(c)` guarded by `c.high()` (spec, "`rise()`,
+    /// `fall()` in the IR").
+    pub fn rise(b: &mut IrBuilder, body: BodyId, carrier: u32, file: &'static str, line: u32, col: u32) -> u32 {
+        let mut x = Dx::new(b, file, line, col);
+        let c = x.carrier(carrier, ValueType::Bool);
+        let guard = x.high(c);
+        b.event(body, Event { source: EventSource::Changed(carrier), guard: Some(guard), origin: Buck::origin(file, line, col) })
+    }
+
+    pub fn reaction(b: &mut IrBuilder, body: BodyId, on: Vec<u32>, stmts: Vec<StmtId>, locals: Vec<piperine_ir::Local>, file: &str, line: u32) -> u32 {
+        b.reaction(body, Reaction { on, stmts, locals, origin: Buck::origin(file, line, 5) })
+    }
+
+    /// `dpwm.msl:7-10`:
+    ///
+    /// ```text
+    /// pub module Osc(out clk: Bit = false) {
+    ///     f: f64 = 200M where f > 0.0;
+    /// }
+    /// digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+    /// ```
+    pub fn osc(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "dpwm.msl";
+        let check = Buck::positive(b, F, 8, 22, 0);
+        let body = b.body(BodySpec { params: vec![Buck::param("f", F, 8, Some(200e6), Some(check))], ..Buck::spec("Osc", F, 7) });
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 7, 20));
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 10, 22) });
+        let mut x = Dx::new(b, F, 10, 45);
+        let clk = x.carrier(0, ValueType::Bool);
+        let toggled = x.un(UnaryOp::Not, clk, Ty::flagged(ValueType::Bool));
+        x.at(10, 57);
+        let half = x.real(0.5);
+        let f = x.param(0, ValueType::F64);
+        let delay = x.bin(BinaryOp::Div, half, f, ValueType::F64);
+        let commit = x.commit(0, toggled, Some(delay));
+        Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 10);
+        body
+    }
+
+    /// `control.msl:22-32`:
+    ///
+    /// ```text
+    /// pub module RefRamp(in tick: Bit, in run: Bit, in target: Bit<u10>,
+    ///                    out reference: Bit<u10> = 0, out at_target: Bit) {
+    ///     at_target = reference == target;
+    /// }
+    /// digital for RefRamp {
+    ///     on tick.rise() {
+    ///         if !run.known_or(false) { reference <- 0; }
+    ///         else if reference < target { reference <- reference + 1; }
+    ///         else if reference > target { reference <- reference - 1; }
+    ///     }
+    /// }
+    /// ```
+    pub fn ref_ramp(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "control.msl";
+        let body = b.body(Buck::spec("RefRamp", F, 22));
+        let word = Ty::u(10);
+        for (name, ty, role, init, line, col) in [
+            ("tick", ValueType::Bool, CarrierRole::In, None, 22, 20),
+            ("run", ValueType::Bool, CarrierRole::In, None, 22, 34),
+            ("target", word.clone(), CarrierRole::In, None, 22, 47),
+            ("reference", word.clone(), CarrierRole::Out, Some(Constant::Int(0)), 23, 20),
+            ("at_target", ValueType::Bool, CarrierRole::Out, None, 23, 52),
+        ] {
+            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
+        }
+        let (tick, run, target, reference, at_target) = (0, 1, 2, 3, 4);
+        let mut x = Dx::new(b, F, 24, 17);
+        let r = x.carrier(reference, word.clone());
+        let t = x.carrier(target, word.clone());
+        let same = x.bin(BinaryOp::Eq, r, t, Ty::flagged(ValueType::Bool));
+        b.drive(body, Drive { carrier: at_target, value: same, after: None, origin: Buck::origin(F, 24, 5) });
+        let rise = Buck::rise(b, body, tick, F, 27, 8);
+        let mut x = Dx::new(b, F, 30, 14);
+        let r = x.carrier(reference, word.clone());
+        let t = x.carrier(target, word.clone());
+        let above = x.bin(BinaryOp::Gt, r, t, Ty::flagged(ValueType::Bool));
+        let r = x.carrier(reference, word.clone());
+        let one = x.int(1, word.clone());
+        let down = x.bin(BinaryOp::Sub, r, one, Ty::flagged(word.clone()));
+        let commit_down = x.commit(reference, down, None);
+        let third = x.when(above, vec![commit_down], None);
+        x.at(29, 14);
+        let r = x.carrier(reference, word.clone());
+        let t = x.carrier(target, word.clone());
+        let below = x.bin(BinaryOp::Lt, r, t, Ty::flagged(ValueType::Bool));
+        let r = x.carrier(reference, word.clone());
+        let one = x.int(1, word.clone());
+        let up = x.bin(BinaryOp::Add, r, one, Ty::flagged(word.clone()));
+        let commit_up = x.commit(reference, up, None);
+        let second = x.when(below, vec![commit_up], Some(third));
+        x.at(28, 12);
+        let run_c = x.carrier(run, ValueType::Bool);
+        let no = x.boolean(false);
+        let running = x.known_or(run_c, no, ValueType::Bool);
+        let stopped = x.un(UnaryOp::Not, running, ValueType::Bool);
+        let zero = x.int(0, word.clone());
+        let rest = x.commit(reference, zero, None);
+        let first = x.when(stopped, vec![rest], Some(second));
+        let stmt = x.stmt(first);
+        Buck::reaction(b, body, vec![rise], vec![stmt], vec![], F, 27);
+        body
+    }
+
+    /// `sense.msl:19-34`:
+    ///
+    /// ```text
+    /// pub module Adc(ain: Electrical, in sample: Bit, out code: Bit<u10> = 0, out done: Bit = false) {
+    ///     vref: f64 = 1.6 where vref > 0.0;
+    ///     tconv: f64 = 500n where tconv > 0.0;
+    ///     tstrobe: f64 = 5n where tstrobe > 0.0;
+    /// }
+    /// digital for Adc {
+    ///     on sample.rise() {
+    ///         let q = (v(ain) / vref * 1024.0 + 0.5).floor().clamp(0.0, 1023.0) as u10;
+    ///         code <- q after tconv;
+    ///         done <- true after tconv;
+    ///         done <- false after tconv + tstrobe;
+    ///     }
+    /// }
+    /// ```
+    pub fn adc(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "sense.msl";
+        let el = Buck::electrical(b);
+        let vref = Buck::positive(b, F, 21, 25, 0);
+        let tconv = Buck::positive(b, F, 23, 27, 1);
+        let tstrobe = Buck::positive(b, F, 25, 26, 2);
+        let body = b.body(BodySpec {
+            params: vec![
+                Buck::param("vref", F, 21, Some(1.6), Some(vref)),
+                Buck::param("tconv", F, 23, Some(500e-9), Some(tconv)),
+                Buck::param("tstrobe", F, 25, Some(5e-9), Some(tstrobe)),
+            ],
+            nodes: vec![BodyNode { name: "ain".into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 19, 18) }],
+            ..Buck::spec("Adc", F, 19)
+        });
+        let word = Ty::u(10);
+        b.carrier(body, Buck::carrier("sample", ValueType::Bool, CarrierRole::In, None, F, 19, 33));
+        b.carrier(body, Buck::carrier("code", word.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 19, 52));
+        b.carrier(body, Buck::carrier("done", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 19, 76));
+        let rise = Buck::rise(b, body, 0, F, 28, 8);
+        let mut x = Dx::new(b, F, 29, 17);
+        let v = x.probe(Terminal::Node(0), Terminal::Ground);
+        let vref = x.param(0, ValueType::F64);
+        let ratio = x.bin(BinaryOp::Div, v, vref, ValueType::F64);
+        let full = x.real(1024.0);
+        let scaled = x.bin(BinaryOp::Mul, ratio, full, ValueType::F64);
+        let half = x.real(0.5);
+        let rounded = x.bin(BinaryOp::Add, scaled, half, ValueType::F64);
+        let floor = x.method(Method::Floor, rounded, vec![], ValueType::F64);
+        let lo = x.real(0.0);
+        let hi = x.real(1023.0);
+        let clamped = x.method(Method::Clamp, floor, vec![lo, hi], ValueType::F64);
+        let q = x.cast(clamped, word.clone(), word.clone());
+        let let_q = x.let_(0, q);
+        x.at(30, 9);
+        let q = x.local(0, word.clone());
+        let tconv = x.param(1, ValueType::F64);
+        let code = x.commit(1, q, Some(tconv));
+        x.at(31, 9);
+        let on = x.boolean(true);
+        let tconv = x.param(1, ValueType::F64);
+        let done_on = x.commit(2, on, Some(tconv));
+        x.at(32, 9);
+        let off = x.boolean(false);
+        let tconv = x.param(1, ValueType::F64);
+        let tstrobe = x.param(2, ValueType::F64);
+        let end = x.bin(BinaryOp::Add, tconv, tstrobe, ValueType::F64);
+        let done_off = x.commit(2, off, Some(end));
+        Buck::reaction(b, body, vec![rise], vec![let_q, code, done_on, done_off], vec![Buck::local("q", word)], F, 28);
+        body
+    }
+
+    /// The comparator: `A2D` of `std/convert.msl:9-13`, `above(e)` written as `Cross(e)`.
+    ///
+    /// ```text
+    /// pub module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
+    /// digital for A2D {
+    ///     on above(v(a) - vth - hyst / 2.0) { d <- true; }
+    ///     on above(vth - hyst / 2.0 - v(a)) { d <- false; }
+    /// }
+    /// ```
+    pub fn comparator(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "convert.msl";
+        let el = Buck::electrical(b);
+        let body = b.body(BodySpec {
+            params: vec![Buck::param("vth", F, 9, Some(0.6), None), Buck::param("hyst", F, 9, Some(50e-3), None)],
+            nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 9, 19) }],
+            ..Buck::spec("A2D", F, 9)
+        });
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 9, 34));
+        // on above(v(a) - vth - hyst / 2.0) { d <- true; }
+        let mut x = Dx::new(b, F, 11, 14);
+        let v = x.probe(Terminal::Node(0), Terminal::Ground);
+        let vth = x.param(0, ValueType::F64);
+        let over = x.bin(BinaryOp::Sub, v, vth, ValueType::F64);
+        let hyst = x.param(1, ValueType::F64);
+        let two = x.real(2.0);
+        let half = x.bin(BinaryOp::Div, hyst, two, ValueType::F64);
+        let rising = x.bin(BinaryOp::Sub, over, half, ValueType::F64);
+        x.at(11, 41);
+        let on = x.boolean(true);
+        let set = x.commit(0, on, None);
+        // on above(vth - hyst / 2.0 - v(a)) { d <- false; }
+        x.at(12, 14);
+        let vth = x.param(0, ValueType::F64);
+        let hyst = x.param(1, ValueType::F64);
+        let two = x.real(2.0);
+        let half = x.bin(BinaryOp::Div, hyst, two, ValueType::F64);
+        let low = x.bin(BinaryOp::Sub, vth, half, ValueType::F64);
+        let v = x.probe(Terminal::Node(0), Terminal::Ground);
+        let falling = x.bin(BinaryOp::Sub, low, v, ValueType::F64);
+        x.at(12, 41);
+        let off = x.boolean(false);
+        let clear = x.commit(0, off, None);
+        let up = b.event(body, Event { source: EventSource::Cross(rising), guard: None, origin: Buck::origin(F, 11, 8) });
+        let down = b.event(body, Event { source: EventSource::Cross(falling), guard: None, origin: Buck::origin(F, 12, 8) });
+        Buck::reaction(b, body, vec![up], vec![set], vec![], F, 11);
+        Buck::reaction(b, body, vec![down], vec![clear], vec![], F, 12);
+        body
     }
 
     /// `power.msl:74-78`:

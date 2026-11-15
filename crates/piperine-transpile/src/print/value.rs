@@ -229,6 +229,7 @@ impl<'a> ValuePrinter<'a> {
                         Stmt::Let { init, .. } => out.push(*init),
                         Stmt::Expr(e) => out.push(*e),
                         Stmt::Contribute { addends, .. } => out.extend(addends.iter().map(|a| a.value)),
+                        Stmt::Commit { value, after, .. } => out.extend([*value].into_iter().chain(*after)),
                     }
                 }
                 out.extend(value);
@@ -463,6 +464,11 @@ impl<'a> ValuePrinter<'a> {
                 form: "contribution".into(),
                 path: format!("{} s{}", self.path, s.index()),
                 origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
+            }),
+            Stmt::Commit { value, .. } => Err(Error::Unsupported {
+                form: "commit".into(),
+                path: format!("{} s{}", self.path, s.index()),
+                origin: self.ir.expr_origin(*value).clone(),
             }),
         }
     }

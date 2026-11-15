@@ -34,6 +34,7 @@ impl<'a> AnalogPrinter<'a> {
                 Stmt::Let { init, .. } => vec![*init],
                 Stmt::Expr(e) => vec![*e],
                 Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
+                Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
             };
             while let Some(e) = exprs.pop() {
                 match self.ir.expr(e) {

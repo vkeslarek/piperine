@@ -32,7 +32,7 @@ use std::fmt::{self, Display, Write};
 
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, Constant, Env, Expr, ExprData, FunctionData, InstanceData, Ir,
+    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, Constant, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
     Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Terminal,
     UnaryOp, ValueType,
 };
@@ -315,9 +315,36 @@ impl<'a> Printer<'a> {
             text.push_str(&self.at(&drive.origin));
             self.line(1, &text);
         }
+        for (k, event) in body.events.iter().enumerate() {
+            let mut text = format!("event E{k} ");
+            match &event.source {
+                EventSource::Changed(c) => text.push_str(&format!("changed {}", Printer::carrier(scope, *c))),
+                EventSource::Cross(e) => {
+                    text.push_str("cross ");
+                    text.push_str(&self.render(scope, Piece::Expr(*e)));
+                }
+            }
+            if let Some(guard) = event.guard {
+                text.push_str(" guard ");
+                text.push_str(&self.render(scope, Piece::Expr(guard)));
+            }
+            text.push_str(&self.at(&event.origin));
+            self.line(1, &text);
+        }
         if let Some(analog) = &body.analog {
             self.line(1, "analog");
             for &stmt in analog {
+                let text = self.render(scope, Piece::Stmt(stmt));
+                self.line(2, &text);
+            }
+        }
+        for (k, reaction) in body.reactions.iter().enumerate() {
+            let on: Vec<String> = reaction.on.iter().map(|e| format!("E{e}")).collect();
+            let at = self.at(&reaction.origin);
+            self.line(1, &format!("reaction R{k} on ({}){at}", on.join(", ")));
+            self.locals(2, &reaction.locals);
+            let scope = Scope { locals: &reaction.locals, ..scope };
+            for &stmt in &reaction.stmts {
                 let text = self.render(scope, Piece::Stmt(stmt));
                 self.line(2, &text);
             }
@@ -478,6 +505,13 @@ impl<'a> Printer<'a> {
                     let neg = if a.negated { "neg " } else { "" };
                     next.push(Piece::Text(format!("{sep}{neg}{op} ")));
                     next.push(Piece::Expr(a.value));
+                }
+            }
+            Stmt::Commit { carrier, value, after } => {
+                next.push(Piece::Text(format!("{} <- ", Printer::carrier(scope, *carrier))));
+                next.push(Piece::Expr(*value));
+                if let Some(after) = after {
+                    next.extend([Piece::Text(" after ".into()), Piece::Expr(*after)]);
                 }
             }
         }
@@ -731,13 +765,30 @@ impl<'a> Printer<'a> {
                     children.join(", ")
                 ),
             );
-            if !body.drives.is_empty() {
-                let drives: Vec<String> = body
-                    .drives
+            if !(body.drives.is_empty() && body.events.is_empty() && body.reactions.is_empty()) {
+                let opt = |e: Option<ExprId>| e.map_or("-".to_string(), |a| format!("e{}", a.0));
+                let drives: Vec<String> = body.drives.iter().map(|d| format!("(c{} e{} {})", d.carrier, d.value.0, opt(d.after))).collect();
+                let events: Vec<String> = body
+                    .events
                     .iter()
-                    .map(|d| format!("(c{} e{} {})", d.carrier, d.value.0, d.after.map_or("-".to_string(), |a| format!("e{}", a.0))))
+                    .map(|ev| match &ev.source {
+                        EventSource::Changed(c) => format!("(changed c{c} {})", opt(ev.guard)),
+                        EventSource::Cross(e) => format!("(cross e{} {})", e.0, opt(ev.guard)),
+                    })
                     .collect();
-                self.line(1, &format!("body {i} discrete: drives ({})", drives.join(", ")));
+                let reactions: Vec<String> = body
+                    .reactions
+                    .iter()
+                    .map(|r| {
+                        let on: Vec<String> = r.on.iter().map(u32::to_string).collect();
+                        let stmts: Vec<String> = r.stmts.iter().map(|s| format!("s{}", s.0)).collect();
+                        format!("(on ({}) ({}))", on.join(", "), stmts.join(", "))
+                    })
+                    .collect();
+                self.line(
+                    1,
+                    &format!("body {i} discrete: drives ({})  events ({})  reactions ({})", drives.join(", "), events.join(", "), reactions.join(", ")),
+                );
             }
         }
         for (i, function) in ir.functions.iter().enumerate() {
@@ -844,6 +895,9 @@ impl<'a> Printer<'a> {
                     })
                     .collect();
                 format!("contribute b{branch} {q} ({})", parts.join(", "))
+            }
+            Stmt::Commit { carrier, value, after } => {
+                format!("commit c{carrier} e{} {}", value.0, after.map_or("-".to_string(), |a| format!("e{}", a.0)))
             }
         }
     }

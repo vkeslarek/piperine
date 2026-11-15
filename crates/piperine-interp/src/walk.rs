@@ -516,6 +516,10 @@ impl<'a> Walk<'a> {
                 let at = addends.first().map_or_else(|| "<unknown>".to_string(), |a| Self::origin(ir.expr_origin(a.value)));
                 Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Contribute` is not executed by the value walk (at {at})")))
             }
+            Stmt::Commit { value, .. } => {
+                let at = Self::origin(ir.expr_origin(*value));
+                Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Commit` is not executed by this walk (at {at})")))
+            }
         }
     }
 

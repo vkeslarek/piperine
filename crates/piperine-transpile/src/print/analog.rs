@@ -148,6 +148,7 @@ impl<'a> AnalogPrinter<'a> {
                 Stmt::Let { init, .. } => exprs.push(*init),
                 Stmt::Expr(e) => exprs.push(*e),
                 Stmt::Contribute { addends, .. } => exprs.extend(addends.iter().map(|a| a.value)),
+                Stmt::Commit { value, after, .. } => exprs.extend([*value].into_iter().chain(*after)),
             }
             for e in exprs {
                 self.reads(e, mode, &mut needed, &mut sources);
@@ -208,6 +209,7 @@ impl<'a> AnalogPrinter<'a> {
                             Stmt::Let { init, .. } => stack.push(*init),
                             Stmt::Expr(x) => stack.push(*x),
                             Stmt::Contribute { addends, .. } => stack.extend(addends.iter().map(|a| a.value)),
+                            Stmt::Commit { value, after, .. } => stack.extend([*value].into_iter().chain(*after)),
                         }
                     }
                     stack.extend(value);

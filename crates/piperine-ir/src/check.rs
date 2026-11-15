@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BranchKind, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp, ValueType,
+    BinaryOp, BranchKind, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp, ValueType,
 };
 use crate::typing::Typing;
 
@@ -61,6 +61,8 @@ struct Owner {
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
     analog: bool,
+    /// A reaction of a body: commits may appear.
+    reaction: bool,
 }
 
 /// The state of one walk: one owner's code, every root of it sharing the memo.
@@ -133,6 +135,7 @@ impl<'a> Checker<'a> {
             Stmt::Let { init, .. } => Some(*init),
             Stmt::Expr(e) => Some(*e),
             Stmt::Contribute { addends, .. } => addends.first().map(|a| a.value),
+            Stmt::Commit { value, .. } => Some(*value),
         };
         first.map_or_else(Checker::unknown, |e| self.expr_origin(e))
     }
@@ -190,6 +193,19 @@ impl<'a> Checker<'a> {
                     self.expr_id(&item, &drive.origin, after);
                 }
             }
+            for event in &body.events {
+                if let EventSource::Cross(e) = event.source {
+                    self.expr_id(&item, &event.origin, e);
+                }
+                if let Some(guard) = event.guard {
+                    self.expr_id(&item, &event.origin, guard);
+                }
+            }
+            for reaction in &body.reactions {
+                for &stmt in &reaction.stmts {
+                    self.stmt_id(&item, &reaction.origin, stmt);
+                }
+            }
             for child in &body.children {
                 match ir.bodies.get(child.body.index()) {
                     None => self.report(item.clone(), child.origin.clone(), format!("child {}: body id {} out of range", child.name, child.body.0)),
@@ -231,6 +247,12 @@ impl<'a> Checker<'a> {
                 Stmt::Contribute { addends, .. } => {
                     for a in addends {
                         self.expr_id(&item, &origin, a.value);
+                    }
+                }
+                Stmt::Commit { value, after, .. } => {
+                    self.expr_id(&item, &origin, *value);
+                    if let Some(after) = after {
+                        self.expr_id(&item, &origin, *after);
                     }
                 }
             }
@@ -409,6 +431,11 @@ impl<'a> Checker<'a> {
             for l in &body.locals {
                 found.push((format!("{item} local {}", l.name), body.origin.clone(), l.ty.clone()));
             }
+            for r in &body.reactions {
+                for l in &r.locals {
+                    found.push((format!("{item} reaction local {}", l.name), r.origin.clone(), l.ty.clone()));
+                }
+            }
             for c in &body.carriers {
                 if !Typing::scalar(&c.ty) {
                     self.report(format!("{item} carrier {}", c.name), c.origin.clone(), format!("a carrier holds `bool`, `f64` or an integer type, found {}", c.ty));
@@ -478,6 +505,7 @@ impl<'a> Checker<'a> {
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
                 in_body: true,
                 analog,
+                reaction: false,
             };
             for param in &body.params {
                 let Some(check) = param.check else { continue };
@@ -504,6 +532,26 @@ impl<'a> Checker<'a> {
                     self.walk(&mut w, Task::Expr(after, Ctx::top()));
                 }
             }
+            for (k, event) in body.events.iter().enumerate() {
+                let mut w = Walk::new(owner(false, format!("body {} event {k}", body.name)), 0);
+                if let EventSource::Cross(e) = event.source {
+                    self.walk(&mut w, Task::Expr(e, Ctx::top()));
+                }
+                if let Some(guard) = event.guard {
+                    self.carried(&w, guard, &ValueType::Bool, "the guard of an event");
+                    self.walk(&mut w, Task::Expr(guard, Ctx::top()));
+                }
+            }
+            for (k, reaction) in body.reactions.iter().enumerate() {
+                let item = format!("body {} reaction {k}", body.name);
+                let mut owner = owner(false, item);
+                owner.locals = reaction.locals.iter().map(|l| l.ty.clone()).collect();
+                owner.reaction = true;
+                let mut w = Walk::new(owner, 0);
+                for &stmt in &reaction.stmts {
+                    self.walk(&mut w, Task::Stmt(stmt, Ctx::top(), false));
+                }
+            }
         }
         let mut graph: Vec<BTreeSet<FunctionId>> = Vec::new();
         for function in &ir.functions {
@@ -519,6 +567,7 @@ impl<'a> Checker<'a> {
                 carriers: Vec::new(),
                 in_body: false,
                 analog: false,
+                reaction: false,
             };
             let mut w = Walk::new(owner, function.params.len());
             self.expect(&w, function.body, &function.ret);
@@ -622,6 +671,17 @@ impl<'a> Checker<'a> {
                 for a in addends {
                     self.expect(w, a.value, &ValueType::F64);
                     next.push(Task::Expr(a.value, ctx));
+                }
+            }
+            Stmt::Commit { carrier, value, after } => {
+                match w.owner.carriers.get(*carrier as usize).cloned() {
+                    Some(ty) => self.carried(w, *value, &ty, "the value of a commit"),
+                    None => self.report(w.owner.item.clone(), origin.clone(), format!("commit to carrier {carrier}, out of range ({} carriers)", w.owner.carriers.len())),
+                }
+                next.push(Task::Expr(*value, ctx));
+                if let Some(after) = after {
+                    self.carried(w, *after, &ValueType::F64, "the delay of a commit");
+                    next.push(Task::Expr(*after, ctx));
                 }
             }
         }

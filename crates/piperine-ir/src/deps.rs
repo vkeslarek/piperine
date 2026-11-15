@@ -23,6 +23,9 @@
 //! - a carrier read is `Constant` in the node potentials and reads the carrier: a discrete value
 //!   holds between events (`Body::carrier_reads` lists them; `Deps` keeps its M1 fields).
 //!
+//! A reaction reads every source of every expression its statements evaluate, conditions and
+//! the values and delays of its commits included.
+//!
 //! Locals are bound by scope, as `Ir::check` reads them: a `let` until its block ends, a
 //! closure's parameters in its body. The walk assumes an IR that passes `Ir::check`, which names every form the walk cannot give
 //! a meaning to (a local read before its `let`, a recursive call, a cycle); on an IR that fails
@@ -33,7 +36,7 @@ use std::sync::OnceLock;
 
 use crate::handle::Body;
 use crate::ids::{ExprId, FunctionId, StmtId};
-use crate::model::{BinaryOp, BodyData, Env, Expr, Ir, Operator, Stmt, Terminal, UnaryOp};
+use crate::model::{BinaryOp, BodyData, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp};
 
 /// The index of a branch in its body (`Body::branches`).
 pub type BranchIndex = u32;
@@ -59,6 +62,12 @@ pub enum Target {
     Drive(u32),
     /// The delay of a drive; empty when the drive has no `after`.
     DriveAfter(u32),
+    /// The guard of an event (`Body::events`); empty when it has none.
+    Guard(u32),
+    /// The crossed expression of a `Cross` event; empty for a `Changed` one.
+    Cross(u32),
+    /// Everything a reaction (`Body::reactions`) reads.
+    Reaction(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -88,6 +97,9 @@ impl<'a> Body<'a> {
             Target::Check(i) => (&deps.checks, i, "param"),
             Target::Drive(i) => (&deps.drives, i, "drive"),
             Target::DriveAfter(i) => (&deps.drive_afters, i, "drive"),
+            Target::Guard(i) => (&deps.guards, i, "event"),
+            Target::Cross(i) => (&deps.crosses, i, "event"),
+            Target::Reaction(i) => (&deps.reactions, i, "reaction"),
         };
         match list.get(i as usize) {
             Some(sources) => sources.to_deps(),
@@ -107,6 +119,9 @@ impl<'a> Body<'a> {
             Target::Check(i) => (&deps.checks, i, "param"),
             Target::Drive(i) => (&deps.drives, i, "drive"),
             Target::DriveAfter(i) => (&deps.drive_afters, i, "drive"),
+            Target::Guard(i) => (&deps.guards, i, "event"),
+            Target::Cross(i) => (&deps.crosses, i, "event"),
+            Target::Reaction(i) => (&deps.reactions, i, "reaction"),
         };
         match list.get(i as usize) {
             Some(sources) => sources.carriers.iter().copied().collect(),
@@ -161,6 +176,9 @@ pub(crate) struct BodyDeps {
     checks: Vec<Sources>,
     drives: Vec<Sources>,
     drive_afters: Vec<Sources>,
+    guards: Vec<Sources>,
+    crosses: Vec<Sources>,
+    reactions: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -292,6 +310,8 @@ struct Walk<'a> {
     affine: Vec<bool>,
     limits: Vec<Sources>,
     stims: Vec<Sources>,
+    /// While a reaction is walked: the sources of every expression it evaluates.
+    reads: Option<Sources>,
 }
 
 impl<'a> Walk<'a> {
@@ -308,6 +328,7 @@ impl<'a> Walk<'a> {
             affine: vec![true; branches],
             limits: vec![Sources::default(); data.limits.len()],
             stims: vec![Sources::default(); data.stims.len()],
+            reads: None,
         };
         let owner = format!("body {}", data.name);
         let checks = data
@@ -337,6 +358,32 @@ impl<'a> Walk<'a> {
                 None => Sources::default(),
             });
         }
+        let mut guards = Vec::with_capacity(data.events.len());
+        let mut crosses = Vec::with_capacity(data.events.len());
+        for event in &data.events {
+            let mut one = |root: Option<ExprId>| match root {
+                Some(e) => {
+                    walk.scopes = vec![Scope::new(owner.clone(), true, data.locals.len())];
+                    walk.run(Task::Expr(e));
+                    walk.pop().sources
+                }
+                None => Sources::default(),
+            };
+            crosses.push(one(match event.source {
+                EventSource::Cross(e) => Some(e),
+                EventSource::Changed(_) => None,
+            }));
+            guards.push(one(event.guard));
+        }
+        let mut reactions = Vec::with_capacity(data.reactions.len());
+        for reaction in &data.reactions {
+            walk.scopes = vec![Scope::new(owner.clone(), true, reaction.locals.len())];
+            walk.reads = Some(Sources::default());
+            for &stmt in &reaction.stmts {
+                walk.run(Task::Stmt(stmt));
+            }
+            reactions.push(walk.reads.take().unwrap_or_default());
+        }
         if let Some(analog) = &data.analog {
             walk.scopes = vec![Scope::new(owner, true, data.locals.len())];
             for &stmt in analog {
@@ -352,6 +399,9 @@ impl<'a> Walk<'a> {
             checks,
             drives,
             drive_afters,
+            guards,
+            crosses,
+            reactions,
         }
     }
 
@@ -455,6 +505,12 @@ impl<'a> Walk<'a> {
                     next.push(Task::Addend { branch: *branch, operator: addend.operator, at: addend.value });
                 }
             }
+            Stmt::Commit { value, after, .. } => {
+                next.extend([Task::Expr(*value), Task::Discard]);
+                if let Some(after) = after {
+                    next.extend([Task::Expr(*after), Task::Discard]);
+                }
+            }
         }
     }
 
@@ -471,8 +527,12 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// `value` is the value of `id`: memoized in the current scope and pushed.
+    /// `value` is the value of `id`: memoized in the current scope and pushed; while a reaction is
+    /// walked, its sources are among the reaction's reads.
     fn done(&mut self, id: ExprId, value: Value) {
+        if let Some(reads) = &mut self.reads {
+            reads.join(&value.sources);
+        }
         self.scope().memo.insert(id, value.clone());
         self.values.push(value);
     }

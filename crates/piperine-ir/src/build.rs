@@ -5,8 +5,8 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, Child, Constant, Drive, Expr, ExprData, FunctionData, InstanceData, Ir,
-    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Site, Stmt, ValueType,
+    BodyData, BodyNode, Branch, Carrier, Child, Constant, Drive, Event, Expr, ExprData, FunctionData, InstanceData, Ir,
+    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, ValueType,
 };
 
 /// The parts of a body, in the order a handle lists them.
@@ -108,6 +108,8 @@ impl IrBuilder {
             children: spec.children,
             carriers: Vec::new(),
             drives: Vec::new(),
+            events: Vec::new(),
+            reactions: Vec::new(),
             deps: DepsMemo::default(),
         });
         BodyId(self.bodies.len() as u32 - 1)
@@ -136,6 +138,20 @@ impl IrBuilder {
         let drives = &mut self.body_data(body).drives;
         drives.push(drive);
         drives.len() as u32 - 1
+    }
+
+    /// Adds an event to `body`: returns its index, the identity `Reaction::on` names it by.
+    pub fn event(&mut self, body: BodyId, event: Event) -> u32 {
+        let events = &mut self.body_data(body).events;
+        events.push(event);
+        events.len() as u32 - 1
+    }
+
+    /// Adds a reaction to `body`, in source order: returns its index.
+    pub fn reaction(&mut self, body: BodyId, reaction: Reaction) -> u32 {
+        let reactions = &mut self.body_data(body).reactions;
+        reactions.push(reaction);
+        reactions.len() as u32 - 1
     }
 
     pub fn function(&mut self, spec: FunctionSpec) -> FunctionId {

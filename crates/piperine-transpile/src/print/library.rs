@@ -34,7 +34,9 @@ impl LibraryPrinter {
                 .carriers()
                 .first()
                 .map(|c| ("a discrete carrier", format!("body {} carrier {}", body.name(), c.name), c.origin.clone()))
-                .or_else(|| body.drives().first().map(|d| ("a drive", format!("body {} drive {}", body.name(), d.carrier), d.origin.clone())));
+                .or_else(|| body.drives().first().map(|d| ("a drive", format!("body {} drive {}", body.name(), d.carrier), d.origin.clone())))
+                .or_else(|| body.events().first().map(|e| ("an event", format!("body {} event 0", body.name()), e.origin.clone())))
+                .or_else(|| body.reactions().first().map(|r| ("a reaction", format!("body {} reaction 0", body.name()), r.origin.clone())));
             if let Some((form, path, origin)) = first {
                 return Err(Error::Unsupported { form: form.to_string(), path, origin });
             }
@@ -264,6 +266,7 @@ impl LibraryPrinter {
                     Stmt::Let { init, .. } => exprs.push(*init),
                     Stmt::Expr(e) => exprs.push(*e),
                     Stmt::Contribute { addends, .. } => exprs.extend(addends.iter().map(|a| a.value)),
+                    Stmt::Commit { value, after, .. } => exprs.extend([*value].into_iter().chain(*after)),
                 }
             }
             exprs.extend(body.params().iter().filter_map(|p| p.check));

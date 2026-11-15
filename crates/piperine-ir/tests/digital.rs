@@ -649,3 +649,151 @@ fn carriers_and_drives_print() {
     assert_eq!(has("binds carrier q: bool to net Bad.q: u8"), 1, "{broken:#?}");
     assert_eq!(broken.len(), 3, "{broken:#?}");
 }
+
+/// One design that places bodies side by side under an empty top, every node port on a node and
+/// every carrier on a net of its own, every param at its default.
+struct Slice;
+
+impl Slice {
+    fn design(b: &mut IrBuilder, placed: &[(&str, BodyId, usize, Vec<ValueType>, Vec<f64>)]) -> InstanceId {
+        let top_body = b.body(Buck::spec("Slice", "slice.msl", 1));
+        let top = b.instance(InstanceSpec { path: "Slice".into(), name: "Slice".into(), body: top_body, parent: None, nodes: vec![], params: vec![], origin: Design::origin("slice.msl", 1, 1) });
+        let el = Buck::electrical(b);
+        for (line, (name, body, nodes, carriers, params)) in placed.iter().enumerate() {
+            let line = line as u32 + 2;
+            let path = format!("Slice.{name}");
+            let at = b.next_instance_id();
+            let nodes = (0..*nodes)
+                .map(|n| NodeRef::Node(b.node(NodeSpec { path: format!("{path}.n{n}"), nature: el, declared_by: at, init: None, origin: Design::origin("slice.msl", line, 5) })))
+                .collect();
+            let nets = carriers
+                .iter()
+                .enumerate()
+                .map(|(c, ty)| b.net(NetSpec { path: format!("{path}.c{c}"), ty: ty.clone(), declared_by: at, init: None, origin: Design::origin("slice.msl", line, 5) }))
+                .collect();
+            let params = params.iter().map(|v| Constant::Real(Real::new(*v))).collect();
+            let id = b.instance(InstanceSpec { path, name: name.to_string(), body: *body, parent: Some(top), nodes, params, origin: Design::origin("slice.msl", line, 5) });
+            b.bind_nets(id, nets);
+        }
+        top
+    }
+}
+
+#[test]
+fn events_and_reactions_print() {
+    let mut b = IrBuilder::new();
+    let osc = Buck::osc(&mut b);
+    let ramp = Buck::ref_ramp(&mut b);
+    let adc = Buck::adc(&mut b);
+    let a2d = Buck::comparator(&mut b);
+    let bit = || ValueType::Bool;
+    let top = Slice::design(
+        &mut b,
+        &[
+            ("osc", osc, 0, vec![bit()], vec![200e6]),
+            ("ramp", ramp, 0, vec![bit(), bit(), Ty::u(10), Ty::u(10), bit()], vec![]),
+            ("adc", adc, 1, vec![bit(), Ty::u(10), bit()], vec![1.6, 500e-9, 5e-9]),
+            ("a2d", a2d, 1, vec![bit()], vec![0.6, 50e-3]),
+        ],
+    );
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![]);
+
+    // `on clk.changed()`: an event on the carrier, no guard; the commit with its delay
+    // (dpwm.msl:10).
+    Printed::holds(
+        &ir,
+        &[
+            "body Osc",
+            "  param f: f64 = 200000000.0 where (f > 0.0)",
+            "  carrier clk: bool out init false",
+            "  event E0 changed clk",
+            "  reaction R0 on (E0)",
+            "    clk <- (!clk) after (0.5 / f)",
+        ],
+    );
+    // `tick.rise()` is `changed` guarded by `high()`; `if`, `else if` and the commits of
+    // control.msl:28-30, an `if` with no `else` closing on `()`.
+    Printed::holds(
+        &ir,
+        &[
+            "body RefRamp",
+            "  carrier tick: bool in",
+            "  carrier run: bool in",
+            "  carrier target: u10 in",
+            "  carrier reference: u10 out init 0",
+            "  carrier at_target: bool out",
+            "  drive at_target = (reference == target)",
+            "  event E0 changed tick guard tick.high()",
+            "  reaction R0 on (E0)",
+            "    if (!run.known_or(false)) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }",
+        ],
+    );
+    // A reaction's own `let`, a probe in a reaction, two commits to one carrier (sense.msl:28-33).
+    Printed::holds(
+        &ir,
+        &[
+            "  event E0 changed sample guard sample.high()",
+            "  reaction R0 on (E0)",
+            "    local q: u10",
+            "    let q = ((((probe(ain, gnd) / vref) * 1024.0) + 0.5).floor().clamp(0.0, 1023.0) as u10)",
+            "    code <- q after tconv",
+            "    done <- true after tconv",
+            "    done <- false after (tconv + tstrobe)",
+        ],
+    );
+    // `above(e)` is `cross(e)` (convert.msl:11-12).
+    Printed::holds(
+        &ir,
+        &[
+            "body A2D",
+            "  param vth: f64 = 0.6",
+            "  param hyst: f64 = 0.05",
+            "  node a: Electrical port",
+            "  carrier d: bool out init false",
+            "  event E0 cross ((probe(a, gnd) - vth) - (hyst / 2.0))",
+            "  event E1 cross ((vth - (hyst / 2.0)) - probe(a, gnd))",
+            "  reaction R0 on (E0)",
+            "    d <- true",
+            "  reaction R1 on (E1)",
+            "    d <- false",
+        ],
+    );
+    let full = ir.to_string();
+    for line in ["discrete: drives ()  events ((changed c0 -))  reactions ((on (0) (s", "events ((cross e", ": commit c0 e", "event E0 changed clk  @dpwm.msl:10:22", "reaction R0 on (E0)  @dpwm.msl:10:5"] {
+        assert!(full.contains(line), "{line} missing from:\n{full}");
+    }
+
+    // What each reads (design: the dependency set of a reaction is the carriers, params and
+    // nodes its body reads).
+    let body = |path: &str| ir.instance_at(path).expect("placed").body();
+    assert_eq!(body("Slice.osc").carrier_reads(Target::Reaction(0)), vec![0]);
+    assert_eq!(body("Slice.osc").dependencies(Target::Reaction(0)), Deps { params: vec![0], ..Deps::default() });
+    assert_eq!(body("Slice.ramp").carrier_reads(Target::Reaction(0)), vec![1, 2, 3]);
+    assert_eq!(body("Slice.ramp").carrier_reads(Target::Guard(0)), vec![0]);
+    assert_eq!(body("Slice.adc").dependencies(Target::Reaction(0)), Deps { nodes: vec![0], params: vec![0, 1, 2], ..Deps::default() });
+    assert_eq!(body("Slice.adc").carrier_reads(Target::Reaction(0)), Vec::<u32>::new());
+    assert_eq!(body("Slice.a2d").dependencies(Target::Cross(1)), Deps { nodes: vec![0], params: vec![0, 1], ..Deps::default() });
+    assert_eq!(body("Slice.a2d").dependencies(Target::Guard(1)), Deps::default());
+    assert_eq!(body("Slice.a2d").dependencies(Target::Reaction(1)), Deps::default());
+
+    // A commit of the wrong type and a guard that is no `bool` are typed like a drive.
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Bad", "bad.msl", 1));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20));
+    let mut x = Dx::new(&mut b, "bad.msl", 2, 9);
+    let guard = x.int(1, Ty::u(8));
+    x.at(3, 9);
+    let value = x.int(3, Ty::u(8));
+    let commit = x.commit(0, value, None);
+    let event = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: Some(guard), origin: Design::origin("bad.msl", 2, 5) });
+    Buck::reaction(&mut b, body, vec![event], vec![commit], vec![], "bad.msl", 3);
+    let top = b.next_instance_id();
+    let net = b.net(NetSpec { path: "Bad.q".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: Design::origin("bad.msl", 1, 20) });
+    let top = Stage::instance(&mut b, "Bad", body, None, vec![], vec![], vec![net], 1);
+    let broken = b.finish(top).check();
+    let at = |line: u32, what: &str| broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).count();
+    assert_eq!(at(2, "the guard of an event must be bool, found u8"), 1, "{broken:#?}");
+    assert_eq!(at(3, "the value of a commit must be bool, found u8"), 1, "{broken:#?}");
+    assert_eq!(broken.len(), 2, "{broken:#?}");
+}
