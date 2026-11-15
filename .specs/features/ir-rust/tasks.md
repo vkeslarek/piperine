@@ -598,9 +598,9 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test residue`: `the_compiled_resistor_matches_the_hand_written_products_bit_for_bit`, `a_compiled_affine_constant_leaves_at_most_one_ulp`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test residue`: `the_compiled_resistor_matches_the_hand_written_products_bit_for_bit`, `a_compiled_affine_constant_leaves_at_most_one_ulp`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
