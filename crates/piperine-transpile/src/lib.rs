@@ -9,6 +9,7 @@ use piperine_ir::{BodyId, Ir};
 use piperine_plan::BodyPlan;
 
 mod error;
+pub mod print;
 pub mod rt;
 
 pub use error::Error;

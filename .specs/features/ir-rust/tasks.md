@@ -246,10 +246,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] `real` is checked over the subnormals, `-0.0`, `1e-14`, `0.1` and 1000 random bit patterns
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::text::tests::reals_round_trip_in_the_shortest_form`, `print::text::tests::keywords_become_raw_identifiers`, `print::text::tests::lines_are_indented_by_four_one_statement_each`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+- [x] `real` is checked over the subnormals, `-0.0`, `1e-14`, `0.1` and 1000 random bit patterns
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::text::tests::reals_round_trip_in_the_shortest_form`, `print::text::tests::keywords_become_raw_identifiers`, `print::text::tests::lines_are_indented_by_four_one_statement_each`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full
@@ -1555,7 +1555,7 @@ Proof: run golden | test a_keyword_identifier_is_raw_and_the_abi_name_is_not ...
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** T1 - the dispatch said "do not edit solver crates"; T1 and T2's Done-when require `DEFAULT_MEMBERS` (which lives in `crates/piperine-solver/tests/workspace_shape.rs`) to gain the new crate, or the guard fails. The one-line list entry is made there, as `ir-interp` T2 did; no solver source is touched. T2 likewise adds `piperine-plan` and `piperine-transpile` to that file's `KEPT_CRATES`, which `instructions_list_the_kept_crates` compares with the crate rows T2 adds to `CLAUDE.md` and `AGENTS.md`.
+**Settled mid-build:** T1 - the dispatch said "do not edit solver crates"; T1 and T2's Done-when require `DEFAULT_MEMBERS` (which lives in `crates/piperine-solver/tests/workspace_shape.rs`) to gain the new crate, or the guard fails. The one-line list entry is made there, as `ir-interp` T2 did; no solver source is touched. T2 likewise adds `piperine-plan` and `piperine-transpile` to that file's `KEPT_CRATES`, which `instructions_list_the_kept_crates` compares with the crate rows T2 adds to `CLAUDE.md` and `AGENTS.md`. T4 - RS-02 AC 2 says a keyword prints as a raw identifier, but Rust refuses `r#crate`, `r#self`, `r#Self` and `r#super`; `Text::ident` prints those four as `crate_`, `self_`, `Self_`, `super_` (the ABI name stays unchanged).
 **Dispatched:** batch 1 (phases 1-2, T1-T10) - Opus worker, 2026-11-15
 **Walked:** none (no screen; each story's Independent Test is a check above)
 
