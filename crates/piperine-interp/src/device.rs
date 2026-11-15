@@ -191,6 +191,25 @@ impl Interpreted {
         Ok(())
     }
 
+    /// The function of `ac_stim` site `k`: `RE` and `IM`.
+    fn stim(&self, f: &FunctionPlan, k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
+        let name = self.body().name();
+        let (frame, params) = self.inputs(f, cx, false);
+        let mut walk = Walk::analog(self.body(), Mode::Stim(k), frame, params);
+        walk.run()?;
+        let Some((re, im)) = walk.phasor() else {
+            return Err(Fault::new(Walk::UNEXECUTED, format!("{name}: stim {k} wrote nothing")));
+        };
+        for (j, w) in f.writes.iter().enumerate() {
+            match *w {
+                Target::StimRe(_) => cx.set(j, re),
+                Target::StimIm(_) => cx.set(j, im),
+                other => return Err(Fault::new(Walk::UNEXECUTED, format!("{name}: stim {k} writes {other:?}"))),
+            }
+        }
+        Ok(())
+    }
+
     /// One `Terms` walk: the value of each write of `f`, in order.
     fn walk_terms(&self, f: &FunctionPlan, cx: &Eval<'_>, pins_at_zero: bool) -> Result<Vec<Dual>, Fault> {
         let (frame, params) = self.inputs(f, cx, pins_at_zero);
@@ -232,9 +251,7 @@ impl Factory for BodyFactory {
         match f.mode {
             Mode::Terms => instance.terms(f, cx),
             Mode::Limit(site) => instance.limit(f, site, cx),
-            Mode::Stim(_) => {
-                Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} ({:?}) is not run by the interpreter yet", f.mode)))
-            }
+            Mode::Stim(site) => instance.stim(f, site, cx),
         }
     }
 

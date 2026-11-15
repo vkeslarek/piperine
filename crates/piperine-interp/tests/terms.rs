@@ -356,3 +356,19 @@ fn the_terms_function_reads_the_limit_value_untouched() {
     let flow = |vd: f64| Models::eval(&d, k, &Lab::diode_reads(vd, 1e-14, 1.0, 0.0, 300.0, 0.0), None).expect("terms").values[0];
     assert!(Lab::close(flow(0.55), 1e-14 * ((0.55 / (K_B * 300.0 / Q)).exp() - 1.0), 1e-12));
 }
+
+#[test]
+fn the_terms_function_reads_the_stim_value() {
+    // Vsource: `v(p, n) +> dc * source_scale() + ac_stim(ac)`. The branch equation is
+    // `v(p, n) - Σ`, so its partial against the stim's VALUE is -1; the stim's arguments are not evaluated.
+    let m = Models::all();
+    let h = m.instance("Vsource");
+    let view = View { shape: m.module("Vsource").prototype() };
+    assert_eq!(view.function("terms").2.len(), 4, "b0.flow against its pin; b0.eq against p, n and the stim");
+    // reads: p, n, b0.flow, stim VALUE, dc, ac, source_scale
+    let reads = [0.3, 0.1, 0.0, 0.4, 1.5, 9.0, 0.5].map(In::F64);
+    let out = Models::eval(&h, 1, &reads, None).expect("terms");
+    assert_eq!(out.jac[3], -1.0, "b0.eq against the stim VALUE");
+    assert_eq!(out.jac[1..3], [1.0, -1.0], "b0.eq against p and n");
+    assert!(Lab::close(out.values[1], 0.2 - (1.5 * 0.5 + 0.4), 1e-12), "{}", out.values[1]);
+}

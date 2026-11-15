@@ -360,13 +360,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Vsource `stim:0` with `ac = 1` writes `RE = 1.0`, `IM = 0.0`
-- [ ] A hand-built site with phase `π/2` writes `RE` within 1e-16 of 0 and `IM = mag`
-- [ ] In `terms`, the Vsource's `b0.eq` has partial `-1` against the stim's `VALUE`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test stim`: `a_stim_writes_its_phasor`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `the_terms_function_reads_the_stim_value`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Vsource `stim:0` with `ac = 1` writes `RE = 1.0`, `IM = 0.0`
+- [x] A hand-built site with phase `π/2` writes `RE` within 1e-16 of 0 and `IM = mag`
+- [x] In `terms`, the Vsource's `b0.eq` has partial `-1` against the stim's `VALUE`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test stim`: `a_stim_writes_its_phasor`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `the_terms_function_reads_the_stim_value`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

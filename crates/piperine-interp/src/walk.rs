@@ -108,6 +108,8 @@ struct Analog<'a> {
     sums: Sums,
     held: Option<Held>,
     limited: Option<Limited>,
+    /// The `(RE, IM)` a `Stim` walk wrote at its site.
+    phasor: Option<(f64, f64)>,
 }
 
 /// One evaluation: the params of the body, and a stack of local frames (a call pushes one).
@@ -137,7 +139,7 @@ impl<'a> Walk<'a> {
             ir: body.ir(),
             params,
             frames: vec![vec![Value::Unit; locals]],
-            analog: Some(Analog { body, mode, frame, sums, held: None, limited: None }),
+            analog: Some(Analog { body, mode, frame, sums, held: None, limited: None, phasor: None }),
         }
     }
 
@@ -163,7 +165,7 @@ impl<'a> Walk<'a> {
         for id in body.analog().unwrap_or(&[]) {
             match self.exec(*id) {
                 Ok(()) => {}
-                Err(f) if f.code == Self::DONE && self.analog.as_ref().is_some_and(|a| a.limited.is_some()) => return Ok(()),
+                Err(f) if f.code == Self::DONE && self.analog.as_ref().is_some_and(|a| a.limited.is_some() || a.phasor.is_some()) => return Ok(()),
                 Err(f) => return Err(f),
             }
         }
@@ -173,6 +175,28 @@ impl<'a> Walk<'a> {
                 Err(Fault::new(Self::UNEXECUTED, format!("{}: the walk of {mode:?} ended without reaching its site", body.name())))
             }
         }
+    }
+
+    /// What a `Stim` walk wrote at its site: `(RE, IM)`.
+    pub(crate) fn phasor(&self) -> Option<(f64, f64)> {
+        self.analog.as_ref().and_then(|a| a.phasor)
+    }
+
+    /// The site of a `Stim(k)` walk: `mag` and `phase` over plain reals; `RE = mag·cos(phase)`,
+    /// `IM = mag·sin(phase)`, and exactly `RE = mag`, `IM = 0` with no phase. Ends the walk.
+    fn stim_site(&mut self, mag: ExprId, phase: Option<ExprId>) -> Result<Value, Fault> {
+        let mag = self.eval_real(mag)?.v;
+        let phasor = match phase {
+            Some(p) => {
+                let phase = self.eval_real(p)?.v;
+                (mag * phase.cos(), mag * phase.sin())
+            }
+            None => (mag, 0.0),
+        };
+        if let Some(a) = self.analog.as_mut() {
+            a.phasor = Some(phasor);
+        }
+        Err(Fault::new(Self::DONE, "the site has written"))
     }
 
     /// What a `Limit` walk wrote at its site.
@@ -328,6 +352,7 @@ impl<'a> Walk<'a> {
                 }))
             }
             Expr::Closure { .. } => Ok(Value::Closure(id)),
+            Expr::Stim { site, mag, phase } if self.mode() == Some(Mode::Stim(*site)) => self.stim_site(*mag, *phase),
             Expr::Limit { site, x, f, seed } if self.mode() == Some(Mode::Limit(*site)) => {
                 self.limit_site(id, *x, *f, *seed)
             }
