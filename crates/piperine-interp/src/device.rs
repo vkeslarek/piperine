@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use piperine_abi::device::{Eval, Factory, Fault, Flow, React, Values};
+use piperine_abi::layout::{HIGH, LOW};
 use piperine_abi::raw::Shape;
 use piperine_abi::shape::ShapeRef;
 use piperine_ir::{Body, BodyId, BranchKind, Ir, ValueType};
@@ -210,6 +211,18 @@ impl Interpreted {
         Ok(())
     }
 
+    /// The `where` of param `p`: the condition over the params it reads, written as a known `BIT`.
+    fn check(&self, f: &FunctionPlan, p: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
+        let body = self.body();
+        let Some(condition) = body.params().get(p as usize).and_then(|x| x.check) else {
+            return Err(Fault::new(Walk::UNEXECUTED, format!("{}: param {p} has no `where`", body.name())));
+        };
+        let (_, params) = self.inputs(f, cx, false);
+        let ok = Walk::new(self.ir.as_ref(), params, body.locals().len()).eval_bool(condition)?;
+        cx.out_bytes(0).copy_from_slice(if ok { &HIGH } else { &LOW });
+        Ok(())
+    }
+
     /// One `Terms` walk: the value of each write of `f`, in order.
     fn walk_terms(&self, f: &FunctionPlan, cx: &Eval<'_>, pins_at_zero: bool) -> Result<Vec<Dual>, Fault> {
         let (frame, params) = self.inputs(f, cx, pins_at_zero);
@@ -252,6 +265,7 @@ impl Factory for BodyFactory {
             Mode::Terms => instance.terms(f, cx),
             Mode::Limit(site) => instance.limit(f, site, cx),
             Mode::Stim(site) => instance.stim(f, site, cx),
+            Mode::Check(param) => instance.check(f, param, cx),
         }
     }
 

@@ -20,7 +20,7 @@ pub(crate) struct Linear {
 }
 
 impl Linear {
-    /// `Σ g_j·x_j` over the iterate.
+    /// `Σ g_j·x_j` over the iterate. `piperine-interp`'s affine rule (INT-12) writes a linear row as `c + this fold`; its test `an_affine_term_is_constant_plus_folded_products` fails if the fold order changes.
     pub fn dot(&self, x: &[f64]) -> f64 {
         self.cols.iter().fold(0.0, |s, (c, g)| s + g * x[c.idx().expect("a column is an unknown")])
     }

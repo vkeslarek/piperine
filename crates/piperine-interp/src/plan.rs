@@ -7,7 +7,10 @@
 //! has `ddt` addends. Inputs: one `LIMIT` per `limit` site, then one `STIM` per `ac_stim` site.
 //!
 //! Functions: `limit:<site>` per `limit` site, `stim:<k>` per `ac_stim` site, then `terms`,
-//! which writes every term (abi.md A3 keeps limits and terms apart). A function reads exactly
+//! which writes every term (abi.md A3 keeps limits and terms apart), then `check:<p>` per param
+//! with a `where`: it reads the params the condition names and writes the param's private `BIT`
+//! pin `check:<p>`, which the param's pin names as its `check` (`HAS_CHECK`). The check pins are
+//! the last pins of the shape. A function reads exactly
 //! the cells of its dependency set (`msl-ir` IR-09) in one order: continuous pins (nodes by
 //! index, then private flows), `LIMIT` values, `STIM` values (the differentiable reads, one
 //! tangent slot each, in that order), then params, the temperature pin and the ambients. A
@@ -47,6 +50,8 @@ pub(crate) enum Mode {
     Stim(u32),
     /// Every term of the body.
     Terms,
+    /// The `where` of param `p`: its check pin.
+    Check(u32),
 }
 
 /// Where a read of a function comes from.
@@ -89,6 +94,8 @@ pub(crate) enum Target {
     Limited(u32),
     StimRe(u32),
     StimIm(u32),
+    /// The check pin of param `p`.
+    Check(u32),
 }
 
 /// What one function of the shape computes, entry by entry parallel to the shape.
@@ -151,6 +158,8 @@ pub(crate) struct Pins {
     /// The private flow pin of each branch; `None` for a flow branch.
     pub branches: Vec<Option<u32>>,
     pub temperature: Option<u32>,
+    /// The private check pin of each param with a `where`, after every other pin.
+    pub checks: Vec<Option<u32>>,
 }
 
 impl Pins {
@@ -194,14 +203,28 @@ impl BodyPlan {
                 None => Vec::new(),
             })
             .collect();
+        // A param with a `where` names its check pin, the last pins of the shape (P6): the pins
+        // before them keep their indices.
+        let pin_count = body.params().len()
+            + body.nodes().len()
+            + body.branches().iter().filter(|b| b.kind == BranchKind::Potential).count()
+            + usize::from(Self::reads_temperature(body));
+        let mut next_check = pin_count as u32;
+        let mut check_pins = Vec::with_capacity(body.params().len());
         for (p, init) in body.params().iter().zip(&defaults) {
             let layout = if p.ty == ValueType::Bool { &BIT } else { &F64 };
             let mut flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
             if p.structural {
                 flags |= pin_flag::STRUCTURAL;
             }
+            let check = p.check.map(|_| {
+                flags |= pin_flag::HAS_CHECK;
+                next_check += 1;
+                next_check - 1
+            });
+            check_pins.push(check);
             let at = origin(&p.origin);
-            s.pin(PinSpec { origin: &at, flags, init, ..PinSpec::discrete(&p.name, role::PARAM, layout) });
+            s.pin(PinSpec { origin: &at, flags, init, check: check.unwrap_or(0), ..PinSpec::discrete(&p.name, role::PARAM, layout) });
         }
 
         // Body nodes, ports and signals alike, with their nature's tolerances.
@@ -237,7 +260,17 @@ impl BodyPlan {
                 ..PinSpec::discrete("temperature", role::GLOBAL, &F64)
             })
         });
-        let pins = Pins { nodes, branches, temperature };
+        // The check pins: a private `BIT` per `where`, written by `check:<p>`.
+        let mut checks = Vec::with_capacity(check_pins.len());
+        for (p, check) in body.params().iter().zip(&check_pins) {
+            checks.push(check.map(|expected| {
+                let at = origin(&p.origin);
+                let pin = s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("check:{}", p.name), role::PRIVATE, &BIT) });
+                debug_assert_eq!(pin, expected);
+                pin
+            }));
+        }
+        let pins = Pins { nodes, branches, temperature, checks };
 
         // Terms, branch by branch.
         let mut terms = Vec::new();
@@ -315,6 +348,16 @@ impl BodyPlan {
             Self::declare(&mut s, &pins, &terms, body, "terms", &origin(body.origin()), &plan);
             functions.push(plan);
         }
+        for (p, param) in body.params().iter().enumerate() {
+            if param.check.is_none() {
+                continue;
+            }
+            let p = p as u32;
+            let set = ReadSet::of(&body.dependencies(Query::Check(p)));
+            let plan = Self::function(Mode::Check(p), &set, vec![(Target::Check(p), None)]);
+            Self::declare(&mut s, &pins, &terms, body, &format!("check:{}", param.name), &origin(&param.origin), &plan);
+            functions.push(plan);
+        }
 
         BodyPlan { shape: s.freeze(), functions }
     }
@@ -387,6 +430,7 @@ impl BodyPlan {
                 Target::Limited(k) => at(cell::INPUT, k, part::LIMITED),
                 Target::StimRe(k) => at(cell::INPUT, limits + k, part::RE),
                 Target::StimIm(k) => at(cell::INPUT, limits + k, part::IM),
+                Target::Check(p) => value(cell::PIN, pins.checks.get(p as usize).copied().flatten().unwrap_or(GROUND)),
             })
             .collect();
         let partials =

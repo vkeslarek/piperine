@@ -171,7 +171,7 @@ impl<'a> Walk<'a> {
         }
         match mode {
             Mode::Terms => Ok(()),
-            Mode::Limit(_) | Mode::Stim(_) => {
+            Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_) => {
                 Err(Fault::new(Self::UNEXECUTED, format!("{}: the walk of {mode:?} ended without reaching its site", body.name())))
             }
         }

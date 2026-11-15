@@ -211,3 +211,20 @@ fn an_unset_param_keeps_its_default() {
     assert_eq!(read("n"), 1.0);
     assert_eq!(read("is"), 1e-14);
 }
+
+#[test]
+fn a_set_that_breaks_a_where_is_refused() {
+    use piperine_solver::prelude::ParamValue;
+    let (ir, mut circuit) = bound::built(Circuits::divider());
+    let mid = bound::node(&ir, "Divider.mid");
+    assert!((bound::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
+    // `r` has `where r > 0`: a negative value is refused and the next dc reads what it read
+    let refused = circuit.set("Divider.r1", "r", ParamValue::Real(-1.0));
+    assert!(refused.is_err(), "r = -1 breaks `where r > 0`");
+    assert!((bound::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
+    let zero = circuit.set("Divider.r1", "r", ParamValue::Real(0.0));
+    assert!(zero.is_err(), "r = 0 breaks `where r > 0`");
+    // a legal value is accepted and changes the result: r1 = 3 k, r2 = 3 k, so mid = 5 V
+    circuit.set("Divider.r1", "r", ParamValue::Real(3000.0)).expect("a legal value");
+    assert!((bound::dc(&mut circuit, &mid) - 5.0).abs() < 1e-9);
+}

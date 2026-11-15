@@ -4,7 +4,8 @@
 //! edge-case shapes (an `analog` block that contributes nothing, a held node with no `analog`);
 //! one function per site and one for the terms, each reading exactly its dependency set with
 //! partials against its differentiable reads, every entry with its origin, every shape valid
-//! and no function writing both a limit and a term (INT-10 AC 5).
+//! and no function writing both a limit and a term (INT-10 AC 5). A param with a `where` has a
+//! private `BIT` check pin, a function that writes it and the `HAS_CHECK` flag (INT-14 AC 1).
 
 use std::sync::Arc;
 
@@ -97,11 +98,11 @@ fn a_held_node_gives_has_init() {
 fn pins_come_in_the_declared_order() {
     let m = Models::all();
     let names = |body: &str| View { shape: m.module(body).prototype() }.pin_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    assert_eq!(names("Resistor"), ["r", "p", "n"]);
-    assert_eq!(names("Capacitor"), ["c", "p", "n"]);
+    assert_eq!(names("Resistor"), ["r", "p", "n", "check:r"]);
+    assert_eq!(names("Capacitor"), ["c", "p", "n", "check:c"]);
     assert_eq!(names("Vsource"), ["dc", "ac", "p", "n", "b0.flow"]);
     assert_eq!(names("Isource"), ["dc", "ac", "p", "n"]);
-    assert_eq!(names("Diode"), ["is", "n", "cj0", "a", "k", "temperature"]);
+    assert_eq!(names("Diode"), ["is", "n", "cj0", "a", "k", "temperature", "check:is", "check:n", "check:cj0"]);
 
     let diode = m.module("Diode").prototype();
     let pin = |i: usize| diode.pins.get(i).copied().unwrap();
@@ -237,11 +238,11 @@ impl Cells {
 fn one_function_per_site_and_one_for_terms() {
     let m = Models::all();
     let names = |body: &str| View { shape: m.module(body).prototype() }.function_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    assert_eq!(names("Diode"), ["limit:vd", "terms"]);
+    assert_eq!(names("Diode"), ["limit:vd", "terms", "check:is", "check:n", "check:cj0"]);
     assert_eq!(names("Vsource"), ["stim:0", "terms"]);
     assert_eq!(names("Isource"), ["stim:0", "terms"]);
-    assert_eq!(names("Resistor"), ["terms"]);
-    assert_eq!(names("Capacitor"), ["terms"]);
+    assert_eq!(names("Resistor"), ["terms", "check:r"]);
+    assert_eq!(names("Capacitor"), ["terms", "check:c"]);
     // what each writes
     let diode = View { shape: m.module("Diode").prototype() };
     assert_eq!(diode.function("limit:vd").1, [Cells::input(0, part::PROPOSED), Cells::input(0, part::LIMITED)]);
@@ -327,12 +328,16 @@ fn every_entry_carries_its_origin() {
     let m = Models::all();
     let diode = m.module("Diode").prototype();
     let pins: Vec<&str> = diode.pins.iter().map(|p| p.origin.as_str()).collect();
-    assert_eq!(pins, ["devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5", "devices.msl:31:18", "devices.msl:31:33", "devices.msl:31:1"]);
+    assert_eq!(pins, ["devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5", "devices.msl:31:18", "devices.msl:31:33", "devices.msl:31:1", "devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5"]);
     let terms: Vec<&str> = diode.terms.iter().map(|t| t.origin.as_str()).collect();
     assert_eq!(terms, ["devices.msl:41:17", "devices.msl:41:17"], "the contribution that writes the branch");
     assert_eq!(diode.inputs.get(0).unwrap().origin.as_str(), "devices.msl:39:17", "the site");
     let functions: Vec<&str> = diode.functions.iter().map(|f| f.origin.as_str()).collect();
-    assert_eq!(functions, ["devices.msl:39:17", "devices.msl:31:1"], "the site, then the body");
+    assert_eq!(
+        functions,
+        ["devices.msl:39:17", "devices.msl:31:1", "devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5"],
+        "the site, the body, then each param with a where"
+    );
 
     let vsource = m.module("Vsource").prototype();
     assert_eq!(vsource.pins.get(4).unwrap().origin.as_str(), "devices.msl:21:30", "the private pin: its contribution");
@@ -380,4 +385,57 @@ fn no_function_writes_a_limit_and_a_term() {
         }
     }
     assert_eq!(limit_writers, 1, "the diode's limit function is among those checked");
+}
+
+#[test]
+fn a_where_declares_a_check_pin_and_function() {
+    let m = Models::all();
+    let resistor = m.module("Resistor").prototype();
+    let view = View { shape: resistor };
+    assert_eq!(view.pin_names(), ["r", "p", "n", "check:r"]);
+    let r = resistor.pins.get(0).copied().unwrap();
+    assert_eq!(r.flags & pin_flag::HAS_CHECK, pin_flag::HAS_CHECK);
+    assert_eq!(r.check, 3, "the param's check is the check pin");
+    let check = resistor.pins.get(3).copied().unwrap();
+    assert_eq!((check.kind, check.role, check.layout.size), (kind::DISCRETE, role::PRIVATE, 2), "a private BIT");
+    // `check:r` reads the param alone and writes the check pin
+    let (reads, writes, partials) = view.function("check:r");
+    assert_eq!(reads, [Cells::pin(0)]);
+    assert_eq!(writes, [Cells::pin(3)]);
+    assert!(partials.is_empty());
+    // a param with no `where` has neither
+    let vsource = m.module("Vsource").prototype();
+    assert!(vsource.pins.iter().all(|p| p.flags & pin_flag::HAS_CHECK == 0));
+    assert!(View { shape: vsource }.function_names().iter().all(|n| !n.starts_with("check:")));
+    // the diode's three
+    let diode = View { shape: m.module("Diode").prototype() };
+    for p in ["is", "n", "cj0"] {
+        let (reads, writes, _) = diode.function(&format!("check:{p}"));
+        assert_eq!(reads, [Cells::pin(diode.pin_index(p))]);
+        assert_eq!(writes, [Cells::pin(diode.pin_index(&format!("check:{p}")))]);
+    }
+    // the function writes the bit: r > 0 is known true, r <= 0 known false
+    let h = m.instance("Resistor");
+    let k = Check::index(&m);
+    for (r, want) in [(1000.0, [1u8, 1]), (-1.0, [0, 1]), (0.0, [0, 1])] {
+        let bytes = Check::bytes(r);
+        let mut out = [0u8; 2];
+        h.eval(k, &[&bytes[..]], &mut [&mut out[..]], &[], &mut []).expect("check");
+        assert_eq!(out, want, "r = {r}");
+    }
+}
+
+/// Small readers for the check function's call.
+struct Check;
+
+impl Check {
+    fn bytes(v: f64) -> [u8; 8] {
+        v.to_le_bytes()
+    }
+
+    /// The index of `check:r` among the resistor's functions.
+    fn index(m: &Models) -> u32 {
+        let names: Vec<String> = View { shape: m.module("Resistor").prototype() }.function_names().iter().map(|s| s.to_string()).collect();
+        names.iter().position(|n| n == "check:r").expect("check:r") as u32
+    }
 }

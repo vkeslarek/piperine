@@ -413,15 +413,15 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] `circuit.set("Divider.r1", "r", ParamValue::Real(-1.0))` is an error and the next `dc()` reads 7.5 V
-- [ ] `set` of a legal value changes the result
-- [ ] Every function of every body passes `verify_partials` at three bias points with `rel_tol` 1e-6, the diode's limit probed where `LIMITED = PROPOSED`
-- [ ] All shapes still validate with the check pins
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test partials`: `every_m1_function_passes_verify_partials`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `a_where_declares_a_check_pin_and_function`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `a_set_that_breaks_a_where_is_refused`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `circuit.set("Divider.r1", "r", ParamValue::Real(-1.0))` is an error and the next `dc()` reads 7.5 V
+- [x] `set` of a legal value changes the result
+- [x] Every function of every body passes `verify_partials` at three bias points with `rel_tol` 1e-6, the diode's limit probed where `LIMITED = PROPOSED`
+- [x] All shapes still validate with the check pins
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test partials`: `every_m1_function_passes_verify_partials`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `a_where_declares_a_check_pin_and_function`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `a_set_that_breaks_a_where_is_refused`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: integration
 **Gate**: build
