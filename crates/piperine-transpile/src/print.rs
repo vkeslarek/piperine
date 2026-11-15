@@ -3,6 +3,7 @@
 //! origin) so the text reads the same on every build (RS-02).
 
 pub mod analog;
+pub mod limit;
 pub mod shape;
 pub mod text;
 pub mod value;

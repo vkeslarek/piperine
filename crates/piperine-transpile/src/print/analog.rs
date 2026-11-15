@@ -25,10 +25,10 @@ use crate::print::{Text, ValuePrinter};
 /// Prints the analog functions of one body from its plan.
 #[derive(Debug)]
 pub struct AnalogPrinter<'a> {
-    ir: &'a Ir,
-    body: Body<'a>,
-    plan: &'a BodyPlan,
-    values: ValuePrinter<'a>,
+    pub(crate) ir: &'a Ir,
+    pub(crate) body: Body<'a>,
+    pub(crate) plan: &'a BodyPlan,
+    pub(crate) values: ValuePrinter<'a>,
 }
 
 /// What a slice of the `analog` block holds: its top-level statements in source order, and the
@@ -105,10 +105,24 @@ impl<'a> AnalogPrinter<'a> {
     /// reads its held value and evaluates nothing.
     pub fn slice(&self, mode: Mode, roots: impl Fn(&Stmt) -> bool) -> Slice {
         let block = self.body.analog().unwrap_or(&[]);
+        self.slice_before(mode, &[], block.len(), roots)
+    }
+
+    /// The top-level `let`s before statement `before` of the block that `exprs` reach, in
+    /// source order, and the reads they and `exprs` use: the slice of a site's own arguments.
+    pub fn slice_of(&self, mode: Mode, exprs: &[ExprId], before: usize) -> Slice {
+        self.slice_before(mode, exprs, before, |_| false)
+    }
+
+    fn slice_before(&self, mode: Mode, exprs: &[ExprId], before: usize, roots: impl Fn(&Stmt) -> bool) -> Slice {
+        let block = self.body.analog().unwrap_or(&[]);
         let mut needed = BTreeSet::new();
         let mut kept = Vec::new();
         let mut sources = BTreeSet::new();
-        for id in block.iter().rev() {
+        for e in exprs {
+            self.reads(*e, mode, &mut needed, &mut sources);
+        }
+        for id in block[..before.min(block.len())].iter().rev() {
             let stmt = self.ir.stmt(*id);
             let keep = match stmt {
                 Stmt::Let { local, .. } => needed.contains(local),
@@ -200,7 +214,7 @@ impl<'a> AnalogPrinter<'a> {
     }
 
     /// The Rust type a read is bound to in generic code: a `bool` param stays `bool`.
-    fn is_bool(&self, s: Source) -> bool {
+    pub(crate) fn is_bool(&self, s: Source) -> bool {
         matches!(s, Source::Param(p) if self.body.params().get(p as usize).is_some_and(|x| x.ty == ValueType::Bool))
     }
 
@@ -408,7 +422,7 @@ impl<'a> AnalogPrinter<'a> {
         t.line("}");
     }
 
-    fn unsupported(&self, form: &str) -> Error {
+    pub(crate) fn unsupported(&self, form: &str) -> Error {
         Error::Unsupported { form: form.to_string(), path: format!("body {}", self.body.name()), origin: self.body.origin().clone() }
     }
 }

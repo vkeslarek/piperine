@@ -340,10 +340,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] A comment in the generated function names each of the three rules (`old`, the seed start, the seed kept)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::limit::tests::a_limit_function_reads_last_age_and_static`, `print::limit::tests::the_terms_function_reads_the_limit_value_only`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] A comment in the generated function names each of the three rules (`old`, the seed start, the seed kept)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::limit::tests::a_limit_function_reads_last_age_and_static`, `print::limit::tests::the_terms_function_reads_the_limit_value_only`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full

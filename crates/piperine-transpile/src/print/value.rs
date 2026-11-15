@@ -134,7 +134,7 @@ impl<'a> ValuePrinter<'a> {
         let mut params = Vec::new();
         for (i, local) in f.params().iter().enumerate() {
             let ty = printer.type_of(&local.ty, &format!("{} param {}", printer.path, local.name))?;
-            params.push(format!("{}: {ty}", printer.locals[i]));
+            params.push(format!("{}: {ty}", Self::unused_prefix(ir, f.body(), i as u32, &printer.locals[i])));
         }
         for env in Self::env_reads(ir, function) {
             params.push(format!("{}: R", Self::env_name(env)));
@@ -201,8 +201,20 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
+    /// `name`, or `_name` when `body` never reads local `local`: a parameter the code ignores.
+    fn unused_prefix(ir: &Ir, body: ExprId, local: u32, name: &str) -> String {
+        let mut exprs = vec![body];
+        while let Some(e) = exprs.pop() {
+            match ir.expr(e) {
+                Expr::Local(i) if *i == local => return name.to_string(),
+                other => Self::children(ir, other, &mut exprs),
+            }
+        }
+        format!("_{name}")
+    }
+
     /// The expressions `expr` holds, statements included.
-    fn children(ir: &Ir, expr: &Expr, out: &mut Vec<ExprId>) {
+    pub(crate) fn children(ir: &Ir, expr: &Expr, out: &mut Vec<ExprId>) {
         match expr {
             Expr::Unary { expr, .. } => out.push(*expr),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
@@ -317,7 +329,7 @@ impl<'a> ValuePrinter<'a> {
                 let mut names = Vec::with_capacity(params.len());
                 for p in params {
                     match self.locals.get(*p as usize) {
-                        Some(name) => names.push(name.clone()),
+                        Some(name) => names.push(Self::unused_prefix(self.ir, *body, *p, name)),
                         None => return Err(self.unsupported(e, "a closure parameter out of range")),
                     }
                 }
