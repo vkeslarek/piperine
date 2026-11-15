@@ -2,130 +2,84 @@
 //! hand-written `Element` and drive each analysis through its public entry,
 //! including the typed `SolverDomain` failures.
 
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
+
+use std::result::Result;
+use std::sync::{Arc, OnceLock};
+
+use abi_devices::{add_resistor, add_vsrc, node_id};
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::raw::{Module, Shape, role};
+use piperine_abi::shape::{PinSpec, ShapeBuf, ShapeRef};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::{AnalogReference, Port};
 use piperine_solver::prelude::*;
-use piperine_solver::abi::{AnalogDevice, DigitalDevice, Introspect, SolverDomain};
 
-struct Resistor {
-    r: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-}
-
-impl AnalogDevice for Resistor {
-    fn load_dc(
-        &mut self,
-        _state: &piperine_solver::abi::DcAnalysisState,
-        _ctx: &Context,
-    ) -> Vec<piperine_solver::abi::Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r;
-        vec![
-            piperine_solver::abi::Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            piperine_solver::abi::Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            piperine_solver::abi::Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            piperine_solver::abi::Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
-    }
-}
-
-impl DigitalDevice for Resistor {}
-
-impl Introspect for Resistor {}
-
-impl Element for Resistor {
-    fn name(&self) -> &str { "r" }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
-}
-
-struct Vdc {
-    v: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl AnalogDevice for Vdc {
-    fn load_dc(
-        &mut self,
-        _state: &piperine_solver::abi::DcAnalysisState,
-        _ctx: &Context,
-    ) -> Vec<piperine_solver::abi::Stamp<AnalogReference, f64>> {
-        let branch = self.branch.clone();
-        vec![
-            piperine_solver::abi::Stamp::Matrix(self.n1.clone(), branch.clone(), 1.0),
-            piperine_solver::abi::Stamp::Matrix(branch.clone(), self.n1.clone(), 1.0),
-            piperine_solver::abi::Stamp::Matrix(self.n2.clone(), branch.clone(), -1.0),
-            piperine_solver::abi::Stamp::Matrix(branch.clone(), self.n2.clone(), -1.0),
-            piperine_solver::abi::Stamp::Rhs(branch, self.v),
-        ]
-    }
-}
-
-impl DigitalDevice for Vdc {}
-
-impl Introspect for Vdc {}
-
-impl Element for Vdc {
-    fn name(&self) -> &str { "v" }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-}
-
-fn create_divider(r1_val: f64, r2_val: f64) -> CircuitInstance {
-    let mut netlist = Netlist::new();
-    let top = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let mid = netlist.connect_node(NodeIdentifier::Anonymous(2));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let v_branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let v1 = Vdc { v: 10.0, n1: top.clone(), n2: gnd.clone(), branch: v_branch };
-    let r1 = Resistor { r: r1_val, n1: top.clone(), n2: mid.clone() };
-    let r2 = Resistor { r: r2_val, n1: mid.clone(), n2: gnd.clone() };
-
-    let elements: Vec<Box<dyn Element>> = vec![Box::new(v1), Box::new(r1), Box::new(r2)];
-    CircuitInstance::from_devices_and_netlist("test", elements, netlist)
+fn create_divider(r1_val: f64, r2_val: f64) -> (CircuitInstance, AnalogReference) {
+    let mut b = CircuitBuilder::new("test");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", 10.0, &top, &gnd);
+    add_resistor(&mut b, "r1", r1_val, &top, &mid);
+    add_resistor(&mut b, "r2", r2_val, &mid, &gnd);
+    (b.build().expect("build"), mid)
 }
 
 #[test]
 fn test_solver_entry_point() {
-    let mut solver1 = Solver::new(create_divider(1000.0, 1000.0)).build();
-    let mut solver2 = Solver::new(create_divider(1000.0, 3000.0)).build(); // test AC2
+    let (circuit1, node1) = create_divider(1000.0, 1000.0);
+    let (circuit2, node2) = create_divider(1000.0, 3000.0);
+    let mut solver1 = Solver::new(circuit1).build();
+    let mut solver2 = Solver::new(circuit2).build(); // test AC2
 
     let mut dc1 = solver1.dc().unwrap();
     let res1 = dc1.solve().unwrap();
-    let mid1 = res1.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+    let mid1 = res1.get_node(&node_id(&node1)).unwrap();
     assert!((mid1 - 5.0).abs() < 1e-9);
 
     let mut dc2 = solver2.dc().unwrap();
     let res2 = dc2.solve().unwrap();
-    let mid2 = res2.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+    let mid2 = res2.get_node(&node_id(&node2)).unwrap();
     assert!((mid2 - 7.5).abs() < 1e-9);
 }
 
-struct BadElement {}
-impl AnalogDevice for BadElement {}
-impl DigitalDevice for BadElement {}
-impl Introspect for BadElement {}
-impl Element for BadElement {
-    fn name(&self) -> &str { "bad" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::empty() }
-    fn setup(&mut self, _ctx: &Context) -> std::result::Result<(), Error> {
-        Err(Error::simple(SolverDomain::Element, "setup error"))
+/// A device whose creation fails: the error reaches the host at build.
+struct BadElement;
+static BAD_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static BAD: OnceLock<Module> = OnceLock::new();
+
+fn bad_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(PinSpec::continuous("p", role::PORT));
+    s.freeze()
+}
+
+impl Device for BadElement {
+    fn prototype() -> &'static Shape<'static> {
+        BAD_SHAPE.get_or_init(bad_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        let _ = Arc::clone(BAD_SHAPE.get_or_init(bad_shape));
+        Err(Fault::new(1, "setup error"))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
 #[test]
 fn test_solver_setup_error_propagation() {
-    let netlist = Netlist::new();
-    let elements: Vec<Box<dyn Element>> = vec![Box::new(BadElement {})];
-    let circuit = CircuitInstance::from_devices_and_netlist("bad", elements, netlist);
-    
-    let mut solver = Solver::new(circuit).build();
-    let result = solver.dc();
+    let mut b = CircuitBuilder::new("bad");
+    let gnd = b.ground();
+    b.device(BAD.get_or_init(|| module::<BadElement>("BadElement")), "bad", &[], &[Port::Node(gnd)]);
+    let result = b.build();
     assert!(result.is_err());
     let err_str = result.err().unwrap().to_string();
     assert!(err_str.contains("setup error"));

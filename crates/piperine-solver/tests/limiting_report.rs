@@ -1,221 +1,237 @@
-//! LimitingReport convergence-gate tests (ABI-10): the Newton loop consults
-//! `limiting_report()` each iteration — applying the `limited_value` to the
-//! guess (steering) and vetoing convergence while a report is active.
+//! Limiting convergence-gate tests (ABI-10) on the `Device` trait: an active
+//! `LIMIT` input vetoes Newton convergence — the solver does not declare
+//! convergence at a clamped non-solution — and a device that limits and then
+//! settles reaches the operating point the unlimited device reaches.
 //!
-//! A test device caches a `LimitingReport` during `load_dc` (the same pattern
-//! the codegen `Limiter` uses), so the solver's consumption of the report is
-//! observable through the recorded guess sequence.
+//! The guess is no longer steered by the solver (the held iterate is the
+//! device's own `LIMITED` value), so the old claim that a reported
+//! `limited_value` overwrites the Newton guess is gone with its hook.
 
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize, Ordering};
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
 
-use piperine_solver::abi::{
-    AnalogDevice, AnalogReference, BranchIdentifier, DcAnalysisState, DigitalDevice, Element,
-    ElementCapabilities, Introspect, LimitReason, LimitingReport, Netlist, NodeIdentifier, Stamp,
+use std::result::Result;
+use std::sync::{Arc, OnceLock};
+
+use abi_devices::{add_diode, add_resistor, add_vsrc, node_id};
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::layout::F64;
+use piperine_abi::raw::{
+    Cell, DEFAULT, GROUND, Module, Partial, Shape, ambient, cell, input, op, part, pin_flag, role,
 };
-use piperine_solver::prelude::{CircuitInstance, Context, Solver};
+use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::{ParamValue, Port};
+use piperine_solver::prelude::{CircuitBuilder, Context, Solver};
 
-/// A device whose load is a linear conductance + matched current (natural
-/// solution `V_node = lim`), plus a `$limit`-style step limiter that clamps
-/// the Newton guess to `lim` while it is far away. Caches the report in
-/// `load_dc` (reading the live guess) and exposes it via `limiting_report()`,
-/// mirroring the codegen `Limiter` producer.
-struct StepLimiter {
-    node: AnalogReference,
-    lim: f64,
-    /// Cached report (set in `load_dc`, read in `limiting_report`).
-    report: Option<LimitingReport>,
-    /// Count of `limiting_report()` calls (the solver consulting the report).
-    consultations: Arc<AtomicUsize>,
-    /// Guess values seen at each `load_dc` call — proves whether the limited
-    /// value was applied to the Newton guess.
-    guesses: Arc<Mutex<Vec<f64>>>,
+const ORIGIN: &str = "limiting_report.rs";
+const THERMAL_VOLTAGE: f64 = 0.02585;
+
+fn cell_of(kind: u32, index: u32, part: u32) -> Cell {
+    Cell { kind, index, part }
 }
 
-impl AnalogDevice for StepLimiter {
-    fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        let v = self
-            .node
-            .idx()
-            .and_then(|i| s.latest().and_then(|row| row.get(i).copied()))
-            .unwrap_or(0.0);
-        self.guesses.lock().unwrap().push(v);
-        // Step limiter: while the guess is far from the target, clamp it there
-        // and report active (vetoing convergence until it lands).
-        if (v - self.lim).abs() > 0.05 {
-            self.report = Some(LimitingReport {
-                device: self.name().to_string(),
-                net: self.node.clone(),
-                proposed: v,
-                limited_value: self.lim,
-                limiter_name: "testlim",
-                reason: LimitReason::VoltageStep,
-            });
+fn partial(write: u32, read: u32) -> Partial {
+    Partial { write, to: 0, read, at: 0 }
+}
+
+/// A conductor with a `LIMIT` input that clamps the iterate `off` above the
+/// proposed value, always: the limit is active at every iteration.
+/// pins: off=0 (PARAM F64); a=1 (PORT)
+/// inputs: I0 LIMIT "x"; terms: T0 FLOW{a, GROUND} "i" = 1e-3·x̂
+/// fn 0 "limit": reads [a, off] writes [I0.PROPOSED = v, I0.LIMITED = v + off] partial (0<-0)=1
+/// fn 1 "i": reads [I0] writes [T0] partial (0<-0)=1e-3
+struct AlwaysLimited;
+static ALWAYS_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static ALWAYS: OnceLock<Module> = OnceLock::new();
+
+fn always_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let off = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &0.3_f64.to_le_bytes(), ..PinSpec::discrete("off", role::PARAM, &F64) });
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let i0 = s.input(InputSpec { name: "x", origin: ORIGIN, kind: input::LIMIT });
+    let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: a, minus: GROUND, abstol: DEFAULT, max: DEFAULT });
+    s.function(FunctionSpec {
+        name: "limit",
+        origin: ORIGIN,
+        reads: vec![cell_of(cell::PIN, a, part::VALUE), cell_of(cell::PIN, off, part::VALUE)],
+        writes: vec![cell_of(cell::INPUT, i0, part::PROPOSED), cell_of(cell::INPUT, i0, part::LIMITED)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![cell_of(cell::INPUT, i0, part::VALUE)],
+        writes: vec![cell_of(cell::TERM, t0, part::VALUE)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for AlwaysLimited {
+    fn prototype() -> &'static Shape<'static> {
+        ALWAYS_SHAPE.get_or_init(always_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((AlwaysLimited, Arc::clone(ALWAYS_SHAPE.get_or_init(always_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            let v = cx.f64(0);
+            cx.set(0, v);
+            cx.set(1, v + cx.f64(1));
+            cx.jac().copy_from_slice(&[1.0]);
         } else {
-            self.report = None;
+            cx.set(0, 1.0e-3 * cx.f64(0));
+            cx.jac()[0] = 1.0e-3;
         }
-        // Linear load: G = 1 S to gnd, I = lim → natural solution V = lim.
-        vec![
-            Stamp::Matrix(self.node.clone(), self.node.clone(), 1.0),
-            Stamp::Rhs(self.node.clone(), self.lim),
-        ]
+        Ok(())
     }
-
-    fn limiting_report(&self) -> Option<LimitingReport> {
-        self.consultations.fetch_add(1, Ordering::SeqCst);
-        self.report.clone()
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
-impl DigitalDevice for StepLimiter {}
-impl Introspect for StepLimiter {}
-impl Element for StepLimiter {
-    fn name(&self) -> &str { "steplim" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
+/// ngspice's junction limiter.
+fn pnjlim(vnew: f64, vold: f64, vt: f64, vcrit: f64) -> f64 {
+    if vnew > vcrit && (vnew - vold).abs() > vt + vt {
+        if vold > 0.0 {
+            let arg = 1.0 + (vnew - vold) / vt;
+            if arg > 0.0 { vold + vt * arg.ln() } else { vcrit }
+        } else {
+            vt * (vnew / vt).ln()
+        }
+    } else {
+        vnew
     }
 }
 
-/// A pure voltage source forcing `node` to `vforce` (branch-current unknown).
-struct Vdc {
-    vforce: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
+/// The diode of `abi_devices` with `pnjlim` on its junction voltage.
+/// pins: is_sat=0 (PARAM F64); p=1, n=2 (PORT)
+/// inputs: I0 LIMIT "vd"; terms: T0 FLOW{p, n} "i" = is·(exp(vd/vt) − 1)
+/// fn 0 "limit": reads [p, n, is, I0.LAST, I0.AGE, STATIC] writes [I0.PROPOSED, I0.LIMITED]
+///               partials (0<-0)=1 (0<-1)=-1
+/// fn 1 "i": reads [I0, is] writes [T0] partials (0<-0)=gd (0<-1)
+struct LimitedDiode;
+static LD_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static LD: OnceLock<Module> = OnceLock::new();
+const IS_DEFAULT: [u8; 8] = 1.0e-14_f64.to_le_bytes();
+
+fn ld_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let is = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &IS_DEFAULT, ..PinSpec::discrete("is_sat", role::PARAM, &F64) });
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let i0 = s.input(InputSpec { name: "vd", origin: ORIGIN, kind: input::LIMIT });
+    let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+    s.function(FunctionSpec {
+        name: "limit",
+        origin: ORIGIN,
+        reads: vec![
+            cell_of(cell::PIN, p, part::VALUE),
+            cell_of(cell::PIN, n, part::VALUE),
+            cell_of(cell::PIN, is, part::VALUE),
+            cell_of(cell::INPUT, i0, part::LAST),
+            cell_of(cell::INPUT, i0, part::AGE),
+            cell_of(cell::AMBIENT, ambient::STATIC, part::VALUE),
+        ],
+        writes: vec![cell_of(cell::INPUT, i0, part::PROPOSED), cell_of(cell::INPUT, i0, part::LIMITED)],
+        partials: vec![partial(0, 0), partial(0, 1)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![cell_of(cell::INPUT, i0, part::VALUE), cell_of(cell::PIN, is, part::VALUE)],
+        writes: vec![cell_of(cell::TERM, t0, part::VALUE)],
+        partials: vec![partial(0, 0), partial(0, 1)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
 }
-impl AnalogDevice for Vdc {
-    fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.branch.clone(), 1.0),
-            Stamp::Matrix(self.branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), self.branch.clone(), -1.0),
-            Stamp::Matrix(self.branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), self.vforce),
-        ]
+
+impl Device for LimitedDiode {
+    fn prototype() -> &'static Shape<'static> {
+        LD_SHAPE.get_or_init(ld_shape).shape()
     }
-}
-impl DigitalDevice for Vdc {}
-impl Introspect for Vdc {}
-impl Element for Vdc {
-    fn name(&self) -> &str { "v" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((LimitedDiode, Arc::clone(LD_SHAPE.get_or_init(ld_shape))))
     }
-}
-
-/// Spec ABI-10: the Newton loop applies `limiting_report().limited_value` to
-/// the guess and the next iteration's load sees the steered value.
-#[test]
-fn newton_applies_limited_value_to_the_guess() {
-    let consultations = Arc::new(AtomicUsize::new(0));
-    let guesses = Arc::new(Mutex::new(Vec::new()));
-
-    let mut netlist = Netlist::new();
-    let node = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let _gnd = netlist.connect_node(NodeIdentifier::Gnd);
-
-    let dev = StepLimiter {
-        node: node.clone(),
-        lim: 0.7,
-        report: None,
-        consultations: consultations.clone(),
-        guesses: guesses.clone(),
-    };
-    let elements: Vec<Box<dyn Element>> = vec![Box::new(dev)];
-    let circuit = CircuitInstance::from_devices_and_netlist("lim", elements, netlist);
-    let mut solver = Solver::new(circuit).build();
-    let res = solver.dc().unwrap().solve().unwrap();
-
-    // The load's natural solution is lim; the limiter steers there faster.
-    let v = res.get_node(&NodeIdentifier::Anonymous(1)).unwrap();
-    assert!((v - 0.7).abs() < 1e-9, "converged to the limited value, got {v}");
-
-    // ABI-10: the solver consulted limiting_report (apply + gate).
-    assert!(
-        consultations.load(Ordering::SeqCst) > 0,
-        "Newton must call limiting_report each iteration"
-    );
-
-    // ABI-10 (apply): the limiter clamped the guess to lim. The recorded
-    // guess sequence reaches lim within the first three load calls (dry-run +
-    // cold-start + clamped) — a plain midpoint-damped linear solve would still
-    // be at ~0.35 by then (sequence [0, 0, 0.35, …]). The early jump to lim
-    // proves `apply_limiting_reports` overwrote the guess.
-    let seq = guesses.lock().unwrap();
-    assert!(
-        seq.iter().take(3).any(|&v| (v - 0.7).abs() < 1e-9),
-        "the clamped value (0.7) appears early in the guess sequence {:?}, \
-         proving the report was applied to the Newton guess",
-        *seq
-    );
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            let vt = THERMAL_VOLTAGE;
+            let vcrit = vt * (vt / (std::f64::consts::SQRT_2 * cx.f64(2))).ln();
+            let v = cx.f64(0) - cx.f64(1);
+            let (age, is_static) = (cx.u8(4), cx.bool(5));
+            let old = if age == 0 || (is_static && age == 1) { vcrit } else { cx.f64(3) };
+            cx.set(0, v);
+            cx.set(1, pnjlim(v, old, vt, vcrit));
+            cx.jac().copy_from_slice(&[1.0, -1.0]);
+        } else {
+            let (vd, is) = (cx.f64(0), cx.f64(1));
+            let e = (vd / THERMAL_VOLTAGE).exp();
+            cx.set(0, is * (e - 1.0));
+            cx.jac().copy_from_slice(&[is * e / THERMAL_VOLTAGE, e - 1.0]);
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
 }
 
 /// Spec ABI-10: an always-active limiter vetoes Newton convergence — the
 /// solver does NOT declare convergence at a clamped non-solution. A voltage
-/// source forcing a node to `vforce` while a limiter clamps the guess to a
-/// different `lim` cannot settle, so the solve fails to converge (the limiter
-/// keeps vetoing). This proves the gate reads `limiting_report`, not a stale
-/// boolean.
+/// source forcing a node to 1 V while a limiter keeps its iterate 0.3 V away
+/// cannot settle, so the solve fails to converge (the limiter keeps vetoing).
+/// This proves the gate reads the limit's activity, not a stale boolean.
 #[test]
 fn active_limiter_vetoes_newton_convergence() {
-    let consultations = Arc::new(AtomicUsize::new(0));
-    let guesses = Arc::new(Mutex::new(Vec::new()));
-
-    let mut netlist = Netlist::new();
-    let node = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    // Vsource forces node to 1.0 V; limiter permanently clamps the guess to
-    // 0.3 V (never releases) — the two can never agree, so convergence is
-    // permanently vetoed.
-    struct AlwaysLim(StepLimiter);
-    impl AnalogDevice for AlwaysLim {
-        fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-            let v = self.0.node.idx().and_then(|i| s.latest().and_then(|r| r.get(i).copied())).unwrap_or(0.0);
-            self.0.guesses.lock().unwrap().push(v);
-            // Always active — clamp to lim regardless of proximity.
-            self.0.report = Some(LimitingReport {
-                device: self.name().to_string(),
-                net: self.0.node.clone(),
-                proposed: v,
-                limited_value: self.0.lim,
-                limiter_name: "alwolim",
-                reason: LimitReason::VoltageStep,
-            });
-            Vec::new()
-        }
-        fn limiting_report(&self) -> Option<LimitingReport> {
-            self.0.consultations.fetch_add(1, Ordering::SeqCst);
-            self.0.report.clone()
-        }
-    }
-    impl DigitalDevice for AlwaysLim {}
-    impl Introspect for AlwaysLim {}
-    impl Element for AlwaysLim {
-        fn name(&self) -> &str { "alwolim" }
-        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC }
-    }
-
-    let dev = AlwaysLim(StepLimiter {
-        node: node.clone(),
-        lim: 0.3,
-        report: None,
-        consultations: consultations.clone(),
-        guesses: guesses.clone(),
-    });
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Vdc { vforce: 1.0, n1: node.clone(), n2: gnd.clone(), branch: vb }),
-        Box::new(dev),
-    ];
-    let circuit = CircuitInstance::from_devices_and_netlist("veto", elements, netlist);
+    let mut b = CircuitBuilder::new("veto");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_vsrc(&mut b, "v1", 1.0, &a, &gnd);
+    b.device(ALWAYS.get_or_init(|| module::<AlwaysLimited>("AlwaysLimited")), "alwolim", &[], &[Port::Node(a)]);
+    let circuit = b.build().expect("build");
     let mut solver = Solver::new(circuit).build();
     let res = solver.dc().unwrap().solve();
 
     // The limiter vetoes convergence permanently → the DC plan fails.
     assert!(res.is_err(), "an always-active limiter must veto convergence");
-    assert!(
-        consultations.load(Ordering::SeqCst) > 0,
-        "the gate consulted limiting_report before vetoing"
-    );
+}
+
+/// A limiter that limits the early iterates and then releases reaches the
+/// operating point the unlimited diode reaches: the limit steers the path,
+/// never the fixed point.
+#[test]
+fn a_limited_diode_reaches_the_unlimited_operating_point() {
+    let solve = |limited: bool| {
+        let mut b = CircuitBuilder::new("diode");
+        let gnd = b.ground();
+        let top = b.node("top");
+        let mid = b.node("mid");
+        add_vsrc(&mut b, "v1", 5.0, &top, &gnd);
+        add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
+        if limited {
+            b.device(
+                LD.get_or_init(|| module::<LimitedDiode>("LimitedDiode")),
+                "d1",
+                &[("is_sat", ParamValue::Real(1.0e-14))],
+                &[Port::Node(mid.clone()), Port::Node(gnd.clone())],
+            );
+        } else {
+            add_diode(&mut b, "d1", 1.0e-14, &mid, &gnd);
+        }
+        let circuit = b.build().expect("build");
+        let mut solver = Solver::new(circuit).with_context(Context::default()).build();
+        solver.dc().unwrap().solve().unwrap().get_node(&node_id(&mid)).unwrap()
+    };
+    let (limited, plain) = (solve(true), solve(false));
+    assert!(plain > 0.5 && plain < 0.9, "the diode conducts: {plain}");
+    // Both stop inside Newton's own criterion (vntol + reltol·|v| ≈ 7e-4 V).
+    assert!((limited - plain).abs() < 1e-4, "limited {limited} vs unlimited {plain}");
 }

@@ -10,79 +10,122 @@
 //! `{Simple,WithCause}{domain, detail}` — domain + fragment is the strongest
 //! typed assertion the taxonomy offers.)
 
-use piperine_solver::abi::{
-    AnalogDevice, DcAnalysisState, DigitalDevice, Error, Introspect, SolverDomain, Stamp,
-};
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
+
+use std::result::Result;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
+
+use abi_devices::add_resistor;
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, op, part, role};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::{Error, Port, SolverDomain};
 use piperine_solver::prelude::*;
+
+const ORIGIN: &str = "failure_rules.rs";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-/// A linear resistor.
-struct Resistor {
-    r: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
+fn cell_of(kind: u32, index: u32) -> Cell {
+    Cell { kind, index, part: part::VALUE }
 }
 
-impl AnalogDevice for Resistor {
-    fn load_dc(&mut self, _s: &DcAnalysisState, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
+/// The shape of a two-port device `I(p, n) = f(V(p, n))`: one `FLOW` term and
+/// the partials against both ports.
+fn two_port_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![cell_of(cell::PIN, p), cell_of(cell::PIN, n)],
+        writes: vec![cell_of(cell::TERM, t0)],
+        partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+/// The §15 trigger: a contribution that is not finite.
+struct NanSource;
+static NAN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static NAN: OnceLock<Module> = OnceLock::new();
+
+impl Device for NanSource {
+    fn prototype() -> &'static Shape<'static> {
+        NAN_SHAPE.get_or_init(two_port_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((NanSource, Arc::clone(NAN_SHAPE.get_or_init(two_port_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        cx.set(0, f64::NAN);
+        cx.jac().copy_from_slice(&[1.0, -1.0]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
-impl DigitalDevice for Resistor {}
-impl Introspect for Resistor {}
-
-impl Element for Resistor {
-    fn name(&self) -> &str {
-        "r"
-    }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC
-    }
+/// A pathological device: its conductance flips sign every evaluation, so no
+/// Newton iteration can settle and no homotopy ramp helps. Nothing in the
+/// stdlib behaves like this — it exists to reach §9's "every strategy failed"
+/// path, which is otherwise only reachable by a real convergence disaster.
+struct Oscillator {
+    flip: AtomicBool,
 }
+static OSC_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static OSC: OnceLock<Module> = OnceLock::new();
 
-/// A device whose DC stamp is not finite — the §15 trigger.
-struct NanSource {
-    n1: AnalogReference,
-    n2: AnalogReference,
-}
-
-impl AnalogDevice for NanSource {
-    fn load_dc(&mut self, _s: &DcAnalysisState, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), f64::NAN),
-            Stamp::Rhs(self.n2.clone(), f64::NAN),
-        ]
+impl Device for Oscillator {
+    fn prototype() -> &'static Shape<'static> {
+        OSC_SHAPE.get_or_init(two_port_shape).shape()
     }
-}
-
-impl DigitalDevice for NanSource {}
-impl Introspect for NanSource {}
-
-impl Element for NanSource {
-    fn name(&self) -> &str {
-        "nan"
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Oscillator { flip: AtomicBool::new(false) }, Arc::clone(OSC_SHAPE.get_or_init(two_port_shape))))
     }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let flip = !self.flip.fetch_xor(true, Ordering::SeqCst);
+        let g = if flip { 1e-3 } else { 1e3 };
+        let rhs = if flip { 1.0 } else { -1.0 };
+        let v = cx.f64(0) - cx.f64(1);
+        cx.set(0, g * v - rhs);
+        cx.jac().copy_from_slice(&[g, -g]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
 /// A one-resistor circuit between node 1 and ground.
 fn resistor_circuit() -> CircuitInstance {
-    let mut netlist = Netlist::new();
-    let a = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let elements: Vec<Box<dyn Element>> =
-        vec![Box::new(Resistor { r: 1000.0, n1: a, n2: gnd })];
-    CircuitInstance::from_devices_and_netlist("rules", elements, netlist)
+    let mut b = CircuitBuilder::new("rules");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_resistor(&mut b, "r", 1000.0, &a, &gnd);
+    b.build().expect("build")
+}
+
+/// The identifier of the circuit's one node.
+fn node_a(circuit: &CircuitInstance) -> NodeIdentifier {
+    circuit
+        .netlist()
+        .all_references()
+        .into_iter()
+        .find_map(|r| match r.variable().as_ref() {
+            piperine_solver::abi::AnalogVariable::Node(id) if *id != NodeIdentifier::Gnd => Some(id.clone()),
+            _ => None,
+        })
+        .expect("the node")
 }
 
 fn sweep() -> AcSweepAnalysisOptions {
@@ -133,7 +176,7 @@ fn section_12_unresolvable_noise_reference_node_is_an_analysis_error() {
     let mut circuit = resistor_circuit();
     let options = NoiseAnalysisOptions {
         sweep_options: sweep(),
-        output_node: NodeIdentifier::Anonymous(1),
+        output_node: node_a(&circuit),
         reference_node: NodeIdentifier::Anonymous(98),
         input_source_name: None,
     };
@@ -158,14 +201,12 @@ fn section_12_unresolvable_noise_reference_node_is_an_analysis_error() {
 /// `Element::name()` ("nan") is what makes the branch nameable.
 #[test]
 fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
-    let mut netlist = Netlist::new();
-    let a = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Resistor { r: 1000.0, n1: a.clone(), n2: gnd.clone() }),
-        Box::new(NanSource { n1: a, n2: gnd }),
-    ];
-    let mut circuit = CircuitInstance::from_devices_and_netlist("nan", elements, netlist);
+    let mut b = CircuitBuilder::new("nan");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_resistor(&mut b, "r", 1000.0, &a, &gnd);
+    b.device(NAN.get_or_init(|| module::<NanSource>("NanSource")), "nan", &[], &[Port::Node(a), Port::Node(gnd)]);
+    let mut circuit = b.build().expect("build");
 
     let err = circuit
         .dc(Context::default())
@@ -175,9 +216,10 @@ fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
     assert_rule(&err, SolverDomain::Element, "§7.3.2.1");
     let text = err.to_string();
     assert!(
-        text.contains("device `nan`"),
-        "§7.3.2.1's message must name the offending device (`nan`, its `Element::name()`): {err}"
+        text.contains("instance `nan`"),
+        "§7.3.2.1's message must name the offending instance (`nan`): {err}"
     );
+    assert!(text.contains(ORIGIN), "§7.3.2.1's message must name the cell's origin ({ORIGIN}): {err}");
 }
 
 // ─── §18 — non-positive period, negative pre-roll ─────────────────────────────
@@ -212,52 +254,14 @@ fn section_18_a_negative_pre_roll_is_an_analysis_error() {
 
 // ─── §9 — DC fails plain Newton, gmin stepping, and source stepping ────────────
 
-/// A pathological element: its conductance flips sign every evaluation, so no
-/// Newton iteration can settle and no homotopy ramp helps. Nothing in the
-/// stdlib behaves like this — it exists to reach §9's "every strategy failed"
-/// path, which is otherwise only reachable by a real convergence disaster.
-struct Oscillator {
-    n1: AnalogReference,
-    n2: AnalogReference,
-    flip: bool,
-}
-
-impl AnalogDevice for Oscillator {
-    fn load_dc(&mut self, _s: &DcAnalysisState, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        self.flip = !self.flip;
-        let g = if self.flip { 1e-3 } else { 1e3 };
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-            Stamp::Rhs(self.n1.clone(), if self.flip { 1.0 } else { -1.0 }),
-        ]
-    }
-}
-
-impl DigitalDevice for Oscillator {}
-impl Introspect for Oscillator {}
-
-impl Element for Oscillator {
-    fn name(&self) -> &str {
-        "osc"
-    }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
-}
-
 #[test]
 fn section_9_exhausting_every_dc_strategy_is_a_convergence_failure() {
-    let mut netlist = Netlist::new();
-    let a = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Resistor { r: 1e6, n1: a.clone(), n2: gnd.clone() }),
-        Box::new(Oscillator { n1: a, n2: gnd, flip: false }),
-    ];
-    let mut circuit = CircuitInstance::from_devices_and_netlist("osc", elements, netlist);
+    let mut b = CircuitBuilder::new("osc");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_resistor(&mut b, "r", 1e6, &a, &gnd);
+    b.device(OSC.get_or_init(|| module::<Oscillator>("Oscillator")), "osc", &[], &[Port::Node(a), Port::Node(gnd)]);
+    let mut circuit = b.build().expect("build");
 
     let err = circuit
         .dc(Context::default())

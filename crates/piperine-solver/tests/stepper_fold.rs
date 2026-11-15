@@ -10,168 +10,31 @@
 //!   through `propose_dt`/`reject_dt` and produces a deterministic step
 //!   sequence (here: hold dt on accept, halve dt on reject).
 
-use piperine_solver::abi::{
-    AnalogDevice, AnalogReference, BranchIdentifier, DigitalDevice, DcAnalysisState, Element,
-    ElementCapabilities, Introspect, Netlist, NodeIdentifier, Stamp,
-    TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
-};
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
+
+use abi_devices::{add_capacitor, add_resistor, add_vsrc};
 use piperine_solver::prelude::{
-    ConvergencePlan, Context, CircuitInstance, Solver, StepLimits, StepperStrategy, TransientAnalysisOptions,
+    CircuitBuilder, CircuitInstance, ConvergencePlan, Solver, StepLimits, StepperStrategy, TransientAnalysisOptions,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 // ── helpers: minimal RC divider circuit ────────────────────────────────────
 
-struct Resistor {
-    r: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-}
-
-impl Resistor {
-    fn stamps(&self, g: f64) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
-    }
-}
-
-impl AnalogDevice for Resistor {
-    fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        self.stamps(1.0 / self.r)
-    }
-    fn load_transient(
-        &mut self,
-        _s: &TransientAnalysisState<'_>,
-        _t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.stamps(1.0 / self.r)
-    }
-}
-
-impl DigitalDevice for Resistor {}
-impl Introspect for Resistor {}
-
-impl Element for Resistor {
-    fn name(&self) -> &str { "r" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_TRAN
-    }
-}
-
-struct CapGnd {
-    c: f64,
-    node: AnalogReference,
-}
-
-impl AnalogDevice for CapGnd {
-    fn load_transient(
-        &mut self,
-        states: &TransientAnalysisState<'_>,
-        t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let dt = t.h;
-        let Some(idx) = self.node.idx() else { return Vec::new(); };
-        if dt <= 0.0 { return Vec::new(); }
-        let (c0, c1, c2) = TrBdf2::stage_coeffs(t.phase, t.h, t.prev_h);
-        let vget = |lb: usize| -> f64 {
-            let row = if lb == 0 { states.latest() } else { states.view(lb) };
-            row.and_then(|r| r.get(idx).copied()).unwrap_or(0.0)
-        };
-        let q_now = self.c * vget(0);
-        let q_prev = self.c * vget(1);
-        let q_prev2 = self.c * vget(2);
-        let mut i_c = c0 * q_now + c1 * q_prev + c2 * q_prev2;
-        if matches!(t.phase, TrBdf2Phase::Trapezoidal) && t.prev_h > 0.0 {
-            let (d0, d1, d2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, t.prev_h);
-            let q_prev3 = self.c * vget(3);
-            i_c -= d0 * q_prev + d1 * q_prev2 + d2 * q_prev3;
-        }
-        let g_eq = c0 * self.c;
-        let rhs = c0 * q_now - i_c;
-        vec![
-            Stamp::Matrix(self.node.clone(), self.node.clone(), g_eq),
-            Stamp::Rhs(self.node.clone(), rhs),
-        ]
-    }
-}
-
-impl DigitalDevice for CapGnd {}
-impl Introspect for CapGnd {}
-
-impl Element for CapGnd {
-    fn name(&self) -> &str { "c" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_TRAN
-    }
-}
-
-/// Constant voltage source. Held at `v` for the whole run, so the RC
-/// divider charges predictably.
-struct Vdc {
-    v: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl Vdc {
-    fn branch_stamps(&self, rhs: f64) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.branch.clone(), 1.0),
-            Stamp::Matrix(self.branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), self.branch.clone(), -1.0),
-            Stamp::Matrix(self.branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), rhs),
-        ]
-    }
-}
-
-impl AnalogDevice for Vdc {
-    fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        self.branch_stamps(self.v * s.src_scale)
-    }
-    fn load_transient(
-        &mut self,
-        _s: &TransientAnalysisState<'_>,
-        _t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.branch_stamps(self.v)
-    }
-}
-
-impl DigitalDevice for Vdc {}
-impl Introspect for Vdc {}
-
-impl Element for Vdc {
-    fn name(&self) -> &str { "v" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-}
-
+/// Constant voltage source `v` held for the whole run, so the RC divider
+/// charges predictably.
 fn build_rc_circuit(v: f64) -> CircuitInstance {
-    let mut netlist = Netlist::new();
-    let top = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let mid = netlist.connect_node(NodeIdentifier::Anonymous(2));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Vdc { v, n1: top.clone(), n2: gnd.clone(), branch: vb }),
-        Box::new(Resistor { r: 1000.0, n1: top, n2: mid.clone() }),
-        Box::new(CapGnd { c: 1e-6, node: mid }),
-    ];
-    CircuitInstance::from_devices_and_netlist("rc", elements, netlist)
+    let mut b = CircuitBuilder::new("rc");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", v, &top, &gnd);
+    add_resistor(&mut b, "r1", 1000.0, &top, &mid);
+    add_capacitor(&mut b, "c1", 1e-6, &mid, &gnd);
+    b.build().expect("build")
 }
 
 // ── ABI-44: parity through the fold ────────────────────────────────────────

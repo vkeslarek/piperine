@@ -556,11 +556,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] `active_limiter_vetoes_newton_convergence` passes on a `LIMIT` input; `newton_applies_limited_value_to_the_guess` is removed and listed; `a_limited_diode_reaches_the_unlimited_operating_point` is added
-- [ ] `failure_rules.rs`: the non-finite tests assert the instance and the cell's `origin`; the six tests keep their names
-- [ ] `helper_devices.rs` runs on `abi_devices.rs`: three tests unchanged, `param_stamps_match_a_central_difference` removed and listed (replaced by `every_device_function_passes_the_partials_verifier`)
-- [ ] `solver_entry.rs` and `stepper_fold.rs`: names and assertions unchanged
-- [ ] Gate: full
+- [x] `active_limiter_vetoes_newton_convergence` passes on a `LIMIT` input; `newton_applies_limited_value_to_the_guess` is removed and listed; `a_limited_diode_reaches_the_unlimited_operating_point` is added
+- [x] `failure_rules.rs`: the non-finite tests assert the instance and the cell's `origin`; the six tests keep their names
+- [x] `helper_devices.rs` runs on `abi_devices.rs`: three tests unchanged, `param_stamps_match_a_central_difference` removed and listed (replaced by `every_device_function_passes_the_partials_verifier`)
+- [x] `solver_entry.rs` and `stepper_fold.rs`: names and assertions unchanged
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
