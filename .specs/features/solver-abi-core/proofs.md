@@ -1,9 +1,9 @@
 # solver-abi-core proofs
 
-**HEAD**: 1fedaa8d
+**HEAD**: d5bd111c
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 51 pass, 0 fail
+**Result**: 53 pass, 1 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -56,7 +56,10 @@
 | C47 | `run owner / test consecutive_rejections_beyond_the_cap_fail_loud ... ok` | pass |
 | C48 | `run owner / test irreversible_reactions_are_bounded_by_the_current_instant ... ok` | pass |
 | C49 | `run owner / test traces_reach_the_sink_in_time_order ... ok` | pass |
-| Build | `cargo build -p piperine-abi --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
+| C50 | `run abi / test an_unreadable_value_list_is_a_fault ... ok` | pass |
+| C51 | `run owner / test a_crossing_within_half_a_tick_of_the_target_does_not_loop ... ok` | pass |
+| C52 | `run abi / from_slice (line - compile fail ... ok` | pass |
+| Build | `cargo build -p piperine-abi --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | **fail** - error[E0107]: struct takes 0 lifetime arguments but 1 lifetime argument was supplied |
 | Build | `cargo build -p piperine-solver --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 
 ## Output
@@ -64,11 +67,11 @@
 `Run abi` - exit 0
 
 ```
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Blocking waiting for file lock on build directory
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
    Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-abi)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.88s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.85s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_abi-e7348cb5af0292bb)
      Running tests/caller.rs (/var/tmp/piperine-target/debug/deps/caller-e0f20ffd0203eae0)
      Running tests/contract.rs (/var/tmp/piperine-target/debug/deps/contract-e6058296f0975f1a)
@@ -85,18 +88,18 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 test retired_crates_are_gone ... ok
-test no_manifest_names_a_retired_crate ... ok
-test solver_manifest_has_no_in_tree_dev_dependency ... ok
-test instructions_list_the_kept_crates ... ok
-test workflows_name_no_retired_crate ... ok
-test state_records_the_solver_structure_decision ... ok
-test root_tests_hold_no_end_to_end_target ... ok
 test instruction_files_and_state_name_the_abi_crate ... ok
+test solver_manifest_has_no_in_tree_dev_dependency ... ok
+test workflows_name_no_retired_crate ... ok
+test instructions_list_the_kept_crates ... ok
+test root_tests_hold_no_end_to_end_target ... ok
+test no_manifest_names_a_retired_crate ... ok
+test state_records_the_solver_structure_decision ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-solver)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.66s
      Running tests/crate_boundaries.rs (/var/tmp/piperine-target/debug/deps/crate_boundaries-0c5174e643cd6c6a)
      Running tests/workspace_shape.rs (/var/tmp/piperine-target/debug/deps/workspace_shape-4e1a2c802e20ae74)
 ```

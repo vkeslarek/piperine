@@ -59,6 +59,9 @@ committed but this file.
 | C47 | `protocol_transient.rs` `consecutive_rejections_beyond_the_cap_fail_loud` | yes - default 64 and a set cap, exact attempt count, reset on acceptance. `LandedEarlier` is not counted - N1 |
 | C48 | `protocol_host.rs` `irreversible_reactions_are_bounded_by_the_current_instant` | yes - `Horizon{stop, crossing: tick_c}` with unknowns, `crossing = stop` without |
 | C49 | `protocol_sink.rs` `traces_reach_the_sink_in_time_order` | yes - a rejected attempt's trace waits for its time; traces precede the instant at one time |
+| C50 | `an_unreadable_value_list_is_a_fault` (from the round-2 N3 probe) | yes - orchestrator: the verifier's own probe, seen red on the old code (silent OK), now asserts FAULT |
+| C51 | `a_crossing_within_half_a_tick_of_the_target_does_not_loop` (from the round-2 N1 probe) | yes - orchestrator: the verifier's 5,001-attempt probe turned into a bounded assertion, red first |
+| C52 | `compile_fail` doctest on `List::from_slice` (from the round-2 N2 probe) | yes - orchestrator: the dropped-Vec read no longer compiles; a compile_fail doctest fails if it compiles |
 | C36 | `protocol_sink.rs` `observations_reach_the_sink_after_acceptance_in_instant_order` | yes |
 | C37 | `protocol_sink.rs` `an_undone_instant_delivers_nothing` | yes |
 | C38 | `protocol_host.rs` `a_host_waiter_runs_once_and_its_writes_are_due_next_microstep` | yes |
