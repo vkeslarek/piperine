@@ -5,7 +5,8 @@
 //! the `TEMPERATURE` pin and `gmin()`, `source_scale()` from the ambients; a non-finite value is
 //! written as it is; two equal calls write equal bytes. An affine `FLOW` term (INT-12) is written
 //! as its constant plus the products of its pin partials folded from `0.0` in declared order, the
-//! sum the assembly subtracts, so the resistor matches `g*vp - g*vn` bit for bit. A `limit` site
+//! sum the assembly subtracts, so the resistor matches `g*vp - g*vn` bit for bit; a constant
+//! `c ≠ 0` leaves a right side within one ulp of `c` (INT-12 AC 3). A `limit` site
 //! reads its input's `VALUE` with derivative 1, its `x`, `f` and seed unevaluated (INT-10 AC 4).
 //! A cell the function does not declare never steers its walk: dead code branching on an unread
 //! `bool` or comparing an unread real runs no arm and the declared writes are exact (C45).
@@ -376,6 +377,37 @@ fn the_resistor_matches_the_hand_written_products_bit_for_bit() {
         assert_eq!(value.to_bits(), (g * vp - g * vn).to_bits(), "({vp}, {vn}, {r})");
         assert_eq!(out.jac, [g, -g]);
     }
+}
+
+/// INT-12's bound on the right side: the assembly stamps `−(v − dot)` with `v = c ⊕ dot`. With
+/// `c = 0` (the resistor above, a Vsource at `dc = 0`) the residue is exactly 0; with `c ≠ 0` it
+/// is `(c ⊕ dot) ⊖ dot`, within one ulp of the row's magnitude `max(|c|, |dot|)` of `c` - no
+/// float `v` gives `c` back exactly at every point.
+#[test]
+fn an_affine_constant_leaves_at_most_one_ulp_on_the_right_side() {
+    let all = Models::all();
+    let v = all.instance("Vsource");
+    let k = Lab::terms(&all, "Vsource");
+    let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+    let mut inexact = 0;
+    for i in 0..2000 {
+        let wide = i % 2 == 1;
+        let (vp, vn) = if wide { (rng.range(-1e6, 1e6), rng.range(-20.0, 20.0)) } else { (rng.range(-20.0, 20.0), rng.range(-20.0, 20.0)) };
+        let (dc, scale) = if wide { (rng.range(-1e-3, 1e3), rng.next()) } else { (rng.range(-10.0, 10.0), rng.next()) };
+        let out = Models::eval(&v, k, &[vp, vn, 0.0, 0.0, dc, 1.0, scale].map(In::F64), None).expect("terms");
+        // the assembly's fold over b0.eq's written partials (p, n, the stim at 0), from 0.0
+        let dot = out.jac[1..].iter().zip([vp, vn, 0.0]).fold(0.0, |s, (g, x)| s + g * x);
+        let c = -(dc * scale);
+        let residue = out.values[1] - dot;
+        let ulp = f64::from_bits(c.abs().max(dot.abs()).to_bits() + 1) - c.abs().max(dot.abs());
+        assert!((residue - c).abs() <= ulp, "residue {residue:e} vs c = {c:e} at ({vp}, {vn}, {dc}, {scale}): ulp {ulp:e}");
+        inexact += usize::from(residue != c);
+
+        let out = Models::eval(&v, k, &[vp, vn, 0.0, 0.0, 0.0, 1.0, scale].map(In::F64), None).expect("terms");
+        let dot = out.jac[1..].iter().zip([vp, vn, 0.0]).fold(0.0, |s, (g, x)| s + g * x);
+        assert_eq!(out.values[1] - dot, 0.0, "c = 0 leaves no residue at ({vp}, {vn})");
+    }
+    assert!(inexact > 0, "the sweep holds points where c ⊕ dot ⊖ dot is not c");
 }
 
 #[test]

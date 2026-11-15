@@ -13,7 +13,7 @@ After `msl-elab` an MSL design exists as an `Ir`, and nothing executes it. The s
 - [ ] An elaborated M1 design runs on the solver from its `Ir` alone: operating point, DC, AC and transient.
 - [ ] The interpreter meets the solver only through the device ABI: shapes, `eval`, nothing else.
 - [ ] Every declared partial is exact: each function of each M1 body passes `piperine_abi::verify::verify_partials`.
-- [ ] A term that is linear in the node potentials leaves no round-off on the solver's right side.
+- [ ] A term that is linear in the node potentials leaves a right-side residue of exactly 0 when its constant `c` is 0, and at most 1 ulp of the row's magnitude `max(|c|, |dot|)` when `c ≠ 0` (verification F3, orchestrator decision: the assembly in `piperine-analog-solver` `flow.rs` is not changed; the 1e-3 parity contract does not need more, and no float value reaches 0 at about 9% of points).
 
 ## Out of Scope
 
@@ -172,7 +172,9 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/`, by `abi.md`
 1. WHEN a `FLOW` term's addends are affine in the node potentials (`msl-ir` IR-09 AC 3) THEN the system SHALL evaluate them with every continuous pin read as 0 to get the constant `c` and the partials `g`, and SHALL write the value `c` added to the sum of `g_j·x_j` folded from `0.0` in the order of the term's declared partials.
 2. WHEN the `Resistor` body is evaluated at any `vp`, `vn` and `r` THEN the system SHALL write a value equal bit for bit to `g*vp - g*vn` with `g = 1.0/r`, and the partials `g` and `-g`.
 
-**Independent Test**: for 1000 random `(vp, vn, r)`, the value minus the fold `0.0 + g*vp + (-g)*vn` is exactly `0.0`.
+3. WHEN an affine term's constant `c` is not 0 THEN the right side the assembly forms, `(c ⊕ dot) ⊖ dot` with `dot` the fold of AC 1, SHALL differ from `c` by at most one ulp of `max(|c|, |dot|)`; WHEN `c` is 0 it SHALL be exactly 0. (verification F3)
+
+**Independent Test**: for 1000 random `(vp, vn, r)`, the value minus the fold `0.0 + g*vp + (-g)*vn` is exactly `0.0`; for 2000 random Vsource points the `eq` row's residue is within one ulp of `c`, and exactly 0 at `dc = 0`.
 
 ---
 

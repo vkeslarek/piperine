@@ -575,6 +575,9 @@ Proof: run lib | test walk::tests::an_unread_value_steers_nothing ... ok
 **C47** - WHEN a transient's stop time is off the solver's tick grid THEN the run SHALL end with exactly one record at the stop, the integrated trajectory point, and no two records SHALL share a time. (verification F1; the solver's own proof is `abi_tran.rs` `a_stop_off_the_tick_grid_is_reached_once_by_an_integrating_step`)
 Proof: run circuit | test a_held_node_starts_the_transient ... ok
 
+**C48** - WHEN an affine term's constant `c` is not 0 THEN its right-side residue `(c ⊕ dot) ⊖ dot` SHALL differ from `c` by at most one ulp of `max(|c|, |dot|)`, and SHALL be exactly 0 when `c` is 0. (INT-12, AC 3; verification F3)
+Proof: run terms | test an_affine_constant_leaves_at_most_one_ulp_on_the_right_side ... ok
+
 ---
 
 ## Handoff
