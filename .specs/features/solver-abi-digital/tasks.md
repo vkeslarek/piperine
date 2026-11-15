@@ -525,7 +525,7 @@ Proof: `cargo test -p piperine-digital-solver --lib 2>&1 | grep -E '^test result
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported)
+**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported); B2 (Sonnet) at f2000f5f
 **Walked:** not applicable - no screen
 
 ---
