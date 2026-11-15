@@ -1277,7 +1277,10 @@ This amends MD-60's "no in-tree crate sits under any of them".
 **Scope:** `crates/piperine-abi`, the manifests of the three solver crates, the
 structural guards (`crate_boundaries.rs`, `workspace_shape.rs`), `CLAUDE.md`,
 `AGENTS.md`.
-**Status:** Proposed (2026-11-15), until the user confirms.
+**Status:** Accepted (2026-11-15), under the user's go-ahead "Ok, deixo tu ir tocando, pode ir
+disparando implementações em seguida ok?" as recorded in
+`.specs/features/solver-completeness/context.md`, "Orchestrator decisions under the user's
+go-ahead" (row MD-61).
 
 ---
 

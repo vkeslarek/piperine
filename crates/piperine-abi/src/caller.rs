@@ -146,9 +146,6 @@ impl Handle {
     /// a buffer per written cell pre-filled with its current bytes, `seed` and
     /// `jac` one entry per declared partial (`jac` pre-zeroed). Each buffer is
     /// at least its cell's length (`device::cell_lens`).
-    // SPEC_DEVIATION: design `caller` gives `input: &[*const u8]`, `output: &[*mut u8]`.
-    // Reason: a safe fn dereferencing caller-supplied raw pointers is unsound; slices are
-    // checked against the cells' lengths and need no `unsafe` in a sub-solver.
     pub fn eval(
         &self,
         k: u32,

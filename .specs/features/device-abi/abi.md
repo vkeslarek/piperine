@@ -528,7 +528,15 @@ pub fn module<D: Device>(name: &'static str) -> Module;             // generic e
 its lists, and `ShapeBuf` is what owns them; `module` is a plain `fn`, not `const fn`, because it
 calls `D::prototype()`, a trait method. A `Fault` is `FAULT` with its code, or `RESHAPE` when
 built with `Fault::reshape`; `cx.set(j, v)` takes any `Pod` (an `F64`, or the byte of an event
-pin).
+pin). `Pod` is an `unsafe trait` implemented for the numeric leaves and their arrays.
+
+The solver calls a device through `caller::Handle` (in `piperine-abi`): `Handle::eval` and
+`Handle::react` take byte slices (`&[&[u8]]` for the reads, `&mut [&mut [u8]]` for the writes),
+checked against each cell's length (`device::cell_lens`, public) before the frame of §3 is
+built from them, so the solver side needs no `unsafe`; a safe call over raw pointers the caller
+supplies would be unsound. `react` takes the handle mutably, so a commit closure cannot call the
+same instance again. `verify::verify_partials` (§8) returns the `CallError` of a function that
+faults at the point.
 
 `Eval` and `React` are borrow-checked lenses over the frames: `cx.f64(i)`, `cx.bytes(i)`,
 `cx.get::<T>(i) -> Option<&T>` and `cx.out::<T>(j)` with `T: Pod`, `cx.set(j, v)`,
@@ -549,7 +557,11 @@ from its own tables.
 
 Purity gives the verifier: in a debug session the solver perturbs each real input of a
 function and compares finite differences with `jac`, at points where every limit the function
-writes has `LIMITED = PROPOSED` (for a function that only reads a limit, anywhere).
+writes has `LIMITED = PROPOSED` (for a function that only reads a limit, anywhere). The step
+is `h = 1e-6·max(1, |x|)`, central; a partial passes when
+`|declared − finite| ≤ rel_tol·max(|declared|, |finite|) + 4ε·max(|f(x+h)|, |f(x−h)|)/2h`, the
+last term the round-off of the difference itself, so an exact zero partial is not failed by
+noise.
 
 ---
 

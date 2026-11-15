@@ -37,8 +37,7 @@ fn f64_at(bytes: &[u8], at: u32) -> f64 {
 /// `|declared − finite| ≤ rel_tol · max(|declared|, |finite|)` plus the
 /// central difference's own round-off, `4 ε · max(|f(x+h)|, |f(x−h)|) / 2h`.
 /// The step is `h = 1e-6 · max(1, |x|)`.
-// SPEC_DEVIATION: design `verify` returns `Verdict`; this returns `Result<Verdict, CallError>`.
-// Reason: a function that faults at the point has no partials to compare, and the fault must reach the author.
+/// A function that faults at the point returns its `CallError`.
 pub fn verify_partials(handle: &Handle, k: u32, input: &[Vec<u8>], rel_tol: f64) -> Result<Verdict, CallError> {
     let shape = handle.shape();
     let f = shape.functions.get(k as usize).ok_or_else(|| CallError {
