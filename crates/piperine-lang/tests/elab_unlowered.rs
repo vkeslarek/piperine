@@ -51,6 +51,30 @@ fn a_site_or_contribution_under_if_is_p0001() {
             names: "an `ac_stim` under an `if` or in a closure",
             at: "ac_stim(1.0)",
         },
+        Row {
+            form: "limit right of &&",
+            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 && limit(v(p), |a, b| a) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
+            names: "a `limit` under an `if` or in a closure",
+            at: "limit(v(p), |a, b| a)",
+        },
+        Row {
+            form: "limit right of ||",
+            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 || limit(v(p), |a, b| a) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
+            names: "a `limit` under an `if` or in a closure",
+            at: "limit(v(p), |a, b| a)",
+        },
+        Row {
+            form: "ac_stim right of &&",
+            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 && ac_stim(1.0) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
+            names: "an `ac_stim` under an `if` or in a closure",
+            at: "ac_stim(1.0)",
+        },
+        Row {
+            form: "ac_stim right of ||",
+            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 || ac_stim(1.0) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
+            names: "an `ac_stim` under an `if` or in a closure",
+            at: "ac_stim(1.0)",
+        },
     ] {
         row.check();
     }
@@ -124,4 +148,15 @@ fn a_diagnostic_means_no_ir() {
     let err = Elab::run(src, "Top").expect_err("refused");
     assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));
+}
+
+#[test]
+fn a_site_on_the_left_of_a_short_circuit_still_lowers() {
+    // The left operand always runs, so a site there is unconditional (ELAB-06, AC 1).
+    for op in ["&&", "||"] {
+        let src = format!("module M(p: Electrical, n: Electrical) {{ }}\nanalog for M {{ let c = limit(v(p), |a, b| a) > 0.0 {op} v(p) > 0.0; let d = ac_stim(1.0) > 0.0 {op} v(p) > 0.0; }}\nmodule Top() {{ signal s: Electrical; let m = M {{ }}(s, gnd); }}");
+        let ir = Elab::ir(&src, "Top");
+        let text = ir.to_string();
+        assert!(text.contains("limit L0") && text.contains("stim"), "{op}: {text}");
+    }
 }

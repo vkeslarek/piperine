@@ -110,7 +110,13 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
             }
             ExprKind::Binary { op, lhs, rhs } => {
-                let (lhs, rhs) = (self.lower_expr(scope, *lhs), self.lower_expr(scope, *rhs));
+                // The right operand of `&&`/`||` runs only when the left does not decide: it is
+                // conditional exactly like an `if` arm.
+                let short_circuit = matches!(op, BinOp::And | BinOp::Or);
+                let lhs = self.lower_expr(scope, *lhs);
+                scope.nesting += u32::from(short_circuit);
+                let rhs = self.lower_expr(scope, *rhs);
+                scope.nesting -= u32::from(short_circuit);
                 let (lhs, rhs) = (lhs?, rhs?);
                 let Some(op) = Self::binary_op(*op) else {
                     self.unsupported(file, node.span, "this operator");
