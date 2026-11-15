@@ -2,8 +2,8 @@
 //! observations of the discrete side reach the host's sink only after the
 //! acceptance that makes them final, in instant order, stamped with their
 //! path, analysis kind and time; an undone instant delivers nothing; a trace
-//! record of a rejected attempt is delivered with its Newton iteration; with
-//! no sink nothing is kept.
+//! record of a rejected attempt is delivered with its Newton iteration; traces
+//! and observations reach the sink in time order; with no sink nothing is kept.
 
 #[allow(dead_code)]
 #[path = "support/stub_sides.rs"]
@@ -80,8 +80,8 @@ fn observations_reach_the_sink_after_acceptance_in_instant_order() {
         ]
     );
     // `top.a` and `top.b` arrive only after the first acceptance, `top.c` after the second.
-    let first_accept = position(&log, 0, |c| matches!(c, Call::Accept(_)));
-    let second_accept = position(&log, 1, |c| matches!(c, Call::Accept(_)));
+    let first_accept = position(&log, 0, |c| matches!(c, Call::Accept));
+    let second_accept = position(&log, 1, |c| matches!(c, Call::Accept));
     let at = |path: &str| seen.borrow().iter().find(|(_, o)| o.path == path).map(|(i, _)| *i).unwrap();
     assert!(at("top.a") > first_accept && at("top.b") > first_accept);
     assert!(at("top.c") > second_accept);
@@ -124,10 +124,11 @@ fn a_trace_of_a_rejected_attempt_is_delivered_with_its_iteration() {
     p.transient(1.0).unwrap();
     let got: Vec<Observation> = seen.borrow().iter().map(|(_, o)| o.clone()).collect();
     assert_eq!(got, [Observation { analysis: AnalysisKind::Transient, ..trace }]);
-    // It arrived after the rejected attempt and before the restore.
+    // It arrived after the rejected attempt, at the acceptance that reached its
+    // time (traces are delivered in time order, F13), though its step was undone.
     let index = seen.borrow()[0].0;
-    assert!(index > position(&log, 0, |c| matches!(c, Call::Attempt { .. })));
-    assert!(index <= position(&log, 0, |c| matches!(c, Call::DiscreteRestore(_))));
+    assert!(index > position(&log, 0, |c| matches!(c, Call::DiscreteRestore(_))));
+    assert!(index > position(&log, 0, |c| matches!(c, Call::Accept)));
 }
 
 #[test]
@@ -147,4 +148,39 @@ fn no_sink_means_observations_are_dropped_not_kept() {
     assert!(calls(&log, |c| matches!(c, Call::Drain)).len() >= 100);
     // One drain of traces after the equilibrium, one after each of the 50 attempts.
     assert_eq!(calls(&log, |c| matches!(c, Call::DrainTraces)).len(), 51);
+}
+
+fn trace(path: &str, time: f64, iteration: u32) -> Observation {
+    Observation { path: path.into(), analysis: AnalysisKind::OperatingPoint, time, kind: ObservationKind::Trace { iteration, bytes: vec![] } }
+}
+
+#[test]
+fn traces_reach_the_sink_in_time_order() {
+    let log = new_log();
+    let mut d = ScriptedDiscrete::new(&log);
+    let mut a = ScriptedAnalog::new(&log);
+    // A step to 2 s is rejected (its trace stays, A5), a step to 1 s is accepted,
+    // then a step to 2 s. Instants run before each landing and at it.
+    d.advance_observations.extend([vec![obs("undone", 1.5)], vec![obs("before.1", 0.5)], vec![obs("before.2", 1.5)]]);
+    d.instant_observations.extend([vec![obs("at.1", 1.0)], vec![obs("at.2", 2.0)]]);
+    a.traces.extend([vec![trace("trace.rejected", 2.0, 1)], vec![trace("trace.1", 1.0, 2)], vec![trace("trace.2", 2.0, 3)]]);
+    a.attempts.push_back(Attempt::Rejected);
+    a.proposals.extend([2.0, 1.0, 2.0]);
+    let (sink, seen) = collecting(&log);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_sink(sink);
+    p.transient(2.0).unwrap();
+    let got: Vec<(String, f64)> = seen.borrow().iter().map(|(_, o)| (o.path.clone(), o.time)).collect();
+    let want: Vec<(String, f64)> = [
+        ("before.1", 0.5),
+        ("trace.1", 1.0),
+        ("at.1", 1.0),
+        ("before.2", 1.5),
+        ("trace.rejected", 2.0),
+        ("trace.2", 2.0),
+        ("at.2", 2.0),
+    ]
+    .iter()
+    .map(|(p, t)| (p.to_string(), *t))
+    .collect();
+    assert_eq!(got, want, "one stream in time order; at one time the solve's traces precede its instant");
 }

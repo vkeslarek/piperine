@@ -4,9 +4,9 @@
 //! origin; a zeroed entry is an unknown constant; an index is checked before
 //! it is followed; the valid fixtures pass.
 
-use piperine_abi::layout::{BIT, F64, LOW};
+use piperine_abi::layout::{BIT, BYTE, F64, LOW};
 use piperine_abi::raw::{
-    Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role, watch,
+    Shape, Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role, watch,
 };
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::validate::{Rule, validate};
@@ -133,12 +133,15 @@ fn resistor_writing_a_limit(flags: u32) -> Specs {
     s
 }
 
+/// (rule, a defect planted in the raw shape, the entry the error names, its origin)
+type RawRow = (Rule, fn(&mut Shape), &'static str, &'static str);
+
 /// (rule, the defect, the entry the error names, its origin)
 type Row = (Rule, fn() -> Specs, &'static str, &'static str);
 
 #[test]
 fn every_shape_local_rule_is_enforced() {
-    let table: [Row; 15] = [
+    let table: [Row; 19] = [
         (Rule::UnknownConstant, || { let mut s = resistor(); s.terms[0].op = 9; s }, "term i", "res.msl:3:5"),
         (Rule::IndexOutOfRange, || { let mut s = resistor(); s.functions[0].reads[1].index = 7; s }, "function i", "res.msl:3:9"),
         (Rule::KindRole, || {
@@ -180,9 +183,39 @@ fn every_shape_local_rule_is_enforced() {
             s
         }, "watch up", "dff.msl:5:5"),
         (Rule::TermBoundNotDiscreteF64, || { let mut s = resistor(); s.terms[0].abstol = 1; s }, "term i", "res.msl:3:5"),
+        (Rule::EventNotEmpty, || { let mut s = flip_flop(); s.pins[3].layout = &BYTE; s }, "pin rise", "dff.msl:2:5"),
+        (Rule::ContinuousNotF64, || { let mut s = resistor(); s.pins[1].layout = &BYTE; s }, "pin p", "res.msl:1:17"),
+        (Rule::CheckNotBool, || {
+            let mut s = resistor();
+            s.pins[0].flags |= pin_flag::HAS_CHECK;
+            s.pins[0].check = 1;
+            s
+        }, "pin r", "res.msl:2:5"),
+        (Rule::QuietChangeRead, || {
+            let mut s = flip_flop();
+            s.pins[1].flags = pin_flag::QUIET;
+            s.reactions[0].reads = vec![pin_cell(1, part::PREVIOUS)];
+            s
+        }, "reaction sample", "dff.msl:3:5"),
     ];
+    // Defects below the specs (a list read by a stride the producer did not use).
+    let raw_rows: [RawRow; 1] = [(
+        Rule::UnreadableList,
+        // SAFETY: the same live pointer and length, read by a stride that is refused.
+        |s| s.terms = unsafe { piperine_abi::raw::List::from_raw_parts(s.terms.as_ptr(), s.terms.len(), 8) },
+        "shape",
+        "",
+    )];
     for rule in Rule::ALL {
-        assert_eq!(table.iter().filter(|row| row.0 == rule).count(), 1, "one row for {rule:?}");
+        let rows = table.iter().filter(|row| row.0 == rule).count() + raw_rows.iter().filter(|row| row.0 == rule).count();
+        assert_eq!(rows, 1, "one row for {rule:?}");
+    }
+    for (rule, plant, entry, origin) in raw_rows {
+        let built = resistor().build();
+        let mut shape = *built.shape();
+        plant(&mut shape);
+        let err = validate(&shape).expect_err(&format!("{rule:?} is not refused"));
+        assert_eq!((err.rule, err.entry.as_str(), err.origin.as_str()), (rule, entry, origin));
     }
     for (rule, plant, entry, origin) in table {
         let shape = plant().build();
@@ -274,8 +307,31 @@ fn the_valid_fixtures_pass() {
     res.terms[0].abstol = 0;
     res.terms[0].max = 0;
     assert_eq!(validate(res.build().shape()), Ok(()));
+    // A `check` naming a discrete BOOL pin, and a QUIET pin read by value only.
+    let mut ff = flip_flop();
+    ff.pins.push(PinSpec { flags: pin_flag::HAS_CHECK, check: 0, ..PinSpec::discrete("k", role::PRIVATE, &BIT) });
+    ff.pins[1].flags = pin_flag::QUIET;
+    assert_eq!(validate(ff.build().shape()), Ok(()));
     // The flip-flop's pins are of every discrete kind the rules look at.
     let ff = flip_flop().build();
     let kinds: Vec<u32> = ff.shape().pins.iter().map(|p| p.kind).collect();
     assert_eq!(kinds, [kind::DISCRETE, kind::DISCRETE, kind::DISCRETE, kind::EVENT]);
+}
+
+#[test]
+fn a_shape_with_an_unreadable_list_is_refused() {
+    let built = resistor().build();
+    let mut shape = *built.shape();
+    // SAFETY: the shape's live pins, read by a stride below the element (refused).
+    shape.pins = unsafe { piperine_abi::raw::List::from_raw_parts(shape.pins.as_ptr(), shape.pins.len(), size_of::<piperine_abi::raw::Pin>() - 8) };
+    let err = validate(&shape).expect_err("a pin list read below its element size");
+    assert_eq!(err.rule, Rule::UnreadableList);
+    let mut shape = *built.shape();
+    let mut f = *shape.functions.get(0).unwrap();
+    // SAFETY: the function's live reads, read by a stride of 4 (refused).
+    f.reads = unsafe { piperine_abi::raw::List::from_raw_parts(f.reads.as_ptr(), f.reads.len(), 4) };
+    let fs = [f];
+    shape.functions = piperine_abi::raw::List::from_slice(&fs);
+    let err = validate(&shape).expect_err("a cell list read below its element size");
+    assert_eq!((err.rule, err.entry.as_str()), (Rule::UnreadableList, "function i"));
 }

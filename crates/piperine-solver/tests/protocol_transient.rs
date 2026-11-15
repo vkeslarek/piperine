@@ -1,7 +1,8 @@
 //! The transient protocol (feature `solver-abi-core`, SAC-14, SAC-16 AC 9;
 //! abi.md §5): on scripted stubs, a step with no landing is one attempt to the
-//! proposed time; a landing's boundary preview is delivered before its
-//! attempt, which is exempt only when the preview changed a value; a rejected
+//! proposed time; a landing is solved on the value before its instant (exempt),
+//! then the instant runs and what it changed is delivered with a restart (the
+//! user's order, superseding the boundary preview of AC 3); a rejected
 //! or shortened attempt restores both sides and the sink mark and advances
 //! again; acceptance fires the crossings, runs the instant with the samples
 //! and asks the next acceptance for a restart (the small one after a host
@@ -17,9 +18,9 @@ use std::rc::Rc;
 
 use piperine_solver::protocol::{
     Accepted, Advance, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
-    Protocol, ProtocolOptions, Restart, Sink,
+    Protocol, ProtocolOptions, Restart, SetOutcome, Sink,
 };
-use stub_sides::{Call, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
+use stub_sides::{Call, horizon, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
 /// Half a second per tick: every time below is exact in binary.
 const SPT: f64 = 0.5;
@@ -70,27 +71,36 @@ fn no_landing_means_one_attempt_to_the_proposed_time() {
 }
 
 #[test]
-fn a_landing_delivers_its_preview_before_the_attempt() {
+fn a_landing_is_solved_on_the_left_value_then_its_instant_runs() {
     let (log, mut d, mut a) = sides();
+    // An R4 landing at 1 s whose instant changes a value the analog side reads.
     d.advances.push_back(Advance::Landing { tick: 2, time_point: true });
-    d.previews.borrow_mut().push_back(vec![boundary()]);
+    d.instants.push_back(Outcome { boundary: vec![boundary()], ..Outcome::default() });
+    a.accepts.push_back(Accepted { fired: vec![], samples: vec![0.5] });
     a.proposals.extend([3.0, 3.0]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(3.0).unwrap();
     let seq = calls(&log, |c| {
-        matches!(c, Call::Advance(_) | Call::Preview(_) | Call::Deliver(_) | Call::Attempt { .. })
+        matches!(c, Call::Advance(_) | Call::Deliver(..) | Call::Attempt { .. } | Call::Accept | Call::RunInstant { .. })
     });
+    let mode = InstantMode { is_static: false, settle: true };
     assert_eq!(
         seq,
         [
             Call::Advance(6),
-            Call::Preview(2),
-            Call::Deliver(vec![boundary()]),
+            // Solved at 1 s on the value before the instant: nothing delivered yet;
+            // exempt, as a step that lands on a scheduled instant.
             Call::Attempt { to: 1.0, exempt: true },
-            // The next step's preview changes nothing: no delivery, not exempt.
+            Call::Accept,
+            // The instant runs after the solve; its reactions read the solution at 1 s.
+            Call::RunInstant { at: 2, samples: vec![0.5], limit: horizon(6, 2), mode },
+            // What it changed (microstep 0 included) reaches the analog side after
+            // that solve, and the next step restarts from the jump.
+            Call::Deliver(vec![boundary()], Restart::Integrator),
             Call::Advance(6),
-            Call::Preview(6),
             Call::Attempt { to: 3.0, exempt: false },
+            Call::Accept,
+            Call::RunInstant { at: 6, samples: vec![], limit: horizon(6, 6), mode },
         ]
     );
 }
@@ -164,32 +174,70 @@ fn acceptance_fires_crossings_runs_the_instant_and_asks_for_restart() {
     d.instants.push_back(Outcome { boundary: vec![boundary()], ..Outcome::default() });
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(2.0).unwrap();
-    let seq = calls(&log, |c| matches!(c, Call::Accept(_) | Call::Fire(..) | Call::RunInstant { .. } | Call::Deliver(_)));
+    let seq = calls(&log, |c| matches!(c, Call::Accept | Call::Fire(..) | Call::RunInstant { .. } | Call::Deliver(..)));
     let mode = InstantMode { is_static: false, settle: true };
     assert_eq!(
         seq,
         [
-            Call::Accept(Restart::None),
+            Call::Accept,
             Call::Fire(5, 2),
-            Call::RunInstant { at: 2, samples: vec![0.25], limit: 4, mode },
-            Call::Deliver(vec![boundary()]),
-            Call::Accept(Restart::Integrator),
-            Call::RunInstant { at: 4, samples: vec![], limit: 4, mode },
+            Call::RunInstant { at: 2, samples: vec![0.25], limit: horizon(4, 2), mode },
+            Call::Deliver(vec![boundary()], Restart::Integrator),
+            Call::Accept,
+            Call::RunInstant { at: 4, samples: vec![], limit: horizon(4, 4), mode },
         ]
     );
 }
 
 #[test]
 fn a_host_param_write_asks_for_the_small_restart() {
+    for (param, restart) in [(true, Restart::IntegratorSmall), (false, Restart::Integrator)] {
+        let (log, mut d, mut a) = sides();
+        // The operating point (two instants) and one step to 1 s, then the instant
+        // a host `set` at 1 s runs: it changes a value the analog side reads.
+        d.instants.extend([Outcome::default(), Outcome::default(), Outcome::default()]);
+        d.instants.push_back(Outcome { boundary: vec![boundary()], host_param_write: param, ..Outcome::default() });
+        a.accepts.push_back(Accepted { fired: vec![], samples: vec![0.25] });
+        a.proposals.extend([1.0, 2.0]);
+        let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+        p.operating_point().unwrap();
+        p.transient(1.0).unwrap();
+        let before = log.borrow().len();
+        assert_eq!(p.set(5, 0, &[2], None).unwrap(), SetOutcome::Committed);
+        p.transient(2.0).unwrap();
+        let seq: Vec<Call> = log.borrow()[before..]
+            .iter()
+            .filter(|c| matches!(c, Call::Shadow(..) | Call::HostCommit { .. } | Call::RunInstant { .. } | Call::Deliver(..) | Call::Attempt { .. }))
+            .cloned()
+            .collect();
+        let quiet = InstantMode { is_static: false, settle: false };
+        let step = InstantMode { is_static: false, settle: true };
+        assert_eq!(
+            seq,
+            [
+                Call::Shadow(5, vec![2]),
+                Call::HostCommit { net: 5, offset: 0, bytes: vec![2], at: 2 },
+                // The write is applied at once at 1 s, reading the accepted solution there.
+                Call::RunInstant { at: 2, samples: vec![0.25], limit: horizon(2, 2), mode: quiet },
+                Call::Deliver(vec![boundary()], restart),
+                // No zero-length step: the next attempt goes forward.
+                Call::Attempt { to: 2.0, exempt: false },
+                Call::RunInstant { at: 4, samples: vec![], limit: horizon(4, 4), mode: step },
+            ],
+            "param write: {param}"
+        );
+    }
+}
+
+#[test]
+fn a_waiter_param_write_asks_for_the_small_restart() {
     let (log, mut d, mut a) = sides();
     a.proposals.extend([1.0, 2.0, 3.0]);
+    // The instant at 1 s applied a host write to a param net (a waiter's write).
     d.instants.push_back(Outcome { boundary: vec![boundary()], host_param_write: true, ..Outcome::default() });
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(3.0).unwrap();
-    assert_eq!(
-        calls(&log, |c| matches!(c, Call::Accept(_))),
-        [Call::Accept(Restart::None), Call::Accept(Restart::IntegratorSmall), Call::Accept(Restart::None)]
-    );
+    assert_eq!(calls(&log, |c| matches!(c, Call::Deliver(..))), [Call::Deliver(vec![boundary()], Restart::IntegratorSmall)]);
 }
 
 #[test]
@@ -212,7 +260,7 @@ fn no_unknowns_means_no_attempt() {
         .collect();
     assert_eq!(ats, [2, 4, 6, 10], "three instants, then the stop time");
     let analog = calls(&log, |c| {
-        matches!(c, Call::Attempt { .. } | Call::Propose(..) | Call::Accept(_) | Call::Preview(_) | Call::Deliver(_))
+        matches!(c, Call::Attempt { .. } | Call::Propose(..) | Call::Accept | Call::Deliver(..))
     });
     assert!(analog.is_empty(), "no analog work without unknowns: {analog:?}");
     assert_eq!(attempts(&log).len(), 0);
@@ -235,4 +283,78 @@ fn settle_runs_at_time_points_and_at_the_stop_time_only() {
         })
         .collect();
     assert_eq!(instants, [(2, false, false), (4, true, false), (6, true, false), (8, true, false)]);
+}
+
+/// The (attempted time, instant tick) pairs of a run, in order.
+fn attempts_and_instants(log: &Log) -> Vec<Call> {
+    calls(log, |c| matches!(c, Call::Advance(_) | Call::Attempt { .. } | Call::RunInstant { .. }))
+        .into_iter()
+        .map(|c| match c {
+            Call::RunInstant { at, .. } => Call::RunInstant { at, samples: vec![], limit: horizon(0, 0), mode: InstantMode { is_static: false, settle: false } },
+            other => other,
+        })
+        .collect()
+}
+
+#[test]
+fn an_off_grid_step_lands_on_the_tick_grid() {
+    let run = |at: i64| Call::RunInstant { at, samples: vec![], limit: horizon(0, 0), mode: InstantMode { is_static: false, settle: false } };
+    // One second per tick; the analog side proposes 1.6 s, then 2.4 s.
+    let (log, d, mut a) = sides();
+    a.proposals.extend([1.6, 2.4]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(1.0));
+    p.transient(3.0).unwrap();
+    assert_eq!(
+        attempts_and_instants(&log),
+        [
+            Call::Advance(1),
+            Call::Attempt { to: 1.0, exempt: false },
+            run(1),
+            Call::Advance(2),
+            Call::Attempt { to: 2.0, exempt: false },
+            run(2),
+            Call::Advance(3),
+            Call::Attempt { to: 3.0, exempt: false },
+            run(3),
+        ],
+        "every step ends on a tick and the instant run is that tick's own"
+    );
+    assert_eq!(p.now(), 3.0);
+
+    // A crossing located off the grid lands on its nearest tick inside the step.
+    let (log, d, mut a) = sides();
+    a.proposals.extend([2.6]);
+    a.attempts.push_back(Attempt::LandedEarlier(1.4));
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(1.0));
+    p.transient(2.0).unwrap();
+    let seq = attempts_and_instants(&log);
+    assert_eq!(&seq[..5], [Call::Advance(2), Call::Attempt { to: 2.0, exempt: false }, Call::Advance(1), Call::Attempt { to: 1.0, exempt: false }, run(1)]);
+}
+
+#[test]
+fn consecutive_rejections_beyond_the_cap_fail_loud() {
+    for cap in [None, Some(5u32)] {
+        let (log, d, mut a) = sides();
+        a.attempts.extend((0..20_000).map(|_| Attempt::Rejected));
+        let mut options = ProtocolOptions::new(SPT);
+        if let Some(c) = cap {
+            options.max_rejections = c;
+        }
+        let want = cap.unwrap_or(ProtocolOptions::MAX_REJECTIONS);
+        let mut p = Protocol::new(d, a, options);
+        let err = p.transient(1.0).expect_err("a step that never converges");
+        let text = err.to_string();
+        assert!(text.contains(&format!("{want} consecutive rejected attempts")), "{text}");
+        assert!(text.contains("from t = 0e0 s"), "the error names the instant it could not leave: {text}");
+        assert_eq!(attempts(&log).len(), want as usize);
+    }
+    // An acceptance resets the count.
+    let (log, d, mut a) = sides();
+    a.attempts.extend([Attempt::Rejected, Attempt::Rejected, Attempt::Converged, Attempt::Rejected, Attempt::Rejected]);
+    a.proposals.extend([1.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
+    let mut options = ProtocolOptions::new(SPT);
+    options.max_rejections = 3;
+    let mut p = Protocol::new(d, a, options);
+    assert_eq!(p.transient(2.0).unwrap(), Ended::StopTime);
+    assert_eq!(attempts(&log).len(), 6);
 }

@@ -128,7 +128,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 1. The protocol module SHALL reach the sub-solvers through the traits `DiscreteSide` and `AnalogSide` only, and SHALL name no item of `piperine-analog-solver` or `piperine-digital-solver`.
 2. WHEN the discrete side reports no landing before the proposed time THEN the protocol SHALL ask the analog side for one attempt to that time.
-3. WHEN the discrete side reports a landing before the proposed time THEN the protocol SHALL deliver that instant's boundary preview to the analog side and attempt a step to the landing, exempt from the truncation test when the preview changed a value.
+3. WHEN the discrete side reports a landing before the proposed time THEN the protocol SHALL deliver that instant's boundary preview to the analog side and attempt a step to the landing, exempt from the truncation test when the preview changed a value. *(Superseded by SAC-24, verification round 1: the user's order "ABI order: solve, then react". Kept as approved history.)*
 4. WHEN an attempt is rejected, or lands earlier than its target THEN the protocol SHALL restore both sides and the sink mark to the last accepted time and advance the discrete side again to the new target.
 5. WHEN an attempt is accepted THEN the protocol SHALL commit the fired crossings at microstep 0 of the landing, run the landing instant with the accepted samples, and ask for a restart when the instant changed a value the analog side reads.
 6. WHEN the change that caused a restart was a host write to a `PARAM` or `GLOBAL` net THEN the protocol SHALL ask for the small restart.
@@ -159,6 +159,38 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 3. `.specs/STATE.md` SHALL carry MD-61, and `CLAUDE.md` and `AGENTS.md` SHALL list the crate.
 
 **Independent Test**: `cargo test -p piperine-solver --test crate_boundaries --test workspace_shape` passes; adding `piperine-digital-solver` as a dependency of `piperine-analog-solver` makes it fail.
+
+---
+
+### P1: Verification round 1 fixes
+
+**User Story**: As the owner of the ABI, I want the findings of verification round 1 closed with requirements of their own, so that each fix has a criterion and a check.
+
+**Acceptance Criteria** (appended; approved ACs above are history):
+
+- **SAC-19** (1). IF a declared partial or its finite difference is not finite THEN `verify_partials` SHALL report it as a mismatch naming the partial (F7).
+
+- **SAC-20** (2). IF a list's stride is below its element's size or breaks its alignment, or its pointer is misaligned, THEN `List::get` SHALL read nothing and `validate` SHALL refuse the shape (`UnreadableList`) (F8).
+
+- **SAC-21** (3). The pointer fields of `Str`, `Bytes`, `List` and `Module` SHALL NOT be public; a view of foreign memory SHALL be built only through an `unsafe fn from_raw_parts`, so no safe accessor can reach undefined behaviour (F9).
+
+- **SAC-22** (4). No source of `piperine-abi` other than `raw.rs`, `thunk.rs` and `caller.rs` SHALL use `unsafe`, and a test SHALL scan for it (F11).
+
+- **SAC-23** (5). IF an event pin's layout is not empty, a continuous pin's layout is not one `F64`, a `check` is not a discrete pin holding a `BOOL` at byte 0, or a reaction reads `PREVIOUS` or `CHANGED` of a `QUIET` pin, THEN `validate` SHALL refuse the shape naming the rule and the entry; proven by rows of check C8 (F12).
+
+- **SAC-24** (6). WHEN a step lands on a scheduled instant THEN the protocol SHALL solve at that time on the value before the instant (the left value), exempt from the truncation test, accept, run the instant (its reactions read the solution at that time), and only then deliver what the instant changed (microstep 0 included) with the restart the next step starts from; user (solver-completeness context.md, 2026-11-15): "ABI order: solve, then react (Recommended)" (F1).
+
+- **SAC-25** (7). Every step of a transient SHALL end on the tick grid (a proposal is floored to a tick, at least one past the last acceptance; a located crossing lands on its nearest tick inside the step), and the instant run at a step's end SHALL be that tick's own (F2).
+
+- **SAC-26** (8). WHEN a reaction returns `FINISH` at the operating point THEN `operating_point` SHALL return `Ended::Finish` and a later `transient` SHALL run nothing and return the same end (F3).
+
+- **SAC-27** (9). IF consecutive attempts from one accepted time are rejected `max_rejections` times (default 64) THEN the transient SHALL fail with a run error naming that time; the step reduction of a rejection SHALL survive the analog side's `restore` (F4).
+
+- **SAC-28** (10). WHEN the host writes a net through `Protocol::set` between runs with the write due now THEN the protocol SHALL run the instant at the current time after the commit and deliver what it changed with `IntegratorSmall` after a param write (`Integrator` otherwise), and the next transient SHALL step forward with no zero-length step; proven by check C30 (F5).
+
+- **SAC-29** (11). WHEN the protocol runs an instant THEN it SHALL bound the `HORIZON` of a reaction a `CROSS` watch can reach by the current instant while the analog side has unknowns (by the stop time when it has none), and of any other reaction by the stop time (abi.md R5) (F6).
+
+- **SAC-30** (12). The sink SHALL receive trace records and observations as one stream in time order: a trace (even of a rejected attempt) is delivered once an acceptance reaches its time, before that time's instant observations (F13).
 
 ---
 
@@ -193,8 +225,20 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-16 | P1: Protocol, AC 9, 10, 11 (no analog, operating point, `E0506`) | Tasks | In Tasks |
 | SAC-17 | P1: Protocol, AC 12, 13 (the sink) | Tasks | In Tasks |
 | SAC-18 | P1: Protocol, AC 15 (host writes) | Tasks | In Tasks |
+| SAC-19 | P1: Verification round 1, AC 1 | Execute | Done |
+| SAC-20 | P1: Verification round 1, AC 2 | Execute | Done |
+| SAC-21 | P1: Verification round 1, AC 3 | Execute | Done |
+| SAC-22 | P1: Verification round 1, AC 4 | Execute | Done |
+| SAC-23 | P1: Verification round 1, AC 5 | Execute | Done |
+| SAC-24 | P1: Verification round 1, AC 6 | Execute | Done |
+| SAC-25 | P1: Verification round 1, AC 7 | Execute | Done |
+| SAC-26 | P1: Verification round 1, AC 8 | Execute | Done |
+| SAC-27 | P1: Verification round 1, AC 9 | Execute | Done |
+| SAC-28 | P1: Verification round 1, AC 10 | Execute | Done |
+| SAC-29 | P1: Verification round 1, AC 11 | Execute | Done |
+| SAC-30 | P1: Verification round 1, AC 12 | Execute | Done |
 
-**Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
+**Coverage:** 30 total (SAC-19 to SAC-30 from verification round 1), 30 mapped to tasks or checks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 
 ---
 

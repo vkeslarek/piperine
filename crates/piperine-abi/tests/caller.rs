@@ -106,7 +106,7 @@ fn handle_builds_the_frames_and_returns_results() {
     let g = 4.0f64.to_le_bytes();
     let mut h = Handle::create(amp_module(), &[(0, &g)]).expect("create");
     assert_eq!(h.shape().functions.len(), 3);
-    assert_eq!(h.module().name.as_str(), "amp");
+    assert_eq!(h.module().name().as_str(), "amp");
 
     let x = 1.5f64.to_le_bytes();
     let mut out = [0u8; 8];

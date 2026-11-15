@@ -160,11 +160,10 @@ fn worked_examples_produce_their_stated_values() {
 #[test]
 fn worked_examples_pass_validation() {
     for m in modules() {
-        // SAFETY: a module's prototype lives as long as its library (abi.md §12).
-        let proto = unsafe { &*m.prototype };
-        assert_eq!(validate(proto), Ok(()), "prototype of {}", m.name.as_str());
-        let h = Handle::create(m, &[]).unwrap_or_else(|e| panic!("create {}: {e}", m.name.as_str()));
-        assert_eq!(validate(h.shape()), Ok(()), "shape of {}", m.name.as_str());
+        let proto = m.prototype();
+        assert_eq!(validate(proto), Ok(()), "prototype of {}", m.name().as_str());
+        let h = Handle::create(m, &[]).unwrap_or_else(|e| panic!("create {}: {e}", m.name().as_str()));
+        assert_eq!(validate(h.shape()), Ok(()), "shape of {}", m.name().as_str());
     }
 }
 
@@ -182,7 +181,7 @@ fn worked_examples_pass_the_partials_verifier() {
     ];
     for (m, k, point) in cases {
         let h = Handle::create(m, &[]).unwrap();
-        assert_eq!(verify_partials(&h, k, &point, 1e-6), Ok(Verdict::Exact), "{} fn {k}", m.name.as_str());
+        assert_eq!(verify_partials(&h, k, &point, 1e-6), Ok(Verdict::Exact), "{} fn {k}", m.name().as_str());
     }
     // The diode's limiter at an active point is skipped, not compared.
     let d = Handle::create(m_d, &[]).unwrap();

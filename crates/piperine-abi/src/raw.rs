@@ -9,20 +9,27 @@ use core::mem::{align_of, size_of};
 
 // ─── Strings, bytes, lists ──────────────────────────────────────────────────
 
+// The three views below and `Module` keep their pointer fields private: a
+// value built in safe code (`from_static`, `from_slice`, `empty`, a
+// `ShapeBuf`, `module::<D>`) points where it says, and one built from foreign
+// memory goes through an `unsafe` constructor or an `unsafe` dereference of
+// the producer's pointer: that is the trust boundary, so the safe accessors
+// that read through them are sound.
+
 /// UTF-8 text owned by the producer.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Str {
-    pub ptr: *const u8,
-    pub len: usize,
+    pub(crate) ptr: *const u8,
+    pub(crate) len: usize,
 }
 
 /// Raw bytes owned by the producer.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Bytes {
-    pub ptr: *const u8,
-    pub len: usize,
+    pub(crate) ptr: *const u8,
+    pub(crate) len: usize,
 }
 
 /// A list whose elements lie `stride` bytes apart: the element size as the
@@ -31,9 +38,9 @@ pub struct Bytes {
 #[repr(C)]
 #[derive(Debug)]
 pub struct List<T> {
-    pub ptr: *const T,
-    pub len: usize,
-    pub stride: usize,
+    pub(crate) ptr: *const T,
+    pub(crate) len: usize,
+    pub(crate) stride: usize,
 }
 
 impl<T> Clone for List<T> {
@@ -67,6 +74,31 @@ impl Str {
         Str { ptr: s.as_ptr(), len: s.len() }
     }
 
+    /// A `Str` over foreign memory.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` is non-null and points to `len` bytes of UTF-8 that stay valid
+    /// and unchanged as long as the `Str` (or any copy) is read (abi.md §12).
+    pub const unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Str {
+        Str { ptr, len }
+    }
+
+    /// The pointer.
+    pub fn as_ptr(&self) -> *const u8 {
+        self.ptr
+    }
+
+    /// The length in bytes.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether the string is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// The bytes of the string.
     pub fn as_bytes(&self) -> &[u8] {
         if self.len == 0 {
@@ -92,6 +124,31 @@ impl Bytes {
         Bytes { ptr: b.as_ptr(), len: b.len() }
     }
 
+    /// A `Bytes` over foreign memory.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` is non-null and points to `len` bytes that stay valid and
+    /// unchanged as long as the `Bytes` (or any copy) is read (abi.md §12).
+    pub const unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Bytes {
+        Bytes { ptr, len }
+    }
+
+    /// The pointer.
+    pub fn as_ptr(&self) -> *const u8 {
+        self.ptr
+    }
+
+    /// The length in bytes.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether there are no bytes.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// The bytes.
     pub fn as_slice(&self) -> &[u8] {
         if self.len == 0 {
@@ -109,6 +166,28 @@ impl<T> List<T> {
         List { ptr: core::ptr::NonNull::<T>::dangling().as_ptr(), len: 0, stride: size_of::<T>() }
     }
 
+    /// A list over foreign memory, `stride` bytes apart.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` is non-null and `len` elements of at least `stride` bytes each
+    /// lie at `ptr + i * stride`, valid and unchanged as long as the list (or
+    /// any copy) is read (abi.md §3, §12). A stride below `size_of::<T>()` is
+    /// allowed here and refused by `is_readable`.
+    pub const unsafe fn from_raw_parts(ptr: *const T, len: usize, stride: usize) -> List<T> {
+        List { ptr, len, stride }
+    }
+
+    /// The pointer.
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr
+    }
+
+    /// The producer's element size.
+    pub fn stride(&self) -> usize {
+        self.stride
+    }
+
     /// A list over a slice, with this compilation's stride.
     pub const fn from_slice(items: &[T]) -> List<T> {
         if items.is_empty() {
@@ -117,15 +196,26 @@ impl<T> List<T> {
         List { ptr: items.as_ptr(), len: items.len(), stride: size_of::<T>() }
     }
 
-    /// Element `i`, read at `ptr + i * stride`; `None` past the end.
+    /// Whether this consumer can read the elements: the stride holds at least
+    /// a `T` and keeps its alignment, and the pointer is aligned. A producer of
+    /// an older minor (abi.md §12 "Versioning") may compile a smaller element;
+    /// such a list is refused, never read past its elements.
+    pub fn is_readable(&self) -> bool {
+        self.stride >= size_of::<T>()
+            && self.stride.is_multiple_of(align_of::<T>())
+            && (self.ptr as usize).is_multiple_of(align_of::<T>())
+    }
+
+    /// Element `i`, read at `ptr + i * stride`; `None` past the end or when the
+    /// list is not readable (`is_readable`).
     pub fn get(&self, i: usize) -> Option<&T> {
-        if i >= self.len {
+        if i >= self.len || !self.is_readable() {
             return None;
         }
         // SAFETY: abi.md §3 "stride = element size as the producer compiled it"
         // and §12 "Ownership": `len` elements lie `stride` bytes apart and live
-        // as long as the list's owner; the producer compiled at least the
-        // fields of `T` this version knows, so `T` is readable there.
+        // as long as the list's owner; `is_readable` checked that each holds a
+        // whole aligned `T`.
         unsafe { Some(&*self.ptr.cast::<u8>().add(i * self.stride).cast::<T>()) }
     }
 
@@ -174,15 +264,73 @@ pub type CommitFn =
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Module {
-    pub name: Str,
+    pub(crate) name: Str,
     /// The shape at default values: lists every `PARAM` pin, its layout, its default.
-    pub prototype: *const Shape,
+    pub(crate) prototype: *const Shape,
     /// The module's own data (an interpreter's IR, an OSDI descriptor).
-    pub data: *const c_void,
-    pub create: CreateFn,
-    pub destroy: DestroyFn,
-    pub eval: EvalFn,
-    pub react: ReactFn,
+    pub(crate) data: *const c_void,
+    pub(crate) create: CreateFn,
+    pub(crate) destroy: DestroyFn,
+    pub(crate) eval: EvalFn,
+    pub(crate) react: ReactFn,
+}
+
+impl Module {
+    /// A module from foreign parts (a library loaded by its symbol).
+    ///
+    /// # Safety
+    ///
+    /// `prototype` points to a valid `Shape` and the four functions keep the
+    /// contracts of abi.md §2 for as long as the module is used (§12: "The
+    /// library and its prototypes live until the process ends").
+    pub const unsafe fn from_raw_parts(
+        name: Str,
+        prototype: *const Shape,
+        data: *const c_void,
+        create: CreateFn,
+        destroy: DestroyFn,
+        eval: EvalFn,
+        react: ReactFn,
+    ) -> Module {
+        Module { name, prototype, data, create, destroy, eval, react }
+    }
+
+    pub fn name(&self) -> &Str {
+        &self.name
+    }
+
+    /// The prototype shape.
+    pub fn prototype(&self) -> &Shape {
+        // SAFETY: abi.md §12 "The library and its prototypes live until the
+        // process ends"; a `Module` is built only by `module::<D>` or the
+        // `unsafe` `from_raw_parts`, both of which keep `prototype` valid.
+        unsafe { &*self.prototype }
+    }
+
+    /// The prototype pointer, as the C entry `create` receives it.
+    pub fn prototype_ptr(&self) -> *const Shape {
+        self.prototype
+    }
+
+    pub fn data(&self) -> *const c_void {
+        self.data
+    }
+
+    pub fn create(&self) -> CreateFn {
+        self.create
+    }
+
+    pub fn destroy(&self) -> DestroyFn {
+        self.destroy
+    }
+
+    pub fn eval(&self) -> EvalFn {
+        self.eval
+    }
+
+    pub fn react(&self) -> ReactFn {
+        self.react
+    }
 }
 
 // SAFETY: abi.md §12 "The library and its prototypes live until the process
@@ -653,4 +801,181 @@ pub fn pod_bytes<T: Pod>(value: &T) -> &[u8] {
     // SAFETY: abi.md §12: a `Pod` has no padding, so all `size_of::<T>()`
     // bytes behind `value` are initialized.
     unsafe { core::slice::from_raw_parts((value as *const T).cast::<u8>(), size_of::<T>()) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::mem::offset_of;
+
+    /// One struct of the table: its measured size and alignment against the C
+    /// layout, and each field's measured offset against the expected one.
+    fn check(name: &str, size: (usize, usize), align: (usize, usize), fields: &[(&str, usize, usize)]) {
+        assert_eq!(size.0, size.1, "size_of::<{name}>()");
+        assert_eq!(align.0, align.1, "align_of::<{name}>()");
+        for (field, got, want) in fields {
+            assert_eq!(got, want, "offset of {name}.{field}");
+        }
+    }
+    
+    #[test]
+    fn struct_layouts_match_the_abi() {
+        assert_eq!(size_of::<usize>(), 8, "the table is for a 64-bit target");
+    
+        check("Str", (size_of::<Str>(), 16), (align_of::<Str>(), 8), &[
+            ("ptr", offset_of!(Str, ptr), 0),
+            ("len", offset_of!(Str, len), 8),
+        ]);
+        check("Bytes", (size_of::<Bytes>(), 16), (align_of::<Bytes>(), 8), &[
+            ("ptr", offset_of!(Bytes, ptr), 0),
+            ("len", offset_of!(Bytes, len), 8),
+        ]);
+        check("List", (size_of::<List<Pin>>(), 24), (align_of::<List<Pin>>(), 8), &[
+            ("ptr", offset_of!(List<Pin>, ptr), 0),
+            ("len", offset_of!(List<Pin>, len), 8),
+            ("stride", offset_of!(List<Pin>, stride), 16),
+        ]);
+        check("Library", (size_of::<Library>(), 64), (align_of::<Library>(), 8), &[
+            ("size", offset_of!(Library, size), 0),
+            ("minor", offset_of!(Library, minor), 4),
+            ("name", offset_of!(Library, name), 8),
+            ("build", offset_of!(Library, build), 24),
+            ("modules", offset_of!(Library, modules), 40),
+        ]);
+        check("Module", (size_of::<Module>(), 64), (align_of::<Module>(), 8), &[
+            ("name", offset_of!(Module, name), 0),
+            ("prototype", offset_of!(Module, prototype), 16),
+            ("data", offset_of!(Module, data), 24),
+            ("create", offset_of!(Module, create), 32),
+            ("destroy", offset_of!(Module, destroy), 40),
+            ("eval", offset_of!(Module, eval), 48),
+            ("react", offset_of!(Module, react), 56),
+        ]);
+        check("Value", (size_of::<Value>(), 24), (align_of::<Value>(), 8), &[
+            ("pin", offset_of!(Value, pin), 0),
+            ("bytes", offset_of!(Value, bytes), 8),
+        ]);
+        check("Created", (size_of::<Created>(), 24), (align_of::<Created>(), 8), &[
+            ("status", offset_of!(Created, status), 0),
+            ("instance", offset_of!(Created, instance), 8),
+            ("shape", offset_of!(Created, shape), 16),
+        ]);
+        check("Instance", (size_of::<Instance>(), 0), (align_of::<Instance>(), 1), &[]);
+        check("Note", (size_of::<Note>(), 256), (align_of::<Note>(), 4), &[
+            ("code", offset_of!(Note, code), 0),
+            ("len", offset_of!(Note, len), 4),
+            ("text", offset_of!(Note, text), 8),
+        ]);
+        check("Shape", (size_of::<Shape>(), 152), (align_of::<Shape>(), 8), &[
+            ("size", offset_of!(Shape, size), 0),
+            ("pins", offset_of!(Shape, pins), 8),
+            ("terms", offset_of!(Shape, terms), 32),
+            ("inputs", offset_of!(Shape, inputs), 56),
+            ("watches", offset_of!(Shape, watches), 80),
+            ("functions", offset_of!(Shape, functions), 104),
+            ("reactions", offset_of!(Shape, reactions), 128),
+        ]);
+        check("Pin", (size_of::<Pin>(), 136), (align_of::<Pin>(), 8), &[
+            ("name", offset_of!(Pin, name), 0),
+            ("origin", offset_of!(Pin, origin), 16),
+            ("kind", offset_of!(Pin, kind), 32),
+            ("role", offset_of!(Pin, role), 36),
+            ("global", offset_of!(Pin, global), 40),
+            ("flags", offset_of!(Pin, flags), 44),
+            ("layout", offset_of!(Pin, layout), 48),
+            ("unit", offset_of!(Pin, unit), 80),
+            ("init", offset_of!(Pin, init), 96),
+            ("check", offset_of!(Pin, check), 112),
+            ("abstol", offset_of!(Pin, abstol), 120),
+        ]);
+        check("Layout", (size_of::<Layout>(), 32), (align_of::<Layout>(), 8), &[
+            ("size", offset_of!(Layout, size), 0),
+            ("align", offset_of!(Layout, align), 4),
+            ("fields", offset_of!(Layout, fields), 8),
+        ]);
+        check("Field", (size_of::<Field>(), 40), (align_of::<Field>(), 8), &[
+            ("name", offset_of!(Field, name), 0),
+            ("leaf", offset_of!(Field, leaf), 16),
+            ("offset", offset_of!(Field, offset), 20),
+            ("count", offset_of!(Field, count), 24),
+            ("flags", offset_of!(Field, flags), 28),
+            ("known", offset_of!(Field, known), 32),
+        ]);
+        check("Term", (size_of::<Term>(), 56), (align_of::<Term>(), 8), &[
+            ("name", offset_of!(Term, name), 0),
+            ("origin", offset_of!(Term, origin), 16),
+            ("op", offset_of!(Term, op), 32),
+            ("plus", offset_of!(Term, plus), 36),
+            ("minus", offset_of!(Term, minus), 40),
+            ("abstol", offset_of!(Term, abstol), 44),
+            ("max", offset_of!(Term, max), 48),
+        ]);
+        check("Input", (size_of::<Input>(), 40), (align_of::<Input>(), 8), &[
+            ("name", offset_of!(Input, name), 0),
+            ("origin", offset_of!(Input, origin), 16),
+            ("kind", offset_of!(Input, kind), 32),
+        ]);
+        check("Watch", (size_of::<Watch>(), 88), (align_of::<Watch>(), 8), &[
+            ("name", offset_of!(Watch, name), 0),
+            ("origin", offset_of!(Watch, origin), 16),
+            ("kind", offset_of!(Watch, kind), 32),
+            ("layout", offset_of!(Watch, layout), 40),
+            ("event", offset_of!(Watch, event), 72),
+            ("ttol", offset_of!(Watch, ttol), 76),
+            ("etol", offset_of!(Watch, etol), 80),
+        ]);
+        check("Cell", (size_of::<Cell>(), 12), (align_of::<Cell>(), 4), &[
+            ("kind", offset_of!(Cell, kind), 0),
+            ("index", offset_of!(Cell, index), 4),
+            ("part", offset_of!(Cell, part), 8),
+        ]);
+        check("Partial", (size_of::<Partial>(), 16), (align_of::<Partial>(), 4), &[
+            ("write", offset_of!(Partial, write), 0),
+            ("to", offset_of!(Partial, to), 4),
+            ("read", offset_of!(Partial, read), 8),
+            ("at", offset_of!(Partial, at), 12),
+        ]);
+        check("Function", (size_of::<Function>(), 112), (align_of::<Function>(), 8), &[
+            ("name", offset_of!(Function, name), 0),
+            ("origin", offset_of!(Function, origin), 16),
+            ("flags", offset_of!(Function, flags), 32),
+            ("reads", offset_of!(Function, reads), 40),
+            ("writes", offset_of!(Function, writes), 64),
+            ("partials", offset_of!(Function, partials), 88),
+        ]);
+        check("Reaction", (size_of::<Reaction>(), 112), (align_of::<Reaction>(), 8), &[
+            ("name", offset_of!(Reaction, name), 0),
+            ("origin", offset_of!(Reaction, origin), 16),
+            ("flags", offset_of!(Reaction, flags), 32),
+            ("on", offset_of!(Reaction, on), 40),
+            ("reads", offset_of!(Reaction, reads), 64),
+            ("writes", offset_of!(Reaction, writes), 88),
+        ]);
+        check("Statement", (size_of::<Statement>(), 24), (align_of::<Statement>(), 8), &[
+            ("pin", offset_of!(Statement, pin), 0),
+            ("offset", offset_of!(Statement, offset), 4),
+            ("len", offset_of!(Statement, len), 8),
+            ("flags", offset_of!(Statement, flags), 12),
+            ("min_after", offset_of!(Statement, min_after), 16),
+        ]);
+        check("Eval", (size_of::<Eval>(), 48), (align_of::<Eval>(), 8), &[
+            ("size", offset_of!(Eval, size), 0),
+            ("input", offset_of!(Eval, input), 8),
+            ("output", offset_of!(Eval, output), 16),
+            ("seed", offset_of!(Eval, seed), 24),
+            ("jac", offset_of!(Eval, jac), 32),
+            ("note", offset_of!(Eval, note), 40),
+        ]);
+        check("React", (size_of::<React>(), 40), (align_of::<React>(), 8), &[
+            ("size", offset_of!(React, size), 0),
+            ("input", offset_of!(React, input), 8),
+            ("host", offset_of!(React, host), 16),
+            ("host_data", offset_of!(React, host_data), 24),
+            ("note", offset_of!(React, note), 32),
+        ]);
+        check("Host", (size_of::<Host>(), 16), (align_of::<Host>(), 8), &[
+            ("size", offset_of!(Host, size), 0),
+            ("commit", offset_of!(Host, commit), 8),
+        ]);
+    }
 }

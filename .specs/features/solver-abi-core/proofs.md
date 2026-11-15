@@ -1,9 +1,9 @@
 # solver-abi-core proofs
 
-**HEAD**: 60a542da
+**HEAD**: 1fedaa8d
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 41 pass, 0 fail
+**Result**: 51 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -33,7 +33,7 @@
 | C24 | `run guards / test instruction_files_and_state_name_the_abi_crate ... ok` | pass |
 | C25 | `run owner / test the_protocol_module_names_no_sub_solver_item ... ok` | pass |
 | C26 | `run owner / test no_landing_means_one_attempt_to_the_proposed_time ... ok` | pass |
-| C27 | `run owner / test a_landing_delivers_its_preview_before_the_attempt ... ok` | pass |
+| C27 | `run owner / test a_landing_is_solved_on_the_left_value_then_its_instant_runs ... ok` | pass |
 | C28 | `run owner / test a_rejected_attempt_restores_both_sides_and_replays ... ok` | pass |
 | C29 | `run owner / test acceptance_fires_crossings_runs_the_instant_and_asks_for_restart ... ok` | pass |
 | C30 | `run owner / test a_host_param_write_asks_for_the_small_restart ... ok` | pass |
@@ -46,6 +46,16 @@
 | C37 | `run owner / test an_undone_instant_delivers_nothing ... ok` | pass |
 | C38 | `run owner / test a_host_waiter_runs_once_and_its_writes_are_due_next_microstep ... ok` | pass |
 | C39 | `run owner / test a_write_is_committed_only_after_the_shadow_accepts ... ok` | pass |
+| C40 | `run abi / test a_non_finite_partial_is_a_mismatch ... ok` | pass |
+| C41 | `run abi / test a_list_whose_stride_is_below_its_element_is_refused ... ok` | pass |
+| C42 | `run abi / test raw_views_have_no_public_pointer_field ... ok` | pass |
+| C43 | `run abi / test no_unsafe_outside_raw_thunk_and_caller ... ok` | pass |
+| C44 | `run owner / test a_landing_is_solved_on_the_left_value_then_its_instant_runs ... ok` | pass |
+| C45 | `run owner / test an_off_grid_step_lands_on_the_tick_grid ... ok` | pass |
+| C46 | `run owner / test finish_at_the_operating_point_ends_the_run ... ok` | pass |
+| C47 | `run owner / test consecutive_rejections_beyond_the_cap_fail_loud ... ok` | pass |
+| C48 | `run owner / test irreversible_reactions_are_bounded_by_the_current_instant ... ok` | pass |
+| C49 | `run owner / test traces_reach_the_sink_in_time_order ... ok` | pass |
 | Build | `cargo build -p piperine-abi --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 | Build | `cargo build -p piperine-solver --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 
@@ -54,11 +64,11 @@
 `Run abi` - exit 0
 
 ```
-running 0 tests
-
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+    Blocking waiting for file lock on build directory
+   Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-abi)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.88s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_abi-e7348cb5af0292bb)
      Running tests/caller.rs (/var/tmp/piperine-target/debug/deps/caller-e0f20ffd0203eae0)
      Running tests/contract.rs (/var/tmp/piperine-target/debug/deps/contract-e6058296f0975f1a)
@@ -74,19 +84,19 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run guards` - exit 0
 
 ```
-test hygiene_guard_lives_in_piperine_lang ... ok
 test retired_crates_are_gone ... ok
 test no_manifest_names_a_retired_crate ... ok
-test instructions_list_the_kept_crates ... ok
 test solver_manifest_has_no_in_tree_dev_dependency ... ok
-test root_tests_hold_no_end_to_end_target ... ok
-test instruction_files_and_state_name_the_abi_crate ... ok
+test instructions_list_the_kept_crates ... ok
 test workflows_name_no_retired_crate ... ok
 test state_records_the_solver_structure_decision ... ok
+test root_tests_hold_no_end_to_end_target ... ok
+test instruction_files_and_state_name_the_abi_crate ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+   Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-solver)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
      Running tests/crate_boundaries.rs (/var/tmp/piperine-target/debug/deps/crate_boundaries-0c5174e643cd6c6a)
      Running tests/workspace_shape.rs (/var/tmp/piperine-target/debug/deps/workspace_shape-4e1a2c802e20ae74)
 ```

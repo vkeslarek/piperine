@@ -183,3 +183,6 @@ User: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida o
 ## Orchestrator note (2026-11-15)
 
 User decided the order at a scheduled instant: "ABI order: solve, then react (Recommended)" - reactions at t read the analog solution at t; the kept discontinuity handling (landing exempt, restart, 1e-3) stays.
+## User answer (2026-11-15): order at a scheduled instant
+
+User: "ABI order: solve, then react (Recommended)" - reactions at t read the analog solution at t (left value); the kept discontinuity handling stays.

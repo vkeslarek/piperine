@@ -36,7 +36,8 @@ fn f64_at(bytes: &[u8], at: u32) -> f64 {
 /// `input` (the bytes of each read cell). A partial passes when
 /// `|declared − finite| ≤ rel_tol · max(|declared|, |finite|)` plus the
 /// central difference's own round-off, `4 ε · max(|f(x+h)|, |f(x−h)|) / 2h`.
-/// The step is `h = 1e-6 · max(1, |x|)`.
+/// The step is `h = 1e-6 · max(1, |x|)`. A non-finite declared value or
+/// finite difference is a mismatch, never a pass.
 /// A function that faults at the point returns its `CallError`.
 pub fn verify_partials(handle: &Handle, k: u32, input: &[Vec<u8>], rel_tol: f64) -> Result<Verdict, CallError> {
     let shape = handle.shape();
@@ -91,7 +92,8 @@ pub fn verify_partials(handle: &Handle, k: u32, input: &[Vec<u8>], rel_tol: f64)
         let finite = (fp - fm) / (xp - xm);
         let declared = jac[i];
         let roundoff = 4.0 * f64::EPSILON * fp.abs().max(fm.abs()) / (xp - xm);
-        if (declared - finite).abs() > rel_tol * declared.abs().max(finite.abs()) + roundoff {
+        let off = (declared - finite).abs() > rel_tol * declared.abs().max(finite.abs()) + roundoff;
+        if off || !declared.is_finite() || !finite.is_finite() {
             mismatches.push(Mismatch { partial: i as u32, declared, finite });
         }
     }
