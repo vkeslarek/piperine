@@ -369,7 +369,7 @@ T22 → T23 → T24 → T25
 **Done when**:
 
 - [x] Test `a_clock_nothing_analog_reads_adds_no_step` compares accepted step counts of an RC transient with and without a free-running `Timer`
-- [x] Test `a_boundary_change_is_read_by_the_arriving_step_and_restarts_the_next` passes with a timer driving the DAC of abi.md §11.6: the solution at the landing uses the new code, the landing is exempt from `trtol`, the next stage runs with `prev_h = 0` — **superseded** by the user's order "ABI order: solve, then react (Recommended)": the landing is solved on the old code, the next step reads the new one and is exempt; the test asserts that
+- [x] Test `a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next` passes with a timer driving the DAC of abi.md §11.6: the solution at the landing uses the new code, the landing is exempt from `trtol`, the next stage runs with `prev_h = 0` — **superseded** by the user's order "ABI order: solve, then react (Recommended)": the landing is solved on the old code, the next step reads the new one and is exempt; the test asserts that
 - [x] Test `a_rejected_step_leaves_no_trace` forces an LTE rejection and a Newton failure and compares the digital checkpoint, the assembly snapshot and the replayed instants
 - [x] Test `a_design_without_analog_runs_every_instant_with_no_solve` passes
 - [x] Test `a_commit_due_after_the_stop_time_stays_pending` and test `settle_fires_at_the_stop_time` pass
@@ -702,8 +702,8 @@ Proof: run solver | test a_pin_abstol_tightens_its_node ... ok
 **C5** - A clock nothing analog reads adds no analog step (SAI-02, Protocol AC 5)
 Proof: run solver | test a_clock_nothing_analog_reads_adds_no_step ... ok
 
-**C6** - A boundary change due at microstep 0 is read by the arriving step, which is exempt from the truncation test, and the next step restarts (SAI-03, Protocol AC 6)
-Proof: run solver | test a_boundary_change_is_read_by_the_arriving_step_and_restarts_the_next ... ok
+**C6** - A boundary change due at microstep 0 of a landing is not read by the step that arrives there, which is solved on the value before the instant (the left value); the instant runs, the change is delivered after it, and the next step restarts the integrator, exempt from the truncation test (SAI-03, Protocol AC 6 as superseded by the user's order "solve, then react")
+Proof: run solver | test a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next ... ok
 
 **C7** - A rejected or shortened step leaves store, queue, sink buffer and histories unchanged and replays the instants (SAI-04, Protocol AC 7)
 Proof: run solver | test a_rejected_step_leaves_no_trace ... ok

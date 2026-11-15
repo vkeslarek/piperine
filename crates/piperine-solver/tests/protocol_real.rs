@@ -84,7 +84,7 @@ fn a_clock_nothing_analog_reads_adds_no_step() {
 }
 
 #[test]
-fn a_boundary_change_is_read_by_the_arriving_step_and_restarts_the_next() {
+fn a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next() {
     // The timer drives the DAC's code HIGH at 1 µs; the DAC drives `o`, which
     // charges `c` through 1 kΩ into 1 nF. The user's order (2026-11-15): the step
     // arriving at 1 µs is solved on the value before the instant (code LOW), the
