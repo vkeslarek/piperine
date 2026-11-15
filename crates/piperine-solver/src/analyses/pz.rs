@@ -134,7 +134,7 @@ impl<'a> PoleZeroSolver<'a> {
         };
 
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
-        let g = Self::assemble_g(circuit, &dc_point, &context, size);
+        let g = Self::assemble_g(circuit, &dc_point, &context, size)?;
         let c = Self::assemble_c(circuit, &dc_point, &context, size)?;
 
         Ok(Self { circuit, size, g, c, input_ref, output_ref, output_ref_node })
@@ -261,7 +261,7 @@ impl<'a> PoleZeroSolver<'a> {
         dc_point: &DcAnalysisResult,
         context: &Context,
         size: usize,
-    ) -> Array2<f64> {
+    ) -> crate::core::result::Result<Array2<f64>> {
         let netlist = circuit.netlist();
         let dc_values_iv = netlist.initial_values(dc_point.values());
         let mut dc_state_array = ndarray::Array1::zeros(size);
@@ -285,22 +285,14 @@ impl<'a> PoleZeroSolver<'a> {
                 source_scale: 1.0,
             };
             let op = state.latest().map(|r| r.to_vec()).unwrap_or_default();
-            match bound.analog.assemble_dc(&op, amb) {
-                Ok(stamps) => {
-                    for stamp in stamps {
-                        if let Stamp::Matrix(r, c, val) = stamp
-                            && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
-                        {
-                            g[[ri, ci]] += val;
-                        }
-                    }
+            for stamp in bound.analog.assemble_dc(&op, amb)? {
+                if let Stamp::Matrix(r, c, val) = stamp
+                    && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
+                {
+                    g[[ri, ci]] += val;
                 }
-                // The caller has no error channel here; a device that cannot be evaluated at
-                // the operating point the DC solve just converged at poisons the pencil, which
-                // the eigen solve then refuses.
-                Err(_) => g.fill(f64::NAN),
             }
-            return g;
+            return Ok(g);
         }
         let CircuitInstance { devices, digital_state, .. } = &mut *circuit;
         let dc_state = DcAnalysisState::new(&state, &digital_state.nets, 1.0);
@@ -313,7 +305,7 @@ impl<'a> PoleZeroSolver<'a> {
                 }
             }
         }
-        g
+        Ok(g)
     }
 
     /// One AC probe: collects every device's `load_ac` matrix stamps at
@@ -324,7 +316,7 @@ impl<'a> PoleZeroSolver<'a> {
         omega: f64,
         context: &Context,
         size: usize,
-    ) -> Array2<Complex<f64>> {
+    ) -> crate::core::result::Result<Array2<Complex<f64>>> {
         let ac_ctx = AcAnalysisContext { frequency: omega / (2.0 * std::f64::consts::PI) };
         let mut y = Array2::<Complex<f64>>::zeros((size, size));
         if circuit.abi.is_some() {
@@ -337,19 +329,14 @@ impl<'a> PoleZeroSolver<'a> {
                 source_scale: 1.0,
             };
             let bound = circuit.abi.as_mut().expect("a circuit of devices");
-            match bound.analog.assemble_ac(&op, amb) {
-                Ok((matrix, _)) => {
-                    for stamp in matrix {
-                        if let Stamp::Matrix(r, c, val) = stamp
-                            && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
-                        {
-                            y[[ri, ci]] += val;
-                        }
-                    }
+            for stamp in bound.analog.assemble_ac(&op, amb)?.0 {
+                if let Stamp::Matrix(r, c, val) = stamp
+                    && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
+                {
+                    y[[ri, ci]] += val;
                 }
-                Err(_) => y.fill(Complex::new(f64::NAN, f64::NAN)),
             }
-            return y;
+            return Ok(y);
         }
         for dev in circuit.devices.iter_mut() {
             for stamp in dev.load_ac(dc_point, &ac_ctx, context) {
@@ -360,7 +347,7 @@ impl<'a> PoleZeroSolver<'a> {
                 }
             }
         }
-        y
+        Ok(y)
     }
 
     /// `C = Im(Y(jω0))/ω0`, guarded by a second probe at `ω1` (PZ-06): every
@@ -375,8 +362,8 @@ impl<'a> PoleZeroSolver<'a> {
     ) -> crate::core::result::Result<Array2<f64>> {
         let omega0 = 1.0;
         let omega1 = 2.0;
-        let y0 = Self::assemble_y(circuit, dc_point, omega0, context, size);
-        let y1 = Self::assemble_y(circuit, dc_point, omega1, context, size);
+        let y0 = Self::assemble_y(circuit, dc_point, omega0, context, size)?;
+        let y1 = Self::assemble_y(circuit, dc_point, omega1, context, size)?;
 
         let mut c = Array2::<f64>::zeros((size, size));
         for i in 0..size {
@@ -531,7 +518,7 @@ mod tests {
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
         assert_eq!(size, 2);
 
-        let g = PoleZeroSolver::assemble_g(&mut circuit, &dc_point, &context, size);
+        let g = PoleZeroSolver::assemble_g(&mut circuit, &dc_point, &context, size).expect("devices evaluate");
         let c = PoleZeroSolver::assemble_c(&mut circuit, &dc_point, &context, size).expect("linear AC stamps");
 
         let i_in = n_in.idx().unwrap();
