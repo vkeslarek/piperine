@@ -284,3 +284,22 @@ VS Code extension productization, marketplace packaging, release/versioning —
 ## M1 follow-ups
 
 - **A child's own signals show as `gnd` in the authored `Child` (msl-elab).** `Child::nodes` is padded with `Ground` for each signal of the placed module because `Terminal` cannot name the child's own node; the instance table carries the real one. Needs a `Terminal::Own` in `piperine-ir` (and `Ir::check` to accept it). No M1 device has a signal.
+
+## MSL spec gaps (spec text owed)
+
+Found by the buck prototype (`examples/buck/GAPS.md`). Each has a provisional rule so work is not blocked; the spec sentence is still owed.
+
+- **G4 - float to `UInt<N>`/`Int<N>` with `as`.** Provisional (ir-rust): saturate to the N-bit range, NaN to 0. Spec Part I §1 rule 1 says "truncates or extends, as in Rust", which is ambiguous for non-Rust widths.
+- **G5 - shift by N or more.** Provisional (ir-rust): mathematical result truncated to N bits (0 for `<<` and unsigned `>>`, sign fill for signed `>>`). No spec rule.
+- **G3 - Appendix H method on a carrier receiver left `Unresolved` with no diagnostic** (`oc_count.saturating_add(1)` on a `Bit<u4>`). Front-end bug in `pom/resolve/members.rs`; `msl-typeck` should link it or report it.
+- **G1 fixed-point type, G2 ranged integer.** Language proposals, not bugs; schedule on demand.
+
+## Queue after ir-rust (user, 2026-11-15)
+
+User, verbatim: "Depois desses desenvolvimentos do ir -> transpilation -> abi eu preciso que tu coloque na fila acertar o CLI, project para poder rodar algo completo. Aí em seguida gostaria de e2e test fixtures, com paridade ngspice. [...] Aí deixamos os e2e em um lugar só, no root, para testar um monte de cenários".
+
+1. **`ir-rust`** (M3, in progress on `feature/ir-rust`): phase A analog, then phase B digital/mixed buck slice.
+2. **CLI + project, run something complete.** `piperine-cli` and `piperine-project` are back in the default build and speak MSL: `Piperine.toml` discovery, `piperine check` / `build` / `run` on an MSL project (e.g. `examples/buck`, the ngspice twins), backend choice (interpreter or transpiled), analyses and results out of the CLI. Today both crates are outside `default-members`.
+3. **Root e2e fixtures with ngspice parity.** One place, root `tests/e2e/`: many scenarios, each an MSL project (or file) + its `.cir` twin + expected outputs, run through the same entry point a user runs (the CLI / project path), compared with ngspice through the single `ToleranceContract`. The current `tests/ngspice/` twins move under it; `piperine-parity` stays the harness.
+4. **M2** - digital and mixed on the transpiler path (galleries E/F, conformance C.2.3, the buck from `.msl`).
+

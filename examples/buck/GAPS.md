@@ -50,3 +50,18 @@ where it matters.
 - **Needed by:** SPEC §4.1 (the ADC code).
 - **Instead:** the ADC clamps to 0.0 to 1023.0 before the cast, so the result is the same under
   either reading.
+- **Provisional rule (ir-rust, 2026-11-15):** the transpiler saturates to the N-bit range and
+  maps NaN to 0, as Rust does for its own integer types. This is a default chosen to unblock
+  `ir-rust`, not spec text: Part I §1 rule 1 still needs a sentence that fixes it.
+
+## G5. A shift by N or more bits
+
+- **Wanted:** a statement of what `x << s` and `x >> s` do on a `UInt<N>`/`Int<N>` when
+  `s >= N`. Rust panics in debug and masks the shift amount in release; neither is acceptable
+  for a language whose arithmetic wraps the same way in every build (Part I §1 rules 5 and 6).
+- **Needed by:** SPEC §6.3 (the Q4 shifts of the PID) only in principle; the model's shift
+  amounts are constants below the width.
+- **Provisional rule (ir-rust, 2026-11-15):** the mathematical result truncated to N bits, so
+  `<<` by N or more gives 0, `>>` on an unsigned value gives 0, and `>>` on a signed value gives
+  the sign fill. Spec text still needed.
+
