@@ -361,7 +361,7 @@ Proof: `cargo test -p piperine-lang`
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** B1 at dd805f01 - returned (T1-T7 ae9ae5ae..90693bba; gap: gmin/source_scale not in POM builtin table)
+**Dispatched:** B1 at dd805f01 - returned (T1-T7 ae9ae5ae..90693bba; gap: gmin/source_scale not in POM builtin table); B2 (T8-T11, Sonnet) at 7ff301da
 **Settled mid-build:** gmin()/source_scale() become POM built-in rows (builtin.rs + docs/pom/resolution.md) in B2 so a model calling them resolves and redefining them is E0457 (orchestrator)
 **Walked:** not applicable - no screen
 
