@@ -1,5 +1,7 @@
 # Solver ABI Integration Specification
 
+**Approved**: 2026-11-15 - user: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida ok?"
+
 Last of four features that make the solver adopt the device ABI (`.specs/features/device-abi/abi.md`, the authority): `solver-abi-core`, then `solver-abi-digital` and `solver-abi-analog` in parallel, then `solver-abi-integration` (this one). It starts when the two parallel branches are merged.
 
 ## Problem Statement

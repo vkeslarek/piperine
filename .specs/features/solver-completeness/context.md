@@ -169,3 +169,13 @@ User's words: "lang-server é bom ficar... cli também mas ambos vão ter sua pr
 | The element contract | the device ABI (`.specs/features/device-abi/abi.md`); amendments 1, 2, 3a, 4, 6, 8, 9 accepted, 3b not now, 5 and 7 withdrawn | `Element` is replaced; feature B (`solver-event-boundary`) is replaced by the `solver-abi-*` features |
 | Split | `spec-abi-amendments` (docs); `solver-abi-core` (the crate `piperine-abi` and the owner protocol); `solver-abi-digital` and `solver-abi-analog` in parallel in separate worktrees, neither touching the other's crate; `solver-abi-integration` (the owner wires both, test devices and mixed tests ported) | five feature directories; see the umbrella's "After the device ABI" |
 | Model roles | Sonnet implements and Opus verifies by default; a feature that is delicate and not large is implemented by Opus and verified by a different Opus; the orchestrator decides | supersedes the round-2 row "Opus implements, Fable verifies" above |
+
+## Orchestrator decisions under the user's go-ahead (2026-11-15)
+
+User: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida ok?" and "vamos fazer a impl via Sonnet e verifier em Opus mas quando a feature é muito delicada e não grande, pode lançar direto um Opus. Eu deixo a decisão do que é delicado para ti."
+
+| Item | Decision |
+| ---- | -------- |
+| MD-61: `piperine-abi` sits under all three solver crates | yes - it is the shared contract the ABI defines; amends MD-60's "no in-tree crate under a sub-solver" |
+| ~60 tests whose whole subject is deleted (strength table, LogicValue, seq/comb, EventQueue, capability flags, bypass) | removed by name into removed.txt under Q3 ("o que precisar apagar, pode apagar") |
+| Roles | amendments: Sonnet/Opus; core: Opus implements (protocol, the contract everything uses); digital: Sonnet/Opus; analog: Opus implements (numeric, small); integration: Sonnet/Opus (large) |

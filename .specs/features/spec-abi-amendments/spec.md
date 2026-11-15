@@ -1,5 +1,7 @@
 # Spec ABI Amendments Specification
 
+**Approved**: 2026-11-15 - user: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida ok?"
+
 ## Problem Statement
 
 The device ABI (`.specs/features/device-abi/abi.md`) and the kept solver algorithm disagree with ten places of `docs/spec/`. The user accepted seven ABI amendments (abi.md §15: 1, 2, 3a, 4, 6, 8, 9) and three solver ones (§15.2, Appendix C.2, §17.1.2 describe the solver's present discontinuity algorithm and tolerance mapping). None has been written. Until they are, the specification states a time-point rule, a jump solve and a residual test that no code will implement.

@@ -1,5 +1,7 @@
 # Solver ABI Analog Specification
 
+**Approved**: 2026-11-15 - user: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida ok?"
+
 One of four features that make the solver adopt the device ABI (`.specs/features/device-abi/abi.md`, the authority): `solver-abi-core`, then `solver-abi-digital` and `solver-abi-analog` (this one) in parallel, then `solver-abi-integration`. This feature edits `crates/piperine-analog-solver` only, so it runs in its own worktree beside `solver-abi-digital`.
 
 ## Problem Statement

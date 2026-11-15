@@ -1,5 +1,7 @@
 # Solver ABI Core Specification
 
+**Approved**: 2026-11-15 - user: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida ok?"
+
 First of four features that make the solver adopt the device ABI (`.specs/features/device-abi/abi.md`, the authority). Order: `solver-abi-core` (this one: the crate `piperine-abi` and the owner's protocol on two traits), then `solver-abi-digital` and `solver-abi-analog` in parallel (each sub-solver on the ABI, in its own crate and worktree), then `solver-abi-integration` (the owner wires both, the tests are ported, `Element` is removed). Together they replace feature B (`solver-event-boundary`) of `solver-completeness`.
 
 ## Problem Statement
