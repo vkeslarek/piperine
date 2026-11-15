@@ -130,3 +130,51 @@ fn a_where_is_recorded_over_the_body_params() {
     let check = body.params()[0].check.expect("a recorded condition");
     assert!(matches!(ir.expr(check), piperine_ir::Expr::Binary { lhs, .. } if matches!(ir.expr(*lhs), piperine_ir::Expr::Param(0))));
 }
+
+const LEAF: &str = "module Leaf(p: Electrical) { a: f64 = 3.0; b: f64 = 4.0; }\n";
+
+#[test]
+fn an_unset_param_takes_its_default() {
+    let src = format!("{LEAF}module Top() {{ signal n: Electrical; let l = Leaf {{ b: 5.0 }}(n); let m = Leaf {{ }}(n); }}");
+    let ir = Elab::ir(&src, "Top");
+    let values = |path: &str| ir.instance_at(path).expect("the instance").params().iter().map(|c| c.to_string()).collect::<Vec<_>>();
+    assert_eq!(values("Top.l"), ["3.0", "5.0"], "`a` takes its default, `b` the given value");
+    assert_eq!(values("Top.m"), ["3.0", "4.0"], "both default");
+}
+
+#[test]
+fn a_required_param_left_out_is_e0319() {
+    let src = "module Leaf() { r: f64; }\nmodule Top() { let l = Leaf { }(); }";
+    let err = Elab::run(src, "Top").expect_err("`r` has no default");
+    assert_eq!(Elab::codes(&err), ["E0319"]);
+    assert!(err[0].diagnostic.message.contains("Top.l"), "{}", err[0].diagnostic.message);
+    let span = err[0].diagnostic.span();
+    assert_eq!(&src[span.start..span.end], "Leaf { }()", "at the placement");
+
+    // The top itself is a placement with no values: a required param of it is just as unbound.
+    let src = "module Top() { r: f64; }";
+    let err = Elab::run(src, "Top").expect_err("a top with a required param");
+    assert_eq!(Elab::codes(&err), ["E0319"]);
+}
+
+#[test]
+fn a_false_where_is_e0317_with_the_path() {
+    let src = "module Leaf() { r: f64 where r > 0.0; }\nmodule Top() { let r1 = Leaf { r: -1.0 }(); }";
+    let err = Elab::run(src, "Top").expect_err("-1.0 breaks `r > 0.0`");
+    assert_eq!(Elab::codes(&err), ["E0317"]);
+    assert!(err[0].diagnostic.message.contains("Top.r1.r"), "names the param's path: {}", err[0].diagnostic.message);
+    let span = err[0].diagnostic.span();
+    assert_eq!(&src[span.start..span.end], "-1.0", "at the value that broke it");
+    // A value inside the condition is accepted.
+    Elab::ir("module Leaf() { r: f64 where r > 0.0; }\nmodule Top() { let r1 = Leaf { r: 1.0 }(); }", "Top");
+}
+
+#[test]
+fn a_bound_value_that_is_not_constant_is_refused() {
+    let src = "module Leaf() { r: f64 = 1.0; }\nmodule Top() { k: f64 = 2.0; let a = Leaf { r: k }(); let b = Leaf { r: temperature() }(); }";
+    let err = Elab::run(src, "Top").expect_err("neither value is constant");
+    assert_eq!(Elab::codes(&err), ["P0001", "E0321"]);
+    let text = |i: usize| &src[err[i].diagnostic.span().start..err[i].diagnostic.span().end];
+    assert_eq!(text(0), "k", "a param of the parent is P0001 (M2)");
+    assert_eq!(text(1), "temperature()", "anything that needs a run is E0321");
+}

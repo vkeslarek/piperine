@@ -9,6 +9,7 @@
 //! bodies (first-reach order), then the instance tree. Any diagnostic means no `Ir`.
 
 mod body;
+mod children;
 mod consts;
 mod diagnose;
 mod elaborator;

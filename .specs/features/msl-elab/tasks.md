@@ -196,13 +196,13 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `E0317` names the param's path (`Top.r1.r`); `E0319`, `E0321`, `E0341` each asserted with its span
-- [ ] A bound value that reads a param of the parent is `P0001`
-- [ ] `DiodeSeries.d1` and `DiodeSeries.d2` both bind `DiodeSeries.b`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `an_unset_param_takes_its_default`, `a_required_param_left_out_is_e0319`, `a_false_where_is_e0317_with_the_path`, `a_bound_value_that_is_not_constant_is_refused`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_instances`: `one_body_per_module_one_instance_per_placement`, `instances_come_in_pre_order`, `paths_start_at_the_top_module`, `signals_are_nodes_and_ports_bind_the_parents`, `a_node_init_is_recorded_on_body_and_design`, `an_unnamed_placement_is_module_hash_k`, `a_module_that_places_itself_is_e0341`, `a_module_under_two_parents_is_one_body`, `an_unconnected_node_stays_in_the_table`
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `E0317` names the param's path (`Top.r1.r`); `E0319`, `E0321`, `E0341` each asserted with its span
+- [x] A bound value that reads a param of the parent is `P0001`
+- [x] `DiodeSeries.d1` and `DiodeSeries.d2` both bind `DiodeSeries.b`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `an_unset_param_takes_its_default`, `a_required_param_left_out_is_e0319`, `a_false_where_is_e0317_with_the_path`, `a_bound_value_that_is_not_constant_is_refused`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_instances`: `one_body_per_module_one_instance_per_placement`, `instances_come_in_pre_order`, `paths_start_at_the_top_module`, `signals_are_nodes_and_ports_bind_the_parents`, `a_node_init_is_recorded_on_body_and_design`, `an_unnamed_placement_is_module_hash_k`, `a_module_that_places_itself_is_e0341`, `a_module_under_two_parents_is_one_body`, `an_unconnected_node_stays_in_the_table`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

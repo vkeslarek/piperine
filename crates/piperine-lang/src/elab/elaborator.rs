@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{Ir, IrBuilder, NatureId};
+use piperine_ir::{BodyId, Ir, IrBuilder, NatureId};
 
 use super::body::ModulePlan;
 use super::consts::ConstEval;
@@ -43,6 +43,9 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) ir: IrBuilder,
     pub(super) locator: Locator<'d>,
     pub(super) natures: BTreeMap<DeclId, NatureId>,
+    /// The body each reached module will get: bodies are built in first-reach order, so a
+    /// placement can name its child's body before that body exists.
+    pub(super) body_ids: BTreeMap<DeclId, BodyId>,
     pub(super) plans: BTreeMap<DeclId, ModulePlan>,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
@@ -56,6 +59,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             ir: IrBuilder::new(),
             locator: Locator::new(design),
             natures: BTreeMap::new(),
+            body_ids: BTreeMap::new(),
             plans: BTreeMap::new(),
             diagnostics: Vec::new(),
         }
@@ -66,6 +70,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             return Err(self.diagnostics);
         }
         let modules: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
+        self.body_ids = modules.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
         self.lower_natures(&modules);
         for module in &modules {
             self.lower_body(*module);

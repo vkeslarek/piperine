@@ -2,20 +2,26 @@
 //! over the body's own params), its nodes (ports first, then signals, with nature and initial
 //! potential). A body is a function of its module alone: one variant per module in M1.
 
-use piperine_ir::{BodyNode, BodySpec, Constant, NatureId, NodeRole, Origin, Param, Real, ValueType};
+use piperine_ir::{BodyNode, BodySpec, Child, Constant, NatureId, NodeRole, Origin, Param, Real, ValueType};
 
+use super::children::ChildPlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::pom::{DeclId, DeclKind, FileId, Resolution, TypeId};
+use crate::pom::{DeclId, DeclKind, ExprId, FileId, Resolution, TypeId};
 
 /// A param of a module, as placement needs it.
+#[derive(Clone)]
 pub(super) struct ParamPlan {
+    pub(super) decl: DeclId,
     pub(super) name: String,
     pub(super) default: Option<Constant>,
+    /// The `where` condition as written, evaluated at each placement over the bound values.
+    pub(super) where_: Option<ExprId>,
 }
 
 /// A node of a module: a port or a signal.
+#[derive(Clone)]
 pub(super) struct NodePlan {
     pub(super) name: String,
     pub(super) role: NodeRole,
@@ -24,11 +30,14 @@ pub(super) struct NodePlan {
     pub(super) origin: Origin,
 }
 
-/// What placement reads of a lowered module: its params and nodes in body order.
+/// What placement reads of a lowered module: its params and nodes in body order, and the
+/// placements it writes.
+#[derive(Clone)]
 pub(super) struct ModulePlan {
     pub(super) body: piperine_ir::BodyId,
     pub(super) params: Vec<ParamPlan>,
     pub(super) nodes: Vec<NodePlan>,
+    pub(super) children: Vec<ChildPlan>,
 }
 
 impl Elaboration<'_, '_> {
@@ -51,6 +60,8 @@ impl Elaboration<'_, '_> {
         }
         let nodes = self.lower_nodes(&mut scope, module);
         let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = nodes.into_iter().unzip();
+        let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
+        let expected = self.body_ids.get(&module).copied();
         let body = self.ir.body(BodySpec {
             name,
             origin: self.locator.decl(module),
@@ -61,9 +72,10 @@ impl Elaboration<'_, '_> {
             stims: scope.stims,
             locals: scope.locals,
             analog: None,
-            children: Vec::new(),
+            children,
         });
-        self.plans.insert(module, ModulePlan { body, params: param_plans, nodes: node_plans });
+        debug_assert_eq!(Some(body), expected, "bodies are built in first-reach order");
+        self.plans.insert(module, ModulePlan { body, params: param_plans, nodes: node_plans, children: child_plans });
     }
 
     /// The IR type of a param's declared type.
@@ -99,7 +111,7 @@ impl Elaboration<'_, '_> {
             None => None,
         };
         let spec = Param { name: name.clone(), ty, default, check, structural: false, origin: self.locator.decl(param) };
-        Some((spec, ParamPlan { name, default }))
+        Some((spec, ParamPlan { decl: param, name, default, where_: p.where_ }))
     }
 
     /// The nodes of a module: ports first, then signals, each with its nature and initial value.
