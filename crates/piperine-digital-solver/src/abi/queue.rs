@@ -76,6 +76,18 @@ impl Queue {
         self.by_due.entry(pending.due).or_default().push(pending);
     }
 
+    /// A `REPLACE` commit that never comes due: removes every pending commit of its statement and
+    /// inserts nothing (abi.md §6 C3). A host commit removes nothing.
+    pub fn cancel(&mut self, pending: &Pending) {
+        if pending.writer == Writer::Host {
+            return;
+        }
+        for list in self.by_due.values_mut() {
+            list.retain(|old| !old.same_statement(pending));
+        }
+        self.by_due.retain(|_, list| !list.is_empty());
+    }
+
     /// The earliest instant something is due at.
     pub fn next_due(&self) -> Option<Instant> {
         self.by_due.keys().next().copied()

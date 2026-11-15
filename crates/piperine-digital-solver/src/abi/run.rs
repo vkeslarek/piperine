@@ -566,20 +566,24 @@ pub fn run_reactions(
                 });
             }
             *call += 1;
-            if let Some(due) = due_at {
-                queue.push(
-                    Pending {
-                        net,
-                        offset: c.offset,
-                        bytes: c.bytes.to_vec(),
-                        writer: Writer::Reaction { instance: job.instance as u32, reaction: job.reaction as u32 },
-                        statement: c.statement,
-                        made: at,
-                        call: *call,
-                        due,
-                    },
-                    s.flags & statement_flag::REPLACE != 0,
-                );
+            let replace = s.flags & statement_flag::REPLACE != 0;
+            let mut pending = Pending {
+                net,
+                offset: c.offset,
+                bytes: c.bytes.to_vec(),
+                writer: Writer::Reaction { instance: job.instance as u32, reaction: job.reaction as u32 },
+                statement: c.statement,
+                made: at,
+                call: *call,
+                due: (at.0, 0),
+            };
+            match due_at {
+                Some(due) => {
+                    pending.due = due;
+                    queue.push(pending, replace);
+                }
+                None if replace => queue.cancel(&pending),
+                None => {}
             }
             status::OK
         };

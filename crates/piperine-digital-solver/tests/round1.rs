@@ -15,6 +15,8 @@ use piperine_digital_solver::abi::net::NetId;
 use piperine_digital_solver::abi::tick::{Resolution, Tick};
 use piperine_digital_solver::limits::DigitalLimits;
 
+const NS: i64 = 1_000_000;
+
 fn engine(devices: Vec<Placed<'_>>) -> Digital {
     Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default())
 }
@@ -43,4 +45,33 @@ fn a_settled_relax_group_leaves_nothing_due_after_its_instant() {
     let before = calls("resolver").0;
     d.advance(Tick(100)).unwrap();
     assert_eq!(calls("resolver").0, before, "and the group's functions are not called again");
+}
+
+#[test]
+fn replace_with_an_infinite_delay_removes_the_pending_commits() {
+    // finding 4, abi.md §6 C3: a REPLACE statement removes every pending commit of itself even when
+    // its own commit never comes due (a statement that is not REPLACE keeps the earlier ones)
+    let mut d = engine(vec![("clock", timer(), vec![("out", "clk"), ("tick", "t")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    assert_eq!(d.next_due(), Some(Tick(10 * NS)), "the start armed the edge and the tick");
+    d.host_commit(net(&d, "clock.half"), 0, &f64::INFINITY.to_le_bytes(), Tick(5)).unwrap();
+    d.fire(net(&d, "global:7"), Tick(5)).unwrap();
+    instant(&mut d, Tick(5));
+    d.drain_observations();
+    d.advance(Tick(11 * NS)).unwrap();
+    let seen = d.drain_observations();
+    use piperine_digital_solver::abi::observe::Observation;
+    let at_10 = |o: &&Observation| match o {
+        Observation::Fire { at, .. } | Observation::Change { at, .. } => at.0 == Tick(10 * NS),
+        _ => false,
+    };
+    assert!(
+        seen.iter().filter(at_10).any(|o| matches!(o, Observation::Change { net, .. } if net == "clk")),
+        "the edge (a statement without REPLACE) was not removed: {seen:?}"
+    );
+    assert!(
+        !seen.iter().filter(at_10).any(|o| matches!(o, Observation::Fire { net, .. } if net == "t")),
+        "the tick (a REPLACE statement) was removed by the never-due commit: {seen:?}"
+    );
 }
