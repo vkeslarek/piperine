@@ -9,8 +9,6 @@ use piperine_abi::thunk::module_with;
 
 mod device;
 mod dual;
-mod netlist;
-mod plan;
 mod walk;
 
 #[cfg(test)]
@@ -20,9 +18,11 @@ mod devices;
 
 pub use device::{BodyFactory, Interpreted};
 pub use dual::Dual;
-pub use plan::BodyPlan;
+pub use piperine_plan::BodyPlan;
 pub use walk::{Value, Walk};
 use piperine_ir::{BodyId, Broken, Ir};
+use piperine_plan::{Modules, Netlist};
+use piperine_solver::prelude::CircuitInstance;
 
 /// An `Ir` that failed `check()`: the entries, each naming an item and its origin.
 #[derive(Debug, Clone, PartialEq)]
@@ -76,5 +76,17 @@ impl Interpreter {
     /// The design this interpreter runs.
     pub fn ir(&self) -> &Ir {
         &self.ir
+    }
+
+    /// The design as a solver circuit, each instance bound to its body's module
+    /// (`Netlist::circuit`).
+    pub fn circuit(&self) -> piperine_solver::prelude::Result<CircuitInstance> {
+        Netlist::new(&self.ir).circuit(self)
+    }
+}
+
+impl Modules for Interpreter {
+    fn module(&self, body: BodyId) -> Option<&'static Module> {
+        Interpreter::module(self, body)
     }
 }

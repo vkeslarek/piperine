@@ -29,7 +29,7 @@ use piperine_ir::{
 
 /// What one term of the shape computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Term {
+pub enum Term {
     /// A flow branch's direct addends, summed.
     Flow(u32),
     /// A branch's `ddt` addends, summed (negated on a potential branch, abi.md A1).
@@ -43,7 +43,7 @@ pub(crate) enum Term {
 
 /// What a function computes: one walk of the `analog` block in one mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Mode {
+pub enum Mode {
     /// The function of `limit` site `k`: its `PROPOSED` and `LIMITED`.
     Limit(u32),
     /// The function of `ac_stim` site `k`: its `RE` and `IM`.
@@ -56,7 +56,7 @@ pub(crate) enum Mode {
 
 /// Where a read of a function comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum Source {
+pub enum Source {
     /// A body node's pin.
     Node(u32),
     /// A potential branch's private flow pin.
@@ -88,7 +88,7 @@ impl Source {
 
 /// What a write of a function is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Target {
+pub enum Target {
     Term(Term),
     Proposed(u32),
     Limited(u32),
@@ -100,7 +100,7 @@ pub(crate) enum Target {
 
 /// What one function of the shape computes, entry by entry parallel to the shape.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct FunctionPlan {
+pub struct FunctionPlan {
     pub mode: Mode,
     /// Parallel to the function's reads.
     pub reads: Vec<Source>,
@@ -152,7 +152,7 @@ struct Received {
 
 /// The pin indices of a body's shape.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Pins {
+pub struct Pins {
     /// The first body-node pin; param `i` is pin `i`.
     pub nodes: u32,
     /// The private flow pin of each branch; `None` for a flow branch.
@@ -180,9 +180,9 @@ impl Pins {
 /// Everything computed once per body: the shape and what each of its entries means.
 #[derive(Debug)]
 pub struct BodyPlan {
-    pub(crate) shape: ShapeRef,
+    shape: ShapeRef,
     /// What each function of the shape computes, in the shape's order.
-    pub(crate) functions: Vec<FunctionPlan>,
+    functions: Vec<FunctionPlan>,
 }
 
 impl BodyPlan {
@@ -477,5 +477,10 @@ impl BodyPlan {
     /// The shape every instance of this body gets.
     pub fn shape(&self) -> &ShapeRef {
         &self.shape
+    }
+
+    /// What each function of the shape computes, in the shape's order.
+    pub fn functions(&self) -> &[FunctionPlan] {
+        &self.functions
     }
 }

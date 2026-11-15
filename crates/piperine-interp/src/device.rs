@@ -11,7 +11,7 @@ use piperine_abi::shape::ShapeRef;
 use piperine_ir::{Body, BodyId, BranchKind, Ir, ValueType};
 
 use crate::dual::Dual;
-use crate::plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
+use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 use crate::walk::{Frame, Held, Sums, Value, Walk};
 
 /// The factory of one body: the design, the body, its plan.
@@ -249,19 +249,19 @@ impl Factory for BodyFactory {
     type Instance = Interpreted;
 
     fn prototype(&self) -> &Shape<'_> {
-        self.plan.shape.shape()
+        self.plan.shape().shape()
     }
 
     /// Every instance of a body gets the plan's shape: no M1 param is structural (abi.md
     /// concept 2). The values seed the param nets; the solver, not the shape, holds them (P5).
     fn create(&self, _values: &Values<'_>) -> Result<(Interpreted, ShapeRef), Fault> {
         let instance = Interpreted { ir: Arc::clone(&self.ir), body: self.body, plan: Arc::clone(&self.plan) };
-        Ok((instance, Arc::clone(&self.plan.shape)))
+        Ok((instance, Arc::clone(self.plan.shape())))
     }
 
     fn eval(instance: &Interpreted, k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
         let name = instance.body().name();
-        let Some(f) = instance.plan.functions.get(k as usize) else {
+        let Some(f) = instance.plan.functions().get(k as usize) else {
             return Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} does not exist")));
         };
         match f.mode {

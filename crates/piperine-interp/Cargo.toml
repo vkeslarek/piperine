@@ -7,4 +7,5 @@ description = "The reference interpreter: runs a Piperine IR through the solver 
 [dependencies]
 piperine-ir = { path = "../piperine-ir" }
 piperine-abi = { path = "../piperine-abi" }
+piperine-plan = { path = "../piperine-plan" }
 piperine-solver = { path = "../piperine-solver" }

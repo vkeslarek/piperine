@@ -174,11 +174,11 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] `git diff --stat` shows no change under `crates/piperine-interp/tests/` and every test there passes
-- [ ] `DEFAULT_MEMBERS`, the workspace manifest and `default-members` gain `crates/piperine-plan`; `crate_boundaries` still passes (the crate sits above the solver)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-plan --test shared`: `the_interpreter_and_the_plan_crate_share_one_body_plan`, `the_netlist_binds_whatever_supplies_the_modules`
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] `git diff --stat` shows no change under `crates/piperine-interp/tests/` and every test there passes
+- [x] `DEFAULT_MEMBERS`, the workspace manifest and `default-members` gain `crates/piperine-plan`; `crate_boundaries` still passes (the crate sits above the solver)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-plan --test shared`: `the_interpreter_and_the_plan_crate_share_one_body_plan`, `the_netlist_binds_whatever_supplies_the_modules`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: build
@@ -1555,7 +1555,7 @@ Proof: run golden | test a_keyword_identifier_is_raw_and_the_abi_name_is_not ...
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** T1 - the dispatch said "do not edit solver crates"; T1 and T2's Done-when require `DEFAULT_MEMBERS` (which lives in `crates/piperine-solver/tests/workspace_shape.rs`) to gain the new crate, or the guard fails. The one-line list entry is made there, as `ir-interp` T2 did; no solver source is touched.
 **Dispatched:** batch 1 (phases 1-2, T1-T10) - Opus worker, 2026-11-15
 **Walked:** none (no screen; each story's Independent Test is a check above)
 

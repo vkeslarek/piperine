@@ -20,7 +20,7 @@ use piperine_ir::{
 };
 
 use crate::dual::Dual;
-use crate::plan::Mode;
+use piperine_plan::Mode;
 
 /// What an expression evaluates to.
 #[derive(Debug, Clone, PartialEq)]

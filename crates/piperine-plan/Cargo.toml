@@ -1,0 +1,13 @@
+[package]
+name = "piperine-plan"
+version.workspace = true
+edition.workspace = true
+description = "The plan both backends of a Piperine IR share: a body's ABI shape and function table, and a design's circuit"
+
+[dependencies]
+piperine-ir = { path = "../piperine-ir" }
+piperine-abi = { path = "../piperine-abi" }
+piperine-solver = { path = "../piperine-solver" }
+
+[dev-dependencies]
+piperine-interp = { path = "../piperine-interp" }

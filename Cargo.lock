@@ -1476,6 +1476,7 @@ version = "0.2.0"
 dependencies = [
  "piperine-abi",
  "piperine-ir",
+ "piperine-plan",
  "piperine-solver",
 ]
 
@@ -1525,6 +1526,16 @@ dependencies = [
  "piperine-lang",
  "piperine-solver",
  "tempfile",
+]
+
+[[package]]
+name = "piperine-plan"
+version = "0.2.0"
+dependencies = [
+ "piperine-abi",
+ "piperine-interp",
+ "piperine-ir",
+ "piperine-solver",
 ]
 
 [[package]]

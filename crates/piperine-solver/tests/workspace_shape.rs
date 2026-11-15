@@ -34,6 +34,7 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-ir",
     "crates/piperine-lang",
     "crates/piperine-parity",
+    "crates/piperine-plan",
     "crates/piperine-solver",
 ];
 
