@@ -488,11 +488,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Every test keeps its name; every numeric literal and tolerance is byte-identical (C41's proof compares them with the base commit)
-- [ ] The four `LogicValue` asserts of the digital-settle test become `HIGH`/`LOW` byte asserts on the same nets, same levels
-- [ ] The transient test still reports 161 steps
-- [ ] If any literal does not hold, stop and report; nothing is retuned
-- [ ] Gate: full
+- [x] Every test keeps its name; every numeric literal and tolerance is byte-identical (C41's proof compares them with the base commit)
+- [x] The four `LogicValue` asserts of the digital-settle test become `HIGH`/`LOW` byte asserts on the same nets, same levels
+- [x] The transient test still reports 161 steps
+- [x] If any literal does not hold, stop and report; nothing is retuned
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

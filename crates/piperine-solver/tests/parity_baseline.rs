@@ -1,375 +1,167 @@
 //! Parity baselines — the exact-value regression oracle for the
-//! behaviour-preserving `solver-simplification` refactor (SS-06/SS-09/SS-16).
+//! behaviour-preserving `solver-simplification` refactor (SS-06/SS-09/SS-16),
+//! ported onto the device ABI (`solver-abi-integration` T17).
 //!
-//! Each test builds a representative circuit from hand-written [`Element`]
-//! doubles, drives it through a real analysis driver (DC linear, DC nonlinear
-//! Newton + homotopy, TR-BDF2 transient integration, complex AC assembly, and
-//! the mixed-signal / digital settle seam), and pins the *current* solved
-//! value(s) to a tight tolerance. A later refactor phase that changes any
-//! pinned number is a defect, not a deviation. The values here were captured
-//! from a run of the pre-refactor solver; they are the sharp net that
-//! complements the broad existing suite.
+//! Each test builds a representative circuit from hand-written `Device`s,
+//! drives it through a real analysis driver (DC linear, DC nonlinear Newton +
+//! homotopy, TR-BDF2 transient integration, complex AC assembly, and the
+//! mixed-signal / digital settle through the owner protocol), and pins the
+//! value(s) captured from the pre-refactor solver to a tight tolerance. A later
+//! change that moves any pinned number is a defect, not a deviation. The
+//! literals and tolerances are byte-identical to their `Element` originals.
 
-use num_complex::Complex64;
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/abi_mixed.rs"]
+mod abi_mixed;
 
-use piperine_solver::abi::{
-    AnalogDevice, AnalogReference, BranchIdentifier, CircularArrayBuffer2, DcAnalysisState,
-    DigitalDevice, Element, ElementCapabilities, EvalCtx, EventSink, Introspect, Netlist,
-    NodeIdentifier, Stamp, TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
-    DigitalPorts, DigitalNet, LogicValue,
+use std::sync::{Arc, OnceLock};
+
+use abi_devices::{add_capacitor, add_resistor, add_vsrc, current_ac, inductor, node_id};
+use abi_mixed::inverter;
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::layout::{BIT, F64, HIGH, LOW};
+use piperine_abi::raw::{
+    Cell, DEFAULT, GROUND, Module, Partial, Shape, Statement, ambient, cell, global, op, part, pin_flag, role, watch,
 };
-use piperine_solver::prelude::{
-    Context, CircuitInstance, Solver, TransientAnalysisOptions,
-};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::{ParamValue, Port};
+use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions};
 use piperine_solver::prelude::AcSweepAnalysisOptions;
 
-// ─────────────────────────── Analog element doubles ──────────────────────────
+const ORIGIN: &str = "parity_baseline.rs";
 
-/// Linear resistor between two references; contributes the same conductance in
-/// DC, AC, and transient.
-struct Resistor {
-    r: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
+fn pin(index: u32) -> Cell {
+    Cell { kind: cell::PIN, index, part: part::VALUE }
+}
+fn term(index: u32) -> Cell {
+    Cell { kind: cell::TERM, index, part: part::VALUE }
+}
+fn partial(write: u32, read: u32) -> Partial {
+    Partial { write, to: 0, read, at: 0 }
+}
+fn flow(name: &'static str, plus: u32, minus: u32) -> TermSpec<'static> {
+    TermSpec { name, origin: ORIGIN, op: op::FLOW, plus, minus, abstol: DEFAULT, max: DEFAULT }
+}
+fn shared(slot: &'static OnceLock<ShapeRef>, build: fn() -> ShapeRef) -> &'static ShapeRef {
+    slot.get_or_init(build)
 }
 
-impl Resistor {
-    fn stamps(&self, g: f64) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
+// ─────────────────────────── Analog device doubles ───────────────────────────
+// The resistor, capacitor, DC source, AC source and inductor are those of
+// `helpers/abi_devices.rs`; the diode and the sine source keep this target's
+// own constants (`vt = 0.025_852`, `std::f64::consts::PI`).
+
+/// Shockley diode `i = is·(exp(v/vt) − 1)` between `p` and `n`, `vt = 0.025_852`.
+/// pins: p=0, n=1 (PORT); terms T0 FLOW{p, n}; fn 0: reads [p, n] writes [T0] partials (0<-0) (0<-1)
+struct Diode;
+static DIODE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+const IS: f64 = 1e-14;
+const VT: f64 = 0.025_852;
+
+fn diode_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(flow("i", p, n));
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![pin(p), pin(n)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Diode {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&DIODE_SHAPE, diode_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Diode, Arc::clone(shared(&DIODE_SHAPE, diode_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let vd = cx.f64(0) - cx.f64(1);
+        let ex = (vd / VT).exp();
+        let gd = IS / VT * ex;
+        cx.set(0, IS * (ex - 1.0));
+        cx.jac().copy_from_slice(&[gd, -gd]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
-impl AnalogDevice for Resistor {
-    fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        self.stamps(1.0 / self.r)
-    }
-    fn load_transient(
-        &mut self,
-        _s: &TransientAnalysisState<'_>,
-        _t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.stamps(1.0 / self.r)
-    }
-    fn load_ac(
-        &mut self,
-        _dc: &piperine_solver::abi::DcAnalysisResult,
-        _ac: &piperine_solver::abi::AcAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, Complex64>> {
-        let g = Complex64::new(1.0 / self.r, 0.0);
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
-    }
+/// Sine voltage source `amp·sin(2π·freq·t)` on a private branch current `f`;
+/// at the t=0 operating point it is `sin(0) = 0`.
+/// pins: p=0, n=1 (PORT); f=2 (PRIVATE); terms T0 FLOW{p, n}, T1 FLOW{f, GROUND}
+/// fn 0: reads [p, n, f, TIME] writes [T0, T1] partials (0<-f) (1<-p) (1<-n)
+struct SineVsrc;
+static SINE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+const AMP: f64 = 1.0;
+const FREQ: f64 = 1000.0;
+
+fn sine_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
+    let t0 = s.term(flow("i", p, n));
+    let t1 = s.term(flow("eq", f, GROUND));
+    s.function(FunctionSpec {
+        name: "v",
+        origin: ORIGIN,
+        reads: vec![pin(p), pin(n), pin(f), Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE }],
+        writes: vec![term(t0), term(t1)],
+        partials: vec![partial(0, 2), partial(1, 0), partial(1, 1)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
 }
 
-impl DigitalDevice for Resistor {}
-
-impl Introspect for Resistor {}
-
-impl Element for Resistor {
-    fn name(&self) -> &str { "r" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_AC
-            | ElementCapabilities::LOADS_TRAN
+impl Device for SineVsrc {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SINE_SHAPE, sine_shape).shape()
     }
-}
-
-/// Ideal DC voltage source with its own branch-current unknown. The forced
-/// value tracks the source-stepping homotopy scale (`src_scale`).
-struct Vdc {
-    v: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl Vdc {
-    fn branch_stamps(&self, rhs: f64) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.branch.clone(), 1.0),
-            Stamp::Matrix(self.branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), self.branch.clone(), -1.0),
-            Stamp::Matrix(self.branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), rhs),
-        ]
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SineVsrc, Arc::clone(shared(&SINE_SHAPE, sine_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let v = AMP * (2.0 * std::f64::consts::PI * FREQ * cx.f64(3)).sin();
+        cx.set(0, cx.f64(2));
+        cx.set(1, cx.f64(0) - cx.f64(1) - v);
+        cx.jac().copy_from_slice(&[1.0, 1.0, -1.0]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
-impl AnalogDevice for Vdc {
-    fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        self.branch_stamps(self.v * s.src_scale)
-    }
-    fn load_transient(
-        &mut self,
-        _s: &TransientAnalysisState<'_>,
-        _t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.branch_stamps(self.v)
-    }
-}
-
-impl DigitalDevice for Vdc {}
-
-impl Introspect for Vdc {}
-
-impl Element for Vdc {
-    fn name(&self) -> &str { "v" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-}
-
-/// Sine voltage source (branch unknown) whose forced value follows
-/// `amp·sin(2π·freq·t)` in the transient; at the t=0 operating point it is
-/// `sin(0) = 0`.
-struct SineVsrc {
-    amp: f64,
-    freq: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl SineVsrc {
-    fn branch_stamps(&self, rhs: f64) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.branch.clone(), 1.0),
-            Stamp::Matrix(self.branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), self.branch.clone(), -1.0),
-            Stamp::Matrix(self.branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), rhs),
-        ]
-    }
-}
-
-impl AnalogDevice for SineVsrc {
-    fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        self.branch_stamps(0.0)
-    }
-    fn load_transient(
-        &mut self,
-        _s: &TransientAnalysisState<'_>,
-        t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let v = self.amp * (2.0 * std::f64::consts::PI * self.freq * t.time).sin();
-        self.branch_stamps(v)
-    }
-}
-
-impl DigitalDevice for SineVsrc {}
-
-impl Introspect for SineVsrc {}
-
-impl Element for SineVsrc {
-    fn name(&self) -> &str { "vsin" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-}
-
-/// Shockley diode (`i = is·(exp(v/vt) − 1)`) between `n1` and `n2`, stamped as a
-/// Norton companion linearised at the current Newton guess.
-struct Diode {
-    is: f64,
-    vt: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-}
-
-impl AnalogDevice for Diode {
-    fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        let v = |r: &AnalogReference| {
-            r.idx()
-                .and_then(|i| s.latest().and_then(|row| row.get(i).copied()))
-                .unwrap_or(0.0)
-        };
-        let vd = v(&self.n1) - v(&self.n2);
-        let ex = (vd / self.vt).exp();
-        let id = self.is * (ex - 1.0);
-        let gd = self.is / self.vt * ex;
-        let ieq = id - gd * vd;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), gd),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), gd),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -gd),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -gd),
-            Stamp::Rhs(self.n1.clone(), -ieq),
-            Stamp::Rhs(self.n2.clone(), ieq),
-        ]
-    }
-}
-
-impl DigitalDevice for Diode {}
-
-impl Introspect for Diode {}
-
-impl Element for Diode {
-    fn name(&self) -> &str { "d" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
-}
-
-/// Linear capacitor to ground (`Q = C·v`). Transient companion mirrors the
-/// codegen kernel's TR-BDF2 stamping (`TrBdf2::stage_coeffs`, MD-07).
-struct CapGnd {
-    c: f64,
-    node: AnalogReference,
-}
-
-impl AnalogDevice for CapGnd {
-    fn load_transient(
-        &mut self,
-        states: &TransientAnalysisState<'_>,
-        t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let dt = t.h;
-        let Some(idx) = self.node.idx() else { return Vec::new(); };
-        if dt <= 0.0 { return Vec::new(); }
-        let (c0, c1, c2) = TrBdf2::stage_coeffs(t.phase, t.h, t.prev_h);
-        let vget = |lb: usize| -> f64 {
-            let row = if lb == 0 { states.latest() } else { states.view(lb) };
-            row.and_then(|r| r.get(idx).copied()).unwrap_or(0.0)
-        };
-        let q_now = self.c * vget(0);
-        let q_prev = self.c * vget(1);
-        let q_prev2 = self.c * vget(2);
-        let mut i_c = c0 * q_now + c1 * q_prev + c2 * q_prev2;
-        if matches!(t.phase, TrBdf2Phase::Trapezoidal) && t.prev_h > 0.0 {
-            let (d0, d1, d2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, t.prev_h);
-            let q_prev3 = self.c * vget(3);
-            i_c -= d0 * q_prev + d1 * q_prev2 + d2 * q_prev3;
-        }
-        let g_eq = c0 * self.c;
-        let rhs = c0 * q_now - i_c;
-        vec![
-            Stamp::Matrix(self.node.clone(), self.node.clone(), g_eq),
-            Stamp::Rhs(self.node.clone(), rhs),
-        ]
-    }
-    fn load_ac(
-        &mut self,
-        _dc: &piperine_solver::abi::DcAnalysisResult,
-        ac: &piperine_solver::abi::AcAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, Complex64>> {
-        let w = 2.0 * std::f64::consts::PI * ac.frequency;
-        let y = Complex64::new(0.0, w * self.c);
-        vec![Stamp::Matrix(self.node.clone(), self.node.clone(), y)]
-    }
-}
-
-impl DigitalDevice for CapGnd {}
-
-impl Introspect for CapGnd {}
-
-impl Element for CapGnd {
-    fn name(&self) -> &str { "c" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_TRAN | ElementCapabilities::LOADS_AC
-    }
-}
-
-/// Ideal inductor to ground modelled as a node-to-ground admittance
-/// `Y = 1/(jωL)` for the AC resonator (no DC/transient participation here).
-struct AcIndGnd {
-    l: f64,
-    node: AnalogReference,
-}
-
-impl AnalogDevice for AcIndGnd {
-    fn load_ac(
-        &mut self,
-        _dc: &piperine_solver::abi::DcAnalysisResult,
-        ac: &piperine_solver::abi::AcAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, Complex64>> {
-        let w = 2.0 * std::f64::consts::PI * ac.frequency;
-        let y = Complex64::new(1.0, 0.0) / Complex64::new(0.0, w * self.l);
-        vec![Stamp::Matrix(self.node.clone(), self.node.clone(), y)]
-    }
-}
-
-impl DigitalDevice for AcIndGnd {}
-
-impl Introspect for AcIndGnd {}
-
-impl Element for AcIndGnd {
-    fn name(&self) -> &str { "l" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
-    }
-}
-
-/// AC current source injecting `i` amps into `node` (small-signal stimulus).
-struct AcISrc {
-    i: f64,
-    node: AnalogReference,
-}
-
-impl AnalogDevice for AcISrc {
-    fn load_ac(
-        &mut self,
-        _dc: &piperine_solver::abi::DcAnalysisResult,
-        _ac: &piperine_solver::abi::AcAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, Complex64>> {
-        vec![Stamp::Rhs(self.node.clone(), Complex64::new(self.i, 0.0))]
-    }
-}
-
-impl DigitalDevice for AcISrc {}
-
-impl Introspect for AcISrc {}
-
-impl Element for AcISrc {
-    fn name(&self) -> &str { "iac" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
-    }
-}
+static DIODE: OnceLock<Module> = OnceLock::new();
+static SINE: OnceLock<Module> = OnceLock::new();
 
 // ───────────────────────────── T1 analog baselines ───────────────────────────
 
 /// Resistive divider operating point — DC linear solve.
 #[test]
 fn parity_divider_op_dc() {
-    let mut netlist = Netlist::new();
-    let top = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let mid = netlist.connect_node(NodeIdentifier::Anonymous(2));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Vdc { v: 10.0, n1: top.clone(), n2: gnd.clone(), branch: vb }),
-        Box::new(Resistor { r: 2000.0, n1: top.clone(), n2: mid.clone() }),
-        Box::new(Resistor { r: 6000.0, n1: mid.clone(), n2: gnd.clone() }),
-    ];
-    let circuit = CircuitInstance::from_devices_and_netlist("divider", elements, netlist);
-    let mut solver = Solver::new(circuit).build();
+    let mut b = CircuitBuilder::new("divider");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", 10.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 2000.0, &top, &mid);
+    add_resistor(&mut b, "r2", 6000.0, &mid, &gnd);
+    let mut solver = Solver::new(b.build().unwrap()).build();
     let res = solver.dc().unwrap().solve().unwrap();
-    let vmid = res.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+    let vmid = res.get_node(&node_id(&mid)).unwrap();
 
     // 10 V · 6k/(2k+6k) = 7.5 V.
     assert!((vmid - 7.5).abs() < 1e-12, "vmid = {vmid}");
@@ -379,21 +171,16 @@ fn parity_divider_op_dc() {
 /// through the convergence plan (gmin / source stepping homotopy).
 #[test]
 fn parity_diode_dc_point() {
-    let mut netlist = Netlist::new();
-    let src = netlist.connect_node(NodeIdentifier::Anonymous(10));
-    let anode = netlist.connect_node(NodeIdentifier::Anonymous(11));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Vdc { v: 1.0, n1: src.clone(), n2: gnd.clone(), branch: vb }),
-        Box::new(Resistor { r: 1000.0, n1: src.clone(), n2: anode.clone() }),
-        Box::new(Diode { is: 1e-14, vt: 0.025_852, n1: anode.clone(), n2: gnd.clone() }),
-    ];
-    let circuit = CircuitInstance::from_devices_and_netlist("diode", elements, netlist);
-    let mut solver = Solver::new(circuit).build();
+    let mut b = CircuitBuilder::new("diode");
+    let gnd = b.ground();
+    let src = b.node("src");
+    let anode = b.node("anode");
+    add_vsrc(&mut b, "v1", 1.0, &src, &gnd);
+    add_resistor(&mut b, "r1", 1000.0, &src, &anode);
+    b.device(DIODE.get_or_init(|| module::<Diode>("Diode")), "d", &[], &[Port::Node(anode.clone()), Port::Node(gnd)]);
+    let mut solver = Solver::new(b.build().unwrap()).build();
     let res = solver.dc().unwrap().solve().unwrap();
-    let vd = res.get_node(&NodeIdentifier::Anonymous(11)).unwrap();
+    let vd = res.get_node(&node_id(&anode)).unwrap();
 
     // Captured operating point of the diode-resistor divider.
     assert!((vd - 0.629_146_879_798_922_5).abs() < 1e-12, "vd = {vd}");
@@ -402,25 +189,20 @@ fn parity_diode_dc_point() {
 /// Sine-driven RC low-pass — TR-BDF2 transient integration + adaptive stepper.
 #[test]
 fn parity_rc_transient() {
-    let mut netlist = Netlist::new();
-    let top = netlist.connect_node(NodeIdentifier::Anonymous(20));
-    let mid = netlist.connect_node(NodeIdentifier::Anonymous(21));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(SineVsrc { amp: 1.0, freq: 1000.0, n1: top.clone(), n2: gnd.clone(), branch: vb }),
-        Box::new(Resistor { r: 1000.0, n1: top.clone(), n2: mid.clone() }),
-        Box::new(CapGnd { c: 1e-7, node: mid.clone() }),
-    ];
-    let circuit = CircuitInstance::from_devices_and_netlist("rc", elements, netlist);
+    let mut b = CircuitBuilder::new("rc");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    b.device(SINE.get_or_init(|| module::<SineVsrc>("SineVsrc")), "v1", &[], &[Port::Node(top.clone()), Port::Node(gnd.clone())]);
+    add_resistor(&mut b, "r1", 1000.0, &top, &mid);
+    add_capacitor(&mut b, "c1", 1e-7, &mid, &gnd);
     let opts = TransientAnalysisOptions::new(1e-3, 1e-5);
-    let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
+    let mut solver = Solver::new(b.build().unwrap()).with_tran_opts(opts).build();
     let res = solver.tran().unwrap().solve().unwrap();
 
     let last = res.last().unwrap();
     let t_last = last.time();
-    let v_last = last.get_node(&NodeIdentifier::Anonymous(21)).unwrap();
+    let v_last = last.get_node(&node_id(&mid)).unwrap();
 
     assert!((t_last - 1e-3).abs() < 1e-12, "t_last = {t_last}");
     // Re-pinned when `PiController::propose_dt` was made monotone in the error
@@ -447,19 +229,14 @@ fn parity_rc_transient() {
 /// transfer peak magnitude and the frequency it lands on.
 #[test]
 fn parity_rlc_ac_resonant_peak() {
-    let mut netlist = Netlist::new();
-    let node = netlist.connect_node(NodeIdentifier::Anonymous(30));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let _ = gnd;
-
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(AcISrc { i: 1.0, node: node.clone() }),
-        Box::new(Resistor { r: 10_000.0, n1: node.clone(), n2: netlist_gnd(&mut netlist) }),
-        Box::new(CapGnd { c: 1e-9, node: node.clone() }),
-        Box::new(AcIndGnd { l: 1e-3, node: node.clone() }),
-    ];
-    let circuit = CircuitInstance::from_devices_and_netlist("rlc", elements, netlist);
-    let mut solver = Solver::new(circuit).build();
+    let mut b = CircuitBuilder::new("rlc");
+    let gnd = b.ground();
+    let node = b.node("node");
+    b.device(current_ac(), "iac", &[("i", ParamValue::Real(1.0))], &[Port::Node(node.clone())]);
+    add_resistor(&mut b, "r1", 10_000.0, &node, &gnd);
+    add_capacitor(&mut b, "c1", 1e-9, &node, &gnd);
+    b.device(inductor(), "l1", &[("l", ParamValue::Real(1e-3))], &[Port::Node(node.clone()), Port::Node(gnd)]);
+    let mut solver = Solver::new(b.build().unwrap()).build();
     let opts = AcSweepAnalysisOptions {
         start_frequency: 1e4,
         stop_frequency: 1e6,
@@ -473,7 +250,7 @@ fn parity_rlc_ac_resonant_peak() {
     let mut peak_freq = 0.0_f64;
     for i in 0..res.len() {
         let step = res.get(i).unwrap();
-        let v = step.get_node(&NodeIdentifier::Anonymous(30)).unwrap();
+        let v = step.get_node(&node_id(&node)).unwrap();
         if v.norm() > peak_mag {
             peak_mag = v.norm();
             peak_freq = step.frequency;
@@ -485,247 +262,231 @@ fn parity_rlc_ac_resonant_peak() {
     assert!((peak_freq - 160_705.281_826_163_85).abs() < 1e-3, "peak_freq = {peak_freq}");
 }
 
-fn netlist_gnd(netlist: &mut Netlist) -> AnalogReference {
-    netlist.connect_node(NodeIdentifier::Gnd)
-}
-
 // ────────────────────── T2 mixed-signal / digital baselines ──────────────────
 
-/// Analog comparator that samples an analog node voltage and drives a digital
-/// net (A2D). Emits its output on the analog accept hook (`accept_timestep`).
-struct Comparator {
-    sense_idx: usize,
-    threshold: f64,
-    out: DigitalNet,
-    last: LogicValue,
+/// Analog comparator that samples a node voltage and drives a digital net (A2D):
+/// a reaction on `START` and on each crossing of `threshold` writes
+/// `out = v ≥ threshold`.
+/// pins: threshold=0 (PARAM F64, default 1.0); sense=1 (PORT continuous); out=2 (PORT BIT);
+///       up=3, down=4 (PRIVATE event); start=5 (GLOBAL START)
+/// watches: W0 CROSS -> up (v − threshold), W1 CROSS -> down (threshold − v)
+/// fn 0: reads [sense, threshold] writes [W0, W1] partials (0<-0) (1<-0)
+/// reaction 0: on [start, up, down] reads [sense, threshold] writes [S0 {out}]
+struct Comparator;
+static CMP_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static CMP: OnceLock<Module> = OnceLock::new();
+const ONE_VOLT: [u8; 8] = 1.0_f64.to_le_bytes();
+
+fn cmp_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let th = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_VOLT, ..PinSpec::discrete("threshold", role::PARAM, &F64) });
+    let sense = s.pin(PinSpec::continuous("sense", role::PORT));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    let up = s.pin(PinSpec::event("up", role::PRIVATE));
+    let down = s.pin(PinSpec::event("down", role::PRIVATE));
+    let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
+    let w = |name, event| WatchSpec { name, origin: ORIGIN, kind: watch::CROSS, layout: &F64, event, ttol: DEFAULT, etol: DEFAULT };
+    let w0 = s.watch(w("rise", up));
+    let w1 = s.watch(w("fall", down));
+    let wc = |index| Cell { kind: cell::WATCH, index, part: part::VALUE };
+    s.function(FunctionSpec {
+        name: "e",
+        origin: ORIGIN,
+        reads: vec![pin(sense), pin(th)],
+        writes: vec![wc(w0), wc(w1)],
+        partials: vec![partial(0, 0), partial(1, 0)],
+        ..FunctionSpec::default()
+    });
+    s.reaction(ReactionSpec {
+        name: "sample",
+        origin: ORIGIN,
+        on: vec![start, up, down],
+        reads: vec![pin(sense), pin(th)],
+        writes: vec![Statement { pin: out, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
 }
 
-impl AnalogDevice for Comparator {}
-
-impl DigitalDevice for Comparator {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out) }
+impl Device for Comparator {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&CMP_SHAPE, cmp_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Comparator, Arc::clone(shared(&CMP_SHAPE, cmp_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let e = cx.f64(0) - cx.f64(1);
+        cx.set(0, e);
+        cx.set(1, -e);
+        cx.jac().copy_from_slice(&[1.0, -1.0]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        let level = if cx.f64(0) >= cx.f64(1) { HIGH } else { LOW };
+        cx.commit(0, &level, 0.0)?;
+        Ok(Flow::Continue)
     }
 }
 
-impl Introspect for Comparator {}
+/// Digital-gated conductance to ground: when `ctrl` is HIGH it adds `g` from
+/// `node` to ground, otherwise nothing (D2A).
+/// pins: g=0 (PARAM F64, default 1 mS); ctrl=1 (PORT BIT); node=2 (PORT continuous)
+/// terms: T0 FLOW{node, GROUND}; fn 0: reads [ctrl, node, g] writes [T0] partials (0<-1)
+struct GatedISink;
+static SINK_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SINK: OnceLock<Module> = OnceLock::new();
+const ONE_MS: [u8; 8] = 1e-3_f64.to_le_bytes();
 
-impl Element for Comparator {
-    fn name(&self) -> &str { "cmp" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL | ElementCapabilities::SAMPLES_ANALOG
-    }
-    fn accept_timestep(
-        &mut self,
-        state: &CircularArrayBuffer2<f64>,
-        _t: f64,
-        _nets: &[LogicValue],
-        sink: &mut dyn EventSink,
-    ) {
-        let v = state.latest().and_then(|r| r.get(self.sense_idx).copied()).unwrap_or(0.0);
-        let new = if v >= self.threshold { LogicValue::One } else { LogicValue::Zero };
-        if new != self.last {
-            self.last = new;
-            sink.emit(self.out, new, 0.0);
-        }
-    }
+fn sink_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let g = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_MS, ..PinSpec::discrete("g", role::PARAM, &F64) });
+    let ctrl = s.pin(PinSpec::discrete("ctrl", role::PORT, &BIT));
+    let node = s.pin(PinSpec::continuous("node", role::PORT));
+    let t0 = s.term(flow("i", node, GROUND));
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![pin(ctrl), pin(node), pin(g)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 1)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
 }
 
-/// Digital-gated current sink: when its control net is `One`, it pulls a fixed
-/// current out of `node` (a resistive load re-routing), otherwise contributes
-/// nothing (D2A).
-struct GatedISink {
-    ctrl: DigitalNet,
-    node: AnalogReference,
-    g: f64,
-}
-
-impl AnalogDevice for GatedISink {
-    fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        let on = s.digital.get(self.ctrl.0).copied() == Some(LogicValue::One);
-        if on {
-            vec![Stamp::Matrix(self.node.clone(), self.node.clone(), self.g)]
-        } else {
-            Vec::new()
-        }
+impl Device for GatedISink {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SINK_SHAPE, sink_shape).shape()
     }
-}
-
-impl DigitalDevice for GatedISink {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: std::slice::from_ref(&self.ctrl), outputs: &[] }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((GatedISink, Arc::clone(shared(&SINK_SHAPE, sink_shape))))
     }
-}
-
-impl Introspect for GatedISink {}
-
-impl Element for GatedISink {
-    fn name(&self) -> &str { "gsink" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::DIGITAL
-            | ElementCapabilities::DEPENDS_ON_DIGITAL
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let g = if cx.bytes(0) == HIGH { cx.f64(2) } else { 0.0 };
+        cx.set(0, g * cx.f64(1));
+        cx.jac().copy_from_slice(&[g]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
 /// Mixed-signal DC settle: an analog divider whose mid node is watched by a
 /// comparator; the comparator's digital output gates an extra conductance back
-/// onto the mid node (D2A→A2D loop). Exercises the `SignalBridge` seam that T6
-/// folds. Pins the settled analog node and the digital net value.
+/// onto the mid node (D2A→A2D loop), through the operating point's rounds.
+/// Pins the settled analog node and the digital net value.
 #[test]
 fn parity_mixed_signal_dc_settle() {
-    let mut netlist = Netlist::new();
-    let top = netlist.connect_node(NodeIdentifier::Anonymous(40));
-    let mid = netlist.connect_node(NodeIdentifier::Anonymous(41));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-    let mid_idx = mid.idx().unwrap();
-    let ctrl = DigitalNet(0);
-
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Vdc { v: 5.0, n1: top.clone(), n2: gnd.clone(), branch: vb }),
-        Box::new(Resistor { r: 1000.0, n1: top.clone(), n2: mid.clone() }),
-        Box::new(Resistor { r: 1000.0, n1: mid.clone(), n2: gnd.clone() }),
-        Box::new(Comparator { sense_idx: mid_idx, threshold: 1.0, out: ctrl, last: LogicValue::X }),
-        Box::new(GatedISink { ctrl, node: mid.clone(), g: 1e-3 }),
-    ];
-    let mut circuit = CircuitInstance::from_devices_and_netlist("ms", elements, netlist);
-    circuit.digital_state = piperine_solver::abi::DigitalState::new(1);
-    let mut solver = Solver::new(circuit).build();
+    let mut b = CircuitBuilder::new("ms");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", 5.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 1000.0, &top, &mid);
+    add_resistor(&mut b, "r2", 1000.0, &mid, &gnd);
+    let ctrl = || Port::Net("ctrl".to_string());
+    b.device(CMP.get_or_init(|| module::<Comparator>("Comparator")), "cmp", &[], &[Port::Node(mid.clone()), ctrl()]);
+    b.device(SINK.get_or_init(|| module::<GatedISink>("GatedISink")), "gsink", &[], &[ctrl(), Port::Node(mid.clone())]);
+    let mut solver = Solver::new(b.build().unwrap()).build();
     let res = solver.dc().unwrap().solve().unwrap();
-    let vmid = res.get_node(&NodeIdentifier::Anonymous(41)).unwrap();
+    let vmid = res.get_node(&node_id(&mid)).unwrap();
 
     // Without the gate the divider sits at 2.5 V (> 1 V threshold); the
     // comparator fires One, the gate adds 1 mS to ground, and the node settles
     // lower. Pin the converged value + the latched digital decision.
     assert!((vmid - 1.666_666_666_666_666_7).abs() < 1e-9, "vmid = {vmid}");
+    let bound = solver.circuit().bound().unwrap();
+    assert_eq!(bound.digital.read(bound.names.nets["net:ctrl"]), HIGH, "ctrl latched");
 }
 
 // ───────────────────── Digital scheduler snapshot (topology) ──────────────────
 
-/// Constant digital source: drives `out` to `One` at power-on.
-struct DigitalSource {
-    out: DigitalNet,
+/// Constant digital source: `out` is HIGH from power-on (its `init`).
+/// pins: out=0 (PORT BIT, init HIGH)
+struct DigitalSource;
+static SRC_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SRC: OnceLock<Module> = OnceLock::new();
+
+fn src_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &HIGH, ..PinSpec::discrete("out", role::PORT, &BIT) });
+    s.freeze()
 }
 
-impl AnalogDevice for DigitalSource {}
-
-impl DigitalDevice for DigitalSource {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out) }
+impl Device for DigitalSource {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SRC_SHAPE, src_shape).shape()
     }
-    fn init(&mut self, sink: &mut dyn EventSink) {
-        sink.emit(self.out, LogicValue::One, 0.0);
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((DigitalSource, Arc::clone(shared(&SRC_SHAPE, src_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
-impl Introspect for DigitalSource {}
+/// Two-input AND gate: pins a=0, b=1, y=2 (PORT BIT); fn 0: reads [a, b] writes [y].
+struct And2;
+static AND_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static AND: OnceLock<Module> = OnceLock::new();
 
-impl Element for DigitalSource {
-    fn name(&self) -> &str { "src" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+fn and_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
+    let b = s.pin(PinSpec::discrete("b", role::PORT, &BIT));
+    let y = s.pin(PinSpec::discrete("y", role::PORT, &BIT));
+    s.function(FunctionSpec { name: "and", origin: ORIGIN, reads: vec![pin(a), pin(b)], writes: vec![pin(y)], ..FunctionSpec::default() });
+    s.freeze()
 }
 
-/// Inverter with zero delay for a purely digital combinational chain.
-struct Inv {
-    input: DigitalNet,
-    output: DigitalNet,
-}
-
-impl AnalogDevice for Inv {}
-
-impl DigitalDevice for Inv {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts {
-            inputs: std::slice::from_ref(&self.input),
-            outputs: std::slice::from_ref(&self.output),
-        }
+impl Device for And2 {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&AND_SHAPE, and_shape).shape()
     }
-    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        let v = ctx.nets[self.input.0];
-        let out = match v {
-            LogicValue::One => LogicValue::Zero,
-            LogicValue::Zero => LogicValue::One,
-            other => other,
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((And2, Arc::clone(shared(&AND_SHAPE, and_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (a, b) = (cx.bytes(0), cx.bytes(1));
+        let y = if a == LOW || b == LOW {
+            LOW
+        } else if a == HIGH && b == HIGH {
+            HIGH
+        } else {
+            [0, 0]
         };
-        sink.emit(self.output, out, 0.0);
+        cx.out_bytes(0).copy_from_slice(&y);
+        Ok(())
     }
-}
-
-impl Introspect for Inv {}
-
-impl Element for Inv {
-    fn name(&self) -> &str { "inv" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
-}
-
-/// Two-input AND gate.
-struct And2 {
-    a: DigitalNet,
-    b: DigitalNet,
-    output: DigitalNet,
-    inputs: [DigitalNet; 2],
-}
-
-impl And2 {
-    fn new(a: DigitalNet, b: DigitalNet, output: DigitalNet) -> Self {
-        Self { a, b, output, inputs: [a, b] }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
-}
-
-impl AnalogDevice for And2 {}
-
-impl DigitalDevice for And2 {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
-    }
-    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        let a = ctx.nets[self.a.0];
-        let b = ctx.nets[self.b.0];
-        let out = match (a, b) {
-            (LogicValue::One, LogicValue::One) => LogicValue::One,
-            (LogicValue::Zero, _) | (_, LogicValue::Zero) => LogicValue::Zero,
-            _ => LogicValue::X,
-        };
-        sink.emit(self.output, out, 0.0);
-    }
-}
-
-impl Introspect for And2 {}
-
-impl Element for And2 {
-    fn name(&self) -> &str { "and" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 /// Pure-digital combinational snapshot: two inverters feeding an AND gate.
 /// net0 = 1 (driven), inv0: net0→net1, inv1: net1→net2, and: (net1,net2)→net3.
-/// Exercises the digital scheduler / topology and the settle to a stable state.
+/// Exercises the digital engine's settle to a stable state at an operating point.
 #[test]
 fn parity_digital_scheduler_snapshot() {
-    let netlist = Netlist::new();
-    let n0 = DigitalNet(0);
-    let n1 = DigitalNet(1);
-    let n2 = DigitalNet(2);
-    let n3 = DigitalNet(3);
+    let mut b = CircuitBuilder::new("dig");
+    let n = |i: usize| Port::Net(format!("net{i}"));
+    b.device(SRC.get_or_init(|| module::<DigitalSource>("DigitalSource")), "src", &[], &[n(0)]);
+    b.device(inverter(), "inv0", &[], &[n(0), n(1)]);
+    b.device(inverter(), "inv1", &[], &[n(1), n(2)]);
+    b.device(AND.get_or_init(|| module::<And2>("And2")), "and", &[], &[n(1), n(2), n(3)]);
+    let mut solver = Solver::new(b.build().unwrap()).build();
+    solver.dc().unwrap().solve().unwrap();
 
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(DigitalSource { out: n0 }),
-        Box::new(Inv { input: n0, output: n1 }),
-        Box::new(Inv { input: n1, output: n2 }),
-        Box::new(And2::new(n1, n2, n3)),
-    ];
-    let mut circuit = CircuitInstance::from_devices_and_netlist("dig", elements, netlist);
-    circuit.digital_state = piperine_solver::abi::DigitalState::new(4);
-    circuit.rebuild_digital_topology();
-    circuit.init_digital().unwrap();
-
-    let nets = &circuit.digital_state.nets;
+    let bound = solver.circuit().bound().unwrap();
+    let nets = |i: usize| bound.digital.read(bound.names.nets[&format!("net:net{i}")]).to_vec();
     // net0=1 → inv0 net1=0 → inv1 net2=1 → AND(net1,net2)=AND(0,1)=0.
-    assert_eq!(nets[0], LogicValue::One, "net0");
-    assert_eq!(nets[1], LogicValue::Zero, "net1");
-    assert_eq!(nets[2], LogicValue::One, "net2");
-    assert_eq!(nets[3], LogicValue::Zero, "net3");
+    assert_eq!(nets(0), HIGH, "net0");
+    assert_eq!(nets(1), LOW, "net1");
+    assert_eq!(nets(2), HIGH, "net2");
+    assert_eq!(nets(3), LOW, "net3");
 }
-
