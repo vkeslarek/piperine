@@ -575,10 +575,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] A difference is a defect of T3, T7 or T8: it goes back to Opus with the function, the inputs and both outputs. No comparison is loosened
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test differential`: `every_m1_function_gives_the_interpreters_bytes`, `every_compiled_function_passes_verify_partials`, `a_non_finite_value_is_written_as_is`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+- [x] A difference is a defect of T3, T7 or T8: it goes back to Opus with the function, the inputs and both outputs. No comparison is loosened
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test differential`: `every_m1_function_gives_the_interpreters_bytes`, `every_compiled_function_passes_verify_partials`, `a_non_finite_value_is_written_as_is`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
