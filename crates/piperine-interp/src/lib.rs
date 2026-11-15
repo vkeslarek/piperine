@@ -4,6 +4,9 @@
 
 use std::sync::Arc;
 
+mod dual;
+
+pub use dual::Dual;
 use piperine_ir::{Broken, Ir};
 
 /// An `Ir` that failed `check()`: the entries, each naming an item and its origin.

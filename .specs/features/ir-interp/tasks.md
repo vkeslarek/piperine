@@ -176,12 +176,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Each operator and method is tested for value and tangent against the analytic formula at three points
-- [ ] Arithmetic between two constants allocates no tangent
-- [ ] `abs` at a negative value gives the negated tangent
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --lib`: `dual::tests::abs_has_the_derivative_of_sign`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Each operator and method is tested for value and tangent against the analytic formula at three points
+- [x] Arithmetic between two constants allocates no tangent
+- [x] `abs` at a negative value gives the negated tangent
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --lib`: `dual::tests::abs_has_the_derivative_of_sign`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
