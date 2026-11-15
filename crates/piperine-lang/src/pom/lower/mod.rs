@@ -1,3 +1,4 @@
+// hygiene-exempt: oversized mod.rs predating the restructure; split into named modules after msl-stdlib merges (ROADMAP.md)
 //! Stage 1: the syntax tree to the arenas. A pure function of the tree: it
 //! reads no scope and resolves nothing. Only this module pushes to the arenas.
 //!

@@ -5,10 +5,12 @@
 use crate::analyses::noise::NoiseAnalysisOptions;
 use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analyses::transient::TransientAnalysisOptions;
-use crate::analog::Netlist;
+use piperine_analog_solver::error::{Error, SolverDomain};
+use piperine_analog_solver::netlist::Netlist;
 use crate::core::element::{Element, ElementCapabilities, Introspect};
-use crate::digital::{DigitalState, DigitalTopology};
-use crate::math::circular_array::CircularArrayBuffer2;
+use piperine_digital_solver::state::DigitalState;
+use piperine_digital_solver::topology::DigitalTopology;
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::Context;
 use crate::analyses::ac::AcSolver;
 use crate::analyses::dc::DcSolver;
@@ -67,8 +69,8 @@ impl CircuitInstance {
     /// was provided.
     pub fn nets(&self) -> Vec<crate::core::net::Net> {
         use crate::core::net::Net;
-        use crate::digital::DigitalNet;
-        let mut nets = self.netlist.nets();
+        use piperine_digital_solver::events::DigitalNet;
+        let mut nets = Net::analog_nets(&self.netlist);
         nets.extend(
             (0..self.digital_state.nets.len())
                 .map(|i| Net::digital(i, self.digital_state.label_or_default(DigitalNet(i)))),
@@ -79,7 +81,7 @@ impl CircuitInstance {
     /// Look up the digital net's stable source-level label, defaulting to
     /// `d{idx}` when no label was attached. Convenience for diagnostics and
     /// result mapping that don't want to construct a full `Net`.
-    pub fn digital_label(&self, net: crate::digital::DigitalNet) -> String {
+    pub fn digital_label(&self, net: piperine_digital_solver::events::DigitalNet) -> String {
         self.digital_state.label_or_default(net)
     }
 
@@ -118,13 +120,11 @@ impl CircuitInstance {
     // `crate::analyses`.
 
     pub fn dc(&mut self, context: Context) -> crate::core::result::Result<DcSolver<'_>> {
-        self.reset_margin_tracking();
         self.start_analysis(&context, crate::analyses::AnalysisKind::Dc);
         DcSolver::new(self, context)
     }
 
     pub fn ac(&mut self, context: Context) -> crate::core::result::Result<AcSolver<'_>> {
-        self.reset_margin_tracking();
         self.start_analysis(&context, crate::analyses::AnalysisKind::Ac);
         AcSolver::new(self, context)
     }
@@ -134,7 +134,6 @@ impl CircuitInstance {
         transient_options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::core::result::Result<TransientSolver<'_>> {
-        self.reset_margin_tracking();
         self.start_analysis(&context, crate::analyses::AnalysisKind::Tran);
         TransientSolver::new(self, transient_options, context)
     }
@@ -208,17 +207,6 @@ impl CircuitInstance {
         crate::analyses::sp::SpSolver::new(self, options, context)
     }
 
-    /// Distortion analysis (`.disto`): small-signal Volterra HD2/HD3
-    /// (single-tone) or IM2/IM3 (two-tone) — see
-    /// [`DistoSolver`](crate::analyses::disto::DistoSolver).
-    pub fn disto(
-        &mut self,
-        options: crate::analyses::disto::DistoOptions,
-        context: Context,
-    ) -> crate::core::result::Result<crate::analyses::disto::DistoSolver<'_>> {
-        crate::analyses::disto::DistoSolver::new(self, options, context)
-    }
-
     // ── Mixed-signal seam ────────────────────────────────────────────────────
     //
     // The one place analog acceptance seeds digital events and the scheduler
@@ -255,8 +243,8 @@ impl CircuitInstance {
     /// reflects its power-on state.
     pub fn init_digital(&mut self) -> crate::core::result::Result<()> {
         use std::cmp::Reverse;
-        use crate::digital::DigitalEvent;
-        use crate::digital::interface::QueueSink;
+        use piperine_digital_solver::events::DigitalEvent;
+        use piperine_digital_solver::interface::QueueSink;
 
         let mut seed_queue = std::collections::BinaryHeap::<Reverse<DigitalEvent>>::new();
         let mut seq: u64 = 0;
@@ -295,7 +283,7 @@ impl CircuitInstance {
         t: f64,
         analog_slice: &[f64],
     ) -> crate::core::result::Result<()> {
-        let limits = crate::analyses::convergence::PlanLimits::default();
+        let limits = piperine_digital_solver::limits::DigitalLimits::default();
         match &self.digital_topology {
             Some(topo) => self.digital_state.evaluate_dag_ordered(
                 t,
@@ -311,6 +299,13 @@ impl CircuitInstance {
                 analog_slice,
             ),
         }
+        .map_err(Self::digital_failure)
+    }
+
+    /// The owner's error for a digital scheduler failure: `DigitalError`'s
+    /// `Display` text, unchanged, under the digital domain.
+    fn digital_failure(e: piperine_digital_solver::error::DigitalError) -> Error {
+        Error::simple(SolverDomain::Digital, e.to_string())
     }
 
     /// Update all devices' cached analog voltages from a solution vector,
@@ -355,7 +350,7 @@ impl CircuitInstance {
         let mut seq = 0u64;
         for (i, device) in self.devices.iter_mut().enumerate() {
             let mut sink =
-                crate::digital::interface::QueueSink::new(&mut seed_queue, t, i, &mut seq);
+                piperine_digital_solver::interface::QueueSink::new(&mut seed_queue, t, i, &mut seq);
             device.accept_timestep(state, t, &before, &mut sink);
         }
         for Reverse(event) in seed_queue {
@@ -415,8 +410,8 @@ impl CircuitInstance {
         value: crate::core::introspect::Value,
     ) -> crate::core::result::Result<crate::core::introspect::Invalidation> {
         let device = self.devices.iter_mut().find(|d| d.name() == label).ok_or_else(|| {
-            crate::error::Error::simple(
-                crate::error::SolverDomain::Element,
+            piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Element,
                 format!("no element labeled `{label}`"),
             )
         })?;
@@ -430,8 +425,8 @@ impl CircuitInstance {
         {
             let lo = desc.bounds.min.map_or("-inf".to_string(), |m| m.to_string());
             let hi = desc.bounds.max.map_or("inf".to_string(), |m| m.to_string());
-            return Err(crate::error::Error::simple(
-                crate::error::SolverDomain::Element,
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Element,
                 format!(
                     "`{label}`: value {v} is out of bounds for parameter `{param}` \
                      (declared bounds [{lo}, {hi}])"
@@ -454,7 +449,7 @@ impl CircuitInstance {
                 }
                 _ => format!("`{label}`: {e}"),
             };
-            crate::error::Error::simple(crate::error::SolverDomain::Element, detail)
+            piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Element, detail)
         })
     }
 
@@ -464,206 +459,13 @@ impl CircuitInstance {
     /// convergence test (ABI-10). The DC and transient systems delegate here
     /// each iteration.
     pub fn apply_limiting_reports(&self, mut guess: ndarray::ArrayViewMut1<f64>) {
-        use crate::math::linear::AsIndex;
+        use piperine_analog_solver::math::linear::AsIndex;
         for dev in &self.devices {
             if let Some(report) = dev.limiting_report()
                 && let Some(i) = report.net.as_index()
                 && i < guess.len()
             {
                 guess[i] = report.limited_value;
-            }
-        }
-    }
-
-    /// Poll the validation findings channel (DVC-14): every element
-    /// declaring [`ElementCapabilities::EMITS_VALIDATION`] is asked for its
-    /// [`ValidationReport`](crate::core::validation::ValidationReport);
-    /// elements without the bit are **never polled** — "costs nothing when
-    /// unused" means *not called*, not *returns empty* (design §C4). Each
-    /// non-`None` report is paired with its element's name. Drivers call
-    /// this only at the evaluation points design §C3 defines, behind a
-    /// [`capabilities`](Self::capabilities) union check so a circuit with no
-    /// validating elements skips even the scan.
-    pub fn validation_reports(
-        &self,
-    ) -> Vec<(String, crate::core::validation::ValidationReport)> {
-        self.devices
-            .iter()
-            .filter(|d| d.capabilities().contains(ElementCapabilities::EMITS_VALIDATION))
-            .filter_map(|d| d.validation_reports().map(|r| (d.name().to_string(), r)))
-            .collect()
-    }
-
-    /// Consume the findings of one evaluation point per the check posture
-    /// (DVC-15). `Off` returns before the capability scan — the hook is
-    /// never polled and nothing is reported ("off calls nothing"). Both
-    /// polling postures append every finding to `sink` (the analysis's
-    /// accumulated record, `SolverStats.validation`); `Strict` then fails
-    /// loud on the first [`ValidationSeverity::Error`](crate::core::validation::ValidationSeverity)
-    /// among *this point's* findings, naming the constraint, the instance
-    /// path, the time, and the margin value. A `Warning` never aborts,
-    /// even in strict. `domain` tags the error with the calling analysis.
-    pub fn consume_validation_reports(
-        &self,
-        posture: crate::analyses::CheckPosture,
-        domain: crate::error::SolverDomain,
-        sink: &mut Vec<crate::core::validation::ValidationFinding>,
-    ) -> crate::core::result::Result<()> {
-        use crate::analyses::CheckPosture;
-        use crate::core::validation::ValidationSeverity;
-        if posture == CheckPosture::Off
-            || !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
-        {
-            return Ok(());
-        }
-        let start = sink.len();
-        for (_, report) in self.validation_reports() {
-            sink.extend(report.findings().iter().cloned());
-        }
-        if posture == CheckPosture::Strict
-            && let Some(finding) = sink[start..].iter().find(|f| f.severity == ValidationSeverity::Error)
-        {
-            return Err(crate::error::Error::simple(
-                domain,
-                format!(
-                    "constraint `{}` violated on instance `{}` at t = {}: margin = {:.6} ({})",
-                    finding.label, finding.instance_path, finding.time, finding.value, finding.message
-                ),
-            ));
-        }
-        Ok(())
-    }
-
-    /// Consume `specify` timing-check violations at one accepted digital
-    /// event point (T21, LRMW3-07, spec P2 AC2) — the digital-domain
-    /// counterpart to [`Self::consume_validation_reports`], same posture
-    /// gate (`Off` polls nothing), same sink, same strict-abort-on-first-
-    /// `Error` rule. Call only once a transient step is accepted (never
-    /// from inside a speculative/rejected attempt — see
-    /// `DigitalState::check_timing_violations`'s own doc for why that is
-    /// safe by construction, not by caller discipline alone).
-    pub fn consume_timing_check_violations(
-        &self,
-        posture: crate::analyses::CheckPosture,
-        domain: crate::error::SolverDomain,
-        accepted_time: f64,
-        sink: &mut Vec<crate::core::validation::ValidationFinding>,
-    ) -> crate::core::result::Result<()> {
-        use crate::analyses::CheckPosture;
-        use crate::core::validation::ValidationSeverity;
-        if posture == CheckPosture::Off {
-            return Ok(());
-        }
-        let start = sink.len();
-        sink.extend(self.digital_state.check_timing_violations(accepted_time, "specify"));
-        if posture == CheckPosture::Strict
-            && let Some(finding) = sink[start..].iter().find(|f| f.severity == ValidationSeverity::Error)
-        {
-            return Err(crate::error::Error::simple(
-                domain,
-                format!(
-                    "timing check `{}` violated at t = {}: {} ({})",
-                    finding.label, finding.time, finding.value, finding.message
-                ),
-            ));
-        }
-        Ok(())
-    }
-
-    /// Evaluate every validating element's declared constraint margins at
-    /// one accepted solution point (DVC-10/11). The analysis drivers call
-    /// this **only** at the evaluation points design §C3 defines — DC at
-    /// the final converged solution (never a homotopy stage), transient at
-    /// each accepted step (never a rejected attempt), AC at each frequency
-    /// point. `solution` is the accepted point's full unknown vector; `t`
-    /// is the evaluation coordinate (`0.0` at a DC point, time in
-    /// transient, frequency in AC). `analysis` is the running analysis
-    /// kind (DVC-19) — a `require` scoped to `@ dc { … }` is evaluated
-    /// only when `analysis == Dc`. `Off` returns before any element is
-    /// touched — the margin kernels are never called ("off calls
-    /// nothing"), and a circuit with no validating elements skips even the
-    /// state build, exactly the `consume_validation_reports` gate.
-    pub fn evaluate_constraints_at(
-        &mut self,
-        posture: crate::analyses::CheckPosture,
-        solution: &[f64],
-        t: f64,
-        analysis: crate::analyses::AnalysisKind,
-    ) {
-        if posture == crate::analyses::CheckPosture::Off
-            || !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
-        {
-            return;
-        }
-        let state = self.build_accept_state(solution);
-        for device in self.devices.iter_mut() {
-            if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
-                device.evaluate_constraints(&state, t, analysis);
-            }
-        }
-    }
-
-    /// Collect the run's margin reports (DVC-18): every element declaring
-    /// [`ElementCapabilities::EMITS_VALIDATION`] is asked for its
-    /// [`MarginReport`](crate::core::margin::MarginReport); elements
-    /// without the bit are never polled — the same gate as
-    /// [`validation_reports`](Self::validation_reports). The returned
-    /// margins are flattened into [`SolverStats.margins`](crate::core::result::SolverStats)
-    /// by the drivers at end of run.
-    pub fn margin_reports(&self) -> Vec<crate::core::margin::ReportedMargin> {
-        if !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
-            return Vec::new();
-        }
-        let mut margins = Vec::new();
-        for device in &self.devices {
-            if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
-                && let Some(report) = device.margin_report()
-            {
-                margins.extend(report.margins().iter().cloned());
-            }
-        }
-        margins
-    }
-
-    /// Collect the run's coverage reports (T33/T34, DVT-40/43): every
-    /// element declaring [`ElementCapabilities::EMITS_VALIDATION`] is
-    /// asked for its [`CoverageReport`](crate::core::coverage::CoverageReport)
-    /// — the same gate `margin_reports` uses (coverage rides the same
-    /// bit, `device/element.rs` sets it for either `has_margins()` or
-    /// `has_coverage()`). Returns `(points, crosses)` flattened across
-    /// every reporting device, for the host to merge across runs (T34 —
-    /// this crate never accumulates across runs itself).
-    pub fn coverage_reports(
-        &self,
-    ) -> (Vec<crate::core::coverage::ReportedCoverPoint>, Vec<crate::core::coverage::ReportedCoverCross>) {
-        if !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
-            return (Vec::new(), Vec::new());
-        }
-        let mut points = Vec::new();
-        let mut crosses = Vec::new();
-        for device in &self.devices {
-            if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
-                && let Some(report) = device.coverage_report()
-            {
-                points.extend(report.points().iter().cloned());
-                crosses.extend(report.crosses().iter().cloned());
-            }
-        }
-        (points, crosses)
-    }
-
-    /// Reset every element's margin tracking so the next analysis starts
-    /// from a clean slate (DVC-18 — margins are a per-run channel). The
-    /// public analysis entries ([`Self::dc`], [`Self::transient`],
-    /// [`Self::ac`]) call this before a run; the internal solves an
-    /// analysis drives underneath itself do not.
-    pub fn reset_margin_tracking(&mut self) {
-        if !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
-            return;
-        }
-        for device in self.devices.iter_mut() {
-            if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
-                device.reset_margin_tracking();
             }
         }
     }

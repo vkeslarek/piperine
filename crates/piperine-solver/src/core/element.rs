@@ -3,21 +3,20 @@
 //! and the stamping/lifecycle vocabulary every participant and every
 //! driver speaks (MD-01 as amended 2026-07-19).
 use num_complex::Complex64;
-use std::collections::HashSet;
 
 use crate::analyses::ac::AcAnalysisContext;
 use crate::prelude::DcAnalysisResult;
 use crate::analyses::dc::DcAnalysisState;
 use crate::analyses::noise::Noise;
 use crate::analyses::transient::{TransientAnalysisContext, TransientAnalysisState};
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::core::introspect::{
     Invalidation, ObservableDescriptor, ParamDescriptor, ParamError, QueryDescriptor, TerminalDescriptor, Value,
 };
-use crate::digital::{DigitalNet, LogicValue};
-use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::linear::Stamp;
+use piperine_digital_solver::events::LogicValue;
+use piperine_digital_solver::interface::{DigitalDevice, DigitalParticipant, EventSink};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::linear::Stamp;
 use crate::analyses::Context;
 
 bitflags::bitflags! {
@@ -85,33 +84,8 @@ bitflags::bitflags! {
         const BYPASS_OK = 1 << 11;
 
         // ── Jacobian / derivative capability (ABI-23) ───────────────────────
-        /// The model provides analytic second derivatives — the `.disto`
-        /// Hessian compiled from symbolic differentiation (DISTO-03). The
-        /// `.disto` driver checks this before solving for HD2; a device
-        /// without it contributes no second-order nonlinear current. Every
-        /// in-tree JIT device that compiles a `.disto` 2nd-derivative kernel
-        /// sets this (ABI-26).
-        const HAS_DISTO2 = 1 << 12;
-        /// The model provides analytic third derivatives — the `.disto`
-        /// third-order Hessian compiled from symbolic differentiation
-        /// (DISTO-03). The `.disto` driver checks this before solving for
-        /// HD3; a device without it contributes no third-order nonlinear
-        /// current.
-        const HAS_DISTO3 = 1 << 13;
-        /// The model's Jacobian is finite-difference (numeric), not analytic
-        /// — e.g., a plugin that perturbs its residual to fill the Jacobian.
-        /// Analyses that require analytic derivatives (`.disto`) fail loud
-        /// on these devices (ABI-25): the method of nonlinear currents
-        /// needs the exact Hessian, never a numeric perturbation.
-        const NUMERIC_JACOBIAN = 1 << 14;
-        /// The model has validation findings to report (DVC-14): constraint
-        /// violations, model self-checks, monitor hits. The solver polls
-        /// [`Element::validation_reports`] **only** on elements declaring
-        /// this bit, and only at the evaluation points design §C3 defines —
-        /// "costs nothing when unused" means *not called*, not *returns
-        /// empty*. Declaring the bit and returning `None` is legal: the bit
-        /// promises capability, not content.
-        const EMITS_VALIDATION = 1 << 15;
+        // Bits 12, 13 and 14 are vacant (the removed distortion capability flags).
+        // Bit 15 is vacant (the removed validation capability flag).
         /// The model provides an analytic `∂F/∂p` kernel (DVG-05): a JIT
         /// device that compiled the parameter-indexed sensitivity function
         /// (DVG-02). The adjoint driver asks the element for analytic
@@ -294,29 +268,6 @@ pub trait AnalogDevice: Send + Sync {
         Vec::new()
     }
 
-    /// Second derivatives of the device's nonlinear contributions at the DC
-    /// operating point — the `.disto` nonlinear-current source data
-    /// (DISTO-03). Default `None`: a fully linear device contributes no
-    /// nonlinear currents.
-    fn load_disto2(
-        &mut self,
-        _dc_op: &DcAnalysisResult,
-        _context: &Context,
-    ) -> Option<crate::analyses::disto::Disto2> {
-        None
-    }
-
-    /// Third derivatives of the device's nonlinear contributions at the DC
-    /// operating point (DISTO-03). Default `None`: contributions of degree
-    /// ≤ 2 have no third-order nonlinear current.
-    fn load_disto3(
-        &mut self,
-        _dc_op: &DcAnalysisResult,
-        _context: &Context,
-    ) -> Option<crate::analyses::disto::Disto3> {
-        None
-    }
-
     // ── Numerical integration feedback ────────────────────────────────────────
 
     /// LTE-driven timestep suggestion, called by the transient stepper after
@@ -338,65 +289,6 @@ pub trait AnalogDevice: Send + Sync {
     ) -> Option<f64> {
         None
     }
-}
-
-/// Digital participation: two-phase delta cycle + hidden-state round-trip.
-///
-/// The delta cycle is two-phase to preserve non-blocking (NBA) semantics
-/// across register chains (SPEC §9): the scheduler calls `seq_phase` on every
-/// woken element first, then `comb_phase` on every woken element, so a
-/// register samples the pre-edge net snapshot instead of racing ahead.
-///
-/// Every method defaults to an element that drives no nets, so a purely
-/// analog device inherits the inert digital surface untouched.
-pub trait DigitalDevice: Send + Sync {
-    /// Boundary wiring: the nets this element reads (its sensitivity list) and
-    /// the nets it drives. Defaults to driving/reading nothing.
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &[], outputs: &[] }
-    }
-
-    /// Power-on: apply register initial values and emit initial output events
-    /// (typically at `t = 0`). No-op for elements with no digital state.
-    fn init(&mut self, _sink: &mut dyn EventSink) {}
-
-    /// Phase 1 (register commit): detect clock edges against the previous
-    /// evaluation and commit register writes from the pre-settle net snapshot.
-    /// Returns whether any clocked block fired. **Must not** emit output events
-    /// — those happen in [`comb_phase`](DigitalDevice::comb_phase).
-    fn seq_phase(&mut self, _ctx: &EvalCtx<'_>) -> bool { false }
-
-    /// Phase 2 (combinational): recompute outputs from live `ctx.nets` and the
-    /// (possibly just-committed) register banks, emitting change events into
-    /// `sink`.
-    fn comb_phase(&mut self, _ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {}
-
-    /// Fused one-shot evaluation: [`seq_phase`](DigitalDevice::seq_phase) then
-    /// [`comb_phase`](DigitalDevice::comb_phase) in a single call. Used by external
-    /// co-simulators that don't participate in the scheduler's two-phase cycle.
-    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        self.seq_phase(ctx);
-        self.comb_phase(ctx, sink);
-    }
-
-    /// Convenience: true if any of the element's input nets is in `changed`.
-    fn has_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
-        self.boundary().inputs.iter().any(|n| changed.contains(n))
-    }
-
-    /// Hidden digital state (module vars, edge-detection memory) as an
-    /// opaque `(int, real)` carrier, snapshotted into each recorded
-    /// [`crate::core::result::TransientStep`] and restored verbatim on full-state
-    /// re-entry (PSS shots, `TransientSolver::with_initial_state`) — the
-    /// shot-state contract requires register state to round-trip with the
-    /// digital nets. `None` = stateless (pure combinational) element.
-    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
-        None
-    }
-
-    /// Restore a state previously produced by [`Self::digital_hidden_snapshot`].
-    /// Called on full-state re-entry after `init`, before the first settle.
-    fn digital_hidden_restore(&mut self, _state: &(Vec<i64>, Vec<f64>)) {}
 }
 
 /// OSDI-style introspection: parameters, queries, terminals, opvars.
@@ -527,8 +419,7 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// analysis run (LRM §5.10.2's `@(final_step)`, LRMW2-08) — right
     /// before the analysis driver (`analyses::dc::DcSolver::solve`,
     /// `analyses::transient::TransientSolver::solve`, …) returns its
-    /// result. `analysis` is the running kind (same shape
-    /// [`Element::evaluate_constraints`] already takes — `Dc`/`Tran`/`Ac`
+    /// result. `analysis` is the running kind (`Dc`/`Tran`/`Ac`
     /// only, no `Noise` variant exists on `AnalysisKind` yet, a
     /// pre-existing limitation this task does not extend). Distinct from
     /// [`Self::destroy`] (fires once per `CircuitInstance`, on `Drop` —
@@ -615,69 +506,10 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// from the last accepted device state — not the dirty rejected-attempt
     /// state. Default: no-op (stateless device).
     fn restore_state(&mut self, _checkpoint: &ElementCheckpoint) {}
+}
 
-    /// Structured validation findings (DVC-13): constraint violations, model
-    /// self-checks, and monitor hits, each carrying severity, label, message,
-    /// value, time, and the authored instance path. Cross-cutting — analog
-    /// and digital elements alike speak through this one channel (it is the
-    /// *primary* mechanism for digital verification, since margins are an
-    /// analog notion). Shaped after [`limiting_report`](AnalogDevice::limiting_report):
-    /// `Option`, not `Vec`, because `None` (nothing to say) is the common
-    /// case. The solver polls only at the evaluation points design §C3
-    /// defines, and only elements declaring
-    /// [`ElementCapabilities::EMITS_VALIDATION`] are ever asked — the default
-    /// `None` here is what an element *without* something to say returns.
-    fn validation_reports(&self) -> Option<crate::core::validation::ValidationReport> { None }
-
-    /// Evaluate the element's declared constraint margins at one accepted
-    /// solution point (DVC-10/11). The analysis drivers call this **only**
-    /// at the evaluation points design §C3 defines — the final converged
-    /// DC solution (never a homotopy stage), each accepted transient step
-    /// (never a rejected attempt, never the UIC/`@initial` t = 0), each AC
-    /// frequency point — through
-    /// [`CircuitInstance::evaluate_constraints_at`](crate::core::circuit::CircuitInstance::evaluate_constraints_at),
-    /// and only on elements declaring
-    /// [`ElementCapabilities::EMITS_VALIDATION`]. Distinct from
-    /// [`accept_timestep`](Element::accept_timestep): the accept hook
-    /// seeds operators and digital events at points that are *not* margin
-    /// evaluation points (a transient's t = 0 operator seeding, the DC
-    /// mixed-signal settle), so margins do not ride it. `state` carries
-    /// the accepted solution as its latest row; `t` is the evaluation
-    /// coordinate (time in transient, `0.0` at a DC point, frequency in
-    /// AC). `analysis` is the running analysis kind (DVC-19) — a `require`
-    /// scoped to `@ dc { … }` is evaluated only when the running analysis
-    /// is `Dc`. The default is no margins to evaluate — zero cost.
-    fn evaluate_constraints(
-        &mut self,
-        _state: &CircularArrayBuffer2<f64>,
-        _t: f64,
-        _analysis: crate::analyses::AnalysisKind,
-    ) {
+impl DigitalParticipant for dyn Element {
+    fn is_digital(&self) -> bool {
+        self.capabilities().contains(ElementCapabilities::DIGITAL)
     }
-
-    /// The run's margin report (DVC-18): every declared pointwise margin's
-    /// worst value with its argmin, read at the end of an analysis into
-    /// [`SolverStats.margins`](crate::core::result::SolverStats). Shaped
-    /// after [`validation_reports`](Element::validation_reports) —
-    /// `Option`, not `Vec`, because an element with no declared margins
-    /// (the common case) has nothing to say.
-    fn margin_report(&self) -> Option<crate::core::margin::MarginReport> { None }
-
-    /// The `cover` channel's per-run report (dv-tester T33/T34, DVT-40/43):
-    /// every declared `cover` point's + `cover cross`'s raw hit counters
-    /// for *this run only* — `None` for an element with no declared
-    /// `cover` (the common case). Merging across runs is host state
-    /// (T34), never tracked here.
-    fn coverage_report(&self) -> Option<crate::core::coverage::CoverageReport> { None }
-
-    /// Reset the margin tracking (worst + argmin) so the next analysis
-    /// starts from a clean slate — margins are a per-run channel, and one
-    /// analysis's extrema must never leak into the next run on the same
-    /// circuit. Called by the public analysis entries
-    /// ([`CircuitInstance::dc`](crate::core::circuit::CircuitInstance::dc)
-    /// and siblings) before the run; the internal solves an analysis
-    /// drives underneath itself (a transient's t = 0 OP, the DC point
-    /// under an AC sweep) do **not** reset — they are part of the run.
-    /// Default no-op (nothing tracked).
-    fn reset_margin_tracking(&mut self) {}
 }

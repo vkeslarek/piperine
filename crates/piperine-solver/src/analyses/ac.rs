@@ -6,14 +6,14 @@
 //! architecture D2). The sweep tunables travel as
 //! [`AcSweepAnalysisOptions`] arguments, and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::Context;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::linear::Stamp;
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
+use piperine_analog_solver::math::linear::Stamp;
+use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::{AcAnalysisResult, AcAnalysisStep};
 
@@ -113,7 +113,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
         Ok(all_stamps)
     }
 
-    fn netlist(&self) -> &crate::analog::Netlist {
+    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
         self.circuit.netlist()
     }
 }
@@ -128,7 +128,7 @@ pub struct AcSolver<'a> {
     pub solver:
         NewtonRaphsonSolver<AnalogReference, Complex<f64>, FaerSparseLinearSystem<Complex<f64>>>,
     /// Convergence tunables (MD-04); AC is linear, so only `max_iter` matters.
-    pub policy: crate::analyses::Policy,
+    pub policy: piperine_analog_solver::tolerances::Policy,
 }
 
 impl<'a> AcSolver<'a> {
@@ -152,17 +152,10 @@ impl<'a> AcSolver<'a> {
 
         let mut dc_solver = DcSolver::new(circuit, context.clone())?;
         // The DC bias under an AC sweep belongs to the AC run (DVC-19):
-        // a `@ dc`-scoped require must not fire here even though a DC
-        // solver is what computes the bias. (The reset below would wipe
-        // the channel anyway — this just keeps the analysis kind honest.)
+        // the DC solver that computes the bias must not run the DC
+        // `finish_analysis` hook; this keeps the analysis kind honest.
         dc_solver.set_analysis_kind(crate::analyses::AnalysisKind::Ac);
         let dc_point = dc_solver.solve()?;
-
-        // The DC solve underneath the sweep is covered by the DC row of
-        // the evaluation-point table (design §C3) — its margin evaluation
-        // must not leak into the AC run's channel, so the sweep starts
-        // from a clean slate (DVC-11: not double-counted).
-        circuit.reset_margin_tracking();
 
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
@@ -176,7 +169,7 @@ impl<'a> AcSolver<'a> {
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver, policy: crate::analyses::Policy::default() })
+        Ok(Self { system, solver, policy: piperine_analog_solver::tolerances::Policy::default() })
     }
 
     /// Performs AC frequency sweep analysis.
@@ -204,7 +197,6 @@ impl<'a> AcSolver<'a> {
         let frequencies = options.generate_frequencies();
 
         let mut data = Vec::new();
-        let mut validation = Vec::new();
 
         for &f_hz in frequencies.iter() {
             self.system.frequency = f_hz;
@@ -213,29 +205,6 @@ impl<'a> AcSolver<'a> {
             let solution = self
                 .solver
                 .solve(&mut self.system, max_iter)?;
-
-            // Constraint margins + validation findings (DVC-11/14/15):
-            // each frequency point is an evaluation point, with the
-            // frequency as the argmin coordinate. The pointwise margin
-            // kernels are real-valued, so they read the small-signal
-            // *amplitudes* — the phasor magnitudes of the solved unknowns
-            // (a phasor's phase reference is arbitrary; the magnitude is
-            // the coordinate-invariant point value). The posture decides:
-            // off never evaluates and never polls, collect records every
-            // finding on the run, strict aborts the sweep at the first
-            // Error.
-            let mags: Vec<f64> = solution.iter().map(|c| c.norm()).collect();
-            self.system.circuit.evaluate_constraints_at(
-                self.system.context.checks,
-                &mags,
-                f_hz,
-                crate::analyses::AnalysisKind::Ac,
-            );
-            self.system.circuit.consume_validation_reports(
-                self.system.context.checks,
-                crate::error::SolverDomain::Ac,
-                &mut validation,
-            )?;
 
             let mut values = HashMap::new();
             for reference in self.system.circuit.netlist().all_references() {
@@ -246,15 +215,7 @@ impl<'a> AcSolver<'a> {
             data.push(AcAnalysisStep::new(f_hz, values));
         }
 
-        let mut result = AcAnalysisResult::new(data);
-        result.stats.validation = validation;
-        // The margin channel (DVC-18): empty under `checks=off` — nothing
-        // was evaluated, so there is nothing honest to report.
-        result.stats.margins = if self.system.context.checks == crate::analyses::CheckPosture::Off {
-            Vec::new()
-        } else {
-            self.system.circuit.margin_reports()
-        };
+        let result = AcAnalysisResult::new(data);
         Ok(result)
     }
 }

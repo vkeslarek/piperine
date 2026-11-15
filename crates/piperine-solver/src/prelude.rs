@@ -11,27 +11,20 @@
 //! ```
 
 // ── Building blocks ────────────────────────────────────────────────────────
-pub use crate::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
+pub use piperine_analog_solver::netlist::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
 pub use crate::core::builder::CircuitBuilder;
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::element::{Element, ElementCapabilities};
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
-    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind, simprobe, SimprobeError,
+    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind,
     SignConvention, TerminalDescriptor, TerminalKind, Value, ValueKind,
 };
 pub use crate::core::net::{Net, NetKind};
-pub use crate::core::output::{
-    parse_memory_text, BufferSink, Channel, FileError, FileId, FileTable, McdTable, MemRadix, SimOutput, StdoutSink,
-};
-pub use crate::core::validation::{ValidationFinding, ValidationReport, ValidationSeverity};
-pub use crate::core::margin::{MarginKind, MarginReport, ReportedMargin};
-pub use crate::digital::{DigitalNet, LogicValue};
-pub use crate::digital::{DelayTable, PathDelay, TimingCheckKind, TimingCheckLimit, TimingCheckTable};
+pub use piperine_digital_solver::events::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;
-pub use crate::analyses::disto::{DistoOptions, DistoSolver};
 pub use crate::analyses::noise::{NoiseAnalysisOptions, NoiseKind};
 pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
 pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
@@ -44,22 +37,23 @@ pub use crate::analyses::sensitivity::{
 pub use crate::analyses::sp::{SpOptions, SpPort, SpSolver};
 pub use crate::analyses::transient::TransientAnalysisOptions;
 pub use crate::analyses::Context;
-pub use crate::analyses::{CheckPosture, Policy, RequireScope, Tolerances};
+pub use piperine_analog_solver::tolerances::{Policy, Tolerances};
 pub use crate::analyses::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
-pub use crate::analyses::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};
-pub use crate::analyses::convergence::{
-    ConvergencePlan, DampedNewton, HomotopyStrategy, NewtonStrategy, PiController, StepperStrategy,
+pub use piperine_analog_solver::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};
+pub use piperine_analog_solver::convergence::{
+    ConvergencePlan, DampedNewton, HomotopyStrategy, NewtonStrategy, PiController, StepLimits,
+    StepperStrategy,
 };
 
 // ── Results ────────────────────────────────────────────────────────────────
 pub use crate::core::result::{
-    AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, DistoResult, NoiseAnalysisResult, NoiseContribution,
+    AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, NoiseAnalysisResult, NoiseContribution,
     PoleZeroResult, SpResult, TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
 };
 
 // ── Errors ─────────────────────────────────────────────────────────────────
-pub use crate::error::Error;
+pub use piperine_analog_solver::error::Error;
 pub use crate::core::result::Result;
 pub use crate::core::result::SolverStats;

@@ -30,14 +30,14 @@
 //! the textbook transmission-zero definition, exact (no root-search
 //! heuristic). An empty zero set is a legitimate answer, unlike poles.
 
-use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
+use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::AcAnalysisContext;
 use crate::analyses::dc::{DcAnalysisState, DcSolver};
 use crate::core::circuit::CircuitInstance;
-use crate::error::{Error, SolverDomain};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::linear::Stamp;
+use piperine_analog_solver::error::{Error, SolverDomain};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::linear::Stamp;
 use crate::prelude::DcAnalysisResult;
 
 use ndarray::Array2;
@@ -367,8 +367,9 @@ impl<'a> PoleZeroSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analog::{Netlist, NodeIdentifier};
-    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
+    use piperine_analog_solver::netlist::{Netlist, NodeIdentifier};
+    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
+    use piperine_digital_solver::interface::DigitalDevice;
     use crate::core::circuit::CircuitInstance;
     use num_complex::Complex64;
 

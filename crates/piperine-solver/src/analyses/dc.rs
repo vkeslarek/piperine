@@ -3,17 +3,18 @@
 //! source scale an element reads while stamping) and the Newton driver
 //! (`DcSystem`/`DcSolver`): gmin/source-stepping homotopy escalation, the
 //! device-bypass stamp cache, and the mixed-signal settle loop.
-use crate::analog::AnalogReference;
-use crate::analyses::convergence::{ConvergencePlan, HomotopyDriver};
-use crate::analyses::{Context, Policy};
+use piperine_analog_solver::netlist::AnalogReference;
+use piperine_analog_solver::convergence::{ConvergencePlan, HomotopyDriver};
+use crate::analyses::Context;
+use piperine_analog_solver::tolerances::Policy;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCapabilities;
-use crate::digital::LogicValue;
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::iv::InitialValue;
-use crate::math::linear::Stamp;
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use piperine_digital_solver::events::LogicValue;
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
+use piperine_analog_solver::math::iv::InitialValue;
+use piperine_analog_solver::math::linear::Stamp;
+use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
 
 use ndarray::ArrayView1;
@@ -151,7 +152,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         let dc_state = DcAnalysisState::new(state, &digital_state.nets, src_scale);
         for dc in devices.iter_mut() {
             let device_stamps = dc.load_dc(&dc_state, &self.context);
-            if let Some(err) = crate::analyses::non_finite_stamp_error(dc.name(), &device_stamps) {
+            if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error(dc.name(), &device_stamps) {
                 return Err(err);
             }
             all_stamps.extend(device_stamps);
@@ -197,7 +198,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         Ok(self.stamp_cache.clone())
     }
 
-    fn netlist(&self) -> &crate::analog::Netlist {
+    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
         self.circuit.netlist()
     }
 
@@ -246,21 +247,18 @@ pub struct DcSolver<'a> {
     /// homotopy attempt, restored on strategy fallthrough so the limiter and
     /// other non-accept-gated state start clean on the next retry.
     device_checkpoint: Vec<Option<crate::core::element::ElementCheckpoint>>,
-    /// The analysis kind margin evaluations at the converged solution are
-    /// tagged with (DVC-19). Defaults to `Dc`; an outer analysis driving a
-    /// DC solve underneath itself (a transient's t = 0 OP, the bias point
-    /// under an AC sweep) overrides it via [`Self::set_analysis_kind`] so a
-    /// `@ dc`-scoped `require` does not fire during tran startup — the
-    /// outer analysis owns the evaluation point.
+    /// The analysis kind this solve runs under. Defaults to `Dc`; an outer
+    /// analysis driving a DC solve underneath itself (a transient's t = 0 OP,
+    /// the bias point under an AC sweep) overrides it via
+    /// [`Self::set_analysis_kind`] — the outer analysis owns `finish_analysis`.
     analysis_kind: crate::analyses::AnalysisKind,
 }
 
 impl<'a> DcSolver<'a> {
-    /// Tag this DC solve's margin evaluations with a different analysis
-    /// kind (DVC-19). Used by outer analyses driving a DC solve underneath
-    /// themselves — a transient's t = 0 OP, the bias point under an AC
-    /// sweep — so a `@ dc`-scoped `require` does not fire during tran
-    /// startup. Defaults to `Dc` at [`Self::new`].
+    /// Tag this DC solve with a different analysis kind. Used by outer
+    /// analyses driving a DC solve underneath themselves — a transient's
+    /// t = 0 OP, the bias point under an AC sweep. Defaults to `Dc` at
+    /// [`Self::new`].
     pub(crate) fn set_analysis_kind(&mut self, kind: crate::analyses::AnalysisKind) {
         self.analysis_kind = kind;
     }
@@ -354,8 +352,8 @@ impl<'a> DcSolver<'a> {
             {
                 for _ in 0..max_ms_iter {
                     let solution_slice = sol.as_slice().ok_or_else(|| {
-                        crate::error::Error::simple(
-                            crate::error::SolverDomain::Dc,
+                        piperine_analog_solver::error::Error::simple(
+                            piperine_analog_solver::error::SolverDomain::Dc,
                             "solution not contiguous",
                         )
                     })?;
@@ -370,7 +368,7 @@ impl<'a> DcSolver<'a> {
                     // The digital snapshot feeds the stamps, so the bypass
                     // cache is stale even though the analog solution is not.
                     self.system.invalidate_bypass();
-                    let strategy = crate::analyses::convergence::DampedNewton;
+                    let strategy = piperine_analog_solver::convergence::DampedNewton;
                     let policy = self.policy.clone();
                     let tolerances = self.system.context.tolerances.clone();
                     sol = self.solver.solve_with_strategy(
@@ -383,38 +381,6 @@ impl<'a> DcSolver<'a> {
             }
             (sol, homotopy_strategy)
         };
-
-        // Constraint margins + validation findings (DVC-11/14/15): only at
-        // the final converged solution — never at a homotopy stage, whose
-        // intermediates are non-physical by construction (design §C3: gmin
-        // stepping adds shunt conductance, source stepping scales sources;
-        // a headroom require checked there fails on a solve that is
-        // converging correctly). A transient's t = 0 solve under UIC
-        // (`uic_clamps` non-empty — a forced `@initial` condition may
-        // legitimately sit outside SOA) skips the evaluation; a computed
-        // operating point is evaluated. The posture decides: off never
-        // evaluates and never polls, collect records every finding on the
-        // stats, strict fails loud on the first Error.
-        let mut validation = Vec::new();
-        if self.system.uic_clamps.is_empty() {
-            let sol = raw_solution.as_slice().ok_or_else(|| {
-                crate::error::Error::simple(
-                    crate::error::SolverDomain::Dc,
-                    "solution not contiguous",
-                )
-            })?;
-            self.system.circuit.evaluate_constraints_at(
-                self.system.context.checks,
-                sol,
-                0.0,
-                self.analysis_kind,
-            );
-        }
-        self.system.circuit.consume_validation_reports(
-            self.system.context.checks,
-            crate::error::SolverDomain::Dc,
-            &mut validation,
-        )?;
 
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
@@ -439,14 +405,6 @@ impl<'a> DcSolver<'a> {
         result.stats.homotopy_levels = self.newton_calls.saturating_sub(1);
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
-        result.stats.validation = validation;
-        // The margin channel (DVC-18): empty under `checks=off` — nothing
-        // was evaluated, so there is nothing honest to report.
-        result.stats.margins = if self.system.context.checks == crate::analyses::CheckPosture::Off {
-            Vec::new()
-        } else {
-            self.system.circuit.margin_reports()
-        };
         // HOST-10: collect each device's final limiting state — the
         // structured diagnostics a host reads via `op.stats.limiting`.
         // Mirrors `apply_limiting_reports`'s iteration over devices.
@@ -476,7 +434,7 @@ impl<'a> DcSolver<'a> {
 impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::core::result::Result<ndarray::Array1<f64>> {
         self.newton_calls += 1;
-        let strategy = crate::analyses::convergence::DampedNewton;
+        let strategy = piperine_analog_solver::convergence::DampedNewton;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         self.solver.solve_with_strategy(

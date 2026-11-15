@@ -8,7 +8,7 @@
 //! [`TransientAnalysisOptions`], the per-step kernel state is
 //! [`TransientAnalysisContext`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::events::{
     EventEntry, EventKind, EventQueue, EventSource,
@@ -16,13 +16,13 @@ use crate::analyses::events::{
 use crate::analyses::Context;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCheckpoint;
-use crate::digital::{DigitalNet, LogicValue};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::integration::{TrBdf2, TrBdf2Phase};
-use crate::math::iv::InitialValue;
-use crate::math::linear::{AsIndex, Stamp};
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use piperine_digital_solver::events::{DigitalNet, LogicValue};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
+use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
+use piperine_analog_solver::math::iv::InitialValue;
+use piperine_analog_solver::math::linear::{AsIndex, Stamp};
+use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::{TransientAnalysisResult, TransientStep};
 
 use log::debug;
@@ -123,6 +123,11 @@ pub struct TransientAnalysisOptions {
 }
 
 impl TransientAnalysisOptions {
+    /// The `dt` bounds the stepper strategy clamps into.
+    pub fn step_limits(&self) -> piperine_analog_solver::convergence::StepLimits {
+        piperine_analog_solver::convergence::StepLimits { dt_min: self.dt_min, dt_max: self.dt_max }
+    }
+
     /// Create transient options. The integrator is always adaptive (PI
     /// controller); `dt` is the initial step size, grown/shrunk from there.
     pub fn new(stop_time: f64, dt: f64) -> Self {
@@ -195,7 +200,7 @@ pub struct TransientAnalysisContext {
     /// Which sub-step the kernel is stamping: [`Trapezoidal`][TrBdf2Phase::Trapezoidal]
     /// over `γh` (solving for `x_{n+γ}`) or [`Bdf2`][TrBdf2Phase::Bdf2] over
     /// `(1−γ)h` (solving for `x_{n+1}` from `x_{n+γ}` and `x_n`).
-    pub phase: crate::math::integration::TrBdf2Phase,
+    pub phase: piperine_analog_solver::math::integration::TrBdf2Phase,
     /// The full step size `h = t_{n+1} − t_n`. The companion sub-step (`γh` or
     /// `(1−γ)h`) is derived from `phase` inside `TrBdf2::phase_coeffs`.
     pub h: f64,
@@ -215,9 +220,9 @@ mod step_tests {
     use super::*;
     use crate::prelude::TransientStep;
     use crate::core::net::Net;
-    use crate::digital::LogicValue;
+    use piperine_digital_solver::events::LogicValue;
     use std::collections::HashMap;
-    use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
+    use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
     use std::sync::Arc;
 
     #[test]
@@ -323,7 +328,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         let tran_state = TransientAnalysisState::new(state, &digital_state.nets);
         for tran in devices.iter_mut() {
             let device_stamps = tran.load_transient(&tran_state, &tran_ctx, &self.context);
-            if let Some(err) = crate::analyses::non_finite_stamp_error(tran.name(), &device_stamps) {
+            if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error(tran.name(), &device_stamps) {
                 return Err(err);
             }
             all_stamps.extend(device_stamps);
@@ -349,7 +354,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         Ok(all_stamps)
     }
 
-    fn netlist(&self) -> &crate::analog::Netlist {
+    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
         self.circuit.netlist()
     }
 
@@ -475,11 +480,6 @@ struct TimeLoop {
     sets_just_applied: bool,
     dt_min_seen: f64,
     dt_max_seen: f64,
-    /// Validation findings accumulated at accepted points (DVC-15):
-    /// collect records the whole run; strict records until the first
-    /// Error finding aborts the analysis. Flushed into the result stats
-    /// by `finish_run`.
-    validation: Vec<crate::core::validation::ValidationFinding>,
 }
 
 impl TimeLoop {
@@ -494,7 +494,6 @@ impl TimeLoop {
             sets_just_applied: false,
             dt_min_seen: f64::INFINITY,
             dt_max_seen: 0.0,
-            validation: Vec::new(),
         }
     }
 }
@@ -512,7 +511,7 @@ pub struct TransientSolver<'a> {
     /// driver delegates `propose_dt`/`reject_dt` to `plan.stepper()` — the
     /// plan is the single strategy owner across analyses (Newton +
     /// Homotopy + Stepper).
-    plan: crate::analyses::convergence::ConvergencePlan,
+    plan: piperine_analog_solver::convergence::ConvergencePlan,
     /// Unified event queue (ABI-36..41). Populated each `predict_step`
     /// from the four sources (digital peek, analog breakpoints, scheduled
     /// sets, `$bound_step` hints). `attempt_step` checkpoints + drains
@@ -522,7 +521,7 @@ pub struct TransientSolver<'a> {
     event_queue: EventQueue,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
-    pub policy: crate::analyses::Policy,
+    pub policy: piperine_analog_solver::tolerances::Policy,
     /// Host-scheduled live parameter writes (LIVE-06/09).
     sets: SetQueue,
     /// Full-state re-entry point (PSS shooting enabler): when set, the run
@@ -544,7 +543,7 @@ impl<'a> TransientSolver<'a> {
         options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::core::result::Result<Self> {
-        Self::with_plan(circuit, options, context, crate::analyses::convergence::ConvergencePlan::default())
+        Self::with_plan(circuit, options, context, piperine_analog_solver::convergence::ConvergencePlan::default())
     }
 
     /// Build a transient solver with an explicit convergence plan (ABI-42):
@@ -554,7 +553,7 @@ impl<'a> TransientSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: TransientAnalysisOptions,
         context: Context,
-        plan: crate::analyses::convergence::ConvergencePlan,
+        plan: piperine_analog_solver::convergence::ConvergencePlan,
     ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
@@ -587,7 +586,7 @@ impl<'a> TransientSolver<'a> {
             initial_conditions: Vec::new(),
             plan,
             event_queue: EventQueue::new(),
-            policy: crate::analyses::Policy::default(),
+            policy: piperine_analog_solver::tolerances::Policy::default(),
             sets: SetQueue::default(),
             reentry_state: None,
             top_level: true,
@@ -604,7 +603,7 @@ impl<'a> TransientSolver<'a> {
 
     /// Replace the convergence plan (ABI-42). The host plugs in a plan with a
     /// custom stepper; the driver delegates rejection/proposal to it.
-    pub fn set_plan(&mut self, plan: crate::analyses::convergence::ConvergencePlan) {
+    pub fn set_plan(&mut self, plan: piperine_analog_solver::convergence::ConvergencePlan) {
         self.plan = plan;
     }
 
@@ -620,15 +619,15 @@ impl<'a> TransientSolver<'a> {
     ) -> crate::core::result::Result<()> {
         for (label, observable) in &selection.requests {
             let Some(dev) = circuit.devices.iter().find(|d| d.name() == label) else {
-                return Err(crate::error::Error::simple(
-                    crate::error::SolverDomain::Element,
+                return Err(piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Element,
                     format!("device `{label}` not found"),
                 ));
             };
             let declared = dev.list_observables();
             if !declared.iter().any(|d| &d.name == observable) {
-                return Err(crate::error::Error::simple(
-                    crate::error::SolverDomain::Element,
+                return Err(piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Element,
                     format!("device `{label}` has no observable `{observable}`"),
                 ));
             }
@@ -638,7 +637,7 @@ impl<'a> TransientSolver<'a> {
 
     /// Read-only access to the convergence plan (e.g., for tests asserting
     /// which strategy is wired).
-    pub fn plan(&self) -> &crate::analyses::convergence::ConvergencePlan {
+    pub fn plan(&self) -> &piperine_analog_solver::convergence::ConvergencePlan {
         &self.plan
     }
 
@@ -756,21 +755,12 @@ impl<'a> TransientSolver<'a> {
                 plus.map(|plus| UicClamp { plus, minus, ic })
             })
             .collect();
-        // The t=0 operating point shares the run's check posture (DVC-15):
-        // it is an evaluation point of this analysis — a collect or off
-        // run must not meet a strict OP underneath. Tolerances keep the
-        // pre-existing default (numeric behavior unchanged).
-        let op_context = Context {
-            checks: self.system.context.checks,
-            require_scope: self.system.context.require_scope,
-            cover: self.system.context.cover,
-            ..Default::default()
-        };
+        // The t=0 operating point runs under the default tolerances (numeric
+        // behavior unchanged).
+        let op_context = Context::default();
         let mut dc_solver = DcSolver::new(self.system.circuit, op_context)?;
-        // The t = 0 OP belongs to the transient run (DVC-19): a `@ dc`-
-        // scoped require must not fire here even though a DC solver is
-        // what computes the point. The DC analysis owns DC points; tran
-        // owns its own startup.
+        // The t = 0 OP belongs to the transient run: the DC analysis owns
+        // DC points; tran owns its own startup.
         dc_solver.set_analysis_kind(crate::analyses::AnalysisKind::Tran);
         dc_solver.system.uic_clamps = uic_clamps.clone();
         let dc_result = dc_solver.solve()?;
@@ -822,7 +812,7 @@ impl<'a> TransientSolver<'a> {
         dt: f64,
         use_predictor: bool,
     ) -> crate::core::result::Result<Option<TransientStep>> {
-        let strategy = crate::analyses::convergence::DampedNewton;
+        let strategy = piperine_analog_solver::convergence::DampedNewton;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         let t_next = t_n + dt;
@@ -1037,36 +1027,6 @@ impl<'a> TransientSolver<'a> {
         self.event_queue.commit();
         self.record_step(steps, t_next, snapshot);
         st.current_time = t_next;
-        // Constraint margins + validation findings (DVC-11/14/15):
-        // accepted steps only — never a rejected attempt (design §C3).
-        // Evaluation is decoupled from the accept hook (`accept_timestep`
-        // seeds operators at points that are not evaluation points, like
-        // the t = 0 operator seeding); the driver evaluates at the just-
-        // accepted solution, then the posture decides: off never
-        // evaluates and never polls, collect records every finding on the
-        // run's stats, strict fails loud on the first Error — aborting
-        // the analysis here.
-        let accepted = self.solver.current_guess().unwrap().to_owned();
-        self.system.circuit.evaluate_constraints_at(
-            self.system.context.checks,
-            accepted.as_slice().unwrap(),
-            t_next,
-            crate::analyses::AnalysisKind::Tran,
-        );
-        self.system.circuit.consume_validation_reports(
-            self.system.context.checks,
-            crate::error::SolverDomain::Transient,
-            &mut st.validation,
-        )?;
-        // `specify` timing-check enforcement (T21, LRMW3-07, spec P2
-        // AC2): same accepted-step-only evaluation point, same posture
-        // gate, same findings sink as the constraint margins just above.
-        self.system.circuit.consume_timing_check_violations(
-            self.system.context.checks,
-            crate::error::SolverDomain::Transient,
-            t_next,
-            &mut st.validation,
-        )?;
         if self.apply_scheduled_sets(st, steps, dt_actual)? {
             // The value jump is a discontinuity: the next TR stage
             // must not re-derive a previous current across it.
@@ -1117,8 +1077,8 @@ impl<'a> TransientSolver<'a> {
             strongest = strongest.max(inv);
         }
         if strongest >= Invalidation::Rebuild {
-            return Err(crate::error::Error::simple(
-                crate::error::SolverDomain::Transient,
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
                 format!(
                     "scheduled set at t={:.3e} needs a structural \
                      rebuild — re-elaborate at the host layer (MD-18)",
@@ -1199,7 +1159,7 @@ impl<'a> TransientSolver<'a> {
             // Normalising `milne` by `trtol` here (tried, reverted) closes the
             // safety band and coarsens the grid enough to break `tran_rc`'s
             // ngspice parity at the steep part of the charging curve.
-            self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options)
+            self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options.step_limits())
         };
         if sets_just_applied {
             dt = (1e-3 * dt_actual).max(self.options.dt_min);
@@ -1286,14 +1246,6 @@ impl<'a> TransientSolver<'a> {
         result.stats.dt_max = st.dt_max_seen;
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
-        result.stats.validation = st.validation.clone();
-        // The margin channel (DVC-18): empty under `checks=off` — nothing
-        // was evaluated, so there is nothing honest to report.
-        result.stats.margins = if self.system.context.checks == crate::analyses::CheckPosture::Off {
-            Vec::new()
-        } else {
-            self.system.circuit.margin_reports()
-        };
         result
     }
 
@@ -1326,7 +1278,7 @@ impl<'a> TransientSolver<'a> {
         // dropped (re-declared by next_breakpoints next predict), step
         // hints discarded (re-emitted by the device).
         self.event_queue.rollback();
-        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options);
+        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
         if st.dt <= self.options.dt_min {
             st.dt_min_floor_hits += 1;
             tracing::warn!(
@@ -1362,7 +1314,7 @@ impl<'a> TransientSolver<'a> {
         // retry starts from the pre-attempt checkpoint (ABI-02).
         self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
-        st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options);
+        st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options.step_limits());
         // Unified event queue rollback — same per-entry semantics as the
         // LTE reject path (ABI-40/41).
         self.event_queue.rollback();
@@ -1383,8 +1335,8 @@ impl<'a> TransientSolver<'a> {
             if iterations > self.options.max_steps {
                 let progress = (st.current_time - self.options.start_time)
                     / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
-                return Err(crate::error::Error::simple(
-                    crate::error::SolverDomain::Transient,
+                return Err(piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Transient,
                     format!(
                         "exceeded the {} step budget at t = {:.6e} s of {:.6e} s \
                          ({:.2}% of the run) with dt = {:.3e} s \

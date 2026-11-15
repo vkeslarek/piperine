@@ -16,7 +16,7 @@ use piperine_solver::abi::{
     TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
 };
 use piperine_solver::prelude::{
-    ConvergencePlan, Context, CircuitInstance, Solver, StepperStrategy, TransientAnalysisOptions,
+    ConvergencePlan, Context, CircuitInstance, Solver, StepLimits, StepperStrategy, TransientAnalysisOptions,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -214,7 +214,7 @@ impl StepperStrategy for HalvingStepper {
         &mut self,
         _lte: f64,
         dt_actual: f64,
-        opts: &TransientAnalysisOptions,
+        opts: &StepLimits,
     ) -> f64 {
         self.proposes.fetch_add(1, Ordering::SeqCst);
         dt_actual.clamp(opts.dt_min, opts.dt_max)
@@ -223,7 +223,7 @@ impl StepperStrategy for HalvingStepper {
     fn reject_dt(
         &mut self,
         failed_dt: f64,
-        opts: &TransientAnalysisOptions,
+        opts: &StepLimits,
     ) -> f64 {
         self.rejects.fetch_add(1, Ordering::SeqCst);
         (failed_dt * 0.5).max(opts.dt_min)
@@ -267,10 +267,10 @@ fn custom_stepper_receives_propose_calls_through_plan() {
 fn default_plan_stepper_is_routed_through_accessor() {
     let mut plan = ConvergencePlan::default();
     let opts = TransientAnalysisOptions::new(1e-3, 1e-5);
-    let dt = plan.stepper_mut().propose_dt(1.0, 1e-5, &opts);
+    let dt = plan.stepper_mut().propose_dt(1.0, 1e-5, &opts.step_limits());
     assert!(dt > 0.0, "default stepper returns a positive dt: {dt}");
 
-    let dt_after_reject = plan.stepper_mut().reject_dt(1e-5, &opts);
+    let dt_after_reject = plan.stepper_mut().reject_dt(1e-5, &opts.step_limits());
     assert!(dt_after_reject > 0.0 && dt_after_reject < 1e-5,
         "default reject_dt shrinks dt: {dt_after_reject}");
 }
