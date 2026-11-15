@@ -473,7 +473,7 @@ Proof: run harness | test parallel_runs_do_not_share_a_scratch_directory ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** 2026-11-15 batch 1 (T1-T4, Sonnet) in ../piperine-msl-parity
+**Dispatched:** 2026-11-15 batch 1 (T1-T4, Sonnet) done 432b4763; main (ir, typeck, elab, interp) merged in 54263820; batch 2 (T5-T10, Sonnet) in ../piperine-msl-parity
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---
