@@ -1,6 +1,6 @@
 # msl-elab proofs
 
-**HEAD**: d7e027ea
+**HEAD**: 46cc2d76
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 42 pass, 0 fail
@@ -56,19 +56,19 @@
 
 ```
 test an_empty_top_is_one_body_and_one_instance ... ok
-test an_unknown_or_ported_top_is_one_diagnostic ... ok
 test front_end_diagnostics_are_returned_without_an_ir ... ok
+test an_unknown_or_ported_top_is_one_diagnostic ... ok
 test every_diagnostic_has_code_span_and_path ... ok
-test the_design_is_unchanged_by_elaboration ... ok
 test the_twins_elaborate_without_diagnostics ... ok
+test the_design_is_unchanged_by_elaboration ... ok
 test elaborating_twice_prints_the_same_text ... ok
 test a_twin_elaborates_to_a_checked_ir ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.20s
 
    Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-elab/crates/piperine-ir)
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-elab/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.16s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.25s
      Running tests/elab_entry.rs (/var/tmp/piperine-target/debug/deps/elab_entry-4cb1a4f29eda6799)
 ```
 
@@ -76,11 +76,11 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 test a_param_read_is_never_folded ... ok
-test a_const_read_is_folded_once ... ok
-test a_bound_value_that_is_not_constant_is_refused ... ok
-test functions_methods_and_logic_fold ... ok
 test division_by_zero_is_inf_not_an_error ... ok
 test a_where_is_recorded_over_the_body_params ... ok
+test an_environment_function_is_dynamic ... ok
+test a_const_read_is_folded_once ... ok
+test a_param_read_with_no_binding_is_not_constant ... ok
 test an_unset_param_takes_its_default ... ok
 test a_required_param_left_out_is_e0319 ... ok
 test a_false_where_is_e0317_with_the_path ... ok
@@ -88,24 +88,24 @@ test a_false_where_is_e0317_with_the_path ... ok
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-elab/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.37s
      Running tests/elab_params.rs (/var/tmp/piperine-target/debug/deps/elab_params-03aa0cdb7ccbf522)
 ```
 
 `Run instances` - exit 0
 
 ```
-test a_node_init_is_recorded_on_body_and_design ... ok
-test a_node_init_that_reads_a_param_is_p0001 ... ok
-test an_empty_module_is_an_empty_body ... ok
-test a_module_that_places_itself_is_e0341 ... ok
 test an_unnamed_placement_is_module_hash_k ... ok
-test a_module_under_two_parents_is_one_body ... ok
-test paths_start_at_the_top_module ... ok
+test a_module_that_places_itself_through_another_is_e0341 ... ok
+test an_empty_module_is_an_empty_body ... ok
+test a_node_init_that_reads_a_param_is_p0001 ... ok
+test a_module_that_places_itself_is_e0341 ... ok
+test electrical_is_lowered_once_with_its_tolerances ... ok
 test one_body_per_module_one_instance_per_placement ... ok
+test paths_start_at_the_top_module ... ok
 test signals_are_nodes_and_ports_bind_the_parents ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-elab/crates/piperine-lang)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
@@ -115,35 +115,36 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run analog` - exit 0
 
 ```
-test sites_are_numbered_in_source_order_and_named ... ok
-test probes_and_environment_lower_to_their_nodes ... ok
 test a_lowered_expression_carries_its_type_and_the_origin_of_its_construct ... ok
-test the_device_bodies_equal_the_structural_goldens ... ok
+test a_branch_is_one_unordered_pair_with_its_kind ... ok
+test a_reversed_pair_negates_its_addends ... ok
+test sites_are_numbered_in_source_order_and_named ... ok
 test a_sum_splits_into_direct_and_ddt_addends ... ok
-test a_site_under_an_if_is_refused_not_mis_lowered ... ok
-test value_code_lowers_to_the_same_forms_and_functions_once ... ok
+test the_device_bodies_equal_the_structural_goldens ... ok
 test a_branch_from_a_node_to_itself_is_e0241 ... ok
+test value_code_lowers_to_the_same_forms_and_functions_once ... ok
 test a_ddt_off_the_top_of_a_flow_contribution_is_refused ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-elab/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.45s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.37s
      Running tests/elab_analog.rs (/var/tmp/piperine-target/debug/deps/elab_analog-4602fd91a315722d)
 ```
 
 `Run unlowered` - exit 0
 
 ```
-running 6 tests
-test a_digital_block_is_p0001 ... ok
+running 7 tests
 test a_diagnostic_means_no_ir ... ok
+test a_digital_block_is_p0001 ... ok
+test a_contribution_in_the_analog_blocks_own_list_still_lowers ... ok
 test a_site_on_the_left_of_a_short_circuit_still_lowers ... ok
 test m_dtemp_or_extern_at_a_placement_is_p0001 ... ok
 test ddt_off_the_top_of_a_flow_contribution_is_p0001 ... ok
 test a_site_or_contribution_under_if_is_p0001 ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-elab/crates/piperine-lang)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
