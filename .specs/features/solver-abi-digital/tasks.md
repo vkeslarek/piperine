@@ -523,8 +523,8 @@ Proof: `cargo test -p piperine-digital-solver --lib 2>&1 | grep -E '^test result
 
 ## Handoff
 
-**Settled mid-build:** none
-**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported); B2 (Sonnet) at f2000f5f - returned (T7-T13 771e775a..f438e312; advance strictly before 'to'; HostWrite error; fixtures Succ..Clockwatch) - returned (core seam adapted 3d000240..28b73be3; preview_boundary + C43 superseded; NetSpec.crossing for integration); Verifier (Opus) at ada78474
+**Settled mid-build:** round-1 fix (orchestrator 2026-11-15): HORIZON after the reactions of the microstep (new SAD requirement + check); RELAX rule = every directed cycle must pass through at least one RELAX net, checked per cycle (graph with RELAX nets removed is acyclic), not per component; never-due REPLACE still removes pending commits; host_commit range-checked; P3 canonical check on every write (functions and commits), release builds included, with tests; none
+**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported); B2 (Sonnet) at f2000f5f - returned (T7-T13 771e775a..f438e312; advance strictly before 'to'; HostWrite error; fixtures Succ..Clockwatch) - returned (core seam adapted 3d000240..28b73be3; preview_boundary + C43 superseded; NetSpec.crossing for integration); Verifier (Opus) at ada78474 - returned (FAIL: 6 findings); Fix pass (Sonnet) + core N2 adapt at 79d28c66
 **Walked:** not applicable - no screen
 
 ---
