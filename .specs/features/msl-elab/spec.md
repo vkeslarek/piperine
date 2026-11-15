@@ -1,83 +1,59 @@
-# MSL Elaboration (POM to IR) Specification
+# MSL Elaboration (POM to IR, M1 subset) Specification
 
-**Status**: Draft. Not approved. Open questions ELAB-Q1 to ELAB-Q7 block approval.
+**Status**: Draft. Not approved. Rewritten for M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S6, S7).
 
 ## Problem Statement
 
-`piperine_lang::pom` gives an immutable `Design` that mirrors the source: no types, no evaluation, no unrolling, no instance copies (`docs/pom/index.md`, "What the POM does not do"). The language defines an elaboration phase that evaluates const generics, checks params, runs generation, places every instance and applies every static check (§0.3, §8 rule 8, §16 step 1). Nothing implements it for MSL, so no MSL model can reach the solver. This feature is that phase: `Design` in, IR out (C3).
+A `Design` mirrors the source: nothing is evaluated and no instance is placed. The language defines an elaboration phase that evaluates constants, checks params and places every instance (§8 rule 8, §16 step 1). Nothing implements it for MSL, so no model reaches the solver. This feature is that phase for the M1 analog subset: a type-checked `Design` and a top module in, an `Ir` out (C3).
 
 ## Goals
 
-- [ ] One call turns a `Design`, a top module and param values into an IR (feature `msl-ir`), or into diagnostics and no IR.
-- [ ] A model that meets an elaboration-phase error condition of `docs/spec/` is rejected with its error code and a source location or path (§0.3 items 3 and 4).
-- [ ] The `Design` is never modified (C3).
-- [ ] The IR carries the metadata of §21, so a host lists params, paths and streams without running the model.
-- [ ] A construct elaboration cannot lower fails with a diagnostic; nothing is dropped silently (project rule "fail loud").
+- [ ] One call turns a `Design` and the name of a top module into an `Ir`, or into diagnostics and no `Ir`.
+- [ ] The five M1 twins elaborate, and their printed IR is pinned by golden tests.
+- [ ] A model that meets an elaboration-phase error of the subset is rejected with the specification's code and a span.
+- [ ] A construct elaboration cannot lower fails with a diagnostic. Nothing is dropped.
+- [ ] The `Design` is never modified.
 
 ## Out of Scope
 
 | Feature | Reason |
 | ------- | ------ |
-| The IR's storage, handles, serde and printer | feature `msl-ir` |
-| Running the IR | features `ir-interp` and `ir-rust` |
-| The device ABI and how a design is handed to the solver | ABI duel (C8, O8); a dependency, not designed here |
-| Package, parse and name-resolution diagnostics | already produced by `piperine-project` and the POM (`E0161` and the POM's resolution codes) |
-| Run-phase and host-phase errors (`E05xx`, `E08xx`, run rows of other parts) | raised by the backends and the host |
-| `extern "osdi"` and `extern "cosim"` modules (§8.5) | their runtime form is the ABI's (O8, G.65); see ELAB-Q6 |
-| Gradients across events (§23.3) beyond listing gradient params (§21 rule 7) | deferred in the solver context too |
-| Incremental re-elaboration | not requested; a structural `set` re-runs elaboration (§8.1.24) |
+| Type checking and the refusal of constructs outside the subset | feature `msl-typeck` (S5); elaboration runs after it |
+| The IR's storage, printer, `check()` and dependency analysis | feature `msl-ir` |
+| Running the IR | feature `ir-interp` |
+| Generics, const generics, monomorphization into several variants | M2; with none, each module has exactly one body, which is S7 with one variant |
+| Generation `for` and `if`, templates, value inputs, module results, bundles | M2 |
+| Param values given by the caller, structural params, re-elaboration on `set` | M2, with the host; in M1 every param is non-structural and a host `set` goes to the solver |
+| A placement's param value that reads the parent's params | M2; it makes the child's param a run-time function of the parent's |
+| Selectors: a contribution under `if` or `match`; switch branches; merged nodes (§11 rule 3) | M2; no M1 model has one |
+| `ddt` anywhere but as a whole addend of a flow contribution; `ddt` in a potential contribution (an inductor) | M2: needs the hoisting of abi.md A1 |
+| Implicit params `m` and `dtemp` given a value | M2; M1 elaborates with `m = 1` and `dtemp = 0` and refuses a placement that sets either |
+| The `digital` side: definitions, reactions, events, boundary reachability, definition order | M2 (S2) |
+| `extern` modules | refused (ELAB-Q6 closed); their runtime form is the ABI's and M1 has no foreign device |
+| Operating-point variables, streams, gradient params and the rest of §21 beyond paths and params | M2, with the host |
 
 ---
 
 ## Assumptions & Open Questions
 
-Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by POM code. Rows marked `n` are unconfirmed proposals with an entry under "Open questions (detail)".
+Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. Rows marked `n` wait for the user in `.specs/features/e2e-m1/questions.md`.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
-| Elaboration reads a `Design` and writes an IR; the POM stays as written | shared borrow in, IR out | C3; POM "one rule" | y |
-| What elaboration does | evaluates const generics, checks params, runs generation, places every instance; type checking, name resolution and every static check belong to it | §8 rule 8, §0.3 Resolution | y |
-| A model with an elaboration-phase error is rejected | diagnostics, no IR | §0.3 item 3 | y |
-| A structural `set` re-runs elaboration; a non-structural `set` does not | elaboration takes param values as input; non-structural params stay run-time values in the IR | §8.1.2, §8.1.23, §8.1.24, §21 rule 4, C7 | y |
-| The standard library is ordinary source | elaborated like user code | §22, §14.13 | y |
-| The elaborator, not the solver, computes which reactions and carriers can touch `analog` | one flag per reaction and per carrier | solver-completeness context Q8 (user round 2), C9 | y |
-| Who type-checks (ELAB-Q1) | a separate feature before this one fills the POM's `Deferred` slots and gives every expression a type | `msl-pom` listed type checking as "next feature"; no feature exists; not decided | n |
-| What the IR keeps of the hierarchy (ELAB-Q2, O3) | flat per-design IR with a name map back to POM handles | proposal of O3 | n |
-| Monomorphization and inlining policy (ELAB-Q3, O3) | one body per distinct set of generic and structural-param values; functions kept as functions, not inlined | C4 says value-level code is reprinted as Rust; Appendix C.1.1 (informative) says "every function is inlined"; the two disagree | n |
-| The lowered form of each construct (ELAB-Q4, O2) | follows the node set of `msl-ir` IR-Q1 | open there | n |
-| Which subset ships first (ELAB-Q5) | the conformance set of Appendix C.2.3 plus the galleries of Appendices D to F, in that order | C.2.3: "the first compiler pass SHOULD run the following as its conformance set" | n |
-| `extern` modules in the first version (ELAB-Q6) | rejected with a diagnostic naming the module | their runtime form waits for O8 | n |
-| Crate (ELAB-Q7) | a module of `piperine-lang` (`piperine_lang::elab`) depending on the IR crate | elaboration is a language phase; no decision recorded | n |
-| Who implements and who verifies (C10) | Opus implements, Fable verifies | whether elaboration counts as "core" is not stated | n |
+| Elaboration reads a `Design` and writes an `Ir`; the POM stays as written | shared borrow in, `Ir` out | C3; `pom/mod.rs` "The one rule" | y |
+| One body per distinct variant; functions kept | as stated; one variant per module in M1 | S7, user: "Concordo e pode disparar" | y |
+| Bodies per module and a flat instance table | as stated | S6, same answer | y |
+| Type checking runs first | `Types::check` is called by the entry point; its diagnostics are returned as they are | S5 | y |
+| Crate (ELAB-Q7) | `piperine_lang::elab`; `piperine-lang` gains a dependency on the IR crate | elaboration is a language phase (§0.3); `CLAUDE.md` names this crate "parser + elaborator"; the IR crate is a leaf, so the edge adds no front-end weight to a backend | y |
+| The elaborator owns every node | every continuous port and signal of every instance is one entry of the IR's node table; a child's port is its parent's node | the solver binds a device's `PORT` pins to named nodes (`CircuitBuilder::device`); a path per node is §21 rule 1 | y |
+| The top of a path | the top module's name: `Divider.mid`, `Divider.r1` | §21 rule 1: "from the top module down"; its example `top.adc.dac.r[3].r` starts with the top | y |
+| The top module of M1 | has no port; its params take their defaults | a port of a top has nothing to connect to; caller-given values are M2 | y |
+| A node's `= value` | a const expression that reads no param; evaluated at elaboration | abi.md §3: a shape "depends on structure only, never on a non-structural value", and the hold is part of the shape; `E0210` already forbids reading a carrier or a probe | y |
+| Code of a construct inside the type-checked subset that elaboration does not lower (Q5) | `P0001`, as in `msl-typeck` | same rule, same code | n |
 
-**Open questions:** ELAB-Q1 to ELAB-Q7 are open and listed below. This spec is not ready for approval.
+**Open questions:** Q5 of `.specs/features/e2e-m1/questions.md` (the code `P0001`). Everything else is resolved above.
 
-**Implicit-requirement dimensions.** Input validation and bounds: ELAB-02, ELAB-03 (params, generation bounds, recursion). Failure states: ELAB-01 AC 3 and AC 4, ELAB-06. Idempotency: ELAB-01 AC 5. Auth and rate limits: N/A because elaboration is an in-process function. Concurrency and ordering: ELAB-03 AC 4 and ELAB-07 AC 3 (the orders §21 fixes). Data lifecycle: N/A because the IR is owned by the caller. Observability: ELAB-05 (diagnostics carry code and location). External-dependency failure: ELAB-03 AC 6 (`include_str!` file unreadable). State-transition integrity: ELAB-04 (structural or not is fixed at elaboration).
-
-**Open questions (detail)**
-
-- **ELAB-Q1. Type checking.** The POM has no expression types and leaves members `Deferred`. §0.3 places type checking in the elaboration phase. Options: (a) a separate feature (`msl-types`) that runs on the `Design` before this one; (b) type checking inside `msl-elab`, interleaved with monomorphization; (c) no checker of our own: lean on `rustc` rejecting the transpiled code. Recommendation: (a). (c) fails because the interpreter must run with no `rustc` (C6) and diagnostics must name MSL source (§0.3.4). (b) makes this feature very large. This question changes the size of the feature and its place in the order.
-- **ELAB-Q2 (O3). Hierarchy kept in the IR.** Same question as `msl-ir` IR-Q3. This spec requires only the paths of §21.
-- **ELAB-Q3 (O3). Monomorphization and inlining.** Options: (a) one body per distinct variant, functions kept; (b) full inlining and one body per instance, as Appendix C.1.1 describes for AIR v2; (c) one body per module, generics kept and resolved by the backends. Recommendation: (a). It keeps the transpiler's output close to the source (C4) and the compiled size proportional to the number of distinct modules, not instances (O5). Value inputs, results and named expressions still need the hoisting of §8.3.
-- **ELAB-Q4 (O2). Lowered forms.** Decided with `msl-ir` IR-Q1; the two features should share one design pass.
-- **ELAB-Q5. First subset.** Options: (a) conformance set then galleries; (b) analog only first (resistor, capacitor, diode) for early ngspice parity; (c) the whole language before anything runs. Recommendation: (a), with an analog slice of (b) as its first milestone, since ngspice parity is the stated strength.
-- **ELAB-Q6. `extern` modules.** Options: (a) reject until the ABI defines external devices; (b) represent them in the IR now as opaque instances. Recommendation: (a).
-- **ELAB-Q7. Crate.** Options: (a) `piperine_lang::elab`; (b) a new crate `piperine-elab`. Recommendation: (a) unless the IR crate must not be a dependency of the language crate.
-
----
-
-## Dependencies & Order
-
-| Depends on | For | State |
-| ---------- | --- | ----- |
-| `msl-pom` | the `Design` | done |
-| type checking (ELAB-Q1) | expression types, `Deferred` members, trait and generic resolution | no feature exists |
-| `msl-stdlib` | the §22 sources (`Bit`, `Electrical`, `above`, `idt`, `transition`, ...) that every model of the conformance set uses | in progress on `feature/msl-stdlib` |
-| `msl-ir` | the output type | drafted with this spec |
-| `solver-restructure` | removes the old `piperine-codegen` this replaces (C1) | planned |
-| ABI duel (C8, O8) | what a device must expose (state, events, small-signal, noise, introspection, external devices) can add items elaboration must compute | open |
-
-Order proposed by O6 (not decided): `msl-elab`, `msl-ir` and `ir-interp` first, `ir-rust` after. Inside the group: `msl-ir` (model), then `msl-elab`, then `ir-interp`; `msl-elab` cannot be tested end to end until `ir-interp` runs, so its own tests are golden tests of the printed IR.
+**Implicit-requirement dimensions.** Input validation and bounds: ELAB-02 (params), ELAB-01 AC 3 and 4. Failure states: ELAB-06. Idempotency: ELAB-01 AC 5. Auth and rate limits: N/A because elaboration is an in-process function. Concurrency and ordering: ELAB-03 AC 2 (instance order), ELAB-04 AC 4 (addend order). Data lifecycle: N/A because the `Ir` is owned by the caller. Observability: every diagnostic carries a code and a span (ELAB-05). External-dependency failure: N/A because nothing external is read in M1 (`include_str!` is outside the subset). State-transition integrity: N/A because elaboration is one pure function.
 
 ---
 
@@ -85,7 +61,7 @@ Order proposed by O6 (not decided): `msl-elab`, `msl-ir` and `ir-interp` first, 
 
 ### P1: One call from a design to an IR ⭐ MVP
 
-**User Story**: As a host author, I want one call that elaborates a top module with given param values so that I get an IR or the reasons there is none.
+**User Story**: As a host author, I want one call that elaborates a top module so that I get an IR or the reasons there is none.
 
 **Why P1**: C3; the entry point of the chain.
 
@@ -93,13 +69,13 @@ Order proposed by O6 (not decided): `msl-elab`, `msl-ir` and `ir-interp` first, 
 
 **Acceptance Criteria**:
 
-1. WHEN elaboration is called with a `Design` without diagnostics, the name of a top module and a set of param values THEN the system SHALL return an IR of that module's elaborated design.
+1. WHEN `Elaborator::run` is called with a `Design` without diagnostics and the name of a module of its root crate THEN the system SHALL return an `Ir` whose `check()` is empty.
 2. The system SHALL take the `Design` by shared borrow and leave `Design::dump()` byte-identical after the call.
-3. IF the `Design` holds a diagnostic of phase package, parse or elaboration THEN the system SHALL return no IR and SHALL return those diagnostics.
-4. IF the named top module does not exist in the `Design` THEN the system SHALL return no IR and one diagnostic naming the module.
-5. WHEN elaboration is called twice with the same `Design`, top module and param values THEN the system SHALL return two IR values with byte-identical printed texts.
+3. IF the `Design` holds a diagnostic, or type checking returns one, THEN the system SHALL return no `Ir` and SHALL return those diagnostics.
+4. IF the named top does not exist, or has a port, THEN the system SHALL return no `Ir` and one diagnostic naming the module.
+5. WHEN `Elaborator::run` is called twice with the same `Design` and top THEN the system SHALL return two `Ir` values with byte-identical printed texts.
 
-**Independent Test**: elaborate the `Resistor` example of §8 and compare the printed IR with a golden file.
+**Independent Test**: elaborate `Divider` of the M1 models and compare the printed IR with a golden file.
 
 ---
 
@@ -113,154 +89,107 @@ Order proposed by O6 (not decided): `msl-elab`, `msl-ir` and `ir-interp` first, 
 
 **Acceptance Criteria**:
 
-1. WHEN a param has no value given by the caller THEN the system SHALL bind it to its default evaluated as a const expression.
-2. IF a param with no default is given no value THEN the system SHALL reject the model with `E0319` (§8.1.17).
-3. IF a bound param value violates the param's `where` condition THEN the system SHALL reject the model with `E0317` and SHALL name the param's path.
-4. IF an environment function of §14.4 appears in a const context THEN the system SHALL reject the model with `E0323`.
-5. IF evaluating a const expression panics (§1 rule 11) THEN the system SHALL reject the model with an elaboration error at that expression.
-6. The system SHALL evaluate every const generic argument and array length to a known value before placing instances (§3.3.8).
+1. WHEN a placement gives no value for a param THEN the system SHALL bind it to its default evaluated as a const expression.
+2. IF a param with no default is given no value THEN the system SHALL reject the model with `E0319` at the placement.
+3. IF a bound param value makes the param's `where` condition false THEN the system SHALL reject the model with `E0317` and SHALL name the param's path.
+4. IF a bound param value or a default reads anything but constants THEN the system SHALL reject the model with `P0001` when it reads a param of the parent, and with `E0321` otherwise.
+5. The system SHALL replace every read of a `const` item by its value, evaluated once.
+6. The system SHALL keep every param as a value read at run time in the bodies: no param read is folded into an expression.
+7. The system SHALL record each param's `where` condition in the body as an expression over the body's params.
 
-**Independent Test**: elaborate a module whose param has `where r > 0.0` with `r = -1.0` and read the diagnostic.
+**Independent Test**: place `Resistor { r: -1.0 }(a, gnd)` and read `E0317` naming `Top.r1.r`; elaborate `DiodeIv` and read the bound `is` of `DiodeIv.d1` as `1e-14`.
 
 ---
 
-### P1: Generation and instance placement ⭐ MVP
+### P1: Instances and nodes ⭐ MVP
 
-**User Story**: As a model author, I want generation unrolled and every instance placed so that the elaborated netlist is the one my source describes.
+**User Story**: As a model author, I want every placement turned into an instance bound to nodes so that the elaborated netlist is the one I wrote.
 
-**Why P1**: §8 rule 8, §8.2.7, §8.3.
+**Why P1**: §8 rule 8; S6.
 
 **Requirement**: ELAB-03
 
 **Acceptance Criteria**:
 
-1. WHEN a body or a `digital` block holds a generation `for` THEN the system SHALL produce one copy of its items per iteration, in iteration order, indexed from 0 (§8.2.23).
-2. WHEN a generation `if` has a const condition THEN the system SHALL keep the items of the taken arm and no item of the others.
-3. IF a generation range or condition is not a const expression THEN the system SHALL reject the model with `E0340`.
-4. The system SHALL place one instance for every placement reached after generation, core modules of §14 included, and name it by §21 rules 1 to 3.
-5. IF a module places itself through generation without end THEN the system SHALL reject the model with `E0341` and SHALL name the module (§8.2.7).
-6. IF the file named by an `include_str!` cannot be read THEN the system SHALL reject the model with a diagnostic naming the path resolved against the source file (§20).
+1. The system SHALL produce one body for each module the top reaches and one instance for each placement, the top included.
+2. The system SHALL order the instance table in pre-order of the hierarchy, children in source order.
+3. The system SHALL give each instance the path of §21 rule 1 starting with the top module's name, and each node the path of the instance that declares it followed by its name without `r#`.
+4. The system SHALL create one node of the node table for each continuous `signal` of each instance, and SHALL bind each port of a child to the node, or to ground, the parent wrote in that position.
+5. WHEN a node is declared with `= value` THEN the system SHALL record the value as the node's initial potential, on the body node and on the design node.
+6. IF a node's `= value` reads a param THEN the system SHALL reject the model with `P0001` at the value.
+7. IF a placement has no `let` of its own THEN the system SHALL name the instance `<module>#<k>` as §21 rule 3 states.
+8. IF a module places itself, directly or through other modules, THEN the system SHALL reject the model with `E0341` and SHALL name the module.
 
-**Independent Test**: elaborate a module with `for k in 0..3 { let r = Resistor { r: 1k }(a, b); }` and list the paths `r[0]`, `r[1]`, `r[2]`.
+**Independent Test**: elaborate `DiodeSeries`; list the paths `DiodeSeries.v1`, `.r1`, `.d1`, `.d2` in that order, and read that `DiodeSeries.d1` and `DiodeSeries.d2` both bind `DiodeSeries.b`.
 
 ---
 
-### P1: Structural and run-time params ⭐ MVP
+### P1: The analog block ⭐ MVP
 
-**User Story**: As a host author, I want to know which params fix structure so that a `set` of the others needs no re-elaboration and no recompilation.
+**User Story**: As a backend author, I want each `analog` block lowered to the IR's analog nodes so that I execute it without reading the POM.
 
-**Why P1**: §8.1.2, §8.1.23, §8.1.24, C7 (MD-18).
+**Why P1**: every M1 device is an `analog` block.
 
 **Requirement**: ELAB-04
 
 **Acceptance Criteria**:
 
-1. The system SHALL mark a param as structural in the IR when generation, a const generic argument, an array length, a template or the trip count of a loop that places instances reads it, or when it alone selects the kind of a branch (§8.1.2).
-2. The system SHALL keep every non-structural param in the IR as a value read at run time, never folded into the expressions that read it.
-3. WHEN elaboration is called again with a different value of a structural param THEN the system SHALL return an IR elaborated with that value and new metadata (§21 rule 4).
+1. The system SHALL lower each value expression, `let` and function of the type-checked set to the IR node of the same form, and each function once however many bodies call it.
+2. The system SHALL lower a potential probe to a `Probe` over the terminals of its nodes, and `temperature()`, `gmin()` and `source_scale()` to their `Env` nodes.
+3. The system SHALL create one branch per unordered pair of terminals that receives a contribution, with the kind potential when any contribution to it is a potential contribution and flow otherwise (§11).
+4. WHEN a contribution's right side is a sum THEN the system SHALL split it at its top-level `+` and `-` into addends in source order, an addend that is exactly `ddt(x)` becoming an addend under `ddt` with value `x`, and every maximal run of other addends becoming one direct addend.
+5. WHEN a contribution is written on the reversed pair of an existing branch THEN the system SHALL negate its addends (§11 rule 10).
+6. The system SHALL give each `limit` placement and each `ac_stim` call of a block its own site, numbered in source order, and SHALL name a `limit` site after the `let` it initializes when it has one.
+7. IF both nodes of a contribution are the same node THEN the system SHALL reject the model with `E0241`.
+8. IF a branch receives both potential and flow contributions THEN the system SHALL reject the model with `E0415`.
 
-**Independent Test**: elaborate a ladder whose length is a param with two lengths and compare the instance counts; check the resistance param is printed as a run-time read.
-
----
-
-### P1: Static checks of the elaboration phase ⭐ MVP
-
-**User Story**: As a model author, I want every static rule of the language checked so that a non-conforming model never runs.
-
-**Why P1**: §0.3 item 3. Staging is ELAB-Q5; type rules depend on ELAB-Q1.
-
-**Requirement**: ELAB-05
-
-**Acceptance Criteria**:
-
-1. IF a model meets an error condition whose phase is elaboration in an error table of Parts I to VI THEN the system SHALL reject the model and report that condition's code.
-2. The system SHALL attach to every diagnostic the source location or the hierarchical path the condition names (§0.3 item 4).
-3. IF an `analog` block reads a discrete carrier other than through `level` or a flag-total function (§3.3.5 to §3.3.7) THEN the system SHALL reject the model with `E0150` and name the carrier.
-4. IF a core primitive is written where the §14 table does not allow it THEN the system SHALL reject the model with `E0450`.
-5. WHEN a model raises no elaboration error under `docs/spec/` THEN the system SHALL return an IR and no error diagnostic.
-
-**Independent Test**: one negative fixture per error code, each asserting the code and the span.
+**Independent Test**: elaborate the `Diode`; its one contribution prints as `b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)` and its site as `limit L0 "vd"`.
 
 ---
 
 ### P1: Nothing is dropped silently ⭐ MVP
 
-**User Story**: As a maintainer, I want an unsupported construct to stop elaboration so that a partial implementation never gives a wrong simulation.
+**User Story**: As a maintainer, I want a form elaboration cannot lower to stop it so that a partial implementation never gives a wrong simulation.
 
-**Why P1**: project rule "fail loud"; the staged delivery of ELAB-Q5 depends on it.
+**Why P1**: project rule "fail loud"; M1 is a subset by decision.
 
 **Requirement**: ELAB-06
 
 **Acceptance Criteria**:
 
-1. IF a construct of a conforming model has no lowering yet THEN the system SHALL return no IR and one diagnostic naming the construct and its source location.
-2. The system SHALL represent in the IR every definition, commit, contribution, reaction, event, `emit!` site and core-primitive placement of the elaborated design.
+1. IF a contribution, a `limit` placement or an `ac_stim` call is written under an `if`, in a function or in a closure THEN the system SHALL reject the model with `P0001` at that form.
+2. IF `ddt` is written anywhere but as a whole addend of a flow contribution THEN the system SHALL reject the model with `P0001` at the `ddt`.
+3. IF a placement sets `m` or `dtemp`, or places an `extern` module, THEN the system SHALL reject the model with `P0001` at the placement.
+4. IF a module of the reachable set has a `digital` block THEN the system SHALL reject the model with `P0001` at the block.
+5. The system SHALL return no `Ir` whenever it returns a diagnostic.
 
-**Independent Test**: elaborate a model with an `extern "osdi"` module (pending ELAB-Q6) and read the diagnostic.
-
----
-
-### P2: Metadata
-
-**User Story**: As a host author, I want the metadata of §21 from the IR so that I list and address items without running the model.
-
-**Why P2**: §21; needed by the host, not by the first solve.
-
-**Requirement**: ELAB-07
-
-**Acceptance Criteria**:
-
-1. The system SHALL record in the IR, for every param, its type, default, `where` condition, structural flag and `///` text, and SHALL list the implicit params `m` and `dtemp` with every instance (§21 rule 8).
-2. The system SHALL record the path of every node, branch, carrier, drive and instance of the elaborated design.
-3. The system SHALL record every `emit!` site with its stream name relative to its instance, its field names and its field types (§19, §21).
-4. The system SHALL record every named `let` of an `analog` block as an operating-point variable (§11 rule 6).
-5. The system SHALL record the set of gradient params found by dependency analysis (§21 rule 7).
-
-**Independent Test**: elaborate the `Front` model of §0.7 and list its params, paths and streams from the IR alone.
+**Independent Test**: one negative fixture per criterion, each asserting the code and the span.
 
 ---
 
-### P2: Boundary reachability
+### P1: Static checks of the subset ⭐ MVP
 
-**User Story**: As the solver, I want to know which reactions and carriers can touch `analog` so that only their scheduled times become time points.
+**User Story**: As a model author, I want the elaboration-phase rules that apply to my model checked so that a non-conforming model never runs.
 
-**Why P2**: §17.2.2; solver-completeness context Q8 assigns the analysis to the elaborator.
+**Why P1**: §0.3 item 3.
 
-**Requirement**: ELAB-08
-
-**Acceptance Criteria**:
-
-1. The system SHALL flag in the IR every carrier and param that an `analog` block reads, directly or through definitions, `let`s and value inputs.
-2. The system SHALL flag in the IR every reaction that can change a flagged carrier or that reads a probe (§12.1.5, §14.1.5).
-
-**Independent Test**: in the `Front` model, the reactions on `above(..)` are flagged and `on clk.rise()` is not.
-
----
-
-### P2: Dependency order of definitions
-
-**User Story**: As a backend author, I want definitions and `resolve`s ordered at elaboration so that a microstep settles them in dependency order.
-
-**Why P2**: §15 step 3.2, §8.2.3.
-
-**Requirement**: ELAB-09
+**Requirement**: ELAB-05
 
 **Acceptance Criteria**:
 
-1. The system SHALL record in the IR an evaluation order of definitions and `resolve`s in which each is evaluated after the definitions it reads.
-2. WHEN definitions among resolved drives form a loop THEN the system SHALL record the loop as one group to be relaxed (§8.2.3).
-3. IF definitions form a loop through a one-driver carrier THEN the system SHALL reject the model with `E0339` (§8.2.3).
+1. The system SHALL attach to every diagnostic a code and the span of the construct, and to a diagnostic about an instance its path (§0.3 item 4).
+2. WHEN a model of the subset meets none of the conditions of ELAB-02 to ELAB-06 THEN the system SHALL return an `Ir` and no diagnostic.
 
-**Independent Test**: elaborate the `Tran` on `Wire`s example (§22.3.7) and read one relaxation group in the printed IR.
+**Independent Test**: the five twins elaborate with no diagnostic; each negative fixture of ELAB-02 to ELAB-06 carries a code and a span inside the fixture's text.
 
 ---
 
 ## Edge Cases
 
-- WHEN a generation `for` has an empty range THEN the system SHALL produce no item and no error.
-- IF a decision that fixes structure has an unknown level (§3.3.8) THEN the system SHALL reject the model with `E0151`.
-- WHEN an instance has no `let` of its own THEN the system SHALL name it `<module>#<k>` with `k` counted as §21 rule 3 states.
-- IF a param value given by the caller names no param of the design THEN the system SHALL return no IR and a diagnostic naming the path.
+- WHEN a module has no `analog` block and places nothing THEN the system SHALL produce a body with no branches and an instance with no children.
+- WHEN the same module is placed under two parents THEN the system SHALL produce one body and two instances.
+- IF a node is connected to no instance THEN the system SHALL keep it in the node table. A floating node is the solver's to report (`E0503`).
+- WHEN a contribution has one addend that is not a sum THEN the system SHALL produce one direct addend.
 
 ---
 
@@ -268,31 +197,32 @@ Order proposed by O6 (not decided): `msl-elab`, `msl-ir` and `ir-interp` first, 
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| ELAB-01 | P1: One call from a design to an IR | - | Pending |
-| ELAB-02 | P1: Params and constants | - | Pending |
-| ELAB-03 | P1: Generation and instance placement | - | Pending |
-| ELAB-04 | P1: Structural and run-time params | - | Pending |
-| ELAB-05 | P1: Static checks of the elaboration phase | - | Pending |
-| ELAB-06 | P1: Nothing is dropped silently | - | Pending |
-| ELAB-07 | P2: Metadata | - | Pending |
-| ELAB-08 | P2: Boundary reachability | - | Pending |
-| ELAB-09 | P2: Dependency order of definitions | - | Pending |
+| ELAB-01 | P1: One call from a design to an IR | Design | Pending |
+| ELAB-02 | P1: Params and constants | Design | Pending |
+| ELAB-03 | P1: Instances and nodes | Design | Pending |
+| ELAB-04 | P1: The analog block | Design | Pending |
+| ELAB-05 | P1: Static checks of the subset | Design | Pending |
+| ELAB-06 | P1: Nothing is dropped silently | Design | Pending |
 
-**Coverage:** 9 total, 0 mapped to tasks.
+ELAB-07 (metadata), ELAB-08 (boundary reachability) and ELAB-09 (definition order) of the first draft are M2.
+
+**Coverage:** 6 total, 0 mapped to tasks.
 
 ---
 
 ## Sources
 
-- `.specs/features/codegen/context.md` - decisions C1 to C10 and open items O1 to O8.
-- `docs/spec/` §0.3, §3.3, §8, §14, §16 step 1, §17.2.2, §19 to §21, Appendix C.1 and C.2.3 - the elaboration phase.
-- `docs/pom/` and `crates/piperine-lang/src/pom/` - what the input holds and does not hold.
-- `feature/solver-completeness:.specs/features/solver-completeness/context.md` Q8 - the elaborator computes boundary reachability.
+- `.specs/features/codegen/context.md` C3, S1, S5, S6, S7 - the decisions.
+- `.specs/features/e2e-m1/models/*.msl` - the models that must elaborate.
+- `docs/spec/` §0.3, §6, §8, §8.1, §11, §14, §16, §21 - the elaboration phase of the subset.
+- `.specs/features/device-abi/abi.md` §3, A1 - why the split into addends and the node ownership.
+- `.specs/features/msl-ir/design.md` - the output.
 
 ---
 
 ## Success Criteria
 
-- [ ] Every model of the conformance set (Appendix C.2.3) elaborates to an IR whose printed text is pinned by a golden test.
-- [ ] Every elaboration-phase error code in scope has a negative fixture that asserts the code and the location.
+- [ ] The five twins elaborate, and one golden file per twin pins the printed IR.
+- [ ] The printed bodies of the five devices equal the golden texts `msl-ir` pins for its hand-built ones: that text is the contract `ir-interp` is tested on.
+- [ ] Every error code named in this spec has a negative fixture asserting the code and the span.
 - [ ] No test finds a `Design` changed by elaboration.
