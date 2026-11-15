@@ -199,11 +199,11 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] `method(expr)` of `(vd / nvt).exp()` in `tests/ngspice/devices.msl` is `Method::Exp`
-- [ ] A method outside the table (`powf`) is `P0001` naming it
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_deferred_method_is_resolved`, `catalogue_methods_on_f64_are_f64`
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `method(expr)` of `(vd / nvt).exp()` in `tests/ngspice/devices.msl` is `Method::Exp`
+- [x] A method outside the table (`powf`) is `P0001` naming it
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_deferred_method_is_resolved`, `catalogue_methods_on_f64_are_f64`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
