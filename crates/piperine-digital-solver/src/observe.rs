@@ -4,7 +4,7 @@
 //! by an index, so two builds of one design in different insertion orders
 //! report the same sequence.
 
-use super::queue::Instant;
+use crate::queue::Instant;
 
 /// One thing the sink sees.
 #[derive(Clone, Debug, PartialEq)]

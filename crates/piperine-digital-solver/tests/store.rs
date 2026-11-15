@@ -4,8 +4,8 @@
 //! nets that fire without bytes, `QUIET` nets that keep no previous.
 
 use piperine_abi::layout::{HIGH, LOW};
-use piperine_digital_solver::abi::net::{NetId, NetSpec};
-use piperine_digital_solver::abi::store::Store;
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::store::Store;
 
 const BIT: NetId = NetId(0);
 const REAL: NetId = NetId(1);

@@ -3,9 +3,9 @@
 //! every function after the writers of what it reads, cycles refused unless
 //! they pass through a `RELAX` net, a stable order.
 
-use piperine_digital_solver::abi::dag::{Dag, Step};
-use piperine_digital_solver::abi::net::{NetId, NetSpec};
-use piperine_digital_solver::abi::plan::FnNode;
+use piperine_digital_solver::dag::{Dag, Step};
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::plan::FnNode;
 use piperine_digital_solver::error::DigitalError;
 
 fn func(name: &str, instance: u32, k: u32, reads: &[u32], writes: &[u32]) -> FnNode {

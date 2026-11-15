@@ -1,7 +1,7 @@
 //! The two adapters that let `Protocol` drive the real sub-solvers
 //! (`solver-abi-integration`, design "The two adapters"). Each converts and
 //! forwards: `DigitalSide` is the discrete side over
-//! `piperine_digital_solver::abi::engine::Digital`, `EquilibriumSide` the
+//! `piperine_digital_solver::engine::Digital`, `EquilibriumSide` the
 //! analog side of an operating point over the DC driver and the device
 //! assembly. Neither holds a rule of its own.
 //!
@@ -16,12 +16,12 @@ use std::rc::Rc;
 
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
-use piperine_digital_solver::abi::advance::Advance as DigitalAdvance;
-use piperine_digital_solver::abi::engine::{Checkpoint, Digital, Horizon as DigitalHorizon, Mode, Shadow as DigitalShadow};
-use piperine_digital_solver::abi::net::NetId;
-use piperine_digital_solver::abi::observe::Observation as DigitalObservation;
-use piperine_digital_solver::abi::plan::DigitalPlan;
-use piperine_digital_solver::abi::tick::{Resolution, Tick as DigitalTick};
+use piperine_digital_solver::advance::Advance as DigitalAdvance;
+use piperine_digital_solver::engine::{Checkpoint, Digital, Horizon as DigitalHorizon, Mode, Shadow as DigitalShadow};
+use piperine_digital_solver::net::NetId;
+use piperine_digital_solver::observe::Observation as DigitalObservation;
+use piperine_digital_solver::plan::DigitalPlan;
+use piperine_digital_solver::tick::{Resolution, Tick as DigitalTick};
 use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::limits::DigitalLimits;
 

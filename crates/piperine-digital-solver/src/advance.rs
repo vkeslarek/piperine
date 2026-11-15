@@ -2,9 +2,9 @@
 //! a target time, each under a sub-checkpoint, and stop before the first one
 //! that touches the analog side.
 
-use super::engine::{Digital, Horizon, Mode};
-use super::instant::Stepped;
-use super::tick::Tick;
+use crate::engine::{Digital, Horizon, Mode};
+use crate::instant::Stepped;
+use crate::tick::Tick;
 use crate::error::DigitalError;
 
 /// How far `Digital::advance` got.

@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use super::net::NetId;
-use super::tick::Tick;
+use crate::net::NetId;
+use crate::tick::Tick;
 
 /// An instant: a tick and a microstep inside it.
 pub type Instant = (Tick, u32);

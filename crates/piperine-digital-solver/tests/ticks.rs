@@ -3,7 +3,7 @@
 //! tick of a delay and the three ways a delay is not a time (E0502, E0435,
 //! `+inf`).
 
-use piperine_digital_solver::abi::tick::{Due, Resolution, Tick};
+use piperine_digital_solver::tick::{Due, Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
 
 fn ticks(seconds_per_tick: f64) -> Resolution {

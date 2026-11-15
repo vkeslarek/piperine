@@ -2,15 +2,15 @@
 //! queue and the observation buffer of a bound plan. Its methods mirror the
 //! discrete side of the owner protocol one to one (abi.md §5, §10).
 
-use super::net::{NetId, NetKind};
-use super::observe::{Obs, Observation};
+use crate::net::{NetId, NetKind};
+use crate::observe::{Obs, Observation};
 use piperine_abi::raw::pin_flag;
 
-use super::plan::{Binding, DigitalPlan, NetWriter};
-use super::queue::{Pending, Queue, Writer};
-use super::run::{Ambient, DirtySet, run_cone, write_net};
-use super::store::Store;
-use super::tick::Tick;
+use crate::plan::{Binding, DigitalPlan, NetWriter};
+use crate::queue::{Pending, Queue, Writer};
+use crate::run::{Ambient, DirtySet, run_cone, write_net};
+use crate::store::Store;
+use crate::tick::Tick;
 use crate::error::DigitalError;
 use crate::limits::DigitalLimits;
 

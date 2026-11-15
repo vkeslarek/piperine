@@ -10,13 +10,13 @@ use piperine_abi::device::{Access, Flow, cell_lens};
 use piperine_abi::layout::{is_canonical, leaf_size};
 use piperine_abi::raw::{Cell, Statement, cell, field_flag, reaction_flag, statement_flag, status};
 
-use super::dag::Step;
-use super::net::{NetId, NetKind};
-use super::observe::{Obs, Observation};
-use super::plan::{Binding, DigitalPlan, InstancePlan};
-use super::queue::{Instant, Pending, Queue, Writer};
-use super::store::{Aligned, Store};
-use super::tick::{Due, Tick};
+use crate::dag::Step;
+use crate::net::{NetId, NetKind};
+use crate::observe::{Obs, Observation};
+use crate::plan::{Binding, DigitalPlan, InstancePlan};
+use crate::queue::{Instant, Pending, Queue, Writer};
+use crate::store::{Aligned, Store};
+use crate::tick::{Due, Tick};
 use crate::error::DigitalError;
 
 /// The values a call reads that are not pins: time, `STATIC`, `TICK`, `HORIZON`.

@@ -1,16 +1,20 @@
-//! The event-driven digital engine: events and logic values (`events`), the
-//! LRM §7.9 driver table (`drivers`), the evaluation interface a discrete
-//! participant implements (`interface`), the caps and the error (`limits`,
-//! `error`), the run state (`state`), the topology (`topology`) and the
-//! two-phase delta-cycle scheduler (`scheduler`). It names no analog concept
-//! and depends on no other crate of the workspace.
+//! The digital engine of the device ABI: byte nets (`net`, `store`), a commit
+//! queue (`queue`), a levelized function order (`dag`, `plan`), the instant
+//! (`instant`, `run`) and the time advance (`advance`, `tick`) of the engine
+//! (`engine`), what the engine observes (`observe`), its caps (`limits`) and
+//! its loud failures (`error`). It names no analog concept and depends on no
+//! crate of the workspace but `piperine-abi`.
 
-pub mod abi;
-pub mod drivers;
+pub mod advance;
+pub mod dag;
+pub mod engine;
 pub mod error;
-pub mod events;
-pub mod interface;
+pub mod instant;
 pub mod limits;
-pub mod scheduler;
-pub mod state;
-pub mod topology;
+pub mod net;
+pub mod observe;
+pub mod plan;
+pub mod queue;
+pub mod run;
+pub mod store;
+pub mod tick;

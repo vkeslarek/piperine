@@ -79,7 +79,7 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     let nets_before: Vec<Vec<u8>> = {
         let bound = ac.system.circuit.bound().expect("bound");
         (0..bound.digital.plan().nets.len())
-            .map(|i| bound.digital.read(piperine_digital_solver::abi::net::NetId(i as u32)).to_vec())
+            .map(|i| bound.digital.read(piperine_digital_solver::net::NetId(i as u32)).to_vec())
             .collect()
     };
     let res = ac.solve_sweep(opts).expect("sweep");
@@ -101,7 +101,7 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     assert_eq!(REACTIONS.load(Ordering::SeqCst), reactions_before, "a reaction ran");
     let bound = circuit.bound().expect("bound");
     for (i, before) in nets_before.iter().enumerate() {
-        let now = bound.digital.read(piperine_digital_solver::abi::net::NetId(i as u32));
+        let now = bound.digital.read(piperine_digital_solver::net::NetId(i as u32));
         assert_eq!(now, before.as_slice(), "net {i} changed");
     }
 }

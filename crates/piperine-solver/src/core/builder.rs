@@ -58,7 +58,7 @@ impl CircuitBuilder {
             devices: Vec::new(),
             shared_params: Vec::new(),
             session_params: Vec::new(),
-            resolution: piperine_digital_solver::abi::tick::Resolution::default().seconds_per_tick,
+            resolution: piperine_digital_solver::tick::Resolution::default().seconds_per_tick,
             next_anon: 0,
         }
     }

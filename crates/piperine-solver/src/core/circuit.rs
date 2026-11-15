@@ -186,7 +186,7 @@ impl CircuitInstance {
         param: &str,
         value: crate::core::bind::ParamValue,
     ) -> crate::core::result::Result<()> {
-        use piperine_digital_solver::abi::engine::Shadow;
+        use piperine_digital_solver::engine::Shadow;
         let bound = self.abi.as_mut().ok_or_else(|| {
             Error::simple(SolverDomain::Device, "`set` addresses device instances; this circuit has none")
         })?;

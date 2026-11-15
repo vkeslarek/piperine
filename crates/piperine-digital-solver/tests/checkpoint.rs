@@ -9,10 +9,10 @@
 mod devices;
 
 use devices::*;
-use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode, Outcome};
-use piperine_digital_solver::abi::net::NetId;
-use piperine_digital_solver::abi::observe::Observation;
-use piperine_digital_solver::abi::tick::{Resolution, Tick};
+use piperine_digital_solver::engine::{Digital, Horizon, Mode, Outcome};
+use piperine_digital_solver::net::NetId;
+use piperine_digital_solver::observe::Observation;
+use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::limits::DigitalLimits;
 
 const NS: i64 = 1_000_000;

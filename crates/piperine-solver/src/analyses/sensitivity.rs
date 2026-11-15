@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use piperine_abi::device::{Access, cell_lens};
 use piperine_abi::raw::{Cell, cell, leaf, part, pin_flag, role};
 use piperine_analog_solver::device::Ambient;
-use piperine_digital_solver::abi::net::NetId;
+use piperine_digital_solver::net::NetId;
 use crate::core::bind::{Bound, Site};
 
 use crate::analyses::context::Context;

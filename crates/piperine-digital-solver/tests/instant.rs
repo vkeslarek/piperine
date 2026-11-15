@@ -9,10 +9,10 @@ mod devices;
 
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
-use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode};
-use piperine_digital_solver::abi::net::{NetId, NetSpec};
-use piperine_digital_solver::abi::observe::Observation;
-use piperine_digital_solver::abi::tick::{Resolution, Tick};
+use piperine_digital_solver::engine::{Digital, Horizon, Mode};
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::observe::Observation;
+use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::limits::DigitalLimits;
 
@@ -26,7 +26,7 @@ fn net(d: &Digital, name: &str) -> NetId {
     net_named(d.plan(), name)
 }
 
-fn instant(d: &mut Digital, at: Tick) -> piperine_digital_solver::abi::engine::Outcome {
+fn instant(d: &mut Digital, at: Tick) -> piperine_digital_solver::engine::Outcome {
     d.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs")
 }
 
@@ -61,7 +61,7 @@ fn start_commits_inits_and_fires_start() {
 
 #[test]
 fn a_plan_with_no_code_applies_host_commits_only() {
-    let plan = piperine_digital_solver::abi::plan::DigitalPlan::bind(
+    let plan = piperine_digital_solver::plan::DigitalPlan::bind(
         vec![NetSpec::discrete("n", 2, 1)],
         vec![],
         Resolution::default(),

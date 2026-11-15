@@ -1015,7 +1015,7 @@ impl TransientSolver<'_> {
         // The last step carries the state a later run re-enters from.
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
         let nets = (0..bound.digital.plan().nets.len())
-            .map(|i| bound.digital.read(piperine_digital_solver::abi::net::NetId(i as u32)).to_vec())
+            .map(|i| bound.digital.read(piperine_digital_solver::net::NetId(i as u32)).to_vec())
             .collect();
         let state = crate::core::result::ReentryState {
             digital: bound.digital.checkpoint(),
@@ -1149,7 +1149,7 @@ impl TransientSolver<'_> {
     }
 
     /// The re-entry state of this run's first recorded step, at the start.
-    pub(crate) fn device_mark_start(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::abi::engine::Checkpoint, nets: Vec<Vec<u8>>) {
+    pub(crate) fn device_mark_start(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::engine::Checkpoint, nets: Vec<Vec<u8>>) {
         if run.steps.len() != 1 {
             return;
         }

@@ -8,12 +8,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use piperine_digital_solver::abi::advance::Advance;
-use piperine_digital_solver::abi::engine::{Checkpoint, Digital, Horizon, Mode, Outcome, Shadow};
-use piperine_digital_solver::abi::net::{NetId, NetSpec};
-use piperine_digital_solver::abi::observe::Observation;
-use piperine_digital_solver::abi::plan::DigitalPlan;
-use piperine_digital_solver::abi::tick::{Resolution, Tick};
+use piperine_digital_solver::advance::Advance;
+use piperine_digital_solver::engine::{Checkpoint, Digital, Horizon, Mode, Outcome, Shadow};
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::observe::Observation;
+use piperine_digital_solver::plan::DigitalPlan;
+use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::limits::DigitalLimits;
 
@@ -69,7 +69,7 @@ fn abi_modules_name_no_analog_or_owner_item() {
         ["Analog", "Reference"].concat(),
     ];
     let mut found = Vec::new();
-    for (path, text) in sources(&crate_dir().join("src/abi")) {
+    for (path, text) in sources(&crate_dir().join("src")) {
         for (n, line) in text.lines().enumerate() {
             for word in &banned {
                 if code(line).contains(word.as_str()) {
@@ -84,7 +84,7 @@ fn abi_modules_name_no_analog_or_owner_item() {
 #[test]
 fn abi_modules_hold_no_unsafe() {
     let mut found = Vec::new();
-    for (path, text) in sources(&crate_dir().join("src/abi")) {
+    for (path, text) in sources(&crate_dir().join("src")) {
         for (n, line) in text.lines().enumerate() {
             if code(line).contains("unsafe") {
                 found.push(format!("{}:{}", path.display(), n + 1));

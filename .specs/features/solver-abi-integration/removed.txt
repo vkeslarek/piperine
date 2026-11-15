@@ -132,3 +132,26 @@ same_time_events_order_by_seq	EventQueue ordering
 mixed_event_sources_survive_rejected_steps	EventQueue rollback of Element events
 event_rollback_is_deterministic_across_runs	EventQueue rollback of Element events
 a_circuit_mixing_elements_and_devices_is_refused	the mixed Element/Device circuit (the Element contract is gone)
+single_driver_resolves_to_its_own_value	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+stronger_driver_wins_table_7_3	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+equal_strength_opposing_values_contend_to_x	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+high_z_driver_yields_unconditionally	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+undriven_net_resolves_to_x_highz	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+re_driving_the_same_source_replaces_not_accumulates	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+removing_a_driver_releases_the_net	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+driver_kind_distinguishes_ordinary_from_connect_module_sources	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+next_state_is_queryable_independent_of_current_state	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+resolved_by_kind_segregates_ordinary_from_connect_module_populations	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+resolved_by_kind_ignores_the_other_population_entirely_when_absent	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+default_strength_for_z_is_highz_others_are_strong	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+multiple_nets_stay_independent	the LRM §7.3 strength table and DriverTable (Strength, DriverKind)
+test_logic_resolution	LogicValue, DigitalState, the delta-cycle event queue of the old engine
+test_evaluate_until_stable_chain	LogicValue, DigitalState, the delta-cycle event queue of the old engine
+nonzero_gate_delay_produces_a_correctly_timed_event	LogicValue, DigitalState, the delta-cycle event queue of the old engine
+test_checkpoint_rollback	LogicValue, DigitalState, the delta-cycle event queue of the old engine
+test_event_ordering	LogicValue, DigitalState, the delta-cycle event queue of the old engine
+two_distinct_drivers_contend_per_table_7_3	LogicValue, DigitalState, the delta-cycle event queue of the old engine
+digital_state_carries_source_labels_or_anonymous_fallback	LogicValue, DigitalState, the delta-cycle event queue of the old engine
+a2d_crossing_interpolates_within_the_published_error_bound	the DigitalDevice seq/comb contract, EventSink and the A2D interpolation wrapper (predict_crossing moved to piperine-analog-solver with its tests)
+non_crossing_samples_yield_no_interpolation	the DigitalDevice seq/comb contract, EventSink and the A2D interpolation wrapper (predict_crossing moved to piperine-analog-solver with its tests)
+external_model_emits_through_the_sink	the DigitalDevice seq/comb contract, EventSink and the A2D interpolation wrapper (predict_crossing moved to piperine-analog-solver with its tests)

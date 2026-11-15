@@ -85,17 +85,23 @@ const ANALOG_MODULES: &[&str] = &[
     "config.rs",
     "convergence.rs",
     "stamp_validation.rs",
+    "crossing.rs",
 ];
 
 const DIGITAL_MODULES: &[&str] = &[
-    "events.rs",
-    "drivers.rs",
-    "interface.rs",
-    "state.rs",
-    "topology.rs",
-    "scheduler.rs",
-    "limits.rs",
+    "advance.rs",
+    "dag.rs",
+    "engine.rs",
     "error.rs",
+    "instant.rs",
+    "limits.rs",
+    "net.rs",
+    "observe.rs",
+    "plan.rs",
+    "queue.rs",
+    "run.rs",
+    "store.rs",
+    "tick.rs",
 ];
 
 #[test]

@@ -10,9 +10,9 @@ mod devices;
 
 use devices::*;
 use piperine_abi::layout::HIGH;
-use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode};
-use piperine_digital_solver::abi::net::NetId;
-use piperine_digital_solver::abi::tick::{Resolution, Tick};
+use piperine_digital_solver::engine::{Digital, Horizon, Mode};
+use piperine_digital_solver::net::NetId;
+use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::limits::DigitalLimits;
 
 const NS: i64 = 1_000_000;
@@ -61,7 +61,7 @@ fn replace_with_an_infinite_delay_removes_the_pending_commits() {
     d.drain_observations();
     d.advance(Tick(11 * NS)).unwrap();
     let seen = d.drain_observations();
-    use piperine_digital_solver::abi::observe::Observation;
+    use piperine_digital_solver::observe::Observation;
     let at_10 = |o: &&Observation| match o {
         Observation::Fire { at, .. } | Observation::Change { at, .. } => at.0 == Tick(10 * NS),
         _ => false,
@@ -79,8 +79,8 @@ fn replace_with_an_infinite_delay_removes_the_pending_commits() {
 #[test]
 fn a_host_write_outside_its_net_fails_loud_and_changes_nothing() {
     // finding 5: it used to be accepted and to panic inside the store at the instant
-    use piperine_digital_solver::abi::net::NetSpec;
-    use piperine_digital_solver::abi::plan::DigitalPlan;
+    use piperine_digital_solver::net::NetSpec;
+    use piperine_digital_solver::plan::DigitalPlan;
     use piperine_digital_solver::error::DigitalError;
     let plan = DigitalPlan::bind(
         vec![NetSpec::discrete("n", 2, 1), NetSpec::event("ev")],

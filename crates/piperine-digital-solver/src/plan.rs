@@ -10,9 +10,9 @@ use piperine_abi::layout::layout_eq;
 use piperine_abi::raw::{Layout, Shape, cell, global, kind, pin_flag, role, statement_flag};
 use piperine_abi::validate::validate;
 
-use super::dag::Dag;
-use super::net::{NetId, NetKind, NetSpec};
-use super::tick::Resolution;
+use crate::dag::Dag;
+use crate::net::{NetId, NetKind, NetSpec};
+use crate::tick::Resolution;
 use crate::error::DigitalError;
 
 /// What one pin of an instance is bound to.

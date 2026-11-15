@@ -6,12 +6,12 @@
 
 use std::collections::BTreeSet;
 
-use super::engine::{Digital, Horizon, Mode, Outcome};
-use super::net::{NetId, NetKind};
-use super::queue::Writer;
-use super::run::{Ambient, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
+use crate::engine::{Digital, Horizon, Mode, Outcome};
+use crate::net::{NetId, NetKind};
+use crate::queue::Writer;
+use crate::run::{Ambient, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
 use piperine_abi::raw::reaction_flag;
-use super::tick::Tick;
+use crate::tick::Tick;
 use crate::error::DigitalError;
 
 /// How a pass over an instant ended.

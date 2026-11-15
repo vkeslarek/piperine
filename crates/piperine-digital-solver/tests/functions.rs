@@ -9,12 +9,12 @@ mod devices;
 
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
-use piperine_digital_solver::abi::net::NetId;
-use piperine_digital_solver::abi::observe::{Obs, Observation};
-use piperine_digital_solver::abi::plan::DigitalPlan;
-use piperine_digital_solver::abi::run::{Ambient, DirtySet, run_functions, write_net};
-use piperine_digital_solver::abi::store::Store;
-use piperine_digital_solver::abi::tick::{Resolution, Tick};
+use piperine_digital_solver::net::NetId;
+use piperine_digital_solver::observe::{Obs, Observation};
+use piperine_digital_solver::plan::DigitalPlan;
+use piperine_digital_solver::run::{Ambient, DirtySet, run_functions, write_net};
+use piperine_digital_solver::store::Store;
+use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
 
 /// A plan with the state `run_functions` needs, standing for a few microsteps of one instant.

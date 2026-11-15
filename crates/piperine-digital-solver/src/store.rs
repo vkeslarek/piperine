@@ -5,7 +5,7 @@
 //! buffer, so each net is stored over-aligned to 16 bytes. The alignment is
 //! found, not assumed, so the store needs no `unsafe`.
 
-use super::net::{NetId, NetKind, NetSpec};
+use crate::net::{NetId, NetKind, NetSpec};
 
 /// The over-alignment of every buffer (the largest leaf is 8 bytes).
 const ALIGN: usize = 16;

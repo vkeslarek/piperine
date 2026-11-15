@@ -24,7 +24,7 @@ use piperine_abi::layout::HIGH;
 use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, ambient, cell, op, part, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
-use piperine_digital_solver::abi::tick::Tick;
+use piperine_digital_solver::tick::Tick;
 use piperine_solver::abi::{AnalogReference, Bound, ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions, TransientAnalysisResult};
 

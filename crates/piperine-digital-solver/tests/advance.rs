@@ -9,11 +9,11 @@ mod devices;
 
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
-use piperine_digital_solver::abi::advance::Advance;
-use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode};
-use piperine_digital_solver::abi::net::{NetId, NetSpec};
-use piperine_digital_solver::abi::observe::Observation;
-use piperine_digital_solver::abi::tick::{Resolution, Tick};
+use piperine_digital_solver::advance::Advance;
+use piperine_digital_solver::engine::{Digital, Horizon, Mode};
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::observe::Observation;
+use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::limits::DigitalLimits;
 
 const NS: i64 = 1_000_000; // ticks of 1 fs

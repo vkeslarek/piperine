@@ -19,10 +19,10 @@ use piperine_analog_solver::device::{AnalogBinding, AnalogInstance, AnalogPlan, 
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, Netlist, NodeIdentifier};
 use piperine_analog_solver::tolerances::Tolerances;
-use piperine_digital_solver::abi::engine::Digital;
-use piperine_digital_solver::abi::net::{NetId, NetSpec};
-use piperine_digital_solver::abi::plan::{Binding, DigitalPlan, InstancePlan};
-use piperine_digital_solver::abi::tick::Resolution;
+use piperine_digital_solver::engine::Digital;
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::plan::{Binding, DigitalPlan, InstancePlan};
+use piperine_digital_solver::tick::Resolution;
 use piperine_digital_solver::limits::DigitalLimits;
 
 use crate::core::result::Result;

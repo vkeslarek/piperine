@@ -6,8 +6,8 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use super::net::{NetId, NetSpec};
-use super::plan::FnNode;
+use crate::net::{NetId, NetSpec};
+use crate::plan::FnNode;
 use crate::error::DigitalError;
 
 /// One step of the order.

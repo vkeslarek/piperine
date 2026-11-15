@@ -8,9 +8,9 @@ use piperine_abi::raw::{
     Cell, Statement, cell, global, part, pin_flag, role, statement_flag,
 };
 use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
-use piperine_digital_solver::abi::net::{NetId, NetSpec};
-use piperine_digital_solver::abi::plan::{Analysis, Binding, NetWriter, ShapeInput, analyze};
-use piperine_digital_solver::abi::tick::Resolution;
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::plan::{Analysis, Binding, NetWriter, ShapeInput, analyze};
+use piperine_digital_solver::tick::Resolution;
 use piperine_digital_solver::error::DigitalError;
 
 fn pin(index: u32, part: u32) -> Cell {

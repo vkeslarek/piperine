@@ -20,9 +20,9 @@ use piperine_abi::raw::{
 };
 use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
 use piperine_abi::thunk::module;
-use piperine_digital_solver::abi::net::{NetId, NetKind, NetSpec};
-use piperine_digital_solver::abi::plan::{Binding, DigitalPlan, InstancePlan};
-use piperine_digital_solver::abi::tick::Resolution;
+use piperine_digital_solver::net::{NetId, NetKind, NetSpec};
+use piperine_digital_solver::plan::{Binding, DigitalPlan, InstancePlan};
+use piperine_digital_solver::tick::Resolution;
 use piperine_digital_solver::error::DigitalError;
 
 // ─── Counting calls ─────────────────────────────────────────────────────────

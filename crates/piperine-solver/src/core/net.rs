@@ -1,9 +1,9 @@
 //! `Net` — the unified public identity of a solved signal.
 //!
-//! Analog nodes, analog branch currents, and digital logic nets are named three
-//! different ways inside the solver ([`AnalogReference`] over an
-//! [`AnalogVariable`], and [`DigitalNet`]). Those stay as the fast-path types
-//! the hot loops use. `Net` is the one *public* identity over all of them: a
+//! Analog nodes, analog branch currents, and digital nets are named different
+//! ways inside the solver ([`AnalogReference`] over an [`AnalogVariable`], and
+//! the digital engine's net ids). Those stay as the fast-path types the hot
+//! loops use. `Net` is the one *public* identity over all of them: a
 //! dense index for the fast path paired with a [`NetKind`] and a stable label,
 //! so diagnostics, queries, and result mapping treat `v(out)`, `i(vsrc)`, a
 //! digital net, and `GND` symmetrically.
@@ -12,7 +12,6 @@ use std::fmt;
 use std::sync::Arc;
 
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, Netlist};
-use piperine_digital_solver::events::DigitalNet;
 
 /// What kind of solved signal a [`Net`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -153,19 +152,10 @@ impl From<&AnalogReference> for Net {
 
 impl Net {
     /// Every analog variable of a netlist as a unified [`Net`] — the public naming
-    /// layer for result mapping, queries, and diagnostics. Digital nets convert
-    /// through `Net::from(DigitalNet)` at the scheduler boundary.
+    /// layer for result mapping, queries, and diagnostics. A digital net is named
+    /// with [`Net::digital`].
     pub fn analog_nets(netlist: &Netlist) -> Vec<Net> {
         netlist.all_references().into_iter().map(Into::into).collect()
-    }
-}
-
-impl From<DigitalNet> for Net {
-    fn from(net: DigitalNet) -> Self {
-        // The solver assigns digital nets dense ids only; a hierarchical source
-        // label (e.g. `top.u1.clk`) is attached by the circuit builder, which
-        // owns the source names. Absent that, the anonymous id is the label.
-        Net::digital(net.0, format!("d{}", net.0))
     }
 }
 
@@ -208,7 +198,7 @@ mod tests {
 
     #[test]
     fn digital_net_maps_symmetrically() {
-        let net: Net = DigitalNet(7).into();
+        let net = Net::digital(7, "d7");
         assert_eq!(net.kind(), NetKind::Digital);
         assert_eq!(net.dense(), Some(7));
         assert_eq!(net.label(), "d7");
@@ -227,7 +217,7 @@ mod tests {
 
     #[test]
     fn digital_and_pseudo_nets_have_no_analog_variable() {
-        let digital: Net = DigitalNet(3).into();
+        let digital = Net::digital(3, "d3");
         assert!(digital.analog_variable().is_none());
 
         let ground = Net::ground();

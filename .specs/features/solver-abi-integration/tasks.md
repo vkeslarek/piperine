@@ -627,11 +627,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Every test of the deleted files and targets is listed in `removed.txt` with its item (`Strength`, `DriverTable`, `LogicValue`, the `seq`/`comb` contract, `DigitalState`, `EventQueue`)
-- [ ] `predict_crossing` and `interpolate_a2d_crossing` are deleted only if nothing uses them; if `solver-crossings` will need the secant step, it moves to the analog crate with its tests and the commit body says so
-- [ ] Test `the_old_digital_engine_is_gone` of `removed_surface.rs` passes
-- [ ] `cargo test -p piperine-digital-solver` is green with the tests of `solver-abi-digital`, their paths updated for the flattened modules and no assertion changed
-- [ ] Gate: full
+- [x] Every test of the deleted files and targets is listed in `removed.txt` with its item (`Strength`, `DriverTable`, `LogicValue`, the `seq`/`comb` contract, `DigitalState`, `EventQueue`)
+- [x] `predict_crossing` and `interpolate_a2d_crossing` are deleted only if nothing uses them; if `solver-crossings` will need the secant step, it moves to the analog crate with its tests and the commit body says so
+- [x] Test `the_old_digital_engine_is_gone` of `removed_surface.rs` passes
+- [x] `cargo test -p piperine-digital-solver` is green with the tests of `solver-abi-digital`, their paths updated for the flattened modules and no assertion changed
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

@@ -145,7 +145,7 @@ pub struct TransientStep {
 /// step bound of the accepted solution.
 #[derive(Debug, Clone)]
 pub(crate) struct ReentryState {
-    pub(crate) digital: piperine_digital_solver::abi::engine::Checkpoint,
+    pub(crate) digital: piperine_digital_solver::engine::Checkpoint,
     /// Every net's bytes, by net id.
     pub(crate) nets: Vec<Vec<u8>>,
     pub(crate) assembly: piperine_analog_solver::device::AssemblySnapshot,

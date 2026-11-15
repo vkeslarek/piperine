@@ -8,9 +8,9 @@ mod devices;
 
 use devices::*;
 use piperine_abi::validate::validate;
-use piperine_digital_solver::abi::dag::Step;
-use piperine_digital_solver::abi::plan::NetWriter;
-use piperine_digital_solver::abi::tick::Resolution;
+use piperine_digital_solver::dag::Step;
+use piperine_digital_solver::plan::NetWriter;
+use piperine_digital_solver::tick::Resolution;
 
 #[test]
 fn every_fixture_shape_is_valid() {

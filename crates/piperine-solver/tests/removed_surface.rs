@@ -209,6 +209,32 @@ fn the_element_contract_is_gone() {
     assert!(found.is_empty(), "removed Element contract still named: {found:#?}");
 }
 
+/// The two-phase digital engine of `solver-abi-integration`: the discrete side
+/// is the byte-net engine of the device ABI (MD-62).
+#[test]
+fn the_old_digital_engine_is_gone() {
+    let found = words_found(&[
+        "Strength",
+        "DriverTable",
+        "DriverKind",
+        "DriverRecord",
+        "LogicValue",
+        "seq_phase",
+        "comb_phase",
+        "DigitalState",
+        "DigitalTopology",
+        "DigitalDevice",
+        "DigitalEvent",
+        "EventQueue",
+        "EventSink",
+        "QueueSink",
+        "EvalCtx",
+        "DigitalPorts",
+        "interpolate_a2d_crossing",
+    ]);
+    assert!(found.is_empty(), "removed old digital engine still named: {found:#?}");
+}
+
 #[test]
 fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";

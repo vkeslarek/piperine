@@ -2,9 +2,9 @@
 //! abi.md §6 C2 and C3): pending commits by due instant, the order commits to
 //! one instant apply in, and transport removal.
 
-use piperine_digital_solver::abi::net::NetId;
-use piperine_digital_solver::abi::queue::{Pending, Queue, Writer};
-use piperine_digital_solver::abi::tick::Tick;
+use piperine_digital_solver::net::NetId;
+use piperine_digital_solver::queue::{Pending, Queue, Writer};
+use piperine_digital_solver::tick::Tick;
 
 const N: NetId = NetId(0);
 const M: NetId = NetId(1);
