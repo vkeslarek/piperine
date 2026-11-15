@@ -8,7 +8,7 @@
 
 ## Architecture Overview
 
-One new leaf crate. A device links against it and nothing else; the two sub-solvers read shapes and call devices through it.
+One new leaf crate. A device links against it and nothing else; the two sub-solvers read shapes and call devices through it. Beside it, one new module of the owner: the protocol, over two traits (see Components, `protocol`).
 
 ```mermaid
 flowchart TD
@@ -62,7 +62,8 @@ sequenceDiagram
 | System | Integration Method |
 | --- | --- |
 | Workspace | `members` and `default-members` gain `crates/piperine-abi` |
-| `solver-abi-digital`, `solver-abi-analog` | depend on `piperine-abi`; start bind with `validate`, call devices through `caller::Handle` |
+| `solver-abi-digital`, `solver-abi-analog` (parallel) | depend on `piperine-abi`; start bind with `validate`, call devices through `caller::Handle`; shape their facade (`Digital`, `Assembly`) so a thin adapter implements `DiscreteSide` or `AnalogSide` |
+| `solver-abi-integration` | implements the two traits for the real sub-solvers, binds, calls `Protocol` from the drivers |
 | Codegen features (`ir-interp`, `ir-rust`) | implement `Device`; test with `verify_partials` |
 
 ---
@@ -130,6 +131,21 @@ sequenceDiagram
 - **Interfaces**: `verify_partials(handle: &Handle, k: u32, input: &[Vec<u8>], rel_tol: f64) -> Verdict`; `Verdict::{Exact, Skipped { limit: u32 }, Mismatch(Vec<Mismatch>)}`; `Mismatch { partial: u32, declared: f64, finite: f64 }`.
 - **Notes**: central difference with step `1e-6 * max(1, |x|)` on the `F64` at byte `at` of `reads[read]`; all partials seeded for the analytic call. A partial against a `LIMIT` input's `VALUE` is perturbed like any read.
 
+### `protocol` (owner crate)
+
+- **Purpose**: abi.md §5 and §10 as orchestration over two traits. Nothing calls it until `solver-abi-integration`; it is proven on stubs.
+- **Location**: `crates/piperine-solver/src/protocol/{sides.rs, transient.rs, operating_point.rs, sink.rs, host.rs, mod.rs}`
+- **Interfaces** (plain data only: ticks `i64`, net and slot ids `u32`, bytes, `f64`):
+  - `trait DiscreteSide { type Mark; fn start(&mut self) -> Result<()>; fn next_due(&self) -> Option<i64>; fn advance(&mut self, to: i64) -> Result<Advance>; fn preview_boundary(&self, at: i64) -> Result<Vec<Boundary>>; fn fire(&mut self, net: u32, at: i64) -> Result<()>; fn run_instant(&mut self, at: i64, samples: &[f64], limit: i64, mode: InstantMode) -> Result<Outcome>; fn mark(&self) -> Self::Mark; fn restore(&mut self, mark: &Self::Mark); fn shadow(&self, net: u32, offset: u32, bytes: &[u8]) -> Result<Shadow>; fn host_commit(&mut self, net: u32, offset: u32, bytes: &[u8], at: i64) -> Result<()>; fn drain(&mut self, out: &mut Vec<Observation>); }`
+  - `Advance::{Reached, Landing { tick: i64, time_point: bool }, Final(i64)}`; `Boundary { slot: u32, bytes: Vec<u8> }`; `InstantMode { is_static: bool, settle: bool }`; `Outcome { boundary: Vec<Boundary>, host_param_write: bool, finish: bool }`; `Shadow::{Accept, Refused { check: String }, Reshape { instance: String }}`.
+  - `trait AnalogSide { type Mark; fn has_unknowns(&self) -> bool; fn propose(&mut self, now: f64, stop: f64) -> f64; fn deliver(&mut self, boundary: &[Boundary]); fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt>; fn accept(&mut self, restart: Restart) -> Result<Accepted>; fn equilibrium(&mut self) -> Result<Accepted>; fn mark(&self) -> Self::Mark; fn restore(&mut self, mark: &Self::Mark); fn drain_traces(&mut self, out: &mut Vec<Observation>); }`
+  - `Attempt::{Converged, Rejected, LandedEarlier(f64)}`; `Restart::{None, Integrator, IntegratorSmall}`; `Accepted { fired: Vec<u32>, samples: Vec<f64> }`.
+  - `Protocol::new(discrete, analog, ProtocolOptions { seconds_per_tick, max_rounds: 20 })`; `operating_point(&mut self) -> Result<()>`; `transient(&mut self, stop: f64) -> Result<Ended>` with `Ended::{StopTime, Finish(f64)}`; `set(&mut self, net, offset, bytes, at: Option<f64>) -> Result<SetOutcome>`; `on_event(&mut self, net: u32, waiter: Box<dyn FnMut(&mut HostCx)>)`; `with_sink(Box<dyn Sink>)`.
+  - `trait Sink { fn observe(&mut self, o: &Observation); }`; `Observation { path: String, analysis: AnalysisKind, time: f64, kind: ObservationKind }` with kinds change, commit, crossing, record, trace (with the Newton iteration).
+- **The transient loop** (one landing): `C = (discrete.mark(), analog.mark(), sink mark)`; `t_c = analog.propose`; `discrete.advance(tick(t_c))`, a `Landing` or `Final` shortens `t_c`; `analog.deliver(discrete.preview_boundary(t_c))`; `analog.attempt(t_c, exempt)`; on `Rejected` or `LandedEarlier` restore `C` and loop (a `Final` mark is dropped); on `Converged` call `analog.accept(restart of the previous landing)`, `discrete.fire` each fired crossing, `discrete.run_instant(t_c, samples, ..)` with `settle` when the landing is a time point, deliver its `boundary` to the analog side and remember the restart it asks for; drain observations to the sink; take the new `C`. A waiter is called from inside `run_instant`'s place in the loop, never during `advance` (the discrete side stops before it, as for any irreversible reaction).
+- **Dependencies**: `piperine_analog_solver::error::Error` for the error type only (the existing `Result` of the owner). No other sub-solver item; a guard test scans the module.
+- **Stubs**: `crates/piperine-solver/tests/support/stub_sides.rs`: a `ScriptedDiscrete` (a list of instants with what each changes, fires and returns) and a `ScriptedAnalog` (a list of attempt results); both record every call in order. Plain structs, no macro.
+
 ---
 
 ## Error Handling Strategy
@@ -141,6 +157,9 @@ sequenceDiagram
 | a shape breaks a shape-local rule | `ShapeError` naming rule, entry, `origin` | the author reads `file:line:col` of the offending item |
 | `Host.commit` refuses | `cx.commit` returns `Err(Fault)` with the status | the reaction propagates it with `?` |
 | a typed access does not fit the cell | `None` | the device decides; no out-of-bounds read exists |
+| operating-point rounds exceed the bound | `E0506` naming the nets the last instant still changed | no silently wrong operating point |
+| a host write is refused (`check`, `RESHAPE` in a transient) | `SetOutcome::Refused` with the reason; nothing committed | the run continues |
+| either side returns an error inside the protocol | restore to the last accepted mark is not attempted; the error is returned with the time | the analysis ends with the side's own typed error |
 
 ---
 
@@ -152,6 +171,8 @@ sequenceDiagram
 | A guard forbids any workspace dependency under a sub-solver | `crates/piperine-solver/tests/crate_boundaries.rs` (`sub_solvers_depend_on_no_workspace_crate`) | the next feature's first manifest edit would fail it | T10 changes the guard to "`piperine-abi` only" and records MD-61 |
 | abi.md does not say what `get::<T>` returns `None` for | abi.md §7, §12 | lens behavior is under-specified | SAC-06 AC 6 fixes one rule: `None` when `T` does not fit the cell |
 | The numeric values of the constants, and the field offsets of `REAL` and `BYTE`, are not in abi.md | abi.md §3, §3.1 P3 | two producers could disagree | `raw.rs` and `layout.rs` are the single assignment; tests pin every value; T2 writes the two layouts into abi.md §3.1 |
+| abi.md §5 step 5 runs the landing instant after the solve; the kept algorithm lets the arriving step read what is due at microstep 0 | abi.md §5; `transient.rs:944` (`attempt_step` runs the digital side before the solve) | two readings of one protocol | `preview_boundary` (pure, on a copy) before the attempt, the real instant after acceptance; deterministic, so both see the same bytes. `spec-abi-amendments` writes the same rule into §15.2 |
+| The traits are fixed before either implementer exists | design `protocol` | a signature that does not fit a sub-solver blocks the parallel features | the signatures use plain data; the interfaces of `solver-abi-digital` (`Digital`) and `solver-abi-analog` (`Assembly`) were designed with them; a change needed later is made in `solver-abi-integration`, the only feature that sees all three |
 | `unsafe` is concentrated in three files | `raw.rs` (`List::get`), `thunk.rs`, `caller.rs` | a layout mistake is undefined behavior | the layout test, the examples through real thunks, and no `unsafe` outside those files (a hygiene-style scan test in `tests/contract.rs`) |
 
 ---
@@ -164,4 +185,5 @@ sequenceDiagram
 | Shape ownership | `ShapeRef = Arc<ShapeBuf>` | "a library returns the same shape to every instance of equal structure"; the shape lives until its last instance |
 | Constants start at 1 | 0 is always "unknown constant" | zeroed memory never passes validation |
 | Tests | integration targets under `crates/piperine-abi/tests/`, one per concern | the checks cite plain test names; the public surface is what is tested |
+| The protocol's home | a module of the owner over two traits with plain-data signatures | the sub-solvers stay independent of the owner; the adapters are written in `solver-abi-integration` |
 | Project-level decision | MD-61 appended to `.specs/STATE.md` by T10 | `piperine-abi` under the three solver crates amends MD-60's "no in-tree crate sits under any of them" |

@@ -13,8 +13,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Build**: `cargo build -p piperine-abi --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run abi**: `cargo test -p piperine-abi`
 **Run guards**: `cargo test -p piperine-solver --test crate_boundaries --test workspace_shape`
+**Run owner**: `cargo test -p piperine-solver`
 
-Executors: Opus sub-agents, one commit per task. Verifier: Fable. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push. Five kept crates do not compile (`piperine-project`, `piperine-cli`, `piperine-lang-server`, `piperine-api`, the root shell) and stay that way.
+Executors: Sonnet sub-agents by default, one commit per task; verifier: Opus. The orchestrator may have Opus implement instead (a different Opus then verifies): Phase 3 is protocol-delicate, nothing here is numerically delicate. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push. Five kept crates do not compile (`piperine-project`, `piperine-cli`, `piperine-lang-server`, `piperine-api`, the root shell) and stay that way.
 
 Rules every task follows:
 
@@ -38,6 +39,7 @@ Rules every task follows:
 | `piperine-abi` Rust side (trait, lenses, thunks, caller) | unit | each AC of SAC-04, 05, 06, 08 and each edge case of the spec | `crates/piperine-abi/tests/{thunks,caller}.rs` | `cargo test -p piperine-abi` |
 | `piperine-abi` checks (validate, verify) | unit | one planted defect per shape-local rule; exact, mismatching and skipped partials | `crates/piperine-abi/tests/{validate,verify}.rs` | `cargo test -p piperine-abi` |
 | Worked examples | unit | abi.md §11.1 to §11.6: stated values and partials through the thunks | `crates/piperine-abi/tests/examples.rs` | `cargo test -p piperine-abi --test examples` |
+| The owner's protocol (`src/protocol/`) | unit | each AC of the Protocol story as a recorded call sequence on scripted stubs | `crates/piperine-solver/tests/protocol_{seam,transient,operating_point,sink,host}.rs` | `cargo test -p piperine-solver` |
 | Workspace manifests, structural guards, instruction files, `.specs/STATE.md` | unit | covered by the guard tests the same task edits | `crates/piperine-solver/tests/{crate_boundaries,workspace_shape}.rs` | `cargo test -p piperine-solver --test crate_boundaries --test workspace_shape` |
 
 ## Gate Check Commands
@@ -47,14 +49,14 @@ Rules every task follows:
 | Gate Level | When to Use | Command |
 | ---------- | ----------- | ------- |
 | Quick | never alone | `cargo test -p piperine-abi` |
-| Full | every task | `cargo test -p piperine-abi`; from T10 also `cargo test -p piperine-solver --test crate_boundaries --test workspace_shape` |
+| Full | every task | `cargo test -p piperine-abi`; from T10 also `cargo test -p piperine-solver` (every existing test unchanged) |
 | Build | last task of each phase | Full, plus the two `**Build**` commands (zero warnings), plus `cargo test -p piperine-lang --test suite_hygiene`, plus `cargo metadata --no-deps --format-version 1 > /dev/null` |
 
 ---
 
 ## Execution Plan
 
-Phases are ordered and run sequentially. Two batches, one per phase (4 and 6 tasks). No task is numerically sensitive: this feature touches no solver code.
+Phases are ordered and run sequentially. Three batches, one per phase (4, 6 and 6 tasks). No task is numerically sensitive: no driver and no numeric code is touched. Phase 3 is protocol-delicate: it fixes the seam the two parallel features implement.
 
 ### Phase 1: The contract as data
 
@@ -66,6 +68,12 @@ T1 → T2 → T3 → T4
 
 ```
 T5 → T6 → T7 → T8 → T9 → T10
+```
+
+### Phase 3: The owner's protocol on stubs
+
+```
+T11 → T12 → T13 → T14 → T15 → T16
 ```
 
 ---
@@ -304,6 +312,142 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 ---
 
+### T11: The two traits, their data and the scripted stubs
+
+**What**: `DiscreteSide`, `AnalogSide`, the plain-data types of the seam, and two scripted stubs that record every call.
+**Where**: `crates/piperine-solver/src/protocol/sides.rs` (+ `protocol/mod.rs`, `src/lib.rs`, `tests/support/stub_sides.rs`, target `tests/protocol_seam.rs`)
+**Depends on**: None (phase order: starts after T10 closes the previous phase)
+**Reuses**: design `protocol` (Interfaces, Stubs); `core/result.rs` (`Result`)
+**Requirement**: SAC-13
+
+**Done when**:
+
+- [ ] The traits and types have the signatures of the design; every type in a signature is plain data (`i64`, `u32`, `f64`, bytes, `String`) or defined in `sides.rs`
+- [ ] `ScriptedDiscrete` and `ScriptedAnalog` are plain structs driven by a list; each records its calls as a `Vec` of a plain enum; no macro
+- [ ] Test `the_protocol_module_names_no_sub_solver_item` scans `src/protocol/` for `piperine_digital_solver` and for every `piperine_analog_solver` path other than `error::` (C25)
+- [ ] Test `the_stubs_replay_their_script_and_record_calls` passes
+- [ ] Nothing outside `src/protocol/` and `src/lib.rs` (`pub mod protocol;`) changes; `cargo test -p piperine-solver` is green
+- [ ] Gate: full
+
+**Tests**: unit
+**Gate**: full
+**Commit**: `feat(solver): the two sides of the protocol as traits, with scripted stubs`
+
+---
+
+### T12: The transient protocol
+
+**What**: `Protocol::transient`: steps 1 to 6 of abi.md §5 with the boundary preview and the restart request.
+**Where**: `crates/piperine-solver/src/protocol/transient.rs` (+ target `tests/protocol_transient.rs`)
+**Depends on**: T11
+**Reuses**: design `protocol` (The transient loop); abi.md §5 protocol text; `analyses/transient.rs` (`predict_step`, `attempt_step`, `accept_step`) read for the present order, not edited
+**Requirement**: SAC-14, SAC-16 (AC 9)
+
+**Done when**:
+
+- [ ] Test `no_landing_means_one_attempt_to_the_proposed_time` passes (C26)
+- [ ] Test `a_landing_delivers_its_preview_before_the_attempt` asserts the recorded order `advance`, `preview_boundary`, `deliver`, `attempt`, and `exempt = true` only when the preview changed a value (C27)
+- [ ] Test `a_rejected_attempt_restores_both_sides_and_replays` and test `an_earlier_landing_restores_and_replays` assert both marks restored, the sink mark dropped, `advance` called again (C28)
+- [ ] Test `acceptance_fires_crossings_runs_the_instant_and_asks_for_restart` asserts `fire` before `run_instant`, the samples passed, and `Restart::Integrator` on the next `accept` (C29)
+- [ ] Test `a_host_param_write_asks_for_the_small_restart` passes (C30)
+- [ ] Test `no_unknowns_means_no_attempt` runs three instants and the stop time with zero `attempt` calls (C33)
+- [ ] Test `settle_runs_at_time_points_and_at_the_stop_time_only` passes
+- [ ] Gate: full
+
+**Tests**: unit
+**Gate**: full
+**Commit**: `feat(solver): the synchronization protocol over the two sides`
+
+---
+
+### T13: The operating point sequence
+
+**What**: `Protocol::operating_point`: start, equilibrium, instant, bounded rounds, `SETTLE`.
+**Where**: `crates/piperine-solver/src/protocol/operating_point.rs` (+ target `tests/protocol_operating_point.rs`)
+**Depends on**: T12
+**Reuses**: abi.md §10 "Operating point"; `analyses/dc.rs` mixed loop read for the present order, not edited
+**Requirement**: SAC-16
+
+**Done when**:
+
+- [ ] Test `the_operating_point_follows_the_call_sequence` asserts the recorded order: `start`, `equilibrium`, `run_instant`, `deliver` and `equilibrium` again while the instant reports a boundary change, then one `run_instant` with `settle` (C34)
+- [ ] Test `rounds_beyond_the_bound_are_e0506_naming_the_nets` passes with a stub that always reports a change, at the default 20 and at a bound of 3 (C35)
+- [ ] Test `an_operating_point_without_unknowns_runs_the_instant_only` passes
+- [ ] Gate: full
+
+**Tests**: unit
+**Gate**: full
+**Commit**: `feat(solver): the operating point sequence of the protocol`
+
+---
+
+### T14: The sink
+
+**What**: `Sink`, `Observation`, delivery after acceptance, traces after every attempt.
+**Where**: `crates/piperine-solver/src/protocol/sink.rs` (+ target `tests/protocol_sink.rs`)
+**Depends on**: T13
+**Reuses**: design `protocol` (`Sink`, `Observation`); abi.md C5, A5, §12 "Watch it"
+**Requirement**: SAC-17
+
+**Done when**:
+
+- [ ] Test `observations_reach_the_sink_after_acceptance_in_instant_order` passes with path, analysis kind and time on each (C36)
+- [ ] Test `an_undone_instant_delivers_nothing` passes (C37)
+- [ ] Test `a_trace_of_a_rejected_attempt_is_delivered_with_its_iteration` passes
+- [ ] Test `no_sink_means_observations_are_dropped_not_kept` passes (no unbounded buffer)
+- [ ] Gate: full
+
+**Tests**: unit
+**Gate**: full
+**Commit**: `feat(solver): the protocol's sink`
+
+---
+
+### T15: Irreversible instants, host waiters and `FINISH`
+
+**What**: R6, R7 and the `final` mark of abi.md §5.
+**Where**: `crates/piperine-solver/src/protocol/host.rs` (+ `transient.rs`, target `tests/protocol_host.rs`)
+**Depends on**: T14
+**Reuses**: abi.md R6, R7, protocol steps 2, 4, 5
+**Requirement**: SAC-15
+
+**Done when**:
+
+- [ ] Test `an_irreversible_landing_runs_once_after_acceptance_and_does_not_settle` passes across a rejected attempt: `run_instant` for that tick is recorded once, with `settle = false` when `time_point` is false (C31)
+- [ ] Test `finish_ends_after_its_instant_and_is_dropped_on_an_earlier_landing` passes (C32)
+- [ ] Test `a_host_waiter_runs_once_and_its_writes_are_due_next_microstep` passes (C38)
+- [ ] Test `a_waiter_is_never_called_during_advance` passes
+- [ ] Gate: full
+
+**Tests**: unit
+**Gate**: full
+**Commit**: `feat(solver): irreversible instants, host waiters and finish in the protocol`
+
+---
+
+### T16: Host writes
+
+**What**: `Protocol::set`: shadow first, refusal, the `RESHAPE` outcome, scheduled writes as queued host commits.
+**Where**: `crates/piperine-solver/src/protocol/host.rs` (+ target `tests/protocol_host.rs`)
+**Depends on**: T15
+**Reuses**: abi.md P5, P6, §10 "Host actions"; `analyses/transient.rs` (`schedule_set`, `apply_scheduled_sets`) read, not edited
+**Requirement**: SAC-18
+
+**Done when**:
+
+- [ ] Test `a_write_is_committed_only_after_the_shadow_accepts` asserts `shadow` before `host_commit` (C39)
+- [ ] Test `a_false_check_refuses_and_commits_nothing` passes
+- [ ] Test `reshape_is_refused_in_a_transient_and_reported_outside_one` passes: `SetOutcome::Reshape { instance }` between analyses, `Refused` inside
+- [ ] Test `a_scheduled_write_is_a_host_commit_at_its_tick` passes
+- [ ] `cargo test -p piperine-solver` is green and no file outside `src/protocol/`, `src/lib.rs` and `tests/` changed in this phase (the commit body shows `git diff --stat` against the commit before T11)
+- [ ] Gate: build
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(solver): host writes through the protocol`
+
+---
+
 ## Checks
 
 **C1** - Every struct of abi.md §3 has its `repr(C)` size and field offsets (SAC-01, AC 2)
@@ -378,6 +522,51 @@ Proof: run guards | test abi_crate_is_a_leaf ... ok
 **C24** - MD-61 and the instruction files name the crate (SAC-12, AC 3)
 Proof: run guards | test instruction_files_and_state_name_the_abi_crate ... ok
 
+**C25** - The protocol module names no sub-solver item (SAC-13, Protocol AC 1)
+Proof: run owner | test the_protocol_module_names_no_sub_solver_item ... ok
+
+**C26** - No landing before the proposed time means one attempt to it (SAC-14, Protocol AC 2)
+Proof: run owner | test no_landing_means_one_attempt_to_the_proposed_time ... ok
+
+**C27** - A landing's boundary preview is delivered before the attempt, which is exempt only when a value changed (SAC-14, Protocol AC 3)
+Proof: run owner | test a_landing_delivers_its_preview_before_the_attempt ... ok
+
+**C28** - A rejected or shortened attempt restores both sides and the sink mark and advances again (SAC-14, Protocol AC 4)
+Proof: run owner | test a_rejected_attempt_restores_both_sides_and_replays ... ok
+
+**C29** - Acceptance fires the crossings at microstep 0, runs the instant with the samples and asks for a restart on a boundary change (SAC-14, Protocol AC 5)
+Proof: run owner | test acceptance_fires_crossings_runs_the_instant_and_asks_for_restart ... ok
+
+**C30** - A host write to a param or global net asks for the small restart (SAC-14, Protocol AC 6)
+Proof: run owner | test a_host_param_write_asks_for_the_small_restart ... ok
+
+**C31** - An irreversible instant runs once after acceptance and settles only if it is a time point (SAC-15, Protocol AC 7)
+Proof: run owner | test an_irreversible_landing_runs_once_after_acceptance_and_does_not_settle ... ok
+
+**C32** - `FINISH` ends the analysis after its instant and is dropped when the step lands earlier (SAC-15, Protocol AC 8)
+Proof: run owner | test finish_ends_after_its_instant_and_is_dropped_on_an_earlier_landing ... ok
+
+**C33** - With no analog unknown every instant and the stop time run with no attempt (SAC-16, Protocol AC 9)
+Proof: run owner | test no_unknowns_means_no_attempt ... ok
+
+**C34** - The operating point follows start, equilibrium, instant, re-solve on a change, `SETTLE` once (SAC-16, Protocol AC 10)
+Proof: run owner | test the_operating_point_follows_the_call_sequence ... ok
+
+**C35** - More rounds than the bound fail with `E0506` naming the nets (SAC-16, Protocol AC 11)
+Proof: run owner | test rounds_beyond_the_bound_are_e0506_naming_the_nets ... ok
+
+**C36** - Observations reach the sink after acceptance, in instant order, with path, analysis kind and time (SAC-17, Protocol AC 12)
+Proof: run owner | test observations_reach_the_sink_after_acceptance_in_instant_order ... ok
+
+**C37** - An undone instant delivers nothing to the sink (SAC-17, Protocol AC 13)
+Proof: run owner | test an_undone_instant_delivers_nothing ... ok
+
+**C38** - A host waiter runs once at an accepted instant and its writes are due at the next microstep (SAC-15, Protocol AC 14)
+Proof: run owner | test a_host_waiter_runs_once_and_its_writes_are_due_next_microstep ... ok
+
+**C39** - A host write is committed only after the shadow accepts it (SAC-18, Protocol AC 15)
+Proof: run owner | test a_write_is_committed_only_after_the_shadow_accepts ... ok
+
 ---
 
 ## Handoff
@@ -391,17 +580,18 @@ Proof: run guards | test instruction_files_and_state_name_the_abi_crate ... ok
 ## Phase Execution Map
 
 ```
-Phase 1 → Phase 2
+Phase 1 → Phase 2 → Phase 3
 
 Phase 1:  T1 → T2 → T3 → T4
 Phase 2:  T5 → T6 → T7 → T8 → T9 → T10
+Phase 3:  T11 → T12 → T13 → T14 → T15 → T16
 ```
 
-Batches: Phase 1 (4 tasks), Phase 2 (6 tasks). Phase 2 starts after T4 because the thunks' `create` and the examples call `validate` and `ShapeBuf`.
+Batches: Phase 1 (4 tasks), Phase 2 (6 tasks), Phase 3 (6 tasks). Phase 2 starts after T4 because the thunks' `create` and the examples call `validate` and `ShapeBuf`. Phase 3 does not use `piperine-abi`; it comes last so the crate is settled when the two parallel features branch from this feature's final commit.
 
 ## Task Granularity Check
 
-Each task is one module of the crate with its own test target, or one guard change. T1 also creates the manifest and the workspace entry because a module cannot exist without its crate. T10 touches two guard targets and three documents because they state one fact (where the crate sits) and a commit that changed only some of them would leave the guards red.
+Each task is one module with its own test target, or one guard change. T15 and T16 share `host.rs` and one target because waiters and writes are the two host entries of one file, proven by separate tests. T1 also creates the manifest and the workspace entry because a module cannot exist without its crate. T10 touches two guard targets and three documents because they state one fact (where the crate sits) and a commit that changed only some of them would leave the guards red.
 
 ## Test Co-location Validation
 
