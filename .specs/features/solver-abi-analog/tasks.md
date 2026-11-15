@@ -295,12 +295,12 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `the_crate_depends_on_the_abi_crate_only` reads this crate's manifest
-- [ ] Test `device_modules_name_no_digital_or_owner_item` scans `src/device/` for `piperine_digital_solver`, `piperine_solver`, `LogicValue`, `DigitalNet` (C1); test `device_modules_hold_no_unsafe` passes
-- [ ] Test `the_facade_offers_what_an_analog_side_needs` runs, on an RC with a DAC: `set_discrete`, `assemble_tran` for both stages, `end_iteration`, `push_stage`, `accept`, `snapshot`, `restore`, `samples`, `drain_traces` (C22)
-- [ ] `git diff <base>..HEAD --stat -- . ':!crates/piperine-analog-solver' ':!.specs'` is empty, and so is the diff of `src/math/`, `src/convergence.rs`, `src/tolerances.rs`, `src/config.rs`, where `<base>` is the commit before T1; the commit body states the base hash
-- [ ] `cargo test -p piperine-analog-solver --lib` reports the 24 old tests passing (C23), and `cargo test -p piperine-solver` is green unedited
-- [ ] Gate: build
+- [x] Test `the_crate_depends_on_the_abi_crate_only` reads this crate's manifest
+- [x] Test `device_modules_name_no_digital_or_owner_item` scans `src/device/` for `piperine_digital_solver`, `piperine_solver`, `LogicValue`, `DigitalNet` (C1); test `device_modules_hold_no_unsafe` passes
+- [x] Test `the_facade_offers_what_an_analog_side_needs` runs, on an RC with a DAC: `set_discrete`, `assemble_tran` for both stages, `end_iteration`, `push_stage`, `accept`, `snapshot`, `restore`, `samples`, `drain_traces` (C22)
+- [x] `git diff <base>..HEAD --stat -- . ':!crates/piperine-analog-solver' ':!.specs'` is empty, and so is the diff of `src/math/`, `src/convergence.rs`, `src/tolerances.rs`, `src/config.rs`, where `<base>` is the commit before T1; the commit body states the base hash
+- [x] `cargo test -p piperine-analog-solver --lib` reports the 24 old tests passing (C23), and `cargo test -p piperine-solver` is green unedited
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build
