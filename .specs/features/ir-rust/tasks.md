@@ -433,10 +433,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The old-compiler and no-cargo tests use shell wrappers written into a `tempdir` (`#[cfg(unix)]`): one prints an old `-vV`, one logs its own invocations while a `cargo` beside it logs any call
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test rustc`: `a_missing_compiler_is_named_and_the_interpreter_is_offered`, `a_compiler_below_1_85_is_refused_with_both_versions`, `the_compiler_is_run_directly_and_cargo_never`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+- [x] The old-compiler and no-cargo tests use shell wrappers written into a `tempdir` (`#[cfg(unix)]`): one prints an old `-vV`, one logs its own invocations while a `cargo` beside it logs any call
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test rustc`: `a_missing_compiler_is_named_and_the_interpreter_is_offered`, `a_compiler_below_1_85_is_refused_with_both_versions`, `the_compiler_is_run_directly_and_cargo_never`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
