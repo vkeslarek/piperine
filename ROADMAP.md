@@ -280,3 +280,7 @@ VS Code extension productization, marketplace packaging, release/versioning —
 - **Re-entry is approximate, not a replay (N1, Low).** Re-entering a transient at a captured clock-edge step lands on a different step grid and ends up to 7.3e-4 relative off the continuous run. Make re-entry restore the step controller state so it replays the continuous run bit for bit.
 - **Re-entry state on every step (N2, Low).** Every accepted step stores the full re-entry state and `mark()` copies all net bytes on each attempt; memory and time grow with step count. Add an opt-out (or capture only at host-requested points).
 - **Partials guard matches by label (N3, Low).** The C27 guard ties a device to its check by label string, not by the module verified; tie it to the module.
+
+## M1 follow-ups
+
+- **A child's own signals show as `gnd` in the authored `Child` (msl-elab).** `Child::nodes` is padded with `Ground` for each signal of the placed module because `Terminal` cannot name the child's own node; the instance table carries the real one. Needs a `Terminal::Own` in `piperine-ir` (and `Ir::check` to accept it). No M1 device has a signal.

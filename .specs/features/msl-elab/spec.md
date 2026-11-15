@@ -122,6 +122,8 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 7. IF a placement has no `let` of its own THEN the system SHALL name the instance `<module>#<k>` as §21 rule 3 states.
 8. IF a module places itself, directly or through other modules, THEN the system SHALL reject the model with `E0341` and SHALL name the module.
 
+**Amendment (T4, orchestrator, msl-elab verification round 1)**: a child's own signals are shown as `gnd` in the authored `Child::nodes`. `Ir::check` forces one slot per node of the child's body and `Terminal` has no "own node", so the authored view pads them with `Ground`; the instance table (`InstanceSpec::nodes`, `Instance::node`) carries the real node (`Top.l.inner`), and backends bind from it. No M1 device has a signal. Pinned by `a_childs_own_signal_is_gnd_in_the_authored_child_and_real_in_the_instance_table`; follow-up in `ROADMAP.md` ("M1 follow-ups").
+
 **Independent Test**: elaborate `DiodeSeries`; list the paths `DiodeSeries.v1`, `.r1`, `.d1`, `.d2` in that order, and read that `DiodeSeries.d1` and `DiodeSeries.d2` both bind `DiodeSeries.b`.
 
 ---

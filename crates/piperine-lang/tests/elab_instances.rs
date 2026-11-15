@@ -103,6 +103,18 @@ fn signals_are_nodes_and_ports_bind_the_parents() {
 }
 
 #[test]
+fn a_childs_own_signal_is_gnd_in_the_authored_child_and_real_in_the_instance_table() {
+    // M1 amendment (ELAB-03): `Child::nodes` has no terminal for "the child's own node", so the
+    // authored view pads it with `Ground`; the instance table carries the real node.
+    let src = format!("{LEAF}module Top() {{ signal s: Electrical; let l = Leaf {{ }}(s, gnd); }}");
+    let ir = Elab::ir(&src, "Top");
+    let child = &ir.top().body().children()[0];
+    assert_eq!(child.nodes.len(), 3, "one slot per node of the child's body");
+    assert_eq!(child.nodes[2], piperine_ir::Terminal::Ground, "the own signal is padded with ground");
+    assert_eq!(ir.instance_at("Top.l").unwrap().node(2).map(|n| n.path().to_string()), Some("Top.l.inner".to_string()));
+}
+
+#[test]
 fn a_node_init_is_recorded_on_body_and_design() {
     let ir = Elab::ir("module Top() { signal n: Electrical = 0.75; }", "Top");
     assert_eq!(ir.bodies().next().unwrap().nodes()[0].init.map(|v| v.get()), Some(0.75));
