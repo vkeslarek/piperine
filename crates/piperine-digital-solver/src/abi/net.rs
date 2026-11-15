@@ -28,6 +28,8 @@ pub struct NetSpec {
     pub relax: bool,
     /// The analog side reads this net (R4's boundary).
     pub analog_reads: bool,
+    /// A `CROSS` watch writes this event net: what it reaches has the `crossing` horizon (abi.md R5).
+    pub crossing: bool,
     /// A host write during a run is refused (P5).
     pub structural: bool,
     /// The first commit at (0, 0); empty for none.
@@ -46,6 +48,7 @@ impl NetSpec {
             record: false,
             relax: false,
             analog_reads: false,
+            crossing: false,
             structural: false,
             init: Vec::new(),
         }

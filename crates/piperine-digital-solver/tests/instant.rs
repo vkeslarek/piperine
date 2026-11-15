@@ -9,7 +9,7 @@ mod devices;
 
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
-use piperine_digital_solver::abi::engine::{Digital, Mode};
+use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::abi::net::{NetId, NetSpec};
 use piperine_digital_solver::abi::observe::Observation;
 use piperine_digital_solver::abi::tick::{Resolution, Tick};
@@ -27,7 +27,7 @@ fn net(d: &Digital, name: &str) -> NetId {
 }
 
 fn instant(d: &mut Digital, at: Tick) -> piperine_digital_solver::abi::engine::Outcome {
-    d.run_instant(at, &[], Tick(i64::MAX), Mode::default()).expect("the instant runs")
+    d.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs")
 }
 
 fn real(v: f64) -> [u8; 16] {
@@ -147,7 +147,7 @@ fn an_instant_that_never_goes_quiet_is_e0501_naming_the_nets() {
     .unwrap();
     let mut d = Digital::new(plan, DigitalLimits::default());
     d.start().unwrap();
-    match d.run_instant(Tick(0), &[], Tick(1000), Mode::default()) {
+    match d.run_instant(Tick(0), &[], Horizon::uniform(Tick(1000)), Mode::default()) {
         Err(DigitalError::NotQuiet { code, tick, nets }) => {
             assert_eq!((code, tick), ("E0501", 0));
             assert_eq!(nets, ["clk", "t.tick"]);
@@ -185,14 +185,14 @@ fn a_settle_commit_with_no_delay_is_refused() {
     // C29
     let mut d = engine(vec![("s", settler(), vec![("out", "out")])]);
     d.start().unwrap();
-    match d.run_instant(Tick(0), &[], Tick(10), Mode { is_static: false, settle: true }) {
+    match d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode { is_static: false, settle: true }) {
         Err(DigitalError::Unsupported { what }) => assert!(what.contains("settle"), "{what}"),
         other => panic!("expected an unsupported error, got {other:?}"),
     }
     // no settle phase, no reaction, no error
     let mut d = engine(vec![("s", settler(), vec![("out", "out")])]);
     d.start().unwrap();
-    d.run_instant(Tick(0), &[], Tick(10), Mode::default()).expect("SETTLE never fired");
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode::default()).expect("SETTLE never fired");
     // a delay that advances is a commit like any other
     let plan = bind_by_name_with(vec![("s", settler(), vec![("out", "out")])], Resolution::default(), |nets| {
         nets.iter_mut().find(|n| n.name == "s.delay").unwrap().init = 1e-9f64.to_le_bytes().to_vec();
@@ -200,7 +200,7 @@ fn a_settle_commit_with_no_delay_is_refused() {
     .unwrap();
     let mut d = Digital::new(plan, DigitalLimits::default());
     d.start().unwrap();
-    d.run_instant(Tick(0), &[], Tick(10), Mode { is_static: false, settle: true }).expect("a delayed settle commit");
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode { is_static: false, settle: true }).expect("a delayed settle commit");
     assert_eq!(d.next_due(), Some(Tick(NS)));
 }
 
@@ -220,7 +220,7 @@ fn an_instant_reports_boundary_fired_and_final() {
     d.start().unwrap();
     d.fire(net(&d, "g"), Tick(7)).unwrap();
     d.fire(net(&d, "fin"), Tick(7)).unwrap();
-    let out = d.run_instant(Tick(7), &[2.5], Tick(100), Mode::default()).unwrap();
+    let out = d.run_instant(Tick(7), &[2.5], Horizon::uniform(Tick(100)), Mode::default()).unwrap();
     assert_eq!(out.boundary, [(net(&d, "out"), real(2.5).to_vec())], "the sample went through the reaction");
     let mut want = vec![net(&d, "g"), net(&d, "fin")];
     want.sort();

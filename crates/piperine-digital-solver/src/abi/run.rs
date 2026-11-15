@@ -27,12 +27,14 @@ pub struct Ambient {
     pub time: f64,
     pub is_static: bool,
     pub horizon: Tick,
+    /// The `HORIZON` of a reaction a `CROSS` watch can reach.
+    pub crossing_horizon: Tick,
 }
 
 impl Ambient {
     /// The ambient of an instant at `tick`, with `HORIZON` the tick itself.
     pub fn at(tick: Tick, seconds_per_tick: f64) -> Ambient {
-        Ambient { tick, time: tick.0 as f64 * seconds_per_tick, is_static: false, horizon: tick }
+        Ambient { tick, time: tick.0 as f64 * seconds_per_tick, is_static: false, horizon: tick, crossing_horizon: tick }
     }
 }
 
@@ -463,12 +465,16 @@ pub fn run_reactions(
         let inst = &instances[f.instance];
         let shape = inst.handle.shape();
         let reaction = shape.reactions.get(f.reaction).expect("listed from this shape");
+        let mut seen = *ambient;
+        if analysis.crossing_reach(f.instance as u32, f.reaction as u32) {
+            seen.horizon = ambient.crossing_horizon;
+        }
         let lens = cell_lens(shape, &reaction.reads, Access::ReactionRead).expect("bind validated the shape");
         let inputs = reaction
             .reads
             .iter()
             .zip(&lens)
-            .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, samples))
+            .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, &seen, samples))
             .collect();
         jobs.push(Job { instance: f.instance, reaction: f.reaction, inputs, on_settle: f.on_settle });
     }

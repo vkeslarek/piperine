@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use super::engine::{Digital, Mode, Outcome};
+use super::engine::{Digital, Horizon, Mode, Outcome};
 use super::net::{NetId, NetKind};
 use super::queue::Writer;
 use super::run::{Ambient, fire_net, fired_reactions, run_functions, run_reactions, write_net};
@@ -31,12 +31,13 @@ impl Digital {
     }
 
     /// Runs the instant `at`: the commits due at (at, 0), then microsteps until quiet. `samples`
-    /// are the accepted continuous values reactions read; `limit` caps `HORIZON`.
+    /// are the accepted continuous values reactions read; `limit` bounds each reaction's `HORIZON`:
+    /// `limit.crossing` for one a `CROSS` watch can reach, `limit.stop` for the rest.
     pub fn run_instant(
         &mut self,
         at: Tick,
         samples: &[f64],
-        limit: Tick,
+        limit: Horizon,
         mode: Mode,
     ) -> Result<Outcome, DigitalError> {
         match self.microsteps(at, samples, limit, mode, false)? {
@@ -53,7 +54,7 @@ impl Digital {
         &mut self,
         at: Tick,
         samples: &[f64],
-        limit: Tick,
+        limit: Horizon,
         mode: Mode,
         lookahead: bool,
     ) -> Result<Stepped, DigitalError> {
@@ -86,7 +87,8 @@ impl Digital {
             }
             let mut ambient = Ambient::at(at, res);
             ambient.is_static = mode.is_static;
-            ambient.horizon = self.horizon(at, limit);
+            ambient.horizon = self.horizon(at, limit.stop);
+            ambient.crossing_horizon = self.horizon(at, limit.crossing);
             run_functions(&self.plan, &mut self.store, &mut self.dirty, here, &ambient, &mut self.obs)?;
             let mut analog_now = false;
             for (i, spec) in self.plan.nets.iter().enumerate() {
@@ -166,7 +168,8 @@ impl Digital {
             }
             let mut ambient = Ambient::at(at, res);
             ambient.is_static = mode.is_static;
-            ambient.horizon = self.horizon(at, limit);
+            ambient.horizon = self.horizon(at, limit.stop);
+            ambient.crossing_horizon = self.horizon(at, limit.crossing);
             let ran = run_reactions(
                 &mut self.plan,
                 &self.store,

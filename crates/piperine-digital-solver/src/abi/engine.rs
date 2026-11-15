@@ -14,6 +14,23 @@ use super::tick::Tick;
 use crate::error::DigitalError;
 use crate::limits::DigitalLimits;
 
+/// The latest ticks a reaction's `HORIZON` may reach at an instant (abi.md R5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Horizon {
+    /// The stop time: the bound when nothing queued reaches the reaction.
+    pub stop: Tick,
+    /// The bound for a reaction a `CROSS` watch can reach: the current instant while the analog side
+    /// has unknowns, the stop time when it has none.
+    pub crossing: Tick,
+}
+
+impl Horizon {
+    /// The same bound for every reaction.
+    pub fn uniform(t: Tick) -> Horizon {
+        Horizon { stop: t, crossing: t }
+    }
+}
+
 /// How an instant runs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Mode {
@@ -231,6 +248,11 @@ impl Digital {
             }
         }
         Ok(Shadow::Accept)
+    }
+
+    /// The name of `net` as the user reads it, for error reports.
+    pub fn net_name(&self, net: NetId) -> String {
+        self.plan.nets[net.0 as usize].name.clone()
     }
 
     /// The bytes of `net` now.

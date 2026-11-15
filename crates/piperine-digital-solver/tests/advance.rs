@@ -10,7 +10,7 @@ mod devices;
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::abi::advance::Advance;
-use piperine_digital_solver::abi::engine::{Digital, Mode};
+use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::abi::net::{NetId, NetSpec};
 use piperine_digital_solver::abi::observe::Observation;
 use piperine_digital_solver::abi::tick::{Resolution, Tick};
@@ -36,7 +36,7 @@ fn net(d: &Digital, name: &str) -> NetId {
 /// Starts the engine and runs its first instant.
 fn started(mut d: Digital) -> Digital {
     d.start().unwrap();
-    d.run_instant(Tick(0), &[], Tick(i64::MAX), Mode::default()).unwrap();
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).unwrap();
     d
 }
 
@@ -52,7 +52,7 @@ fn advance_stops_before_the_first_time_point_and_leaves_it_untouched() {
     assert_eq!(d.checkpoint(), before, "store, queue and bookkeeping are those before the instant");
     assert_eq!(d.observations(), observed.as_slice());
     // the owner then runs the instant whole
-    let out = d.run_instant(Tick(5), &[], Tick(20), Mode::default()).unwrap();
+    let out = d.run_instant(Tick(5), &[], Horizon::uniform(Tick(20)), Mode::default()).unwrap();
     assert_eq!(out.boundary, [(net(&d, "y"), LOW.to_vec())]);
     assert_eq!(d.advance(Tick(20)).unwrap(), Advance::Landing { tick: Tick(9), time_point: true }, "the next one is a landing too");
 }
@@ -164,22 +164,43 @@ fn horizon_is_before_the_earliest_pending_commit_and_the_limit() {
     // a commit pending at 500 and a limit of 1000: before the commit
     d.fire(net(&d, "go"), Tick(100)).unwrap();
     d.host_commit(net(&d, "seen"), 0, &[0; 16], Tick(500)).unwrap();
-    d.run_instant(Tick(100), &[], Tick(1000), Mode::default()).unwrap();
+    d.run_instant(Tick(100), &[], Horizon::uniform(Tick(1000)), Mode::default()).unwrap();
     assert_eq!(seen(&d), (100, 499));
 
     // a limit below the pending commit wins
     d.fire(net(&d, "go"), Tick(200)).unwrap();
-    d.run_instant(Tick(200), &[], Tick(300), Mode::default()).unwrap();
+    d.run_instant(Tick(200), &[], Horizon::uniform(Tick(300)), Mode::default()).unwrap();
     assert_eq!(seen(&d), (200, 299));
 
     // nothing pending: the tick before the limit, and never before the instant itself
     let mut d = started(engine_with(vec![("w", clockwatch(), vec![("go", "go"), ("seen", "seen")])], &[]));
     d.fire(net(&d, "go"), Tick(50)).unwrap();
-    d.run_instant(Tick(50), &[], Tick(80), Mode::default()).unwrap();
+    d.run_instant(Tick(50), &[], Horizon::uniform(Tick(80)), Mode::default()).unwrap();
     assert_eq!(seen(&d), (50, 79));
     d.fire(net(&d, "go"), Tick(90)).unwrap();
-    d.run_instant(Tick(90), &[], Tick(90), Mode::default()).unwrap();
+    d.run_instant(Tick(90), &[], Horizon::uniform(Tick(90)), Mode::default()).unwrap();
     assert_eq!(seen(&d), (90, 90));
+}
+
+#[test]
+fn a_reaction_a_crossing_can_reach_gets_the_crossing_horizon() {
+    // abi.md R5: `crossing` bounds a reaction a CROSS watch can reach, `stop` the others
+    let horizon = |crossing_net: bool| {
+        let plan = bind_by_name_with(
+            vec![("w", clockwatch(), vec![("go", "go"), ("seen", "seen")])],
+            Resolution::default(),
+            |nets| nets.iter_mut().find(|n| n.name == "go").unwrap().crossing = crossing_net,
+        )
+        .unwrap();
+        let mut d = started(Digital::new(plan, DigitalLimits::default()));
+        d.fire(net(&d, "go"), Tick(10)).unwrap();
+        let limit = Horizon { stop: Tick(1000), crossing: Tick(10) };
+        d.run_instant(Tick(10), &[], limit, Mode::default()).unwrap();
+        let b = d.read(net(&d, "seen"));
+        i64::from_le_bytes(b[8..].try_into().unwrap())
+    };
+    assert_eq!(horizon(true), 10, "reachable by a crossing: the current instant");
+    assert_eq!(horizon(false), 999, "not reachable: the stop time");
 }
 
 #[test]
@@ -187,7 +208,7 @@ fn tick_is_the_instants_tick() {
     let mut d = started(engine_with(vec![("w", clockwatch(), vec![("go", "go"), ("seen", "seen")])], &[]));
     for t in [7, 123_456_789] {
         d.fire(net(&d, "go"), Tick(t)).unwrap();
-        d.run_instant(Tick(t), &[], Tick(i64::MAX), Mode::default()).unwrap();
+        d.run_instant(Tick(t), &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).unwrap();
         let b = d.read(net(&d, "seen"));
         assert_eq!(i64::from_le_bytes(b[..8].try_into().unwrap()), t);
     }

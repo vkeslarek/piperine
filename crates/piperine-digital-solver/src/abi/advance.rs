@@ -2,7 +2,7 @@
 //! a target time, each under a sub-checkpoint, and stop before the first one
 //! that touches the analog side.
 
-use super::engine::{Digital, Mode};
+use super::engine::{Digital, Horizon, Mode};
 use super::instant::Stepped;
 use super::tick::Tick;
 use crate::error::DigitalError;
@@ -31,7 +31,7 @@ impl Digital {
                 return Ok(Advance::Reached);
             }
             let sub = self.checkpoint();
-            match self.microsteps(s, &[], to, Mode::default(), true)? {
+            match self.microsteps(s, &[], Horizon::uniform(to), Mode::default(), true)? {
                 Stepped::Landing { time_point } => {
                     self.restore(&sub);
                     return Ok(Advance::Landing { tick: s, time_point });

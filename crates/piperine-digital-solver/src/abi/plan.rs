@@ -69,9 +69,17 @@ pub struct Analysis {
     param_nets: Vec<bool>,
     /// `[instance][reaction]`: running it makes the instant a time point (abi.md §5 R4).
     probes: Vec<Vec<bool>>,
+    /// `[instance][reaction]`: a `CROSS` watch can reach what the reaction listens to or reads.
+    crossing: Vec<Vec<bool>>,
 }
 
 impl Analysis {
+    /// Whether a `CROSS` watch can reach reaction `reaction` of `instance` (abi.md R5): its
+    /// `HORIZON` is then bounded by the owner's `crossing` limit.
+    pub fn crossing_reach(&self, instance: u32, reaction: u32) -> bool {
+        self.crossing[instance as usize][reaction as usize]
+    }
+
     /// Whether reaction `reaction` of `instance` reads a continuous pin, or has a statement without
     /// `LATER` whose net reaches, through reads and writes, the analog side or such a reaction.
     pub fn probes(&self, instance: u32, reaction: u32) -> bool {
@@ -210,6 +218,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
         }
     }
     let probes = reachability(nets, inputs, &functions, &later);
+    let crossing = crossing_reach(nets, inputs, &functions);
     Ok(Analysis {
         writers,
         functions,
@@ -218,6 +227,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
         settle_nets: globals(global::SETTLE),
         param_nets,
         probes,
+        crossing,
     })
 }
 
@@ -276,6 +286,52 @@ fn reachability(
         }
         if !changed {
             return probes;
+        }
+    }
+}
+
+/// R5: which reactions a `CROSS` watch can reach. Forward from the nets the watches fire: through a
+/// function that reads a reached net to the nets it writes, through a reaction that listens to or
+/// reads one to the nets its statements name. Least fixed point.
+fn crossing_reach(nets: &[NetSpec], inputs: &[ShapeInput<'_>], functions: &[FnNode]) -> Vec<Vec<bool>> {
+    let mut reached: Vec<bool> = nets.iter().map(|n| n.crossing).collect();
+    let mut out: Vec<Vec<bool>> = inputs.iter().map(|i| vec![false; i.shape.reactions.len()]).collect();
+    let net_of = |input: &ShapeInput<'_>, pin: u32| match input.pins.get(pin as usize) {
+        Some(Binding::Net(id)) => Some(*id),
+        _ => None,
+    };
+    loop {
+        let mut changed = false;
+        for f in functions {
+            if f.reads.iter().any(|r| reached[r.0 as usize]) {
+                for w in &f.writes {
+                    if !reached[w.0 as usize] {
+                        reached[w.0 as usize] = true;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for (i, input) in inputs.iter().enumerate() {
+            for (r, reaction) in input.shape.reactions.iter().enumerate() {
+                let listened = reaction.on.iter().copied();
+                let read = reaction.reads.iter().filter(|c| c.kind == cell::PIN).map(|c| c.index);
+                if !listened.chain(read).any(|p| net_of(input, p).is_some_and(|n| reached[n.0 as usize])) {
+                    continue;
+                }
+                out[i][r] = true;
+                for st in reaction.writes.iter() {
+                    if let Some(n) = net_of(input, st.pin)
+                        && !reached[n.0 as usize]
+                    {
+                        reached[n.0 as usize] = true;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            return out;
         }
     }
 }

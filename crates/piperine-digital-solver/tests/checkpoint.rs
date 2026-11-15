@@ -9,7 +9,7 @@
 mod devices;
 
 use devices::*;
-use piperine_digital_solver::abi::engine::{Digital, Mode, Outcome};
+use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode, Outcome};
 use piperine_digital_solver::abi::net::NetId;
 use piperine_digital_solver::abi::observe::Observation;
 use piperine_digital_solver::abi::tick::{Resolution, Tick};
@@ -26,7 +26,7 @@ fn net(d: &Digital, name: &str) -> NetId {
 }
 
 fn instant(d: &mut Digital, at: Tick) -> Outcome {
-    d.run_instant(at, &[], Tick(i64::MAX), Mode::default()).expect("the instant runs")
+    d.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs")
 }
 
 /// A divide-by-two: a clock, a flip-flop and an inverter in a loop, and a counter on the clock.

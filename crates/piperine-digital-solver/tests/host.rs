@@ -10,7 +10,7 @@ mod devices;
 
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
-use piperine_digital_solver::abi::engine::{Digital, Mode, Shadow};
+use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode, Shadow};
 use piperine_digital_solver::abi::net::{NetId, NetSpec};
 use piperine_digital_solver::abi::observe::Observation;
 use piperine_digital_solver::abi::tick::{Resolution, Tick};
@@ -27,7 +27,7 @@ fn net(d: &Digital, name: &str) -> NetId {
 
 fn started(mut d: Digital) -> Digital {
     d.start().unwrap();
-    d.run_instant(Tick(0), &[], Tick(i64::MAX), Mode::default()).unwrap();
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).unwrap();
     d
 }
 
@@ -42,7 +42,7 @@ fn a_host_write_is_a_commit_at_microstep_zero() {
     d.host_commit(net(&d, "a"), 0, &HIGH, Tick(5)).unwrap();
     assert_eq!(d.read(net(&d, "a")), [0, 0], "queued, not applied");
     assert_eq!(d.next_due(), Some(Tick(5)));
-    d.run_instant(Tick(5), &[], Tick(10), Mode::default()).unwrap();
+    d.run_instant(Tick(5), &[], Horizon::uniform(Tick(10)), Mode::default()).unwrap();
     assert_eq!(d.read(net(&d, "a")), HIGH);
     assert_eq!(d.read(net(&d, "y")), LOW, "and its readers ran in the same microstep");
     let changes: Vec<_> = d

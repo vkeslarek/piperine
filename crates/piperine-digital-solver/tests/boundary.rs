@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use piperine_digital_solver::abi::advance::Advance;
-use piperine_digital_solver::abi::engine::{Checkpoint, Digital, Mode, Outcome, Shadow};
+use piperine_digital_solver::abi::engine::{Checkpoint, Digital, Horizon, Mode, Outcome, Shadow};
 use piperine_digital_solver::abi::net::{NetId, NetSpec};
 use piperine_digital_solver::abi::observe::Observation;
 use piperine_digital_solver::abi::plan::DigitalPlan;
@@ -102,11 +102,12 @@ fn the_facade_offers_every_operation_of_the_discrete_side() {
     let _next_due: fn(&Digital) -> Option<Tick> = Digital::next_due;
     let _advance: fn(&mut Digital, Tick) -> Result<Advance, DigitalError> = Digital::advance;
     let _fire: fn(&mut Digital, NetId, Tick) -> Result<(), DigitalError> = Digital::fire;
-    let _run: fn(&mut Digital, Tick, &[f64], Tick, Mode) -> Result<Outcome, DigitalError> = Digital::run_instant;
+    let _run: fn(&mut Digital, Tick, &[f64], Horizon, Mode) -> Result<Outcome, DigitalError> = Digital::run_instant;
     let _checkpoint: fn(&Digital) -> Checkpoint = Digital::checkpoint;
     let _restore: fn(&mut Digital, &Checkpoint) = Digital::restore;
     let _shadow: fn(&Digital, NetId, u32, &[u8]) -> Result<Shadow, DigitalError> = Digital::shadow;
     let _commit: fn(&mut Digital, NetId, u32, &[u8], Tick) -> Result<(), DigitalError> = Digital::host_commit;
+    let _name: fn(&Digital, NetId) -> String = Digital::net_name;
     let _drain: fn(&mut Digital) -> Vec<Observation> = Digital::drain_observations;
 
     // and each once, on a small plan: one host-driven net
@@ -123,7 +124,8 @@ fn the_facade_offers_every_operation_of_the_discrete_side() {
     d.restore(&cp);
     assert_eq!(d.read(n), [0, 0]);
     assert_eq!(d.shadow(n, 0, &[1, 1]).unwrap(), Shadow::Accept);
-    let out = d.run_instant(Tick(4), &[], Tick(10), Mode::default()).unwrap();
+    assert_eq!(d.net_name(n), "n");
+    let out = d.run_instant(Tick(4), &[], Horizon::uniform(Tick(10)), Mode::default()).unwrap();
     assert!(!out.finish);
     assert!(d.drain_observations().iter().any(|o| matches!(o, Observation::Change { net, .. } if net == "n")));
 }
