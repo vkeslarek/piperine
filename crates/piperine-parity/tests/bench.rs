@@ -1,10 +1,11 @@
 //! Scope: `Bench`, the chain from a twin's text to a bound solver circuit (requirements PAR-02 and
 //! PAR-04 AC 4): a twin loads, a failing stage is named with its diagnostics, nodes and sources
-//! are reached by the `.cir` names, and a skipped reference still solves the MSL side. No ngspice
-//! binary is involved.
+//! are reached by the `.cir` names, and a skipped reference still solves the MSL side (that one test also runs ngspice once, for the
+//! compared count of a real run). The other tests involve no ngspice binary.
 
 use piperine_parity::bench::Bench;
-use piperine_parity::ngspice::{Lookup, Ngspice, Reference};
+use piperine_parity::ngspice::{Lookup, Ngspice};
+use piperine_parity::operating_point::{OperatingPoint, Outcome};
 use piperine_solver::prelude::Context;
 
 /// Runs a closure expected to panic and returns the panic message.
@@ -85,20 +86,18 @@ fn nodes_and_sources_are_reached_by_cir_names() {
 
 #[test]
 fn a_skipped_reference_still_solves_the_msl_side() {
-    let reference = Ngspice::new(Lookup::Skip).run("divider");
-    assert!(matches!(reference, Reference::Skipped));
-    let mut compared = 0;
-    let mut bench = Bench::load("divider");
-    let mid = bench.node("mid");
-    let result = bench.circuit().dc(Context::default()).expect("the solve succeeds under skip").solve().expect("solve");
-    assert!(result.get_node(&mid).is_some());
-    if let Reference::Golden(golden) = &reference {
-        compared += golden.stdout().len();
-    }
-    assert_eq!(compared, 0, "nothing is compared under skip");
-    // a failing solve still panics: a twin that fails to load does
-    let message = Panicked::message(|| {
-        Bench::load("no_such_twin");
+    let twin = OperatingPoint { fixture: "divider", nodes: &["vin", "mid"] };
+    // the parity test's own comparison under skip: the MSL side is solved, nothing is compared
+    let skipped = twin.compare(&Ngspice::new(Lookup::Skip));
+    assert_eq!(skipped, Outcome { solved: 2, compared: 0 });
+    // the same comparison against a real run: both nodes are solved and compared
+    let lookup = Ngspice::locate(None, std::env::var_os("PATH").as_deref()).unwrap_or_else(|message| panic!("{message}"));
+    let real = twin.compare(&Ngspice::new(lookup));
+    assert_eq!(real, Outcome { solved: 2, compared: 2 });
+    // a twin that fails to load fails under skip too
+    let missing = OperatingPoint { fixture: "no_such_twin", nodes: &["a"] };
+    let message = Panicked::message(move || {
+        missing.compare(&Ngspice::new(Lookup::Skip));
     });
-    assert!(!message.is_empty());
+    assert!(message.contains("no_such_twin"), "{message}");
 }
