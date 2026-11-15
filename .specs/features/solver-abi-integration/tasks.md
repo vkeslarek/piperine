@@ -183,13 +183,13 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] `assemble` branches once on `circuit.abi`; `Assembly::push_stage` follows each converged stage; `snapshot`/`restore` travel with `solver.state_snapshot()`/`restore_state`
-- [ ] Test `rc_step_reads_one_minus_exp_on_devices` passes with the literal and tolerance of `helper_devices.rs`
-- [ ] Test `a_continuous_init_starts_newton_and_is_held_through_the_operating_point` passes
-- [ ] Test `a_rejected_stage_restores_the_term_history` forces a Newton failure with a tiny iteration cap and compares histories
-- [ ] No discrete pin exists in these circuits: the protocol is wired in Phase 3; a device circuit with a discrete net an analog function reads is refused by the transient driver until then, with a test
-- [ ] `cargo test -p piperine-solver` is green: every existing test unchanged
-- [ ] Gate: build
+- [x] `assemble` branches once on `circuit.abi`; `Assembly::push_stage` follows each converged stage; `snapshot`/`restore` travel with `solver.state_snapshot()`/`restore_state`
+- [x] Test `rc_step_reads_one_minus_exp_on_devices` passes with the literal and tolerance of `helper_devices.rs`
+- [x] Test `a_continuous_init_starts_newton_and_is_held_through_the_operating_point` passes
+- [x] Test `a_rejected_stage_restores_the_term_history` forces a Newton failure with a tiny iteration cap and compares histories
+- [x] No discrete pin exists in these circuits: the protocol is wired in Phase 3; a device circuit with a discrete net an analog function reads is refused by the transient driver until then, with a test
+- [x] `cargo test -p piperine-solver` is green: every existing test unchanged
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build

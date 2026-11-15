@@ -8,6 +8,7 @@
 //! [`TransientAnalysisOptions`], the per-step kernel state is
 //! [`TransientAnalysisContext`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
+use piperine_analog_solver::device::{Ambient, AssemblySnapshot, Stage};
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::events::{
@@ -302,6 +303,9 @@ pub struct TransientSystem<'a> {
     pub uic_clamps: Vec<UicClamp>,
     /// While true, the clamps stamp — released after the first accepted step.
     pub uic_hold: bool,
+    /// An error a Newton callback met (they return nothing): the driver
+    /// takes it after the solve that raised it.
+    callback_error: Option<piperine_analog_solver::error::Error>,
 }
 
 impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
@@ -309,6 +313,9 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         &mut self,
         state: &CircularArrayBuffer2<f64>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
+        if self.circuit.abi.is_some() {
+            return self.assemble_device(state);
+        }
         // TR-BDF2 is the sole integration scheme — no Gear order ramp. The
         // kernel derives the companion from `phase` + `h` via the centralised
         // `TrBdf2::phase_coeffs` (MD-07); the TR stage's previous-current
@@ -359,7 +366,19 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
     }
 
     fn any_limiting_report(&self) -> bool {
+        if let Some(bound) = &self.circuit.abi {
+            return !bound.analog.limiting_active().is_empty();
+        }
         self.circuit.devices.iter().any(|d| d.limiting_report().is_some())
+    }
+
+    /// Every Newton iteration but the first ends here (abi.md A2).
+    fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<f64>, iteration_number: usize) {
+        if iteration_number > 0
+            && let Some(bound) = self.circuit.abi.as_mut()
+        {
+            bound.analog.end_iteration();
+        }
     }
 
     fn apply_limiting_reports(&self, guess: ndarray::ArrayViewMut1<f64>) {
@@ -368,11 +387,72 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
 
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
 
+    /// A converged stage gains a row of the Newton buffer: the assembly's term
+    /// histories gain theirs, at the same point and in the same call.
     fn convergence_success_callback(
         &mut self,
         _state: &CircularArrayBuffer2<f64>,
-        _: &ArrayView1<f64>,
+        converged: &ArrayView1<f64>,
     ) {
+        let amb = self.ambient();
+        if let Some(bound) = self.circuit.abi.as_mut() {
+            bound.analog.end_iteration();
+            if let Err(e) = bound.analog.push_stage(&converged.to_vec(), amb) {
+                self.callback_error.get_or_insert(e);
+            }
+        }
+    }
+}
+
+impl TransientSystem<'_> {
+    /// The coordinates of the stage being solved (abi.md §4.2).
+    fn ambient(&self) -> Ambient {
+        Ambient {
+            time: self.time,
+            freq: 0.0,
+            is_static: false,
+            gmin: self.context.tolerances.gmin,
+            source_scale: 1.0,
+        }
+    }
+
+    /// The stamps of one stage of a circuit of devices: `FLOW` terms in their
+    /// Norton form, `DDT` terms through the TR-BDF2 companion over their own
+    /// history, `DELAY` terms from theirs, then the solver's shunts and clamps.
+    fn assemble_device(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
+        let x: Vec<f64> = match state.latest() {
+            Some(row) => row.to_vec(),
+            None => vec![0.0; state.size()],
+        };
+        let stage = Stage { phase: self.phase, h: self.h, prev_h: self.prev_h };
+        let amb = self.ambient();
+        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let mut all_stamps = bound.analog.assemble_tran(&x, amb, stage)?;
+        if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", &all_stamps) {
+            return Err(err);
+        }
+        let gshunt = self.context.tolerances.gshunt;
+        if gshunt > 0.0 {
+            for r in self.circuit.netlist().all_references() {
+                if r.variable().is_node() && !r.variable().is_ground() {
+                    all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
+                }
+            }
+        }
+        if self.uic_hold {
+            for clamp in &self.uic_clamps {
+                clamp.stamp(&mut all_stamps);
+            }
+        }
+        Ok(all_stamps)
+    }
+
+    /// The error a callback met during the solve just run, if any.
+    fn take_callback_error(&mut self) -> crate::core::result::Result<()> {
+        self.callback_error.take().map_or(Ok(()), Err)
     }
 }
 
@@ -447,6 +527,9 @@ struct StepAttempt {
     /// Per-element device-state checkpoints (ABI-02): restored on rejection,
     /// dropped on acceptance. `None` entries = stateless devices.
     device_checkpoints: Vec<Option<ElementCheckpoint>>,
+    /// The same for a circuit of devices: term histories and limit states,
+    /// restored with the Newton history.
+    assembly: Option<AssemblySnapshot>,
 }
 
 /// Phase 3 output — the Milne-LTE accept-gate verdict for a converged
@@ -558,6 +641,7 @@ impl<'a> TransientSolver<'a> {
         Context::init_global();
         circuit.setup_all(&context)?;
         Self::validate_probe_selection(circuit, &options.probe_selection)?;
+        Self::refuse_unprotocolled_nets(circuit)?;
 
         // Build DAG topology once before simulation begins
         circuit.rebuild_digital_topology();
@@ -575,7 +659,13 @@ impl<'a> TransientSolver<'a> {
             tfinal: options.stop_time,
             uic_clamps: Vec::new(),
             uic_hold: false,
+            callback_error: None,
         };
+        if let Some(bound) = &system.circuit.abi {
+            let mut tolerances = system.context.tolerances.clone();
+            bound.tighten(&mut tolerances);
+            system.context.tolerances = tolerances;
+        }
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 4)?;
 
@@ -613,6 +703,34 @@ impl<'a> TransientSolver<'a> {
     /// otherwise fail loud with a named error before the run starts, not
     /// silently record nothing. Runs once after `setup_all` so the device
     /// catalog (`list_observables`) is populated.
+    /// Until the protocol drives the discrete side (feature phase 3), a
+    /// device circuit may not read a discrete net the design itself writes
+    /// from an analog function: nothing would deliver its changes.
+    fn refuse_unprotocolled_nets(circuit: &CircuitInstance) -> crate::core::result::Result<()> {
+        use piperine_digital_solver::abi::net::NetId;
+        use piperine_digital_solver::abi::plan::NetWriter;
+        let Some(bound) = &circuit.abi else { return Ok(()) };
+        let plan = bound.digital.plan();
+        let driven: Vec<String> = plan
+            .nets
+            .iter()
+            .enumerate()
+            .filter(|(i, n)| n.analog_reads && plan.analysis().writer(NetId(*i as u32)) != NetWriter::Host)
+            .map(|(_, n)| format!("`{}`", n.name))
+            .collect();
+        if driven.is_empty() {
+            return Ok(());
+        }
+        Err(piperine_analog_solver::error::Error::simple(
+            piperine_analog_solver::error::SolverDomain::Transient,
+            format!(
+                "an analog function reads discrete net(s) {} the design writes; the transient driver \
+                 cannot deliver their changes yet",
+                driven.join(", ")
+            ),
+        ))
+    }
+
     fn validate_probe_selection(
         circuit: &CircuitInstance,
         selection: &crate::core::introspect::ProbeSelection,
@@ -709,9 +827,34 @@ impl<'a> TransientSolver<'a> {
                 dev.digital_hidden_restore(&hidden);
             }
         }
-        self.solver.push_initial_conditions(ivs.clone());
-        self.solver.push_initial_conditions(ivs);
+        self.push_initial(ivs.clone())?;
+        self.push_initial(ivs)?;
         Ok(self.snapshot(self.options.start_time))
+    }
+
+    /// Pushes one row of initial values onto the Newton history and, for a
+    /// circuit of devices, the same row onto every `DDT` term's history, so
+    /// the two stay aligned (the equilibrium rows count as `STATIC`).
+    fn push_initial(&mut self, ivs: Vec<InitialValue<AnalogReference, f64>>) -> crate::core::result::Result<()> {
+        self.solver.push_initial_conditions(ivs);
+        if self.system.circuit.abi.is_none() {
+            return Ok(());
+        }
+        let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
+        let amb = Ambient { time: self.options.start_time, is_static: true, ..self.system.ambient() };
+        if let Some(bound) = self.system.circuit.abi.as_mut() {
+            bound.analog.push_stage(&x, amb)?;
+        }
+        Ok(())
+    }
+
+    /// The `(plus, minus, ic)` seeds of the circuit: an element's
+    /// `initial_conditions()`, or a continuous pin's `init` (abi.md §3.1).
+    fn initial_seeds(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
+        if let Some(bound) = &self.system.circuit.abi {
+            return bound.holds.iter().map(|h| (Some(h.reference.clone()), None, h.value)).collect();
+        }
+        self.system.circuit.devices.iter().flat_map(|dev| dev.initial_conditions()).collect()
     }
 
     /// Element `@initial { V(p,n) <- ic }` UIC seeds: the t=0 branch
@@ -723,15 +866,13 @@ impl<'a> TransientSolver<'a> {
         iv_dc: &[InitialValue<AnalogReference, f64>],
     ) -> Vec<InitialValue<AnalogReference, f64>> {
         let mut device_ic: Vec<InitialValue<AnalogReference, f64>> = Vec::new();
-        for dev in &self.system.circuit.devices {
-            for (plus, minus, ic) in dev.initial_conditions() {
-                let Some(plus_ref) = plus else { continue };
-                let v_minus = minus
-                    .as_ref()
-                    .and_then(|m| m.as_index())
-                    .map_or(0.0, |i| iv_dc.iter().find(|iv| iv.reference.as_index() == Some(i)).map_or(0.0, |iv| iv.value));
-                device_ic.push(InitialValue { reference: plus_ref, value: v_minus + ic });
-            }
+        for (plus, minus, ic) in self.initial_seeds() {
+            let Some(plus_ref) = plus else { continue };
+            let v_minus = minus
+                .as_ref()
+                .and_then(|m| m.as_index())
+                .map_or(0.0, |i| iv_dc.iter().find(|iv| iv.reference.as_index() == Some(i)).map_or(0.0, |iv| iv.value));
+            device_ic.push(InitialValue { reference: plus_ref, value: v_minus + ic });
         }
         device_ic
     }
@@ -746,11 +887,8 @@ impl<'a> TransientSolver<'a> {
         // pin the t=0 solve so the seed is the *consistent* operating point,
         // and stay stamped through the first accepted step.
         let uic_clamps: Vec<UicClamp> = self
-            .system
-            .circuit
-            .devices
-            .iter()
-            .flat_map(|dev| dev.initial_conditions())
+            .initial_seeds()
+            .into_iter()
             .filter_map(|(plus, minus, ic)| {
                 plus.map(|plus| UicClamp { plus, minus, ic })
             })
@@ -763,6 +901,16 @@ impl<'a> TransientSolver<'a> {
         // DC points; tran owns its own startup.
         dc_solver.set_analysis_kind(crate::analyses::AnalysisKind::Tran);
         dc_solver.system.uic_clamps = uic_clamps.clone();
+        // A continuous pin's `init` is also Newton's starting value.
+        if dc_solver.system.circuit.abi.is_some() {
+            dc_solver.apply_initial_conditions(
+                uic_clamps
+                    .iter()
+                    .filter(|c| c.minus.is_none())
+                    .map(|c| InitialValue { reference: c.plus.clone(), value: c.ic })
+                    .collect(),
+            );
+        }
         let dc_result = dc_solver.solve()?;
         self.system.uic_clamps = uic_clamps;
         // The clamp's job is done once the DC operating point in
@@ -782,19 +930,19 @@ impl<'a> TransientSolver<'a> {
 
         let device_ic = self.device_initial_conditions(&iv_dc);
 
-        self.solver.push_initial_conditions(iv_dc.clone());
-        self.solver.push_initial_conditions(iv_dc);
+        self.push_initial(iv_dc.clone())?;
+        self.push_initial(iv_dc)?;
         if !device_ic.is_empty() {
-            self.solver.push_initial_conditions(device_ic.clone());
-            self.solver.push_initial_conditions(device_ic);
+            self.push_initial(device_ic.clone())?;
+            self.push_initial(device_ic)?;
         }
         // User `ic` seeds the t=0 state. Pushed twice so both rows of the
         // companion's history buffer see the ic values (avoids a
         // discontinuity that would spike the first transient step) —
         // milestone-1 seed; full enforced-hold is deferred.
         if !self.initial_conditions.is_empty() {
-            self.solver.push_initial_conditions(self.initial_conditions.clone());
-            self.solver.push_initial_conditions(self.initial_conditions.clone());
+            self.push_initial(self.initial_conditions.clone())?;
+            self.push_initial(self.initial_conditions.clone())?;
         }
 
         Ok(self.snapshot(self.options.start_time))
@@ -833,6 +981,7 @@ impl<'a> TransientSolver<'a> {
         self.solver.solve_with_strategy(
             &mut self.system, &strategy, &tolerances, &policy,
         )?;
+        self.system.take_callback_error()?;
 
         // Phase 2 — BDF2 over (1−γ)·dt → final point x_{n+1} (warm-start x_{n+γ}).
         self.system.phase = TrBdf2Phase::Bdf2;
@@ -841,6 +990,7 @@ impl<'a> TransientSolver<'a> {
         self.solver.solve_with_strategy(
             &mut self.system, &strategy, &tolerances, &policy,
         )?;
+        self.system.take_callback_error()?;
 
         // `prev_h` is set by the caller once the global-LTE accept gate passes.
         Ok(Some(self.snapshot(t_next)))
@@ -952,6 +1102,7 @@ impl<'a> TransientSolver<'a> {
         // dirty it, so a rejected attempt restores to the last accepted state.
         let device_checkpoints = self.snapshot_device_checkpoints();
         let analog_history = self.solver.state_snapshot();
+        let assembly = self.system.circuit.abi.as_ref().map(|b| b.analog.snapshot());
         // Unified event queue checkpoint (ABI-40/41): snapshot the queue
         // before draining the events due at this landing point. On reject,
         // `rollback()` honors each entry's `RollbackBehavior` — digital
@@ -962,7 +1113,7 @@ impl<'a> TransientSolver<'a> {
         self.system.circuit.run_digital_at(prediction.t_next)?;
         let outcome =
             self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
-        Ok(StepAttempt { prediction, outcome, analog_history, device_checkpoints })
+        Ok(StepAttempt { prediction, outcome, analog_history, device_checkpoints, assembly })
     }
 
     /// Phase 3 — assess: the global Milne-LTE accept gate (TRB-05/06). The
@@ -1021,6 +1172,7 @@ impl<'a> TransientSolver<'a> {
         st.dt_min_seen = st.dt_min_seen.min(dt_actual);
         st.dt_max_seen = st.dt_max_seen.max(dt_actual);
         self.settle_digital(t_next)?;
+        self.accept_assembly(t_next)?;
         // Unified event queue commit (ABI-40): the attempt's drained events
         // fired; the snapshot is dropped. Predict rebuilds the queue next
         // step from the live sources.
@@ -1095,6 +1247,21 @@ impl<'a> TransientSolver<'a> {
             *last = re;
         }
         Ok(true)
+    }
+
+    /// An accepted solution of a circuit of devices: every `DELAY` term's
+    /// history gains its value and every limit's `LAST` its `x̂` (abi.md A5).
+    /// The crossings and the step bound it reports belong to the protocol.
+    fn accept_assembly(&mut self, t: f64) -> crate::core::result::Result<()> {
+        if self.system.circuit.abi.is_none() {
+            return Ok(());
+        }
+        let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
+        let amb = Ambient { time: t, ..self.system.ambient() };
+        if let Some(bound) = self.system.circuit.abi.as_mut() {
+            bound.analog.accept(&x, amb)?;
+        }
+        Ok(())
     }
 
     /// D2A settle on acceptance: the analog accept-hooks seed the digital
@@ -1214,6 +1381,13 @@ impl<'a> TransientSolver<'a> {
                 .circuit
                 .accept_and_run_digital(op.as_slice().unwrap(), start_time)?;
             self.system.circuit.digital_state.commit();
+            // The same anchor for the `DELAY` terms of a circuit of devices.
+            if self.system.circuit.abi.is_some() {
+                let amb = Ambient { time: start_time, is_static: true, ..self.system.ambient() };
+                if let Some(bound) = self.system.circuit.abi.as_mut() {
+                    bound.analog.accept(&op.to_vec(), amb)?;
+                }
+            }
         }
 
         self.solver.reset_iteration_counter();
@@ -1261,6 +1435,7 @@ impl<'a> TransientSolver<'a> {
         milne: f64,
         analog_history: CircularArrayBuffer2<f64>,
         device_checkpoints: Vec<Option<ElementCheckpoint>>,
+        assembly: Option<AssemblySnapshot>,
     ) -> bool {
         if self.policy.trace.transient {
             eprintln!(
@@ -1294,6 +1469,7 @@ impl<'a> TransientSolver<'a> {
         // retry starts from the pre-attempt checkpoint (ABI-02).
         self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
+        self.restore_assembly(assembly);
         false
     }
 
@@ -1306,6 +1482,7 @@ impl<'a> TransientSolver<'a> {
         dt_proposed: f64,
         analog_history: CircularArrayBuffer2<f64>,
         device_checkpoints: Vec<Option<ElementCheckpoint>>,
+        assembly: Option<AssemblySnapshot>,
     ) {
         st.steps_rejected += 1;
         st.last_step_accepted = false;
@@ -1314,6 +1491,7 @@ impl<'a> TransientSolver<'a> {
         // retry starts from the pre-attempt checkpoint (ABI-02).
         self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
+        self.restore_assembly(assembly);
         st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options.step_limits());
         // Unified event queue rollback — same per-entry semantics as the
         // LTE reject path (ABI-40/41).
@@ -1364,7 +1542,7 @@ impl<'a> TransientSolver<'a> {
             // Whether this step's Milne window spans a live-set value jump
             // (consumed here; re-armed below when new sets apply).
             let post_set_step = st.sets_just_applied;
-            let StepAttempt { prediction, outcome, analog_history, device_checkpoints } = attempt;
+            let StepAttempt { prediction, outcome, analog_history, device_checkpoints, assembly } = attempt;
 
             if let Ok(Some(snapshot)) = outcome {
                 // Both Newton phases converged.
@@ -1377,7 +1555,7 @@ impl<'a> TransientSolver<'a> {
                         assessment.milne, post_set_step,
                     )?;
                 } else if self.reject_lte_step(
-                    &mut st, &prediction, assessment.milne, analog_history, device_checkpoints,
+                    &mut st, &prediction, assessment.milne, analog_history, device_checkpoints, assembly,
                 ) {
                     // dt floor: accept the step as-is rather than stall.
                     self.accept_step(
@@ -1387,7 +1565,7 @@ impl<'a> TransientSolver<'a> {
                 }
             } else {
                 // Either phase failed to converge — reject the whole step.
-                self.reject_step(&mut st, prediction.dt_proposed, analog_history, device_checkpoints);
+                self.reject_step(&mut st, prediction.dt_proposed, analog_history, device_checkpoints, assembly);
                 if st.dt <= self.options.dt_min && let Err(e) = outcome {
                     return Err(e);
                 }
@@ -1498,6 +1676,14 @@ impl<'a> TransientSolver<'a> {
             .iter()
             .map(|d| d.checkpoint_state())
             .collect()
+    }
+
+    /// Return a circuit of devices to the term histories and limit states of
+    /// the checkpoint taken before the rejected attempt.
+    fn restore_assembly(&mut self, snapshot: Option<AssemblySnapshot>) {
+        if let (Some(bound), Some(snapshot)) = (self.system.circuit.abi.as_mut(), snapshot) {
+            bound.analog.restore(&snapshot);
+        }
     }
 
     /// Restore each element that produced a checkpoint before the rejected
