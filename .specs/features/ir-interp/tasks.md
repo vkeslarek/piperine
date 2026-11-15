@@ -150,13 +150,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Root `Cargo.toml` lists the crate in `members` and `default-members`; `workspace_shape.rs::DEFAULT_MEMBERS` gains it; `crate_boundaries` stays green (no solver crate gains an edge)
-- [ ] `Rejected` carries the `check()` entries
-- [ ] `the_crate_spawns_nothing_and_reads_no_file` scans `crates/piperine-interp/src` for `std::process`, `std::fs` and `unsafe` and finds none
-- [ ] `crates/piperine-interp/tests/support/circuits.rs` builds, over `devices.rs`: the divider, a diode behind a source and 1 Ω, an RC low-pass with an AC source, an RC with the node `out` held at 0
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `an_ir_that_fails_check_is_rejected`, `the_crate_spawns_nothing_and_reads_no_file`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Root `Cargo.toml` lists the crate in `members` and `default-members`; `workspace_shape.rs::DEFAULT_MEMBERS` gains it; `crate_boundaries` stays green (no solver crate gains an edge)
+- [x] `Rejected` carries the `check()` entries
+- [x] `the_crate_spawns_nothing_and_reads_no_file` scans `crates/piperine-interp/src` for `std::process`, `std::fs` and `unsafe` and finds none
+- [x] `crates/piperine-interp/tests/support/circuits.rs` builds, over `devices.rs`: the divider, a diode behind a source and 1 Ω, an RC low-pass with an AC source, an RC with the node `out` held at 0
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `an_ir_that_fails_check_is_rejected`, `the_crate_spawns_nothing_and_reads_no_file`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

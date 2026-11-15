@@ -1,0 +1,10 @@
+[package]
+name = "piperine-interp"
+version.workspace = true
+edition.workspace = true
+description = "The reference interpreter: runs a Piperine IR through the solver by walking its bodies over dual numbers"
+
+[dependencies]
+piperine-ir = { path = "../piperine-ir" }
+piperine-abi = { path = "../piperine-abi" }
+piperine-solver = { path = "../piperine-solver" }

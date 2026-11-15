@@ -30,6 +30,7 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-abi",
     "crates/piperine-analog-solver",
     "crates/piperine-digital-solver",
+    "crates/piperine-interp",
     "crates/piperine-ir",
     "crates/piperine-lang",
     "crates/piperine-solver",
