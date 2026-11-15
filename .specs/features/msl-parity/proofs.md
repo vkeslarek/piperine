@@ -1,9 +1,9 @@
 # msl-parity proofs
 
-**HEAD**: bd4c1ed8
+**HEAD**: bb0b2838
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 41 pass, 0 fail
+**Result**: 42 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -41,6 +41,7 @@
 | C32 | `run corpus / test the_guards_report_planted_text ... ok` | pass |
 | C33 | `run twins / test the_current_source_twin_exists ... ok` | pass |
 | C34 | `run op / test isrc_r ... ok` | pass |
+| C39 | `run dc / test diode_rev ... ok` | pass |
 | C35 | `run lib / test contract::tests::two_zeros_are_accepted ... ok` | pass |
 | C36 | `run lib / test golden::tests::a_wrong_row_count_names_both_counts ... ok` | pass |
 | C37 | `run lib / test waveform::tests::a_time_outside_the_result_is_none ... ok` | pass |
@@ -55,15 +56,16 @@
 
 ```
 running 5 tests
+test the_cir_fixtures_are_byte_identical ... ok
 test the_current_source_twin_exists ... ok
 test the_corpus_holds_the_library_and_the_twins ... ok
-test the_cir_fixtures_are_byte_identical ... ok
 test every_twin_builds_without_diagnostics ... ok
 test top_nodes_carry_the_cir_names ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-parity/crates/piperine-parity)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
      Running tests/twins.rs (/var/tmp/piperine-target/debug/deps/twins-a814ee5aa6a9c3f3)
 ```
 
@@ -71,14 +73,14 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 4 tests
-test a_failing_stage_is_named_with_its_diagnostics ... ok
 test nodes_and_sources_are_reached_by_cir_names ... ok
 test a_twin_loads_into_a_bound_circuit ... ok
+test a_failing_stage_is_named_with_its_diagnostics ... ok
 test a_skipped_reference_still_solves_the_msl_side ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
      Running tests/bench.rs (/var/tmp/piperine-target/debug/deps/bench-f1be51f3a87b18ae)
 ```
 
@@ -86,35 +88,36 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 5 tests
-test ngspice_runs_in_batch_in_an_empty_scratch_directory ... ok
 test a_failed_run_or_missing_export_names_the_fixture ... ok
+test ngspice_runs_in_batch_in_an_empty_scratch_directory ... ok
 test parallel_runs_do_not_share_a_scratch_directory ... ok
 test each_run_has_its_own_scratch_removed_on_drop ... ok
 test the_exports_of_the_corpus_parse_to_their_row_counts ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-parity/crates/piperine-parity)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
      Running tests/harness.rs (/var/tmp/piperine-target/debug/deps/harness-afa899d895b7538d)
 ```
 
 `Run lib` - exit 0
 
 ```
-test contract::tests::two_zeros_are_accepted ... ok
-test golden::tests::a_wrong_row_count_names_both_counts ... ok
-test golden::tests::a_grid_mismatch_names_the_point ... ok
-test golden::tests::the_print_precision_is_read_from_the_token ... ok
-test golden::tests::an_export_is_found_with_or_without_data_suffix ... ok
-test ngspice::tests::skip_passes_and_prints_one_line ... ok
+test contract::tests::a_rejection_names_point_values_bound_and_rationale ... ok
 test golden::tests::an_unparsable_row_names_file_and_row ... ok
+test golden::tests::an_export_is_found_with_or_without_data_suffix ... ok
+test golden::tests::the_print_precision_is_read_from_the_token ... ok
 test ngspice::tests::a_missing_binary_fails_naming_the_opt_out ... ok
+test ngspice::tests::skip_passes_and_prints_one_line ... ok
 test waveform::tests::a_time_outside_the_result_is_none ... ok
+test golden::tests::a_grid_mismatch_names_the_point ... ok
 test ngspice::tests::the_binary_comes_from_the_variable_or_the_path ... ok
 
 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-parity/crates/piperine-parity)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.71s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_parity-df705e4d73d3d345)
 ```
 
@@ -129,7 +132,7 @@ test every_twin_has_a_cir_and_a_test ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
      Running tests/parity_corpus.rs (/var/tmp/piperine-target/debug/deps/parity_corpus-28c57b8cbe4fe1a3)
 ```
 
@@ -150,12 +153,14 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run dc` - exit 0
 
 ```
-running 1 test
+running 2 tests
 test diode_iv ... ok
+test diode_rev ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-parity/crates/piperine-parity)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.63s
      Running tests/parity_dc.rs (/var/tmp/piperine-target/debug/deps/parity_dc-9b5533275bec3ee8)
 ```
 
@@ -165,9 +170,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test ac_rc ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-parity/crates/piperine-parity)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.67s
      Running tests/parity_ac.rs (/var/tmp/piperine-target/debug/deps/parity_ac-c8453cadbc9c63c5)
 ```
 
@@ -180,6 +186,7 @@ test tran_rc ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-parity/crates/piperine-parity)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.66s
      Running tests/parity_tran.rs (/var/tmp/piperine-target/debug/deps/parity_tran-f7621f59e550f6d9)
 ```
