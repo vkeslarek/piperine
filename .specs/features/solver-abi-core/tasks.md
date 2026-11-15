@@ -348,14 +348,14 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Test `no_landing_means_one_attempt_to_the_proposed_time` passes (C26)
-- [ ] Test `a_landing_delivers_its_preview_before_the_attempt` asserts the recorded order `advance`, `preview_boundary`, `deliver`, `attempt`, and `exempt = true` only when the preview changed a value (C27)
-- [ ] Test `a_rejected_attempt_restores_both_sides_and_replays` and test `an_earlier_landing_restores_and_replays` assert both marks restored, the sink mark dropped, `advance` called again (C28)
-- [ ] Test `acceptance_fires_crossings_runs_the_instant_and_asks_for_restart` asserts `fire` before `run_instant`, the samples passed, and `Restart::Integrator` on the next `accept` (C29)
-- [ ] Test `a_host_param_write_asks_for_the_small_restart` passes (C30)
-- [ ] Test `no_unknowns_means_no_attempt` runs three instants and the stop time with zero `attempt` calls (C33)
-- [ ] Test `settle_runs_at_time_points_and_at_the_stop_time_only` passes
-- [ ] Gate: full
+- [x] Test `no_landing_means_one_attempt_to_the_proposed_time` passes (C26)
+- [x] Test `a_landing_delivers_its_preview_before_the_attempt` asserts the recorded order `advance`, `preview_boundary`, `deliver`, `attempt`, and `exempt = true` only when the preview changed a value (C27)
+- [x] Test `a_rejected_attempt_restores_both_sides_and_replays` and test `an_earlier_landing_restores_and_replays` assert both marks restored, the sink mark dropped, `advance` called again (C28)
+- [x] Test `acceptance_fires_crossings_runs_the_instant_and_asks_for_restart` asserts `fire` before `run_instant`, the samples passed, and `Restart::Integrator` on the next `accept` (C29)
+- [x] Test `a_host_param_write_asks_for_the_small_restart` passes (C30)
+- [x] Test `no_unknowns_means_no_attempt` runs three instants and the stop time with zero `attempt` calls (C33)
+- [x] Test `settle_runs_at_time_points_and_at_the_stop_time_only` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
