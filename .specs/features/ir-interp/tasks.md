@@ -253,13 +253,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Diode: `limit:vd` reads `[a, k, is, n, temperature, vd.LAST, vd.AGE, STATIC]`, writes `[vd.PROPOSED, vd.LIMITED]`, partials `(PROPOSED←a)`, `(PROPOSED←k)`; `terms` reads `[vd.VALUE, is, n, cj0, temperature, GMIN]`, partials `(flow←vd)`, `(charge←vd)`
-- [ ] Resistor `terms`: reads `[p, n, r]`, partials `(flow←p)`, `(flow←n)`, none against `r`
-- [ ] No function writes both a limit and a term
-- [ ] `validate` accepts all five device shapes and the two edge-case shapes
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `one_function_per_site_and_one_for_terms`, `reads_and_partials_are_the_dependency_sets`, `every_entry_carries_its_origin`, `every_m1_shape_validates`, `no_function_writes_a_limit_and_a_term`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Diode: `limit:vd` reads `[a, k, is, n, temperature, vd.LAST, vd.AGE, STATIC]`, writes `[vd.PROPOSED, vd.LIMITED]`, partials `(PROPOSED←a)`, `(PROPOSED←k)`; `terms` reads `[vd.VALUE, is, n, cj0, temperature, GMIN]`, partials `(flow←vd)`, `(charge←vd)`
+- [x] Resistor `terms`: reads `[p, n, r]`, partials `(flow←p)`, `(flow←n)`, none against `r`
+- [x] No function writes both a limit and a term
+- [x] `validate` accepts all five device shapes and the two edge-case shapes
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `one_function_per_site_and_one_for_terms`, `reads_and_partials_are_the_dependency_sets`, `every_entry_carries_its_origin`, `every_m1_shape_validates`, `no_function_writes_a_limit_and_a_term`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

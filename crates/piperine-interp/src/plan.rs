@@ -5,11 +5,24 @@
 //! branch has a `FLOW` term for its direct addends and a `DDT` term for its `ddt` addends; a
 //! potential branch has the two `FLOW` terms of abi.md A1, and a `DDT` term `{f, GROUND}` when it
 //! has `ddt` addends. Inputs: one `LIMIT` per `limit` site, then one `STIM` per `ac_stim` site.
+//!
+//! Functions: `limit:<site>` per `limit` site, `stim:<k>` per `ac_stim` site, then `terms`,
+//! which writes every term (abi.md A3 keeps limits and terms apart). A function reads exactly
+//! the cells of its dependency set (`msl-ir` IR-09) in one order: continuous pins (nodes by
+//! index, then private flows), `LIMIT` values, `STIM` values (the differentiable reads, one
+//! tangent slot each, in that order), then params, the temperature pin and the ambients. A
+//! `limit` function also reads its site's `LAST` and `AGE` and the ambient `STATIC`. Partials are
+//! declared write by write, each against the differentiable reads of its own set, in read
+//! order: the order the assembly folds `Σ g·x` in (INT-12).
+
+use std::collections::BTreeSet;
 
 use piperine_abi::layout::{BIT, F64};
-use piperine_abi::raw::{DEFAULT, GROUND, global, input, op, pin_flag, role};
-use piperine_abi::shape::{InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_ir::{Body, BranchKind, Constant, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
+use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
+use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
+use piperine_ir::{
+    Body, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType,
+};
 
 /// What one term of the shape computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,6 +36,98 @@ pub(crate) enum Term {
     /// A potential branch's `FLOW {f, GROUND}` term: the potential difference minus the sum of
     /// its direct addends.
     Eq(u32),
+}
+
+/// What a function computes: one walk of the `analog` block in one mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Mode {
+    /// The function of `limit` site `k`: its `PROPOSED` and `LIMITED`.
+    Limit(u32),
+    /// The function of `ac_stim` site `k`: its `RE` and `IM`.
+    Stim(u32),
+    /// Every term of the body.
+    Terms,
+}
+
+/// Where a read of a function comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Source {
+    /// A body node's pin.
+    Node(u32),
+    /// A potential branch's private flow pin.
+    BranchFlow(u32),
+    /// A `limit` site's input `VALUE`.
+    LimitValue(u32),
+    /// An `ac_stim` site's input `VALUE`.
+    StimValue(u32),
+    Param(u32),
+    Temperature,
+    Gmin,
+    SourceScale,
+    LimitLast(u32),
+    LimitAge(u32),
+    Static,
+}
+
+impl Source {
+    /// A read the walk carries a tangent for.
+    pub fn is_differentiable(self) -> bool {
+        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_))
+    }
+}
+
+/// What a write of a function is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Target {
+    Term(Term),
+    Proposed(u32),
+    Limited(u32),
+    StimRe(u32),
+    StimIm(u32),
+}
+
+/// What one function of the shape computes, entry by entry parallel to the shape.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FunctionPlan {
+    pub mode: Mode,
+    /// Parallel to the function's reads.
+    pub reads: Vec<Source>,
+    /// The differentiable reads: the leading `slots` entries of `reads`.
+    pub slots: usize,
+    /// Parallel to the function's writes.
+    pub writes: Vec<Target>,
+    /// `(write, slot)`, parallel to the function's partials.
+    pub partials: Vec<(usize, usize)>,
+    /// Per write: a `FLOW` term affine in the node potentials (INT-12).
+    pub affine: Vec<bool>,
+}
+
+/// A set of reads, kept in read order by `Source`'s order.
+#[derive(Clone, Debug, Default)]
+struct ReadSet(BTreeSet<Source>);
+
+impl ReadSet {
+    fn of(deps: &Deps) -> ReadSet {
+        let mut set = ReadSet::default();
+        set.add(deps);
+        set
+    }
+
+    fn add(&mut self, deps: &Deps) {
+        self.0.extend(deps.nodes.iter().map(|i| Source::Node(*i)));
+        self.0.extend(deps.limits.iter().map(|i| Source::LimitValue(*i)));
+        self.0.extend(deps.stims.iter().map(|i| Source::StimValue(*i)));
+        self.0.extend(deps.params.iter().map(|i| Source::Param(*i)));
+        self.0.extend(deps.env.iter().map(|e| match e {
+            Env::Temperature => Source::Temperature,
+            Env::Gmin => Source::Gmin,
+            Env::SourceScale => Source::SourceScale,
+        }));
+    }
+
+    fn union(&mut self, other: &ReadSet) {
+        self.0.extend(other.0.iter().copied());
+    }
 }
 
 /// What a branch receives from the `analog` block, and where it was first written.
@@ -60,12 +165,14 @@ impl Pins {
 
 /// Everything computed once per body: the shape and what each of its entries means.
 #[derive(Debug)]
-#[allow(dead_code, reason = "`pins` and `terms` are read by the function plan, T6")]
+#[allow(dead_code, reason = "`pins`, `terms` and `functions` are read by the walk, T7")]
 pub struct BodyPlan {
     pub(crate) shape: ShapeRef,
     pub(crate) pins: Pins,
     /// What each term of the shape computes, in the shape's order.
     pub(crate) terms: Vec<Term>,
+    /// What each function of the shape computes, in the shape's order.
+    pub(crate) functions: Vec<FunctionPlan>,
 }
 
 impl BodyPlan {
@@ -170,7 +277,120 @@ impl BodyPlan {
             s.input(InputSpec { name: &site.name, origin: &at, kind: input::STIM });
         }
 
-        BodyPlan { shape: s.freeze(), pins, terms }
+        // Functions: one per site, then the terms.
+        let mut functions = Vec::new();
+        for (k, site) in body.limits().iter().enumerate() {
+            let k = k as u32;
+            let set = ReadSet::of(&body.dependencies(Query::Limit(k)));
+            let mut plan = Self::function(Mode::Limit(k), &set, vec![(Target::Proposed(k), Some(&set)), (Target::Limited(k), None)]);
+            plan.reads.extend([Source::LimitLast(k), Source::LimitAge(k), Source::Static]);
+            let name = format!("limit:{}", site.name);
+            Self::declare(&mut s, &pins, &terms, body, &name, &origin(&site.origin), &plan);
+            functions.push(plan);
+        }
+        for (k, site) in body.stims().iter().enumerate() {
+            let k = k as u32;
+            let set = ReadSet::of(&body.dependencies(Query::Stim(k)));
+            let plan = Self::function(Mode::Stim(k), &set, vec![(Target::StimRe(k), None), (Target::StimIm(k), None)]);
+            Self::declare(&mut s, &pins, &terms, body, &format!("stim:{k}"), &origin(&site.origin), &plan);
+            functions.push(plan);
+        }
+        if !terms.is_empty() {
+            let sets: Vec<ReadSet> = terms.iter().map(|t| Self::term_set(body, *t)).collect();
+            let mut all = ReadSet::default();
+            for set in &sets {
+                all.union(set);
+            }
+            let writes = terms.iter().zip(&sets).map(|(t, set)| (Target::Term(*t), Some(set))).collect();
+            let mut plan = Self::function(Mode::Terms, &all, writes);
+            plan.affine = terms
+                .iter()
+                .map(|t| match t {
+                    Term::Flow(b) | Term::Eq(b) => body.is_affine(*b),
+                    Term::Current(_) => true,
+                    Term::Charge(_) => false,
+                })
+                .collect();
+            Self::declare(&mut s, &pins, &terms, body, "terms", &origin(body.origin()), &plan);
+            functions.push(plan);
+        }
+
+        BodyPlan { shape: s.freeze(), pins, terms, functions }
+    }
+
+    /// What term `t` reads.
+    fn term_set(body: Body<'_>, t: Term) -> ReadSet {
+        match t {
+            Term::Flow(b) => ReadSet::of(&body.dependencies(Query::Flow(b))),
+            Term::Charge(b) => ReadSet::of(&body.dependencies(Query::Charge(b))),
+            Term::Current(b) => ReadSet([Source::BranchFlow(b)].into_iter().collect()),
+            Term::Eq(b) => {
+                let mut set = ReadSet::of(&body.dependencies(Query::Flow(b)));
+                let branch = &body.branches()[b as usize];
+                for end in [branch.plus, branch.minus] {
+                    if let Terminal::Node(i) = end {
+                        set.0.insert(Source::Node(i));
+                    }
+                }
+                set
+            }
+        }
+    }
+
+    /// A function reading `all`, writing `writes`; a write with a set gets one partial per
+    /// differentiable read of that set.
+    fn function(mode: Mode, all: &ReadSet, writes: Vec<(Target, Option<&ReadSet>)>) -> FunctionPlan {
+        let reads: Vec<Source> = all.0.iter().copied().collect();
+        let slots = reads.iter().take_while(|s| s.is_differentiable()).count();
+        let mut partials = Vec::new();
+        for (w, (_, set)) in writes.iter().enumerate() {
+            let Some(set) = set else { continue };
+            for (slot, source) in reads[..slots].iter().enumerate() {
+                if set.0.contains(source) {
+                    partials.push((w, slot));
+                }
+            }
+        }
+        let affine = vec![false; writes.len()];
+        FunctionPlan { mode, reads, slots, writes: writes.into_iter().map(|(t, _)| t).collect(), partials, affine }
+    }
+
+    /// Adds `plan` to the shape as function `name`.
+    fn declare(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, name: &str, origin: &str, plan: &FunctionPlan) {
+        let limits = body.limits().len() as u32;
+        let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
+        let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
+        let reads = plan
+            .reads
+            .iter()
+            .map(|r| match *r {
+                Source::Node(i) => value(cell::PIN, pins.node(i)),
+                Source::BranchFlow(b) => value(cell::PIN, pins.branches[b as usize].unwrap_or(GROUND)),
+                Source::LimitValue(k) => value(cell::INPUT, k),
+                Source::StimValue(k) => value(cell::INPUT, limits + k),
+                Source::Param(i) => value(cell::PIN, i),
+                Source::Temperature => value(cell::PIN, pins.temperature.unwrap_or(GROUND)),
+                Source::Gmin => value(cell::AMBIENT, ambient::GMIN),
+                Source::SourceScale => value(cell::AMBIENT, ambient::SOURCE_SCALE),
+                Source::LimitLast(k) => at(cell::INPUT, k, part::LAST),
+                Source::LimitAge(k) => at(cell::INPUT, k, part::AGE),
+                Source::Static => value(cell::AMBIENT, ambient::STATIC),
+            })
+            .collect();
+        let writes = plan
+            .writes
+            .iter()
+            .map(|w| match *w {
+                Target::Term(t) => value(cell::TERM, terms.iter().position(|x| *x == t).unwrap_or(usize::MAX) as u32),
+                Target::Proposed(k) => at(cell::INPUT, k, part::PROPOSED),
+                Target::Limited(k) => at(cell::INPUT, k, part::LIMITED),
+                Target::StimRe(k) => at(cell::INPUT, limits + k, part::RE),
+                Target::StimIm(k) => at(cell::INPUT, limits + k, part::IM),
+            })
+            .collect();
+        let partials =
+            plan.partials.iter().map(|(w, slot)| Partial { write: *w as u32, to: 0, read: *slot as u32, at: 0 }).collect();
+        s.function(FunctionSpec { name, origin, reads, writes, partials, ..FunctionSpec::default() });
     }
 
     /// What each branch receives: contributions sit at the top level of the `analog` block.

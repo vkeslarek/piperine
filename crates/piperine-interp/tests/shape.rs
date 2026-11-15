@@ -1,12 +1,16 @@
 //! The shape of a body (feature `ir-interp`, INT-09, INT-01 AC 5, INT-05 AC 1): pins in the
 //! declared order with their defaults, tolerances and holds; the terms of flow and potential
 //! branches; one input per site; a value of the wrong layout refused naming the param; the two
-//! edge-case shapes (an `analog` block that contributes nothing, a held node with no `analog`).
+//! edge-case shapes (an `analog` block that contributes nothing, a held node with no `analog`);
+//! one function per site and one for the terms, each reading exactly its dependency set with
+//! partials against its differentiable reads, every entry with its origin, every shape valid
+//! and no function writing both a limit and a term (INT-10 AC 5).
 
 use std::sync::Arc;
 
 use piperine_abi::caller::Handle;
-use piperine_abi::raw::{global, input, kind, op, pin_flag, role};
+use piperine_abi::raw::{Cell, Partial, Shape, ambient, cell, global, input, kind, op, part, pin_flag, role};
+use piperine_abi::validate::validate;
 use piperine_interp::Interpreter;
 use piperine_ir::{
     BodyNode, BodySpec, InstanceSpec, IrBuilder, NodeRef, NodeRole, NodeSpec, Origin, Real, Stmt,
@@ -190,4 +194,190 @@ fn a_held_node_without_analog_is_ports_only() {
     // a top with no held node and no analog block has no module
     let divider = Interpreter::new(Arc::new(Circuits::divider())).expect("checked");
     assert!(divider.module(divider.ir().top().body().id()).is_none());
+}
+
+/// Cells and partials written short.
+struct Cells;
+
+impl Cells {
+    fn pin(i: u32) -> Cell {
+        Cell { kind: cell::PIN, index: i, part: part::VALUE }
+    }
+
+    fn input(i: u32, p: u32) -> Cell {
+        Cell { kind: cell::INPUT, index: i, part: p }
+    }
+
+    fn term(i: u32) -> Cell {
+        Cell { kind: cell::TERM, index: i, part: part::VALUE }
+    }
+
+    fn ambient(a: u32) -> Cell {
+        Cell { kind: cell::AMBIENT, index: a, part: part::VALUE }
+    }
+
+    fn partial(write: u32, read: u32) -> Partial {
+        Partial { write, to: 0, read, at: 0 }
+    }
+
+    /// Every shape these tests plan: the five devices and the two edge-case shapes.
+    fn every_shape(m: &Models, quiet: &Models, held: &Interpreter) -> Vec<(String, &'static Shape<'static>)> {
+        let mut shapes: Vec<(String, &'static Shape<'static>)> = ["Resistor", "Capacitor", "Vsource", "Isource", "Diode"]
+            .iter()
+            .map(|n| (n.to_string(), m.module(n).prototype()))
+            .collect();
+        shapes.push(("Quiet".into(), quiet.module("Quiet").prototype()));
+        let top = held.ir().top().body().id();
+        shapes.push(("RcHeld".into(), held.module(top).expect("held top").prototype()));
+        shapes
+    }
+}
+
+#[test]
+fn one_function_per_site_and_one_for_terms() {
+    let m = Models::all();
+    let names = |body: &str| View { shape: m.module(body).prototype() }.function_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(names("Diode"), ["limit:vd", "terms"]);
+    assert_eq!(names("Vsource"), ["stim:0", "terms"]);
+    assert_eq!(names("Isource"), ["stim:0", "terms"]);
+    assert_eq!(names("Resistor"), ["terms"]);
+    assert_eq!(names("Capacitor"), ["terms"]);
+    // what each writes
+    let diode = View { shape: m.module("Diode").prototype() };
+    assert_eq!(diode.function("limit:vd").1, [Cells::input(0, part::PROPOSED), Cells::input(0, part::LIMITED)]);
+    assert_eq!(diode.function("terms").1, [Cells::term(0), Cells::term(1)]);
+    let vsource = View { shape: m.module("Vsource").prototype() };
+    assert_eq!(vsource.function("stim:0").1, [Cells::input(0, part::RE), Cells::input(0, part::IM)]);
+    assert_eq!(vsource.function("terms").1, [Cells::term(0), Cells::term(1)]);
+}
+
+#[test]
+fn reads_and_partials_are_the_dependency_sets() {
+    let m = Models::all();
+    // Diode pins: is=0 n=1 cj0=2 a=3 k=4 temperature=5; input vd=0.
+    let diode = View { shape: m.module("Diode").prototype() };
+    let (reads, _, partials) = diode.function("limit:vd");
+    assert_eq!(
+        reads,
+        [
+            Cells::pin(3),
+            Cells::pin(4),
+            Cells::pin(0),
+            Cells::pin(1),
+            Cells::pin(5),
+            Cells::input(0, part::LAST),
+            Cells::input(0, part::AGE),
+            Cells::ambient(ambient::STATIC),
+        ]
+    );
+    assert_eq!(partials, [Cells::partial(0, 0), Cells::partial(0, 1)], "PROPOSED against a and k");
+    let (reads, _, partials) = diode.function("terms");
+    assert_eq!(
+        reads,
+        [
+            Cells::input(0, part::VALUE),
+            Cells::pin(0),
+            Cells::pin(1),
+            Cells::pin(2),
+            Cells::pin(5),
+            Cells::ambient(ambient::GMIN),
+        ]
+    );
+    assert_eq!(partials, [Cells::partial(0, 0), Cells::partial(1, 0)], "flow and charge against vd");
+
+    // Resistor pins: r=0 p=1 n=2. No partial against the param.
+    let (reads, _, partials) = View { shape: m.module("Resistor").prototype() }.function("terms");
+    assert_eq!(reads, [Cells::pin(1), Cells::pin(2), Cells::pin(0)]);
+    assert_eq!(partials, [Cells::partial(0, 0), Cells::partial(0, 1)]);
+
+    // Capacitor pins: c=0 p=1 n=2.
+    let (reads, _, partials) = View { shape: m.module("Capacitor").prototype() }.function("terms");
+    assert_eq!(reads, [Cells::pin(1), Cells::pin(2), Cells::pin(0)]);
+    assert_eq!(partials, [Cells::partial(0, 0), Cells::partial(0, 1)]);
+
+    // Vsource pins: dc=0 ac=1 p=2 n=3 b0.flow=4; input ac=0. The stimulus reads its magnitude.
+    let vsource = View { shape: m.module("Vsource").prototype() };
+    let (reads, _, partials) = vsource.function("stim:0");
+    assert_eq!(reads, [Cells::pin(1)]);
+    assert!(partials.is_empty());
+    let (reads, _, partials) = vsource.function("terms");
+    assert_eq!(
+        reads,
+        [
+            Cells::pin(2),
+            Cells::pin(3),
+            Cells::pin(4),
+            Cells::input(0, part::VALUE),
+            Cells::pin(0),
+            Cells::pin(1),
+            Cells::ambient(ambient::SOURCE_SCALE),
+        ]
+    );
+    // b0.flow against the private pin; b0.eq against p, n and the stimulus
+    assert_eq!(partials, [Cells::partial(0, 2), Cells::partial(1, 0), Cells::partial(1, 1), Cells::partial(1, 3)]);
+
+    // Isource pins: dc=0 ac=1 p=2 n=3: its flow term reads no pin.
+    let (reads, _, partials) = View { shape: m.module("Isource").prototype() }.function("terms");
+    assert_eq!(reads, [Cells::input(0, part::VALUE), Cells::pin(0), Cells::pin(1), Cells::ambient(ambient::SOURCE_SCALE)]);
+    assert_eq!(partials, [Cells::partial(0, 0)]);
+}
+
+#[test]
+fn every_entry_carries_its_origin() {
+    let m = Models::all();
+    let diode = m.module("Diode").prototype();
+    let pins: Vec<&str> = diode.pins.iter().map(|p| p.origin.as_str()).collect();
+    assert_eq!(pins, ["devices.msl:32:5", "devices.msl:33:5", "devices.msl:34:5", "devices.msl:31:18", "devices.msl:31:33", "devices.msl:31:1"]);
+    let terms: Vec<&str> = diode.terms.iter().map(|t| t.origin.as_str()).collect();
+    assert_eq!(terms, ["devices.msl:41:17", "devices.msl:41:17"], "the contribution that writes the branch");
+    assert_eq!(diode.inputs.get(0).unwrap().origin.as_str(), "devices.msl:39:17", "the site");
+    let functions: Vec<&str> = diode.functions.iter().map(|f| f.origin.as_str()).collect();
+    assert_eq!(functions, ["devices.msl:39:17", "devices.msl:31:1"], "the site, then the body");
+
+    let vsource = m.module("Vsource").prototype();
+    assert_eq!(vsource.pins.get(4).unwrap().origin.as_str(), "devices.msl:21:30", "the private pin: its contribution");
+    assert_eq!(vsource.inputs.get(0).unwrap().origin.as_str(), "devices.msl:21:62");
+    assert_eq!(vsource.functions.get(0).unwrap().origin.as_str(), "devices.msl:21:62");
+
+    // nothing is left without an origin
+    let (quiet, held) = (Odd::quiet(), Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked"));
+    for (name, shape) in Cells::every_shape(&m, &quiet, &held) {
+        let origins = shape
+            .pins
+            .iter()
+            .map(|p| p.origin)
+            .chain(shape.terms.iter().map(|t| t.origin))
+            .chain(shape.inputs.iter().map(|x| x.origin))
+            .chain(shape.functions.iter().map(|f| f.origin));
+        for o in origins {
+            assert!(!o.as_str().is_empty(), "{name}: an entry without an origin");
+        }
+    }
+}
+
+#[test]
+fn every_m1_shape_validates() {
+    let (m, quiet) = (Models::all(), Odd::quiet());
+    let held = Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked");
+    let shapes = Cells::every_shape(&m, &quiet, &held);
+    assert_eq!(shapes.len(), 7);
+    for (name, shape) in shapes {
+        assert_eq!(validate(shape), Ok(()), "{name}");
+    }
+}
+
+#[test]
+fn no_function_writes_a_limit_and_a_term() {
+    let (m, quiet) = (Models::all(), Odd::quiet());
+    let held = Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked");
+    let mut limit_writers = 0;
+    for (name, shape) in Cells::every_shape(&m, &quiet, &held) {
+        for f in shape.functions.iter() {
+            let limit = f.writes.iter().any(|c| c.kind == cell::INPUT && matches!(c.part, part::PROPOSED | part::LIMITED));
+            let term = f.writes.iter().any(|c| c.kind == cell::TERM);
+            assert!(!(limit && term), "{name}: function {} writes a limit and a term", f.name.as_str());
+            limit_writers += usize::from(limit);
+        }
+    }
+    assert_eq!(limit_writers, 1, "the diode's limit function is among those checked");
 }
