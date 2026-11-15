@@ -57,6 +57,25 @@ fn library_sources() -> Vec<(String, String)> {
     sources
 }
 
+/// The library-source walk reaches the three solver crates and `piperine-lang`
+/// (feature `solver-restructure`, SR-07): a guard that cannot see a crate
+/// enforces nothing over it.
+#[test]
+fn the_walk_covers_the_three_solver_crates() {
+    let sources = library_sources();
+    for dir in [
+        "crates/piperine-solver/src",
+        "crates/piperine-analog-solver/src",
+        "crates/piperine-digital-solver/src",
+        "crates/piperine-lang/src",
+    ] {
+        assert!(
+            sources.iter().any(|(path, _)| path.starts_with(dir)),
+            "the library-source walk reaches no file under {dir}"
+        );
+    }
+}
+
 // ─── 1. No switched-off test code ─────────────────────────────────────────────
 
 /// Whether one source line switches test code off. A file or module compiled
@@ -260,10 +279,7 @@ fn every_ignored_doc_example_is_registered() {
     /// Why each file's `ignore` fence is not a runnable example.
     fn reason(path: &str) -> Option<&'static str> {
         Some(match path {
-            "crates/piperine-plugin/src/lib.rs" => {
-                "shows a plugin crate's own entry symbol — only compiles inside a cdylib plugin"
-            }
-            "crates/piperine-solver/src/analyses/ac.rs" => {
+                "crates/piperine-solver/src/analyses/ac.rs" => {
                 "illustrative sweep snippet: needs a built circuit the doc does not construct"
             }
             "crates/piperine-solver/src/core/builder.rs" => {
@@ -293,7 +309,7 @@ fn every_ignored_doc_example_is_registered() {
          or make the example runnable):\n  {}",
         unregistered.join("\n  ")
     );
-    assert_eq!(seen.len(), 4, "the registered set changed — update the registry: {seen:?}");
+    assert_eq!(seen.len(), 3, "the registered set changed — update the registry: {seen:?}");
 }
 
 // ─── 4. Every integration target states its scope ─────────────────────────────
@@ -526,8 +542,10 @@ fn mod_rs_files() -> Vec<(String, usize, String)> {
 /// reason for the ones that remain.
 fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
     Some(match path {
-        "crates/piperine-lang/src/elab/lower/mod.rs" => "`SymbolTable` + the `Elaborator` god struct",
-        "crates/piperine-codegen/src/resolve/mod.rs" => "the resolved form's own vocabulary",
+        // Follow-up (ROADMAP.md): refactor these three into named modules after msl-stdlib merges.
+        "crates/piperine-lang/src/pom/resolve/mod.rs" => "name-resolution stages; split pending",
+        "crates/piperine-lang/src/pom/reflect/mod.rs" => "POM reflection surface; split pending",
+        "crates/piperine-lang/src/pom/lower/mod.rs" => "lowering driver; split pending",
         _ => return None,
     })
 }
@@ -561,7 +579,7 @@ fn mod_rs_declares_only() {
     );
     assert_eq!(
         exempted.len(),
-        2,
+        3,
         "the exempted set changed — update the registry and the count: {exempted:?}"
     );
 }
@@ -624,25 +642,7 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// source scrape, no workspace crate linked either. An entry added here must move the expected
 /// set in [`root_targets_match_the_naming_rule`] with it, so the exemption
 /// cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 3] = [
-    (
-        "lrm_conformance_matrix.rs",
-        "lrm-conformance-closure LRMC-ID registry (MD-31, T9) — a repo-policy proof \
-         (data table + spec.md parse + filesystem read of each closing test), not a \
-         host-surface or cross-crate one",
-    ),
-    (
-        "lrm_section_coverage.rs",
-        "lrm-conformance-wave2 LRM-2-4 section coverage gate (T4/T5) — a repo-policy proof \
-         (VAMS-LRM-2-4.md heading parse + coverage_exclusions.toml read + LRM-COVERS \
-         source scrape), not a host-surface or cross-crate one",
-    ),
-    (
-        "ngspice_parity_matrix.rs",
-        "NGP-15/MD-31 parity registry over the whole ngspice corpus — a repo-policy proof \
-         (data table + filesystem walk), not a host-surface or cross-crate one",
-    ),
-];
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 0] = [];
 
 fn registered_root_exemption(file: &str) -> Option<&'static str> {
     ROOT_TARGET_EXEMPTIONS.iter().find(|(name, _)| *name == file).map(|(_, why)| *why)

@@ -660,7 +660,7 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [x] A new entry `### MD-58: the solver is three crates; events are the only boundary` under "Macro Decisions", with: the three crate names and the dependency direction; the event-only boundary as the target of `solver-event-boundary`; opaque byte carriers; the kept discontinuity algorithm and tolerance mapping with the spec amendments owed; the five removed crates; the user's words quoted for each; status Locked, date 2026-11-14
+- [x] A new entry `### MD-60: the solver is three crates; events are the only boundary` under "Macro Decisions", with: the three crate names and the dependency direction; the event-only boundary as the target of `solver-event-boundary`; opaque byte carriers; the kept discontinuity algorithm and tolerance mapping with the spec amendments owed; the five removed crates; the user's words quoted for each; status Locked, date 2026-11-14
 - [x] The handoff snapshot gains a short entry for `solver-restructure`
 - [x] `workspace_shape.rs` gains `state_records_the_solver_structure_decision` (C36): the heading exists and its section names the three crates
 - [x] `cargo test` on the three solver crates is green; `cargo build --all-targets` on `piperine-lang` and the three solver crates prints no warning (C33)
@@ -668,7 +668,7 @@ T25 → T26 → T27
 
 **Tests**: integration
 **Gate**: full
-**Commit**: `docs(specs): MD-58 the solver is three crates`
+**Commit**: `docs(specs): MD-60 the solver is three crates`
 
 ---
 
@@ -682,16 +682,16 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Both files are moved with `git mv`; no `.rs` file remains under the root `tests/`, and `tests/support/` is gone
-- [ ] `repo_root()` resolves to the repository root (`CARGO_MANIFEST_DIR/../..`); the walk functions return the same repository-relative paths as before, so no detector and no message changes
-- [ ] The 11 test functions exist under their names (C40); no detector function (`is_disabled_marker`, `is_ignore_attribute`, `is_file_scope_allow`, `dead_architecture_identifiers_in`, ...) is edited
-- [ ] Registrations and exemptions that name a path under a removed crate or a deleted file are removed; an entry for a solver file that moved is re-pointed to its new path; nothing else in the registries changes (C41)
-- [ ] A new test `the_walk_covers_the_three_solver_crates` asserts that the library-source walk returns at least one file under each of `crates/piperine-solver/src`, `crates/piperine-analog-solver/src`, `crates/piperine-digital-solver/src` and `crates/piperine-lang/src` (C42)
-- [ ] `cargo test -p piperine-lang --test suite_hygiene` passes (C39). **If a test fails on a kept source for a reason that predates this feature (including the "more than 100 library sources" assertion): stop, change nothing, report the test and its output** (SR-07 AC 6)
-- [ ] `root_tests_hold_no_end_to_end_target` in `workspace_shape.rs` is tightened to "no `.rs` file under the root `tests/`", and `workspace_shape.rs` gains `hygiene_guard_lives_in_piperine_lang` (C43)
-- [ ] The new guard targets of this feature (`workspace_shape`, `removed_surface`, `crate_boundaries`, `event_order`, `helper_devices`, `integration_scheme_elements`) pass the guard's own rules: `//!` header, no `#[ignore]`, no file-scope `#![allow]`
-- [ ] `cargo test` on `piperine-lang` and the three solver crates is green; `cargo build --all-targets` on the four prints no warning
-- [ ] Gate: build
+- [x] Both files are moved with `git mv`; no `.rs` file remains under the root `tests/`, and `tests/support/` is gone
+- [x] `repo_root()` resolves to the repository root (`CARGO_MANIFEST_DIR/../..`); the walk functions return the same repository-relative paths as before, so no detector and no message changes
+- [x] The 11 test functions exist under their names (C40); no detector function (`is_disabled_marker`, `is_ignore_attribute`, `is_file_scope_allow`, `dead_architecture_identifiers_in`, ...) is edited
+- [x] Registrations and exemptions that name a path under a removed crate or a deleted file are removed; an entry for a solver file that moved is re-pointed to its new path; nothing else in the registries changes (C41)
+- [x] A new test `the_walk_covers_the_three_solver_crates` asserts that the library-source walk returns at least one file under each of `crates/piperine-solver/src`, `crates/piperine-analog-solver/src`, `crates/piperine-digital-solver/src` and `crates/piperine-lang/src` (C42)
+- [x] `cargo test -p piperine-lang --test suite_hygiene` passes (C39). **If a test fails on a kept source for a reason that predates this feature (including the "more than 100 library sources" assertion): stop, change nothing, report the test and its output** (SR-07 AC 6)
+- [x] `root_tests_hold_no_end_to_end_target` in `workspace_shape.rs` is tightened to "no `.rs` file under the root `tests/`", and `workspace_shape.rs` gains `hygiene_guard_lives_in_piperine_lang` (C43)
+- [x] The new guard targets of this feature (`workspace_shape`, `removed_surface`, `crate_boundaries`, `event_order`, `helper_devices`, `integration_scheme_elements`) pass the guard's own rules: `//!` header, no `#[ignore]`, no file-scope `#![allow]`
+- [x] `cargo test` on `piperine-lang` and the three solver crates is green; `cargo build --all-targets` on the four prints no warning
+- [x] Gate: build
 
 **Tests**: integration
 **Gate**: build
@@ -806,7 +806,7 @@ Proof: run solver | test instructions_list_the_kept_crates ... ok
 **C35** - The crate table of `CLAUDE.md` and the workspace map of `AGENTS.md` hold no entry for a retired crate (SR-06, AC 2)
 Proof: run solver | test instructions_have_no_entry_for_a_retired_crate ... ok
 
-**C36** - `.specs/STATE.md` records the three-crate decision under `MD-58` (SR-06, AC 3)
+**C36** - `.specs/STATE.md` records the three-crate decision under `MD-60` (SR-06, AC 3)
 Proof: run solver | test state_records_the_solver_structure_decision ... ok
 
 **C37** - No assertion line was added to or changed in a test file that existed at e129b869, outside the five ported targets (SR-05, AC 4)
@@ -839,7 +839,7 @@ Proof: run hygiene | test the_detectors_recognise_what_they_forbid ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** T27 (user, 2026-11-15): mod.rs rule red on piperine-lang pom/{resolve,reflect,lower}/mod.rs - "Exempt now, refactor later (Recommended)": named exemptions + a follow-up item; root-target floor - "Yes, retarget it (Recommended)": the naming rule applies to crate test targets, the root-count floor is removed; the stale ignored-doc registry is fixed in T27; MD-58 wording is stale, the decision is MD-60; none
+**Settled mid-build:** T27 (user, 2026-11-15): mod.rs rule red on piperine-lang pom/{resolve,reflect,lower}/mod.rs - "Exempt now, refactor later (Recommended)": named exemptions + a follow-up item; root-target floor - "Yes, retarget it (Recommended)": the naming rule applies to crate test targets, the root-count floor is removed; the stale ignored-doc registry is fixed in T27; MD-60 wording is stale, the decision is MD-60; none
 **Dispatched:** B1 (T1-T7, Sonnet) at b4b1e768 - returned (T1-T7 218054f7..3767b691; baseline 354 green; 358 pass after ports; helpers via #[path] mod); B2 (T8-T12, Sonnet) at 03d18454 - returned (T8-T12 1cdd920f..c8929613; guards written post-state (no red run); predict_crossing moved into solver); B3 (T13-T18, Sonnet) at f91fb21d - returned (T13-T18 aa0660ff..5bc9006d; 298 pass; removed.txt 76 names; T13 'wholly about' picks by worker; timing-check tests removed in T15 (dep on ValidationFinding)); B4 (T19-T24, Sonnet) at 50cf98eb - returned (T19-T24 26155bc8..e53555ab; 249+24+27 green; orphan rule -> digital_failure helper; T21 subject uppercase (check_commit ERROR)); B5 (T25-T27, Sonnet) at 36e0fedb
 **Walked:** not applicable: no screen
 

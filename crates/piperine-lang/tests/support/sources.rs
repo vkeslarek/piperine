@@ -11,13 +11,13 @@ use std::path::{Path, PathBuf};
 /// The repository root — every consumer of this module lives in the root
 /// package's `tests/` tree.
 pub fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 /// `suite_hygiene.rs` itself: it *spells* the forbidden patterns its own
 /// guards look for, so it is the one source the walk must always skip — the
 /// rule book is not a subject of its own rules.
-const SELF: &str = "tests/suite_hygiene.rs";
+const SELF: &str = "crates/piperine-lang/tests/suite_hygiene.rs";
 
 /// Every `.rs` file under `crates/`, `src/`, and `tests/`, skipping build
 /// output and `suite_hygiene.rs`. Returned as `(repo-relative path, contents)`.
@@ -77,11 +77,5 @@ pub fn root_targets() -> Vec<(String, String)> {
             path.strip_prefix("tests/").map(|file| (file.to_string(), text))
         })
         .collect();
-    assert!(
-        targets.len() > 20,
-        "the walk found only {} root targets — the layout moved and the \
-         root-naming guard is blind",
-        targets.len()
-    );
     targets
 }

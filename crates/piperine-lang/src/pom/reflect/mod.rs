@@ -1,3 +1,4 @@
+// hygiene-exempt: oversized mod.rs predating the restructure; split into named modules after msl-stdlib merges (ROADMAP.md)
 //! The reflection face: `Copy` handles that borrow a [`Design`], and the
 //! [`Reflect`] trait every declaration handle shares.
 

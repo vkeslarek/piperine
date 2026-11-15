@@ -128,16 +128,8 @@ fn root_tests_hold_no_end_to_end_target() {
         .filter(|p| ext(p, "cir") && p.starts_with(tests.join("ngspice")))
         .count();
     assert!(cir > 0, "tests/ngspice/ lost its .cir fixtures");
-    for entry in std::fs::read_dir(&tests).expect("read tests/") {
-        let path = entry.expect("dir entry").path();
-        if path.is_file() && ext(&path, "rs") {
-            assert!(
-                path.file_name().is_some_and(|n| n == "suite_hygiene.rs"),
-                "{} is a root test target besides the hygiene guard",
-                path.display()
-            );
-        }
-    }
+    let rs: Vec<_> = files.iter().filter(|p| ext(p, "rs")).collect();
+    assert!(rs.is_empty(), ".rs files remain under the root tests/: {rs:?}");
 }
 
 #[test]
@@ -273,4 +265,13 @@ fn state_records_the_solver_structure_decision() {
     for name in ["piperine-solver", "piperine-analog-solver", "piperine-digital-solver"] {
         assert!(section.contains(name), "the decision does not name {name}");
     }
+}
+
+#[test]
+fn hygiene_guard_lives_in_piperine_lang() {
+    let root = repo_root();
+    assert!(root.join("crates/piperine-lang/tests/suite_hygiene.rs").is_file());
+    assert!(root.join("crates/piperine-lang/tests/support/sources.rs").is_file());
+    assert!(!root.join("tests/suite_hygiene.rs").exists());
+    assert!(!root.join("tests/support").exists());
 }
