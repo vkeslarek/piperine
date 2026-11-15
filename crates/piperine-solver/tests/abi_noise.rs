@@ -7,6 +7,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
@@ -223,4 +226,11 @@ fn test_per_source_noise_reporting_and_conservation() {
         manual_int += 0.5 * df * (res.out_noise_sq[i] + res.out_noise_sq[i + 1]);
     }
     assert!((res.integrated_noise - manual_int.sqrt()).abs() < 1e-12);
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("NoisyR", NOISY.get_or_init(|| module::<NoisyR>("NoisyR")));
 }

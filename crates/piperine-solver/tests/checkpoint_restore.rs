@@ -27,6 +27,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::cell::RefCell;
 use std::result::Result;
@@ -248,4 +251,11 @@ fn dc_homotopy_fallthrough_drives_restore_between_strategies() {
     let mut solver = Solver::new(circuit).build();
     let plain = solver.dc().unwrap().solve().unwrap().get_node(&node_id(&anode)).unwrap();
     assert!((starved - plain).abs() < 1e-4, "after the fallthrough {starved} V vs the plain solve {plain} V");
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("AgedDiode", AGED.get_or_init(|| module::<AgedDiode>("AgedDiode")));
 }

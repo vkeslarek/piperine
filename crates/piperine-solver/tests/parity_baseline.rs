@@ -16,6 +16,9 @@ mod abi_devices;
 #[allow(dead_code)]
 #[path = "helpers/abi_mixed.rs"]
 mod abi_mixed;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::sync::{Arc, OnceLock};
 
@@ -489,4 +492,16 @@ fn parity_digital_scheduler_snapshot() {
     assert_eq!(nets(1), LOW, "net1");
     assert_eq!(nets(2), HIGH, "net2");
     assert_eq!(nets(3), LOW, "net3");
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Diode", DIODE.get_or_init(|| module::<Diode>("Diode")));
+    partials::verify_every_function("SineVsrc", SINE.get_or_init(|| module::<SineVsrc>("SineVsrc")));
+    partials::verify_every_function("Comparator", CMP.get_or_init(|| module::<Comparator>("Comparator")));
+    partials::verify_every_function("GatedISink", SINK.get_or_init(|| module::<GatedISink>("GatedISink")));
+    partials::verify_every_function("DigitalSource", SRC.get_or_init(|| module::<DigitalSource>("DigitalSource")));
+    partials::verify_every_function("And2", AND.get_or_init(|| module::<And2>("And2")));
 }

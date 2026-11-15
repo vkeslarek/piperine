@@ -3,6 +3,10 @@
 //! importing nothing but `abi` (MD-17's two-tier surface), and it builds into
 //! a circuit and solves.
 
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
+
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
 
@@ -79,4 +83,11 @@ fn abi_compiles_a_device() {
     let mut circuit = b.build().expect("build");
     let res = circuit.dc(Context::default()).unwrap().solve().unwrap();
     assert_eq!(res.get(n1.variable().clone()), Some(0.0));
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Resistor", MODULE.get_or_init(|| module::<Resistor>("Resistor")));
 }

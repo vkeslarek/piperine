@@ -8,6 +8,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::sync::{Arc, OnceLock};
 
@@ -134,4 +137,11 @@ fn default_set_temperature_is_noop() {
     circuit.set_temperature(350.0);
     assert_eq!(v_out(&mut circuit, &mid), before);
     assert!((before - 0.5).abs() < 1e-12);
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Thermo", THERMO.get_or_init(|| module::<Thermo>("Thermo")));
 }

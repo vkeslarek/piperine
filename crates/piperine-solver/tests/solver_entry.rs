@@ -6,6 +6,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
@@ -83,4 +86,11 @@ fn test_solver_setup_error_propagation() {
     assert!(result.is_err());
     let err_str = result.err().unwrap().to_string();
     assert!(err_str.contains("setup error"));
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("BadElement", BAD.get_or_init(|| module::<BadElement>("BadElement")));
 }

@@ -765,8 +765,8 @@ Proof: run solver | test the_element_contract_is_gone ... ok
 **C26** - No source names the strength table, `LogicValue`, the two-phase contract, `DigitalState` or `EventQueue` (SAI-14, Port AC 5)
 Proof: run solver | test the_old_digital_engine_is_gone ... ok
 
-**C27** - Every function of every test device passes the partials verifier (SAI-15, Port AC 4)
-Proof: run solver | test every_device_function_passes_the_partials_verifier ... ok
+**C27** - Every function of every test device passes the partials verifier (SAI-15, Port AC 4): the helper libraries at a table of operating points and at generic points, each target's own devices (`parity_baseline`'s among them) in that target, and a guard names every hand-written device of the suite in a check (a failure fixture is held to its declared failure)
+Proof: `o=$(cargo test -p piperine-solver 2>&1); for t in every_device_function_passes_the_partials_verifier every_helper_device_passes_at_generic_points every_hand_written_device_is_in_a_partials_check; do printf '%s\n' "$o" | grep -q "test $t ... ok" || { echo "no pass line for $t"; exit 1; }; done; n=$(printf '%s\n' "$o" | grep -c "test its_devices_pass_the_partials_verifier ... ok"); m=$(grep -l 'fn its_devices_pass_the_partials_verifier' crates/piperine-solver/tests/*.rs | wc -l); test "$m" -gt 20 && test "$n" -eq "$m" || { echo "$n of $m targets"; exit 1; }`
 
 **C28** - The analog sub-solver names no digital type (SAI-14, Port AC 6)
 Proof: run guards | test analog_sources_name_no_digital_type ... ok

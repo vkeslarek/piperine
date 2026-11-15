@@ -10,6 +10,9 @@ use std::sync::{Arc, OnceLock};
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use abi_devices::{add_capacitor, add_resistor, add_vsrc, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
@@ -252,4 +255,13 @@ fn a_rejected_stage_restores_the_term_history() {
         let _ = still.transient(options, Context::default()).expect("tran").solve();
     }
     assert_ne!(running.bound().expect("bound").analog.snapshot(), still.bound().expect("bound").analog.snapshot());
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("ChargedC", CHARGED_MODULE.get_or_init(|| module::<ChargedC>("ChargedC")));
+    // TIME (read 3) before FLAKY_AFTER, where the fixture does not fault.
+    partials::verify_every_function_with("FlakyC", FLAKY_MODULE.get_or_init(|| module::<FlakyC>("FlakyC")), &[(0, 3, 0.0)]);
 }

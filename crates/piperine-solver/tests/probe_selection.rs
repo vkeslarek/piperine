@@ -14,6 +14,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::sync::{Arc, OnceLock};
 
@@ -338,4 +341,11 @@ fn valid_probe_selection_passes_setup() {
                 .request("stub", "var[0]"),
         );
     tran_setup_result(opts).expect("valid selection must not fail setup");
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Stub", STUB.get_or_init(|| module::<Stub>("Stub")));
 }

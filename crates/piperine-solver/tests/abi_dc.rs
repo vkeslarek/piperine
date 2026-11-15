@@ -8,6 +8,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
@@ -151,4 +154,11 @@ fn gmin_stepping_reaches_a_device_through_the_ambient_input() {
     dc.set_gmin_extra(0.0);
     let rest = dc.newton().expect("a solve at rest");
     assert!((rest[at] - gmin).abs() < 1.0e-15, "v(a) = {} at rest, expected {gmin}", rest[at]);
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("GminProbe", GMIN_PROBE.get_or_init(|| module::<GminProbe>("GminProbe")));
 }

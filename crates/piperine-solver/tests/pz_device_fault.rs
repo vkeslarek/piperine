@@ -1,6 +1,10 @@
 //! A device that cannot be evaluated at the pole-zero assembly fails the
 //! analysis with an error naming the instance (never a poisoned matrix).
 
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
+
 use std::sync::{Arc, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
@@ -89,3 +93,11 @@ fn piperine_abi_test_vsrc() -> &'static Module {
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_vsrc;
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    // FREQ (read 1) at 0: the operating point, where the fixture has a model.
+    partials::verify_every_function_with("AcFault", MODULE.get_or_init(|| module::<AcFault>("AcFault")), &[(0, 1, 0.0)]);
+}

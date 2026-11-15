@@ -14,6 +14,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::result::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -272,4 +275,15 @@ fn section_9_exhausting_every_dc_strategy_is_a_convergence_failure() {
     // rather than `Dc` — §16 calls this a "convergence failure" without fixing
     // the domain, and this is the domain the code actually uses.
     assert_rule(&err, SolverDomain::Newton, "converge");
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    use partials::Fixture;
+    // The fixture of the non-finite rule: its value is NaN at every point.
+    partials::verify_every_function_except("NanSource", NAN.get_or_init(|| module::<NanSource>("NanSource")), &[(0, Fixture::NonFinite)]);
+    // The fixture of "every strategy failed": its conductance flips at every call.
+    partials::verify_every_function_except("Oscillator", OSC.get_or_init(|| module::<Oscillator>("Oscillator")), &[(0, Fixture::Impure)]);
 }

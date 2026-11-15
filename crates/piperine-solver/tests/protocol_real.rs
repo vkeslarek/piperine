@@ -13,6 +13,9 @@ mod abi_devices;
 #[allow(dead_code)]
 #[path = "helpers/abi_mixed.rs"]
 mod abi_mixed;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::cell::Cell as StdCell;
 use std::sync::{Arc, OnceLock};
@@ -244,4 +247,11 @@ fn settle_fires_at_the_stop_time() {
     let last = *settle_times().last().expect("SETTLE fired");
     assert!((last - stop).abs() < 1.0e-15, "the last SETTLE is at the stop time: {last}");
     assert!((result.last().unwrap().time() - stop).abs() < 1.0e-15);
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("FlakyG", FLAKY_MODULE.get_or_init(|| module::<FlakyG>("FlakyG")));
 }

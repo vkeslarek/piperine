@@ -4,6 +4,10 @@
 //! `PRIVATE`) and the tests read what bind made of it by name and by the
 //! plans' own nets.
 
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
+
 use std::sync::{Arc, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
@@ -290,4 +294,12 @@ fn bind_creates_each_placement_once_for_both_sides() {
     let circuit = b.build().expect("bind");
     assert_eq!(CREATES.load(std::sync::atomic::Ordering::SeqCst) - before, 3, "creates = placements");
     assert_eq!(circuit.bound().expect("bound").names.instances.len(), 3);
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Probe", MODULE.get_or_init(|| module::<Probe>("probe")));
+    partials::verify_every_function("Counting", COUNTING_MODULE.get_or_init(|| module::<Counting>("counting")));
 }

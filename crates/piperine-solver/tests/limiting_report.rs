@@ -11,6 +11,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
@@ -234,4 +237,18 @@ fn a_limited_diode_reaches_the_unlimited_operating_point() {
     assert!(plain > 0.5 && plain < 0.9, "the diode conducts: {plain}");
     // Both stop inside Newton's own criterion (vntol + reltol·|v| ≈ 7e-4 V).
     assert!((limited - plain).abs() < 1e-4, "limited {limited} vs unlimited {plain}");
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    use partials::Fixture;
+    // The fixture of the veto: its limit is active at every point.
+    partials::verify_every_function_except(
+        "AlwaysLimited",
+        ALWAYS.get_or_init(|| module::<AlwaysLimited>("AlwaysLimited")),
+        &[(0, Fixture::AlwaysLimited)],
+    );
+    partials::verify_every_function("LimitedDiode", LD.get_or_init(|| module::<LimitedDiode>("LimitedDiode")));
 }

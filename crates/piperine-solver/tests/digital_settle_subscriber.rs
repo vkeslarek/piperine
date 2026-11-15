@@ -16,6 +16,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_mixed.rs"]
 mod abi_mixed;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::cell::RefCell;
 use std::result::Result;
@@ -310,4 +313,15 @@ fn the_subscriber_sees_only_the_settled_value_never_the_mid_delta_cycle_glitch()
     let settled = settled_at(FLIP_AT);
     assert_eq!(settled.len(), 1, "SETTLE fires exactly once for this one settle: {settled:?}");
     assert_eq!(settled[0], LOW, "the subscriber must see c's correct SETTLED value (LOW), never a transient glitch (HIGH)");
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Setter", SETTER.get_or_init(|| module::<Setter>("Setter")));
+    partials::verify_every_function("Subscriber", SUB.get_or_init(|| module::<Subscriber>("Subscriber")));
+    partials::verify_every_function("Gate", OR_MODULE.get_or_init(|| module::<Gate<false>>("Or2")));
+    partials::verify_every_function("Gate", AND_MODULE.get_or_init(|| module::<Gate<true>>("And2")));
+    partials::verify_every_function("LagInverter", LAG.get_or_init(|| module::<LagInverter>("LagInverter")));
 }

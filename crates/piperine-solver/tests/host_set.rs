@@ -8,6 +8,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::sync::{Arc, OnceLock};
 
@@ -291,4 +294,17 @@ fn a_structural_set_during_a_run_is_refused() {
     let bound = circuit.bound().unwrap();
     assert!(bound.digital.read(w_net).iter().all(|b| *b == 0), "nothing changed: `w` is still not given");
     assert!(bound.host_writes.is_empty());
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("CheckedR", CHECKED.get_or_init(|| module::<CheckedR>("CheckedR")));
+    // r (read 0 of "setup") on the side of the threshold the default instance was made for.
+    partials::verify_every_function_with(
+        "Collapsible",
+        COLLAPSIBLE.get_or_init(|| module::<Collapsible>("Collapsible")),
+        &[(0, 0, 1.0e3)],
+    );
 }

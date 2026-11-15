@@ -8,6 +8,9 @@
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::sync::{Arc, OnceLock};
 
@@ -231,4 +234,11 @@ fn device_introspect_reaches_the_labeled_devices_introspect_surface() {
 fn device_introspect_returns_none_for_an_unknown_label() {
     let (circuit, _) = divider(1000.0, 1000.0);
     assert!(!circuit.bound().unwrap().names.params.keys().any(|(p, _)| p == "nope"));
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Mute", MUTE.get_or_init(|| module::<Mute>("Mute")));
 }

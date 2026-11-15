@@ -10,6 +10,9 @@ use std::sync::{Arc, OnceLock};
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use abi_devices::{add_resistor, add_vsrc, resistor_opt};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
@@ -214,4 +217,11 @@ fn a_derivative_chains_through_a_discrete_function() {
     let d = result.get(&out, "x1", "r").expect("derivative");
     assert!((d + 2.5e-3).abs() <= 1.0e-9 * 2.5e-3, "dv/dr = {d:e}");
     assert!(result.fallback_users.is_empty());
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Gd", GD_MODULE.get_or_init(|| module::<Gd>("Gd")));
 }

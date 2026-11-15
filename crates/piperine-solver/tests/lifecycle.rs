@@ -8,6 +8,10 @@
 //! `accept_timestep`, `set_param`) are gone with them; the order the solver
 //! evaluates a device in is the protocol's, proven by `protocol_*.rs`.
 
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
+
 use std::result::Result;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -110,4 +114,12 @@ fn test_setup_error_propagates() {
     assert!(result.is_err());
     assert!(result.err().unwrap().to_string().contains("test setup error"));
     assert_eq!(FAIL_CREATES.load(Ordering::SeqCst), 1);
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Counted", COUNTED.get_or_init(|| module::<Counted>("Counted")));
+    partials::verify_every_function("Failing", FAILING.get_or_init(|| module::<Failing>("Failing")));
 }

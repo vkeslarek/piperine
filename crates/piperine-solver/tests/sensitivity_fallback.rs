@@ -11,6 +11,9 @@ use std::sync::{Arc, OnceLock};
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use abi_devices::{add_vsrc, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
@@ -235,4 +238,12 @@ fn the_fallback_restores_a_host_written_param() {
     let bytes = circuit.bound().expect("bound").analog.var("gfb", "g").expect("VAR g").to_vec();
     let g_after = f64::from_le_bytes(bytes[..8].try_into().expect("an F64"));
     assert!((g_after - 2e-3).abs() < 1e-15, "the written value is restored, not the default: {g_after}");
+}
+
+/// SAI-15: every function of this target's own devices passes the partials
+/// verifier (the guard of `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Gan", GAN_MODULE.get_or_init(|| module::<Gan>("Gan")));
+    partials::verify_every_function("Gfb", GFB_MODULE.get_or_init(|| module::<Gfb>("Gfb")));
 }
