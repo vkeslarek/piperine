@@ -201,12 +201,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] `pnjlim` evaluated at the six branch points of its source equals the same formula written in the test
-- [ ] `1.0 / 0.0` is `inf` and nothing fails
-- [ ] A closure reached outside a `limit` faults with the closure's origin in the message
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --lib`: `walk::tests::f64_arithmetic_and_methods_match_rust`, `walk::tests::division_by_zero_is_ieee`, `walk::tests::short_circuit_and_if_evaluate_one_side`, `walk::tests::calls_bind_parameters_and_closures_see_locals`, `walk::tests::an_unexecuted_form_faults_with_its_origin`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `pnjlim` evaluated at the six branch points of its source equals the same formula written in the test
+- [x] `1.0 / 0.0` is `inf` and nothing fails
+- [x] A closure reached outside a `limit` faults with the closure's origin in the message
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --lib`: `walk::tests::f64_arithmetic_and_methods_match_rust`, `walk::tests::division_by_zero_is_ieee`, `walk::tests::short_circuit_and_if_evaluate_one_side`, `walk::tests::calls_bind_parameters_and_closures_see_locals`, `walk::tests::an_unexecuted_form_faults_with_its_origin`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

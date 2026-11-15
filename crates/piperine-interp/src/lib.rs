@@ -5,8 +5,15 @@
 use std::sync::Arc;
 
 mod dual;
+mod walk;
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../piperine-ir/tests/support/devices.rs"]
+mod devices;
 
 pub use dual::Dual;
+pub use walk::{Value, Walk};
 use piperine_ir::{Broken, Ir};
 
 /// An `Ir` that failed `check()`: the entries, each naming an item and its origin.
