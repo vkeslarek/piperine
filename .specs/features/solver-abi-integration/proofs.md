@@ -1,6 +1,6 @@
 # solver-abi-integration proofs
 
-**HEAD**: 65716919
+**HEAD**: 8176115a
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 34 pass, 0 fail
@@ -69,11 +69,11 @@
 ```
 running 8 tests
 test abi_crate_is_a_leaf ... ok
-test owner_depends_on_the_abi_and_both_sub_solvers_only ... ok
 test each_sub_solver_holds_its_modules ... ok
 test sub_solvers_depend_on_the_abi_crate_only ... ok
-test the_three_solver_crates_exist ... ok
 test the_manifest_scan_reads_table_form_dependencies ... ok
+test owner_depends_on_the_abi_and_both_sub_solvers_only ... ok
+test the_three_solver_crates_exist ... ok
 test digital_sources_name_no_analog_type ... ok
 test analog_sources_name_no_digital_type ... ok
 
