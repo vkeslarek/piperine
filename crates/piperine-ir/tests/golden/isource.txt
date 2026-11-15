@@ -1,0 +1,13 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Isource  @devices.msl:24:1
+  param dc: f64 = 0.0  @devices.msl:25:5
+  param ac: f64 = 0.0  @devices.msl:26:5
+  node p: Electrical port  @devices.msl:24:20
+  node n: Electrical port  @devices.msl:24:35
+  branch b0 (p, n) flow
+  stim S0 "ac"  @devices.msl:28:62
+  analog
+    b0.flow +> direct ((dc * source_scale()) + ac_stim S0 (ac))
+instance isource: Isource  nodes (gnd, gnd)  params (dc = 0.001, ac = 0.0)  top  @devices.msl:24:1

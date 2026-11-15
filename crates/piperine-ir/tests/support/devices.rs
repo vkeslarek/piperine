@@ -483,6 +483,20 @@ impl Devices {
         })
     }
 
+    /// The body alone as the design: a top instance named after it, both ports on ground, the
+    /// given param values. For the two-port devices only.
+    pub fn alone(b: &mut IrBuilder, body: BodyId, name: &str, line: u32, params: Vec<f64>) -> InstanceId {
+        b.instance(InstanceSpec {
+            path: name.to_string(),
+            name: name.to_string(),
+            body,
+            parent: None,
+            nodes: vec![NodeRef::Ground, NodeRef::Ground],
+            params: params.into_iter().map(|v| Constant::Real(Real::new(v))).collect(),
+            origin: Self::origin(line, 1),
+        })
+    }
+
     fn child(name: &str, body: BodyId, nodes: Vec<Terminal>, params: Vec<(u32, f64)>, line: u32) -> Child {
         Child {
             name: name.to_string(),

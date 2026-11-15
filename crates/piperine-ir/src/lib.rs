@@ -7,6 +7,7 @@ mod build;
 mod handle;
 mod ids;
 mod model;
+mod print;
 mod real;
 
 pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NodeSpec};

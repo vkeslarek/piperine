@@ -1,0 +1,30 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Diode  @devices.msl:31:1
+  param is: f64 = 1e-14 where (is > 0.0)  @devices.msl:32:5
+  param n: f64 = 1.0 where (n > 0.0)  @devices.msl:33:5
+  param cj0: f64 = 0.0 where (cj0 >= 0.0)  @devices.msl:34:5
+  node a: Electrical port  @devices.msl:31:18
+  node k: Electrical port  @devices.msl:31:33
+  branch b0 (a, k) flow
+  limit L0 "vd"  @devices.msl:39:17
+  local nvt: f64
+  local vcrit: f64
+  local vd: f64
+  local id: f64
+  local new: f64
+  local old: f64
+  analog
+    let nvt = (n * vt())
+    let vcrit = (nvt * ln((nvt / (sqrt(2.0) * is))))
+    let vd = limit L0 (probe(a, k), |new, old| pnjlim(new, old, nvt, vcrit), seed vcrit)
+    let id = (is * (exp((vd / nvt)) - 1.0))
+    b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)
+fn vt() -> f64  @analog.msl:10:1
+  ((1.380649e-23 * temperature()) / 1.602176634e-19)
+fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64  @analog.msl:21:1
+  local arg: f64
+  local arg: f64
+  if ((new > vcrit) && (abs((new - old)) > (2.0 * nvt))) { if (old > 0.0) { let arg = ((new - old) / nvt); if (arg > 0.0) { (old + (nvt * (2.0 + ln((arg - 2.0))))) } else { (old - (nvt * (2.0 + ln((2.0 - arg))))) } } else { (nvt * ln((new / nvt))) } } else { if (new < 0.0) { let arg = if (old > 0.0) { ((-old) - 1.0) } else { ((2.0 * old) - 1.0) }; if (new < arg) { arg } else { new } } else { new } }
+instance diode: Diode  nodes (gnd, gnd)  params (is = 1e-14, n = 1.0, cj0 = 0.0)  top  @devices.msl:31:1

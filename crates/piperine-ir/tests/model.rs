@@ -60,15 +60,19 @@ impl Sources {
 
 #[test]
 fn a_finished_ir_has_no_mutating_operation() {
-    // A `&mut self` method may exist only inside an `impl` of the builder.
+    // No `&mut self` method on `Ir` or on a handle: the builder (and the printer's own buffer)
+    // are the only types that mutate.
+    let read_only = ["Ir ", "Ir{", "Body<", "Function<", "Instance<", "Node<", "Nature<"];
     for (path, text) in Sources::all() {
-        let mut owner_is_builder = false;
+        let mut guarded = false;
         for (n, line) in text.lines().enumerate() {
             if line.starts_with("impl") {
-                owner_is_builder = line.contains("IrBuilder");
+                let target = line.rsplit(" for ").next().unwrap_or(line);
+                let target = target.trim_start_matches("impl").trim_start_matches("<'a>").trim();
+                guarded = read_only.iter().any(|t| target.starts_with(t.trim_end()) && !target.starts_with("IrBuilder"));
             }
-            if line.contains("&mut self") && !owner_is_builder {
-                panic!("{path}:{}: a mutating method outside IrBuilder: {line}", n + 1);
+            if line.contains("&mut self") && guarded {
+                panic!("{path}:{}: a mutating method on the IR or a handle: {line}", n + 1);
             }
         }
     }
@@ -118,6 +122,7 @@ impl Sequence {
 #[test]
 fn equal_builder_sequences_give_equal_irs() {
     assert_eq!(Sequence::build(), Sequence::build());
+    assert_eq!(Sequence::build().to_string(), Sequence::build().to_string());
 }
 
 /// The five device bodies, the divider on top of them, and the `Everything` body that uses each

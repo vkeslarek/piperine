@@ -1,0 +1,31 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Vsource  @devices.msl:17:1
+  param dc: f64 = 0.0  @devices.msl:18:5
+  param ac: f64 = 0.0  @devices.msl:19:5
+  node p: Electrical port  @devices.msl:17:20
+  node n: Electrical port  @devices.msl:17:35
+  branch b0 (p, n) potential
+  stim S0 "ac"  @devices.msl:21:62
+  analog
+    b0.potential +> direct ((dc * source_scale()) + ac_stim S0 (ac))
+body Resistor  @devices.msl:5:1
+  param r: f64 where (r > 0.0)  @devices.msl:6:5
+  node p: Electrical port  @devices.msl:5:21
+  node n: Electrical port  @devices.msl:5:36
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> direct (probe(p, n) / r)
+body Divider  @divider.msl:5:1
+  node vin: Electrical signal  @divider.msl:6:5
+  node mid: Electrical signal  @divider.msl:7:5
+  child v1: Vsource  nodes (vin, gnd)  params (dc = 10.0)  @divider.msl:8:5
+  child r1: Resistor  nodes (vin, mid)  params (r = 1000.0)  @divider.msl:9:5
+  child r2: Resistor  nodes (mid, gnd)  params (r = 3000.0)  @divider.msl:10:5
+instance Divider: Divider  nodes (Divider.vin, Divider.mid)  params ()  top  @divider.msl:5:1
+instance Divider.v1: Vsource  nodes (Divider.vin, gnd)  params (dc = 10.0, ac = 0.0)  @divider.msl:8:5
+instance Divider.r1: Resistor  nodes (Divider.vin, Divider.mid)  params (r = 1000.0)  @divider.msl:9:5
+instance Divider.r2: Resistor  nodes (Divider.mid, gnd)  params (r = 3000.0)  @divider.msl:10:5
+node Divider.vin: Electrical  declared by Divider  @divider.msl:6:5
+node Divider.mid: Electrical  declared by Divider  @divider.msl:7:5

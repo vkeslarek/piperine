@@ -225,11 +225,11 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] `E0210`, `E0251`, `E0312`, `E0318`, `E0320` each asserted with the span of the offending construct
-- [ ] A placement of a user module records `Callee::Module(decl)`; a placement of a core module is routed to T7's table by its `Resolution::Builtin`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_modules`: `params_are_f64_or_bool`, `a_default_of_the_wrong_type_is_rejected`, `a_where_that_is_not_bool_is_e0318`, `ports_and_signals_are_nodes_and_gnd_fits_any`, `a_node_init_that_is_not_f64_is_e0210`, `a_placement_checks_nodes_count_and_params`, `a_node_of_another_nature_is_e0251`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `E0210`, `E0251`, `E0312`, `E0318`, `E0320` each asserted with the span of the offending construct
+- [x] A placement of a user module records `Callee::Module(decl)`; a placement of a core module is routed to T7's table by its `Resolution::Builtin`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_modules`: `params_are_f64_or_bool`, `a_default_of_the_wrong_type_is_rejected`, `a_where_that_is_not_bool_is_e0318`, `ports_and_signals_are_nodes_and_gnd_fits_any`, `a_node_init_that_is_not_f64_is_e0210`, `a_placement_checks_nodes_count_and_params`, `a_node_of_another_nature_is_e0251`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
