@@ -1,11 +1,12 @@
 # msl-stdlib verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at e12c8946 (HEAD 5a267335 adds only `.specs/` commits)
-**Verifier**: independent sub-agent (author != verifier), Opus, round 1
-**Diff range**: 0ae471d1..5a267335 (implementation a7fb0985..2dde7ddc)
+**Round**: 2
+**Proofs**: `proofs.md` at ed1fc2fd (HEAD cfea70b5 adds only `.specs/` commits); round 1 judged e12c8946
+**Verifier**: independent sub-agent (author != verifier), Opus, rounds 1 and 2
+**Diff range**: 0ae471d1..5a267335 (implementation a7fb0985..2dde7ddc); round 2 fixes c7749a1d..ed1fc2fd
 
-Summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that cannot fail, one rule of STD-06 not implemented), three Low, two Info. The library itself is sound: the hand-traced bodies match their sources, the intrinsic list is exactly the five string readers, `Transient` is complete, and the galleries build clean.
+Round 2: 113 checks hold as tested; one new Medium (N1) and two Low (N2, N3) are open. Round 1 summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that cannot fail, one rule of STD-06 not implemented), three Low, two Info. The library itself is sound: the hand-traced bodies match their sources, the intrinsic list is exactly the five string readers, `Transient` is complete, and the galleries build clean.
 
 ## Judgement of the library bodies (Q2 "as many as possible")
 
@@ -33,6 +34,22 @@ Summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that 
 - **Performance.** Not a per-build POM problem (F6): the 220 s is the fuzz's shape, one full serialize + `from_json` per numeric leaf.
 - **Process.** T16 before T15 is a real dependency (`monitor` calls `require` of `io`) and was disclosed. T6 and T7 were amended 19 s and 4 s after their first commit, before the next commit, locally (reflog) — benign. The tests noted green-before are negative controls (`a_nature_impl_wins_over_a_blanket`, `an_unlinked_member_keeps_its_slot`, `a_private_std_item_is_e0161`) that hold on both sides by construction; each of their features has a positive test that was red. No finding.
 
+## Round 2
+
+Each fix re-judged against its criterion, the round 1 probes re-run at HEAD, and `std_library`, `pom_resolve`, `std_galleries`, `std_excerpts` re-run (69, 38, 12, 11 tests, green).
+
+| Finding | Fix | Re-judged |
+| --- | --- | --- |
+| F1 | c7749a1d | holds: the test builds over the embedded std and fails if the root's `Q`/`PI` resolve anywhere but the root file. Probe: diags `[]`, `Q -> Q`, `PI -> m::PI` |
+| F2 | 1254568a | holds for the probe of round 1: the private `a::Hidden` now leaves `p.zz()` `Unresolved`. The new test also covers an unimported `pub` trait, named and glob imports, and a nested namespace; G.67 records the declaration-order tie. The scope test is a lookup by the trait's own name, which opens N1 and N2 |
+| F3 | 48db0e3c | holds: `den: [f64; D] where den[D - 1] != 0.0` in `std/analog.msl` and Part VII; the spec now names `den: [1.0, 0.0]` as `E0317`. The POM evaluates no `where`, so the probe still builds clean, as Out of Scope says |
+| F4 | b45c08ae | partly: the reverse-bias branch is added and matches `devsup.c` lines 67-81, and a new test evaluates every branch of the shipped body. The forward step is still the SPICE3 `vold + vt·ln(1 + dv/vt)` with the `vcrit` fallback; `devsup.c` (lines 54-61 of the copy in vams-corpus) has `vold + vt·(2 + ln(arg − 2))` and `vold − vt·(2 + ln(2 − arg))` with `arg = dv/vt`. The Resolution now calls the SPICE3 step "the forward-bias step of `DEVpnjlim`" (N3) |
+| F5 | 9c24bd5a | holds: C17, C71/C72 and C107 assert what their criteria fix (rows below) |
+| F6 | - | Info; no change needed |
+| F7 | 8937a8ac, ed1fc2fd | holds as an open item: G.68 records it for a type checker; the STD-01 AC 8 guard still passes |
+
+Regression spot check: carrier methods of std still link (`c.high()`, `c.rise()`, and `d.known()` in a nested `mod m`); galleries clean.
+
 ## Checks
 
 | Check | Test | Holds |
@@ -53,7 +70,7 @@ Summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that 
 | C14 | `spec_text.rs` `s22_lists_the_engine_items` | yes |
 | C15 | `spec_text.rs` `s22_rule_4_names_extern_intrinsic` | yes |
 | C16 | `spec_text.rs` `b1_still_counts_65_constructs` | yes |
-| C17 | `spec_text.rs` `e0707_is_replaced_by_e0317` | weak - asserts `E0317` appears in §22.2.13 and §22.2.14, not that it is given for the two named conditions (F5) |
+| C17 | `spec_text.rs` `e0707_is_replaced_by_e0317` | yes (round 2) - the conjugate rule of §22.2.13 and §22.2.14 and the `den[D - 1] != 0.0` rule each must carry `E0317` |
 | C18 | `spec_text.rs` `laplace_states_the_proper_rule` | yes |
 | C19 | `spec_text.rs` `g64_names_the_normal_generator` | yes |
 | C20 | `pom_resolve.rs` `intrinsic_fn_is_accepted_in_std` | yes |
@@ -65,7 +82,7 @@ Summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that 
 | C26 | `pom_resolve.rs` `self_assoc_resolves_through_repr_supertrait` | yes |
 | C27 | `pom_resolve.rs` `self_assoc_resolves_through_a_user_supertrait` | yes |
 | C28 | `pom_resolve.rs` `self_assoc_missing_everywhere_is_e0161` | yes |
-| C29 | `pom_resolve.rs` `blanket_method_resolves_on_a_carrier` | weak - positive case holds, but the criterion's "a visible trait" is neither tested nor implemented: a private trait of another namespace links (F2) |
+| C29 | `pom_resolve.rs` `blanket_method_resolves_on_a_carrier`, `a_blanket_trait_out_of_scope_never_links` | yes (round 2) for the cases tested: private and unimported `pub` traits do not link, named and glob imports do, a nested namespace does not. Name-based scope lookup misses an aliased import and drops std's `Known` when a model declares any item named `Known` (N1, N2) |
 | C30 | `pom_resolve.rs` `blanket_method_resolves_on_self_in_a_nature_impl` | yes |
 | C31 | `pom_resolve.rs` `a_nature_impl_wins_over_a_blanket` | yes |
 | C32 | `pom_resolve.rs` `an_unlinked_member_keeps_its_slot` | yes |
@@ -107,8 +124,8 @@ Summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that 
 | C68 | `std_excerpts.rs` `the_forward_guard_covers_part_vii` | yes |
 | C69 | `std_excerpts.rs` `a_missing_fence_is_named` | yes |
 | C70 | `std_excerpts.rs` `a_fence_one_character_off_is_not_found` | yes |
-| C71 | `std_excerpts.rs` `every_std_item_is_in_a_fence` | weak - the reverse guard accepts `rust,fragment` fences and matches by substring, looser than "inside a `rust` fence" (F5) |
-| C72 | `std_excerpts.rs` `every_std_behavior_block_is_in_a_fence` | weak - same matcher as C71: any non-compile_fail fence, substring match (F5) |
+| C71 | `std_excerpts.rs` `every_std_item_is_in_a_fence`, `the_reverse_guard_counts_only_valid_fences_by_whole_line` | yes (round 2) - `Class::Valid` fences only, whole consecutive lines (a trailing `//` comment on the last line allowed); control on a fragment fence and on a tail match |
+| C72 | `std_excerpts.rs` `every_std_behavior_block_is_in_a_fence` | yes (round 2) - same matcher as C71 |
 | C73 | `std_excerpts.rs` `prelude_items_outside_part_vii_are_shown_pub` | yes |
 | C74 | `std_excerpts.rs` `a_missing_item_is_named` | yes |
 | C75 | `std_excerpts.rs` `the_reverse_guard_covers_std` | yes |
@@ -128,7 +145,7 @@ Summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that 
 | C89 | `pom_resolve.rs` `k_b_resolves_to_std_constants` | yes |
 | C90 | `pom_resolve.rs` `transient_is_a_builtin_variant` | yes |
 | C91 | `pom_resolve.rs` `the_core_rows_are_unchanged` | yes |
-| C92 | `pom_resolve.rs` `a_model_constant_hides_the_prelude_constant` | no - built over an empty std (`support/pom.rs::build`), so there is no prelude `Q`/`PI` to hide; the test passes whatever the prelude does. Probe over the real std: behavior is correct (F1) |
+| C92 | `pom_resolve.rs` `a_model_constant_hides_the_prelude_constant` | yes (round 2) - built over the embedded std; the root's `Q` and `PI` must resolve into the root file, which fails if the prelude's constant won |
 | C93 | `std_library.rs` `the_fixture_prelude_is_gone` | yes |
 | C94 | `std_library.rs` `no_pom_test_was_removed` | yes - counts `#[test]` lines against the floors |
 | C95 | `pom_docs.rs` `the_builtin_table_doc_has_no_const_row` | yes |
@@ -143,7 +160,7 @@ Summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that 
 | C104 | `book.rs` `the_chapter_names_every_core_name` | yes |
 | C105 | `book.rs` `the_chapter_has_a_part_per_namespace` | yes |
 | C106 | `book.rs` `the_chapter_names_every_prelude_export` | yes |
-| C107 | `book.rs` `the_chapter_explains_the_prelude_and_the_engine_items` | weak - `std::prelude` is checked anywhere in the chapter, not under the "engine" heading; the criterion is ambiguous (F5) |
+| C107 | `book.rs` `the_chapter_explains_the_prelude_and_the_engine_items` | yes (round 2) - `std::prelude` in a heading, and named in a code span inside the engine part beside the five intrinsics |
 | C108 | `book.rs` `chapter_blocks_build_against_std` | yes |
 | C109 | `book.rs` `every_msl_block_parses` | yes |
 | C110 | `book.rs` `packages_and_cheatsheet_name_std` | yes |
@@ -157,8 +174,11 @@ Summary: 113 checks, 107 hold, 5 weak, 1 no. Two Medium findings (one test that 
 | --- | --- | --- | --- | --- | --- |
 | F1 C92's test cannot fail: `a_model_constant_hides_the_prelude_constant` builds over an empty std, so no prelude `Q` or `PI` exists to be hidden | Medium | `pom_resolve.rs` `a_model_constant_hides_the_prelude_constant` calls `build`, which is `support/pom.rs::build` = `std_source("lib.msl","pub mod prelude;\n").std_source("prelude.msl","")` | probe over the real std: `const Q: f64 = 1.0; const Y: f64 = Q; mod m { const PI: f64 = 3.0; const Z: f64 = PI; }` gives no diagnostic, `Q -> Q` and `PI -> m::PI` (root crate). Behaviour is right; the test does not hold it | build that test with `Design::builder().source("top.msl", ..)` (the embedded std), and assert both uses resolve to root declarations |  fixed c7749a1d |
 | F2 STD-06 AC 1 says "a visible trait"; `blanket_method` scans every `impl` of the design, so a carrier method links to a trait no scope can see, and the first impl in declaration order wins silently | Medium | `src/pom/resolve/members.rs:153` `blanket_method` iterates `0..decl_count()` with no visibility or ambiguity check; the T7 commit body names the gap; C29's test has no negative case for an invisible trait | `mod a { trait Hidden { fn zz(self) -> bool; } impl<T: Repr> Hidden for T { fn zz(self) -> bool { true } } }` + `module M(in p: Bit) { let x = p.zz(); }`: no diagnostic, `p.zz()` resolves to `a::Hidden.zz` | filter blanket impls to traits visible at the call (in scope or through the prelude); add the negative case to C29's test. If the orchestrator decides "all traits" is intended, amend STD-06 AC 1 with the user instead |  fixed 1254568a |
-| F3 `laplace_nd`'s proper rule is on array lengths only: a zero top coefficient (`den[D-1] == 0`) gives an improper H(s) and fewer poles than the `D-1` states rule 5 promises | Low | `std/analog.msl:250` `den: [f64; D] where den.iter().any(|d| *d != 0.0)`; §22.2.14 rule 4 states `N <= D` | `laplace_nd(v(a)) { num: [0.0, 1.0], den: [1.0, 0.0] }` builds with no diagnostic; by the body, the last row is `w[0] = x` and `y = ddt(x)`, H(s) = s (the case Q6 excluded). (The POM evaluates no `where`, so this is a spec/body gap, not a test gap) | add `den[D - 1] != 0.0` to the `where` of `den` in `laplace_nd` and Part VII (rule 3 or 4) |  fixed 48db0e3c |
+| F3 `laplace_nd`'s proper rule is on array lengths only: a zero top coefficient (`den[D-1] == 0`) gives an improper H(s) and fewer poles than the `D-1` states rule 5 promises | Low | `std/analog.msl:250` `den: [f64; D] where` (any element non-zero); §22.2.14 rule 4 states `N <= D` | `laplace_nd(v(a)) { num: [0.0, 1.0], den: [1.0, 0.0] }` builds with no diagnostic; by the body, the last row is `w[0] = x` and `y = ddt(x)`, H(s) = s (the case Q6 excluded). (The POM evaluates no `where`, so this is a spec/body gap, not a test gap) | add `den[D - 1] != 0.0` to the `where` of `den` in `laplace_nd` and Part VII (rule 3 or 4) |  fixed 48db0e3c |
 | F4 Part VII §22.2.4 Resolution says `pnjlim` is "the ngspice function … written in MSL, branch by branch"; ngspice's `DEVpnjlim` is not that function | Low | `/home/keslarek/Git/vams-corpus/sources/ngspice/src/spicelib/devices/devsup.c:50-84`: forward step `vold + vt*(2+log(arg-2))` with `arg = dv/vt`, a separate step for `arg <= 0`, and a reverse-bias branch (`vnew < 0` limited to `-vold-1` / `2*vold-1`). The std body is the SPICE3 form from `limit.rs` (`1 + dv/vt`, no reverse branch). `fetlim`/`limvds` do match devsup.c | read devsup.c beside `std/analog.msl:21-27` | reword the Resolution: "transliterated from Piperine's former `limit.rs` (the SPICE3 form)"; or port the current devsup.c branches (a user decision, since the spec chose `limit.rs`) |  fixed b45c08ae |
 | F5 Three assertions looser than their criterion: C17 checks only that `E0317` appears in §22.2.13/14; C71/C72's reverse guard accepts `rust,fragment` fences and matches by substring; C107 looks for `std::prelude` anywhere in the chapter, not under the "engine" heading | Low | `spec_text.rs` `e0707_is_replaced_by_e0317`; `std_excerpts.rs` `all_fence_texts` (filters only `CompileFail`) and `item_failures` (`f.contains(&wanted)`); `book.rs` `the_chapter_explains_the_prelude_and_the_engine_items` | e.g. moving a std item's only listing into a `rust,fragment` fence keeps C71 green | C17: assert the sentence that names both conditions; C71/72: take `Class::Valid` fences only; C107: settle the wording with the orchestrator, then assert where `std::prelude` sits |  fixed 9c24bd5a |
-| F6 Cost of the embedded std, measured: an empty design builds in 151 ms (debug), serializes to 745 KB JSON with 30 141 numeric leaves, `from_json` 160 ms. The 220 s fuzz is the test's shape (≈0.27 s per mutated leaf; the full fuzz over the real std would run about 4.5 h), not a slow POM | Info | probe `p1_timing` / `p5_from_json_sampled_over_real_std` at HEAD | 804 sampled mutations over the real std ran in 216 s with 0 panics (the S3 class did not reappear) | none required. Optional: let `Design` serialization skip the embedded std (it is reconstructible) | |
+| F6 Cost of the embedded std, measured: an empty design builds in 151 ms (debug), serializes to 745 KB JSON with 30 141 numeric leaves, `from_json` 160 ms. The 220 s fuzz is the test's shape (≈0.27 s per mutated leaf; the full fuzz over the real std would run about 4.5 h), not a slow POM | Info | probe `p1_timing` / `p5_from_json_sampled_over_real_std` at HEAD | 804 sampled mutations over the real std ran in 216 s with 0 panics (the S3 class did not reappear) | none required. Optional: let `Design` serialization skip the embedded std (it is reconstructible) | no change needed (Info), judged in verifier round 2 at 418f8d5a |
 | F7 `analysis(Tran)` in a model still builds with no diagnostic: `Tran` resolves to the module of `std::nets` | Info | probe: `module M() { let k = analysis(Tran); }`: diags `[]`, `Tran -> Decl(nets::Tran)` | as stated | none now (no type checker); the doc and Book guards stop the spelling in the specification. A later type pass should reject a module as an `Analysis` argument |  fixed 8937a8ac |
+| N1 (round 2) A model that declares any item named `Known` (a struct, a module) silently loses `known`, `known_or` and `is_known` on every carrier: `trait_in_scope` looks the trait up by its name, the model's item hides that name, and the call stays `Unresolved` with no diagnostic | Medium | `src/pom/resolve/imports.rs` `trait_in_scope`: `scope_lookup(ns, name, Prefer::Types, ..) == Some(Decl(tr))` | `struct Known { x: f64 }` + `module M(in d: Bit<u8>) { let k = d.known(); let o = d.known_or(0); }`: diags `[]`, both calls `Unresolved`; `module Known() {}` + `d.is_known()`: the same | decide the in-scope set from the imports and the prelude rather than from a lookup of the name (Rust: a trait imported by the prelude glob stays in scope for method calls when a local item takes its name); add the case to C29's test | |
+| N2 (round 2) A trait imported under another name (`use a::Hidden as H;`) is not in scope for its methods | Low | same function: the lookup is by the trait's declared name `Hidden`, which `as H` does not bind | `mod a { pub trait Hidden { fn zz(self) -> bool; } impl<T: Repr> Hidden for T { .. } }` + `use a::Hidden as H;` + `p.zz()`: `Unresolved`, no diagnostic | the same fix as N1 covers it (an import of the trait under any name puts it in scope) | |
+| N3 (round 2) F4 only partly closed: the Resolution of §22.2.4 calls `vold + vt·ln(1 + (vnew − vold)/vt)` "the forward-bias step of `DEVpnjlim`" and the test is titled "branch by branch", but `devsup.c` steps by `vt·(2 + ln(arg − 2))` / `−vt·(2 + ln(2 − arg))` with `arg = (vnew − vold)/vt` and has no `vcrit` fallback | Low | `/home/keslarek/Git/vams-corpus/sources/ngspice/src/spicelib/devices/devsup.c:54-61` against `std/analog.msl` `pnjlim` and `std_library.rs` `pnjlim_follows_ngspice_devpnjlim_branch_by_branch` (cases 1-3 assert the SPICE3 form) | read the two side by side | port the current forward step (the orchestrator decided "ngspice DEVpnjlim branch by branch"), or say in the Resolution that the forward step is the SPICE3 one | |
