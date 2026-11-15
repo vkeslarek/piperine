@@ -176,7 +176,7 @@ T6 → T7 → T8 → T9
 
 - [x] `callee(expr)` is `Callee::Function(decl)` for a call of a function
 - [x] A closure anywhere but as an argument whose parameter has a function type is `P0001`
-- [ ] `pnjlim` and `vt` of the embedded `std` check with no diagnostic (SPEC_DEVIATION: `pnjlim` calls `.abs()`/`.ln()` (T5 catalogue) and `vt` calls `temperature()` (T7 core table), so neither can check clean at T4; `pnjlim` is proven in T5, `vt` in T7)
+- [ ] `pnjlim` and `vt` of the embedded `std` check with no diagnostic (SPEC_DEVIATION: `pnjlim` calls `.abs()`/`.ln()` (T5 catalogue) and `vt` calls `temperature()` (T7 core table), so neither can check clean at T4; `pnjlim` is proven in T5 by `the_std_pnjlim_checks_clean`, `vt` in T7)
 - [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_call_takes_its_declared_result`, `a_closure_takes_its_types_from_the_parameter`, `a_recursive_function_is_typed_from_its_signature`, `a_closure_outside_an_argument_is_p0001`
 - [x] Gate check passes: `cargo test -p piperine-lang`
 - [x] Test count: the tests named above, and no existing test removed
@@ -199,11 +199,11 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] `method(expr)` of `(vd / nvt).exp()` in `tests/ngspice/devices.msl` is `Method::Exp`
-- [ ] A method outside the table (`powf`) is `P0001` naming it
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_deferred_method_is_resolved`, `catalogue_methods_on_f64_are_f64`
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
-- [ ] Test count: the tests named above, and no existing test removed
+- [ ] `method(expr)` of `(vd / nvt).exp()` in `tests/ngspice/devices.msl` is `Method::Exp` (SPEC_DEVIATION: the `Diode` of devices.msl also needs `limit`, `v(a, k)`, contributions and params (T6, T7), so the test proves the same expression form `(vd / nvt).exp()` in a function; the devices.msl instance is proven in T9)
+- [x] A method outside the table (`powf`) is `P0001` naming it
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_deferred_method_is_resolved`, `catalogue_methods_on_f64_are_f64`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

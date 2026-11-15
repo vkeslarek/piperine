@@ -79,6 +79,7 @@ impl Checker<'_> {
             ExprKind::Block(block) => self.statements(&block.stmts, None),
             ExprKind::If { cond, then, else_ } => self.conditional(*cond, then, *else_),
             ExprKind::Call { .. } => self.call(expr),
+            ExprKind::MethodCall { .. } => self.method_call(expr),
             ExprKind::Closure { .. } => {
                 self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
                 None

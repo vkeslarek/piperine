@@ -7,7 +7,7 @@
 mod support;
 
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, Reflect};
-use piperine_lang::types::{Callee, Ty, Types};
+use piperine_lang::types::{Callee, Method, Ty, Types};
 
 /// A design of `Top` with `body` as its analog block and `items` before it.
 fn source(items: &str, body: &str) -> String {
@@ -195,4 +195,44 @@ fn a_closure_outside_an_argument_is_p0001() {
     let (src, d) = diagnostics(FUNCTIONS, "let a = half(|x| x);");
     assert_eq!(codes_of(&d), ["P0001"]);
     assert_eq!(snippet(&src, &d[0]), "|x| x");
+}
+
+#[test]
+fn a_deferred_method_is_resolved() {
+    // The M1 diode's own form: `(vd / nvt).exp()`, in a function the module calls.
+    let items = "fn shockley(vd: f64, nvt: f64) -> f64 { (vd / nvt).exp() - 1.0 }";
+    let src = source(items, "let i = shockley(0.5, 0.026);");
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").expect("clean");
+    let call = (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::MethodCall { .. })).expect("a method call");
+    assert_eq!(types.method(call), Some(Method::Exp));
+    assert_eq!(types.ty(call), Some(&Ty::F64));
+
+    // A method outside the table is refused by name.
+    let (src, d) = diagnostics("fn p(a: f64) -> f64 { a.powf(2.0) }", "let x = p(1.0);");
+    assert_eq!(codes_of(&d), ["P0001"]);
+    assert!(d[0].diagnostic.message.contains("powf"), "{}", d[0].diagnostic.message);
+    assert_eq!(snippet(&src, &d[0]), "powf");
+}
+
+#[test]
+fn catalogue_methods_on_f64_are_f64() {
+    let items = "fn all(a: f64) -> f64 { a.exp() + a.ln() + a.sqrt() + a.abs() + 2.0_f64.sqrt() }";
+    let t = local_types(items, "let r = all(1.0);", &["r"]);
+    assert_eq!(t, [Ty::F64]);
+
+    // A method takes no argument; a bool receiver has no catalogue row.
+    let (_, d) = diagnostics("fn p(a: f64) -> f64 { a.exp(1.0) }", "let x = p(1.0);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    let (_, d) = diagnostics("fn p(a: bool) -> f64 { a.exp() }", "let x = p(true);");
+    assert_eq!(codes_of(&d), ["P0001"]);
+}
+
+#[test]
+fn the_std_pnjlim_checks_clean() {
+    let design = Design::builder().source("top.msl", "use std::analog::pnjlim;\nmodule Top() { }\nanalog for Top { let r = pnjlim(0.7, 0.6, 0.026, 0.6); }").build();
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    let pnjlim = design.function("pnjlim").expect("std pnjlim").decl().id();
+    assert!(types.reached().contains(&pnjlim));
 }

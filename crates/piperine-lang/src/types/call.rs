@@ -2,8 +2,9 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
-use crate::pom::{Arg, CallClass, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
+use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, PatKind, Resolution};
 
+use super::catalogue::Catalogue;
 use super::check::Checker;
 use super::unsupported::Unsupported;
 use super::{Callee, Ty};
@@ -86,6 +87,29 @@ impl Checker<'_> {
             self.check(arg.value, ty);
         }
         Some(())
+    }
+
+    /// A method call the POM left `Deferred` for want of the receiver's type: resolved against the
+    /// Appendix H catalogue, the row recorded.
+    pub(super) fn method_call(&mut self, expr: ExprId) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let ExprKind::MethodCall { recv, method, generics, args, res } = &node.kind else { return None };
+        if !matches!(res, Resolution::Deferred(DeferReason::ReceiverTypeUnknown)) || generics.is_some() {
+            self.unsupported(file, node.span, &format!("method `{}`", method.text));
+            return None;
+        }
+        let recv_ty = self.infer(*recv)?;
+        let Some(row) = Catalogue::method(&recv_ty, &method.text) else {
+            self.unsupported(file, method.span, &format!("method `{}` on `{}`", method.text, recv_ty.name(self.design)));
+            for arg in args {
+                self.infer(arg.value);
+            }
+            return None;
+        };
+        self.apply(expr, &[], args)?;
+        self.methods.insert(expr, row);
+        Some(Catalogue::result(row, &recv_ty))
     }
 
     /// A closure passed where `expected` is the declared type of the parameter. Anywhere else

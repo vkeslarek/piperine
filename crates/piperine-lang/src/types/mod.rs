@@ -8,6 +8,7 @@
 //! The result is a table or the reasons there is none, never both.
 
 mod call;
+mod catalogue;
 mod check;
 mod expr;
 mod table;
