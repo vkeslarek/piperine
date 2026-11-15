@@ -274,11 +274,11 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] One test row per language construct of the spec's Out of Scope table (integers, `match`, `struct`, loops, `let mut`, generics, `digital`, `Option`, tuples, arrays, references, templates, value inputs, module results, `extern`)
-- [ ] An item holding such a construct that the top does not reach raises nothing
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_subset`: `a_construct_outside_the_subset_is_p0001`, `p0001_names_the_construct`, `unreached_items_are_not_reported`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] One test row per language construct of the spec's Out of Scope table (integers, `match`, `struct`, loops, `let mut`, generics, `digital`, `Option`, tuples, arrays, references, templates, value inputs, module results, `extern`)
+- [x] An item holding such a construct that the top does not reach raises nothing
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_subset`: `a_construct_outside_the_subset_is_p0001`, `p0001_names_the_construct`, `unreached_items_are_not_reported`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

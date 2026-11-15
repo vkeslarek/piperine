@@ -1,7 +1,7 @@
 //! Analog forms: probes (`v(a, b)`, `potential`), contributions (`+>`) and the core primitives
 //! of the subset (`ddt`, `limit`, `ac_stim` and the environment functions of §14.4).
 
-use crate::pom::{Arg, BuiltinId, DeclKind, DeferReason, ExprId, ExprKind, QuantityRole, Resolution};
+use crate::pom::{Arg, BuiltinId, BuiltinKind, DeclKind, DeferReason, ExprId, ExprKind, QuantityRole, Resolution};
 
 use super::catalogue::{Allowed, Core};
 use super::check::{Checker, Context};
@@ -93,7 +93,8 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let Some(sig) = Core::signature(id) else {
-            self.unsupported(file, node.span, &format!("core primitive `{}`", id.name()));
+            let what = if matches!(id.info().kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Statement | BuiltinKind::Event) { "core primitive" } else { "built-in" };
+            self.unsupported(file, node.span, &format!("{what} `{}`", id.name()));
             return None;
         };
         if sig.allowed == Allowed::Analog && self.context == Context::Function {

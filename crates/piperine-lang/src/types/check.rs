@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BehaviorKind, BlockNode, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, Resolution, TypeId, TypeKind};
 
+use super::unsupported::Unsupported;
 use super::{Callee, Method, Ty, Types};
 
 /// Where the expression being checked is written: the §14 table allows a core primitive by it.
@@ -29,6 +30,9 @@ pub(super) struct Checker<'d> {
     pub(super) callees: BTreeMap<ExprId, Callee>,
     pub(super) reached: Vec<DeclId>,
     pub(super) context: Context,
+    /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
+    /// one diagnostic.
+    pub(super) poisoned: BTreeSet<DeclId>,
     queued: BTreeSet<DeclId>,
     queue: VecDeque<DeclId>,
     diagnostics: Vec<DesignDiagnostic>,
@@ -46,6 +50,7 @@ impl<'d> Checker<'d> {
             callees: BTreeMap::new(),
             reached: Vec::new(),
             context: Context::Module,
+            poisoned: BTreeSet::new(),
             queued: BTreeSet::new(),
             queue: VecDeque::new(),
             diagnostics: Vec::new(),
@@ -80,7 +85,7 @@ impl<'d> Checker<'d> {
             DeclKind::Module(_) => self.module(decl),
             DeclKind::Fn(_) => self.function(decl),
             DeclKind::Const(_) => self.constant(decl),
-            other => self.unsupported_decl(decl, other.label()),
+            other => self.unsupported_decl(decl, Unsupported::item(other)),
         }
     }
 
@@ -106,7 +111,7 @@ impl<'d> Checker<'d> {
     fn unsupported_decl(&mut self, decl: DeclId, what: &str) {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
-        self.unsupported(file, span, &format!("{} declaration", what.to_lowercase()));
+        self.unsupported(file, span, what);
     }
 
     /// `P0002`: a plain type mismatch at `span`, naming both types.
@@ -146,14 +151,19 @@ impl<'d> Checker<'d> {
                     }
                 },
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
+                Resolution::Decl(d) => {
+                    let what = Unsupported::item(&self.design.decl_data(d).kind);
+                    self.unsupported(file, node.span, &format!("{what} used as a type"));
+                    None
+                }
                 _ => {
                     self.unsupported(file, node.span, "this type");
                     None
                 }
             },
             TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
-            TypeKind::Tuple(_) => {
-                self.unsupported(file, node.span, "tuple type");
+            TypeKind::Tuple(_) | TypeKind::Array { .. } | TypeKind::Slice(_) | TypeKind::Ref { .. } | TypeKind::Flip(_) | TypeKind::Infer => {
+                self.unsupported(file, node.span, Unsupported::ty(&node.kind));
                 None
             }
             TypeKind::FnPtr { params, ret } => {
@@ -163,26 +173,6 @@ impl<'d> Checker<'d> {
                     None => Some(Ty::Unit),
                 };
                 Some(Ty::Fn(params?, Box::new(ret?)))
-            }
-            TypeKind::Array { .. } => {
-                self.unsupported(file, node.span, "array type");
-                None
-            }
-            TypeKind::Slice(_) => {
-                self.unsupported(file, node.span, "slice type");
-                None
-            }
-            TypeKind::Ref { .. } => {
-                self.unsupported(file, node.span, "reference type");
-                None
-            }
-            TypeKind::Flip(_) => {
-                self.unsupported(file, node.span, "`flip` type");
-                None
-            }
-            TypeKind::Infer => {
-                self.unsupported(file, node.span, "inferred type `_`");
-                None
             }
         }
     }
@@ -260,8 +250,12 @@ impl<'d> Checker<'d> {
     }
 
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
+        let before = self.diagnostics.len();
+        // A body that already raised a diagnostic is not also compared with its result: one
+        // mistake is one diagnostic.
         if let Some(found) = self.statements(&body.stmts, Some(ret))
             && found != *ret
+            && self.diagnostics.len() == before
         {
             self.mismatch(file, body.span, ret, &found);
         }
@@ -274,6 +268,7 @@ impl<'d> Checker<'d> {
         let DeclKind::Module(m) = &data.kind else { return };
         if data.generics_span.is_some() {
             self.unsupported(data.file, data.span, "generic module");
+            return;
         }
         if m.abi.is_some() {
             self.unsupported(data.file, data.span, "`extern` module");
@@ -313,7 +308,7 @@ impl<'d> Checker<'d> {
                 self.infer(instance);
             }
         }
-        if let Some(result) = m.result {
+        if let (Some(result), None) = (m.result, m.ret) {
             let file = self.file_of_expr(result);
             let span = self.design.expr_node(result).span;
             self.unsupported(file, span, "module result");

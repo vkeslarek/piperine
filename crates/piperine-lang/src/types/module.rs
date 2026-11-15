@@ -40,7 +40,7 @@ impl Checker<'_> {
                 }
             }
             other => {
-                self.unsupported(file, node.span, &format!("port or signal of type `{}`", other.name(self.design)));
+                self.unsupported(file, node.span, &format!("value input port of type `{}`", other.name(self.design)));
                 None
             }
         }
@@ -93,8 +93,13 @@ impl Checker<'_> {
             self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
             return;
         };
-        if let Some(ty) = ty {
-            self.locals.insert(*binding, ty);
+        match ty {
+            Some(ty) => {
+                self.locals.insert(*binding, ty);
+            }
+            None => {
+                self.poisoned.insert(*binding);
+            }
         }
     }
 
@@ -110,13 +115,19 @@ impl Checker<'_> {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
             ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
             _ => {
-                self.unsupported(file, node.span, "placement through a template value or a function");
+                if !self.reads_poisoned(*callee) {
+                    self.unsupported(file, node.span, "placement through a template value or a function");
+                }
                 for arg in args {
                     self.infer(arg.value);
                 }
                 return None;
             }
         };
+        if self.design.decl_data(module).generics_span.is_some() {
+            self.unsupported(file, node.span, "generic module");
+            return None;
+        }
         self.reach(module);
         self.callees.insert(expr, Callee::Module(module));
         let ty = Ty::Module(module);
@@ -124,6 +135,14 @@ impl Checker<'_> {
         self.connections(expr, module, args, file);
         self.param_block(&fields);
         Some(ty)
+    }
+
+    /// Whether `expr` is a name whose value already raised a diagnostic.
+    fn reads_poisoned(&self, expr: ExprId) -> bool {
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.poisoned.contains(&d)),
+            _ => false,
+        }
     }
 
     fn callee_is(&self, callee: ExprId, module: DeclId) -> bool {

@@ -2,7 +2,7 @@
 //! otherwise. A mismatch is one `P0002` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
-use crate::pom::{BinOp, BlockNode, BuiltinKind, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
+use crate::pom::{BinOp, BlockNode, BuiltinKind, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
 use crate::stack;
 
 use super::check::Checker;
@@ -85,6 +85,10 @@ impl Checker<'_> {
             ExprKind::MethodCall { .. } => self.method_call(expr),
             ExprKind::Closure { .. } => {
                 self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
+                None
+            }
+            ExprKind::Struct { class: StructClass::Template(_), .. } => {
+                self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
                 None
             }
             other => {
@@ -202,7 +206,7 @@ impl Checker<'_> {
                     DeclKind::Signal(s) => self.node_type(s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         let local = self.locals.get(&decl).cloned();
-                        if local.is_none() {
+                        if local.is_none() && !self.poisoned.contains(&decl) {
                             self.unsupported(file, node.span, "a name whose type is unknown");
                         }
                         local
@@ -213,7 +217,7 @@ impl Checker<'_> {
                         Some(Ty::Fn(params, Box::new(ret)))
                     }
                     other => {
-                        self.unsupported(file, node.span, &format!("a name of a {}", other.label().to_lowercase()));
+                        self.unsupported(file, node.span, &format!("{} used as a value", Unsupported::item(&other)));
                         None
                     }
                 }
@@ -282,7 +286,10 @@ impl Checker<'_> {
         let annotated = match ty {
             Some(t) => match self.lower_type(t) {
                 Some(t) => Some(t),
-                None => return,
+                None => {
+                    self.poisoned.insert(*binding);
+                    return;
+                }
             },
             None => None,
         };
@@ -297,8 +304,13 @@ impl Checker<'_> {
                 None
             }
         };
-        if let Some(t) = bound {
-            self.locals.insert(*binding, t);
+        match bound {
+            Some(t) => {
+                self.locals.insert(*binding, t);
+            }
+            None => {
+                self.poisoned.insert(*binding);
+            }
         }
     }
 }
