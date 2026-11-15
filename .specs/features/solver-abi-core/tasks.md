@@ -574,7 +574,7 @@ Proof: run owner | test a_write_is_committed_only_after_the_shadow_accepts ... o
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 at dd805f01
 **Walked:** not applicable - no screen
 
 ---
