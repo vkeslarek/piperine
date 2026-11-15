@@ -498,9 +498,11 @@ three hold:
 1. **Update.** Every unknown moved by at most `reltol · max(|x|, |x_old|) + abstol`. `abstol`
    is the nature's: for a node, the smallest potential `abstol` of the natures meeting there;
    for a branch unknown, its flow `abstol`.
-2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`. For a node's row
-   `abstol` is the flow `abstol` of its nature. For the row of a branch with a potential
-   contribution it is the potential `abstol`.
+2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`. A node's row is
+   tested against the potential `abstol` of that node (the smallest potential `abstol` of the
+   natures meeting there, default 1 µV). A branch row is tested against the flow `abstol`
+   (default 1 pA). This is the mapping the reference implementation's ngspice parity was
+   validated with.
 3. **Limiting.** No `limit` instance is active (§18 rule 5).
 4. A non-finite value in an unknown, a residual or a Jacobian entry fails the solve
    (`E0507`).
@@ -509,7 +511,7 @@ three hold:
 
 > **Resolution.** In rule 2, `scale` is the largest magnitude among the terms summed in the
 > row. Where several natures meet at a node (§4 rule 5), the row uses the smallest of their
-> flow `abstol`s, by symmetry with rule 1.
+> potential `abstol`s, as rule 1 does.
 
 > **Resolution.** A node of a nature without `flow` has no row of its own. Its potential is
 > set by the row of its one potential driver (§6 rule 2).

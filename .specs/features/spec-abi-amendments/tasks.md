@@ -282,12 +282,12 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] Rule 2 says: a node's row is tested against the potential `abstol` of that node (the smallest potential `abstol` of the natures meeting there, default 1 µV), a branch row against the flow `abstol` (default 1 pA), each plus `reltol · scale`
-- [ ] A sentence says this is the mapping the reference implementation's ngspice parity was validated with
-- [ ] Rule 1 (the update test) is compared with `Tolerances::has_converged` and corrected only where it states something the code does not do
-- [ ] C.2.1's tolerance row agrees with the rule
-- [ ] Test `residual_test_uses_the_present_mapping` asserts, inside `### 17.1`, that the sentence of rule 2 about a node's row contains `potential` and the one about a branch row contains `flow`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] Rule 2 says: a node's row is tested against the potential `abstol` of that node (the smallest potential `abstol` of the natures meeting there, default 1 µV), a branch row against the flow `abstol` (default 1 pA), each plus `reltol · scale`
+- [x] A sentence says this is the mapping the reference implementation's ngspice parity was validated with
+- [x] Rule 1 (the update test) is compared with `Tolerances::has_converged` and corrected only where it states something the code does not do
+- [x] C.2.1's tolerance row agrees with the rule
+- [x] Test `residual_test_uses_the_present_mapping` asserts, inside `### 17.1`, that the sentence of rule 2 about a node's row contains `potential` and the one about a branch row contains `flow`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full

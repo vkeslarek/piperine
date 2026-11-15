@@ -1228,3 +1228,13 @@ fn reference_rows_describe_the_kept_jump() {
     let restart = c.lines().find(|l| l.starts_with("| restart")).expect("restart row");
     assert!(restart.contains("set"), "{restart}");
 }
+
+#[test]
+fn residual_test_uses_the_present_mapping() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "### 17.1"));
+    let node = s.split(". ").find(|x| x.contains("node's row is tested")).expect("node sentence");
+    assert!(node.contains("potential"), "{node}");
+    let branch = s.split(". ").find(|x| x.contains("branch row is tested")).expect("branch sentence");
+    assert!(branch.contains("flow"), "{branch}");
+}
