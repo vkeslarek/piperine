@@ -71,7 +71,11 @@ impl Digital {
         let mut out = Outcome::default();
         let mut boundary: BTreeSet<NetId> = BTreeSet::new();
         let mut fired: BTreeSet<NetId> = BTreeSet::new();
-        let mut n = 0u32;
+        // An instant suspended for the host's waiters continues where it stopped.
+        let mut n = match self.suspended.take() {
+            Some((tick, microstep)) if tick == at && !lookahead => microstep,
+            _ => 0,
+        };
         loop {
             let here = (at, n);
             self.store.begin_microstep();
@@ -125,7 +129,8 @@ impl Digital {
                 if analog_now || probing {
                     return Ok(Stepped::Landing { time_point: true });
                 }
-                if irreversible {
+                let waited = self.waited.iter().any(|w| self.store.fired(*w));
+                if irreversible || waited {
                     return Ok(Stepped::Landing { time_point: false });
                 }
             }
@@ -142,6 +147,16 @@ impl Digital {
             out.finish |= ran.finish;
             self.obs.flush();
             out.microsteps = n + 1;
+
+            // A host waiter's event fired: suspend until the host has answered (abi.md §5 R7).
+            let host_events: Vec<NetId> = self.waited.iter().copied().filter(|w| self.store.fired(*w)).collect();
+            if !lookahead && !host_events.is_empty() {
+                self.suspended = Some((at, n + 1));
+                out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
+                out.fired = fired.into_iter().collect();
+                out.host_events = host_events;
+                return Ok(Stepped::Done(out));
+            }
 
             // the next microstep runs when a commit to a net that is not QUIET is due at it
             let next = (at, n + 1);

@@ -64,6 +64,10 @@ pub struct Outcome {
     pub finish: bool,
     /// How many microsteps ran.
     pub microsteps: u32,
+    /// Event nets with a host waiter (`Digital::wait`) that fired in the last microstep run. When
+    /// not empty the instant is suspended: host commits made now are due at its next microstep,
+    /// and the next `run_instant` at the same tick continues it (abi.md §5 R7).
+    pub host_events: Vec<NetId>,
 }
 
 /// The engine's state at one point: the store, the queue, how many observations existed, and the
@@ -77,6 +81,7 @@ pub struct Checkpoint {
     now: Tick,
     call: u32,
     running: bool,
+    suspended: Option<(Tick, u32)>,
 }
 
 /// The discrete engine over a bound plan.
@@ -93,6 +98,10 @@ pub struct Digital {
     /// Numbers the commits of a microstep (abi.md §6 C2).
     pub(crate) call: u32,
     pub(crate) running: bool,
+    /// Event nets a host waiter listens to (abi.md §5 R7): an `IRREVERSIBLE` reaction of the host's.
+    pub(crate) waited: Vec<NetId>,
+    /// An instant suspended for the host's waiters: its tick and the microstep it continues at.
+    pub(crate) suspended: Option<(Tick, u32)>,
 }
 
 impl Digital {
@@ -109,6 +118,8 @@ impl Digital {
             now: Tick(0),
             call: 0,
             running: false,
+            waited: Vec::new(),
+            suspended: None,
         }
     }
 
@@ -122,6 +133,7 @@ impl Digital {
         self.now = Tick(0);
         self.call = 0;
         self.running = true;
+        self.suspended = None;
         for (i, net) in self.plan.nets.iter().enumerate() {
             if net.init.is_empty() {
                 continue;
@@ -157,7 +169,8 @@ impl Digital {
         }
     }
 
-    /// A commit by the host, due at microstep 0 of `at` (abi.md §6 C6).
+    /// A commit by the host, due at microstep 0 of `at` (abi.md §6 C6); while the instant `at` is
+    /// suspended for the host's waiters, due at the microstep it continues at (R7).
     ///
     /// A write to a `STRUCTURAL` net while a run is in progress is refused, and nothing changes (P5).
     pub fn host_commit(&mut self, net: NetId, offset: u32, bytes: &[u8], at: Tick) -> Result<(), DigitalError> {
@@ -183,10 +196,22 @@ impl Digital {
             statement: 0,
             made: (self.now, 0),
             call: self.call,
-            due: (at, 0),
+            due: match self.suspended {
+                Some((tick, microstep)) if tick == at => (at, microstep),
+                _ => (at, 0),
+            },
         };
         self.queue.push(pending, false);
         Ok(())
+    }
+
+    /// Registers a host waiter on event net `net` (abi.md §5 R7): the host is an `IRREVERSIBLE`
+    /// reaction on it. A look-ahead stops before an instant that fires it; `run_instant` suspends
+    /// that instant after the microstep it fired in and reports it in `Outcome::host_events`.
+    pub fn wait(&mut self, net: NetId) {
+        if !self.waited.contains(&net) {
+            self.waited.push(net);
+        }
     }
 
     /// Fires event net `net`: a commit due at microstep 0 of `at` (abi.md §6 C6).
@@ -210,6 +235,7 @@ impl Digital {
             now: self.now,
             call: self.call,
             running: self.running,
+            suspended: self.suspended,
         }
     }
 
@@ -223,6 +249,7 @@ impl Digital {
         self.now = cp.now;
         self.call = cp.call;
         self.running = cp.running;
+        self.suspended = cp.suspended;
     }
 
     /// Checks a host write to a `PARAM` or `GLOBAL` net before it is committed (abi.md P6): the

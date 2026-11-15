@@ -10,6 +10,7 @@ mod devices;
 
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
+use piperine_digital_solver::abi::advance::Advance;
 use piperine_digital_solver::abi::engine::{Digital, Horizon, Mode, Shadow};
 use piperine_digital_solver::abi::net::{NetId, NetSpec};
 use piperine_digital_solver::abi::observe::Observation;
@@ -123,4 +124,44 @@ fn reshape_on_the_shadow_names_the_instance_and_changes_nothing() {
     assert_eq!(d.shadow(net(&d, "c.r"), 0, &f64_bytes(500.0)).unwrap(), Shadow::Reshape { instance: "c".into() });
     assert_eq!(d.checkpoint(), before);
     assert_eq!(d.read(net(&d, "c.r")), f64_bytes(1.0));
+}
+
+#[test]
+fn a_waited_event_suspends_its_instant_until_the_host_answers() {
+    // abi.md §5 R7: a host waiter is an IRREVERSIBLE reaction on its event net.
+    let mut d = started(engine_with(
+        vec![
+            ("set", setter(), vec![("up", "up"), ("out", "out")]),
+            ("inv", inverter(), vec![("a", "a"), ("y", "y")]),
+        ],
+        |_| {},
+    ));
+    let up = net(&d, "up");
+    d.wait(up);
+    d.fire(up, Tick(5)).unwrap();
+    // The look-ahead stops before the instant, untouched: a landing that is not a time point.
+    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(5), time_point: false });
+    assert_eq!(d.read(net(&d, "out")), [0, 0]);
+
+    let limit = Horizon::uniform(Tick(10));
+    let first = d.run_instant(Tick(5), &[], limit, Mode::default()).unwrap();
+    assert_eq!(first.host_events, vec![up], "suspended after the microstep `up` fired in");
+    assert_eq!(d.read(net(&d, "out")), [0, 0], "the setter's commit waits for the next microstep");
+    // The host answers: its write is due at the microstep the instant continues at.
+    d.host_commit(net(&d, "a"), 0, &HIGH, Tick(5)).unwrap();
+    let rest = d.run_instant(Tick(5), &[], limit, Mode::default()).unwrap();
+    assert!(rest.host_events.is_empty());
+    assert_eq!(d.read(net(&d, "out")), HIGH);
+    assert_eq!(d.read(net(&d, "a")), HIGH);
+    assert_eq!(d.read(net(&d, "y")), LOW, "the host's write ran its readers");
+    let at_a: Vec<_> = d
+        .observations()
+        .iter()
+        .filter_map(|o| match o {
+            Observation::Change { net, at, .. } if net.as_str() == "a" => Some(*at),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(at_a, vec![(Tick(5), 1)], "applied at the next microstep of the instant");
+    assert_eq!(d.next_due(), None, "nothing left over");
 }
