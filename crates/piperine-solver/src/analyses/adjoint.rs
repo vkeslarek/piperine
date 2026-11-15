@@ -51,17 +51,20 @@ pub struct AdjointOptions {
     /// still one solve, regardless.
     pub output_ref: Option<Net>,
     pub params: Vec<(String, String)>,
+    /// For a circuit of devices: difference `∂F/∂p` by re-evaluation instead of
+    /// the declared partials (the oracle of the declared route).
+    pub finite_difference_only: bool,
 }
 
 impl AdjointOptions {
     pub fn new(output: Net, params: Vec<(String, String)>) -> Self {
-        Self { output, output_ref: None, params }
+        Self { output, output_ref: None, params, finite_difference_only: false }
     }
 
     /// Differential output `output − output_ref` — the shape a margin on
     /// `V(a, b)` needs. One transpose solve still serves every parameter.
     pub fn new_diff(output: Net, output_ref: Net, params: Vec<(String, String)>) -> Self {
-        Self { output, output_ref: Some(output_ref), params }
+        Self { output, output_ref: Some(output_ref), params, finite_difference_only: false }
     }
 }
 
@@ -147,7 +150,9 @@ impl<'a> AdjointSolver<'a> {
         //    `accept_and_run_digital`, so the adjoint seeds the same way
         //    before reading `param_stamps` — the JIT kernel reads its
         //    cached terminal voltages off the accept-gated `last_volts`).
-        let _ = self.circuit.accept_and_run_digital(&op, 0.0);
+        if self.circuit.abi.is_none() {
+            let _ = self.circuit.accept_and_run_digital(&op, 0.0);
+        }
 
         // 4. Re-stamp the Jacobian once at the converged op. Only Matrix
         //    entries feed the transpose solve's LHS; the residual Rhs the
@@ -195,6 +200,9 @@ impl<'a> AdjointSolver<'a> {
         //    (analytic vs stamp-perturbation, DVG-07) and which elements
         //    used the fallback — propagated onto the result.
         let mut collector = ParamStampCollector::new(self.circuit, self.context.clone());
+        if self.options.finite_difference_only {
+            collector = collector.finite_difference_only();
+        }
         let out_label = self.options.output.label().to_string();
         let mut d = HashMap::new();
         for (label, param) in &self.options.params {
@@ -231,6 +239,16 @@ fn restamp_jacobian(
     op: &[f64],
     ctx: &Context,
 ) -> Result<Vec<Stamp<AnalogReference, f64>>> {
+    if let Some(bound) = circuit.abi.as_mut() {
+        let amb = piperine_analog_solver::device::Ambient {
+            time: 0.0,
+            freq: 0.0,
+            is_static: true,
+            gmin: ctx.tolerances.gmin,
+            source_scale: 1.0,
+        };
+        return bound.analog.assemble_dc(op, amb);
+    }
     let mut buf = CircularArrayBuffer2::new(1, op.len());
     let row = Array1::from_vec(op.to_vec());
     buf.push(&row.view());

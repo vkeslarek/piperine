@@ -17,6 +17,11 @@
 use std::collections::{HashMap, HashSet};
 
 use ndarray::Array1;
+use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::raw::{Cell, cell, leaf, part, pin_flag, role};
+use piperine_analog_solver::device::Ambient;
+use piperine_digital_solver::abi::net::NetId;
+use crate::core::bind::{Bound, Site};
 
 use crate::analyses::context::Context;
 use crate::analyses::dc::DcAnalysisState;
@@ -74,11 +79,21 @@ pub struct ParamStampCollector<'a> {
     context: Context,
     /// Labels of elements that used the stamp-perturbation fallback.
     pub fallback_users: HashSet<String>,
+    /// Skip the declared partials of a circuit of devices and always difference
+    /// by re-evaluation (the oracle of the declared route).
+    force_fallback: bool,
 }
 
 impl<'a> ParamStampCollector<'a> {
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> Self {
-        Self { circuit, context, fallback_users: HashSet::new() }
+        Self { circuit, context, fallback_users: HashSet::new(), force_fallback: false }
+    }
+
+    /// For a circuit of devices: difference by re-evaluation only, ignoring the
+    /// declared partials against params.
+    pub fn finite_difference_only(mut self) -> Self {
+        self.force_fallback = true;
+        self
     }
 
     /// Collect `∂F/∂param` for `req` at the converged operating point `op`
@@ -87,6 +102,9 @@ impl<'a> ParamStampCollector<'a> {
     /// same voltages. Fails loud (reusing `.sens`'s rule) for an unknown
     /// element/parameter, a rebuild-class parameter, or a non-Real parameter.
     pub fn collect(&mut self, req: &ParamRequest, op: &[f64]) -> Result<ParamDerivative> {
+        if self.circuit.abi.is_some() {
+            return self.collect_device(req, op);
+        }
         // Admissibility + metadata first — a short mutable borrow of the one
         // device, released before the netlist read (fallback) re-borrows.
         let (param_idx, value, has_kernel) = {
@@ -175,6 +193,103 @@ impl<'a> ParamStampCollector<'a> {
         let ctx = self.context.clone();
         let device = self.find_device(&req.label)?;
         let stamps = perturb(device, &req.param, value, op, &ref_map, &ctx)?;
+        Ok(ParamDerivative {
+            label: req.label.clone(),
+            param: req.param.clone(),
+            stamps,
+            engine: SensitivityEngine::StampPerturbation,
+        })
+    }
+
+    /// `∂F/∂param` of a circuit of devices. The param is addressed by instance
+    /// path and `PARAM` pin name. The declared route seeds the partials against
+    /// the param's pin and, chained through the declared partials of the
+    /// discrete functions between it and the terms, against every pin the
+    /// param reaches (abi.md §10 "Host procedures"); where no declared path
+    /// reaches a term the derivative is a finite difference by re-evaluation at
+    /// the same operating point (F5). A `STRUCTURAL` param fails loud: a
+    /// derivative across a rebuild is not a sensitivity.
+    fn collect_device(&mut self, req: &ParamRequest, op: &[f64]) -> Result<ParamDerivative> {
+        let tolerances = self.context.tolerances.clone();
+        let ref_map = index_refs(self.circuit.netlist().all_references());
+        let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
+        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let Some(inst) = bound.names.instances.iter().position(|p| *p == req.label) else {
+            return Err(sens(format!("no instance `{}`", req.label)));
+        };
+        let shape = bound.analog.plan().shape(inst);
+        let params: Vec<&str> = shape.pins.iter().filter(|p| p.role == role::PARAM).map(|p| p.name.as_str()).collect();
+        let Some(pin) = shape.pins.iter().find(|p| p.role == role::PARAM && p.name.as_str() == req.param) else {
+            return Err(sens(format!(
+                "`{}` declares no parameter `{}`; available: {}",
+                req.label,
+                req.param,
+                if params.is_empty() { "(none)".to_string() } else { params.join(", ") }
+            )));
+        };
+        if pin.flags & pin_flag::STRUCTURAL != 0 {
+            return Err(sens(format!(
+                "`{}.{}` is STRUCTURAL — sensitivities are only defined for params a host may write during a run",
+                req.label, req.param
+            )));
+        }
+        let real = pin.layout.fields.iter().next().is_some_and(|f| f.leaf == leaf::F64);
+        if !real {
+            return Err(sens(format!("`{}.{}` is not Real-typed — only Real parameters are differentiable", req.label, req.param)));
+        }
+        let net = bound.names.params[&(req.label.clone(), req.param.clone())];
+        let amb = Ambient { time: 0.0, freq: 0.0, is_static: true, gmin: tolerances.gmin, source_scale: 1.0 };
+
+        if !self.force_fallback {
+            let derivs = net_derivatives(bound, net)?;
+            let mut stamps = Vec::new();
+            for j in 0..bound.names.instances.len() {
+                let wrt: Vec<(u32, f64)> = bound.names.pins[j]
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(pi, site)| match site {
+                        Site::Net(n) => derivs.get(n).map(|d| (pi as u32, *d)),
+                        _ => None,
+                    })
+                    .collect();
+                if !wrt.is_empty() {
+                    stamps.extend(bound.analog.param_stamps(j, &wrt, op, amb)?);
+                }
+            }
+            if !stamps.is_empty() {
+                return Ok(ParamDerivative {
+                    label: req.label.clone(),
+                    param: req.param.clone(),
+                    stamps,
+                    engine: SensitivityEngine::Analytic,
+                });
+            }
+        }
+
+        // No declared path (or forced): difference two evaluations at the same iterate.
+        self.fallback_users.insert(req.label.clone());
+        let Some(slot) = bound.names.slots.get(&net).copied() else {
+            // No analog function reads the param: the residual does not depend on it.
+            return Ok(ParamDerivative {
+                label: req.label.clone(),
+                param: req.param.clone(),
+                stamps: Vec::new(),
+                engine: SensitivityEngine::StampPerturbation,
+            });
+        };
+        let init = bound.digital.plan().nets[net.0 as usize].init.clone();
+        let value = init.get(..8).and_then(|b| b.try_into().ok()).map_or(0.0, f64::from_le_bytes);
+        let dp = step(value);
+        // Central difference: the same iterate, the param moved by `±dp`.
+        let mut at = |v: f64| -> Result<Vec<Stamp<AnalogReference, f64>>> {
+            let mut moved = init.clone();
+            moved[..8].copy_from_slice(&v.to_le_bytes());
+            bound.analog.set_discrete(slot, &moved);
+            bound.analog.assemble_dc(op, amb)
+        };
+        let (plus, minus) = (at(value + dp), at(value - dp));
+        bound.analog.set_discrete(slot, &init);
+        let stamps = diff_residual(&minus?, &plus?, op, 2.0 * dp, &ref_map);
         Ok(ParamDerivative {
             label: req.label.clone(),
             param: req.param.clone(),
@@ -324,4 +439,69 @@ fn diff_residual(
         }
     }
     out
+}
+
+/// The derivative of every net's bytes with respect to the param on `net`: 1 on the
+/// param's own net, and across each discrete function the sum over its declared
+/// partials (read net derivative times the partial), evaluated at the engine's
+/// present net values.
+fn net_derivatives(bound: &Bound, net: NetId) -> Result<HashMap<NetId, f64>> {
+    let plan = bound.digital.plan();
+    let mut edges: Vec<(NetId, NetId, f64)> = Vec::new();
+    for node in plan.analysis().functions() {
+        let inst = &plan.instances[node.instance as usize];
+        let shape = inst.handle.shape();
+        let f = shape.functions.get(node.k as usize).expect("an analyzed function");
+        if f.partials.is_empty() {
+            continue;
+        }
+        let net_of = |c: &Cell| match (c.kind == cell::PIN).then(|| bound.names.pins[node.instance as usize].get(c.index as usize)) {
+            Some(Some(Site::Net(n))) => Some(*n),
+            _ => None,
+        };
+        let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
+        let reads = cell_lens(shape, &f.reads, Access::FunctionRead).ok_or_else(|| sens(format!("{}: bad read cells", inst.path)))?;
+        let writes = cell_lens(shape, &f.writes, Access::FunctionWrite).ok_or_else(|| sens(format!("{}: bad write cells", inst.path)))?;
+        let inputs: Vec<Vec<u8>> = f
+            .reads
+            .iter()
+            .zip(&reads)
+            .map(|(c, len)| match net_of(c).filter(|_| c.part == part::VALUE) {
+                Some(n) => {
+                    let mut b = bound.digital.read(n).to_vec();
+                    b.resize(*len, 0);
+                    b
+                }
+                None => vec![0; *len],
+            })
+            .collect();
+        let input: Vec<&[u8]> = inputs.iter().map(Vec::as_slice).collect();
+        let mut out: Vec<Vec<u8>> = writes.iter().map(|n| vec![0; *n]).collect();
+        let mut output: Vec<&mut [u8]> = out.iter_mut().map(Vec::as_mut_slice).collect();
+        let mut jac = vec![0.0; f.partials.len()];
+        let seed = vec![1u8; f.partials.len()];
+        inst.handle
+            .eval(node.k, &input, &mut output, &seed, &mut jac)
+            .map_err(|e| sens(format!("instance `{}`: function `{}`: {e}", inst.path, f.name.as_str())))?;
+        for (pi, p) in f.partials.iter().enumerate() {
+            let (Some(r), Some(w)) = (f.reads.get(p.read as usize), f.writes.get(p.write as usize)) else { continue };
+            if let (Some(rn), Some(wn)) = (net_of(r), net_of(w)) {
+                edges.push((rn, wn, jac[pi]));
+            }
+        }
+    }
+    let mut derivs: HashMap<NetId, f64> = HashMap::from([(net, 1.0)]);
+    for _ in 0..=edges.len() {
+        let mut next: HashMap<NetId, f64> = HashMap::from([(net, 1.0)]);
+        for (rn, wn, g) in &edges {
+            if let Some(d) = derivs.get(rn) {
+                *next.entry(*wn).or_default() += g * d;
+            }
+        }
+        if next == derivs {
+            break;
+        }
+        derivs = next;
+    }
+    Ok(derivs)
 }

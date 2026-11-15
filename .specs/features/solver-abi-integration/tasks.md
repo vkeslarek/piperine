@@ -276,12 +276,12 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] A param is addressed by instance path and pin name; partials against the param's pin are seeded only here
-- [ ] A derivative chains through the partials of a discrete function between the param and the term (a test device with a derived conductance)
-- [ ] Test `sensitivity_uses_declared_partials_and_falls_back_to_a_finite_difference` passes: equal results from both routes within 1e-6 relative on the divider
-- [ ] Test `a_structural_param_sensitivity_fails_loud` passes
-- [ ] The `Element` branch and its tests are unchanged
-- [ ] Gate: full
+- [x] A param is addressed by instance path and pin name; partials against the param's pin are seeded only here
+- [x] A derivative chains through the partials of a discrete function between the param and the term (a test device with a derived conductance)
+- [x] Test `sensitivity_uses_declared_partials_and_falls_back_to_a_finite_difference` passes: equal results from both routes within 1e-6 relative on the divider
+- [x] Test `a_structural_param_sensitivity_fails_loud` passes
+- [x] The `Element` branch and its tests are unchanged
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
