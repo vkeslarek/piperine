@@ -10,7 +10,7 @@ The interpreter (`ir-interp`) proves the chain from MSL to the solver on the M1 
 
 - [ ] The five M1 device bodies are printed as readable Rust, compiled with `rustc` alone, cached by hash and loaded through `piperine_abi_1`.
 - [ ] Every function of every M1 body gives the interpreter's bytes on the compiled backend, and the seven ngspice twins pass on the compiled backend under the unchanged `ToleranceContract`.
-- [ ] A second build of an unchanged design invokes `rustc` zero times; no analysis and no `set` ever invokes it.
+- [ ] A second build of an unchanged design runs no compilation (only the `rustc -vV` probe its cache key needs); no analysis and no `set` ever invokes `rustc`.
 - [ ] The digital and mixed forms the buck needs (integers, unknown values, carriers, drives, events, reactions, commits, the two crossings of the boundary) exist in the IR, in the shape plan and in the generated Rust, and behave on the solver as `docs/spec/` and `examples/buck/SPEC.md` say.
 
 ## Out of Scope
@@ -58,6 +58,7 @@ Every RS-Q of the draft is settled here under R4 (`.specs/features/codegen/conte
 | `as` from a float to `UInt<N>`/`Int<N>` (buck `GAPS.md` G4) | saturates to the range of the `N`-bit type; NaN gives 0 | §1 rule 1 "as in Rust", read at the type's own width. The buck clamps before the cast, so it is the same under either reading. The language text should say it: reported, not blocking | y (R4 delegation) |
 | A shift by `N` or more | the mathematical result truncated to `N` bits: `<<` gives 0, `>>` gives 0 for `UInt` and the sign fill for `Int` | no rule in `docs/spec/`; a result that does not depend on the storage width is the only reading consistent with §1 rule 6. Reported, not blocking | y (R4 delegation) |
 | `rise()`, `fall()` in the IR | the IR holds two core event sources, `changed` of a carrier and `cross` of a real expression, each with an optional `bool` guard read at the microstep; `rise` is `changed` guarded by "known and true" | §13: `rise` is stdlib over `changed`; §12.1 ("a reaction that must ignore it says so") makes unknown to true a rise | y |
+| RS-04 AC 1: a warm build and `rustc` | a warm build runs `rustc -vV` (the version text the cache key of RS-Q3 hashes) and zero compilations; the criterion read "invokes the compiler zero times", which the key itself contradicts. Consequence accepted: a warm cache does not load without a `rustc` on the machine | orchestrator ruling 2026-11-15, F6 (verification of phase A); the alternative, caching the `-vV` text by compiler path and mtime, is not taken | y |
 | `LATER` on a statement | set only when the commit's delay is a literal constant greater than 0, with `min_after` that constant; every other statement has no flag | abi.md C1: a generator sets `LATER` only where it can state a bound | y (R4 delegation) |
 
 **Open questions:** none - all resolved or logged above.
@@ -148,7 +149,7 @@ Phase A is complete and mergeable without phase B.
 
 **Acceptance Criteria**:
 
-1. WHEN a design whose generated source is unchanged is built a second time THEN the system SHALL invoke the compiler zero times and SHALL load the cached library.
+1. WHEN a design whose generated source is unchanged is built a second time THEN the system SHALL run no compilation (it MAY run `rustc -vV`, the version probe the cache key of RS-Q3 needs, and nothing else) and SHALL load the cached library.
 2. WHEN a change to the `Ir` changes the generated source THEN the system SHALL build and load a different cache entry.
 3. WHEN the output of `rustc -vV` differs between two builds THEN the system SHALL use different cache entries.
 4. WHEN two builds of one design run at the same time on an empty cache THEN the system SHALL complete both and SHALL leave one complete entry.
@@ -158,7 +159,7 @@ Phase A is complete and mergeable without phase B.
 8. IF the cache directory cannot be created or written THEN the system SHALL fail before any analysis with an error naming the directory.
 9. The system SHALL place the cache under `PIPERINE_CACHE_DIR`, else `$XDG_CACHE_HOME/piperine`, else `$HOME/.cache/piperine`, else `%LOCALAPPDATA%\piperine`.
 
-**Independent Test**: build a design twice with a compiler wrapper that counts invocations; the second count is 0.
+**Independent Test**: build a design twice with a compiler wrapper that counts invocations; the second build adds no compilation, only the `-vV` probe.
 
 ---
 
@@ -399,6 +400,6 @@ Phase A is complete and mergeable without phase B.
 
 - [ ] `cargo test -p piperine-parity` is green with both backends on all seven twins, with `contract.rs` unchanged.
 - [ ] Every function of every M1 body is bit-equal on the two backends.
-- [ ] A warm build invokes `rustc` zero times; a build without `rustc` fails with the stated error while the interpreter still runs.
+- [ ] A warm build runs no compilation (only `rustc -vV`); a build without `rustc` fails with the stated error while the interpreter still runs.
 - [ ] The generated source of the five M1 bodies is pinned as golden files a reader can follow from MSL line to Rust line.
 - [ ] The buck-slice circuits (oscillator, `Dpwm`, `RefRamp` with `Pid`, `Adc`, comparator, switched analog device) behave as their checks state on the compiled backend.

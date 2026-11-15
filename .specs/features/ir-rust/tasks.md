@@ -552,6 +552,7 @@ T42 → T43 → T44 → T45 → T46
 
 - [x] The divider's `Dc` gives `mid` = half of `vin` to 1e-12 relative, as `ir-interp`'s circuit test does
 - [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test compiled`: `modules_come_through_the_symbol_and_bind_like_the_interpreter`, `loaded_shapes_equal_the_plans_entry_by_entry`, `a_shape_that_differs_from_its_plan_is_refused`, `the_compiled_divider_solves`
+- [x] Verification F6 (C16): RS-04 AC 1 amended by recorded decision (a warm build may run `rustc -vV`, never a compilation); `a_second_build_runs_no_compiler` keeps asserting zero builds and now also that the warm build's only call is the one `-vV`
 - [x] Verification F5 (T16, C19): `Transpiler::compile` removes a cache entry only when something stood at the key's path when it looked (an incomplete entry or one that fails to open), never on a plain miss; `two_racing_builds_leave_one_entry_and_no_staging` also races eight `Transpiler::compile` calls of the resistor, starts spread over the build
 - [x] Verification F1 (C105): `a_panic_in_compiled_code_is_a_fault_and_the_instance_survives` passes in the same target; a `rustc` wrapper injects a conditional `panic!` into the resistor's `terms`, the call faults with the message and the next call on the instance returns its value
 - [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
@@ -1289,7 +1290,7 @@ Proof: run compile | test a_compile_error_keeps_the_source_and_shows_stderr ... 
 **C15** - A compiler below 1.85: an error with the version found and 1.85. (RS-03, AC 4; T12)
 Proof: run rustc | test a_compiler_below_1_85_is_refused_with_both_versions ... ok
 
-**C16** - A second build of an unchanged design invokes the compiler 0 times and loads the cached library. (RS-04, AC 1; T16)
+**C16** - A second build of an unchanged design runs no compilation (only the `rustc -vV` probe the key needs, orchestrator ruling 2026-11-15, F6) and loads the cached library. (RS-04, AC 1; T16)
 Proof: run compile | test a_second_build_runs_no_compiler ... ok
 
 **C17** - An `Ir` change that changes the source gives another entry. (RS-04, AC 2; T16)

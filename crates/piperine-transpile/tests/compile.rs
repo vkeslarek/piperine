@@ -1,7 +1,7 @@
 //! `Transpiler::compile` end to end (feature `ir-rust`, RS-01 AC 1, RS-02 AC 4, RS-03 AC 3,
 //! RS-04 AC 1, 2, 3 and 5, RS-08; checks C1, C9, C16, C18, C19, C23, C24, C25): the five M1
-//! designs build with no error and no warning; a second build runs no compiler, counted by a
-//! wrapper script's log and not by the crate; a changed IR or another compiler text is another
+//! designs build with no error and no warning; a second build runs no compilation (only the
+//! `rustc -vV` probe of the key), counted by a wrapper script's log and not by the crate; a changed IR or another compiler text is another
 //! entry; a compiler error keeps the source and shows the compiler's words; a corrupted library
 //! is rebuilt; the source sits beside the library; a build reports its cost.
 #![cfg(unix)]
@@ -75,6 +75,11 @@ impl Wrapper {
         Settings { rustc: Some(self.program.clone()), cache: cache.to_path_buf() }
     }
 
+    /// Every call, its arguments on one line.
+    fn calls(&self) -> Vec<String> {
+        std::fs::read_to_string(&self.log).unwrap_or_default().lines().map(str::to_string).collect()
+    }
+
     /// The calls that build something: every call but `-vV`.
     fn builds(&self) -> Vec<String> {
         std::fs::read_to_string(&self.log)
@@ -125,9 +130,13 @@ fn a_second_build_runs_no_compiler() {
     let first = compile(&t, &settings);
     let after_first = wrapper.builds();
     assert_eq!(after_first.len(), 2, "the ABI rlib and the design's cdylib: {after_first:?}");
+    let calls_before = wrapper.calls().len();
 
     let second = compile(&t, &settings);
     assert_eq!(wrapper.builds(), after_first, "the second build ran no compiler");
+    // RS-04 AC 1 as amended (verification F6): the warm build ran the version probe the key
+    // needs (RS-Q3) and nothing else
+    assert_eq!(wrapper.calls()[calls_before..], ["-vV".to_string()], "a warm build runs `rustc -vV` once and builds nothing");
     assert!(second.report().cache_hit);
     assert_eq!(second.report().rustc_invocations, 0);
     assert_eq!(second.source_path(), first.source_path(), "the cached entry was loaded");
