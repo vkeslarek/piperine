@@ -7,6 +7,7 @@
 //!
 //! The result is a table or the reasons there is none, never both.
 
+mod call;
 mod check;
 mod expr;
 mod table;

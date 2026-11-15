@@ -6,8 +6,8 @@
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
-use piperine_lang::types::{Ty, Types};
+use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, Reflect};
+use piperine_lang::types::{Callee, Ty, Types};
 
 /// A design of `Top` with `body` as its analog block and `items` before it.
 fn source(items: &str, body: &str) -> String {
@@ -127,4 +127,72 @@ fn a_let_without_type_or_value_is_p0001() {
     let (src, d) = diagnostics("", "let x;");
     assert_eq!(codes_of(&d), ["P0001"]);
     assert_eq!(snippet(&src, &d[0]), "let x;");
+}
+
+const FUNCTIONS: &str = "fn half(a: f64) -> f64 { a / 2.0 }\nfn positive(a: f64) -> bool { a > 0.0 }\nfn apply(f: fn(f64, f64) -> f64, x: f64) -> f64 { f(x, x) }\nfn fact(n: f64) -> f64 { if n <= 1.0 { 1.0 } else { n * fact(n - 1.0) } }";
+
+#[test]
+fn a_call_takes_its_declared_result() {
+    let t = local_types(FUNCTIONS, "let a = half(1.0); let b = positive(a);", &["a", "b"]);
+    assert_eq!(t, [Ty::F64, Ty::Bool]);
+
+    // The callee is recorded and the function is reached.
+    let src = source(FUNCTIONS, "let a = half(1.0);");
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").expect("clean");
+    let half = design.function("half").expect("half").decl().id();
+    let call = (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::Call { .. }) && src[design.expr_node(*e).span.range()].starts_with("half(")).expect("a call");
+    assert_eq!(types.callee(call), Some(Callee::Function(half)));
+    assert!(types.reached().contains(&half));
+    // The `apply` body is not reached: nothing calls it.
+    assert!(!types.reached().contains(&design.function("apply").unwrap().decl().id()));
+
+    // Each argument is checked against its parameter, and the count is checked.
+    let (src, d) = diagnostics(FUNCTIONS, "let a = half(true);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "true");
+    let (_, d) = diagnostics(FUNCTIONS, "let a = half(1.0, 2.0);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    let (_, d) = diagnostics(FUNCTIONS, "let a = half();");
+    assert_eq!(codes_of(&d), ["P0002"]);
+}
+
+#[test]
+fn a_closure_takes_its_types_from_the_parameter() {
+    let t = local_types(FUNCTIONS, "let r = apply(|a, b| a + b, 2.0); let s = apply(|a: f64, b: f64| a * b, 2.0);", &["r", "s"]);
+    assert_eq!(t, [Ty::F64, Ty::F64]);
+
+    // The body is checked against the declared result.
+    let (src, d) = diagnostics(FUNCTIONS, "let r = apply(|a, b| a > b, 2.0);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "a > b");
+    // A parameter type written in the closure must be the declared one.
+    let (src, d) = diagnostics(FUNCTIONS, "let r = apply(|a: bool, b| b, 2.0);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "bool");
+    // And so must the parameter count.
+    let (_, d) = diagnostics(FUNCTIONS, "let r = apply(|a| a, 2.0);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+}
+
+#[test]
+fn a_recursive_function_is_typed_from_its_signature() {
+    let t = local_types(FUNCTIONS, "let r = fact(5.0);", &["r"]);
+    assert_eq!(t, [Ty::F64]);
+    let src = source(FUNCTIONS, "let r = fact(5.0);");
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").expect("clean");
+    let fact = design.function("fact").unwrap().decl().id();
+    assert_eq!(types.reached().iter().filter(|d| **d == fact).count(), 1);
+}
+
+#[test]
+fn a_closure_outside_an_argument_is_p0001() {
+    let (src, d) = diagnostics(FUNCTIONS, "let f = |x: f64| x;");
+    assert_eq!(codes_of(&d), ["P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "|x: f64| x");
+    // An argument whose parameter is not a function type does not take a closure either.
+    let (src, d) = diagnostics(FUNCTIONS, "let a = half(|x| x);");
+    assert_eq!(codes_of(&d), ["P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "|x| x");
 }

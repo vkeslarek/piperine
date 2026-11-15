@@ -24,6 +24,7 @@ impl Checker<'_> {
                     Some(expected.clone())
                 }
                 ExprKind::Block(block) => self.statements(&block.stmts, Some(expected)),
+                ExprKind::Closure { .. } => self.closure(expr, expected),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
                     self.check(*cond, &Ty::Bool);
                     self.statements(&then.stmts, Some(expected));
@@ -77,6 +78,11 @@ impl Checker<'_> {
             ExprKind::Binary { op, lhs, rhs } => self.binary(*op, *lhs, *rhs),
             ExprKind::Block(block) => self.statements(&block.stmts, None),
             ExprKind::If { cond, then, else_ } => self.conditional(*cond, then, *else_),
+            ExprKind::Call { .. } => self.call(expr),
+            ExprKind::Closure { .. } => {
+                self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
+                None
+            }
             other => {
                 self.unsupported(file, node.span, Unsupported::expr(other));
                 None

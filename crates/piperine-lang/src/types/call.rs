@@ -1,0 +1,131 @@
+//! Calls of functions and closures. A call is typed from the declared signature of its callee
+//! after each argument is checked against its parameter; a closure takes its parameter types
+//! from the function type of the parameter it is passed to.
+
+use crate::pom::{Arg, CallClass, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
+
+use super::check::Checker;
+use super::unsupported::Unsupported;
+use super::{Callee, Ty};
+
+impl Checker<'_> {
+    /// What a callee path names, if the callee is a plain path.
+    fn callee_resolution(&self, callee: ExprId) -> Option<Resolution> {
+        match &self.design.expr_node(callee).kind {
+            ExprKind::Path(path) => self.design.path_node(*path).segments.last().map(|s| s.res),
+            _ => None,
+        }
+    }
+
+    /// The call `expr`: a call of a function, or of a name whose type is a function type.
+    pub(super) fn call(&mut self, expr: ExprId) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let ExprKind::Call { callee, args, params, class } = &node.kind else { return None };
+        if params.is_some() {
+            self.unsupported(file, node.span, "param block on a call");
+            return None;
+        }
+        if !matches!(class, CallClass::Function) {
+            self.unsupported(file, node.span, "call that is not a function call");
+            return None;
+        }
+        match self.callee_resolution(*callee) {
+            Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
+                DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
+                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, *callee, args),
+                _ => {
+                    self.unsupported(file, node.span, "call of this declaration");
+                    None
+                }
+            },
+            _ => {
+                self.unsupported(file, node.span, Unsupported::expr(&node.kind));
+                None
+            }
+        }
+    }
+
+    /// A call of a function of the reachable set: arguments against the declared parameters,
+    /// the declared result as the type.
+    fn function_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
+        let (params, ret) = self.signature(function)?;
+        self.reach(function);
+        self.callees.insert(expr, Callee::Function(function));
+        self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
+        self.apply(expr, &params, args)?;
+        Some(ret)
+    }
+
+    /// A call of a parameter or a local whose type is `fn(..) -> R`.
+    fn indirect_call(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Ty> {
+        let Ty::Fn(params, ret) = self.infer(callee)? else {
+            let file = self.file_of_expr(expr);
+            let span = self.design.expr_node(callee).span;
+            self.unsupported(file, span, "call of a value that is not a function");
+            return None;
+        };
+        self.apply(expr, &params, args)?;
+        Some(*ret)
+    }
+
+    /// Check each argument against its parameter, in order. A function takes positional
+    /// arguments only (the POM refuses `name: value` on a call that is not a placement).
+    fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        if args.len() != params.len() {
+            let message = format!("expected {} argument(s), found {}", params.len(), args.len());
+            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
+            for arg in args {
+                self.infer(arg.value);
+            }
+            return None;
+        }
+        for (arg, ty) in args.iter().zip(params) {
+            self.check(arg.value, ty);
+        }
+        Some(())
+    }
+
+    /// A closure passed where `expected` is the declared type of the parameter. Anywhere else
+    /// it is `P0001`: the subset has no type variable to infer its parameters with.
+    pub(super) fn closure(&mut self, expr: ExprId, expected: &Ty) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let ExprKind::Closure { params, ret, body, .. } = &node.kind else { return None };
+        let Ty::Fn(declared, result) = expected else {
+            self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
+            return None;
+        };
+        if params.len() != declared.len() {
+            let message = format!("expected a closure of {} parameter(s), found {}", declared.len(), params.len());
+            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            return None;
+        }
+        for (param, ty) in params.iter().zip(declared) {
+            let pat = self.design.pat_node(param.pat).clone();
+            let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
+                self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
+                return None;
+            };
+            if let Some(annotation) = param.ty
+                && let Some(written) = self.lower_type(annotation)
+                && written != *ty
+            {
+                let span = self.design.type_node(annotation).span;
+                self.mismatch(file, span, ty, &written);
+            }
+            self.locals.insert(*binding, ty.clone());
+        }
+        if let Some(annotation) = ret
+            && let Some(written) = self.lower_type(*annotation)
+            && written != **result
+        {
+            let span = self.design.type_node(*annotation).span;
+            self.mismatch(file, span, result, &written);
+        }
+        self.check(*body, result);
+        Some(expected.clone())
+    }
+}
