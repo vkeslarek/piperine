@@ -1,7 +1,7 @@
 # Batch worker brief — solver-abi-analog
 
 You are a BATCH WORKER for feature `solver-abi-analog` in the worktree
-/home/keslarek/Git/piperine-solver-completeness (branch `feature/solver-completeness`). Work only there.
+/home/keslarek/Git/piperine-abi-analog (branch `feature/solver-abi-analog`). Work only there.
 
 1. Activate the skill `tlc-spec-driven` by name (Skill tool) and follow its Execute flow
    (references/implement.md) as a batch worker: no sub-agents, no Verifier, no push, no merge.

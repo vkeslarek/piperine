@@ -179,3 +179,7 @@ User: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida o
 | MD-61: `piperine-abi` sits under all three solver crates | yes - it is the shared contract the ABI defines; amends MD-60's "no in-tree crate under a sub-solver" |
 | ~60 tests whose whole subject is deleted (strength table, LogicValue, seq/comb, EventQueue, capability flags, bypass) | removed by name into removed.txt under Q3 ("o que precisar apagar, pode apagar") |
 | Roles | amendments: Sonnet/Opus; core: Opus implements (protocol, the contract everything uses); digital: Sonnet/Opus; analog: Opus implements (numeric, small); integration: Sonnet/Opus (large) |
+
+## Orchestrator note (2026-11-15)
+
+User decided the order at a scheduled instant: "ABI order: solve, then react (Recommended)" - reactions at t read the analog solution at t; the kept discontinuity handling (landing exempt, restart, 1e-3) stays.
