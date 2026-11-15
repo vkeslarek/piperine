@@ -157,10 +157,12 @@ fn a_held_node_starts_the_transient() {
     let (t0, v0) = steps[0];
     assert_eq!(t0, 0.0);
     assert!(v0.abs() < 1e-9, "out at the first step: {v0}");
-    // the run's final record repeats t = RC with the node at the source value; the point
-    // of the trajectory at RC is the one before it
-    let at_rc = steps.iter().find(|(t, _)| (t - rc).abs() < 1e-12 * rc).copied().expect("a step at RC");
-    let v = at_rc.1;
+    // no two records share a time; the last one is the trajectory point at RC
+    for pair in steps.windows(2) {
+        assert!(pair[1].0 > pair[0].0, "records at {:e} then {:e}", pair[0].0, pair[1].0);
+    }
+    let (t, v) = *steps.last().expect("steps");
+    assert!((t - rc).abs() < 1e-12 * rc, "the run ends at RC: {t:e}");
     assert!((v - (1.0 - (-1.0_f64).exp())).abs() < 1e-3, "out at RC: {v}");
 }
 
