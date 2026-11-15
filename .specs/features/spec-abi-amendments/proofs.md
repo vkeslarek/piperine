@@ -1,6 +1,6 @@
 # spec-abi-amendments proofs
 
-**HEAD**: 3e77174d
+**HEAD**: efb6fb90
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 13 pass, 0 fail
@@ -26,20 +26,20 @@
 `Run spec` - exit 0
 
 ```
-test s36_names_are_identifiers ... ok
-test e0162_is_defined_in_3_4 ... ok
-test every_method_called_in_a_spec_fence_is_catalogued ... ok
+test structure_changing_set_is_refused ... ok
 test time_point_runs_the_procedure ... ok
-test e0163_is_defined_in_3_5 ... ok
+test e0162_is_defined_in_3_4 ... ok
 test zero_bytes_are_the_unknown_value ... ok
+test e0163_is_defined_in_3_5 ... ok
 test s36_defines_the_package_codes ... ok
-test every_error_code_is_defined_exactly_once ... ok
+test every_method_called_in_a_spec_fence_is_catalogued ... ok
 test gnd_and_the_implicit_params_are_core_names ... ok
+test every_error_code_is_defined_exactly_once ... ok
 
 test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-spec-amend/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.71s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.74s
      Running tests/spec_text.rs (/var/tmp/piperine-target/debug/deps/spec_text-8e0716f5857daff9)
 ```
 
