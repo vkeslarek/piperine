@@ -231,6 +231,12 @@ impl<T: Carried> Flagged<T> {
         if bytes[T::WIDTH] == 0 { Flagged::unknown() } else { Flagged::known(T::decode(bytes)) }
     }
 
+    /// Writes the pin's bytes (`encode`) at the start of `out`, the buffer of a write cell.
+    pub fn write(self, out: &mut [u8]) {
+        let bytes = self.encode();
+        out[..bytes.len()].copy_from_slice(&bytes);
+    }
+
     /// The pin's bytes: the value and the known byte 1, or every byte 0 when unknown (RS-11
     /// AC 4).
     pub fn encode(self) -> Vec<u8> {

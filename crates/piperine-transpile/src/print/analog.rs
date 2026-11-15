@@ -240,7 +240,10 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Expr::Math { args, .. } => stack.extend(args),
                 Expr::Closure { body, .. } => stack.push(*body),
-                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) => {}
+                Expr::Carrier(c) => {
+                    sources.insert(Source::Carrier(*c));
+                }
+                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => {}
             }
         }
     }

@@ -97,6 +97,9 @@ pub struct ValuePrinter<'a> {
     /// The carrier of each commit printed so far, in printing order: the order of the
     /// reaction's statements in the shape.
     committed: RefCell<Vec<u32>>,
+    /// The names of the reads (params, nodes, carriers, the environment) printed so far: the
+    /// variables the code uses, so a function binds no read it leaves alone.
+    used: RefCell<BTreeSet<String>>,
 }
 
 /// The variables an `analog` block's read forms print as: a probe as the difference of its
@@ -132,6 +135,7 @@ impl<'a> ValuePrinter<'a> {
             faults: true,
             commits: false,
             committed: RefCell::new(Vec::new()),
+            used: RefCell::new(BTreeSet::new()),
         }
     }
 
@@ -154,6 +158,7 @@ impl<'a> ValuePrinter<'a> {
             faults: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
+            used: RefCell::new(BTreeSet::new()),
         }
     }
 
@@ -199,6 +204,23 @@ impl<'a> ValuePrinter<'a> {
         self.committed.borrow().clone()
     }
 
+    /// Whether the code printed so far reads the variable `name` (a param, node, carrier or
+    /// environment read).
+    pub fn uses(&self, name: &str) -> bool {
+        self.used.borrow().contains(name)
+    }
+
+    /// The Rust type a pin of `ty` is decoded as: `bool`, `f64`, `rt::UInt<N>`, `rt::Int<N>`.
+    pub fn type_of(&self, ty: &ValueType) -> Result<String, Error> {
+        self.rust_type(ty, &self.path)
+    }
+
+    /// Notes that the code reads the variable `name`, and gives it back.
+    fn read(&self, name: &str) -> String {
+        self.used.borrow_mut().insert(name.to_string());
+        name.to_string()
+    }
+
     /// The printed name of local `i`.
     pub fn local(&self, i: u32) -> Option<&str> {
         self.locals.get(i as usize).map(String::as_str)
@@ -215,7 +237,7 @@ impl<'a> ValuePrinter<'a> {
         let reads = self.analog.as_ref()?;
         let ground = if self.plain { "0.0" } else { "R::constant(0.0)" };
         let node = |t: Terminal| match t {
-            Terminal::Node(i) => reads.nodes.get(i as usize).cloned(),
+            Terminal::Node(i) => reads.nodes.get(i as usize).map(|n| self.read(n)),
             Terminal::Ground => Some(ground.to_string()),
         };
         let (p, m) = (node(plus)?, node(minus)?);
@@ -316,6 +338,18 @@ impl<'a> ValuePrinter<'a> {
     /// and `e` is not.
     pub fn expr_as(&self, e: ExprId, want: &ValueType) -> Result<String, Error> {
         Ok(self.typed(e, want)?.text)
+    }
+
+    /// `e`, a `bool`, as an operand of `&&`: a value that may be unknown is decided
+    /// (`e.decide("<origin of e>")?`, a fault naming `e` when unknown, RS-11 AC 5).
+    pub fn condition(&self, e: ExprId) -> Result<String, Error> {
+        if !Self::is_flagged(self.ir.expr_type(e)) {
+            return Ok(self.piece(e)?.at(Prec::Compare));
+        }
+        if !self.faults {
+            return Err(self.unsupported(e, "a condition on a value that may be unknown in analog code"));
+        }
+        Ok(format!("{}.decide({:?})?", self.piece(e)?.at(Prec::Atom), self.at(e)))
     }
 
     /// `-e`, `e` parenthesized unless it is an atom.
@@ -543,12 +577,12 @@ impl<'a> ValuePrinter<'a> {
                 None => Err(self.unsupported(e, "a local out of range")),
             },
             Expr::Param(i) => match self.params.get(*i as usize) {
-                Some(name) => atom(name.clone()),
+                Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "a param read outside a body")),
             },
-            Expr::Env(env) => atom(Self::env_name(*env).to_string()),
+            Expr::Env(env) => atom(self.read(Self::env_name(*env))),
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
-                Some(name) => atom(name.clone()),
+                Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "a carrier read")),
             },
             Expr::Unknown => {
@@ -581,7 +615,7 @@ impl<'a> ValuePrinter<'a> {
                         None => self.expr(*a)?,
                     });
                 }
-                printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| Self::env_name(env).to_string()));
+                printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
                 let call = format!("{}({})", Text::ident(self.ir.function(*function).name()), printed.join(", "));
                 if !Self::faults(self.ir, *function) {
                     return atom(call);
