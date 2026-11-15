@@ -4,12 +4,10 @@
 //! value from before the instant:
 //! - a fixture whose settled value differs from the one before the instant
 //!   (`c = a OR NOT(NOT(a))`): the subscriber sees the settled one;
-//! - a classic AND-gate glitch fixture (`c = a AND NOT(a)`) whose settled value
-//!   is the same before and after: the subscriber sees only that value.
-//!
-//! The premise of the second fixture in the original (that `c` really reads
-//! `One` for an intermediate delta cycle) was about the two-phase engine's
-//! delta cycles, which a reaction cannot observe; it is not asserted here.
+//! - a classic AND-gate glitch fixture (`c = a AND NOT(a)`, the inverter one
+//!   microstep late) whose settled value is the same before and after: `c`
+//!   really reads `HIGH` for an intermediate microstep (the sink's changes
+//!   show it), and the subscriber sees only the settled value.
 //!
 //! The two structural claims of the original (`EventKind` keeps its four
 //! variants; `on_digital_settled` has one call site) were about the removed
@@ -31,6 +29,7 @@ use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRe
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Solver, TransientAnalysisOptions};
+use piperine_solver::protocol::{Observation, ObservationKind, Sink};
 
 fn pin(index: u32) -> Cell {
     Cell { kind: cell::PIN, index, part: part::VALUE }
@@ -77,6 +76,58 @@ impl Device for Setter {
     }
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
         cx.commit(0, &HIGH, 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+/// An inverter one microstep late: a reaction writes `y <- NOT a` with no
+/// delay (due the next microstep), so a reader of both `a` and `y` sees the
+/// new `a` beside the old `y` for one microstep (a delta-cycle glitch).
+/// pins: a=0 (PORT BIT); y=1 (PORT BIT, init HIGH); flip=2 (PRIVATE event)
+/// fn 0 "edge": reads [a.CHANGED] writes [flip.CHANGED]
+/// reaction 0: on [flip] reads [a] writes [S0 {y}]
+struct LagInverter;
+static LAG_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static LAG: OnceLock<Module> = OnceLock::new();
+
+fn lag_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
+    let y = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &HIGH, ..PinSpec::discrete("y", role::PORT, &BIT) });
+    let flip = s.pin(PinSpec::event("flip", role::PRIVATE));
+    s.function(FunctionSpec {
+        name: "edge",
+        origin: "digital_settle_subscriber.rs",
+        reads: vec![Cell { kind: cell::PIN, index: a, part: part::CHANGED }],
+        writes: vec![Cell { kind: cell::PIN, index: flip, part: part::CHANGED }],
+        ..FunctionSpec::default()
+    });
+    s.reaction(ReactionSpec {
+        name: "invert",
+        origin: "digital_settle_subscriber.rs",
+        on: vec![flip],
+        reads: vec![pin(a)],
+        writes: vec![Statement { pin: y, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for LagInverter {
+    fn prototype() -> &'static Shape<'static> {
+        LAG_SHAPE.get_or_init(lag_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((LagInverter, Arc::clone(LAG_SHAPE.get_or_init(lag_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let changed = cx.bytes(0) == [1];
+        cx.set(0, changed as u8);
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        let y = if cx.bytes(0) == HIGH { LOW } else if cx.bytes(0) == LOW { HIGH } else { [0, 0] };
+        cx.commit(0, &y, 0.0)?;
         Ok(Flow::Continue)
     }
 }
@@ -181,12 +232,34 @@ fn subscribe(b: &mut CircuitBuilder) {
     b.device(SUB.get_or_init(|| module::<Subscriber>("Subscriber")), "subscriber", &[], &[net("c")]);
 }
 
+/// A sink that keeps what it sees.
+struct Collect(std::rc::Rc<RefCell<Vec<Observation>>>);
+
+impl Sink for Collect {
+    fn observe(&mut self, o: &Observation) {
+        self.0.borrow_mut().push(o.clone());
+    }
+}
+
 /// A transient that stops at the flip: the instant of the flip is the last one,
-/// and the `SETTLE` of the stop time follows its quiescence.
-fn run(circuit: CircuitInstance) {
+/// and the `SETTLE` of the stop time follows its quiescence. Returns every
+/// value `c` took during the flip's instant, in order (the sink's changes).
+fn run(circuit: CircuitInstance) -> Vec<Vec<u8>> {
     SETTLED.with(|s| s.borrow_mut().clear());
-    let mut solver = Solver::new(circuit).with_tran_opts(TransientAnalysisOptions::new(FLIP_AT, 1.0e-8)).build();
+    let seen = std::rc::Rc::new(RefCell::new(Vec::new()));
+    let mut solver = Solver::new(circuit)
+        .with_tran_opts(TransientAnalysisOptions::new(FLIP_AT, 1.0e-8))
+        .with_sink(Box::new(Collect(std::rc::Rc::clone(&seen))))
+        .build();
     solver.tran().expect("transient").solve().expect("runs");
+    let seen = seen.borrow();
+    seen.iter()
+        .filter(|o| o.path == "c" && (o.time - FLIP_AT).abs() < 1.0e-12)
+        .filter_map(|o| match &o.kind {
+            ObservationKind::Change { bytes } => Some(bytes.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn settled_at(time: f64) -> Vec<Vec<u8>> {
@@ -221,15 +294,19 @@ fn the_subscriber_sees_the_post_settle_value_even_when_it_differs_from_the_pre_a
 
 #[test]
 fn the_subscriber_sees_only_the_settled_value_never_the_mid_delta_cycle_glitch() {
-    // c = a AND NOT(a): always LOW once settled, though it may read HIGH for
-    // an intermediate round.
+    // c = a AND NOT(a): always LOW once settled, though it reads HIGH for one
+    // microstep, while the late inverter still holds NOT(a) from before the flip.
     let mut b = CircuitBuilder::new("glitch");
     start(&mut b);
-    b.device(inverter(), "inv", &[], &[net("a"), net("nb")]);
+    b.device(LAG.get_or_init(|| module::<LagInverter>("LagInverter")), "inv", &[], &[net("a"), net("nb")]);
     b.device(AND_MODULE.get_or_init(|| module::<Gate<true>>("And2")), "and", &[], &[net("a"), net("nb"), net("c")]);
     subscribe(&mut b);
-    run(b.build().expect("build"));
+    let c_during = run(b.build().expect("build"));
 
+    assert!(
+        c_during.contains(&HIGH.to_vec()),
+        "the fixture must actually glitch (c reads HIGH at some intermediate microstep of the flip): {c_during:?}"
+    );
     let settled = settled_at(FLIP_AT);
     assert_eq!(settled.len(), 1, "SETTLE fires exactly once for this one settle: {settled:?}");
     assert_eq!(settled[0], LOW, "the subscriber must see c's correct SETTLED value (LOW), never a transient glitch (HIGH)");
