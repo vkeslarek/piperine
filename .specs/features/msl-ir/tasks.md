@@ -107,15 +107,15 @@ T8
 
 **Done when**:
 
-- [ ] The crate has `Cargo.toml`, `src/lib.rs`, `src/ids.rs` and `src/model.rs`, and the root manifest lists it in `members` and `default-members`
-- [ ] `crates/piperine-solver/tests/workspace_shape.rs`: `RETIRED_CRATES` drops `piperine-ir` and `DEFAULT_MEMBERS` gains `crates/piperine-ir` (Q6, decided); the stale note in `crates/piperine-lang/tests/suite_hygiene.rs` about the name is updated
-- [ ] Every type of design "Data Models" exists with `Debug, Clone, PartialEq`; ids also `Copy, Eq, Hash, PartialOrd, Ord`
-- [ ] `Constant::Real` and `Expr::Real` compare by bit pattern
-- [ ] `cargo tree -p piperine-ir` lists no in-tree crate
-- [ ] `workspace_shape` and `suite_hygiene` are green
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test model`: `ids_are_u32_newtypes_one_per_arena`, `ir_is_send_and_sync`
-- [ ] Gate check passes: `cargo test -p piperine-ir`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] The crate has `Cargo.toml`, `src/lib.rs`, `src/ids.rs` and `src/model.rs`, and the root manifest lists it in `members` and `default-members`
+- [x] `crates/piperine-solver/tests/workspace_shape.rs`: `RETIRED_CRATES` drops `piperine-ir` and `DEFAULT_MEMBERS` gains `crates/piperine-ir` (Q6, decided); the stale note in `crates/piperine-lang/tests/suite_hygiene.rs` about the name is updated
+- [x] Every type of design "Data Models" exists with `Debug, Clone, PartialEq`; ids also `Copy, Eq, Hash, PartialOrd, Ord`
+- [x] `Constant::Real` and `Expr::Real` compare by bit pattern
+- [x] `cargo tree -p piperine-ir` lists no in-tree crate
+- [x] `workspace_shape` and `suite_hygiene` are green
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test model`: `ids_are_u32_newtypes_one_per_arena`, `ir_is_send_and_sync`
+- [x] Gate check passes: `cargo test -p piperine-ir`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

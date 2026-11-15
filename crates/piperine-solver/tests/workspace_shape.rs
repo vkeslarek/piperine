@@ -19,7 +19,6 @@ fn repo_root() -> PathBuf {
 /// crates extends this list.
 const RETIRED_CRATES: &[&str] = &[
     "piperine-codegen",
-    "piperine-ir",
     "piperine-python",
     "piperine-plugin",
     "piperine-plugin-macros",
@@ -31,6 +30,7 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-abi",
     "crates/piperine-analog-solver",
     "crates/piperine-digital-solver",
+    "crates/piperine-ir",
     "crates/piperine-lang",
     "crates/piperine-solver",
 ];

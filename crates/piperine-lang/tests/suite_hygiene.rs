@@ -439,8 +439,9 @@ fn no_file_scope_lint_suppression() {
 /// can only be checked against a deleted type cannot be checked at all.
 ///
 /// Note: `piperine-ir` and `piperine_ir` were on this list under MD-35
-/// before MD-40 renamed `piperine-signal` to `piperine-ir`; they are now
-/// LIVE identifiers (the compiler-IR crate) and are no longer banned.
+/// before MD-40 renamed `piperine-signal` to `piperine-ir`; they are
+/// LIVE identifiers again (the `msl-ir` feature's object-model crate, a
+/// leaf with no in-tree dependency) and are no longer banned.
 const DEAD_ARCHITECTURE_IDENTIFIERS: [&str; 4] =
     ["IrProgram", "IrModule", "IrExpr", "IrInstance"];
 
