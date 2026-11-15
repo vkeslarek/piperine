@@ -85,6 +85,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.64 | Implementation-defined numerics: spline end conditions; `normal` is fixed | Resolved provisionally |
 | G.65 | The `"cosim"` interface | Open |
 | G.66 | Session parameter names of `simparam` | Open |
+| G.67 | Two blanket traits with one method name | Open |
 
 ## Open items
 
@@ -354,6 +355,12 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 
 **Status: Open.**
 `simparam(name, default)` (§14.4) reads a session parameter. This specification names none, so no name is portable between hosts.
+
+### G.67 Two blanket traits with one method name
+
+**Status: Open.**
+A method call on a carrier links a trait method through a blanket `impl<T: Repr> Tr for T` of a trait in scope at the call (§22, STD-06). No section gives a code for two traits in scope that both have the method name.
+In force: the first in declaration order links, with no diagnostic. For review: report an ambiguity, as Rust does.
 
 ## Closed items
 

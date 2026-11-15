@@ -1351,6 +1351,38 @@ fn blanket_method_resolves_on_a_carrier() {
 }
 
 #[test]
+fn a_blanket_trait_out_of_scope_never_links() {
+    // STD-06 AC 1: only a trait visible at the call links: declared in, imported into, or
+    // (for `std`) re-exported by the prelude of the call's namespace. Another namespace's trait,
+    // private or `pub` but not imported, is not in scope.
+    let body = |vis: &str| format!("mod a {{ {vis}trait Hidden {{ fn zz(self) -> bool; }} impl<T: Repr> Hidden for T {{ fn zz(self) -> bool {{ true }} }} }}\nnature Lvl {{ value: f64 }}\n");
+    for vis in ["", "pub "] {
+        let design = build(&format!("{}module M(p: Lvl) {{ let x = p.zz(); }}\n", body(vis)));
+        assert_eq!(member_res(&design, "p.zz()"), Resolution::Unresolved, "`{vis}trait` of another namespace, not imported");
+    }
+    // Imported by name or by glob: in scope.
+    let named = build(&format!("{}use a::Hidden;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", body("pub ")));
+    assert_eq!(member_res(&named, "p.zz()"), decl(&named, "a::Hidden::zz"));
+    let glob = build(&format!("{}use a::*;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", body("pub ")));
+    assert_eq!(member_res(&glob, "p.zz()"), decl(&glob, "a::Hidden::zz"));
+    // Declared in the namespace of the call, though the call sits in a nested module's namespace
+    // that did not import it: not in scope there.
+    let nested = build(&format!("{}mod b {{ module M(p: super::Lvl) {{ let x = p.zz(); }} }}\n", body("pub ")));
+    assert_eq!(member_res(&nested, "p.zz()"), Resolution::Unresolved);
+}
+
+#[test]
+fn two_visible_blankets_keep_declaration_order() {
+    // G.67: no ambiguity code exists; with two visible blanket traits of one method name the first
+    // in declaration order links, silently.
+    let design = build(
+        "trait A { fn zz(self) -> bool; }\ntrait B { fn zz(self) -> bool; }\nimpl<T: Repr> A for T { fn zz(self) -> bool { true } }\nimpl<T: Repr> B for T { fn zz(self) -> bool { false } }\nnature Lvl { value: f64 }\nmodule M(p: Lvl) { let x = p.zz(); }\n",
+    );
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(member_res(&design, "p.zz()"), decl(&design, "A::zz"));
+}
+
+#[test]
 fn blanket_method_resolves_on_self_in_a_nature_impl() {
     // STD-06 AC 2.
     let design = build(&format!("{BLANKET}impl Lvl {{ fn again(self) -> bool {{ self.known() }} }}\n"));

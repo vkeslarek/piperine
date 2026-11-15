@@ -119,6 +119,14 @@ impl Ctx<'_> {
         None
     }
 
+    /// Is the trait `tr` in scope for code owned by `from`: found by its own name from the nearest
+    /// enclosing namespace, as a declaration, an import or a prelude item (Rust's "trait in scope").
+    pub(super) fn trait_in_scope(&self, from: DeclId, tr: DeclId) -> bool {
+        let ns = if matches!(self.design.decl_data(from).kind, DeclKind::Namespace(_)) { Some(from) } else { self.parent_namespace(from) };
+        let (Some(ns), Some(name)) = (ns, self.design.decl_data(tr).name.as_ref()) else { return false };
+        self.scope_lookup(ns, &name.text, Prefer::Types, &mut Vec::new()) == Some(Resolution::Decl(tr))
+    }
+
     /// The crate that holds the namespace `ns`.
     fn crate_of(&self, ns: DeclId) -> usize {
         self.design.file_data(self.design.decl_data(ns).file).krate.index()

@@ -133,7 +133,7 @@ D4, D3, U2 and Q1 to Q5 are the user's decisions (`context.md`, "Answers"). The 
 
 **Acceptance Criteria** (STD-06, A method of a blanket implementation on a carrier):
 
-1. WHEN a method is called on a carrier, no carrier built-in and no `impl` of the nature or of its value type has that name, and a visible trait has it and has an implementation `impl<T: Repr> Tr for T`, THEN the POM SHALL resolve the call to the trait's method.
+1. WHEN a method is called on a carrier, no carrier built-in and no `impl` of the nature or of its value type has that name, and a trait in scope at the call (declared in, imported into or, through the prelude, visible from the namespace that holds the call; a trait of another namespace that is not imported never links) has it and has an implementation `impl<T: Repr> Tr for T`, THEN the POM SHALL resolve the call to the trait's method.
 2. WHEN `self.known()` is called inside an `impl` of a nature THEN the POM SHALL resolve it to `Known::known` by the same rule.
 3. WHEN a nature's own `impl` and a blanket implementation both have the method name THEN the POM SHALL resolve the call to the nature's function.
 4. IF no rule of the member table links the method THEN the slot SHALL stay `Unresolved` for a known receiver and `Deferred` otherwise, with no diagnostic.
