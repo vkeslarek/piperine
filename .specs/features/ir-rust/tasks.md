@@ -317,10 +317,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] Expected texts for `Resistor`, `Capacitor`, `Vsource` and `Diode` are written in the test from design.md's sample and the plan's read order
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::analog::tests::an_affine_term_is_printed_as_constant_plus_fold`, `print::analog::tests::a_slice_holds_only_what_its_outputs_reach`, `print::analog::tests::a_potential_branch_prints_its_flow_and_equation_terms`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+- [x] Expected texts for `Resistor`, `Capacitor`, `Vsource` and `Diode` are written in the test from design.md's sample and the plan's read order
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::analog::tests::an_affine_term_is_printed_as_constant_plus_fold`, `print::analog::tests::a_slice_holds_only_what_its_outputs_reach`, `print::analog::tests::a_potential_branch_prints_its_flow_and_equation_terms`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full

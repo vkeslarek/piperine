@@ -8,14 +8,16 @@
 //! prints under its MSL name, suffixed `_<index>` when another local of its owner shares that
 //! name. An environment read (`temperature()`, `gmin()`, `source_scale()`) is a variable of
 //! that name: a function that reads one, itself or through a call, takes it as a trailing
-//! parameter, and a call passes it on. Any other form (a probe, a `limit` or `ac_stim` site, a
-//! contribution) has no lowering here and is `Error::Unsupported` with its form, path and
+//! parameter, and a call passes it on. A probe, a `limit` or an `ac_stim` site prints only
+//! inside an `analog` block, as the variables its `Reads` name; elsewhere it, like a
+//! contribution, has no lowering here and is `Error::Unsupported` with its form, path and
 //! origin.
 
 use std::collections::BTreeSet;
 
 use piperine_ir::{
-    BinaryOp, Body, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Origin, Param, Stmt, StmtId, UnaryOp, ValueType,
+    BinaryOp, Body, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Origin, Param, Stmt, StmtId, Terminal, UnaryOp,
+    ValueType,
 };
 
 use crate::Error;
@@ -64,6 +66,20 @@ pub struct ValuePrinter<'a> {
     params: Vec<String>,
     /// The owner's origin: where an error with no expression of its own points.
     origin: Origin,
+    /// How the analog read forms print; `None` outside an `analog` block.
+    analog: Option<Reads>,
+}
+
+/// The variables an `analog` block's read forms print as: a probe as the difference of its
+/// nodes' variables, a `limit` or `ac_stim` site as the variable of its held value.
+#[derive(Clone, Debug, Default)]
+pub struct Reads {
+    /// By body node.
+    pub nodes: Vec<String>,
+    /// By `limit` site.
+    pub limits: Vec<String>,
+    /// By `ac_stim` site.
+    pub stims: Vec<String>,
 }
 
 impl<'a> ValuePrinter<'a> {
@@ -71,14 +87,43 @@ impl<'a> ValuePrinter<'a> {
     pub fn of_function(ir: &'a Ir, function: FunctionId) -> ValuePrinter<'a> {
         let f = ir.function(function);
         let (path, origin) = (format!("fn {}", f.name()), f.origin().clone());
-        ValuePrinter { ir, path, locals: Self::names(f.locals()), params: Vec::new(), origin }
+        ValuePrinter { ir, path, locals: Self::names(f.locals()), params: Vec::new(), origin, analog: None }
     }
 
     /// The printer of the code of the body named `body`, with its locals and params.
     pub fn of_body(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
         let params = body.params().iter().map(|p: &Param| Text::ident(&p.name)).collect();
         let (path, origin) = (format!("body {}", body.name()), body.origin().clone());
-        ValuePrinter { ir, path, locals: Self::names(body.locals()), params, origin }
+        ValuePrinter { ir, path, locals: Self::names(body.locals()), params, origin, analog: None }
+    }
+
+    /// This printer with the analog read forms printing as `reads` names them.
+    pub fn with_reads(self, reads: Reads) -> ValuePrinter<'a> {
+        ValuePrinter { analog: Some(reads), ..self }
+    }
+
+    /// The printed name of local `i`.
+    pub fn local(&self, i: u32) -> Option<&str> {
+        self.locals.get(i as usize).map(String::as_str)
+    }
+
+    /// `plus − minus` as the probe reads it: a node's variable, `R::constant(0.0)` for ground
+    /// on the left, nothing subtracted for ground on the right (`x − 0` is `x`, bit for bit).
+    pub fn probe(&self, plus: Terminal, minus: Terminal) -> Option<String> {
+        Some(self.probe_piece(plus, minus)?.text)
+    }
+
+    fn probe_piece(&self, plus: Terminal, minus: Terminal) -> Option<Piece> {
+        let reads = self.analog.as_ref()?;
+        let node = |t: Terminal| match t {
+            Terminal::Node(i) => reads.nodes.get(i as usize).cloned(),
+            Terminal::Ground => Some("R::constant(0.0)".to_string()),
+        };
+        let (p, m) = (node(plus)?, node(minus)?);
+        Some(match minus {
+            Terminal::Ground if plus != Terminal::Ground => Piece::new(p, Prec::Atom),
+            _ => Piece::new(format!("{p} - {m}"), Prec::Add),
+        })
     }
 
     /// `function` as one Rust `fn` generic over `Real`, under its comment: its params, then one
@@ -108,6 +153,16 @@ impl<'a> ValuePrinter<'a> {
     /// by four spaces relative to the first.
     pub fn expr(&self, e: ExprId) -> Result<String, Error> {
         Ok(self.piece(e)?.text)
+    }
+
+    /// `-e`, `e` parenthesized unless it is an atom.
+    pub fn negated(&self, e: ExprId) -> Result<String, Error> {
+        Ok(format!("-{}", self.piece(e)?.at(Prec::Atom)))
+    }
+
+    /// `e` as the right operand of a `+`: parenthesized when it binds no stronger than `+`.
+    pub fn right_of_add(&self, e: ExprId) -> Result<String, Error> {
+        Ok(self.piece(e)?.at(Prec::Mul))
     }
 
     /// The environment reads of `function`, its own and those of every function it calls, in
@@ -268,9 +323,15 @@ impl<'a> ValuePrinter<'a> {
                 }
                 Ok(Piece::new(format!("|{}| {}", names.join(", "), self.expr(*body)?), Prec::Low))
             }
-            Expr::Probe { .. } => Err(self.unsupported(e, "probe")),
-            Expr::Limit { .. } => Err(self.unsupported(e, "limit")),
-            Expr::Stim { .. } => Err(self.unsupported(e, "ac_stim")),
+            Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
+            Expr::Limit { site, .. } => match self.analog.as_ref().and_then(|r| r.limits.get(*site as usize)) {
+                Some(name) => atom(name.clone()),
+                None => Err(self.unsupported(e, "limit")),
+            },
+            Expr::Stim { site, .. } => match self.analog.as_ref().and_then(|r| r.stims.get(*site as usize)) {
+                Some(name) => atom(name.clone()),
+                None => Err(self.unsupported(e, "ac_stim")),
+            },
         }
     }
 
