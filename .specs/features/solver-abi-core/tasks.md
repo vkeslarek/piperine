@@ -92,15 +92,15 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] `crates/piperine-abi/Cargo.toml` has empty `[dependencies]` and no `[dev-dependencies]`; the crate is in `members` and `default-members` of the root manifest
-- [ ] Every struct of abi.md §3 exists `#[repr(C)]` with the listed field order; every enumeration is a set of `pub const u32` starting at 1; `GROUND`, `DEFAULT`, `MAJOR`, `MINOR`, `SYMBOL` exist
-- [ ] Test `struct_layouts_match_the_abi` asserts `size_of`, `align_of` and each field's `offset_of!` against a hand-written table for a 64-bit target (C1)
-- [ ] Test `every_constant_has_its_pinned_value` asserts each constant's value and that no group contains 0 or a duplicate
-- [ ] Test `list_reads_by_the_producers_stride` reads a `List<Pin>` built with a stride of `size_of::<Pin>() + 16` and gets every element (C2)
-- [ ] Test `empty_list_yields_nothing` passes
-- [ ] Test `crate_declares_no_dependency` reads the manifest (C3)
-- [ ] `default_members_are_the_green_crates` of `workspace_shape.rs` is updated to include the crate and passes
-- [ ] Gate: full
+- [x] `crates/piperine-abi/Cargo.toml` has empty `[dependencies]` and no `[dev-dependencies]`; the crate is in `members` and `default-members` of the root manifest
+- [x] Every struct of abi.md §3 exists `#[repr(C)]` with the listed field order; every enumeration is a set of `pub const u32` starting at 1; `GROUND`, `DEFAULT`, `MAJOR`, `MINOR`, `SYMBOL` exist
+- [x] Test `struct_layouts_match_the_abi` asserts `size_of`, `align_of` and each field's `offset_of!` against a hand-written table for a 64-bit target (C1)
+- [x] Test `every_constant_has_its_pinned_value` asserts each constant's value and that no group contains 0 or a duplicate
+- [x] Test `list_reads_by_the_producers_stride` reads a `List<Pin>` built with a stride of `size_of::<Pin>() + 16` and gets every element (C2)
+- [x] Test `empty_list_yields_nothing` passes
+- [x] Test `crate_declares_no_dependency` reads the manifest (C3)
+- [x] `default_members_are_the_green_crates` of `workspace_shape.rs` is updated to include the crate and passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

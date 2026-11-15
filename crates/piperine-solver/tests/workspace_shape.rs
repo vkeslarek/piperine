@@ -25,6 +25,7 @@ const RETIRED_CRATES: &[&str] = &[
 /// The workspace's `default-members`: the crates that build and test green.
 /// Later tasks extend this list as the sub-solver crates appear.
 const DEFAULT_MEMBERS: &[&str] = &[
+    "crates/piperine-abi",
     "crates/piperine-analog-solver",
     "crates/piperine-digital-solver",
     "crates/piperine-lang",
