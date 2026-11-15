@@ -1,6 +1,8 @@
 # MSL Elaboration (POM to IR, M1 subset) Specification
 
-**Status**: Draft. Not approved. Rewritten for M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S6, S7).
+**Approved**: 2026-11-15 - user: "Concordo e pode disparar"; M1 questions: all recommended options accepted
+
+**Status**: Approved. Rewritten for M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S6, S7).
 
 ## Problem Statement
 
@@ -36,7 +38,7 @@ A `Design` mirrors the source: nothing is evaluated and no instance is placed. T
 
 ## Assumptions & Open Questions
 
-Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. Rows marked `n` wait for the user in `.specs/features/e2e-m1/questions.md`.
+Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. No row is left open: the user answered `.specs/features/e2e-m1/questions.md` on 2026-11-15.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
@@ -49,9 +51,9 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 | The top of a path | the top module's name: `Divider.mid`, `Divider.r1` | §21 rule 1: "from the top module down"; its example `top.adc.dac.r[3].r` starts with the top | y |
 | The top module of M1 | has no port; its params take their defaults | a port of a top has nothing to connect to; caller-given values are M2 | y |
 | A node's `= value` | a const expression that reads no param; evaluated at elaboration | abi.md §3: a shape "depends on structure only, never on a non-structural value", and the hold is part of the shape; `E0210` already forbids reading a carrier or a probe | y |
-| Code of a construct inside the type-checked subset that elaboration does not lower (Q5) | `P0001`, as in `msl-typeck` | same rule, same code | n |
+| Code of a construct inside the type-checked subset that elaboration does not lower (Q5) | `P0001`, as in `msl-typeck` | same rule, same code | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
 
-**Open questions:** Q5 of `.specs/features/e2e-m1/questions.md` (the code `P0001`). Everything else is resolved above.
+**Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.
 
 **Implicit-requirement dimensions.** Input validation and bounds: ELAB-02 (params), ELAB-01 AC 3 and 4. Failure states: ELAB-06. Idempotency: ELAB-01 AC 5. Auth and rate limits: N/A because elaboration is an in-process function. Concurrency and ordering: ELAB-03 AC 2 (instance order), ELAB-04 AC 4 (addend order). Data lifecycle: N/A because the `Ir` is owned by the caller. Observability: every diagnostic carries a code and a span (ELAB-05). External-dependency failure: N/A because nothing external is read in M1 (`include_str!` is outside the subset). State-transition integrity: N/A because elaboration is one pure function.
 
@@ -213,7 +215,7 @@ ELAB-07 (metadata), ELAB-08 (boundary reachability) and ELAB-09 (definition orde
 ## Sources
 
 - `.specs/features/codegen/context.md` C3, S1, S5, S6, S7 - the decisions.
-- `.specs/features/e2e-m1/models/*.msl` - the models that must elaborate.
+- `tests/ngspice/*.msl` - the models that must elaborate.
 - `docs/spec/` §0.3, §6, §8, §8.1, §11, §14, §16, §21 - the elaboration phase of the subset.
 - `.specs/features/device-abi/abi.md` §3, A1 - why the split into addends and the node ownership.
 - `.specs/features/msl-ir/design.md` - the output.
