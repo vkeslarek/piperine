@@ -1,6 +1,8 @@
 # MSL Parity Harness (M1) Specification
 
-**Status**: Draft. Not approved. New feature of the end-to-end slice (`.specs/features/codegen/context.md` S1, S9).
+**Approved**: 2026-11-15 - user: "Concordo e pode disparar"; M1 questions: all recommended options accepted
+
+**Status**: Approved. New feature of the end-to-end slice (`.specs/features/codegen/context.md` S1, S9).
 
 ## Problem Statement
 
@@ -8,7 +10,7 @@ The old ngspice cross-check ran on the retired Verilog-AMS front end and was del
 
 ## Goals
 
-- [ ] Five twins run end to end from `.msl` source and agree with ngspice: `divider` and `diode_series` (operating point), `diode_iv` (DC sweep), `ac_rc` (AC), `tran_rc` (transient).
+- [ ] Six twins run end to end from `.msl` source and agree with ngspice: `divider` and `diode_series` (operating point), `diode_iv` (DC sweep), `ac_rc` (AC), `tran_rc` (transient), and the new `isrc_r` (operating point, Q7).
 - [ ] Every numeric tolerance of the comparison is written once, in `ToleranceContract`, with the reason for its value.
 - [ ] A failure names the fixture, the quantity, the point, both values and the bound.
 - [ ] A parity claim cannot go green without ngspice having run, unless the person running the suite asked for that.
@@ -19,7 +21,7 @@ The old ngspice cross-check ran on the retired Verilog-AMS front end and was del
 | ------- | ------ |
 | The other fixtures of `tests/ngspice/` (BJT, MOS, JFET, noise, pole-zero, URC, temperature, homotopy, `uic_rc`) | their devices or analyses are outside M1 (S1) |
 | Noise, `tf`, `pz`, `sp`, `sens`, `pss` parity | not M1 analyses |
-| A device library for users (`std` or a `spice` crate) | Q4: in M1 the models are a fixture beside the twins |
+| A device library for users (`std` or a `spice` crate) | Q4, decided: in M1 the models are a fixture beside the twins; a library is its own feature after M1 |
 | The `ngspice_parity_matrix` of the old suite (every device against every analysis) | it gated a model library; M1 has five twins and PAR-07 gates those |
 | Changing a `.cir` fixture | the corpus is reused as it is |
 | Installing ngspice, or pinning its version | the environment's; the harness prints the version it ran |
@@ -29,7 +31,7 @@ The old ngspice cross-check ran on the retired Verilog-AMS front end and was del
 
 ## Assumptions & Open Questions
 
-Rows marked `y` are settled by a recorded decision, by code or by a run made while writing this spec. Rows marked `n` wait for the user in `.specs/features/e2e-m1/questions.md`.
+Rows marked `y` are settled by a recorded decision, by code or by a run made while writing this spec. No row is left open: the user answered `.specs/features/e2e-m1/questions.md` on 2026-11-15.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
@@ -37,16 +39,16 @@ Rows marked `y` are settled by a recorded decision, by code or by a run made whi
 | The five fixtures | `divider`, `diode_iv`, `diode_series`, `ac_rc`, and `tran_rc` as the RC transient | S1; `tests/ngspice/tran_rc.cir` exists and ngspice-47 runs all five (checked 2026-11-15) | y |
 | Hosting crate | a new crate `crates/piperine-parity` (`publish = false`): the harness is its library, the fixture tests its integration targets | the root package does not compile; MD-28 puts a target in the crate it exercises, and this is the only crate that exercises the whole chain; keeping process spawning out of `piperine-interp` | y |
 | Where the twins live | `tests/ngspice/<name>.msl` beside `<name>.cir`, with the shared `devices.msl` | one directory per corpus; `mod devices;` in a twin finds the file by MD-55's on-disk rule | y |
-| The MSL models | `.specs/features/e2e-m1/models/*.msl`, moved unchanged | they build on today's POM with zero diagnostics | y |
+| The MSL models | `tests/ngspice/*.msl`, moved unchanged | they build on today's POM with zero diagnostics | y |
 | No `uic` in MSL | the transient twin declares `out` as a held node (`= 0.0`) | §16 H6: "There is no `uic`"; H1 gives the same start as ngspice's `uic` with a discharged capacitor | y |
 | The diode model | Shockley current plus `gmin() * vd`, no series resistance, `cj0 = 0` | ngspice shunts every junction with `gmin`: at −1 V it reports 1.01e-12 A, which is `gmin·1 V + is`; its reverse-bias cubic differs from this by less than 1e-18 A there | y |
 | Physical constants | the prelude's exact SI values; ngspice's differ in the sixth digit of `kT/q` | the effect on the diode current at 0.8 V is about 2e-5 relative, under the contract's 1e-3 | y |
-| ngspice is absent (Q2) | the parity tests fail, naming the binary they looked for; `PIPERINE_NGSPICE=skip` turns each into a pass that prints `SKIP` | the old harness passed silently without ngspice, which made the parity claim unfalsifiable on such a machine | n |
-| The contract's values (Q3) | voltages `1e-3` relative, `1e-6` V absolute; currents `1e-3`, `1e-12` A; AC magnitude `1e-3`, `1e-12`; AC phase `1e-4` rad absolute, compared where the magnitude clears its floor; transient as voltages | the old contract's values (`16bddaae^:tests/support/ngspice.rs`), except the current floor: it said "ngspice's abstol for currents" and wrote `1e-9`; ngspice's `abstol` is `1e-12` | n |
-| A sixth twin for the current source (Q7) | `isrc_r.cir` and `isrc_r.msl`: a 1 mA source into 1 kΩ, operating point | `Isource` is in M1 by S1 and no existing fixture places one | n |
+| ngspice is absent (Q2) | the parity tests fail, naming the binary they looked for; `PIPERINE_NGSPICE=skip` turns each into a pass that prints `SKIP` | the old harness passed silently without ngspice, which made the parity claim unfalsifiable on such a machine | y - Q2, user 2026-11-15: "Fail, opt-out env (Recommended)" |
+| The contract's values (Q3) | voltages `1e-3` relative, `1e-6` V absolute; currents `1e-3`, `1e-12` A; AC magnitude `1e-3`, `1e-12`; AC phase `1e-4` rad absolute, compared where the magnitude clears its floor; transient as voltages | the old contract's values (`16bddaae^:tests/support/ngspice.rs`), except the current floor: it said "ngspice's abstol for currents" and wrote `1e-9`; ngspice's `abstol` is `1e-12` | y - Q3, user 2026-11-15: "Old contract, 1e-12 A floor (Recommended)" |
+| A sixth twin for the current source (Q7) | `isrc_r.cir` and `isrc_r.msl`: a 1 mA source into 1 kΩ, operating point | `Isource` is in M1 by S1 and no existing fixture places one | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
 | Signs | the flow of a `Vsource`'s branch is compared with ngspice's `i(v1)` unchanged | both are the current from `+` to `−` through the source: ngspice gives −4.59e-2 A at +0.8 V | y |
 
-**Open questions:** Q2, Q3, Q4 and Q7 of `.specs/features/e2e-m1/questions.md`. The criteria below are written with the recommended answers.
+**Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.
 
 **Implicit-requirement dimensions.** Input validation and bounds: PAR-03 AC 4 (an export row that does not parse), PAR-06 AC 5 (grids that differ). Failure states: PAR-03 AC 3, PAR-04. Idempotency: PAR-03 AC 2 (a scratch directory per run). Auth and rate limits: N/A because everything is local. Concurrency and ordering: PAR-03 AC 2 (tests run in parallel). Data lifecycle: PAR-03 AC 2 (the scratch directory is removed). Observability: PAR-05 AC 3. External-dependency failure: PAR-03 AC 3, PAR-04. State-transition integrity: N/A because a run keeps no state.
 
@@ -116,7 +118,7 @@ Rows marked `y` are settled by a recorded decision, by code or by a run made whi
 
 **User Story**: As a maintainer, I want a missing ngspice to be visible so that a green run always means the comparison happened.
 
-**Why P1**: an unfalsifiable parity claim is the failure this feature exists to prevent. The policy is Q2.
+**Why P1**: an unfalsifiable parity claim is the failure this feature exists to prevent. The policy is Q2, decided.
 
 **Requirement**: PAR-04
 
@@ -195,7 +197,7 @@ Rows marked `y` are settled by a recorded decision, by code or by a run made whi
 
 **User Story**: As a maintainer, I want `Isource` compared with ngspice so that every M1 device is covered by a twin.
 
-**Why P2**: S1 lists current sources; the five named fixtures place none. Adding a fixture is Q7.
+**Why P2**: S1 lists current sources; the five named fixtures place none. Q7, decided: the fixture is added.
 
 **Requirement**: PAR-08
 
@@ -239,7 +241,7 @@ Rows marked `y` are settled by a recorded decision, by code or by a run made whi
 - `.specs/features/codegen/context.md` S1, S9 - the slice and this feature.
 - `tests/ngspice/{divider,diode_iv,diode_series,ac_rc,tran_rc}.cir` - the golden side, unchanged.
 - `git show 16bddaae^:tests/support/ngspice.rs` - the old harness: the `ToleranceContract` pattern, its values, the scratch directory per run.
-- `.specs/features/e2e-m1/models/*.msl` - the twins as drafted and checked against today's front end.
+- `tests/ngspice/*.msl` - the twins as drafted and checked against today's front end.
 - `docs/spec/` §16 (H1, H6), §18, Appendix C.2.1 - held nodes, limiting, the solver's own defaults.
 - ngspice-47 run of the five fixtures on 2026-11-15 - export names, row counts, signs.
 

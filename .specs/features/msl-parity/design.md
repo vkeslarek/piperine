@@ -44,7 +44,7 @@ The MSL side always runs, with or without ngspice (PAR-04 AC 4): `Ngspice::run` 
 | --------- | -------- | ---------- |
 | The old harness | `git show 16bddaae^:tests/support/ngspice.rs` | `ToleranceContract` (shape, `holds`, rationale printed on failure), `ScratchDir` (one directory per run, removed on drop), the strict `wrdata` parser: ported, not redesigned |
 | The fixtures | `tests/ngspice/*.cir` | run as they are |
-| The M1 models | `.specs/features/e2e-m1/models/*.msl` | moved to `tests/ngspice/` |
+| The M1 models | `tests/ngspice/*.msl` | moved to `tests/ngspice/` |
 | The chain | `piperine_lang::pom::Design`, `piperine_lang::elab::Elaborator`, `piperine_interp::Interpreter` | called in order by `Bench::load` |
 | Solver drivers | `piperine_solver::prelude` (`CircuitInstance::{dc, ac, transient, set}`, `AcSweepAnalysisOptions`, `TransientAnalysisOptions`, result getters) | the tests call them directly; there is no host session |
 | `tempfile` | workspace dependency | the scratch directory |
@@ -166,4 +166,4 @@ pub struct Golden {
 
 ## Size
 
-8 tasks: crate, guard edits and the fixtures moved in; `ToleranceContract` with its unit tests; `Ngspice`, `ScratchDir` and the absent policy; `Golden` parsers; `Bench`; `parity_op` (two tests) with the CI edit; `parity_dc` and `parity_ac`; `parity_tran`, `Waveform` and the corpus guard. PAR-08 adds one small task if Q7 is yes. Sonnet implements, Opus verifies.
+10 tasks (see `tasks.md`; the twins and `isrc_r` are already in `tests/ngspice/`): crate and guard edits; `ToleranceContract` with its unit tests; `Ngspice`, `ScratchDir` and the absent policy; `Golden` parsers; `Bench`; `parity_op` (two tests) with the CI edit; `parity_dc` and `parity_ac`; `parity_tran`, `Waveform` and the corpus guard. The sixth twin `isrc_r` (Q7, decided) is a third test of `parity_op`. Sonnet implements, Opus verifies.
