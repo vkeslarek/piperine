@@ -524,7 +524,7 @@ Proof: `cargo test -p piperine-digital-solver --lib 2>&1 | grep -E '^test result
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported); B2 (Sonnet) at f2000f5f - returned (T7-T13 771e775a..f438e312; advance strictly before 'to'; HostWrite error; fixtures Succ..Clockwatch) - returned (core seam adapted 3d000240..28b73be3; preview_boundary + C43 superseded; NetSpec.crossing for integration)
+**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported); B2 (Sonnet) at f2000f5f - returned (T7-T13 771e775a..f438e312; advance strictly before 'to'; HostWrite error; fixtures Succ..Clockwatch) - returned (core seam adapted 3d000240..28b73be3; preview_boundary + C43 superseded; NetSpec.crossing for integration); Verifier (Opus) at ada78474
 **Walked:** not applicable - no screen
 
 ---
