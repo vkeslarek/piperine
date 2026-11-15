@@ -131,7 +131,7 @@ The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a st
 7. WHEN a reaction reads `TICK` THEN it SHALL read the instant's tick, and `HORIZON` SHALL be no later than the tick before the earliest pending commit and no later than the limit the owner set.
 8. IF a commit is due later than the tick the engine is advanced to THEN it SHALL stay pending.
 9. WHEN two commits are due at times that round to the same tick THEN they SHALL apply in one instant.
-10. WHEN the owner asks for the boundary values of a landing instant THEN the engine SHALL return the bytes each analog-read net holds after the commits due at microstep 0 and the functions apply, computed on a copy, with no reaction run and no state changed.
+10. ~~WHEN the owner asks for the boundary values of a landing instant THEN the engine SHALL return ... computed on a copy~~ SUPERSEDED (user decision, 2026-11-15, solver-completeness context.md "Orchestrator note": "ABI order: solve, then react (Recommended)"): at a scheduled instant the owner solves at t on the left value first, then runs the instant; there is no microstep-0 preview and `preview_boundary` is removed from the seam and from this engine.
 
 **Independent Test**: a divider clock that no analog-read net depends on runs 1000 edges inside one `advance`; the same clock driving a net flagged analog-read stops `advance` before its first edge.
 
@@ -192,7 +192,7 @@ The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a st
 | SAD-19 | P2: Host, AC 1, 2 (host commit, structural) | Tasks | In Tasks |
 | SAD-20 | P2: Host, AC 6, 7 (observations) | Tasks | In Tasks |
 | SAD-21 | Goals: the old engine and its tests are untouched | Tasks | In Tasks |
-| SAD-22 | P1: Checkpoint, AC 10 (boundary preview of a landing) | Tasks | In Tasks |
+| SAD-22 | P1: Checkpoint, AC 10 (boundary preview of a landing) | superseded (see AC 10) | Superseded |
 
 **Coverage:** 22 total, 22 mapped to tasks, 0 unmapped. Umbrella requirements met here: SCI-01 to SCI-05, SCI-07 to SCI-09, SCE-02, and the digital half of SCE-01, SCE-03, SCE-04; SCI-06 is met by D1 (see Assumptions).
 

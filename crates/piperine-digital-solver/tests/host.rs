@@ -1,8 +1,8 @@
-//! Host writes, the parameter cone, the shadow and the boundary preview
-//! (feature `solver-abi-digital`, SAD-18, SAD-19 and SAD-22; abi.md §3.1 P5
+//! Host writes, the parameter cone and the shadow
+//! (feature `solver-abi-digital`, SAD-18 and SAD-19; abi.md §3.1 P5
 //! and P6, §6 C6): a host write is a commit at microstep 0, a `STRUCTURAL`
 //! write mid-run is refused, a param write is checked on a copy of the store
-//! first, and the boundary of a landing is computed with nothing run.
+//! first.
 
 #[path = "support/devices.rs"]
 #[allow(dead_code)] // each test target uses the devices it needs
@@ -123,30 +123,4 @@ fn reshape_on_the_shadow_names_the_instance_and_changes_nothing() {
     assert_eq!(d.shadow(net(&d, "c.r"), 0, &f64_bytes(500.0)).unwrap(), Shadow::Reshape { instance: "c".into() });
     assert_eq!(d.checkpoint(), before);
     assert_eq!(d.read(net(&d, "c.r")), f64_bytes(1.0));
-}
-
-#[test]
-fn preview_boundary_applies_microstep_zero_on_a_copy() {
-    // C43
-    reset_calls();
-    let mut d = started(engine_with(
-        vec![
-            ("inv", inverter(), vec![("a", "a"), ("y", "y")]),
-            ("cmp", setter(), vec![("up", "up"), ("out", "o")]),
-        ],
-        |nets| {
-            nets.iter_mut().find(|n| n.name == "y").unwrap().analog_reads = true;
-            nets.iter_mut().find(|n| n.name == "o").unwrap().analog_reads = true;
-        },
-    ));
-    d.host_commit(net(&d, "a"), 0, &HIGH, Tick(5)).unwrap();
-    d.fire(net(&d, "up"), Tick(5)).unwrap();
-    let before = d.checkpoint();
-    let observed = d.observations().to_vec();
-    let boundary = d.preview_boundary(Tick(5)).unwrap();
-    assert_eq!(boundary, [(net(&d, "y"), LOW.to_vec()), (net(&d, "o"), vec![0, 0])], "y after the function; o untouched: the reaction did not run");
-    assert_eq!(d.checkpoint(), before, "no state changed");
-    assert_eq!(d.observations(), observed.as_slice(), "nothing was observed");
-    assert_eq!(calls("setter").1, 0, "no reaction ran");
-    assert_eq!(d.next_due(), Some(Tick(5)), "the commits are still queued");
 }

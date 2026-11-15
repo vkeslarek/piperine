@@ -338,7 +338,7 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 ### T12: Host commits, the parameter cone and the shadow
 
-**What**: `host_commit`, the cone computed at bind, `shadow`, `preview_boundary`.
+**What**: `host_commit`, the cone computed at bind, `shadow` (`preview_boundary` was built here and removed afterwards: see the note under `## Checks`).
 **Where**: `crates/piperine-digital-solver/src/abi/engine.rs` (+ `plan.rs` for the cone, target `tests/host.rs`)
 **Depends on**: T11
 **Reuses**: design `plan` (cone), `engine`; abi.md P5, P6, C6
@@ -351,7 +351,7 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 - [x] Test `the_cone_is_the_functions_fed_by_params_and_globals_only` passes: a function with an input reachable from a statement or a written port is outside it
 - [x] Test `a_false_check_refuses_the_write_and_changes_nothing` passes with `Checked` (C41)
 - [x] Test `reshape_on_the_shadow_names_the_instance_and_changes_nothing` passes (C42)
-- [x] Test `preview_boundary_applies_microstep_zero_on_a_copy` passes: the returned bytes are the post-commit values, the store is unchanged, no reaction ran, nothing was observed (C43)
+- [x] ~~Test `preview_boundary_applies_microstep_zero_on_a_copy`~~ superseded: the owner solves first, then runs the instant (user: "ABI order: solve, then react (Recommended)"); removed with C43
 - [x] Gate: full
 
 **Tests**: unit
@@ -372,7 +372,7 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 - [x] Test `the_crate_depends_on_the_abi_crate_only` reads this crate's manifest
 - [x] Test `abi_modules_name_no_analog_or_owner_item` scans `src/abi/` for `piperine_analog_solver`, `piperine_solver`, `Netlist`, `Stamp`, `AnalogReference` (C44); test `abi_modules_hold_no_unsafe` passes
-- [x] Test `the_facade_offers_every_operation_of_the_discrete_side` calls each of `start`, `next_due`, `advance`, `preview_boundary`, `fire`, `run_instant`, `checkpoint`, `restore`, `shadow`, `host_commit`, `drain_observations` once on a small plan, with the argument and result shapes the trait of `solver-abi-core` uses after the obvious conversions (`Tick` and `i64`, `NetId` and `u32`)
+- [x] Test `the_facade_offers_every_operation_of_the_discrete_side` calls each of `start`, `next_due`, `advance`, `fire`, `run_instant`, `checkpoint`, `restore`, `shadow`, `host_commit`, `drain_observations` once on a small plan, with the argument and result shapes the trait of `solver-abi-core` uses after the obvious conversions (`Tick` and `i64`, `NetId` and `u32`)
 - [x] `git diff <base>..HEAD --stat -- . ':!crates/piperine-digital-solver'` is empty, and so is the diff of `src/{drivers,events,interface,scheduler,state,topology}.rs`, where `<base>` is the commit before T1; the commit body states the base hash
 - [x] `cargo test -p piperine-digital-solver --lib` reports the 27 old tests passing (C45), and `cargo test -p piperine-solver` is green
 - [x] Gate: build
@@ -511,8 +511,7 @@ Proof: run digital | test a_false_check_refuses_the_write_and_changes_nothing ..
 **C42** - `RESHAPE` on the shadow names the instance and changes nothing (SAD-18, AC 5)
 Proof: run digital | test reshape_on_the_shadow_names_the_instance_and_changes_nothing ... ok
 
-**C43** - The boundary preview of a landing applies microstep 0 on a copy, runs no reaction and changes nothing (SAD-22, AC 10)
-Proof: run digital | test preview_boundary_applies_microstep_zero_on_a_copy ... ok
+*(C43, the boundary preview of a landing, is removed: SAD-22 is superseded by the user's decision "ABI order: solve, then react (Recommended)", solver-completeness context.md. The numbering of the other checks stands.)*
 
 **C44** - The digital crate depends on `piperine-abi` only and its new modules name no analog or owner item (SAD-01, AC 1)
 Proof: run digital | test abi_modules_name_no_analog_or_owner_item ... ok

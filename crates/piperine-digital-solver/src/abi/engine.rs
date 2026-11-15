@@ -8,7 +8,7 @@ use piperine_abi::raw::pin_flag;
 
 use super::plan::{Binding, DigitalPlan, NetWriter};
 use super::queue::{Pending, Queue, Writer};
-use super::run::{Ambient, DirtySet, fire_net, run_cone, run_functions, write_net};
+use super::run::{Ambient, DirtySet, run_cone, write_net};
 use super::store::Store;
 use super::tick::Tick;
 use crate::error::DigitalError;
@@ -231,35 +231,6 @@ impl Digital {
             }
         }
         Ok(Shadow::Accept)
-    }
-
-    /// The bytes of every net the analog side reads after the commits due at microstep 0 of `at`
-    /// apply and the functions run, computed on a copy: no reaction runs, nothing is observed, no
-    /// state changes.
-    pub fn preview_boundary(&self, at: Tick) -> Result<Vec<(NetId, Vec<u8>)>, DigitalError> {
-        let mut store = self.store.clone();
-        let mut queue = self.queue.clone();
-        let mut dirty = self.dirty.clone();
-        let mut obs = Obs::new();
-        let here = (at, 0);
-        store.begin_microstep();
-        for p in queue.take_due(here) {
-            if self.plan.nets[p.net.0 as usize].kind == NetKind::Event {
-                fire_net(&self.plan, &mut store, &mut dirty, &mut obs, p.net, here);
-            } else {
-                write_net(&self.plan, &mut store, &mut dirty, &mut obs, p.net, p.offset, &p.bytes, here);
-            }
-        }
-        let ambient = Ambient::at(at, self.plan.resolution.seconds_per_tick);
-        run_functions(&self.plan, &mut store, &mut dirty, here, &ambient, &mut obs)?;
-        Ok(self
-            .plan
-            .nets
-            .iter()
-            .enumerate()
-            .filter(|(_, n)| n.analog_reads)
-            .map(|(i, _)| (NetId(i as u32), store.value(NetId(i as u32)).to_vec()))
-            .collect())
     }
 
     /// The bytes of `net` now.

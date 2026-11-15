@@ -101,7 +101,6 @@ fn the_facade_offers_every_operation_of_the_discrete_side() {
     let _start: fn(&mut Digital) -> Result<(), DigitalError> = Digital::start;
     let _next_due: fn(&Digital) -> Option<Tick> = Digital::next_due;
     let _advance: fn(&mut Digital, Tick) -> Result<Advance, DigitalError> = Digital::advance;
-    let _preview: fn(&Digital, Tick) -> Result<Vec<(NetId, Vec<u8>)>, DigitalError> = Digital::preview_boundary;
     let _fire: fn(&mut Digital, NetId, Tick) -> Result<(), DigitalError> = Digital::fire;
     let _run: fn(&mut Digital, Tick, &[f64], Tick, Mode) -> Result<Outcome, DigitalError> = Digital::run_instant;
     let _checkpoint: fn(&Digital) -> Checkpoint = Digital::checkpoint;
@@ -118,7 +117,6 @@ fn the_facade_offers_every_operation_of_the_discrete_side() {
     assert_eq!(d.next_due(), None);
     d.host_commit(n, 0, &[1, 1], Tick(4)).unwrap();
     assert_eq!(d.next_due(), Some(Tick(4)));
-    assert_eq!(d.preview_boundary(Tick(4)).unwrap(), []);
     let cp = d.checkpoint();
     assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Reached);
     assert_eq!(d.read(n), [1, 1]);
