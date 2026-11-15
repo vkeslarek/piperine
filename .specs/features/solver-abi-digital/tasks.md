@@ -85,14 +85,14 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] `piperine-digital-solver` depends on `piperine-abi` and nothing else in the tree; `cargo test -p piperine-solver --test crate_boundaries` passes unedited (`sub_solvers_depend_on_the_abi_crate_only`)
-- [ ] Test `a_delay_is_due_at_the_nearest_tick` passes for delays below, at and above half a tick (C1)
-- [ ] Test `a_time_outside_the_tick_range_is_e0502` passes (C2)
-- [ ] Test `a_nan_delay_is_e0435` and test `an_infinite_delay_never_comes_due` pass (C3, C4)
-- [ ] Test `a_non_advancing_delay_is_the_next_microstep` passes for 0, negative and a quarter of a tick
-- [ ] Test `the_default_tick_is_one_femtosecond` passes
-- [ ] `error::tests::display_is_the_scheduler_message_text` still passes
-- [ ] Gate: full
+- [x] `piperine-digital-solver` depends on `piperine-abi` and nothing else in the tree; `cargo test -p piperine-solver --test crate_boundaries` passes unedited (`sub_solvers_depend_on_the_abi_crate_only`)
+- [x] Test `a_delay_is_due_at_the_nearest_tick` passes for delays below, at and above half a tick (C1)
+- [x] Test `a_time_outside_the_tick_range_is_e0502` passes (C2)
+- [x] Test `a_nan_delay_is_e0435` and test `an_infinite_delay_never_comes_due` pass (C3, C4)
+- [x] Test `a_non_advancing_delay_is_the_next_microstep` passes for 0, negative and a quarter of a tick
+- [x] Test `the_default_tick_is_one_femtosecond` passes
+- [x] `error::tests::display_is_the_scheduler_message_text` still passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

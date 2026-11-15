@@ -9,6 +9,20 @@ pub enum DigitalError {
     DeltaCycleLimit { limit: usize, time: f64 },
     /// The DAG-ordered evaluation's back-edge loop did not settle.
     DagNotConverged { iterations: usize, time: f64 },
+    /// E0502: a time that is not a representable count of ticks.
+    TickRange { code: &'static str, seconds: f64 },
+    /// E0435: a commit made with a NaN delay.
+    NanDelay { code: &'static str, instance: String, statement: u32 },
+    /// E0501: an instant that did not go quiet; the nets still changing.
+    NotQuiet { code: &'static str, tick: i64, nets: Vec<String> },
+    /// A device returned `FAULT` (or `RESHAPE` outside the parameter cone), or
+    /// the engine caught a commit that breaks its statement's promise.
+    Fault { code: u32, message: String, tick: i64, instance: String },
+    /// A bind rule failed; `rule` is abi.md's name for it, `what` the pins or
+    /// functions that break it.
+    Bind { rule: &'static str, what: Vec<String> },
+    /// A construct the engine does not run yet.
+    Unsupported { what: &'static str },
 }
 
 impl fmt::Display for DigitalError {
@@ -22,6 +36,20 @@ impl fmt::Display for DigitalError {
                 f,
                 "DAG digital eval: back-edge loop did not converge in {iterations} iters at t={time}"
             ),
+            DigitalError::TickRange { code, seconds } => {
+                write!(f, "{code}: {seconds} s is outside the range of the tick count")
+            }
+            DigitalError::NanDelay { code, instance, statement } => {
+                write!(f, "{code}: NaN delay in statement {statement} of `{instance}`")
+            }
+            DigitalError::NotQuiet { code, tick, nets } => {
+                write!(f, "{code}: the instant at tick {tick} did not go quiet; still changing: {}", nets.join(", "))
+            }
+            DigitalError::Fault { code, message, tick, instance } => {
+                write!(f, "fault {code} in `{instance}` at tick {tick}: {message}")
+            }
+            DigitalError::Bind { rule, what } => write!(f, "bind rule {rule} broken: {}", what.join("; ")),
+            DigitalError::Unsupported { what } => write!(f, "unsupported: {what}"),
         }
     }
 }

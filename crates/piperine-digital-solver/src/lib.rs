@@ -5,6 +5,7 @@
 //! two-phase delta-cycle scheduler (`scheduler`). It names no analog concept
 //! and depends on no other crate of the workspace.
 
+pub mod abi;
 pub mod drivers;
 pub mod error;
 pub mod events;
