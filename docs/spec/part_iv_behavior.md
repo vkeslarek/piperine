@@ -603,7 +603,7 @@ of `&&` whose left operand is an `Event`.
   | The two solutions are | `cross` |
   | --- | --- |
   | two time points of a transient | located by the solver (§17.3); fires at the located instant, rounded up to a tick (§15) |
-  | two time points a jump separates (§15.2) | located by the solver (§17.3) |
+  | two time points a jump separates (§15.2) | not located: fires at the time point of the step that reads the change, at the microstep after that step's solve (§15 step 3.4), never before the change (§15.2.4) |
   | two rounds of an operating point (§16 step 4) | fires in the round that follows |
   | two points of a sweep (§16.1.2) | fires at the later point |
 

@@ -114,6 +114,7 @@ The table fixes the microstep at which each event fires; §13 defines the events
 | `at(x)`, scheduled at tick `t` before `t` was reached | `(t, 0)` |
 | `at(x)`, armed or re-armed in microstep `n` with a time equal to `t` (§13 rule 4) | `(t, n + 1)` |
 | `cross(e)`, located at `t` (§17.3) | `(t, n + 1)`, where `n` is the microstep at which step 3.4 solved `t` |
+| `cross(e)`, across a jump read by the step to `t` (§15.2.4) | the same: `(t, n + 1)`; it is not located |
 | `settle` | the settle phase of `t`; no microstep |
 | `a \|\| b`, `ev && c`, a function or module returning `Event` | whenever its definition (§13) fires from the rows above |
 
@@ -279,8 +280,10 @@ of its own.
    `Bit<f64>` that jumps, `c·v` is carried and `v` moves. Charge is conserved.
 4. **Probes and `cross` read solutions that exist.** There is no second pass. A reaction at
    `(t, n)` reads the latest solution (§15 step 3.3), which is the left value until a
-   step has read the change. A crossing that a change makes is detected between the solution
-   of the step before it and that of the step that reads it (§17.3).
+   step has read the change. A crossing that a change makes is found between the left value and
+   the right value. It is not located (§17.3): it fires at the time point of the step that
+   reads the change, at the microstep after that step's solve (§15 step 3.4), so never before
+   the change that caused it.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
@@ -605,8 +608,9 @@ three hold:
   (§15 S2).
 - **A3.** If Newton does not converge, or rule 1 fails, reject the step and go to A1 with a
   smaller candidate.
-- **A4.** If a `cross` expression went from `≤ 0` to `> 0` in the step, locate it (§17.3).
-  This may replace `t_c` by an earlier time and repeat from A2.
+- **A4.** If a `cross` expression went from `≤ 0` to `> 0` in the step, locate it (§17.3),
+  unless the step reads a jump (§15.2.4). This may replace `t_c` by an earlier time and repeat
+  from A2.
 - **A5.** Accept the step. `t_c` is the next time point. Event times in `(t, t_c)` that are
   not time points take effect in order, before `t_c` (§15 I3).
 
@@ -657,13 +661,16 @@ time points, and whose time the solver finds.
 3. The landing time is rounded up to a tick (§15 T4). At the landing time point `e > 0`
    holds, and `e ≤ 0` held at the previous time point.
 4. When several crossings fall in one step the solver lands on the earliest. Crossings that
-   round to the same tick fire together at `(t, 0)`.
+   round to the same tick fire together, at the microstep after the solve of `t` (§15 step
+   3.4).
 5. An expression that is unknown does not fire and is not located.
 6. A `cross` under a guard made only of discrete carriers is not located while the guard is
    false (§13 rule 5).
 7. A corner of a waveform computed from `now()` is invisible to the error estimate. It
    **MUST** be written as a carrier change (§9, case D), which makes it a time point and a
    jump.
+8. A crossing between the two solutions a jump separates is not located. It fires at the
+   time point of the step that reads the jump, after that step's solve (§15.2.4).
 
 > **Resolution.** Rule 3's guarantee is stated as: the landing time exceeds the true crossing
 > time by at most `ttol` plus one tick, or `e < etol` holds there. Rule 4 is stated here.
