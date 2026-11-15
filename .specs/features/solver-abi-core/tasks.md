@@ -416,11 +416,11 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Test `an_irreversible_landing_runs_once_after_acceptance_and_does_not_settle` passes across a rejected attempt: `run_instant` for that tick is recorded once, with `settle = false` when `time_point` is false (C31)
-- [ ] Test `finish_ends_after_its_instant_and_is_dropped_on_an_earlier_landing` passes (C32)
-- [ ] Test `a_host_waiter_runs_once_and_its_writes_are_due_next_microstep` passes (C38)
-- [ ] Test `a_waiter_is_never_called_during_advance` passes
-- [ ] Gate: full
+- [x] Test `an_irreversible_landing_runs_once_after_acceptance_and_does_not_settle` passes across a rejected attempt: `run_instant` for that tick is recorded once, with `settle = false` when `time_point` is false (C31)
+- [x] Test `finish_ends_after_its_instant_and_is_dropped_on_an_earlier_landing` passes (C32)
+- [x] Test `a_host_waiter_runs_once_and_its_writes_are_due_next_microstep` passes (C38)
+- [x] Test `a_waiter_is_never_called_during_advance` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

@@ -16,7 +16,8 @@
 
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
-use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, InstantMode, Outcome, Restart, Tick};
+use super::host::Waiter;
+use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, InstantMode, Restart, Tick};
 use super::sink::{Delivery, Sink};
 
 /// How the protocol maps time and bounds its loops.
@@ -54,6 +55,8 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     /// The restart the next acceptance passes to the analog side.
     pub(super) restart: Restart,
     pub(super) delivery: Delivery,
+    /// Host waiters by event net (abi.md R7).
+    pub(super) waiters: Vec<(u32, Waiter)>,
 }
 
 /// The three marks of one checkpoint.
@@ -73,6 +76,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             in_transient: false,
             restart: Restart::None,
             delivery: Delivery::default(),
+            waiters: Vec::new(),
         }
     }
 
@@ -122,11 +126,6 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     pub(super) fn collect(&mut self, analysis: AnalysisKind) {
         let discrete = &mut self.discrete;
         self.delivery.collect(analysis, |out| discrete.drain(out));
-    }
-
-    /// Runs the instant `at` to its end.
-    pub(super) fn run_whole_instant(&mut self, at: Tick, samples: &[f64], limit: Tick, mode: InstantMode) -> Result<Outcome> {
-        self.discrete.run_instant(at, samples, limit, mode)
     }
 
     /// Runs a transient from the last accepted time (after `operating_point`)

@@ -1,0 +1,141 @@
+//! Irreversible instants, `FINISH`, host waiters and host writes in the
+//! protocol (feature `solver-abi-core`, SAC-15, SAC-18; abi.md R6, R7, P5, P6,
+//! §5 steps 2, 4, 5): an irreversible landing runs once after the acceptance
+//! and settles only at a time point; `FINISH` ends the analysis after its
+//! instant and is dropped when the step lands earlier; a host waiter runs once
+//! at an accepted instant, never during `advance`, and its writes are due at
+//! the next microstep; a host write is committed only after the shadow accepts.
+
+#[allow(dead_code)]
+#[path = "support/stub_sides.rs"]
+mod stub_sides;
+
+use std::rc::Rc;
+
+use piperine_solver::protocol::{
+    Advance, Attempt, Ended, InstantMode, Outcome, Protocol, ProtocolOptions, SetOutcome,
+};
+use stub_sides::{Call, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
+
+const SPT: f64 = 0.5;
+
+fn sides() -> (Log, ScriptedDiscrete, ScriptedAnalog) {
+    let log = new_log();
+    let d = ScriptedDiscrete::new(&log);
+    let a = ScriptedAnalog::new(&log);
+    (log, d, a)
+}
+
+/// The `(at, mode)` of every recorded `run_instant`.
+fn instants(log: &Log) -> Vec<(i64, InstantMode)> {
+    calls(log, |c| matches!(c, Call::RunInstant { .. }))
+        .into_iter()
+        .map(|c| match c {
+            Call::RunInstant { at, mode, .. } => (at, mode),
+            _ => unreachable!(),
+        })
+        .collect()
+}
+
+const STEP: InstantMode = InstantMode { is_static: false, settle: true };
+const FORCED: InstantMode = InstantMode { is_static: false, settle: false };
+
+#[test]
+fn an_irreversible_landing_runs_once_after_acceptance_and_does_not_settle() {
+    let (log, mut d, mut a) = sides();
+    // The instant at tick 2 fires an irreversible reaction: a landing that is no time point.
+    d.advances.extend([Advance::Landing { tick: 2, time_point: false }, Advance::Landing { tick: 2, time_point: false }]);
+    a.proposals.extend([2.0, 2.0, 2.0]);
+    a.attempts.push_back(Attempt::Rejected);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(2.0).unwrap();
+    assert_eq!(instants(&log), [(2, FORCED), (4, STEP)], "tick 2 runs once, with no settle");
+    // It runs after the acceptance of the landing, not before the rejected attempt.
+    let seq = calls(&log, |c| matches!(c, Call::Attempt { .. } | Call::Accept(_) | Call::RunInstant { .. }));
+    assert!(matches!(seq[0], Call::Attempt { to: 1.0, .. }));
+    assert!(matches!(seq[1], Call::Attempt { to: 1.0, .. }));
+    assert!(matches!(seq[2], Call::Accept(_)));
+    assert!(matches!(seq[3], Call::RunInstant { at: 2, .. }));
+}
+
+#[test]
+fn finish_ends_after_its_instant_and_is_dropped_on_an_earlier_landing() {
+    let (log, mut d, mut a) = sides();
+    // A reaction at tick 6 (3 s) returns FINISH; the first step lands earlier at 1 s.
+    d.advances.extend([Advance::Final(6), Advance::Reached, Advance::Final(6)]);
+    a.proposals.extend([4.0, 4.0]);
+    a.attempts.push_back(Attempt::LandedEarlier(1.0));
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(10.0).unwrap(), Ended::Finish(3.0));
+    assert_eq!(p.now(), 3.0);
+    assert_eq!(instants(&log), [(2, STEP), (6, STEP)], "the analysis went on after 1 s and ended after 3 s");
+    assert_eq!(calls(&log, |c| matches!(c, Call::Propose(..))).len(), 2, "nothing is proposed after the FINISH");
+
+    // A FINISH returned by the landing instant itself ends the analysis too.
+    let (log, mut d, mut a) = sides();
+    d.instants.push_back(Outcome { finish: true, ..Outcome::default() });
+    a.proposals.push_back(1.0);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(10.0).unwrap(), Ended::Finish(1.0));
+    assert_eq!(instants(&log), [(2, STEP)]);
+}
+
+/// A protocol whose instant at tick 2 fires host event 4, with a waiter that
+/// logs `Waiter(4)` and writes `[1, 1]` to net 9.
+fn waited(log: &Log, mut d: ScriptedDiscrete, mut a: ScriptedAnalog) -> (Protocol<ScriptedDiscrete, ScriptedAnalog>, Rc<std::cell::RefCell<Vec<SetOutcome>>>) {
+    d.advances.push_back(Advance::Landing { tick: 2, time_point: false });
+    d.instants.push_back(Outcome { host_events: vec![4], ..Outcome::default() });
+    a.proposals.extend([2.0, 2.0]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    let results = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let (log, out) = (Rc::clone(log), Rc::clone(&results));
+    p.on_event(4, Box::new(move |cx| {
+        log.borrow_mut().push(Call::Waiter(cx.event()));
+        assert_eq!(cx.time(), 1.0);
+        out.borrow_mut().push(cx.set(9, 0, &[1, 1]).unwrap());
+    }));
+    (p, results)
+}
+
+#[test]
+fn a_host_waiter_runs_once_and_its_writes_are_due_next_microstep() {
+    let (log, d, a) = sides();
+    let (mut p, results) = waited(&log, d, a);
+    p.transient(2.0).unwrap();
+    let seq = calls(&log, |c| {
+        matches!(c, Call::Wait(_) | Call::RunInstant { .. } | Call::Waiter(_) | Call::Shadow(..) | Call::HostCommit { .. })
+    });
+    assert_eq!(
+        seq,
+        [
+            Call::Wait(4),
+            Call::RunInstant { at: 2, samples: vec![], limit: 4, mode: FORCED },
+            Call::Waiter(4),
+            Call::Shadow(9, vec![1, 1]),
+            // Due at the instant's own tick: the next microstep.
+            Call::HostCommit { net: 9, offset: 0, bytes: vec![1, 1], at: 2 },
+            // The instant continues.
+            Call::RunInstant { at: 2, samples: vec![], limit: 4, mode: FORCED },
+            Call::RunInstant { at: 4, samples: vec![], limit: 4, mode: STEP },
+        ]
+    );
+    assert_eq!(*results.borrow(), [SetOutcome::Committed]);
+}
+
+#[test]
+fn a_waiter_is_never_called_during_advance() {
+    let (log, mut d, mut a) = sides();
+    // The landing is rejected once and replayed.
+    d.advances.push_back(Advance::Landing { tick: 2, time_point: false });
+    a.attempts.push_back(Attempt::Rejected);
+    a.proposals.push_back(2.0);
+    let (mut p, _) = waited(&log, d, a);
+    p.transient(2.0).unwrap();
+    let log = log.borrow();
+    assert_eq!(log.iter().filter(|c| matches!(c, Call::Waiter(_))).count(), 1, "called once");
+    let waiter = log.iter().position(|c| matches!(c, Call::Waiter(_))).unwrap();
+    assert!(matches!(log[waiter - 1], Call::RunInstant { .. }), "a waiter follows a run_instant: {:?}", log[waiter - 1]);
+    let last_accept_before = log[..waiter].iter().rposition(|c| matches!(c, Call::Accept(_)));
+    let last_advance_before = log[..waiter].iter().rposition(|c| matches!(c, Call::Advance(_)));
+    assert!(last_accept_before > last_advance_before, "an acceptance separates the waiter from any advance");
+}
