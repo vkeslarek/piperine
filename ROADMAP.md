@@ -59,6 +59,7 @@ postures).
 | Item | Status |
 |------|--------|
 | `.disto` on MOS2/MOS3 — Cranelift function-count explosion | **open** — kernels are opt-in (`disto(true)`, default off); fix = stop emitting the ordered cross-product (combinations are symmetric → one indexed function, not N) |
+| A device transient with a non-zero start and no captured step | **open** — fails loud (digital init only at tick 0): `TransientAnalysisOptions::with_start` needs `with_initial_state`; found in `solver-abi-integration` (T18), no feature owns it yet |
 | LTRA (lossy tline, convolution) | urc covers the practical case; backlog |
 | Autonomous-oscillator PSS | period detection needs phase conditions; backlog |
 | AC `.sens` | DC ships; AC behind the same API if the optimizer needs it |

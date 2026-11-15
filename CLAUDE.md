@@ -5,13 +5,14 @@
 Piperine is a mixed-signal language and simulator. `piperine-lang` parses the Piperine
 mixed-signal language (MSL, specified in `docs/spec/`) and builds the POM `Design` from it;
 elaboration and code generation are not built yet. The native solver is three crates:
-`piperine-solver` (the analysis engine and the `Element` ABI) and two sub-solvers,
+`piperine-solver` (the analysis engine and the owner protocol over the device ABI) and two sub-solvers,
 `piperine-analog-solver` and `piperine-digital-solver`, which the solver owner combines.
 Devices speak one ABI, the leaf crate `piperine-abi` (MD-61): the `#[repr(C)]` contract of
 `.specs/features/device-abi/abi.md`, the `Device` trait, the solver-side `caller::Handle`
 and the shape and partials checks; it depends on no crate.
-The target is that the analog and the digital side meet only through events (MD-60);
-today the digital snapshot (`&[LogicValue]`) is still shared until feature B. Rust workspace, edition 2024.
+The analog and the digital side meet only through events at an instant, run by the owner
+protocol (`piperine-solver/src/protocol/`, MD-60, MD-62): no value or snapshot is shared, and
+the device ABI is the only device contract. Rust workspace, edition 2024.
 
 **Today only `piperine-lang`, `piperine-abi` and the three solver crates compile.** The root `piperine`
 shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` are kept in the tree but do not
@@ -29,7 +30,7 @@ source ──parse_and_elaborate──► Design (POM)        crate: piperine-la
                                     │
                                     ▼
           piperine-solver  ◄── owns ──►  piperine-analog-solver
-          (Element ABI, analyses)        piperine-digital-solver
+          (owner protocol, analyses)     piperine-digital-solver
                                     │
                                     ▼
                     hosts: piperine-api (Rust), piperine-cli
@@ -37,7 +38,7 @@ source ──parse_and_elaborate──► Design (POM)        crate: piperine-la
 
 The owner `piperine-solver` depends on both sub-solvers; the sub-solvers depend on neither
 the owner nor each other. `piperine-abi` is the one in-tree crate any of the three may
-depend on (MD-61). Events are the target boundary between them (the digital snapshot is shared until feature B).
+depend on (MD-61). Events at an instant, run by the owner protocol, are the boundary between them.
 
 ### UNBREAKABLE RULE — POM navigability mirrors the source
 
@@ -71,9 +72,9 @@ compile). Never pass `--workspace`: the root shell and the other four crates do 
 |-------|------|
 | `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`). Spec: `docs/spec/`; POM guide: `docs/pom/`. |
 | `piperine-abi` | The device ABI (MD-61, `.specs/features/device-abi/abi.md`): the `#[repr(C)]` shape, frames and `u32` constants (`raw.rs`), the shipped layouts `BIT`/`REAL`/`BYTE`/`F64`/`NONE` (`layout.rs`), the owned shape builder `ShapeBuf`/`ShapeRef` (`shape.rs`), the `Device` trait and its `Eval`/`React` lenses (`device.rs`), the generic `extern "C"` thunks `module::<D>`/`library` (`thunk.rs`), the solver-side `caller::Handle`, shape-local `validate` and the finite-difference `verify_partials`. Depends on no crate; `unsafe` only in `raw.rs`, `thunk.rs`, `caller.rs`. |
-| `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
-| `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors. Depends on no in-tree crate; the events-only boundary to the digital side is the target (the digital snapshot is shared until feature B). |
-| `piperine-digital-solver` | The digital sub-solver (event-driven scheduler `scheduler.rs`, drivers, topology, `DigitalLimits`). Depends on no in-tree crate; the events-only boundary to the analog side is the target. |
+| `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the owner protocol (`protocol/`) and its adapters (`analyses/adapters.rs`), the bind of device instances (`core/bind.rs`, `core/builder.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
+| `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors, the device `Assembly` (`device/`: terms, partials, histories, limit iterates, checkpoints) and the secant step of crossing location (`crossing.rs`). Depends only on `piperine-abi`; it names no digital type. |
+| `piperine-digital-solver` | The digital sub-solver: the byte-net engine of the device ABI (`engine.rs`, `plan.rs`, `queue.rs`, `dag.rs`, `instant.rs`, `advance.rs`, `tick.rs`, `observe.rs`, `DigitalLimits`). Depends only on `piperine-abi`; it names no analog type. |
 | `piperine-api` | The library face (MD-20): the one host entry point `Session` + `SessionBuilder`, the sweep drivers, and `SolverConfig` (`session/`), result objects (`results.rs`, `waveform.rs`, `fourier.rs`, `units.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
 | `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
 | `piperine-project` | `Piperine.toml` discovery, git dependency resolver (a dependency that declares contributions **is** a plugin — MD-30), `SourceMap` recipe, GitHub-release device-binary fetch + cache (`release.rs`), plugin lockfile. |
@@ -81,10 +82,10 @@ compile). Never pass `--workspace`: the root shell and the other four crates do 
 
 ## Solver architecture (current state)
 
-- **One ABI:** `Element` trait (`core/element.rs`) with `ElementCapabilities` bitflags
-  (`ANALOG`, `DIGITAL`, `SAMPLES_ANALOG`, `LOADS_DC/AC/TRAN`, `EMITS_NOISE`,
-  `DEPENDS_ON_DIGITAL`, `HAS_INTERNAL_UNKNOWNS`, `SUPPORTS_ROLLBACK`, `BYPASS_OK`).
-  No `Device` wrapper, no downcast.
+- **One ABI:** the `Device` trait of `piperine-abi` (MD-62). The analog `Assembly` and the
+  digital `Digital` run its shapes; the solver owns the companion, the limit iterate, every
+  history and every checkpoint, and a device is `eval` over declared reads, writes and
+  partials, and `react`. Devices are bound by `CircuitBuilder::device` (`core/bind.rs`).
 - **Naming:** `Net` (`core/net.rs`) unifies analog nodes, branch currents, digital nets,
   and pseudo variables under one public identity with stable labels.
 - **Convergence:** `ConvergencePlan` (analog crate, `convergence.rs`) composes `HomotopyStrategy`
@@ -92,10 +93,9 @@ compile). Never pass `--workspace`: the root shell and the other four crates do 
   (caps extracted from magic numbers).
 - **Integration:** `TrBdf2` (analog crate, `math/integration.rs`) — the sole transient scheme (a
   Trapezoidal stage over `γh` then a BDF2 stage over `(1−γ)h`, γ = 2−√2); no
-  method-selection surface. LTE-driven timestep via
-  `Element::suggest_transient_step` + the plan's PI controller.
+  method-selection surface. LTE-driven timestep via the plan's PI controller.
 - **Errors:** `SolverDomain` enum — typed domains, no free strings.
-- **Scheduler:** the generic digital scheduler returns `Result<(), DigitalError>`; the owner maps it to `Error` at its one call site.
+- **Protocol:** the owner protocol (`protocol/`) steps both sides; a boundary change is solved on the left value, the instant runs, then it is delivered with a restart (MD-62). The digital engine returns `Result<_, DigitalError>`; the owner maps it to `Error` at its call sites.
 - **Prelude:** `prelude.rs` exports the host-facing surface.
 
 ## Known gaps

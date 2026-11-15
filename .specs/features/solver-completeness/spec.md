@@ -245,10 +245,10 @@ No jump solve is planned anywhere: Q7 stands, and `spec-abi-amendments` writes t
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
 | SCR-01 | P1: Restructure, AC 1 to 4 (detailed as SR-01 to SR-06 in `solver-restructure`) | solver-restructure | Verified |
-| SCE-01 | P1: Event boundary, AC 1, 2 (event-only boundary) | solver-abi-core, -digital, -integration | In Tasks |
+| SCE-01 | P1: Event boundary, AC 1, 2 (event-only boundary) | solver-abi-core, -digital, -integration | Implementing |
 | SCE-02 | P1: Event boundary, AC 3, 15 (DAG propagation to convergence or `E0501`) | solver-abi-digital | In Tasks |
-| SCE-03 | P1: Event boundary, AC 5, 6 (which events cut an analog step) | solver-abi-core, -digital, -integration | In Tasks |
-| SCE-04 | P1: Event boundary, AC 4 (the event sink) | solver-abi-core, -digital, -integration | In Tasks |
+| SCE-03 | P1: Event boundary, AC 5, 6 (which events cut an analog step) | solver-abi-core, -digital, -integration | Implementing |
+| SCE-04 | P1: Event boundary, AC 4 (the event sink) | solver-abi-core, -digital, -integration | Implementing |
 | SCI-01 | P1: Event boundary, AC 7 (ticks) | solver-abi-digital | In Tasks |
 | SCI-02 | P1: Event boundary, AC 8, 16 (`E0502`, `E0435`) | solver-abi-digital | In Tasks |
 | SCI-03 | P1: Event boundary, AC 9 (byte carriers) | solver-abi-digital | In Tasks |
@@ -259,13 +259,13 @@ No jump solve is planned anywhere: Q7 stands, and `spec-abi-amendments` writes t
 | SCI-08 | P1: Event boundary, AC 18 (scheduled events) | solver-abi-digital | In Tasks |
 | SCI-09 | P1: Event boundary, AC 17 (determinism) | solver-abi-digital | In Tasks |
 | SCT-05 | P2: Time point, AC 1, 2, 3 (settle, settle commit) | AC 1: solver-abi-core, -digital; AC 2, 3: solver-time-point | Pending |
-| SCT-07 | P2: Time point, AC 4 (`E0506`) | solver-abi-core, -integration | In Tasks |
-| SCT-08 | P2: Time point, AC 6 (held nodes) | solver-abi-integration | In Tasks |
-| SCT-09 | P2: Time point, AC 5 (rejection leaves no trace) | solver-abi-core, -integration | In Tasks |
+| SCT-07 | P2: Time point, AC 4 (`E0506`) | solver-abi-core, -integration | Implementing |
+| SCT-08 | P2: Time point, AC 6 (held nodes) | solver-abi-integration | Implementing |
+| SCT-09 | P2: Time point, AC 5 (rejection leaves no trace) | solver-abi-core, -integration | Implementing |
 | SCT-10 | P2: Time point, AC 7 (sweep points) | solver-time-point | Pending |
 | SCT-11 | P2: Time point, AC 8 (what waits for time is dropped) | solver-time-point | Pending |
 | SCT-12 | P2: Time point, AC 9, 10 (continuation) | solver-time-point | Pending |
-| SCT-13 | P2: Time point, AC 11 (analysis and solve kind) | solver-abi-integration | In Tasks |
+| SCT-13 | P2: Time point, AC 11 (analysis and solve kind) | solver-abi-integration | Implementing |
 | SCX-01 | P2: Crossings, AC 1, 2, 4 (location) | solver-crossings | Pending |
 | SCX-02 | P2: Crossings, AC 5 (across rounds and sweep points) | solver-crossings | Pending |
 | SCX-03 | P2: Crossings, AC 3, 6, 7 (`E0510`, step cap, `E0509`) | AC 6: solver-abi-analog, -integration; AC 3, 7: solver-crossings | Pending |
@@ -273,9 +273,9 @@ No jump solve is planned anywhere: Q7 stands, and `spec-abi-amendments` writes t
 | SCH-02 | P2: Host seam, AC 3 (force, release) | solver-host-seam | Pending |
 | SCH-03 | P2: Host seam, AC 5 (scheduled probe) | solver-host-seam | Pending |
 | SCH-04 | P2: Host seam, AC 4 (`E0806`) | solver-host-seam | Pending |
-| SCH-05 | P2: Host seam, AC 6, 7, 8 (records, `finish`) | solver-abi-core, -digital, -integration | In Tasks |
-| SCH-06 | P2: Host seam, AC 9 (session parameters) | solver-abi-integration | In Tasks |
-| SCH-07 | P2: Host seam, AC 10 (wake request, no rollback) | solver-abi-core, -digital, -integration | In Tasks |
+| SCH-05 | P2: Host seam, AC 6, 7, 8 (records, `finish`) | solver-abi-core, -digital, -integration | Implementing |
+| SCH-06 | P2: Host seam, AC 9 (session parameters) | solver-abi-integration | Implementing |
+| SCH-07 | P2: Host seam, AC 10 (wake request, no rollback) | solver-abi-core, -digital, -integration | Implementing |
 | SCN-01 | P3: Numerics, AC 1 (tolerances per nature, present mapping) | solver-numerics | Pending |
 | SCN-02 | P3: Numerics, AC 2 (`E0503` named) | solver-numerics | Pending |
 | SCN-03 | P3: Numerics, AC 3 (truncation per state) | solver-numerics | Pending |

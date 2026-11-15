@@ -1282,9 +1282,55 @@ disparando implementações em seguida ok?" as recorded in
 `.specs/features/solver-completeness/context.md`, "Orchestrator decisions under the user's
 go-ahead" (row MD-61).
 
+### MD-62: the device ABI is the only device contract
+
+`solver-abi-integration` (2026-11-15). The owner `piperine-solver` drives every
+analysis through the device ABI of `piperine-abi`: the analog sub-solver's
+`Assembly`, the digital sub-solver's `Digital` and the owner protocol
+(`src/protocol/`, with its adapters in `analyses/adapters.rs`) over the two. The
+`Element` trait, `AnalogDevice`, `DigitalDevice`, `Introspect`, the capability
+flags, device checkpoints, `LimitingReport`, `Invalidation`, `next_breakpoints`, the
+strength table, `LogicValue`, `DigitalState`, `EventQueue` and the two-phase
+engine are deleted; `tests/removed_surface.rs` guards each name and
+`removed.txt` lists every removed test with its item.
+
+1. **The solver owns what a device used to keep.** The companion (a `DDT` term's
+   history and its TR-BDF2 stamp), the limit iterate (a `LIMIT` input's held
+   state), every history and every checkpoint (a rejected attempt restores both
+   sub-solvers and the sink, abi.md §5) are the assembly's and the protocol's, not
+   a device's. A device is `eval` over declared reads, writes and partials, and
+   `react`.
+2. **Boundary delivery.** At an instant the digital side changes a value the
+   analog side reads (or the host writes a param), the step lands on the instant
+   solved on the value before it (the left value); then the instant runs; then the
+   change is delivered with a restart (`Restart::Integrator`: `prev_h = 0`, the
+   next step exempt from the truncation test; `IntegratorSmall` after a host param
+   write: also a step of 1e-3 of the last, floored at `dt_min`). User (2026-11-15,
+   through the coordinator): solve on the left value, then react. This supersedes
+   the boundary preview of `solver-abi-core` and `live_params`' former reading
+   that the landing already shows the new value.
+3. **One circuit kind.** `CircuitBuilder::build` always binds; a circuit has no
+   second contract and no mixed form. `CircuitInstance::set`, `schedule_set` and
+   `on_event` are the host's actions; `SolverDomain::Device` replaces
+   `SolverDomain::Element`.
+4. **Known gap.** A device transient with a non-zero start and no captured step
+   fails loud (digital init only at tick 0); `ROADMAP.md` P1 backlog.
+
+**Scope:** `crates/piperine-solver`, `piperine-analog-solver`,
+`piperine-digital-solver`, `CLAUDE.md`, `AGENTS.md`.
+**Status:** Accepted (2026-11-15), under the user's go-ahead "Ok, deixo tu ir tocando,
+pode ir disparando implementações em seguida ok?" and the settled boundary order above.
+
 ---
 
 ## Handoff Snapshot
+
+### Feature - `solver-abi-integration` (2026-11-15)
+
+The Element contract and the two-phase digital engine are gone (MD-62); every
+analysis runs on devices over the owner protocol. Tasks T1 to T25 are
+committed; the Verifier and `check_proofs.py` are the orchestrator's next step.
+State: see `.specs/features/solver-abi-integration/tasks.md` `## Handoff`.
 
 ### Feature - `solver-restructure` (2026-11-14)
 

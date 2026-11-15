@@ -8,8 +8,8 @@ diagram, crate table, known gaps) — read both before making changes.
 A mixed-signal language and simulator. `piperine-lang` parses and elaborates the source
 (Verilog-AMS LRM 2.4, `.vams`/`.va`, Annex A grammar only, C7 — never a third-party
 Verilog-A compiler) into a POM `Design`. The native solver is three crates:
-`piperine-solver` (analyses and the `Element` ABI) owning `piperine-analog-solver` and
-`piperine-digital-solver`, which meet through events as the target boundary (the digital snapshot stays shared until feature B). PHDL was retired in full
+`piperine-solver` (analyses and the owner protocol over the device ABI) owning `piperine-analog-solver` and
+`piperine-digital-solver`, which meet only through events at an instant, run by the owner protocol (MD-62). PHDL was retired in full
 (MD-44/MD-45).
 
 **Only `piperine-lang`, `piperine-abi` and the three solver crates compile today.** The root `piperine`
@@ -27,7 +27,7 @@ source ──► piperine-lang ──► Design (POM) ──► device compiler 
 ```
 
 Dependency direction: the owner `piperine-solver` depends on both sub-solvers; the
-sub-solvers depend on neither the owner nor each other; events are the target boundary.
+sub-solvers depend on neither the owner nor each other; events at an instant are the boundary.
 `piperine-abi` (the device ABI, MD-61) depends on no crate and is the only in-tree crate a
 solver crate may depend on besides those arrows. Breaking either arrow is a regression.
 
@@ -46,9 +46,9 @@ cargo test      # their whole suite; never `--workspace` (four crates do not bui
 crates/
 ├── piperine-lang/            parser + elaborator: grammar/ elab/ pom/ eval/ (+ headers/)
 ├── piperine-abi/             device ABI: repr(C) contract, Device trait, thunks, caller::Handle, validate, verify
-├── piperine-solver/          owner: Element ABI (core/), analyses/, Net naming, prelude
-├── piperine-analog-solver/   analog sub-solver: math/, convergence, TrBdf2
-├── piperine-digital-solver/  digital sub-solver (event-driven scheduler)
+├── piperine-solver/          owner: protocol/, analyses/, bind (core/), Net naming, prelude
+├── piperine-analog-solver/   analog sub-solver: math/, device/ (Assembly), convergence, TrBdf2
+├── piperine-digital-solver/  digital sub-solver (the byte-net engine of the device ABI)
 ├── piperine-api/             the library face: session, results, waveform (does not build yet)
 ├── piperine-cli/             `piperine` CLI (does not build yet)
 ├── piperine-project/         Piperine.toml + dependency resolver (does not build yet)

@@ -6,7 +6,8 @@
 //! holds no Verilog-AMS or Python source, `default-members` lists the green
 //! crates and the CI workflows name no retired crate. Covers SAC-12 AC 3
 //! (`solver-abi-core`): the instruction files name `piperine-abi` and
-//! `.specs/STATE.md` records MD-61.
+//! `.specs/STATE.md` records MD-61. Covers SAI-16 (`solver-abi-integration`):
+//! `.specs/STATE.md` records MD-62 and the instruction files name no removed item.
 
 use std::path::PathBuf;
 
@@ -278,11 +279,8 @@ fn instruction_text_places_the_moved_code_and_states_the_boundary_as_target() {
         assert!(!text.contains("meet through events only"), "{name} states the events-only boundary as current");
         assert!(!text.contains("through events only."), "{name} states the events-only boundary as current");
         assert!(!text.contains("Events are the only boundary"), "{name} states the events-only boundary as current");
-        assert!(
-            text.contains("events as the target boundary") || text.contains("events are the target boundary")
-                || text.contains("The target is that the analog and the digital side meet only through events"),
-            "{name} does not call the events-only boundary the target"
-        );
+        assert!(text.contains("MD-62"), "{name} does not cite MD-62, the device ABI as the only device contract");
+        assert!(text.contains("owner protocol"), "{name} does not name the owner protocol as the boundary");
         assert!(text.contains("root `piperine`"), "{name} omits the root shell from the non-building list");
         for gone in ["crates/piperine-plugin", "PluginHost", "codegen's own"] {
             assert!(!text.contains(gone), "{name} still references {gone}");
@@ -329,4 +327,11 @@ fn instruction_files_and_state_name_the_abi_crate() {
     }
     let state = std::fs::read_to_string(repo_root().join(".specs/STATE.md")).expect("read .specs/STATE.md");
     assert!(state.contains("### MD-61"), ".specs/STATE.md carries no MD-61");
+    assert!(state.contains("### MD-62"), ".specs/STATE.md carries no MD-62");
+    for file in ["CLAUDE.md", "AGENTS.md"] {
+        let text = std::fs::read_to_string(repo_root().join(file)).expect("read an instruction file");
+        for gone in ["Element", "ElementCapabilities", "AnalogDevice", "DigitalDevice", "LogicValue", "EventQueue"] {
+            assert!(!text.contains(gone), "{file} still names the removed {gone}");
+        }
+    }
 }
