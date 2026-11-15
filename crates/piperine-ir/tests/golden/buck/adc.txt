@@ -1,0 +1,20 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Adc
+  param vref: f64 = 1.6 where (vref > 0.0)
+  param tconv: f64 = 5e-7 where (tconv > 0.0)
+  param tstrobe: f64 = 5e-9 where (tstrobe > 0.0)
+  node ain: Electrical port
+  carrier sample: bool in
+  carrier code: u10 out init 0
+  carrier done: bool out init false
+  event E0 changed sample guard sample.high()
+  reaction R0 on (E0)
+    local q: u10
+    let q = ((((probe(ain, gnd) / vref) * 1024.0) + 0.5).floor().clamp(0.0, 1023.0) as u10)
+    code <- q after tconv
+    done <- true after tconv
+    done <- false after (tconv + tstrobe)
+body Top
+instance Top: Top  nodes ()  params ()  top

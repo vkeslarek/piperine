@@ -1,0 +1,9 @@
+body Dff
+  carrier clk: bool in
+  carrier d: bool in
+  carrier q: bool out init false
+  event E0 changed clk guard clk.high()
+  reaction R0 on (E0)
+    q <- d
+body Top
+instance Top: Top  nodes ()  params ()  top

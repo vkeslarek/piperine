@@ -1,0 +1,23 @@
+body Osc  @dpwm.msl:7:1
+  param f: f64 = 200000000.0 where (f > 0.0)  @dpwm.msl:8:5
+  carrier clk: bool out init false  @dpwm.msl:7:20
+  event E0 changed clk  @dpwm.msl:10:22
+  reaction R0 on (E0)  @dpwm.msl:10:5
+    clk <- (!clk) after (0.5 / f)
+body Top  @top.msl:1:1
+instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
+arenas
+  top 0
+  body 0: where (e2)  natures ()  branches ()  children ()  analog -
+  body 0 discrete: drives ()  events ((changed c0 -))  reactions ((on (0) (s0)))
+  body 1: where ()  natures ()  branches ()  children ()  analog -
+  instance 0: name Top  body 1  parent -  children ()  nodes ()
+  e0: f64 = real 0.0  @dpwm.msl:8:22
+  e1: f64 = param 0  @dpwm.msl:8:22
+  e2: bool = gt e1 e0  @dpwm.msl:8:22
+  e3: flagged<bool> = carrier 0  @dpwm.msl:10:45
+  e4: flagged<bool> = not e3  @dpwm.msl:10:45
+  e5: f64 = real 0.5  @dpwm.msl:10:57
+  e6: f64 = param 0  @dpwm.msl:10:57
+  e7: f64 = div e5 e6  @dpwm.msl:10:57
+  s0: commit c0 e4 e7

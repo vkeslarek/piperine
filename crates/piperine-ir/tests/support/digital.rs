@@ -452,6 +452,454 @@ impl Buck {
         body
     }
 
+    /// The D flip-flop of abi.md §11.4, `clk.rise()` as `changed` guarded by `high()`:
+    ///
+    /// ```text
+    /// pub module Dff(in clk: Bit, in d: Bit, out q: Bit = false) {}
+    /// digital for Dff { on clk.rise() { q <- d; } }
+    /// ```
+    pub fn dff(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "dff.msl";
+        let body = b.body(Buck::spec("Dff", F, 1));
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, F, 1, 19));
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, F, 1, 32));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 44));
+        let rise = Buck::rise(b, body, 0, F, 2, 22);
+        let mut x = Dx::new(b, F, 2, 37);
+        let d = x.carrier(1, ValueType::Bool);
+        let commit = x.commit(2, d, None);
+        Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 2);
+        body
+    }
+
+    /// `control.msl:9-14`, `if let Some(d) = data.known()` in msl-digital's lowering
+    /// (`x.known()` is `(x.is_known(), x.known_or(zero))`), `SETPOINT_RESET` 100 and
+    /// `SETPOINT_MAX` 168 folded (`spec.msl:22-24`):
+    ///
+    /// ```text
+    /// pub module SetpointReg(in wr: Bit, in data: Bit<u8>, out code: Bit<u8> = SETPOINT_RESET) {}
+    /// digital for SetpointReg {
+    ///     on wr.rise() {
+    ///         if let Some(d) = data.known() { code <- d.min(SETPOINT_MAX); }
+    ///     }
+    /// }
+    /// ```
+    pub fn setpoint_reg(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "control.msl";
+        let u8_ = Ty::u(8);
+        let body = b.body(Buck::spec("SetpointReg", F, 9));
+        b.carrier(body, Buck::carrier("wr", ValueType::Bool, CarrierRole::In, None, F, 9, 27));
+        b.carrier(body, Buck::carrier("data", u8_.clone(), CarrierRole::In, None, F, 9, 39));
+        b.carrier(body, Buck::carrier("code", u8_.clone(), CarrierRole::Out, Some(Constant::Int(100)), F, 9, 60));
+        let rise = Buck::rise(b, body, 0, F, 11, 8);
+        let mut x = Dx::new(b, F, 12, 12);
+        let data = x.carrier(1, u8_.clone());
+        let known = x.is_known(data);
+        let data = x.carrier(1, u8_.clone());
+        let zero = x.int(0, u8_.clone());
+        let value = x.known_or(data, zero, u8_.clone());
+        let let_d = x.let_(0, value);
+        x.at(12, 41);
+        let d = x.local(0, u8_.clone());
+        let max = x.int(168, u8_.clone());
+        let capped = x.method(Method::Min, d, vec![max], u8_.clone());
+        let commit = x.commit(2, capped, None);
+        let taken = x.when(known, vec![let_d, commit], None);
+        let stmt = x.stmt(taken);
+        Buck::reaction(b, body, vec![rise], vec![stmt], vec![Buck::local("d", u8_)], F, 11);
+        body
+    }
+
+    /// `dpwm.msl:40-80`, with the functions it calls (`rev3~1`, `dithered_width~01`: the frame
+    /// index `frame + 1` may be unknown). `&&` and `||` over values that may be unknown are `&`
+    /// and `|` (msl-digital: §3.3.12 gives them one table); `N_PERIOD - 1`, `SAMPLE_COUNT`,
+    /// `DEAD_COUNTS` and `N_PERIOD - DEAD_COUNTS` are folded to 399, 0, 4 and 396 (`spec.msl`).
+    /// The `Never` monitor of line 53 is a stdlib module with an `emit!`, out of this slice.
+    ///
+    /// ```text
+    /// pub module Dpwm(in clk: Bit, in run: Bit, in duty: Bit<u12>, in oc: Bit, in sink_oc: Bit,
+    ///                 out hs: Bit = false, out ls: Bit = false, out sample: Bit, out cut: Bit = false) {
+    ///     signal count: Bit<u9> = 0;  signal width: Bit<u9> = 0;  signal frame: Bit<u3> = 0;
+    ///     signal hs_off: Bit<u9> = 0;  signal hs_cut: Bit = false;  signal ls_cut: Bit = false;
+    ///     sample = count == SAMPLE_COUNT;
+    /// }
+    /// digital for Dpwm {
+    ///     on clk.rise() {
+    ///         let wrap = count == N_PERIOD - 1;
+    ///         let next = if wrap { 0 } else { count + 1 };
+    ///         let enabled = run.known_or(false);
+    ///         let w = if wrap { dithered_width(duty.known_or(0), frame + 1) } else { width };
+    ///         let hs_trip = !wrap && (hs_cut || (hs && oc.known_or(true)));
+    ///         let ls_trip = !wrap && (ls_cut || (ls && sink_oc.known_or(true)));
+    ///         let hs_next = enabled && !hs_trip && next < w;
+    ///         let off_at = if wrap { w } else if hs && !hs_next { next } else { hs_off };
+    ///         let ls_next = enabled && !hs_next && !ls_trip
+    ///             && next >= off_at + DEAD_COUNTS && next < N_PERIOD - DEAD_COUNTS;
+    ///         count <- next; width <- w; hs_off <- off_at; hs_cut <- hs_trip; ls_cut <- ls_trip;
+    ///         hs <- hs_next; ls <- ls_next;
+    ///         if wrap { frame <- frame + 1; cut <- hs_cut; }
+    ///     }
+    /// }
+    /// ```
+    pub fn dpwm(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "dpwm.msl";
+        let rev3 = Buck::rev3_flagged(b);
+        let dithered = Buck::dithered_width_flagged(b, rev3);
+        let body = b.body(Buck::spec("Dpwm", F, 40));
+        let (bit, u9, u3, u12) = (ValueType::Bool, Ty::u(9), Ty::u(3), Ty::u(12));
+        let no = || Some(Constant::Bool(false));
+        let zero = || Some(Constant::Int(0));
+        for (name, ty, role, init, line, col) in [
+            ("clk", bit.clone(), CarrierRole::In, None, 40, 17),
+            ("run", bit.clone(), CarrierRole::In, None, 40, 30),
+            ("duty", u12.clone(), CarrierRole::In, None, 40, 43),
+            ("oc", bit.clone(), CarrierRole::In, None, 40, 61),
+            ("sink_oc", bit.clone(), CarrierRole::In, None, 40, 73),
+            ("hs", bit.clone(), CarrierRole::Out, no(), 41, 17),
+            ("ls", bit.clone(), CarrierRole::Out, no(), 41, 39),
+            ("sample", bit.clone(), CarrierRole::Out, None, 41, 61),
+            ("cut", bit.clone(), CarrierRole::Out, no(), 41, 78),
+            ("count", u9.clone(), CarrierRole::Signal, zero(), 42, 12),
+            ("width", u9.clone(), CarrierRole::Signal, zero(), 43, 12),
+            ("frame", u3.clone(), CarrierRole::Signal, zero(), 44, 12),
+            ("hs_off", u9.clone(), CarrierRole::Signal, zero(), 46, 12),
+            ("hs_cut", bit.clone(), CarrierRole::Signal, no(), 48, 12),
+            ("ls_cut", bit.clone(), CarrierRole::Signal, no(), 49, 12),
+        ] {
+            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
+        }
+        let (clk, run, duty, oc, sink_oc, hs, ls, sample, cut) = (0, 1, 2, 3, 4, 5, 6, 7, 8);
+        let (count, width, frame, hs_off, hs_cut, ls_cut) = (9, 10, 11, 12, 13, 14);
+        let fb = Ty::flagged(bit.clone());
+        let f9 = Ty::flagged(u9.clone());
+
+        // sample = count == SAMPLE_COUNT;
+        let mut x = Dx::new(b, F, 51, 14);
+        let c = x.carrier(count, u9.clone());
+        let at_zero = x.int(0, u9.clone());
+        let same = x.bin(BinaryOp::Eq, c, at_zero, fb.clone());
+        b.drive(body, Drive { carrier: sample, value: same, after: None, origin: Buck::origin(F, 51, 5) });
+        let rise = Buck::rise(b, body, clk, F, 56, 8);
+
+        let locals = [
+            ("wrap", fb.clone()),
+            ("next", f9.clone()),
+            ("enabled", bit.clone()),
+            ("w", f9.clone()),
+            ("hs_trip", fb.clone()),
+            ("ls_trip", fb.clone()),
+            ("hs_next", fb.clone()),
+            ("off_at", f9.clone()),
+            ("ls_next", fb.clone()),
+        ];
+        let (wrap, next, enabled, w, hs_trip, ls_trip, hs_next, off_at, ls_next) = (0, 1, 2, 3, 4, 5, 6, 7, 8);
+        let mut x = Dx::new(b, F, 57, 20);
+        let mut stmts = Vec::new();
+        // let wrap = count == N_PERIOD - 1;
+        let c = x.carrier(count, u9.clone());
+        let last = x.int(399, u9.clone());
+        let v = x.bin(BinaryOp::Eq, c, last, fb.clone());
+        stmts.push(x.let_(wrap, v));
+        // let next = if wrap { 0 } else { count + 1 };
+        x.at(58, 20);
+        let cond = x.local(wrap, fb.clone());
+        let restart = x.int(0, u9.clone());
+        let c = x.carrier(count, u9.clone());
+        let one = x.int(1, u9.clone());
+        let step = x.bin(BinaryOp::Add, c, one, f9.clone());
+        let v = x.if_(cond, restart, step, f9.clone());
+        stmts.push(x.let_(next, v));
+        // let enabled = run.known_or(false);
+        x.at(59, 23);
+        let r = x.carrier(run, bit.clone());
+        let off = x.boolean(false);
+        let v = x.known_or(r, off, bit.clone());
+        stmts.push(x.let_(enabled, v));
+        // let w = if wrap { dithered_width(duty.known_or(0), frame + 1) } else { width };
+        x.at(61, 17);
+        let cond = x.local(wrap, fb.clone());
+        let d = x.carrier(duty, u12.clone());
+        let z = x.int(0, u12.clone());
+        let word = x.known_or(d, z, u12.clone());
+        let fr = x.carrier(frame, u3.clone());
+        let one = x.int(1, u3.clone());
+        let following = x.bin(BinaryOp::Add, fr, one, Ty::flagged(u3.clone()));
+        let latched = x.call(dithered, vec![word, following], f9.clone());
+        let held = x.carrier(width, u9.clone());
+        let v = x.if_(cond, latched, held, f9.clone());
+        stmts.push(x.let_(w, v));
+        // let hs_trip = !wrap && (hs_cut || (hs && oc.known_or(true)));
+        // let ls_trip = !wrap && (ls_cut || (ls && sink_oc.known_or(true)));
+        for (local, cut_flag, side, trip, line) in [(hs_trip, hs_cut, hs, oc, 62), (ls_trip, ls_cut, ls, sink_oc, 63)] {
+            x.at(line, 23);
+            let wr = x.local(wrap, fb.clone());
+            let not_wrap = x.un(UnaryOp::Not, wr, fb.clone());
+            let cf = x.carrier(cut_flag, bit.clone());
+            let on = x.carrier(side, bit.clone());
+            let t = x.carrier(trip, bit.clone());
+            let assume = x.boolean(true);
+            let tripped = x.known_or(t, assume, bit.clone());
+            let on_and_tripped = x.bin(BinaryOp::BitAnd, on, tripped, fb.clone());
+            let either = x.bin(BinaryOp::BitOr, cf, on_and_tripped, fb.clone());
+            let v = x.bin(BinaryOp::BitAnd, not_wrap, either, fb.clone());
+            stmts.push(x.let_(local, v));
+        }
+        // let hs_next = enabled && !hs_trip && next < w;
+        x.at(64, 23);
+        let en = x.local(enabled, bit.clone());
+        let t = x.local(hs_trip, fb.clone());
+        let not_t = x.un(UnaryOp::Not, t, fb.clone());
+        let a = x.bin(BinaryOp::BitAnd, en, not_t, fb.clone());
+        let n = x.local(next, f9.clone());
+        let wl = x.local(w, f9.clone());
+        let inside = x.bin(BinaryOp::Lt, n, wl, fb.clone());
+        let v = x.bin(BinaryOp::BitAnd, a, inside, fb.clone());
+        stmts.push(x.let_(hs_next, v));
+        // let off_at = if wrap { w } else if hs && !hs_next { next } else { hs_off };
+        x.at(65, 22);
+        let cond = x.local(wrap, fb.clone());
+        let wl = x.local(w, f9.clone());
+        let on = x.carrier(hs, bit.clone());
+        let hn = x.local(hs_next, fb.clone());
+        let not_hn = x.un(UnaryOp::Not, hn, fb.clone());
+        let falls = x.bin(BinaryOp::BitAnd, on, not_hn, fb.clone());
+        let n = x.local(next, f9.clone());
+        let kept = x.carrier(hs_off, u9.clone());
+        let inner = x.if_(falls, n, kept, f9.clone());
+        let v = x.if_(cond, wl, inner, f9.clone());
+        stmts.push(x.let_(off_at, v));
+        // let ls_next = enabled && !hs_next && !ls_trip && next >= off_at + DEAD_COUNTS && next < N_PERIOD - DEAD_COUNTS;
+        x.at(66, 23);
+        let en = x.local(enabled, bit.clone());
+        let hn = x.local(hs_next, fb.clone());
+        let not_hn = x.un(UnaryOp::Not, hn, fb.clone());
+        let a = x.bin(BinaryOp::BitAnd, en, not_hn, fb.clone());
+        let lt = x.local(ls_trip, fb.clone());
+        let not_lt = x.un(UnaryOp::Not, lt, fb.clone());
+        let a = x.bin(BinaryOp::BitAnd, a, not_lt, fb.clone());
+        x.at(67, 16);
+        let n = x.local(next, f9.clone());
+        let oa = x.local(off_at, f9.clone());
+        let dead = x.int(4, u9.clone());
+        let start = x.bin(BinaryOp::Add, oa, dead, f9.clone());
+        let after_dead = x.bin(BinaryOp::Ge, n, start, fb.clone());
+        let a = x.bin(BinaryOp::BitAnd, a, after_dead, fb.clone());
+        let n = x.local(next, f9.clone());
+        let end = x.int(396, u9.clone());
+        let before_end = x.bin(BinaryOp::Lt, n, end, fb.clone());
+        let v = x.bin(BinaryOp::BitAnd, a, before_end, fb.clone());
+        stmts.push(x.let_(ls_next, v));
+        // count <- next; width <- w; hs_off <- off_at; hs_cut <- hs_trip; ls_cut <- ls_trip; hs <- hs_next; ls <- ls_next;
+        for (line, carrier, local, ty) in [
+            (68, count, next, f9.clone()),
+            (69, width, w, f9.clone()),
+            (70, hs_off, off_at, f9.clone()),
+            (71, hs_cut, hs_trip, fb.clone()),
+            (72, ls_cut, ls_trip, fb.clone()),
+            (73, hs, hs_next, fb.clone()),
+            (74, ls, ls_next, fb.clone()),
+        ] {
+            x.at(line, 9);
+            let v = x.local(local, ty);
+            stmts.push(x.commit(carrier, v, None));
+        }
+        // if wrap { frame <- frame + 1; cut <- hs_cut; }
+        x.at(76, 13);
+        let fr = x.carrier(frame, u3.clone());
+        let one = x.int(1, u3.clone());
+        let advanced = x.bin(BinaryOp::Add, fr, one, Ty::flagged(u3.clone()));
+        let advance = x.commit(frame, advanced, None);
+        x.at(77, 13);
+        let was_cut = x.carrier(hs_cut, bit.clone());
+        let report = x.commit(cut, was_cut, None);
+        x.at(75, 9);
+        let cond = x.local(wrap, fb.clone());
+        let at_wrap = x.when(cond, vec![advance, report], None);
+        stmts.push(x.stmt(at_wrap));
+        let locals = locals.into_iter().map(|(n, t)| Buck::local(n, t)).collect();
+        Buck::reaction(b, body, vec![rise], stmts, locals, F, 56);
+        body
+    }
+
+    /// `control.msl:46-75`, the constants folded (`spec.msl`: `KP_Q4` 64, `KI_Q4` 8, `KD_Q4`
+    /// 1024, `D_POLE_SHIFT` 2, `Q_SHIFT` 4, `E_MIN` -256, `E_MAX` 255, `DUTY_MAX` 2880) and `&&`,
+    /// `||` over values that may be unknown written `&`, `|`:
+    ///
+    /// ```text
+    /// pub module Pid(in tick: Bit, in run: Bit, in reference: Bit<u10>, in meas: Bit<u10>,
+    ///                out duty: Bit<u12> = 0) {
+    ///     signal integ: Bit<i32> = 0;  signal deriv: Bit<i32> = 0;  signal e_prev: Bit<i16> = 0;
+    /// }
+    /// digital for Pid {
+    ///     on tick.rise() {
+    ///         if !run.known_or(false) {
+    ///             integ <- 0; deriv <- 0; e_prev <- 0; duty <- 0;
+    ///         } else {
+    ///             let e = ((reference.known_or(0) as i16) - (meas.known_or(1023) as i16)).clamp(E_MIN, E_MAX);
+    ///             let p = KP_Q4 * (e as i32);
+    ///             let d = (deriv >> D_POLE_SHIFT) + KD_Q4 * ((e - e_prev) as i32);
+    ///             let u = (p + integ + d) >> Q_SHIFT;
+    ///             let u_max = DUTY_MAX as i32;
+    ///             let windup = (u > u_max && e > 0) || (u < 0 && e < 0);
+    ///             if !windup {
+    ///                 integ <- (integ + KI_Q4 * (e as i32)).clamp(0, u_max << Q_SHIFT);
+    ///             }
+    ///             deriv <- d;
+    ///             e_prev <- e;
+    ///             duty <- u.clamp(0, u_max) as u12;
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn pid(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "control.msl";
+        let body = b.body(Buck::spec("Pid", F, 46));
+        let (bit, u10, u12, i16_, i32_) = (ValueType::Bool, Ty::u(10), Ty::u(12), Ty::i(16), Ty::i(32));
+        let zero = || Some(Constant::Int(0));
+        for (name, ty, role, init, line, col) in [
+            ("tick", bit.clone(), CarrierRole::In, None, 46, 19),
+            ("run", bit.clone(), CarrierRole::In, None, 46, 33),
+            ("reference", u10.clone(), CarrierRole::In, None, 46, 46),
+            ("meas", u10.clone(), CarrierRole::In, None, 46, 72),
+            ("duty", u12.clone(), CarrierRole::Out, zero(), 47, 16),
+            ("integ", i32_.clone(), CarrierRole::Signal, zero(), 49, 12),
+            ("deriv", i32_.clone(), CarrierRole::Signal, zero(), 51, 12),
+            ("e_prev", i16_.clone(), CarrierRole::Signal, zero(), 53, 12),
+        ] {
+            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
+        }
+        let (tick, run, reference, meas, duty, integ, deriv, e_prev) = (0, 1, 2, 3, 4, 5, 6, 7);
+        let rise = Buck::rise(b, body, tick, F, 56, 8);
+        let (fb, f32_) = (Ty::flagged(bit.clone()), Ty::flagged(i32_.clone()));
+        let locals = [("e", i16_.clone()), ("p", i32_.clone()), ("d", f32_.clone()), ("u", f32_.clone()), ("u_max", i32_.clone()), ("windup", fb.clone())];
+        let (e, p, d, u, u_max, windup) = (0, 1, 2, 3, 4, 5);
+
+        // if !run.known_or(false) { integ <- 0; deriv <- 0; e_prev <- 0; duty <- 0; }
+        let mut x = Dx::new(b, F, 57, 12);
+        let r = x.carrier(run, bit.clone());
+        let off = x.boolean(false);
+        let running = x.known_or(r, off, bit.clone());
+        let stopped = x.un(UnaryOp::Not, running, bit.clone());
+        x.at(58, 13);
+        let mut reset = Vec::new();
+        for (carrier, ty) in [(integ, i32_.clone()), (deriv, i32_.clone()), (e_prev, i16_.clone()), (duty, u12.clone())] {
+            let z = x.int(0, ty);
+            reset.push(x.commit(carrier, z, None));
+        }
+        let reset = x.block(reset, None, ValueType::Unit);
+
+        let mut run_stmts = Vec::new();
+        // let e = ((reference.known_or(0) as i16) - (meas.known_or(1023) as i16)).clamp(E_MIN, E_MAX);
+        x.at(61, 21);
+        let rf = x.carrier(reference, u10.clone());
+        let z = x.int(0, u10.clone());
+        let rk = x.known_or(rf, z, u10.clone());
+        let rs = x.cast(rk, i16_.clone(), i16_.clone());
+        let m = x.carrier(meas, u10.clone());
+        let full = x.int(1023, u10.clone());
+        let mk = x.known_or(m, full, u10.clone());
+        let ms = x.cast(mk, i16_.clone(), i16_.clone());
+        let diff = x.bin(BinaryOp::Sub, rs, ms, i16_.clone());
+        let lo = x.int(-256, i16_.clone());
+        let hi = x.int(255, i16_.clone());
+        let v = x.method(Method::Clamp, diff, vec![lo, hi], i16_.clone());
+        run_stmts.push(x.let_(e, v));
+        // let p = KP_Q4 * (e as i32);
+        x.at(62, 21);
+        let kp = x.int(64, i32_.clone());
+        let el = x.local(e, i16_.clone());
+        let ew = x.cast(el, i32_.clone(), i32_.clone());
+        let v = x.bin(BinaryOp::Mul, kp, ew, i32_.clone());
+        run_stmts.push(x.let_(p, v));
+        // let d = (deriv >> D_POLE_SHIFT) + KD_Q4 * ((e - e_prev) as i32);
+        x.at(63, 21);
+        let dv = x.carrier(deriv, i32_.clone());
+        let pole = x.int(2, i32_.clone());
+        let filtered = x.bin(BinaryOp::Shr, dv, pole, f32_.clone());
+        let kd = x.int(1024, i32_.clone());
+        let el = x.local(e, i16_.clone());
+        let ep = x.carrier(e_prev, i16_.clone());
+        let de = x.bin(BinaryOp::Sub, el, ep, Ty::flagged(i16_.clone()));
+        let dw = x.cast(de, i32_.clone(), f32_.clone());
+        let kick = x.bin(BinaryOp::Mul, kd, dw, f32_.clone());
+        let v = x.bin(BinaryOp::Add, filtered, kick, f32_.clone());
+        run_stmts.push(x.let_(d, v));
+        // let u = (p + integ + d) >> Q_SHIFT;
+        x.at(64, 21);
+        let pl = x.local(p, i32_.clone());
+        let ig = x.carrier(integ, i32_.clone());
+        let sum = x.bin(BinaryOp::Add, pl, ig, f32_.clone());
+        let dl = x.local(d, f32_.clone());
+        let sum = x.bin(BinaryOp::Add, sum, dl, f32_.clone());
+        let q = x.int(4, i32_.clone());
+        let v = x.bin(BinaryOp::Shr, sum, q, f32_.clone());
+        run_stmts.push(x.let_(u, v));
+        // let u_max = DUTY_MAX as i32;
+        x.at(65, 25);
+        let dm = x.int(2880, u12.clone());
+        let v = x.cast(dm, i32_.clone(), i32_.clone());
+        run_stmts.push(x.let_(u_max, v));
+        // let windup = (u > u_max && e > 0) || (u < 0 && e < 0);
+        x.at(66, 26);
+        let ul = x.local(u, f32_.clone());
+        let um = x.local(u_max, i32_.clone());
+        let over = x.bin(BinaryOp::Gt, ul, um, fb.clone());
+        let el = x.local(e, i16_.clone());
+        let z = x.int(0, i16_.clone());
+        let pos = x.bin(BinaryOp::Gt, el, z, bit.clone());
+        let high = x.bin(BinaryOp::BitAnd, over, pos, fb.clone());
+        let ul = x.local(u, f32_.clone());
+        let z = x.int(0, i32_.clone());
+        let under = x.bin(BinaryOp::Lt, ul, z, fb.clone());
+        let el = x.local(e, i16_.clone());
+        let z = x.int(0, i16_.clone());
+        let neg = x.bin(BinaryOp::Lt, el, z, bit.clone());
+        let low = x.bin(BinaryOp::BitAnd, under, neg, fb.clone());
+        let v = x.bin(BinaryOp::BitOr, high, low, fb.clone());
+        run_stmts.push(x.let_(windup, v));
+        // if !windup { integ <- (integ + KI_Q4 * (e as i32)).clamp(0, u_max << Q_SHIFT); }
+        x.at(68, 26);
+        let ig = x.carrier(integ, i32_.clone());
+        let ki = x.int(8, i32_.clone());
+        let el = x.local(e, i16_.clone());
+        let ew = x.cast(el, i32_.clone(), i32_.clone());
+        let gain = x.bin(BinaryOp::Mul, ki, ew, i32_.clone());
+        let acc = x.bin(BinaryOp::Add, ig, gain, f32_.clone());
+        let z = x.int(0, i32_.clone());
+        let um = x.local(u_max, i32_.clone());
+        let q = x.int(4, i32_.clone());
+        let top = x.bin(BinaryOp::Shl, um, q, i32_.clone());
+        let clamped = x.method(Method::Clamp, acc, vec![z, top], f32_.clone());
+        let integrate = x.commit(integ, clamped, None);
+        x.at(67, 13);
+        let wl = x.local(windup, fb.clone());
+        let free = x.un(UnaryOp::Not, wl, fb.clone());
+        let cond = x.when(free, vec![integrate], None);
+        run_stmts.push(x.stmt(cond));
+        // deriv <- d; e_prev <- e; duty <- u.clamp(0, u_max) as u12;
+        x.at(70, 13);
+        let dl = x.local(d, f32_.clone());
+        run_stmts.push(x.commit(deriv, dl, None));
+        x.at(71, 13);
+        let el = x.local(e, i16_.clone());
+        run_stmts.push(x.commit(e_prev, el, None));
+        x.at(72, 13);
+        let ul = x.local(u, f32_.clone());
+        let z = x.int(0, i32_.clone());
+        let um = x.local(u_max, i32_.clone());
+        let bounded = x.method(Method::Clamp, ul, vec![z, um], f32_.clone());
+        let word = x.cast(bounded, u12.clone(), Ty::flagged(u12.clone()));
+        run_stmts.push(x.commit(duty, word, None));
+        x.at(59, 16);
+        let running_block = x.block(run_stmts, None, ValueType::Unit);
+        x.at(57, 9);
+        let body_if = x.if_(stopped, reset, running_block, ValueType::Unit);
+        let stmt = x.stmt(body_if);
+        let locals = locals.into_iter().map(|(n, t)| Buck::local(n, t)).collect();
+        Buck::reaction(b, body, vec![rise], vec![stmt], locals, F, 56);
+        body
+    }
+
     /// `power.msl:74-78`:
     ///
     /// ```text

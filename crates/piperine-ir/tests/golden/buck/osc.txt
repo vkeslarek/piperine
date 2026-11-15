@@ -1,0 +1,8 @@
+body Osc
+  param f: f64 = 200000000.0 where (f > 0.0)
+  carrier clk: bool out init false
+  event E0 changed clk
+  reaction R0 on (E0)
+    clk <- (!clk) after (0.5 / f)
+body Top
+instance Top: Top  nodes ()  params ()  top

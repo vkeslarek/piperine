@@ -1,0 +1,16 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body A2D
+  param vth: f64 = 0.6
+  param hyst: f64 = 0.05
+  node a: Electrical port
+  carrier d: bool out init false
+  event E0 cross ((probe(a, gnd) - vth) - (hyst / 2.0))
+  event E1 cross ((vth - (hyst / 2.0)) - probe(a, gnd))
+  reaction R0 on (E0)
+    d <- true
+  reaction R1 on (E1)
+    d <- false
+body Top
+instance Top: Top  nodes ()  params ()  top

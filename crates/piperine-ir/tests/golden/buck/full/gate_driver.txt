@@ -1,0 +1,29 @@
+body GateDriver  @power.msl:74:1
+  param tpd: f64 = 1e-8 where (tpd > 0.0)  @power.msl:75:5
+  carrier hs_cmd: bool in  @power.msl:74:30
+  carrier ls_cmd: bool in  @power.msl:74:46
+  carrier hs_gate: bool out  @power.msl:74:63
+  carrier ls_gate: bool out  @power.msl:74:81
+  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd  @power.msl:76:5
+  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd  @power.msl:77:5
+body Top  @top.msl:1:1
+instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
+arenas
+  top 0
+  body 0: where (e2)  natures ()  branches ()  children ()  analog -
+  body 0 discrete: drives ((c2 e6 e7), (c3 e11 e12))  events ()  reactions ()
+  body 1: where ()  natures ()  branches ()  children ()  analog -
+  instance 0: name Top  body 1  parent -  children ()  nodes ()
+  e0: f64 = real 0.0  @power.msl:75:26
+  e1: f64 = param 0  @power.msl:75:26
+  e2: bool = gt e1 e0  @power.msl:75:26
+  e3: flagged<bool> = carrier 0  @power.msl:76:15
+  e4: flagged<bool> = carrier 1  @power.msl:76:15
+  e5: flagged<bool> = not e4  @power.msl:76:15
+  e6: flagged<bool> = bitand e3 e5  @power.msl:76:15
+  e7: f64 = param 0  @power.msl:76:38
+  e8: flagged<bool> = carrier 1  @power.msl:77:15
+  e9: flagged<bool> = carrier 0  @power.msl:77:15
+  e10: flagged<bool> = not e9  @power.msl:77:15
+  e11: flagged<bool> = bitand e8 e10  @power.msl:77:15
+  e12: f64 = param 0  @power.msl:77:38

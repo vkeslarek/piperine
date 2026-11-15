@@ -1,0 +1,10 @@
+body GateDriver
+  param tpd: f64 = 1e-8 where (tpd > 0.0)
+  carrier hs_cmd: bool in
+  carrier ls_cmd: bool in
+  carrier hs_gate: bool out
+  carrier ls_gate: bool out
+  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd
+  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd
+body Top
+instance Top: Top  nodes ()  params ()  top

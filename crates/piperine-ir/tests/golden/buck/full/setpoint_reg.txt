@@ -1,0 +1,32 @@
+body SetpointReg  @control.msl:9:1
+  carrier wr: bool in  @control.msl:9:27
+  carrier data: u8 in  @control.msl:9:39
+  carrier code: u8 out init 100  @control.msl:9:60
+  event E0 changed wr guard wr.high()  @control.msl:11:8
+  reaction R0 on (E0)  @control.msl:11:5
+    local d: u8
+    if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }
+body Top  @top.msl:1:1
+instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
+arenas
+  top 0
+  body 0: where ()  natures ()  branches ()  children ()  analog -
+  body 0 discrete: drives ()  events ((changed c0 e1))  reactions ((on (0) (s2)))
+  body 1: where ()  natures ()  branches ()  children ()  analog -
+  instance 0: name Top  body 1  parent -  children ()  nodes ()
+  e0: flagged<bool> = carrier 0  @control.msl:11:8
+  e1: bool = high e0  @control.msl:11:8
+  e2: flagged<u8> = carrier 1  @control.msl:12:12
+  e3: bool = is_known e2  @control.msl:12:12
+  e4: flagged<u8> = carrier 1  @control.msl:12:12
+  e5: u8 = int 0  @control.msl:12:12
+  e6: u8 = known_or e4 e5  @control.msl:12:12
+  e7: u8 = local 0  @control.msl:12:41
+  e8: u8 = int 168  @control.msl:12:41
+  e9: u8 = min e7 (e8)  @control.msl:12:41
+  e10: () = block (s0, s1) -  @control.msl:12:41
+  e11: () = unit  @control.msl:12:41
+  e12: () = if e3 e10 e11  @control.msl:12:41
+  s0: let 0 e6
+  s1: commit c2 e9 -
+  s2: expr e12

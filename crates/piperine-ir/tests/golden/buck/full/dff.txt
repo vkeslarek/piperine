@@ -1,0 +1,19 @@
+body Dff  @dff.msl:1:1
+  carrier clk: bool in  @dff.msl:1:19
+  carrier d: bool in  @dff.msl:1:32
+  carrier q: bool out init false  @dff.msl:1:44
+  event E0 changed clk guard clk.high()  @dff.msl:2:22
+  reaction R0 on (E0)  @dff.msl:2:5
+    q <- d
+body Top  @top.msl:1:1
+instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
+arenas
+  top 0
+  body 0: where ()  natures ()  branches ()  children ()  analog -
+  body 0 discrete: drives ()  events ((changed c0 e1))  reactions ((on (0) (s0)))
+  body 1: where ()  natures ()  branches ()  children ()  analog -
+  instance 0: name Top  body 1  parent -  children ()  nodes ()
+  e0: flagged<bool> = carrier 0  @dff.msl:2:22
+  e1: bool = high e0  @dff.msl:2:22
+  e2: flagged<bool> = carrier 1  @dff.msl:2:37
+  s0: commit c2 e2 -

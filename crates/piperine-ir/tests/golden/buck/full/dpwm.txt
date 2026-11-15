@@ -1,0 +1,217 @@
+body Dpwm  @dpwm.msl:40:1
+  carrier clk: bool in  @dpwm.msl:40:17
+  carrier run: bool in  @dpwm.msl:40:30
+  carrier duty: u12 in  @dpwm.msl:40:43
+  carrier oc: bool in  @dpwm.msl:40:61
+  carrier sink_oc: bool in  @dpwm.msl:40:73
+  carrier hs: bool out init false  @dpwm.msl:41:17
+  carrier ls: bool out init false  @dpwm.msl:41:39
+  carrier sample: bool out  @dpwm.msl:41:61
+  carrier cut: bool out init false  @dpwm.msl:41:78
+  carrier count: u9 signal init 0  @dpwm.msl:42:12
+  carrier width: u9 signal init 0  @dpwm.msl:43:12
+  carrier frame: u3 signal init 0  @dpwm.msl:44:12
+  carrier hs_off: u9 signal init 0  @dpwm.msl:46:12
+  carrier hs_cut: bool signal init false  @dpwm.msl:48:12
+  carrier ls_cut: bool signal init false  @dpwm.msl:49:12
+  drive sample = (count == 0u9)  @dpwm.msl:51:5
+  event E0 changed clk guard clk.high()  @dpwm.msl:56:8
+  reaction R0 on (E0)  @dpwm.msl:56:5
+    local wrap: flagged<bool>
+    local next: flagged<u9>
+    local enabled: bool
+    local w: flagged<u9>
+    local hs_trip: flagged<bool>
+    local ls_trip: flagged<bool>
+    local hs_next: flagged<bool>
+    local off_at: flagged<u9>
+    local ls_next: flagged<bool>
+    let wrap = (count == 399u9)
+    let next = if wrap { 0u9 } else { (count + 1u9) }
+    let enabled = run.known_or(false)
+    let w = if wrap { "dithered_width~01"(duty.known_or(0u12), (frame + 1u3)) } else { width }
+    let hs_trip = ((!wrap) & (hs_cut | (hs & oc.known_or(true))))
+    let ls_trip = ((!wrap) & (ls_cut | (ls & sink_oc.known_or(true))))
+    let hs_next = ((enabled & (!hs_trip)) & (next < w))
+    let off_at = if wrap { w } else { if (hs & (!hs_next)) { next } else { hs_off } }
+    let ls_next = ((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))
+    count <- next
+    width <- w
+    hs_off <- off_at
+    hs_cut <- hs_trip
+    ls_cut <- ls_trip
+    hs <- hs_next
+    ls <- ls_next
+    if wrap { frame <- (frame + 1u3); cut <- hs_cut } else { () }
+body Top  @top.msl:1:1
+fn "rev3~1"(k: flagged<u3>) -> flagged<u3>  @dpwm.msl:14:1
+  local k: flagged<u3>
+  ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))
+fn "dithered_width~01"(duty: u12, frame: flagged<u3>) -> flagged<u9>  @dpwm.msl:18:1
+  local duty: u12
+  local frame: flagged<u3>
+  local coarse: u9
+  local fine: u3
+  let coarse = ((duty >> 3i32) as u9)
+  let fine = ((duty & 7u12) as u3)
+  if ("rev3~1"(frame) < fine) { (coarse + 1u9) } else { coarse }
+instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
+arenas
+  top 0
+  body 0: where ()  natures ()  branches ()  children ()  analog -
+  body 0 discrete: drives ((c7 e35 -))  events ((changed c0 e37))  reactions ((on (0) (s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17, s20)))
+  body 1: where ()  natures ()  branches ()  children ()  analog -
+  fn 0: body e14
+  fn 1: body e32
+  instance 0: name Top  body 1  parent -  children ()  nodes ()
+  e0: flagged<u3> = local 0  @dpwm.msl:14:24
+  e1: u3 = int 1  @dpwm.msl:14:24
+  e2: flagged<u3> = bitand e0 e1  @dpwm.msl:14:24
+  e3: i32 = int 2  @dpwm.msl:14:24
+  e4: flagged<u3> = shl e2 e3  @dpwm.msl:14:24
+  e5: flagged<u3> = local 0  @dpwm.msl:14:24
+  e6: u3 = int 2  @dpwm.msl:14:24
+  e7: flagged<u3> = bitand e5 e6  @dpwm.msl:14:24
+  e8: flagged<u3> = bitor e4 e7  @dpwm.msl:14:24
+  e9: flagged<u3> = local 0  @dpwm.msl:14:24
+  e10: i32 = int 2  @dpwm.msl:14:24
+  e11: flagged<u3> = shr e9 e10  @dpwm.msl:14:24
+  e12: u3 = int 1  @dpwm.msl:14:24
+  e13: flagged<u3> = bitand e11 e12  @dpwm.msl:14:24
+  e14: flagged<u3> = bitor e8 e13  @dpwm.msl:14:24
+  e15: u12 = local 0  @dpwm.msl:19:18
+  e16: i32 = int 3  @dpwm.msl:19:18
+  e17: u12 = shr e15 e16  @dpwm.msl:19:18
+  e18: u9 = cast e17 to u9  @dpwm.msl:19:18
+  e19: u12 = local 0  @dpwm.msl:20:16
+  e20: u12 = int 7  @dpwm.msl:20:16
+  e21: u12 = bitand e19 e20  @dpwm.msl:20:16
+  e22: u3 = cast e21 to u3  @dpwm.msl:20:16
+  e23: flagged<u3> = local 1  @dpwm.msl:21:5
+  e24: flagged<u3> = call fn 0 (e23)  @dpwm.msl:21:5
+  e25: u3 = local 3  @dpwm.msl:21:5
+  e26: flagged<bool> = lt e24 e25  @dpwm.msl:21:5
+  e27: u9 = local 2  @dpwm.msl:21:5
+  e28: u9 = int 1  @dpwm.msl:21:5
+  e29: u9 = add e27 e28  @dpwm.msl:21:5
+  e30: u9 = local 2  @dpwm.msl:21:5
+  e31: flagged<u9> = if e26 e29 e30  @dpwm.msl:21:5
+  e32: flagged<u9> = block (s0, s1) e31  @dpwm.msl:18:52
+  e33: flagged<u9> = carrier 9  @dpwm.msl:51:14
+  e34: u9 = int 0  @dpwm.msl:51:14
+  e35: flagged<bool> = eq e33 e34  @dpwm.msl:51:14
+  e36: flagged<bool> = carrier 0  @dpwm.msl:56:8
+  e37: bool = high e36  @dpwm.msl:56:8
+  e38: flagged<u9> = carrier 9  @dpwm.msl:57:20
+  e39: u9 = int 399  @dpwm.msl:57:20
+  e40: flagged<bool> = eq e38 e39  @dpwm.msl:57:20
+  e41: flagged<bool> = local 0  @dpwm.msl:58:20
+  e42: u9 = int 0  @dpwm.msl:58:20
+  e43: flagged<u9> = carrier 9  @dpwm.msl:58:20
+  e44: u9 = int 1  @dpwm.msl:58:20
+  e45: flagged<u9> = add e43 e44  @dpwm.msl:58:20
+  e46: flagged<u9> = if e41 e42 e45  @dpwm.msl:58:20
+  e47: flagged<bool> = carrier 1  @dpwm.msl:59:23
+  e48: bool = bool false  @dpwm.msl:59:23
+  e49: bool = known_or e47 e48  @dpwm.msl:59:23
+  e50: flagged<bool> = local 0  @dpwm.msl:61:17
+  e51: flagged<u12> = carrier 2  @dpwm.msl:61:17
+  e52: u12 = int 0  @dpwm.msl:61:17
+  e53: u12 = known_or e51 e52  @dpwm.msl:61:17
+  e54: flagged<u3> = carrier 11  @dpwm.msl:61:17
+  e55: u3 = int 1  @dpwm.msl:61:17
+  e56: flagged<u3> = add e54 e55  @dpwm.msl:61:17
+  e57: flagged<u9> = call fn 1 (e53, e56)  @dpwm.msl:61:17
+  e58: flagged<u9> = carrier 10  @dpwm.msl:61:17
+  e59: flagged<u9> = if e50 e57 e58  @dpwm.msl:61:17
+  e60: flagged<bool> = local 0  @dpwm.msl:62:23
+  e61: flagged<bool> = not e60  @dpwm.msl:62:23
+  e62: flagged<bool> = carrier 13  @dpwm.msl:62:23
+  e63: flagged<bool> = carrier 5  @dpwm.msl:62:23
+  e64: flagged<bool> = carrier 3  @dpwm.msl:62:23
+  e65: bool = bool true  @dpwm.msl:62:23
+  e66: bool = known_or e64 e65  @dpwm.msl:62:23
+  e67: flagged<bool> = bitand e63 e66  @dpwm.msl:62:23
+  e68: flagged<bool> = bitor e62 e67  @dpwm.msl:62:23
+  e69: flagged<bool> = bitand e61 e68  @dpwm.msl:62:23
+  e70: flagged<bool> = local 0  @dpwm.msl:63:23
+  e71: flagged<bool> = not e70  @dpwm.msl:63:23
+  e72: flagged<bool> = carrier 14  @dpwm.msl:63:23
+  e73: flagged<bool> = carrier 6  @dpwm.msl:63:23
+  e74: flagged<bool> = carrier 4  @dpwm.msl:63:23
+  e75: bool = bool true  @dpwm.msl:63:23
+  e76: bool = known_or e74 e75  @dpwm.msl:63:23
+  e77: flagged<bool> = bitand e73 e76  @dpwm.msl:63:23
+  e78: flagged<bool> = bitor e72 e77  @dpwm.msl:63:23
+  e79: flagged<bool> = bitand e71 e78  @dpwm.msl:63:23
+  e80: bool = local 2  @dpwm.msl:64:23
+  e81: flagged<bool> = local 4  @dpwm.msl:64:23
+  e82: flagged<bool> = not e81  @dpwm.msl:64:23
+  e83: flagged<bool> = bitand e80 e82  @dpwm.msl:64:23
+  e84: flagged<u9> = local 1  @dpwm.msl:64:23
+  e85: flagged<u9> = local 3  @dpwm.msl:64:23
+  e86: flagged<bool> = lt e84 e85  @dpwm.msl:64:23
+  e87: flagged<bool> = bitand e83 e86  @dpwm.msl:64:23
+  e88: flagged<bool> = local 0  @dpwm.msl:65:22
+  e89: flagged<u9> = local 3  @dpwm.msl:65:22
+  e90: flagged<bool> = carrier 5  @dpwm.msl:65:22
+  e91: flagged<bool> = local 6  @dpwm.msl:65:22
+  e92: flagged<bool> = not e91  @dpwm.msl:65:22
+  e93: flagged<bool> = bitand e90 e92  @dpwm.msl:65:22
+  e94: flagged<u9> = local 1  @dpwm.msl:65:22
+  e95: flagged<u9> = carrier 12  @dpwm.msl:65:22
+  e96: flagged<u9> = if e93 e94 e95  @dpwm.msl:65:22
+  e97: flagged<u9> = if e88 e89 e96  @dpwm.msl:65:22
+  e98: bool = local 2  @dpwm.msl:66:23
+  e99: flagged<bool> = local 6  @dpwm.msl:66:23
+  e100: flagged<bool> = not e99  @dpwm.msl:66:23
+  e101: flagged<bool> = bitand e98 e100  @dpwm.msl:66:23
+  e102: flagged<bool> = local 5  @dpwm.msl:66:23
+  e103: flagged<bool> = not e102  @dpwm.msl:66:23
+  e104: flagged<bool> = bitand e101 e103  @dpwm.msl:66:23
+  e105: flagged<u9> = local 1  @dpwm.msl:67:16
+  e106: flagged<u9> = local 7  @dpwm.msl:67:16
+  e107: u9 = int 4  @dpwm.msl:67:16
+  e108: flagged<u9> = add e106 e107  @dpwm.msl:67:16
+  e109: flagged<bool> = ge e105 e108  @dpwm.msl:67:16
+  e110: flagged<bool> = bitand e104 e109  @dpwm.msl:67:16
+  e111: flagged<u9> = local 1  @dpwm.msl:67:16
+  e112: u9 = int 396  @dpwm.msl:67:16
+  e113: flagged<bool> = lt e111 e112  @dpwm.msl:67:16
+  e114: flagged<bool> = bitand e110 e113  @dpwm.msl:67:16
+  e115: flagged<u9> = local 1  @dpwm.msl:68:9
+  e116: flagged<u9> = local 3  @dpwm.msl:69:9
+  e117: flagged<u9> = local 7  @dpwm.msl:70:9
+  e118: flagged<bool> = local 4  @dpwm.msl:71:9
+  e119: flagged<bool> = local 5  @dpwm.msl:72:9
+  e120: flagged<bool> = local 6  @dpwm.msl:73:9
+  e121: flagged<bool> = local 8  @dpwm.msl:74:9
+  e122: flagged<u3> = carrier 11  @dpwm.msl:76:13
+  e123: u3 = int 1  @dpwm.msl:76:13
+  e124: flagged<u3> = add e122 e123  @dpwm.msl:76:13
+  e125: flagged<bool> = carrier 13  @dpwm.msl:77:13
+  e126: flagged<bool> = local 0  @dpwm.msl:75:9
+  e127: () = block (s18, s19) -  @dpwm.msl:75:9
+  e128: () = unit  @dpwm.msl:75:9
+  e129: () = if e126 e127 e128  @dpwm.msl:75:9
+  s0: let 2 e18
+  s1: let 3 e22
+  s2: let 0 e40
+  s3: let 1 e46
+  s4: let 2 e49
+  s5: let 3 e59
+  s6: let 4 e69
+  s7: let 5 e79
+  s8: let 6 e87
+  s9: let 7 e97
+  s10: let 8 e114
+  s11: commit c9 e115 -
+  s12: commit c10 e116 -
+  s13: commit c12 e117 -
+  s14: commit c13 e118 -
+  s15: commit c14 e119 -
+  s16: commit c5 e120 -
+  s17: commit c6 e121 -
+  s18: commit c11 e124 -
+  s19: commit c8 e125 -
+  s20: expr e129

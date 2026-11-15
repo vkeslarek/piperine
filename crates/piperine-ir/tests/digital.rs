@@ -922,3 +922,51 @@ fn the_m1_prints_are_unchanged() {
         }
     }
 }
+
+#[test]
+fn the_buck_slice_bodies_pass_check_and_print_as_their_golden_texts() {
+    // The ten bodies of the buck slice (spec "Phase B scope"), each alone in a design with the
+    // functions it calls, printed in both forms against `tests/golden/buck/` (the structural
+    // form, msl-digital's contract) and `tests/golden/buck/full/`. `PIPERINE_UPDATE_GOLDEN=1`
+    // rewrites them; the texts are read against the MSL each fixture transcribes.
+    let bodies: [(&str, fn(&mut IrBuilder) -> BodyId); 10] = [
+        ("osc", Buck::osc),
+        ("dpwm", Buck::dpwm),
+        ("setpoint_reg", Buck::setpoint_reg),
+        ("ref_ramp", Buck::ref_ramp),
+        ("pid", Buck::pid),
+        ("gate_driver", Buck::gate_driver),
+        ("adc", Buck::adc),
+        ("comparator", Buck::comparator),
+        ("switch", Buck::switch),
+        ("dff", Buck::dff),
+    ];
+    for (name, make) in bodies {
+        let mut b = IrBuilder::new();
+        let body = make(&mut b);
+        let ir = Design::finish(b);
+        assert_eq!(ir.check(), vec![], "{name}");
+        let body = ir.body(body);
+        // `rise()` is `changed` guarded by `high()` of the same carrier; `above(e)` is `cross(e)`
+        // with no guard.
+        for event in body.events() {
+            match (&event.source, event.guard.map(|g| ir.expr(g))) {
+                (piperine_ir::EventSource::Changed(c), Some(piperine_ir::Expr::High(read))) => {
+                    assert_eq!(ir.expr(*read), &piperine_ir::Expr::Carrier(*c), "{name}: a rise reads its own carrier");
+                }
+                (piperine_ir::EventSource::Changed(_), None) => assert_eq!(name, "osc", "only the oscillator waits on a bare change"),
+                (piperine_ir::EventSource::Cross(_), None) => assert_eq!(name, "comparator", "only the comparator crosses"),
+                (source, guard) => panic!("{name}: an event outside the slice's forms: {source:?} guard {guard:?}"),
+            }
+        }
+        for (dir, text) in [("tests/golden/buck", ir.print_structural()), ("tests/golden/buck/full", ir.to_string())] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(dir).join(format!("{name}.txt"));
+            if std::env::var_os("PIPERINE_UPDATE_GOLDEN").is_some() {
+                std::fs::create_dir_all(path.parent().expect("a directory")).expect("create the golden directory");
+                std::fs::write(&path, &text).expect("write a golden");
+            }
+            let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert_eq!(text, golden, "golden {} differs", path.display());
+        }
+    }
+}

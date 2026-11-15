@@ -1,0 +1,40 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body A2D  @convert.msl:9:1
+  param vth: f64 = 0.6  @convert.msl:9:5
+  param hyst: f64 = 0.05  @convert.msl:9:5
+  node a: Electrical port  @convert.msl:9:19
+  carrier d: bool out init false  @convert.msl:9:34
+  event E0 cross ((probe(a, gnd) - vth) - (hyst / 2.0))  @convert.msl:11:8
+  event E1 cross ((vth - (hyst / 2.0)) - probe(a, gnd))  @convert.msl:12:8
+  reaction R0 on (E0)  @convert.msl:11:5
+    d <- true
+  reaction R1 on (E1)  @convert.msl:12:5
+    d <- false
+body Top  @top.msl:1:1
+instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
+arenas
+  top 0
+  body 0: where (-, -)  natures (0)  branches ()  children ()  analog -
+  body 0 discrete: drives ()  events ((cross e6 -), (cross e14 -))  reactions ((on (0) (s0)), (on (1) (s1)))
+  body 1: where ()  natures ()  branches ()  children ()  analog -
+  instance 0: name Top  body 1  parent -  children ()  nodes ()
+  e0: f64 = probe n0 gnd  @convert.msl:11:14
+  e1: f64 = param 0  @convert.msl:11:14
+  e2: f64 = sub e0 e1  @convert.msl:11:14
+  e3: f64 = param 1  @convert.msl:11:14
+  e4: f64 = real 2.0  @convert.msl:11:14
+  e5: f64 = div e3 e4  @convert.msl:11:14
+  e6: f64 = sub e2 e5  @convert.msl:11:14
+  e7: bool = bool true  @convert.msl:11:41
+  e8: f64 = param 0  @convert.msl:12:14
+  e9: f64 = param 1  @convert.msl:12:14
+  e10: f64 = real 2.0  @convert.msl:12:14
+  e11: f64 = div e9 e10  @convert.msl:12:14
+  e12: f64 = sub e8 e11  @convert.msl:12:14
+  e13: f64 = probe n0 gnd  @convert.msl:12:14
+  e14: f64 = sub e12 e13  @convert.msl:12:14
+  e15: bool = bool false  @convert.msl:12:41
+  s0: commit c0 e7 -
+  s1: commit c0 e15 -

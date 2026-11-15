@@ -1,0 +1,37 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Switch  @switch.msl:1:1
+  param ron: f64 = 0.02 where (ron > 0.0)  @switch.msl:2:5
+  param roff: f64 = 1000000.0 where (roff > ron)  @switch.msl:3:5
+  node p: Electrical port  @switch.msl:1:19
+  node n: Electrical port  @switch.msl:1:34
+  carrier g: bool in  @switch.msl:1:52
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> direct (probe(p, n) * if g.high() { (1.0 / ron) } else { (1.0 / roff) })
+body Top  @top.msl:1:1
+instance Top: Top  nodes ()  params ()  top  @top.msl:1:1
+arenas
+  top 0
+  body 0: where (e2, e5)  natures (0, 0)  branches ((0, 1))  children ()  analog (s0)
+  body 1: where ()  natures ()  branches ()  children ()  analog -
+  instance 0: name Top  body 1  parent -  children ()  nodes ()
+  e0: f64 = real 0.0  @switch.msl:2:30
+  e1: f64 = param 0  @switch.msl:2:30
+  e2: bool = gt e1 e0  @switch.msl:2:30
+  e3: f64 = param 0  @switch.msl:3:32
+  e4: f64 = param 1  @switch.msl:3:25
+  e5: bool = gt e4 e3  @switch.msl:3:25
+  e6: f64 = probe n0 n1  @switch.msl:5:21
+  e7: flagged<bool> = carrier 0  @switch.msl:5:21
+  e8: bool = high e7  @switch.msl:5:21
+  e9: f64 = real 1.0  @switch.msl:5:21
+  e10: f64 = param 0  @switch.msl:5:21
+  e11: f64 = div e9 e10  @switch.msl:5:21
+  e12: f64 = real 1.0  @switch.msl:5:21
+  e13: f64 = param 1  @switch.msl:5:21
+  e14: f64 = div e12 e13  @switch.msl:5:21
+  e15: f64 = if e8 e11 e14  @switch.msl:5:21
+  e16: f64 = mul e6 e15  @switch.msl:5:21
+  s0: contribute b0 flow (direct e16)
