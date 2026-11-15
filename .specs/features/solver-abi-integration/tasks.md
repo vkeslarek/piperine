@@ -208,11 +208,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `dc_agrees_on_both_contracts` compares every unknown of the divider, the diode circuit and a diode with series resistance within 1e-12 relative
-- [ ] Test `transient_takes_the_same_steps_on_both_contracts` compares, for the RC step and the sine-driven RC, the accepted step count (equal), every accepted time (equal to 1e-15 relative) and every unknown at every step (1e-12 relative)
-- [ ] Test `newton_takes_the_same_iterations_on_both_contracts` compares `stats.newton_iterations` on the diode circuit
-- [ ] If a comparison fails, stop and report; no tolerance of this target is negotiable without the user
-- [ ] Gate: full
+- [x] Test `dc_agrees_on_both_contracts` compares every unknown of the divider, the diode circuit and a diode with series resistance within 1e-12 relative
+- [x] Test `transient_takes_the_same_steps_on_both_contracts` compares, for the RC step and the sine-driven RC, the accepted step count (equal), every accepted time (equal to 1e-15 relative) and every unknown at every step (1e-12 relative)
+- [x] Test `newton_takes_the_same_iterations_on_both_contracts` compares `stats.newton_iterations` on the diode circuit
+- [x] If a comparison fails, stop and report; no tolerance of this target is negotiable without the user
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
