@@ -1,9 +1,9 @@
 # msl-ir proofs
 
-**HEAD**: b631738a
+**HEAD**: d6a95fa7
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 41 pass, 0 fail
+**Result**: 42 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -45,6 +45,7 @@
 | C36 | `run check / test a_top_alone_prints_and_checks ... ok` | pass |
 | C37 | `run model / test a_body_without_analog_has_no_branches ... ok` | pass |
 | C38 | `run check / test a_duplicated_path_is_named ... ok` | pass |
+| C39 | `run deps / test a_limit_read_and_a_constant_if_keep_the_class ... ok` | pass |
 | Build | `cargo build -p piperine-solver --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 | Build | `cargo build -p piperine-lang --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 | Build | `test ! -d crates/piperine-ir // cargo build -p piperine-ir --all-targets 2>&1 / tee /dev/stderr / (! grep -qE ` | pass |
@@ -54,20 +55,20 @@
 `Run model` - exit 0
 
 ```
+test every_expression_records_its_type ... ok
+test ir_is_send_and_sync ... ok
 test instances_are_stored_in_pre_order ... ok
-test the_authored_tree_is_walkable ... ok
 test one_body_serves_every_instance_of_it ... ok
-test path_lookup_finds_instances_and_nodes ... ok
 test limit_and_stim_sites_are_indexed ... ok
+test path_lookup_finds_instances_and_nodes ... ok
 test the_node_table_names_nature_declarer_and_init ... ok
-test a_finished_ir_has_no_mutating_operation ... ok
+test the_authored_tree_is_walkable ... ok
 test value_code_of_the_subset_is_representable ... ok
+test a_finished_ir_has_no_mutating_operation ... ok
 
 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Blocking waiting for file lock on build directory
-   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.17s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/model.rs (/var/tmp/piperine-target/debug/deps/model-37b4b500b758490e)
 ```
 
@@ -76,65 +77,64 @@ test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 4 tests
 test storage_types_implement_serde ... ok
+test json_round_trip_gives_an_equal_ir ... ok
 test text_that_is_no_ir_fails_to_deserialize ... ok
 test reals_survive_bit_for_bit ... ok
-test json_round_trip_gives_an_equal_ir ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-    Blocking waiting for file lock on build directory
-   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.75s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/serde.rs (/var/tmp/piperine-target/debug/deps/serde-ac60f5b7bbf7b790)
 ```
 
 `Run print` - exit 0
 
 ```
-running 4 tests
+running 5 tests
 test no_parser_of_the_text_exists ... ok
 test printed_text_shows_every_item ... ok
 test printing_twice_is_byte_identical ... ok
 test unequal_irs_print_different_texts ... ok
+test a_cyclic_deep_or_shared_ir_prints ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
-   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/print.rs (/var/tmp/piperine-target/debug/deps/print-15cc330508aed8f3)
 ```
 
 `Run check` - exit 0
 
 ```
-running 8 tests
+running 9 tests
 test a_top_alone_prints_and_checks ... ok
-test a_built_ir_checks_clean ... ok
+test a_recursive_call_or_an_unbound_local_is_named ... ok
 test a_duplicated_path_is_named ... ok
-test an_instance_with_wrong_arity_is_named ... ok
 test a_cyclic_expression_is_named_without_hanging ... ok
+test an_instance_with_wrong_arity_is_named ... ok
 test a_wrong_type_in_an_analog_position_is_named ... ok
 test an_out_of_range_id_is_named ... ok
 test a_misplaced_or_duplicated_site_is_named ... ok
+test a_built_ir_checks_clean ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 
-   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/check.rs (/var/tmp/piperine-target/debug/deps/check-74c101b8702f60de)
 ```
 
 `Run deps` - exit 0
 
 ```
-running 3 tests
+running 5 tests
 test dependency_sets_have_a_fixed_order ... ok
+test a_limit_read_and_a_constant_if_keep_the_class ... ok
+test a_shared_expression_is_walked_once ... ok
 test affine_means_probes_meet_only_linear_operators ... ok
 test dependencies_follow_locals_and_calls ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-ir/crates/piperine-ir)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/deps.rs (/var/tmp/piperine-target/debug/deps/deps-0fbf51e077f2aa9a)
 ```
