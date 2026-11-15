@@ -813,10 +813,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The second test prints every M1 fixture and compares with `crates/piperine-ir/tests/golden/`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `a_defective_digital_body_gives_one_entry_per_defect`, `the_m1_prints_are_unchanged`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] The second test prints every M1 fixture and compares with `crates/piperine-ir/tests/golden/`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `a_defective_digital_body_gives_one_entry_per_defect`, `the_m1_prints_are_unchanged`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full

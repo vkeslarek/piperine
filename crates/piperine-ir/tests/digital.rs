@@ -8,11 +8,16 @@
 #[allow(dead_code)]
 mod digital;
 
+#[path = "support/devices.rs"]
+#[allow(dead_code)]
+mod devices;
+
 use digital::{Buck, Dx, Ty};
+use devices::Devices;
 use piperine_ir::{
-    BinaryOp, BodyId, BodySpec, CarrierRole, Child, Constant, Deps, Drive, FunctionId, FunctionSpec, InstanceId,
-    InstanceSpec, Ir, IrBuilder, Local, Method, NetId, NetSpec, NodeRef, NodeSpec, Origin, Real, Target, Terminal,
-    UnaryOp, ValueType,
+    Addend, BinaryOp, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, Constant, Deps, Drive, FunctionId, FunctionSpec, InstanceId,
+    InstanceSpec, Ir, IrBuilder, Local, Method, NetId, NetSpec, NodeRef, NodeSpec, Operator, Origin, QuantityRole, Real,
+    Stmt, Target, Terminal, UnaryOp, ValueType,
 };
 
 /// Designs for the tests: a set of functions or bodies under an empty top body.
@@ -796,4 +801,124 @@ fn events_and_reactions_print() {
     assert_eq!(at(2, "the guard of an event must be bool, found u8"), 1, "{broken:#?}");
     assert_eq!(at(3, "the value of a commit must be bool, found u8"), 1, "{broken:#?}");
     assert_eq!(broken.len(), 2, "{broken:#?}");
+}
+
+#[test]
+fn a_defective_digital_body_gives_one_entry_per_defect() {
+    // One body, each defect of RS-09 AC 4 and of the task once:
+    //
+    //   module Bad(p: Electrical, n: Electrical, in en: Bit, out q: Bit, out aux: Bit, in stop: Bit) {   // line 1
+    //       signal count: Bit<u4> = 0;                                                     // line 2
+    //       en = true;                                      // line 3: drives an `in` port
+    //       q = en.known_or(false);                         // line 4: q is driven ...
+    //   }
+    //   on en.changed() ... on cross(count) ...             // lines 5, 6: a cross over an integer
+    //   on E0, E7 {                                         // line 7: event 7 does not exist
+    //       stop <- false;                                  // line 8: commits to an `in` port
+    //       q <- true;                                      // line 9: ... and committed
+    //   }
+    //   analog { aux <- true;                               // line 10: a commit outside a reaction
+    //            i(p, n) +> v(p, n) * if (en & true).known_or(false) { 1.0 } else { 0.0 }; }  // line 11
+    const F: &str = "bad.msl";
+    let mut b = IrBuilder::new();
+    let el = Buck::electrical(&mut b);
+    let port = |name: &str, col: u32| piperine_ir::BodyNode { name: name.into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Design::origin(F, 1, col) };
+    let mut x = Dx::new(&mut b, F, 10, 14);
+    let yes = x.boolean(true);
+    let stray = x.commit(3, yes, None);
+    x.at(11, 22);
+    let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+    let en = x.carrier(0, ValueType::Bool);
+    let yes = x.boolean(true);
+    let masked = x.bin(BinaryOp::BitAnd, en, yes, Ty::flagged(ValueType::Bool));
+    let no = x.boolean(false);
+    let level = x.known_or(masked, no, ValueType::Bool);
+    let one = x.real(1.0);
+    let zero = x.real(0.0);
+    let factor = x.if_(level, one, zero, ValueType::F64);
+    let value = x.bin(BinaryOp::Mul, v, factor, ValueType::F64);
+    let contribution = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] });
+    let body = b.body(BodySpec {
+        nodes: vec![port("p", 12), port("n", 27)],
+        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+        analog: Some(vec![stray, contribution]),
+        ..Buck::spec("Bad", F, 1)
+    });
+    for (name, ty, role, init, line, col) in [
+        ("en", ValueType::Bool, CarrierRole::In, None, 1, 42),
+        ("stop", ValueType::Bool, CarrierRole::In, None, 1, 82),
+        ("q", ValueType::Bool, CarrierRole::Out, None, 1, 57),
+        ("aux", ValueType::Bool, CarrierRole::Out, None, 1, 69),
+        ("count", Ty::u(4), CarrierRole::Signal, Some(Constant::Int(0)), 2, 12),
+    ] {
+        b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
+    }
+    let yes = Dx::new(&mut b, F, 3, 10).boolean(true);
+    b.drive(body, Drive { carrier: 0, value: yes, after: None, origin: Design::origin(F, 3, 5) });
+    let mut x = Dx::new(&mut b, F, 4, 9);
+    let en = x.carrier(0, ValueType::Bool);
+    let no = x.boolean(false);
+    let q = x.known_or(en, no, ValueType::Bool);
+    b.drive(body, Drive { carrier: 2, value: q, after: None, origin: Design::origin(F, 4, 5) });
+    let changed = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) });
+    let count = Dx::new(&mut b, F, 6, 14).carrier(4, Ty::u(4));
+    b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Cross(count), guard: None, origin: Design::origin(F, 6, 8) });
+    let mut x = Dx::new(&mut b, F, 8, 15);
+    let no = x.boolean(false);
+    let to_input = x.commit(1, no, None);
+    x.at(9, 14);
+    let yes = x.boolean(true);
+    let to_driven = x.commit(2, yes, None);
+    Buck::reaction(&mut b, body, vec![changed, 7], vec![to_input, to_driven], vec![], F, 7);
+    let top = b.next_instance_id();
+    let nets: Vec<NetId> = [("en", ValueType::Bool), ("stop", ValueType::Bool), ("q", ValueType::Bool), ("aux", ValueType::Bool), ("count", Ty::u(4))]
+        .into_iter()
+        .map(|(n, ty)| b.net(NetSpec { path: format!("Bad.{n}"), ty, declared_by: top, init: None, origin: Design::origin(F, 1, 1) }))
+        .collect();
+    let p = b.node(NodeSpec { path: "Bad.p".into(), nature: el, declared_by: top, init: None, origin: Design::origin(F, 1, 12) });
+    let top = Stage::instance(&mut b, "Bad", body, None, vec![NodeRef::Node(p), NodeRef::Ground], vec![], nets, 1);
+    let broken = b.finish(top).check();
+
+    let one = |item: &str, line: u32, what: &str| {
+        let hits: Vec<_> = broken.iter().filter(|e| e.what.contains(what)).collect();
+        assert_eq!(hits.len(), 1, "{what}: {broken:#?}");
+        assert_eq!((hits[0].item.as_str(), hits[0].origin.file.as_str(), hits[0].origin.line), (item, F, line), "{what}");
+    };
+    one("body Bad drive en", 3, "drives the `in` port en: an input is written outside the body");
+    one("body Bad reaction 0", 8, "commits to the `in` port stop: an input is written outside the body");
+    one("body Bad carrier q", 1, "carrier q has both a drive and a commit");
+    one("body Bad", 11, "`analog` reads carrier en outside `known_or`, `is_known` and `high` (§3.3.5)");
+    one("body Bad reaction 0", 7, "waits on event 7, out of range (2 events)");
+    one("body Bad", 10, "a commit outside a reaction");
+    one("body Bad event 1", 6, "a `cross` watches a real, found flagged<u4>");
+    assert_eq!(broken.len(), 7, "{broken:#?}");
+}
+
+#[test]
+fn the_m1_prints_are_unchanged() {
+    // RS-09 AC 5: every M1 fixture prints, in both forms, the bytes of its golden text.
+    let device = |make: fn(&mut IrBuilder) -> BodyId, name: &str, line: u32, params: Vec<f64>| {
+        let mut b = IrBuilder::new();
+        let body = make(&mut b);
+        let top = Devices::alone(&mut b, body, name, line, params);
+        b.finish(top)
+    };
+    let mut b = IrBuilder::new();
+    let top = Devices::divider(&mut b);
+    let cases = [
+        ("resistor", device(Devices::resistor, "resistor", 5, vec![1000.0])),
+        ("capacitor", device(Devices::capacitor, "capacitor", 11, vec![1e-12])),
+        ("vsource", device(Devices::vsource, "vsource", 17, vec![10.0, 0.0])),
+        ("isource", device(Devices::isource, "isource", 24, vec![1e-3, 0.0])),
+        ("diode", device(Devices::diode, "diode", 31, vec![1e-14, 1.0, 0.0])),
+        ("divider", b.finish(top)),
+    ];
+    for (name, ir) in cases {
+        assert_eq!(ir.check(), vec![], "{name}");
+        for (dir, text) in [("tests/golden", ir.print_structural()), ("tests/golden/full", ir.to_string())] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(dir).join(format!("{name}.txt"));
+            let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert_eq!(text, golden, "{} differs", path.display());
+        }
+    }
 }

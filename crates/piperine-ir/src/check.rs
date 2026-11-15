@@ -1,4 +1,8 @@
 //! `Ir::check`: the invariants a correct builder sequence guarantees, verified over the arenas.
+//! The digital forms add their own: a body writes only the carriers it may (never an `in`
+//! port), a carrier has a drive or commits, never both, `analog` reads a carrier only through
+//! `known_or`, `is_known` and `high` (§3.3.5), a reaction waits on events of its body, a commit
+//! sits in a reaction, and a `cross` watches a real.
 //! Every id is in range, instances agree with their bodies, paths are unique, `limit` and
 //! `ac_stim` sites sit unconditionally at the top of the `analog` block and are used once, and
 //! every expression has the type its position requires, every local is bound before it is read,
@@ -20,7 +24,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BranchKind, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp, ValueType,
+    BinaryOp, BodyData, BranchKind, CarrierRole, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
+    ValueType,
 };
 use crate::typing::Typing;
 
@@ -41,6 +46,7 @@ impl Ir {
         checker.paths();
         checker.types();
         checker.code();
+        checker.discrete();
         checker.out
     }
 }
@@ -61,8 +67,6 @@ struct Owner {
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
     analog: bool,
-    /// A reaction of a body: commits may appear.
-    reaction: bool,
 }
 
 /// The state of one walk: one owner's code, every root of it sharing the memo.
@@ -488,6 +492,167 @@ impl<'a> Checker<'a> {
         None
     }
 
+    // ---- the digital rules -----------------------------------------------------------------
+
+    /// The expressions and statements reachable from `stmts` and `exprs`, through operands and
+    /// blocks, each once. Ids out of range are skipped (`ids` names them).
+    fn reach(&self, stmts: &[StmtId], exprs: &[ExprId]) -> (Vec<ExprId>, Vec<StmtId>) {
+        let ir = self.ir;
+        let (mut seen_e, mut seen_s) = (HashSet::new(), HashSet::new());
+        let (mut out_e, mut out_s) = (Vec::new(), Vec::new());
+        let mut stack_e: Vec<ExprId> = exprs.to_vec();
+        let mut stack_s: Vec<StmtId> = stmts.to_vec();
+        loop {
+            if let Some(s) = stack_s.pop() {
+                let Some(stmt) = ir.stmts.get(s.index()) else { continue };
+                if !seen_s.insert(s) {
+                    continue;
+                }
+                out_s.push(s);
+                match stmt {
+                    Stmt::Let { init, .. } => stack_e.push(*init),
+                    Stmt::Expr(e) => stack_e.push(*e),
+                    Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
+                    Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
+                }
+                continue;
+            }
+            let Some(e) = stack_e.pop() else { break };
+            let Some(data) = ir.exprs.get(e.index()) else { continue };
+            if !seen_e.insert(e) {
+                continue;
+            }
+            out_e.push(e);
+            match &data.kind {
+                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
+                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) => {}
+                Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
+                Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
+                Expr::KnownOr { value, default } => stack_e.extend([*value, *default]),
+                Expr::If { cond, then, otherwise } => stack_e.extend([*cond, *then, *otherwise]),
+                Expr::Block { stmts, value } => {
+                    stack_s.extend(stmts);
+                    stack_e.extend(value);
+                }
+                Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
+                Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
+                Expr::Closure { body, .. } => stack_e.push(*body),
+                Expr::Limit { x, f, seed, .. } => stack_e.extend([*x, *f].into_iter().chain(*seed)),
+                Expr::Stim { mag, phase, .. } => stack_e.extend([*mag].into_iter().chain(*phase)),
+            }
+        }
+        (out_e, out_s)
+    }
+
+    /// The commits among `stmts`, with the carrier each writes.
+    fn commits(&self, stmts: &[StmtId]) -> Vec<(StmtId, u32)> {
+        stmts
+            .iter()
+            .filter_map(|s| match self.ir.stmts.get(s.index()) {
+                Some(Stmt::Commit { carrier, .. }) => Some((*s, *carrier)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn discrete(&mut self) {
+        let ir = self.ir;
+        for body in &ir.bodies {
+            self.writes(body);
+            self.analog_reads(body);
+            let item = format!("body {}", body.name);
+            for (k, reaction) in body.reactions.iter().enumerate() {
+                for &e in &reaction.on {
+                    if e as usize >= body.events.len() {
+                        self.report(format!("{item} reaction {k}"), reaction.origin.clone(), format!("waits on event {e}, out of range ({} events)", body.events.len()));
+                    }
+                }
+            }
+            for (k, event) in body.events.iter().enumerate() {
+                if let EventSource::Cross(e) = event.source {
+                    if let Some(ty) = self.ty(e).filter(|t| *Typing::base(t) != ValueType::F64) {
+                        self.report(format!("{item} event {k}"), event.origin.clone(), format!("a `cross` watches a real, found {ty}"));
+                    }
+                }
+            }
+            // A commit anywhere but in a reaction: the analog block, a `where`, a drive, an event.
+            let mut roots: Vec<ExprId> = body.params.iter().filter_map(|p| p.check).collect();
+            roots.extend(body.drives.iter().flat_map(|d| [d.value].into_iter().chain(d.after)));
+            roots.extend(body.events.iter().flat_map(|e| {
+                let cross = match e.source {
+                    EventSource::Cross(x) => Some(x),
+                    EventSource::Changed(_) => None,
+                };
+                cross.into_iter().chain(e.guard)
+            }));
+            let (_, stmts) = self.reach(body.analog.as_deref().unwrap_or(&[]), &roots);
+            for (s, _) in self.commits(&stmts) {
+                let origin = self.stmt_origin(&ir.stmts[s.index()]);
+                self.report(item.clone(), origin, "a commit outside a reaction".to_string());
+            }
+        }
+        for function in &ir.functions {
+            let (_, stmts) = self.reach(&[], &[function.body]);
+            for (s, _) in self.commits(&stmts) {
+                let origin = self.stmt_origin(&ir.stmts[s.index()]);
+                self.report(format!("function {}", function.name), origin, "a commit outside a reaction".to_string());
+            }
+        }
+    }
+
+    /// Who writes each carrier: an `in` port is written by its driver outside, never by the body;
+    /// any other carrier has drives or commits, never both.
+    fn writes(&mut self, body: &BodyData) {
+        let item = format!("body {}", body.name);
+        let input = |c: u32| body.carriers.get(c as usize).filter(|c| c.role == CarrierRole::In);
+        for drive in &body.drives {
+            if let Some(c) = input(drive.carrier) {
+                self.report(format!("{item} drive {}", c.name), drive.origin.clone(), format!("drives the `in` port {}: an input is written outside the body", c.name));
+            }
+        }
+        let mut committed: BTreeSet<u32> = BTreeSet::new();
+        for (k, reaction) in body.reactions.iter().enumerate() {
+            let (_, stmts) = self.reach(&reaction.stmts, &[]);
+            for (s, carrier) in self.commits(&stmts) {
+                committed.insert(carrier);
+                if let Some(c) = input(carrier) {
+                    let origin = self.stmt_origin(&self.ir.stmts[s.index()]);
+                    self.report(format!("{item} reaction {k}"), origin, format!("commits to the `in` port {}: an input is written outside the body", c.name));
+                }
+            }
+        }
+        let driven: BTreeSet<u32> = body.drives.iter().map(|d| d.carrier).collect();
+        for c in driven.intersection(&committed) {
+            if let Some(carrier) = body.carriers.get(*c as usize) {
+                self.report(format!("{item} carrier {}", carrier.name), carrier.origin.clone(), format!("carrier {} has both a drive and a commit", carrier.name));
+            }
+        }
+    }
+
+    /// §3.3.5: `analog` reads a carrier only as the receiver of `known_or`, `is_known` or `high`.
+    fn analog_reads(&mut self, body: &BodyData) {
+        let Some(analog) = &body.analog else { return };
+        let (exprs, _) = self.reach(analog, &[]);
+        let ir = self.ir;
+        let mut allowed: HashSet<ExprId> = HashSet::new();
+        for e in &exprs {
+            if let Expr::KnownOr { value: read, .. } | Expr::IsKnown(read) | Expr::High(read) = &ir.exprs[e.index()].kind {
+                if matches!(ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Carrier(_))) {
+                    allowed.insert(*read);
+                }
+            }
+        }
+        for e in exprs {
+            if let Expr::Carrier(c) = ir.exprs[e.index()].kind {
+                if !allowed.contains(&e) {
+                    let name = body.carriers.get(c as usize).map_or_else(|| format!("{c}"), |c| c.name.clone());
+                    let origin = self.expr_origin(e);
+                    self.report(format!("body {}", body.name), origin, format!("`analog` reads carrier {name} outside `known_or`, `is_known` and `high` (§3.3.5)"));
+                }
+            }
+        }
+    }
+
     // ---- code ------------------------------------------------------------------------------
 
     fn code(&mut self) {
@@ -505,7 +670,6 @@ impl<'a> Checker<'a> {
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
                 in_body: true,
                 analog,
-                reaction: false,
             };
             for param in &body.params {
                 let Some(check) = param.check else { continue };
@@ -546,7 +710,6 @@ impl<'a> Checker<'a> {
                 let item = format!("body {} reaction {k}", body.name);
                 let mut owner = owner(false, item);
                 owner.locals = reaction.locals.iter().map(|l| l.ty.clone()).collect();
-                owner.reaction = true;
                 let mut w = Walk::new(owner, 0);
                 for &stmt in &reaction.stmts {
                     self.walk(&mut w, Task::Stmt(stmt, Ctx::top(), false));
@@ -567,7 +730,6 @@ impl<'a> Checker<'a> {
                 carriers: Vec::new(),
                 in_body: false,
                 analog: false,
-                reaction: false,
             };
             let mut w = Walk::new(owner, function.params.len());
             self.expect(&w, function.body, &function.ret);
