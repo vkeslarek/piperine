@@ -44,8 +44,9 @@ impl Interpreted {
 
     /// The frame and params of function `f` from the call's reads: each differentiable read
     /// seeded in its slot, every other read a plain value; a cell `f` does not read is `None`
-    /// (a real param `NaN`, see `walk`).
-    fn inputs(&self, f: &FunctionPlan, cx: &Eval<'_>) -> (Frame, Vec<Value>) {
+    /// (a real param `NaN`, see `walk`). With `pins_at_zero`, every continuous pin reads 0 (its
+    /// tangent kept): the walk of the affine rule.
+    fn inputs(&self, f: &FunctionPlan, cx: &Eval<'_>, pins_at_zero: bool) -> (Frame, Vec<Value>) {
         let body = self.body();
         let mut frame = Frame {
             nodes: vec![None; body.nodes().len()],
@@ -60,7 +61,8 @@ impl Interpreted {
             .map(|p| if p.ty == ValueType::Bool { Value::Unit } else { Value::Real(Dual::constant(f64::NAN)) })
             .collect();
         for (i, source) in f.reads.iter().enumerate() {
-            let read = || if i < f.slots { Dual::seeded(cx.f64(i), i, f.slots) } else { Dual::constant(cx.f64(i)) };
+            let v = if pins_at_zero && source.is_pin() { 0.0 } else { cx.f64(i) };
+            let read = || if i < f.slots { Dual::seeded(v, i, f.slots) } else { Dual::constant(v) };
             let cell = match *source {
                 Source::Node(n) => frame.nodes.get_mut(n as usize),
                 Source::BranchFlow(b) => frame.flows.get_mut(b as usize),
@@ -111,9 +113,50 @@ impl Interpreted {
         })
     }
 
-    /// The `terms` function: one walk, each term's value and its seeded partials.
+    /// The `terms` function. A term the plan marks affine (INT-12) is written as `c + Σ g_j·x_j`:
+    /// `c` and the pin partials `g` from a walk with every continuous pin read as 0, the sum
+    /// folded from `0.0` over its pin partials in declared order, as the assembly folds the
+    /// right side (`piperine-analog-solver`'s `Linear::dot`), so a linear row leaves no
+    /// round-off there. Every other value and partial comes from the walk at the iterate.
     fn terms(&self, f: &FunctionPlan, cx: &mut Eval<'_>) -> Result<(), Fault> {
-        let (frame, params) = self.inputs(f, cx);
+        let pin = |slot: usize| f.reads.get(slot).is_some_and(|r| r.is_pin());
+        let affine = |w: usize| f.affine.get(w).copied().unwrap_or(false);
+        let at_iterate = (0..f.writes.len()).any(|w| !affine(w))
+            || f.partials.iter().any(|(w, slot)| affine(*w) && !pin(*slot));
+        let iterate = if at_iterate { Some(self.walk_terms(f, cx, false)?) } else { None };
+        let zero = if f.affine.iter().any(|a| *a) { Some(self.walk_terms(f, cx, true)?) } else { None };
+        let pick = |w: usize, slot: Option<usize>| -> Result<&Dual, Fault> {
+            let from_zero = affine(w) && slot.is_none_or(pin);
+            let walk = if from_zero { zero.as_ref() } else { iterate.as_ref() };
+            walk.and_then(|values| values.get(w))
+                .ok_or_else(|| Fault::new(Walk::UNEXECUTED, format!("write {w} has no walk to read from")))
+        };
+        for w in 0..f.writes.len() {
+            let value = pick(w, None)?;
+            let v = if affine(w) {
+                let fold = f
+                    .partials
+                    .iter()
+                    .filter(|(pw, slot)| *pw == w && pin(*slot))
+                    .fold(0.0, |s, (_, slot)| s + value.tangent(*slot) * cx.f64(*slot));
+                value.v + fold
+            } else {
+                value.v
+            };
+            cx.set(w, v);
+        }
+        for (p, (w, slot)) in f.partials.iter().enumerate() {
+            if cx.wanted(p) {
+                let g = pick(*w, Some(*slot))?.tangent(*slot);
+                cx.jac()[p] = g;
+            }
+        }
+        Ok(())
+    }
+
+    /// One `Terms` walk: the value of each write of `f`, in order.
+    fn walk_terms(&self, f: &FunctionPlan, cx: &Eval<'_>, pins_at_zero: bool) -> Result<Vec<Dual>, Fault> {
+        let (frame, params) = self.inputs(f, cx, pins_at_zero);
         let mut walk = Walk::analog(self.body(), Mode::Terms, frame, params);
         walk.run()?;
         let Some((sums, frame)) = walk.finish() else {
@@ -126,15 +169,7 @@ impl Interpreted {
             };
             values.push(self.term(t, &sums, &frame)?);
         }
-        for (j, v) in values.iter().enumerate() {
-            cx.set(j, v.v);
-        }
-        for (p, (w, slot)) in f.partials.iter().enumerate() {
-            if cx.wanted(p) {
-                cx.jac()[p] = values[*w].tangent(*slot);
-            }
-        }
-        Ok(())
+        Ok(values)
     }
 }
 

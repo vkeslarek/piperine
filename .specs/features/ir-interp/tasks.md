@@ -305,13 +305,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] For 1000 pseudo-random `(vp, vn, r)` from a fixed seed, the resistor's value minus `0.0 + g*vp + (-g)*vn` is exactly `0.0`, and the value equals `g*vp - g*vn` bit for bit with `g = 1.0/r`
-- [ ] The Vsource's `b0.flow` and `b0.eq` terms follow the same rule
-- [ ] The diode's flow term, not affine, is evaluated at the iterate as in T7
-- [ ] A body with affine and non-affine terms evaluates each by its own rule (hand-built test body)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `an_affine_term_is_constant_plus_folded_products`, `the_resistor_matches_the_hand_written_products_bit_for_bit`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] For 1000 pseudo-random `(vp, vn, r)` from a fixed seed, the resistor's value minus `0.0 + g*vp + (-g)*vn` is exactly `0.0`, and the value equals `g*vp - g*vn` bit for bit with `g = 1.0/r`
+- [x] The Vsource's `b0.flow` and `b0.eq` terms follow the same rule
+- [x] The diode's flow term, not affine, is evaluated at the iterate as in T7
+- [x] A body with affine and non-affine terms evaluates each by its own rule (hand-built test body)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `an_affine_term_is_constant_plus_folded_products`, `the_resistor_matches_the_hand_written_products_bit_for_bit`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

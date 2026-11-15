@@ -3,7 +3,9 @@
 //! reading pin differences and ground 0; every seeded partial is the dual derivative through
 //! operators, methods, calls and locals, an unseeded one stays zero; `temperature()` comes from
 //! the `TEMPERATURE` pin and `gmin()`, `source_scale()` from the ambients; a non-finite value is
-//! written as it is; two equal calls write equal bytes.
+//! written as it is; two equal calls write equal bytes. An affine `FLOW` term (INT-12) is written
+//! as its constant plus the products of its pin partials folded from `0.0` in declared order, the
+//! sum the assembly subtracts, so the resistor matches `g*vp - g*vn` bit for bit.
 
 use piperine_ir::{
     Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, IrBuilder, NodeRole, Operator, Origin, QuantityRole, Stmt,
@@ -79,6 +81,41 @@ impl Lab {
             children: vec![],
         });
         let top = Devices::alone(&mut b, body, "S", 1, vec![]);
+        Models::of(b.finish(top))
+    }
+
+    /// `Mixed(p, n)`: branch 0 `i(p, n) +> v(p, n)·3 + 0.3` (affine), branch 1
+    /// `i(p, ground) +> exp(v(p))` (not affine).
+    fn mixed() -> Models {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let mut e = Ex::new(&mut b, "mixed.msl", 2, 5);
+        let v = e.probe(Terminal::Node(0), Terminal::Node(1));
+        let three = e.real(3.0);
+        let scaled = e.binary(BinaryOp::Mul, v, three);
+        let c = e.real(0.3);
+        let linear = e.binary(BinaryOp::Add, scaled, c);
+        let vp = e.probe(Terminal::Node(0), Terminal::Ground);
+        let curved = e.math(piperine_ir::MathFn::Exp, vp);
+        let direct = |value| Addend { operator: Operator::Direct, negated: false, value };
+        let first = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![direct(linear)] });
+        let second = b.stmt(Stmt::Contribute { branch: 1, quantity: QuantityRole::Flow, addends: vec![direct(curved)] });
+        let at = Origin { file: "mixed.msl".into(), line: 1, col: 1 };
+        let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: at.clone() };
+        let flow = |plus, minus| Branch { plus, minus, kind: BranchKind::Flow };
+        let body = b.body(BodySpec {
+            name: "Mixed".into(),
+            origin: at.clone(),
+            params: vec![],
+            nodes: vec![port("p"), port("n")],
+            branches: vec![flow(Terminal::Node(0), Terminal::Node(1)), flow(Terminal::Node(0), Terminal::Ground)],
+            limits: vec![],
+            stims: vec![],
+            locals: vec![],
+            analog: Some(vec![first, second]),
+            children: vec![],
+        });
+        let top = Devices::alone(&mut b, body, "M", 1, vec![]);
         Models::of(b.finish(top))
     }
 
@@ -203,4 +240,87 @@ fn a_non_finite_value_is_written_as_is() {
     let out = Models::eval(&d, Lab::terms(&m, "Diode"), &Lab::diode_reads(0.5, f64::NAN, 1.0, 0.0, 300.0, 0.0), None)
         .expect("NaN is not a fault");
     assert!(out.values[0].is_nan());
+}
+
+/// A fixed-seed generator (xorshift64*), so the sweep is the same on every run.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> f64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        let bits = self.0.wrapping_mul(0x2545_f491_4f6c_dd1d);
+        (bits >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// Uniform in `[lo, hi)`.
+    fn range(&mut self, lo: f64, hi: f64) -> f64 {
+        lo + (hi - lo) * self.next()
+    }
+}
+
+#[test]
+fn an_affine_term_is_constant_plus_folded_products() {
+    // Mixed: the affine term is c + (0.0 + g_p·vp + g_n·vn) with c = 0.3 at pins 0, g = 3, −3
+    // (not `(vp − vn)·3 + 0.3`, which rounds differently);
+    // the exp term is evaluated at the iterate.
+    let m = Lab::mixed();
+    let h = m.instance("Mixed");
+    let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+    let mut differs = 0;
+    for _ in 0..200 {
+        let (vp, vn) = (rng.range(-5.0, 5.0), rng.range(-5.0, 5.0));
+        let out = Models::eval(&h, 0, &[In::F64(vp), In::F64(vn)], None).expect("terms");
+        let c = (0.0 - 0.0) * 3.0 + 0.3;
+        let fold = 0.0 + 3.0 * vp + -3.0 * vn;
+        assert_eq!(out.values[0].to_bits(), (c + fold).to_bits(), "affine at ({vp}, {vn})");
+        assert_eq!(out.values[1].to_bits(), vp.exp().to_bits(), "exp at the iterate");
+        // partials: (b0←p) (b0←n) (b1←p)
+        assert_eq!(out.jac, [3.0, -3.0, vp.exp()]);
+        differs += usize::from((vp - vn) * 3.0 + 0.3 != c + fold);
+    }
+    assert!(differs > 0, "the sweep holds points where the two roundings differ");
+
+    // Vsource: b0.flow = 0 + (0.0 + 1·f); b0.eq = c + (0.0 + 1·vp + (−1)·vn) with
+    // c = 0 − 0 − (dc·scale + stim); its partial against the stimulus comes from the iterate.
+    let all = Models::all();
+    let v = all.instance("Vsource");
+    let k = Lab::terms(&all, "Vsource");
+    for _ in 0..200 {
+        let (vp, vn, f, dc, scale) =
+            (rng.range(-20.0, 20.0), rng.range(-20.0, 20.0), rng.range(-1.0, 1.0), rng.range(-10.0, 10.0), rng.next());
+        let out = Models::eval(&v, k, &[vp, vn, f, 0.0, dc, 1.0, scale].map(In::F64), None).expect("terms");
+        assert_eq!(out.values[0].to_bits(), (0.0 + (0.0 + 1.0 * f)).to_bits());
+        let c = 0.0 - 0.0 - (dc * scale + 0.0);
+        assert_eq!(out.values[1].to_bits(), (c + (0.0 + 1.0 * vp + -1.0 * vn)).to_bits(), "eq at ({vp}, {vn}, {dc}, {scale})");
+        assert_eq!(out.jac, [1.0, 1.0, -1.0, -1.0]);
+    }
+
+    // The diode's flow is not affine: its value is the iterate's, as in the terms walk.
+    let d = all.instance("Diode");
+    let out = Models::eval(&d, Lab::terms(&all, "Diode"), &Lab::diode_reads(0.6, 1e-14, 1.0, 0.0, 300.15, 1e-12), None)
+        .expect("terms");
+    let nvt = 1.0 * (K_B * 300.15 / Q);
+    let id = 1e-14 * ((0.6 / nvt).exp() - 1.0);
+    assert_eq!(out.values[0].to_bits(), (id + 1e-12 * 0.6).to_bits());
+}
+
+#[test]
+fn the_resistor_matches_the_hand_written_products_bit_for_bit() {
+    let m = Models::all();
+    let h = m.instance("Resistor");
+    let k = Lab::terms(&m, "Resistor");
+    let mut rng = Rng(0x0123_4567_89ab_cdef);
+    for _ in 0..1000 {
+        let (vp, vn) = (rng.range(-100.0, 100.0), rng.range(-100.0, 100.0));
+        let r = 10f64.powf(rng.range(-3.0, 9.0));
+        let out = Models::eval(&h, k, &[In::F64(vp), In::F64(vn), In::F64(r)], None).expect("terms");
+        let g = 1.0 / r;
+        let value = out.values[0];
+        // the assembly's right side, −(v − Σ g_j·x_j) folded from 0.0, is exactly zero
+        assert_eq!(value - (0.0 + g * vp + (-g) * vn), 0.0, "residue at ({vp}, {vn}, {r})");
+        assert_eq!(value.to_bits(), (g * vp - g * vn).to_bits(), "({vp}, {vn}, {r})");
+        assert_eq!(out.jac, [g, -g]);
+    }
 }

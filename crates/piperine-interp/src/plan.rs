@@ -70,6 +70,11 @@ pub(crate) enum Source {
 }
 
 impl Source {
+    /// A continuous pin: read as 0 by the affine rule (INT-12).
+    pub fn is_pin(self) -> bool {
+        matches!(self, Source::Node(_) | Source::BranchFlow(_))
+    }
+
     /// A read the walk carries a tangent for.
     pub fn is_differentiable(self) -> bool {
         matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_))
