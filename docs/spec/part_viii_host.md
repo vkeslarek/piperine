@@ -58,8 +58,9 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 3. A **`force`** overrides a carrier until its **`release`**. It is outside model semantics
    and recorded on `log` (§19 rule 2).
 4. Made before the run, a host drive is an initial value like the model's own, and a `set`
-   binds the param without a change (§16 step 2). Made during the run, either is a commit:
-   it happens at a scheduled time and enters that instant at step 2 of §15.
+   binds the param without a change (§16 step 2). Made during the run, either happens at a
+   scheduled time: a drive is a commit that enters that instant at step 2 of §15; a `set`
+   applies after the step to that time is accepted, at step 5 of §15 (§15.2).
 5. Monte Carlo is a host loop. It assigns a distribution to any param by path, draws per
    instance or globally, and sets the values before elaboration.
 6. A `set` is checked against the param's `where` (§8.1.1). A `set` that fails is

@@ -80,8 +80,9 @@ produce the result of the following procedure.
 
 1. *Land* on `t` (§17.2). The transient step that arrives at `t` is solved once, in step
    3.4. Until then the latest solution is the one accepted at the previous time point.
-2. *Collect* what is due at `t`: `at` events, delayed commits, host `set`s and host drives
-   (§23.1.4). Collected commits are due at `(t, 0)`. Collected events fire at `(t, 0)`.
+2. *Collect* what is due at `t`: `at` events, delayed commits and host drives (§23.1.4).
+   Collected commits are due at `(t, 0)`. Collected events fire at `(t, 0)`. A host `set` is
+   not collected here: it applies in step 5.
 3. *Microstep loop*, for `n = 0, 1, …`:
    1. *Apply* the commits due at `(t, n)`. Commits to one level of one drive are ordered by
       §12.1.2; the last one is the value.
@@ -101,7 +102,8 @@ produce the result of the following procedure.
    5. *Exit test.* Leave the loop when step 3.4 has run and nothing is pending at `(t, n + 1)`.
 4. *Settle.* Every reaction on `settle` runs once, reading the final discrete state and the
    solution at `t`. This is the **settle phase**.
-5. *Advance* to the next time point (§17.2).
+5. *Advance* to the next time point (§17.2). First the host `set`s due at `t` apply, after
+   the settle phase; the first step after `t` reads them (§15.2, "Host `set`").
 
 Something is **pending** at `(t, n + 1)` when a commit is due there or an event fires there.
 The table fixes the microstep at which each event fires; §13 defines the events themselves.
@@ -238,8 +240,18 @@ that step reads it. A change made after that solve is read by the first step aft
 that lands on a jump is exempt from the truncation-error test (§17.2.1), and the step after it
 restarts the integrator (rule 6).
 
-When several changes occur at one `t`, in successive microsteps, the first step after `t`
-reads them all.
+When several changes occur at one `t`, in successive microsteps, the step that reads the first
+of them reads them all, unless step 3.4 solves `t` between two of them.
+
+**Host `set`.** A `set` due at `t` lands the solver on `t` but is not applied before the step
+that arrives there: that step is tested for truncation error like any other and does not read
+the set. The set applies after the step to `t` is accepted, after the settle phase (§15 step 5).
+The first step after `t` reads it. That step is exempt from the truncation-error test, restarts
+the integrator, and its size restarts at 10⁻³ of the last step (Appendix C.2). A `set` of a
+param whose change moves the operating point (the solver's `OperatingPoint` invalidation strength, Appendix C.2)
+also retakes the step to `t` with the new value; the retaken step's solution replaces the
+solution at `t`. It is a transient step that reads the change, so the set still has no solve
+of its own.
 
 **Dynamic semantics.** The following hold with no further rule.
 
