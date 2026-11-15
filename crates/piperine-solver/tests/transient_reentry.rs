@@ -1,14 +1,16 @@
 //! SC-04 enabler — transient full-state re-entry: an RC charge run 0→T,
 //! captured at T, re-entered T→2T equals a single 0→2T run within the
 //! solver's tolerance class. This is the PSS shooting seam
-//! (`TransientSolver::with_initial_state`).
+//! (`TransientSolver::with_initial_state`); on devices the captured step
+//! carries the protocol's checkpoint (the digital engine's, the assembly's
+//! histories) besides the solution that seeds the Newton history.
 
 // Each target includes the library by path: it uses a different subset of it.
 #[allow(dead_code)]
-#[path = "helpers/devices.rs"]
-mod devices;
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
 
-use devices::{NodeMap, C, R, Vsrc};
+use abi_devices::{NodeMap, add_capacitor, add_resistor, add_vsrc};
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions};
 
@@ -28,9 +30,9 @@ fn build_rc() -> (CircuitInstance, NodeMap) {
     let gnd = b.ground();
     let top = b.node("top");
     let out = b.node("out");
-    b.element(Box::new(Vsrc::new("v1", 5.0, top.clone(), gnd.clone())));
-    b.element(Box::new(R::new("r1", 1.0e3, top, out.clone())));
-    b.element(Box::new(C::new("c1", 1.0e-6, out.clone(), gnd)));
+    add_vsrc(&mut b, "v1", 5.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 1.0e3, &top, &out);
+    add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
     let circuit = b.build().expect("build");
     let mut map = NodeMap::new();
     map.insert("out", out);
@@ -94,4 +96,50 @@ fn reentry_from_captured_state_matches_continuous_run() {
         (v_reentry_end - analytic_end).abs() < 1.0e-2,
         "analytic sanity: v(2T)={v_reentry_end} vs {analytic_end}"
     );
+}
+
+/// A host write made between the capture and the re-entry applies at the
+/// re-entry: with the source set to 0 V at T the capacitor discharges from
+/// the captured state, `v(2T) = v(T)·e^(−1)`.
+#[test]
+fn a_host_write_since_the_capture_applies_at_the_reentry() {
+    let t_half = 1.0e-3;
+    let (mut circuit, info) = build_rc();
+    let ic = discharged_ic(&info, &circuit);
+    let mut leg1 = circuit
+        .transient(TransientAnalysisOptions::new(t_half, t_half / 100.0), Context::default())
+        .expect("tran 1");
+    leg1.apply_initial_conditions(ic);
+    let captured = leg1.solve().expect("solve 1").last().expect("steps").clone();
+    let v_captured = captured.get_node(&info.id("out")).expect("v(out)");
+
+    circuit.set("v1", "dc", piperine_solver::abi::ParamValue::Real(0.0)).expect("host write");
+    let opts = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0).with_start(t_half);
+    let mut leg2 = circuit.transient(opts, Context::default()).expect("tran 2");
+    leg2.with_initial_state(&captured);
+    let v_end = leg2.solve().expect("solve 2").last().expect("steps").get_node(&info.id("out")).expect("v(out)");
+    let analytic = v_captured * (-1.0_f64).exp();
+    assert!((v_end - analytic).abs() < 1.0e-2, "discharge from the captured state: v(2T)={v_end} vs {analytic}");
+}
+
+/// Only the first and the last step of a run of devices carry the state a
+/// transient re-enters from; a late start needs one. Both fail loud.
+#[test]
+fn reentry_needs_a_captured_device_state() {
+    let t_half = 1.0e-3;
+    let (mut circuit, _info) = build_rc();
+    let run = circuit
+        .transient(TransientAnalysisOptions::new(t_half, t_half / 100.0), Context::default())
+        .expect("tran")
+        .solve()
+        .expect("solve");
+    let middle = run.iter().nth(3).expect("a middle step").clone();
+    let opts = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0).with_start(middle.time());
+    let mut solver = circuit.transient(opts.clone(), Context::default()).expect("tran");
+    solver.with_initial_state(&middle);
+    let err = solver.solve().expect_err("no device state on a middle step");
+    assert!(err.to_string().contains("carries no state of the device instances"), "{err}");
+
+    let err = circuit.transient(opts, Context::default()).expect("tran").solve().expect_err("late start");
+    assert!(err.to_string().contains("only from a captured step"), "{err}");
 }

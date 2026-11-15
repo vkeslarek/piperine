@@ -153,6 +153,18 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         self.delivery.restore(c.sink);
     }
 
+    /// Continues from a state both sides were put back to (a transient
+    /// re-entered at a captured step, the PSS shooting seam): the last
+    /// accepted time is `now`, the discrete side has started, and `samples`
+    /// are the continuous values its reactions read there. No operating point
+    /// runs; `transient` steps forward from `now`.
+    pub fn resume(&mut self, now: f64, samples: Vec<f64>) {
+        self.now = now;
+        self.started = true;
+        self.finished = None;
+        self.samples = samples;
+    }
+
     /// Buffers what the discrete side observed.
     pub(super) fn collect(&mut self, analysis: AnalysisKind) {
         let discrete = &mut self.discrete;

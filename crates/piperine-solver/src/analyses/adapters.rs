@@ -32,6 +32,7 @@ use crate::protocol::{
 use crate::analyses::dc::DcSolver;
 use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
 use crate::core::bind::{Bound, NameMap, Site};
+use crate::core::result::{ReentryState, TransientStep};
 
 /// A digital failure as the owner reports it (the text keeps every typed field).
 pub(crate) fn digital_error(e: DigitalError) -> Error {
@@ -83,6 +84,25 @@ impl DigitalSide {
     /// The engine, back to its owner.
     pub(crate) fn into_digital(self) -> Digital {
         self.digital
+    }
+
+    /// The engine's checkpoint and every net's bytes in it.
+    pub(crate) fn state(&self) -> (Checkpoint, Vec<Vec<u8>>) {
+        let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read(NetId(i as u32)).to_vec()).collect();
+        (self.digital.checkpoint(), nets)
+    }
+
+    /// Puts the engine back to a captured checkpoint whose nets hold `nets`;
+    /// the analog copy then holds what they hold: returns each slot's bytes.
+    pub(crate) fn resume(&mut self, checkpoint: &Checkpoint, nets: &[Vec<u8>]) -> Vec<(u32, Vec<u8>)> {
+        self.digital.restore(checkpoint);
+        let mut slots = Vec::with_capacity(self.slot_nets.len());
+        for (slot, net) in self.slot_nets.iter().enumerate() {
+            let bytes = nets[net.0 as usize].clone();
+            self.copy[slot].clone_from(&bytes);
+            slots.push((slot as u32, bytes));
+        }
+        slots
     }
 
     fn time(&self, tick: DigitalTick) -> f64 {
@@ -284,6 +304,17 @@ impl TransientSide<'_, '_> {
     /// After the operating point: the history rows and the recorded start.
     pub(crate) fn begin(&mut self) -> Result<()> {
         self.tran.device_begin(&mut self.run)
+    }
+
+    /// Instead of the operating point: the captured step's solution and
+    /// histories; returns the continuous values reactions read there.
+    pub(crate) fn resume(&mut self, step: &TransientStep, state: &ReentryState) -> Result<Vec<f64>> {
+        self.tran.device_resume(&mut self.run, step, state)
+    }
+
+    /// The recorded start carries the state a later run re-enters from.
+    pub(crate) fn mark_start(&mut self, digital: Checkpoint, nets: Vec<Vec<u8>>) {
+        self.tran.device_mark_start(&mut self.run, digital, nets);
     }
 }
 

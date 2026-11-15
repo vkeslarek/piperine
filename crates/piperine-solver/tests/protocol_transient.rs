@@ -408,3 +408,39 @@ fn crossing_retries_count_toward_the_rejection_cap() {
     assert!(err.to_string().contains("5 consecutive rejected attempts"), "{err}");
     assert_eq!(attempts(&log).len(), 5);
 }
+
+/// Re-entry (the PSS shooting seam): after `resume` the transient continues
+/// from the resumed time on the sides as they were put back, with no
+/// operating point; a host write between runs then runs its instant at once,
+/// reading the samples given to `resume`.
+#[test]
+fn a_resumed_transient_continues_from_its_time_without_an_operating_point() {
+    let (log, d, mut a) = sides();
+    a.proposals.extend([3.0]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.resume(2.0, vec![0.25]);
+    assert_eq!(p.now(), 2.0);
+    assert_eq!(p.set(7, 0, &[1], None).unwrap(), SetOutcome::Committed);
+    let instants: Vec<(i64, Vec<f64>)> = calls(&log, |c| matches!(c, Call::RunInstant { .. }))
+        .into_iter()
+        .map(|c| match c {
+            Call::RunInstant { at, samples, .. } => (at, samples),
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(instants, [(4, vec![0.25])], "the write's instant runs at the resumed time");
+    assert_eq!(p.transient(4.0).unwrap(), Ended::StopTime);
+    assert!(calls(&log, |c| matches!(c, Call::Start | Call::Equilibrium)).is_empty(), "no operating point");
+    assert_eq!(
+        calls(&log, |c| matches!(c, Call::Propose(..) | Call::Advance(_) | Call::Attempt { .. })),
+        [
+            Call::Propose(2.0, 4.0),
+            Call::Advance(6),
+            Call::Attempt { to: 3.0, exempt: false },
+            Call::Propose(3.0, 4.0),
+            Call::Advance(8),
+            Call::Attempt { to: 4.0, exempt: false },
+        ]
+    );
+    assert_eq!(p.now(), 4.0);
+}

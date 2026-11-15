@@ -152,6 +152,22 @@ pub struct TransientStep {
     /// circuit state for re-entry (PSS shots): register state round-trips
     /// with the digital nets (the shot-state contract).
     digital_hidden: HashMap<String, (Vec<i64>, Vec<f64>)>,
+    /// For a circuit of devices, the state a transient re-enters from at this
+    /// step: recorded on the first and the last step of a run.
+    reentry: Option<Arc<ReentryState>>,
+}
+
+/// What a transient of a circuit of devices re-enters from besides the
+/// solution (abi.md §5 checkpoint): the discrete engine's checkpoint and every
+/// net's bytes in it, the assembly's term histories and limit states, and the
+/// step bound of the accepted solution.
+#[derive(Debug, Clone)]
+pub(crate) struct ReentryState {
+    pub(crate) digital: piperine_digital_solver::abi::engine::Checkpoint,
+    /// Every net's bytes, by net id.
+    pub(crate) nets: Vec<Vec<u8>>,
+    pub(crate) assembly: piperine_analog_solver::device::AssemblySnapshot,
+    pub(crate) cap: f64,
 }
 
 impl TransientStep {
@@ -162,7 +178,17 @@ impl TransientStep {
             digital: Vec::new(),
             device_state: HashMap::new(),
             digital_hidden: HashMap::new(),
+            reentry: None,
         }
+    }
+
+    /// The re-entry state of a circuit of devices, when this step carries one.
+    pub(crate) fn reentry(&self) -> Option<&Arc<ReentryState>> {
+        self.reentry.as_ref()
+    }
+
+    pub(crate) fn set_reentry(&mut self, state: Option<Arc<ReentryState>>) {
+        self.reentry = state;
     }
 
     /// Attach a digital-net snapshot (by `DigitalNet` id).

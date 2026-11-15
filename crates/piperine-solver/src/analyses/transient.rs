@@ -1722,12 +1722,33 @@ impl TransientSolver<'_> {
         use crate::analyses::adapters::{DigitalSide, TransientSide, empty_digital};
         use crate::protocol::{Protocol, ProtocolOptions};
         use piperine_analog_solver::error::{Error, SolverDomain};
-        if self.reentry_state.is_some() || self.options.start_time != 0.0 {
-            return Err(Error::simple(
-                SolverDomain::Transient,
-                "a circuit of devices does not re-enter a transient yet (solver-abi-integration T18)",
-            ));
-        }
+        // Re-entry: the captured step and the state of the instances it carries.
+        let resume = match self.reentry_state.take() {
+            None if self.options.start_time != 0.0 => {
+                return Err(Error::simple(
+                    SolverDomain::Transient,
+                    format!(
+                        "a transient of devices starts at {:e} s only from a captured step \
+                         (`with_initial_state`); without one it starts at 0",
+                        self.options.start_time
+                    ),
+                ));
+            }
+            None => None,
+            Some(step) => {
+                let Some(state) = step.reentry().cloned() else {
+                    return Err(Error::simple(
+                        SolverDomain::Transient,
+                        format!(
+                            "the step at {:e} s carries no state of the device instances: \
+                             re-enter from the first or the last step of a transient of this circuit",
+                            step.time()
+                        ),
+                    ));
+                };
+                Some((step, state))
+            }
+        };
         // Scheduled host writes: one at or before the start is a write before the
         // run; a later one is a host commit the protocol lands on.
         let mut later = Vec::new();
@@ -1755,9 +1776,29 @@ impl TransientSolver<'_> {
             let (net, bytes) = bound.param_bytes(path, param, value)?;
             writes.push((*t, format!("{path}.{param}"), net.0, bytes));
         }
+        if let Some((_, state)) = &resume
+            && state.nets.len() != bound.digital.plan().nets.len()
+        {
+            return Err(Error::simple(
+                SolverDomain::Transient,
+                "the captured step belongs to another binding of this circuit (it was re-bound since)",
+            ));
+        }
         let spt = bound.digital.plan().resolution.seconds_per_tick;
         let digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
-        let side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
+        let mut side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
+        // A host write made since the capture is written again at the re-entry.
+        let mut rewrites = Vec::new();
+        if let Some((_, state)) = &resume {
+            for (slot, bytes) in side.resume(&state.digital, &state.nets) {
+                bound.analog.set_discrete(slot, &bytes);
+            }
+            for (net, bytes) in &bound.host_writes {
+                if state.nets[net.0 as usize] != *bytes {
+                    rewrites.push((net.0, bytes.clone()));
+                }
+            }
+        }
         let run = DeviceRun {
             st: TimeLoop::new(self.options.start_time, self.options.dt),
             steps: Vec::new(),
@@ -1772,14 +1813,33 @@ impl TransientSolver<'_> {
             spt,
             cap: f64::INFINITY,
         };
-        let stop = self.options.stop_time;
+        let (start, stop) = (self.options.start_time, self.options.stop_time);
         let hooks = self.host.clone();
         let nets = hooks.nets(bound);
         let protocol = Protocol::new(side, TransientSide { tran: self, run }, ProtocolOptions::new(spt));
         let mut protocol = hooks.install(protocol, nets.as_deref().unwrap_or(&[]));
         let ran = nets
-            .and_then(|_| protocol.operating_point())
-            .and_then(|_| protocol.analog_mut().begin())
+            .and_then(|_| match &resume {
+                None => protocol.operating_point().and_then(|_| protocol.analog_mut().begin()),
+                Some((step, state)) => {
+                    let samples = protocol.analog_mut().resume(step, state)?;
+                    protocol.resume(start, samples);
+                    for (net, bytes) in &rewrites {
+                        if let crate::protocol::SetOutcome::Refused { reason } = protocol.set(*net, 0, bytes, None)? {
+                            return Err(Error::simple(
+                                SolverDomain::Transient,
+                                format!("a host write made since the capture is refused at the re-entry: {reason}"),
+                            ));
+                        }
+                    }
+                    Ok(())
+                }
+            })
+            .and_then(|_| {
+                let (digital, nets) = protocol.discrete().state();
+                protocol.analog_mut().mark_start(digital, nets);
+                Ok(())
+            })
             .and_then(|_| {
                 for (t, what, net, bytes) in &writes {
                     match protocol.set(*net, 0, bytes, Some(*t))? {
@@ -1805,11 +1865,25 @@ impl TransientSolver<'_> {
             })
             .and_then(|_| protocol.transient(stop));
         let (side, analog) = protocol.into_sides();
-        let run = analog.run;
+        let mut run = analog.run;
         if let Some(bound) = self.system.circuit.abi.as_mut() {
             bound.digital = side.into_digital();
         }
         ran?;
+        // The last step carries the state a later run re-enters from.
+        let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
+        let nets = (0..bound.digital.plan().nets.len())
+            .map(|i| bound.digital.read(piperine_digital_solver::abi::net::NetId(i as u32)).to_vec())
+            .collect();
+        let state = crate::core::result::ReentryState {
+            digital: bound.digital.checkpoint(),
+            nets,
+            assembly: bound.analog.snapshot(),
+            cap: run.cap,
+        };
+        if let Some(last) = run.steps.last_mut() {
+            last.set_reentry(Some(std::sync::Arc::new(state)));
+        }
         if self.top_level {
             self.system.circuit.finish_analysis(&self.system.context, crate::analyses::AnalysisKind::Tran);
         }
@@ -1882,6 +1956,13 @@ impl TransientSolver<'_> {
                 self.push_initial(self.initial_conditions.clone())?;
             }
         }
+        self.device_record_start(run);
+        Ok(())
+    }
+
+    /// The start is recorded, and the run takes the node unknowns the
+    /// truncation test reads.
+    fn device_record_start(&mut self, run: &mut DeviceRun) {
         let start_time = self.options.start_time;
         if start_time >= self.options.record_from {
             run.steps.push(self.snapshot(start_time));
@@ -1896,7 +1977,47 @@ impl TransientSolver<'_> {
             .filter(|r| !r.is_branch())
             .filter_map(|r| r.idx())
             .collect();
-        Ok(())
+    }
+
+    /// Re-entry from a captured step instead of an operating point (the PSS
+    /// shooting seam), as `apply_reentry_state` does for elements: the
+    /// assembly's histories and limit states come back, the captured solution
+    /// seeds both history rows (no DC solve, no device or user seed), and the
+    /// start is recorded. Returns the continuous values reactions read there.
+    pub(crate) fn device_resume(
+        &mut self,
+        run: &mut DeviceRun,
+        step: &TransientStep,
+        state: &crate::core::result::ReentryState,
+    ) -> crate::core::result::Result<Vec<f64>> {
+        self.system.uic_hold = false;
+        self.device_bound().analog.restore(&state.assembly);
+        let ivs: Vec<InitialValue<AnalogReference, f64>> = self
+            .system
+            .circuit
+            .netlist()
+            .all_references()
+            .into_iter()
+            .filter_map(|reference| {
+                step.get(reference.variable().clone()).map(|value| InitialValue { reference: reference.clone(), value })
+            })
+            .collect();
+        self.push_initial(ivs.clone())?;
+        self.push_initial(ivs)?;
+        run.cap = state.cap;
+        self.device_record_start(run);
+        let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
+        Ok(self.device_bound().analog.samples(&x))
+    }
+
+    /// The re-entry state of this run's first recorded step, at the start.
+    pub(crate) fn device_mark_start(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::abi::engine::Checkpoint, nets: Vec<Vec<u8>>) {
+        if run.steps.len() != 1 {
+            return;
+        }
+        let assembly = self.device_bound().analog.snapshot();
+        let state = crate::core::result::ReentryState { digital, nets, assembly, cap: run.cap };
+        run.steps[0].set_reentry(Some(std::sync::Arc::new(state)));
     }
 
     /// The end of the next step: the controller's proposal, at most the stop
