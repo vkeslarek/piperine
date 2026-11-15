@@ -1,6 +1,6 @@
 # solver-abi-digital proofs
 
-**HEAD**: d75324d6
+**HEAD**: faf2712e
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 47 pass, 0 fail
