@@ -111,3 +111,14 @@ The eight questions of `.specs/features/e2e-m1/questions.md`, with the user's ch
 | Q8 | when Appendix C is amended | "Accept all (Recommended)" | after M1 runs, in one spec edit with `spec-abi-amendments` |
 
 With these the five M1 specs are approved (user: "Concordo e pode disparar", and the answers above). Tasks are approved under the user's standing instruction: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida ok?".
+
+## Order after M1 (user, 2026-11-15)
+
+User, verbatim: "Mergeia o buck e as features prontas. Pode ir rodando os grandes passos. Eu deixaria o interpreter de lado por enquanto e faria o transpiler primeiro, dá menos trabalho apesar do debug não ser perfeito, ainda podemos olhar no resultado intermediário."
+
+| # | Decision | Amends |
+| - | -------- | ------ |
+| R1 | `ir-rust` (M3) comes **before** M2. The interpreter is frozen at its M1 subset; it is not extended to digital or mixed-signal for now. | S2, S3, O6 |
+| R2 | M2 (digital, mixed, galleries E/F, conformance C.2.3, the buck) is built on the transpiler path. Where the interpreter covers a form (the M1 analog subset), it stays the differential oracle; elsewhere the oracle is the gallery's own expected behavior and ngspice where a twin exists. | C6 for the forms the interpreter lacks |
+| R3 | The generated Rust is the debug surface: kept on disk, formatted, readable, each item naming its IR/MSL path ("ainda podemos olhar no resultado intermediário"). | RS-Q8 |
+| R4 | The orchestrator settles the open RS-Q questions under the user's standing delegation ("pode ir disparando implementações", "Pode ir rodando os grandes passos") and records each answer in `ir-rust/spec.md`. | - |
