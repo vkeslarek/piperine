@@ -203,11 +203,11 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Devices: `Inverter` and `And2` (one function), `Dff` (abi.md §11.4), `Timer` (a `START` reaction and a delayed `REPLACE` commit to a private event pin, toggling a `BIT` output), `Counter` (state in a private pin), `Resolver` (two `RELAX` drive pins, one value pin, wired-or with unknown), `Recorder` (a `RECORD` pin), `Checked` (a param with a `check` pin and a setup function that returns `RESHAPE` above a threshold), `Sampler` (a reaction that reads a continuous pin), `Stub` (an `IRREVERSIBLE` reaction)
-- [ ] `bind_by_name(devices, wires) -> DigitalPlan` is a plain function taking a list of (device, pin name to net name); no macro
-- [ ] Test `every_fixture_shape_is_valid` passes
-- [ ] Test `fixtures_bind_into_a_plan` binds a timer, a flip-flop and an inverter
-- [ ] Gate: build
+- [x] Devices: `Inverter` and `And2` (one function), `Dff` (abi.md §11.4), `Timer` (a `START` reaction and a delayed `REPLACE` commit to a private event pin, toggling a `BIT` output), `Counter` (state in a private pin), `Resolver` (two `RELAX` drive pins, one value pin, wired-or with unknown), `Recorder` (a `RECORD` pin), `Checked` (a param with a `check` pin and a setup function that returns `RESHAPE` above a threshold), `Sampler` (a reaction that reads a continuous pin), `Stub` (an `IRREVERSIBLE` reaction)
+- [x] `bind_by_name(devices, wires) -> DigitalPlan` is a plain function taking a list of (device, pin name to net name); no macro
+- [x] Test `every_fixture_shape_is_valid` passes
+- [x] Test `fixtures_bind_into_a_plan` binds a timer, a flip-flop and an inverter
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build
