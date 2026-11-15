@@ -73,6 +73,13 @@ impl<'a> AnalogPrinter<'a> {
             Source::Param(p) => {
                 self.body.params().get(p as usize).map_or_else(|| Text::generated(&format!("param{p}")), |x| Text::ident(&x.name))
             }
+            Source::Carrier(c) => {
+                self.body.carriers().get(c as usize).map_or_else(|| Text::generated(&format!("carrier{c}")), |x| Text::ident(&x.name))
+            }
+            Source::CarrierChanged(c) => {
+                let name = self.body.carriers().get(c as usize).map_or_else(|| format!("carrier{c}"), |x| x.name.clone());
+                Text::generated(&format!("{name}_changed"))
+            }
             Source::Temperature => ValuePrinter::env_name(Env::Temperature).to_string(),
             Source::Gmin => ValuePrinter::env_name(Env::Gmin).to_string(),
             Source::SourceScale => ValuePrinter::env_name(Env::SourceScale).to_string(),
@@ -108,6 +115,7 @@ impl<'a> AnalogPrinter<'a> {
             Target::Check(p) => {
                 format!("check:{}", self.body.params().get(p as usize).map_or_else(|| p.to_string(), |x| x.name.clone()))
             }
+            Target::Carrier(c) => self.body.carriers().get(c as usize).map_or_else(|| c.to_string(), |x| x.name.clone()),
         }
     }
 

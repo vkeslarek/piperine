@@ -85,6 +85,8 @@ impl Interpreted {
                     None
                 }
                 Source::LimitLast(_) | Source::LimitAge(_) | Source::Static => None,
+                // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
+                Source::Carrier(_) | Source::CarrierChanged(_) => None,
             };
             if let Some(cell) = cell {
                 *cell = Some(read());

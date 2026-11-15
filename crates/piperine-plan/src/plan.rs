@@ -10,7 +10,8 @@
 //! which writes every term (abi.md A3 keeps limits and terms apart), then `check:<p>` per param
 //! with a `where`: it reads the params the condition names and writes the param's private `BIT`
 //! pin `check:<p>`, which the param's pin names as its `check` (`HAS_CHECK`). The check pins are
-//! the last pins of the shape. A function reads exactly
+//! the last M1 pins of the shape; the discrete pins of `digital.rs` (one per carrier) follow
+//! them. A function reads exactly
 //! the cells of its dependency set (`msl-ir` IR-09) in one order: continuous pins (nodes by
 //! index, then private flows), `LIMIT` values, `STIM` values (the differentiable reads, one
 //! tangent slot each, in that order), then params, the temperature pin and the ambients. A
@@ -21,6 +22,8 @@
 use std::collections::BTreeSet;
 
 use piperine_abi::layout::{BIT, F64};
+
+use crate::digital::{CarrierLayout, Digital};
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_ir::{
@@ -66,6 +69,10 @@ pub enum Source {
     /// An `ac_stim` site's input `VALUE`.
     StimValue(u32),
     Param(u32),
+    /// The `VALUE` of a carrier's pin.
+    Carrier(u32),
+    /// The `CHANGED` byte of a carrier's pin.
+    CarrierChanged(u32),
     Temperature,
     Gmin,
     SourceScale,
@@ -96,6 +103,8 @@ pub enum Target {
     StimIm(u32),
     /// The check pin of param `p`.
     Check(u32),
+    /// The `VALUE` of a carrier's pin.
+    Carrier(u32),
 }
 
 /// What one function of the shape computes, entry by entry parallel to the shape.
@@ -158,14 +167,21 @@ pub struct Pins {
     /// The private flow pin of each branch; `None` for a flow branch.
     pub branches: Vec<Option<u32>>,
     pub temperature: Option<u32>,
-    /// The private check pin of each param with a `where`, after every other pin.
+    /// The private check pin of each param with a `where`, after every other M1 pin.
     pub checks: Vec<Option<u32>>,
+    /// The pin of carrier 0; carrier `i` is pin `carriers + i`, after every M1 pin.
+    pub carriers: u32,
 }
 
 impl Pins {
     /// The pin of body node `i`.
     pub fn node(&self, i: u32) -> u32 {
         self.nodes + i
+    }
+
+    /// The pin of carrier `i`.
+    pub fn carrier(&self, i: u32) -> u32 {
+        self.carriers + i
     }
 
     /// The pin a term end names: a node's pin, or `GROUND`.
@@ -200,9 +216,9 @@ impl BodyPlan {
             .map(|p| match p.default {
                 Some(Constant::Real(r)) => r.get().to_le_bytes().to_vec(),
                 Some(Constant::Bool(b)) => vec![u8::from(b), 1],
-                // An integer param has no pin layout in the M1 plan: no default is written, so
-                // the bind of an instance that gives no value fails loud.
-                Some(Constant::Int(_)) | None => Vec::new(),
+                // An integer param has a carrier's layout and bytes (`digital.rs`).
+                Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
+                None => Vec::new(),
             })
             .collect();
         // A param with a `where` names its check pin, the last pins of the shape (P6): the pins
@@ -214,7 +230,11 @@ impl BodyPlan {
         let mut next_check = pin_count as u32;
         let mut check_pins = Vec::with_capacity(body.params().len());
         for (p, init) in body.params().iter().zip(&defaults) {
-            let layout = if p.ty == ValueType::Bool { &BIT } else { &F64 };
+            let layout = match &p.ty {
+                ValueType::Bool => &BIT,
+                ty if ty.is_integer() => CarrierLayout::of(ty).unwrap_or(&F64),
+                _ => &F64,
+            };
             let mut flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
             if p.structural {
                 flags |= pin_flag::STRUCTURAL;
@@ -272,7 +292,8 @@ impl BodyPlan {
                 pin
             }));
         }
-        let pins = Pins { nodes, branches, temperature, checks };
+        let carriers = Digital::carrier_pins(&mut s, body);
+        let pins = Pins { nodes, branches, temperature, checks, carriers };
 
         // Terms, branch by branch.
         let mut terms = Vec::new();
@@ -415,6 +436,8 @@ impl BodyPlan {
                 Source::LimitValue(k) => value(cell::INPUT, k),
                 Source::StimValue(k) => value(cell::INPUT, limits + k),
                 Source::Param(i) => value(cell::PIN, i),
+                Source::Carrier(c) => value(cell::PIN, pins.carrier(c)),
+                Source::CarrierChanged(c) => at(cell::PIN, pins.carrier(c), part::CHANGED),
                 Source::Temperature => value(cell::PIN, pins.temperature.unwrap_or(GROUND)),
                 Source::Gmin => value(cell::AMBIENT, ambient::GMIN),
                 Source::SourceScale => value(cell::AMBIENT, ambient::SOURCE_SCALE),
@@ -433,6 +456,7 @@ impl BodyPlan {
                 Target::StimRe(k) => at(cell::INPUT, limits + k, part::RE),
                 Target::StimIm(k) => at(cell::INPUT, limits + k, part::IM),
                 Target::Check(p) => value(cell::PIN, pins.checks.get(p as usize).copied().flatten().unwrap_or(GROUND)),
+                Target::Carrier(c) => value(cell::PIN, pins.carrier(c)),
             })
             .collect();
         let partials =
