@@ -130,7 +130,7 @@ impl Row {
             params: vec![param("k0"), param("k1"), param("k2")],
             nodes: vec![port("p"), port("n")],
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
-            limits: vec![site("l0")],
+            limits: vec![site("l0"), site("l1")],
             stims: vec![site("s0"), site("s1")],
             locals: vec![local("x"), local("y"), local("new"), local("old")],
             analog: Some(stmts),
@@ -329,5 +329,87 @@ fn affine_means_probes_meet_only_linear_operators() {
         let mut e = Row::ex(b);
         let (k, g) = (e.param(0), e.env(Env::Gmin));
         (vec![], e.binary(BinaryOp::Mul, k, g))
+    }));
+}
+
+/// `limit(v(p, n), |new, old| new, 0.0)` at `site`: the limited iterate of the branch potential.
+struct Limited;
+
+impl Limited {
+    fn read(e: &mut Ex<'_>, site: u32) -> ExprId {
+        let x = Row::v(e);
+        let new = e.local(2);
+        let f = e.closure(vec![2, 3], new);
+        let seed = e.real(0.0);
+        e.limit(site, x, f, Some(seed))
+    }
+}
+
+#[test]
+fn a_limit_read_and_a_constant_if_keep_the_class() {
+    // IR-10 AC 1: a `limit` read stands for the limited iterate of its input, an ABI read
+    // (abi.md A2): it is classed like a probe. `k0 * limit(v)` is affine...
+    assert!(Row::affine(|b| {
+        let mut e = Row::ex(b);
+        let k = e.param(0);
+        let lim = Limited::read(&mut e, 0);
+        (vec![], e.binary(BinaryOp::Mul, k, lim))
+    }));
+    // ... `limit(v) + v` is affine ...
+    assert!(Row::affine(|b| {
+        let mut e = Row::ex(b);
+        let lim = Limited::read(&mut e, 0);
+        let v = Row::v(&mut e);
+        (vec![], e.binary(BinaryOp::Add, lim, v))
+    }));
+    // ... and `limit(v) * limit(v)`, a product of two reads, is not.
+    assert!(!Row::affine(|b| {
+        let mut e = Row::ex(b);
+        let l0 = Limited::read(&mut e, 0);
+        let l1 = Limited::read(&mut e, 1);
+        (vec![], e.binary(BinaryOp::Mul, l0, l1))
+    }));
+    // `gmin() * limit(v)` reads the environment and the site, not the probed nodes: the input is
+    // the site's own dependency.
+    let ir = Row::ir(|b| {
+        let mut e = Row::ex(b);
+        let g = e.env(Env::Gmin);
+        let lim = Limited::read(&mut e, 0);
+        (vec![], e.binary(BinaryOp::Mul, g, lim))
+    });
+    let body = ir.body(BodyId(0));
+    assert!(body.is_affine(0));
+    assert_eq!(body.dependencies(Target::Flow(0)), Want::deps(&[], &[], &[Env::Gmin], &[0], &[]));
+    assert_eq!(body.dependencies(Target::Limit(0)), Want::deps(&[0, 1], &[], &[], &[], &[]));
+
+    // IR-10 AC 2: an `if` whose condition reads no probe and no `limit` site joins its arms.
+    // Both arms affine: affine.
+    assert!(Row::affine(|b| {
+        let mut e = Row::ex(b);
+        let (k, z) = (e.param(0), e.real(0.0));
+        let cond = e.binary(BinaryOp::Gt, k, z);
+        let (v, k1) = (Row::v(&mut e), e.param(1));
+        let then = e.binary(BinaryOp::Mul, k1, v);
+        let other = Row::v(&mut e);
+        (vec![], e.if_f64(cond, then, other))
+    }));
+    // One arm nonlinear: not affine.
+    assert!(!Row::affine(|b| {
+        let mut e = Row::ex(b);
+        let (k, z) = (e.param(0), e.real(0.0));
+        let cond = e.binary(BinaryOp::Gt, k, z);
+        let v = Row::v(&mut e);
+        let then = e.math(MathFn::Exp, v);
+        let other = Row::v(&mut e);
+        (vec![], e.if_f64(cond, then, other))
+    }));
+    // A condition on a `limit` read: not affine, though both arms are.
+    assert!(!Row::affine(|b| {
+        let mut e = Row::ex(b);
+        let lim = Limited::read(&mut e, 0);
+        let z = e.real(0.0);
+        let cond = e.binary(BinaryOp::Gt, lim, z);
+        let (v, w) = (Row::v(&mut e), Row::v(&mut e));
+        (vec![], e.if_f64(cond, v, w))
     }));
 }

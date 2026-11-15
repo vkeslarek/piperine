@@ -212,6 +212,25 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 
 **Independent Test**: on the hand-built resistor, the flow of `(p, n)` depends on nodes `p`, `n` and param `r`, and is affine; on the diode, the flow depends on the `limit` site and is not affine.
 
+**SPEC amendment (verification round 1, 2026-11-15)**: AC 3 reads "probe" as a read the ABI declares. A `limit` read stands for the limited iterate of its input, which the backend holds as an input of its own (abi.md A2), so it is classed as a probe is: `k * limit(v)` is affine, `limit(v) * limit(v)` is not. An `if` whose condition reads no probe and no `limit` site is a selection fixed for the solve and keeps the class of its arms. Both readings are what `ir-interp` INT-12 needs; IR-10 states them as criteria.
+
+---
+
+### P1: The class of a `limit` read and of a constant `if` (amendment)
+
+**User Story**: As a backend author, I want the affine test to treat a `limit` read as a declared input and a constant-condition `if` as a fixed selection so that the partial pattern matches the reads the ABI declares.
+
+**Why P1**: verification round 1 found both readings implemented and unpinned; `ir-interp` INT-12 relies on them.
+
+**Requirement**: IR-10
+
+**Acceptance Criteria**:
+
+1. WHEN a body is asked whether a branch's direct addends are affine THEN the system SHALL class a `limit` read as it classes a probe: affine on its own, reaching the sum through the operators of IR-09 AC 3, and SHALL count the site, not the nodes its input probes, among the dependencies of the read.
+2. WHEN an `if` has a condition that reads no probe and no `limit` site THEN the system SHALL class the `if` as the join of its two arms; WHEN its condition reads one THEN the system SHALL class it as not affine.
+
+**Independent Test**: `k0 * limit(v)` is affine, `limit(v) * limit(v)` is not; `if k0 > 0 { k1 * v } else { v }` is affine, the same `if` with an `exp(v)` arm or a condition on `limit(v)` is not.
+
 ---
 
 ## Edge Cases
@@ -234,10 +253,11 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 | IR-07 | P1: The M1 analog node set | Design | Pending |
 | IR-08 | P1: Bodies and the flat instance table | Design | Pending |
 | IR-09 | P1: Static dependencies | Design | Pending |
+| IR-10 | P1: The class of a `limit` read and of a constant `if` (amendment) | Verification round 1 | Pending |
 
 IR-05 of the first draft (the IR is a side artifact of the POM) is now `msl-elab` ELAB-01 AC 2: this crate no longer sees a `Design`.
 
-**Coverage:** 8 total, 0 mapped to tasks.
+**Coverage:** 9 total, 0 mapped to tasks.
 
 ---
 

@@ -6,7 +6,7 @@
 //! reads and a class on the lattice `Constant < Affine < Nonlinear` (in the node potentials):
 //!
 //! - constants, params and environment reads are `Constant`; a probe is `Affine`;
-//! - a `limit` read is the site alone, `Affine`: the backend holds the limited iterate as an
+//! - a `limit` read is the site alone, `Affine` (IR-10): the backend holds the limited iterate as an
 //!   input that stands in for its input `x` (abi.md A2), so `x`, the function and the seed are
 //!   the site's own dependencies (`Target::Limit`), not its readers';
 //! - an `ac_stim` read is the site plus its magnitude and phase, which are evaluated where the
@@ -17,7 +17,7 @@
 //! - a call reads its arguments and what the callee reads itself (walked with its parameters
 //!   bound to the arguments); it is `Constant` when every argument is, `Nonlinear` otherwise;
 //! - an `if` reads its condition and both arms; it joins the arms when the condition is
-//!   `Constant`, and is `Nonlinear` otherwise.
+//!   `Constant`, and is `Nonlinear` otherwise (IR-10).
 //!
 //! The walk assumes an IR that passes `Ir::check`; a form `check` does not exclude and the walk
 //! cannot give a meaning to (a local read before its `let`, a recursive call) panics with its

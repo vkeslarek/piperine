@@ -664,6 +664,9 @@ Proof: run model | test a_body_without_analog_has_no_branches ... ok
 **C38** - IF two instances or two nodes have the same path THEN `Ir::check` SHALL return an entry naming the path. (IR edge case 3; T7)
 Proof: run check | test a_duplicated_path_is_named ... ok
 
+**C39** - WHEN a body is asked whether a branch's direct addends are affine THEN the system SHALL class a `limit` read as a probe and an `if` on a condition that reads no probe and no `limit` site as the join of its arms. (IR-10, AC 1 and AC 2; verification round 1)
+Proof: run deps | test a_limit_read_and_a_constant_if_keep_the_class ... ok
+
 ---
 
 ## Handoff
