@@ -848,7 +848,7 @@ pub type Placed<'a> = (&'a str, Handle, Vec<(&'a str, &'a str)>);
 
 /// Binds `devices` by net name. A wired pin goes to the named net, created on first use from the
 /// pin's layout and flags (`QUIET`, `RECORD`, `RELAX`, `STRUCTURAL` of any pin on it, and the
-/// first `init`). A pin with no wire gets a net of its own, named `<path>.<pin>`; an unwired
+/// the `init` of any pin that has one). A pin with no wire gets a net of its own, named `<path>.<pin>`; an unwired
 /// `GLOBAL` pin goes to the design-wide net `global:<constant>`; an unwired `OPTIONAL` pin goes to
 /// nothing. A continuous pin binds to the sample slot of its wire's name, slots numbered in the
 /// order the names first appear.
@@ -891,7 +891,6 @@ pub fn bind_by_name_with(
                 if p.kind == kind::EVENT {
                     spec.kind = NetKind::Event;
                 }
-                spec.init = p.init.as_slice().to_vec();
                 nets.push(spec);
                 NetId(nets.len() as u32 - 1)
             });
@@ -900,6 +899,9 @@ pub fn bind_by_name_with(
             spec.record |= p.flags & pin_flag::RECORD != 0;
             spec.relax |= p.flags & pin_flag::RELAX != 0;
             spec.structural |= p.flags & pin_flag::STRUCTURAL != 0;
+            if spec.init.is_empty() && p.flags & pin_flag::HAS_INIT != 0 {
+                spec.init = p.init.as_slice().to_vec();
+            }
             pins.push(Binding::Net(id));
         }
         instances.push(InstancePlan { path: path.to_string(), handle, pins });

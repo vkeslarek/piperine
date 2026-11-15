@@ -298,11 +298,11 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `restore_returns_store_queue_and_observations_byte_for_byte` passes and counts zero device calls during `restore` (C30)
-- [ ] Test `two_runs_give_identical_observations` passes on a design with five instances built in two different insertion orders of equal paths (C31)
-- [ ] Test `every_change_commit_and_record_is_observed_in_order` passes; eight records through one statement give eight `Record`s (C37)
-- [ ] Test `observations_after_a_checkpoint_are_gone_after_restore` passes (C38)
-- [ ] Gate: full
+- [x] Test `restore_returns_store_queue_and_observations_byte_for_byte` passes and counts zero device calls during `restore` (C30)
+- [x] Test `two_runs_give_identical_observations` passes on a design with five instances built in two different insertion orders of equal paths (C31)
+- [x] Test `every_change_commit_and_record_is_observed_in_order` passes; eight records through one statement give eight `Record`s (C37)
+- [x] Test `observations_after_a_checkpoint_are_gone_after_restore` passes (C38)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

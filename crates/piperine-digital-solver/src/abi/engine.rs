@@ -36,6 +36,19 @@ pub struct Outcome {
     pub microsteps: u32,
 }
 
+/// The engine's state at one point: the store, the queue, how many observations existed, and the
+/// bookkeeping that follows them. Taking and restoring one calls no device (abi.md §5 R6, §9).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Checkpoint {
+    store: Store,
+    queue: Queue,
+    dirty: DirtySet,
+    observed: usize,
+    now: Tick,
+    call: u32,
+    running: bool,
+}
+
 /// The discrete engine over a bound plan.
 #[derive(Debug)]
 pub struct Digital {
@@ -140,6 +153,31 @@ impl Digital {
             });
         }
         self.host_commit(net, 0, &[], at)
+    }
+
+    /// The state to come back to with `restore`.
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            store: self.store.clone(),
+            queue: self.queue.clone(),
+            dirty: self.dirty.clone(),
+            observed: self.obs.mark(),
+            now: self.now,
+            call: self.call,
+            running: self.running,
+        }
+    }
+
+    /// Puts the engine back as `cp` found it: store, queue and observations equal, byte for byte,
+    /// and no device is called. Observations already drained stay drained.
+    pub fn restore(&mut self, cp: &Checkpoint) {
+        self.store = cp.store.clone();
+        self.queue = cp.queue.clone();
+        self.dirty = cp.dirty.clone();
+        self.obs.truncate(cp.observed);
+        self.now = cp.now;
+        self.call = cp.call;
+        self.running = cp.running;
     }
 
     /// The bytes of `net` now.
