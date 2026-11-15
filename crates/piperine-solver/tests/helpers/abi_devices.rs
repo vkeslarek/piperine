@@ -5,6 +5,7 @@
 //! are assembled with `CircuitBuilder::device`; a voltage source is the
 //! potential-contribution form of abi.md A1 (a private branch pin `f`).
 
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
@@ -15,7 +16,7 @@ use piperine_abi::raw::{
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{AnalogReference, AnalogVariable, NodeIdentifier, ParamValue, Port};
-use piperine_solver::prelude::CircuitBuilder;
+use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Net};
 
 /// The solver constant every junction module of the corpus uses.
 const THERMAL_VOLTAGE: f64 = 0.02585;
@@ -67,6 +68,79 @@ pub fn node_id(reference: &AnalogReference) -> NodeIdentifier {
         AnalogVariable::Node(id) => id.clone(),
         other => panic!("not a node reference: {other:?}"),
     }
+}
+
+/// Name -> reference for the nodes a test builds.
+pub struct NodeMap {
+    nodes: HashMap<String, AnalogReference>,
+}
+
+impl NodeMap {
+    pub fn new() -> Self {
+        Self { nodes: HashMap::new() }
+    }
+
+    pub fn insert(&mut self, name: &str, reference: AnalogReference) {
+        self.nodes.insert(name.to_string(), reference);
+    }
+
+    pub fn get(&self, name: &str) -> &AnalogReference {
+        self.nodes.get(name).unwrap_or_else(|| panic!("node `{name}` not mapped"))
+    }
+
+    /// The identifier results are keyed by.
+    pub fn id(&self, name: &str) -> NodeIdentifier {
+        node_id(self.get(name))
+    }
+}
+
+/// The solver `Net` of a mapped node.
+pub fn net_for(circuit: &CircuitInstance, map: &NodeMap, name: &str) -> Net {
+    let var = map.get(name).variable().clone();
+    circuit
+        .nets()
+        .into_iter()
+        .find(|n| n.analog_variable().map(|v| **v == *var).unwrap_or(false))
+        .unwrap_or_else(|| panic!("net `{name}` not solved"))
+}
+
+/// The divider family of `devices.rs`'s `divider_fixture`, on devices: `Top`
+/// (source over two resistors), `DiodeTop` (source, resistor, diode), `OptTop`
+/// (divider of `ROpt`s whose `w` is never given) and `RcTop` (source,
+/// resistor, capacitor). Nodes: `top`, `mid`.
+pub fn divider_fixture(top: &str) -> (CircuitInstance, NodeMap) {
+    let mut b = CircuitBuilder::new(top);
+    let gnd = b.ground();
+    let top_node = b.node("top");
+    let mid = b.node("mid");
+    match top {
+        "Top" => {
+            add_vsrc(&mut b, "v1", 10.0, &top_node, &gnd);
+            add_resistor(&mut b, "r1", 1.0e3, &top_node, &mid);
+            add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
+        }
+        "DiodeTop" => {
+            add_vsrc(&mut b, "v1", 1.0, &top_node, &gnd);
+            add_resistor(&mut b, "r1", 1.0e3, &top_node, &mid);
+            add_diode(&mut b, "d1", 1.0e-14, &mid, &gnd);
+        }
+        "OptTop" => {
+            add_vsrc(&mut b, "v1", 10.0, &top_node, &gnd);
+            b.device(resistor_opt(), "r1", &[], &nodes(&top_node, &mid));
+            b.device(resistor_opt(), "r2", &[], &nodes(&mid, &gnd));
+        }
+        "RcTop" => {
+            add_vsrc(&mut b, "v1", 10.0, &top_node, &gnd);
+            add_resistor(&mut b, "r1", 1.0e3, &top_node, &mid);
+            add_capacitor(&mut b, "c1", 1.0e-9, &mid, &gnd);
+        }
+        other => panic!("no circuit `{other}`"),
+    }
+    let circuit = b.build().expect("build");
+    let mut map = NodeMap::new();
+    map.insert("top", top_node);
+    map.insert("mid", mid);
+    (circuit, map)
 }
 
 fn nodes(p: &AnalogReference, n: &AnalogReference) -> [Port; 2] {

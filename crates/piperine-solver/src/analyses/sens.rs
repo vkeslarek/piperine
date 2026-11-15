@@ -80,6 +80,9 @@ impl<'a> SensSolver<'a> {
     /// ([`Invalidation::Rebuild`]) — a finite difference across a rebuild
     /// boundary is not a sensitivity.
     fn param_value(&self, label: &str, param: &str) -> crate::core::result::Result<f64> {
+        if self.circuit.abi.is_some() {
+            return self.device_param_value(label, param);
+        }
         let device =
             self.circuit.devices.iter().find(|d| d.name() == label).ok_or_else(|| {
                 Error::simple(SolverDomain::Sens, format!("no element labeled `{label}`"))
@@ -118,6 +121,56 @@ impl<'a> SensSolver<'a> {
         }
     }
 
+    /// `param_value` for a circuit of devices: the instance by path, the
+    /// `PARAM` pin by name, its value the host's last write or the net's `init`.
+    /// A `STRUCTURAL` param is the rebuild class: writing it re-creates the
+    /// instances, so a difference across it is not a sensitivity.
+    fn device_param_value(&self, label: &str, param: &str) -> crate::core::result::Result<f64> {
+        use piperine_abi::raw::{leaf, pin_flag, role};
+        let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
+        let bound = self.circuit.abi.as_ref().expect("a circuit of devices");
+        let Some(inst) = bound.names.instances.iter().position(|p| p == label) else {
+            return Err(sens(format!("no instance labeled `{label}`")));
+        };
+        let shape = bound.analog.plan().shape(inst);
+        let Some(pin) = shape.pins.iter().find(|p| p.role == role::PARAM && p.name.as_str() == param) else {
+            let names: Vec<&str> =
+                shape.pins.iter().filter(|p| p.role == role::PARAM).map(|p| p.name.as_str()).collect();
+            return Err(sens(format!(
+                "`{label}` declares no parameter `{param}`; available: {}",
+                if names.is_empty() { "(none)".to_string() } else { names.join(", ") }
+            )));
+        };
+        if pin.flags & pin_flag::STRUCTURAL != 0 {
+            return Err(sens(format!(
+                "`{label}.{param}` is STRUCTURAL: writing it re-creates the instances (Rebuild) — \
+                 sensitivities are only defined for params a host may write during a run"
+            )));
+        }
+        if !pin.layout.fields.iter().next().is_some_and(|f| f.leaf == leaf::F64) {
+            return Err(sens(format!("`{label}.{param}` is not a real parameter")));
+        }
+        let net = bound.names.params[&(label.to_string(), param.to_string())];
+        let bytes = bound
+            .host_writes
+            .iter()
+            .rev()
+            .find(|(n, _)| *n == net)
+            .map(|(_, b)| b.clone())
+            .unwrap_or_else(|| bound.digital.plan().nets[net.0 as usize].init.clone());
+        let value = bytes.get(..8).and_then(|b| b.try_into().ok()).map(f64::from_le_bytes);
+        value.ok_or_else(|| sens(format!("`{label}.{param}` holds no value")))
+    }
+
+    /// Writes `value` to `label.param`: the element's restamp path, or a host
+    /// write between analyses on a circuit of devices.
+    fn write_param(&mut self, label: &str, param: &str, value: f64) -> crate::core::result::Result<()> {
+        if self.circuit.abi.is_some() {
+            return self.circuit.set(label, param, crate::core::bind::ParamValue::Real(value));
+        }
+        self.circuit.set_element_param(label, param, Value::Real(value)).map(|_| ())
+    }
+
     fn solve_op(&mut self) -> crate::core::result::Result<crate::core::result::DcAnalysisResult> {
         let mut dc = DcSolver::new(self.circuit, self.context.clone())?;
         dc.policy = self.policy.clone();
@@ -145,11 +198,11 @@ impl<'a> SensSolver<'a> {
         for ((label, param), p0) in params.iter().zip(currents) {
             let dp = if p0 == 0.0 { self.options.dp_rel } else { self.options.dp_rel * p0.abs() };
 
-            self.circuit.set_element_param(label, param, Value::Real(p0 + dp))?;
+            self.write_param(label, param, p0 + dp)?;
             let plus = self.solve_op()?;
-            self.circuit.set_element_param(label, param, Value::Real(p0 - dp))?;
+            self.write_param(label, param, p0 - dp)?;
             let minus = self.solve_op()?;
-            self.circuit.set_element_param(label, param, Value::Real(p0))?;
+            self.write_param(label, param, p0)?;
 
             for out in &outputs {
                 let a = plus.get_net(out).ok_or_else(|| {

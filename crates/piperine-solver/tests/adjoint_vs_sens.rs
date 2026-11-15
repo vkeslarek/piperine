@@ -21,10 +21,10 @@
 
 // Each target includes the library by path: it uses a different subset of it.
 #[allow(dead_code)]
-#[path = "helpers/devices.rs"]
-mod devices;
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
 
-use devices::{divider_fixture, net_for, NodeMap};
+use abi_devices::{divider_fixture, net_for, NodeMap};
 use piperine_solver::prelude::{AdjointOptions, CircuitInstance, Context, SensAnalysisOptions};
 
 fn build(top: &str) -> (CircuitInstance, NodeMap) {

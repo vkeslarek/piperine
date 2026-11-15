@@ -277,7 +277,14 @@ impl<'a> ParamStampCollector<'a> {
                 engine: SensitivityEngine::StampPerturbation,
             });
         };
-        let init = bound.digital.plan().nets[net.0 as usize].init.clone();
+        // The param's present value: the host's last write, else the net's `init`.
+        let init = bound
+            .host_writes
+            .iter()
+            .rev()
+            .find(|(n, _)| *n == net)
+            .map(|(_, b)| b.clone())
+            .unwrap_or_else(|| bound.digital.plan().nets[net.0 as usize].init.clone());
         let value = init.get(..8).and_then(|b| b.try_into().ok()).map_or(0.0, f64::from_le_bytes);
         let dp = step(value);
         // Central difference: the same iterate, the param moved by `±dp`.
