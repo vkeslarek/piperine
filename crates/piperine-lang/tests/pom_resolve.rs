@@ -84,6 +84,30 @@ fn core_name_redefined_is_e0457() {
 }
 
 #[test]
+fn continuation_variables_are_builtin_functions() {
+    // Spec 14.4.7: `gmin()` and `source_scale()` are core environment functions.
+    for name in ["gmin", "source_scale"] {
+        let info = builtin(name).unwrap_or_else(|| panic!("`{name}` is a built-in")).info();
+        assert_eq!((info.kind, info.section), (BuiltinKind::Fn, "§14.4"), "{name}");
+    }
+    let design = build("fn g() -> f64 { gmin() * source_scale() }");
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    for name in ["gmin", "source_scale"] {
+        let Resolution::Builtin(id) = one(&design, name)[0] else { panic!("`{name}` resolves to the built-in") };
+        assert_eq!(id.name(), name);
+    }
+}
+
+#[test]
+fn continuation_variable_redefined_is_e0457() {
+    let src = "fn gmin() -> f64 { 0.0 }\nmod inner { module source_scale() {} }\n";
+    let design = build(src);
+    let found = with_code(&design, "E0457");
+    let at: Vec<&str> = found.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(at, ["gmin", "source_scale"], "{found:?}");
+}
+
+#[test]
 fn duplicate_member_name_is_e0330() {
     let src = "module M(a: f64, a: f64) { p: f64 = 1.0; signal p: f64; let q = 1; let q = 2; }\nmodule N(x: f64) { signal y: f64; signal z: f64; }\n";
     let design = build(src);

@@ -100,6 +100,8 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("analysis", BuiltinKind::Fn, "§14.4"),
     row("now", BuiltinKind::Fn, "§14.4"),
     row("freq", BuiltinKind::Fn, "§14.4"),
+    row("gmin", BuiltinKind::Fn, "§14.4"),
+    row("source_scale", BuiltinKind::Fn, "§14.4"),
     row("ddt", BuiltinKind::Module, "§14.5"),
     row("delay", BuiltinKind::Module, "§14.6"),
     row("limit", BuiltinKind::Module, "§14.7"),

@@ -201,6 +201,8 @@ T8 → T9 → T10 → T11
 **Gate**: full
 **Commit**: `docs(spec): gmin() and source_scale() are core environment functions (ABI amendment 8)`
 
+**Follow-up (B2, own commit, no new task id)**: `gmin` and `source_scale` added as built-in `Fn` rows (§14.4) in `crates/piperine-lang/src/pom/builtin.rs` and `docs/pom/resolution.md`; tests `continuation_variables_are_builtin_functions` and `continuation_variable_redefined_is_e0457` in `pom_resolve.rs` (red first, then green).
+
 ---
 
 ### T7: Amendment 9: records travel as commits to quiet pins
