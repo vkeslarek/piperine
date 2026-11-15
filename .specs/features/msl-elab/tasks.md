@@ -433,13 +433,13 @@ Proof: run analog | test a_branch_from_a_node_to_itself_is_e0241 ... ok
 **C28** - IF a branch receives both potential and flow contributions THEN the system SHALL reject the model with `E0415`. (ELAB-04, AC 8; T7)
 Proof: run analog | test potential_and_flow_on_one_branch_is_e0415 ... ok
 
-**C29** - IF a contribution, a `limit` placement or an `ac_stim` call is written under an `if`, in a function or in a closure THEN the system SHALL reject the model with `P0001` at that form. (ELAB-06, AC 1; T8)
+**C29** - IF a contribution, a `limit` placement or an `ac_stim` call is written under an `if`, on the right of `&&` or `||`, in a function or in a closure THEN the system SHALL reject the model with `P0001` at that form. (ELAB-06, AC 1; T8)
 Proof: run unlowered | test a_site_or_contribution_under_if_is_p0001 ... ok
 
 **C30** - IF `ddt` is written anywhere but as a whole addend of a flow contribution THEN the system SHALL reject the model with `P0001` at the `ddt`. (ELAB-06, AC 2; T8)
 Proof: run unlowered | test ddt_off_the_top_of_a_flow_contribution_is_p0001 ... ok
 
-**C31** - IF a placement sets `m` or `dtemp`, or places an `extern` module, THEN the system SHALL reject the model with `P0001` at the placement. (ELAB-06, AC 3; T8)
+**C31** - IF a placement sets `m` or `dtemp`, THEN the system SHALL reject the model with `E0320` (from the front end); IF a model places an `extern` module, THEN the system SHALL reject it with `P0001` at the `extern` declaration. (amendment (d), accepted by the orchestrator) (ELAB-06, AC 3; T8)
 Proof: run unlowered | test m_dtemp_or_extern_at_a_placement_is_p0001 ... ok
 
 **C32** - IF a module of the reachable set has a `digital` block THEN the system SHALL reject the model with `P0001` at the block. (ELAB-06, AC 4; T8)
