@@ -8,7 +8,7 @@
 #[path = "support/stub_sides.rs"]
 mod stub_sides;
 
-use piperine_solver::protocol::{Accepted, Boundary, InstantMode, Outcome, Protocol, ProtocolOptions};
+use piperine_solver::protocol::{Accepted, Boundary, InstantMode, Outcome, Protocol, ProtocolOptions, Restart};
 use stub_sides::{Call, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
 const QUIET: InstantMode = InstantMode { is_static: true, settle: false };
@@ -20,7 +20,7 @@ fn changing() -> Outcome {
 
 fn sequence(log: &Log) -> Vec<Call> {
     calls(log, |c| {
-        matches!(c, Call::Start | Call::Equilibrium | Call::RunInstant { .. } | Call::Deliver(_) | Call::Fire(..))
+        matches!(c, Call::Start | Call::Equilibrium | Call::RunInstant { .. } | Call::Deliver(..) | Call::Fire(..))
     })
 }
 
@@ -40,7 +40,7 @@ fn the_operating_point_follows_the_call_sequence() {
             Call::Start,
             Call::Equilibrium,
             Call::RunInstant { at: 0, samples: vec![0.5], limit: 0, mode: QUIET },
-            Call::Deliver(vec![Boundary { slot: 7, bytes: vec![1] }]),
+            Call::Deliver(vec![Boundary { slot: 7, bytes: vec![1] }], Restart::None),
             Call::Equilibrium,
             // A crossing between rounds is due at the next microstep.
             Call::Fire(9, 0),

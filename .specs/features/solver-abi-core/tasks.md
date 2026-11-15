@@ -531,8 +531,8 @@ Proof: run owner | test the_protocol_module_names_no_sub_solver_item ... ok
 **C26** - No landing before the proposed time means one attempt to it (SAC-14, Protocol AC 2)
 Proof: run owner | test no_landing_means_one_attempt_to_the_proposed_time ... ok
 
-**C27** - A landing's boundary preview is delivered before the attempt, which is exempt only when a value changed (SAC-14, Protocol AC 3)
-Proof: run owner | test a_landing_delivers_its_preview_before_the_attempt ... ok
+**C27** - Superseded by C44 (SAC-24): a landing is no longer previewed; it is solved on the left value, then its instant runs (SAC-14, Protocol AC 3, superseded)
+Proof: run owner | test a_landing_is_solved_on_the_left_value_then_its_instant_runs ... ok
 
 **C28** - A rejected or shortened attempt restores both sides and the sink mark and advances again (SAC-14, Protocol AC 4)
 Proof: run owner | test a_rejected_attempt_restores_both_sides_and_replays ... ok
@@ -581,6 +581,9 @@ Proof: run abi | test raw_views_have_no_public_pointer_field ... ok
 
 **C43** - No unsafe outside raw.rs, thunk.rs and caller.rs (SAC-22)
 Proof: run abi | test no_unsafe_outside_raw_thunk_and_caller ... ok
+
+**C44** - A landing is solved on the left value; its instant runs after the acceptance and its changes are delivered after that solve, with a restart (SAC-24)
+Proof: run owner | test a_landing_is_solved_on_the_left_value_then_its_instant_runs ... ok
 
 ---
 

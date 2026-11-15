@@ -60,7 +60,6 @@ fn the_stubs_replay_their_script_and_record_calls() {
     let mut d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
     d.advances.push_back(Advance::Landing { tick: 7, time_point: true });
-    d.previews.borrow_mut().push_back(vec![Boundary { slot: 1, bytes: vec![1, 1] }]);
     d.instants.push_back(Outcome { finish: true, ..Outcome::default() });
     d.shadows.borrow_mut().push_back(Shadow::Refused { check: "r > 0".into() });
     a.proposals.push_back(3.0);
@@ -70,7 +69,7 @@ fn the_stubs_replay_their_script_and_record_calls() {
     let mode = InstantMode { is_static: false, settle: true };
     assert_eq!(d.advance(10).unwrap(), Advance::Landing { tick: 7, time_point: true });
     assert_eq!(d.advance(10).unwrap(), Advance::Reached, "an exhausted script answers Reached");
-    assert_eq!(d.preview_boundary(7).unwrap(), vec![Boundary { slot: 1, bytes: vec![1, 1] }]);
+    a.deliver(&[Boundary { slot: 1, bytes: vec![1, 1] }], Restart::Integrator);
     assert!(d.run_instant(7, &[0.5], 99, mode).unwrap().finish);
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Refused { check: "r > 0".into() });
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Accept);
@@ -80,14 +79,14 @@ fn the_stubs_replay_their_script_and_record_calls() {
     assert_eq!(a.propose(3.0, 5.0), 5.0, "an exhausted script proposes the stop time");
     assert_eq!(a.attempt(3.0, false).unwrap(), Attempt::Rejected);
     assert_eq!(a.attempt(3.0, false).unwrap(), Attempt::Converged);
-    assert_eq!(a.accept(Restart::Integrator).unwrap(), Accepted { fired: vec![4], samples: vec![0.5] });
+    assert_eq!(a.accept().unwrap(), Accepted { fired: vec![4], samples: vec![0.5] });
     let am = a.mark();
     a.restore(&am);
 
     assert_eq!(*log.borrow(), vec![
         Call::Advance(10),
         Call::Advance(10),
-        Call::Preview(7),
+        Call::Deliver(vec![Boundary { slot: 1, bytes: vec![1, 1] }], Restart::Integrator),
         Call::RunInstant { at: 7, samples: vec![0.5], limit: 99, mode },
         Call::Shadow(2, vec![9]),
         Call::Shadow(2, vec![9]),
@@ -97,7 +96,7 @@ fn the_stubs_replay_their_script_and_record_calls() {
         Call::Propose(3.0, 5.0),
         Call::Attempt { to: 3.0, exempt: false },
         Call::Attempt { to: 3.0, exempt: false },
-        Call::Accept(Restart::Integrator),
+        Call::Accept,
         Call::AnalogMark(0),
         Call::AnalogRestore(0),
     ]);

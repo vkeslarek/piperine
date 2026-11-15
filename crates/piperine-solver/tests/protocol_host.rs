@@ -54,10 +54,10 @@ fn an_irreversible_landing_runs_once_after_acceptance_and_does_not_settle() {
     p.transient(2.0).unwrap();
     assert_eq!(instants(&log), [(2, FORCED), (4, STEP)], "tick 2 runs once, with no settle");
     // It runs after the acceptance of the landing, not before the rejected attempt.
-    let seq = calls(&log, |c| matches!(c, Call::Attempt { .. } | Call::Accept(_) | Call::RunInstant { .. }));
+    let seq = calls(&log, |c| matches!(c, Call::Attempt { .. } | Call::Accept | Call::RunInstant { .. }));
     assert!(matches!(seq[0], Call::Attempt { to: 1.0, .. }));
     assert!(matches!(seq[1], Call::Attempt { to: 1.0, .. }));
-    assert!(matches!(seq[2], Call::Accept(_)));
+    assert!(matches!(seq[2], Call::Accept));
     assert!(matches!(seq[3], Call::RunInstant { at: 2, .. }));
 }
 
@@ -138,7 +138,7 @@ fn a_waiter_is_never_called_during_advance() {
     assert_eq!(log.iter().filter(|c| matches!(c, Call::Waiter(_))).count(), 1, "called once");
     let waiter = log.iter().position(|c| matches!(c, Call::Waiter(_))).unwrap();
     assert!(matches!(log[waiter - 1], Call::RunInstant { .. }), "a waiter follows a run_instant: {:?}", log[waiter - 1]);
-    let last_accept_before = log[..waiter].iter().rposition(|c| matches!(c, Call::Accept(_)));
+    let last_accept_before = log[..waiter].iter().rposition(|c| matches!(c, Call::Accept));
     let last_advance_before = log[..waiter].iter().rposition(|c| matches!(c, Call::Advance(_)));
     assert!(last_accept_before > last_advance_before, "an acceptance separates the waiter from any advance");
 }

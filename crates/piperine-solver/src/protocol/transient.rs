@@ -4,13 +4,17 @@
 //! C := checkpoint(discrete, analog, sink buffer)                 at accepted time t
 //! 1. t_c := analog.propose(t, stop)           (the stop time when there is no unknown)
 //! 2. discrete.advance(tick(t_c)): a Landing or Final shortens t_c to its tick
-//! 3. deliver the boundary preview of t_c; attempt to t_c, exempt when it changed a value
+//! 3. attempt to t_c on the value before the instant (the left value), exempt when
+//!    t_c is a scheduled instant
 //! 4. Rejected: restore C, propose again.  LandedEarlier(t'): restore C, t_c := t', go to 2
-//! 5. accept (with the restart the previous instant asked for); fire the crossings at
-//!    (t_c, 0); run the instant t_c with the samples, settling when it is a time point;
-//!    a later boundary change asks the next acceptance for a restart
+//! 5. accept; fire the crossings at (t_c, 0); run the instant t_c, whose reactions read the
+//!    solution at t_c, settling when it is a time point; deliver what it changed
+//!    (microstep 0 included) with the restart the next step starts from
 //! 6. t := t_c; a Final mark or a FINISH ends the analysis after this instant
 //! ```
+//!
+//! The order of steps 3 and 5 is the user's (solver-completeness context.md,
+//! 2026-11-15: "ABI order: solve, then react"); the jump handling is the kept one.
 //!
 //! What a restore replays is discrete work only; one analog solve per landing.
 
@@ -52,8 +56,6 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     /// The last accepted time.
     pub(super) now: f64,
     pub(super) in_transient: bool,
-    /// The restart the next acceptance passes to the analog side.
-    pub(super) restart: Restart,
     pub(super) delivery: Delivery,
     /// Host waiters by event net (abi.md R7).
     pub(super) waiters: Vec<(u32, Waiter)>,
@@ -74,7 +76,6 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             options,
             now: 0.0,
             in_transient: false,
-            restart: Restart::None,
             delivery: Delivery::default(),
             waiters: Vec::new(),
         }
@@ -157,7 +158,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             }
             // Step 2: the discrete instants before t_c, stopping before a landing.
             let (mut settle, mut final_mark) = (true, false);
-            match self.discrete.advance(self.tick(t_c)).map_err(|e| at(t_c, e))? {
+            let advanced = self.discrete.advance(self.tick(t_c)).map_err(|e| at(t_c, e))?;
+            match advanced {
                 Advance::Reached => {}
                 Advance::Landing { tick, time_point } => {
                     t_c = self.time(tick);
@@ -173,11 +175,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 
             // Steps 3 and 4: one analog attempt to t_c.
             let samples = if unknowns {
-                let preview = self.discrete.preview_boundary(tick_c).map_err(|e| at(t_c, e))?;
-                let exempt = !preview.is_empty();
-                if exempt {
-                    self.analog.deliver(&preview);
-                }
+                let exempt = !matches!(advanced, Advance::Reached);
                 let attempt = self.analog.attempt(t_c, exempt).map_err(|e| at(t_c, e))?;
                 let analog = &mut self.analog;
                 self.delivery.deliver_now(AnalysisKind::Transient, |out| analog.drain_traces(out));
@@ -194,7 +192,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                     }
                 }
                 // Step 5: accept, fire the crossings at (t_c, 0).
-                let accepted = self.analog.accept(std::mem::take(&mut self.restart)).map_err(|e| at(t_c, e))?;
+                let accepted = self.analog.accept().map_err(|e| at(t_c, e))?;
                 for net in &accepted.fired {
                     self.discrete.fire(*net, tick_c).map_err(|e| at(t_c, e))?;
                 }
@@ -205,8 +203,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let mode = InstantMode { is_static: false, settle };
             let outcome = self.run_whole_instant(tick_c, &samples, stop_tick, mode).map_err(|e| at(t_c, e))?;
             if unknowns && !outcome.boundary.is_empty() {
-                self.analog.deliver(&outcome.boundary);
-                self.restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
+                let restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
+                self.analog.deliver(&outcome.boundary, restart);
             }
             // Step 6.
             self.collect(AnalysisKind::Transient);

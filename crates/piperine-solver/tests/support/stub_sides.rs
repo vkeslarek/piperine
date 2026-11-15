@@ -20,7 +20,6 @@ use piperine_solver::protocol::{
 pub enum Call {
     Start,
     Advance(Tick),
-    Preview(Tick),
     Fire(u32, Tick),
     RunInstant { at: Tick, samples: Vec<f64>, limit: Tick, mode: InstantMode },
     DiscreteMark(u32),
@@ -30,9 +29,9 @@ pub enum Call {
     Wait(u32),
     Drain,
     Propose(f64, f64),
-    Deliver(Vec<Boundary>),
+    Deliver(Vec<Boundary>, Restart),
     Attempt { to: f64, exempt: bool },
-    Accept(Restart),
+    Accept,
     Equilibrium,
     AnalogMark(u32),
     AnalogRestore(u32),
@@ -57,7 +56,6 @@ pub fn calls(log: &Log, keep: impl Fn(&Call) -> bool) -> Vec<Call> {
 pub struct ScriptedDiscrete {
     pub log: Log,
     pub advances: VecDeque<Advance>,
-    pub previews: RefCell<VecDeque<Vec<Boundary>>>,
     pub instants: VecDeque<Outcome>,
     pub shadows: RefCell<VecDeque<Shadow>>,
     /// Observations made by each `advance`, in order.
@@ -74,7 +72,6 @@ impl ScriptedDiscrete {
         ScriptedDiscrete {
             log: Rc::clone(log),
             advances: VecDeque::new(),
-            previews: RefCell::new(VecDeque::new()),
             instants: VecDeque::new(),
             shadows: RefCell::new(VecDeque::new()),
             advance_observations: VecDeque::new(),
@@ -104,10 +101,6 @@ impl DiscreteSide for ScriptedDiscrete {
         self.record(Call::Advance(to));
         self.buffer.extend(self.advance_observations.pop_front().unwrap_or_default());
         Ok(self.advances.pop_front().unwrap_or(Advance::Reached))
-    }
-    fn preview_boundary(&self, at: Tick) -> Result<Vec<Boundary>> {
-        self.record(Call::Preview(at));
-        Ok(self.previews.borrow_mut().pop_front().unwrap_or_default())
     }
     fn fire(&mut self, net: u32, at: Tick) -> Result<()> {
         self.record(Call::Fire(net, at));
@@ -189,16 +182,16 @@ impl AnalogSide for ScriptedAnalog {
         self.record(Call::Propose(now, stop));
         self.proposals.pop_front().unwrap_or(stop)
     }
-    fn deliver(&mut self, boundary: &[Boundary]) {
-        self.record(Call::Deliver(boundary.to_vec()));
+    fn deliver(&mut self, boundary: &[Boundary], restart: Restart) {
+        self.record(Call::Deliver(boundary.to_vec(), restart));
     }
     fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
         self.record(Call::Attempt { to, exempt });
         self.buffer.extend(self.traces.pop_front().unwrap_or_default());
         Ok(self.attempts.pop_front().unwrap_or(Attempt::Converged))
     }
-    fn accept(&mut self, restart: Restart) -> Result<Accepted> {
-        self.record(Call::Accept(restart));
+    fn accept(&mut self) -> Result<Accepted> {
+        self.record(Call::Accept);
         Ok(self.accepts.pop_front().unwrap_or_default())
     }
     fn equilibrium(&mut self) -> Result<Accepted> {

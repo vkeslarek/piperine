@@ -80,8 +80,8 @@ fn observations_reach_the_sink_after_acceptance_in_instant_order() {
         ]
     );
     // `top.a` and `top.b` arrive only after the first acceptance, `top.c` after the second.
-    let first_accept = position(&log, 0, |c| matches!(c, Call::Accept(_)));
-    let second_accept = position(&log, 1, |c| matches!(c, Call::Accept(_)));
+    let first_accept = position(&log, 0, |c| matches!(c, Call::Accept));
+    let second_accept = position(&log, 1, |c| matches!(c, Call::Accept));
     let at = |path: &str| seen.borrow().iter().find(|(_, o)| o.path == path).map(|(i, _)| *i).unwrap();
     assert!(at("top.a") > first_accept && at("top.b") > first_accept);
     assert!(at("top.c") > second_accept);

@@ -5,7 +5,7 @@
 
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
-use super::sides::{AnalogSide, AnalysisKind, Boundary, DiscreteSide, InstantMode};
+use super::sides::{AnalogSide, AnalysisKind, Boundary, DiscreteSide, InstantMode, Restart};
 use super::transient::Protocol;
 
 /// The `E0506` error: the rounds of an operating point exceeded `max`.
@@ -51,12 +51,12 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             if rounds >= self.options.max_rounds {
                 return Err(too_many_rounds(self.options.max_rounds, &outcome.boundary));
             }
-            self.analog.deliver(&outcome.boundary);
+            self.analog.deliver(&outcome.boundary, Restart::None);
         }
         let settled = self.run_whole_instant(at, &samples, at, InstantMode { is_static: true, settle: true })?;
         if unknowns && !settled.boundary.is_empty() {
             // A settle commit is read by the solve that arrives next (abi.md §10 step 4).
-            self.analog.deliver(&settled.boundary);
+            self.analog.deliver(&settled.boundary, Restart::None);
         }
         self.collect(analysis);
         self.delivery.flush();

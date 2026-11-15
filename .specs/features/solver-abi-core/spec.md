@@ -128,7 +128,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 1. The protocol module SHALL reach the sub-solvers through the traits `DiscreteSide` and `AnalogSide` only, and SHALL name no item of `piperine-analog-solver` or `piperine-digital-solver`.
 2. WHEN the discrete side reports no landing before the proposed time THEN the protocol SHALL ask the analog side for one attempt to that time.
-3. WHEN the discrete side reports a landing before the proposed time THEN the protocol SHALL deliver that instant's boundary preview to the analog side and attempt a step to the landing, exempt from the truncation test when the preview changed a value.
+3. WHEN the discrete side reports a landing before the proposed time THEN the protocol SHALL deliver that instant's boundary preview to the analog side and attempt a step to the landing, exempt from the truncation test when the preview changed a value. *(Superseded by SAC-24, verification round 1: the user's order "ABI order: solve, then react". Kept as approved history.)*
 4. WHEN an attempt is rejected, or lands earlier than its target THEN the protocol SHALL restore both sides and the sink mark to the last accepted time and advance the discrete side again to the new target.
 5. WHEN an attempt is accepted THEN the protocol SHALL commit the fired crossings at microstep 0 of the landing, run the landing instant with the accepted samples, and ask for a restart when the instant changed a value the analog side reads.
 6. WHEN the change that caused a restart was a host write to a `PARAM` or `GLOBAL` net THEN the protocol SHALL ask for the small restart.
@@ -178,6 +178,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-23** (5). IF an event pin's layout is not empty, a continuous pin's layout is not one `F64`, a `check` is not a discrete pin holding a `BOOL` at byte 0, or a reaction reads `PREVIOUS` or `CHANGED` of a `QUIET` pin, THEN `validate` SHALL refuse the shape naming the rule and the entry; proven by rows of check C8 (F12).
 
+- **SAC-24** (6). WHEN a step lands on a scheduled instant THEN the protocol SHALL solve at that time on the value before the instant (the left value), exempt from the truncation test, accept, run the instant (its reactions read the solution at that time), and only then deliver what the instant changed (microstep 0 included) with the restart the next step starts from; user (solver-completeness context.md, 2026-11-15): "ABI order: solve, then react (Recommended)" (F1).
+
 ---
 
 ## Edge Cases
@@ -216,6 +218,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-21 | P1: Verification round 1, AC 3 | Execute | Done |
 | SAC-22 | P1: Verification round 1, AC 4 | Execute | Done |
 | SAC-23 | P1: Verification round 1, AC 5 | Execute | Done |
+| SAC-24 | P1: Verification round 1, AC 6 | Execute | Done |
 
 **Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 
