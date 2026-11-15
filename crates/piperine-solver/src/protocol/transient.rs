@@ -66,6 +66,10 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     pub(super) delivery: Delivery,
     /// The time a `FINISH` ended the run at, if one did.
     pub(super) finished: Option<f64>,
+    /// The operating point has started the discrete side.
+    pub(super) started: bool,
+    /// The continuous values reactions read, at the last accepted solution.
+    pub(super) samples: Vec<f64>,
     /// Host waiters by event net (abi.md R7).
     pub(super) waiters: Vec<(u32, Waiter)>,
 }
@@ -87,6 +91,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             in_transient: false,
             delivery: Delivery::default(),
             finished: None,
+            started: false,
+            samples: Vec::new(),
             waiters: Vec::new(),
         }
     }
@@ -239,6 +245,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             } else {
                 Vec::new()
             };
+            self.samples.clone_from(&samples);
             let mode = InstantMode { is_static: false, settle };
             let outcome = self.run_whole_instant(tick_c, &samples, stop_tick, mode).map_err(|e| at(t_c, e))?;
             if unknowns && !outcome.boundary.is_empty() {

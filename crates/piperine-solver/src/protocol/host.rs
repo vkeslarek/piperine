@@ -7,7 +7,7 @@
 
 use piperine_analog_solver::error::Result;
 
-use super::sides::{AnalogSide, DiscreteSide, InstantMode, Outcome, Shadow, Tick};
+use super::sides::{AnalogSide, AnalysisKind, DiscreteSide, InstantMode, Outcome, Restart, Shadow, Tick};
 use super::transient::Protocol;
 
 /// What became of a host write.
@@ -80,9 +80,34 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// as a host commit at `at` (a scheduled write) or at the current time.
     /// A false `check` refuses it; a `RESHAPE` is refused inside a transient and
     /// reported outside one, with nothing committed.
+    ///
+    /// Between runs, a write due now is applied at once: the instant at the
+    /// current time runs (no settle; it reads the accepted solution there) and
+    /// what it changed reaches the analog side with the restart the next step
+    /// starts from (the small one after a param write). The next transient
+    /// then steps forward, never zero-length.
     pub fn set(&mut self, net: u32, offset: u32, bytes: &[u8], at: Option<f64>) -> Result<SetOutcome> {
-        let tick = self.tick(at.unwrap_or(self.now));
-        host_write(&mut self.discrete, self.in_transient, net, offset, bytes, tick)
+        let now_tick = self.tick(self.now);
+        let tick = self.tick(at.unwrap_or(self.now)).max(now_tick);
+        let outcome = host_write(&mut self.discrete, self.in_transient, net, offset, bytes, tick)?;
+        if outcome == SetOutcome::Committed && self.started && !self.in_transient && tick == now_tick {
+            let samples = std::mem::take(&mut self.samples);
+            let mode = InstantMode { is_static: false, settle: false };
+            let ran = self.run_whole_instant(now_tick, &samples, now_tick, mode);
+            self.samples = samples;
+            let ran = ran?;
+            if self.analog.has_unknowns() && !ran.boundary.is_empty() {
+                let restart = if ran.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
+                self.analog.deliver(&ran.boundary, restart);
+            }
+            if ran.finish {
+                self.finished = Some(self.now);
+            }
+            let analysis = if self.now > 0.0 { AnalysisKind::Transient } else { AnalysisKind::OperatingPoint };
+            self.collect(analysis);
+            self.delivery.flush();
+        }
+        Ok(outcome)
     }
 
     /// Calls `waiter` once each time event net `net` fires at an accepted instant.

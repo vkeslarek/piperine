@@ -540,7 +540,7 @@ Proof: run owner | test a_rejected_attempt_restores_both_sides_and_replays ... o
 **C29** - Acceptance fires the crossings at microstep 0, runs the instant with the samples and asks for a restart on a boundary change (SAC-14, Protocol AC 5)
 Proof: run owner | test acceptance_fires_crossings_runs_the_instant_and_asks_for_restart ... ok
 
-**C30** - A host write to a param or global net asks for the small restart (SAC-14, Protocol AC 6)
+**C30** - A host write to a param or global net asks for the small restart, through `Protocol::set` between runs (no zero-length step) and, in `a_waiter_param_write_asks_for_the_small_restart`, from a waiter inside an instant (SAC-14, Protocol AC 6; SAC-28)
 Proof: run owner | test a_host_param_write_asks_for_the_small_restart ... ok
 
 **C31** - An irreversible instant runs once after acceptance and settles only if it is a time point (SAC-15, Protocol AC 7)

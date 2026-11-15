@@ -30,6 +30,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         let analysis = AnalysisKind::OperatingPoint;
         let unknowns = self.analog.has_unknowns();
         self.discrete.start()?;
+        self.started = true;
         self.collect(analysis);
         let mut rounds = 0u32;
         let mut finish = false;
@@ -63,6 +64,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             self.analog.deliver(&settled.boundary, Restart::None);
         }
         finish |= settled.finish;
+        self.samples = samples;
         self.collect(analysis);
         self.delivery.flush();
         if finish {

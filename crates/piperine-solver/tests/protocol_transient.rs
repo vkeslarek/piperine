@@ -18,7 +18,7 @@ use std::rc::Rc;
 
 use piperine_solver::protocol::{
     Accepted, Advance, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
-    Protocol, ProtocolOptions, Restart, Sink,
+    Protocol, ProtocolOptions, Restart, SetOutcome, Sink,
 };
 use stub_sides::{Call, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
@@ -191,6 +191,46 @@ fn acceptance_fires_crossings_runs_the_instant_and_asks_for_restart() {
 
 #[test]
 fn a_host_param_write_asks_for_the_small_restart() {
+    for (param, restart) in [(true, Restart::IntegratorSmall), (false, Restart::Integrator)] {
+        let (log, mut d, mut a) = sides();
+        // The operating point (two instants) and one step to 1 s, then the instant
+        // a host `set` at 1 s runs: it changes a value the analog side reads.
+        d.instants.extend([Outcome::default(), Outcome::default(), Outcome::default()]);
+        d.instants.push_back(Outcome { boundary: vec![boundary()], host_param_write: param, ..Outcome::default() });
+        a.accepts.push_back(Accepted { fired: vec![], samples: vec![0.25] });
+        a.proposals.extend([1.0, 2.0]);
+        let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+        p.operating_point().unwrap();
+        p.transient(1.0).unwrap();
+        let before = log.borrow().len();
+        assert_eq!(p.set(5, 0, &[2], None).unwrap(), SetOutcome::Committed);
+        p.transient(2.0).unwrap();
+        let seq: Vec<Call> = log.borrow()[before..]
+            .iter()
+            .filter(|c| matches!(c, Call::Shadow(..) | Call::HostCommit { .. } | Call::RunInstant { .. } | Call::Deliver(..) | Call::Attempt { .. }))
+            .cloned()
+            .collect();
+        let quiet = InstantMode { is_static: false, settle: false };
+        let step = InstantMode { is_static: false, settle: true };
+        assert_eq!(
+            seq,
+            [
+                Call::Shadow(5, vec![2]),
+                Call::HostCommit { net: 5, offset: 0, bytes: vec![2], at: 2 },
+                // The write is applied at once at 1 s, reading the accepted solution there.
+                Call::RunInstant { at: 2, samples: vec![0.25], limit: 2, mode: quiet },
+                Call::Deliver(vec![boundary()], restart),
+                // No zero-length step: the next attempt goes forward.
+                Call::Attempt { to: 2.0, exempt: false },
+                Call::RunInstant { at: 4, samples: vec![], limit: 4, mode: step },
+            ],
+            "param write: {param}"
+        );
+    }
+}
+
+#[test]
+fn a_waiter_param_write_asks_for_the_small_restart() {
     let (log, mut d, mut a) = sides();
     a.proposals.extend([1.0, 2.0, 3.0]);
     // The instant at 1 s applied a host write to a param net (a waiter's write).

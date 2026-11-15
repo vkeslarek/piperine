@@ -186,6 +186,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-27** (9). IF consecutive attempts from one accepted time are rejected `max_rejections` times (default 64) THEN the transient SHALL fail with a run error naming that time; the step reduction of a rejection SHALL survive the analog side's `restore` (F4).
 
+- **SAC-28** (10). WHEN the host writes a net through `Protocol::set` between runs with the write due now THEN the protocol SHALL run the instant at the current time after the commit and deliver what it changed with `IntegratorSmall` after a param write (`Integrator` otherwise), and the next transient SHALL step forward with no zero-length step; proven by check C30 (F5).
+
 ---
 
 ## Edge Cases
@@ -228,6 +230,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-25 | P1: Verification round 1, AC 7 | Execute | Done |
 | SAC-26 | P1: Verification round 1, AC 8 | Execute | Done |
 | SAC-27 | P1: Verification round 1, AC 9 | Execute | Done |
+| SAC-28 | P1: Verification round 1, AC 10 | Execute | Done |
 
 **Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 
