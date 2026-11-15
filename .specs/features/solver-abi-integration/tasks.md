@@ -673,7 +673,7 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] `.specs/STATE.md` carries MD-62 (the device ABI is the only device contract; the solver owns companion, limit iterate, histories, checkpoints; `Element` is gone; boundary delivery by preview) and a handoff snapshot
+- [ ] `.specs/STATE.md` carries MD-62 (the device ABI is the only device contract; the solver owns companion, limit iterate, histories, checkpoints; `Element` is gone; boundary delivery: solve at the instant on the left value, run the instant, then deliver with restart) and a handoff snapshot
 - [ ] `CLAUDE.md` and `AGENTS.md` describe the four crates and name no removed item; the instruction-file guard of `workspace_shape.rs` passes with `MD-62` added to what it asserts
 - [ ] The umbrella's traceability marks the requirements this feature met as `Verified` only after the Verifier's report; until then `Implementing`
 - [ ] `cargo test -p piperine-lang --test suite_hygiene` passes

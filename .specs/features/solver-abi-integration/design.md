@@ -28,7 +28,7 @@ flowchart TD
     Dig[piperine-digital-solver: Digital]
     Drv -->|assemble| Asm
     Asm -->|Vec of Stamp| NR
-    Proto -->|advance, preview_boundary, run_instant, checkpoint, restore| Dig
+    Proto -->|advance, run_instant, checkpoint, restore| Dig
     Proto -->|set_discrete bytes, fired crossings, samples| Asm
     Asm --> Dev[device instances via caller::Handle]
     Dig --> Dev
@@ -40,14 +40,13 @@ One transient step (abi.md §5, with the boundary delivery of the spec's Assumpt
 flowchart TD
     C[C = checkpoint: Digital, Assembly histories, Newton history, sink mark] --> P[1. propose t_c: controller, CAP watches, stop time]
     P --> A[2. Digital.advance to t_c: stops before the first time point s; t_c = s]
-    A --> B[preview_boundary at t_c: bytes of analog-read nets after microstep 0; Assembly.set_discrete]
-    B --> S[3. solve TR-BDF2 to t_c]
+    A --> S[3. solve TR-BDF2 to t_c on the LEFT values of the analog-read nets]
     S --> J{converged and, unless the landing is a boundary change, within trtol?}
     J -- no --> R[4. restore C; smaller step] --> P
     J -- yes --> X[5. accept; Assembly.accept: histories, LAST, watches; crossings become commits at t_c, 0]
-    X --> I[Digital.run_instant at t_c with samples; settle]
+    X --> I[Digital.run_instant at t_c with samples, limit Horizon of stop and crossing; settle]
     I --> D{a net an analog function reads changed?}
-    D -- yes --> T[restart: prev_h = 0; after a host PARAM or GLOBAL write also dt = 1e-3 of the last]
+    D -- yes --> T[deliver(boundary, restart): Assembly.set_discrete; prev_h = 0; after a host PARAM or GLOBAL write also dt = 1e-3 of the last]
     D -- no --> N[6. t = t_c; C = checkpoint]
     T --> N
 ```
@@ -168,7 +167,7 @@ A task marked sensitive changes where a number comes from. Its gate includes `pa
 | Concern | Location (file:line) | Impact | Mitigation |
 | --- | --- | --- | --- |
 | `parity_baseline` pins a transient step count (161) and values to 1e-9 | `crates/piperine-solver/tests/parity_baseline.rs:438`, `:443` | a one-bit difference near a controller threshold could move the grid | the companion reproduces `C::load_transient` expression for expression; the differential test compares before `Element` is deleted; if the count moves, stop and report |
-| Today a scheduled `set` is applied after the landing step and re-solved; digital events are applied before it | `transient.rs:1060` (`apply_scheduled_sets`), `:944` (`attempt_step`) | unifying both as boundary changes could move `live_params` numbers | host writes keep their own restart rule (10⁻³); `live_params` runs unchanged in the gate of the protocol task; if the re-solve cannot be reproduced by the preview, the task keeps a host-write-specific landing and reports |
+| Today a scheduled `set` is applied after the landing step and re-solved; digital events are applied before it | `transient.rs:1060` (`apply_scheduled_sets`), `:944` (`attempt_step`) | unifying both as boundary changes could move `live_params` numbers | host writes keep their own restart rule (10⁻³); `live_params` runs unchanged in the gate of the protocol task; if the re-solve cannot be reproduced by solving on the left value and delivering after the instant, the task keeps a host-write-specific landing and reports |
 | The operating-point mixed loop exits silently after 20 rounds | `analyses/dc.rs:355` | a wrong operating point returned as converged | the device branch goes through `Protocol::operating_point`, which fails with `E0506` (SAI-06) |
 | `TransientSystem` and `DcSystem` hand `digital: &[LogicValue]` to devices | `analyses/dc.rs:30`, `transient.rs:38` | the shared snapshot | removed in Phase 5 with the last `Element` |
 | 84 `impl Element` across 30 files | `crates/piperine-solver/tests/*.rs`, `src/analyses/{sp,pz,noise}.rs`, `src/core/{builder,introspect}.rs` | the port is the bulk of the feature | Phase 4 is six port tasks by family, each with the removed and ported names in its commit body |
