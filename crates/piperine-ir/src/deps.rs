@@ -218,11 +218,34 @@ impl Scope {
     }
 }
 
-/// One abstract walk of a body, and of the functions it calls.
+/// One step of the iterative walk. Expressions leave their value on the value stack.
+enum Task {
+    /// Evaluate an expression: its value is pushed.
+    Expr(ExprId),
+    /// The operands of an expression are on the value stack: combine them.
+    Finish(ExprId),
+    Stmt(StmtId),
+    /// A `let` has evaluated its init (on the stack): bind the local.
+    Bind(u32, ExprId),
+    /// An expression statement's value is not used.
+    Discard,
+    /// An addend's value (on the stack) is contributed to a branch.
+    Addend { branch: u32, operator: Operator, at: ExprId },
+    /// A closure's parameters are bound before its body is walked.
+    BindParams(ExprId),
+    /// A callee's body has been walked (its value on the stack): leave its scope.
+    Return { at: ExprId, args: Vec<Value> },
+}
+
+/// One abstract walk of a body, and of the functions it calls. The walk is iterative (an
+/// explicit task stack and value stack), so nesting depth costs no native stack.
 struct Walk<'a> {
     ir: &'a Ir,
     /// The functions being walked, innermost last: a call of one of them is a recursion.
     calls: Vec<FunctionId>,
+    /// The owners being walked, innermost (the current one) last.
+    scopes: Vec<Scope>,
+    values: Vec<Value>,
     flow: Vec<Sources>,
     charge: Vec<Sources>,
     affine: Vec<bool>,
@@ -236,6 +259,8 @@ impl<'a> Walk<'a> {
         let mut walk = Walk {
             ir,
             calls: Vec::new(),
+            scopes: Vec::new(),
+            values: Vec::new(),
             flow: vec![Sources::default(); branches],
             charge: vec![Sources::default(); branches],
             affine: vec![true; branches],
@@ -248,16 +273,17 @@ impl<'a> Walk<'a> {
             .iter()
             .map(|param| match param.check {
                 Some(check) => {
-                    let mut scope = Scope::new(owner.clone(), true, data.locals.len());
-                    walk.expr(&mut scope, check).sources
+                    walk.scopes = vec![Scope::new(owner.clone(), true, data.locals.len())];
+                    walk.run(Task::Expr(check));
+                    walk.pop().sources
                 }
                 None => Sources::default(),
             })
             .collect();
         if let Some(analog) = &data.analog {
-            let mut scope = Scope::new(owner, true, data.locals.len());
+            walk.scopes = vec![Scope::new(owner, true, data.locals.len())];
             for &stmt in analog {
-                walk.stmt(&mut scope, stmt);
+                walk.run(Task::Stmt(stmt));
             }
         }
         BodyDeps {
@@ -270,30 +296,57 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Panics naming the owner and the origin of `id`: a form the walk cannot give a meaning to.
-    fn refuse(&self, scope: &Scope, id: ExprId, what: &str) -> ! {
-        let o = &self.ir.exprs[id.index()].origin;
-        panic!("{}: {what} at {}:{}:{} (run Ir::check first)", scope.owner, o.file, o.line, o.col)
+    /// The current owner's scope.
+    fn scope(&mut self) -> &mut Scope {
+        match self.scopes.last_mut() {
+            Some(scope) => scope,
+            None => panic!("the dependency walk has no scope"),
+        }
     }
 
-    fn stmt(&mut self, scope: &mut Scope, id: StmtId) {
-        let ir = self.ir;
-        match &ir.stmts[id.index()] {
-            Stmt::Let { local, init } => {
-                let value = self.expr(scope, *init);
-                self.bind(scope, *local, value, *init);
-            }
-            Stmt::Expr(e) => {
-                self.expr(scope, *e);
-            }
-            Stmt::Contribute { branch, addends, .. } => {
-                let b = *branch as usize;
-                for addend in addends {
-                    let value = self.expr(scope, addend.value);
+    fn pop(&mut self) -> Value {
+        match self.values.pop() {
+            Some(value) => value,
+            None => panic!("the dependency walk lost a value"),
+        }
+    }
+
+    /// The last `n` values, in evaluation order.
+    fn pop_n(&mut self, n: usize) -> Vec<Value> {
+        let at = self.values.len().saturating_sub(n);
+        self.values.split_off(at)
+    }
+
+    /// Panics naming the owner and the origin of `id`: a form the walk cannot give a meaning to.
+    fn refuse(&self, id: ExprId, what: &str) -> ! {
+        let o = &self.ir.exprs[id.index()].origin;
+        let owner = self.scopes.last().map_or("<no owner>", |s| s.owner.as_str());
+        panic!("{owner}: {what} at {}:{}:{} (run Ir::check first)", o.file, o.line, o.col)
+    }
+
+    /// Runs the walk from `root` to its end.
+    fn run(&mut self, root: Task) {
+        let mut stack = vec![root];
+        let mut next = Vec::new();
+        while let Some(task) = stack.pop() {
+            match task {
+                Task::Expr(id) => self.expr(id, &mut next),
+                Task::Finish(id) => self.finish(id, &mut next),
+                Task::Stmt(id) => self.stmt(id, &mut next),
+                Task::Bind(local, at) => {
+                    let value = self.pop();
+                    self.bind(local, value, at);
+                }
+                Task::Discard => {
+                    self.pop();
+                }
+                Task::Addend { branch, operator, at } => {
+                    let value = self.pop();
+                    let b = branch as usize;
                     if b >= self.flow.len() {
-                        self.refuse(scope, addend.value, &format!("contribution to branch {branch}, out of range"));
+                        self.refuse(at, &format!("contribution to branch {branch}, out of range"));
                     }
-                    match addend.operator {
+                    match operator {
                         Operator::Direct => {
                             self.flow[b].join(&value.sources);
                             if value.class == Class::Nonlinear {
@@ -303,11 +356,43 @@ impl<'a> Walk<'a> {
                         Operator::Ddt => self.charge[b].join(&value.sources),
                     }
                 }
+                Task::BindParams(id) => {
+                    // A closure parameter is supplied at run time (the limiter's `new` and `old`):
+                    // it carries no static source and is an iterate of a potential.
+                    if let Expr::Closure { params, .. } = &self.ir.exprs[id.index()].kind {
+                        for &p in params {
+                            self.bind(p, Value::of(Sources::default(), Class::Affine), id);
+                        }
+                    }
+                }
+                Task::Return { at, args } => {
+                    let callee = self.pop();
+                    self.scopes.pop();
+                    self.calls.pop();
+                    self.called(at, &args, &callee);
+                }
+            }
+            // `next` holds the follow-up tasks in evaluation order.
+            stack.extend(next.drain(..).rev());
+        }
+    }
+
+    fn stmt(&mut self, id: StmtId, next: &mut Vec<Task>) {
+        let ir = self.ir;
+        match &ir.stmts[id.index()] {
+            Stmt::Let { local, init } => next.extend([Task::Expr(*init), Task::Bind(*local, *init)]),
+            Stmt::Expr(e) => next.extend([Task::Expr(*e), Task::Discard]),
+            Stmt::Contribute { branch, addends, .. } => {
+                for addend in addends {
+                    next.push(Task::Expr(addend.value));
+                    next.push(Task::Addend { branch: *branch, operator: addend.operator, at: addend.value });
+                }
             }
         }
     }
 
-    fn bind(&self, scope: &mut Scope, local: u32, value: Value, at: ExprId) {
+    fn bind(&mut self, local: u32, value: Value, at: ExprId) {
+        let scope = self.scope();
         match scope.locals.get_mut(local as usize) {
             Some(slot) => {
                 if slot.as_ref().is_some_and(|old| *old != value) {
@@ -315,44 +400,51 @@ impl<'a> Walk<'a> {
                 }
                 *slot = Some(value);
             }
-            None => self.refuse(scope, at, &format!("local {local} out of range")),
+            None => self.refuse(at, &format!("local {local} out of range")),
         }
     }
 
-    fn expr(&mut self, scope: &mut Scope, id: ExprId) -> Value {
-        if let Some(value) = scope.memo.get(&id) {
-            return value.clone();
-        }
-        let value = self.walk_expr(scope, id);
-        scope.memo.insert(id, value.clone());
-        value
+    /// `value` is the value of `id`: memoized in the current scope and pushed.
+    fn done(&mut self, id: ExprId, value: Value) {
+        self.scope().memo.insert(id, value.clone());
+        self.values.push(value);
     }
 
-    fn walk_expr(&mut self, scope: &mut Scope, id: ExprId) -> Value {
+    /// Starts `id`: a memoized or leaf value is pushed now, any other form schedules its operands
+    /// and its `Finish`.
+    fn expr(&mut self, id: ExprId, next: &mut Vec<Task>) {
         let ir = self.ir;
+        if let Some(value) = self.scope().memo.get(&id).cloned() {
+            self.values.push(value);
+            return;
+        }
+        let in_body = self.scope().in_body;
         match &ir.exprs[id.index()].kind {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit => Value::constant(),
-            Expr::Local(i) => match scope.locals.get(*i as usize) {
-                Some(Some(value)) => value.clone(),
-                Some(None) => self.refuse(scope, id, &format!("local {i} read before its `let`")),
-                None => self.refuse(scope, id, &format!("local {i} out of range")),
-            },
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit => return self.done(id, Value::constant()),
+            Expr::Local(i) => {
+                let value = match self.scope().locals.get(*i as usize) {
+                    Some(Some(value)) => value.clone(),
+                    Some(None) => self.refuse(id, &format!("local {i} read before its `let`")),
+                    None => self.refuse(id, &format!("local {i} out of range")),
+                };
+                return self.done(id, value);
+            }
             Expr::Param(i) => {
-                if !scope.in_body {
-                    self.refuse(scope, id, "param read outside a body");
+                if !in_body {
+                    self.refuse(id, "param read outside a body");
                 }
                 let mut sources = Sources::default();
                 sources.params.insert(*i);
-                Value::of(sources, Class::Constant)
+                return self.done(id, Value::of(sources, Class::Constant));
             }
             Expr::Env(env) => {
                 let mut sources = Sources::default();
                 sources.env.insert(*env);
-                Value::of(sources, Class::Constant)
+                return self.done(id, Value::of(sources, Class::Constant));
             }
             Expr::Probe { plus, minus } => {
-                if !scope.in_body {
-                    self.refuse(scope, id, "probe outside a body");
+                if !in_body {
+                    self.refuse(id, "probe outside a body");
                 }
                 let mut sources = Sources::default();
                 for t in [plus, minus] {
@@ -360,96 +452,112 @@ impl<'a> Walk<'a> {
                         sources.nodes.insert(*n);
                     }
                 }
-                Value::of(sources, Class::Affine)
+                return self.done(id, Value::of(sources, Class::Affine));
             }
-            Expr::Unary { op, expr } => {
-                let value = self.expr(scope, *expr);
+            Expr::Unary { expr, .. } => next.push(Task::Expr(*expr)),
+            Expr::Binary { lhs, rhs, .. } => next.extend([Task::Expr(*lhs), Task::Expr(*rhs)]),
+            Expr::If { cond, then, otherwise } => {
+                next.extend([Task::Expr(*cond), Task::Expr(*then), Task::Expr(*otherwise)]);
+            }
+            Expr::Block { stmts, value } => {
+                next.extend(stmts.iter().map(|&s| Task::Stmt(s)));
+                next.extend(value.iter().map(|&v| Task::Expr(v)));
+            }
+            Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
+            Expr::Closure { body, .. } => next.extend([Task::BindParams(id), Task::Expr(*body)]),
+            Expr::Limit { x, f, seed, .. } => {
+                if !in_body {
+                    self.refuse(id, "limit outside a body");
+                }
+                next.extend([Task::Expr(*x), Task::Expr(*f)]);
+                next.extend(seed.iter().map(|&s| Task::Expr(s)));
+            }
+            Expr::Stim { mag, phase, .. } => {
+                if !in_body {
+                    self.refuse(id, "ac_stim outside a body");
+                }
+                next.push(Task::Expr(*mag));
+                next.extend(phase.iter().map(|&p| Task::Expr(p)));
+            }
+        }
+        // Any form with operands is combined once they are walked.
+        next.push(Task::Finish(id));
+    }
+
+    /// Combines the operand values of `id`, left on the value stack by its operands' tasks.
+    fn finish(&mut self, id: ExprId, next: &mut Vec<Task>) {
+        let ir = self.ir;
+        let value = match &ir.exprs[id.index()].kind {
+            Expr::Unary { op, .. } => {
+                let value = self.pop();
                 match op {
                     UnaryOp::Neg => value,
                     UnaryOp::Not => Value::nonlinear([&value]),
                 }
             }
-            Expr::Binary { op, lhs, rhs } => {
-                let l = self.expr(scope, *lhs);
-                let r = self.expr(scope, *rhs);
-                self.binary(*op, l, r)
+            Expr::Binary { op, .. } => {
+                let r = self.pop();
+                let l = self.pop();
+                Walk::binary(*op, l, r)
             }
-            Expr::If { cond, then, otherwise } => {
-                let c = self.expr(scope, *cond);
-                let t = self.expr(scope, *then);
-                let o = self.expr(scope, *otherwise);
+            Expr::If { .. } => {
+                let o = self.pop();
+                let t = self.pop();
+                let c = self.pop();
                 let class = if c.class == Class::Constant { t.class.max(o.class) } else { Class::Nonlinear };
                 let mut sources = c.sources;
                 sources.join(&t.sources);
                 sources.join(&o.sources);
                 Value::of(sources, class)
             }
-            Expr::Block { stmts, value } => {
-                for &s in stmts {
-                    self.stmt(scope, s);
-                }
-                match value {
-                    Some(v) => self.expr(scope, *v),
-                    None => Value::constant(),
-                }
-            }
+            Expr::Block { value, .. } => match value {
+                Some(_) => self.pop(),
+                None => Value::constant(),
+            },
             Expr::Call { function, args } => {
-                let values: Vec<Value> = args.iter().map(|&a| self.expr(scope, a)).collect();
-                let callee = self.call(scope, id, *function, &values);
-                let mut out = Value::nonlinear(&values);
-                out.sources.join(&callee.sources);
-                out
+                let values = self.pop_n(args.len());
+                self.enter(id, *function, values, next);
+                return;
             }
             Expr::Math { args, .. } => {
-                let values: Vec<Value> = args.iter().map(|&a| self.expr(scope, a)).collect();
+                let values = self.pop_n(args.len());
                 Value::nonlinear(&values)
             }
-            Expr::Closure { params, body } => {
-                // A closure parameter is supplied at run time (the limiter's `new` and `old`): it
-                // carries no static source and is an iterate of a potential.
-                for &p in params {
-                    self.bind(scope, p, Value::of(Sources::default(), Class::Affine), id);
-                }
-                let value = self.expr(scope, *body);
+            Expr::Closure { .. } => {
+                let value = self.pop();
                 Value::of(value.sources, Class::Nonlinear)
             }
-            Expr::Limit { site, x, f, seed } => {
-                if !scope.in_body {
-                    self.refuse(scope, id, "limit outside a body");
-                }
-                let mut own = self.expr(scope, *x).sources;
-                own.join(&self.expr(scope, *f).sources);
-                if let Some(s) = seed {
-                    own.join(&self.expr(scope, *s).sources);
+            Expr::Limit { site, seed, .. } => {
+                let mut own = Sources::default();
+                for value in self.pop_n(2 + usize::from(seed.is_some())) {
+                    own.join(&value.sources);
                 }
                 match self.limits.get_mut(*site as usize) {
                     Some(slot) => slot.join(&own),
-                    None => self.refuse(scope, id, &format!("limit site {site} out of range")),
+                    None => self.refuse(id, &format!("limit site {site} out of range")),
                 }
                 let mut sources = Sources::default();
                 sources.limits.insert(*site);
                 Value::of(sources, Class::Affine)
             }
-            Expr::Stim { site, mag, phase } => {
-                if !scope.in_body {
-                    self.refuse(scope, id, "ac_stim outside a body");
-                }
-                let mut values = vec![self.expr(scope, *mag)];
-                if let Some(p) = phase {
-                    values.push(self.expr(scope, *p));
-                }
+            Expr::Stim { site, phase, .. } => {
+                let values = self.pop_n(1 + usize::from(phase.is_some()));
                 let mut value = Value::nonlinear(&values);
                 match self.stims.get_mut(*site as usize) {
                     Some(slot) => slot.join(&value.sources),
-                    None => self.refuse(scope, id, &format!("ac_stim site {site} out of range")),
+                    None => self.refuse(id, &format!("ac_stim site {site} out of range")),
                 }
                 value.sources.stims.insert(*site);
                 value
             }
-        }
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } => {
+                self.refuse(id, "a leaf has no operands to finish")
+            }
+        };
+        self.done(id, value);
     }
 
-    fn binary(&self, op: BinaryOp, l: Value, r: Value) -> Value {
+    fn binary(op: BinaryOp, l: Value, r: Value) -> Value {
         let class = match op {
             BinaryOp::Add | BinaryOp::Sub => l.class.max(r.class),
             BinaryOp::Mul if l.class == Class::Constant => r.class,
@@ -461,24 +569,30 @@ impl<'a> Walk<'a> {
         Value::of(sources, class)
     }
 
-    /// What `function` reads when called with `args`: its body walked in a scope of its own,
-    /// its parameters (its first locals) bound to the arguments.
-    fn call(&mut self, scope: &Scope, at: ExprId, function: FunctionId, args: &[Value]) -> Value {
+    /// Enters `function`, called at `at` with `args`: its body is walked in a scope of its own,
+    /// its parameters (its first locals) bound to the arguments; `Return` leaves it.
+    fn enter(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>, next: &mut Vec<Task>) {
         let ir = self.ir;
         let data = &ir.functions[function.index()];
         if self.calls.contains(&function) {
-            self.refuse(scope, at, &format!("recursive call of {}", data.name));
+            self.refuse(at, &format!("recursive call of {}", data.name));
         }
         let mut callee = Scope::new(format!("function {}", data.name), false, data.locals.len());
         if args.len() != data.params.len() || args.len() > callee.locals.len() {
-            self.refuse(scope, at, &format!("call of {} with {} args, it takes {}", data.name, args.len(), data.params.len()));
+            self.refuse(at, &format!("call of {} with {} args, it takes {}", data.name, args.len(), data.params.len()));
         }
-        for (slot, arg) in callee.locals.iter_mut().zip(args) {
+        for (slot, arg) in callee.locals.iter_mut().zip(&args) {
             *slot = Some(arg.clone());
         }
         self.calls.push(function);
-        let value = self.expr(&mut callee, data.body);
-        self.calls.pop();
-        value
+        self.scopes.push(callee);
+        next.extend([Task::Expr(data.body), Task::Return { at, args }]);
+    }
+
+    /// A call at `at` returned `callee`: the call reads its arguments and what the callee reads.
+    fn called(&mut self, at: ExprId, args: &[Value], callee: &Value) {
+        let mut out = Value::nonlinear(args);
+        out.sources.join(&callee.sources);
+        self.done(at, out);
     }
 }

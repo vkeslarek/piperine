@@ -431,3 +431,28 @@ fn a_shared_expression_is_walked_once() {
     assert!(body.is_affine(0));
     assert!(started.elapsed() < std::time::Duration::from_secs(5), "took {:?}", started.elapsed());
 }
+
+#[test]
+fn a_deep_expression_is_walked_without_native_stack() {
+    // `v(p, n) + 1.0 + ... + 1.0`, 10 000 terms left-associated, asked on a 2 MiB thread (the
+    // test harness default) in the debug profile: the walk must not grow the native stack.
+    let deps = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            let ir = Row::ir(|b| {
+                let mut e = Row::ex(b);
+                let mut acc = Row::v(&mut e);
+                for _ in 0..10_000 {
+                    let one = e.real(1.0);
+                    acc = e.binary(BinaryOp::Add, acc, one);
+                }
+                (vec![], acc)
+            });
+            let body = ir.body(BodyId(0));
+            (body.dependencies(Target::Flow(0)), body.is_affine(0))
+        })
+        .expect("spawn")
+        .join()
+        .expect("the walk returns");
+    assert_eq!(deps, (Want::deps(&[0, 1], &[], &[], &[], &[]), true));
+}
