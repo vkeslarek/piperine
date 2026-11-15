@@ -57,8 +57,11 @@ pub enum Mode {
     Check(u32),
     /// Drive `k`: the value of its carrier, or of its undelayed pin when it has an `after`.
     Drive(u32),
-    /// `Changed` event `k`: fires its event pin when the carrier changed and the guard holds.
+    /// Event `k`: a `Changed` event fires its event pin when the carrier changed and the guard
+    /// holds; a guarded `Cross` event, when its watch fired and the guard holds.
     Event(u32),
+    /// The `cross` event `k`: the value of its `CROSS` watch.
+    Cross(u32),
     /// The `changed` event of drive `k`'s undelayed pin.
     DelayedEvent(u32),
 }
@@ -83,6 +86,8 @@ pub enum Source {
     Delayed(u32),
     /// The `CHANGED` byte of drive `k`'s undelayed pin.
     DelayedChanged(u32),
+    /// The `CHANGED` byte of the pin the watch of guarded `cross` event `k` fires.
+    Crossed(u32),
     Temperature,
     Gmin,
     SourceScale,
@@ -121,6 +126,8 @@ pub enum Target {
     Delayed(u32),
     /// The event pin of the `changed` event of drive `k`'s undelayed pin.
     DelayedEventPin(u32),
+    /// The `CROSS` watch of event `k`.
+    Watch(u32),
 }
 
 /// What one function of the shape computes, entry by entry parallel to the shape.
@@ -196,6 +203,11 @@ pub struct Pins {
     pub carriers: u32,
     /// The event pin of each event of the body, after the carrier pins.
     pub events: Vec<u32>,
+    /// Per event, the pin its `CROSS` watch fires when it is a guarded `cross`, after the event
+    /// pins; `None` for every other event (an unguarded watch fires the event pin itself).
+    pub crossed: Vec<Option<u32>>,
+    /// Per event, the index of its `CROSS` watch; `None` for a `Changed` event.
+    pub watches: Vec<Option<u32>>,
     /// The two pins of each drive with an `after`, after the event pins; `None` for a drive
     /// without one.
     pub delayed: Vec<Option<DelayedPins>>,
@@ -338,8 +350,10 @@ impl BodyPlan {
         }
         let carriers = Digital::carrier_pins(&mut s, body);
         let events = Digital::event_pins(&mut s, body);
+        let crossed = Digital::crossed_pins(&mut s, body);
         let delayed = Digital::delayed_pins(&mut s, body);
-        let pins = Pins { nodes, branches, temperature, checks, carriers, events, delayed };
+        let watches = Digital::watches(&mut s, body, &events, &crossed);
+        let pins = Pins { nodes, branches, temperature, checks, carriers, events, crossed, watches, delayed };
 
         // Terms, branch by branch.
         let mut terms = Vec::new();
@@ -384,7 +398,7 @@ impl BodyPlan {
         let mut functions = Vec::new();
         for (k, site) in body.limits().iter().enumerate() {
             let k = k as u32;
-            let set = ReadSet::of(&body.dependencies(Query::Limit(k)));
+            let set = ReadSet::target(body, Query::Limit(k));
             let mut plan = Self::function(Mode::Limit(k), &set, vec![(Target::Proposed(k), Some(&set)), (Target::Limited(k), None)]);
             plan.reads.extend([Source::LimitLast(k), Source::LimitAge(k), Source::Static]);
             let name = format!("limit:{}", site.name);
@@ -393,7 +407,7 @@ impl BodyPlan {
         }
         for (k, site) in body.stims().iter().enumerate() {
             let k = k as u32;
-            let set = ReadSet::of(&body.dependencies(Query::Stim(k)));
+            let set = ReadSet::target(body, Query::Stim(k));
             let plan = Self::function(Mode::Stim(k), &set, vec![(Target::StimRe(k), None), (Target::StimIm(k), None)]);
             Self::declare(&mut s, &pins, &terms, body, &format!("stim:{k}"), &origin(&site.origin), &plan);
             functions.push(plan);
@@ -422,7 +436,7 @@ impl BodyPlan {
                 continue;
             }
             let p = p as u32;
-            let set = ReadSet::of(&body.dependencies(Query::Check(p)));
+            let set = ReadSet::target(body, Query::Check(p));
             let plan = Self::function(Mode::Check(p), &set, vec![(Target::Check(p), None)]);
             Self::declare(&mut s, &pins, &terms, body, &format!("check:{}", param.name), &origin(&param.origin), &plan);
             functions.push(plan);
@@ -437,11 +451,11 @@ impl BodyPlan {
     /// What term `t` reads.
     fn term_set(body: Body<'_>, t: Term) -> ReadSet {
         match t {
-            Term::Flow(b) => ReadSet::of(&body.dependencies(Query::Flow(b))),
-            Term::Charge(b) => ReadSet::of(&body.dependencies(Query::Charge(b))),
+            Term::Flow(b) => ReadSet::target(body, Query::Flow(b)),
+            Term::Charge(b) => ReadSet::target(body, Query::Charge(b)),
             Term::Current(b) => ReadSet([Source::BranchFlow(b)].into_iter().collect()),
             Term::Eq(b) => {
-                let mut set = ReadSet::of(&body.dependencies(Query::Flow(b)));
+                let mut set = ReadSet::target(body, Query::Flow(b));
                 let branch = &body.branches()[b as usize];
                 for end in [branch.plus, branch.minus] {
                     if let Terminal::Node(i) = end {
@@ -488,9 +502,11 @@ impl BodyPlan {
                 Target::StimIm(k) => at(cell::INPUT, limits + k, part::IM),
                 Target::Check(p) => value(cell::PIN, pins.checks.get(p as usize).copied().flatten().unwrap_or(GROUND)),
                 Target::Carrier(c) => value(cell::PIN, pins.carrier(c)),
-                Target::EventPin(k) => value(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND)),
+                // abi.md §4.1: an event pin is written through its `CHANGED` byte (nonzero fires it).
+                Target::EventPin(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
                 Target::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
-                Target::DelayedEventPin(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.event)),
+                Target::DelayedEventPin(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.event), part::CHANGED),
+                Target::Watch(k) => value(cell::WATCH, pins.watches.get(k as usize).copied().flatten().unwrap_or(GROUND)),
             })
             .collect();
         let partials =
@@ -513,6 +529,7 @@ impl BodyPlan {
             Source::CarrierChanged(c) => at(cell::PIN, pins.carrier(c), part::CHANGED),
             Source::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
             Source::DelayedChanged(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value), part::CHANGED),
+            Source::Crossed(k) => at(cell::PIN, pins.crossed.get(k as usize).copied().flatten().unwrap_or(GROUND), part::CHANGED),
             Source::Temperature => value(cell::PIN, pins.temperature.unwrap_or(GROUND)),
             Source::Gmin => value(cell::AMBIENT, ambient::GMIN),
             Source::SourceScale => value(cell::AMBIENT, ambient::SOURCE_SCALE),
@@ -547,7 +564,8 @@ impl BodyPlan {
         Self::queries(body).iter().any(|q| body.dependencies(*q).env.contains(&Env::Temperature))
     }
 
-    /// Every dependency query of a body: each branch's two parts, each site, each param.
+    /// Every dependency query of a body: each branch's two parts, each site, each param, and
+    /// each drive, delay, guard, crossed expression and reaction.
     fn queries(body: Body<'_>) -> Vec<Query> {
         let n = |len: usize| 0..len as u32;
         n(body.branches().len())
@@ -555,6 +573,9 @@ impl BodyPlan {
             .chain(n(body.limits().len()).map(Query::Limit))
             .chain(n(body.stims().len()).map(Query::Stim))
             .chain(n(body.params().len()).map(Query::Check))
+            .chain(n(body.drives().len()).flat_map(|k| [Query::Drive(k), Query::DriveAfter(k)]))
+            .chain(n(body.events().len()).flat_map(|k| [Query::Guard(k), Query::Cross(k)]))
+            .chain(n(body.reactions().len()).map(Query::Reaction))
             .collect()
     }
 

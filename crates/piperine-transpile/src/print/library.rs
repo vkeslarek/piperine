@@ -159,7 +159,7 @@ impl LibraryPrinter {
                     (analog.check(k)?, format!("{param}_check"))
                 }
                 // `discrete` refused every body that has a digital function before any printing.
-                Mode::Drive(_) | Mode::Event(_) | Mode::DelayedEvent(_) => {
+                Mode::Cross(_) | Mode::Drive(_) | Mode::Event(_) | Mode::DelayedEvent(_) => {
                     return Err(Error::Unsupported { form: format!("the digital function {:?}", f.mode), path: format!("body {name} function {k}"), origin: at.clone() });
                 }
             };

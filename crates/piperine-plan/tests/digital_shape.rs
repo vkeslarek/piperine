@@ -317,7 +317,7 @@ fn an_event_is_an_event_pin_and_its_function() {
     assert_eq!(Find::function_names(shape), ["event:0"], "one function: the event's");
     let (reads, writes, partials) = Find::function(shape, "event:0");
     assert_eq!(reads, [pin(0, part::VALUE), pin(0, part::CHANGED)]);
-    assert_eq!(writes, [pin(3, part::VALUE)], "writes the event pin");
+    assert_eq!(writes, [pin(3, part::CHANGED)], "fires the event pin: abi.md §4.1, an event pin is written through CHANGED");
     assert_eq!(partials, []);
     assert_eq!(plan.functions()[0].mode, Mode::Event(0));
 
@@ -328,7 +328,7 @@ fn an_event_is_an_event_pin_and_its_function() {
     let clk = Find::pin(shape, "clk");
     let (reads, writes, _) = Find::function(shape, "event:0");
     assert_eq!(reads, [pin(clk, part::VALUE), pin(clk, part::CHANGED)]);
-    assert_eq!(writes, [pin(Find::pin(shape, "event:0"), part::VALUE)]);
+    assert_eq!(writes, [pin(Find::pin(shape, "event:0"), part::CHANGED)]);
 
     // A guard reading another carrier and a param: `on clk.changed() if en.high() && k > 0.0`
     // reads the VALUE of `en` and the param `k` besides `clk`'s two cells.
@@ -356,7 +356,7 @@ fn an_event_is_an_event_pin_and_its_function() {
     let mut want = vec![pin(k, part::VALUE), pin(clk, part::VALUE), pin(clk, part::CHANGED), pin(en, part::VALUE)];
     want.sort_by_key(|c| (c.index, c.part));
     assert_eq!(got, want, "the carrier's VALUE and CHANGED and every pin of the guard, once each");
-    assert_eq!(writes, [pin(Find::pin(shape, "event:0"), part::VALUE)]);
+    assert_eq!(writes, [pin(Find::pin(shape, "event:0"), part::CHANGED)]);
     assert!(shape.pins.get(Find::pin(shape, "event:0") as usize).is_some_and(|p| p.kind == kind::EVENT && p.role == role::PRIVATE));
     assert_eq!(plan.functions()[0].reads.iter().filter(|r| matches!(r, Source::CarrierChanged(_))).count(), 1);
 }
@@ -385,7 +385,7 @@ fn a_delayed_drive_is_a_pin_an_event_and_a_reaction() {
     // The `changed` event on it: VALUE and CHANGED of the undelayed pin (RS-12 AC 3).
     let (reads, writes, _) = Find::function(shape, "drive:hs_gate.changed");
     assert_eq!(reads, [pin(now, part::VALUE), pin(now, part::CHANGED)]);
-    assert_eq!(writes, [pin(changed, part::VALUE)]);
+    assert_eq!(writes, [pin(changed, part::CHANGED)]);
     // The reaction: on that event, reading the undelayed value and what the delay reads (`tpd`),
     // one statement on the whole of `hs_gate` (2 bytes, `BIT`); `tpd` is no literal: no `LATER`.
     let (on, reads, statements) = Find::reaction(shape, "drive:hs_gate");
@@ -540,4 +540,131 @@ fn a_probing_reaction_reads_the_continuous_pin() {
     let shape = plan.shape().shape();
     let (_, reads, _) = Find::reaction(shape, "reaction:0");
     assert!(reads.iter().all(|c| shape.pins.get(c.index as usize).is_some_and(|p| p.kind != kind::CONTINUOUS)));
+}
+
+#[test]
+fn a_cross_event_is_a_watch_with_partials() {
+    // abi.md §11.5, the comparator: two `CROSS` watches, each firing its `PRIVATE` event pin,
+    // written by an analog function with a partial against each continuous pin it reads; one
+    // reaction per event, committing `HIGH` or `LOW` to `out` (init `LOW`) with no reads. The
+    // buck's comparator is std `A2D` (convert.msl:9-13): one node `a` and the params `vth`,
+    // `hyst` where §11.5 has `inp`, `inn`; one function per watch (F4: granularity is the
+    // library's).
+    let (ir, body) = Alone::design(Buck::comparator);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (a, vth, hyst, d) = (Find::pin(shape, "a"), Find::pin(shape, "vth"), Find::pin(shape, "hyst"), Find::pin(shape, "d"));
+    let (up, down) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"));
+    let d_pin = shape.pins.get(d as usize).expect("d");
+    assert_eq!((d_pin.kind, d_pin.role, d_pin.init.as_slice()), (kind::DISCRETE, role::PORT, &LOW[..]), "out (PORT BIT, init LOW)");
+    for e in [up, down] {
+        let p = shape.pins.get(e as usize).expect("event pin");
+        assert_eq!((p.kind, p.role), (kind::EVENT, role::PRIVATE), "up, down (PRIVATE event)");
+    }
+    // watches: W0 CROSS -> up, W1 CROSS -> down; a CROSS watch holds one F64 (abi.md §3)
+    let watches: Vec<(String, u32, u32, u32, u32)> =
+        shape.watches.iter().map(|w| (w.name.as_str().to_string(), w.kind, w.event, w.ttol, w.etol)).collect();
+    let (cross, default) = (piperine_abi::raw::watch::CROSS, piperine_abi::raw::DEFAULT);
+    assert_eq!(watches, [("cross:0".into(), cross, up, default, default), ("cross:1".into(), cross, down, default, default)]);
+    for w in shape.watches.iter() {
+        assert_eq!(layout(&w.layout), layout(&piperine_abi::layout::F64));
+    }
+    // the analog functions: each writes its watch, with a partial against `a` only (the one
+    // continuous pin of its set); `vth` and `hyst` are read, not differentiated
+    let watch = |w: u32| Cell { kind: cell::WATCH, index: w, part: part::VALUE };
+    for (k, w) in [(0, 0), (1, 1)] {
+        let (reads, writes, partials) = Find::function(shape, &format!("cross:{k}"));
+        assert_eq!(reads, [pin(a, part::VALUE), pin(vth, part::VALUE), pin(hyst, part::VALUE)]);
+        assert_eq!(writes, [watch(w)]);
+        assert_eq!(partials, [(0, 0)], "(0 <- a)");
+    }
+    assert_eq!(Find::function_names(shape), ["cross:0", "cross:1"], "no function writes an event pin: the watches do (P1)");
+    assert_eq!(plan.functions()[0].mode, Mode::Cross(0));
+    // reaction 0: on [up] writes [S0 {out}]; reaction 1: on [down] writes [S0 {out}]
+    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![up], vec![], vec![(d, 0, 2, 0, 0.0)]));
+    assert_eq!(Find::reaction(shape, "reaction:1"), (vec![down], vec![], vec![(d, 0, 2, 0, 0.0)]));
+
+    // A guarded `cross` (`on cross(v(a)) if en.high()`): the watch fires a private event pin
+    // `cross:0`, and the event function fires the event pin when that pin fired and the guard
+    // holds (R1: the non-probing part of a guard is a discrete function).
+    fn guarded(b: &mut IrBuilder) -> BodyId {
+        let el = Buck::electrical(b);
+        let body = b.body(BodySpec {
+            nodes: vec![piperine_ir::BodyNode { name: "a".into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Buck::origin("gc.msl", 1, 10) }],
+            ..Buck::spec("GuardedCross", "gc.msl", 1)
+        });
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "gc.msl", 1, 30));
+        let mut x = Dx::new(b, "gc.msl", 2, 12);
+        let v = x.probe(piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Ground);
+        let en = x.carrier(0, ValueType::Bool);
+        let guard = x.high(en);
+        b.event(body, Event { source: EventSource::Cross(v), guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) });
+        body
+    }
+    let (ir, body) = Alone::design(guarded);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (a, en, event, crossed) = (Find::pin(shape, "a"), Find::pin(shape, "en"), Find::pin(shape, "event:0"), Find::pin(shape, "cross:0"));
+    assert!(shape.pins.get(crossed as usize).is_some_and(|p| p.kind == kind::EVENT && p.role == role::PRIVATE));
+    assert_eq!(shape.watches.get(0).map(|w| w.event), Some(crossed), "the watch fires its own pin");
+    assert_eq!(Find::function(shape, "cross:0"), (vec![pin(a, part::VALUE)], vec![watch(0)], vec![(0, 0)]));
+    let (reads, writes, _) = Find::function(shape, "event:0");
+    assert_eq!(reads, [pin(en, part::VALUE), pin(crossed, part::CHANGED)]);
+    assert_eq!(writes, [pin(event, part::CHANGED)]);
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn an_analog_read_of_a_carrier_is_a_read_of_terms() {
+    // RS-12 AC 7 on the switch (`i(p, n) +> v(p, n) * if g.high() { 1.0 / ron } else { 1.0 /
+    // roff }`): `terms` reads the carrier `g`'s VALUE beside the nodes and params, with no
+    // partial against it (a discrete value is no differentiable read); the term stays affine.
+    let (ir, body) = Alone::design(Buck::switch);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (p, n, ron, roff, g) = (Find::pin(shape, "p"), Find::pin(shape, "n"), Find::pin(shape, "ron"), Find::pin(shape, "roff"), Find::pin(shape, "g"));
+    let (reads, writes, partials) = Find::function(shape, "terms");
+    assert_eq!(reads, [pin(p, part::VALUE), pin(n, part::VALUE), pin(ron, part::VALUE), pin(roff, part::VALUE), pin(g, part::VALUE)]);
+    assert_eq!(writes, [Cell { kind: cell::TERM, index: 0, part: part::VALUE }]);
+    assert_eq!(partials, [(0, 0), (0, 1)], "against p and n only");
+    let terms = plan.functions().iter().find(|f| f.mode == Mode::Terms).expect("terms");
+    assert_eq!(terms.reads.last(), Some(&Source::Carrier(0)));
+    assert_eq!(terms.slots, 2, "two tangent slots: p and n");
+    assert_eq!(terms.affine, [true], "a carrier read is constant in the node potentials");
+}
+
+#[test]
+fn every_buck_slice_shape_validates() {
+    // RS-12 AC 9: the ten bodies of the buck slice, each planned alone, pass the ABI's
+    // shape-local rules.
+    let bodies: [(&str, fn(&mut IrBuilder) -> BodyId); 10] = [
+        ("osc", Buck::osc),
+        ("dpwm", Buck::dpwm),
+        ("setpoint_reg", Buck::setpoint_reg),
+        ("ref_ramp", Buck::ref_ramp),
+        ("pid", Buck::pid),
+        ("gate_driver", Buck::gate_driver),
+        ("adc", Buck::adc),
+        ("comparator", Buck::comparator),
+        ("switch", Buck::switch),
+        ("dff", Buck::dff),
+    ];
+    for (name, make) in bodies {
+        let (ir, body) = Alone::design(make);
+        let plan = BodyPlan::new(ir.body(body));
+        let shape = plan.shape().shape();
+        assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "{name}");
+        // the plan's tables run parallel to the shape's lists
+        assert_eq!(plan.functions().len(), shape.functions.len(), "{name}: functions");
+        assert_eq!(plan.reactions().len(), shape.reactions.len(), "{name}: reactions");
+        // every event pin has exactly one writer (P1): a function or a watch
+        for (i, p) in shape.pins.iter().enumerate() {
+            if p.kind != kind::EVENT {
+                continue;
+            }
+            let by_functions = shape.functions.iter().filter(|f| f.writes.iter().any(|w| w.kind == cell::PIN && w.index == i as u32)).count();
+            let by_watches = shape.watches.iter().filter(|w| w.event == i as u32).count();
+            assert_eq!(by_functions + by_watches, 1, "{name}: event pin {} has one writer", p.name.as_str());
+        }
+    }
 }

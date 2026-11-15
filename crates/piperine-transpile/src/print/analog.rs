@@ -86,6 +86,7 @@ impl<'a> AnalogPrinter<'a> {
                 let part = if matches!(s, Source::Delayed(_)) { "now" } else { "now_changed" };
                 Text::generated(&format!("{name}_{part}"))
             }
+            Source::Crossed(k) => Text::generated(&format!("cross{k}_changed")),
             Source::Temperature => ValuePrinter::env_name(Env::Temperature).to_string(),
             Source::Gmin => ValuePrinter::env_name(Env::Gmin).to_string(),
             Source::SourceScale => ValuePrinter::env_name(Env::SourceScale).to_string(),
@@ -129,6 +130,7 @@ impl<'a> AnalogPrinter<'a> {
                 let part = if matches!(t, Target::Delayed(_)) { "now" } else { "changed" };
                 format!("drive:{name}.{part}")
             }
+            Target::Watch(k) => format!("cross:{k}"),
         }
     }
 

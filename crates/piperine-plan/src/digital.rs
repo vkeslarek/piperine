@@ -31,13 +31,23 @@
 //! literal greater than 0 (abi.md §6 C1: a bound the generator can state); a delay that reads
 //! anything, or none, gives no flag. The reaction of a delayed drive follows the same rule.
 //!
-//! Function order after the M1 functions: `drive:*` in drive order, then `event:*` in event
-//! order, then each `drive:<carrier>.changed`. Reactions: the body's in source order, then one
+//! Crossings (RS-12 AC 6, abi.md §11.5): a `cross` event is a `CROSS` watch `cross:<k>`
+//! (one `F64`, default tolerances) firing the event's pin, its value written by the analog
+//! function `cross:<k>` with a partial against each continuous pin of its dependency set. A
+//! guarded `cross` fires a private event pin `cross:<k>` instead (after the event pins), and the
+//! event function `event:<k>` reads its `CHANGED` and the guard's pins and fires the event pin.
+//!
+//! An analog read of a carrier (RS-12 AC 7) is in the dependency set of the term that reads it:
+//! `terms` reads the carrier's `VALUE`, with no partial (it is no differentiable read).
+//!
+//! Function order after the M1 functions: `cross:*` in event order, `drive:*` in drive order,
+//! then `event:*` in event order, then each `drive:<carrier>.changed`. Reactions: the body's in source order, then one
 //! per delayed drive in drive order.
 
 use piperine_abi::layout::{BIT, BYTE, REAL, leaf_size};
-use piperine_abi::raw::{Field, Layout, List, Statement, Str, field_flag, leaf, pin_flag, role, statement_flag};
-use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf};
+use piperine_abi::layout::F64;
+use piperine_abi::raw::{DEFAULT, Field, Layout, List, Statement, Str, field_flag, leaf, pin_flag, role, statement_flag, watch};
+use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
 use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, StmtId, Target as Query, ValueType};
 
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
@@ -209,6 +219,42 @@ impl Digital {
             .collect()
     }
 
+    /// Adds the pin each guarded `cross` event's watch fires; `None` for every other event.
+    pub(crate) fn crossed_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<u32>> {
+        body.events()
+            .iter()
+            .enumerate()
+            .map(|(k, e)| match (&e.source, e.guard) {
+                (EventSource::Cross(_), Some(_)) => {
+                    Some(s.pin(PinSpec { origin: &Self::at(&e.origin), ..PinSpec::event(&format!("cross:{k}"), role::PRIVATE) }))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Adds one `CROSS` watch per `cross` event, firing the event's pin (or, guarded, its
+    /// `cross:<k>` pin); returns each event's watch.
+    pub(crate) fn watches(s: &mut ShapeBuf, body: Body<'_>, events: &[u32], crossed: &[Option<u32>]) -> Vec<Option<u32>> {
+        body.events()
+            .iter()
+            .enumerate()
+            .map(|(k, e)| {
+                let EventSource::Cross(_) = e.source else { return None };
+                let event = crossed.get(k).copied().flatten().or_else(|| events.get(k).copied())?;
+                Some(s.watch(WatchSpec {
+                    name: &format!("cross:{k}"),
+                    origin: &Self::at(&e.origin),
+                    kind: watch::CROSS,
+                    layout: &F64,
+                    event,
+                    ttol: DEFAULT,
+                    etol: DEFAULT,
+                }))
+            })
+            .collect()
+    }
+
     /// Adds the two pins of each drive with `after`; `None` for a drive without one.
     pub(crate) fn delayed_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<DelayedPins>> {
         body.drives()
@@ -232,6 +278,12 @@ impl Digital {
             BodyPlan::declare(s, pins, &[], body, &name, &Self::at(origin), &plan);
             functions.push(plan);
         };
+        for (k, e) in body.events().iter().enumerate() {
+            let EventSource::Cross(_) = e.source else { continue };
+            let k = k as u32;
+            let set = ReadSet::target(body, Query::Cross(k));
+            add(s, format!("cross:{k}"), &e.origin, BodyPlan::function(Mode::Cross(k), &set, vec![(Target::Watch(k), Some(&set))]));
+        }
         for (k, d) in body.drives().iter().enumerate() {
             let k = k as u32;
             let set = ReadSet::target(body, Query::Drive(k));
@@ -240,10 +292,15 @@ impl Digital {
             add(s, name, &d.origin, BodyPlan::function(Mode::Drive(k), &set, vec![(write, None)]));
         }
         for (k, e) in body.events().iter().enumerate() {
-            let EventSource::Changed(c) = e.source else { continue };
             let k = k as u32;
             let mut set = ReadSet::target(body, Query::Guard(k));
-            set.0.extend([Source::Carrier(c), Source::CarrierChanged(c)]);
+            match e.source {
+                EventSource::Changed(c) => set.0.extend([Source::Carrier(c), Source::CarrierChanged(c)]),
+                EventSource::Cross(_) if e.guard.is_some() => {
+                    set.0.insert(Source::Crossed(k));
+                }
+                EventSource::Cross(_) => continue,
+            }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
         }
         for (k, d) in body.drives().iter().enumerate() {
