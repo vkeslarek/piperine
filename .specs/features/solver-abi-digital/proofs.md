@@ -1,9 +1,9 @@
 # solver-abi-digital proofs
 
-**HEAD**: c2872a20
+**HEAD**: d75324d6
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 46 pass, 0 fail
+**Result**: 47 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -51,6 +51,7 @@
 | C42 | `run digital / test reshape_on_the_shadow_names_the_instance_and_changes_nothing ... ok` | pass |
 | C44 | `run digital / test abi_modules_name_no_analog_or_owner_item ... ok` | pass |
 | C45 | `cargo test -p piperine-digital-solver --lib 2>&1 / grep -E '^test result: ok\. 27 passed'` | pass |
+| C46 | `run digital / test horizon_counts_the_commits_other_reactions_make_in_the_same_microstep ... ok` | pass |
 | Build | `cargo build -p piperine-digital-solver --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 | Build | `cargo build -p piperine-solver --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 
@@ -59,7 +60,6 @@
 `Run digital` - exit 0
 
 ```
-     Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_digital_solver-c933d948c91bd502)
      Running tests/advance.rs (/var/tmp/piperine-target/debug/deps/advance-f79babe5f6c91f9c)
      Running tests/bind.rs (/var/tmp/piperine-target/debug/deps/bind-3086bacece866c3b)
      Running tests/boundary.rs (/var/tmp/piperine-target/debug/deps/boundary-77a3f9fd47207f0c)
@@ -71,6 +71,7 @@
      Running tests/instant.rs (/var/tmp/piperine-target/debug/deps/instant-1872408436915898)
      Running tests/queue.rs (/var/tmp/piperine-target/debug/deps/queue-8ce281259e0add3c)
      Running tests/reactions.rs (/var/tmp/piperine-target/debug/deps/reactions-6545fbfa642e1baa)
+     Running tests/round1.rs (/var/tmp/piperine-target/debug/deps/round1-9cbbeec96634d37c)
      Running tests/store.rs (/var/tmp/piperine-target/debug/deps/store-5dd2056c91c78ed8)
      Running tests/ticks.rs (/var/tmp/piperine-target/debug/deps/ticks-ad1d170213cba4c3)
    Doc-tests piperine_digital_solver
