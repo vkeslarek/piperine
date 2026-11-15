@@ -384,7 +384,7 @@ Proof: `cargo test -p piperine-analog-solver --lib 2>&1 | grep -E '^test result:
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** B1 at daa75d37 - returned (T1-T6 45d8a189..f7cde469 + merge core 1f75003a; limited-diode test at reltol 1e-10 (new test); DELAY history pushed in accept)
+**Dispatched:** B1 at daa75d37 - returned (T1-T6 45d8a189..f7cde469 + merge core 1f75003a; limited-diode test at reltol 1e-10 (new test); DELAY history pushed in accept); B2 (Opus) at ecddd47c
 **Walked:** not applicable - no screen
 
 ---
