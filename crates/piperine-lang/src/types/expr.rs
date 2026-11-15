@@ -2,7 +2,7 @@
 //! otherwise. A mismatch is one `P0002` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
-use crate::pom::{BinOp, BlockNode, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
+use crate::pom::{BinOp, BlockNode, BuiltinKind, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::stack;
 
 use super::check::Checker;
@@ -13,6 +13,12 @@ impl Checker<'_> {
     /// Check `expr` against `expected`. A mismatch is one diagnostic; the expression then takes
     /// the expected type.
     pub(super) fn check(&mut self, expr: ExprId, expected: &Ty) {
+        self.check_as(expr, expected, "P0002");
+    }
+
+    /// `check`, where a mismatch of `expr` itself carries `code` (a rule of the specification
+    /// with a code of its own, `E0318` for a `where`) instead of the plain `P0002`.
+    pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
         stack::deep(|| {
             let node = self.design.expr_node(expr).clone();
             let file = self.file_of_expr(expr);
@@ -33,7 +39,7 @@ impl Checker<'_> {
                 }
                 // `100` where an `f64` is required: the one integer literal the subset names.
                 ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")) && *expected == Ty::F64 => {
-                    self.report_integer_literal(file, node.span);
+                    self.mismatch_coded(file, node.span, code, "f64", "an integer literal");
                     Some(expected.clone())
                 }
                 _ => self.infer(expr),
@@ -41,14 +47,11 @@ impl Checker<'_> {
             if let Some(found) = found
                 && found != *expected
             {
-                self.mismatch(file, node.span, expected, &found);
+                let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
+                self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
             }
             self.exprs[expr.index()] = Some(expected.clone());
         })
-    }
-
-    fn report_integer_literal(&mut self, file: crate::pom::FileId, span: crate::msl::Span) {
-        self.mismatch_text(file, span, "f64", "an integer literal");
     }
 
     /// The type of `expr` from the expression alone; `None` after a diagnostic.
@@ -195,6 +198,8 @@ impl Checker<'_> {
                         self.lower_type(c.ty)
                     }
                     DeclKind::Param(p) => self.lower_type(p.ty),
+                    DeclKind::Port(p) => self.node_type(p.ty),
+                    DeclKind::Signal(s) => self.node_type(s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         let local = self.locals.get(&decl).cloned();
                         if local.is_none() {
@@ -213,6 +218,7 @@ impl Checker<'_> {
                     }
                 }
             }
+            Resolution::Builtin(id) if id.info().kind == BuiltinKind::Node => Some(Ty::AnyNode),
             Resolution::Builtin(id) => {
                 self.unsupported(file, node.span, &format!("built-in `{}`", id.name()));
                 None

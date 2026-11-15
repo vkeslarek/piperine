@@ -24,12 +24,14 @@ fn an_unknown_top_is_one_diagnostic() {
     let err = Types::check(&design, "Missing").expect_err("no such module");
     assert_eq!(err.len(), 1);
     assert!(err[0].diagnostic.message.contains("Missing"), "{}", err[0].diagnostic.message);
+    assert_eq!(err[0].diagnostic.code, "P0003", "an unknown top has the compiler-owned code P0003");
 
     // A module of the standard library is not a module of the root crate.
     let design = Design::builder().std_source("lib.msl", "pub mod prelude;\npub module Lib() { }\n").std_source("prelude.msl", "").source("top.msl", "module Top() { }").build();
     let err = Types::check(&design, "Lib").expect_err("a std module is no top");
     assert_eq!(err.len(), 1);
     assert!(err[0].diagnostic.message.contains("Lib"));
+    assert_eq!(err[0].diagnostic.code, "P0003");
 }
 
 const SHARED: &str = "const K: f64 = 2.0;\nmodule Top() { }\nanalog for Top { let a = K; let b = a; }";

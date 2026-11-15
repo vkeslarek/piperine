@@ -46,6 +46,9 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 | Method catalogue | the rows of Appendix H.2 the models call: `exp`, `ln`, `sqrt`, `abs` on `f64` | Appendix H rule 1: the catalogue is closed; a table of rows, one line each to extend | y |
 | Code of a construct outside the subset (Q5) | `P0001`, a compiler-owned code outside the `Eppnn` space | the specification has no code for "not supported yet", and its numbers are never reused | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
 | Code of a plain type mismatch (Q5) | `P0002` until Part I owns one | no error table of `docs/spec/` has a row for a mismatched type; §0.4 leaves it to Rust | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
+| Code of an unknown top | `P0003`, compiler-owned like `P0001` and `P0002` | consistent with Q5: compiler-owned P-codes outside the `Eppnn` space; orchestrator decision 2026-11-15 | y |
+| Arguments of a function call | positional only; `name: value` on a call that is not a placement is `E0140` from the POM | the POM refuses it before the checker runs; orchestrator decision 2026-11-15 | y |
+| Wrong argument count of a function or method call | `P0002` | a plain type mismatch of the call against its signature (Q5); orchestrator decision 2026-11-15 | y |
 | An SI-suffixed literal and a float literal are `f64`; an unsuffixed integer literal is refused where an `f64` is required | as stated | Appendix A.2; §22 Resolution at `rout`: "`100`, an integer literal, which is a type error for an `f64` param" | y |
 
 **Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.

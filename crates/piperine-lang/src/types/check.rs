@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BehaviorKind, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, Resolution, TypeId, TypeKind, CallClass, BlockNode, FnParamData};
+use crate::pom::{BehaviorKind, BlockNode, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, Resolution, TypeId, TypeKind};
 
 use super::{Callee, Method, Ty, Types};
 
@@ -104,7 +104,12 @@ impl<'d> Checker<'d> {
 
     /// `P0002` with the two types already written out.
     pub(super) fn mismatch_text(&mut self, file: FileId, span: Span, expected: &str, found: &str) {
-        self.report(file, Diagnostic::new("P0002", format!("mismatched types: expected `{expected}`, found `{found}`"), span, format!("expected `{expected}`, found `{found}`")));
+        self.mismatch_coded(file, span, "P0002", expected, found);
+    }
+
+    /// A mismatch under the code of the rule that was broken.
+    pub(super) fn mismatch_coded(&mut self, file: FileId, span: Span, code: &'static str, expected: &str, found: &str) {
+        self.report(file, Diagnostic::new(code, format!("mismatched types: expected `{expected}`, found `{found}`"), span, format!("expected `{expected}`, found `{found}`")));
     }
 
     // ---- types as written ------------------------------------------------------------------
@@ -247,15 +252,32 @@ impl<'d> Checker<'d> {
         }
     }
 
-    /// A module of the reachable set: the modules it places are reached, and its analog blocks
-    /// are checked.
+    /// A module of the reachable set: its params, nodes and placements, then its analog blocks.
+    /// The modules it places are reached.
     fn module(&mut self, decl: DeclId) {
         let data = self.design.decl_data(decl).clone();
         let DeclKind::Module(m) = &data.kind else { return };
-        for instance in m.instances.iter().copied() {
-            if let crate::pom::ExprKind::Call { class: CallClass::Instance { module: Some(placed), .. }, .. } = &self.design.expr_node(instance).kind {
-                self.callees.insert(instance, Callee::Module(*placed));
-                self.reach(*placed);
+        if data.generics_span.is_some() {
+            self.unsupported(data.file, data.span, "generic module");
+        }
+        if m.abi.is_some() {
+            self.unsupported(data.file, data.span, "`extern` module");
+        }
+        if let Some(ret) = m.ret {
+            let span = self.design.type_node(ret).span;
+            self.unsupported(data.file, span, "module result `-> T`");
+        }
+        for child in data.children.iter().copied() {
+            let item = self.design.decl_data(child).clone();
+            match &item.kind {
+                DeclKind::Port(p) => self.port(&p.clone(), item.file),
+                DeclKind::Param(p) => self.param(&p.clone()),
+                DeclKind::Signal(s) => self.signal(&s.clone()),
+                DeclKind::Let(l) => self.module_let(&l.clone()),
+                DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error => {}
+                DeclKind::Generation(_) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
+                DeclKind::Definition(_) => self.unsupported(item.file, item.span, "definition `=`"),
+                other => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
             }
         }
         for behavior in m.behaviors.iter().copied() {
@@ -267,6 +289,17 @@ impl<'d> Checker<'d> {
                 }
                 BehaviorKind::Digital => self.unsupported(b.file, b.span, "`digital` block"),
             }
+        }
+        // A placement no statement above typed (one written where only the module lists it).
+        for instance in m.instances.iter().copied() {
+            if self.exprs[instance.index()].is_none() {
+                self.infer(instance);
+            }
+        }
+        if let Some(result) = m.result {
+            let file = self.file_of_expr(result);
+            let span = self.design.expr_node(result).span;
+            self.unsupported(file, span, "module result");
         }
     }
 }

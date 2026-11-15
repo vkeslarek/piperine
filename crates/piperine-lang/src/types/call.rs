@@ -27,9 +27,21 @@ impl Checker<'_> {
             self.unsupported(file, node.span, "param block on a call");
             return None;
         }
-        if !matches!(class, CallClass::Function) {
-            self.unsupported(file, node.span, "call that is not a function call");
-            return None;
+        match class {
+            CallClass::Function => {}
+            CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),
+            CallClass::Instance { module: None, .. } => {
+                self.unsupported(file, node.span, "core module placement");
+                return None;
+            }
+            CallClass::Probe => {
+                self.unsupported(file, node.span, "probe");
+                return None;
+            }
+            CallClass::Unclassified => {
+                self.unsupported(file, node.span, "call that is not a function call");
+                return None;
+            }
         }
         match self.callee_resolution(*callee) {
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {

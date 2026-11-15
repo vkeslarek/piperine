@@ -155,6 +155,10 @@ fn a_call_takes_its_declared_result() {
     assert_eq!(codes_of(&d), ["P0002"]);
     let (_, d) = diagnostics(FUNCTIONS, "let a = half();");
     assert_eq!(codes_of(&d), ["P0002"]);
+
+    // A function takes positional arguments only: the POM refuses a named one (`E0140`).
+    let named = support::build(&source(FUNCTIONS, "let a = half(a: 1.0);"));
+    assert_eq!(support::codes(&named), ["E0140"]);
 }
 
 #[test]

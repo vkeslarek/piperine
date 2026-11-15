@@ -11,6 +11,7 @@ mod call;
 mod catalogue;
 mod check;
 mod expr;
+mod module;
 mod table;
 mod ty;
 mod unsupported;
