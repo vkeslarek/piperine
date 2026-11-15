@@ -191,8 +191,10 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 
     fn transient_loop(&mut self, stop: f64) -> Result<Ended> {
         // Every step ends on the tick grid, so the instant run at a step's end
-        // is that tick's own (an instant runs only at its own tick).
-        let stop_tick = self.tick(stop);
+        // is that tick's own (an instant runs only at its own tick). The stop
+        // takes the steps' own rounding: rounded up, a stop off the grid lies a
+        // tick past the step that reaches it, and the loop would run once more.
+        let stop_tick = self.floor_tick(stop);
         let stop = self.time(stop_tick);
         let at = |t: f64, e: Error| Error::wrap(SolverDomain::Transient, format!("at t = {t:e} s"), e);
         let mut forced: Option<Tick> = None;

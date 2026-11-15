@@ -1256,6 +1256,14 @@ impl TransientSolver<'_> {
         let t_next = if !exempt && (run.proposed - to).abs() < run.spt { run.proposed } else { to };
         run.attempted = t_next;
         let st = &mut run.st;
+        if t_next <= st.current_time {
+            // A zero-length step integrates nothing (a `DDT` stamps no companion
+            // at `h <= 0`): never attempted, never accepted.
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
+                format!("a step to t = {t_next:e} s does not advance from t = {:e} s", st.current_time),
+            ));
+        }
         let prediction = StepPrediction {
             t_next,
             dt_actual: t_next - st.current_time,

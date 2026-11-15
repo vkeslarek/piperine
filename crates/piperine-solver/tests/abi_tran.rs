@@ -2,7 +2,7 @@
 //! `1 - e^-1` with the literal and tolerance of `helper_devices.rs`; a
 //! continuous pin's `init` starts Newton and is held through a transient's
 //! operating point only; a rejected stage leaves the term histories as they
-//! were.
+//! were; a stop off the tick grid is reached exactly once, by a step that integrates.
 
 use std::sync::{Arc, OnceLock};
 
@@ -178,6 +178,61 @@ fn rc_step_reads_one_minus_exp_on_devices() {
     let analytic = 1.0 - (-1.0_f64).exp();
     assert!((last.time() - tau).abs() < 1.0e-12, "stopped at t = {}", last.time());
     assert!((v - analytic).abs() < 1.0e-3, "v(rc) = {v} vs 1 - 1/e = {analytic}");
+}
+
+/// The RC of `rc_step_reads_one_minus_exp_on_devices` with the corner of the `ac_rc`/`tran_rc`
+/// twins: `tau = 1 kohm * 1.5915494309189535e-9 F`, 1591549430.92 ticks of the default 1 fs grid.
+fn rc_to(stop: f64) -> (f64, Vec<(f64, f64)>) {
+    let (r, c) = (1.0e3, 1.5915494309189535e-9);
+    let tau = r * c;
+    let mut b = CircuitBuilder::new("rc");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let out = b.node("out");
+    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
+    add_resistor(&mut b, "r1", r, &top, &out);
+    add_capacitor(&mut b, "c1", c, &out, &gnd);
+    let mut circuit = b.build().expect("build");
+    let mut solver = circuit
+        .transient(TransientAnalysisOptions::new(stop, stop / 400.0), Context::default())
+        .expect("tran");
+    solver.apply_initial_conditions(vec![InitialValue { reference: out.clone(), value: 0.0 }]);
+    let result = solver.solve().expect("solve");
+    let id = node_id(&out);
+    (tau, result.iter().map(|s| (s.time(), s.get_node(&id).expect("v(out)"))).collect())
+}
+
+/// Times strictly increase: no record repeats a time (a zero-length step records one).
+fn assert_strictly_increasing(steps: &[(f64, f64)]) {
+    for pair in steps.windows(2) {
+        assert!(pair[1].0 > pair[0].0, "records at {:e} then {:e}: {steps:?}", pair[0].0, pair[1].0);
+    }
+}
+
+#[test]
+fn a_stop_off_the_tick_grid_is_reached_once_by_an_integrating_step() {
+    let tau: f64 = 1.0e3 * 1.5915494309189535e-9;
+    let fraction = (tau / 1.0e-15).fract();
+    assert!(fraction > 0.5, "the stop must round up on the 1 fs grid: {fraction}");
+    let (_, steps) = rc_to(tau);
+    assert_strictly_increasing(&steps);
+    let (t, v) = *steps.last().expect("steps");
+    assert!((t - tau).abs() < 1.0e-12 * tau, "stopped at t = {t:e}");
+    let analytic = 1.0 - (-1.0_f64).exp();
+    assert!((v - analytic).abs() < 1.0e-3, "v(out) at the stop = {v} vs 1 - 1/e = {analytic}");
+    let at_stop = steps.iter().filter(|(s, _)| (s - tau).abs() < 1.0e-12 * tau).count();
+    assert_eq!(at_stop, 1, "one record at the stop: {:?}", &steps[steps.len().saturating_sub(3)..]);
+}
+
+#[test]
+fn a_stop_on_the_tick_grid_ends_on_its_own_step() {
+    let stop = 1.6e-6;
+    let (tau, steps) = rc_to(stop);
+    assert_strictly_increasing(&steps);
+    let (t, v) = *steps.last().expect("steps");
+    assert!((t - stop).abs() < 1.0e-12 * stop, "stopped at t = {t:e}");
+    let analytic = 1.0 - (-stop / tau).exp();
+    assert!((v - analytic).abs() < 1.0e-3, "v(out) at the stop = {v} vs {analytic}");
 }
 
 /// A capacitor of `module` (seeded to `INITIAL_VOLTAGE`) over a resistor to
