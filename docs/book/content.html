@@ -64,7 +64,7 @@ analog for Resistor {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model. The compiler from MSL to the solver does not exist yet, so nothing is executed. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model. The solver and its device ABI are built (chapters 13 and 14). The compiler from MSL to the solver does not exist yet, so no MSL source is executed. This book describes the language as specified.</p>
 </div>
 </section>
 
@@ -1253,7 +1253,7 @@ assert_eq!(front.port("q").unwrap().writers().len(), 1); // the commit `q <- d;`
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The design is settled by an adversarial review: a builder and a critic went four rounds, and its elegance score rose from 5.5 to 8.1 with no blocker left. It is <strong>not implemented yet</strong>. Nothing here has been compiled. Its home will be the crate <code>piperine-abi</code>, which has no dependencies and is the only crate a device links against.</p>
+  <p>Built. The ABI lives in the crate <code>piperine-abi</code>, which has no dependencies and is the only crate a device links against. The solver calls every device through it; the old per-kind device interfaces are gone. Its design was settled by an adversarial review: a builder and a critic went four rounds, and its elegance score rose from 5.5 to 8.1 with no blocker left.</p>
 </div>
 
 <h3>Why one ABI</h3>
@@ -1443,7 +1443,7 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 
 <h3>What it changes in the spec</h3>
 
-<p>The ABI brings a few small changes to the language rules. They are decided and will reach the rest of this book in a small follow-up.</p>
+<p>The ABI brought a few small changes to the language rules. They are now part of the specification.</p>
 
 <ul>
 <li><strong>Delayed commits do not make time points (<code>LATER</code>).</strong> A commit whose delay always moves time forward by at least one tick changes nothing at the instant that made it. Only its due time is tested, on its own. The one change you can observe: <code>on settle</code> sees fewer time points.</li>
@@ -1456,8 +1456,122 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 </section>
 
 <!-- ===================================================== 14 -->
-<section id="cheatsheet" class="chapter">
+<section id="solver" class="chapter">
 <p class="ch-num">Chapter 14</p>
+<h2>The solver</h2>
+
+<p>The solver is the part of Piperine that turns devices into numbers. It knows physics and time, not the language: it never sees an MSL expression, only devices that speak the ABI of chapter 13. This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.</p>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Today a program drives it from Rust with devices written by hand. The compiler that turns your MSL into devices comes next, and then the solver runs your source directly.</p>
+</div>
+
+<h3>Three parts, one boundary</h3>
+
+<p>The solver is three parts. The <strong>analog solver</strong> owns the continuous unknowns and solves the equations. The <strong>digital solver</strong> owns the discrete nets and runs instants. The <strong>event owner</strong> sits above both, owns the clock and the queue of what is due, and decides who runs when. The analog and digital solvers never call each other: everything that crosses between them is an event the owner carries.</p>
+
+<pre class="mermaid">
+flowchart LR
+  H["Your host program"] --> O["Event owner<br/>clock, checkpoints, observations"]
+  O -- "discrete values an analog<br/>function reads" --> A["Analog solver<br/>Newton, TR-BDF2"]
+  A -- "crossings, samples" --> O
+  O -- "instants" --> D["Digital solver<br/>microsteps"]
+  D -- "values that changed" --> O
+</pre>
+
+<p>Analog code runs at every time step as long as the design has any: continuous behavior is continuous. Digital code runs only at instants where something is due.</p>
+
+<h3>The analyses</h3>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Analysis</th><th>What it computes</th></tr></thead>
+<tbody>
+<tr><td>Operating point</td><td>The equilibrium: every <code>ddt</code> is zero, digital settled.</td></tr>
+<tr><td>Transient</td><td>The response over time, with an adaptive step.</td></tr>
+<tr><td>AC</td><td>The small-signal response over frequency, linearized at the operating point.</td></tr>
+<tr><td>Noise</td><td>The output noise density over frequency, and each source's share.</td></tr>
+<tr><td>Transfer function</td><td>DC gain, input resistance and output resistance.</td></tr>
+<tr><td>Pole-zero</td><td>The poles and zeros of a transfer function.</td></tr>
+<tr><td>S-parameters</td><td>The scattering matrix of an N-port.</td></tr>
+<tr><td>Sensitivity</td><td>How outputs move with each parameter, by finite differences or, for many parameters at once, by one adjoint solve.</td></tr>
+<tr><td>Periodic steady state</td><td>The state that repeats itself after one period, by shooting.</td></tr>
+</tbody></table></div>
+
+<h3>Finding the operating point</h3>
+
+<p>The analog solver uses Newton's method: guess, linearize every device at the guess, solve the linear system, repeat. A solution is accepted only when two tests pass at once: no unknown moved more than its tolerance, and the currents into every node balance within tolerance. A large step is damped, and a limiter (<code>limit</code> in MSL) keeps an exponential junction from jumping too far.</p>
+
+<p>When plain Newton fails, the solver makes the problem easier and walks back. First it adds a conductance from every node to ground and lowers it decade by decade (<em>gmin stepping</em>). If that fails, it turns all sources off and ramps them back up (<em>source stepping</em>). These are the same two steps ngspice takes, in the same order.</p>
+
+<p>A mixed design alternates: solve the analog side, run the digital instant on that solution, give the analog side what changed, solve again. After 20 rounds that still change something the solver stops with <code>E0506</code> and names the nets that kept moving, rather than return a wrong answer. Then <code>settle</code> fires once.</p>
+
+<h3>One transient step</h3>
+
+<p>Time inside the solver is an integer count of ticks (one femtosecond unless the session says otherwise), so two events at "the same time" really are at the same time. Each step goes like this:</p>
+
+<ol class="steps">
+<li><strong>Propose.</strong> The step controller proposes how far to go, bounded by the stop time and by any <code>bound_step</code>.</li>
+<li><strong>Look ahead.</strong> The digital solver runs ahead to that time. It stops at the first instant that touches the analog side, and the step is shortened to land exactly there.</li>
+<li><strong>Solve.</strong> The analog solver integrates to that time on the values the digital side had just <em>before</em> the instant.</li>
+<li><strong>Judge.</strong> If Newton failed or the error estimate is too big, everything returns to the checkpoint taken at the start, and the step is retried smaller.</li>
+<li><strong>Accept and react.</strong> The solution is accepted. Crossings found in it become events, and the digital instant runs, reading the accepted solution.</li>
+<li><strong>Deliver.</strong> What the instant changed reaches the analog side. If an analog function reads it, the next step restarts from first order, because a jump has no history to extrapolate from.</li>
+</ol>
+
+<pre class="mermaid">
+flowchart TD
+  P["propose t"] --> L["digital looks ahead,<br/>may shorten t"]
+  L --> S["analog solves to t<br/>on the values before the instant"]
+  S --> J{"converged and<br/>error small?"}
+  J -- no --> R["back to checkpoint,<br/>smaller step"] --> P
+  J -- yes --> A["accept; crossings fire"]
+  A --> I["digital instant at t"]
+  I --> D["deliver changes;<br/>restart if needed"] --> P
+</pre>
+
+<p>A rejected step costs only that step: no device keeps memory of its own, so going back is the solver restoring its own copies.</p>
+
+<h3>Integration and step size</h3>
+
+<p>Every <code>ddt</code> is integrated with <strong>TR-BDF2</strong>: each step is a trapezoidal stage followed by a second-order backward-difference stage. It is accurate like the trapezoidal rule and does not ring on stiff circuits. You never choose a method; there is only this one.</p>
+
+<p>The error of each step is estimated by comparing the solution with a straight-line prediction through the two stages. A PI controller then grows or shrinks the step from that estimate, smoothly, so it does not oscillate on a stiff edge. A step that lands on a scheduled event or right after a jump is exempt from the error test, because what it measures there is the jump, not an integration error.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Tolerance</th><th>Default</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>reltol</code></td><td>1e-3</td><td>relative tolerance for every unknown</td></tr>
+<tr><td><code>vntol</code></td><td>1 µV</td><td>absolute tolerance for a node potential; a nature's <code>abstol</code> can tighten it per node</td></tr>
+<tr><td><code>abstol</code></td><td>1 pA</td><td>absolute tolerance for a branch flow</td></tr>
+<tr><td><code>gmin</code></td><td>1e-12 S</td><td>the smallest conductance a junction model adds</td></tr>
+<tr><td><code>trtol</code></td><td>7</td><td>how far the step error may exceed its target before the step is rejected</td></tr>
+</tbody></table></div>
+
+<p>These are ngspice's defaults with ngspice's meanings. Matching ngspice is a design goal: on the same circuit the two simulators are expected to agree to within these tolerances. The side-by-side runs against ngspice return once MSL compiles to devices.</p>
+
+<h3>The digital side</h3>
+
+<p>One digital instant is a series of <em>microsteps</em> at the same time. In each, the commits due now are applied, the discrete functions that read a changed value run in dependency order, and then the reactions whose event fired run, all reading the same snapshot. Their commits are due at the next microstep, or later if they have an <code>after</code>. The instant ends when nothing more is due now.</p>
+
+<ul>
+<li><strong>Only what changed runs.</strong> A function whose inputs did not change is not called. A free-running clock costs only what it actually touches.</li>
+<li><strong>Combinational loops must say so.</strong> A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing. Any other loop is refused when the design is built, naming its functions.</li>
+<li><strong>An instant must go quiet.</strong> After 1000 microsteps the solver stops with <code>E0501</code> and names the nets that keep changing.</li>
+<li><strong>Running ahead is safe.</strong> The digital side runs ahead of the analog side on checkpoints. If an instant turns out to touch the analog side, it is undone and becomes the next landing.</li>
+</ul>
+
+<h3>Watching and steering a run</h3>
+
+<p>Everything that happens can be observed as it is accepted: each value that changed, each commit, each crossing, each <code>emit!</code> record, and on request each Newton iteration of a function. Observations from a rejected step never reach you.</p>
+
+<p>The host can change a parameter between analyses, schedule a change at a time inside a transient (the solver lands exactly there), or wait for an event and react to it. A change is first checked against the device's own rules; a refused change leaves the circuit as it was.</p>
+
+</section>
+
+<!-- ===================================================== 15 -->
+<section id="cheatsheet" class="chapter">
+<p class="ch-num">Chapter 15</p>
 <h2>Cheat sheet</h2>
 
 <p>One screen of syntax. Everything not here is Rust.</p>
