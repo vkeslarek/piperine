@@ -1,7 +1,7 @@
 //! The one place that names a construct outside the M1 subset. Every `match` is exhaustive with
 //! no wildcard arm, so a new POM variant fails to compile until it is classified.
 
-use crate::pom::{ExprKind, PatKind, StmtKind, UnOp};
+use crate::pom::{BinOp, ExprKind, PatKind, StmtKind, UnOp};
 
 pub(super) struct Unsupported;
 
@@ -42,6 +42,30 @@ impl Unsupported {
             ExprKind::Emit { .. } => "`emit!` statement",
             ExprKind::IncludeStr(_) => "`include_str!`",
             ExprKind::Error => "malformed expression",
+        }
+    }
+
+    /// The name of a binary operator the subset does not type.
+    pub(super) fn binary(op: BinOp) -> &'static str {
+        match op {
+            BinOp::Add => "operator `+`",
+            BinOp::Sub => "operator `-`",
+            BinOp::Mul => "operator `*`",
+            BinOp::Div => "operator `/`",
+            BinOp::Rem => "operator `%`",
+            BinOp::BitXor => "operator `^`",
+            BinOp::BitAnd => "operator `&`",
+            BinOp::BitOr => "operator `|`",
+            BinOp::Shl => "operator `<<`",
+            BinOp::Shr => "operator `>>`",
+            BinOp::And => "operator `&&`",
+            BinOp::Or => "operator `||`",
+            BinOp::Eq => "operator `==`",
+            BinOp::Ne => "operator `!=`",
+            BinOp::Lt => "operator `<`",
+            BinOp::Le => "operator `<=`",
+            BinOp::Gt => "operator `>`",
+            BinOp::Ge => "operator `>=`",
         }
     }
 

@@ -99,6 +99,11 @@ impl<'d> Checker<'d> {
     /// `P0002`: a plain type mismatch at `span`, naming both types.
     pub(super) fn mismatch(&mut self, file: FileId, span: Span, expected: &Ty, found: &Ty) {
         let (expected, found) = (expected.name(self.design), found.name(self.design));
+        self.mismatch_text(file, span, &expected, &found);
+    }
+
+    /// `P0002` with the two types already written out.
+    pub(super) fn mismatch_text(&mut self, file: FileId, span: Span, expected: &str, found: &str) {
         self.report(file, Diagnostic::new("P0002", format!("mismatched types: expected `{expected}`, found `{found}`"), span, format!("expected `{expected}`, found `{found}`")));
     }
 

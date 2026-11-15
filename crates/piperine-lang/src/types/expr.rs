@@ -2,7 +2,7 @@
 //! otherwise. A mismatch is one `P0002` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
-use crate::pom::{DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind};
+use crate::pom::{BinOp, BlockNode, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::stack;
 
 use super::check::Checker;
@@ -14,16 +14,40 @@ impl Checker<'_> {
     /// the expected type.
     pub(super) fn check(&mut self, expr: ExprId, expected: &Ty) {
         stack::deep(|| {
-            let found = self.infer(expr);
+            let node = self.design.expr_node(expr).clone();
+            let file = self.file_of_expr(expr);
+            // Where the expected type flows into the parts of the expression: the value of a
+            // block or of the arms of an `if` is where a mismatch is reported.
+            let found = match &node.kind {
+                ExprKind::Paren(inner) => {
+                    self.check(*inner, expected);
+                    Some(expected.clone())
+                }
+                ExprKind::Block(block) => self.statements(&block.stmts, Some(expected)),
+                ExprKind::If { cond, then, else_: Some(else_) } => {
+                    self.check(*cond, &Ty::Bool);
+                    self.statements(&then.stmts, Some(expected));
+                    self.check(*else_, expected);
+                    Some(expected.clone())
+                }
+                // `100` where an `f64` is required: the one integer literal the subset names.
+                ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")) && *expected == Ty::F64 => {
+                    self.report_integer_literal(file, node.span);
+                    Some(expected.clone())
+                }
+                _ => self.infer(expr),
+            };
             if let Some(found) = found
                 && found != *expected
             {
-                let node = self.design.expr_node(expr);
-                let (file, span) = (self.file_of_expr(expr), node.span);
-                self.mismatch(file, span, expected, &found);
+                self.mismatch(file, node.span, expected, &found);
             }
             self.exprs[expr.index()] = Some(expected.clone());
         })
+    }
+
+    fn report_integer_literal(&mut self, file: crate::pom::FileId, span: crate::msl::Span) {
+        self.mismatch_text(file, span, "f64", "an integer literal");
     }
 
     /// The type of `expr` from the expression alone; `None` after a diagnostic.
@@ -42,10 +66,84 @@ impl Checker<'_> {
             ExprKind::Lit(lit) => self.literal(&lit.kind, file, node.span),
             ExprKind::Path(_) => self.path(expr),
             ExprKind::Paren(inner) => self.infer(*inner),
+            ExprKind::Unary { op: UnOp::Neg, expr: operand } => {
+                self.check(*operand, &Ty::F64);
+                Some(Ty::F64)
+            }
+            ExprKind::Unary { op: UnOp::Not, expr: operand } => {
+                self.check(*operand, &Ty::Bool);
+                Some(Ty::Bool)
+            }
+            ExprKind::Binary { op, lhs, rhs } => self.binary(*op, *lhs, *rhs),
+            ExprKind::Block(block) => self.statements(&block.stmts, None),
+            ExprKind::If { cond, then, else_ } => self.conditional(*cond, then, *else_),
             other => {
                 self.unsupported(file, node.span, Unsupported::expr(other));
                 None
             }
+        }
+    }
+
+    fn binary(&mut self, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
+        match op {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
+                self.check(lhs, &Ty::F64);
+                self.check(rhs, &Ty::F64);
+                Some(Ty::F64)
+            }
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                self.check(lhs, &Ty::F64);
+                self.check(rhs, &Ty::F64);
+                Some(Ty::Bool)
+            }
+            BinOp::And | BinOp::Or => {
+                self.check(lhs, &Ty::Bool);
+                self.check(rhs, &Ty::Bool);
+                Some(Ty::Bool)
+            }
+            BinOp::Eq | BinOp::Ne => {
+                match self.infer(lhs) {
+                    Some(t @ (Ty::F64 | Ty::Bool)) => self.check(rhs, &t),
+                    Some(_) => {
+                        let file = self.file_of_expr(lhs);
+                        let span = self.design.expr_node(lhs).span;
+                        self.unsupported(file, span, "comparison of values that are neither `f64` nor `bool`");
+                    }
+                    None => {
+                        self.infer(rhs);
+                    }
+                }
+                Some(Ty::Bool)
+            }
+            BinOp::Rem | BinOp::BitXor | BinOp::BitAnd | BinOp::BitOr | BinOp::Shl | BinOp::Shr => {
+                let file = self.file_of_expr(lhs);
+                let span = self.design.expr_node(lhs).span;
+                self.unsupported(file, span, Unsupported::binary(op));
+                None
+            }
+        }
+    }
+
+    /// `if cond { then } else { else_ }`: with an `else` the common type of the two blocks;
+    /// without one, `()`.
+    fn conditional(&mut self, cond: ExprId, then: &BlockNode, else_: Option<ExprId>) -> Option<Ty> {
+        self.check(cond, &Ty::Bool);
+        let then_ty = self.statements(&then.stmts, None);
+        match (else_, then_ty) {
+            (Some(else_), Some(t)) => {
+                self.check(else_, &t);
+                Some(t)
+            }
+            (Some(else_), None) => {
+                self.infer(else_);
+                None
+            }
+            (None, Some(t)) if t != Ty::Unit => {
+                let file = self.file_of_expr(cond);
+                self.mismatch(file, then.span, &Ty::Unit, &t);
+                Some(Ty::Unit)
+            }
+            (None, t) => t,
         }
     }
 
