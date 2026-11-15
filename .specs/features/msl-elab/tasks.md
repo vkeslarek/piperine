@@ -407,6 +407,7 @@ Proof: run instances | test an_unnamed_placement_is_module_hash_k ... ok
 
 **C20** - IF a module places itself, directly or through other modules, THEN the system SHALL reject the model with `E0341` and SHALL name the module. (ELAB-03, AC 8; T4)
 Proof: run instances | test a_module_that_places_itself_is_e0341 ... ok
+Proof: run instances | test a_module_that_places_itself_through_another_is_e0341 ... ok
 
 **C21** - The system SHALL lower each value expression, `let` and function of the type-checked set to the IR node of the same form, and each function once however many bodies call it. (ELAB-04, AC 1; T5)
 Proof: run analog | test value_code_lowers_to_the_same_forms_and_functions_once ... ok

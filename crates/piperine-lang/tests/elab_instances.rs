@@ -125,6 +125,15 @@ fn a_module_that_places_itself_is_e0341() {
 }
 
 #[test]
+fn a_module_that_places_itself_through_another_is_e0341() {
+    let src = "module A() { let b = B { }(); }\nmodule B() { let a = A { }(); }\nmodule Top() { let a = A { }(); }";
+    let err = Elab::run(src, "Top").expect_err("A -> B -> A never ends");
+    assert_eq!(Elab::codes(&err), ["E0341"]);
+    assert!(err[0].diagnostic.message.contains("Top.a.b.a"), "{}", err[0].diagnostic.message);
+    assert!(err[0].diagnostic.message.contains('A'), "{}", err[0].diagnostic.message);
+}
+
+#[test]
 fn an_unconnected_node_stays_in_the_table() {
     let ir = Elab::ir("module Top() { signal floating: Electrical; }", "Top");
     assert!(ir.node_at("Top.floating").is_some(), "a floating node is the solver's to report (E0503)");
