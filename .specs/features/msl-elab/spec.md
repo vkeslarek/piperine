@@ -52,6 +52,7 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 | The top module of M1 | has no port; its params take their defaults | a port of a top has nothing to connect to; caller-given values are M2 | y |
 | A node's `= value` | a const expression that reads no param; evaluated at elaboration | abi.md §3: a shape "depends on structure only, never on a non-structural value", and the hold is part of the shape; `E0210` already forbids reading a carrier or a probe | y |
 | Code of a construct inside the type-checked subset that elaboration does not lower (Q5) | `P0001`, as in `msl-typeck` | same rule, same code | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
+| Code of the internal "elaboration built an ill-formed IR" diagnostic | `P0004`, a compiler-owned code beside `P0001` to `P0003` (`E0999` is not spec-owned: `docs/spec/index.md` §0.2 gives `E09xx` to Appendix A) | conditions the compiler owns, not the language, take `P` codes (Q5) | y - Q5 applied by the orchestrator, msl-elab verification round 2 |
 
 **Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.
 

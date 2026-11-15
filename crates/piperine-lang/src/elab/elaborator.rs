@@ -94,7 +94,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
     }
 
-    /// The `Ir` itself when `check()` finds nothing; else one `E0999` internal-error diagnostic
+    /// The `Ir` itself when `check()` finds nothing; else one `P0004` internal-error diagnostic
     /// per broken invariant, at the top module, and no `Ir`. Never checked in debug builds only:
     /// a lowering gap must not reach a backend as an `Ok`.
     pub(super) fn well_formed(design: &Design, top: DeclId, ir: Ir) -> Result<Ir, Vec<DesignDiagnostic>> {
@@ -108,7 +108,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             .iter()
             .map(|b| DesignDiagnostic {
                 file: data.file,
-                diagnostic: Diagnostic::new("E0999", format!("internal error: elaboration produced an ill-formed IR: {} ({} at {})", b.what, b.item, b.origin), span, "this is a bug in the elaborator, not in the model"),
+                diagnostic: Diagnostic::new("P0004", format!("internal error: elaboration produced an ill-formed IR: {} ({} at {})", b.what, b.item, b.origin), span, "this is a bug in the elaborator, not in the model"),
             })
             .collect())
     }
@@ -149,6 +149,6 @@ mod tests {
         let ir = IrBuilder::new().finish(InstanceId(0));
         assert!(!ir.check().is_empty(), "the crafted IR must be broken");
         let err = Elaboration::well_formed(&design, types.reached()[0], ir).expect_err("no Ir");
-        assert!(err.iter().all(|d| d.diagnostic.code == "E0999" && d.diagnostic.message.contains("internal error")), "{err:?}");
+        assert!(err.iter().all(|d| d.diagnostic.code == "P0004" && d.diagnostic.message.contains("internal error")), "{err:?}");
     }
 }
