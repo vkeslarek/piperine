@@ -4,6 +4,7 @@
 //! called through `piperine_abi::caller::Handle`; nothing here is `unsafe`.
 
 pub mod assembly;
+mod flow;
 pub mod plan;
 
 pub use assembly::{Ambient, Assembly};

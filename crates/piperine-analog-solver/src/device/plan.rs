@@ -83,6 +83,8 @@ pub(crate) struct FnPlan {
 pub(crate) struct TermPlan {
     pub name: String,
     pub origin: String,
+    /// `FLOW`, `DDT` or `DELAY`.
+    pub op: u32,
     pub plus: Option<AnalogReference>,
     pub minus: Option<AnalogReference>,
     /// The function (index into `InstancePlan::functions`) and write slot of
@@ -272,6 +274,7 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
         terms.push(TermPlan {
             name: t.name.as_str().into(),
             origin: t.origin.as_str().into(),
+            op: t.op,
             plus,
             minus,
             value: None,

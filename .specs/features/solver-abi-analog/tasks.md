@@ -132,11 +132,11 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `a_flow_term_stamps_its_norton_form` asserts the four matrix entries and two right-side entries of the diode at a hand-computed bias (C2)
-- [ ] Test `a_potential_source_stamps_through_its_private_pin` asserts the voltage source of abi.md A1 gives the same five positions and the right side `V` that `branch_force` gives today
-- [ ] Test `a_divider_solves_to_its_ratio` drives `NewtonRaphsonSolver` with `assemble_dc` on a source and two resistors and reads 7.5 V within 1e-12
-- [ ] Test `a_diode_satisfies_its_own_equation` passes with the tolerance of `helper_devices.rs`
-- [ ] Gate: full
+- [x] Test `a_flow_term_stamps_its_norton_form` asserts the four matrix entries and two right-side entries of the diode at a hand-computed bias (C2)
+- [x] Test `a_potential_source_stamps_through_its_private_pin` asserts the voltage source of abi.md A1 gives the same five positions and the right side `V` that `branch_force` gives today
+- [x] Test `a_divider_solves_to_its_ratio` drives `NewtonRaphsonSolver` with `assemble_dc` on a source and two resistors and reads 7.5 V within 1e-12
+- [x] Test `a_diode_satisfies_its_own_equation` passes with the tolerance of `helper_devices.rs`
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

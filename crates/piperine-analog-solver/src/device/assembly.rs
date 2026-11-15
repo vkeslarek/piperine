@@ -6,11 +6,14 @@
 //! `set_discrete` (abi.md §10). A non-finite value or seeded partial that the
 //! solve reads fails it, naming instance, cell and origin (A4).
 
-use piperine_abi::raw::ambient;
+use piperine_abi::raw::{ambient, op};
 
 use super::device_error;
+use super::flow::{direct, stamp_flow};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source};
 use crate::error::Error;
+use crate::math::linear::Stamp;
+use crate::netlist::AnalogReference;
 
 /// The coordinates of one solve (abi.md §4.2, ambient inputs).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -132,6 +135,23 @@ impl Assembly {
             check_finite(inst, st)?;
         }
         Ok(())
+    }
+}
+
+impl Assembly {
+    /// The stamps of an equilibrium solve at iterate `x`: every `FLOW` term
+    /// in its Norton form.
+    pub fn assemble_dc(&mut self, x: &[f64], amb: Ambient) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
+        self.evaluate(x, amb)?;
+        let mut out = Vec::new();
+        for (inst, st) in self.plan.instances.iter().zip(&self.state) {
+            for t in &inst.terms {
+                if t.op == op::FLOW {
+                    stamp_flow(t, &direct(t, st), x, &mut out);
+                }
+            }
+        }
+        Ok(out)
     }
 }
 

@@ -440,7 +440,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 12] = [const { OnceLock::new() }; 12];
+    static M: [OnceLock<Module>; 14] = [const { OnceLock::new() }; 14];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -454,6 +454,8 @@ pub fn modules() -> Modules {
         counted: module_of::<CountedResistor>(&M[9], "CountedResistor"),
         probe: module_of::<Probe>(&M[10], "Probe"),
         faulty: module_of::<Faulty>(&M[11], "Faulty"),
+        plain_diode: module_of::<PlainDiode>(&M[12], "PlainDiode"),
+        vsource: module_of::<VSource>(&M[13], "VSource"),
     }
 }
 
@@ -472,6 +474,8 @@ pub struct Modules {
     pub counted: &'static Module,
     pub probe: &'static Module,
     pub faulty: &'static Module,
+    pub plain_diode: &'static Module,
+    pub vsource: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)
@@ -777,6 +781,100 @@ impl Device for Faulty {
         let g = if mode == 2.0 { f64::INFINITY } else { 1.0 };
         let dm = if mode == 3.0 { f64::INFINITY } else { 0.0 };
         cx.jac().copy_from_slice(&[g, -1.0, dm]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+// ─── Plain devices for analytic circuits ────────────────────────────────────
+
+/// The thermal voltage of the plain diode, as `tests/helpers/devices.rs` of
+/// `piperine-solver` writes it.
+pub const VT: f64 = 0.02585;
+
+/// pins: is=0 (PARAM F64); a=1, k=2 (PORT continuous)
+/// terms: T0 FLOW {a, k} "id" = is·(exp(v/VT) − 1), no limiting
+/// fn 0 "id": reads [a, k, is] writes [T0] partials (0←0) (0←1) (0←2)
+pub struct PlainDiode;
+static PLAIN_DIODE: OnceLock<ShapeRef> = OnceLock::new();
+
+fn plain_diode_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let is = s.pin(param("is"));
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let k = s.pin(PinSpec::continuous("k", role::PORT));
+    let t0 = s.term(flow("id", op::FLOW, a, k));
+    s.function(FunctionSpec {
+        name: "id",
+        reads: vec![pin(a), pin(k), pin(is)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1), partial(0, 2)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for PlainDiode {
+    fn prototype() -> &'static Shape {
+        shared(&PLAIN_DIODE, plain_diode_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((PlainDiode, Arc::clone(shared(&PLAIN_DIODE, plain_diode_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (v, is) = (cx.f64(0) - cx.f64(1), cx.f64(2));
+        let e = (v / VT).exp();
+        cx.set(0, is * (e - 1.0));
+        let gd = is * e / VT;
+        cx.jac().copy_from_slice(&[gd, -gd, e - 1.0]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A potential source written as abi.md A1 says: a private continuous pin
+/// `f` carries the branch flow.
+/// pins: dc=0 (PARAM F64); p=1, n=2 (PORT continuous); f=3 (PRIVATE continuous)
+/// terms: T0 FLOW {p, n} "i" = f;  T1 FLOW {f, GROUND} "eq" = x(p) − x(n) − dc·SOURCE_SCALE
+/// fn 0 "v": reads [p, n, f, dc, SOURCE_SCALE] writes [T0, T1]
+///           partials (0←2)=1 (1←0)=1 (1←1)=−1 (1←3)=−SOURCE_SCALE
+pub struct VSource;
+static VSOURCE: OnceLock<ShapeRef> = OnceLock::new();
+
+fn vsource_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let dc = s.pin(param("dc"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
+    let t0 = s.term(flow("i", op::FLOW, p, n));
+    let t1 = s.term(flow("eq", op::FLOW, f, GROUND));
+    s.function(FunctionSpec {
+        name: "v",
+        reads: vec![pin(p), pin(n), pin(f), pin(dc), ambient(ambient::SOURCE_SCALE)],
+        writes: vec![term(t0), term(t1)],
+        partials: vec![partial(0, 2), partial(1, 0), partial(1, 1), partial(1, 3)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for VSource {
+    fn prototype() -> &'static Shape {
+        shared(&VSOURCE, vsource_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((VSource, Arc::clone(shared(&VSOURCE, vsource_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let scale = cx.f64(4);
+        cx.set(0, cx.f64(2));
+        cx.set(1, cx.f64(0) - cx.f64(1) - cx.f64(3) * scale);
+        cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -scale]);
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {

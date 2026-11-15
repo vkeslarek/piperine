@@ -12,17 +12,20 @@ mod circuit;
 #[allow(dead_code)]
 #[path = "support/devices.rs"]
 mod devices;
+#[allow(dead_code)]
+#[path = "support/system.rs"]
+mod system;
 
 use std::collections::HashSet;
 
-use circuit::{at, instance, netlist};
+use circuit::{at, f64_bytes, instance, netlist};
 use devices::{Modules, modules};
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::Module;
 use piperine_abi::validate::{Rule, validate};
 use piperine_abi::verify::{Verdict, verify_partials};
 use piperine_analog_solver::device::AnalogBinding::{Absent, Discrete, Ground};
-use piperine_analog_solver::device::AnalogPlan;
+use piperine_analog_solver::device::{AnalogPlan, Assembly};
 use piperine_analog_solver::netlist::AnalogReference;
 
 /// The pattern as a set of `(row, column)` unknown indices.
@@ -51,11 +54,21 @@ fn the_pattern_is_terms_times_partials() {
     let (a, k) = (idx(&n[0]), idx(&n[1]));
     assert_eq!(positions(&plan), HashSet::from([(a, a), (a, k), (k, a), (k, k)]));
 
-    // The cubic's partials vanish at zero bias; its positions are declared.
+    // The cubic's partials vanish at zero bias; its positions are declared,
+    // and an equilibrium solve stamps every one of them at any bias.
     let cubic = instance("c1", m.cubic, vec![Discrete(0), at(&n[2]), at(&n[3])]);
     let plan = AnalogPlan::bind(vec![cubic], &net).expect("bind");
     let (p, q) = (idx(&n[2]), idx(&n[3]));
-    assert_eq!(positions(&plan), HashSet::from([(p, p), (p, q), (q, p), (q, q)]));
+    let want = HashSet::from([(p, p), (p, q), (q, p), (q, q)]);
+    assert_eq!(positions(&plan), want);
+    let mut asm = Assembly::new(plan);
+    asm.set_discrete(0, &f64_bytes(2.0));
+    for (bias, zero) in [(0.0, true), (0.5, false), (0.0, true)] {
+        let stamps = asm.assemble_dc(&[0.0, 0.0, bias, 0.0], system::at_rest()).expect("assemble");
+        assert_eq!(system::matrix_positions(&stamps), want, "at bias {bias}");
+        let (a, _) = system::dense(&stamps, 4);
+        assert_eq!(a[p][p] == 0.0, zero, "the partial at bias {bias} is {}", a[p][p]);
+    }
 }
 
 #[test]
@@ -110,7 +123,7 @@ fn an_analog_bind_error_names_its_entry() {
 }
 
 /// The fixtures that must pass every rule (all but `bad_limit`).
-fn valid(m: &Modules) -> [(&'static str, &'static Module); 11] {
+fn valid(m: &Modules) -> [(&'static str, &'static Module); 13] {
     [
         ("resistor", m.resistor),
         ("diode", m.diode),
@@ -123,6 +136,8 @@ fn valid(m: &Modules) -> [(&'static str, &'static Module); 11] {
         ("counted", m.counted),
         ("probe", m.probe),
         ("faulty", m.faulty),
+        ("plain_diode", m.plain_diode),
+        ("vsource", m.vsource),
     ]
 }
 
@@ -161,6 +176,8 @@ fn every_fixture_function_passes_the_partials_verifier() {
         ("counted", m.counted, 0, vec![f(1.2), f(0.3), f(1e3)]),
         ("probe", m.probe, 0, vec![f(0.3), f(1e-6), f(0.0), vec![1], f(1e-12), f(1.0)]),
         ("faulty", m.faulty, 0, vec![f(0.9), f(0.2), f(0.0)]),
+        ("plain_diode", m.plain_diode, 0, vec![f(0.6), f(0.0), f(1e-14)]),
+        ("vsource", m.vsource, 0, vec![f(3.0), f(1.0), f(2e-3), f(5.0), f(0.5)]),
     ];
     for (name, module, k, input) in points {
         let h = Handle::create(module, &[]).expect("create");
