@@ -1,0 +1,514 @@
+//! The shape-local rules of abi.md §9 (feature `solver-abi-core`, SAC-09):
+//! the bind checks that need one shape and no net. Lists are read only
+//! through `List::get`, every index is checked before it is followed, and no
+//! constant is interpreted before it is known. The rules that need nets (one
+//! writer, layout equality across a net, cycles, the parameter cone) belong
+//! to the sub-solvers' bind.
+
+use std::fmt;
+
+use crate::layout::leaf_size;
+use crate::raw::{
+    Cell, DEFAULT, Function, GROUND, Layout, Pin, Reaction, Shape, Str, ambient, cell, field_flag, fn_flag, global,
+    input, kind, leaf, op, part, pin_flag, reaction_flag, role, statement_flag, watch,
+};
+
+/// One shape-local rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Rule {
+    /// A constant outside the set its field allows, or a part its cell does not have.
+    UnknownConstant,
+    /// An index past the end of the list it names.
+    IndexOutOfRange,
+    /// A pin kind and role pair outside abi.md §3.1.
+    KindRole,
+    /// A partial whose `to` or `at` is not the byte of an `F64`.
+    PartialNotF64,
+    /// A term whose `plus` or `minus` is not a continuous pin or `GROUND`.
+    TermTargetNotContinuous,
+    /// A function writing analog cells and pins (F2).
+    MixedSorts,
+    /// A discrete function reading an input or a continuous pin (F2, §4.2).
+    DiscreteReadsAnalog,
+    /// `CHANGED` read by a function that writes anything but event pins (§4.1).
+    ChangedReadByWriter,
+    /// A function writing a limit and a term without `OWNS_CORRECTION`, or
+    /// with it and a partial against that limit (A3).
+    LimitCorrection,
+    /// A function reading a `QUIET` pin (P7).
+    QuietRead,
+    /// A reaction listening to a pin that is not an event pin (R1).
+    ReactionOnNonEvent,
+    /// A `PARAM` pin after a pin that is not one (P5).
+    ParamAfterNonParam,
+}
+
+impl Rule {
+    /// Every rule, in the order of the spec's list.
+    pub const ALL: [Rule; 12] = [
+        Rule::UnknownConstant,
+        Rule::IndexOutOfRange,
+        Rule::KindRole,
+        Rule::PartialNotF64,
+        Rule::TermTargetNotContinuous,
+        Rule::MixedSorts,
+        Rule::DiscreteReadsAnalog,
+        Rule::ChangedReadByWriter,
+        Rule::LimitCorrection,
+        Rule::QuietRead,
+        Rule::ReactionOnNonEvent,
+        Rule::ParamAfterNonParam,
+    ];
+
+    fn sentence(self) -> &'static str {
+        match self {
+            Rule::UnknownConstant => "an unknown constant, or a part its cell does not have",
+            Rule::IndexOutOfRange => "an index out of range",
+            Rule::KindRole => "a pin kind and role pair outside abi.md §3.1",
+            Rule::PartialNotF64 => "a partial whose `to` or `at` is not an F64",
+            Rule::TermTargetNotContinuous => "a term target that is not a continuous pin",
+            Rule::MixedSorts => "a function writing both analog cells and pins (F2)",
+            Rule::DiscreteReadsAnalog => "a discrete function reading an input or a continuous pin",
+            Rule::ChangedReadByWriter => "CHANGED read by a function that writes a discrete pin or an analog cell",
+            Rule::LimitCorrection => {
+                "a function writing a limit and a term without OWNS_CORRECTION, or with it and a partial against that limit"
+            }
+            Rule::QuietRead => "a function reading a QUIET pin",
+            Rule::ReactionOnNonEvent => "a reaction listening to a non-event pin",
+            Rule::ParamAfterNonParam => "a PARAM pin after a non-PARAM pin (P5)",
+        }
+    }
+}
+
+impl fmt::Display for Rule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.sentence())
+    }
+}
+
+/// A broken rule: which, at which entry (`"pin p"`, `"function i"`, …), and
+/// the entry's source position.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShapeError {
+    pub rule: Rule,
+    pub entry: String,
+    pub origin: String,
+    /// What exactly is wrong, for the reader.
+    pub detail: String,
+}
+
+impl fmt::Display for ShapeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {} ({}): {}", self.origin, self.entry, self.rule, self.detail)
+    }
+}
+
+impl std::error::Error for ShapeError {}
+
+/// The bytes a cell holds, as far as a check needs them.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CellBytes<'s> {
+    F64,
+    Byte,
+    I64,
+    Layout(&'s Layout),
+}
+
+impl CellBytes<'_> {
+    /// Whether byte `at` starts an `F64` of this cell.
+    fn f64_at(self, at: u32) -> bool {
+        match self {
+            CellBytes::F64 => at == 0,
+            CellBytes::Byte | CellBytes::I64 => false,
+            CellBytes::Layout(l) => l.fields.iter().any(|f| {
+                f.leaf == leaf::F64 && at >= f.offset && (at - f.offset).is_multiple_of(8) && (at - f.offset) / 8 < f.count
+            }),
+        }
+    }
+}
+
+/// How a cell is used.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Access {
+    FunctionRead,
+    FunctionWrite,
+    ReactionRead,
+}
+
+/// The entry an error names.
+struct Entry<'s> {
+    what: &'static str,
+    name: &'s Str,
+    origin: &'s Str,
+}
+
+impl Entry<'_> {
+    fn fail(&self, rule: Rule, detail: String) -> ShapeError {
+        ShapeError {
+            rule,
+            entry: format!("{} {}", self.what, self.name.as_str()),
+            origin: self.origin.as_str().to_string(),
+            detail,
+        }
+    }
+}
+
+fn known(value: u32, set: &[u32]) -> bool {
+    set.contains(&value)
+}
+
+fn known_bits(value: u32, all: u32) -> bool {
+    value & !all == 0
+}
+
+const KINDS: &[u32] = &[kind::CONTINUOUS, kind::DISCRETE, kind::EVENT];
+const ROLES: &[u32] = &[role::PORT, role::PARAM, role::GLOBAL, role::PRIVATE];
+const GLOBALS: &[u32] = &[
+    global::TEMPERATURE,
+    global::RESOLUTION,
+    global::DC,
+    global::TRAN,
+    global::AC,
+    global::NOISE,
+    global::START,
+    global::SETTLE,
+    global::NAMED,
+];
+const PIN_FLAGS: u32 = pin_flag::STRUCTURAL
+    | pin_flag::OPTIONAL
+    | pin_flag::HAS_INIT
+    | pin_flag::HAS_CHECK
+    | pin_flag::QUIET
+    | pin_flag::RECORD
+    | pin_flag::RELAX;
+const OPS: &[u32] = &[op::FLOW, op::DDT, op::DELAY];
+const INPUTS: &[u32] = &[input::LIMIT, input::NOISE, input::STIM];
+const WATCHES: &[u32] = &[watch::VAR, watch::CROSS, watch::CAP, watch::TRACE];
+const CELLS: &[u32] = &[cell::PIN, cell::TERM, cell::INPUT, cell::WATCH, cell::AMBIENT];
+const PARTS: &[u32] = &[
+    part::VALUE,
+    part::PREVIOUS,
+    part::CHANGED,
+    part::TIME,
+    part::LAST,
+    part::AGE,
+    part::PROPOSED,
+    part::LIMITED,
+    part::PSD,
+    part::RE,
+    part::IM,
+];
+const AMBIENTS: &[u32] = &[
+    ambient::TIME,
+    ambient::FREQ,
+    ambient::STATIC,
+    ambient::GMIN,
+    ambient::SOURCE_SCALE,
+    ambient::TICK,
+    ambient::HORIZON,
+];
+const STATEMENT_FLAGS: u32 = statement_flag::LATER | statement_flag::REPLACE;
+
+/// Checks every shape-local rule of abi.md §9; the first broken one is returned.
+pub fn validate(shape: &Shape) -> Result<(), ShapeError> {
+    let mut seen_non_param = false;
+    for pin in shape.pins.iter() {
+        check_pin(shape, pin)?;
+        let e = Entry { what: "pin", name: &pin.name, origin: &pin.origin };
+        if pin.role == role::PARAM && seen_non_param {
+            return Err(e.fail(Rule::ParamAfterNonParam, "PARAM pins come first (P5)".into()));
+        }
+        seen_non_param |= pin.role != role::PARAM;
+    }
+    for term in shape.terms.iter() {
+        let e = Entry { what: "term", name: &term.name, origin: &term.origin };
+        if !known(term.op, OPS) {
+            return Err(e.fail(Rule::UnknownConstant, format!("op {}", term.op)));
+        }
+        for (side, target) in [("plus", term.plus), ("minus", term.minus)] {
+            if target == GROUND {
+                continue;
+            }
+            let Some(pin) = shape.pins.get(target as usize) else {
+                return Err(e.fail(Rule::IndexOutOfRange, format!("{side} = {target}")));
+            };
+            if pin.kind != kind::CONTINUOUS {
+                return Err(e.fail(
+                    Rule::TermTargetNotContinuous,
+                    format!("{side} is pin {}", pin.name.as_str()),
+                ));
+            }
+        }
+        for (what, index) in [("abstol", term.abstol), ("max", term.max)] {
+            if index != DEFAULT && shape.pins.get(index as usize).is_none() {
+                return Err(e.fail(Rule::IndexOutOfRange, format!("{what} = {index}")));
+            }
+        }
+    }
+    for inp in shape.inputs.iter() {
+        if !known(inp.kind, INPUTS) {
+            let e = Entry { what: "input", name: &inp.name, origin: &inp.origin };
+            return Err(e.fail(Rule::UnknownConstant, format!("kind {}", inp.kind)));
+        }
+    }
+    for w in shape.watches.iter() {
+        let e = Entry { what: "watch", name: &w.name, origin: &w.origin };
+        if !known(w.kind, WATCHES) {
+            return Err(e.fail(Rule::UnknownConstant, format!("kind {}", w.kind)));
+        }
+        check_layout(&e, &w.layout)?;
+        if w.kind == watch::CROSS && shape.pins.get(w.event as usize).is_none() {
+            return Err(e.fail(Rule::IndexOutOfRange, format!("event = {}", w.event)));
+        }
+        for (what, index) in [("ttol", w.ttol), ("etol", w.etol)] {
+            if w.kind == watch::CROSS && index != DEFAULT && shape.pins.get(index as usize).is_none() {
+                return Err(e.fail(Rule::IndexOutOfRange, format!("{what} = {index}")));
+            }
+        }
+    }
+    for f in shape.functions.iter() {
+        check_function(shape, f)?;
+    }
+    for r in shape.reactions.iter() {
+        check_reaction(shape, r)?;
+    }
+    Ok(())
+}
+
+fn check_pin(shape: &Shape, pin: &Pin) -> Result<(), ShapeError> {
+    let e = Entry { what: "pin", name: &pin.name, origin: &pin.origin };
+    if !known(pin.kind, KINDS) {
+        return Err(e.fail(Rule::UnknownConstant, format!("kind {}", pin.kind)));
+    }
+    if !known(pin.role, ROLES) {
+        return Err(e.fail(Rule::UnknownConstant, format!("role {}", pin.role)));
+    }
+    if pin.role == role::GLOBAL && !known(pin.global, GLOBALS) {
+        return Err(e.fail(Rule::UnknownConstant, format!("global {}", pin.global)));
+    }
+    if !known_bits(pin.flags, PIN_FLAGS) {
+        return Err(e.fail(Rule::UnknownConstant, format!("flags {:#x}", pin.flags)));
+    }
+    check_layout(&e, &pin.layout)?;
+    let allowed = match pin.kind {
+        kind::CONTINUOUS => pin.role == role::PORT || pin.role == role::PRIVATE,
+        kind::EVENT => pin.role != role::PARAM,
+        _ => true,
+    };
+    if !allowed {
+        return Err(e.fail(Rule::KindRole, format!("kind {} with role {}", pin.kind, pin.role)));
+    }
+    if pin.flags & pin_flag::HAS_CHECK != 0 && shape.pins.get(pin.check as usize).is_none() {
+        return Err(e.fail(Rule::IndexOutOfRange, format!("check = {}", pin.check)));
+    }
+    Ok(())
+}
+
+fn check_layout(e: &Entry<'_>, layout: &Layout) -> Result<(), ShapeError> {
+    for f in layout.fields.iter() {
+        let Some(width) = leaf_size(f.leaf) else {
+            return Err(e.fail(Rule::UnknownConstant, format!("field {} leaf {}", f.name.as_str(), f.leaf)));
+        };
+        if !known_bits(f.flags, field_flag::HAS_KNOWN) {
+            return Err(e.fail(Rule::UnknownConstant, format!("field {} flags {:#x}", f.name.as_str(), f.flags)));
+        }
+        let end = f.offset as u64 + width as u64 * f.count as u64;
+        let known_end = f.known as u64 + f.count as u64;
+        if end > layout.size as u64 || (f.flags & field_flag::HAS_KNOWN != 0 && known_end > layout.size as u64) {
+            return Err(e.fail(
+                Rule::IndexOutOfRange,
+                format!("field {} lies past the layout's {} bytes", f.name.as_str(), layout.size),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The bytes of `c` under `access`, after checking its constants and index.
+pub(crate) fn cell_bytes<'s>(
+    shape: &'s Shape,
+    c: &Cell,
+    access: Access,
+) -> Result<CellBytes<'s>, (Rule, String)> {
+    if !known(c.kind, CELLS) {
+        return Err((Rule::UnknownConstant, format!("cell kind {}", c.kind)));
+    }
+    if !known(c.part, PARTS) {
+        return Err((Rule::UnknownConstant, format!("cell part {}", c.part)));
+    }
+    let no_part = || Err((Rule::UnknownConstant, format!("part {} of cell kind {} index {}", c.part, c.kind, c.index)));
+    let out_of_range = || Err((Rule::IndexOutOfRange, format!("cell kind {} index {}", c.kind, c.index)));
+    let read = access != Access::FunctionWrite;
+    match c.kind {
+        cell::PIN => {
+            let Some(pin) = shape.pins.get(c.index as usize) else { return out_of_range() };
+            match (pin.kind, c.part, read) {
+                (kind::CONTINUOUS, part::VALUE, true) => Ok(CellBytes::F64),
+                (kind::DISCRETE, part::VALUE, _) | (kind::DISCRETE, part::PREVIOUS, true) => {
+                    Ok(CellBytes::Layout(&pin.layout))
+                }
+                (kind::DISCRETE, part::CHANGED, true) | (kind::EVENT, part::CHANGED, _) => Ok(CellBytes::Byte),
+                _ => no_part(),
+            }
+        }
+        cell::AMBIENT => {
+            if !known(c.index, AMBIENTS) {
+                return Err((Rule::UnknownConstant, format!("ambient {}", c.index)));
+            }
+            let reaction_ok = matches!(c.index, ambient::TIME | ambient::STATIC | ambient::TICK | ambient::HORIZON);
+            let function_ok = !matches!(c.index, ambient::TICK | ambient::HORIZON);
+            let ok = match access {
+                Access::FunctionRead => function_ok,
+                Access::ReactionRead => reaction_ok,
+                Access::FunctionWrite => false,
+            };
+            if !ok || c.part != part::VALUE {
+                return no_part();
+            }
+            Ok(match c.index {
+                ambient::STATIC => CellBytes::Byte,
+                ambient::TICK | ambient::HORIZON => CellBytes::I64,
+                _ => CellBytes::F64,
+            })
+        }
+        _ if access == Access::ReactionRead => no_part(),
+        cell::TERM => {
+            let Some(term) = shape.terms.get(c.index as usize) else { return out_of_range() };
+            match (c.part, read) {
+                (part::VALUE, false) => Ok(CellBytes::F64),
+                (part::TIME, false) if term.op == op::DELAY => Ok(CellBytes::F64),
+                _ => no_part(),
+            }
+        }
+        cell::INPUT => {
+            let Some(inp) = shape.inputs.get(c.index as usize) else { return out_of_range() };
+            match (inp.kind, c.part, read) {
+                (_, part::VALUE, true) => Ok(CellBytes::F64),
+                (input::LIMIT, part::LAST, true) => Ok(CellBytes::F64),
+                (input::LIMIT, part::AGE, true) => Ok(CellBytes::Byte),
+                (input::LIMIT, part::PROPOSED | part::LIMITED, false)
+                | (input::NOISE, part::PSD, false)
+                | (input::STIM, part::RE | part::IM, false) => Ok(CellBytes::F64),
+                _ => no_part(),
+            }
+        }
+        _ => {
+            let Some(w) = shape.watches.get(c.index as usize) else { return out_of_range() };
+            match (c.part, read) {
+                (part::VALUE, false) if w.kind == watch::CROSS || w.kind == watch::CAP => Ok(CellBytes::F64),
+                (part::VALUE, false) => Ok(CellBytes::Layout(&w.layout)),
+                _ => no_part(),
+            }
+        }
+    }
+}
+
+fn check_function(shape: &Shape, f: &Function) -> Result<(), ShapeError> {
+    let e = Entry { what: "function", name: &f.name, origin: &f.origin };
+    if !known_bits(f.flags, fn_flag::OWNS_CORRECTION) {
+        return Err(e.fail(Rule::UnknownConstant, format!("flags {:#x}", f.flags)));
+    }
+    let mut reads = Vec::with_capacity(f.reads.len());
+    for c in f.reads.iter() {
+        reads.push(cell_bytes(shape, c, Access::FunctionRead).map_err(|(rule, d)| e.fail(rule, d))?);
+    }
+    let mut writes = Vec::with_capacity(f.writes.len());
+    for c in f.writes.iter() {
+        writes.push(cell_bytes(shape, c, Access::FunctionWrite).map_err(|(rule, d)| e.fail(rule, d))?);
+    }
+    for (i, p) in f.partials.iter().enumerate() {
+        let (Some(w), Some(r)) = (writes.get(p.write as usize), reads.get(p.read as usize)) else {
+            return Err(e.fail(Rule::IndexOutOfRange, format!("partial {i}: write {} read {}", p.write, p.read)));
+        };
+        if !w.f64_at(p.to) || !r.f64_at(p.at) {
+            return Err(e.fail(Rule::PartialNotF64, format!("partial {i}: to {} at {}", p.to, p.at)));
+        }
+    }
+
+    let writes_pin = f.writes.iter().any(|c| c.kind == cell::PIN);
+    let writes_analog = f.writes.iter().any(|c| c.kind != cell::PIN);
+    if writes_pin && writes_analog {
+        return Err(e.fail(Rule::MixedSorts, "writes analog cells and pins".into()));
+    }
+    let pin_of = |c: &Cell| shape.pins.get(c.index as usize).filter(|_| c.kind == cell::PIN);
+    if writes_pin {
+        for c in f.reads.iter() {
+            let analog = matches!(c.kind, cell::INPUT | cell::AMBIENT)
+                || pin_of(c).is_some_and(|p| p.kind == kind::CONTINUOUS);
+            if analog {
+                return Err(e.fail(
+                    Rule::DiscreteReadsAnalog,
+                    format!("reads cell kind {} index {}", c.kind, c.index),
+                ));
+            }
+        }
+    }
+    let event_only = f.writes.iter().all(|c| pin_of(c).is_some_and(|p| p.kind == kind::EVENT));
+    if !event_only && f.reads.iter().any(|c| c.kind == cell::PIN && c.part == part::CHANGED) {
+        return Err(e.fail(Rule::ChangedReadByWriter, "reads CHANGED".into()));
+    }
+
+    let limit_writes: Vec<u32> = f
+        .writes
+        .iter()
+        .filter(|c| c.kind == cell::INPUT && (c.part == part::PROPOSED || c.part == part::LIMITED))
+        .map(|c| c.index)
+        .collect();
+    let writes_term = f.writes.iter().any(|c| c.kind == cell::TERM);
+    if !limit_writes.is_empty() && writes_term {
+        if f.flags & fn_flag::OWNS_CORRECTION == 0 {
+            return Err(e.fail(Rule::LimitCorrection, "writes a limit and a term without OWNS_CORRECTION".into()));
+        }
+        for p in f.partials.iter() {
+            let against = f.reads.get(p.read as usize);
+            if against.is_some_and(|c| c.kind == cell::INPUT && limit_writes.contains(&c.index)) {
+                return Err(e.fail(
+                    Rule::LimitCorrection,
+                    "OWNS_CORRECTION with a partial against the limit it writes".into(),
+                ));
+            }
+        }
+    }
+
+    for c in f.reads.iter() {
+        if let Some(p) = pin_of(c)
+            && p.flags & (pin_flag::QUIET | pin_flag::RECORD) != 0
+        {
+            return Err(e.fail(Rule::QuietRead, format!("reads quiet pin {}", p.name.as_str())));
+        }
+    }
+    Ok(())
+}
+
+fn check_reaction(shape: &Shape, r: &Reaction) -> Result<(), ShapeError> {
+    let e = Entry { what: "reaction", name: &r.name, origin: &r.origin };
+    if !known_bits(r.flags, reaction_flag::IRREVERSIBLE) {
+        return Err(e.fail(Rule::UnknownConstant, format!("flags {:#x}", r.flags)));
+    }
+    for index in r.on.iter() {
+        let Some(pin) = shape.pins.get(*index as usize) else {
+            return Err(e.fail(Rule::IndexOutOfRange, format!("on {index}")));
+        };
+        if pin.kind != kind::EVENT {
+            return Err(e.fail(Rule::ReactionOnNonEvent, format!("on pin {}", pin.name.as_str())));
+        }
+    }
+    for c in r.reads.iter() {
+        cell_bytes(shape, c, Access::ReactionRead).map_err(|(rule, d)| e.fail(rule, d))?;
+    }
+    for (i, s) in r.writes.iter().enumerate() {
+        if !known_bits(s.flags, STATEMENT_FLAGS) {
+            return Err(e.fail(Rule::UnknownConstant, format!("statement {i} flags {:#x}", s.flags)));
+        }
+        let Some(pin) = shape.pins.get(s.pin as usize) else {
+            return Err(e.fail(Rule::IndexOutOfRange, format!("statement {i} pin {}", s.pin)));
+        };
+        if s.offset as u64 + s.len as u64 > pin.layout.size as u64 {
+            return Err(e.fail(
+                Rule::IndexOutOfRange,
+                format!("statement {i}: bytes {}..+{} past pin {}", s.offset, s.len, pin.name.as_str()),
+            ));
+        }
+    }
+    Ok(())
+}

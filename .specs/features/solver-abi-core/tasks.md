@@ -162,12 +162,12 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] `Rule` has one variant per rule of the spec's list (twelve); `ShapeError` carries rule, entry name and `origin`
-- [ ] Test `every_shape_local_rule_is_enforced` walks a plain table of (rule, planted defect) with one row per rule and asserts the rule and the entry name in each error (C8)
-- [ ] Test `a_zeroed_shape_entry_is_an_unknown_constant` passes
-- [ ] Test `an_index_is_checked_before_it_is_followed` passes: a cell index of `u32::MAX` returns an error and reads nothing
-- [ ] The valid resistor and flip-flop fixtures return `Ok`
-- [ ] Gate: build
+- [x] `Rule` has one variant per rule of the spec's list (twelve); `ShapeError` carries rule, entry name and `origin`
+- [x] Test `every_shape_local_rule_is_enforced` walks a plain table of (rule, planted defect) with one row per rule and asserts the rule and the entry name in each error (C8)
+- [x] Test `a_zeroed_shape_entry_is_an_unknown_constant` passes
+- [x] Test `an_index_is_checked_before_it_is_followed` passes: a cell index of `u32::MAX` returns an error and reads nothing
+- [x] The valid resistor and flip-flop fixtures return `Ok`
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build
