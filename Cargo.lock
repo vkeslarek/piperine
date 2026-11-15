@@ -1471,12 +1471,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-interp"
+version = "0.2.0"
+dependencies = [
+ "piperine-abi",
+ "piperine-ir",
+ "piperine-solver",
+]
+
+[[package]]
+name = "piperine-ir"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "piperine-lang"
 version = "0.2.0"
 dependencies = [
  "chumsky",
  "logos",
  "miette",
+ "piperine-ir",
  "serde",
  "serde_json",
  "stacker",

@@ -7,19 +7,20 @@ diagram, crate table, known gaps) — read both before making changes.
 
 A mixed-signal language and simulator. `piperine-lang` parses and elaborates the source
 (Verilog-AMS LRM 2.4, `.vams`/`.va`, Annex A grammar only, C7 — never a third-party
-Verilog-A compiler) into a POM `Design`. The native solver is three crates:
+Verilog-A compiler) into a POM `Design`, type-checks the M1 subset (`types/`) and
+elaborates it into `piperine-ir`'s `Ir` (`elab/`). The native solver is three crates:
 `piperine-solver` (analyses and the owner protocol over the device ABI) owning `piperine-analog-solver` and
 `piperine-digital-solver`, which meet only through events at an instant, run by the owner protocol (MD-62). PHDL was retired in full
 (MD-44/MD-45).
 
-**Only `piperine-lang`, `piperine-abi` and the three solver crates compile today.** The root `piperine`
+**Only `piperine-lang`, `piperine-ir`, `piperine-abi` and the three solver crates compile today.** The root `piperine`
 shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` stay in the tree but do not
 build until the new device compiler lands.
 
 ```
-source ──► piperine-lang ──► Design (POM) ──► device compiler (to come)
-                                                   │
-                       piperine-solver (owner) ◄───┘
+source ──► piperine-lang ──► Design (POM) ──► Ir (piperine-ir) ──► device compiler (to come)
+                                                                       │
+                       piperine-solver (owner) ◄───────────────────────┘
                        ├── piperine-analog-solver
                        └── piperine-digital-solver
                                    │
@@ -45,7 +46,8 @@ cargo test      # their whole suite; never `--workspace` (four crates do not bui
 
 ```
 crates/
-├── piperine-lang/            parser + elaborator: grammar/ elab/ pom/ eval/ (+ headers/)
+├── piperine-lang/            parser + type checker + elaborator: msl/ pom/ types/ elab/ (+ std/)
+├── piperine-ir/              the IR: arenas, builder, check(), printer and parser
 ├── piperine-abi/             device ABI: repr(C) contract, Device trait, thunks, caller::Handle, validate, verify
 ├── piperine-solver/          owner: protocol/, analyses/, bind (core/), Net naming, prelude
 ├── piperine-analog-solver/   analog sub-solver: math/, device/ (Assembly), convergence, TrBdf2

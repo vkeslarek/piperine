@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/msl-elab/design.md`
-**Status**: Approved
+**Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-ir || cargo build -p piperine-ir --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run entry**: `cargo test -p piperine-lang --test elab_entry`
 **Run params**: `cargo test -p piperine-lang --test elab_params`
@@ -19,7 +19,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run analog**: `cargo test -p piperine-lang --test elab_analog`
 **Run unlowered**: `cargo test -p piperine-lang --test elab_unlowered`
 
-Executors: Sonnet implements T1 to T6 and T8 to T10; Opus implements T7 (the contribution split: a wrong sign or a misplaced `ddt` is a silent wrong answer); Opus verifies the feature. The worktree and branch are told at dispatch. This feature runs in wave 2: it needs `msl-ir` (the crate `piperine-ir`, its `IrBuilder`, printer, `check()` and golden texts) and `msl-typeck` (`piperine_lang::types`) merged into the worktree first.
+Executors: Sonnet implements T1 to T6 and T8 to T10; Opus implements T7 (the contribution split: a wrong sign or a misplaced `ddt` is a silent wrong answer); Opus verifies the feature. The worktree and branch are told at dispatch. This feature runs in wave 2: it needs `msl-ir` (the crate `piperine-ir`, its `IrBuilder`, printer, `check()` and structural golden texts) and `msl-typeck` (`piperine_lang::types`) merged into the worktree first.
 
 Rules every task follows:
 
@@ -30,7 +30,7 @@ Rules every task follows:
 - The M1 corpus is `tests/ngspice/devices.msl` and the six twins beside it, read from disk by tests (`CARGO_MANIFEST_DIR/../../tests/ngspice`). They are not edited.
 - **Every `Ir` returned passes `Ir::check()`**; each test that gets an `Ir` asserts it.
 - **Constants are folded, params never** (ELAB-02 AC 5 and 6): a host `set` must reach the solver without re-elaboration (MD-18).
-- **The printed IR is the contract with `ir-interp`.** The bodies elaborated from `tests/ngspice/devices.msl` must print byte for byte as `crates/piperine-ir/tests/golden/{resistor,capacitor,vsource,isource,diode}.txt`. A difference is settled by reading `devices.msl`: whichever side misreads it is fixed, and a change to a golden of `piperine-ir` is reported in the batch summary.
+- **The printed IR is the contract with `ir-interp`.** The bodies elaborated from `tests/ngspice/devices.msl`, printed in structural form (`Ir::print_structural`: no origins, arena order not significant), must equal `crates/piperine-ir/tests/golden/{resistor,capacitor,vsource,isource,diode}.txt` byte for byte. A difference is settled by reading `devices.msl`: whichever side misreads it is fixed, and a change to a golden of `piperine-ir` is reported in the batch summary.
 - Tests compare printed IR, paths and diagnostics; they never reach into crate-private lowering state.
 - **Fail loud.** A form the code does not handle is a diagnostic, a `Fault` or an entry of `check()`, never a silent default.
 - **AGENTS.md idiom rules bind**: no loose function (every `fn` is a method of a struct or a trait), no macro of your own (`macro_rules!`, proc-macros; derives are fine), modules named after what they do, no `unwrap()`/`expect()` on a user-input path.
@@ -48,7 +48,7 @@ Rules every task follows:
 
 | Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
 | ---------- | ------------------ | -------------------- | ---------------- | ----------- |
-| Entry point, determinism, the corpus, golden IR | unit | each AC of ELAB-01 and ELAB-05; one golden file per twin; device bodies equal to `piperine-ir`'s goldens | `crates/piperine-lang/tests/elab_entry.rs`, `tests/fixtures/elab/*.txt` | `cargo test -p piperine-lang --test elab_entry` |
+| Entry point, determinism, the corpus, golden IR | unit | each AC of ELAB-01 and ELAB-05; one golden file per twin; device bodies equal to `piperine-ir`'s structural goldens | `crates/piperine-lang/tests/elab_entry.rs`, `tests/fixtures/elab/*.txt` | `cargo test -p piperine-lang --test elab_entry` |
 | Constants and params | unit | each AC of ELAB-02, each code with its span and path | `crates/piperine-lang/tests/elab_params.rs` | `cargo test -p piperine-lang --test elab_params` |
 | Instances, nodes, paths | unit | each AC of ELAB-03 and edge cases 1 to 3 | `crates/piperine-lang/tests/elab_instances.rs` | `cargo test -p piperine-lang --test elab_instances` |
 | Analog lowering | unit | each AC of ELAB-04 and edge case 4; every sign and parenthesis form of the split | `crates/piperine-lang/tests/elab_analog.rs` | `cargo test -p piperine-lang --test elab_analog` |
@@ -120,12 +120,12 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `crates/piperine-lang/Cargo.toml` depends on `piperine-ir` by path; `lib.rs` exports `elab`
-- [ ] `Origin` of every IR item is `file:line:col` computed from its span
-- [ ] Any diagnostic means `Err` and no `Ir`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `front_end_diagnostics_are_returned_without_an_ir`, `an_unknown_or_ported_top_is_one_diagnostic`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `crates/piperine-lang/Cargo.toml` depends on `piperine-ir` by path; `lib.rs` exports `elab`
+- [x] `Origin` of every IR item is `file:line:col` computed from its span
+- [x] Any diagnostic means `Err` and no `Ir`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `front_end_diagnostics_are_returned_without_an_ir`, `an_unknown_or_ported_top_is_one_diagnostic`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -145,12 +145,12 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `K_B`, `Q` and a `const` defined from them fold to the bit-exact `f64` Rust computes
-- [ ] `1.0 / 0.0` is `inf`, not an error
-- [ ] A read of a param with no binding is reported to the caller as not constant
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_const_read_is_folded_once`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `K_B`, `Q` and a `const` defined from them fold to the bit-exact `f64` Rust computes
+- [x] `1.0 / 0.0` is `inf`, not an error
+- [x] A read of a param with no binding is reported to the caller as not constant
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_const_read_is_folded_once`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -170,13 +170,13 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `Electrical` is lowered once with `abstol` 1e-6 (potential) and 1e-12 (flow) and its units
-- [ ] A signal `r#out` is a node named `out`
-- [ ] A node initial value that reads a param is `P0001` at the value
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_where_is_recorded_over_the_body_params`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_instances`: `a_node_init_that_reads_a_param_is_p0001`, `an_empty_module_is_an_empty_body`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `Electrical` is lowered once with `abstol` 1e-6 (potential) and 1e-12 (flow) and its units
+- [x] A signal `r#out` is a node named `out`
+- [x] A node initial value that reads a param is `P0001` at the value
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_where_is_recorded_over_the_body_params`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_instances`: `a_node_init_that_reads_a_param_is_p0001`, `an_empty_module_is_an_empty_body`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -196,13 +196,13 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `E0317` names the param's path (`Top.r1.r`); `E0319`, `E0321`, `E0341` each asserted with its span
-- [ ] A bound value that reads a param of the parent is `P0001`
-- [ ] `DiodeSeries.d1` and `DiodeSeries.d2` both bind `DiodeSeries.b`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `an_unset_param_takes_its_default`, `a_required_param_left_out_is_e0319`, `a_false_where_is_e0317_with_the_path`, `a_bound_value_that_is_not_constant_is_refused`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_instances`: `one_body_per_module_one_instance_per_placement`, `instances_come_in_pre_order`, `paths_start_at_the_top_module`, `signals_are_nodes_and_ports_bind_the_parents`, `a_node_init_is_recorded_on_body_and_design`, `an_unnamed_placement_is_module_hash_k`, `a_module_that_places_itself_is_e0341`, `a_module_under_two_parents_is_one_body`, `an_unconnected_node_stays_in_the_table`
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `E0317` names the param's path (`Top.r1.r`); `E0319`, `E0321`, `E0341` each asserted with its span
+- [x] A bound value that reads a param of the parent is `P0001`
+- [x] `DiodeSeries.d1` and `DiodeSeries.d2` both bind `DiodeSeries.b`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `an_unset_param_takes_its_default`, `a_required_param_left_out_is_e0319`, `a_false_where_is_e0317_with_the_path`, `a_bound_value_that_is_not_constant_is_refused`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_instances`: `one_body_per_module_one_instance_per_placement`, `instances_come_in_pre_order`, `paths_start_at_the_top_module`, `signals_are_nodes_and_ports_bind_the_parents`, `a_node_init_is_recorded_on_body_and_design`, `an_unnamed_placement_is_module_hash_k`, `a_module_that_places_itself_is_e0341`, `a_module_under_two_parents_is_one_body`, `an_unconnected_node_stays_in_the_table`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -224,13 +224,13 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `pnjlim` is one `FunctionId` however many bodies call it
-- [ ] Every lowered expression carries its `ValueType` and origin
-- [ ] A param read inside an `analog` `let` prints as a param read, never as a number
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_param_read_is_never_folded`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `value_code_lowers_to_the_same_forms_and_functions_once`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `pnjlim` is one `FunctionId` however many bodies call it
+- [x] Every lowered expression carries its `ValueType` and origin
+- [x] A param read inside an `analog` `let` prints as a param read, never as a number
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_param_read_is_never_folded`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `value_code_lowers_to_the_same_forms_and_functions_once`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -250,11 +250,11 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `v(a)` is a probe to ground; `v(a, k)` between two body nodes
-- [ ] The diode's site prints `limit L0 "vd"` with its seed
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `probes_and_environment_lower_to_their_nodes`, `sites_are_numbered_in_source_order_and_named`
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `v(a)` is a probe to ground; `v(a, k)` between two body nodes
+- [x] The diode's site prints `limit L0 "vd"` with its seed
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `probes_and_environment_lower_to_their_nodes`, `sites_are_numbered_in_source_order_and_named`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -276,14 +276,14 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] The diode prints `b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)`
-- [ ] `a - (b + ddt(x))` gives a direct addend `a - b` and a negated `ddt` addend `x`; `-ddt(x)` and `i(n, p) +> ddt(x)` both negate
-- [ ] `E0241` and `E0415` each asserted with its span
-- [ ] A `ddt` that is not a whole top-level leaf of a flow contribution is refused (the code and message land in T8's table)
-- [ ] The five device bodies print byte for byte as `crates/piperine-ir/tests/golden/*.txt`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `a_branch_is_one_unordered_pair_with_its_kind`, `a_sum_splits_into_direct_and_ddt_addends`, `a_reversed_pair_negates_its_addends`, `a_branch_from_a_node_to_itself_is_e0241`, `potential_and_flow_on_one_branch_is_e0415`, `a_single_addend_is_one_direct_addend`
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] The diode prints `b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)`
+- [x] `a - (b + ddt(x))` gives a direct addend `a - b` and a negated `ddt` addend `x`; `-ddt(x)` and `i(n, p) +> ddt(x)` both negate
+- [x] `E0241` and `E0415` each asserted with its span
+- [x] A `ddt` that is not a whole top-level leaf of a flow contribution is refused (the code and message land in T8's table)
+- [x] The five device bodies, printed in structural form, equal `crates/piperine-ir/tests/golden/*.txt` byte for byte
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `a_branch_is_one_unordered_pair_with_its_kind`, `a_sum_splits_into_direct_and_ddt_addends`, `a_reversed_pair_negates_its_addends`, `a_branch_from_a_node_to_itself_is_e0241`, `potential_and_flow_on_one_branch_is_e0415`, `a_single_addend_is_one_direct_addend`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -305,11 +305,11 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] One negative source per row of the table, asserting `P0001`, the form's name and its span
-- [ ] Every such source returns `Err` and no `Ir`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_unlowered`: `a_site_or_contribution_under_if_is_p0001`, `ddt_off_the_top_of_a_flow_contribution_is_p0001`, `m_dtemp_or_extern_at_a_placement_is_p0001`, `a_digital_block_is_p0001`, `a_diagnostic_means_no_ir`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] One negative source per row of the table, asserting `P0001`, the form's name and its span
+- [x] Every such source returns `Err` and no `Ir`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_unlowered`: `a_site_or_contribution_under_if_is_p0001`, `ddt_off_the_top_of_a_flow_contribution_is_p0001`, `m_dtemp_or_extern_at_a_placement_is_p0001`, `a_digital_block_is_p0001`, `a_diagnostic_means_no_ir`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -329,43 +329,18 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `crates/piperine-lang/tests/fixtures/elab/{divider,diode_iv,diode_series,ac_rc,tran_rc,isrc_r}.txt` exist and are compared byte for byte
-- [ ] `device_bodies_match_the_ir_goldens` compares the five bodies with `crates/piperine-ir/tests/golden/*.txt`
-- [ ] Every `Ir` has an empty `check()`; `TranRc.out` has initial potential 0
-- [ ] Every negative test of the feature asserts a code and a span inside the source, and a path where an instance is named
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `a_twin_elaborates_to_a_checked_ir`, `the_design_is_unchanged_by_elaboration`, `elaborating_twice_prints_the_same_text`, `every_diagnostic_has_code_span_and_path`, `the_twins_elaborate_without_diagnostics`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `crates/piperine-lang/tests/fixtures/elab/{divider,diode_iv,diode_series,ac_rc,tran_rc,isrc_r}.txt` exist and are compared byte for byte
+- [x] `device_bodies_match_the_ir_goldens` compares the five bodies, in structural form (`Ir::print_structural`), with `crates/piperine-ir/tests/golden/*.txt`
+- [x] Every `Ir` has an empty `check()`; `TranRc.out` has initial potential 0
+- [x] Every negative test of the feature asserts a code and a span inside the source, and a path where an instance is named
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `a_twin_elaborates_to_a_checked_ir`, `the_design_is_unchanged_by_elaboration`, `elaborating_twice_prints_the_same_text`, `every_diagnostic_has_code_span_and_path`, `the_twins_elaborate_without_diagnostics`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
 
 **Commit**: `test(lang): the M1 twins elaborate to pinned IR`
-
----
-
-### T10: Instruction files describe the new stages
-
-**What**: `CLAUDE.md` and `AGENTS.md` say that `piperine-lang` type-checks and elaborates the M1 subset into `piperine-ir`, with the pipeline diagram and the crate table updated.
-**Where**: `CLAUDE.md`
-**Depends on**: T9
-**Reuses**: the current crate table and pipeline diagram
-**Requirement**: ELAB-01
-**Executor**: Sonnet
-
-**Done when**:
-
-- [ ] The crate table has a row for `piperine-ir` and `piperine-lang`'s row names `types/` and `elab/`
-- [ ] `AGENTS.md`'s workspace map and "Only ... compile today" sentence match
-- [ ] No sentence still says type checking or elaboration is "not built yet"
-- [ ] `crates/piperine-solver/tests/workspace_shape.rs` (which reads the instruction files) stays green
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape`
-- [ ] Test count: the tests named above, and no existing test removed
-
-**Tests**: none
-**Gate**: build
-
-**Commit**: `docs: CLAUDE.md and AGENTS.md name the type checker, the elaborator and piperine-ir`
 
 ---
 
@@ -432,6 +407,7 @@ Proof: run instances | test an_unnamed_placement_is_module_hash_k ... ok
 
 **C20** - IF a module places itself, directly or through other modules, THEN the system SHALL reject the model with `E0341` and SHALL name the module. (ELAB-03, AC 8; T4)
 Proof: run instances | test a_module_that_places_itself_is_e0341 ... ok
+Proof: run instances | test a_module_that_places_itself_through_another_is_e0341 ... ok
 
 **C21** - The system SHALL lower each value expression, `let` and function of the type-checked set to the IR node of the same form, and each function once however many bodies call it. (ELAB-04, AC 1; T5)
 Proof: run analog | test value_code_lowers_to_the_same_forms_and_functions_once ... ok
@@ -457,13 +433,13 @@ Proof: run analog | test a_branch_from_a_node_to_itself_is_e0241 ... ok
 **C28** - IF a branch receives both potential and flow contributions THEN the system SHALL reject the model with `E0415`. (ELAB-04, AC 8; T7)
 Proof: run analog | test potential_and_flow_on_one_branch_is_e0415 ... ok
 
-**C29** - IF a contribution, a `limit` placement or an `ac_stim` call is written under an `if`, in a function or in a closure THEN the system SHALL reject the model with `P0001` at that form. (ELAB-06, AC 1; T8)
+**C29** - IF a contribution, a `limit` placement or an `ac_stim` call is written under an `if`, on the right of `&&` or `||`, in a function, in a closure or (a contribution only) in a plain block nested in the analog block THEN the system SHALL reject the model with `P0001` at that form. (ELAB-06, AC 1; T8)
 Proof: run unlowered | test a_site_or_contribution_under_if_is_p0001 ... ok
 
 **C30** - IF `ddt` is written anywhere but as a whole addend of a flow contribution THEN the system SHALL reject the model with `P0001` at the `ddt`. (ELAB-06, AC 2; T8)
 Proof: run unlowered | test ddt_off_the_top_of_a_flow_contribution_is_p0001 ... ok
 
-**C31** - IF a placement sets `m` or `dtemp`, or places an `extern` module, THEN the system SHALL reject the model with `P0001` at the placement. (ELAB-06, AC 3; T8)
+**C31** - IF a placement sets `m` or `dtemp`, THEN the system SHALL reject the model with `E0320` (from the front end); IF a model places an `extern` module, THEN the system SHALL reject it with `P0001` at the `extern` declaration. (amendment (d), accepted by the orchestrator) (ELAB-06, AC 3; T8)
 Proof: run unlowered | test m_dtemp_or_extern_at_a_placement_is_p0001 ... ok
 
 **C32** - IF a module of the reachable set has a `digital` block THEN the system SHALL reject the model with `P0001` at the block. (ELAB-06, AC 4; T8)
@@ -497,7 +473,7 @@ Proof: run analog | test a_single_addend_is_one_direct_addend ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none yet
+**Dispatched:** 2026-11-15 batches 1-3 done (e01e8537); Verifier rounds 1 and 2 (Opus) done in ../piperine-msl-elab; round-2 findings closed by d242daac and 95960152, no third round
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---

@@ -87,8 +87,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// starts from (the small one after a param write). The next transient
     /// then steps forward, never zero-length.
     pub fn set(&mut self, net: u32, offset: u32, bytes: &[u8], at: Option<f64>) -> Result<SetOutcome> {
-        let now_tick = self.tick(self.now);
-        let tick = self.tick(at.unwrap_or(self.now)).max(now_tick);
+        let now_tick = self.now_tick;
+        let tick = at.map_or(now_tick, |t| self.tick(t)).max(now_tick);
         let outcome = host_write(&mut self.discrete, self.in_transient, net, offset, bytes, tick)?;
         if outcome == SetOutcome::Committed && self.started && !self.in_transient && tick == now_tick {
             let samples = std::mem::take(&mut self.samples);

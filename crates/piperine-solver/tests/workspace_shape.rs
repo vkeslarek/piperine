@@ -19,7 +19,6 @@ fn repo_root() -> PathBuf {
 /// crates extends this list.
 const RETIRED_CRATES: &[&str] = &[
     "piperine-codegen",
-    "piperine-ir",
     "piperine-python",
     "piperine-plugin",
     "piperine-plugin-macros",
@@ -31,6 +30,8 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-abi",
     "crates/piperine-analog-solver",
     "crates/piperine-digital-solver",
+    "crates/piperine-interp",
+    "crates/piperine-ir",
     "crates/piperine-lang",
     "crates/piperine-parity",
     "crates/piperine-solver",
@@ -187,10 +188,11 @@ fn workflows_name_no_retired_crate() {
     assert!(!ci.contains("requirements.txt"), "ci.yml installs Python requirements");
 }
 
-/// The ten crates the workspace keeps.
+/// The crates the workspace keeps.
 const KEPT_CRATES: &[&str] = &[
     "piperine-abi",
     "piperine-lang",
+    "piperine-ir",
     "piperine-project",
     "piperine-solver",
     "piperine-analog-solver",

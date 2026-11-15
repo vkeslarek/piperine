@@ -95,6 +95,11 @@ impl Net {
         self.kind
     }
 
+    /// Replaces the label (a node the builder was given a name for).
+    pub(crate) fn relabel(&mut self, label: String) {
+        self.label = label;
+    }
+
     /// The stable source-level label, for diagnostics and result mapping.
     pub fn label(&self) -> &str {
         &self.label

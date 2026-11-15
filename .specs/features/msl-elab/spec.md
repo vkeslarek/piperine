@@ -52,6 +52,7 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 | The top module of M1 | has no port; its params take their defaults | a port of a top has nothing to connect to; caller-given values are M2 | y |
 | A node's `= value` | a const expression that reads no param; evaluated at elaboration | abi.md §3: a shape "depends on structure only, never on a non-structural value", and the hold is part of the shape; `E0210` already forbids reading a carrier or a probe | y |
 | Code of a construct inside the type-checked subset that elaboration does not lower (Q5) | `P0001`, as in `msl-typeck` | same rule, same code | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
+| Code of the internal "elaboration built an ill-formed IR" diagnostic | `P0004`, a compiler-owned code beside `P0001` to `P0003` (`E0999` is not spec-owned: `docs/spec/index.md` §0.2 gives `E09xx` to Appendix A) | conditions the compiler owns, not the language, take `P` codes (Q5) | y - Q5 applied by the orchestrator, msl-elab verification round 2 |
 
 **Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.
 
@@ -122,6 +123,8 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 7. IF a placement has no `let` of its own THEN the system SHALL name the instance `<module>#<k>` as §21 rule 3 states.
 8. IF a module places itself, directly or through other modules, THEN the system SHALL reject the model with `E0341` and SHALL name the module.
 
+**Amendment (T4, orchestrator, msl-elab verification round 1)**: a child's own signals are shown as `gnd` in the authored `Child::nodes`. `Ir::check` forces one slot per node of the child's body and `Terminal` has no "own node", so the authored view pads them with `Ground`; the instance table (`InstanceSpec::nodes`, `Instance::node`) carries the real node (`Top.l.inner`), and backends bind from it. No M1 device has a signal. Pinned by `a_childs_own_signal_is_gnd_in_the_authored_child_and_real_in_the_instance_table`; follow-up in `ROADMAP.md` ("M1 follow-ups").
+
 **Independent Test**: elaborate `DiodeSeries`; list the paths `DiodeSeries.v1`, `.r1`, `.d1`, `.d2` in that order, and read that `DiodeSeries.d1` and `DiodeSeries.d2` both bind `DiodeSeries.b`.
 
 ---
@@ -144,6 +147,8 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 6. The system SHALL give each `limit` placement and each `ac_stim` call of a block its own site, numbered in source order, and SHALL name a `limit` site after the `let` it initializes when it has one.
 7. IF both nodes of a contribution are the same node THEN the system SHALL reject the model with `E0241`.
 8. IF a branch receives both potential and flow contributions THEN the system SHALL reject the model with `E0415`.
+
+**Amendment (T8)**: (a) only a chain that holds a `ddt` leaf is split at its `+`/`-`; a chain with no `ddt` stays one direct addend as written, so no floating-point sum is re-associated. (b) A leading-negative run becomes an addend with `negated` set, its first leaf's sign. (c) Refused with `P0001` (table `elab/unlowered.rs`): a `ddt` that is not a whole addend of a flow contribution, a `ddt` with a tolerance, a `ddt` in a potential contribution. (d) ELAB-06 AC 3 and AC 1 in part are met earlier than written: `m`/`dtemp` in a placement are `E0320` from the front end, a `limit`/`ac_stim` in a function or closure is `E0450`, and an `extern` module is a type-check `P0001` at its declaration. **Confirmed**: accepted by the orchestrator under the user's standing delegation ("Ok, deixo tu ir tocando..."), msl-elab verification round 1: the model is refused either way, with no `Ir` and nothing silent. (e) The right operand of `&&`/`||` is conditional: a `limit` or an `ac_stim` there is `P0001` like one under an `if`. (f) A contribution in a plain block nested in the analog block (`{ i(p, n) +> 1.0; }`, `let x = { i(p, n) +> 1.0; 2.0 };`, legal by Part IV §10 rule 8) is `P0001` "a contribution in a nested block": M1 lowers a contribution only as a statement of the analog block's own list.
 
 **Independent Test**: elaborate the `Diode`; its one contribution prints as `b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)` and its site as `limit L0 "vd"`.
 
@@ -225,6 +230,6 @@ ELAB-07 (metadata), ELAB-08 (boundary reachability) and ELAB-09 (definition orde
 ## Success Criteria
 
 - [ ] The five twins elaborate, and one golden file per twin pins the printed IR.
-- [ ] The printed bodies of the five devices equal the golden texts `msl-ir` pins for its hand-built ones: that text is the contract `ir-interp` is tested on.
+- [ ] The bodies of the five devices, printed in structural form (`Ir::print_structural`: no origins, arena order not significant), equal the structural golden texts `msl-ir` pins for its hand-built ones: that form is the contract `ir-interp` is tested on.
 - [ ] Every error code named in this spec has a negative fixture asserting the code and the span.
 - [ ] No test finds a `Design` changed by elaboration.

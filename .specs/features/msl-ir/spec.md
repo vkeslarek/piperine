@@ -212,6 +212,50 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 
 **Independent Test**: on the hand-built resistor, the flow of `(p, n)` depends on nodes `p`, `n` and param `r`, and is affine; on the diode, the flow depends on the `limit` site and is not affine.
 
+**SPEC amendment (verification round 1, 2026-11-15)**: AC 3 reads "probe" as a read the ABI declares. A `limit` read stands for the limited iterate of its input, which the backend holds as an input of its own (abi.md A2), so it is classed as a probe is: `k * limit(v)` is affine, `limit(v) * limit(v)` is not. An `if` whose condition reads no probe and no `limit` site is a selection fixed for the solve and keeps the class of its arms. Both readings are what `ir-interp` INT-12 needs; IR-10 states them as criteria.
+
+---
+
+### P1: The class of a `limit` read and of a constant `if` (amendment)
+
+**User Story**: As a backend author, I want the affine test to treat a `limit` read as a declared input and a constant-condition `if` as a fixed selection so that the partial pattern matches the reads the ABI declares.
+
+**Why P1**: verification round 1 found both readings implemented and unpinned; `ir-interp` INT-12 relies on them.
+
+**Requirement**: IR-10
+
+**Acceptance Criteria**:
+
+1. WHEN a body is asked whether a branch's direct addends are affine THEN the system SHALL class a `limit` read as it classes a probe: affine on its own, reaching the sum through the operators of IR-09 AC 3, and SHALL count the site, not the nodes its input probes, among the dependencies of the read.
+2. WHEN an `if` has a condition that reads no probe and no `limit` site THEN the system SHALL class the `if` as the join of its two arms; WHEN its condition reads one THEN the system SHALL class it as not affine.
+
+**Independent Test**: `k0 * limit(v)` is affine, `limit(v) * limit(v)` is not; `if k0 > 0 { k1 * v } else { v }` is affine, the same `if` with an `exp(v)` arm or a condition on `limit(v)` is not.
+
+---
+
+### P1: The structural printed form (amendment)
+
+**User Story**: As the author of `msl-elab` or of a backend test, I want a printed form of an IR that holds its structure and types but not its origins or arena order so that two producers of one design (the hand-built fixtures and the elaborator) compare byte for byte.
+
+**Why P1**: verification round 2 found that the goldens pinned the full text of IR-04, whose origins and arena ids no elaborator reading `devices.msl` reproduces. The contract between `msl-ir` and `msl-elab` is structural (orchestrator decision, 2026-11-15).
+
+**Requirement**: IR-11
+
+**Acceptance Criteria**:
+
+1. WHEN an `Ir` is printed in structural form (`Ir::print_structural`) THEN the system SHALL return the tree part of the printed text - every nature, body, function, instance and node, and every expression and statement reachable from them - with the type of every expression whose form does not imply it, and with no origin and no arena id.
+2. WHEN two `Ir` values differ only in the origins they hold or in the order of their nature, body, function, expression, statement or node arenas THEN the system SHALL print byte-identical structural texts.
+3. WHEN two `Ir` values differ in an expression's form, operand, constant, terminal or type, in a bound value or in a local's type THEN the system SHALL print structural texts that differ.
+4. The system SHALL keep the full text of IR-04, origins and arena section included, as the `Display` form of `Ir`.
+
+**Independent Test**: the structural goldens `crates/piperine-ir/tests/golden/*.txt` pin the five hand-built devices and the divider; the same IRs with every origin moved and every arena reversed print them unchanged.
+
+**The structural form, defined** (design "Printer"): the tree of IR-04 without the `arenas` section and without any `@origin`; natures, bodies, functions, the locals of each owner and the node table sorted by their printed text; instances in the pre-order of IR-08 AC 2; params, body nodes, branches, sites, children and statements in declaration order. An expression is written out in full wherever it is reached; one reached again within the same statement prints as `^k`, the `k`-th expression written out in that statement. An expression whose recorded type differs from the type its form implies prints as `(<expr> : <type>)`. The golden files of `msl-ir` are structural; the full text is pinned separately under `tests/golden/full/`.
+
+**Origin rule for an elaborated IR** (stated here for `msl-elab` and the features after it; not a criterion of this feature): an expression's origin is the start (file, 1-based line, 1-based column) of the POM span of the construct the expression lowers from; an expression the elaborator synthesizes without a construct of its own (a folded constant, an implied operand) carries the origin of the construct that produced it. The hand-built bodies of `tests/support/devices.rs` do not follow this rule - one origin per statement, picked by hand - and need not: they are compared in structural form only. A later feature tests origins against the source separately.
+
+**SPEC amendment (verification round 2, 2026-11-15)**: IR-04's Independent Test ("a golden test pins the printed IR of the hand-built diode") now holds in both forms: `tests/golden/full/*.txt` pins the full text (C24), `tests/golden/*.txt` the structural form (C40), which is the one `msl-elab` compares against.
+
 ---
 
 ## Edge Cases
@@ -234,10 +278,12 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 | IR-07 | P1: The M1 analog node set | Design | Pending |
 | IR-08 | P1: Bodies and the flat instance table | Design | Pending |
 | IR-09 | P1: Static dependencies | Design | Pending |
+| IR-10 | P1: The class of a `limit` read and of a constant `if` (amendment) | Verification round 1 | Pending |
+| IR-11 | P1: The structural printed form (amendment) | Verification round 2 | Pending |
 
 IR-05 of the first draft (the IR is a side artifact of the POM) is now `msl-elab` ELAB-01 AC 2: this crate no longer sees a `Design`.
 
-**Coverage:** 8 total, 0 mapped to tasks.
+**Coverage:** 10 total, 0 mapped to tasks.
 
 ---
 
@@ -254,4 +300,4 @@ IR-05 of the first draft (the IR is a side artifact of the POM) is now `msl-elab
 
 - [ ] The five device bodies and the five twins of M1 are representable, and `msl-elab` produces them.
 - [ ] `cargo tree -p piperine-ir` lists no in-tree crate.
-- [ ] A golden test pins one printed IR per device.
+- [ ] A golden test pins one printed IR per device, in full and in structural form; `msl-elab` compares the structural form.

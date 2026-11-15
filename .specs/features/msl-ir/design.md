@@ -102,27 +102,43 @@ Nothing is imported from `piperine-lang`: the patterns are copied, the crate sta
 
 ### `Printer` (`print.rs`) and `Ir::check` (`check.rs`)
 
-- **Purpose**: IR-04 and IR-06.
-- **Interfaces**: `impl Display for Ir`; `Ir::check(&self) -> Vec<Broken>` with `Broken { item: String, origin: Origin, what: String }`.
+- **Purpose**: IR-04, IR-11 and IR-06.
+- **Interfaces**: `impl Display for Ir` (the full text); `Ir::print_structural(&self) -> String` (the structural form, IR-11); `Ir::check(&self) -> Vec<Broken>` with `Broken { item: String, origin: Origin, what: String }`.
 
-Printed form, for orientation (the golden tests fix it):
+**Two printed forms.** The full text (`Display`, IR-04) is the tree followed by an `arenas` section (every expression and statement by id with its type, form by ids and origin): it prints every field equality compares, so unequal IRs print differently. The **structural form** (`print_structural`, IR-11) is the cross-feature contract: what `msl-elab` must reproduce from `devices.msl`, byte for byte, against `crates/piperine-ir/tests/golden/*.txt`. It is the tree alone, with these rules:
+
+| Rule | Why |
+| --- | --- |
+| No `@origin` anywhere, no `arenas` section, no arena id | origins and arena order are the producer's, not the design's |
+| Natures, bodies, functions, an owner's locals and the node table sorted by their printed text | their arena order is the order a producer happened to build in |
+| Instances in table order | IR-08 AC 2 fixes the pre-order: it is structure |
+| Params, body nodes, branches, sites, children, statements in declaration order | IR-02 AC 2 fixes it, and indices into them are semantic |
+| Locals, params, terminals, functions and sites by name or site index | names are what the source wrote |
+| An expression is written out in full wherever it is reached; reached again in the same statement it prints `^k` (the `k`-th written out in that statement, pre-order), `<cycle ^k>` while still being written | the numbering follows the tree; a DAG or a broken IR still terminates |
+| `(<expr> : <type>)` when the recorded type differs from the type the form implies (constants, operators, probes, environment reads, math, sites: their fixed type; a local or param: its declared type; a call: the callee's return; an `if`: its `then` arm; a block: its value, else `()`; a closure: `fn(param types) -> body type`) | every type is recoverable without annotating what the form already fixes |
+
+**Origins in an elaborated IR** (the rule `msl-elab` follows, tested by a later feature, not by this one): an expression's origin is the start of the POM span of the construct it lowers from; a synthesized expression (a folded constant, an implied operand) carries the origin of the construct that produced it. The hand-built fixtures of `tests/support/devices.rs` share one hand-picked origin per statement and are compared in structural form only.
+
+Printed form (structural, as `print_structural` writes it), for orientation (the golden tests fix it):
 
 ```text
-body Diode  @devices.msl:31:1
-  param is: f64 = 1e-14 where (is > 0)
-  param n: f64 = 1 where (n > 0)
-  param cj0: f64 = 0 where (cj0 >= 0)
+body Diode
+  param is: f64 = 1e-14 where (is > 0.0)
+  param n: f64 = 1.0 where (n > 0.0)
+  param cj0: f64 = 0.0 where (cj0 >= 0.0)
   node a: Electrical port
   node k: Electrical port
   branch b0 (a, k) flow
   limit L0 "vd"
+  local id: f64
+  ...
   analog
     let nvt = (n * vt())
-    let vcrit = (nvt * ln((nvt / (sqrt(2) * is))))
+    let vcrit = (nvt * ln((nvt / (sqrt(2.0) * is))))
     let vd = limit L0 (probe(a, k), |new, old| pnjlim(new, old, nvt, vcrit), seed vcrit)
-    let id = (is * (exp((vd / nvt)) - 1))
+    let id = (is * (exp((vd / nvt)) - 1.0))
     b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)
-instance Divider.r1: Resistor  nodes (Divider.vin, Divider.mid)  params (r = 1000)
+instance Divider.r1: Resistor  nodes (Divider.vin, Divider.mid)  params (r = 1000.0)
 node Divider.mid: Electrical  declared by Divider
 ```
 

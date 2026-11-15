@@ -984,7 +984,7 @@ impl TransientSolver<'_> {
                 None => protocol.operating_point().and_then(|_| protocol.analog_mut().begin()),
                 Some((step, state)) => {
                     let samples = protocol.analog_mut().resume(step, state)?;
-                    protocol.resume(start, samples);
+                    protocol.resume_at_tick(start, state.digital.now().0, samples);
                     for (net, bytes) in &rewrites {
                         if let crate::protocol::SetOutcome::Refused { reason } = protocol.set(*net, 0, bytes, None)? {
                             return Err(Error::simple(
@@ -1256,6 +1256,14 @@ impl TransientSolver<'_> {
         let t_next = if !exempt && (run.proposed - to).abs() < run.spt { run.proposed } else { to };
         run.attempted = t_next;
         let st = &mut run.st;
+        if t_next <= st.current_time {
+            // A zero-length step integrates nothing (a `DDT` stamps no companion
+            // at `h <= 0`): never attempted, never accepted.
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
+                format!("a step to t = {t_next:e} s does not advance from t = {:e} s", st.current_time),
+            ));
+        }
         let prediction = StepPrediction {
             t_next,
             dt_actual: t_next - st.current_time,

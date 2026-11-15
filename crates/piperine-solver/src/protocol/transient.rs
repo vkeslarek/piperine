@@ -62,6 +62,10 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     pub(super) options: ProtocolOptions,
     /// The last accepted time.
     pub(super) now: f64,
+    /// The tick of the last instant run, at or before `now`'s step: the tick
+    /// the next step starts from. Equal to `tick(now)` except after a resume
+    /// from a time off the grid.
+    pub(super) now_tick: Tick,
     pub(super) in_transient: bool,
     pub(super) delivery: Delivery,
     /// The time a `FINISH` ended the run at, if one did.
@@ -88,6 +92,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             analog,
             options,
             now: 0.0,
+            now_tick: 0,
             in_transient: false,
             delivery: Delivery::default(),
             finished: None,
@@ -162,9 +167,19 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// re-entered at a captured step, the PSS shooting seam): the last
     /// accepted time is `now`, the discrete side has started, and `samples`
     /// are the continuous values its reactions read there. No operating point
-    /// runs; `transient` steps forward from `now`.
+    /// runs; `transient` steps forward from `now`, on from the tick `now` floors
+    /// to, as a stop does.
     pub fn resume(&mut self, now: f64, samples: Vec<f64>) {
+        let tick = self.floor_tick(now);
+        self.resume_at_tick(now, tick, samples);
+    }
+
+    /// `resume`, with the tick the discrete side ran its last instant at (its
+    /// checkpoint's own): a time off the grid lies within a tick of it, on
+    /// either side, so no rounding of `now` recovers it.
+    pub fn resume_at_tick(&mut self, now: f64, tick: Tick, samples: Vec<f64>) {
         self.now = now;
+        self.now_tick = tick;
         self.started = true;
         self.finished = None;
         self.samples = samples;
@@ -191,15 +206,28 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 
     fn transient_loop(&mut self, stop: f64) -> Result<Ended> {
         // Every step ends on the tick grid, so the instant run at a step's end
-        // is that tick's own (an instant runs only at its own tick).
-        let stop_tick = self.tick(stop);
+        // is that tick's own (an instant runs only at its own tick). The stop
+        // takes the steps' own rounding: rounded up, a stop off the grid lies a
+        // tick past the step that reaches it, and the loop would run once more.
+        let stop_tick = self.floor_tick(stop);
+        if stop > self.now && stop_tick <= self.now_tick {
+            // Every step ends on a later tick, past this stop: a run that took
+            // no step would end short of it with no error.
+            return Err(Error::simple(
+                SolverDomain::Transient,
+                format!(
+                    "the stop {stop:e} s lies after t = {:e} s but inside its tick {}: no step reaches it",
+                    self.now, self.now_tick
+                ),
+            ));
+        }
         let stop = self.time(stop_tick);
         let at = |t: f64, e: Error| Error::wrap(SolverDomain::Transient, format!("at t = {t:e} s"), e);
         let mut forced: Option<Tick> = None;
         let mut rejections = 0u32;
-        while self.tick(self.now) < stop_tick {
+        while self.now_tick < stop_tick {
             let c = self.checkpoint();
-            let now_tick = self.tick(self.now);
+            let now_tick = self.now_tick;
             let unknowns = self.analog.has_unknowns();
             let mut tick_c = match forced.take() {
                 Some(t) => t,
@@ -294,6 +322,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             self.collect(AnalysisKind::Transient);
             self.delivery.flush(t_c);
             self.now = t_c;
+            self.now_tick = tick_c;
             if final_mark || outcome.finish {
                 self.finished = Some(t_c);
                 return Ok(Ended::Finish(t_c));

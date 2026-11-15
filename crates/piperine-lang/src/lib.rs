@@ -11,8 +11,9 @@
 //!   `module.ports()`, `signal.writers()`). The model mirrors the source: a signal declared in
 //!   module `abc` is found there and nowhere else, and resolution only adds links.
 //!
-//! Elaboration (generics, unrolling, flattening) is not part of this crate yet; it would be
-//! built *from* a `Design`, never into it.
+//! * [`types`]: the type checker of the M1 subset, a side table over POM ids.
+//! * [`elab`]: elaboration of the M1 subset, a `Design` and a top module in, an
+//!   [`piperine_ir::Ir`] out. It is built *from* a `Design`, never into it.
 //!
 //! The reference documentation of the object model is under `docs/pom/` and its examples run
 //! as doctests of [`pom::guide`].
@@ -28,6 +29,8 @@
 //! assert_eq!(top.signal("s").unwrap().writers().len(), 1);
 //! ```
 
+pub mod elab;
 pub mod msl;
 pub mod pom;
+pub mod types;
 mod stack;
