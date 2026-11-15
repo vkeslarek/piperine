@@ -1,6 +1,6 @@
 # solver-abi-core proofs
 
-**HEAD**: b3603aee
+**HEAD**: 7605cf25
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 54 pass, 0 fail
@@ -67,7 +67,7 @@
 `Run abi` - exit 0
 
 ```
-test crates/piperine-abi/src/shape.rs - shape::ShapeBuf::shape (line 342) - compile fail ... ok
+test crates/piperine-abi/src/raw.rs - raw::List<'a,T>::from_slice (line 216) - compile fail ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
@@ -87,19 +87,19 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run guards` - exit 0
 
 ```
+test instructions_have_no_entry_for_a_retired_crate ... ok
 test retired_crates_are_gone ... ok
-test no_manifest_names_a_retired_crate ... ok
 test solver_manifest_has_no_in_tree_dev_dependency ... ok
 test instructions_list_the_kept_crates ... ok
+test no_manifest_names_a_retired_crate ... ok
+test instruction_files_and_state_name_the_abi_crate ... ok
 test root_tests_hold_no_end_to_end_target ... ok
 test workflows_name_no_retired_crate ... ok
-test instruction_files_and_state_name_the_abi_crate ... ok
 test state_records_the_solver_structure_decision ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-   Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-solver)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
      Running tests/crate_boundaries.rs (/var/tmp/piperine-target/debug/deps/crate_boundaries-0c5174e643cd6c6a)
      Running tests/workspace_shape.rs (/var/tmp/piperine-target/debug/deps/workspace_shape-4e1a2c802e20ae74)
 ```
