@@ -84,12 +84,12 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `piperine-analog-solver` depends on `piperine-abi` and on nothing else in the tree; `cargo test -p piperine-solver --test crate_boundaries` passes unedited (`sub_solvers_depend_on_the_abi_crate_only`)
-- [ ] Test `the_pattern_is_terms_times_partials` passes: the diode's pattern holds its four node positions whatever the bias, and a partial that is zero at the first evaluation keeps its position (C13)
-- [ ] Test `a_discrete_function_is_not_taken` and test `a_term_to_ground_has_one_row` pass
-- [ ] Test `an_analog_bind_error_names_its_entry` passes for a term target bound to a discrete net and for a limit written with a term and no `OWNS_CORRECTION`
-- [ ] Test `every_fixture_function_passes_the_partials_verifier` and test `every_fixture_shape_is_valid` pass in `tests/plan.rs`
-- [ ] Gate: full
+- [x] `piperine-analog-solver` depends on `piperine-abi` and on nothing else in the tree; `cargo test -p piperine-solver --test crate_boundaries` passes unedited (`sub_solvers_depend_on_the_abi_crate_only`)
+- [x] Test `the_pattern_is_terms_times_partials` passes: the diode's pattern holds its four node positions whatever the bias, and a partial that is zero at the first evaluation keeps its position (C13)
+- [x] Test `a_discrete_function_is_not_taken` and test `a_term_to_ground_has_one_row` pass
+- [x] Test `an_analog_bind_error_names_its_entry` passes for a term target bound to a discrete net and for a limit written with a term and no `OWNS_CORRECTION`
+- [x] Test `every_fixture_function_passes_the_partials_verifier` and test `every_fixture_shape_is_valid` pass in `tests/plan.rs`
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

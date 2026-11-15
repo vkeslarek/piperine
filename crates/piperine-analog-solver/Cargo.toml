@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+piperine-abi = { path = "../piperine-abi" }
 num-complex.workspace = true
 num-traits.workspace = true
 faer.workspace = true

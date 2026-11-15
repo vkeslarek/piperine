@@ -1433,6 +1433,7 @@ dependencies = [
  "ndarray",
  "num-complex",
  "num-traits",
+ "piperine-abi",
  "thiserror 2.0.18",
  "tracing",
 ]
