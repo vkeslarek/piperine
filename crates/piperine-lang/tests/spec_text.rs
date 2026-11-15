@@ -1216,3 +1216,15 @@ fn jump_has_no_solve_of_its_own() {
     assert!(!s.contains("h → 0"), "the backward-Euler limit is gone");
     assert!(!s.contains("repeated once"), "the repeated solve is gone");
 }
+
+#[test]
+fn reference_rows_describe_the_kept_jump() {
+    let c = spec("appendix_c_implementation.md");
+    let jumps: Vec<&str> = c.lines().filter(|l| l.starts_with("| the jump")).collect();
+    assert_eq!(jumps.len(), 2, "C.1 and C.2 each have a jump row");
+    for row in jumps {
+        assert!(!row.contains("gap"), "{row}");
+    }
+    let restart = c.lines().find(|l| l.starts_with("| restart")).expect("restart row");
+    assert!(restart.contains("set"), "{restart}");
+}

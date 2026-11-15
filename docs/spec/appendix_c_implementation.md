@@ -41,7 +41,7 @@ Structure is resolved at elaboration, and every function is inlined. AIR v2 ther
 | `analog for M` | `iter` region | |
 | `+>` | `+=` contribution, split into resistive and reactive parts | |
 | switch branch | a branch whose kind is chosen per solve | gap (G.6) |
-| the jump (§15.2) | two backward-Euler solves at the same `t` | gap (G.6) |
+| the jump (§15.2) | no solve of its own: the transient step that reads the change | |
 | `limit(x, f, seed)` | limited probe with previous-iteration state, seed and RHS correction | gap for user `f` (G.6) |
 | reaction, `<-` | sequential `on` region, commit | |
 | `settle` | the region of that name; its commits are queued for microstep 0 of the next accepted time point (§15) | |
@@ -69,14 +69,14 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | Part V guarantee | Piperine algorithm | Status |
 | --- | --- | --- |
 | microstep loop (§15) | two-phase delta cycle: combinational cells in topological order, then sequential evaluation over one snapshot; commits sorted by (instant made, source index); at most 1000 microsteps per instant; relaxation passes per loop of resolved drives bounded by its drive count plus one | |
-| the jump (§15.2) | a backward-Euler solve with `h` equal to one tick and time not advanced, started from the left value; repeated once from its own result; the `1/h` rows are scaled by `h` so the matrix stays conditioned | gap (G.6) |
+| the jump (§15.2) | no solve of its own: the solver lands exactly on the time of the change (`predict_step`); what is due at microstep 0 is applied before the solve, so the step that arrives there reads it (`attempt_step`); a change made in a later microstep is read by the first step after it; the landing step is exempt from the truncation-error test (`assess_step`) | |
 | operating point (§16) | Newton; then gmin stepping (a shunt on every node from 0.1 S down, a decade per converged solve, adaptive factor); then source stepping (scale from 0 to 1, first step 0.1 growing ×1.5 up to 0.25, halved on failure, a 1 µS knee shunt ramped out at the end); at most 20 mixed rounds | |
 | held nodes (§16) | a 10¹² S clamp from each node with `= value` to that value through every solve of a transient's operating point, removed before the first step | |
 | convergence (§17.1) | `reltol` 1e-3, default potential `abstol` 1 µV, flow `abstol` 1 pA, `gmin` 1e-12 S; an update much larger than the last is damped to the midpoint; stamps may be reused while the inputs move less than the tolerance (SPICE bypass), never while limiting | |
-| truncation error (§17.2) | TR-BDF2 (a trapezoidal stage over `γh`, then BDF2 over `(1 − γ)h`, `γ = 2 − √2`); error by Milne's device over node potentials against `trtol` 7; a node whose differences straddle a jump is skipped | |
+| truncation error (§17.2) | TR-BDF2 (a trapezoidal stage over `γh`, then BDF2 over `(1 − γ)h`, `γ = 2 − √2`); error by Milne's device over node potentials against `trtol` 7; a step that lands on a jump is exempt | |
 | step control (§17.2) | PI controller, `h · (1/lte)^p`, `p = kp + ki · (lte − lte_prev)/lte`, `kp` 0.7, `ki` 0.4, growth clamped to \[0.2, 1.5\]; a rejected step is divided by 8; at `dt_min` an error rejection is accepted with a warning and a Newton failure fails | |
 | time points (§17.2) | a reachability set computed once at elaboration marks the reactions that can touch the analog side; only their scheduled times are breakpoints | |
-| restart (§15.2) | a state counts as moved when its value or its `ddt` differs between the left value and the second pass by more than the convergence tolerance; if any did, the trapezoidal stage degrades to backward Euler for one step and the step restarts at 10⁻³ of the last one, with the error estimate taken over the moved states only; if none did, the step continues as if no jump had happened | |
+| restart (§15.2) | the previous derivative is dropped for one trapezoidal stage after every jump (`accept_step`, `TrBdf2::stage_coeffs`: backward Euler over the `γh` sub-step); the step size restarts at 10⁻³ of the last step, floored at the minimum step, after a host `set` only; any other jump keeps the controller's proposal (`propose_dt`, `sets_just_applied`) | |
 | rollback (§17.2) | one event queue (scheduled commits restored, `at` times and breakpoints re-polled, step bounds and crossings discarded and re-emitted), with the digital state, device state and analog history checkpointed per step | |
 | crossings (§17.3) | secant prediction from the bracketing pair, bisection when it stalls, retake to the predicted time | gap (G.6): today Piperine fires at the first accepted point after the sign change |
 | limiting (§18) | ngspice `pnjlim`, `fetlim`, `limvds`; an instance is active while `abs(x̂ − x) > 1e-6 + 1e-4 · abs(x)`; when a limited branch potential becomes node potentials, the minus node moves and the plus node stays, unless the minus node is `gnd` | |
@@ -97,7 +97,7 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | hold conductance | 10¹² S | §16 |
 | `trtol` | 7 | §17.2.1 |
 | step controller | `kp` 0.7, `ki` 0.4, growth in \[0.2, 1.5\], rejection ÷ 8 | §17.2 |
-| restart step after a jump | 10⁻³ of the last step | §15.2.6 |
+| restart step after a host `set` (any other jump keeps the controller's proposal) | 10⁻³ of the last step, floored at the minimum step | §15.2.6 |
 | limiting activity | `abs(x̂ − x) > 1e-6 + 1e-4 · abs(x)` | §18 rule 5 |
 | `temperature`, `tnom` | 300.15 K | §14 |
 

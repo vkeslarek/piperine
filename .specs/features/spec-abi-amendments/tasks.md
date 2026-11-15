@@ -259,12 +259,12 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] C.1 and C.2 rows "the jump (§15.2)" describe the algorithm of T8 and carry no `gap (G.6)`
-- [ ] C.2 row "restart" says: the previous derivative is dropped for one trapezoidal stage after every jump; the step size restarts at 10⁻³ of the last step, floored at the minimum step, after a host `set` only; any other jump keeps the controller's proposal (`propose_dt`, `sets_just_applied`)
-- [ ] C.2.1 row "restart step after a jump" says the same condition
-- [ ] G.6 no longer lists "the jump as a zero-length backward-Euler solve"; the "Highest impact" line of Appendix G no longer names the jump solve
-- [ ] Test `reference_rows_describe_the_kept_jump` asserts: no line of `appendix_c_implementation.md` that starts with `| the jump` contains `gap`, and the `| restart` row contains `set`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] C.1 and C.2 rows "the jump (§15.2)" describe the algorithm of T8 and carry no `gap (G.6)`
+- [x] C.2 row "restart" says: the previous derivative is dropped for one trapezoidal stage after every jump; the step size restarts at 10⁻³ of the last step, floored at the minimum step, after a host `set` only; any other jump keeps the controller's proposal (`propose_dt`, `sets_just_applied`)
+- [x] C.2.1 row "restart step after a jump" says the same condition
+- [x] G.6 no longer lists "the jump as a zero-length backward-Euler solve"; the "Highest impact" line of Appendix G no longer names the jump solve
+- [x] Test `reference_rows_describe_the_kept_jump` asserts: no line of `appendix_c_implementation.md` that starts with `| the jump` contains `gap`, and the `| restart` row contains `set`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full

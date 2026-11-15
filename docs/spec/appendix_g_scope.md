@@ -43,7 +43,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | source search paths (`-I`) | a dependency named in the manifest (§3.6 rule 12) |
 | a package registry | `path` and `git` dependencies (§3.6 rule 7) |
 
-**Highest impact:** G.6 (crossings landed on time, the jump solve), G.8 (import), G.21 (lossy lines), G.22 (load-dependent delay).
+**Highest impact:** G.6 (crossings landed on time), G.8 (import), G.21 (lossy lines), G.22 (load-dependent delay).
 
 ## Summary
 
@@ -115,7 +115,6 @@ Alternatives under consideration: a named result port, or `-> name: T`.
 | Gap | Defined in |
 | --- | --- |
 | switch branches | §11 rule 2 |
-| the jump as a zero-length backward-Euler solve | §15.2 |
 | known flags | §3.3 |
 | resolved natures | §4, §5.2 |
 | user `limit` functions | §18 |
