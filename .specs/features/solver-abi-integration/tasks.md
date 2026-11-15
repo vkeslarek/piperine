@@ -369,7 +369,7 @@ T22 → T23 → T24 → T25
 **Done when**:
 
 - [x] Test `a_clock_nothing_analog_reads_adds_no_step` compares accepted step counts of an RC transient with and without a free-running `Timer`
-- [x] Test `a_boundary_change_is_read_by_the_arriving_step_and_restarts_the_next` passes with a timer driving the DAC of abi.md §11.6: the solution at the landing uses the new code, the landing is exempt from `trtol`, the next stage runs with `prev_h = 0`
+- [x] Test `a_boundary_change_is_read_by_the_arriving_step_and_restarts_the_next` passes with a timer driving the DAC of abi.md §11.6: the solution at the landing uses the new code, the landing is exempt from `trtol`, the next stage runs with `prev_h = 0` — **superseded** by the user's order "ABI order: solve, then react (Recommended)": the landing is solved on the old code, the next step reads the new one and is exempt; the test asserts that
 - [x] Test `a_rejected_step_leaves_no_trace` forces an LTE rejection and a Newton failure and compares the digital checkpoint, the assembly snapshot and the replayed instants
 - [x] Test `a_design_without_analog_runs_every_instant_with_no_solve` passes
 - [x] Test `a_commit_due_after_the_stop_time_stays_pending` and test `settle_fires_at_the_stop_time` pass

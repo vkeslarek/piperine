@@ -185,3 +185,14 @@ A task marked sensitive changes where a number comes from. Its gate includes `pa
 | Adapters only | this feature adds no logic to the protocol, the engine or the assembly | each was verified alone; a fix belongs with its tests |
 | Removed tests | by name in `removed.txt` | the rule of `solver-restructure`; the Verifier can audit the list |
 | Project-level decision | MD-62 appended to `.specs/STATE.md` in the last task: the device ABI is the only device contract; the solver owns companion, limit iterate, histories and checkpoints; `Element` is gone | binds every later solver and codegen feature |
+
+---
+
+## As built (Phase 3, accepted by the orchestrator 2026-11-15)
+
+- **Adapters** live in `crates/piperine-solver/src/analyses/adapters.rs` (`DigitalSide`, `EquilibriumSide`, `TransientSide`, `HostHooks`): `tests/protocol_seam.rs` forbids sub-solver names in `src/protocol/`. `Protocol` gained `into_sides` and `analog_mut`. The digital engine leaves `Bound` (`mem::replace` with an empty `Digital`) for a run and goes back after it.
+- **Every operating point** of a circuit of devices (DC, the transient's, the AC bias point and the other small-signal bias points) runs `Protocol::operating_point`.
+- **Tick-grid tolerance.** A transient step that is not a landing ends at the controller's own proposal when it lies within one tick of the protocol's tick-grid target; a landing ends exactly at its tick. The parity oracles keep the controller's time grid; sink times are tick times (within one tick of the accepted time).
+- **The step after a boundary change** (`deliver` with `Restart::Integrator` or `IntegratorSmall`) starts with `prev_h = 0` and is exempt from the truncation test and the controller, as after a scheduled set today; `IntegratorSmall` also sets the step to `1e-3` of the last, floored at `dt_min`. The landing itself is solved on the left value (the user's order).
+- **Host writes.** `CircuitInstance::set` checks the cone on `Digital::shadow`; an accepted write is one of the host's initial writes of every later analysis (`Bound::host_writes`). A `RESHAPE` or a `STRUCTURAL` param between analyses re-creates and re-binds **every** instance from the kept bind recipe over the circuit's own nodes (bind creates the whole recipe).
+- **Host waiters** needed `Digital::wait` and instant suspension in the digital engine (4e4e3f4a).
