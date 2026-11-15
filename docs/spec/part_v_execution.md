@@ -176,9 +176,10 @@ next microstep under T3. It is an ordinary commit with one fixed due instant.
   arrives at `t_next` is solved (step 3.4). That step reads the value `(t_next, 0)` applies to
   that carrier, and the definitions and `resolve`s that follow from it. When other commits to
   the same level are due at `(t_next, 0)`, the step reads the winner under §12.1.2.
-- **S3.** A settle commit is therefore read by an ordinary step: it does not make `t_next` a
-  time point, so that step is not exempt from the truncation-error test and the integrator
-  does not restart for it (§15.2). A settle commit is an explicit lag of one step.
+- **S3.** The solver has no settle commit yet. A commit due at `t_next` enters its queue as a
+  digital event, which is a landing (`predict_step`): the step that arrives at `t_next` is
+  exempt from the truncation-error test and the step after it restarts the integrator, as
+  for any change due before the solve (§15.2). A settle commit is an explicit lag of one step.
 - **S4.** Event times strictly between `t` and `t_next` read the old value.
 - **S5.** If the step to `t_next` is rejected, the commit moves with `t_next`.
 - **S6.** Where time does not advance, the next time point is the next sweep point (§16.1).
@@ -254,7 +255,7 @@ it, and how, depends on when the change is made:
   crossing found by that solve, a converter's threshold, a probe after step 3.4), and by the
   microsteps that follow from it, is read by the first step after `t`. That step is an
   ordinary one: it is tested for truncation error and the integrator does not restart. A
-  settle commit is read the same way (§15 S3).
+  settle commit is a change due before the solve of `t_next` (§15 S3).
 - **A host `set`** is read by the first step after `t`, with the exemption and the restarts
   of the paragraph below.
 
@@ -297,7 +298,7 @@ of its own.
    the integrator: the first step after the operating point (H2), the step after one that
    landed on `t` because something was due there, and the step that reads a host `set`. Restarting, the trapezoidal stage drops the previous
    derivative and runs as backward Euler over its sub-step. A change made after the solve of
-   `t`, and a settle commit, restart nothing. After a host `set` the step size also restarts
+   `t` restarts nothing. After a host `set` the step size also restarts
    at 10⁻³ of the last step (Appendix C.2); in every other case the controller's proposal is
    kept.
 7. The step that reads a jump converges under §17.1. Each primitive has in it the meaning of
@@ -632,7 +633,7 @@ solver **MUST** land is rule 2.
 | reaction at `t` that probes | yes | no |
 | `cross` located at `t` | yes | only if what `analog` reads changes |
 | `on settle` | runs only at time points; adds none | no |
-| a commit from `on settle`, read by `analog` | no: it is due at the next one | yes, read by the step that arrives there as an ordinary step (§15 S3) |
+| a commit from `on settle`, read by `analog` | no: it is due at the next one | yes, read by the step that arrives there, a landing (§15 S3) |
 | `bound_step(dt)` | no: caps the step | no |
 
 A digital clock that nothing analog depends on costs the solver nothing.
