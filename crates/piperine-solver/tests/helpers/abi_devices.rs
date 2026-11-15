@@ -102,6 +102,12 @@ pub fn add_vsrc(b: &mut CircuitBuilder, path: &str, dc: f64, p: &AnalogReference
 /// pins: r=0 (PARAM F64, default 1e3); p=1, n=2 (PORT)
 /// terms: T0 FLOW{p, n} "i"
 /// fn 0 "i": reads [p, n, r] writes [T0] partials (0<-0) (0<-1) (0<-2)
+///
+/// The value is written as `g·V_p − g·V_n`, the same products the assembly's
+/// Norton right side `−(v − Σ g_j·x_j)` subtracts, so that side is exactly 0
+/// as the conductance-only stamp of the `Element` double has none. Written
+/// `(V_p − V_n)/r`, it carries a last-bit residue every solve, which the
+/// step controller turns into diverging step times (the differential oracle).
 pub struct R;
 static R_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static R_MODULE: OnceLock<Module> = OnceLock::new();
@@ -132,10 +138,11 @@ impl Device for R {
         Ok((R, Arc::clone(shape_of(&R_SHAPE, r_shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
-        cx.set(0, v / r);
+        let (vp, vn, r) = (cx.f64(0), cx.f64(1), cx.f64(2));
+        let g = 1.0 / r;
+        cx.set(0, g * vp - g * vn);
         // `dF/dr = -(V_p - V_n) / r^2`: the sensitivity partial.
-        cx.jac().copy_from_slice(&[1.0 / r, -1.0 / r, -v / (r * r)]);
+        cx.jac().copy_from_slice(&[g, -g, -(vp - vn) / (r * r)]);
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
