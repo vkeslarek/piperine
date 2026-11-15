@@ -6,6 +6,7 @@
 //! architecture D2). The sweep tunables travel as
 //! [`AcSweepAnalysisOptions`] arguments, and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
+use piperine_analog_solver::device::Ambient;
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::Context;
 use crate::analyses::dc::DcSolver;
@@ -99,6 +100,9 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
+        if self.circuit.abi.is_some() {
+            return self.assemble_device();
+        }
         let ac_ctx = AcAnalysisContext {
             frequency: self.frequency,
         };
@@ -115,6 +119,31 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
 
     fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
         self.circuit.netlist()
+    }
+}
+
+impl AcSystem<'_> {
+    /// The small-signal system of a circuit of devices at the operating point
+    /// (abi.md §10 "Ac"): the matrix and the stimulus right side of the
+    /// assembly. No reaction runs and no pin changes during a sweep.
+    fn assemble_device(&mut self) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
+        let mut op = vec![0.0; self.circuit.netlist().max_index().map_or(0, |i| i + 1)];
+        for reference in self.circuit.netlist().all_references() {
+            if let (Some(i), Some(v)) = (reference.idx(), self.dc_point.values().get(reference.variable())) {
+                op[i] = *v;
+            }
+        }
+        let amb = Ambient {
+            time: 0.0,
+            freq: self.frequency,
+            is_static: false,
+            gmin: self.context.tolerances.gmin,
+            source_scale: 1.0,
+        };
+        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let (mut matrix, rhs) = bound.analog.assemble_ac(&op, amb)?;
+        matrix.extend(rhs);
+        Ok(matrix)
     }
 }
 

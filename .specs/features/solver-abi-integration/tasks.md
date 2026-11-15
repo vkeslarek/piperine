@@ -231,10 +231,10 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] The branch is one `if` on `circuit.abi`; the `Element` branch is unchanged
-- [ ] Test `an_rlc_peak_matches_the_baseline_on_devices` reads the peak magnitude and frequency literals of `parity_baseline.rs` with their tolerances
-- [ ] No reaction runs and no pin changes during a sweep (a counting device asserts it)
-- [ ] Gate: full
+- [x] The branch is one `if` on `circuit.abi`; the `Element` branch is unchanged
+- [x] Test `an_rlc_peak_matches_the_baseline_on_devices` reads the peak magnitude and frequency literals of `parity_baseline.rs` with their tolerances
+- [x] No reaction runs and no pin changes during a sweep (a counting device asserts it)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

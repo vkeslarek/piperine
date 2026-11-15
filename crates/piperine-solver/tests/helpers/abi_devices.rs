@@ -516,3 +516,126 @@ impl Device for Vramp {
 pub fn vramp() -> &'static Module {
     module_of::<Vramp>(&VRAMP_MODULE, "Vramp")
 }
+
+// ---------------------------------------------------------------------------
+// AC source and inductor
+// ---------------------------------------------------------------------------
+
+fn input_cell(index: u32, part: u32) -> Cell {
+    Cell { kind: cell::INPUT, index, part }
+}
+
+/// An AC current source injecting `i` amps into `p` (small-signal stimulus).
+/// pins: i=0 (PARAM F64, default 1); p=1 (PORT)
+/// inputs: I0 STIM "stim"; terms: T0 FLOW{p, GROUND} "i"
+/// fn 0 "stim": reads [i] writes [I0.RE, I0.IM]
+/// fn 1 "load": reads [I0.VALUE] writes [T0] partials (0<-0) = -1
+pub struct Iac;
+static IAC_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static IAC_MODULE: OnceLock<Module> = OnceLock::new();
+const IAC_DEFAULT: [u8; 8] = 1.0_f64.to_le_bytes();
+
+fn iac_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(real_param("i", &IAC_DEFAULT));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let i0 = s.input(piperine_abi::shape::InputSpec { name: "stim", origin: ORIGIN, kind: piperine_abi::raw::input::STIM });
+    let t0 = s.term(flow("i", op::FLOW, p, GROUND));
+    s.function(FunctionSpec {
+        name: "stim",
+        origin: ORIGIN,
+        reads: vec![pin(0)],
+        writes: vec![input_cell(i0, part::RE), input_cell(i0, part::IM)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "load",
+        origin: ORIGIN,
+        reads: vec![input_cell(i0, part::VALUE)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Iac {
+    fn prototype() -> &'static Shape<'static> {
+        shape_of(&IAC_SHAPE, iac_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Iac, Arc::clone(shape_of(&IAC_SHAPE, iac_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            let i = cx.f64(0);
+            cx.set(0, i);
+            cx.set(1, 0.0_f64);
+        } else {
+            cx.set(0, -cx.f64(0));
+            cx.jac().copy_from_slice(&[-1.0]);
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn current_ac() -> &'static Module {
+    module_of::<Iac>(&IAC_MODULE, "Iac")
+}
+
+/// An inductor, `V(p, n) = l * ddt(I)`, on a private branch current `f`.
+/// pins: l=0 (PARAM F64, default 1e-3); p=1, n=2 (PORT); f=3 (PRIVATE)
+/// terms: T0 FLOW{p, n} "i", T1 FLOW{f, GROUND} "eq", T2 DDT{f, GROUND} "flux"
+/// fn 0: reads [p, n, f, l] writes [T0, T1, T2]
+///       partials (0<-f) (1<-p) (1<-n) (2<-f) (2<-l)
+pub struct L;
+static L_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static L_MODULE: OnceLock<Module> = OnceLock::new();
+const L_DEFAULT: [u8; 8] = 1.0e-3_f64.to_le_bytes();
+
+fn l_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(real_param("l", &L_DEFAULT));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
+    let t0 = s.term(flow("i", op::FLOW, p, n));
+    let t1 = s.term(flow("eq", op::FLOW, f, GROUND));
+    let t2 = s.term(flow("flux", op::DDT, f, GROUND));
+    s.function(FunctionSpec {
+        name: "l",
+        origin: ORIGIN,
+        reads: vec![pin(p), pin(n), pin(f), pin(0)],
+        writes: vec![term(t0), term(t1), term(t2)],
+        partials: vec![partial(0, 2), partial(1, 0), partial(1, 1), partial(2, 2), partial(2, 3)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for L {
+    fn prototype() -> &'static Shape<'static> {
+        shape_of(&L_SHAPE, l_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((L, Arc::clone(shape_of(&L_SHAPE, l_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (vp, vn, f, l) = (cx.f64(0), cx.f64(1), cx.f64(2), cx.f64(3));
+        cx.set(0, f);
+        cx.set(1, vp - vn);
+        cx.set(2, -l * f);
+        cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -l, -f]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn inductor() -> &'static Module {
+    module_of::<L>(&L_MODULE, "L")
+}
