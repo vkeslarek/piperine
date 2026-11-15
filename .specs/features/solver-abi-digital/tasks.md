@@ -525,7 +525,7 @@ Proof: `cargo test -p piperine-digital-solver --lib 2>&1 | grep -E '^test result
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 at daa75d37
 **Walked:** not applicable - no screen
 
 ---
