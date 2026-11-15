@@ -215,6 +215,25 @@ impl<'a> ValuePrinter<'a> {
         self.rust_type(ty, &self.path)
     }
 
+    /// The Rust type a pin of `ty` holds inside `rt::Flagged<…>`: a real is the plain `f64`
+    /// whatever the code's own real is.
+    pub fn pin_type(&self, ty: &ValueType) -> Result<String, Error> {
+        match ty {
+            ValueType::F64 => Ok("f64".to_string()),
+            other => self.rust_type(other, &self.path),
+        }
+    }
+
+    /// `rt::UInt::<N>::new(0)` or `rt::Int::<N>::new(0)`: the value of an integer param no one
+    /// wrote.
+    pub fn zero(ty: &ValueType) -> String {
+        match ty {
+            ValueType::UInt(n) => format!("rt::UInt::<{n}>::new(0)"),
+            ValueType::Int(n) => format!("rt::Int::<{n}>::new(0)"),
+            _ => "0".to_string(),
+        }
+    }
+
     /// Notes that the code reads the variable `name`, and gives it back.
     fn read(&self, name: &str) -> String {
         self.used.borrow_mut().insert(name.to_string());

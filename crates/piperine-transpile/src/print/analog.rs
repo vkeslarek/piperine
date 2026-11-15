@@ -261,6 +261,55 @@ impl<'a> AnalogPrinter<'a> {
         matches!(s, Source::Param(p) if self.body.params().get(p as usize).is_some_and(|x| x.ty == ValueType::Bool))
     }
 
+    /// Whether a generic block takes read `s` as it is rather than as a `Real` (so it is no
+    /// `Dual`): a bool or integer param, a carrier.
+    pub(crate) fn is_plain(&self, s: Source) -> bool {
+        match s {
+            Source::Param(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
+            Source::Carrier(_) => true,
+            _ => false,
+        }
+    }
+
+    /// The type of read `s` in a generic block: `R`, `bool`, an integer, or for a carrier the
+    /// `rt::Flagged<T>` its pin decodes to.
+    pub(crate) fn block_type(&self, s: Source) -> Result<String, Error> {
+        match s {
+            Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
+                Some(ty) if *ty != ValueType::F64 => self.values.type_of(ty),
+                _ => Ok("R".to_string()),
+            },
+            Source::Carrier(c) => match self.body.carriers().get(c as usize) {
+                Some(carrier) => Ok(format!("rt::Flagged<{}>", self.values.pin_type(&carrier.ty)?)),
+                None => Err(self.unsupported(&format!("a read of carrier {c}"))),
+            },
+            _ => Ok("R".to_string()),
+        }
+    }
+
+    /// The `let` that binds read `i` of a function from its lens `cx`: a real as an `f64`, a
+    /// `bool` param as a `bool`, an integer param decoded (an unwritten one is 0), a carrier's
+    /// pin decoded into a value that may be unknown.
+    pub(crate) fn decode(&self, cx: &str, i: usize, s: Source) -> Result<String, Error> {
+        let name = self.read_name(s);
+        Ok(match s {
+            Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
+                Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
+                Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => format!(
+                    "let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or({});",
+                    self.values.pin_type(ty)?,
+                    ValuePrinter::zero(ty)
+                ),
+                _ => format!("let {name} = {cx}.f64({i});"),
+            },
+            Source::Carrier(c) => match self.body.carriers().get(c as usize) {
+                Some(carrier) => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i}));", self.values.pin_type(&carrier.ty)?),
+                None => return Err(self.unsupported(&format!("a read of carrier {c}"))),
+            },
+            _ => format!("let {name} = {cx}.f64({i});"),
+        })
+    }
+
     /// `i(a, k)` or `v(p, n)`: what a contribution to `branch` writes, with its nature's access.
     fn branch_text(&self, branch: u32, quantity: QuantityRole) -> String {
         let Some(b) = self.body.branches().get(branch as usize) else { return format!("branch {branch}") };
@@ -326,17 +375,17 @@ impl<'a> AnalogPrinter<'a> {
         let mut t = Text::new();
         self.terms_block(&mut t, f, &slice, &reads)?;
         t.line("");
-        self.terms_function(&mut t, k, f, &reads);
+        self.terms_function(&mut t, k, f, &reads)?;
         let mut text = t.finish();
         text.pop();
         Ok(text)
     }
 
     fn terms_block(&self, t: &mut Text, f: &FunctionPlan, slice: &Slice, reads: &[(usize, Source)]) -> Result<(), Error> {
-        let params: Vec<String> = reads
-            .iter()
-            .map(|(_, s)| format!("{}: {}", self.read_name(*s), if self.is_bool(*s) { "bool" } else { "R" }))
-            .collect();
+        let mut params: Vec<String> = Vec::with_capacity(reads.len());
+        for (_, s) in reads {
+            params.push(format!("{}: {}", self.read_name(*s), self.block_type(*s)?));
+        }
         t.comment(&format!("{}.analog", self.body.name()), self.body.origin());
         t.line(&format!("fn terms_block<R: Real>({}) -> [R; {}] {{", params.join(", "), f.writes.len()));
         let mut lines = Vec::new();
@@ -404,7 +453,7 @@ impl<'a> AnalogPrinter<'a> {
         Ok(())
     }
 
-    fn terms_function(&self, t: &mut Text, k: usize, f: &FunctionPlan, reads: &[(usize, Source)]) {
+    fn terms_function(&self, t: &mut Text, k: usize, f: &FunctionPlan, reads: &[(usize, Source)]) -> Result<(), Error> {
         let pin = |slot: usize| f.reads.get(slot).is_some_and(|r| r.is_pin());
         let affine = |w: usize| f.affine.get(w).copied().unwrap_or(false);
         let at_iterate = (0..f.writes.len()).any(|w| !affine(w)) || f.partials.iter().any(|(w, slot)| affine(*w) && !pin(*slot));
@@ -418,10 +467,13 @@ impl<'a> AnalogPrinter<'a> {
             self.function_origin(k)
         ));
         t.line("fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {");
+        let mut binds = Vec::with_capacity(reads.len());
+        for (i, s) in reads {
+            binds.push(self.decode("cx_", *i, *s)?);
+        }
         t.indented(|t| {
-            for (i, s) in reads {
-                let get = if self.is_bool(*s) { "bool" } else { "f64" };
-                t.line(&format!("let {} = cx_.{get}({i});", names[*i]));
+            for line in &binds {
+                t.line(line);
             }
             let call = |zero: bool| {
                 let args: Vec<String> = reads
@@ -431,7 +483,7 @@ impl<'a> AnalogPrinter<'a> {
                         if *i < f.slots {
                             let v = if zero && s.is_pin() { "0.0" } else { name.as_str() };
                             format!("Dual::<{}>::seeded({v}, {i})", f.slots)
-                        } else if self.is_bool(*s) {
+                        } else if self.is_plain(*s) {
                             name.clone()
                         } else {
                             format!("Dual::<{}>::constant({name})", f.slots)
@@ -477,6 +529,7 @@ impl<'a> AnalogPrinter<'a> {
             t.line("Ok(())");
         });
         t.line("}");
+        Ok(())
     }
 
     pub(crate) fn unsupported(&self, form: &str) -> Error {

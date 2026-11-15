@@ -76,7 +76,7 @@ impl<'a> DigitalPrinter<'a> {
         let name = self.names.read_name(s);
         let carrier_of_drive = |k: u32| self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);
         let pin = |ty: &ValueType| -> Result<String, Error> {
-            Ok(format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i}));", values.type_of(ty)?))
+            Ok(format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i}));", values.pin_type(ty)?))
         };
         Ok(Some(match s {
             Source::Carrier(c) => match self.body.carriers().get(c as usize) {
@@ -92,7 +92,7 @@ impl<'a> DigitalPrinter<'a> {
             Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {
-                    let (rust, zero) = (values.type_of(ty)?, Self::zero(ty));
+                    let (rust, zero) = (values.type_of(ty)?, ValuePrinter::zero(ty));
                     format!("let {name} = rt::Flagged::<{rust}>::decode({cx}.bytes({i})).known_or({zero});")
                 }
                 _ => format!("let {name} = {cx}.f64({i});"),
@@ -101,15 +101,6 @@ impl<'a> DigitalPrinter<'a> {
                 return Ok(None);
             }
         }))
-    }
-
-    /// `rt::UInt::<N>::new(0)` or `rt::Int::<N>::new(0)`.
-    fn zero(ty: &ValueType) -> String {
-        match ty {
-            ValueType::UInt(n) => format!("rt::UInt::<{n}>::new(0)"),
-            ValueType::Int(n) => format!("rt::Int::<{n}>::new(0)"),
-            _ => "0".to_string(),
-        }
     }
 
     /// The `let` lines binding the reads of `f` its code uses (`values` printed them) or in

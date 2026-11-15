@@ -156,14 +156,12 @@ impl LibraryPrinter {
                 }
                 Mode::Drive(_) => (digital.drive(k)?, digital.function_name(f)),
                 Mode::Event(_) | Mode::DelayedEvent(_) => (digital.event(k)?, digital.function_name(f)),
-                Mode::Cross(_) => {
-                    return Err(Error::Unsupported { form: "a cross watch".to_string(), path: format!("body {name} function {k}"), origin: at.clone() });
-                }
+                Mode::Cross(_) => (digital.cross(k)?, digital.function_name(f)),
             };
-            if matches!(f.mode, Mode::Terms | Mode::Limit(_)) {
+            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Cross(_)) {
                 uses.insert("rt::Dual");
             }
-            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_)) {
+            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_) | Mode::Cross(_)) {
                 uses.insert("rt::Real");
             }
             uses.insert("piperine_abi::device::Eval");
