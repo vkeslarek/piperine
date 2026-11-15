@@ -157,13 +157,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `two_writers_of_one_net_are_refused_naming_both` passes for function against function and function against statement (C8)
-- [ ] Test `unequal_layouts_on_one_net_are_refused` passes (C9)
-- [ ] Test `an_unbound_global_is_refused_unless_optional` passes, with the `OPTIONAL` pin reading zero bytes
-- [ ] Test `later_is_dropped_when_its_bound_is_under_one_tick` passes at resolutions of 1 fs and 1 ns (C18)
-- [ ] Test `a_shape_that_fails_validation_fails_bind` passes
-- [ ] Test `a_net_nobody_writes_is_written_by_the_host` passes
-- [ ] Gate: full
+- [x] Test `two_writers_of_one_net_are_refused_naming_both` passes for function against function and function against statement (C8)
+- [x] Test `unequal_layouts_on_one_net_are_refused` passes (C9)
+- [x] Test `an_unbound_global_is_refused_unless_optional` passes, with the `OPTIONAL` pin reading zero bytes
+- [x] Test `later_is_dropped_when_its_bound_is_under_one_tick` passes at resolutions of 1 fs and 1 ns (C18)
+- [x] Test `a_shape_that_fails_validation_fails_bind` passes
+- [x] Test `a_net_nobody_writes_is_written_by_the_host` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
