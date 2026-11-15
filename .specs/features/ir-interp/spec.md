@@ -1,82 +1,55 @@
-# IR Interpreter (reference backend) Specification
+# IR Interpreter (reference backend, M1 subset) Specification
 
-**Status**: Draft. Not approved. Open questions INT-Q1 to INT-Q7 block approval.
+**Status**: Draft. Not approved. Rewritten for M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S4, S8).
 
 ## Problem Statement
 
-After `msl-elab` an MSL design exists as an IR, and nothing executes it. The retired path compiled straight to machine code through Cranelift, which was hard to debug and to verify (context.md "Why"). The chain needs a backend that runs an IR directly, with no compiler in the environment, whose behavior is easy to read and to trust. That backend is the reference: the debug mode, and the oracle every fast backend is compared against (C6).
+After `msl-elab` an MSL design exists as an `Ir`, and nothing executes it. The solver runs devices through one contract, the device ABI (MD-62), and every device in the tree today is written by hand in a test. This feature is the first backend: one generic device that runs any body of an `Ir` through the ABI, with Jacobians from dual numbers (S4). It is the reference: always available, with no compiler in the environment, and the oracle a faster backend is compared against (C6).
 
 ## Goals
 
-- [ ] An elaborated design runs on the solver from its IR alone, with no `rustc` and no compilation step (C6 "always available").
-- [ ] The interpreter gives every construct the behavior `docs/spec/` defines for it, per kind of solve (§16.2) and per instant (§15).
-- [ ] A run-phase error names its code and the instance path (§0.3 items 3 and 4, §1 rule 11).
-- [ ] A differential harness runs one IR on the interpreter and on another backend and reports the first difference (C6).
-- [ ] This is the first end-to-end MSL to solver path (O6 proposal), so integration tests can exist again.
+- [ ] An elaborated M1 design runs on the solver from its `Ir` alone: operating point, DC, AC and transient.
+- [ ] The interpreter meets the solver only through the device ABI: shapes, `eval`, nothing else.
+- [ ] Every declared partial is exact: each function of each M1 body passes `piperine_abi::verify::verify_partials`.
+- [ ] A term that is linear in the node potentials leaves no round-off on the solver's right side.
 
 ## Out of Scope
 
 | Feature | Reason |
 | ------- | ------ |
 | The IR model and its construction | features `msl-ir` and `msl-elab` |
-| The Rust transpiler | feature `ir-rust` |
-| The device ABI: device shape, state, events, small-signal, noise, introspection, external devices, versioning | ABI duel (C8, O8); the interpreter implements it and does not design it |
-| Time, ticks, the event queue, the carrier store, commit ordering, the microstep loop, checkpoint and rollback | owned by the solver (C9; solver-completeness context Q1) |
-| Newton, step control, crossings location, limiting algorithms, the jump solve | solver (Part V, Appendix C.2) |
-| The history and state of `ddt`, `delay`, `limit` and `noise` | §14 rule 5: their value inputs "are read by the solver"; the split of state is the ABI's |
-| `extern "osdi"` and `extern "cosim"` devices | they are other devices under the ABI, not interpreted IR |
-| Interpreter speed work (bytecode, caching of evaluation plans) | the interpreter is the reference, not the fast path (C6); see INT-Q4 |
-| Re-enabling the ngspice parity targets | follows the first end-to-end run; planned separately (solver-completeness context, round 2: "Tests") |
+| Reactions, commits, discrete functions other than a param's `where`, events, watches, `emit!` records | the digital side is M2 (S2); the M1 node set has none |
+| `DELAY` terms, `NOISE` inputs, `CROSS`/`CAP`/`TRACE`/`VAR` watches, the ambients `TIME`, `FREQ`, `STATIC` as model reads | their source forms are outside the M1 subset |
+| Partials against params | `sens` and `adjoint` are not M1 analyses; the solver falls back to finite differences where a path has no partial (abi.md §10) |
+| The differential harness between two backends (first draft INT-06) | M3: it needs a second backend. S8 fixes how they will be compared |
+| A debug trace or stepping (INT-Q2) | not in M1: the printed IR and the solver's trace flags are the debug surface |
+| Interpreter speed work | the interpreter is the reference, not the fast path (C6) |
+| A host session (`piperine-api`) | does not build yet; M1 exposes one function that returns a bound `CircuitInstance` |
+| Time, steps, Newton, limiting tolerance, histories, checkpoints | the solver's (C9; abi.md §0 item 2) |
 
 ---
 
 ## Assumptions & Open Questions
 
-Rows marked `y` are settled by a recorded decision or by `docs/spec/`. Rows marked `n` are unconfirmed proposals with an entry under "Open questions (detail)".
+Rows marked `y` are settled by a recorded decision, by `docs/spec/`, by `abi.md` or by code. Rows marked `n` wait for the user in `.specs/features/e2e-m1/questions.md`.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
-| The interpreter is the reference backend | always available, the debug mode, the differential oracle | C6 | y |
-| It executes the IR, not the POM | input is an IR value | C3 | y |
-| The solver owns events and time; devices evaluate | the interpreter evaluates definitions, `resolve`, reactions and `analog` when the solver calls it | C9; solver-completeness context Q1, user: "pode ser modelado como solver o dono dos eventos" | y |
-| Carriers cross the boundary as opaque bytes | the interpreter encodes levels and known flags into the byte layout the IR fixes, unknown levels in a canonical form | C9; solver-completeness context Q2, user: "Prefiro bytes também" | y |
-| Value semantics | Rust edition 2024 value semantics with the deltas of Part I | §0.4 | y |
-| How the Jacobian is computed (INT-Q1, O1) | forward-mode dual numbers while evaluating `analog` | proposal of O1; the language requires only that everything is differentiated with respect to every probe (§11 rule 5) | n |
-| What "debug mode" contains (INT-Q2) | backend selection plus an evaluation trace keyed by instance path; no stepping debugger in the first version | C6 names the mode and no content | n |
-| How two backends are compared (INT-Q3) | discrete carriers, records and event order bit for bit; analog values within the session's convergence tolerances | not decided | n |
-| Whether the interpreter is the default backend for small runs (INT-Q4, O5) | undecided here; the choice is a host option | proposal of O5 | n |
-| How the interpreter meets the ABI (INT-Q5, O8) | one generic device type that holds an IR handle and implements the ABI for any module | depends on the duel | n |
-| Crate (INT-Q6) | a new crate `piperine-interp` depending on the IR crate and on the ABI crate | no decision recorded | n |
-| Arbitrary-width integers and `Float<16>`/`Float<128>` (INT-Q7) | exact semantics in the interpreter from the first version | §1 rules 5 and 6; affects the oracle's authority | n |
-| Who implements and who verifies (C10) | Opus implements, Fable verifies | whether the interpreter counts as "core" is not stated | n |
+| The interpreter is the reference backend and executes the IR | as stated | C3, C6 | y |
+| Jacobians by forward-mode dual numbers | one tangent per differentiable read of the function | S4, user: "Concordo e pode disparar"; abi.md §8 | y |
+| One generic device for every body (INT-Q5) | `Interpreted`, created by a per-body factory that holds the plan | abi.md §3: `Module.data` is "the module's own (an interpreter's IR, an OSDI descriptor)"; §7 "One path" | y |
+| The ABI crate gains a constructor of a `Module` that carries data (Q1) | `piperine_abi::thunk::module_with::<F: Factory>(name, &'static F)`; `Device` and `module::<D>` stay as they are | `Device::prototype()` and `Device::create()` are static functions and `module::<D>` sets `data` to null (`thunk.rs:28`), so one Rust type cannot serve many bodies today. The alternative is `unsafe` thunks outside `piperine-abi`, which its own rule forbids | n |
+| Crate (INT-Q6) | `piperine-interp`: depends on the IR crate, `piperine-abi` and `piperine-solver` | the solver crates may depend only on `piperine-abi` (MD-61), so the arrow can only point this way; the solver dependency is for `Interpreter::circuit` alone | y |
+| Where the IR is turned into a solver circuit | `Interpreter::circuit`, in this crate, until a host crate builds | `piperine-api` does not compile; the function reads only the instance table and a body-to-module map, so moving it later changes no logic | y |
+| Modules live for the process | one leaked `Module` and one leaked factory per body per `Interpreter` | `CircuitBuilder::device` and `Handle::create` take `&'static Module` (`builder.rs:99`, `caller.rs:130`); the count is bounded by the bodies of a design | y |
+| Linear terms (the T5 lesson) | an affine `FLOW` term is written as `c + Σ partial·read`, summed as the assembly sums | `piperine-analog-solver/src/device/flow.rs:24`: the right side is `−(v − Σ g·x)`, folded from `0.0` in partial order | y |
+| Every node of a body is a `PORT` pin | ports and signals alike; the netlist binds each to a design node | `msl-elab` owns every node; a `PORT` pin with `HAS_INIT` gives the hold of §16 H1 (`bind.rs:431`) | y |
+| `limit` on its first iteration | from the seed, and never below it (§18 rule 2) | abi.md A2 gives the seed rule; its §11.2 example omits rule 2, the specification states it | y |
+| Backend comparison (INT-Q3) | discrete bit for bit, analog within the session tolerances | S8; nothing to compare in M1 | y |
 
-**Open questions:** INT-Q1 to INT-Q7 are open and listed below. This spec is not ready for approval.
+**Open questions:** Q1 of `.specs/features/e2e-m1/questions.md` (the addition to `piperine-abi`). Everything else is resolved above.
 
-**Implicit-requirement dimensions.** Input validation and bounds: INT-01 AC 3 (an IR that fails `check()`), INT-05. Failure states: INT-05 (panic, non-finite contribution, run errors). Idempotency: INT-02 AC 4 (re-evaluation with the same inputs gives the same outputs). Auth and rate limits: N/A because the interpreter is an in-process library. Concurrency and ordering: INT-04 AC 3 (no dependence on evaluation order, I1). Data lifecycle: N/A because state lifetime is fixed by the ABI (INT-Q5). Observability: INT-05 AC 3, INT-07 and INT-Q2. External-dependency failure: N/A because the interpreter has no external dependency; that is its purpose. State-transition integrity: INT-04 AC 4 (a rejected step leaves no trace, I8).
-
-**Open questions (detail)**
-
-- **INT-Q1 (O1). Jacobian.** Options: (a) forward-mode duals: `analog` is evaluated over a number type that carries a value and its partials with respect to the probes; (b) symbolic differentiation on the IR, the interpreter then evaluates derivative expressions. Recommendation: (a), the proposal of O1: it removes a stage and is exact to machine precision. Two language constraints hold either way: `ddx` is defined over probe leaves, with other branches held constant and `limit` transparent (§14.2.3); the small-signal sweep needs the resistive and the reactive part of each contribution separately (§16.2, `ddt` is `jω·x`).
-- **INT-Q2. Debug mode.** C6 calls the interpreter "the debug mode" without content. Options: (a) selection only: the same run, interpreted; (b) plus a trace of evaluations (which definition, reaction or contribution, its inputs and result, its path); (c) plus breakpoints and stepping driven by the host. Recommendation: (b) now, (c) as its own feature with the host. The solver's record sink is already the first-class debug surface for events (solver-completeness context Q4).
-- **INT-Q3. Oracle comparison.** Options: (a) everything bit for bit; (b) discrete side bit for bit, analog within tolerance; (c) final waveforms only, within tolerance. Recommendation: (b). Rust has no fast-math, so (a) may hold in practice if both backends evaluate in the same order, but libm calls and a different Jacobian method (INT-Q1) can move the last bit.
-- **INT-Q4 (O5). Default backend.** Whether small runs use the interpreter by default to avoid compile latency. Recommendation: decide in `ir-rust` with measurements; this feature only guarantees the interpreter is selectable.
-- **INT-Q5 (O8). ABI fit.** Where instance state lives, how the interpreter reports events and step bounds, and how small-signal and noise are asked for, are all the duel's output. This spec states behavior and leaves the seam open.
-- **INT-Q6. Crate.** Options: (a) `piperine-interp`; (b) a module of the IR crate. Recommendation: (a): the IR crate stays free of solver dependencies.
-- **INT-Q7. Wide and odd numeric types.** `UInt<N>`/`Int<N>` for any `N` in 1..=128 wrap modulo `2^N`; `Float<N>` has `N` in {16, 32, 64, 128}. Options: (a) exact from the start; (b) fail loud on widths with no native Rust type until needed. Recommendation: (a) for integers (masking is cheap), (b) for `Float<16>` and `Float<128>`, which stable Rust does not have.
-
----
-
-## Dependencies & Order
-
-| Depends on | For | State |
-| ---------- | --- | ----- |
-| `msl-ir` | the input | drafted with this spec |
-| `msl-elab` | real IR values to run; without it only hand-built IRs are testable | drafted with this spec |
-| ABI duel (C8, O8) | the interface the interpreter implements | open |
-| `solver-restructure` and the solver features that follow it | the event owner, the digital DAG, the analog sub-solver the interpreter is called by | planned on `feature/solver-completeness` |
-| `msl-stdlib` | the §22 sources the conformance set uses | in progress |
-
-Order proposed by O6 (not decided): `msl-elab`, `msl-ir` and `ir-interp` first; `ir-rust` after, tested against this feature's oracle. `ir-interp` is last of its group and is the first point where integration tests and ngspice parity can run.
+**Implicit-requirement dimensions.** Input validation and bounds: INT-01 AC 3 (an IR that fails `check()`), INT-05. Failure states: INT-05. Idempotency: INT-02 AC 5 (purity, abi.md F1). Auth and rate limits: N/A because it is an in-process library. Concurrency and ordering: INT-02 AC 5; the device is `Send` and keeps no state between calls. Data lifecycle: the leaked modules, stated above. Observability: INT-05 AC 2 (origins in faults); every pin, term, input and function carries its `origin`. External-dependency failure: N/A because nothing external is called. State-transition integrity: N/A because the device has no memory (abi.md §0 item 2).
 
 ---
 
@@ -84,142 +57,200 @@ Order proposed by O6 (not decided): `msl-elab`, `msl-ir` and `ir-interp` first; 
 
 ### P1: Run a design from its IR ⭐ MVP
 
-**User Story**: As a model author, I want my elaborated design to run with no compiler installed so that I can simulate anywhere and immediately.
+**User Story**: As a host author, I want an elaborated design bound to the solver with one call so that I can ask for an analysis.
 
-**Why P1**: C6; first end-to-end path (O6).
+**Why P1**: C6; the first end-to-end path.
 
 **Requirement**: INT-01
 
 **Acceptance Criteria**:
 
-1. WHEN a session selects the interpreter backend for an IR THEN the system SHALL run the requested analysis without invoking `rustc` or any other external program.
-2. The system SHALL present an interpreted design to the solver through the device ABI (C8), with no interface of its own.
-3. IF the IR fails its invariant check THEN the system SHALL refuse to run it and SHALL return the check's entries.
+1. WHEN `Interpreter::new` is given an `Ir` whose `check()` is empty THEN the system SHALL return an interpreter that gives one `&'static Module` per body that has an `analog` block or a node with an initial potential.
+2. WHEN `Interpreter::circuit` is called THEN the system SHALL return a `CircuitInstance` in which each such instance is one device bound by `CircuitBuilder::device` under its path, each design node is one solver node named by its path, and each param holds its bound value.
+3. IF the `Ir` fails `check()` THEN the system SHALL return no interpreter and SHALL return the check's entries.
+4. The system SHALL invoke no external program and read no file.
+5. WHEN a body node has an initial potential THEN the system SHALL give its pin `HAS_INIT` with that value.
 
-**Independent Test**: run a `Dc` analysis of a resistor divider elaborated from MSL source on a machine with no `rustc` in `PATH`.
+**Independent Test**: elaborate `Divider` of the M1 models, call `circuit()`, run `dc()`; `Divider.mid` reads 7.5 V within 1e-9.
+
+---
+
+### P1: The ABI carries a module's data ⭐ MVP
+
+**User Story**: As the author of a device that serves many modules, I want to build a `Module` around a factory value so that one Rust type runs any number of bodies without `unsafe` of my own.
+
+**Why P1**: without it the generic device cannot be expressed through `piperine-abi` (Q1).
+
+**Requirement**: INT-08
+
+**Acceptance Criteria**:
+
+1. WHEN `thunk::module_with` is given a name and a `&'static` factory THEN the system SHALL return a `Module` whose `data` is that factory and whose `prototype` is the factory's.
+2. WHEN `create` of that module is called THEN the system SHALL call the factory's `create` with the given values and SHALL validate the returned shape as `module::<D>` does.
+3. WHEN `eval` or `react` of that module is called THEN the system SHALL run the instance the factory created, with a panic turned into a `FAULT` as in `module::<D>`.
+4. The system SHALL leave `Device`, `module::<D>` and every existing test of `piperine-abi` and `piperine-solver` unchanged and green.
+
+**Independent Test**: a test factory in `piperine-abi/tests` holding a gain `k` builds two modules with different `k`; one device type, two results.
+
+---
+
+### P1: A shape from a body ⭐ MVP
+
+**User Story**: As the solver, I want each body described as a shape so that I bind it like any hand-written device.
+
+**Why P1**: the shape is the whole interface (abi.md §3).
+
+**Requirement**: INT-09
+
+**Acceptance Criteria**:
+
+1. The system SHALL declare the pins of a body in this order: one `PARAM` pin per param in declaration order with its default as `init`; one `PORT` continuous pin per body node in node order with the `abstol` of its nature's potential and flow; one `PRIVATE` continuous pin per potential branch; one `GLOBAL` `TEMPERATURE` pin when the body reads `temperature()`.
+2. The system SHALL declare, per flow branch, a `FLOW` term when it has a direct addend and a `DDT` term when it has an addend under `ddt`, both on the branch's terminals.
+3. The system SHALL declare, per potential branch with private pin `f`, a `FLOW` term on the branch's terminals whose value is `f`, and a `FLOW` term `{f, GROUND}` whose value is the potential difference minus the sum of the contributions (abi.md A1).
+4. The system SHALL declare one `LIMIT` input per `limit` site and one `STIM` input per `ac_stim` site.
+5. The system SHALL declare one function per `limit` site that writes its `PROPOSED` and `LIMITED`, one function per `ac_stim` site that writes its `RE` and `IM`, and one function that writes every term of the body.
+6. The system SHALL declare as the reads of each function exactly the cells of its static dependency set (`msl-ir` IR-09), and as its partials each written term or `PROPOSED` against each continuous pin, `LIMIT` value and `STIM` value of that set.
+7. The system SHALL give every pin, term, input and function the `origin` of its IR item.
+8. WHEN a shape is produced for any M1 body THEN `piperine_abi::validate::validate` SHALL accept it.
+
+**Independent Test**: the shape of `Diode` has pins `is, n, cj0, a, k, temperature`, one `LIMIT` input, terms `FLOW{a,k}` and `DDT{a,k}`, and two functions; it validates.
 
 ---
 
 ### P1: Value semantics ⭐ MVP
 
-**User Story**: As a model author, I want value-level code to compute what the language defines so that functions, structs, enums and `match` behave as written.
+**User Story**: As a model author, I want value code to compute what the language defines so that `pnjlim` and `vt` behave as written.
 
-**Why P1**: §0.4 and Part I; every other story evaluates expressions.
+**Why P1**: §0.4, Part I; every other story evaluates expressions.
 
 **Requirement**: INT-02
 
 **Acceptance Criteria**:
 
-1. The system SHALL evaluate integer arithmetic of `UInt<N>` and `Int<N>` wrapping modulo `2^N` (§1 rule 6).
+1. The system SHALL evaluate `f64` arithmetic, comparisons and the methods `exp`, `ln`, `sqrt` and `abs` with the results of Rust's `f64`.
 2. WHEN a float is divided by zero THEN the system SHALL yield the IEEE 754 result and SHALL not fail (§1 rule 12).
-3. The system SHALL propagate the known flag of every level through every operator as §3.3.2 defines.
-4. WHEN an expression is evaluated twice with the same inputs THEN the system SHALL return the same levels and the same known flags.
+3. The system SHALL evaluate `&&` and `||` without evaluating the right operand when the left decides, and an `if` by evaluating only the taken block.
+4. WHEN a function is called THEN the system SHALL evaluate its body with its parameters bound to the argument values, and a closure with the locals of the block that wrote it.
+5. WHEN a function is evaluated twice with the same inputs THEN the system SHALL write the same output bytes and the same partials.
 
-**Independent Test**: unit tests over hand-built IR expressions: `unknown & false` is known `false`; `200u8 + 100u8` is `44`.
+**Independent Test**: evaluate `pnjlim` from the standard library at the six branch points of its source and compare with the same formula written in the test.
 
 ---
 
-### P1: Analog evaluation ⭐ MVP
+### P1: Analog evaluation with exact partials ⭐ MVP
 
-**User Story**: As the analog sub-solver, I want each `analog` block evaluated at the current iterate with its derivatives so that Newton can assemble and solve.
+**User Story**: As the analog sub-solver, I want each term's value and its partials at the iterate so that Newton assembles and solves.
 
-**Why P1**: §11, §16.2; the analog half of the first end-to-end run.
+**Why P1**: §11 rule 5, §11 rule 16; abi.md F5.
 
 **Requirement**: INT-03
 
 **Acceptance Criteria**:
 
-1. WHEN the solver asks for an evaluation THEN the system SHALL execute the `analog` block with probes reading the current iterate and SHALL return, for every branch, the sum of the contributions enabled in that solve (§11 rules 15 and 16).
-2. The system SHALL return the derivative of every contribution with respect to every probe it depends on, through function calls, value inputs and results (§11 rule 5).
-3. The system SHALL give each core primitive the value of its row and of the solve's column in the first table of §16.2.
-4. WHEN `ddx(e, probe)` is evaluated THEN the system SHALL return the partial derivative of `e` with a probe of the same branch contributing 1, the reversed branch −1 and every other branch held constant (§14.2.3).
-5. IF a contribution evaluates to a non-finite value THEN the system SHALL fail the solve (§11 rule 19).
-6. WHEN `bound_step(dt)` is executed at the accepted solution of a transient step THEN the system SHALL report `dt` to the solver as a cap on the next step (§14.10.2).
+1. WHEN the terms function is evaluated THEN the system SHALL execute the `analog` block once, with each probe reading the difference of its terminals' pins, ground reading 0, and SHALL write to each term the sum of its branch's addends with their signs.
+2. The system SHALL write, for every seeded partial, the derivative of the written value with respect to the read cell, computed by dual numbers through operators, methods, function calls and locals.
+3. The system SHALL read `temperature()` from the `TEMPERATURE` pin, `gmin()` from the ambient `GMIN` and `source_scale()` from the ambient `SOURCE_SCALE`.
+4. WHEN a function of any M1 body is given to `verify_partials` at a point where its limits hold `LIMITED = PROPOSED` THEN the verifier SHALL pass every declared partial with `rel_tol` 1e-6.
+5. The system SHALL give `abs` the derivative `sign(x)` and every other method of the catalogue its analytic derivative.
 
-**Independent Test**: evaluate a diode `analog` block at a fixed bias on a hand-built IR and compare current and conductance with the closed form.
+**Independent Test**: evaluate the diode's terms function at `vd = 0.6 V`, 300.15 K; the `FLOW` value equals `is·(exp(vd/vt) − 1) + gmin·vd` and its partial against the `LIMIT` value equals `is·exp(vd/vt)/vt + gmin`, both to 1e-12 relative.
 
 ---
 
-### P1: Discrete evaluation ⭐ MVP
+### P1: Linear terms are exact ⭐ MVP
 
-**User Story**: As the digital sub-solver, I want definitions, `resolve`s and reactions evaluated on demand so that the microstep loop settles and reacts as §15 states.
+**User Story**: As the solver, I want a linear term's value to be the same products I subtract so that its right side is exactly zero.
 
-**Why P1**: §8.2, §12, §13, §15; the digital half of the first end-to-end run.
+**Why P1**: the lesson of `solver-abi-integration` T5: a last-bit residue per solve became 1e-12 relative drift in step times.
 
-**Requirement**: INT-04
+**Requirement**: INT-12
 
 **Acceptance Criteria**:
 
-1. WHEN the solver asks for a definition or a `resolve` THEN the system SHALL return its value computed from the carrier values the solver supplies.
-2. WHEN the solver runs a reaction THEN the system SHALL execute it once to completion and SHALL return its commits, each with its target, value and delay, without writing any carrier itself (§12.1.1, §12.1.6).
-3. The system SHALL give the same result for any order in which the solver evaluates the reactions of one microstep (§15 I1, I2).
-4. WHEN a step is rejected THEN the system SHALL keep no state from the evaluations made during it (§15 I8, §14 rule 8).
-5. WHEN an `emit!` is executed THEN the system SHALL hand the solver one record with its stream, its fields and the instance path (§19 rule 1).
-6. WHEN the solver asks whether an event expression fires THEN the system SHALL answer from the state and the solution the solver supplies for that instant (§13, §15 "What each kind of code reads").
+1. WHEN a `FLOW` term's addends are affine in the node potentials (`msl-ir` IR-09 AC 3) THEN the system SHALL evaluate them with every continuous pin read as 0 to get the constant `c` and the partials `g`, and SHALL write the value `c` added to the sum of `g_j·x_j` folded from `0.0` in the order of the term's declared partials.
+2. WHEN the `Resistor` body is evaluated at any `vp`, `vn` and `r` THEN the system SHALL write a value equal bit for bit to `g*vp - g*vn` with `g = 1.0/r`, and the partials `g` and `-g`.
 
-**Independent Test**: run the trace of §15.1 (the `Front` model) and compare the order of commits, definitions and reactions with the table of §15.1.
+**Independent Test**: for 1000 random `(vp, vn, r)`, the value minus the fold `0.0 + g*vp + (-g)*vn` is exactly `0.0`.
 
 ---
 
-### P1: Run errors ⭐ MVP
+### P1: `limit` ⭐ MVP
 
-**User Story**: As a model author, I want a failure during a run to say what failed and where so that I can fix the model.
+**User Story**: As a model author, I want `limit` to bound Newton's step as §18 states so that a junction converges.
 
-**Why P1**: §0.3 items 3 and 4; the motivation of the whole redesign is debuggability.
+**Why P1**: the diode is in M1 by decision (S1).
+
+**Requirement**: INT-10
+
+**Acceptance Criteria**:
+
+1. WHEN the function of a `limit` site is evaluated THEN the system SHALL write `PROPOSED` as the site's input `x` with its partials against the continuous pins, and `LIMITED` as `f(x, old)`.
+2. WHEN `AGE` is 0, or the ambient `STATIC` is true and `AGE` is 1, THEN the system SHALL take `old` as the seed, or as `x` when the site has no seed; otherwise it SHALL take `old` as `LAST` (abi.md A2).
+3. WHEN `old` is the seed and `f(x, seed)` is below the seed THEN the system SHALL write the seed as `LIMITED` (§18 rule 2).
+4. WHEN the terms function reaches a `limit` site THEN the system SHALL use the input's `VALUE` as the site's result with derivative 1 against that read, and SHALL not evaluate `x`, `f` or the seed (§18 rule 3, abi.md A2).
+5. The system SHALL declare no function that writes both a limit and a term (abi.md A3).
+
+**Independent Test**: bind one `Diode` across a 0.8 V source through 1 Ω and run `dc()`; it converges, and the current equals the fixed point of the Shockley equation to 1e-9 relative.
+
+---
+
+### P1: `ac_stim` ⭐ MVP
+
+**User Story**: As a model author, I want `ac_stim` to be the small-signal stimulus so that an `Ac` sweep has a source.
+
+**Why P1**: AC is an M1 analysis (S1).
+
+**Requirement**: INT-11
+
+**Acceptance Criteria**:
+
+1. WHEN the function of an `ac_stim` site is evaluated THEN the system SHALL write `RE` as `mag·cos(phase)` and `IM` as `mag·sin(phase)`, and `RE = mag`, `IM = 0` when the site has no phase.
+2. WHEN the terms function reaches an `ac_stim` site THEN the system SHALL use the input's `VALUE` as the call's result with derivative 1 against that read.
+
+**Independent Test**: bind `Vsource { ac: 1.0 }` to a 1 kΩ and 1.5915494309189535 nF low-pass and run an `Ac` point at 100 kHz; the output magnitude is `1/√2` to 1e-9.
+
+---
+
+### P1: Faults ⭐ MVP
+
+**User Story**: As a model author, I want a failure to say what failed and where.
+
+**Why P1**: §0.3 item 4; debuggability is the reason for the redesign.
 
 **Requirement**: INT-05
 
 **Acceptance Criteria**:
 
-1. IF value-level code panics during a run (§1 rule 11) THEN the system SHALL fail the analysis and SHALL name the instance path.
-2. IF a condition of phase run in an error table of Part IV is met during an evaluation THEN the system SHALL fail the analysis with that condition's code.
-3. The system SHALL attach to every run error the hierarchical path of the instance and the source location the IR records for the failing item.
+1. IF `create` is given a value for a param whose layout it does not match THEN the system SHALL return a `FAULT` naming the param.
+2. IF an evaluation reaches an IR form the interpreter does not execute THEN the system SHALL return a `FAULT` whose message names the form and its origin, and SHALL not write a value.
 
-**Independent Test**: index an array out of range in a reaction and read the error's code, path and source location.
-
----
-
-### P1: Differential oracle ⭐ MVP
-
-**User Story**: As a backend author, I want to run one IR on the interpreter and on my backend and see the first difference so that a fast backend is proven against the reference.
-
-**Why P1**: C6: "the differential oracle every fast backend is tested against".
-
-**Requirement**: INT-06
-
-**Acceptance Criteria**:
-
-1. WHEN the harness is given an IR, an analysis and a second backend THEN the system SHALL run the analysis on both and SHALL return either "equal" or the first differing item.
-2. WHEN the two runs differ THEN the system SHALL report the instant, the path of the item and both values.
-3. WHEN the second backend is the interpreter itself THEN the system SHALL report "equal".
-
-**Independent Test**: run the harness against a deliberately wrong test backend that negates one contribution and read the reported path.
+**Independent Test**: a hand-built IR that passes `check()` and holds a closure outside a `limit` faults at evaluation with the closure's origin in the note.
 
 ---
 
-### P2: Debug mode
+### P2: A param's `where` guards a host `set`
 
-**User Story**: As a model author, I want to select the interpreter to investigate a run so that I can see what the model computed.
+**User Story**: As a host author, I want a `set` that breaks a param's `where` refused so that a running design never holds an illegal value.
 
-**Why P2**: C6 names the mode; its content is INT-Q2.
+**Why P2**: §8.1, abi.md P6. No M1 fixture sets a guarded param; without this a bad `set` would pass silently, so it is in M1 but after the parity path.
 
-**Requirement**: INT-07
+**Requirement**: INT-14
 
 **Acceptance Criteria**:
 
-1. WHERE the debug trace is enabled the system SHALL emit one trace entry per evaluated definition, reaction and contribution, with its instance path and its result.
-2. WHILE the debug trace is disabled the system SHALL emit no trace entry.
+1. WHEN a param has a `where` condition THEN the system SHALL declare a private discrete pin that holds a `BOOL` at byte 0, a discrete function that reads the params the condition names and writes it, and SHALL flag the param's pin `HAS_CHECK` with that pin as its `check`.
+2. WHEN `CircuitInstance::set` writes a value that makes the condition false THEN the solver SHALL refuse the write.
 
-**Independent Test**: run the `Front` model with the trace enabled and find the three reactions by path.
+**Independent Test**: `circuit.set("Top.r1", "r", Real(-1.0))` returns an error and a following `dc()` reads the old result.
 
 ---
 
 ## Edge Cases
 
-- WHEN a design has no `analog` block THEN the system SHALL run its discrete evaluation with no analog evaluation requested.
-- WHEN `noise(psd)` is evaluated outside a `Noise` sweep THEN the system SHALL return 0 and SHALL not evaluate `psd` (§16.2 note 1).
-- IF `analog` code reaches a value with an unknown level THEN the system SHALL fail the analysis, since elaboration guarantees it cannot (§3.3.5).
-- WHEN a reaction makes no commit THEN the system SHALL return an empty list of commits.
+- WHEN a body has an `analog` block that contributes nothing THEN the system SHALL give a shape with no term and no function, and the instance SHALL bind.
+- WHEN a body has no `analog` block and a node with an initial potential THEN the system SHALL give a shape of `PORT` pins only.
+- WHEN a param is not given at a placement THEN the system SHALL pass no value for it and the pin SHALL hold its default.
+- IF a contribution evaluates to a non-finite value THEN the system SHALL write it as it is; the solver fails the solve (abi.md A4, `E0507`).
 
 ---
 
@@ -227,29 +258,35 @@ Order proposed by O6 (not decided): `msl-elab`, `msl-ir` and `ir-interp` first; 
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| INT-01 | P1: Run a design from its IR | - | Pending |
-| INT-02 | P1: Value semantics | - | Pending |
-| INT-03 | P1: Analog evaluation | - | Pending |
-| INT-04 | P1: Discrete evaluation | - | Pending |
-| INT-05 | P1: Run errors | - | Pending |
-| INT-06 | P1: Differential oracle | - | Pending |
-| INT-07 | P2: Debug mode | - | Pending |
+| INT-01 | P1: Run a design from its IR | Design | Pending |
+| INT-02 | P1: Value semantics | Design | Pending |
+| INT-03 | P1: Analog evaluation with exact partials | Design | Pending |
+| INT-05 | P1: Faults | Design | Pending |
+| INT-08 | P1: The ABI carries a module's data | Design | Pending |
+| INT-09 | P1: A shape from a body | Design | Pending |
+| INT-10 | P1: `limit` | Design | Pending |
+| INT-11 | P1: `ac_stim` | Design | Pending |
+| INT-12 | P1: Linear terms are exact | Design | Pending |
+| INT-14 | P2: A param's `where` guards a host `set` | Design | Pending |
 
-**Coverage:** 7 total, 0 mapped to tasks.
+INT-04 (discrete evaluation) and INT-07 (debug mode) of the first draft are M2; INT-06 (differential oracle) is M3.
+
+**Coverage:** 10 total, 0 mapped to tasks.
 
 ---
 
 ## Sources
 
-- `.specs/features/codegen/context.md` - decisions C1 to C10 and open items O1 to O8.
-- `docs/spec/` Part I (§1, §3.3), Part IV (§11 to §14), Part V (§15, §16.2), §19, Appendix C.2.3 - the behavior to reproduce.
-- `feature/solver-completeness:.specs/features/solver-completeness/context.md` Q1, Q2, Q4 - what the solver owns.
+- `.specs/features/codegen/context.md` C3, C6, C9, S1, S4, S8, and the T5 lesson - the decisions.
+- `.specs/features/device-abi/abi.md` §3, §4 (F1 to F5, A1 to A4), §7, §8, §11 - the contract implemented.
+- `crates/piperine-abi/src/{device,thunk,shape,verify}.rs`, `crates/piperine-solver/src/core/{bind,builder}.rs`, `crates/piperine-solver/tests/helpers/abi_devices.rs` - how devices are built and bound today.
+- `docs/spec/` §11, §14.3, §14.4, §14.7, §16 H1, §18 - the behavior.
+- `.specs/features/msl-ir/design.md` - the input.
 
 ---
 
 ## Success Criteria
 
-- [ ] Every item of the conformance set (Appendix C.2.3) runs on the interpreter and matches its hand trace in `docs/spec/`.
-- [ ] The trace of §15.1 is reproduced event for event.
-- [ ] The whole suite runs on a machine without `rustc`.
-- [ ] The differential harness is the test entry point `ir-rust` uses.
+- [ ] The five M1 twins bind and run their analysis on the solver from the IR.
+- [ ] Every function of every M1 body passes `verify_partials`.
+- [ ] `piperine-interp` holds no `unsafe`.
