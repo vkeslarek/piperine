@@ -15,25 +15,7 @@ mod devices;
 #[path = "support/both.rs"]
 mod both;
 
-use both::{Both, Written};
-
-/// A fixed-seed generator (xorshift64*), so the sweep is the same on every run.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> f64 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        let bits = self.0.wrapping_mul(0x2545_f491_4f6c_dd1d);
-        (bits >> 11) as f64 / (1u64 << 53) as f64
-    }
-
-    /// Uniform in `[lo, hi)`.
-    fn range(&mut self, lo: f64, hi: f64) -> f64 {
-        lo + (hi - lo) * self.next()
-    }
-}
+use both::{Both, Rng, Written};
 
 fn reals(values: &[f64]) -> Vec<Vec<u8>> {
     values.iter().map(|v| v.to_le_bytes().to_vec()).collect()

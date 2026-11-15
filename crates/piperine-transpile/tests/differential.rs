@@ -1,9 +1,11 @@
 //! The compiled functions against the interpreter's (feature `ir-rust`, RS-06 AC 1, 2 and 7, and
 //! the edge case on MSL names the printer generates; checks C33, C35, C41, C104): every function
 //! of the five M1 bodies is evaluated through `caller::Handle` on the interpreter's module and on
-//! the compiled one with the same input bytes, at three bias points, the six `AGE`/`STATIC` cases
-//! of a `limit` included, with every partial seeded and with none; the written cells are equal
-//! bit for bit and the partials equal as `f64`. Every compiled function passes `verify_partials`
+//! the compiled one with the same input bytes, at three bias points and over a seeded sweep of
+//! 300 more (wide and negative biases, `LAST` on both sides of 0 and of the diode's `vcrit`, every
+//! arm of `pnjlim` reached), the six `AGE`/`STATIC` cases of a `limit` included, with every
+//! partial seeded and with none; the written cells are equal bit for bit and the partials equal
+//! as `f64`. Every compiled function passes `verify_partials`
 //! at `rel_tol` 1e-6. A non-finite value is written as it is, on both backends. Bodies whose MSL
 //! names are the names the printer generates (`cx`, `self` beside `self_`, `limit_vd_last`, a
 //! param named like an environment read, duplicate locals beside `<name>_<index>`) compile and
@@ -28,7 +30,7 @@ mod devices;
 #[path = "support/both.rs"]
 mod both;
 
-use both::{Both, Written};
+use both::{Both, Rng, Written};
 use devices::{Devices, Ex};
 
 /// One bias point: the two node potentials, and the `LAST` a limit starts from.
@@ -47,6 +49,50 @@ impl Bias {
         Bias { first: 0.55, second: 0.05, last: 0.45 },
         Bias { first: 0.95, second: 0.05, last: 0.70 },
     ];
+
+    /// `n` points from a fixed seed (verification F4): every other one wide, the first potential
+    /// in [-25 V, 17.5 V), the second in [-0.5 V, 0.5 V) and `LAST` in [-30 V, 5 V), so
+    /// `pnjlim`'s negative arms run and the diode's exponential reaches 1e300 (below 18 V, where
+    /// it stays finite; a non-finite value is `a_non_finite_value_is_written_as_is`'s); the rest
+    /// narrow, both in [-1.5 V, 1.5 V), around 0 and the diode's `vcrit` (0.73 V).
+    fn sweep(n: usize) -> Vec<Bias> {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        (0..n)
+            .map(|i| {
+                if i % 2 == 0 {
+                    Bias { first: rng.range(-25.0, 17.5), second: rng.range(-0.5, 0.5), last: rng.range(-30.0, 5.0) }
+                } else {
+                    Bias { first: rng.range(-1.5, 1.5), second: rng.range(-0.05, 0.05), last: rng.range(-1.5, 1.5) }
+                }
+            })
+            .collect()
+    }
+
+    /// The arm of `pnjlim(new, old, nvt, vcrit)` (std/analog.msl:21-31) the diode's limit takes
+    /// at this point with `old` the held `LAST` (`AGE` 2), at the params `Bias::param` gives
+    /// (`is` 1e-14, `n` 1) and the temperature `Bias::bytes` gives (300.15 K).
+    fn pnjlim_arm(&self) -> &'static str {
+        let nvt = 1.0 * (1.380649e-23 * 300.15 / 1.602176634e-19);
+        let vcrit = nvt * (nvt / (2.0_f64.sqrt() * 1e-14)).ln();
+        let (new, old) = (self.first - self.second, self.last);
+        if new > vcrit && (new - old).abs() > 2.0 * nvt {
+            match (old > 0.0, (new - old) / nvt > 0.0) {
+                (true, true) => "old > 0, arg > 0",
+                (true, false) => "old > 0, arg <= 0",
+                (false, _) => "old <= 0",
+            }
+        } else if new < 0.0 {
+            let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };
+            match (old > 0.0, new < arg) {
+                (true, true) => "new < 0, old > 0, new < arg",
+                (true, false) => "new < 0, old > 0, new >= arg",
+                (false, true) => "new < 0, old <= 0, new < arg",
+                (false, false) => "new < 0, old <= 0, new >= arg",
+            }
+        } else {
+            "new"
+        }
+    }
 
     /// The value of a param by name, within what every body accepts.
     fn param(name: &str) -> f64 {
@@ -179,6 +225,16 @@ fn every_m1_function_gives_the_interpreters_bytes() {
     assert_eq!(seen.functions, 13);
     assert_eq!(seen.limited, 3 * 6, "the diode's limit: three points, six AGE/STATIC cases (each run with and without seeds)");
     assert!(seen.calls > 100, "{} calls compared", seen.calls);
+
+    // verification F4: 300 seeded points more, every arm of pnjlim among them
+    let sweep = Bias::sweep(300);
+    let arms: std::collections::BTreeSet<&str> = sweep.iter().map(Bias::pnjlim_arm).collect();
+    assert_eq!(arms.len(), 8, "the sweep reaches every arm of pnjlim: {arms:?}");
+    assert!(sweep.iter().any(|b| b.last < 0.0) && sweep.iter().any(|b| b.last > 0.73), "LAST on both sides of 0 and of vcrit");
+    assert!(sweep.iter().any(|b| b.first - b.second > 15.0), "a bias where the diode's exponential passes 1e250");
+    let swept = compare(&both, &sweep);
+    assert_eq!(swept.functions, 13);
+    assert_eq!(swept.limited, 300 * 6, "the diode's limit at every swept point, six AGE/STATIC cases each");
 }
 
 #[test]

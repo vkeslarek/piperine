@@ -1,6 +1,7 @@
 //! The five M1 device bodies built once on each backend: the interpreter's modules and the
 //! compiled library's, in a cache directory of the test's own, with small readers that evaluate
-//! one function of a body on either and give back what it wrote.
+//! one function of a body on either and give back what it wrote, and the fixed-seed generator
+//! the sweeps draw from.
 
 use std::sync::Arc;
 
@@ -103,5 +104,23 @@ impl Written {
         let mut jac = vec![0.0; n];
         h.eval(k, &reads, &mut writes, seed.unwrap_or(&all), &mut jac)?;
         Ok(Written { cells, jac })
+    }
+}
+
+/// A fixed-seed generator (xorshift64*), so a sweep is the same on every run.
+pub struct Rng(pub u64);
+
+impl Rng {
+    pub fn next(&mut self) -> f64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        let bits = self.0.wrapping_mul(0x2545_f491_4f6c_dd1d);
+        (bits >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// Uniform in `[lo, hi)`.
+    pub fn range(&mut self, lo: f64, hi: f64) -> f64 {
+        lo + (hi - lo) * self.next()
     }
 }

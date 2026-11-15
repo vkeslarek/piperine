@@ -578,6 +578,7 @@ T42 → T43 → T44 → T45 → T46
 
 - [x] A difference is a defect of T3, T7 or T8: it goes back to Opus with the function, the inputs and both outputs. No comparison is loosened
 - [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test differential`: `every_m1_function_gives_the_interpreters_bytes`, `every_compiled_function_passes_verify_partials`, `a_non_finite_value_is_written_as_is`
+- [x] Verification F4 (C33): `every_m1_function_gives_the_interpreters_bytes` also runs 300 seeded points (the xorshift of `residue`, moved to `support/both.rs`), wide and narrow, every arm of `pnjlim` reached, bit equality kept; red under the affine-association mutation that left it green
 - [x] Verification F2, F3 (C104): `msl_names_that_equal_generated_names_give_the_interpreters_bytes` passes in the same target; the comparison loop moved into the helper `compare`, its assertions unchanged
 - [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
 - [x] Test count: the 3 test(s) named above, and no existing test removed or edited
