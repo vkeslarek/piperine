@@ -555,7 +555,7 @@ Proof: run owner | test no_unknowns_means_no_attempt ... ok
 **C34** - The operating point follows start, equilibrium, instant, re-solve on a change, `SETTLE` once (SAC-16, Protocol AC 10)
 Proof: run owner | test the_operating_point_follows_the_call_sequence ... ok
 
-**C35** - More rounds than the bound fail with `E0506` naming the nets (SAC-16, Protocol AC 11)
+**C35** - More rounds than the bound fail with `E0506` naming the nets by name (`DiscreteSide::net_name`, round 1 F10) (SAC-16, Protocol AC 11)
 Proof: run owner | test rounds_beyond_the_bound_are_e0506_naming_the_nets ... ok
 
 **C36** - Observations reach the sink after acceptance, in instant order, with path, analysis kind and time (SAC-17, Protocol AC 12)

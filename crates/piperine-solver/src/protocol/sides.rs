@@ -176,6 +176,9 @@ pub trait DiscreteSide {
     /// Queues a host commit due at `at` (the next microstep when `at` is the
     /// current instant).
     fn host_commit(&mut self, net: u32, offset: u32, bytes: &[u8], at: Tick) -> Result<()>;
+    /// The name of the net behind boundary slot `slot`, as the user reads it
+    /// (the instance path and pin name), for error reports such as `E0506`.
+    fn net_name(&self, slot: u32) -> String;
     /// Registers a host waiter on event net `net`: an `IRREVERSIBLE` reaction (R7).
     fn wait(&mut self, net: u32);
     /// Moves the observations made since the last drain into `out`, in instant order.

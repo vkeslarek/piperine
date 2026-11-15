@@ -57,6 +57,7 @@ fn rounds_beyond_the_bound_are_e0506_naming_the_nets() {
         let mut d = ScriptedDiscrete::new(&log);
         let a = ScriptedAnalog::new(&log);
         d.instants.extend((0..40).map(|_| changing()));
+        d.names.push((7, "top.cmp.out".into()));
         let mut options = ProtocolOptions::new(1e-12);
         if let Some(b) = bound {
             options.max_rounds = b;
@@ -67,7 +68,7 @@ fn rounds_beyond_the_bound_are_e0506_naming_the_nets() {
         let text = err.to_string();
         assert!(text.contains("E0506"), "{text}");
         assert!(text.contains(&format!("{want} rounds")), "{text}");
-        assert!(text.contains("slots): 7"), "the error names the nets still changing: {text}");
+        assert!(text.contains("nets still changing: top.cmp.out"), "the error names the nets still changing: {text}");
         assert_eq!(calls(&log, |c| matches!(c, Call::Equilibrium)).len(), want as usize, "one solve per round");
         assert!(
             calls(&log, |c| matches!(c, Call::RunInstant { mode, .. } if mode.settle)).is_empty(),

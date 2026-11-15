@@ -68,6 +68,8 @@ pub struct ScriptedDiscrete {
     /// Observations made by each `run_instant`, in order.
     pub instant_observations: VecDeque<Vec<Observation>>,
     pub next: Option<Tick>,
+    /// The net names behind boundary slots; an unnamed slot reads `slot <n>`.
+    pub names: Vec<(u32, String)>,
     buffer: Vec<Observation>,
     marks: Cell<u32>,
 }
@@ -82,6 +84,7 @@ impl ScriptedDiscrete {
             advance_observations: VecDeque::new(),
             instant_observations: VecDeque::new(),
             next: None,
+            names: Vec::new(),
             buffer: Vec::new(),
             marks: Cell::new(0),
         }
@@ -133,6 +136,9 @@ impl DiscreteSide for ScriptedDiscrete {
     fn host_commit(&mut self, net: u32, offset: u32, bytes: &[u8], at: Tick) -> Result<()> {
         self.record(Call::HostCommit { net, offset, bytes: bytes.to_vec(), at });
         Ok(())
+    }
+    fn net_name(&self, slot: u32) -> String {
+        self.names.iter().find(|(s, _)| *s == slot).map(|(_, n)| n.clone()).unwrap_or_else(|| format!("slot {slot}"))
     }
     fn wait(&mut self, net: u32) {
         self.record(Call::Wait(net));
