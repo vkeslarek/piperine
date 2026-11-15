@@ -91,6 +91,20 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for SpSystem<'a> {
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext { frequency: self.frequency };
         let mut stamps = Vec::new();
+        if self.circuit.abi.is_some() {
+            let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
+            let amb = piperine_analog_solver::device::Ambient {
+                time: 0.0,
+                freq: self.frequency,
+                is_static: false,
+                gmin: self.context.tolerances.gmin,
+                source_scale: 1.0,
+            };
+            let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+            let (matrix, rhs) = bound.analog.assemble_ac(&op, amb)?;
+            stamps.extend(matrix);
+            stamps.extend(rhs);
+        }
         for dev in &mut self.circuit.devices {
             stamps.extend(dev.load_ac(&self.dc_point, &ac_ctx, &self.context));
         }
@@ -235,181 +249,24 @@ impl<'a> SpSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use piperine_analog_solver::netlist::{BranchIdentifier, Netlist, NodeIdentifier};
-    use crate::analyses::dc::DcAnalysisState;
-    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
-    use piperine_digital_solver::interface::DigitalDevice;
-    use piperine_analog_solver::math::linear::Stamp as S;
+    use piperine_analog_solver::netlist::{Netlist, NodeIdentifier};
+    use crate::analyses::test_devices as td;
+    use crate::core::builder::CircuitBuilder;
+    use crate::core::element::Element;
     use num_complex::Complex64;
 
-    // ── test doubles ─────────────────────────────────────────────────────
-
-    /// A plain resistor between two nodes — `load_dc` (DC point) and
-    /// `load_ac` (frequency-independent real conductance) both stamped.
-    struct TestResistor {
-        n1: AnalogReference,
-        n2: AnalogReference,
-        r: f64,
-    }
-    impl AnalogDevice for TestResistor {
-        fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<S<AnalogReference, f64>> {
-            let g = 1.0 / self.r;
-            vec![
-                S::Matrix(self.n1.clone(), self.n1.clone(), g),
-                S::Matrix(self.n2.clone(), self.n2.clone(), g),
-                S::Matrix(self.n1.clone(), self.n2.clone(), -g),
-                S::Matrix(self.n2.clone(), self.n1.clone(), -g),
-            ]
-        }
-        fn load_ac(
-            &mut self,
-            _dc: &DcAnalysisResult,
-            _ac_ctx: &AcAnalysisContext,
-            _c: &Context,
-        ) -> Vec<S<AnalogReference, Complex64>> {
-            let g = Complex64::new(1.0 / self.r, 0.0);
-            vec![
-                S::Matrix(self.n1.clone(), self.n1.clone(), g),
-                S::Matrix(self.n2.clone(), self.n2.clone(), g),
-                S::Matrix(self.n1.clone(), self.n2.clone(), -g),
-                S::Matrix(self.n2.clone(), self.n1.clone(), -g),
-            ]
-        }
-    }
-    impl DigitalDevice for TestResistor {}
-    impl Introspect for TestResistor {}
-    impl Element for TestResistor {
-        fn name(&self) -> &str {
-            "r"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC
-        }
-    }
-
-    /// A shunt capacitor to ground — pure `load_ac` (`jωC`), no DC stamp
-    /// (DC point sees it as an open).
-    struct TestCapacitor {
-        n1: AnalogReference,
-        n2: AnalogReference,
-        c: f64,
-    }
-    impl AnalogDevice for TestCapacitor {
-        fn load_ac(
-            &mut self,
-            _dc: &DcAnalysisResult,
-            ac_ctx: &AcAnalysisContext,
-            _c: &Context,
-        ) -> Vec<S<AnalogReference, Complex64>> {
-            let omega = 2.0 * std::f64::consts::PI * ac_ctx.frequency;
-            let y = Complex64::new(0.0, omega * self.c);
-            vec![
-                S::Matrix(self.n1.clone(), self.n1.clone(), y),
-                S::Matrix(self.n2.clone(), self.n2.clone(), y),
-                S::Matrix(self.n1.clone(), self.n2.clone(), -y),
-                S::Matrix(self.n2.clone(), self.n1.clone(), -y),
-            ]
-        }
-    }
-    impl DigitalDevice for TestCapacitor {}
-    impl Introspect for TestCapacitor {}
-    impl Element for TestCapacitor {
-        fn name(&self) -> &str {
-            "c"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
-        }
-    }
-
-    /// A huge (1 GΩ) DC-only bias resistor to ground — gives a floating
-    /// test node a well-defined DC operating point (real `.sp` fixtures
-    /// always have *some* DC continuity; a bare two-terminal passive test
-    /// double otherwise has none) without perturbing the AC/S-parameter
-    /// result (no `load_ac` stamp at all).
-    struct TestDcBias {
-        n: AnalogReference,
-    }
-    impl AnalogDevice for TestDcBias {
-        fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<S<AnalogReference, f64>> {
-            vec![S::Matrix(self.n.clone(), self.n.clone(), 1e-9)]
-        }
-    }
-    impl DigitalDevice for TestDcBias {}
-    impl Introspect for TestDcBias {}
-    impl Element for TestDcBias {
-        fn name(&self) -> &str {
-            "rbias"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-        }
-    }
-
-    /// An ideal wire (zero-impedance short) between two *distinct* netlist
-    /// nodes, MNA branch-unknown style: `V(p) − V(n) − 0·I = 0` in both DC
-    /// and AC. Used to build a T-junction test fixture (two ports tied to
-    /// the same electrical point through separate, non-coincident port
-    /// nodes) — the physically correct way to test a shunt element, as
-    /// opposed to declaring two ports on the literal same node (SP-05's
-    /// "port nodes coincide" fail-loud case).
-    struct TestWire {
-        p: AnalogReference,
-        n: AnalogReference,
-        branch: AnalogReference,
-    }
-    impl AnalogDevice for TestWire {
-        fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<S<AnalogReference, f64>> {
-            let b = self.branch.clone();
-            vec![
-                S::Matrix(self.p.clone(), b.clone(), 1.0),
-                S::Matrix(b.clone(), self.p.clone(), 1.0),
-                S::Matrix(self.n.clone(), b.clone(), -1.0),
-                S::Matrix(b.clone(), self.n.clone(), -1.0),
-            ]
-        }
-        fn load_ac(
-            &mut self,
-            _dc: &DcAnalysisResult,
-            _ac_ctx: &AcAnalysisContext,
-            _c: &Context,
-        ) -> Vec<S<AnalogReference, Complex64>> {
-            let b = self.branch.clone();
-            let one = Complex64::new(1.0, 0.0);
-            vec![
-                S::Matrix(self.p.clone(), b.clone(), one),
-                S::Matrix(b.clone(), self.p.clone(), one),
-                S::Matrix(self.n.clone(), b.clone(), -one),
-                S::Matrix(b.clone(), self.n.clone(), -one),
-            ]
-        }
-    }
-    impl DigitalDevice for TestWire {}
-    impl Introspect for TestWire {}
-    impl Element for TestWire {
-        fn name(&self) -> &str {
-            "wire"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC
-        }
-    }
+    // ── test doubles: `analyses/test_devices.rs` ────────────────────────
 
     /// Series-`R` attenuator: `port1 --Rs-- port2`, both ports referenced to
     /// ground. A textbook 2-port with a known closed-form `S` at any `z0`.
     fn series_r_attenuator(rs: f64, z0: f64) -> (CircuitInstance, SpOptions) {
-        let mut netlist = Netlist::new();
-        let n1 = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let n2 = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-        let _ = gnd;
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestResistor { n1: n1.clone(), n2: n2.clone(), r: rs }),
-            Box::new(TestDcBias { n: n1.clone() }),
-            Box::new(TestDcBias { n: n2.clone() }),
-        ];
-        let circuit = CircuitInstance::from_devices_and_netlist("atten", devices, netlist);
+        let mut b = CircuitBuilder::new("atten");
+        let n1 = b.node("n0");
+        let n2 = b.node("n1");
+        td::resistor(&mut b, "r", &n1, &n2, rs);
+        td::dc_bias(&mut b, "bias1", &n1);
+        td::dc_bias(&mut b, "bias2", &n2);
+        let circuit = b.build().unwrap();
         let options = SpOptions {
             ports: vec![
                 SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },
@@ -425,21 +282,16 @@ mod tests {
     /// ideal wires on *distinct* port nodes — not the coincident-node
     /// SP-05 case) — a first-order low-pass in the port impedance.
     fn shunt_c_lowpass(cap: f64, z0: f64) -> (CircuitInstance, SpOptions) {
-        let mut netlist = Netlist::new();
-        let n1 = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let n2 = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let n_mid = netlist.connect_node(NodeIdentifier::Anonymous(2));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-        let b1 = netlist.connect_branch(BranchIdentifier::from_component("w1"));
-        let b2 = netlist.connect_branch(BranchIdentifier::from_component("w2"));
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestWire { p: n1.clone(), n: n_mid.clone(), branch: b1 }),
-            Box::new(TestWire { p: n2.clone(), n: n_mid.clone(), branch: b2 }),
-            Box::new(TestCapacitor { n1: n_mid.clone(), n2: gnd, c: cap }),
-            Box::new(TestDcBias { n: n_mid }),
-        ];
-        let circuit = CircuitInstance::from_devices_and_netlist("lp", devices, netlist);
+        let mut b = CircuitBuilder::new("lp");
+        let n1 = b.node("n0");
+        let n2 = b.node("n1");
+        let n_mid = b.node("n2");
+        let gnd = b.ground();
+        td::wire(&mut b, "w1", &n1, &n_mid);
+        td::wire(&mut b, "w2", &n2, &n_mid);
+        td::capacitor(&mut b, "c", &n_mid, &gnd, cap);
+        td::dc_bias(&mut b, "bias", &n_mid);
+        let circuit = b.build().unwrap();
         let options = SpOptions {
             ports: vec![
                 SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },
@@ -461,19 +313,16 @@ mod tests {
     /// each port node plus a series resistor between them — reciprocal,
     /// passive, and buildable from the existing test doubles.
     fn reciprocal_rc_network(rs: f64, cap: f64, z0: f64) -> (CircuitInstance, SpOptions) {
-        let mut netlist = Netlist::new();
-        let n1 = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let n2 = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestResistor { n1: n1.clone(), n2: n2.clone(), r: rs }),
-            Box::new(TestCapacitor { n1: n1.clone(), n2: gnd.clone(), c: cap }),
-            Box::new(TestCapacitor { n1: n2.clone(), n2: gnd, c: cap }),
-            Box::new(TestDcBias { n: n1.clone() }),
-            Box::new(TestDcBias { n: n2.clone() }),
-        ];
-        let circuit = CircuitInstance::from_devices_and_netlist("pi", devices, netlist);
+        let mut b = CircuitBuilder::new("pi");
+        let n1 = b.node("n0");
+        let n2 = b.node("n1");
+        let gnd = b.ground();
+        td::resistor(&mut b, "r", &n1, &n2, rs);
+        td::capacitor(&mut b, "c1", &n1, &gnd, cap);
+        td::capacitor(&mut b, "c2", &n2, &gnd, cap);
+        td::dc_bias(&mut b, "bias1", &n1);
+        td::dc_bias(&mut b, "bias2", &n2);
+        let circuit = b.build().unwrap();
         let options = SpOptions {
             ports: vec![
                 SpPort { num: 1, node: NodeIdentifier::Anonymous(0), z0 },

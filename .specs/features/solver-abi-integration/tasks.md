@@ -300,10 +300,10 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Each inline double is a `Device` with the same values; each unit test keeps its name, literals and tolerances
-- [ ] The 19 unit tests of the three files pass
-- [ ] No assertion line of the three files changes (the commit body shows `git diff --stat` and states it)
-- [ ] Gate: full
+- [x] Each inline double is a `Device` with the same values; each unit test keeps its name, literals and tolerances
+- [x] The 19 unit tests of the three files pass
+- [x] No assertion line of the three files changes (the commit body shows `git diff --stat` and states it)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

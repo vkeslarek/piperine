@@ -233,6 +233,17 @@ impl<'a> TransferFunctionSolver<'a> {
         let mut state = piperine_analog_solver::math::circular_array::CircularArrayBuffer2::new(1, size);
         state.push(&dc_state_array.view());
 
+        if let Some(bound) = circuit.abi.as_mut() {
+            let amb = piperine_analog_solver::device::Ambient {
+                time: 0.0,
+                freq: 0.0,
+                is_static: true,
+                gmin: context.tolerances.gmin,
+                source_scale: 1.0,
+            };
+            return bound.analog.assemble_dc(&dc_state_array.to_vec(), amb);
+        }
+
         // Update all devices at DC operating point
         circuit.update_all(&state, context);
 

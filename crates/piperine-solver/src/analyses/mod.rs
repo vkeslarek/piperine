@@ -21,6 +21,8 @@ pub mod sens;
 pub mod sensitivity;
 pub mod solver;
 pub mod sp;
+#[cfg(test)]
+mod test_devices;
 pub mod tf;
 pub mod transient;
 

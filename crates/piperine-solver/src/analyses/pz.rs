@@ -276,6 +276,32 @@ impl<'a> PoleZeroSolver<'a> {
         circuit.update_all(&state, context);
 
         let mut g = Array2::<f64>::zeros((size, size));
+        if let Some(bound) = circuit.abi.as_mut() {
+            let amb = piperine_analog_solver::device::Ambient {
+                time: 0.0,
+                freq: 0.0,
+                is_static: true,
+                gmin: context.tolerances.gmin,
+                source_scale: 1.0,
+            };
+            let op = state.latest().map(|r| r.to_vec()).unwrap_or_default();
+            match bound.analog.assemble_dc(&op, amb) {
+                Ok(stamps) => {
+                    for stamp in stamps {
+                        if let Stamp::Matrix(r, c, val) = stamp
+                            && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
+                        {
+                            g[[ri, ci]] += val;
+                        }
+                    }
+                }
+                // The caller has no error channel here; a device that cannot be evaluated at
+                // the operating point the DC solve just converged at poisons the pencil, which
+                // the eigen solve then refuses.
+                Err(_) => g.fill(f64::NAN),
+            }
+            return g;
+        }
         let CircuitInstance { devices, digital_state, .. } = &mut *circuit;
         let dc_state = DcAnalysisState::new(&state, &digital_state.nets, 1.0);
         for dev in devices.iter_mut() {
@@ -301,6 +327,30 @@ impl<'a> PoleZeroSolver<'a> {
     ) -> Array2<Complex<f64>> {
         let ac_ctx = AcAnalysisContext { frequency: omega / (2.0 * std::f64::consts::PI) };
         let mut y = Array2::<Complex<f64>>::zeros((size, size));
+        if circuit.abi.is_some() {
+            let op = crate::analyses::ac::operating_vector(circuit, dc_point);
+            let amb = piperine_analog_solver::device::Ambient {
+                time: 0.0,
+                freq: ac_ctx.frequency,
+                is_static: false,
+                gmin: context.tolerances.gmin,
+                source_scale: 1.0,
+            };
+            let bound = circuit.abi.as_mut().expect("a circuit of devices");
+            match bound.analog.assemble_ac(&op, amb) {
+                Ok((matrix, _)) => {
+                    for stamp in matrix {
+                        if let Stamp::Matrix(r, c, val) = stamp
+                            && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
+                        {
+                            y[[ri, ci]] += val;
+                        }
+                    }
+                }
+                Err(_) => y.fill(Complex::new(f64::NAN, f64::NAN)),
+            }
+            return y;
+        }
         for dev in circuit.devices.iter_mut() {
             for stamp in dev.load_ac(dc_point, &ac_ctx, context) {
                 if let Stamp::Matrix(r, c, val) = stamp
@@ -367,202 +417,28 @@ impl<'a> PoleZeroSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use piperine_analog_solver::netlist::{Netlist, NodeIdentifier};
-    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
-    use piperine_digital_solver::interface::DigitalDevice;
+    use piperine_analog_solver::netlist::NodeIdentifier;
+    use crate::analyses::test_devices as td;
+    use crate::core::builder::CircuitBuilder;
     use crate::core::circuit::CircuitInstance;
-    use num_complex::Complex64;
 
-    // ── test doubles ─────────────────────────────────────────────────────
-
-    struct TestResistor {
-        n1: AnalogReference,
-        n2: AnalogReference,
-        r: f64,
-    }
-    impl AnalogDevice for TestResistor {
-        fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-            let g = 1.0 / self.r;
-            vec![
-                Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-                Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-                Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-                Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-            ]
-        }
-    }
-    impl DigitalDevice for TestResistor {}
-    impl Introspect for TestResistor {}
-    impl Element for TestResistor {
-        fn name(&self) -> &str {
-            "r"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-        }
-    }
-
-    struct TestCapacitor {
-        n1: AnalogReference,
-        n2: AnalogReference,
-        c: f64,
-    }
-    impl AnalogDevice for TestCapacitor {
-        fn load_ac(
-            &mut self,
-            _dc: &DcAnalysisResult,
-            ac_ctx: &AcAnalysisContext,
-            _ctx: &Context,
-        ) -> Vec<Stamp<AnalogReference, Complex64>> {
-            let omega = 2.0 * std::f64::consts::PI * ac_ctx.frequency;
-            let y = Complex64::new(0.0, omega * self.c);
-            vec![
-                Stamp::Matrix(self.n1.clone(), self.n1.clone(), y),
-                Stamp::Matrix(self.n2.clone(), self.n2.clone(), y),
-                Stamp::Matrix(self.n1.clone(), self.n2.clone(), -y),
-                Stamp::Matrix(self.n2.clone(), self.n1.clone(), -y),
-            ]
-        }
-    }
-    impl DigitalDevice for TestCapacitor {}
-    impl Introspect for TestCapacitor {}
-    impl Element for TestCapacitor {
-        fn name(&self) -> &str {
-            "c"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
-        }
-    }
-
-    /// A device whose AC stamp is quadratic in ω (`jω²C`, not `jωC`) —
-    /// deliberately breaks the affine-in-jω assumption to exercise PZ-06.
-    struct FreqNonlinearDevice {
-        n1: AnalogReference,
-        n2: AnalogReference,
-        k: f64,
-    }
-    impl AnalogDevice for FreqNonlinearDevice {
-        fn load_ac(
-            &mut self,
-            _dc: &DcAnalysisResult,
-            ac_ctx: &AcAnalysisContext,
-            _ctx: &Context,
-        ) -> Vec<Stamp<AnalogReference, Complex64>> {
-            let omega = 2.0 * std::f64::consts::PI * ac_ctx.frequency;
-            let y = Complex64::new(0.0, omega * omega * self.k);
-            vec![Stamp::Matrix(self.n1.clone(), self.n2.clone(), y)]
-        }
-    }
-    impl DigitalDevice for FreqNonlinearDevice {}
-    impl Introspect for FreqNonlinearDevice {}
-    impl Element for FreqNonlinearDevice {
-        fn name(&self) -> &str {
-            "bad"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
-        }
-    }
-
-    /// An ideal DC voltage source between `p` and `n`, MNA branch-unknown
-    /// style (mirrors `core::builder::tests::TestVsource`).
-    struct TestVoltageSource {
-        p: AnalogReference,
-        n: AnalogReference,
-        branch: AnalogReference,
-        v: f64,
-    }
-    impl AnalogDevice for TestVoltageSource {
-        fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-            let b = self.branch.clone();
-            vec![
-                Stamp::Matrix(self.p.clone(), b.clone(), 1.0),
-                Stamp::Matrix(b.clone(), self.p.clone(), 1.0),
-                Stamp::Matrix(self.n.clone(), b.clone(), -1.0),
-                Stamp::Matrix(b.clone(), self.n.clone(), -1.0),
-                Stamp::Rhs(b, self.v),
-            ]
-        }
-    }
-    impl DigitalDevice for TestVoltageSource {}
-    impl Introspect for TestVoltageSource {}
-    impl Element for TestVoltageSource {
-        fn name(&self) -> &str {
-            "v1"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-        }
-    }
-
-    /// An ideal inductor between `p` and `n`: a DC short (branch constraint
-    /// `V(p) − V(n) = 0`) whose AC branch row adds `−jωL` on the branch
-    /// unknown (`V(p) − V(n) − jωL·I = 0`).
-    struct TestInductor {
-        p: AnalogReference,
-        n: AnalogReference,
-        branch: AnalogReference,
-        l: f64,
-    }
-    impl AnalogDevice for TestInductor {
-        fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-            let b = self.branch.clone();
-            vec![
-                Stamp::Matrix(self.p.clone(), b.clone(), 1.0),
-                Stamp::Matrix(b.clone(), self.p.clone(), 1.0),
-                Stamp::Matrix(self.n.clone(), b.clone(), -1.0),
-                Stamp::Matrix(b.clone(), self.n.clone(), -1.0),
-            ]
-        }
-        fn load_ac(
-            &mut self,
-            _dc: &DcAnalysisResult,
-            ac_ctx: &AcAnalysisContext,
-            _ctx: &Context,
-        ) -> Vec<Stamp<AnalogReference, Complex64>> {
-            let omega = 2.0 * std::f64::consts::PI * ac_ctx.frequency;
-            let b = self.branch.clone();
-            let one = Complex64::new(1.0, 0.0);
-            vec![
-                Stamp::Matrix(self.p.clone(), b.clone(), one),
-                Stamp::Matrix(b.clone(), self.p.clone(), one),
-                Stamp::Matrix(self.n.clone(), b.clone(), -one),
-                Stamp::Matrix(b.clone(), self.n.clone(), -one),
-                Stamp::Matrix(b.clone(), b, Complex64::new(0.0, -omega * self.l)),
-            ]
-        }
-    }
-    impl DigitalDevice for TestInductor {}
-    impl Introspect for TestInductor {}
-    impl Element for TestInductor {
-        fn name(&self) -> &str {
-            "l1"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC
-        }
-    }
+    // ── test doubles: `analyses/test_devices.rs` ────────────────────────
 
     /// `v1(in,gnd) --R-- out --C-- gnd`: a source-driven single-pole RC
     /// low-pass — `.pz`'s canonical single-pole worked example. `V(in)` is
     /// pinned by the ideal source, so `H(s) = V(out)/V(in) = 1/(RCs + 1)`,
     /// pole at `s = −1/(RC)`.
     fn rc_circuit_with_source(r: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
-        let mut netlist = Netlist::new();
-        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let n_out = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestVoltageSource { p: n_in.clone(), n: gnd.clone(), branch, v: 1.0 }),
-            Box::new(TestResistor { n1: n_in, n2: n_out.clone(), r }),
-            Box::new(TestCapacitor { n1: n_out, n2: gnd, c }),
-        ];
-        let circuit = CircuitInstance::from_devices_and_netlist("rc", devices, netlist);
+        let mut b = CircuitBuilder::new("rc");
+        let n_in = b.node("n0");
+        let n_out = b.node("n1");
+        let gnd = b.ground();
+        td::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
+        td::resistor(&mut b, "r", &n_in, &n_out, r);
+        td::capacitor(&mut b, "c", &n_out, &gnd, c);
+        let circuit = b.build().unwrap();
         let options = PoleZeroOptions {
-            input_source: BranchIdentifier::from_component("v1"),
+            input_source: BranchIdentifier::new("v1", "f"),
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
             output_ref: None,
         };
@@ -573,23 +449,18 @@ mod tests {
     /// `.pz`'s canonical complex-conjugate-pair worked example, poles at
     /// `−R/(2L) ± j·sqrt(1/(LC) − (R/(2L))²)`.
     fn rlc_circuit_with_source(r: f64, l: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
-        let mut netlist = Netlist::new();
-        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let n_a = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let n_b = netlist.connect_node(NodeIdentifier::Anonymous(2));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-        let v_branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-        let l_branch = netlist.connect_branch(BranchIdentifier::from_component("l1"));
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestVoltageSource { p: n_in.clone(), n: gnd.clone(), branch: v_branch, v: 1.0 }),
-            Box::new(TestResistor { n1: n_in, n2: n_a.clone(), r }),
-            Box::new(TestInductor { p: n_a, n: n_b.clone(), branch: l_branch, l }),
-            Box::new(TestCapacitor { n1: n_b, n2: gnd, c }),
-        ];
-        let circuit = CircuitInstance::from_devices_and_netlist("rlc", devices, netlist);
+        let mut b = CircuitBuilder::new("rlc");
+        let n_in = b.node("n0");
+        let n_a = b.node("n1");
+        let n_b = b.node("n2");
+        let gnd = b.ground();
+        td::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
+        td::resistor(&mut b, "r", &n_in, &n_a, r);
+        td::inductor(&mut b, "l1", &n_a, &n_b, l);
+        td::capacitor(&mut b, "c", &n_b, &gnd, c);
+        let circuit = b.build().unwrap();
         let options = PoleZeroOptions {
-            input_source: BranchIdentifier::from_component("v1"),
+            input_source: BranchIdentifier::new("v1", "f"),
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(2)),
             output_ref: None,
         };
@@ -599,18 +470,14 @@ mod tests {
     /// `v1(in,gnd) --R-- gnd`: a purely resistive network (no reactive
     /// element anywhere) — `.pz`'s PZ-05 fail-loud worked example.
     fn resistor_only_circuit(r: f64) -> (CircuitInstance, PoleZeroOptions) {
-        let mut netlist = Netlist::new();
-        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestVoltageSource { p: n_in.clone(), n: gnd.clone(), branch, v: 1.0 }),
-            Box::new(TestResistor { n1: n_in.clone(), n2: gnd, r }),
-        ];
-        let circuit = CircuitInstance::from_devices_and_netlist("ronly", devices, netlist);
+        let mut b = CircuitBuilder::new("ronly");
+        let n_in = b.node("n0");
+        let gnd = b.ground();
+        td::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
+        td::resistor(&mut b, "r", &n_in, &gnd, r);
+        let circuit = b.build().unwrap();
         let options = PoleZeroOptions {
-            input_source: BranchIdentifier::from_component("v1"),
+            input_source: BranchIdentifier::new("v1", "f"),
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(0)),
             output_ref: None,
         };
@@ -623,21 +490,17 @@ mod tests {
     /// pole at `s = −1/((R1‖R2)·C)` — `.pz`'s canonical worked example with
     /// a known finite zero (PZ-02/04).
     fn lag_network_circuit(r1: f64, r2: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
-        let mut netlist = Netlist::new();
-        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let n_out = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestVoltageSource { p: n_in.clone(), n: gnd.clone(), branch, v: 1.0 }),
-            Box::new(TestResistor { n1: n_in.clone(), n2: n_out.clone(), r: r1 }),
-            Box::new(TestCapacitor { n1: n_in, n2: n_out.clone(), c }),
-            Box::new(TestResistor { n1: n_out.clone(), n2: gnd, r: r2 }),
-        ];
-        let circuit = CircuitInstance::from_devices_and_netlist("lag", devices, netlist);
+        let mut b = CircuitBuilder::new("lag");
+        let n_in = b.node("n0");
+        let n_out = b.node("n1");
+        let gnd = b.ground();
+        td::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
+        td::resistor(&mut b, "r1", &n_in, &n_out, r1);
+        td::capacitor(&mut b, "c", &n_in, &n_out, c);
+        td::resistor(&mut b, "r2", &n_out, &gnd, r2);
+        let circuit = b.build().unwrap();
         let options = PoleZeroOptions {
-            input_source: BranchIdentifier::from_component("v1"),
+            input_source: BranchIdentifier::new("v1", "f"),
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
             output_ref: None,
         };
@@ -648,17 +511,14 @@ mod tests {
     /// network with a well-posed (nonsingular) DC point and a clean,
     /// hand-computable `(G, C)` pencil.
     fn rc_circuit(r_in: f64, r: f64, c: f64) -> (CircuitInstance, AnalogReference, AnalogReference) {
-        let mut netlist = Netlist::new();
-        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let n_out = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestResistor { n1: n_in.clone(), n2: gnd.clone(), r: r_in }),
-            Box::new(TestResistor { n1: n_in.clone(), n2: n_out.clone(), r }),
-            Box::new(TestCapacitor { n1: n_out.clone(), n2: gnd, c }),
-        ];
-        let circuit = CircuitInstance::from_devices_and_netlist("rc", devices, netlist);
+        let mut b = CircuitBuilder::new("rc");
+        let n_in = b.node("n0");
+        let n_out = b.node("n1");
+        let gnd = b.ground();
+        td::resistor(&mut b, "rin", &n_in, &gnd, r_in);
+        td::resistor(&mut b, "r", &n_in, &n_out, r);
+        td::capacitor(&mut b, "c", &n_out, &gnd, c);
+        let circuit = b.build().unwrap();
         (circuit, n_in, n_out)
     }
 
@@ -692,17 +552,14 @@ mod tests {
 
     #[test]
     fn freq_nonlinear_ac_stamp_fails_loud_pz06() {
-        let mut netlist = Netlist::new();
-        let n1 = netlist.connect_node(NodeIdentifier::Anonymous(0));
-        let n2 = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-
-        let devices: Vec<Box<dyn Element>> = vec![
-            Box::new(TestResistor { n1: n1.clone(), n2: gnd.clone(), r: 1000.0 }),
-            Box::new(TestResistor { n1: n2.clone(), n2: gnd, r: 1000.0 }),
-            Box::new(FreqNonlinearDevice { n1, n2, k: 1.0 }),
-        ];
-        let mut circuit = CircuitInstance::from_devices_and_netlist("bad", devices, netlist);
+        let mut b = CircuitBuilder::new("bad");
+        let n1 = b.node("n0");
+        let n2 = b.node("n1");
+        let gnd = b.ground();
+        td::resistor(&mut b, "r1", &n1, &gnd, 1000.0);
+        td::resistor(&mut b, "r2", &n2, &gnd, 1000.0);
+        td::freq_nonlinear(&mut b, "bad", &n1, &n2, 1.0);
+        let mut circuit = b.build().unwrap();
         let context = Context::default();
         circuit.setup_all(&context).unwrap();
         let dc_point = DcSolver::new(&mut circuit, context.clone()).unwrap().solve().unwrap();
