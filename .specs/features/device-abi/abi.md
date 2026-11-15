@@ -517,12 +517,18 @@ step 5 nothing is undone: the discontinuity handling restarts the *next* step.
 ```rust
 pub trait Device: Sized + Send + 'static {
     fn prototype() -> &'static Shape;
-    fn create(values: &Values<'_>) -> Result<(Self, Arc<Shape>), Fault>;
+    fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault>;   // ShapeRef = Arc<ShapeBuf>
     fn eval (&self, k: u32, cx: &mut Eval<'_>)  -> Result<(), Fault>;
     fn react(&self, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault>;      // Flow::Continue | Flow::Finish
 }
-pub const fn module<D: Device>(name: &'static str) -> Module;       // generic extern "C" thunks; no macro
+pub fn module<D: Device>(name: &'static str) -> Module;             // generic extern "C" thunks; no macro
 ```
+
+`create` returns a `ShapeRef` (`Arc<ShapeBuf>`), not an `Arc<Shape>`: a `Shape` only points to
+its lists, and `ShapeBuf` is what owns them; `module` is a plain `fn`, not `const fn`, because it
+calls `D::prototype()`, a trait method. A `Fault` is `FAULT` with its code, or `RESHAPE` when
+built with `Fault::reshape`; `cx.set(j, v)` takes any `Pod` (an `F64`, or the byte of an event
+pin).
 
 `Eval` and `React` are borrow-checked lenses over the frames: `cx.f64(i)`, `cx.bytes(i)`,
 `cx.get::<T>(i) -> Option<&T>` and `cx.out::<T>(j)` with `T: Pod`, `cx.set(j, v)`,
@@ -644,7 +650,7 @@ order, partials as `(write ← read)`. `BIT` is the shipped layout `{ v: BOOL @0
 ### 11.1 Resistor
 
 ```rust
-// pins:   p, n (PORT continuous);  r (PARAM F64, default 1e3)
+// pins:   r (PARAM F64, default 1e3);  p, n (PORT continuous)        (PARAM pins first, P5)
 // terms:  T0 FLOW {p, n} "i"
 // fn 0 "i":  reads [p, n, r]   writes [T0]   partials (0←0) (0←1) (0←2)
 fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
@@ -662,7 +668,7 @@ changes.
 ### 11.2 Diode with limiting and noise
 
 ```rust
-// pins:    a, k (PORT);  is, n, cj0 (PARAM F64);  temperature (GLOBAL TEMPERATURE)
+// pins:    is, n, cj0 (PARAM F64);  a, k (PORT);  temperature (GLOBAL TEMPERATURE)
 // inputs:  I0 LIMIT "vd", I1 NOISE "shot", I2 NOISE "flicker"        (ambient: FREQ, STATIC)
 // terms:   T0 FLOW{a,k} "id", T1 DDT{a,k} "qj"          watches: W0 VAR "gd"
 // fn 0 "limit":   reads [a, k, is, n, temperature, I0.LAST, I0.AGE, STATIC]
@@ -688,7 +694,7 @@ fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
             let (vd, is, cj) = (cx.f64(0), cx.f64(1), cx.f64(3));
             let nvt = cx.f64(2) * K_B * cx.f64(4) / Q;
             let e   = (vd / nvt).exp();
-            cx.set(0, is * (e - 1.0));                       // plain values at vd; the solver corrects
+            cx.set(0, is * (e - 1.0) + cx.f64(5) + cx.f64(6)); // plain values at vd; the solver corrects
             cx.set(1, cj * vd);
             cx.jac().copy_from_slice(&[is * e / nvt, cj, 1.0, 1.0]);
         }
@@ -700,10 +706,13 @@ fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
 }
 ```
 
+`fn 1` adds the `VALUE`s of `I1` and `I2` (0 outside a `Noise` sweep) to the current, so its
+declared partials against them, 1 each, are exact (A2, F5).
+
 ### 11.3 Capacitor
 
 ```rust
-// pins: p, n (PORT);  c (PARAM F64)      terms: T0 DDT{p,n} "q"
+// pins: c (PARAM F64);  p, n (PORT)      terms: T0 DDT{p,n} "q"
 // fn 0: reads [p, n, c]  writes [T0]  partials (0←0) (0←1) (0←2)
 fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
     let (v, c) = (cx.f64(0) - cx.f64(1), cx.f64(2));
@@ -757,7 +766,7 @@ commits a firing of `up` at `(t, 0)`. The digital sub-solver sees an event pin f
 ### 11.6 DAC: event → analog
 
 ```rust
-// pins: code (PORT BYTE);  out (PORT continuous);  vref (PARAM F64);  f (PRIVATE continuous: the branch flow)
+// pins: vref (PARAM F64);  code (PORT BYTE);  out (PORT continuous);  f (PRIVATE continuous: the branch flow)
 // terms: T0 FLOW{out, GROUND} "i", T1 FLOW{f, GROUND} "eq"
 // fn 0: reads [code, out, f, vref]  writes [T0, T1]  partials (0←2) (1←1) (1←3)
 fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {

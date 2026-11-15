@@ -279,12 +279,12 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Resistor, diode with limiting and noise, capacitor, D flip-flop, comparator and DAC exist with the shapes their comments state
-- [ ] Test `worked_examples_produce_their_stated_values` asserts each function's outputs and partials at one hand-computed point, and the flip-flop's and comparator's commits (C20)
-- [ ] Test `worked_examples_pass_validation` passes (C21)
-- [ ] Test `worked_examples_pass_the_partials_verifier` passes for every function with a partial
-- [ ] abi.md §7 shows `ShapeRef` and the non-`const` `module`, with one sentence saying why; where an example of §11 does not compile as printed, abi.md is corrected in this commit and the commit body lists each correction
-- [ ] Gate: full
+- [x] Resistor, diode with limiting and noise, capacitor, D flip-flop, comparator and DAC exist with the shapes their comments state
+- [x] Test `worked_examples_produce_their_stated_values` asserts each function's outputs and partials at one hand-computed point, and the flip-flop's and comparator's commits (C20)
+- [x] Test `worked_examples_pass_validation` passes (C21)
+- [x] Test `worked_examples_pass_the_partials_verifier` passes for every function with a partial
+- [x] abi.md §7 shows `ShapeRef` and the non-`const` `module`, with one sentence saying why; where an example of §11 does not compile as printed, abi.md is corrected in this commit and the commit body lists each correction
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
