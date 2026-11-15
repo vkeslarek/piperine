@@ -552,6 +552,7 @@ T42 → T43 → T44 → T45 → T46
 
 - [x] The divider's `Dc` gives `mid` = half of `vin` to 1e-12 relative, as `ir-interp`'s circuit test does
 - [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test compiled`: `modules_come_through_the_symbol_and_bind_like_the_interpreter`, `loaded_shapes_equal_the_plans_entry_by_entry`, `a_shape_that_differs_from_its_plan_is_refused`, `the_compiled_divider_solves`
+- [x] Verification F1 (C105): `a_panic_in_compiled_code_is_a_fault_and_the_instance_survives` passes in the same target; a `rustc` wrapper injects a conditional `panic!` into the resistor's `terms`, the call faults with the message and the next call on the instance returns its value
 - [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 - [x] Test count: the 4 test(s) named above, and no existing test removed or edited
 
@@ -1552,6 +1553,9 @@ Proof: run golden | test a_keyword_identifier_is_raw_and_the_abi_name_is_not ...
 
 **C104** - MSL names equal to names the printer generates (`cx`, `self` beside `self_`, `limit_vd_last`, a param named like an environment read, duplicate locals beside `<name>_<index>`, a body whose module would be `rt`) compile and every function gives the interpreter's bytes. (edge case 5; T18; verification F2, F3)
 Proof: run differential | test msl_names_that_equal_generated_names_give_the_interpreters_bytes ... ok
+
+**C105** - A panic in compiled code is a `FAULT` carrying the panic message, and the next call on the same instance succeeds: phase A's proof of the criterion C40 holds for phase B. (RS-06, AC 6; T17; verification F1)
+Proof: run compiled | test a_panic_in_compiled_code_is_a_fault_and_the_instance_survives ... ok
 
 ---
 

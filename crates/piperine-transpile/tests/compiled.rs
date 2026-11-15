@@ -1,14 +1,16 @@
-//! The compiled design as modules and a circuit (feature `ir-rust`, RS-05 AC 1 and 2; checks
-//! C26, C27, C28, C29): each running body is bound to the module the library gives under its
-//! name, as the interpreter binds its own; every loaded prototype equals the plan's shape entry by
-//! entry; a library whose shape differs from its plan is refused naming the entry; and the
-//! compiled divider solves to the divider ratio, as the interpreter's does.
+//! The compiled design as modules and a circuit (feature `ir-rust`, RS-05 AC 1 and 2, RS-06 AC 6;
+//! checks C26, C27, C28, C29, C105): each running body is bound to the module the library gives
+//! under its name, as the interpreter binds its own; every loaded prototype equals the plan's
+//! shape entry by entry; a library whose shape differs from its plan is refused naming the entry;
+//! a panic in compiled code comes back as a fault with its message and the instance answers the
+//! next call; and the compiled divider solves to the divider ratio, as the interpreter's does.
 #![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 
-use piperine_abi::raw::{Cell, List, Module, Shape};
+use piperine_abi::caller::Handle;
+use piperine_abi::raw::{Cell, List, Module, Shape, status};
 use piperine_interp::Interpreter;
 use piperine_ir::{Ir, IrBuilder, NodeRef};
 use piperine_plan::{BodyPlan, Modules};
@@ -166,6 +168,56 @@ fn a_shape_that_differs_from_its_plan_is_refused() {
     assert!(entry.starts_with("pin 1:"), "the entry is named: {entry}");
     assert!(entry.contains("`p`") && entry.contains("`pp`"), "both sides are shown: {entry}");
     assert!(err.to_string().contains("transpiler defect"), "{err}");
+}
+
+// RS-06 AC 6: value-level code that panics fails the call with a fault that carries the panic
+// message, and the process and the instance stay usable. The compiler here is a wrapper that
+// adds `if p > 100.0 { panic!(..) }` to the resistor's generated `terms` before building it: a
+// panic in compiled code the transpiler itself never writes.
+#[test]
+fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let work = tempfile::tempdir().unwrap();
+    let inject = work.path().join("inject.sed");
+    std::fs::write(&inject, "s/let p = cx_.f64(0);/let p = cx_.f64(0); if p > 100.0 { panic!(\"boom at {p}\"); }/\n").unwrap();
+    let wrapper = work.path().join("rustc");
+    let script = format!(
+        "#!/bin/sh\nREAL=$(command -v rustc)\n\
+        if [ \"$1\" = \"-vV\" ]; then exec \"$REAL\" -vV; fi\n\
+        for a in \"$@\"; do shift; case \"$a\" in\n\
+          *design.rs) sed -f '{}' \"$a\" > \"$(dirname \"$a\")/mutated.rs\"\n\
+                      set -- \"$@\" \"$(dirname \"$a\")/mutated.rs\";;\n\
+          *) set -- \"$@\" \"$a\";; esac; done\nexec \"$REAL\" \"$@\"\n",
+        inject.display()
+    );
+    std::fs::write(&wrapper, script).unwrap();
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let settings = Settings { rustc: Some(wrapper), cache: work.path().join("cache") };
+
+    let mut b = IrBuilder::new();
+    let body = Devices::resistor(&mut b);
+    let top = Devices::alone(&mut b, body, "R", 1, vec![1000.0]);
+    let ir = b.finish(top);
+    let compiled = compile(&ir, &settings);
+    let module = Modules::module(&compiled, body).expect("the resistor's module");
+    let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create: {e}"));
+    let k = handle.shape().functions.iter().position(|f| f.name.as_str() == "terms").expect("terms") as u32;
+    // terms reads [p, n, r] and writes b0.flow, with two partials
+    let run = |p: f64| {
+        let input: Vec<[u8; 8]> = [p, 0.0, 1000.0].iter().map(|v| v.to_le_bytes()).collect();
+        let reads: Vec<&[u8]> = input.iter().map(|b| b.as_slice()).collect();
+        let mut out = [0u8; 8];
+        let mut jac = [0.0; 2];
+        handle.eval(k, &reads, &mut [&mut out[..]], &[1, 1], &mut jac).map(|()| f64::from_le_bytes(out))
+    };
+
+    let fault = run(200.0).expect_err("the injected panic fires above 100 V");
+    assert_eq!(fault.status, status::FAULT, "{fault}");
+    assert!(fault.message.contains("boom at 200"), "the panic's message is carried: {fault}");
+    // the same instance answers the next call, with the resistor's value
+    assert_eq!(run(0.5).unwrap_or_else(|e| panic!("the call after the fault: {e}")), 0.5 / 1000.0);
+    // and faults again where the code panics, the process still alive
+    assert!(run(300.0).is_err_and(|e| e.status == status::FAULT && e.message.contains("boom at 300")));
 }
 
 // RS-05 independent test: the compiled resistor divider runs a `Dc` and `mid` reads the divider
