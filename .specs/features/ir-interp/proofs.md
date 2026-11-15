@@ -1,6 +1,6 @@
 # ir-interp proofs
 
-**HEAD**: 722f8792
+**HEAD**: b0810d84
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 51 pass, 0 fail
@@ -64,12 +64,12 @@
 `Run circuit` - exit 0
 
 ```
+test a_circuit_binds_instances_nodes_and_params ... ok
 test an_unset_param_keeps_its_default ... ok
 test a_set_that_breaks_a_where_is_refused ... ok
-test a_circuit_binds_instances_nodes_and_params ... ok
 test a_held_node_starts_the_transient ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
    Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-abi)
    Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-ir)
@@ -77,27 +77,27 @@ test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
    Compiling piperine-digital-solver v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-digital-solver)
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-solver)
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-interp)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.26s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.28s
      Running tests/circuit.rs (/var/tmp/piperine-target/debug/deps/circuit-c6bcde5cd512f815)
 ```
 
 `Run shape` - exit 0
 
 ```
-test one_function_per_site_and_one_for_terms ... ok
+test a_value_of_the_wrong_layout_faults_naming_the_param ... ok
 test pins_come_in_the_declared_order ... ok
-test a_flow_branch_declares_flow_and_ddt_terms ... ok
-test a_potential_branch_declares_its_pin_and_two_terms ... ok
+test one_function_per_site_and_one_for_terms ... ok
+test reads_and_partials_are_the_dependency_sets ... ok
+test sites_declare_limit_and_stim_inputs ... ok
 test every_entry_carries_its_origin ... ok
+test no_function_writes_a_limit_and_a_term ... ok
 test a_where_declares_a_check_pin_and_function ... ok
 test every_m1_shape_validates ... ok
-test no_function_writes_a_limit_and_a_term ... ok
-test sites_declare_limit_and_stim_inputs ... ok
 
 test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-interp)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.48s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.45s
      Running tests/shape.rs (/var/tmp/piperine-target/debug/deps/shape-f513b0dadbd7d664)
 ```
 
@@ -106,33 +106,33 @@ test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 3 tests
 test module_with_carries_the_factory ... ok
-test create_goes_through_the_factory_and_validates ... ok
 test eval_and_react_run_the_created_instance ... ok
+test create_goes_through_the_factory_and_validates ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-abi)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
      Running tests/factory.rs (/var/tmp/piperine-target/debug/deps/factory-f56ceb0559a7ddd5)
 ```
 
 `Run lib` - exit 0
 
 ```
-test dual::tests::mul_follows_the_product_rule ... ok
-test dual::tests::neg_flips_value_and_tangent ... ok
 test dual::tests::the_chain_rule_composes ... ok
+test dual::tests::abs_has_the_derivative_of_sign ... ok
 test walk::tests::an_unexecuted_form_faults_with_its_origin ... ok
+test dual::tests::mul_follows_the_product_rule ... ok
 test walk::tests::an_unread_value_steers_nothing ... ok
 test walk::tests::division_by_zero_is_ieee ... ok
-test walk::tests::f64_arithmetic_and_methods_match_rust ... ok
-test walk::tests::calls_bind_parameters_and_closures_see_locals ... ok
 test walk::tests::short_circuit_and_if_evaluate_one_side ... ok
+test walk::tests::calls_bind_parameters_and_closures_see_locals ... ok
+test walk::tests::f64_arithmetic_and_methods_match_rust ... ok
 
 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-interp)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.47s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_interp-55a54c1fd80ff7e7)
 ```
 
@@ -141,10 +141,10 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 test the_terms_function_sums_addends_with_signs ... ok
 test seeded_partials_are_the_dual_derivatives ... ok
-test environment_reads_come_from_pin_and_ambients ... ok
-test evaluating_twice_writes_the_same_bytes ... ok
 test the_terms_function_reads_the_stim_value ... ok
 test the_terms_function_reads_the_limit_value_untouched ... ok
+test environment_reads_come_from_pin_and_ambients ... ok
+test evaluating_twice_writes_the_same_bytes ... ok
 test the_resistor_matches_the_hand_written_products_bit_for_bit ... ok
 test an_affine_term_is_constant_plus_folded_products ... ok
 test an_affine_constant_leaves_at_most_one_ulp_on_the_right_side ... ok
@@ -152,7 +152,7 @@ test an_affine_constant_leaves_at_most_one_ulp_on_the_right_side ... ok
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-interp)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.47s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
      Running tests/terms.rs (/var/tmp/piperine-target/debug/deps/terms-b3d925e9d3116a06)
 ```
 
@@ -165,7 +165,7 @@ test every_m1_function_passes_verify_partials ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-interp)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
      Running tests/partials.rs (/var/tmp/piperine-target/debug/deps/partials-d7ff87ea58d22805)
 ```
 
@@ -174,13 +174,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 3 tests
 test old_is_seed_or_last_by_age_and_static ... ok
-test a_limit_writes_proposed_and_limited ... ok
 test the_seed_is_kept_when_the_limited_value_falls_below ... ok
+test a_limit_writes_proposed_and_limited ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-interp)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.42s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
      Running tests/limit.rs (/var/tmp/piperine-target/debug/deps/limit-5a2d264f5712ddb9)
 ```
 
@@ -193,7 +193,7 @@ test a_stim_writes_its_phasor ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-ir-interp/crates/piperine-interp)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
      Running tests/stim.rs (/var/tmp/piperine-target/debug/deps/stim-a1188d05a8407da1)
 ```
 
