@@ -1,0 +1,11 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Resistor
+  param r: f64 where (r > 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> direct (probe(p, n) / r)
+instance resistor: Resistor  nodes (gnd, gnd)  params (r = 1000.0)  top

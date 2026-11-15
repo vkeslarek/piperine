@@ -1471,6 +1471,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-ir"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "piperine-lang"
 version = "0.2.0"
 dependencies = [

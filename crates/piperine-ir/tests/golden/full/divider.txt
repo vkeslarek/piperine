@@ -1,0 +1,56 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Vsource  @devices.msl:17:1
+  param dc: f64 = 0.0  @devices.msl:18:5
+  param ac: f64 = 0.0  @devices.msl:19:5
+  node p: Electrical port  @devices.msl:17:20
+  node n: Electrical port  @devices.msl:17:35
+  branch b0 (p, n) potential
+  stim S0 "ac"  @devices.msl:21:62
+  analog
+    b0.potential +> direct ((dc * source_scale()) + ac_stim S0 (ac))
+body Resistor  @devices.msl:5:1
+  param r: f64 where (r > 0.0)  @devices.msl:6:5
+  node p: Electrical port  @devices.msl:5:21
+  node n: Electrical port  @devices.msl:5:36
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> direct (probe(p, n) / r)
+body Divider  @divider.msl:5:1
+  node vin: Electrical signal  @divider.msl:6:5
+  node mid: Electrical signal  @divider.msl:7:5
+  child v1: Vsource  nodes (vin, gnd)  params (dc = 10.0)  @divider.msl:8:5
+  child r1: Resistor  nodes (vin, mid)  params (r = 1000.0)  @divider.msl:9:5
+  child r2: Resistor  nodes (mid, gnd)  params (r = 3000.0)  @divider.msl:10:5
+instance Divider: Divider  nodes (Divider.vin, Divider.mid)  params ()  top  @divider.msl:5:1
+instance Divider.v1: Vsource  nodes (Divider.vin, gnd)  params (dc = 10.0, ac = 0.0)  @divider.msl:8:5
+instance Divider.r1: Resistor  nodes (Divider.vin, Divider.mid)  params (r = 1000.0)  @divider.msl:9:5
+instance Divider.r2: Resistor  nodes (Divider.mid, gnd)  params (r = 3000.0)  @divider.msl:10:5
+node Divider.vin: Electrical  declared by Divider  @divider.msl:6:5
+node Divider.mid: Electrical  declared by Divider  @divider.msl:7:5
+arenas
+  top 0
+  body 0: where (-, -)  natures (0, 0)  branches ((0, 1))  children ()  analog (s0)
+  body 1: where (e8)  natures (0, 0)  branches ((0, 1))  children ()  analog (s1)
+  body 2: where ()  natures (0, 0)  branches ()  children ((body 0 nodes (0, gnd) params (0)), (body 1 nodes (0, 1) params (0)), (body 1 nodes (1, gnd) params (0)))  analog -
+  instance 0: name Divider  body 2  parent -  children (1, 2, 3)  nodes (0, 1)
+  instance 1: name v1  body 0  parent 0  children ()  nodes (0, gnd)
+  instance 2: name r1  body 1  parent 0  children ()  nodes (0, 1)
+  instance 3: name r2  body 1  parent 0  children ()  nodes (1, gnd)
+  node 0: nature 0  declared by 0
+  node 1: nature 0  declared by 0
+  e0: f64 = param 0  @devices.msl:21:30
+  e1: f64 = env source_scale  @devices.msl:21:30
+  e2: f64 = mul e0 e1  @devices.msl:21:30
+  e3: f64 = param 1  @devices.msl:21:30
+  e4: f64 = ac_stim S0 e3 -  @devices.msl:21:30
+  e5: f64 = add e2 e4  @devices.msl:21:30
+  e6: f64 = param 0  @devices.msl:6:17
+  e7: f64 = real 0.0  @devices.msl:6:17
+  e8: bool = gt e6 e7  @devices.msl:6:17
+  e9: f64 = probe n0 n1  @devices.msl:8:32
+  e10: f64 = param 0  @devices.msl:8:32
+  e11: f64 = div e9 e10  @devices.msl:8:32
+  s0: contribute b0 potential (direct e5)
+  s1: contribute b0 flow (direct e11)

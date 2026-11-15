@@ -1,0 +1,13 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Vsource
+  param dc: f64 = 0.0
+  param ac: f64 = 0.0
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) potential
+  stim S0 "ac"
+  analog
+    b0.potential +> direct ((dc * source_scale()) + ac_stim S0 (ac))
+instance vsource: Vsource  nodes (gnd, gnd)  params (dc = 10.0, ac = 0.0)  top

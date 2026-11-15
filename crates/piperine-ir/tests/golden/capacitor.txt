@@ -1,0 +1,11 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Capacitor
+  param c: f64 where (c >= 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> ddt (c * probe(p, n))
+instance capacitor: Capacitor  nodes (gnd, gnd)  params (c = 1e-12)  top
