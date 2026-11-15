@@ -346,13 +346,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_host_write_is_a_commit_at_microstep_zero` passes (C39)
-- [ ] Test `a_structural_param_write_during_a_run_is_refused` passes (C40)
-- [ ] Test `the_cone_is_the_functions_fed_by_params_and_globals_only` passes: a function with an input reachable from a statement or a written port is outside it
-- [ ] Test `a_false_check_refuses_the_write_and_changes_nothing` passes with `Checked` (C41)
-- [ ] Test `reshape_on_the_shadow_names_the_instance_and_changes_nothing` passes (C42)
-- [ ] Test `preview_boundary_applies_microstep_zero_on_a_copy` passes: the returned bytes are the post-commit values, the store is unchanged, no reaction ran, nothing was observed (C43)
-- [ ] Gate: full
+- [x] Test `a_host_write_is_a_commit_at_microstep_zero` passes (C39)
+- [x] Test `a_structural_param_write_during_a_run_is_refused` passes (C40)
+- [x] Test `the_cone_is_the_functions_fed_by_params_and_globals_only` passes: a function with an input reachable from a statement or a written port is outside it
+- [x] Test `a_false_check_refuses_the_write_and_changes_nothing` passes with `Checked` (C41)
+- [x] Test `reshape_on_the_shadow_names_the_instance_and_changes_nothing` passes (C42)
+- [x] Test `preview_boundary_applies_microstep_zero_on_a_copy` passes: the returned bytes are the post-commit values, the store is unchanged, no reaction ran, nothing was observed (C43)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

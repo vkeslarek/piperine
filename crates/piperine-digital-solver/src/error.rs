@@ -23,6 +23,8 @@ pub enum DigitalError {
     Bind { rule: &'static str, what: Vec<String> },
     /// A construct the engine does not run yet.
     Unsupported { what: &'static str },
+    /// A host write the engine refuses; nothing changed.
+    HostWrite { net: String, reason: &'static str },
 }
 
 impl fmt::Display for DigitalError {
@@ -50,6 +52,7 @@ impl fmt::Display for DigitalError {
             }
             DigitalError::Bind { rule, what } => write!(f, "bind rule {rule} broken: {}", what.join("; ")),
             DigitalError::Unsupported { what } => write!(f, "unsupported: {what}"),
+            DigitalError::HostWrite { net, reason } => write!(f, "host write to net `{net}` refused: {reason}"),
         }
     }
 }

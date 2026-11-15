@@ -4,9 +4,11 @@
 
 use super::net::{NetId, NetKind};
 use super::observe::{Obs, Observation};
-use super::plan::DigitalPlan;
+use piperine_abi::raw::pin_flag;
+
+use super::plan::{Binding, DigitalPlan, NetWriter};
 use super::queue::{Pending, Queue, Writer};
-use super::run::DirtySet;
+use super::run::{Ambient, DirtySet, fire_net, run_cone, run_functions, write_net};
 use super::store::Store;
 use super::tick::Tick;
 use crate::error::DigitalError;
@@ -19,6 +21,17 @@ pub struct Mode {
     pub is_static: bool,
     /// Fire `SETTLE` once the microstep loop is quiet.
     pub settle: bool,
+}
+
+/// The answer to a host write checked on a shadow of the store (abi.md P6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Shadow {
+    /// Commit it (also the answer for a net outside the parameter cone).
+    Accept,
+    /// A `check` pin of the written param came out false: its path.
+    Refused { check: String },
+    /// A function of the cone returned `RESHAPE`: the instance's path.
+    Reshape { instance: String },
 }
 
 /// What running an instant did.
@@ -128,7 +141,13 @@ impl Digital {
     }
 
     /// A commit by the host, due at microstep 0 of `at` (abi.md §6 C6).
+    ///
+    /// A write to a `STRUCTURAL` net while a run is in progress is refused, and nothing changes (P5).
     pub fn host_commit(&mut self, net: NetId, offset: u32, bytes: &[u8], at: Tick) -> Result<(), DigitalError> {
+        let spec = &self.plan.nets[net.0 as usize];
+        if spec.structural && self.running {
+            return Err(DigitalError::HostWrite { net: spec.name.clone(), reason: "a STRUCTURAL pin cannot change during a run" });
+        }
         self.call += 1;
         let pending = Pending {
             net,
@@ -178,6 +197,69 @@ impl Digital {
         self.now = cp.now;
         self.call = cp.call;
         self.running = cp.running;
+    }
+
+    /// Checks a host write to a `PARAM` or `GLOBAL` net before it is committed (abi.md P6): the
+    /// parameter cone downstream of the net runs on a copy of the store. A false `check` pin refuses
+    /// the write and names the pin; a `RESHAPE` names the instance. Nothing of the engine changes.
+    pub fn shadow(&self, net: NetId, offset: u32, bytes: &[u8]) -> Result<Shadow, DigitalError> {
+        let analysis = self.plan.analysis();
+        if !analysis.is_param_net(net) || analysis.writer(net) != NetWriter::Host {
+            return Ok(Shadow::Accept);
+        }
+        let mut store = self.store.clone();
+        let mut dirty = DirtySet::none(&self.plan);
+        let mut obs = Obs::new();
+        let here = (self.now, 0);
+        write_net(&self.plan, &mut store, &mut dirty, &mut obs, net, offset, bytes, here);
+        let ambient = Ambient::at(self.now, self.plan.resolution.seconds_per_tick);
+        if let Some(instance) = run_cone(&self.plan, &mut store, &mut dirty, here, &ambient, &mut obs)? {
+            return Ok(Shadow::Reshape { instance });
+        }
+        for inst in &self.plan.instances {
+            let shape = inst.handle.shape();
+            for (i, pin) in shape.pins.iter().enumerate() {
+                if inst.pins[i] != Binding::Net(net) || pin.flags & pin_flag::HAS_CHECK == 0 {
+                    continue;
+                }
+                let Some(check) = shape.pins.get(pin.check as usize) else { continue };
+                if let Binding::Net(c) = inst.pins[pin.check as usize]
+                    && store.value(c).first() == Some(&0)
+                {
+                    return Ok(Shadow::Refused { check: format!("{}.{}", inst.path, check.name.as_str()) });
+                }
+            }
+        }
+        Ok(Shadow::Accept)
+    }
+
+    /// The bytes of every net the analog side reads after the commits due at microstep 0 of `at`
+    /// apply and the functions run, computed on a copy: no reaction runs, nothing is observed, no
+    /// state changes.
+    pub fn preview_boundary(&self, at: Tick) -> Result<Vec<(NetId, Vec<u8>)>, DigitalError> {
+        let mut store = self.store.clone();
+        let mut queue = self.queue.clone();
+        let mut dirty = self.dirty.clone();
+        let mut obs = Obs::new();
+        let here = (at, 0);
+        store.begin_microstep();
+        for p in queue.take_due(here) {
+            if self.plan.nets[p.net.0 as usize].kind == NetKind::Event {
+                fire_net(&self.plan, &mut store, &mut dirty, &mut obs, p.net, here);
+            } else {
+                write_net(&self.plan, &mut store, &mut dirty, &mut obs, p.net, p.offset, &p.bytes, here);
+            }
+        }
+        let ambient = Ambient::at(at, self.plan.resolution.seconds_per_tick);
+        run_functions(&self.plan, &mut store, &mut dirty, here, &ambient, &mut obs)?;
+        Ok(self
+            .plan
+            .nets
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.analog_reads)
+            .map(|(i, _)| (NetId(i as u32), store.value(NetId(i as u32)).to_vec()))
+            .collect())
     }
 
     /// The bytes of `net` now.

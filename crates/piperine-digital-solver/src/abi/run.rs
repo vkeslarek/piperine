@@ -241,6 +241,23 @@ pub fn run_functions(
     }
 }
 
+/// D restricted to the parameter cone, for a shadow of the store (abi.md P6): the path of the instance
+/// whose function returned `RESHAPE`, if one did.
+pub fn run_cone(
+    plan: &DigitalPlan,
+    store: &mut Store,
+    dirty: &mut DirtySet,
+    at: Instant,
+    ambient: &Ambient,
+    obs: &mut Obs,
+) -> Result<Option<String>, DigitalError> {
+    match walk(plan, store, dirty, at, ambient, obs, Some(plan.cone())) {
+        Ok(()) => Ok(None),
+        Err(Stop::Error(e)) => Err(e),
+        Err(Stop::Reshape(instance)) => Ok(Some(instance)),
+    }
+}
+
 fn walk(
     plan: &DigitalPlan,
     store: &mut Store,

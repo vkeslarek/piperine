@@ -413,6 +413,7 @@ pub struct DigitalPlan {
     pub resolution: Resolution,
     pub(crate) analysis: Analysis,
     pub(crate) dag: Dag,
+    cone: Vec<bool>,
 }
 
 impl DigitalPlan {
@@ -424,7 +425,8 @@ impl DigitalPlan {
             analyze(&nets, &inputs, resolution)?
         };
         let dag = Dag::build(analysis.functions(), &nets)?;
-        Ok(DigitalPlan { nets, instances, resolution, analysis, dag })
+        let cone = parameter_cone(&nets, &instances, &analysis, &dag);
+        Ok(DigitalPlan { nets, instances, resolution, analysis, dag, cone })
     }
 
     /// The layout of the pins on `net` (P4 made them equal): the first pin's.
@@ -437,6 +439,19 @@ impl DigitalPlan {
         })
     }
 
+    /// P6: per function of the dag, whether it is in the parameter cone.
+    pub fn cone(&self) -> &[bool] {
+        &self.cone
+    }
+
+    /// Whether function `k` of `instance` is in the parameter cone.
+    pub fn in_cone(&self, instance: u32, k: u32) -> bool {
+        (0..self.dag.len()).any(|f| {
+            let node = self.dag.function(f);
+            node.instance == instance && node.k == k && self.cone[f]
+        })
+    }
+
     /// The order the discrete functions run in.
     pub fn dag(&self) -> &Dag {
         &self.dag
@@ -445,5 +460,42 @@ impl DigitalPlan {
     /// What the bind rules derived.
     pub fn analysis(&self) -> &Analysis {
         &self.analysis
+    }
+}
+
+/// P6: the discrete functions all of whose inputs derive, through functions only, from nets the host
+/// writes that carry a `PARAM` or `GLOBAL` pin and no `PORT` pin. A function fed by a reaction's
+/// statement, or by a port, is outside it. Least fixed point over the dag's functions.
+fn parameter_cone(nets: &[NetSpec], instances: &[InstancePlan], analysis: &Analysis, dag: &Dag) -> Vec<bool> {
+    let mut derived = vec![false; nets.len()];
+    let mut param = vec![false; nets.len()];
+    let mut port = vec![false; nets.len()];
+    for inst in instances {
+        for (i, pin) in inst.handle.shape().pins.iter().enumerate() {
+            if let Binding::Net(id) = inst.pins[i] {
+                param[id.0 as usize] |= pin.role == role::PARAM || pin.role == role::GLOBAL;
+                port[id.0 as usize] |= pin.role == role::PORT;
+            }
+        }
+    }
+    for (i, d) in derived.iter_mut().enumerate() {
+        *d = param[i] && !port[i] && analysis.writer(NetId(i as u32)) == NetWriter::Host;
+    }
+    let mut cone = vec![false; dag.len()];
+    loop {
+        let mut changed = false;
+        for (f, in_cone) in cone.iter_mut().enumerate() {
+            let node = dag.function(f);
+            if !*in_cone && node.reads.iter().all(|r| derived[r.0 as usize]) {
+                *in_cone = true;
+                changed = true;
+                for w in &node.writes {
+                    derived[w.0 as usize] = true;
+                }
+            }
+        }
+        if !changed {
+            return cone;
+        }
     }
 }
