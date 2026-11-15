@@ -904,7 +904,7 @@ state of the jump rule (§15.2).
 - **§14.5.1** `x` is a value input: any known `f64` expression (§14 rule 5). The result is a
   continuous expression with a direct dependence on `x` (§8.3.6).
 - **§14.5.2** `abstol` is the absolute tolerance of the state `x` in the truncation-error test
-  (§17.2.1) and in the test of whether a jump moved it (§15.2.6). Left out, the simulator derives
+  (§17.2.1). Left out, the simulator derives
   it from the tolerances of the natures `x` reads.
 
 > **Resolution.** §14.5.2 assigns `abstol` its role. The source design gives the parameter and no
@@ -915,7 +915,8 @@ the integration method's (§17.2); in a jump solve, which is a transient step (�
 same.
 
 - **§14.5.3** State: the accepted history of `x`. Across a jump `x` is continuous wherever the
-  equations allow (§15.2.1); the history is dropped only when the jump moved it (§15.2.6).
+  equations allow (§15.2.1). The history is kept across a jump; the previous derivative is
+  dropped only in the steps §15.2.6 restarts.
 - **§14.5.4** Read in a reaction or an event argument, the result is the derivative in the
   solution read: 0 at an equilibrium solution, the derivative of the step that read the jump, after one (§15.2.4).
 - **§14.5.5** In `Noise`, `ddt(n)` of a noise result is `jω·n` (§11.1.9).

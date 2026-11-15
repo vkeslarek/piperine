@@ -264,8 +264,8 @@ analog<ROWS, COLS> for Dram<ROWS, COLS> { v(vref) +> vpre; }
 | --- | --- |
 | Branch kind | The branch `(c.bl, gnd)` gets a flow contribution or none. No contribution is zero flow (§11 rule 4). The kind never changes, so this is not a switch branch (§11 rule 2). |
 | Word line high | The cell drives the bit line toward `vdd` or 0 V through `ron`. |
-| Word line falls, `(t, n)` | The reaction probes the solution from before the change (§15 table): the bit line as the cell and any writer left it. It commits `bit`. The same microstep's jump removes the cell's flow (§15 step 3.4). |
-| `(t, n + 1)` | `bit` applies. `analog` reads it statically, so a jump is solved; with the word line low it moves nothing. |
+| Word line falls, `(t, n)` | The reaction runs before the step to `t` is solved and probes the solution of the previous time point (§15 step 3.3): the bit line as the cell and any writer left it. It commits `bit`. |
+| `(t, n + 1)` | `bit` applies. Nothing is pending, so the step that arrives at `t` is solved (§15 step 3.4). It reads both changes: the fall of the word line removes the cell's flow, and `bit`, which `analog` reads statically, moves nothing with the word line low. |
 | Unknown `wl` | `high()` reads it as low (§22.1). A fall to unknown fires `fall()`; the stored bit is the probe's comparison, which is known. |
 | Time points | Every word-line change that `analog` reads; every fall, since the reaction probes. |
 
@@ -350,23 +350,25 @@ module ShareCharge(in close: Bit) {
 | First step | The holds are removed; `1p · v(a)` and `3p · v(b)` are the states. Nothing moves until the switch closes. |
 | `close` rises at `(t, 0)` | The commit applies before the step to `t` is solved; that step reads `close`: a jump (§15 step 3.4). |
 
-At that instant the step that arrives at `t` reads `close` (§15.2). With `i` the switch flow and
-`h` the length of that step, its node rows are:
+At that instant the step that arrives at `t` reads `close` (§15.2). It is a TR-BDF2 step
+(Appendix C.2). With `i` the switch flow at the end of its trapezoidal stage and `k > 0` that
+stage's weight on the new charge, its node rows are below; nothing moved before `t`, so no
+previous derivative enters them:
 
 | Row | Equation | Source |
 | --- | --- | --- |
-| node `a` | `1p · (v(a) − 1) / h + i = 0` | `ddt` as the step discretizes it |
-| node `b` | `3p · (v(b) − 0) / h − i = 0` | the same |
+| node `a` | `k · 1p · (v(a) − 1) + i = 0` | `ddt` as the trapezoidal stage discretizes it |
+| node `b` | `k · 3p · (v(b) − 0) − i = 0` | the same |
 | switch | `v(a) − v(b) = 0` | the constraint that forces the jump |
 
 | Step | Trace |
 | --- | --- |
-| The step | Adding the node rows removes `i`: `1p · (v − 1) + 3p · v = 0`. So `v(a) = v(b) = 0.25 V`: the right values are those of the first step that reads the jump. |
+| The step | Adding the node rows removes `i` and `k`: `1p · (v − 1) + 3p · v = 0`, so the stage ends at 0.25 V. The BDF2 stage has the same form over the charges of `t − h`, the stage point and `t`, and conserves the same sum. So `v(a) = v(b) = 0.25 V`: the right values are those of the first step that reads the jump. |
 | Conservation | The cut that the switch closes holds 1 pC before and `4p · 0.25 = 1 pC` after (§15.2.2). |
-| No solve of its own | The change has no solve at an unchanged `t`; the step to `t` is the solve that reads it (§15.2.4). |
+| No solve of its own | The change has no solve at an unchanged `t`; the step to `t` is the solve that reads it (§15.2). |
 | Restart | The step to `t` landed there for the commit of `close`, so it is exempt from the truncation-error test; the step after it drops the previous derivative and runs its trapezoidal stage as backward Euler (§15.2.6). |
 | Afterwards | `a` and `b` float together at 0.25 V. The transient is determined by the states (§15.2.1). |
 | `Dc` | Singular with the switch open or closed: no node has a DC path. Nothing is held outside a transient's operating point (§16). |
 | `Ac`, `Noise` | Their operating point fails the same way. |
 | Unknown `close` | `high()` reads it as low: the switch is open (§22.1). |
-| Gradients | Across the jump the sensitivities of the states obey the same backward-Euler limit (§23.3.2). |
+| Gradients | Across the jump the sensitivities of the states are carried by the step that reads it, as the states are (§15.2.10, §23.3.2). |

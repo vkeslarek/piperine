@@ -61,7 +61,9 @@ when §17.2.2 makes it one.
 ### Solves
 
 A **solve** determines the analog unknowns while every discrete carrier and param is held
-constant. There are four kinds, and §16.2 states what each primitive is in each:
+constant. There are three kinds: the equilibrium solve, the transient step and the small-signal
+sweep. The table also names the jump solve, a transient step that §16.2 gives a column of its
+own; §16.2 states what each primitive is in each:
 
 | Kind | Definition | Where it occurs |
 | --- | --- | --- |
@@ -70,7 +72,7 @@ constant. There are four kinds, and §16.2 states what each primitive is in each
 | **jump solve** | the transient step that reads a jump: the step arriving at its time point, or the first one after it | §15.2 |
 | **small-signal sweep** | one linear solve per frequency of the linearized equations | `Ac`, `Noise` and host analyses built on them (§11.1, §16.3) |
 
-The first three converge under §17.1. A jump solve is a transient step, not a fourth kind of solve on its own. A sweep has no instants: no reaction runs in it and no
+Every solve but a small-signal sweep converges under §17.1. A sweep has no instants: no reaction runs in it and no
 carrier changes (§16.2).
 
 ### The time-point procedure

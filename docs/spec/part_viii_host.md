@@ -172,7 +172,7 @@ piece by piece:
    `dt*/dp = −(∂e/∂p) / (de/dt)`, where `∂e/∂p` includes the state's own sensitivity. At `t*`
    the state's sensitivity jumps by the change of the right-hand side across the event, times
    `dt*/dp`: the **saltation correction**. Across a jump (§15.2) the sensitivities of the
-   states obey the same backward-Euler limit as the states.
+   states are carried by the step that reads it, as the states are (§15.2.10).
 3. **A scheduled time moves by its own derivative.** An `at` or `after` time computed from
    params has `dt/dp` equal to the derivative of the expression that gives it.
 4. **A commit of a real value carries the sensitivity of the expression committed, taken at
