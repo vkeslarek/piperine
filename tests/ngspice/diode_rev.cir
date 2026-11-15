@@ -1,0 +1,10 @@
+* diode reverse bias (golden): -1 V to -20 V, gmin shunt dominates
+V1 vin 0 DC 0
+R1 vin a 1
+D1 a 0 DMOD
+.model DMOD D (is=1e-14 n=1 rs=0)
+.control
+dc V1 -1 -20 -1
+wrdata diode_rev_sweep i(v1)
+.endc
+.end

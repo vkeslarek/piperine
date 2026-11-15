@@ -454,6 +454,9 @@ Proof: run twins | test the_current_source_twin_exists ... ok
 **C34** - WHEN the test `isrc_r` runs THEN the system SHALL compare `v(a)` with ngspice's under `DC_VOLTAGE`. (PAR-08, AC 2; T6)
 Proof: run op | test isrc_r ... ok
 
+**C39** - WHEN the test `diode_rev` runs THEN the system SHALL compare the flow of `v1` at each of the 20 rows of the -1 V to -20 V sweep with ngspice's `i(v1)` under `DC_CURRENT`, and a diode without the `gmin` shunt SHALL fail it. (PAR-08, AC 3; F1 fix)
+Proof: run dc | test diode_rev ... ok
+
 **C35** - WHEN the golden value and the actual value are both exactly 0 THEN the system SHALL accept the pair. (PAR edge case 1; T2)
 Proof: run lib | test contract::tests::two_zeros_are_accepted ... ok
 

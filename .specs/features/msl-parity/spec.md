@@ -41,7 +41,7 @@ Rows marked `y` are settled by a recorded decision, by code or by a run made whi
 | Where the twins live | `tests/ngspice/<name>.msl` beside `<name>.cir`, with the shared `devices.msl` | one directory per corpus; `mod devices;` in a twin finds the file by MD-55's on-disk rule | y |
 | The MSL models | `tests/ngspice/*.msl`, moved unchanged | they build on today's POM with zero diagnostics | y |
 | No `uic` in MSL | the transient twin declares `out` as a held node (`= 0.0`) | §16 H6: "There is no `uic`"; H1 gives the same start as ngspice's `uic` with a discharged capacitor | y |
-| The diode model | Shockley current plus `gmin() * vd`, no series resistance, `cj0 = 0` | ngspice shunts every junction with `gmin`: at −1 V it reports 1.01e-12 A, which is `gmin·1 V + is`; its reverse-bias cubic differs from this by less than 1e-18 A there | y |
+| The diode model | Shockley current plus `gmin() * vd` (held by `diode_rev`, PAR-08 AC 3: `diode_iv`'s reverse half sits under the 1e-12 A floor), no series resistance, `cj0 = 0` | ngspice shunts every junction with `gmin`: at −1 V it reports 1.01e-12 A, which is `gmin·1 V + is`; its reverse-bias cubic differs from this by less than 1e-18 A there | y |
 | Physical constants | the prelude's exact SI values; ngspice's differ in the sixth digit of `kT/q` | the effect on the diode current at 0.8 V is about 2e-5 relative, under the contract's 1e-3 | y |
 | ngspice is absent (Q2) | the parity tests fail, naming the binary they looked for; `PIPERINE_NGSPICE=skip` turns each into a pass that prints `SKIP` | the old harness passed silently without ngspice, which made the parity claim unfalsifiable on such a machine | y - Q2, user 2026-11-15: "Fail, opt-out env (Recommended)" |
 | The contract's values (Q3) | voltages `1e-3` relative, `1e-6` V absolute; currents `1e-3`, `1e-12` A; AC magnitude `1e-3`, `1e-12`; AC phase `1e-4` rad absolute, compared where the magnitude clears its floor; transient as voltages | the old contract's values (`16bddaae^:tests/support/ngspice.rs`), except the current floor: it said "ngspice's abstol for currents" and wrote `1e-9`; ngspice's `abstol` is `1e-12` | y - Q3, user 2026-11-15: "Old contract, 1e-12 A floor (Recommended)" |
@@ -207,6 +207,7 @@ Rows marked `y` are settled by a recorded decision, by code or by a run made whi
 
 1. The system SHALL hold `tests/ngspice/isrc_r.cir` (a 1 mA current source into 1 kΩ, operating point, `print v(a)`) and its twin `isrc_r.msl`.
 2. WHEN the test `isrc_r` runs THEN the system SHALL compare `v(a)` with ngspice's under `DC_VOLTAGE`.
+3. (Amendment, verification round 1, F1; user decision: the 1e-12 A floor stays.) The system SHALL hold `tests/ngspice/diode_rev.cir` and its twin `diode_rev.msl` (the `diode_iv` diode model, a DC sweep of `v1` from -1 V to -20 V in 20 steps), and WHEN the test `diode_rev` runs THEN the system SHALL compare the flow of `v1` at each row with ngspice's `i(v1)` under `DC_CURRENT`; the `gmin` current (1e-12 S times the bias, up to 2e-11 A) sits above the floor, so a diode without the `gmin` shunt fails it.
 
 **Independent Test**: the test `isrc_r` is green and both sides read 1 V in magnitude with the same sign.
 
