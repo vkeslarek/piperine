@@ -1177,8 +1177,13 @@ fn structure_changing_set_is_refused() {
     let end = s[start..].find(" 8. ").expect("rule 8") + start;
     let rule = &s[start..end];
     assert!(rule.contains("E0803") && rule.contains("extern"), "{rule}");
-    assert!(rule.contains("re-elaborates"), "{rule}");
+    let dc = rule.find("in a `Dc` sweep").expect("rule 7 names the `Dc` sweep");
+    assert!(rule[dc..].contains("re-elaborates the instance"), "{rule}");
+    let s85 = flat(&section(&spec("part_iii_structure.md"), "### 8.5 "));
+    let r10 = &s85[s85.find("**§8.5.10**").expect("§8.5.10")..s85.find("**§8.5.11**").expect("§8.5.11")];
+    assert!(r10.contains("E0803") && r10.contains("in a `Dc` sweep that point re-elaborates"), "{r10}");
 }
+
 
 #[test]
 fn zero_bytes_are_the_unknown_value() {
@@ -1215,6 +1220,12 @@ fn jump_has_no_solve_of_its_own() {
     assert!(s.contains("no solve of its own"), "{s}");
     assert!(!s.contains("h → 0"), "the backward-Euler limit is gone");
     assert!(!s.contains("repeated once"), "the repeated solve is gone");
+    let r6 = &s[s.find(" 6. ").expect("rule 6")..s.find(" 7. ").expect("rule 7")];
+    assert!(r6.contains("backward Euler"), "{r6}");
+    assert!(r6.contains("drops the previous derivative"), "{r6}");
+    let landing = &s[s.find("**Before the solve of `t`.**").expect("before-the-solve case")
+        ..s.find("**After the solve of `t`.**").expect("after-the-solve case")];
+    assert!(landing.contains("is exempt from the truncation-error test"), "{landing}");
 }
 
 #[test]
@@ -1226,7 +1237,12 @@ fn reference_rows_describe_the_kept_jump() {
         assert!(!row.contains("gap"), "{row}");
     }
     let restart = c.lines().find(|l| l.starts_with("| restart")).expect("restart row");
-    assert!(restart.contains("set"), "{restart}");
+    assert!(restart.contains("10⁻³ of the last step"), "{restart}");
+    assert!(restart.contains("after a host `set` only"), "{restart}");
+    let g6 = section(&spec("appendix_g_scope.md"), "### G.6 ");
+    for row in table_rows(&g6) {
+        assert!(!row[0].contains("jump"), "G.6 lists no jump gap: {row:?}");
+    }
 }
 
 #[test]
@@ -1244,4 +1260,6 @@ fn jump_solve_is_a_transient_step() {
     let exec = spec("part_v_execution.md");
     let row = exec.lines().find(|l| l.starts_with("| **jump solve**")).expect("jump solve row");
     assert!(row.contains("transient step"), "{row}");
+    let f5 = flat(&section(&spec("appendix_f_gallery_mixed.md"), "## F.5 "));
+    assert!(f5.contains("the right values are those of the first step that reads the jump"), "{f5}");
 }
