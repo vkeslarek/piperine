@@ -4,12 +4,14 @@
 //! is imported. The M1 node set covers the analog subset of `tests/ngspice/*.msl`.
 
 mod build;
+mod check;
 mod handle;
 mod ids;
 mod model;
 mod print;
 mod real;
 
+pub use check::Broken;
 pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NodeSpec};
 pub use handle::{Body, Function, Instance, Nature, Node};
 pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};

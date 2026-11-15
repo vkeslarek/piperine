@@ -497,6 +497,100 @@ impl Devices {
         })
     }
 
+    fn everything_origin() -> Origin {
+        Origin { file: "all.msl".into(), line: 1, col: 1 }
+    }
+
+    /// A body that constructs every `Expr`, `Stmt`, `Addend`, `Terminal` and `Site` variant the
+    /// five devices leave out.
+    pub fn everything(b: &mut IrBuilder) -> BodyId {
+        let el = Self::electrical(b);
+        let f64_local = |name: &str| Local { name: name.to_string(), ty: ValueType::F64 };
+        // fn id(x: f64) -> f64 { x }
+        let mut e = Ex::new(b, "all.msl", 2, 1);
+        let x = e.local(0);
+        let function = b.function(FunctionSpec {
+            name: "identity".into(),
+            origin: Self::everything_origin(),
+            params: vec![f64_local("x")],
+            ret: ValueType::F64,
+            locals: vec![f64_local("x")],
+            body: x,
+        });
+        let mut e = Ex::new(b, "all.msl", 3, 1);
+        let one = e.real(1.0);
+        let two = e.real(2.0);
+        let sum = e.binary(BinaryOp::Add, one, two);
+        let let_x = b.stmt(Stmt::Let { local: 0, init: sum });
+        let mut e = Ex::new(b, "all.msl", 4, 1);
+        // a block with a let and a value, inside a statement
+        let t = e.boolean(true);
+        let not = e.unary(UnaryOp::Not, t);
+        let unit = e.unit();
+        let inner_let = e.local(0);
+        let blk_let = e.b.stmt(Stmt::Let { local: 1, init: inner_let });
+        let mut e = Ex::new(b, "all.msl", 5, 1);
+        let y = e.local(1);
+        let neg = e.unary(UnaryOp::Neg, y);
+        let abs = e.math(MathFn::Abs, neg);
+        let block = e.block(vec![blk_let], Some(abs), ValueType::F64);
+        let block_stmt = b.stmt(Stmt::Expr(block));
+        let unit_stmt = b.stmt(Stmt::Expr(unit));
+        let mut e = Ex::new(b, "all.msl", 6, 1);
+        let tt = e.boolean(true);
+        let cond = e.binary(BinaryOp::Or, not, tt);
+        let a1 = e.real(1.0);
+        let a2 = e.real(2.0);
+        let pick = e.if_f64(cond, a1, a2);
+        let ln = e.math(MathFn::Ln, pick);
+        let ex = e.math(MathFn::Exp, ln);
+        let sq = e.math(MathFn::Sqrt, ex);
+        let call_arg = e.local(0);
+        let called = e.call(function, vec![call_arg]);
+        let temp = e.env(Env::Temperature);
+        let probe = e.probe(Terminal::Node(0), Terminal::Ground);
+        let seed = e.real(0.0);
+        let body_local = e.local(2);
+        let closure = e.closure(vec![2], body_local);
+        let limited = e.limit(0, probe, closure, Some(seed));
+        let mag = e.real(1.0);
+        let phase = e.real(90.0);
+        let stim = e.stim(0, mag, Some(phase));
+        let s1 = e.binary(BinaryOp::Add, sq, called);
+        let s2 = e.binary(BinaryOp::Add, s1, temp);
+        let s3 = e.binary(BinaryOp::Add, s2, limited);
+        let total = e.binary(BinaryOp::Add, s3, stim);
+        let contribute = b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Potential,
+            addends: vec![Addend { operator: Operator::Ddt, negated: true, value: total }],
+        });
+        b.body(BodySpec {
+            name: "Everything".into(),
+            origin: Self::everything_origin(),
+            params: vec![
+                Param {
+                    name: "flag".into(),
+                    ty: ValueType::Bool,
+                    default: Some(Constant::Bool(true)),
+                    check: None,
+                    structural: true,
+                    origin: Self::everything_origin(),
+                },
+            ],
+            nodes: vec![
+                BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: Self::everything_origin() },
+                BodyNode { name: "s".into(), nature: el, role: NodeRole::Signal, init: Some(Real::new(0.5)), origin: Self::everything_origin() },
+            ],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind: BranchKind::Potential }],
+            limits: vec![Site { name: "lim".into(), origin: Self::everything_origin() }],
+            stims: vec![Site { name: "stim".into(), origin: Self::everything_origin() }],
+            locals: vec![f64_local("x"), f64_local("y"), f64_local("t")],
+            analog: Some(vec![let_x, block_stmt, unit_stmt, contribute]),
+            children: vec![],
+        })
+    }
+
     fn child(name: &str, body: BodyId, nodes: Vec<Terminal>, params: Vec<(u32, f64)>, line: u32) -> Child {
         Child {
             name: name.to_string(),
