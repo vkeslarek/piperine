@@ -699,6 +699,7 @@ T42 → T43 → T44 → T45 → T46
 
 - [x] The target has no numeric literal beside a comparison: every bound is a `ToleranceContract`
 - [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test backends`: `both_backends_agree_on_the_m1_circuits`
+- [x] Verification F9 (C39): `both_backends_agree_on_the_m1_circuits` keeps every contract assertion and also requires the operating points, the AC phasors (real and imaginary parts) and the transient steps (times and values) bit-equal across the backends; red under a 1 % error in the compiled `exp`, which the contract absorbed
 - [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 - [x] Test count: the 1 test(s) named above, and no existing test removed or edited
 
@@ -1363,7 +1364,7 @@ Proof: run lib | test print::analog::tests::an_affine_term_is_printed_as_constan
 **C38** - An affine constant `c ≠ 0` leaves a right side within 1 ulp of `max(|c|, |Σ|)` of `−c` over 2000 points. (RS-06, AC 4; T19)
 Proof: run residue | test a_compiled_affine_constant_leaves_at_most_one_ulp ... ok
 
-**C39** - Divider, diode series, AC RC and transient RC agree on the two backends under the contract of each domain. (RS-06, AC 5; T23)
+**C39** - Divider, diode series, AC RC and transient RC agree on the two backends under the contract of each domain, and are equal bit for bit (verification F9). (RS-06, AC 5; T23)
 Proof: run backends | test both_backends_agree_on_the_m1_circuits ... ok
 
 **C40** - A panic in compiled code is a `FAULT` with the message; the next call on the instance succeeds. (RS-06, AC 6; T39)

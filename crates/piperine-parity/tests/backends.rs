@@ -3,6 +3,9 @@
 //! the compiled library, and every result agrees under the `ToleranceContract` of its domain. No
 //! bound is written here: each comparison is a contract's `assert`, the interpreter's value in
 //! the reference place and the compiled one as the actual, so a rejection names both backends.
+//! Every result is also equal bit for bit (verification F9): the two backends' functions give
+//! the same bits (RS-06 AC 1), so the solver walks the same Newton path and time steps on both,
+//! and any difference is a defect, never noise a contract may absorb.
 
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
@@ -35,6 +38,7 @@ impl Pair {
             let actual = self.rust.circuit().dc(Context::default()).expect("dc").solve().expect("rust solves").get_node(&b).expect("v(node)");
             let quantity = format!("v({node})");
             ToleranceContract::DC_VOLTAGE.assert(&self.point(&quantity, Coordinate::OperatingPoint), wanted, actual);
+            assert_eq!(actual.to_bits(), wanted.to_bits(), "{}: {quantity} is {actual:e} compiled and {wanted:e} interpreted, not the same bits", self.fixture);
         }
     }
 }
@@ -62,6 +66,12 @@ fn both_backends_agree_on_the_m1_circuits() {
         if ToleranceContract::phase_applies(wanted.norm()) {
             ToleranceContract::AC_PHASE.assert(&ac.point("arg v(out)", at), wanted.arg(), actual.arg());
         }
+        assert_eq!(
+            (actual.re.to_bits(), actual.im.to_bits()),
+            (wanted.re.to_bits(), wanted.im.to_bits()),
+            "ac_rc: v(out) at {} Hz is {actual} compiled and {wanted} interpreted, not the same bits",
+            a.frequency
+        );
     }
 
     // transient RC to 10 us: the compiled waveform read at the interpreter's times
@@ -75,6 +85,12 @@ fn both_backends_agree_on_the_m1_circuits() {
     let (steps_i, steps_r): (Vec<_>, Vec<_>) = (run_i.iter().collect(), run_r.iter().collect());
     let compiled = Waveform::new(steps_r.iter().map(|s| s.time()).collect(), steps_r.iter().map(|s| s.get_node(&out_r).expect("v(out)")).collect());
     assert_ne!(steps_i.len(), 0, "the interpreter's transient has steps");
+    // the same time steps and the same values, bit for bit
+    assert_eq!(steps_r.len(), steps_i.len(), "tran_rc: the same number of steps on both backends");
+    for (r, i) in steps_r.iter().zip(&steps_i) {
+        let (vr, vi) = (r.get_node(&out_r).expect("v(out)"), i.get_node(&out_i).expect("v(out)"));
+        assert_eq!((r.time().to_bits(), vr.to_bits()), (i.time().to_bits(), vi.to_bits()), "tran_rc: v(out) = {vr:e} at {:e} s compiled, {vi:e} at {:e} s interpreted", r.time(), i.time());
+    }
     for s in &steps_i {
         let actual = compiled.at(s.time()).unwrap_or_else(|| panic!("tran_rc: the time {:e} s lies outside the compiled result", s.time()));
         let wanted = s.get_node(&out_i).expect("v(out)");
