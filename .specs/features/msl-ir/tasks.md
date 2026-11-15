@@ -671,7 +671,7 @@ Proof: run check | test a_duplicated_path_is_named ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** 2026-11-15 batch 1 (T1-T7, Sonnet) done 89c0a3bf; batch 2 (T8, Opus) in ../piperine-msl-ir
+**Dispatched:** 2026-11-15 batches 1-2 done (b631738a); proofs 41/41; Verifier round 1 (Opus) in ../piperine-msl-ir
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---
