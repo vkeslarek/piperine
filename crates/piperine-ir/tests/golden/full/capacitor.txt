@@ -1,0 +1,22 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Capacitor  @devices.msl:11:1
+  param c: f64 where (c >= 0.0)  @devices.msl:12:5
+  node p: Electrical port  @devices.msl:11:22
+  node n: Electrical port  @devices.msl:11:37
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> ddt (c * probe(p, n))
+instance capacitor: Capacitor  nodes (gnd, gnd)  params (c = 1e-12)  top  @devices.msl:11:1
+arenas
+  top 0
+  body 0: where (e2)  natures (0, 0)  branches ((0, 1))  children ()  analog (s0)
+  instance 0: name capacitor  body 0  parent -  children ()  nodes (gnd, gnd)
+  e0: f64 = param 0  @devices.msl:12:17
+  e1: f64 = real 0.0  @devices.msl:12:17
+  e2: bool = ge e0 e1  @devices.msl:12:17
+  e3: f64 = param 0  @devices.msl:14:40
+  e4: f64 = probe n0 n1  @devices.msl:14:40
+  e5: f64 = mul e3 e4  @devices.msl:14:40
+  s0: contribute b0 flow (ddt e5)

@@ -1,24 +1,13 @@
 nature Electrical
   potential Voltage v "V" abstol 1e-6
   flow Current i "A" abstol 1e-12
-body Isource  @devices.msl:24:1
-  param dc: f64 = 0.0  @devices.msl:25:5
-  param ac: f64 = 0.0  @devices.msl:26:5
-  node p: Electrical port  @devices.msl:24:20
-  node n: Electrical port  @devices.msl:24:35
+body Isource
+  param dc: f64 = 0.0
+  param ac: f64 = 0.0
+  node p: Electrical port
+  node n: Electrical port
   branch b0 (p, n) flow
-  stim S0 "ac"  @devices.msl:28:62
+  stim S0 "ac"
   analog
     b0.flow +> direct ((dc * source_scale()) + ac_stim S0 (ac))
-instance isource: Isource  nodes (gnd, gnd)  params (dc = 0.001, ac = 0.0)  top  @devices.msl:24:1
-arenas
-  top 0
-  body 0: where (-, -)  natures (0, 0)  branches ((0, 1))  children ()  analog (s0)
-  instance 0: name isource  body 0  parent -  children ()  nodes (gnd, gnd)
-  e0: f64 = param 0  @devices.msl:28:30
-  e1: f64 = env source_scale  @devices.msl:28:30
-  e2: f64 = mul e0 e1  @devices.msl:28:30
-  e3: f64 = param 1  @devices.msl:28:30
-  e4: f64 = ac_stim S0 e3 -  @devices.msl:28:30
-  e5: f64 = add e2 e4  @devices.msl:28:30
-  s0: contribute b0 flow (direct e5)
+instance isource: Isource  nodes (gnd, gnd)  params (dc = 0.001, ac = 0.0)  top

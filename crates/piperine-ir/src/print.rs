@@ -16,13 +16,23 @@
 //! `<bad ...>`, an expression met again while it is being printed as `<cycle eN>`, and an
 //! expression already printed in the tree as `eN`, its arena line. The walk is iterative, so
 //! nesting depth costs no native stack.
+//!
+//! [`Ir::print_structural`] prints the **structural form** (IR-11): the tree alone, with no
+//! origin and no arena id, and the type of every expression whose form does not imply it. It is
+//! the form two producers of one design compare (the hand-built fixtures and `msl-elab`), so
+//! nothing in it depends on the order of an arena: natures, bodies, functions, the locals of an
+//! owner and the node table print sorted by their text; instances keep the pre-order of
+//! IR-08 AC 2; params, nodes, branches, sites, children and statements keep declaration order.
+//! An expression is written out in full wherever it is reached; one reached again inside the same
+//! statement prints as `^k`, the `k`-th expression written out in that statement (`<cycle ^k>`
+//! when it is still being written), so the numbering follows the tree, not the arena.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Write};
 
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BodyNode, BranchKind, Constant, Env, Expr, FunctionData, InstanceData, Ir,
+    BinaryOp, BodyData, BodyNode, BranchKind, Constant, Env, Expr, ExprData, FunctionData, InstanceData, Ir,
     Local, MathFn, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Terminal,
     UnaryOp, ValueType,
 };
@@ -30,9 +40,16 @@ use crate::real::Real;
 
 impl Display for Ir {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut printer = Printer { ir: self, out: String::new(), printed: HashSet::new(), on_stack: HashSet::new() };
-        printer.ir();
-        f.write_str(&printer.out)
+        f.write_str(&Printer::new(self, false).text())
+    }
+}
+
+impl Ir {
+    /// The structural form of this IR (IR-11): the tree of the printed text with every
+    /// expression's type where its form does not imply it, and no origin or arena id. Two IRs
+    /// that differ only in origins or in the order of their arenas print it byte-identically.
+    pub fn print_structural(&self) -> String {
+        Printer::new(self, true).text()
     }
 }
 
@@ -87,13 +104,48 @@ enum Piece {
 struct Printer<'a> {
     ir: &'a Ir,
     out: String,
-    /// Expressions already written out in the tree; a later use prints `eN`.
+    /// The structural form (IR-11) rather than the full text (IR-04).
+    structural: bool,
+    /// Expressions already written out in the tree; a later use prints `eN` (in the structural
+    /// form: `^k`, within one statement).
     printed: HashSet<ExprId>,
     /// Expressions being written out; meeting one again is a cycle.
     on_stack: HashSet<ExprId>,
+    /// The structural form's numbering: the `k`-th expression written out in this statement.
+    numbers: HashMap<ExprId, usize>,
 }
 
 impl<'a> Printer<'a> {
+    fn new(ir: &'a Ir, structural: bool) -> Self {
+        Printer { ir, out: String::new(), structural, printed: HashSet::new(), on_stack: HashSet::new(), numbers: HashMap::new() }
+    }
+
+    fn text(mut self) -> String {
+        self.ir();
+        self.out
+    }
+
+    /// `  @origin` after an item in the full text; nothing in the structural form.
+    fn at(&self, origin: &Origin) -> String {
+        if self.structural { String::new() } else { format!("  @{origin}") }
+    }
+
+    /// The text `write` appends to the output, taken out of it.
+    fn chunk(&mut self, write: impl FnOnce(&mut Self)) -> String {
+        let start = self.out.len();
+        write(self);
+        self.out.split_off(start)
+    }
+
+    /// Items printed in arena order in the full text; sorted by their text in the structural form.
+    fn items(&mut self, mut chunks: Vec<String>) {
+        if self.structural {
+            chunks.sort();
+        }
+        for chunk in chunks {
+            self.out.push_str(&chunk);
+        }
+    }
     /// A real as its shortest round-trip form; a NaN, whose payload that form drops, by its bits.
     fn real(r: Real) -> String {
         let v = r.get();
@@ -115,29 +167,49 @@ impl<'a> Printer<'a> {
     }
 
     fn ir(&mut self) {
-        for nature in &self.ir.natures {
-            self.line(0, &format!("nature {}", Printer::name(&nature.name)));
-            self.line(1, &format!("potential {}", Printer::quantity(&nature.potential)));
-            if let Some(flow) = &nature.flow {
-                self.line(1, &format!("flow {}", Printer::quantity(flow)));
-            }
-        }
-        for body in &self.ir.bodies {
-            self.body(body);
-        }
-        for function in &self.ir.functions {
-            self.function(function);
-        }
-        for (i, instance) in self.ir.instances.iter().enumerate() {
+        let ir = self.ir;
+        let natures = ir
+            .natures
+            .iter()
+            .map(|nature| {
+                self.chunk(|p| {
+                    p.line(0, &format!("nature {}", Printer::name(&nature.name)));
+                    p.line(1, &format!("potential {}", Printer::quantity(&nature.potential)));
+                    if let Some(flow) = &nature.flow {
+                        p.line(1, &format!("flow {}", Printer::quantity(flow)));
+                    }
+                })
+            })
+            .collect();
+        self.items(natures);
+        let bodies = ir.bodies.iter().map(|body| self.chunk(|p| p.body(body))).collect();
+        self.items(bodies);
+        let functions = ir.functions.iter().map(|function| self.chunk(|p| p.function(function))).collect();
+        self.items(functions);
+        for (i, instance) in ir.instances.iter().enumerate() {
             self.instance(i, instance);
         }
-        for node in &self.ir.nodes {
-            let nature = self.nature_name(node.nature.index());
-            let declarer = self.ir.instances.get(node.declared_by.index()).map_or("<bad instance>".to_string(), |i| Printer::name(&i.path));
-            let init = node.init.map_or(String::new(), |r| format!("  init {}", Printer::real(r)));
-            self.line(0, &format!("node {}: {nature}  declared by {declarer}{init}  @{}", Printer::name(&node.path), node.origin));
+        let nodes = ir
+            .nodes
+            .iter()
+            .map(|node| {
+                let nature = self.nature_name(node.nature.index());
+                let declarer = ir.instances.get(node.declared_by.index()).map_or("<bad instance>".to_string(), |i| Printer::name(&i.path));
+                let init = node.init.map_or(String::new(), |r| format!("  init {}", Printer::real(r)));
+                let at = self.at(&node.origin);
+                self.chunk(|p| p.line(0, &format!("node {}: {nature}  declared by {declarer}{init}{at}", Printer::name(&node.path))))
+            })
+            .collect();
+        self.items(nodes);
+        if !self.structural {
+            self.arenas();
         }
-        self.arenas();
+    }
+
+    /// The locals table of an owner: index order in the full text, sorted in the structural form.
+    fn locals(&mut self, indent: usize, locals: &[Local]) {
+        let lines = locals.iter().map(|l| self.chunk(|p| p.line(indent, &format!("local {}: {}", Printer::name(&l.name), l.ty)))).collect();
+        self.items(lines);
     }
 
     fn nature_name(&self, i: usize) -> String {
@@ -149,7 +221,8 @@ impl<'a> Printer<'a> {
     }
 
     fn body(&mut self, body: &BodyData) {
-        self.line(0, &format!("body {}  @{}", Printer::name(&body.name), body.origin));
+        let at = self.at(&body.origin);
+        self.line(0, &format!("body {}{at}", Printer::name(&body.name)));
         let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes };
         for param in &body.params {
             let mut text = format!("param {}: {}", Printer::name(&param.name), param.ty);
@@ -162,14 +235,15 @@ impl<'a> Printer<'a> {
             if param.structural {
                 text.push_str(" structural");
             }
-            let _ = write!(text, "  @{}", param.origin);
+            text.push_str(&self.at(&param.origin));
             self.line(1, &text);
         }
         for node in &body.nodes {
             let nature = self.nature_name(node.nature.index());
             let role = if node.role == crate::model::NodeRole::Port { "port" } else { "signal" };
             let init = node.init.map_or(String::new(), |r| format!(" init {}", Printer::real(r)));
-            self.line(1, &format!("node {}: {nature} {role}{init}  @{}", Printer::name(&node.name), node.origin));
+            let at = self.at(&node.origin);
+            self.line(1, &format!("node {}: {nature} {role}{init}{at}", Printer::name(&node.name)));
         }
         for (i, branch) in body.branches.iter().enumerate() {
             let kind = if branch.kind == BranchKind::Flow { "flow" } else { "potential" };
@@ -178,14 +252,14 @@ impl<'a> Printer<'a> {
             self.line(1, &format!("branch b{i} ({plus}, {minus}) {kind}"));
         }
         for (i, site) in body.limits.iter().enumerate() {
-            self.line(1, &format!("limit L{i} {:?}  @{}", site.name, site.origin));
+            let at = self.at(&site.origin);
+            self.line(1, &format!("limit L{i} {:?}{at}", site.name));
         }
         for (i, site) in body.stims.iter().enumerate() {
-            self.line(1, &format!("stim S{i} {:?}  @{}", site.name, site.origin));
+            let at = self.at(&site.origin);
+            self.line(1, &format!("stim S{i} {:?}{at}", site.name));
         }
-        for local in &body.locals {
-            self.line(1, &format!("local {}: {}", Printer::name(&local.name), local.ty));
-        }
+        self.locals(1, &body.locals);
         for child in &body.children {
             let callee = self.ir.bodies.get(child.body.index());
             let name = callee.map_or("<bad body>".to_string(), |b| Printer::name(&b.name));
@@ -198,15 +272,10 @@ impl<'a> Printer<'a> {
                     format!("{pname} = {v}")
                 })
                 .collect();
+            let at = self.at(&child.origin);
             self.line(
                 1,
-                &format!(
-                    "child {}: {name}  nodes ({})  params ({})  @{}",
-                    Printer::name(&child.name),
-                    nodes.join(", "),
-                    params.join(", "),
-                    child.origin
-                ),
+                &format!("child {}: {name}  nodes ({})  params ({}){at}", Printer::name(&child.name), nodes.join(", "), params.join(", ")),
             );
         }
         if let Some(analog) = &body.analog {
@@ -220,35 +289,41 @@ impl<'a> Printer<'a> {
 
     fn function(&mut self, function: &FunctionData) {
         let params: Vec<String> = function.params.iter().map(|p| format!("{}: {}", Printer::name(&p.name), p.ty)).collect();
-        self.line(
-            0,
-            &format!("fn {}({}) -> {}  @{}", Printer::name(&function.name), params.join(", "), function.ret, function.origin),
-        );
-        for local in &function.locals {
-            self.line(1, &format!("local {}: {}", Printer::name(&local.name), local.ty));
-        }
+        let at = self.at(&function.origin);
+        self.line(0, &format!("fn {}({}) -> {}{at}", Printer::name(&function.name), params.join(", "), function.ret));
+        self.locals(1, &function.locals);
         let scope = Scope { locals: &function.locals, params: &[], nodes: &[] };
         let body = function.body;
-        // A block body prints one statement per line; its id is printed and on the stack meanwhile.
-        let fresh = !self.printed.contains(&body);
-        match self.ir.exprs.get(body.index()).map(|e| &e.kind) {
-            Some(Expr::Block { stmts, value }) if fresh => {
-                self.printed.insert(body);
-                self.on_stack.insert(body);
-                for &stmt in stmts {
-                    let text = self.render(scope, Piece::Stmt(stmt));
-                    self.line(1, &text);
-                }
-                if let Some(value) = value {
-                    let text = self.render(scope, Piece::Expr(*value));
-                    self.line(1, &text);
-                }
-                self.on_stack.remove(&body);
+        // A block body prints one statement per line. In the full text its id is printed and on
+        // the stack meanwhile. In the structural form each line is a statement of its own,
+        // guarded by its own walk, and a block whose type its value does not imply prints whole,
+        // with its type.
+        let lines = match self.ir.exprs.get(body.index()) {
+            Some(ExprData { kind: Expr::Block { stmts, value }, ty, .. }) => {
+                let fresh = if self.structural { *ty == Printer::block_type(self.ir, value) } else { !self.printed.contains(&body) };
+                fresh.then_some((stmts, value))
             }
-            _ => {
-                let text = self.render(scope, Piece::Expr(body));
-                self.line(1, &text);
-            }
+            _ => None,
+        };
+        let Some((stmts, value)) = lines else {
+            let text = self.render(scope, Piece::Expr(body));
+            self.line(1, &text);
+            return;
+        };
+        if !self.structural {
+            self.printed.insert(body);
+            self.on_stack.insert(body);
+        }
+        for &stmt in stmts {
+            let text = self.render(scope, Piece::Stmt(stmt));
+            self.line(1, &text);
+        }
+        if let Some(value) = value {
+            let text = self.render(scope, Piece::Expr(*value));
+            self.line(1, &text);
+        }
+        if !self.structural {
+            self.on_stack.remove(&body);
         }
     }
 
@@ -273,15 +348,10 @@ impl<'a> Printer<'a> {
             })
             .collect();
         let top = if self.ir.top.index() == index { "  top" } else { "" };
+        let at = self.at(&instance.origin);
         self.line(
             0,
-            &format!(
-                "instance {}: {body_name}  nodes ({})  params ({}){top}  @{}",
-                Printer::name(&instance.path),
-                nodes.join(", "),
-                params.join(", "),
-                instance.origin
-            ),
+            &format!("instance {}: {body_name}  nodes ({})  params ({}){top}{at}", Printer::name(&instance.path), nodes.join(", "), params.join(", ")),
         );
     }
 
@@ -300,6 +370,12 @@ impl<'a> Printer<'a> {
 
     /// The text of `root`, written by an explicit stack.
     fn render(&mut self, scope: Scope<'_>, root: Piece) -> String {
+        if self.structural {
+            // A statement is written out on its own: its numbering starts afresh.
+            self.printed.clear();
+            self.on_stack.clear();
+            self.numbers.clear();
+        }
         let mut text = String::new();
         let mut stack = vec![root];
         let mut next = Vec::new();
@@ -367,15 +443,22 @@ impl<'a> Printer<'a> {
             return;
         };
         if self.on_stack.contains(&id) {
-            next.push(Piece::Text(format!("<cycle e{}>", id.0)));
+            next.push(Piece::Text(format!("<cycle {}>", self.reference(id))));
             return;
         }
         if !self.printed.insert(id) {
-            next.push(Piece::Text(format!("e{}", id.0)));
+            next.push(Piece::Text(self.reference(id)));
             return;
         }
+        let number = self.numbers.len();
+        self.numbers.insert(id, number);
         self.on_stack.insert(id);
         let text = |t: String| Piece::Text(t);
+        // The structural form writes a type its form does not imply.
+        let note = self.structural && self.implied(scope, &data.kind).as_ref() != Some(&data.ty);
+        if note {
+            next.push(text("(".into()));
+        }
         match &data.kind {
             Expr::Real(r) => next.push(text(Printer::real(*r))),
             Expr::Bool(b) => next.push(text(b.to_string())),
@@ -453,7 +536,54 @@ impl<'a> Printer<'a> {
                 next.push(text(")".into()));
             }
         }
+        if note {
+            next.push(text(format!(" : {})", data.ty)));
+        }
         next.push(Piece::Exit(id));
+    }
+
+    /// How a later use of `id` prints: its arena id in the full text, its number in this
+    /// statement in the structural form.
+    fn reference(&self, id: ExprId) -> String {
+        match self.numbers.get(&id) {
+            Some(k) if self.structural => format!("^{k}"),
+            _ => format!("e{}", id.0),
+        }
+    }
+
+    /// The type of a block with `value`: the value's recorded type, `()` without one.
+    fn block_type(ir: &Ir, value: &Option<ExprId>) -> ValueType {
+        match value {
+            Some(v) => ir.exprs.get(v.index()).map_or(ValueType::Unit, |e| e.ty.clone()),
+            None => ValueType::Unit,
+        }
+    }
+
+    /// The type an expression's form implies, given the recorded types of its operands; `None`
+    /// when an id it needs is out of range.
+    fn implied(&self, scope: Scope<'_>, kind: &Expr) -> Option<ValueType> {
+        let ir = self.ir;
+        let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
+        match kind {
+            Expr::Real(_) | Expr::Math { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } => {
+                Some(ValueType::F64)
+            }
+            Expr::Bool(_) => Some(ValueType::Bool),
+            Expr::Unit => Some(ValueType::Unit),
+            Expr::Local(i) => scope.locals.get(*i as usize).map(|l| l.ty.clone()),
+            Expr::Param(i) => scope.params.get(*i as usize).map(|p| p.ty.clone()),
+            Expr::Unary { op: UnaryOp::Neg, .. } => Some(ValueType::F64),
+            Expr::Unary { op: UnaryOp::Not, .. } => Some(ValueType::Bool),
+            Expr::Binary { op: BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div, .. } => Some(ValueType::F64),
+            Expr::Binary { .. } => Some(ValueType::Bool),
+            Expr::If { then, .. } => ty(then),
+            Expr::Block { value, .. } => Some(Printer::block_type(ir, value)),
+            Expr::Call { function, .. } => ir.functions.get(function.index()).map(|f| f.ret.clone()),
+            Expr::Closure { params, body } => {
+                let params: Option<Vec<ValueType>> = params.iter().map(|p| scope.locals.get(*p as usize).map(|l| l.ty.clone())).collect();
+                Some(ValueType::Fn(params?, Box::new(ty(body)?)))
+            }
+        }
     }
 
     // ---- the arenas -------------------------------------------------------------------------

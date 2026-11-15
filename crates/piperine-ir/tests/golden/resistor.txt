@@ -1,22 +1,11 @@
 nature Electrical
   potential Voltage v "V" abstol 1e-6
   flow Current i "A" abstol 1e-12
-body Resistor  @devices.msl:5:1
-  param r: f64 where (r > 0.0)  @devices.msl:6:5
-  node p: Electrical port  @devices.msl:5:21
-  node n: Electrical port  @devices.msl:5:36
+body Resistor
+  param r: f64 where (r > 0.0)
+  node p: Electrical port
+  node n: Electrical port
   branch b0 (p, n) flow
   analog
     b0.flow +> direct (probe(p, n) / r)
-instance resistor: Resistor  nodes (gnd, gnd)  params (r = 1000.0)  top  @devices.msl:5:1
-arenas
-  top 0
-  body 0: where (e2)  natures (0, 0)  branches ((0, 1))  children ()  analog (s0)
-  instance 0: name resistor  body 0  parent -  children ()  nodes (gnd, gnd)
-  e0: f64 = param 0  @devices.msl:6:17
-  e1: f64 = real 0.0  @devices.msl:6:17
-  e2: bool = gt e0 e1  @devices.msl:6:17
-  e3: f64 = probe n0 n1  @devices.msl:8:32
-  e4: f64 = param 0  @devices.msl:8:32
-  e5: f64 = div e3 e4  @devices.msl:8:32
-  s0: contribute b0 flow (direct e5)
+instance resistor: Resistor  nodes (gnd, gnd)  params (r = 1000.0)  top

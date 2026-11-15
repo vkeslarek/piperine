@@ -25,7 +25,7 @@ Rules every task follows:
 
 - **The crate is a leaf.** `piperine-ir` depends on `serde` (workspace) only; `serde_json` is a dev-dependency. Nothing is imported from `piperine-lang`: its patterns are copied (`pom/ids.rs`, `pom/reflect/mod.rs`, `pom/check.rs`).
 - **The data model of `design.md` is the contract.** Field and variant names are those of its Data Models section; `msl-elab` and `ir-interp` are written against them in parallel. A change you believe necessary: stop and report.
-- **The hand-built fixtures are shared.** `crates/piperine-ir/tests/support/devices.rs` is `#[path]`-included by `piperine-interp`'s tests, and the golden texts of T6 are what `msl-elab` must reproduce. Build each body exactly as `tests/ngspice/devices.msl` reads, in source order.
+- **The hand-built fixtures are shared.** `crates/piperine-ir/tests/support/devices.rs` is `#[path]`-included by `piperine-interp`'s tests, and the golden texts of T6, in the structural form of IR-11 (`tests/golden/*.txt`), are what `msl-elab` must reproduce; the full text is pinned under `tests/golden/full/`. Build each body exactly as `tests/ngspice/devices.msl` reads, in source order.
 - Ids are `u32` newtypes written out by hand, one per arena. Reals are stored and compared by bit pattern.
 - **Fail loud.** A form the code does not handle is a diagnostic, a `Fault` or an entry of `check()`, never a silent default.
 - **AGENTS.md idiom rules bind**: no loose function (every `fn` is a method of a struct or a trait), no macro of your own (`macro_rules!`, proc-macros; derives are fine), modules named after what they do, no `unwrap()`/`expect()` on a user-input path.
@@ -45,7 +45,7 @@ Rules every task follows:
 | ---------- | ------------------ | -------------------- | ---------------- | ----------- |
 | Storage, ids, builder, handles, node set | unit | 1:1 to the ACs of IR-01, IR-02, IR-07, IR-08 and edge case 2, on hand-built IRs | `crates/piperine-ir/tests/model.rs`, `tests/support/devices.rs` | `cargo test -p piperine-ir --test model` |
 | Serialization | unit | each AC of IR-03; `inf` and `-0.0` round-trip | `crates/piperine-ir/tests/serde.rs` | `cargo test -p piperine-ir --test serde` |
-| Printer | unit | each AC of IR-04; one golden text per device body and one for the divider | `crates/piperine-ir/tests/print.rs`, `tests/golden/*.txt` | `cargo test -p piperine-ir --test print` |
+| Printer | unit | each AC of IR-04 and IR-11; one golden text per device body and one for the divider, in each form | `crates/piperine-ir/tests/print.rs`, `tests/golden/*.txt`, `tests/golden/full/*.txt` | `cargo test -p piperine-ir --test print` |
 | `Ir::check` | unit | each AC of IR-06, edge cases 1 and 3; one broken IR per entry kind | `crates/piperine-ir/tests/check.rs` | `cargo test -p piperine-ir --test check` |
 | Dependency analysis | unit | each AC of IR-09 on all five device bodies; every operator row of the affine rule | `crates/piperine-ir/tests/deps.rs` | `cargo test -p piperine-ir --test deps` |
 | Workspace manifests and guards | unit | the existing guards stay green with the new member | `crates/piperine-solver/tests/workspace_shape.rs` | `cargo test -p piperine-solver --test workspace_shape` |
@@ -290,7 +290,7 @@ T8
 | ---------- | ------------------ | -------------------- | ---------------- | ----------- |
 | Storage, ids, builder, handles, node set | unit | 1:1 to the ACs of IR-01, IR-02, IR-07, IR-08 and edge case 2, on hand-built IRs | `crates/piperine-ir/tests/model.rs`, `tests/support/devices.rs` | `cargo test -p piperine-ir --test model` |
 | Serialization | unit | each AC of IR-03; `inf` and `-0.0` round-trip | `crates/piperine-ir/tests/serde.rs` | `cargo test -p piperine-ir --test serde` |
-| Printer | unit | each AC of IR-04; one golden text per device body and one for the divider | `crates/piperine-ir/tests/print.rs`, `tests/golden/*.txt` | `cargo test -p piperine-ir --test print` |
+| Printer | unit | each AC of IR-04 and IR-11; one golden text per device body and one for the divider, in each form | `crates/piperine-ir/tests/print.rs`, `tests/golden/*.txt`, `tests/golden/full/*.txt` | `cargo test -p piperine-ir --test print` |
 | `Ir::check` | unit | each AC of IR-06, edge cases 1 and 3; one broken IR per entry kind | `crates/piperine-ir/tests/check.rs` | `cargo test -p piperine-ir --test check` |
 | Dependency analysis | unit | each AC of IR-09 on all five device bodies; every operator row of the affine rule | `crates/piperine-ir/tests/deps.rs` | `cargo test -p piperine-ir --test deps` |
 | Workspace manifests and guards | unit | the existing guards stay green with the new member | `crates/piperine-solver/tests/workspace_shape.rs` | `cargo test -p piperine-solver --test workspace_shape` |
@@ -666,6 +666,18 @@ Proof: run check | test a_duplicated_path_is_named ... ok
 
 **C39** - WHEN a body is asked whether a branch's direct addends are affine THEN the system SHALL class a `limit` read as a probe and an `if` on a condition that reads no probe and no `limit` site as the join of its arms. (IR-10, AC 1 and AC 2; verification round 1)
 Proof: run deps | test a_limit_read_and_a_constant_if_keep_the_class ... ok
+
+**C40** - WHEN an `Ir` is printed in structural form (`Ir::print_structural`) THEN the system SHALL return the tree part of the printed text - every nature, body, function, instance and node, and every expression and statement reachable from them - with the type of every expression whose form does not imply it, and with no origin and no arena id. (IR-11, AC 1; verification round 2)
+Proof: run print | test structural_text_is_the_tree_with_types ... ok
+
+**C41** - WHEN two `Ir` values differ only in the origins they hold or in the order of their nature, body, function, expression, statement or node arenas THEN the system SHALL print byte-identical structural texts. (IR-11, AC 2; verification round 2)
+Proof: run print | test structural_text_ignores_origins_and_arena_order ... ok
+
+**C42** - WHEN two `Ir` values differ in an expression's form, operand, constant, terminal or type, in a bound value or in a local's type THEN the system SHALL print structural texts that differ. (IR-11, AC 3; verification round 2)
+Proof: run print | test structural_text_shows_forms_and_types ... ok
+
+**C43** - The system SHALL keep the full text of IR-04, origins and arena section included, as the `Display` form of `Ir`. (IR-11, AC 4; verification round 2)
+Proof: run print | test display_stays_the_full_form ... ok
 
 ---
 
