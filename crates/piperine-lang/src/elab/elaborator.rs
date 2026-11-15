@@ -88,11 +88,29 @@ impl<'d, 't> Elaboration<'d, 't> {
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
                 let ir = self.ir.finish(instance);
-                debug_assert!(ir.check().is_empty(), "elaboration produced an ill-formed IR: {:?}", ir.check());
-                Ok(ir)
+                Self::well_formed(self.design, top, ir)
             }
             _ => Err(self.diagnostics),
         }
+    }
+
+    /// The `Ir` itself when `check()` finds nothing; else one `E0999` internal-error diagnostic
+    /// per broken invariant, at the top module, and no `Ir`. Never checked in debug builds only:
+    /// a lowering gap must not reach a backend as an `Ok`.
+    pub(super) fn well_formed(design: &Design, top: DeclId, ir: Ir) -> Result<Ir, Vec<DesignDiagnostic>> {
+        let broken = ir.check();
+        if broken.is_empty() {
+            return Ok(ir);
+        }
+        let data = design.decl_data(top);
+        let span = data.name.as_ref().map_or(data.span, |n| n.span);
+        Err(broken
+            .iter()
+            .map(|b| DesignDiagnostic {
+                file: data.file,
+                diagnostic: Diagnostic::new("E0999", format!("internal error: elaboration produced an ill-formed IR: {} ({} at {})", b.what, b.item, b.origin), span, "this is a bug in the elaborator, not in the model"),
+            })
+            .collect())
     }
 
     /// `P0001` and `true` when the top has a port.
@@ -114,5 +132,23 @@ impl<'d, 't> Elaboration<'d, 't> {
     /// `P0001`: a construct inside the type-checked subset that M1 elaboration does not lower.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
         self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use piperine_ir::{InstanceId, IrBuilder};
+
+    use super::*;
+
+    #[test]
+    fn an_ill_formed_ir_becomes_an_internal_error_and_no_ir() {
+        let design = Design::builder().source("top.msl", "module Top() { }").build();
+        let types = Types::check(&design, "Top").expect("a clean model");
+        // No instance at all: the top id dangles, so `check()` has something to say.
+        let ir = IrBuilder::new().finish(InstanceId(0));
+        assert!(!ir.check().is_empty(), "the crafted IR must be broken");
+        let err = Elaboration::well_formed(&design, types.reached()[0], ir).expect_err("no Ir");
+        assert!(err.iter().all(|d| d.diagnostic.code == "E0999" && d.diagnostic.message.contains("internal error")), "{err:?}");
     }
 }
