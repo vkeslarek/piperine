@@ -329,13 +329,13 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `crates/piperine-lang/tests/fixtures/elab/{divider,diode_iv,diode_series,ac_rc,tran_rc,isrc_r}.txt` exist and are compared byte for byte
-- [ ] `device_bodies_match_the_ir_goldens` compares the five bodies, in structural form (`Ir::print_structural`), with `crates/piperine-ir/tests/golden/*.txt`
-- [ ] Every `Ir` has an empty `check()`; `TranRc.out` has initial potential 0
-- [ ] Every negative test of the feature asserts a code and a span inside the source, and a path where an instance is named
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `a_twin_elaborates_to_a_checked_ir`, `the_design_is_unchanged_by_elaboration`, `elaborating_twice_prints_the_same_text`, `every_diagnostic_has_code_span_and_path`, `the_twins_elaborate_without_diagnostics`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `crates/piperine-lang/tests/fixtures/elab/{divider,diode_iv,diode_series,ac_rc,tran_rc,isrc_r}.txt` exist and are compared byte for byte
+- [x] `device_bodies_match_the_ir_goldens` compares the five bodies, in structural form (`Ir::print_structural`), with `crates/piperine-ir/tests/golden/*.txt`
+- [x] Every `Ir` has an empty `check()`; `TranRc.out` has initial potential 0
+- [x] Every negative test of the feature asserts a code and a span inside the source, and a path where an instance is named
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `a_twin_elaborates_to_a_checked_ir`, `the_design_is_unchanged_by_elaboration`, `elaborating_twice_prints_the_same_text`, `every_diagnostic_has_code_span_and_path`, `the_twins_elaborate_without_diagnostics`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

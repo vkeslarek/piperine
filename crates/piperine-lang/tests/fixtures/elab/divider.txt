@@ -1,0 +1,31 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Divider
+  node vin: Electrical signal
+  node mid: Electrical signal
+  child v1: Vsource  nodes (vin, gnd)  params (dc = 10.0)
+  child r1: Resistor  nodes (vin, mid)  params (r = 1000.0)
+  child r2: Resistor  nodes (mid, gnd)  params (r = 3000.0)
+body Resistor
+  param r: f64 where (r > 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> direct (probe(p, n) / r)
+body Vsource
+  param dc: f64 = 0.0
+  param ac: f64 = 0.0
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) potential
+  stim S0 "ac"
+  analog
+    b0.potential +> direct ((dc * source_scale()) + ac_stim S0 (ac))
+instance Divider: Divider  nodes (Divider.vin, Divider.mid)  params ()  top
+instance Divider.v1: Vsource  nodes (Divider.vin, gnd)  params (dc = 10.0, ac = 0.0)
+instance Divider.r1: Resistor  nodes (Divider.vin, Divider.mid)  params (r = 1000.0)
+instance Divider.r2: Resistor  nodes (Divider.mid, gnd)  params (r = 3000.0)
+node Divider.mid: Electrical  declared by Divider
+node Divider.vin: Electrical  declared by Divider

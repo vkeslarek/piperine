@@ -1,0 +1,38 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body AcRc
+  node vin: Electrical signal
+  node out: Electrical signal
+  child v1: Vsource  nodes (vin, gnd)  params (dc = 0.0, ac = 1.0)
+  child r1: Resistor  nodes (vin, out)  params (r = 1000.0)
+  child c1: Capacitor  nodes (out, gnd)  params (c = 1.5915494309189535e-9)
+body Capacitor
+  param c: f64 where (c >= 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> ddt (c * probe(p, n))
+body Resistor
+  param r: f64 where (r > 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> direct (probe(p, n) / r)
+body Vsource
+  param dc: f64 = 0.0
+  param ac: f64 = 0.0
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) potential
+  stim S0 "ac"
+  analog
+    b0.potential +> direct ((dc * source_scale()) + ac_stim S0 (ac))
+instance AcRc: AcRc  nodes (AcRc.vin, AcRc.out)  params ()  top
+instance AcRc.v1: Vsource  nodes (AcRc.vin, gnd)  params (dc = 0.0, ac = 1.0)
+instance AcRc.r1: Resistor  nodes (AcRc.vin, AcRc.out)  params (r = 1000.0)
+instance AcRc.c1: Capacitor  nodes (AcRc.out, gnd)  params (c = 1.5915494309189535e-9)
+node AcRc.out: Electrical  declared by AcRc
+node AcRc.vin: Electrical  declared by AcRc

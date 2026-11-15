@@ -1,0 +1,27 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body Isource
+  param dc: f64 = 0.0
+  param ac: f64 = 0.0
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) flow
+  stim S0 "ac"
+  analog
+    b0.flow +> direct ((dc * source_scale()) + ac_stim S0 (ac))
+body IsrcR
+  node a: Electrical signal
+  child i1: Isource  nodes (gnd, a)  params (dc = 0.001)
+  child r1: Resistor  nodes (a, gnd)  params (r = 1000.0)
+body Resistor
+  param r: f64 where (r > 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> direct (probe(p, n) / r)
+instance IsrcR: IsrcR  nodes (IsrcR.a)  params ()  top
+instance IsrcR.i1: Isource  nodes (gnd, IsrcR.a)  params (dc = 0.001, ac = 0.0)
+instance IsrcR.r1: Resistor  nodes (IsrcR.a, gnd)  params (r = 1000.0)
+node IsrcR.a: Electrical  declared by IsrcR
