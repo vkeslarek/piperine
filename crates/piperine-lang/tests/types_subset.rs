@@ -22,10 +22,10 @@ struct Row {
 
 const ROWS: &[Row] = &[
     Row { construct: "integer literal", source: "module Top() { }\nanalog for Top { let x = 1; }", names: "integer literal" },
-    Row { construct: "u32", source: "module Top() { }\nanalog for Top { let x: u32 = 1; }", names: "integer type `u32`" },
-    Row { construct: "usize", source: "module Top() { }\nanalog for Top { let x: usize = 1; }", names: "integer type `usize`" },
-    Row { construct: "UInt<N>", source: "module Top() { }\nanalog for Top { let x: UInt<8> = 1; }", names: "`UInt`" },
-    Row { construct: "Int<N>", source: "module Top() { }\nanalog for Top { let x: Int<8> = 1; }", names: "`Int`" },
+    Row { construct: "u32", source: "module Top() { }\nanalog for Top { let x: u32 = 1.0; }", names: "integer type `u32`" },
+    Row { construct: "usize", source: "module Top() { }\nanalog for Top { let x: usize = 1.0; }", names: "integer type `usize`" },
+    Row { construct: "UInt<N>", source: "module Top() { }\nanalog for Top { let x: UInt<8> = 1.0; }", names: "`UInt`" },
+    Row { construct: "Int<N>", source: "module Top() { }\nanalog for Top { let x: Int<8> = 1.0; }", names: "`Int`" },
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
     Row { construct: "str", source: "fn f(s: &str) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(\"a\"); }", names: "reference type" },
@@ -69,6 +69,19 @@ const ROWS: &[Row] = &[
     Row { construct: "module result", source: "module M() -> f64 { 1.0 }\nmodule Top() { let m = M(); }", names: "module result" },
     Row { construct: "extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: E) { }\nmodule Top(a: E) { let x = X(a); }", names: "`extern` module" },
     Row { construct: "generation", source: "module Top(a: E) { for i in 0..2 { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
+    Row { construct: "bound_step", source: "module Top() { }\nanalog for Top { bound_step(1.0); }", names: "`bound_step`" },
+    Row { construct: "ddx", source: "module Top(a: E) { }\nanalog for Top { let x = ddx(v(a), v(a)); }", names: "`ddx`" },
+    Row { construct: "delay", source: "module Top(a: E) { }\nanalog for Top { let x = delay(v(a), 1.0); }", names: "`delay`" },
+    Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
+    Row { construct: "cross", source: "module Top(a: E) { }\nanalog for Top { let x = cross(v(a)); }", names: "`cross`" },
+    Row { construct: "at", source: "module Top() { }\nanalog for Top { let x = at(1.0); }", names: "`at`" },
+    Row { construct: "simparam", source: "module Top() { }\nanalog for Top { let x = simparam(1.0); }", names: "`simparam`" },
+    Row { construct: "now", source: "module Top() { }\nanalog for Top { let x = now(); }", names: "`now`" },
+    Row { construct: "freq", source: "module Top() { }\nanalog for Top { let x = freq(); }", names: "`freq`" },
+    Row { construct: "inflow", source: "module Top(a: E) { }\nanalog for Top { let x = a.inflow(); }", names: "inflow" },
+    Row { construct: "flow probe read as a value", source: "module Top(a: E) { }\nanalog for Top { let x = i(a); }", names: "flow probe" },
+    Row { construct: "trait", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top() { }\nanalog for Top { let y = 1.0.get(); }", names: "method `get`" },
+    Row { construct: "commit", source: "module Top() { signal s: E; }\ndigital for Top { on settle { s <- 1.0; } }", names: "`digital` block" },
 ];
 
 fn check(row: &Row) -> (String, Vec<DesignDiagnostic>) {
@@ -124,4 +137,25 @@ fn unreached_items_are_not_reported() {
     let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let mut y = x; y }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
     let design: Design = support::build(&reached);
     assert!(Types::check(&design, "Top").is_err());
+}
+
+/// Constructs that only resolve against the real standard library: `Bit`, `Repr` and the known
+/// flag are refused by name as well.
+const STD_ROWS: &[Row] = &[
+    Row { construct: "Bit", source: "module Top(c: Bit) { }", names: "`Bit`" },
+    Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },
+    Row { construct: "known flag", source: "module Top() { }\nanalog for Top { let x = 1.0.level(1.0); }", names: "method `level`" },
+];
+
+#[test]
+fn std_types_outside_the_subset_are_p0001() {
+    for row in STD_ROWS {
+        let src = format!("{HEAD}{}", row.source);
+        let design = Design::builder().source("top.msl", &src).build();
+        assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", row.construct, support::codes(&design));
+        let d = Types::check(&design, "Top").expect_err(row.construct);
+        assert_eq!(d.len(), 1, "{}: {:?}", row.construct, d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(d[0].diagnostic.code, "P0001", "{}: {}", row.construct, d[0].diagnostic.message);
+        assert!(d[0].diagnostic.message.contains(row.names), "{}: {}", row.construct, d[0].diagnostic.message);
+    }
 }

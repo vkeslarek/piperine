@@ -120,6 +120,27 @@ fn diagnostics_come_in_source_order_one_per_expression() {
     // One mistake inside nested parentheses is one diagnostic, not one per level.
     let (_, d) = diagnostics("", "let x: f64 = ((true));");
     assert_eq!(d.len(), 1, "{d:?}");
+
+    // `Top` is checked first, then `lower` (declared above it), so the worklist meets the
+    // later span first; the sort puts them back in source order.
+    let (src, d) = diagnostics("fn lower() -> f64 { true }", "let a: bool = 1.0; let y = lower();");
+    assert_eq!(d.len(), 2, "{d:?}");
+    assert_eq!([snippet(&src, &d[0]), snippet(&src, &d[1])], ["true", "1.0"]);
+
+    // Across files: the worklist goes top.msl, helper.msl, top.msl again.
+    let design = Design::builder()
+        .std_source("lib.msl", "pub mod prelude;\n")
+        .std_source("prelude.msl", "")
+        .source("top.msl", "mod helper;\npub fn g() -> f64 { true }\nmodule Top() { }\nanalog for Top { let a: bool = 1.0; let y = helper::f(); }")
+        .source("helper.msl", "pub fn f() -> f64 { let z: bool = 1.0; super::g() }")
+        .build();
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let d = Types::check(&design, "Top").expect_err("expected diagnostics");
+    assert_eq!(d.len(), 3, "{d:?}");
+    let files: Vec<_> = d.iter().map(|d| d.file).collect();
+    assert!(files.windows(2).all(|w| w[0] <= w[1]), "{files:?}");
+    let starts: Vec<usize> = d.iter().filter(|d| d.file == files[0]).map(|d| d.diagnostic.span().start).collect();
+    assert!(starts.windows(2).all(|w| w[0] < w[1]), "{starts:?}");
 }
 
 #[test]
@@ -129,7 +150,7 @@ fn a_let_without_type_or_value_is_p0001() {
     assert_eq!(snippet(&src, &d[0]), "let x;");
 }
 
-const FUNCTIONS: &str = "fn half(a: f64) -> f64 { a / 2.0 }\nfn positive(a: f64) -> bool { a > 0.0 }\nfn apply(f: fn(f64, f64) -> f64, x: f64) -> f64 { f(x, x) }\nfn fact(n: f64) -> f64 { if n <= 1.0 { 1.0 } else { n * fact(n - 1.0) } }";
+const FUNCTIONS: &str = "fn half(a: f64) -> f64 { a / 2.0 }\nfn positive(a: f64) -> bool { a > 0.0 }\nfn apply(f: fn(f64, f64) -> f64, x: f64) -> f64 { x }\nfn fact(n: f64) -> f64 { if n <= 1.0 { 1.0 } else { n * fact(n - 1.0) } }";
 
 #[test]
 fn a_call_takes_its_declared_result() {
@@ -239,4 +260,41 @@ fn the_std_pnjlim_checks_clean() {
     let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     let pnjlim = design.function("pnjlim").expect("std pnjlim").decl().id();
     assert!(types.reached().contains(&pnjlim));
+}
+
+#[test]
+fn a_function_is_a_value_only_as_an_argument() {
+    let items = "fn h(a: f64, b: f64) -> f64 { a }\nfn apply(f: fn(f64, f64) -> f64, x: f64) -> f64 { x }";
+    // As an argument whose parameter has a function type, it checks.
+    local_types(items, "let r = apply(h, 2.0);", &["r"]);
+
+    // Anywhere else it is outside the subset.
+    let (src, d) = diagnostics(items, "let f = h;");
+    assert_eq!(codes_of(&d), ["P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "h");
+
+    // A call whose callee is not a named function or built-in has no callee to record: refused.
+    let (src, d) = diagnostics("fn run(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }", "let y = run(|a| a, 1.0);");
+    assert_eq!(codes_of(&d), ["P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "f(x)");
+}
+
+#[test]
+fn an_unsupported_form_does_not_hide_an_independent_error() {
+    // A refused annotation still has its initializer checked.
+    let (src, d) = diagnostics("", "let x: u32 = 1.0 + true;");
+    assert_eq!(codes_of(&d), ["P0001", "P0002"]);
+    assert_eq!(snippet(&src, &d[1]), "true");
+
+    // A generic function is refused and its body is checked as well.
+    let (src, d) = diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g(1.0);");
+    assert_eq!(codes_of(&d), ["P0001", "P0002"]);
+    assert!(d[0].diagnostic.message.contains("generic function"));
+    assert_eq!(snippet(&src, &d[1]), "true");
+
+    // A body that ends in a statement lacks its result whatever else it got wrong.
+    let (src, d) = diagnostics("fn f(a: f64) -> f64 { let y = a + true; }", "let z = f(1.0);");
+    assert_eq!(codes_of(&d), ["P0002", "P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "{ let y = a + true; }");
+    assert_eq!(snippet(&src, &d[1]), "true");
 }

@@ -46,9 +46,12 @@ impl CoreParam {
 /// Where a core primitive may be written (§14 table, column "Allowed in").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Allowed {
-    /// An `analog` block or a module body, never a `fn` or a closure.
+    /// An `analog` block only (`ac_stim`).
     Analog,
-    /// Everywhere a value is evaluated during a run.
+    /// Where instances go and an `analog` block reads them: a module body or an `analog` block,
+    /// never a `fn`, a closure, a param default or a `where` (`ddt`, `limit`).
+    Instances,
+    /// Everywhere a value is evaluated during a run: never a const context (`E0323`).
     Everywhere,
 }
 
@@ -64,8 +67,8 @@ pub(super) struct CoreSig {
 /// here (`delay`, `noise`, `ddx`, `cross`, `at`, `now`, `freq`, `analysis`, `simparam`, ...) is
 /// `P0001`, which is how it stays refused without a line of code each.
 const CORE_ROWS: &[(&str, CoreSig)] = &[
-    ("ddt", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Analog }),
-    ("limit", CoreSig { required: &[CoreParam::F64, CoreParam::Limiter], optional: &[CoreParam::F64], allowed: Allowed::Analog }),
+    ("ddt", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Instances }),
+    ("limit", CoreSig { required: &[CoreParam::F64, CoreParam::Limiter], optional: &[CoreParam::F64], allowed: Allowed::Instances }),
     ("ac_stim", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Analog }),
     ("temperature", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere }),
     ("gmin", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere }),

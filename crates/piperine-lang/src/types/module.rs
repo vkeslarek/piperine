@@ -4,7 +4,7 @@
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, NatureKind, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
-use super::check::Checker;
+use super::check::{Checker, Context};
 use super::unsupported::Unsupported;
 use super::{Callee, Ty};
 
@@ -68,10 +68,10 @@ impl Checker<'_> {
             }
         });
         if let (Some(ty), Some(default)) = (&ty, param.default) {
-            self.check(default, ty);
+            self.within(Context::Const, |this| this.check(default, ty));
         }
         if let Some(cond) = param.where_ {
-            self.check_as(cond, &Ty::Bool, "E0318");
+            self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0318"));
         }
     }
 

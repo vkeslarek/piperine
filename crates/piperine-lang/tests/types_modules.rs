@@ -157,3 +157,65 @@ fn a_node_of_another_nature_is_e0251() {
     assert_eq!(codes_of(&d), ["P0002"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
 }
+
+#[test]
+fn a_where_on_a_module_or_fn_is_bool() {
+    let (src, d) = diagnostics("module Top() where 1.0 { }");
+    assert_eq!(codes_of(&d), ["E0318"]);
+    assert_eq!(snippet(&src, &d[0]), "1.0");
+
+    let (src, d) = diagnostics("fn f(x: f64) -> f64 where x { x }\nmodule Top() { }\nanalog for Top { let y = f(1.0); }");
+    assert_eq!(codes_of(&d), ["E0318"]);
+    assert_eq!(snippet(&src, &d[0]), "x");
+
+    // A `bool` condition on each checks.
+    let src = format!("{NATURES}fn f(x: f64) -> f64 where x > 0.0 {{ x }}\nmodule Top() where true {{ }}\nanalog for Top {{ let y = f(1.0); }}");
+    let design = design_of(&src);
+    Types::check(&design, "Top").expect("bool where clauses");
+}
+
+#[test]
+fn a_core_primitive_is_checked_where_it_is_written() {
+    // §14 "Allowed in": `ac_stim` is `analog` only, so a module body is refused.
+    for (body, text) in [
+        ("module Top() { let x = ac_stim(1.0); }", "ac_stim(1.0)"),
+        // `ddt` and `limit` go where instances go: not in a param default or a `where`.
+        ("module Top() { a: f64 = ddt(1.0); }", "ddt(1.0)"),
+        ("fn l(n: f64, o: f64) -> f64 { n }\nmodule Top() { a: f64 = limit(1.0, l); }", "limit(1.0, l)"),
+        ("module Top() { a: f64 = 1.0 where ac_stim(1.0) > 0.0; }", "ac_stim(1.0)"),
+        ("module Top() where ddt(1.0) > 0.0 { }", "ddt(1.0)"),
+    ] {
+        let (src, d) = diagnostics(body);
+        assert_eq!(codes_of(&d), ["E0450"], "{body}");
+        assert_eq!(snippet(&src, &d[0]), text, "{body}");
+    }
+
+    // A probe is not allowed in a param default either.
+    let (src, d) = diagnostics("module Top(a: E) { x: f64 = v(a); }");
+    assert_eq!(codes_of(&d), ["E0450"]);
+    assert_eq!(snippet(&src, &d[0]), "v(a)");
+
+    // Where the table allows them they check: `ddt` and a probe in a module-body `let`.
+    let src = format!("{NATURES}module Top(a: E) {{ let x = ddt(1.0); let y = v(a); }}");
+    let design = design_of(&src);
+    Types::check(&design, "Top").expect("ddt and a probe in a module-body let");
+}
+
+#[test]
+fn an_environment_function_in_a_const_context_is_e0323() {
+    for (body, text) in [
+        ("module Top() { t: f64 = temperature(); }", "temperature()"),
+        ("module Top() { a: f64 = 1.0 where temperature() > 0.0; }", "temperature()"),
+        ("module Top() where gmin() > 0.0 { }", "gmin()"),
+        ("const T0: f64 = source_scale();\nmodule Top() { a: f64 = T0; }", "source_scale()"),
+    ] {
+        let (src, d) = diagnostics(body);
+        assert_eq!(codes_of(&d), ["E0323"], "{body}");
+        assert_eq!(snippet(&src, &d[0]), text, "{body}");
+    }
+
+    // A run-time position takes it: a module-body `let` and an `analog` block.
+    let src = format!("{NATURES}module Top() {{ let x = temperature(); }}\nanalog for Top {{ let y = temperature(); }}");
+    let design = design_of(&src);
+    Types::check(&design, "Top").expect("the environment at run time");
+}

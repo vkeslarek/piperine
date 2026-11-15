@@ -11,7 +11,7 @@ use super::{Callee, Ty};
 
 impl Checker<'_> {
     /// What a callee path names, if the callee is a plain path.
-    fn callee_resolution(&self, callee: ExprId) -> Option<Resolution> {
+    pub(super) fn callee_resolution(&self, callee: ExprId) -> Option<Resolution> {
         match &self.design.expr_node(callee).kind {
             ExprKind::Path(path) => self.design.path_node(*path).segments.last().map(|s| s.res),
             _ => None,
@@ -45,7 +45,7 @@ impl Checker<'_> {
             Some(Resolution::Builtin(id)) => self.core_call(expr, id, args),
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
-                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, *callee, args),
+                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, args),
                 _ => {
                     self.unsupported(file, node.span, "call of this declaration");
                     None
@@ -61,24 +61,24 @@ impl Checker<'_> {
     /// A call of a function of the reachable set: arguments against the declared parameters,
     /// the declared result as the type.
     fn function_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
-        let (params, ret) = self.signature(function)?;
         self.reach(function);
+        let (params, ret) = self.signature(function)?;
         self.callees.insert(expr, Callee::Function(function));
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         self.apply(expr, &params, args)?;
         Some(ret)
     }
 
-    /// A call of a parameter or a local whose type is `fn(..) -> R`.
-    fn indirect_call(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Ty> {
-        let Ty::Fn(params, ret) = self.infer(callee)? else {
-            let file = self.file_of_expr(expr);
-            let span = self.design.expr_node(callee).span;
-            self.unsupported(file, span, "call of a value that is not a function");
-            return None;
-        };
-        self.apply(expr, &params, args)?;
-        Some(*ret)
+    /// A call of a parameter or a local whose type is `fn(..) -> R`: there is no named function
+    /// to record as its callee, so the form is outside the subset.
+    fn indirect_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        self.unsupported(file, span, "call of a function value (a parameter or a local)");
+        for arg in args {
+            self.infer(arg.value);
+        }
+        None
     }
 
     /// Check each argument against its parameter, in order. A function takes positional

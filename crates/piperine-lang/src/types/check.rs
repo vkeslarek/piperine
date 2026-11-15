@@ -18,6 +18,15 @@ pub(super) enum Context {
     Analog,
     /// A `fn` or a closure.
     Function,
+    /// A const context (§8.1.21): a param default, a `where`, a `const` initializer.
+    Const,
+}
+
+/// The parts of a function signature, each typed on its own.
+struct SignatureParts {
+    params: Vec<(DeclId, Option<Ty>)>,
+    ret: Option<Ty>,
+    ok: bool,
 }
 
 /// One pass over the reachable set. Everything it learns goes into side tables; the design is
@@ -70,6 +79,14 @@ impl<'d> Checker<'d> {
             return Err(diagnostics);
         }
         Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached })
+    }
+
+    /// Run `body` with `context` as the place being checked, then restore the one outside.
+    pub(super) fn within<R>(&mut self, context: Context, body: impl FnOnce(&mut Self) -> R) -> R {
+        let outer = std::mem::replace(&mut self.context, context);
+        let result = body(self);
+        self.context = outer;
+        result
     }
 
     /// Put a declaration on the worklist the first time it is reached.
@@ -184,7 +201,7 @@ impl<'d> Checker<'d> {
         let DeclKind::Const(data) = self.design.decl_data(decl).kind.clone() else { return };
         let Some(ty) = self.lower_type(data.ty) else { return };
         match data.value {
-            Some(value) => self.check(value, &ty),
+            Some(value) => self.within(Context::Const, |this| this.check(value, &ty)),
             None => {
                 let d = self.design.decl_data(decl);
                 let (file, span) = (d.file, d.span);
@@ -195,6 +212,18 @@ impl<'d> Checker<'d> {
 
     /// The declared parameter types and result of a function, or `None` after a `P0001`.
     pub(super) fn signature(&mut self, decl: DeclId) -> Option<(Vec<Ty>, Ty)> {
+        let parts = self.signature_parts(decl)?;
+        let params: Option<Vec<Ty>> = parts.params.iter().map(|(_, ty)| ty.clone()).collect();
+        match (parts.ok, params, parts.ret) {
+            (true, Some(params), Some(ret)) => Some((params, ret)),
+            _ => None,
+        }
+    }
+
+    /// The signature piece by piece: each parameter with its type if it has one, the result if
+    /// it has one, and whether the signature as a whole is inside the subset. A refused piece
+    /// does not stop the others from being typed, so the body can still be checked.
+    fn signature_parts(&mut self, decl: DeclId) -> Option<SignatureParts> {
         let data: DeclData = self.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let mut ok = true;
@@ -209,56 +238,78 @@ impl<'d> Checker<'d> {
         let mut params = Vec::new();
         for child in data.children.iter().copied() {
             let DeclKind::FnParam(p) = &self.design.decl_data(child).kind else { continue };
-            match p {
-                FnParamData::Named { ty } => match self.lower_type(*ty) {
-                    Some(t) => params.push(t),
-                    None => ok = false,
-                },
+            let ty = match p {
+                FnParamData::Named { ty } => self.lower_type(*ty),
                 FnParamData::SelfValue | FnParamData::Error => {
                     let d = self.design.decl_data(child);
                     self.unsupported(d.file, d.span, "`self` parameter");
-                    ok = false;
+                    None
                 }
-            }
+            };
+            ok &= ty.is_some();
+            params.push((child, ty));
         }
         let ret = match f.ret {
             Some(r) => self.lower_type(r),
             None => Some(Ty::Unit),
         };
-        match (ok, ret) {
-            (true, Some(ret)) => Some((params, ret)),
-            _ => None,
-        }
+        ok &= ret.is_some();
+        Some(SignatureParts { params, ret, ok })
     }
 
-    /// A function of the reachable set: its body against its declared result. A call to it is
-    /// typed from the signature alone, so a recursive function never loops.
+    /// A function of the reachable set: its `where`, then its body against its declared result.
+    /// A call to it is typed from the signature alone, so a recursive function never loops. A
+    /// signature outside the subset is refused once and the body is still checked, with the
+    /// parameters that could not be typed silent.
     fn function(&mut self, decl: DeclId) {
-        let Some((params, ret)) = self.signature(decl) else { return };
+        let Some(parts) = self.signature_parts(decl) else { return };
         let data = self.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return };
-        let named = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
-        for (param, ty) in named.zip(params) {
-            self.locals.insert(param, ty);
+        for (param, ty) in parts.params {
+            match ty {
+                Some(ty) => {
+                    self.locals.insert(param, ty);
+                }
+                None => {
+                    self.poisoned.insert(param);
+                }
+            }
+        }
+        if let Some(cond) = f.where_ {
+            self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0318"));
         }
         self.context = Context::Function;
-        match &f.body {
-            Some(body) => self.function_body(body, &ret, data.file),
-            None => self.unsupported(data.file, data.span, "function without a body"),
+        match (&f.body, parts.ret) {
+            (Some(body), Some(ret)) => self.function_body(body, &ret, data.file),
+            (Some(body), None) => {
+                self.statements(&body.stmts, None);
+            }
+            (None, _) => self.unsupported(data.file, data.span, "function without a body"),
         }
         self.context = Context::Module;
     }
 
+    /// The statements of a body against the declared result. A missing result is reported
+    /// whatever else the body got wrong, since it is its own mistake; only when the last
+    /// statement is itself outside the subset (a `return` stands where the value would be) is
+    /// it a consequence of that refusal and left out.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
-        let before = self.diagnostics.len();
-        // A body that already raised a diagnostic is not also compared with its result: one
-        // mistake is one diagnostic.
         if let Some(found) = self.statements(&body.stmts, Some(ret))
             && found != *ret
-            && self.diagnostics.len() == before
+            && !self.last_statement_refused(body, file)
         {
             self.mismatch(file, body.span, ret, &found);
         }
+    }
+
+    /// Whether a `P0001` was raised inside the last statement of `body`.
+    fn last_statement_refused(&self, body: &BlockNode, file: FileId) -> bool {
+        let Some(last) = body.stmts.last() else { return false };
+        let span = self.design.stmt_node(*last).span;
+        self.diagnostics.iter().any(|d| {
+            let at = d.diagnostic.span();
+            d.file == file && d.diagnostic.code == "P0001" && at.start >= span.start && at.end <= span.end
+        })
     }
 
     /// A module of the reachable set: its params, nodes and placements, then its analog blocks.
@@ -276,6 +327,9 @@ impl<'d> Checker<'d> {
         if let Some(ret) = m.ret {
             let span = self.design.type_node(ret).span;
             self.unsupported(data.file, span, "module result `-> T`");
+        }
+        if let Some(cond) = m.where_ {
+            self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0318"));
         }
         for child in data.children.iter().copied() {
             let item = self.design.decl_data(child).clone();

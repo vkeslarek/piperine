@@ -118,6 +118,9 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 5. IF the `= value` of a node is not an `f64` THEN the system SHALL reject the model with `E0210`.
 6. WHEN a module is placed THEN the system SHALL check that each node argument is a node of the nature of its port, that the argument count equals the port count (`E0312`), and that each entry of the param block names a param of the module once (`E0320`) with a value of the param's type.
 7. IF a node argument has a nature different from its port's THEN the system SHALL reject the model with `E0251`.
+8. IF the `where` of a module or of a `fn` is not `bool` THEN the system SHALL reject the model with `E0318`.
+
+> Amendment, verification round 1 (F1): the module and `fn` `where` were not read.
 
 **Independent Test**: place `Resistor { r: true }(a, b)` and read a diagnostic at `true`; place `Resistor { r: 1k }(a)` and read `E0312`.
 
@@ -140,6 +143,10 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 5. The system SHALL type `ddt(x)` with `x: f64` as `f64`, `ac_stim(mag)` and `ac_stim(mag, phase)` over `f64` as `f64`, and `temperature()`, `gmin()` and `source_scale()` as `f64`.
 6. The system SHALL type `limit(x, f)` and `limit(x, f, seed)` as `f64` after checking `x: f64`, `seed: f64` and `f` as a function or closure of type `fn(f64, f64) -> f64`.
 7. IF a core primitive of the §14 table is written in a `fn` or a closure where the table does not allow it THEN the system SHALL reject the model with `E0450`.
+8. IF a core primitive or a probe is written in a context the §14 "Allowed in" column does not list (`ac_stim` outside an `analog` block; `ddt` and `limit` in a `fn`, a closure, a param default or a `where`; a probe in a `fn`, a closure, a param default or a `where`) THEN the system SHALL reject the model with `E0450`.
+9. IF an environment function of §14.4 (`temperature`, `gmin`, `source_scale`) is written in a const context (a param default, a `where` of a module, `fn` or param, or a `const` initializer) THEN the system SHALL reject the model with `E0323`.
+
+> Amendment, verification round 1 (F2): this feature owns the "Allowed in" column in every position, not only inside a `fn` or a closure, and owns `E0323` (§8.1.21).
 
 **Independent Test**: check the `Diode` of the M1 models and read no diagnostic; replace its closure by `|new| new` and read one diagnostic at the closure.
 
@@ -158,6 +165,10 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 1. IF an expression, statement, pattern, type or item of the reachable set is outside TYP-02 to TYP-04 THEN the system SHALL reject the model with one diagnostic of the code `P0001` at that construct.
 2. The system SHALL name in every `P0001` diagnostic the construct as the specification names it (for example "`match` expression", "generic module", "integer type `u32`").
 3. WHEN an item holds a construct outside the subset and no top module reaches it THEN the system SHALL report nothing for it.
+4. IF a function is written as a value anywhere but as an argument whose parameter has a function type, or a call has a callee that is not a named function or a built-in (a call through a parameter or a local), THEN the system SHALL reject the model with one diagnostic of the code `P0001` at that construct.
+5. IF a construct is refused with `P0001` THEN the system SHALL still check every part of the reachable set that does not depend on it: the initializer of a `let` whose annotation is refused, the body of a generic function, and the missing result of a body whose last statement is not itself refused.
+
+> Amendment, verification round 1 (F3, F6): an indirect call has no callee to record, so the checker refuses the form and msl-elab's `Unlowered` table is unchanged. A generic `fn` is refused at its declaration (`P0001`, "generic function") and its body is checked with the parameters it could not type left silent.
 
 **Independent Test**: check a top that places a module holding a `match`; read `P0001` at the `match`. Check the M1 `DiodeIv`, which reaches `pnjlim` and `vt` and none of the generic modules of `std::analog`; read no diagnostic.
 

@@ -53,8 +53,8 @@ impl Checker<'_> {
                 return None;
             }
         };
-        if self.context == Context::Function {
-            self.coded(file, "E0450", node.span, "a probe is not allowed in a `fn` or a closure".to_string(), "core primitive in a fn or a closure");
+        if matches!(self.context, Context::Function | Context::Const) {
+            self.coded(file, "E0450", node.span, "a probe is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         if args.is_empty() || args.len() > 2 {
             let message = format!("a probe takes 1 or 2 nodes, found {}", args.len());
@@ -97,9 +97,22 @@ impl Checker<'_> {
             self.unsupported(file, node.span, &format!("{what} `{}`", id.name()));
             return None;
         };
-        if sig.allowed == Allowed::Analog && self.context == Context::Function {
-            let message = format!("`{}` is not allowed in a `fn` or a closure", id.name());
-            self.coded(file, "E0450", node.span, message, "core primitive in a fn or a closure");
+        let name = id.name();
+        match (sig.allowed, self.context) {
+            (Allowed::Everywhere, Context::Const) => {
+                let message = format!("`{name}` is an environment function and is not allowed in a const context");
+                self.coded(file, "E0323", node.span, message, "environment function in a const context");
+            }
+            (Allowed::Everywhere, _) | (Allowed::Instances, Context::Analog | Context::Module) | (Allowed::Analog, Context::Analog) => {}
+            (_, context) => {
+                let place = match context {
+                    Context::Function => "a `fn` or a closure",
+                    Context::Const => "a param default, a `where` or a `const`",
+                    Context::Module => "a module body",
+                    Context::Analog => "an `analog` block",
+                };
+                self.coded(file, "E0450", node.span, format!("`{name}` is not allowed in {place}"), "core primitive out of place");
+            }
         }
         self.callees.insert(expr, Callee::Core(id));
         if let Some(named) = args.iter().find(|a| a.name.is_some()) {

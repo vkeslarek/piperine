@@ -31,6 +31,7 @@ impl Checker<'_> {
                 }
                 ExprKind::Block(block) => self.statements(&block.stmts, Some(expected)),
                 ExprKind::Closure { .. } => self.closure(expr, expected),
+                ExprKind::Path(_) if matches!(expected, Ty::Fn(..)) && self.function_named(expr).is_some() => self.function_value(expr),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
                     self.check(*cond, &Ty::Bool);
                     self.statements(&then.stmts, Some(expected));
@@ -52,6 +53,23 @@ impl Checker<'_> {
             }
             self.exprs[expr.index()] = Some(expected.clone());
         })
+    }
+
+    /// The function a plain path names, if it names one.
+    fn function_named(&self, expr: ExprId) -> Option<crate::pom::DeclId> {
+        match self.callee_resolution(expr) {
+            Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Fn(_)) => Some(decl),
+            _ => None,
+        }
+    }
+
+    /// A function passed as an argument whose parameter has a function type: reached, typed from
+    /// its signature.
+    fn function_value(&mut self, expr: ExprId) -> Option<Ty> {
+        let decl = self.function_named(expr)?;
+        self.reach(decl);
+        let (params, ret) = self.signature(decl)?;
+        Some(Ty::Fn(params, Box::new(ret)))
     }
 
     /// The type of `expr` from the expression alone; `None` after a diagnostic.
@@ -212,9 +230,8 @@ impl Checker<'_> {
                         local
                     }
                     DeclKind::Fn(_) => {
-                        self.reach(decl);
-                        let (params, ret) = self.signature(decl)?;
-                        Some(Ty::Fn(params, Box::new(ret)))
+                        self.unsupported(file, node.span, "function used as a value outside an argument whose parameter has a function type");
+                        None
                     }
                     other => {
                         self.unsupported(file, node.span, &format!("{} used as a value", Unsupported::item(&other)));
@@ -287,6 +304,9 @@ impl Checker<'_> {
             Some(t) => match self.lower_type(t) {
                 Some(t) => Some(t),
                 None => {
+                    if let Some(init) = init {
+                        self.infer(init);
+                    }
                     self.poisoned.insert(*binding);
                     return;
                 }

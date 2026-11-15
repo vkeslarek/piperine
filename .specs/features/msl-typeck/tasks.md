@@ -747,3 +747,21 @@ Batches: B1 = Phase 1 (5 tasks, Sonnet); B2 = Phase 2 (4 tasks, Sonnet). The Ver
 | T7: Analog forms and the core table | Probes, contributions, core primitives | unit | unit | ✅ OK |
 | T8: The subset classifier | The subset classifier | unit | unit | ✅ OK |
 | T9: The M1 corpus checks clean | Entry point, the corpus | unit | unit | ✅ OK |
+
+**C38** - IF the `where` of a module or of a `fn` is not `bool` THEN the system SHALL reject the model with `E0318`. (TYP-03, AC 8; verification F1)
+Proof: run modules | test a_where_on_a_module_or_fn_is_bool ... ok
+
+**C39** - IF a core primitive or a probe is written where the §14 "Allowed in" column does not list it (a module body, a param default or a `where`, besides a `fn` or a closure) THEN the system SHALL reject the model with `E0450`. (TYP-04, AC 8; verification F2)
+Proof: run modules | test a_core_primitive_is_checked_where_it_is_written ... ok
+
+**C40** - IF an environment function is written in a const context THEN the system SHALL reject the model with `E0323`. (TYP-04, AC 9; verification F2)
+Proof: run modules | test an_environment_function_in_a_const_context_is_e0323 ... ok
+
+**C41** - IF a function is written as a value outside an argument whose parameter has a function type, or a call goes through a parameter or a local THEN the system SHALL reject the model with `P0001`. (TYP-05, AC 4; verification F3)
+Proof: run values | test a_function_is_a_value_only_as_an_argument ... ok
+
+**C42** - IF a construct is refused with `P0001` THEN the system SHALL still report the independent errors of the initializer, of a generic function's body, and of a missing result. (TYP-05, AC 5; verification F6)
+Proof: run values | test an_unsupported_form_does_not_hide_an_independent_error ... ok
+
+**C43** - The system SHALL refuse `Bit`, `Repr` and the known-flag method with `P0001` against the real standard library. (TYP-05, AC 1; verification F5)
+Proof: run subset | test std_types_outside_the_subset_are_p0001 ... ok
