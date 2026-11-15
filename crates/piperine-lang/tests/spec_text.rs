@@ -1301,10 +1301,17 @@ fn e0707_is_replaced_by_e0317() {
     for (file, text) in all_specs() {
         assert!(!text.contains("E0707"), "{file} still names E0707");
     }
+    // The rule (one list item) that names each condition also gives `E0317`.
+    let rule_with = |heading: &str, needle: &str| -> String {
+        let rules: Vec<String> = section(&p7, heading).lines().filter(|l| l.starts_with(|c: char| c.is_ascii_digit())).map(one_line).collect();
+        rules.into_iter().find(|r| r.contains(needle)).unwrap_or_else(|| panic!("{heading} has a rule naming {needle}"))
+    };
     for heading in ["#### 22.2.13", "#### 22.2.14"] {
-        let s = one_line(&section(&p7, heading));
-        assert!(s.contains("`E0317`"), "{heading} gives E0317: {s}");
+        let rule = rule_with(heading, "appear with its conjugate");
+        assert!(rule.contains("`E0317`"), "{heading}: the conjugate rule gives E0317: {rule}");
     }
+    let zero = rule_with("#### 22.2.14", "`den[D - 1] != 0.0`");
+    assert!(zero.contains("`E0317`") && zero.contains("zero"), "the zero denominator gives E0317: {zero}");
 }
 
 #[test]

@@ -215,7 +215,7 @@ fn the_chapter_names_every_prelude_export() {
 #[test]
 fn the_chapter_explains_the_prelude_and_the_engine_items() {
     let html = chapter(&content(), "core-std");
-    assert!(code_spans(&html).iter().any(|s| s == "std::prelude"), "the chapter names `std::prelude`");
+    assert!(headings(&html).iter().any(|h| h.contains("std::prelude")), "the chapter has a part on `std::prelude`");
     let design = embedded();
     let intrinsics: Vec<String> = design.std_crate().decls().into_iter().filter(|d| d.as_function().is_some_and(|f| f.is_intrinsic())).filter_map(|d| d.name().map(String::from)).collect();
     assert_eq!(intrinsics.len(), 5, "{intrinsics:?}");
@@ -226,6 +226,8 @@ fn the_chapter_explains_the_prelude_and_the_engine_items() {
         .expect("a heading that contains `engine`");
     let absent = missing(part.split("<h3>").next().unwrap(), &intrinsics);
     assert!(absent.is_empty(), "the part on the engine does not name: {absent:?}");
+    // C107: the part on the engine also names `std::prelude` (how the five items reach a model).
+    assert!(code_spans(part.split("<h3>").next().unwrap()).iter().any(|s| s == "std::prelude"), "the part on the engine names `std::prelude`");
 }
 
 #[test]

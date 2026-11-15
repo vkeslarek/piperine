@@ -1086,7 +1086,7 @@ digital for Probe { on clk.rise() { require("ok_at_edge", ok); log(Severity::Inf
 
 <h3>Implemented by the engine</h3>
 
-<p>Five library items have no body to read, because their job is to read the characters of a <code>str</code>, which the language itself cannot do. They are declared <code>extern "intrinsic"</code>: you see the signature and the contract, and the engine supplies the body (§3 rule 10). Only <code>std</code> may declare one; the same line in your crate is error E0125.</p>
+<p>Five library items have no body to read, because their job is to read the characters of a <code>str</code>, which the language itself cannot do. They are declared <code>extern "intrinsic"</code>: you see the signature and the contract, and the engine supplies the body (§3 rule 10). Only <code>std</code> may declare one; the same line in your crate is error E0125. Like every other library item they are <code>pub</code> and reach your code through <code>std::prelude</code>, by their single names.</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Item</th><th>What the engine does for it</th></tr></thead>

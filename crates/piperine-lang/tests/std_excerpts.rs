@@ -164,14 +164,26 @@ fn units(text: &str) -> Vec<Unit> {
         .collect()
 }
 
+/// Does the fence list `wanted` as consecutive whole lines? The item ends where its last token does,
+/// so the last line may carry a trailing `// comment` in the fence (the parser's span stops before it).
+fn lists(fence: &[String], wanted: &[String]) -> bool {
+    let Some((last, head)) = wanted.split_last() else { return true };
+    fence.windows(wanted.len()).any(|w| {
+        w[..head.len()] == *head && {
+            let line = &w[head.len()];
+            line == last || line.strip_prefix(last.as_str()).is_some_and(|rest| rest.trim_start().starts_with("//"))
+        }
+    })
+}
+
 /// Reverse guard: each unit of each file (file name, text) is inside some fence text.
 fn item_failures(files: &[(String, String)], fences: &[String], behavior: bool) -> Vec<ItemFailure> {
-    let fences: Vec<String> = fences.iter().map(|f| normalized_lines(f).join("\n")).collect();
+    let fences: Vec<Vec<String>> = fences.iter().map(|f| normalized_lines(f)).collect();
     let mut failures = Vec::new();
     for (name, text) in files {
         for unit in units(text).into_iter().filter(|u| u.behavior == behavior) {
-            let wanted = normalized_lines(&unit.text).join("\n");
-            if !fences.iter().any(|f| f.contains(&wanted)) {
+            let wanted = normalized_lines(&unit.text);
+            if !fences.iter().any(|f| lists(f, &wanted)) {
                 failures.push(ItemFailure { file: name.clone(), line: unit.line, item: unit.label });
             }
         }
@@ -211,8 +223,14 @@ fn part_vii() -> String {
     std::fs::read_to_string(root().join("docs/spec/part_vii_stdlib.md")).expect("part VII exists")
 }
 
+/// The text of each fence that counts as a `rust` listing: the compiling ones only (a
+/// `rust,fragment` or `compile_fail` fence is not where an item is declared).
+fn fences_of(blocks: Vec<Block>) -> Vec<String> {
+    blocks.into_iter().filter(|b: &Block| b.class == Class::Valid).map(|b| b.text).collect()
+}
+
 fn all_fence_texts() -> Vec<String> {
-    corpus().into_iter().filter(|b: &Block| b.class != Class::CompileFail).map(|b| b.text).collect()
+    fences_of(corpus())
 }
 
 #[test]
@@ -262,6 +280,20 @@ fn every_std_behavior_block_is_in_a_fence() {
     // A block is an excerpt of any fence of `docs/spec/` (decision S4): the block of `Short` is in §11.
     let failures = item_failures(&std_files(), &all_fence_texts(), true);
     assert!(failures.is_empty(), "std behavior blocks in no fence of docs/spec: {failures:#?}");
+}
+
+#[test]
+fn the_reverse_guard_counts_only_valid_fences_by_whole_line() {
+    // F5 (C71/C72): an item listed only in a `rust,fragment` fence is not listed, and a fence line
+    // that merely ends with the item's line does not contain it.
+    let files = vec![("a.msl".to_string(), "pub fn idt() {}\n".to_string())];
+    let block = |class, text: &str| Block { file: "x.md".to_string(), line: 1, class, text: text.to_string() };
+    let fragment = fences_of(vec![block(Class::Fragment, "pub fn idt() {}\n")]);
+    assert_eq!(item_failures(&files, &fragment, false).len(), 1, "a fragment fence lists nothing");
+    let valid = fences_of(vec![block(Class::Valid, "pub fn idt() {}\n")]);
+    assert!(item_failures(&files, &valid, false).is_empty());
+    let tail = vec!["xx pub fn idt() {}\n".to_string()];
+    assert_eq!(item_failures(&files, &tail, false).len(), 1, "a line that only ends with the item is not the item");
 }
 
 #[test]
