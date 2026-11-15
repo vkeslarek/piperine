@@ -92,10 +92,9 @@ produce the result of the following procedure.
       reads the state settled in 3.2 and the analog solution after microstep `n − 1` (for
       `n = 0`, the left value). Its commits are due at `(t, n + 1)`, or later under T2. An
       `extern "cosim"` module runs here as one reaction (§8.5).
-   4. *Jump.* If a carrier or param that `analog` reads changed in this microstep to a
-      value the last solve had not already read, perform the jump solve (§15.2). A settle
-      commit is a value the solve had already read (S3). `cross` expressions are compared
-      across the jump (§13 rule 5).
+   4. *Jump.* No solve runs here (§15.2). A carrier or param that `analog` reads and that
+      changed in this microstep is read by the first transient step after `t`; a change due at
+      `(t, 0)` was already read by the step that arrived at `t`.
    5. *Exit test.* Leave the loop when nothing is pending at `(t, n + 1)`.
 4. *Settle.* Every reaction on `settle` runs once, reading the final discrete state and the
    final solution of `t`. This is the **settle phase**.
@@ -110,13 +109,8 @@ The table fixes the microstep at which each event fires; §13 defines the events
 | `at(x)`, scheduled at tick `t` before `t` was reached | `(t, 0)` |
 | `at(x)`, armed or re-armed in microstep `n` with a time equal to `t` (§13 rule 4) | `(t, n + 1)` |
 | `cross(e)`, located at `t` (§17.3) | `(t, 0)` |
-| `cross(e)`, crossed between the two sides of the jump of microstep `n` | `(t, n + 1)` |
 | `settle` | the settle phase of `t`; no microstep |
 | `a \|\| b`, `ev && c`, a function or module returning `Event` | whenever its definition (§13) fires from the rows above |
-
-> **Resolution.** A crossing detected across the jump of microstep `n` fires at `(t, n + 1)`
-> and counts as pending. This follows §15.2.4, which makes the right value what `cross`
-> reads at `(t, n + 1)`.
 
 > **Resolution.** In the settle phase the only primitive event that has fired is `settle`.
 > An event read as a `bool` there (§13 rule 2) is true only if `settle` makes it fire.
@@ -216,7 +210,7 @@ The operating point and the instant an analysis ends are always time points (§1
 | 4 | 10 ns | — | — | `settle` | no reaction on `settle` |
 | 5 | — | — | — | — | time advances |
 
-No jump solve runs: `Front` has no `analog` block, so step 3.4 never holds. At `(10 ns, 1)`
+No jump is read: `Front` has no `analog` block, so step 3.4 never holds. At `(10 ns, 1)`
 nothing is pending at microstep 2, so the loop exits.
 
 The flip-flop took the value from before the edge, as hardware does. The comparator's new
@@ -224,61 +218,61 @@ output reaches `q` at the next clock edge.
 
 ### 15.2 The jump
 
-A **jump** is the change of the analog solution at one time `t`, caused by a change of
-something `analog` reads at `(t, n)`: a discrete carrier or a param. The solution before the
-jump solve is its left value; the **right value** is the solution after it. One rule defines
-the jump solve:
+A **jump** is the change, at one time `t`, of something `analog` reads at `(t, n)`: a discrete
+carrier or a param. The solution accepted before the change is its **left value**; the
+**right value** is the solution of the first transient step that reads the change. One rule
+defines the jump:
 
-**The right value is the limit of a backward-Euler step of length `h → 0` taken from the left
-value.** Every `ddt(q)` reads `(q − q⁻) / h`, where `q⁻` is its argument at the previous solve
-of this instant.
+**A jump has no solve of its own.** The change is read by a transient step (§17.2) and by
+nothing else. The solver lands exactly on the time `t` of the change (§17.2.2). What is due at
+microstep 0 of `t` is applied before the step that arrives at `t` is solved, so that step reads
+it. A change made in a later microstep of `t` is read by the first step after `t`. The step
+that lands on a jump is exempt from the truncation-error test (§17.2.1), and the step after it
+restarts the integrator (rule 6).
 
-When several jumps occur at one `t`, in successive microsteps, each takes the previous one's
-right value as its left value.
+When several changes occur at one `t`, in successive microsteps, the first step after `t`
+reads them all.
 
-**Dynamic semantics.** The following hold with no further rule; each follows from the one
-above.
+**Dynamic semantics.** The following hold with no further rule.
 
 1. **The arguments of `ddt` are the states.** A **state** is the argument of one `ddt`
-   instance. States are continuous across a jump wherever the equations allow. A capacitor
-   keeps `c·v`, an inductor keeps `l·i`, an `idt` keeps its integral. Everything else
-   (algebraic unknowns, flows) is free and is solved for.
-2. **A constraint may force a state to jump.** Then the sum of the states over each cut the
-   constraint closes is conserved. The flow that moves it is the **impulsive flow**: the
-   `1/h` term. It exists only inside the solve and no probe reads it. Shorting a 1 pF
-   capacitor at 1 V to a 3 pF one at 0 V gives 0.25 V on both (Appendix F.5).
+   instance. The integrator's history carries each state across a jump, to the accuracy of the
+   step and not as an exact limit at one time. A capacitor keeps `c·v`, an inductor keeps
+   `l·i`, an `idt` keeps its integral. Everything else (algebraic unknowns, flows) is free and
+   is solved for.
+2. **A constraint may force a state to move.** The step that reads the jump takes the new
+   value of the constraint, and the sum of the states over each cut the constraint closes is
+   conserved by that step, to the accuracy of the step. Shorting a 1 pF capacitor at 1 V to a
+   3 pF one at 0 V gives 0.25 V on both at the first step that reads the jump (Appendix F.5).
 3. **A state multiplied by a carrier keeps the product.** In `ddt(c * v(p, n))` with `c` a
-   `Bit<f64>` that jumps, `c·v` is continuous and `v` jumps. Charge is conserved.
-4. **The solve is repeated once**, from its own result. The second pass moves no state and
-   gives every `ddt` its finite right-hand value. That is what probes and `cross` read at
-   `(t, n + 1)`.
+   `Bit<f64>` that jumps, `c·v` is carried and `v` moves. Charge is conserved.
+4. **Probes and `cross` read solutions that exist.** There is no second pass. A reaction at
+   `(t, n)` reads the solution after microstep `n − 1` (§15), which is the left value until a
+   step has read the change. A crossing that a change makes is detected between the solution
+   of the step before it and that of the step that reads it (§17.3).
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
-6. **The integrator restarts where the jump was felt.** For each state whose value or
-   derivative differs between the left value and the second pass, the integrator drops its
-   multistep history and its error estimate and starts from the right value. A state the
-   jump did not move keeps its history.
-7. Both passes converge under §17.1. Each primitive has in a jump solve the meaning of the
-   "Jump solve" column of §16.2. `analysis(Static)` is false and `now()` is `t`.
+6. **The integrator restarts after the jump.** The step after the step that lands on a jump
+   restarts the integrator: its trapezoidal stage drops the previous derivative and runs as
+   backward Euler. After a host `set` the step size also restarts (Appendix C.2); after any
+   other jump the controller's proposal is kept.
+7. The step that reads a jump converges under §17.1. Each primitive has in it the meaning of
+   the "Jump solve" column of §16.2, which is the meaning in a transient step.
+   `analysis(Static)` is false and `now()` is the time of the step.
 8. A jump that leaves a node with no path to `gnd` except through `ddt` terms is still
-   determined, by rule 1.
+   determined, because the step discretizes those terms.
 9. A jump whose constraints contradict each other, such as two potential sources in a loop,
    fails as a singular solve (`E0503`).
-10. Sensitivities across a jump obey the same limit as the states (§23.3.2).
-
-> **Resolution.** The limit `h → 0` is normative. An implementation **MAY** use a finite `h`;
-> its right value **MUST** agree with the limit within the convergence tolerances of §17.1.
-
-> **Resolution.** In rule 6, "differs" means by more than the tolerance of §17.1.1.
-> Differences inside it **MAY** be treated as no change.
+10. Sensitivities across a jump are those of the states carried and of the step that reads it
+    (§23.3.2).
 
 **Errors**
 
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0503` | A solve of any kind is singular. The report names the branches, or the node, that make it so. | run |
-| `E0504` | A jump solve does not converge (§17.1). The report names the instant and the carriers or params whose change caused it. | run |
+| `E0504` | A transient step that reads a jump does not converge (§17.1). The report names the instant and the carriers or params whose change caused it. | run |
 
 **Example.** Appendix F.5 traces the charge-sharing jump row by row.
 

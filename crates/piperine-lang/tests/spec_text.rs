@@ -1207,3 +1207,12 @@ fn records_travel_as_quiet_commits() {
     assert!(s.contains("quiet"), "{s}");
     assert!(s.contains("no microstep"), "{s}");
 }
+
+#[test]
+fn jump_has_no_solve_of_its_own() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "### 15.2"));
+    assert!(s.contains("no solve of its own"), "{s}");
+    assert!(!s.contains("h → 0"), "the backward-Euler limit is gone");
+    assert!(!s.contains("repeated once"), "the repeated solve is gone");
+}

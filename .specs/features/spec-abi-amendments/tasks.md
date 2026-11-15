@@ -234,14 +234,14 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] §15.2 states, from `transient.rs`: the solver lands exactly on the time of the change (`predict_step`); what is due at microstep 0 is applied before the solve, so the step that arrives there reads it (`attempt_step`); a change made in a later microstep is read by the first step after it; the landing step is exempt from the truncation-error test (`assess_step`); the next step restarts the integrator, the trapezoidal stage dropping its previous derivative and running as backward Euler (`accept_step`, `TrBdf2::stage_coeffs`)
-- [ ] The backward-Euler limit `h → 0`, the repeated solve (old rule 4) and the impulsive flow are gone as normative text; the two `Resolution` notes that depended on them are removed or rewritten
-- [ ] States under `ddt` are said to be carried by the integrator's history across the jump to the accuracy of the step, not as an exact limit at one time
-- [ ] Every rule number of §15.2 that another page cites (grep `§15.2.` in `docs/spec/`) still exists or its citing sentence is updated in this commit
-- [ ] Step 3.4 of the time-point procedure no longer requires a jump solve inside the instant
-- [ ] `E0504` is defined once and names the failure of a transient step that reads a jump
-- [ ] Test `jump_has_no_solve_of_its_own` asserts, inside `### 15.2`: the phrase `no solve of its own` is present, and `h → 0` and `repeated once` are absent
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] §15.2 states, from `transient.rs`: the solver lands exactly on the time of the change (`predict_step`); what is due at microstep 0 is applied before the solve, so the step that arrives there reads it (`attempt_step`); a change made in a later microstep is read by the first step after it; the landing step is exempt from the truncation-error test (`assess_step`); the next step restarts the integrator, the trapezoidal stage dropping its previous derivative and running as backward Euler (`accept_step`, `TrBdf2::stage_coeffs`)
+- [x] The backward-Euler limit `h → 0`, the repeated solve (old rule 4) and the impulsive flow are gone as normative text; the two `Resolution` notes that depended on them are removed or rewritten
+- [x] States under `ddt` are said to be carried by the integrator's history across the jump to the accuracy of the step, not as an exact limit at one time
+- [x] Every rule number of §15.2 that another page cites (grep `§15.2.` in `docs/spec/`) still exists or its citing sentence is updated in this commit
+- [x] Step 3.4 of the time-point procedure no longer requires a jump solve inside the instant
+- [x] `E0504` is defined once and names the failure of a transient step that reads a jump
+- [x] Test `jump_has_no_solve_of_its_own` asserts, inside `### 15.2`: the phrase `no solve of its own` is present, and `h → 0` and `repeated once` are absent
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
