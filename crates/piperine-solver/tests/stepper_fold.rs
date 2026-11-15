@@ -16,9 +16,8 @@ use piperine_solver::abi::{
     TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
 };
 use piperine_solver::prelude::{
-    ConvergencePlan, Context, CircuitInstance, Solver, StepperStrategy, TransientAnalysisOptions,
+    ConvergencePlan, Context, CircuitInstance, Solver, StepLimits, StepperStrategy, TransientAnalysisOptions,
 };
-use piperine_analog_solver::convergence::StepLimits;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
