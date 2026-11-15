@@ -305,11 +305,11 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] One negative source per row of the table, asserting `P0001`, the form's name and its span
-- [ ] Every such source returns `Err` and no `Ir`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_unlowered`: `a_site_or_contribution_under_if_is_p0001`, `ddt_off_the_top_of_a_flow_contribution_is_p0001`, `m_dtemp_or_extern_at_a_placement_is_p0001`, `a_digital_block_is_p0001`, `a_diagnostic_means_no_ir`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] One negative source per row of the table, asserting `P0001`, the form's name and its span
+- [x] Every such source returns `Err` and no `Ir`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_unlowered`: `a_site_or_contribution_under_if_is_p0001`, `ddt_off_the_top_of_a_flow_contribution_is_p0001`, `m_dtemp_or_extern_at_a_placement_is_p0001`, `a_digital_block_is_p0001`, `a_diagnostic_means_no_ir`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

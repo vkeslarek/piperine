@@ -12,6 +12,7 @@ use piperine_ir::{Addend, BinaryOp, Branch, BranchKind, Expr, ExprId as LoweredE
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::unlowered::Unlowered;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{self, BinOp, DeclKind, ExprId, ExprKind, Resolution, UnOp};
 use crate::types::Callee;
@@ -28,7 +29,7 @@ impl Elaboration<'_, '_> {
     /// A contribution statement `lhs +> rhs`, appended to `out`; `false` after a diagnostic.
     pub(super) fn lower_contribution(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, lhs: ExprId, rhs: ExprId, span: Span) -> bool {
         if scope.nesting > 0 {
-            self.unsupported(scope.file, span, "a contribution under an `if` or in a closure");
+            self.refuse(scope.file, span, Unlowered::ConditionalContribution);
             return false;
         }
         let Some((role, plus, minus)) = self.contribution_target(scope, lhs) else { return false };
@@ -188,7 +189,7 @@ impl Elaboration<'_, '_> {
         match &args[..] {
             [x] => self.lower_expr(scope, x.value),
             _ => {
-                self.unsupported(scope.file, node.span, "a `ddt` with a tolerance");
+                self.refuse(scope.file, node.span, Unlowered::DdtTolerance);
                 None
             }
         }

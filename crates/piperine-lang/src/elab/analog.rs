@@ -5,6 +5,7 @@ use piperine_ir::{Env, Expr, ExprId as LoweredExpr, Origin, Site, StmtId as Lowe
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::unlowered::Unlowered;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 impl Elaboration<'_, '_> {
@@ -18,11 +19,11 @@ impl Elaboration<'_, '_> {
             let decl = self.design.decl_data(block).clone();
             let DeclKind::Behavior(behavior) = &decl.kind else { continue };
             if behavior.kind != BehaviorKind::Analog {
-                self.unsupported(decl.file, decl.span, "a `digital` block");
+                self.refuse(decl.file, decl.span, Unlowered::DigitalBlock);
                 continue;
             }
             if stmts.is_some() {
-                self.unsupported(decl.file, decl.span, "a second `analog` block for one module");
+                self.refuse(decl.file, decl.span, Unlowered::SecondAnalogBlock);
                 continue;
             }
             // After a diagnostic the block is empty: no `Ir` is built anyway.
@@ -90,8 +91,16 @@ impl Elaboration<'_, '_> {
                 let (mag, phase) = (lowered.next()??, lowered.next().flatten());
                 Some(self.emit(Expr::Stim { site, mag, phase }, ty, origin))
             }
-            name @ ("limit" | "ac_stim") => {
-                self.unsupported(scope.file, span, &format!("a `{name}` under an `if` or in a closure"));
+            "limit" => {
+                self.refuse(scope.file, span, Unlowered::ConditionalLimit);
+                None
+            }
+            "ac_stim" => {
+                self.refuse(scope.file, span, Unlowered::ConditionalStim);
+                None
+            }
+            "ddt" => {
+                self.refuse(scope.file, span, Unlowered::DdtOffTop);
                 None
             }
             name => {

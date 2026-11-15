@@ -9,6 +9,7 @@ use piperine_ir::{Child, Constant, Terminal};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::unlowered::Unlowered;
 use crate::msl::Diagnostic;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
 use crate::types::Callee;
@@ -125,7 +126,7 @@ impl Elaboration<'_, '_> {
                 _ => None,
             };
             let Some(index) = index else {
-                self.unsupported(file, field.span, &format!("a placement that sets `{}`", field.name.text));
+                self.refuse(file, field.span, Unlowered::PlacementSets(&field.name.text));
                 ok = false;
                 continue;
             };

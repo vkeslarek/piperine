@@ -20,6 +20,7 @@ mod lower;
 mod nature;
 mod origin;
 mod place;
+mod unlowered;
 
 pub use consts::{Bindings, ConstEval, ConstFault};
 pub use elaborator::Elaborator;
