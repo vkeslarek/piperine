@@ -45,6 +45,11 @@ pub(crate) fn empty_digital(seconds_per_tick: f64) -> Result<Digital> {
     Ok(Digital::new(plan, DigitalLimits::default()))
 }
 
+/// The discrete side's settled state at the top of a transient step: the
+/// engine's checkpoint and every net's bytes, which the analog side attaches
+/// to the step accepted before it (each step is a full circuit state).
+pub(crate) type Settled = Rc<RefCell<Option<(Checkpoint, Vec<Vec<u8>>)>>>;
+
 /// The discrete side: the digital engine, with the slot map of bind.
 pub(crate) struct DigitalSide {
     digital: Digital,
@@ -58,6 +63,8 @@ pub(crate) struct DigitalSide {
     copy: Vec<Vec<u8>>,
     /// Host commits made at the start of the analysis (its kind's global).
     on_start: Vec<(NetId, Vec<u8>)>,
+    /// Where each mark also leaves the settled state (a transient's steps).
+    settled: Option<Settled>,
 }
 
 impl DigitalSide {
@@ -87,7 +94,12 @@ impl DigitalSide {
             .chain(bound.temperature.iter().cloned())
             .chain(bound.host_writes.iter().cloned())
             .collect();
-        DigitalSide { digital, slots: names.slots.clone(), slot_nets: names.slot_nets.clone(), copy, on_start }
+        DigitalSide { digital, slots: names.slots.clone(), slot_nets: names.slot_nets.clone(), copy, on_start, settled: None }
+    }
+
+    /// Each mark also leaves the settled state in `settled`.
+    pub(crate) fn record_settled(&mut self, settled: Settled) {
+        self.settled = Some(settled);
     }
 
     /// The engine, back to its owner.
@@ -163,7 +175,12 @@ impl DiscreteSide for DigitalSide {
     }
 
     fn mark(&self) -> Checkpoint {
-        self.digital.checkpoint()
+        let checkpoint = self.digital.checkpoint();
+        if let Some(settled) = &self.settled {
+            let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read(NetId(i as u32)).to_vec()).collect();
+            *settled.borrow_mut() = Some((checkpoint.clone(), nets));
+        }
+        checkpoint
     }
 
     fn restore(&mut self, mark: &Checkpoint) {
@@ -307,6 +324,8 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
 pub(crate) struct TransientSide<'s, 'a> {
     pub(crate) tran: &'s mut TransientSolver<'a>,
     pub(crate) run: DeviceRun,
+    /// The discrete side's state at the top of each step.
+    pub(crate) settled: Settled,
 }
 
 impl TransientSide<'_, '_> {
@@ -343,6 +362,11 @@ impl AnalogSide for TransientSide<'_, '_> {
     }
 
     fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
+        // Nothing has moved since the protocol's mark: the step accepted last
+        // takes the settled state as its re-entry state.
+        if let Some((digital, nets)) = self.settled.borrow_mut().take() {
+            self.tran.device_capture(&mut self.run, digital, nets);
+        }
         self.tran.device_attempt(&mut self.run, to, exempt)
     }
 

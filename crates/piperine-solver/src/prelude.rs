@@ -47,7 +47,7 @@ pub use piperine_analog_solver::convergence::{
 // ── Results ────────────────────────────────────────────────────────────────
 pub use crate::core::result::{
     AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, NoiseAnalysisResult, NoiseContribution,
-    PoleZeroResult, SpResult, TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
+    PoleZeroResult, SpResult, TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep, DigitalNets,
 };
 
 // ── Errors ─────────────────────────────────────────────────────────────────

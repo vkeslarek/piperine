@@ -3,16 +3,25 @@
 //! solver's tolerance class. This is the PSS shooting seam
 //! (`TransientSolver::with_initial_state`); on devices the captured step
 //! carries the protocol's checkpoint (the digital engine's, the assembly's
-//! histories) besides the solution that seeds the Newton history.
+//! histories) besides the solution that seeds the Newton history. Every
+//! accepted step of a mixed run carries its digital net values and is a
+//! state a transient re-enters from, the middle steps as the last.
 
 // Each target includes the library by path: it uses a different subset of it.
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/abi_mixed.rs"]
+mod abi_mixed;
 
-use abi_devices::{NodeMap, add_capacitor, add_resistor, add_vsrc};
-use piperine_solver::abi::InitialValue;
-use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions};
+use abi_devices::{NodeMap, add_capacitor, add_resistor, add_vsrc, node_id};
+use abi_mixed::{count_of, counter, dac, timer};
+use piperine_abi::layout::{HIGH, LOW};
+use piperine_solver::abi::{AnalogReference, InitialValue, ParamValue, Port};
+use piperine_solver::prelude::{
+    CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
+};
 
 /// `v(out) = 0` initial condition (discharged capacitor) so the runs show
 /// the charge transient instead of the DC steady state.
@@ -122,24 +131,111 @@ fn a_host_write_since_the_capture_applies_at_the_reentry() {
     assert!((v_end - analytic).abs() < 1.0e-2, "discharge from the captured state: v(2T)={v_end} vs {analytic}");
 }
 
-/// Only the first and the last step of a run of devices carry the state a
-/// transient re-enters from; a late start needs one. Both fail loud.
+/// A late start needs a captured step, and a step a transient did not record
+/// carries no state of the device instances: both fail loud.
 #[test]
-fn reentry_needs_a_captured_device_state() {
+fn a_late_start_needs_a_step_a_transient_recorded() {
     let t_half = 1.0e-3;
     let (mut circuit, _info) = build_rc();
-    let run = circuit
-        .transient(TransientAnalysisOptions::new(t_half, t_half / 100.0), Context::default())
-        .expect("tran")
-        .solve()
-        .expect("solve");
-    let middle = run.iter().nth(3).expect("a middle step").clone();
-    let opts = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0).with_start(middle.time());
-    let mut solver = circuit.transient(opts.clone(), Context::default()).expect("tran");
-    solver.with_initial_state(&middle);
-    let err = solver.solve().expect_err("no device state on a middle step");
-    assert!(err.to_string().contains("carries no state of the device instances"), "{err}");
-
-    let err = circuit.transient(opts, Context::default()).expect("tran").solve().expect_err("late start");
+    let opts = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0).with_start(t_half);
+    let err = circuit.transient(opts.clone(), Context::default()).expect("tran").solve().expect_err("late start");
     assert!(err.to_string().contains("only from a captured step"), "{err}");
+
+    let foreign = TransientStep::new(t_half, std::collections::HashMap::new());
+    let mut solver = circuit.transient(opts, Context::default()).expect("tran");
+    solver.with_initial_state(&foreign);
+    let err = solver.solve().expect_err("no device state on a step built by the host");
+    assert!(err.to_string().contains("carries no state of the device instances"), "{err}");
+}
+
+// ---------------------------------------------------------------------------
+// A mixed circuit: a 100 µs half-period clock drives a DAC into an RC (τ = 100
+// µs) and a counter of its rising edges. Every step is a full circuit state.
+// ---------------------------------------------------------------------------
+
+const HALF: f64 = 1.0e-4;
+const STOP: f64 = 1.0e-3;
+
+fn net(name: &str) -> Port {
+    Port::Net(name.to_string())
+}
+
+fn build_clocked_rc() -> (CircuitInstance, AnalogReference) {
+    let mut b = CircuitBuilder::new("clock -> dac -> rc");
+    let gnd = b.ground();
+    let o = b.node("o");
+    let c = b.node("c");
+    b.device(timer(), "clk", &[("half", ParamValue::Real(HALF))], &[net("code")]);
+    b.device(counter(), "cnt", &[], &[net("code"), net("n")]);
+    b.device(dac(), "dac", &[("vref", ParamValue::Real(1.0))], &[net("code"), Port::Node(o.clone())]);
+    add_resistor(&mut b, "r1", 1.0e3, &o, &c);
+    add_capacitor(&mut b, "c1", 1.0e-7, &c, &gnd);
+    (b.build().expect("build"), c)
+}
+
+fn run_clocked(circuit: &mut CircuitInstance, from: Option<&TransientStep>) -> TransientAnalysisResult {
+    let mut opts = TransientAnalysisOptions::new(STOP, 1.0e-5);
+    if let Some(step) = from {
+        opts = opts.with_start(step.time());
+    }
+    let mut solver = circuit.transient(opts, Context::default()).expect("tran");
+    if let Some(step) = from {
+        solver.with_initial_state(step);
+    }
+    solver.solve().expect("solve")
+}
+
+/// The clock's value and the rising edges counted at a step's time, after the
+/// instant at that time ran (edges at every multiple of `HALF`, the first HIGH).
+fn expected_at(t: f64) -> ([u8; 2], u32) {
+    let ticks = (t / 1.0e-15).round() as u64;
+    let k = ticks / (HALF / 1.0e-15).round() as u64;
+    let clk = if k % 2 == 1 { HIGH } else { LOW };
+    (clk, k.div_ceil(2) as u32)
+}
+
+#[test]
+fn every_step_carries_the_digital_net_values() {
+    let (mut circuit, _c) = build_clocked_rc();
+    let result = run_clocked(&mut circuit, None);
+    assert!(result.len() > 20, "{} steps", result.len());
+    let mut highs = 0;
+    for step in result.iter() {
+        let (clk, n) = expected_at(step.time());
+        let nets = step.digital_nets().unwrap_or_else(|| panic!("the step at {:e} s carries no digital values", step.time()));
+        assert!(nets.names().iter().any(|name| name == "code"), "{:?}", nets.names());
+        assert_eq!(step.digital_named("code"), Some(&clk[..]), "code at {:e} s", step.time());
+        assert_eq!(count_of(step.digital_named("n").expect("n")), n, "edges counted by {:e} s", step.time());
+        highs += usize::from(clk == HIGH);
+    }
+    assert!(highs > 0 && highs < result.len(), "the clock toggles over the run");
+}
+
+#[test]
+fn reentry_from_any_captured_step_matches_the_continuous_run() {
+    let (mut circuit, c) = build_clocked_rc();
+    let full = run_clocked(&mut circuit, None);
+    let last = full.last().expect("steps");
+    let v_full = last.get_node(&node_id(&c)).expect("v(c)");
+    let n_full = count_of(last.digital_named("n").expect("n"));
+    assert_eq!(n_full, 5, "rising edges at 1, 3, 5, 7 and 9 x 100 µs");
+
+    // Middle steps, on both clock phases, and the first and the last.
+    let picks: Vec<usize> = (0..full.len()).step_by(7).chain([full.len() - 1]).collect();
+    assert!(picks.len() > 5);
+    for &i in &picks {
+        let captured = full.get(i).unwrap().clone();
+        let leg = run_clocked(&mut circuit, Some(&captured));
+        let first = leg.iter().next().expect("the re-entered run has steps");
+        assert_eq!(first.time(), captured.time());
+        assert_eq!(first.get_node(&node_id(&c)), captured.get_node(&node_id(&c)), "re-entry starts at the captured state");
+        assert_eq!(first.digital_nets(), captured.digital_nets(), "and at its digital values");
+        let end = leg.last().expect("steps");
+        assert_eq!(end.time(), last.time());
+        assert_eq!(end.digital_named("code"), last.digital_named("code"), "re-entered at step {i} ({:e} s)", captured.time());
+        assert_eq!(count_of(end.digital_named("n").expect("n")), n_full, "re-entered at step {i} ({:e} s)", captured.time());
+        let v = end.get_node(&node_id(&c)).expect("v(c)");
+        let tol = 1e-9 + 1e-3 * v_full.abs();
+        assert!((v - v_full).abs() <= tol, "re-entered at step {i} ({:e} s): v(c) = {v} vs {v_full} (tol {tol})", captured.time());
+    }
 }

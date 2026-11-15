@@ -167,13 +167,26 @@ mod step_tests {
         let var: Arc<AnalogVariable> = Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0)));
         let mut values = HashMap::new();
         values.insert(var.clone(), 1.25);
-        let step = TransientStep::new(0.0, values);
+        let names: Arc<[String]> = vec!["d0".to_string(), "top.clk".to_string()].into();
+        let digital = crate::core::result::DigitalNets::new(names, vec![vec![1, 1], vec![0, 1]]);
+        let step = TransientStep::new(0.0, values).with_digital(digital);
 
         let analog_net: Net = (&AnalogReference::new(var.clone(), 0)).into();
         assert_eq!(step.get_net(&analog_net), Some(1.25));
 
+        let digital_net = Net::digital(1, "top.clk");
+        assert_eq!(step.digital_net(&digital_net), Some(&[0u8, 1][..]));
+        assert_eq!(step.digital_net(&Net::digital(0, "d0")), Some(&[1u8, 1][..]));
+        assert_eq!(step.digital_named("top.clk"), Some(&[0u8, 1][..]));
         // A digital net carries no analog value.
-        assert_eq!(step.get_net(&Net::digital(1, "top.clk")), None);
+        assert_eq!(step.get_net(&digital_net), None);
+
+        // Wrong kind returns None — analog_net is not a digital net.
+        assert_eq!(step.digital_net(&analog_net), None);
+
+        // Digital net past the recorded snapshot returns None.
+        assert_eq!(step.digital_net(&Net::digital(99, "x")), None);
+        assert_eq!(step.digital_named("x"), None);
     }
 }
 
@@ -842,6 +855,8 @@ pub(crate) struct DeviceRun {
     spt: f64,
     /// The smallest `CAP` of the last accepted solution: the next step's bound.
     cap: f64,
+    /// The digital nets' names, by net id (each step's digital values).
+    net_names: std::sync::Arc<[String]>,
 }
 
 /// A converged attempt and its truncation verdict, until `device_accept`.
@@ -883,7 +898,7 @@ impl TransientSolver<'_> {
                         SolverDomain::Transient,
                         format!(
                             "the step at {:e} s carries no state of the device instances: \
-                             re-enter from the first or the last step of a transient of this circuit",
+                             re-enter from a step a transient of this circuit recorded",
                             step.time()
                         ),
                     ));
@@ -919,7 +934,7 @@ impl TransientSolver<'_> {
             writes.push((*t, format!("{path}.{param}"), net.0, bytes));
         }
         if let Some((_, state)) = &resume
-            && state.nets.len() != bound.digital.plan().nets.len()
+            && state.nets.names() != bound.digital.plan().nets.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
         {
             return Err(Error::simple(
                 SolverDomain::Transient,
@@ -928,15 +943,18 @@ impl TransientSolver<'_> {
         }
         let spt = bound.digital.plan().resolution.seconds_per_tick;
         let digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        let net_names: std::sync::Arc<[String]> = digital.plan().nets.iter().map(|n| n.name.clone()).collect();
         let mut side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
+        let settled = crate::analyses::adapters::Settled::default();
+        side.record_settled(settled.clone());
         // A host write made since the capture is written again at the re-entry.
         let mut rewrites = Vec::new();
         if let Some((_, state)) = &resume {
-            for (slot, bytes) in side.resume(&state.digital, &state.nets) {
+            for (slot, bytes) in side.resume(&state.digital, state.nets.bytes()) {
                 bound.analog.set_discrete(slot, &bytes);
             }
             for (net, bytes) in &bound.host_writes {
-                if state.nets[net.0 as usize] != *bytes {
+                if state.nets.get(net.0 as usize) != Some(bytes.as_slice()) {
                     rewrites.push((net.0, bytes.clone()));
                 }
             }
@@ -954,11 +972,12 @@ impl TransientSolver<'_> {
             failed: None,
             spt,
             cap: f64::INFINITY,
+            net_names,
         };
         let (start, stop) = (self.options.start_time, self.options.stop_time);
         let hooks = self.host.clone();
         let nets = hooks.nets(bound);
-        let protocol = Protocol::new(side, TransientSide { tran: self, run }, ProtocolOptions::new(spt));
+        let protocol = Protocol::new(side, TransientSide { tran: self, run, settled }, ProtocolOptions::new(spt));
         let mut protocol = hooks.install(protocol, nets.as_deref().unwrap_or(&[]));
         let ran = nets
             .and_then(|_| match &resume {
@@ -1019,7 +1038,7 @@ impl TransientSolver<'_> {
             .collect();
         let state = crate::core::result::ReentryState {
             digital: bound.digital.checkpoint(),
-            nets,
+            nets: std::sync::Arc::new(crate::core::result::DigitalNets::new(run.net_names.clone(), nets)),
             assembly: bound.analog.snapshot(),
             cap: run.cap,
         };
@@ -1153,9 +1172,31 @@ impl TransientSolver<'_> {
         if run.steps.len() != 1 {
             return;
         }
+        let state = self.device_reentry_state(run, digital, nets);
+        run.steps[0].set_reentry(Some(state));
+    }
+
+    /// The re-entry state of the step accepted last, taken at the top of the
+    /// next step (its instant ran and its boundary was delivered, nothing has
+    /// moved since): the discrete side's settled state, the assembly's and the
+    /// step bound. A step already carrying one, or a time not recorded, is left.
+    pub(crate) fn device_capture(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::engine::Checkpoint, nets: Vec<Vec<u8>>) {
+        let due = run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.current_time);
+        if due {
+            let state = self.device_reentry_state(run, digital, nets);
+            run.steps.last_mut().expect("a recorded step").set_reentry(Some(state));
+        }
+    }
+
+    fn device_reentry_state(
+        &mut self,
+        run: &DeviceRun,
+        digital: piperine_digital_solver::engine::Checkpoint,
+        nets: Vec<Vec<u8>>,
+    ) -> std::sync::Arc<crate::core::result::ReentryState> {
         let assembly = self.device_bound().analog.snapshot();
-        let state = crate::core::result::ReentryState { digital, nets, assembly, cap: run.cap };
-        run.steps[0].set_reentry(Some(std::sync::Arc::new(state)));
+        let nets = std::sync::Arc::new(crate::core::result::DigitalNets::new(run.net_names.clone(), nets));
+        std::sync::Arc::new(crate::core::result::ReentryState { digital, nets, assembly, cap: run.cap })
     }
 
     /// The end of the next step: the controller's proposal, at most the stop

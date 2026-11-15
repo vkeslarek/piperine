@@ -134,9 +134,64 @@ pub struct TransientStep {
     /// `TransientAnalysisOptions::record_device_state`; lets a host recompute
     /// a stateful device's branch current at this step (`Trace.i`).
     device_state: HashMap<String, (Vec<f64>, Vec<f64>)>,
+    /// Every digital net's bytes at this step (after its instant ran), with
+    /// the nets' names: lets a transient trace read sequential logic over
+    /// time, which an operating point cannot express.
+    digital: Option<Arc<DigitalNets>>,
     /// For a circuit of devices, the state a transient re-enters from at this
-    /// step: recorded on the first and the last step of a run.
+    /// step: recorded on every accepted step of a run (a full circuit state).
     reentry: Option<Arc<ReentryState>>,
+}
+
+/// Every digital net's bytes at one step, by net id, with the nets' names
+/// (the bytes are the net's layout: a `BIT` is `[value, known]`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DigitalNets {
+    names: Arc<[String]>,
+    bytes: Vec<Vec<u8>>,
+}
+
+impl DigitalNets {
+    /// `bytes[i]` is the net named `names[i]`.
+    ///
+    /// # Panics
+    /// When the two lengths differ.
+    pub fn new(names: Arc<[String]>, bytes: Vec<Vec<u8>>) -> Self {
+        assert_eq!(names.len(), bytes.len(), "one name per net");
+        Self { names, bytes }
+    }
+
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
+    /// The bytes of the net with id `idx`.
+    pub fn get(&self, idx: usize) -> Option<&[u8]> {
+        self.bytes.get(idx).map(Vec::as_slice)
+    }
+
+    /// The bytes of the net named `name`.
+    pub fn by_name(&self, name: &str) -> Option<&[u8]> {
+        self.names.iter().position(|n| n == name).map(|i| self.bytes[i].as_slice())
+    }
+
+    /// The nets' names, by net id.
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+
+    /// Every net as `(name, bytes)`, by net id.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.names.iter().map(String::as_str).zip(self.bytes.iter().map(Vec::as_slice))
+    }
+
+    pub(crate) fn bytes(&self) -> &[Vec<u8>] {
+        &self.bytes
+    }
 }
 
 /// What a transient of a circuit of devices re-enters from besides the
@@ -147,7 +202,7 @@ pub struct TransientStep {
 pub(crate) struct ReentryState {
     pub(crate) digital: piperine_digital_solver::engine::Checkpoint,
     /// Every net's bytes, by net id.
-    pub(crate) nets: Vec<Vec<u8>>,
+    pub(crate) nets: Arc<DigitalNets>,
     pub(crate) assembly: piperine_analog_solver::device::AssemblySnapshot,
     pub(crate) cap: f64,
 }
@@ -158,8 +213,39 @@ impl TransientStep {
             time,
             values,
             device_state: HashMap::new(),
+            digital: None,
             reentry: None,
         }
+    }
+
+    /// Attach the step's digital net values.
+    pub fn with_digital(mut self, digital: DigitalNets) -> Self {
+        self.digital = Some(Arc::new(digital));
+        self
+    }
+
+    /// Every digital net's bytes at this step, or `None` if unrecorded.
+    pub fn digital_nets(&self) -> Option<&DigitalNets> {
+        self.digital.as_deref()
+    }
+
+    /// This step's bytes of the digital net with id `idx`, or `None` if unrecorded.
+    pub fn digital(&self, idx: usize) -> Option<&[u8]> {
+        self.digital.as_ref()?.get(idx)
+    }
+
+    /// This step's bytes of the digital net named `name`, or `None` if unrecorded.
+    pub fn digital_named(&self, name: &str) -> Option<&[u8]> {
+        self.digital.as_ref()?.by_name(name)
+    }
+
+    /// Read the digital net's bytes by [`Net`]. Returns `None` for analog and
+    /// pseudo nets, or for digital nets that were not recorded this step.
+    pub fn digital_net(&self, net: &Net) -> Option<&[u8]> {
+        if !matches!(net.kind(), crate::core::net::NetKind::Digital) {
+            return None;
+        }
+        self.digital(net.dense()?)
     }
 
     /// The re-entry state of a circuit of devices, when this step carries one.
@@ -167,7 +253,11 @@ impl TransientStep {
         self.reentry.as_ref()
     }
 
+    /// The re-entry state, and with it the step's digital net values.
     pub(crate) fn set_reentry(&mut self, state: Option<Arc<ReentryState>>) {
+        if let Some(state) = &state {
+            self.digital = Some(state.nets.clone());
+        }
         self.reentry = state;
     }
 
