@@ -187,8 +187,17 @@ fn a_circuit_binds_instances_nodes_and_params() {
     let mut paths = bound.names.instances.clone();
     paths.sort();
     assert_eq!(paths, ["Divider.r1", "Divider.r2", "Divider.v1"]);
-    // one solver node per design node, none for ground
-    assert_eq!(circuit.nets().iter().filter(|n| n.label().starts_with("v(")).count(), ir.nodes().count());
+    // one solver node per design node, named by its path, none for ground
+    let mut labels: Vec<String> =
+        circuit.nets().iter().map(|n| n.label().to_string()).filter(|l| l.starts_with("v(")).collect();
+    labels.sort();
+    assert_eq!(labels, ["v(Divider.mid)", "v(Divider.vin)"]);
+    for node in ir.nodes() {
+        let named = circuit.node(node.path()).unwrap_or_else(|| panic!("no solver node {}", node.path()));
+        // the reference the path names is node `i` of the IR, `Anonymous(i)`
+        let identity = piperine_solver::prelude::Net::from(named).label().to_string();
+        assert_eq!(identity, format!("v({})", bound::node(&ir, node.path())), "{}", node.path());
+    }
     // the params hold their bound values: r2 = 3 k, so mid = 7.5 V; and `set` addresses them by path
     let mid = bound::node(&ir, "Divider.mid");
     assert!((bound::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
