@@ -413,3 +413,21 @@ fn a_limit_read_and_a_constant_if_keep_the_class() {
         (vec![], e.if_f64(cond, v, w))
     }));
 }
+
+#[test]
+fn a_shared_expression_is_walked_once() {
+    // `acc = acc + acc` 40 times on one id: 2^40 paths through 41 expressions.
+    let ir = Row::ir(|b| {
+        let mut e = Row::ex(b);
+        let mut acc = Row::v(&mut e);
+        for _ in 0..40 {
+            acc = e.binary(BinaryOp::Add, acc, acc);
+        }
+        (vec![], acc)
+    });
+    let started = std::time::Instant::now();
+    let body = ir.body(BodyId(0));
+    assert_eq!(body.dependencies(Target::Flow(0)), Want::deps(&[0, 1], &[], &[], &[], &[]));
+    assert!(body.is_affine(0));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "took {:?}", started.elapsed());
+}

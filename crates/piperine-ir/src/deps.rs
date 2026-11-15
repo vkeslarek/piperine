@@ -23,7 +23,7 @@
 //! a meaning to (a local read before its `let`, a recursive call, a cycle); on an IR that fails
 //! it the walk panics with the origin, never answers a default.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::OnceLock;
 
 use crate::handle::Body;
@@ -131,7 +131,7 @@ pub(crate) struct BodyDeps {
     checks: Vec<Sources>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct Sources {
     nodes: BTreeSet<u32>,
     params: BTreeSet<u32>,
@@ -169,7 +169,7 @@ enum Class {
 }
 
 /// The abstract value of an expression.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Value {
     sources: Sources,
     class: Class,
@@ -199,11 +199,23 @@ impl Value {
 }
 
 /// The locals of one owner (a body's `analog` block or a function), bound as the walk passes
-/// their `let`s.
+/// their `let`s, and the values of the expressions already walked in it.
+///
+/// The memo makes a shared expression id cost one walk, not one per path. It is valid while the
+/// locals keep their values: a rebinding to a different value clears it. Every side effect of a
+/// walk (a site's or a branch's sources joined, a local bound) is idempotent, so skipping the
+/// repeat walk of a memoized expression loses none.
 struct Scope {
     owner: String,
     in_body: bool,
     locals: Vec<Option<Value>>,
+    memo: HashMap<ExprId, Value>,
+}
+
+impl Scope {
+    fn new(owner: String, in_body: bool, locals: usize) -> Self {
+        Scope { owner, in_body, locals: vec![None; locals], memo: HashMap::new() }
+    }
 }
 
 /// One abstract walk of a body, and of the functions it calls.
@@ -236,14 +248,14 @@ impl<'a> Walk<'a> {
             .iter()
             .map(|param| match param.check {
                 Some(check) => {
-                    let mut scope = Scope { owner: owner.clone(), in_body: true, locals: vec![None; data.locals.len()] };
+                    let mut scope = Scope::new(owner.clone(), true, data.locals.len());
                     walk.expr(&mut scope, check).sources
                 }
                 None => Sources::default(),
             })
             .collect();
         if let Some(analog) = &data.analog {
-            let mut scope = Scope { owner, in_body: true, locals: vec![None; data.locals.len()] };
+            let mut scope = Scope::new(owner, true, data.locals.len());
             for &stmt in analog {
                 walk.stmt(&mut scope, stmt);
             }
@@ -297,12 +309,26 @@ impl<'a> Walk<'a> {
 
     fn bind(&self, scope: &mut Scope, local: u32, value: Value, at: ExprId) {
         match scope.locals.get_mut(local as usize) {
-            Some(slot) => *slot = Some(value),
+            Some(slot) => {
+                if slot.as_ref().is_some_and(|old| *old != value) {
+                    scope.memo.clear();
+                }
+                *slot = Some(value);
+            }
             None => self.refuse(scope, at, &format!("local {local} out of range")),
         }
     }
 
     fn expr(&mut self, scope: &mut Scope, id: ExprId) -> Value {
+        if let Some(value) = scope.memo.get(&id) {
+            return value.clone();
+        }
+        let value = self.walk_expr(scope, id);
+        scope.memo.insert(id, value.clone());
+        value
+    }
+
+    fn walk_expr(&mut self, scope: &mut Scope, id: ExprId) -> Value {
         let ir = self.ir;
         match &ir.exprs[id.index()].kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit => Value::constant(),
@@ -443,7 +469,7 @@ impl<'a> Walk<'a> {
         if self.calls.contains(&function) {
             self.refuse(scope, at, &format!("recursive call of {}", data.name));
         }
-        let mut callee = Scope { owner: format!("function {}", data.name), in_body: false, locals: vec![None; data.locals.len()] };
+        let mut callee = Scope::new(format!("function {}", data.name), false, data.locals.len());
         if args.len() != data.params.len() || args.len() > callee.locals.len() {
             self.refuse(scope, at, &format!("call of {} with {} args, it takes {}", data.name, args.len(), data.params.len()));
         }
