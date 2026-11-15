@@ -86,6 +86,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.65 | The `"cosim"` interface | Open |
 | G.66 | Session parameter names of `simparam` | Open |
 | G.67 | Two blanket traits with one method name | Open |
+| G.68 | `analysis(Tran)` names a module | Open |
 
 ## Open items
 
@@ -361,6 +362,12 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 **Status: Open.**
 A method call on a carrier links a trait method through a blanket `impl<T: Repr> Tr for T` of a trait in scope at the call (§22, STD-06). No section gives a code for two traits in scope that both have the method name.
 In force: the first in declaration order links, with no diagnostic. For review: report an ambiguity, as Rust does.
+
+### G.68 `analysis(Tran)` names a module
+
+**Status: Open.**
+`Transient` is the analysis kind (§22.3.7); `Tran` is the module that places a transmission gate in `std::nets`. Name resolution links `analysis(Tran)` to that module without a diagnostic, because the POM has no type checking: an argument of `analysis` is not required to be an `Analysis` value.
+In force: the specification spells the kind `Transient` everywhere. A later type pass (msl-typeck) should reject a module as the argument of `analysis`.
 
 ## Closed items
 
