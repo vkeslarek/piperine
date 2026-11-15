@@ -1,0 +1,103 @@
+//! `Transpiler::compile`: print, key, look in the cache, build on a miss (the ABI `rlib` once,
+//! then the design's `cdylib`), load (design "Architecture Overview"; RS-01 to RS-04, RS-08).
+//! Nothing here runs during an analysis: a design is compiled once, before the first one.
+
+use std::path::Path;
+use std::time::Instant;
+
+use crate::abi_source::AbiSource;
+use crate::cache::{Cache, Entry, Key};
+use crate::compiled::{Compiled, Report};
+use crate::error::Error;
+use crate::load::Loaded;
+use crate::rt;
+use crate::rustc::Rustc;
+use crate::settings::Settings;
+use crate::Transpiler;
+
+impl Transpiler {
+    /// Compiles the design with the compiler `settings` names, through the cache at
+    /// `settings.cache`, and loads it.
+    ///
+    /// The cache key is the SHA-256 of the generated source, the runtime source, the embedded
+    /// ABI sources, the output of `rustc -vV` and the flags (RS-Q3). A hit invokes the compiler
+    /// zero times. A cached library whose bytes fail the manifest hash is removed and rebuilt
+    /// once; a second failure is the load error. A compiler error is `Error::CompileFailed`
+    /// with the compiler's standard error, and the generated source stays on disk where the
+    /// error names it.
+    pub fn compile(&self, settings: &Settings) -> Result<Compiled, Error> {
+        let started = Instant::now();
+        let source = self.source()?;
+        let mut report = Report { transpile: started.elapsed(), ..Report::default() };
+
+        let rustc = Rustc::locate(settings)?;
+        let cache = Cache::at(&settings.cache)?;
+        let flags = Rustc::FLAGS.join(" ");
+        // parts: source, runtime, compiler text, flags, then the ABI files; the ABI library's
+        // own key leaves out the first two.
+        let mut parts: Vec<&[u8]> =
+            vec![source.as_bytes(), rt::REAL.as_bytes(), rustc.version_text().as_bytes(), flags.as_bytes()];
+        for (name, text) in AbiSource::FILES {
+            parts.push(name.as_bytes());
+            parts.push(text.as_bytes());
+        }
+        let key = Key::of(&parts);
+        let abi_key = Key::of(&parts[2..]);
+
+        let hit = cache.entry(&key).and_then(|entry| {
+            let at = Instant::now();
+            let opened = Loaded::open(&entry);
+            report.load += at.elapsed();
+            // RS-04 AC 5: an entry that fails to open is not what it recorded; it is rebuilt.
+            opened.ok().map(|loaded| (entry, loaded))
+        });
+        let (entry, loaded) = match hit {
+            Some(found) => {
+                report.cache_hit = true;
+                found
+            }
+            None => {
+                cache.remove(&key)?;
+                self.build_and_open(&cache, &key, &abi_key, &rustc, &source, &mut report)?
+            }
+        };
+        report.rustc_invocations = rustc.invocations();
+        Ok(Compiled { ir: self.ir.clone(), entry, loaded, report })
+    }
+
+    fn build_and_open(
+        &self,
+        cache: &Cache,
+        key: &Key,
+        abi_key: &Key,
+        rustc: &Rustc,
+        source: &str,
+        report: &mut Report,
+    ) -> Result<(Entry, Loaded), Error> {
+        let at = Instant::now();
+        let abi = cache.abi(abi_key, |staging| {
+            let src = staging.join("src");
+            AbiSource::write_to(&src)?;
+            rustc.rlib(&src.join("lib.rs"), &staging.join("libpiperine_abi.rlib")).map(|_| ())
+        })?;
+        let mut warnings = String::new();
+        let entry = cache.build(key, rustc.version_text(), Rustc::FLAGS, |staging| {
+            let entry = Entry::at(staging);
+            Self::write(&entry.source(), source)?;
+            Self::write(&entry.runtime(), rt::REAL)?;
+            warnings = rustc.cdylib(&entry.source(), &abi, &entry.library())?;
+            Ok(())
+        })?;
+        report.compile += at.elapsed();
+        report.warnings = warnings;
+        let at = Instant::now();
+        let loaded = Loaded::open(&entry)?;
+        report.load += at.elapsed();
+        Ok((entry, loaded))
+    }
+
+    fn write(path: &Path, text: &str) -> Result<(), Error> {
+        std::fs::write(path, text)
+            .map_err(|e| Error::Cache { dir: path.parent().unwrap_or(path).to_path_buf(), cause: e.to_string() })
+    }
+}

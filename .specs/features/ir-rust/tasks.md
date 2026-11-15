@@ -526,11 +526,11 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] Compiler invocations are counted by a wrapper script's log, not by the crate's own counter
-- [ ] The warning test reads `rustc`'s standard error for each of the five M1 bodies and requires it empty
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test compile`: `the_m1_design_compiles_with_no_error_and_no_warning`, `a_second_build_runs_no_compiler`, `a_changed_ir_is_another_entry`, `another_compiler_version_is_another_entry`, `a_compile_error_keeps_the_source_and_shows_stderr`, `a_corrupted_library_is_rebuilt`, `the_source_is_kept_beside_the_library_and_reported`, `a_build_reports_its_cost`
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the 8 test(s) named above, and no existing test removed or edited
+- [x] Compiler invocations are counted by a wrapper script's log, not by the crate's own counter
+- [x] The warning test reads `rustc`'s standard error for each of the five M1 bodies and requires it empty
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test compile`: `the_m1_design_compiles_with_no_error_and_no_warning`, `a_second_build_runs_no_compiler`, `a_changed_ir_is_another_entry`, `another_compiler_version_is_another_entry`, `a_compile_error_keeps_the_source_and_shows_stderr`, `a_corrupted_library_is_rebuilt`, `the_source_is_kept_beside_the_library_and_reported`, `a_build_reports_its_cost`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 8 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build
