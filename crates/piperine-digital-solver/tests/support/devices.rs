@@ -745,14 +745,20 @@ unsafe extern "C" fn rogue_react(_: *mut Instance, k: u32, frame: *const RawReac
 }
 
 pub fn rogue() -> Handle {
-    let module = ROGUE.get_or_init(|| Module {
-        name: Str::from_static("rogue"),
-        prototype: shared(&ROGUE_SHAPE, rogue_shape).as_raw(),
-        data: std::ptr::null(),
-        create: rogue_create,
-        destroy: rogue_destroy,
-        eval: rogue_eval,
-        react: rogue_react,
+    let module = ROGUE.get_or_init(|| {
+        // SAFETY: `rogue_shape` is a valid shape that lives for the process (a `OnceLock` static), and the four
+        // functions above keep the contracts of abi.md §2.
+        unsafe {
+            Module::from_raw_parts(
+                Str::from_static("rogue"),
+                shared(&ROGUE_SHAPE, rogue_shape).as_raw(),
+                std::ptr::null(),
+                rogue_create,
+                rogue_destroy,
+                rogue_eval,
+                rogue_react,
+            )
+        }
     });
     Handle::create(module, &[]).expect("a fixture device creates")
 }
