@@ -537,8 +537,10 @@ three hold:
    holds:
    - what is due at `(t, 0)` changes, directly or through definitions and `resolve`s, a
      carrier or param that `analog` reads;
-   - a reaction that counts there probes, in its guard or body, or can change a carrier
-     that `analog` or a probing reaction reads;
+   - a reaction that counts there probes, in its guard or body, or can change, at that
+     instant, a carrier that `analog` or a probing reaction reads. A commit whose delay
+     always advances time by at least one tick changes nothing at the instant that makes
+     it; its due time is a scheduled time tested on its own;
    - a host action there probes (rule 6).
 
    The operating point, the stop time, every located crossing (§17.3) and the instant at

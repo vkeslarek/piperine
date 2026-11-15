@@ -81,10 +81,10 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] The bullet contains the phrases `at that instant` and `by at least one tick`, and says the due time of such a commit is a scheduled time tested on its own
-- [ ] A1 of the advance procedure and §15 "Event times that are not time points" do not contradict the bullet (read them; edit only if they do)
-- [ ] Test `later_commit_is_not_a_time_point` asserts both phrases inside the section `### 17.2`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] The bullet contains the phrases `at that instant` and `by at least one tick`, and says the due time of such a commit is a scheduled time tested on its own
+- [x] A1 of the advance procedure and §15 "Event times that are not time points" do not contradict the bullet (read them; edit only if they do)
+- [x] Test `later_commit_is_not_a_time_point` asserts both phrases inside the section `### 17.2`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full

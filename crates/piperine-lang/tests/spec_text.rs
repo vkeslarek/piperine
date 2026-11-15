@@ -70,6 +70,11 @@ fn section(text: &str, heading: &str) -> String {
     out
 }
 
+/// `text` with every run of whitespace (line wraps included) as one space.
+fn flat(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// The body rows of every table of `section`: cells trimmed, header and
 /// separator rows left out.
 fn table_rows(section: &str) -> Vec<Vec<String>> {
@@ -1135,4 +1140,12 @@ fn glossary_and_file_map_name_crates_and_packages() {
     let part_i = map.iter().find(|r| r[0].contains("part_i_values.md")).expect("Part I row");
     assert!(part_i[1].contains("crates") && part_i[1].contains("packages"), "{part_i:?}");
     assert!(part_i[2].contains("§1–3"), "{part_i:?}");
+}
+
+#[test]
+fn later_commit_is_not_a_time_point() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "### 17.2"));
+    assert!(s.contains("at that instant"), "{s}");
+    assert!(s.contains("by at least one tick"), "{s}");
 }
