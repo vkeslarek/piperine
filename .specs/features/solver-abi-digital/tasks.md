@@ -134,12 +134,12 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `commits_apply_in_made_statement_call_order` passes with three commits to overlapping bytes made in a shuffled order (C13)
-- [ ] Test `transport_removes_later_commits_of_the_same_statement_only` passes: a later-due commit of the same statement and range goes, an earlier-due one stays, another statement's stays (C14)
-- [ ] Test `replace_removes_every_pending_commit_of_the_statement` passes (C15)
-- [ ] Test `disjoint_byte_ranges_of_one_statement_do_not_remove_each_other` passes
-- [ ] Test `next_due_is_the_earliest_instant` passes
-- [ ] Gate: full
+- [x] Test `commits_apply_in_made_statement_call_order` passes with three commits to overlapping bytes made in a shuffled order (C13)
+- [x] Test `transport_removes_later_commits_of_the_same_statement_only` passes: a later-due commit of the same statement and range goes, an earlier-due one stays, another statement's stays (C14)
+- [x] Test `replace_removes_every_pending_commit_of_the_statement` passes (C15)
+- [x] Test `disjoint_byte_ranges_of_one_statement_do_not_remove_each_other` passes
+- [x] Test `next_due_is_the_earliest_instant` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

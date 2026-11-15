@@ -3,5 +3,6 @@
 //! It lives beside the old engine and shares nothing with it.
 
 pub mod net;
+pub mod queue;
 pub mod store;
 pub mod tick;
