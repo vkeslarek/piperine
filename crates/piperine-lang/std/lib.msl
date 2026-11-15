@@ -1,6 +1,15 @@
 //! The standard library of Piperine, embedded in the `piperine-lang` crate.
 //!
-//! The root declares the namespace `prelude`: its `pub` items are visible in every file with
-//! no import. The content is the work of the `msl-stdlib` feature.
+//! The root declares one `pub` namespace per section of Part VII: `constants`, `carriers`,
+//! `values`, `analog`, `nets`, `convert`, `monitor` and `io`. `prelude` re-exports every `pub`
+//! item of the others: its items are visible in every file with no import.
 
+pub mod constants;
+pub mod carriers;
+pub mod values;
+pub mod analog;
+pub mod nets;
+pub mod convert;
+pub mod io;
+pub mod monitor;
 pub mod prelude;

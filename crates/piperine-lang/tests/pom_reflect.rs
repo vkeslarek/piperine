@@ -5,15 +5,13 @@
 #[path = "support/spec_corpus.rs"]
 mod spec_corpus;
 
-use piperine_lang::pom::{Decl, Design, DesignBuilder, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
+use piperine_lang::pom::{Decl, Design, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
 use serde::{Serialize, de::DeserializeOwned};
 use spec_corpus::{Class, corpus};
 
-const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
-
-/// A design of `src` with the fixture prelude beside it.
+/// A design of `src` over the embedded standard library.
 fn with_prelude(src: &str) -> Design {
-    std_lib(Design::builder(), PRELUDE).source("top.msl", src).build()
+    Design::builder().source("top.msl", src).build()
 }
 
 #[test]
@@ -525,9 +523,9 @@ digital for M { on a { q <- s; } }
     let field = design.find("Stream").and_then(|d| d.as_struct()).unwrap().fields()[0].decl();
     let accesses: Vec<_> = (0..design.expr_count())
         .map(|i| design.expr(ExprId(i as u32)))
-        .filter(|e| matches!(e.kind(), ExprKind::Field { .. }))
+        .filter(|e| matches!(e.kind(), ExprKind::Field { .. }) && e.enclosing().krate().is_root())
         .collect();
-    assert_eq!(accesses.len(), 2);
+    assert_eq!(accesses.len(), 2, "the two accesses of the root file; the library has its own");
     assert!(accesses.iter().all(|e| e.target() == Some(field) && e.as_path().is_none()));
 
     // An expression that names nothing has no target.
@@ -815,6 +813,40 @@ fn exercise(d: &Design) {
 }
 
 #[test]
+fn a_nature_field_that_names_no_quantity_is_an_err_not_a_panic() {
+    // The standard library declares natures, so a corrupted field id reaches `to_ast`: `from_json`
+    // reports it and no read panics. The first `Quantity` field of `Electrical` is pointed at the
+    // root namespace (decl 0), which is no quantity.
+    let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "pub nature N { potential: P { access: v, units: \"V\", abstol: 1u } }\n").source("top.msl", "").build();
+    let mut json = serde_json::to_value(&design).unwrap();
+    let mut found = false;
+    fn point_quantities_at_root(v: &mut serde_json::Value, found: &mut bool) {
+        match v {
+            serde_json::Value::Object(map) => {
+                if let Some(q) = map.get_mut("Quantity") {
+                    if q.is_number() {
+                        *q = serde_json::json!(0);
+                        *found = true;
+                    }
+                }
+                for (_, c) in map.iter_mut() {
+                    point_quantities_at_root(c, found);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|c| point_quantities_at_root(c, found)),
+            _ => {}
+        }
+    }
+    point_quantities_at_root(&mut json, &mut found);
+    assert!(found, "the serialized design has a nature field that names a quantity");
+    let text = json.to_string();
+    let result = std::panic::catch_unwind(|| Design::from_json(&text));
+    let result = result.expect("from_json never panics");
+    let problems = result.err().expect("a nature field naming no quantity is rejected");
+    assert!(problems.iter().any(|p| p.contains("quantity")), "{problems:?}");
+}
+
+#[test]
 fn from_json_never_panics_on_a_corrupted_field() {
     // POL-21 AC 2 (A-33): every numeric leaf of a design, set to an id out of
     // range and to 1, is either an `Err` or a design every read survives.
@@ -822,7 +854,7 @@ fn from_json_never_panics_on_a_corrupted_field() {
         .stack_size(8 << 20)
         .spawn(|| {
             let src = "mod a { pub const K: f64 = 1.5k; }\nuse a::K;\nmodule M(a: E) { signal s: E; s = a; let x = R(a, a) { r: K }; }\ndigital for M { on e { s[0] <- 1; } }\nfn f(o: Option<u8>) -> u8 { match o { None => 0, Some(x) => x + 1 } }";
-            let design = Design::builder().source("top.msl", src).build();
+            let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "").source("top.msl", src).build();
             let good = serde_json::to_value(&design).unwrap();
             let mut leaves = Vec::new();
             number_leaves(&good, Vec::new(), &mut leaves);
@@ -858,8 +890,3 @@ fn from_json_never_panics_on_a_corrupted_field() {
         .unwrap();
 }
 
-/// `items` as the `pub` content of `std::prelude` (what `.prelude(name, items)` used to register).
-/// It is a second std file so the fixture's own `//!` comments stay legal.
-fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
-    builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
-}

@@ -522,6 +522,15 @@ impl Design {
                     }
                 }
             }
+            if let DeclKind::Nature(n) = &d.kind {
+                for f in &n.fields {
+                    if let NatureFieldNode::Quantity(q) = f {
+                        if !matches!(self.decls.get(q.index()).map(|c| &c.kind), Some(DeclKind::Quantity(_))) {
+                            problems.push(format!("{id:?}: nature field {q:?} is not a quantity"));
+                        }
+                    }
+                }
+            }
             match d.parent {
                 Some(p) if p.index() >= self.decls.len() => problems.push(format!("{id:?}: parent {p:?} does not exist")),
                 Some(p) if !self.decls[p.index()].children.contains(&id) => {

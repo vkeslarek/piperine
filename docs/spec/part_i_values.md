@@ -33,7 +33,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
   read-only borrow: of an array, slice or string in a function parameter, and of any value as
   a call argument (`(0.1..=10.0).contains(&n)`).
 - **§1 rule 3.** Constants are `const` items. The prelude has `Q`, `K_B`, `EPS0`, `PI`, `E`
-  and `inf` (table below).
+  and `inf` (table below): they are `pub const` items of `std::constants`, re-exported by the
+  prelude.
 - **§1 rule 4.** Only a type with `Repr` can be carried: it is the `T` of `Bit<T>` and the
   `value` of a nature ([§4](part_ii_carriers.md#4-natures)).
 - **§1 rule 5.** `uN` and `iN` are aliases of `UInt<N>` and `Int<N>` for `N` in 1..=128. `fN`
@@ -62,6 +63,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 
 **Prelude constants**
 
+The six constants are `pub const` items of `std::constants` ([§22](part_vii_stdlib.md#22-standard-library)), re-exported by the prelude.
+
 | Name | Type | Value | Meaning |
 | --- | --- | --- | --- |
 | `Q` | `f64` | `1.602176634e-19` | elementary charge, C |
@@ -69,7 +72,16 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 | `EPS0` | `f64` | `8.8541878128e-12` | vacuum permittivity, F/m |
 | `PI` | `f64` | Rust's `f64::consts::PI` | π |
 | `E` | `f64` | Rust's `f64::consts::E` | Euler's number |
-| `inf` | `f64` | `f64::INFINITY` | positive infinity |
+| `inf` | `f64` | `1.0 / 0.0` | positive infinity |
+
+```rust
+pub const Q: f64 = 1.602176634e-19;
+pub const K_B: f64 = 1.380649e-23;
+pub const EPS0: f64 = 8.8541878128e-12;
+pub const PI: f64 = 3.141592653589793;
+pub const E: f64 = 2.718281828459045;
+pub const inf: f64 = 1.0 / 0.0;
+```
 
 > **Resolution.** The design names the constants and not their values. `Q` and `K_B` are the
 > exact SI values of 2019; `EPS0` is the CODATA 2018 value.
@@ -218,8 +230,8 @@ of the functions it calls. A function may belong to several classes; the restric
 
 - **§3 rule 1.** Inside `analog`, calls are differentiated through
   ([§11](part_iv_behavior.md#11-analog) rule 5).
-- **§3 rule 2.** `extern "C" fn` is implemented outside the language and has no body; a function
-  that is neither `extern` nor a trait item has a body. Either mismatch is `E0125`. An
+- **§3 rule 2.** `extern "C" fn` and `extern "intrinsic" fn` are implemented outside the language
+  and have no body; a function that is neither `extern` nor a trait item has a body. Either mismatch is `E0125`. An
   `extern` function called inside `analog` needs `#[derivative(f)]`.
 - **§3 rule 3.** A **closure** `|a, b| expr` is a value and may be passed to functions. It
   captures by value. Its class is that of its body.
@@ -239,9 +251,11 @@ of the functions it calls. A function may belong to several classes; the restric
   bounds are written in `generics`.
 - **§3 rule 9.** A function that is generic over a type, a nature or a const is instantiated
   at elaboration. An error inside an instantiation is an elaboration error.
-- **§3 rule 10.** The only ABI string a function accepts is `"C"`. An `extern "C" fn` takes
-  and returns `bool`, integer and float scalars only. It **MUST** be a function of its
-  arguments alone.
+- **§3 rule 10.** A function accepts two ABI strings, `"C"` and `"intrinsic"`. The string
+  `"intrinsic"` is accepted only in the crate `std`. An `extern "C" fn` takes and returns
+  `bool`, integer and float scalars only. It **MUST** be a function of its arguments alone.
+  An `extern "intrinsic" fn` has no body, is not restricted to scalar types, takes no
+  `#[derivative]`, and has the contract its entry in Part VII gives.
 - **§3 rule 11.** `#[derivative(f, …)]` names one function for each `f64` parameter, in order.
   Each has the signature of the `extern` function and returns the partial derivative with
   respect to that parameter.
@@ -254,6 +268,10 @@ of the functions it calls. A function may belong to several classes; the restric
 > **Resolution.** Rule 11 extends the one-argument example of the design to several
 > arguments. Rule 10 restricts `extern` functions to scalars because no layout for composite
 > values across the C ABI is defined. How the symbol is located is the toolchain's business.
+
+> **Resolution.** `"intrinsic"` names an item the language cannot express and the engine
+> implements, such as a function that reads the characters of a `str`. Rust spells the same
+> idea `extern "rust-intrinsic"`. A user crate that needs native code writes `extern "C"`.
 
 > **Resolution.** Rule 12 mirrors the rule for a module that places itself
 > ([§8.2](part_iii_structure.md#82-the-body)): `analog` code is straight-line after
@@ -281,7 +299,7 @@ of the functions it calls. A function may belong to several classes; the restric
 | `E0122` | a function is called where one of its classes is not allowed. A core primitive or `emit!` written directly in such a position is `E0450` or `E0601` | elaboration |
 | `E0123` | an `extern` function without `#[derivative]` is called inside `analog` | elaboration |
 | `E0124` | `#[derivative]` names a function with the wrong signature, or the wrong number of functions | elaboration |
-| `E0125` | an ABI string other than `"C"` on a function, a non-scalar type in its signature, an `extern` function with a body, or a function without a body that is neither `extern` nor a trait item | elaboration |
+| `E0125` | an ABI string other than `"C"` and `"intrinsic"` on a function, the ABI `"intrinsic"` outside the crate `std`, a non-scalar type in its signature, an `extern` function with a body, or a function without a body that is neither `extern` nor a trait item | elaboration |
 | `E0126` | a recursion reached from `analog` that elaboration cannot unroll | elaboration |
 | `E0127` | a `where` on a function that is false for an instantiation | elaboration |
 

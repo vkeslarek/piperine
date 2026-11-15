@@ -221,7 +221,7 @@ analog for Switch {
 }
 
 /// Two nodes made one: with no selector the kind is fixed, and the nodes merge at elaboration.
-module Short<N: Nature>(a: N, b: N) {}
+pub module Short<N: Nature>(a: N, b: N) {}
 analog<N> for Short<N> { potential(a, b) +> 0.0; }
 
 /// An equation is a row: a nature whose "flow" is the residual gives it the right tolerance.
@@ -260,18 +260,18 @@ Coupling among any number of separate inductors goes through a port: each induct
 
 ### 11.1 One block, every analysis
 
-An **analysis** is one run the host asks of an elaborated design: `Dc`, `Tran`, `Ac`, `Noise`, or
+An **analysis** is one run the host asks of an elaborated design: `Dc`, `Transient`, `Ac`, `Noise`, or
 a host procedure over them (§16.3). One `analog` block serves every analysis. What each primitive is in each kind of solve is one table
 (§16.2). `analysis(a)` tells the block which analysis and which solve it is in.
 
 **Static semantics**
 
-- **§11.1.1** `Analysis` is a closed enum with five variants: `Dc`, `Tran`, `Ac`, `Noise`,
+- **§11.1.1** `Analysis` is a closed enum with five variants: `Dc`, `Transient`, `Ac`, `Noise`,
   `Static`. `fn analysis(a: Analysis) -> bool` is an environment function (§14.4).
 
   | `Analysis` | True during | Constant during an analysis |
   | --- | --- | --- |
-  | `Dc`, `Tran`, `Ac`, `Noise` | the whole of that analysis, its operating point included | yes |
+  | `Dc`, `Transient`, `Ac`, `Noise` | the whole of that analysis, its operating point included | yes |
   | `Static` | an equilibrium solve: a `Dc` point and every operating point, all its rounds. False in a transient step, a jump and a small-signal sweep | no: it is the one variant that names a solve, not an analysis |
 
 - **§11.1.2** Every other analysis a host offers is built by the host from these solves. The model
@@ -297,7 +297,7 @@ a host procedure over them (§16.3). One `analog` block serves every analysis. W
   | `delay(x, td)` | `x` | `exp(−jω·td)·x` |
 
 - **§11.1.6** A sampled system that has a small-signal response around an operating point states
-  it: under `!analysis(Tran)` it writes the same transfer with `delay`. `zi_nd` (§22.2) is written
+  it: under `!analysis(Transient)` it writes the same transfer with `delay`. `zi_nd` (§22.2) is written
   this way, which gives `H(exp(jωT))` in `Ac` and `Noise` and `H(1)` in `Dc` (VAMS 4.5.12).
 - **§11.1.7** Around a periodic trajectory a real-valued carrier carries the perturbation
   committed to it, and event times move (§23.3.4). Every sampled system then has a response with
@@ -646,7 +646,7 @@ of `&&` whose left operand is an `Event`.
 | through the whole operating point, every round | the guard `analysis(Static)` | §11.1.1 |
 | a crossing that is right at time 0 | `above(e)` (§22.2) | `cross(e) \|\| (init() && e > 0.0)` |
 
-Any of them is restricted to an analysis with a guard: `init() && analysis(Tran)`.
+Any of them is restricted to an analysis with a guard: `init() && analysis(Transient)`.
 
 **Errors**
 
@@ -863,7 +863,7 @@ with `mag` and `phase` evaluated at the operating point.
 | --- | --- | --- |
 | `temperature() -> f64` | the analysis temperature plus the instance's effective `dtemp` (§8.5.5), in kelvin | constant during an analysis |
 | `simparam(name: &str, default: Option<f64>) -> f64` | the session parameter `name`, else `default` | constant during an analysis |
-| `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Tran`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
+| `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Transient`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
 | `now() -> f64` | the time of the solve | environment of the solve |
 | `freq() -> f64` | the frequency of the sweep point | environment of the solve |
 | `gmin() -> f64` | the conductance of the shunt the solver adds on every node, in siemens | environment of the solve |

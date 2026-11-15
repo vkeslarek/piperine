@@ -146,9 +146,8 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | Kind | Names (section) |
 | --- | --- |
 | `Type` | `str` (§1), `uN` (§1), `iN` (§1), `fN` (§1), `bool` (§1), `usize` (§1), `isize` (§1), `UInt` (§1), `Int` (§1), `Float` (§1), `Option` (§1), `Event` (§13), `Analysis` (§11.1) |
-| `Variant` | `Some` (§1), `None` (§1), `Dc` (§11.1.1), `Tran` (§11.1.1), `Ac` (§11.1.1), `Noise` (§11.1.1), `Static` (§11.1.1) |
+| `Variant` | `Some` (§1), `None` (§1), `Dc` (§11.1.1), `Transient` (§11.1.1), `Ac` (§11.1.1), `Noise` (§11.1.1), `Static` (§11.1.1) |
 | `Trait` | `Nature` (§4), `Repr` (§2), `Fn` (§3), `Clone`, `Copy`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Default`, `Debug`, `Hash` (App. H) |
-| `Const` | `Q` (§1), `K_B` (§1), `EPS0` (§1), `PI` (§1), `E` (§1), `inf` (§1) |
 | `Fn` | `potential` (§14.1), `flow` (§14.1), `ddx` (§14.2), `ac_stim` (§14.3), `temperature` (§14.4), `simparam` (§14.4), `analysis` (§14.4), `now` (§14.4), `freq` (§14.4), `gmin` (§14.4), `source_scale` (§14.4) |
 | `Module` | `ddt` (§14.5), `delay` (§14.6), `limit` (§14.7), `noise` (§14.8), `cross` (§14.9), `at` (§14.9) |
 | `Event` | `settle` (§14.9) |
@@ -159,7 +158,7 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `level` (§14.12), `inflow` (§14.1) |
 
 The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, `f16`, `f32`,
-`f64`, `f128`). Standard-library modules such as `idt`, `transition` and `above` are *not*
+`f64`, `f128`). The six constants of §1 (`Q`, `K_B`, `EPS0`, `PI`, `E`, `inf`) are not rows: they are items of `std::constants`, found through the prelude like any library item. Standard-library modules such as `idt`, `transition` and `above` are *not*
 built in: they are declared in the standard library's `std::prelude` (Part VII of the
 specification), and a design that does not load them leaves them `Unresolved`. The `Trait` and `Type` rows are kept equal to the tables H.8 and H.9 of Appendix H (plus `Repr`, `Nature`, `Fn` and the §1 types). Methods of the catalogue get no row: a method on a value needs its receiver's type and stays `Deferred(ReceiverTypeUnknown)`. An associated name written through a generic (`A::WIDTH`) resolves through its bounds: an item of a user trait, a `Repr` member row, `E0161` when `Repr` is the only bound and has no such member, and `Deferred(BuiltinTraitMember)` (silently) through any other built-in trait. A namespace item named like a core
 primitive of §14, or `gnd`, `Nature` or `str`, is `E0457` (`m` and `dtemp` are `E0375`, left to elaboration).
@@ -241,16 +240,28 @@ assert_eq!(class("p"), CallClass::Probe);
 
 ## Members
 
+`Self::NAME` inside a trait resolves through the supertraits, as the name after a generic's bounds does:
+first the trait's own items, then each supertrait in the order written. A user supertrait gives its
+item, `Repr` gives the member row (`Self::WIDTH` is `Repr::WIDTH`), any other built-in supertrait gives
+`Deferred(BuiltinTraitMember)`, and a name found nowhere is `E0161` at the path. Resolution writes the
+slot only.
+
 `e.name` and `e.m()` are linked when the declarations alone decide the type of `e`:
 
 | Receiver | `e.name` resolves to | `e.m()` resolves to |
 | --- | --- | --- |
 | an instance of a known module | the module's item of that name: a port, param, signal or `let` | |
 | a value of a declared struct or bundle type (a port, signal or `let` with that annotated type) | the field | |
-| a carrier of a nature | | in order: the carrier built-ins (`changed`, `prev`, `others`, `inflow`, `level`), the `impl` blocks of the nature (or bundle), then the `impl` blocks of the nature's value type |
+| a carrier of a nature | | in order: the carrier built-ins (`changed`, `prev`, `others`, `inflow`, `level`), the `impl` blocks of the nature (or bundle), then the `impl` blocks of the nature's value type, then a blanket `impl<T: Repr> Tr for T` (or `impl<T> Tr for T`) of a trait that has the method and is in scope at the call |
 | `self` in an `impl` | | a value of the impl's self type, then as above |
 | anything else | `Deferred` | `Deferred` |
 
+* The blanket step, for a `Repr` bound or none, links `d.known()` to `Known::known`; an impl with any other bound is not searched.
+  Only a trait in scope at the call links: declared in, imported into (by name or glob) or reached through the prelude from the
+  namespace that holds the call, as in Rust; a trait of another namespace that is not imported never links. Two traits in scope
+  with the method: the first in declaration order links, with no diagnostic (G.67).
+  The call is listed in that method's `references()`. A value receiver stays `Deferred(ReceiverTypeUnknown)`:
+  the POM does no trait solving, so a type checker links it.
 * A member item that is not `pub` still resolves, and `E0343` is reported at the member name. A
   member that the instance's module does not have stays `Unresolved` and is also `E0343` (§8.4.8).
 * A field a declared struct does not have stays `Unresolved` with no diagnostic: the POM has no
@@ -310,7 +321,7 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 
 | Code | Stage | Defined in | Meaning | Span |
 | --- | --- | --- | --- | --- |
-| `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one | the function's name |
+| `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one; an `extern "intrinsic"` function in a crate other than `std` (the help reads `only the standard library declares intrinsic functions`). `Function::is_intrinsic` is true exactly for the ABI `intrinsic`; an `extern "intrinsic" fn` of `std` is reported nothing and a call to it is an ordinary `CallClass::Function` | the function's name |
 | `E0130` | 6 | `§3.1` | an `impl` block written for a module | the self type of the `impl` |
 | `E0140` | 6 | `§3.2` | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
 | `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path, including a private item or a private namespace of another crate; a first segment that names a crate of the design that is no dependency of the containing crate (the help reads `name it under [dependencies] in Piperine.toml`); `super` at a crate root; an unreadable root file or crate root; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |

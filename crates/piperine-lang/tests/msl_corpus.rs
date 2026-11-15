@@ -10,37 +10,11 @@
 #[path = "support/spec_corpus.rs"]
 mod spec_corpus;
 
-use piperine_lang::msl::parser::{parse, parse_block, parse_expr};
-use spec_corpus::{Block, Class, corpus, extract};
+use piperine_lang::msl::parser::parse;
+use spec_corpus::{Block, Class, corpus, extract, fragment_diagnostics};
 
 fn count(blocks: &[Block], class: Class) -> usize {
     blocks.iter().filter(|b| b.class == class).count()
-}
-
-/// Diagnostics of a fragment, or none when some entry accepts it. A fragment
-/// is a piece of a file, so it is tried as a whole file, as the body of a
-/// block (statements), as the body of a module (params, signals, `let`s,
-/// definitions), and as a list of expressions, one per line.
-fn fragment_diagnostics(text: &str) -> Vec<String> {
-    let as_file = parse(text);
-    if as_file.diagnostics.is_empty() {
-        return Vec::new();
-    }
-    if parse_block(&format!("{{\n{text}\n}}")).1.is_empty() {
-        return Vec::new();
-    }
-    if parse(&format!("module Fragment() {{\n{text}\n}}")).diagnostics.is_empty() {
-        return Vec::new();
-    }
-    let lines: Vec<&str> = text
-        .lines()
-        .map(|l| l.split("//").next().unwrap_or("").trim())
-        .filter(|l| !l.is_empty())
-        .collect();
-    if !lines.is_empty() && lines.iter().all(|l| parse_expr(l).1.is_empty()) {
-        return Vec::new();
-    }
-    as_file.diagnostics.iter().map(|d| format!("{}: {}", d.code, d.message)).collect()
 }
 
 #[test]

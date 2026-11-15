@@ -3,7 +3,7 @@
 //! resolution of every path in types, signatures and bodies, with the
 //! binding errors `E0161`, `E0330` and `E0457`.
 
-use piperine_lang::pom::{BuiltinKind, builtin};
+use piperine_lang::pom::{BUILTINS, BuiltinKind, builtin};
 
 #[test]
 fn builtin_table_has_every_core_primitive() {
@@ -16,11 +16,8 @@ fn builtin_table_has_every_core_primitive() {
     for name in ["u0", "u129", "i0", "i129", "f8", "f64x", "f", "u", "u01", "u+1"] {
         assert!(builtin(name).is_none(), "`{name}` is not a built-in");
     }
-    // Prelude constants and the option variants (section 1).
-    for name in ["Q", "K_B", "EPS0", "PI", "E", "inf"] {
-        let info = builtin(name).expect(name).info();
-        assert_eq!((info.kind, info.section), (BuiltinKind::Const, "§1"), "{name}");
-    }
+    // The prelude constants are items of `std::constants`, not rows (`the_constants_are_not_builtin`);
+    // the option variants stay (section 1).
     for name in ["Some", "None"] {
         assert_eq!(builtin(name).expect(name).info().kind, BuiltinKind::Variant);
     }
@@ -52,6 +49,40 @@ fn builtin_table_has_every_core_primitive() {
     for name in ["idt", "transition", "above", "limexp", "discontinuity"] {
         assert!(builtin(name).is_none(), "`{name}` is not core");
     }
+}
+
+#[test]
+fn the_constants_are_not_builtin() {
+    // STD-15 AC 1: no row for the six constants of section 1.
+    for name in ["Q", "K_B", "EPS0", "PI", "E", "inf"] {
+        assert!(builtin(name).is_none(), "`{name}` is not a built-in");
+        assert!(BUILTINS.iter().all(|row| row.name != name), "the table has no row `{name}`");
+    }
+}
+
+#[test]
+fn the_core_rows_are_unchanged() {
+    // STD-15 AC 4: every other row is the row the table had before the constants left.
+    use BuiltinKind::*;
+    let rows = [
+        ("uN", Type, "§1"), ("iN", Type, "§1"), ("fN", Type, "§1"), ("bool", Type, "§1"), ("usize", Type, "§1"), ("isize", Type, "§1"),
+        ("UInt", Type, "§1"), ("Int", Type, "§1"), ("Float", Type, "§1"), ("Option", Type, "§1"), ("Event", Type, "§13"), ("Analysis", Type, "§11.1"),
+        ("Some", Variant, "§1"), ("None", Variant, "§1"), ("Dc", Variant, "§11.1.1"), ("Transient", Variant, "§11.1.1"), ("Ac", Variant, "§11.1.1"),
+        ("Noise", Variant, "§11.1.1"), ("Static", Variant, "§11.1.1"),
+        ("Repr", Trait, "§2"), ("Nature", Trait, "§4"), ("Fn", Trait, "§3"), ("Clone", Trait, "App. H"), ("Copy", Trait, "App. H"),
+        ("PartialEq", Trait, "App. H"), ("Eq", Trait, "App. H"), ("PartialOrd", Trait, "App. H"), ("Ord", Trait, "App. H"),
+        ("Default", Trait, "App. H"), ("Debug", Trait, "App. H"), ("Hash", Trait, "App. H"),
+        ("str", Type, "§1"), ("gnd", Node, "§6"), ("m", ImplicitParam, "§8.5"), ("dtemp", ImplicitParam, "§8.5"),
+        ("Repr::WIDTH", Member, "§2"), ("Repr::encode", Member, "§2"), ("Repr::decode", Member, "§2"),
+        ("potential", Fn, "§14.1"), ("flow", Fn, "§14.1"), ("ddx", Fn, "§14.2"), ("ac_stim", Fn, "§14.3"), ("temperature", Fn, "§14.4"),
+        ("simparam", Fn, "§14.4"), ("analysis", Fn, "§14.4"), ("now", Fn, "§14.4"), ("freq", Fn, "§14.4"),
+        ("gmin", Fn, "§14.4"), ("source_scale", Fn, "§14.4"),
+        ("ddt", Module, "§14.5"), ("delay", Module, "§14.6"), ("limit", Module, "§14.7"), ("noise", Module, "§14.8"),
+        ("cross", Module, "§14.9"), ("at", Module, "§14.9"), ("settle", Event, "§14.9"), ("bound_step", Statement, "§14.10"),
+        ("changed", Method, "§14.9"), ("prev", Method, "§14.12"), ("others", Method, "§14.12"), ("level", Method, "§14.12"), ("inflow", Method, "§14.1"),
+    ];
+    let table: Vec<(&str, BuiltinKind, &str)> = BUILTINS.iter().map(|r| (r.name, r.kind, r.section)).collect();
+    assert_eq!(table, rows.to_vec());
 }
 
 #[path = "support/pom.rs"]
@@ -145,8 +176,6 @@ fn decl(design: &Design, path: &str) -> Resolution {
     Resolution::Decl(design.find(path).unwrap_or_else(|| panic!("`{path}` is declared")).id())
 }
 
-const PRELUDE_FIXTURE: &str = include_str!("fixtures/pom/prelude.msl");
-
 #[test]
 fn use_and_qualified_paths_resolve() {
     let src = "\
@@ -217,13 +246,15 @@ fn prelude_source_items_are_visible_everywhere() {
     let missing = with_code(&design, "E0161");
     assert_eq!(missing.len(), 1, "{missing:?}");
     assert_eq!(primary_text(&design, missing[0]), "Hidden");
-    // The same through the spec fixture: its natures are there for the asking.
-    let design = std_lib(Design::builder(), PRELUDE_FIXTURE).source("top.msl", "use Electrical;\nuse Bit;\n").build();
-    // (Whether the fixture builds clean by itself is `fixture_prelude_builds_clean`'s question.)
+    // The same through the embedded library: its natures are there for the asking.
+    let design = Design::builder().source("top.msl", "use Electrical;\nuse Bit;\n").build();
+    // (Whether the library builds clean by itself is `embedded_std_builds_clean`'s question.)
     let root_file = design.root().file().id();
     assert!(design.diagnostics().iter().all(|d| d.file != root_file), "{:?}", design.diagnostics());
-    let Resolution::Decl(electrical) = one(&design, "Electrical")[0] else { panic!("Electrical resolves") };
-    assert!(design.decl_data(electrical).file != design.root().file().id());
+    for r in resolutions(&design, "Electrical") {
+        let Resolution::Decl(electrical) = r[0] else { panic!("Electrical resolves") };
+        assert!(design.decl_data(electrical).file != design.root().file().id());
+    }
     assert!(design.root().file().id() == piperine_lang::pom::FileId(0));
     assert!(design.files().last().unwrap().krate().is_std());
 }
@@ -329,10 +360,10 @@ fn builtin_names_resolve_to_table_entries() {
         }
     }
     // A declaration shadows the table; so does an import.
-    // Core primitives and constants are names of expressions too.
-    let exprs = build("fn g() -> f64 { ddt(temperature()) * K_B }");
+    // Core primitives are names of expressions too.
+    let exprs = build("fn g() -> f64 { ddt(temperature()) }");
     assert!(with_code(&exprs, "E0161").is_empty(), "{:?}", exprs.diagnostics());
-    for (name, section) in [("ddt", "§14.5"), ("temperature", "§14.4"), ("K_B", "§1")] {
+    for (name, section) in [("ddt", "§14.5"), ("temperature", "§14.4")] {
         let Resolution::Builtin(id) = one(&exprs, name)[0] else { panic!("`{name}` is a built-in") };
         assert_eq!((id.name().as_str(), id.info().section), (name, section));
     }
@@ -583,24 +614,22 @@ fn f() -> u32 { Mode::B(1); S::K + S::make() + S::X + Tr::run() }
 }
 
 #[test]
-fn fixture_prelude_builds_clean() {
-    // As a prelude beside an empty root, and as the root itself: no diagnostics either way.
-    let as_prelude = std_lib(Design::builder(), PRELUDE_FIXTURE).source("top.msl", "").build();
-    assert!(as_prelude.diagnostics().is_empty(), "{:?}", as_prelude.diagnostics());
-    let as_root = Design::builder().source("prelude.msl", PRELUDE_FIXTURE).build();
-    assert!(as_root.diagnostics().is_empty(), "{:?}", as_root.diagnostics());
-    assert!(as_root.check().is_empty());
+fn embedded_std_builds_clean() {
+    // The embedded library beside an empty root: no diagnostics, a sound design.
+    let design = Design::builder().source("top.msl", "").build();
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert!(design.check().is_empty());
     // It declares what the spec says the prelude does.
-    for name in ["Bit", "Wire", "Electrical", "Thermal", "VSignal"] {
-        assert!(as_root.nature(name).is_some(), "nature `{name}`");
+    let std = design.std_crate();
+    for name in ["carriers::Bit", "nets::Wire", "carriers::Electrical", "carriers::Thermal", "carriers::VSignal"] {
+        assert!(std.find(name).and_then(|d| d.as_nature()).is_some(), "nature `{name}`");
     }
-    for name in ["idt", "above", "transition"] {
-        assert!(as_root.module(name).is_some(), "module `{name}`");
+    for name in ["analog::idt", "analog::above", "analog::transition"] {
+        assert!(std.find(name).and_then(|d| d.as_module()).is_some(), "module `{name}`");
     }
-    // The module `idt` is named by its own block, and the block's generic is the module's.
-    let idt = as_root.module("idt").unwrap();
-    assert_eq!(idt.behaviors().len(), 1);
-    assert_eq!(as_root.module("transition").unwrap().digital_blocks().len(), 1);
+    // The module `idt` is named by its own block, and `transition` has its digital block.
+    assert_eq!(std.find("analog::idt").unwrap().as_module().unwrap().behaviors().len(), 1);
+    assert_eq!(std.find("analog::transition").unwrap().as_module().unwrap().digital_blocks().len(), 1);
 }
 
 /// POM-08 AC 7 and AC 9: a `use` in a block is an item of that block, visible
@@ -763,10 +792,14 @@ fn core_names_cannot_be_redeclared() {
 }
 
 #[test]
-fn fixture_prelude_declares_no_core_name() {
-    let design = Design::builder().source("prelude.msl", PRELUDE_FIXTURE).build();
-    for name in ["Nature", "gnd", "m", "dtemp", "str"] {
-        assert!(design.find(name).is_none(), "the fixture prelude declares `{name}`");
+fn embedded_std_declares_no_core_name() {
+    let design = Design::builder().source("top.msl", "").build();
+    for namespace in design.std_crate().root().submodules() {
+        for item in namespace.items() {
+            if let Some(name) = item.name() {
+                assert!(!["Nature", "gnd", "m", "dtemp", "str"].contains(&name), "std declares `{name}`");
+            }
+        }
     }
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
 }
@@ -1193,4 +1226,290 @@ fn duplicate_items_in_a_block_are_e0162() {
 /// It is a second std file so the fixture's own `//!` comments stay legal.
 fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
     builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
+}
+
+#[test]
+fn transient_is_a_builtin_variant() {
+    // STD-15 AC 3: the analysis kind is `Transient`; `Tran` is not a core name.
+    let info = builtin("Transient").expect("Transient is a built-in").info();
+    assert_eq!((info.kind, info.section), (BuiltinKind::Variant, "§11.1.1"));
+    assert!(builtin("Tran").is_none(), "`Tran` is the module of §22.3.7, not a core name");
+}
+
+const INTRINSIC: &str = "pub extern \"intrinsic\" fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64;\n";
+
+/// The function named `name`, in any crate of the design.
+fn function<'d>(design: &'d Design, name: &str) -> piperine_lang::pom::Function<'d> {
+    let all = design.crates().into_iter().flat_map(|c| c.decls()).filter_map(|d| d.as_function());
+    all.into_iter().find(|f| f.name() == Some(name)).unwrap_or_else(|| panic!("a function `{name}`"))
+}
+
+#[test]
+fn intrinsic_fn_is_accepted_in_std() {
+    // STD-04 AC 1: no diagnostic for an `extern "intrinsic" fn` of the crate `std`.
+    let design = std_lib(Design::builder(), INTRINSIC).source("top.msl", "").build();
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+}
+
+#[test]
+fn intrinsic_fn_outside_std_is_e0125() {
+    // STD-04 AC 2: E0125 at the function's name, with a help line.
+    let src = "extern \"intrinsic\" fn f(x: f64) -> f64;\n";
+    let design = build(src);
+    let found = with_code(&design, "E0125");
+    assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(primary_text(&design, found[0]), "f");
+    assert_eq!(found[0].diagnostic.span().start as usize, src.find("f(").unwrap());
+    assert!(found[0].diagnostic.help.as_deref().is_some_and(|h| h.contains("only the standard library declares intrinsic functions")), "{:?}", found[0].diagnostic.help);
+    assert_eq!(design.diagnostics().len(), 1, "{:?}", design.diagnostics());
+}
+
+#[test]
+fn intrinsic_fn_with_a_body_is_e0125() {
+    // STD-04 AC 3: a body is wrong even in `std`.
+    let std_src = "pub extern \"intrinsic\" fn f(x: f64) -> f64 { x }\n";
+    let design = std_lib(Design::builder(), std_src).source("top.msl", "").build();
+    let found = with_code(&design, "E0125");
+    assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(found[0].diagnostic.span().start as usize, std_src.find("f(").unwrap());
+    assert_eq!(design.diagnostics().len(), 1, "{:?}", design.diagnostics());
+}
+
+#[test]
+fn is_intrinsic_reads_the_abi() {
+    // STD-04 AC 4.
+    let design = std_lib(Design::builder(), &format!("{INTRINSIC}pub fn plain(x: f64) -> f64 {{ x }}\n"))
+        .source("top.msl", "extern \"C\" fn c(x: f64) -> f64;\n")
+        .build();
+    assert!(function(&design, "pnjlim").is_intrinsic());
+    assert!(!function(&design, "plain").is_intrinsic());
+    assert!(!function(&design, "c").is_intrinsic());
+}
+
+#[test]
+fn extern_c_fn_is_not_intrinsic() {
+    // STD-04 AC 5: no diagnostic, and not intrinsic.
+    let design = build("extern \"C\" fn g(x: f64) -> f64;\n");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(function(&design, "g").abi(), Some("C"));
+    assert!(!function(&design, "g").is_intrinsic());
+}
+
+#[test]
+fn a_call_to_an_intrinsic_resolves() {
+    // STD-04 AC 6: the call is `CallClass::Function` and the callee is the std declaration.
+    use piperine_lang::pom::{CallClass, ExprId, ExprKind};
+    let design = std_lib(Design::builder(), INTRINSIC).source("top.msl", "fn g(a: f64) -> f64 { pnjlim(a, a, a, a) }\n").build();
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let call = (0..design.expr_count())
+        .map(|i| design.expr(ExprId(i as u32)))
+        .find(|e| !e.enclosing().file().krate().is_std() && matches!(e.kind(), ExprKind::Call { .. }))
+        .expect("the call");
+    let ExprKind::Call { class, callee, .. } = call.kind() else { unreachable!() };
+    assert_eq!(*class, CallClass::Function);
+    let target = function(&design, "pnjlim").decl().id();
+    assert_eq!(design.expr(*callee).resolution(), Resolution::Decl(target));
+}
+
+#[test]
+fn self_assoc_resolves_through_repr_supertrait() {
+    // STD-05 AC 1: `Self::WIDTH` in `trait Known: Repr` is the built-in member `Repr::WIDTH`.
+    let design = build("trait Known: Repr { fn w(self) -> u32 { Self::WIDTH } }\n");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let member = piperine_lang::pom::builtin_member("Repr", "WIDTH").expect("Repr::WIDTH is a member row");
+    let res = one(&design, "Self::WIDTH");
+    assert_eq!(res, [decl(&design, "Known"), Resolution::Builtin(member)]);
+}
+
+#[test]
+fn self_assoc_resolves_through_a_user_supertrait() {
+    // STD-05 AC 2.
+    let design = build("trait Base { const K: u32 = 1; }\ntrait Sub: Base { fn k(self) -> u32 { Self::K } }\n");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(one(&design, "Self::K"), [decl(&design, "Sub"), decl(&design, "Base::K")]);
+}
+
+#[test]
+fn self_assoc_missing_everywhere_is_e0161() {
+    // STD-05 AC 3: E0161 at the path, for a Repr supertrait and for a user one.
+    for src in [
+        "trait Known: Repr { fn w(self) -> u32 { Self::NOPE } }\n",
+        "trait Base { const K: u32 = 1; }\ntrait Sub: Base { fn k(self) -> u32 { Self::NOPE } }\n",
+        "trait Alone { fn k(self) -> u32 { Self::NOPE } }\n",
+    ] {
+        let design = build(src);
+        let found = with_code(&design, "E0161");
+        assert_eq!(found.len(), 1, "{src}: {:?}", design.diagnostics());
+        assert_eq!(primary_text(&design, found[0]), "Self::NOPE", "{src}");
+        assert_eq!(design.diagnostics().len(), 1, "{src}: {:?}", design.diagnostics());
+    }
+}
+
+/// What the field access or method call with this text resolves to, in the root crate.
+fn member_res(design: &Design, text: &str) -> Resolution {
+    use piperine_lang::pom::{ExprId, ExprKind};
+    let e = (0..design.expr_count())
+        .map(|i| design.expr(ExprId(i as u32)))
+        .find(|e| e.text() == text && !e.enclosing().file().krate().is_std() && matches!(e.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }))
+        .unwrap_or_else(|| panic!("member expression `{text}`"));
+    match e.kind() {
+        ExprKind::Field { res, .. } | ExprKind::MethodCall { res, .. } => *res,
+        _ => unreachable!(),
+    }
+}
+
+const BLANKET: &str = "\
+trait Known { fn known(self) -> bool; }
+impl<T: Repr> Known for T { fn known(self) -> bool { true } }
+nature Lvl { value: f64 }
+";
+
+#[test]
+fn blanket_method_resolves_on_a_carrier() {
+    // STD-06 AC 1: no built-in, no nature impl, a blanket `impl<T: Repr> Known for T`.
+    let design = build(&format!("{BLANKET}module M(p: Lvl) {{ let a = p.known(); }}\n"));
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(member_res(&design, "p.known()"), decl(&design, "Known::known"));
+    // An unbounded blanket `impl<T> Known for T` reads the same.
+    let unbounded = build("trait Known { fn known(self) -> bool; }\nimpl<T> Known for T { fn known(self) -> bool { true } }\nnature Lvl { value: f64 }\nmodule M(p: Lvl) { let a = p.known(); }\n");
+    assert_eq!(member_res(&unbounded, "p.known()"), decl(&unbounded, "Known::known"));
+}
+
+#[test]
+fn a_blanket_trait_out_of_scope_never_links() {
+    // STD-06 AC 1: only a trait visible at the call links: declared in, imported into, or
+    // (for `std`) re-exported by the prelude of the call's namespace. Another namespace's trait,
+    // private or `pub` but not imported, is not in scope.
+    let body = |vis: &str| format!("mod a {{ {vis}trait Hidden {{ fn zz(self) -> bool; }} impl<T: Repr> Hidden for T {{ fn zz(self) -> bool {{ true }} }} }}\nnature Lvl {{ value: f64 }}\n");
+    for vis in ["", "pub "] {
+        let design = build(&format!("{}module M(p: Lvl) {{ let x = p.zz(); }}\n", body(vis)));
+        assert_eq!(member_res(&design, "p.zz()"), Resolution::Unresolved, "`{vis}trait` of another namespace, not imported");
+    }
+    // Imported by name or by glob: in scope.
+    let named = build(&format!("{}use a::Hidden;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", body("pub ")));
+    assert_eq!(member_res(&named, "p.zz()"), decl(&named, "a::Hidden::zz"));
+    let glob = build(&format!("{}use a::*;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", body("pub ")));
+    assert_eq!(member_res(&glob, "p.zz()"), decl(&glob, "a::Hidden::zz"));
+    // Declared in the namespace of the call, though the call sits in a nested module's namespace
+    // that did not import it: not in scope there.
+    let nested = build(&format!("{}mod b {{ module M(p: super::Lvl) {{ let x = p.zz(); }} }}\n", body("pub ")));
+    assert_eq!(member_res(&nested, "p.zz()"), Resolution::Unresolved);
+}
+
+#[test]
+fn a_local_item_named_like_a_prelude_trait_keeps_its_methods() {
+    // N1: the trait is in scope through the prelude although a model item takes its name; the
+    // check is by the trait's declaration, not by the text `Known`.
+    let std = "pub trait Known { fn known(self) -> bool; fn known_or(self, d: bool) -> bool; fn is_known(self) -> bool; }\n\
+        impl<T: Repr> Known for T { fn known(self) -> bool { true } fn known_or(self, d: bool) -> bool { true } fn is_known(self) -> bool { true } }\n";
+    for item in ["struct Known { x: f64 }", "module Known() {}"] {
+        let design = std_lib(Design::builder(), std).source("top.msl", &format!("nature Lvl {{ value: f64 }}\n{item}\nmodule M(p: Lvl) {{ let a = p.known(); let b = p.known_or(true); let c = p.is_known(); }}\n")).build();
+        for call in ["p.known()", "p.known_or(true)", "p.is_known()"] {
+            let want = Resolution::Decl(design.std_crate().find(&format!("prelude::Known::{}", &call[2..call.find('(').unwrap()])).expect("std declares it").id());
+            assert_eq!(member_res(&design, call), want, "{item}: {call}");
+        }
+    }
+}
+
+#[test]
+fn a_trait_imported_under_an_alias_is_in_scope() {
+    // N2: `use a::Hidden as H;` binds `H`, and the trait's methods are in scope all the same.
+    let src = format!("{}use a::Hidden as H;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", "mod a { pub trait Hidden { fn zz(self) -> bool; } impl<T: Repr> Hidden for T { fn zz(self) -> bool { true } } }\nnature Lvl { value: f64 }\n");
+    let design = build(&src);
+    assert_eq!(member_res(&design, "p.zz()"), decl(&design, "a::Hidden::zz"));
+}
+
+#[test]
+fn two_visible_blankets_keep_declaration_order() {
+    // G.67: no ambiguity code exists; with two visible blanket traits of one method name the first
+    // in declaration order links, silently.
+    let design = build(
+        "trait A { fn zz(self) -> bool; }\ntrait B { fn zz(self) -> bool; }\nimpl<T: Repr> A for T { fn zz(self) -> bool { true } }\nimpl<T: Repr> B for T { fn zz(self) -> bool { false } }\nnature Lvl { value: f64 }\nmodule M(p: Lvl) { let x = p.zz(); }\n",
+    );
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(member_res(&design, "p.zz()"), decl(&design, "A::zz"));
+}
+
+#[test]
+fn blanket_method_resolves_on_self_in_a_nature_impl() {
+    // STD-06 AC 2.
+    let design = build(&format!("{BLANKET}impl Lvl {{ fn again(self) -> bool {{ self.known() }} }}\n"));
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(member_res(&design, "self.known()"), decl(&design, "Known::known"));
+}
+
+#[test]
+fn a_nature_impl_wins_over_a_blanket() {
+    // STD-06 AC 3.
+    let design = build(&format!("{BLANKET}impl Lvl {{ fn known(self) -> bool {{ false }} }}\nmodule M(p: Lvl) {{ let a = p.known(); }}\n"));
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(member_res(&design, "p.known()"), decl(&design, "impl Lvl.known"));
+}
+
+#[test]
+fn an_unlinked_member_keeps_its_slot() {
+    // STD-06 AC 4: no rule links it; a known receiver stays `Unresolved`, any other `Deferred`.
+    let src = format!(
+        "{BLANKET}trait Other {{ fn other(self) -> bool; }}\nimpl<T: Other> Known2 for T {{ fn two(self) -> bool {{ true }} }}\ntrait Known2 {{ fn two(self) -> bool; }}\n\
+         fn f(v: f64) -> bool {{ v.known() }}\nmodule M(p: Lvl) {{ let a = p.nothing(); let b = p.two(); }}\n"
+    );
+    let design = build(&src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    // A name no trait has.
+    assert_eq!(member_res(&design, "p.nothing()"), Resolution::Unresolved);
+    // A blanket bounded by a trait that is not `Repr` is not searched.
+    assert_eq!(member_res(&design, "p.two()"), Resolution::Unresolved);
+    // A value receiver needs its type: no trait solving.
+    assert_eq!(member_res(&design, "v.known()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
+}
+
+#[test]
+fn a_blanket_call_is_a_reference_of_the_trait_method() {
+    // STD-06 AC 5: `known`, `known_or` and `is_known` calls are listed by `references()`.
+    let src = "\
+trait Known { fn known(self) -> bool; fn known_or(self, d: f64) -> f64; fn is_known(self) -> bool; }
+impl<T: Repr> Known for T { fn known(self) -> bool { true } fn known_or(self, d: f64) -> f64 { d } fn is_known(self) -> bool { true } }
+nature Lvl { value: f64 }
+module M(p: Lvl) { let a = p.known(); let b = p.known_or(1.0); let c = p.is_known(); }
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    for (method, call) in [("known", "p.known()"), ("known_or", "p.known_or(1.0)"), ("is_known", "p.is_known()")] {
+        let refs = design.find(&format!("Known::{method}")).expect(method).references();
+        let texts: Vec<String> = refs.iter().filter_map(|r| if let piperine_lang::pom::Reference::Member(e) = r { Some(e.text().to_string()) } else { None }).collect();
+        assert_eq!(texts, [call], "{method}");
+    }
+}
+
+#[test]
+fn k_b_resolves_to_std_constants() {
+    // STD-15 AC 2: a model naming `K_B` reaches the constant of `std::constants`.
+    let design = Design::builder().source("top.msl", "const X: f64 = K_B;\n").build();
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let all = resolutions(&design, "K_B");
+    assert!(!all.is_empty(), "`K_B` is written");
+    for r in all {
+        let Resolution::Decl(id) = r[0] else { panic!("K_B resolves to a declaration") };
+        let item = design.decl(id);
+        assert_eq!(item.qualified_name(), "constants::K_B");
+        assert!(item.krate().is_std());
+    }
+}
+
+#[test]
+fn a_model_constant_hides_the_prelude_constant() {
+    // STD-15 AC 5: a namespace item named like a prelude constant is not E0457 and wins.
+    // Built over the embedded std, where the prelude really carries `Q` and `PI`.
+    let src = "const Q: f64 = 1.0;\nconst Y: f64 = Q;\nmod m { const PI: f64 = 3.0; const Z: f64 = PI; }\n";
+    let design = Design::builder().source("top.msl", src).build();
+    assert!(with_code(&design, "E0457").is_empty(), "{:?}", design.diagnostics());
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let in_root = |res: Resolution| match res {
+        Resolution::Decl(id) => design.files()[design.decl_data(id).file.index()].text() == src,
+        _ => false,
+    };
+    // The std declares its own `Q`/`PI` paths too: the root's use is the one resolving into the root.
+    let hits = |name: &str| resolutions(&design, name).iter().filter(|p| in_root(p[0])).count();
+    assert_eq!(hits("Q"), 1, "the root's `Q` resolves to the root declaration, not the prelude's");
+    assert_eq!(hits("PI"), 1, "the root's `PI` resolves to `m::PI`, not the prelude's");
 }

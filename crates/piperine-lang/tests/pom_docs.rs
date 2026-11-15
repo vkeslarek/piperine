@@ -417,3 +417,46 @@ fn mapping_has_a_crate_row() {
         assert!(row.contains(needed), "the `crate` row lacks {needed}: {row}");
     }
 }
+
+#[test]
+fn resolution_doc_describes_intrinsics() {
+    // STD-17 AC 2: the page names `extern "intrinsic"` and `is_intrinsic` where it describes E0125.
+    let page = page_of("resolution.md");
+    let row = page.lines().find(|l| l.starts_with("| `E0125` |")).expect("the E0125 row");
+    assert!(row.contains("extern \"intrinsic\"") && row.contains("`std`"), "{row}");
+    let shape = page.lines().find(|l| l.contains("is_intrinsic")).expect("a line naming `is_intrinsic`");
+    assert!(shape.contains("extern \"intrinsic\""), "{shape}");
+}
+
+#[test]
+fn resolution_doc_describes_the_supertrait_rule() {
+    // STD-17 AC 3: `Self::NAME` in a trait resolves through the supertraits.
+    let page = page_of("resolution.md");
+    let line = page.lines().find(|l| l.contains("Self::NAME") && l.contains("supertrait")).expect("a line on `Self::NAME` and supertraits");
+    assert!(line.contains("trait"), "{line}");
+}
+
+#[test]
+fn members_doc_lists_the_blanket_step() {
+    // STD-17 AC 4: the Members table ends the carrier row with the blanket implementation.
+    let page = page_of("resolution.md");
+    let row = page.lines().find(|l| l.starts_with("| a carrier of a nature")).expect("the carrier row of the Members table");
+    assert!(row.contains("blanket") && row.contains("impl<T: Repr>"), "{row}");
+    assert!(row.rfind("blanket") > row.rfind("value type"), "the blanket step comes last: {row}");
+    let rule = page.lines().find(|l| l.contains("blanket") && l.contains("Repr") && !l.starts_with('|')).expect("a sentence on the blanket step");
+    assert!(rule.contains("not searched") || rule.contains("other bound"), "{rule}");
+}
+
+#[test]
+fn the_builtin_table_doc_has_no_const_row() {
+    // STD-17 AC 1: the table has no `Const` row and the page says where the constants went.
+    let page = page_of("resolution.md");
+    let table = section_rows(&page, "## The built-in table");
+    assert!(!table.is_empty(), "the built-in table is found");
+    assert!(table.iter().all(|r| r.first().is_none_or(|c| c.as_str() != "`Const`")), "no `Const` row");
+    let sentence = page.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(sentence.contains("`std::constants`") && sentence.contains("six constants"), "the page says the six constants are items of `std::constants`");
+    let model = page_of("model.md");
+    let kinds = section_rows(&model, "### `BuiltinKind`");
+    assert!(kinds.iter().all(|r| r.first().is_none_or(|c| c.as_str() != "`Const`")), "BuiltinKind has no `Const` variant row");
+}

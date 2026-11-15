@@ -1,0 +1,1 @@
+module Capacitor(p: Electrical, n: Electrical) { c: f64; }

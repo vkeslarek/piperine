@@ -56,7 +56,7 @@ The language adds **65** constructs. Everything else a model uses is the standar
 | 20 | SI suffixes | literal | `1k`, `2.2u`: an `f64` times a power of ten | A.2 |
 | 21 | `Unknown` | literal | every level unknown, of any `Repr` type | §3.3, A.3 |
 | 22 | `Event` | type | something that fires at instants | §13 |
-| 23 | `Analysis` | type | the closed enum `Dc`, `Tran`, `Ac`, `Noise`, `Static` | §11.1 |
+| 23 | `Analysis` | type | the closed enum `Dc`, `Transient`, `Ac`, `Noise`, `Static` | §11.1 |
 | 24 | `uN` / `iN` / `fN` | types | `UInt<N>`, `Int<N>`, `Float<N>` and their short names | §1 |
 | 25 | `Repr` | trait | lays a value type out on levels | §2 |
 | 26 | `Nature` | trait | the bound satisfied by every nature | §6 rule 4, §8.3 |
