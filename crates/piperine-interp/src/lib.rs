@@ -50,6 +50,19 @@ impl Interpreter {
         if !entries.is_empty() {
             return Err(Rejected { entries });
         }
+        // R1: the interpreter is frozen at the M1 analog subset; a digital body is named, not run.
+        let digital: Vec<Broken> = ir
+            .bodies()
+            .filter(|b| !(b.carriers().is_empty() && b.drives().is_empty() && b.events().is_empty() && b.reactions().is_empty()))
+            .map(|b| Broken {
+                item: format!("body {}", b.name()),
+                origin: b.origin().clone(),
+                what: format!("body {} has carriers, drives or reactions: the interpreter runs the M1 analog subset only (use the compiled backend)", b.name()),
+            })
+            .collect();
+        if !digital.is_empty() {
+            return Err(Rejected { entries: digital });
+        }
         let modules = ir
             .bodies()
             .map(|body| {
