@@ -107,6 +107,10 @@ produce the result of the following procedure.
 5. *Advance* to the next time point (§17.2). First the host `set`s due at `t` apply, after
    the settle phase; the first step after `t` reads them (§15.2, "Host `set`").
 
+> **Note.** The solver's pass before step 3.4 (`run_digital_at`) hands elements no analog
+> solution: a reaction there reads the previous time point only through the values an element
+> cached at the last accepted step, which the solver crates do not show (Appendix C.2).
+
 Something is **pending** at `(t, n + 1)` when a commit is due there or an event fires there.
 The table fixes the microstep at which each event fires; §13 defines the events themselves.
 
