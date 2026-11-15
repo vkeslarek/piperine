@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use piperine_abi::caller::Handle;
 use piperine_abi::device::{Access, cell_lens};
-use piperine_abi::raw::{Cell, DEFAULT, Function, GROUND, Shape, cell, input, kind, part};
+use piperine_abi::raw::{Cell, DEFAULT, Function, GROUND, Shape, cell, input, kind, part, watch};
 use piperine_abi::validate::validate;
 
 use super::device_error;
@@ -82,6 +82,10 @@ pub(crate) struct FnPlan {
     pub stim: bool,
     /// Writes a `NOISE` input's `PSD`: needed by a noise sweep only.
     pub noise: bool,
+    /// Writes a `VAR`, `CROSS` or `CAP` watch: needed at an accepted solution.
+    pub watch: bool,
+    /// `(write slot, watch)` of each `TRACE` watch it writes.
+    pub traces: Vec<(usize, usize)>,
 }
 
 /// One term: its rows and the columns its partials reach.
@@ -133,6 +137,20 @@ pub(crate) struct InstancePlan {
     pub functions: Vec<FnPlan>,
     pub terms: Vec<TermPlan>,
     pub inputs: Vec<InputPlan>,
+    pub watches: Vec<WatchPlan>,
+}
+
+/// One watch (abi.md §4.3).
+#[derive(Debug)]
+pub(crate) struct WatchPlan {
+    pub name: String,
+    pub origin: String,
+    /// `VAR`, `CROSS`, `CAP` or `TRACE`.
+    pub kind: u32,
+    /// A `CROSS` watch's event pin.
+    pub event: u32,
+    /// The function and write slot of its `VALUE`.
+    pub value: Option<(usize, usize)>,
 }
 
 /// The analog half of bind: every instance's analog functions, their cells'
@@ -142,6 +160,9 @@ pub struct AnalogPlan {
     pub(crate) instances: Vec<InstancePlan>,
     /// The byte size of each discrete slot.
     pub(crate) slots: Vec<usize>,
+    /// The unknown each continuous pin read by a reaction samples, in
+    /// instance, reaction and read order; `None` for ground.
+    pub(crate) samples: Vec<Option<usize>>,
     pattern: Vec<(AnalogReference, AnalogReference)>,
 }
 
@@ -156,8 +177,9 @@ impl AnalogPlan {
     pub fn bind(instances: Vec<AnalogInstance>, netlist: &Netlist) -> Result<AnalogPlan, Error> {
         let mut bound = Vec::with_capacity(instances.len());
         let mut slots = Vec::new();
+        let mut samples = Vec::new();
         for inst in instances {
-            bound.push(bind_instance(inst, netlist, &mut slots)?);
+            bound.push(bind_instance(inst, netlist, &mut slots, &mut samples)?);
         }
         let mut seen = HashSet::new();
         let mut pattern = Vec::new();
@@ -176,7 +198,7 @@ impl AnalogPlan {
             }
         }
         let slots = slots.into_iter().map(|s| s.unwrap_or(0)).collect();
-        Ok(AnalogPlan { instances: bound, slots, pattern })
+        Ok(AnalogPlan { instances: bound, slots, samples, pattern })
     }
 
     /// The matrix positions the declared terms and partials can reach, each once.
@@ -253,7 +275,12 @@ fn source(path: &str, shape: &Shape, pins: &[AnalogBinding], f: &Function, c: &C
     })
 }
 
-fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option<usize>>) -> Result<InstancePlan, Error> {
+fn bind_instance(
+    inst: AnalogInstance,
+    netlist: &Netlist,
+    slots: &mut Vec<Option<usize>>,
+    samples: &mut Vec<Option<usize>>,
+) -> Result<InstancePlan, Error> {
     let AnalogInstance { path, handle, pins } = inst;
     let shape = handle.shape();
     validate(shape).map_err(|e| device_error(format!("instance `{path}`: {e}")))?;
@@ -353,6 +380,29 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
         }
     }
 
+    // The continuous pins the digital side's reactions read (abi.md R2).
+    for r in shape.reactions.iter() {
+        for c in r.reads.iter() {
+            let continuous = shape.pins.get(c.index as usize).is_some_and(|p| p.kind == kind::CONTINUOUS);
+            if c.kind == cell::PIN && continuous {
+                samples.push(match &pins[c.index as usize] {
+                    AnalogBinding::Unknown(r) => r.idx(),
+                    _ => None,
+                });
+            }
+        }
+    }
+    let mut watches: Vec<WatchPlan> = shape
+        .watches
+        .iter()
+        .map(|w| WatchPlan {
+            name: w.name.as_str().into(),
+            origin: w.origin.as_str().into(),
+            kind: w.kind,
+            event: w.event,
+            value: None,
+        })
+        .collect();
     let mut inputs: Vec<InputPlan> = shape
         .inputs
         .iter()
@@ -384,6 +434,7 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
                 (cell::INPUT, part::RE) => inputs[c.index as usize].re = Some((fi, w)),
                 (cell::INPUT, part::IM) => inputs[c.index as usize].im = Some((fi, w)),
                 (cell::INPUT, part::PSD) => inputs[c.index as usize].psd = Some((fi, w)),
+                (cell::WATCH, _) => watches[c.index as usize].value = Some((fi, w)),
                 (cell::TERM, part::TIME) => terms[c.index as usize].td = Some((fi, w)),
                 _ => {}
             }
@@ -451,11 +502,23 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
             limits,
             stim: writes.iter().any(|c| c.kind == cell::INPUT && matches!(c.part, part::RE | part::IM)),
             noise: writes.iter().any(|c| c.kind == cell::INPUT && c.part == part::PSD),
+            watch: writes.iter().any(|c| {
+                c.kind == cell::WATCH && shape.watches.get(c.index as usize).is_some_and(|w| w.kind != watch::TRACE)
+            }),
+            traces: writes
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    c.kind == cell::WATCH && shape.watches.get(c.index as usize).is_some_and(|w| w.kind == watch::TRACE)
+                })
+                .map(|(w, c)| (w, c.index as usize))
+                .collect(),
         });
     }
     if functions.is_empty() {
         terms.clear();
         inputs.clear();
+        watches.clear();
     }
-    Ok(InstancePlan { path, handle, functions, terms, inputs })
+    Ok(InstancePlan { path, handle, functions, terms, inputs, watches })
 }

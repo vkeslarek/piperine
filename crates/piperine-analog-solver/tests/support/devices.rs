@@ -9,7 +9,7 @@ use std::ptr::NonNull;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW};
+use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW, REAL};
 use piperine_abi::raw::{
     Cell, Created, DEFAULT, Eval as RawEval, GROUND, Instance, List, Module, Note, Partial, React as RawReact, Shape,
     Statement, Str, Value, ambient, cell, fn_flag, global, input, op, part, pin_flag, role, status, watch,
@@ -440,7 +440,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 24] = [const { OnceLock::new() }; 24];
+    static M: [OnceLock<Module>; 27] = [const { OnceLock::new() }; 27];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -466,6 +466,9 @@ pub fn modules() -> Modules {
         noisy: module_of::<NoisyResistor>(&M[21], "NoisyResistor"),
         split: module_of::<Split>(&M[22], "Split"),
         flicker: module_of::<Flicker>(&M[23], "Flicker"),
+        capper: module_of::<Capper>(&M[24], "Capper"),
+        tracer: module_of::<Tracer>(&M[25], "Tracer"),
+        sample_hold: module_of::<SampleHold>(&M[26], "SampleHold"),
     }
 }
 
@@ -496,6 +499,9 @@ pub struct Modules {
     pub noisy: &'static Module,
     pub split: &'static Module,
     pub flicker: &'static Module,
+    pub capper: &'static Module,
+    pub tracer: &'static Module,
+    pub sample_hold: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)
@@ -1464,6 +1470,147 @@ impl Device for Flicker {
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+// ─── Watch fixtures ─────────────────────────────────────────────────────────
+
+/// Two step-size caps.
+/// pins: c1=0, c2=1 (PARAM F64); p=2 (PORT continuous)
+/// watches: W0 CAP "a" = c1·(1 + v(p)), W1 CAP "b" = c2
+/// fn 0 "caps": reads [p, c1, c2] writes [W0, W1]
+pub struct Capper;
+static CAPPER: OnceLock<ShapeRef> = OnceLock::new();
+
+fn cap_watch(name: &'static str) -> WatchSpec<'static> {
+    WatchSpec { name, origin: "fixture:capper", kind: watch::CAP, layout: &F64, event: 0, ttol: DEFAULT, etol: DEFAULT }
+}
+
+fn capper_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let (c1, c2) = (s.pin(param("c1")), s.pin(param("c2")));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let w0 = s.watch(cap_watch("a"));
+    let w1 = s.watch(cap_watch("b"));
+    let w = |index| Cell { kind: cell::WATCH, index, part: part::VALUE };
+    s.function(FunctionSpec {
+        name: "caps",
+        reads: vec![pin(p), pin(c1), pin(c2)],
+        writes: vec![w(w0), w(w1)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Capper {
+    fn prototype() -> &'static Shape {
+        shared(&CAPPER, capper_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Capper, Arc::clone(shared(&CAPPER, capper_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (v, c1, c2) = (cx.f64(0), cx.f64(1), cx.f64(2));
+        cx.set(0, c1 * (1.0 + v));
+        cx.set(1, c2);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A conductance that traces its voltage whenever it exceeds 0.5 V.
+/// pins: p=0 (PORT continuous)
+/// terms: T0 FLOW {p, GROUND} "g" = v(p)     watches: W0 TRACE "hi" (layout REAL)
+/// fn 0 "g": reads [p] writes [T0, W0] partials (0←0)=1; W0 = {v, known} when v > 0.5,
+///           else left empty (all zero, P3)
+pub struct Tracer;
+static TRACER: OnceLock<ShapeRef> = OnceLock::new();
+
+fn tracer_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let t0 = s.term(flow("g", op::FLOW, p, GROUND));
+    let w0 = s.watch(WatchSpec {
+        name: "hi",
+        origin: "fixture:tracer:W0",
+        kind: watch::TRACE,
+        layout: &REAL,
+        event: 0,
+        ttol: DEFAULT,
+        etol: DEFAULT,
+    });
+    s.function(FunctionSpec {
+        name: "g",
+        reads: vec![pin(p)],
+        writes: vec![term(t0), Cell { kind: cell::WATCH, index: w0, part: part::VALUE }],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Tracer {
+    fn prototype() -> &'static Shape {
+        shared(&TRACER, tracer_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Tracer, Arc::clone(shared(&TRACER, tracer_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let v = cx.f64(0);
+        cx.set(0, v);
+        cx.jac()[0] = 1.0;
+        if v > 0.5 {
+            let rec = cx.out_bytes(1);
+            rec[..8].copy_from_slice(&v.to_le_bytes());
+            rec[8] = 1;
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A sample-and-hold: a reaction reads a continuous pin.
+/// pins: inp=0 (PORT continuous); clk=1 (PORT event); out=2 (PORT REAL)
+/// reaction 0 "sample": on [clk] reads [inp] writes [S0 {out}]
+pub struct SampleHold;
+static SAMPLE_HOLD: OnceLock<ShapeRef> = OnceLock::new();
+
+fn sample_hold_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let inp_ = s.pin(PinSpec::continuous("inp", role::PORT));
+    let clk = s.pin(PinSpec::event("clk", role::PORT));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &REAL));
+    s.reaction(ReactionSpec {
+        name: "sample",
+        on: vec![clk],
+        reads: vec![pin(inp_)],
+        writes: vec![Statement { pin: out, offset: 0, len: 16, flags: 0, min_after: 0.0 }],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for SampleHold {
+    fn prototype() -> &'static Shape {
+        shared(&SAMPLE_HOLD, sample_hold_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SampleHold, Arc::clone(shared(&SAMPLE_HOLD, sample_hold_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        let mut real = [0u8; 16];
+        real[..8].copy_from_slice(&cx.f64(0).to_le_bytes());
+        real[8] = 1;
+        cx.commit(0, &real, 0.0)?;
         Ok(Flow::Continue)
     }
 }

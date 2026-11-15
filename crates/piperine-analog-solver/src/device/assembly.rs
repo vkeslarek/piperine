@@ -13,6 +13,7 @@ use super::delay::{Delayed, stamp_delay};
 use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
+use super::watch::{Accepted, TraceRecord, Watched, accept_watches, record_traces};
 use super::small_signal::{ComplexStamps, NoiseColumn, noise_columns, response, stamp_matrix, stimulus};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
 use crate::error::Error;
@@ -77,6 +78,8 @@ pub(crate) struct InstanceState {
     pub ddt: Vec<History>,
     /// Per term; used by `DELAY` terms only.
     pub delay: Vec<Delayed>,
+    /// Per watch.
+    pub watched: Vec<Watched>,
 }
 
 /// What a rejected step must undo (abi.md §5 I8): every term history and
@@ -86,6 +89,7 @@ pub struct AssemblySnapshot {
     ddt: Vec<Vec<History>>,
     held: Vec<Vec<Held>>,
     delay: Vec<Vec<Delayed>>,
+    watched: Vec<Vec<Watched>>,
 }
 
 /// The device assembly of one circuit: its plan, the discrete slots its
@@ -97,6 +101,10 @@ pub struct Assembly {
     previous: Vec<Vec<u8>>,
     pub(crate) state: Vec<InstanceState>,
     scratch: Vec<u8>,
+    /// `TRACE` records not yet drained; never part of a snapshot (A5).
+    traces: Vec<TraceRecord>,
+    /// Newton iterations since the last recorded converged solve.
+    iteration: u64,
 }
 
 impl Assembly {
@@ -120,9 +128,10 @@ impl Assembly {
                 held: vec![Held::default(); inst.inputs.len()],
                 ddt: vec![History::default(); inst.terms.len()],
                 delay: vec![Delayed::default(); inst.terms.len()],
+                watched: vec![Watched::default(); inst.watches.len()],
             })
             .collect();
-        Assembly { previous: slots.clone(), slots, plan, state, scratch: Vec::new() }
+        Assembly { previous: slots.clone(), slots, plan, state, scratch: Vec::new(), traces: Vec::new(), iteration: 0 }
     }
 
     /// The plan this assembly runs.
@@ -156,10 +165,13 @@ impl Assembly {
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             for pass in [true, false] {
                 for (fi, f) in inst.functions.iter().enumerate() {
-                    let needed = f.rows || (need.stim && f.stim) || (need.noise && f.noise);
+                    let needed =
+                        f.rows || (need.stim && f.stim) || (need.noise && f.noise) || (need.watch && f.watch);
                     if needed && f.limits == pass {
                         let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
-                        run(inst, f, &mut st.fns[fi], &ctx, &mut self.scratch)?;
+                        if run(inst, f, &mut st.fns[fi], &ctx, &mut self.scratch)? {
+                            record_traces(inst, f, &st.fns[fi], self.iteration, &mut self.traces);
+                        }
                     }
                 }
                 if pass {
@@ -188,17 +200,22 @@ impl Assembly {
     // Reason: `x̂` is the `LIMITED` written in the iteration's own evaluation,
     // which already ran at the iterate; the next solution is not read.
     pub fn end_iteration(&mut self) {
+        self.iteration += 1;
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             advance(inst, st, 2);
         }
     }
 
-    /// Accepts the solution `x` at `amb.time`: evaluates there, every written
-    /// limit's `LAST` becomes its `x̂` with `AGE = 1`, and every `DELAY`
-    /// term's history gains its value.
-    pub fn accept(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
-        self.evaluate(x, amb)?;
-        for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
+    /// Accepts the solution `x` at `amb.time`: evaluates there, with the
+    /// functions writing `VAR`, `CROSS` and `CAP` watches; every written
+    /// limit's `LAST` becomes its `x̂` with `AGE = 1`; every `DELAY` term's
+    /// history gains its value; the watches report (see `watch`).
+    pub fn accept(&mut self, x: &[f64], amb: Ambient) -> Result<Accepted, Error> {
+        self.evaluate_for(x, amb, Need::ACCEPT)?;
+        self.iteration = 0;
+        let mut acc = Accepted { fired: Vec::new(), cap: f64::INFINITY };
+        for (index, (inst, st)) in self.plan.instances.iter().zip(self.state.iter_mut()).enumerate() {
+            accept_watches(index, inst, st, &mut acc)?;
             advance(inst, st, 1);
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DELAY {
@@ -207,7 +224,26 @@ impl Assembly {
                 }
             }
         }
-        Ok(())
+        Ok(acc)
+    }
+
+    /// The bytes of `VAR` watch `name` of instance `path` at the last
+    /// accepted solution.
+    pub fn var(&self, path: &str, name: &str) -> Option<&[u8]> {
+        let i = self.plan.instances.iter().position(|inst| inst.path == path)?;
+        let w = self.plan.instances[i].watches.iter().position(|w| w.name == name)?;
+        self.state[i].watched[w].var.as_deref()
+    }
+
+    /// Every `TRACE` record written since the last drain, in order.
+    pub fn drain_traces(&mut self) -> Vec<TraceRecord> {
+        std::mem::take(&mut self.traces)
+    }
+
+    /// The values at `x` of the continuous pins the digital side's reactions
+    /// read, in instance, reaction and read order (0 for ground).
+    pub fn samples(&self, x: &[f64]) -> Vec<f64> {
+        self.plan.samples.iter().map(|s| s.map_or(0.0, |i| x[i])).collect()
     }
 }
 
@@ -305,6 +341,7 @@ impl Assembly {
     // no assembly evaluated (the last assemble ran at the iterate before it).
     pub fn push_stage(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
         self.evaluate(x, amb)?;
+        self.iteration = 0;
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DDT {
@@ -322,6 +359,7 @@ impl Assembly {
             ddt: self.state.iter().map(|s| s.ddt.clone()).collect(),
             held: self.state.iter().map(|s| s.held.clone()).collect(),
             delay: self.state.iter().map(|s| s.delay.clone()).collect(),
+            watched: self.state.iter().map(|s| s.watched.clone()).collect(),
         }
     }
 
@@ -331,6 +369,7 @@ impl Assembly {
             st.ddt.clone_from(&snap.ddt[i]);
             st.held.clone_from(&snap.held[i]);
             st.delay.clone_from(&snap.delay[i]);
+            st.watched.clone_from(&snap.watched[i]);
         }
     }
 }
@@ -348,14 +387,17 @@ pub(crate) struct Need {
     pub stim: bool,
     /// `NOISE` densities (a noise sweep).
     pub noise: bool,
+    /// `VAR`, `CROSS` and `CAP` watches (an accepted solution).
+    pub watch: bool,
     /// A small-signal linearization: every limit holds `x̂ = x`.
     pub small_signal: bool,
 }
 
 impl Need {
-    pub const NEWTON: Need = Need { stim: false, noise: false, small_signal: false };
-    pub const AC: Need = Need { stim: true, noise: false, small_signal: true };
-    pub const NOISE: Need = Need { stim: false, noise: true, small_signal: true };
+    pub const NEWTON: Need = Need { stim: false, noise: false, watch: false, small_signal: false };
+    pub const AC: Need = Need { stim: true, noise: false, watch: false, small_signal: true };
+    pub const NOISE: Need = Need { stim: false, noise: true, watch: false, small_signal: true };
+    pub const ACCEPT: Need = Need { stim: false, noise: false, watch: true, small_signal: false };
 }
 
 /// Everything a read cell's bytes come from.
@@ -393,20 +435,24 @@ impl Reads<'_> {
     }
 }
 
-/// Calls `f` unless its read bytes are those of its last call (F3).
+/// Calls `f` unless its read bytes are those of its last call (F3);
+/// whether it was called. Its `TRACE` buffers start each call empty (A5).
 pub(crate) fn run(
     inst: &InstancePlan,
     f: &FnPlan,
     st: &mut FnState,
     ctx: &Reads<'_>,
     scratch: &mut Vec<u8>,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     scratch.clear();
     for (source, len) in &f.reads {
         ctx.push(*source, *len, scratch);
     }
     if st.valid && st.read == *scratch {
-        return Ok(());
+        return Ok(false);
+    }
+    for (slot, _) in &f.traces {
+        st.out[*slot].fill(0);
     }
     let mut at = 0;
     let input: Vec<&[u8]> = f
@@ -427,7 +473,7 @@ pub(crate) fn run(
     st.read.clear();
     st.read.extend_from_slice(scratch);
     st.valid = true;
-    Ok(())
+    Ok(true)
 }
 
 /// A4: every term value, limit iterate and seeded partial a Newton solve

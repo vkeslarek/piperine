@@ -9,12 +9,14 @@ mod delay;
 mod flow;
 mod limit;
 mod small_signal;
+mod watch;
 pub mod plan;
 
 pub use assembly::{Ambient, Assembly, AssemblySnapshot};
 pub use ddt::Stage;
 pub use limit::LimitState;
 pub use small_signal::{ComplexStamps, NoiseColumn};
+pub use watch::{Accepted, TraceRecord};
 pub use plan::{AnalogBinding, AnalogInstance, AnalogPlan};
 
 use crate::error::{Error, SolverDomain};

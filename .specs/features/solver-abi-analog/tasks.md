@@ -271,12 +271,12 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `a_var_watch_is_readable_at_an_accepted_solution` passes (C16)
-- [ ] Test `a_cross_watch_fires_on_a_rising_sign_change` passes: `≤ 0` to `> 0` fires, `> 0` to `> 0` and a falling change do not (C17)
-- [ ] Test `accept_reports_the_smallest_cap` passes (C18)
-- [ ] Test `a_trace_record_survives_a_rejected_step` passes: records written before a `restore` are still drained, each with its iteration number (C19)
-- [ ] Test `samples_are_the_continuous_pins_reactions_read` passes
-- [ ] Gate: full
+- [x] Test `a_var_watch_is_readable_at_an_accepted_solution` passes (C16)
+- [x] Test `a_cross_watch_fires_on_a_rising_sign_change` passes: `≤ 0` to `> 0` fires, `> 0` to `> 0` and a falling change do not (C17)
+- [x] Test `accept_reports_the_smallest_cap` passes (C18)
+- [x] Test `a_trace_record_survives_a_rejected_step` passes: records written before a `restore` are still drained, each with its iteration number (C19)
+- [x] Test `samples_are_the_continuous_pins_reactions_read` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
