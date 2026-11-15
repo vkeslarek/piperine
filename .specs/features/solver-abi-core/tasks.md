@@ -302,12 +302,12 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] `sub_solvers_depend_on_no_workspace_crate` is renamed `sub_solvers_depend_on_the_abi_crate_only` and allows exactly `piperine-abi` (C22); its self-test still catches a planted dependency on the other sub-solver
-- [ ] Test `abi_crate_is_a_leaf` asserts `piperine-abi` has no dependency (C23)
-- [ ] Test `instruction_files_and_state_name_the_abi_crate` of `workspace_shape.rs` asserts `CLAUDE.md` and `AGENTS.md` name `piperine-abi` and `.specs/STATE.md` carries `### MD-61` (C24)
-- [ ] MD-61 is written in the form of MD-60 (decision, the user's words where they exist, trade-off, scope, status) and says it amends MD-60's "no in-tree crate sits under any of them"; its status is `Proposed` until the user confirms
-- [ ] `cargo test -p piperine-lang --test suite_hygiene` passes
-- [ ] Gate: build
+- [x] `sub_solvers_depend_on_no_workspace_crate` is renamed `sub_solvers_depend_on_the_abi_crate_only` and allows exactly `piperine-abi` (C22); its self-test still catches a planted dependency on the other sub-solver
+- [x] Test `abi_crate_is_a_leaf` asserts `piperine-abi` has no dependency (C23)
+- [x] Test `instruction_files_and_state_name_the_abi_crate` of `workspace_shape.rs` asserts `CLAUDE.md` and `AGENTS.md` name `piperine-abi` and `.specs/STATE.md` carries `### MD-61` (C24)
+- [x] MD-61 is written in the form of MD-60 (decision, the user's words where they exist, trade-off, scope, status) and says it amends MD-60's "no in-tree crate sits under any of them"; its status is `Proposed` until the user confirms
+- [x] `cargo test -p piperine-lang --test suite_hygiene` passes
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build

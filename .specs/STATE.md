@@ -1251,6 +1251,34 @@ nor each other, and no in-tree crate sits under any of them.
 `piperine-digital-solver`, the workspace manifests and the instruction files.
 **Status:** Locked (2026-11-14).
 
+### MD-61: `piperine-abi` sits under the three solver crates
+
+`solver-abi-core` (2026-11-15). The device ABI (`.specs/features/device-abi/abi.md`)
+lives in a new crate `piperine-abi`: the `#[repr(C)]` contract, the Rust `Device`
+trait with its lenses and thunks, the solver-side `caller::Handle`, shape-local
+`validate` and the partials verifier. It depends on no crate at all. Each solver
+crate may depend on it, and it is the only in-tree crate a sub-solver may depend on.
+This amends MD-60's "no in-tree crate sits under any of them".
+
+1. **One crate holds the contract.** User (through the coordinator, 2026-11-15):
+   "new crate `piperine-abi`", "digital sub-solver on the ABI", "analog sub-solver on
+   the ABI". Every device (test devices, the interpreter, generated Rust) links against
+   it and nothing else.
+2. **The sub-solvers still never see each other.** `piperine-abi` is vocabulary only:
+   no solver logic, no dependency, so it carries no path from one sub-solver to the
+   other. The guard `crate_boundaries::sub_solvers_depend_on_the_abi_crate_only`
+   allows exactly this crate and still catches a dependency on the other sub-solver;
+   `abi_crate_is_a_leaf` keeps it dependency-free.
+3. **Trade-off.** A change to the ABI recompiles all three solver crates and every
+   device; in return the C layout, the call path (`caller`) and the checks
+   (`validate`, `verify_partials`) exist once, and the only `unsafe` of the call path
+   lives in `raw.rs`, `thunk.rs` and `caller.rs` of this crate.
+
+**Scope:** `crates/piperine-abi`, the manifests of the three solver crates, the
+structural guards (`crate_boundaries.rs`, `workspace_shape.rs`), `CLAUDE.md`,
+`AGENTS.md`.
+**Status:** Proposed (2026-11-15), until the user confirms.
+
 ---
 
 ## Handoff Snapshot

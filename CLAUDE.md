@@ -7,13 +7,16 @@ mixed-signal language (MSL, specified in `docs/spec/`) and builds the POM `Desig
 elaboration and code generation are not built yet. The native solver is three crates:
 `piperine-solver` (the analysis engine and the `Element` ABI) and two sub-solvers,
 `piperine-analog-solver` and `piperine-digital-solver`, which the solver owner combines.
+Devices speak one ABI, the leaf crate `piperine-abi` (MD-61): the `#[repr(C)]` contract of
+`.specs/features/device-abi/abi.md`, the `Device` trait, the solver-side `caller::Handle`
+and the shape and partials checks; it depends on no crate.
 The target is that the analog and the digital side meet only through events (MD-60);
 today the digital snapshot (`&[LogicValue]`) is still shared until feature B. Rust workspace, edition 2024.
 
-**Today only `piperine-lang` and the three solver crates compile.** The root `piperine`
+**Today only `piperine-lang`, `piperine-abi` and the three solver crates compile.** The root `piperine`
 shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` are kept in the tree but do not
 build yet: they depended on crates that were retired (codegen, ir, python, plugin,
-plugin-macros) and wait for the new device compiler. The root `Cargo.toml` lists the four
+plugin-macros) and wait for the new device compiler. The root `Cargo.toml` lists the five
 green crates as `default-members`.
 
 ## Pipeline (the spine)
@@ -33,7 +36,8 @@ source ──parse_and_elaborate──► Design (POM)        crate: piperine-la
 ```
 
 The owner `piperine-solver` depends on both sub-solvers; the sub-solvers depend on neither
-the owner nor each other. Events are the target boundary between them (the digital snapshot is shared until feature B).
+the owner nor each other. `piperine-abi` is the one in-tree crate any of the three may
+depend on (MD-61). Events are the target boundary between them (the digital snapshot is shared until feature B).
 
 ### UNBREAKABLE RULE — POM navigability mirrors the source
 
@@ -51,7 +55,7 @@ collapsed/flattened form (e.g. for codegen) produces a **separate side artifact*
 ## Build and test
 
 ```sh
-cargo build                       # the default members: lang + the three solver crates
+cargo build                       # the default members: lang, abi + the three solver crates
 cargo test                        # their whole suite
 cargo test -p piperine-solver     # one crate
 cargo test <name>                 # one test
@@ -66,6 +70,7 @@ compile). Never pass `--workspace`: the root shell and the other four crates do 
 | Crate | Role |
 |-------|------|
 | `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`). Spec: `docs/spec/`; POM guide: `docs/pom/`. |
+| `piperine-abi` | The device ABI (MD-61, `.specs/features/device-abi/abi.md`): the `#[repr(C)]` shape, frames and `u32` constants (`raw.rs`), the shipped layouts `BIT`/`REAL`/`BYTE`/`F64`/`NONE` (`layout.rs`), the owned shape builder `ShapeBuf`/`ShapeRef` (`shape.rs`), the `Device` trait and its `Eval`/`React` lenses (`device.rs`), the generic `extern "C"` thunks `module::<D>`/`library` (`thunk.rs`), the solver-side `caller::Handle`, shape-local `validate` and the finite-difference `verify_partials`. Depends on no crate; `unsafe` only in `raw.rs`, `thunk.rs`, `caller.rs`. |
 | `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
 | `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors. Depends on no in-tree crate; the events-only boundary to the digital side is the target (the digital snapshot is shared until feature B). |
 | `piperine-digital-solver` | The digital sub-solver (event-driven scheduler `scheduler.rs`, drivers, topology, `DigitalLimits`). Depends on no in-tree crate; the events-only boundary to the analog side is the target. |

@@ -1,7 +1,8 @@
 //! Structural guards for the three-crate solver split (SR-04, SR-05):
 //! `piperine-solver` owns the events and the public face; `piperine-analog-solver`
-//! and `piperine-digital-solver` depend on nothing in the tree, name nothing of
-//! each other's domain, and hold the modules the design assigns them.
+//! and `piperine-digital-solver` depend on nothing in the tree but the device ABI
+//! crate `piperine-abi` (MD-61), which is a leaf; they name nothing of each
+//! other's domain and hold the modules the design assigns them.
 
 use std::path::{Path, PathBuf};
 
@@ -67,6 +68,7 @@ fn workspace_dependencies(text: &str) -> Vec<String> {
 const ANALOG: &str = "piperine-analog-solver";
 const DIGITAL: &str = "piperine-digital-solver";
 const OWNER: &str = "piperine-solver";
+const ABI: &str = "piperine-abi";
 
 const ANALOG_MODULES: &[&str] = &[
     "error.rs",
@@ -105,14 +107,39 @@ fn the_three_solver_crates_exist() {
     }
 }
 
-#[test]
-fn sub_solvers_depend_on_no_workspace_crate() {
-    for name in [ANALOG, DIGITAL] {
-        let text = manifest(name);
-        assert!(!text.contains("path ="), "{name} manifest holds a path dependency");
-        let deps = workspace_dependencies(&text);
-        assert!(deps.is_empty(), "{name} manifest names workspace crates: {deps:?}");
+/// The workspace crates a sub-solver manifest names other than `piperine-abi`
+/// (MD-61), and its path dependencies on anything else.
+fn sub_solver_violations(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = workspace_dependencies(text).into_iter().filter(|d| d != ABI).collect();
+    for line in text.lines().map(str::trim) {
+        if line.contains("path =") && !line.starts_with(ABI) {
+            out.push(format!("path dependency: {line}"));
+        }
     }
+    out
+}
+
+#[test]
+fn sub_solvers_depend_on_the_abi_crate_only() {
+    for name in [ANALOG, DIGITAL] {
+        let found = sub_solver_violations(&manifest(name));
+        assert!(found.is_empty(), "{name} manifest names workspace crates other than {ABI}: {found:?}");
+    }
+    // The scan still catches a sub-solver depending on the other one.
+    let planted = "[dependencies]\npiperine-abi = { path = \"../piperine-abi\" }\npiperine-digital-solver = { path = \"../piperine-digital-solver\" }\n";
+    let found = sub_solver_violations(planted);
+    assert!(found.iter().any(|f| f == DIGITAL), "a planted dependency on {DIGITAL} is not caught: {found:?}");
+    assert!(sub_solver_violations("[dependencies]\npiperine-abi = { path = \"../piperine-abi\" }\n").is_empty());
+}
+
+#[test]
+fn abi_crate_is_a_leaf() {
+    let text = manifest(ABI);
+    assert!(!text.contains("path ="), "{ABI} manifest holds a path dependency");
+    let deps = workspace_dependencies(&text);
+    assert!(deps.is_empty(), "{ABI} manifest names workspace crates: {deps:?}");
+    let root = std::fs::read_to_string(repo_root().join("Cargo.toml")).expect("read the root manifest");
+    assert!(root.contains("\"crates/piperine-abi\""), "the workspace does not list {ABI}");
 }
 
 #[test]

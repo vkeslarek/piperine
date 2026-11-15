@@ -12,7 +12,7 @@ Verilog-A compiler) into a POM `Design`. The native solver is three crates:
 `piperine-digital-solver`, which meet through events as the target boundary (the digital snapshot stays shared until feature B). PHDL was retired in full
 (MD-44/MD-45).
 
-**Only `piperine-lang` and the three solver crates compile today.** The root `piperine`
+**Only `piperine-lang`, `piperine-abi` and the three solver crates compile today.** The root `piperine`
 shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` stay in the tree but do not
 build until the new device compiler lands.
 
@@ -28,8 +28,8 @@ source ──► piperine-lang ──► Design (POM) ──► device compiler 
 
 Dependency direction: the owner `piperine-solver` depends on both sub-solvers; the
 sub-solvers depend on neither the owner nor each other; events are the target boundary.
-`piperine-solver` depends on no other in-tree crate. Breaking either arrow is a
-regression.
+`piperine-abi` (the device ABI, MD-61) depends on no crate and is the only in-tree crate a
+solver crate may depend on besides those arrows. Breaking either arrow is a regression.
 
 ## Build and verify
 
@@ -45,6 +45,7 @@ cargo test      # their whole suite; never `--workspace` (four crates do not bui
 ```
 crates/
 ├── piperine-lang/            parser + elaborator: grammar/ elab/ pom/ eval/ (+ headers/)
+├── piperine-abi/             device ABI: repr(C) contract, Device trait, thunks, caller::Handle, validate, verify
 ├── piperine-solver/          owner: Element ABI (core/), analyses/, Net naming, prelude
 ├── piperine-analog-solver/   analog sub-solver: math/, convergence, TrBdf2
 ├── piperine-digital-solver/  digital sub-solver (event-driven scheduler)

@@ -4,7 +4,9 @@
 //! Covers SR-02: retired crates have no directory and no manifest names them,
 //! the root `tests/` holds no Verilog-AMS end-to-end target, and `examples/`
 //! holds no Verilog-AMS or Python source, `default-members` lists the green
-//! crates and the CI workflows name no retired crate.
+//! crates and the CI workflows name no retired crate. Covers SAC-12 AC 3
+//! (`solver-abi-core`): the instruction files name `piperine-abi` and
+//! `.specs/STATE.md` records MD-61.
 
 use std::path::PathBuf;
 
@@ -185,6 +187,7 @@ fn workflows_name_no_retired_crate() {
 
 /// The eight crates the workspace keeps.
 const KEPT_CRATES: &[&str] = &[
+    "piperine-abi",
     "piperine-lang",
     "piperine-project",
     "piperine-solver",
@@ -316,4 +319,14 @@ fn hygiene_guard_lives_in_piperine_lang() {
     assert!(root.join("crates/piperine-lang/tests/support/sources.rs").is_file());
     assert!(!root.join("tests/suite_hygiene.rs").exists());
     assert!(!root.join("tests/support").exists());
+}
+
+#[test]
+fn instruction_files_and_state_name_the_abi_crate() {
+    for file in ["CLAUDE.md", "AGENTS.md"] {
+        let text = std::fs::read_to_string(repo_root().join(file)).expect("read an instruction file");
+        assert!(text.contains("piperine-abi"), "{file} does not name piperine-abi");
+    }
+    let state = std::fs::read_to_string(repo_root().join(".specs/STATE.md")).expect("read .specs/STATE.md");
+    assert!(state.contains("### MD-61"), ".specs/STATE.md carries no MD-61");
 }
