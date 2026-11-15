@@ -1419,9 +1419,17 @@ fn k_b_resolves_to_std_constants() {
 #[test]
 fn a_model_constant_hides_the_prelude_constant() {
     // STD-15 AC 5: a namespace item named like a prelude constant is not E0457 and wins.
-    let design = build("const Q: f64 = 1.0;\nconst Y: f64 = Q;\nmod m { const PI: f64 = 3.0; const Z: f64 = PI; }\n");
+    // Built over the embedded std, where the prelude really carries `Q` and `PI`.
+    let src = "const Q: f64 = 1.0;\nconst Y: f64 = Q;\nmod m { const PI: f64 = 3.0; const Z: f64 = PI; }\n";
+    let design = Design::builder().source("top.msl", src).build();
     assert!(with_code(&design, "E0457").is_empty(), "{:?}", design.diagnostics());
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(one(&design, "Q"), [decl(&design, "Q")]);
-    assert_eq!(one(&design, "PI"), [decl(&design, "m::PI")]);
+    let in_root = |res: Resolution| match res {
+        Resolution::Decl(id) => design.files()[design.decl_data(id).file.index()].text() == src,
+        _ => false,
+    };
+    // The std declares its own `Q`/`PI` paths too: the root's use is the one resolving into the root.
+    let hits = |name: &str| resolutions(&design, name).iter().filter(|p| in_root(p[0])).count();
+    assert_eq!(hits("Q"), 1, "the root's `Q` resolves to the root declaration, not the prelude's");
+    assert_eq!(hits("PI"), 1, "the root's `PI` resolves to `m::PI`, not the prelude's");
 }
