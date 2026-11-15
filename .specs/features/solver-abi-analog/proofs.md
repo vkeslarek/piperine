@@ -1,6 +1,6 @@
 # solver-abi-analog proofs
 
-**HEAD**: 20d6b2db
+**HEAD**: b1b86c81
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 25 pass, 0 fail
@@ -38,9 +38,9 @@
 `Run analog` - exit 0
 
 ```
-   Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-abi-analog/crates/piperine-abi)
-   Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-abi-analog/crates/piperine-analog-solver)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.45s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_analog_solver-d85a2eecb8c4fbb0)
      Running tests/assembly_ddt.rs (/var/tmp/piperine-target/debug/deps/assembly_ddt-120b3b4b98c81008)
      Running tests/assembly_delay.rs (/var/tmp/piperine-target/debug/deps/assembly_delay-7d354577901f8e40)
