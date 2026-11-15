@@ -6,8 +6,8 @@
 //! allocates. The analog half is an [`AnalogPlan`] over an [`Assembly`], the
 //! discrete half a [`DigitalPlan`] over a [`Digital`] engine.
 //!
-//! A device is a bundle of pure functions, so the solver creates each
-//! instance once per side from the same module and values.
+//! The solver creates each placement once; the analog and the digital side
+//! hold shares of the one instance.
 
 use std::collections::HashMap;
 
@@ -337,7 +337,11 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
             values.push((pi as u32, bytes));
         }
         let analog = create(spec.module, path, &values)?;
-        let digital = create(spec.module, path, &values)?;
+        // One `create` per placement: both sides call the same instance (an external
+        // device holds state; two copies would diverge). The assembly's evals and the
+        // engine's reactions never run concurrently in this owner, and the handle's
+        // lock serializes them anyway.
+        let digital = analog.share();
         let shape = analog.shape();
         let mut sites = Vec::with_capacity(shape.pins.len());
         let mut pin_nets = Vec::with_capacity(shape.pins.len());

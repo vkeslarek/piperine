@@ -62,19 +62,31 @@ fn empty_note() -> Note {
 /// One live instance of a module.
 ///
 /// `Handle` is `Send`: calls on different instances may run on different
-/// threads (abi.md §12). It is not `Sync`: no two calls on one instance may
-/// overlap (abi.md §12 "Threads"), so a handle is never shared between threads.
+/// threads (abi.md §12). No two calls on one instance may overlap (abi.md §12
+/// "Threads"): [`share`](Handle::share)d handles of one instance take a lock
+/// for the length of each call, so they are `Sync` too.
 #[derive(Debug)]
 pub struct Handle {
+    inner: std::sync::Arc<Inner>,
+}
+
+/// The instance behind every share of one handle.
+#[derive(Debug)]
+struct Inner {
     module: &'static Module,
     instance: *mut Instance,
     shape: *const Shape<'static>,
+    /// Calls on one instance never overlap (abi.md §12 "Threads"): shares of a
+    /// handle take this for the length of each `eval` and `react`.
+    calls: std::sync::Mutex<()>,
 }
 
 // SAFETY: abi.md §12 "Calls on different instances may run on different
-// threads": a `Handle` owns its instance, and `Handle` is not `Sync`, so
-// moving it moves the only caller.
-unsafe impl Send for Handle {}
+// threads": the instance is only called while `calls` is held, so no two calls
+// on it overlap whichever share or thread makes them.
+unsafe impl Send for Inner {}
+// SAFETY: as for `Send`; `calls` serializes every call through a shared reference.
+unsafe impl Sync for Inner {}
 
 /// The data of the `Host` a `react` call passes: the solver's closure, and a
 /// panic it raised, resumed once the device has returned.
@@ -127,19 +139,33 @@ impl Handle {
         if made.status != status::OK || made.instance.is_null() || made.shape.is_null() {
             return Err(CallError::from_note(made.status, &note));
         }
-        Ok(Handle { module, instance: made.instance, shape: made.shape })
+        Ok(Handle {
+            inner: std::sync::Arc::new(Inner {
+                module,
+                instance: made.instance,
+                shape: made.shape,
+                calls: std::sync::Mutex::new(()),
+            }),
+        })
+    }
+
+    /// Another handle on the same instance (one `create`, several callers: the
+    /// two sub-solvers of one placement). The instance is destroyed when the
+    /// last share is dropped; calls through any share are serialized.
+    pub fn share(&self) -> Handle {
+        Handle { inner: std::sync::Arc::clone(&self.inner) }
     }
 
     /// The module this instance came from.
     pub fn module(&self) -> &'static Module {
-        self.module
+        self.inner.module
     }
 
     /// The instance's shape.
     pub fn shape(&self) -> &Shape<'_> {
         // SAFETY: abi.md §9 "Any other shape lives until the last instance
         // created with it is destroyed": the instance lives as long as `self`.
-        unsafe { &*self.shape }
+        unsafe { &*self.inner.shape }
     }
 
     /// Runs function `k`. `input` holds the bytes of each read cell, `output`
@@ -186,7 +212,10 @@ impl Handle {
         };
         // SAFETY: abi.md §3 Eval "Every pointer is non-null and has the length
         // the shape says": checked above against the function's cells.
-        let s = unsafe { (self.module.eval)(self.instance, k, &frame) };
+        let s = {
+            let _calls = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
+            unsafe { (self.inner.module.eval)(self.inner.instance, k, &frame) }
+        };
         match s {
             status::OK => Ok(()),
             _ => Err(CallError::from_note(s, &note)),
@@ -222,7 +251,10 @@ impl Handle {
         };
         // SAFETY: abi.md §3 React: `input` matches the reaction's reads
         // (checked above); `host` and `data` outlive the call.
-        let s = unsafe { (self.module.react)(self.instance, k, &frame) };
+        let s = {
+            let _calls = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
+            unsafe { (self.inner.module.react)(self.inner.instance, k, &frame) }
+        };
         if let Some(payload) = data.panic.take() {
             resume_unwind(payload);
         }
@@ -247,7 +279,7 @@ fn check_cells(what: &str, got: impl ExactSizeIterator<Item = usize>, want: &[us
     Ok(())
 }
 
-impl Drop for Handle {
+impl Drop for Inner {
     fn drop(&mut self) {
         // SAFETY: abi.md §2 entry 3: the instance came from this module's
         // `create` and is destroyed once, here.

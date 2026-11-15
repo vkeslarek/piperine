@@ -164,3 +164,41 @@ fn handle_is_send() {
     let functions = std::thread::spawn(move || h.shape().functions.len()).join().unwrap();
     assert_eq!(functions, 3);
 }
+
+#[test]
+fn a_shared_handle_is_one_instance_destroyed_with_its_last_share() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static CREATES: AtomicUsize = AtomicUsize::new(0);
+    static DESTROYS: AtomicUsize = AtomicUsize::new(0);
+    struct Counted;
+    impl piperine_abi::device::Device for Counted {
+        fn prototype() -> &'static piperine_abi::raw::Shape<'static> {
+            static S: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
+            S.get_or_init(|| piperine_abi::shape::ShapeBuf::new().freeze()).shape()
+        }
+        fn create(_: &piperine_abi::device::Values<'_>) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
+            CREATES.fetch_add(1, Ordering::SeqCst);
+            Ok((Counted, std::sync::Arc::new(piperine_abi::shape::ShapeBuf::new())))
+        }
+        fn eval(&self, _: u32, _: &mut piperine_abi::device::Eval) -> Result<(), piperine_abi::device::Fault> {
+            Ok(())
+        }
+        fn react(&self, _: u32, _: &mut piperine_abi::device::React) -> Result<piperine_abi::device::Flow, piperine_abi::device::Fault> {
+            Ok(piperine_abi::device::Flow::Continue)
+        }
+    }
+    impl Drop for Counted {
+        fn drop(&mut self) {
+            DESTROYS.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    static MODULE: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
+    let module = MODULE.get_or_init(|| piperine_abi::thunk::module::<Counted>("counted"));
+    let a = Handle::create(module, &[]).expect("create");
+    let b = a.share();
+    assert_eq!(CREATES.load(Ordering::SeqCst), 1, "sharing creates nothing");
+    drop(a);
+    assert_eq!(DESTROYS.load(Ordering::SeqCst), 0, "a share keeps the instance alive");
+    drop(b);
+    assert_eq!(DESTROYS.load(Ordering::SeqCst), 1);
+}

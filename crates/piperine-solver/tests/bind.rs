@@ -259,3 +259,50 @@ fn a_shared_param_net_feeds_every_instance_bound_to_it() {
     assert_eq!(real(&nets[net("x3").0 as usize].init), 9.0e3);
     assert_eq!(bound.names.slots[&net("x1")], bound.names.slots[&net("x2")], "one analog slot for both");
 }
+
+// ---------------------------------------------------------------------------
+// One create per placement
+// ---------------------------------------------------------------------------
+
+static CREATES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// pins: a=0 (PORT continuous), nothing else; counts its `create` calls.
+struct Counting;
+static COUNTING_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static COUNTING_MODULE: OnceLock<Module> = OnceLock::new();
+
+fn counting_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(PinSpec::continuous("a", role::PORT));
+    s.freeze()
+}
+
+impl Device for Counting {
+    fn prototype() -> &'static Shape<'static> {
+        COUNTING_SHAPE.get_or_init(counting_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        CREATES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok((Counting, Arc::clone(COUNTING_SHAPE.get_or_init(counting_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+#[test]
+fn bind_creates_each_placement_once_for_both_sides() {
+    let module = COUNTING_MODULE.get_or_init(|| module::<Counting>("counting"));
+    let mut b = CircuitBuilder::new("count");
+    let n = b.node("n");
+    for path in ["x1", "x2", "x3"] {
+        b.device(module, path, &[], &[Port::Node(n.clone())]);
+    }
+    let before = CREATES.load(std::sync::atomic::Ordering::SeqCst);
+    let circuit = b.build().expect("bind");
+    assert_eq!(CREATES.load(std::sync::atomic::Ordering::SeqCst) - before, 3, "creates = placements");
+    assert_eq!(circuit.bound().expect("bound").names.instances.len(), 3);
+}
