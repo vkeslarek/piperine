@@ -505,6 +505,7 @@ T42 → T43 → T44 → T45 → T46
 - [x] The test libraries are small sources compiled by T12's `Rustc` into a `tempdir`
 - [x] `unsafe_lives_in_load_only` scans `src/` of the crate and the golden files
 - [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test load`: `a_file_that_is_no_library_is_named`, `a_library_without_the_symbol_is_named`, `a_library_of_a_newer_minor_is_refused`, `a_library_whose_bytes_changed_is_not_loaded`, `unsafe_lives_in_load_only`
+- [x] Verification F7 (C31): `a_library_smaller_than_the_host_reads_is_refused` passes in the same target: the `Library.size` refusal of RS-05 AC 3, with the host's own size loading
 - [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 - [x] Test count: the 5 test(s) named above, and no existing test removed or edited
 
@@ -1335,8 +1336,9 @@ Proof: run load | test a_file_that_is_no_library_is_named ... ok
 **C30** - A library without the symbol: an error naming the file. (RS-05, AC 3; T15)
 Proof: run load | test a_library_without_the_symbol_is_named ... ok
 
-**C31** - A library of a newer minor: an error naming the file. (RS-05, AC 3; T15)
+**C31** - A library of a newer minor, or whose `Library.size` is below the host's (verification F7): an error naming the file. (RS-05, AC 3; T15)
 Proof: run load | test a_library_of_a_newer_minor_is_refused ... ok
+Proof: run load | test a_library_smaller_than_the_host_reads_is_refused ... ok
 
 **C32** - `unsafe` appears in `src/load.rs` and in no other source of the crate nor in a golden file, except the one export attribute `#[unsafe(no_mangle)]` on `piperine_abi_1` in generated source and goldens (orchestrator ruling, 2026-11-15: RS-05 AC 4 means no `unsafe` block or `unsafe fn` outside `load.rs`). (RS-05, AC 4; T15)
 Proof: run load | test unsafe_lives_in_load_only ... ok

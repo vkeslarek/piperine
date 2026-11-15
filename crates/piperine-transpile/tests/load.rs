@@ -1,6 +1,7 @@
 //! Loading a library through `piperine_abi_1` (feature `ir-rust`, RS-05 AC 3 and 4, RS-04 AC 5;
-//! checks C29, C30, C31, C32, C46): a file that is no library, a library without the symbol and
-//! one of a newer minor each fail with an error naming the file; a library whose bytes changed is
+//! checks C29, C30, C31, C32, C46): a file that is no library, a library without the symbol, one
+//! of a newer minor and one whose `Library.size` is below the host's each fail with an error
+//! naming the file; a library whose bytes changed is
 //! refused by the hash check before it is opened; and `unsafe` lives in `src/load.rs` only. The
 //! test libraries are small sources compiled by `Rustc` into a temp dir.
 
@@ -60,6 +61,11 @@ impl Workshop {
 
 /// A library of the given minor with no module, written against the ABI crate.
 fn library_source(minor: &str) -> String {
+    library_setting(&format!("library.minor = {minor};"))
+}
+
+/// A library with no module whose `Library` is changed by `statement` before it is exported.
+fn library_setting(statement: &str) -> String {
     format!(
         r#"use piperine_abi::raw::Library;
 use std::sync::OnceLock;
@@ -68,7 +74,7 @@ pub extern "C" fn piperine_abi_1() -> *const Library {{
     static LIBRARY: OnceLock<Library> = OnceLock::new();
     LIBRARY.get_or_init(|| {{
         let mut library = piperine_abi::thunk::library("test", "load.rs", &[]);
-        library.minor = {minor};
+        {statement}
         library
     }})
 }}
@@ -115,6 +121,18 @@ fn a_library_of_a_newer_minor_is_refused() {
 
     let future = shop.library("minor-next", &library_source("piperine_abi::raw::MINOR + 1"));
     must_name(&Loaded::open(&future).expect_err("a newer minor"), &future, "minor");
+}
+
+// RS-05 AC 3 / abi.md §12 (verification F7): a `Library.size` smaller than the `Library` this
+// host reads is refused, naming the file and the field; the host's own size loads.
+#[test]
+fn a_library_smaller_than_the_host_reads_is_refused() {
+    let shop = Workshop::new();
+    let exact = shop.library("size-now", &library_setting("library.size = std::mem::size_of::<Library>() as _;"));
+    Loaded::open(&exact).expect("the host's own size loads");
+
+    let short = shop.library("size-short", &library_setting("library.size = (std::mem::size_of::<Library>() - 1) as _;"));
+    must_name(&Loaded::open(&short).expect_err("a Library smaller than the host reads"), &short, "Library.size");
 }
 
 // RS-04 AC 5: bytes that do not match the recorded hash are not loaded. The changed file is a
