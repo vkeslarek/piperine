@@ -20,7 +20,8 @@
 //! - an `if` reads its condition and both arms; it joins the arms when the condition is
 //!   `Constant`, and is `Nonlinear` otherwise (IR-10).
 //!
-//! The walk assumes an IR that passes `Ir::check`, which names every form the walk cannot give
+//! Locals are bound by scope, as `Ir::check` reads them: a `let` until its block ends, a
+//! closure's parameters in its body. The walk assumes an IR that passes `Ir::check`, which names every form the walk cannot give
 //! a meaning to (a local read before its `let`, a recursive call, a cycle); on an IR that fails
 //! it the walk panics with the origin, never answers a default.
 
@@ -234,6 +235,8 @@ enum Task {
     Addend { branch: u32, operator: Operator, at: ExprId },
     /// A closure's parameters are bound before its body is walked.
     BindParams(ExprId),
+    /// A block or a closure ends: the locals it bound go out of scope.
+    Restore(Vec<Option<Value>>),
     /// A callee's body has been walked (its value on the stack): leave its scope.
     Return { at: ExprId, function: FunctionId, args: Vec<Value> },
 }
@@ -372,6 +375,13 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
+                Task::Restore(locals) => {
+                    let scope = self.scope();
+                    if scope.locals != locals {
+                        scope.memo.clear();
+                        scope.locals = locals;
+                    }
+                }
                 Task::Return { at, function, args } => {
                     let callee = self.pop();
                     self.scopes.pop();
@@ -470,9 +480,16 @@ impl<'a> Walk<'a> {
             Expr::Block { stmts, value } => {
                 next.extend(stmts.iter().map(|&s| Task::Stmt(s)));
                 next.extend(value.iter().map(|&v| Task::Expr(v)));
+                // The block's `let`s end with it.
+                let outside = self.scope().locals.clone();
+                next.push(Task::Restore(outside));
             }
             Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
-            Expr::Closure { body, .. } => next.extend([Task::BindParams(id), Task::Expr(*body)]),
+            Expr::Closure { body, .. } => {
+                // The parameters end with the closure.
+                let outside = self.scope().locals.clone();
+                next.extend([Task::BindParams(id), Task::Expr(*body), Task::Restore(outside)]);
+            }
             Expr::Limit { x, f, seed, .. } => {
                 if !in_body {
                     self.refuse(id, "limit outside a body");

@@ -460,4 +460,44 @@ fn a_recursive_call_or_an_unbound_local_is_named() {
         (vec![early], x)
     });
     assert_eq!(ir.check(), Vec::<Broken>::new());
+    // Scope, not evaluation order: `if true { { let x0 = 1.0; x0 } } else { x0 }`. The `let`
+    // ends with its block, so the read in the `else` arm (at 7:9) is unbound; the read inside
+    // the block is not.
+    let ir = Shape::ir(1, |b| {
+        let mut e = Shape::ex(b);
+        let cond = e.boolean(true);
+        let one = e.real(1.0);
+        let inner = e.local(0);
+        e.at(7, 9);
+        let outer = e.local(0);
+        let bind = b.stmt(Stmt::Let { local: 0, init: one });
+        let mut e = Shape::ex(b);
+        let block = e.block(vec![bind], Some(inner), ValueType::F64);
+        (vec![], e.if_f64(cond, block, outer))
+    });
+    let broken = ir.check();
+    let hits = Entries::with(&broken, "read before its `let`");
+    assert_eq!(hits.len(), 1, "{broken:?}");
+    assert_eq!(hits[0].origin, Origin { file: "shape.msl".into(), line: 7, col: 9 });
+    // The dependency walk reads locals by the same scope: it refuses the read, never answers
+    // from the other arm's binding.
+    let walked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ir.body(piperine_ir::BodyId(0)).dependencies(piperine_ir::Target::Flow(0))
+    }));
+    assert!(walked.is_err(), "the dependency walk answered {walked:?}");
+
+    // A closure parameter ends with the closure: `|x0| x0;` then an addend reading `x0` (at 8:4).
+    let ir = Shape::ir(1, |b| {
+        let mut e = Shape::ex(b);
+        let inside = e.local(0);
+        let closure = e.closure(vec![0], inside);
+        e.at(8, 4);
+        let after = e.local(0);
+        let stmt = b.stmt(Stmt::Expr(closure));
+        (vec![stmt], after)
+    });
+    let broken = ir.check();
+    let hits = Entries::with(&broken, "read before its `let`");
+    assert_eq!(hits.len(), 1, "{broken:?}");
+    assert_eq!(hits[0].origin, Origin { file: "shape.msl".into(), line: 8, col: 4 });
 }

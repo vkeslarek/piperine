@@ -6,11 +6,17 @@
 //! broken and never panics.
 //!
 //! The code walk is iterative (an explicit stack, so nesting depth costs no native stack) and
-//! visits each expression once per placement context, so an id shared by many parents costs
-//! one visit, not one per path. An expression met again while it is still being walked is a
-//! cycle, whatever its depth.
+//! visits each expression once per placement context and set of bound locals, so an id shared by
+//! many parents costs one visit, not one per path. An expression met again while it is still
+//! being walked is a cycle, whatever its depth.
+//!
+//! A local is bound by scope, not by evaluation order: a `let` binds its local from the next
+//! statement to the end of its block (of the `analog` block at the top level), a closure binds
+//! its parameters in its body only, and a function's parameters are bound in its whole body. A
+//! `let` in one arm of an `if` sits in that arm's block, so the other arm and what follows the
+//! `if` do not see it.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
@@ -59,14 +65,19 @@ struct Walk {
     /// The distinct expressions that use each `limit` / `ac_stim` site.
     limit_users: Vec<BTreeSet<ExprId>>,
     stim_users: Vec<BTreeSet<ExprId>>,
-    /// Locals bound so far, in evaluation order (a `let` after its init, closure parameters on
-    /// entry, function parameters from the start).
+    /// Locals bound in the scope being walked (a `let` after its init until its block ends,
+    /// closure parameters in the closure's body, function parameters throughout).
     bound: Vec<bool>,
+    /// The id of the current `bound` set, interned: part of a visit's key.
+    scope: u32,
+    scopes: HashMap<Vec<bool>, u32>,
+    /// Local reads already reported as unbound.
+    unbound: HashSet<ExprId>,
     /// Expressions whose own checks ran.
     seen: HashSet<ExprId>,
-    /// Expression and statement visits already made, per placement.
-    done: HashSet<(ExprId, Ctx)>,
-    stmts_done: HashSet<(StmtId, Ctx, bool)>,
+    /// Expression and statement visits already made, per placement and scope.
+    done: HashSet<(ExprId, Ctx, u32)>,
+    stmts_done: HashSet<(StmtId, Ctx, bool, u32)>,
     /// Expressions being walked: meeting one again is a cycle.
     on_stack: HashSet<ExprId>,
     /// The functions this owner's code calls.
@@ -89,6 +100,8 @@ enum Task {
     Stmt(StmtId, Ctx, bool),
     /// A `let` has evaluated its init: its local is bound.
     Bind(u32),
+    /// A block or a closure ends: the locals it bound go out of scope.
+    Restore(Vec<bool>),
 }
 
 struct Checker<'a> {
@@ -434,6 +447,11 @@ impl<'a> Checker<'a> {
                     if let Some(slot) = w.bound.get_mut(local as usize) {
                         *slot = true;
                     }
+                    w.rescope();
+                }
+                Task::Restore(bound) => {
+                    w.bound = bound;
+                    w.rescope();
                 }
                 Task::Stmt(id, ctx, top) => self.stmt(w, id, ctx, top, &mut next),
                 Task::Expr(id, ctx) => self.expr(w, id, ctx, &mut next),
@@ -445,7 +463,7 @@ impl<'a> Checker<'a> {
 
     fn stmt(&mut self, w: &mut Walk, id: StmtId, ctx: Ctx, top: bool, next: &mut Vec<Task>) {
         let Some(stmt) = self.ir.stmts.get(id.index()) else { return };
-        if !w.stmts_done.insert((id, ctx, top)) {
+        if !w.stmts_done.insert((id, ctx, top, w.scope)) {
             return;
         }
         let origin = self.stmt_origin(stmt);
@@ -523,7 +541,7 @@ impl<'a> Checker<'a> {
             }
             return;
         }
-        if !w.done.insert((id, ctx)) {
+        if !w.done.insert((id, ctx, w.scope)) {
             return;
         }
         w.on_stack.insert(id);
@@ -535,19 +553,19 @@ impl<'a> Checker<'a> {
             Expr::Real(_) => self.own(w, &origin, ty, &ValueType::F64),
             Expr::Bool(_) => self.own(w, &origin, ty, &ValueType::Bool),
             Expr::Unit => self.own(w, &origin, ty, &ValueType::Unit),
-            Expr::Local(i) => {
-                if first {
-                    match w.owner.locals.get(*i as usize) {
-                        Some(local) => {
-                            self.own(w, &origin, ty, &local.clone());
-                            if !w.bound.get(*i as usize).copied().unwrap_or(false) {
-                                self.wrong(w, origin.clone(), format!("local {i} read before its `let`"));
-                            }
-                        }
-                        None => self.wrong(w, origin, format!("local {i} out of range ({} locals)", w.owner.locals.len())),
+            Expr::Local(i) => match w.owner.locals.get(*i as usize) {
+                Some(local) => {
+                    if first {
+                        self.own(w, &origin, ty, &local.clone());
+                    }
+                    // Checked in every scope the read is visited in; reported once.
+                    if !w.bound.get(*i as usize).copied().unwrap_or(false) && w.unbound.insert(id) {
+                        self.wrong(w, origin.clone(), format!("local {i} read before its `let`"));
                     }
                 }
-            }
+                None if first => self.wrong(w, origin, format!("local {i} out of range ({} locals)", w.owner.locals.len())),
+                None => {}
+            },
             Expr::Param(_) if !first => {}
             Expr::Param(i) => {
                 if !w.owner.in_body {
@@ -619,6 +637,8 @@ impl<'a> Checker<'a> {
                 if let Some(v) = value {
                     next.push(Task::Expr(*v, ctx));
                 }
+                // The block's `let`s end with it.
+                next.push(Task::Restore(w.bound.clone()));
             }
             Expr::Call { function, args } => {
                 if let Some(f) = self.ir.functions.get(function.index()) {
@@ -648,6 +668,7 @@ impl<'a> Checker<'a> {
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
             Expr::Closure { params, body } => {
+                let outside = w.bound.clone();
                 for p in params {
                     match w.bound.get_mut(*p as usize) {
                         Some(slot) => *slot = true,
@@ -666,7 +687,10 @@ impl<'a> Checker<'a> {
                         other => self.wrong(w, origin.clone(), format!("a closure must have a function type, found {other}")),
                     }
                 }
+                w.rescope();
                 next.push(Task::Expr(*body, Ctx { closure: true, ..ctx }));
+                // The parameters end with the closure.
+                next.push(Task::Restore(outside));
             }
             Expr::Probe { plus, minus } => {
                 if first {
@@ -760,17 +784,28 @@ impl Walk {
         for slot in slots.iter_mut().take(bound) {
             *slot = true;
         }
-        Walk {
+        let mut walk = Walk {
             owner,
             limit_users: Vec::new(),
             stim_users: Vec::new(),
             bound: slots,
+            scope: 0,
+            scopes: HashMap::new(),
+            unbound: HashSet::new(),
             seen: HashSet::new(),
             done: HashSet::new(),
             stmts_done: HashSet::new(),
             on_stack: HashSet::new(),
             calls: BTreeSet::new(),
-        }
+        };
+        walk.rescope();
+        walk
+    }
+
+    /// Interns the current `bound` set as the scope id of the visits that follow.
+    fn rescope(&mut self) {
+        let next = self.scopes.len() as u32;
+        self.scope = *self.scopes.entry(self.bound.clone()).or_insert(next);
     }
 }
 
