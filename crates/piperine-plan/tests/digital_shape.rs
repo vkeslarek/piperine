@@ -400,3 +400,144 @@ fn a_delayed_drive_is_a_pin_an_event_and_a_reaction() {
     // Nothing writes `hs_gate` but that reaction: no function writes the carrier's pin (P1).
     assert!(shape.functions.iter().all(|f| f.writes.iter().all(|w| w.index != hs_gate || w.kind != cell::PIN)));
 }
+
+#[test]
+fn a_reaction_lists_its_events_reads_and_statements() {
+    // abi.md §11.4, reaction 0 of the D flip-flop: `on [rise]  reads [d]  writes [S0 {q}]`; the
+    // statement commits the whole `BIT` of `q` (offset 0, 2 bytes) at the next microstep, so
+    // without `LATER` (RS-12 AC 4).
+    let (ir, body) = Alone::design(Buck::dff);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    assert_eq!(shape.reactions.len(), 1);
+    let (on, reads, statements) = Find::reaction(shape, "reaction:0");
+    assert_eq!(on, [3], "on the event pin `rise`");
+    assert_eq!(reads, [pin(1, part::VALUE)], "reads `d`");
+    assert_eq!(statements, [(2, 0, 2, 0, 0.0)], "S0 {{q}}");
+    assert_eq!(shape.reactions.get(0).map(|r| (r.origin.as_str(), r.flags)), Some(("dff.msl:2:5", 0)));
+
+    // The Dpwm's `on clk.rise()` (dpwm.msl:56-70): it reads the carriers its MSL text names and
+    // no other (not `clk`, whose edge is the event's, nor `sample` or `cut`), and has one
+    // statement per commit in source order: count, width, hs_off, hs_cut, ls_cut, hs, ls, then
+    // under `if wrap`, frame and cut. Pin order would put `hs`, `ls`, `cut` first.
+    let (ir, body) = Alone::design(Buck::dpwm);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (on, reads, statements) = Find::reaction(shape, "reaction:0");
+    assert_eq!(on, [Find::pin(shape, "event:0")]);
+    let mut read: Vec<&str> = reads
+        .iter()
+        .map(|c| {
+            assert_eq!((c.kind, c.part), (cell::PIN, part::VALUE), "a reaction reads pin VALUEs");
+            shape.pins.get(c.index as usize).map_or("?", |p| p.name.as_str())
+        })
+        .collect();
+    read.sort_unstable();
+    let mut named = ["count", "run", "duty", "frame", "width", "hs_cut", "hs", "oc", "ls_cut", "ls", "sink_oc", "hs_off"];
+    named.sort_unstable();
+    assert_eq!(read, named);
+    let committed: Vec<&str> = statements.iter().map(|st| shape.pins.get(st.0 as usize).map_or("?", |p| p.name.as_str())).collect();
+    assert_eq!(committed, ["count", "width", "hs_off", "hs_cut", "ls_cut", "hs", "ls", "frame", "cut"]);
+    // each statement covers its carrier's whole pin: `u9` is 4 bytes, `u3` and `bool` 2
+    let lens: Vec<u32> = statements.iter().map(|st| st.2).collect();
+    assert_eq!(lens, [4, 4, 4, 2, 2, 2, 2, 2, 2]);
+    assert!(statements.iter().all(|st| st.1 == 0 && st.3 == 0));
+    let carriers: Vec<u32> = plan.reactions()[0].statements.iter().map(|st| st.carrier).collect();
+    assert_eq!(carriers, [9, 10, 12, 13, 14, 5, 6, 11, 8], "the plan's statements name the carriers, in the same order");
+
+    // RefRamp: three commits to `reference` in one `if`/`else if` chain are three statements.
+    let (ir, body) = Alone::design(Buck::ref_ramp);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let reference = Find::pin(shape, "reference");
+    let (_, reads, statements) = Find::reaction(shape, "reaction:0");
+    assert_eq!(reads, [pin(Find::pin(shape, "run"), part::VALUE), pin(Find::pin(shape, "target"), part::VALUE), pin(reference, part::VALUE)]);
+    assert_eq!(statements, [(reference, 0, 4, 0, 0.0); 3]);
+}
+
+#[test]
+fn only_a_literal_positive_delay_is_later() {
+    // abi.md §6 C1 and RS-12 AC 4: `LATER` with `min_after` only when the delay is a literal
+    // constant greater than 0. A body committing `q` six ways, and a drive with a literal delay:
+    //   on clk.changed() {
+    //       q <- x after 2n;  q <- x after 0.0;  q <- x after -1n;  q <- x;
+    //       q <- x after t;   q <- x after 0.5 / t;
+    //   }
+    //   y = x after 3n;
+    fn delays(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(BodySpec { params: vec![Buck::param("t", "d.msl", 1, Some(1e-9), None)], ..Buck::spec("Delays", "d.msl", 1) });
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 20));
+        b.carrier(body, Buck::carrier("x", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 30));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 40));
+        b.carrier(body, Buck::carrier("y", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 50));
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("d.msl", 2, 8) });
+        let mut x = Dx::new(b, "d.msl", 3, 9);
+        let mut stmts = Vec::new();
+        for delay in 0..6 {
+            let value = x.carrier(1, ValueType::Bool);
+            let after = match delay {
+                0 => Some(x.real(2e-9)),
+                1 => Some(x.real(0.0)),
+                2 => Some(x.real(-1e-9)),
+                3 => None,
+                4 => Some(x.param(0, ValueType::F64)),
+                _ => {
+                    let half = x.real(0.5);
+                    let t = x.param(0, ValueType::F64);
+                    Some(x.bin(piperine_ir::BinaryOp::Div, half, t, ValueType::F64))
+                }
+            };
+            stmts.push(x.commit(2, value, after));
+        }
+        Buck::reaction(b, body, vec![changed], stmts, vec![], "d.msl", 2);
+        let mut x = Dx::new(b, "d.msl", 5, 9);
+        let value = x.carrier(1, ValueType::Bool);
+        let after = x.real(3e-9);
+        b.drive(body, piperine_ir::Drive { carrier: 3, value, after: Some(after), origin: Buck::origin("d.msl", 5, 5) });
+        body
+    }
+    let (ir, body) = Alone::design(delays);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let later = piperine_abi::raw::statement_flag::LATER;
+    let (_, _, statements) = Find::reaction(shape, "reaction:0");
+    let flags: Vec<(u32, f64)> = statements.iter().map(|st| (st.3, st.4)).collect();
+    assert_eq!(flags, [(later, 2e-9), (0, 0.0), (0, 0.0), (0, 0.0), (0, 0.0), (0, 0.0)]);
+    let mins: Vec<Option<f64>> = plan.reactions()[0].statements.iter().map(|st| st.min_after).collect();
+    assert_eq!(mins, [Some(2e-9), None, None, None, None, None]);
+    // the delayed drive's reaction follows the same rule
+    let (_, _, statements) = Find::reaction(shape, "drive:y");
+    assert_eq!(statements, [(Find::pin(shape, "y"), 0, 2, later, 3e-9)]);
+    // the oscillator's `after 0.5 / f` reads a param: no flag
+    let (ir, body) = Alone::design(Buck::osc);
+    let plan = BodyPlan::new(ir.body(body));
+    let (_, _, statements) = Find::reaction(plan.shape().shape(), "reaction:0");
+    assert_eq!(statements.iter().map(|st| st.3).collect::<Vec<_>>(), [0]);
+}
+
+#[test]
+fn a_probing_reaction_reads_the_continuous_pin() {
+    // RS-12 AC 8 on the Adc (sense.msl:28-33): `v(ain)` makes the continuous pin `ain` a read of
+    // the reaction, beside the params its body reads (`vref`; `tconv`, `tstrobe` in the delays).
+    let (ir, body) = Alone::design(Buck::adc);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let ain = Find::pin(shape, "ain");
+    assert!(shape.pins.get(ain as usize).is_some_and(|p| p.kind == kind::CONTINUOUS));
+    let (on, reads, statements) = Find::reaction(shape, "reaction:0");
+    assert_eq!(on, [Find::pin(shape, "event:0")]);
+    assert_eq!(
+        reads,
+        [pin(ain, part::VALUE), pin(Find::pin(shape, "vref"), part::VALUE), pin(Find::pin(shape, "tconv"), part::VALUE), pin(Find::pin(shape, "tstrobe"), part::VALUE)]
+    );
+    assert!(plan.reactions()[0].reads.contains(&Source::Node(0)));
+    // code (a `u10`: 4 bytes), done, done: the three commits in source order
+    let (code, done) = (Find::pin(shape, "code"), Find::pin(shape, "done"));
+    assert_eq!(statements, [(code, 0, 4, 0, 0.0), (done, 0, 2, 0, 0.0), (done, 0, 2, 0, 0.0)]);
+    // a reaction that probes nothing reads no continuous pin: the flip-flop's
+    let (ir, body) = Alone::design(Buck::dff);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (_, reads, _) = Find::reaction(shape, "reaction:0");
+    assert!(reads.iter().all(|c| shape.pins.get(c.index as usize).is_some_and(|p| p.kind != kind::CONTINUOUS)));
+}

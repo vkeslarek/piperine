@@ -23,19 +23,30 @@
 //! commits the value to the carrier after the delay. Those two pins follow the event pins, a
 //! drive's pair in drive order.
 //!
+//! Reactions (RS-12 AC 4, AC 8): one ABI reaction `reaction:<k>` per reaction of the body, on
+//! the event pins of its events, reading the `VALUE` of every pin its body reads (carriers,
+//! params, and the continuous pins it probes), with one statement per commit in source order
+//! (a depth-first walk of its statements, `then` before `else`). A statement commits the whole
+//! of its carrier's pin. It is `LATER` with `min_after` the delay only when the delay is a real
+//! literal greater than 0 (abi.md §6 C1: a bound the generator can state); a delay that reads
+//! anything, or none, gives no flag. The reaction of a delayed drive follows the same rule.
+//!
 //! Function order after the M1 functions: `drive:*` in drive order, then `event:*` in event
-//! order, then each `drive:<carrier>.changed`. Reactions: one per delayed drive, in drive order.
+//! order, then each `drive:<carrier>.changed`. Reactions: the body's in source order, then one
+//! per delayed drive in drive order.
 
 use piperine_abi::layout::{BIT, BYTE, REAL, leaf_size};
 use piperine_abi::raw::{Field, Layout, List, Statement, Str, field_flag, leaf, pin_flag, role, statement_flag};
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf};
-use piperine_ir::{Body, CarrierRole, Constant, EventSource, Origin, Target as Query, ValueType};
+use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, StmtId, Target as Query, ValueType};
 
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
 
 /// What a reaction of the shape runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReactionMode {
+    /// Reaction `k` of the body.
+    Reaction(u32),
     /// The commit of drive `k`'s undelayed value after its delay (RS-12 AC 5).
     Delayed(u32),
 }
@@ -247,9 +258,25 @@ impl Digital {
         functions
     }
 
-    /// Declares the reactions of `body`: one per drive with `after`.
+    /// Declares the reactions of `body`: its own, then one per drive with `after`.
     pub(crate) fn reactions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>) -> Vec<ReactionPlan> {
+        let ir = body.ir();
         let mut reactions = Vec::new();
+        for (k, r) in body.reactions().iter().enumerate() {
+            let mut commits = Vec::new();
+            Commits::stmts(ir, &r.stmts, &mut commits);
+            let plan = ReactionPlan {
+                mode: ReactionMode::Reaction(k as u32),
+                on: r.on.iter().map(|e| pins.events.get(*e as usize).copied().unwrap_or(u32::MAX)).collect(),
+                reads: ReadSet::target(body, Query::Reaction(k as u32)).0.into_iter().collect(),
+                statements: commits
+                    .into_iter()
+                    .map(|(carrier, after)| StatementPlan { carrier, min_after: after.and_then(|a| Self::min_after(ir, a)) })
+                    .collect(),
+            };
+            Self::declare(s, pins, body, &format!("reaction:{k}"), &Self::at(&r.origin), &plan);
+            reactions.push(plan);
+        }
         for (k, d) in body.drives().iter().enumerate() {
             let k = k as u32;
             let Some(delayed) = pins.delayed(k) else { continue };
@@ -259,13 +286,22 @@ impl Digital {
                 mode: ReactionMode::Delayed(k),
                 on: vec![delayed.event],
                 reads: set.0.into_iter().collect(),
-                statements: vec![StatementPlan { carrier: d.carrier, min_after: None }],
+                statements: vec![StatementPlan { carrier: d.carrier, min_after: d.after.and_then(|a| Self::min_after(ir, a)) }],
             };
             let name = format!("drive:{}", Self::carrier_name(body, d.carrier));
             Self::declare(s, pins, body, &name, &Self::at(&d.origin), &plan);
             reactions.push(plan);
         }
         reactions
+    }
+
+    /// The `min_after` of a commit delayed by `after`: the delay itself when it is a real
+    /// literal greater than 0, else none (abi.md §6 C1).
+    fn min_after(ir: &Ir, after: ExprId) -> Option<f64> {
+        match ir.expr(after) {
+            Expr::Real(r) if r.get() > 0.0 => Some(r.get()),
+            _ => None,
+        }
     }
 
     /// Adds `plan` to the shape as reaction `name`: each statement commits the whole of its
@@ -292,5 +328,69 @@ impl Digital {
             writes,
             ..ReactionSpec::default()
         });
+    }
+}
+
+/// The commits of a reaction's statements, in source order: a depth-first walk, each
+/// expression's operands in order, a block's statements before its value, `then` before `else`.
+struct Commits;
+
+impl Commits {
+    /// Appends `(carrier, after)` for each commit among `stmts` and what they hold.
+    fn stmts(ir: &Ir, stmts: &[StmtId], out: &mut Vec<(u32, Option<ExprId>)>) {
+        for id in stmts {
+            match ir.stmt(*id) {
+                Stmt::Let { init, .. } => Self::expr(ir, *init, out),
+                Stmt::Expr(e) => Self::expr(ir, *e, out),
+                Stmt::Contribute { addends, .. } => addends.iter().for_each(|a| Self::expr(ir, a.value, out)),
+                Stmt::Commit { carrier, value, after } => {
+                    Self::expr(ir, *value, out);
+                    if let Some(a) = after {
+                        Self::expr(ir, *a, out);
+                    }
+                    out.push((*carrier, *after));
+                }
+            }
+        }
+    }
+
+    fn expr(ir: &Ir, id: ExprId, out: &mut Vec<(u32, Option<ExprId>)>) {
+        let mut each = |ids: &[ExprId]| ids.iter().for_each(|e| Self::expr(ir, *e, out));
+        match ir.expr(id) {
+            Expr::Real(_)
+            | Expr::Bool(_)
+            | Expr::Unit
+            | Expr::Local(_)
+            | Expr::Param(_)
+            | Expr::Probe { .. }
+            | Expr::Env(_)
+            | Expr::Int(_)
+            | Expr::Unknown
+            | Expr::Carrier(_) => {}
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => each(&[*expr]),
+            Expr::Binary { lhs, rhs, .. } => each(&[*lhs, *rhs]),
+            Expr::KnownOr { value, default } => each(&[*value, *default]),
+            Expr::If { cond, then, otherwise } => each(&[*cond, *then, *otherwise]),
+            Expr::Call { args, .. } | Expr::Math { args, .. } => each(args),
+            Expr::Closure { body, .. } => each(&[*body]),
+            Expr::Limit { x, f, seed, .. } => {
+                each(&[*x, *f]);
+                each(seed.as_slice());
+            }
+            Expr::Stim { mag, phase, .. } => {
+                each(&[*mag]);
+                each(phase.as_slice());
+            }
+            Expr::Method { receiver, args, .. } => {
+                each(&[*receiver]);
+                each(args);
+            }
+            Expr::Block { stmts, value } => {
+                Self::stmts(ir, stmts, out);
+                if let Some(v) = value {
+                    Self::expr(ir, *v, out);
+                }
+            }
+        }
     }
 }
