@@ -574,7 +574,7 @@ Proof: run owner | test a_write_is_committed_only_after_the_shadow_accepts ... o
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** B1 at dd805f01 - returned (T1-T4 890b120d..764ab2a1; constants chosen (groups from 1, GROUND=u32::MAX); layouts F64/NONE added; 3 unchecked shape rules)
+**Dispatched:** B1 at dd805f01 - returned (T1-T4 890b120d..764ab2a1; constants chosen (groups from 1, GROUND=u32::MAX); layouts F64/NONE added; 3 unchecked shape rules); B2 (Opus) at 4b06df65
 **Settled mid-build:** the three shape rules T4 left unchecked (a statement writing a continuous pin; a CROSS watch whose event pin is not an event pin; a term whose abstol/max pin is not a discrete F64) become validate rules in B2 with tests; constants and F64/NONE layouts accepted, written into abi.md (orchestrator)
 **Walked:** not applicable - no screen
 
