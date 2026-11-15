@@ -984,7 +984,7 @@ impl TransientSolver<'_> {
                 None => protocol.operating_point().and_then(|_| protocol.analog_mut().begin()),
                 Some((step, state)) => {
                     let samples = protocol.analog_mut().resume(step, state)?;
-                    protocol.resume(start, samples);
+                    protocol.resume_at_tick(start, state.digital.now().0, samples);
                     for (net, bytes) in &rewrites {
                         if let crate::protocol::SetOutcome::Refused { reason } = protocol.set(*net, 0, bytes, None)? {
                             return Err(Error::simple(

@@ -84,6 +84,13 @@ pub struct Checkpoint {
     suspended: Option<(Tick, u32)>,
 }
 
+impl Checkpoint {
+    /// The tick of the last instant entered when it was taken.
+    pub fn now(&self) -> Tick {
+        self.now
+    }
+}
+
 /// The discrete engine over a bound plan.
 #[derive(Debug)]
 pub struct Digital {

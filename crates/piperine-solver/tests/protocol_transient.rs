@@ -7,7 +7,8 @@
 //! again; acceptance fires the crossings, runs the instant with the samples
 //! and asks the next acceptance for a restart (the small one after a host
 //! param write); with no unknown no attempt is made; settle runs at time
-//! points and the stop time only.
+//! points and the stop time only; a resume off the grid steps on from the
+//! tick its discrete side ran at, and a stop inside that tick is an error.
 
 #[allow(dead_code)]
 #[path = "support/stub_sides.rs"]
@@ -479,4 +480,44 @@ fn a_resumed_transient_continues_from_its_time_without_an_operating_point() {
         ]
     );
     assert_eq!(p.now(), 4.0);
+}
+
+/// A resume at a time off the grid steps on from the tick its discrete side
+/// ran at last, the one `resume_at_tick` names: a stop inside the next tick is
+/// reached by one step, and a stop after the time but inside that same tick
+/// is an error, never a run that returns having taken no step.
+#[test]
+fn a_resume_off_the_grid_steps_on_from_its_tick() {
+    // Resumed at 2.45 (tick 4.9), its instant at tick 4: a stop at 2.6 (tick 5.2) is one step to tick 5.
+    let (log, d, mut a) = sides();
+    a.proposals.extend([2.6]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.resume_at_tick(2.45, 4, vec![0.25]);
+    assert_eq!(p.transient(2.6).unwrap(), Ended::StopTime);
+    assert_eq!(
+        calls(&log, |c| matches!(c, Call::Advance(_) | Call::Attempt { .. })),
+        [Call::Advance(5), Call::Attempt { to: 2.5, exempt: false }]
+    );
+
+    // Resumed below its tick (an analog time 1.95, the instant at tick 4): a host write runs at tick 4.
+    let (log, d, a) = sides();
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.resume_at_tick(1.95, 4, vec![0.25]);
+    assert_eq!(p.set(7, 0, &[1], None).unwrap(), SetOutcome::Committed);
+    let at: Vec<i64> = calls(&log, |c| matches!(c, Call::RunInstant { .. }))
+        .into_iter()
+        .map(|c| match c {
+            Call::RunInstant { at, .. } => at,
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(at, [4]);
+
+    // A stop at 2.47 (tick 4.94) lies after 2.45 and inside tick 4: no step reaches it.
+    let (log, d, a) = sides();
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.resume_at_tick(2.45, 4, vec![0.25]);
+    let err = p.transient(2.47).expect_err("a stop inside the resumed tick");
+    assert!(err.to_string().contains("no step reaches it"), "{err}");
+    assert!(attempts(&log).is_empty());
 }

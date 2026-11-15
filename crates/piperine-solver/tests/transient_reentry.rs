@@ -5,7 +5,10 @@
 //! carries the protocol's checkpoint (the digital engine's, the assembly's
 //! histories) besides the solution that seeds the Newton history. Every
 //! accepted step of a mixed run carries its digital net values and is a
-//! state a transient re-enters from, the middle steps as the last.
+//! state a transient re-enters from, the middle steps as the last. A re-entry
+//! from a capture off the tick grid steps on from the tick its instant ran at:
+//! a stop a tick or less later is reached once, and a stop inside that same
+//! tick fails loud.
 
 // Each target includes the library by path: it uses a different subset of it.
 #[allow(dead_code)]
@@ -146,6 +149,68 @@ fn a_late_start_needs_a_step_a_transient_recorded() {
     solver.with_initial_state(&foreign);
     let err = solver.solve().expect_err("no device state on a step built by the host");
     assert!(err.to_string().contains("carries no state of the device instances"), "{err}");
+}
+
+/// An RC with τ = 1 kOhm x 1.5915494309189535 nF, 0.92 of a 1 fs tick past
+/// tick 1591549430: a run stopped at τ ends there, off the grid, and its last
+/// step is the capture.
+fn rc_captured_at_tau() -> (CircuitInstance, AnalogReference, TransientStep) {
+    let (r, c) = (1.0e3, 1.5915494309189535e-9);
+    let tau: f64 = r * c;
+    let fraction = (tau / 1.0e-15).fract();
+    assert!((fraction - 0.92).abs() < 0.01, "τ lies 0.92 of a tick past the grid: {fraction}");
+    let mut b = CircuitBuilder::new("rc");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let out = b.node("out");
+    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
+    add_resistor(&mut b, "r1", r, &top, &out);
+    add_capacitor(&mut b, "c1", c, &out, &gnd);
+    let mut circuit = b.build().expect("build");
+    let mut leg = circuit.transient(TransientAnalysisOptions::new(tau, tau / 400.0), Context::default()).expect("tran");
+    leg.apply_initial_conditions(vec![InitialValue { reference: out.clone(), value: 0.0 }]);
+    let captured = leg.solve().expect("solve").last().expect("steps").clone();
+    assert_eq!(captured.time(), tau, "the run stops at τ itself");
+    (circuit, out, captured)
+}
+
+fn reenter(circuit: &mut CircuitInstance, captured: &TransientStep, stop: f64) -> piperine_solver::prelude::Result<TransientAnalysisResult> {
+    let opts = TransientAnalysisOptions::new(stop, captured.time() / 400.0).with_start(captured.time());
+    let mut solver = circuit.transient(opts, Context::default()).expect("tran");
+    solver.with_initial_state(captured);
+    solver.solve()
+}
+
+/// Re-entered at τ (tick fraction .92), a stop 1 fs and 0.5 fs later is
+/// reached by one step that integrates, recorded once, on 1 − e^(−t/τ).
+#[test]
+fn an_off_grid_reentry_reaches_a_stop_within_the_next_tick_once() {
+    let (mut circuit, out, captured) = rc_captured_at_tau();
+    let tau = captured.time();
+    for stop in [tau + 1.0e-15, tau + 0.5e-15, tau + 2.0e-15] {
+        let leg = reenter(&mut circuit, &captured, stop).unwrap_or_else(|e| panic!("stop τ + {:e} s: {e}", stop - tau));
+        let times: Vec<f64> = leg.iter().map(|s| s.time()).collect();
+        assert_eq!(times.first(), Some(&tau), "the run starts at the capture");
+        for pair in times.windows(2) {
+            assert!(pair[1] > pair[0], "records at {:e} then {:e}: {times:?}", pair[0], pair[1]);
+        }
+        assert_eq!(times.iter().filter(|t| **t == stop).count(), 1, "one record at stop τ + {:e} s: {times:?}", stop - tau);
+        assert_eq!(times.last(), Some(&stop), "the run ends at the stop: {times:?}");
+        let v = leg.last().expect("steps").get_node(&node_id(&out)).expect("v(out)");
+        let analytic = 1.0 - (-stop / tau).exp();
+        assert!((v - analytic).abs() < 1.0e-3, "v(out) at τ + {:e} s = {v} vs {analytic}", stop - tau);
+    }
+}
+
+/// A stop after the capture but inside the tick its instant ran at has no
+/// step to reach it: the run fails loud instead of returning the capture alone.
+#[test]
+fn a_stop_inside_the_reentry_tick_fails_loud() {
+    let (mut circuit, _out, captured) = rc_captured_at_tau();
+    let stop = captured.time() + 0.05e-15;
+    assert!(stop > captured.time());
+    let err = reenter(&mut circuit, &captured, stop).expect_err("no step reaches a stop inside the tick");
+    assert!(err.to_string().contains("no step reaches it"), "{err}");
 }
 
 // ---------------------------------------------------------------------------
