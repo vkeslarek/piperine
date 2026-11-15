@@ -1,9 +1,22 @@
 # Solver Restructure verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at 21f77c4f (verified over HEAD ec35d7c5, diff range e129b869..ec35d7c5)
+**Verdict**: PASS - F1-F6 are closed and re-judged. Two new Low documentation findings (N1, N2) are open for the user; there is no third round
+**Proofs**: `proofs.md` at f9e81d02 (round 1 over ec35d7c5; round 2 over faf5d200, fix range a9ff229d..faf5d200)
 **Verifier**: independent sub-agent (author != verifier)
-**Round**: 1
+**Round**: 2
+
+## Round 2
+
+The fix commits d230d0df..841cf1c0 were re-judged at HEAD faf5d200:
+
+- **F1**: `words_in` matches whole identifiers and the scan now covers `Channel`, `FileId`, `FileError` and `Region`. Re-running probe 2 (the planted `pub use removed::{Region, Channel, FileId, FileError};` in `abi.rs`) makes `text_io_is_gone` and `regions_are_gone` FAIL. The self-test also holds the negative case (`RegionQueueless`, `channels`).
+- **F2**: `StepLimits` is exported from `prelude` beside `StepperStrategy`, and `stepper_fold.rs` imports it from the facade only.
+- **F3**: the role text and the paths are correct, the plugin and codegen references are gone, and the root shell is listed. A planted "They meet through events only." in `AGENTS.md` makes `instructions_list_the_kept_crates` FAIL. Two residuals remain: N1 and N2.
+- **F4**: disclosed in `design.md`.
+- **F5**: `Net::analog_nets` (associated fn) and `CircuitInstance::digital_failure` (private associated fn) have the same bodies as before. The only call sites changed are `nets()` and the one scheduler `map_err`. No logic change.
+- **F6**: the scan reads table-form headers, and the new self-test `the_manifest_scan_reads_table_form_dependencies` proves it.
+- **C38**: the proof now compares against the 353 test fns at e129b869, and it passes when run here.
+- **Regression run at HEAD**: `cargo test` on the three solver crates is green, `suite_hygiene` is green (12 tests), and `cargo build --all-targets` on the four crates prints 0 warnings.
 
 No hidden logic change was found in the moved code. The findings below are about guards that are looser than their criteria, the public facade, and the instruction files.
 
@@ -59,7 +72,7 @@ Own examples, run at HEAD as throwaway tests (deleted, tree clean):
 | C17 | `removed_surface.rs` `specify_timing_is_gone` | yes |
 | C18 | `removed_surface.rs` `regions_are_gone` | yes - closed (F1 d230d0df) |
 | C19 | `removed_surface.rs` `simprobe_is_gone` | yes |
-| C20 | `removed_surface.rs` `the_scan_catches_a_planted_name` | yes for the scan itself; SR-03 AC 7 is still open through the name lists (F1); closed (F1 d230d0df) |
+| C20 | `removed_surface.rs` `the_scan_catches_a_planted_name` | yes - covers the whole-identifier matcher, positive and negative (F1 d230d0df) |
 | C21 | `crate_boundaries.rs` `the_three_solver_crates_exist` | yes |
 | C22 | `crate_boundaries.rs` `sub_solvers_depend_on_no_workspace_crate` | yes - `path =` also catches table-form entries |
 | C23 | `crate_boundaries.rs` `owner_depends_on_both_sub_solvers_only` | yes - closed (F6 0c98cf15) |
@@ -73,11 +86,11 @@ Own examples, run at HEAD as throwaway tests (deleted, tree clean):
 | C31 | `parity_baseline` byte-identical and green | yes |
 | C32 | baseline minus `removed.txt` all `... ok` | yes - independently confirmed against the e129b869 test-fn set |
 | C33 | `cargo build --all-targets` on the four crates, no warning | yes |
-| C34 | `workspace_shape.rs` `instructions_list_the_kept_crates` | yes - closed (F3 480bb9d6) |
-| C35 | `workspace_shape.rs` `instructions_have_no_entry_for_a_retired_crate` | yes for the table and map; the body text still names `piperine-plugin` paths (F3) |
+| C34 | `workspace_shape.rs` `instructions_list_the_kept_crates` | yes for placement, deleted-crate references and the root shell (F3 480bb9d6); weak on the boundary wording - `text.contains("target")` is vacuous (N1) |
+| C35 | `workspace_shape.rs` `instructions_have_no_entry_for_a_retired_crate` | yes - the body references to `piperine-plugin` are gone and are now guarded by C34's text check (F3 480bb9d6) |
 | C36 | `workspace_shape.rs` `state_records_the_solver_structure_decision` | yes - quotes checked against `context.md` |
 | C37 | `git diff` with no added `assert` line outside the ported targets | yes - every modified kept test file was read by hand |
-| C38 | `baseline.txt` has at least 250 lines | yes - closed (tightened in the closing commit) |
+| C38 | `baseline.txt` holds every e129b869 solver test fn | yes - tightened in 841cf1c0; 353 names, run here |
 | C39 | `cargo test -p piperine-lang --test suite_hygiene` | yes |
 | C40 | 11 e129b869 fn names present | yes - 12 `#[test]` fns run: the 11 originals plus the walk test |
 | C41 | no removed-crate path in the guard | yes |
@@ -95,6 +108,8 @@ Own examples, run at HEAD as throwaway tests (deleted, tree clean):
 | F4 (Low) The generic scheduler signature breaks inference at call sites that pass `&mut []`, which the design said would "compile unchanged" | `tests/digital_driver_segregation.rs` (3 sites) and the `events.rs` unit test needed `&mut [] as &mut [Box<...>]` | disclose this in `design.md` under the digital crate's Interfaces (no behaviour change). No code change needed |closed e153e614 |
 | F5 (Low) Two new module-level free functions break MD-13 rule 2 ("No loose functions", `AGENTS.md`) | `pub(crate) fn digital_failure` in `core/result.rs:428`, and `pub fn analog_nets` in `core/net.rs:157` | make them owned, for example `Net::analog(&Netlist)` as an associated fn and a method on `CircuitInstance` (or a local extension trait) for the digital error |closed 7ea89680 |
 | F6 (Low) The owner's manifest scan misses table-form dependencies | `workspace_dependencies` keeps only lines that start with `piperine-`; a `[dependencies.piperine-lang]` header with `path = ...` would pass `owner_depends_on_both_sub_solvers_only` | also read `[dependencies.piperine-*]`, `[dev-dependencies.piperine-*]` and `[build-dependencies.piperine-*]` headers as dependency keys |closed 0c98cf15 |
+| N1 (Low, round 2) The C34 boundary-wording assertion is vacuous, and the CLAUDE.md summary sentence is garbled | `workspace_shape.rs` `assert!(text.contains("target"))` is satisfied by "binary target" and "test target". With `CLAUDE.md` rewritten to call events "the only boundary" and "current", `workspace_shape` stayed 11/11 green. `CLAUDE.md:10-11` reads "Events are the only boundary between the analog and the digital side is the target boundary (MD-60)" | reword to "The events-only boundary between the analog and the digital side is the target (MD-60)", and assert a specific phrase (for example `contains("target boundary")` plus `!contains("Events are the only boundary")`) | open - for the user |
+| N2 (Low, round 2) `design.md` still describes the replaced error conversion | the digital crate's "Errors" bullet says "The owner has `impl From<DigitalError> for Error`". The orphan rule forbids that impl; the code uses the private `CircuitInstance::digital_failure` | reword the bullet to name `CircuitInstance::digital_failure` | open - for the user |
 
 ## Notes (process, no fix owed)
 
