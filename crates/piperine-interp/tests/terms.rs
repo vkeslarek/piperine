@@ -7,10 +7,12 @@
 //! as its constant plus the products of its pin partials folded from `0.0` in declared order, the
 //! sum the assembly subtracts, so the resistor matches `g*vp - g*vn` bit for bit. A `limit` site
 //! reads its input's `VALUE` with derivative 1, its `x`, `f` and seed unevaluated (INT-10 AC 4).
+//! A cell the function does not declare never steers its walk: dead code branching on an unread
+//! `bool` or comparing an unread real runs no arm and the declared writes are exact (C45).
 
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, IrBuilder, NodeRole, Operator, Origin, QuantityRole, Stmt,
-    Terminal,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Constant, Expr, InstanceSpec, IrBuilder, Local, NodeRef, NodeRole,
+    Operator, Origin, Param, QuantityRole, Real, Stmt, Terminal, ValueType,
 };
 
 #[allow(dead_code)]
@@ -118,6 +120,56 @@ impl Lab {
         });
         let top = Devices::alone(&mut b, body, "M", 1, vec![]);
         Models::of(b.finish(top))
+    }
+
+    /// `Flag(p, n; flag: bool = true, k: f64 = 2.0)`: `let g = if flag { 1.0 } else { 2.0 };` and
+    /// `let h = if k > 1.0 { 1.0 } else { 2.0 };`, both dead, then `i(p, n) +> v(p, n)`. Neither
+    /// param reaches the write, so the `terms` function reads neither.
+    fn flag() -> Models {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let flag = b.expr(Expr::Param(0), ValueType::Bool, Origin { file: "flag.msl".into(), line: 2, col: 13 });
+        let mut e = Ex::new(&mut b, "flag.msl", 2, 5);
+        let (one, two) = (e.real(1.0), e.real(2.0));
+        let pick = e.if_f64(flag, one, two);
+        let k = e.param(1);
+        let threshold = e.real(1.0);
+        let above = e.binary(BinaryOp::Gt, k, threshold);
+        let (one, two) = (e.real(1.0), e.real(2.0));
+        let pick_k = e.if_f64(above, one, two);
+        let v = e.probe(Terminal::Node(0), Terminal::Node(1));
+        let let_g = b.stmt(Stmt::Let { local: 0, init: pick });
+        let let_h = b.stmt(Stmt::Let { local: 1, init: pick_k });
+        let direct = Addend { operator: Operator::Direct, negated: false, value: v };
+        let contribute = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![direct] });
+        let at = Origin { file: "flag.msl".into(), line: 1, col: 1 };
+        let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: at.clone() };
+        let param = |name: &str, ty, default| Param { name: name.into(), ty, default: Some(default), check: None, structural: false, origin: at.clone() };
+        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64 };
+        let body = b.body(BodySpec {
+            name: "Flag".into(),
+            origin: at.clone(),
+            params: vec![param("flag", ValueType::Bool, Constant::Bool(true)), param("k", ValueType::F64, Constant::Real(Real::new(2.0)))],
+            nodes: vec![port("p"), port("n")],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+            limits: vec![],
+            stims: vec![],
+            locals: vec![local("g"), local("h")],
+            analog: Some(vec![let_g, let_h, contribute]),
+            children: vec![],
+        });
+        let top = b.instance(InstanceSpec {
+            path: "F".into(),
+            name: "F".into(),
+            body,
+            parent: None,
+            nodes: vec![NodeRef::Ground, NodeRef::Ground],
+            params: vec![Constant::Bool(true), Constant::Real(Real::new(2.0))],
+            origin: at,
+        });
+        let ir = b.finish(top);
+        assert!(ir.check().is_empty(), "{:?}", ir.check());
+        Models::of(ir)
     }
 
     /// The diode's `terms` reads: `[vd, is, n, cj0, temperature, GMIN]`.
@@ -371,4 +423,20 @@ fn the_terms_function_reads_the_stim_value() {
     assert_eq!(out.jac[3], -1.0, "b0.eq against the stim VALUE");
     assert_eq!(out.jac[1..3], [1.0, -1.0], "b0.eq against p and n");
     assert!(Lab::close(out.values[1], 0.2 - (1.5 * 0.5 + 0.4), 1e-12), "{}", out.values[1]);
+}
+
+#[test]
+fn an_undeclared_read_never_steers_the_walk() {
+    // `flag` (bool) and `k` (real) reach no write: the terms function reads neither, the dead
+    // `if`s over them run no arm, and the flow is v(p, n) with partials 1, -1.
+    let m = Lab::flag();
+    let k = Lab::terms(&m, "Flag");
+    let (reads, _, _) = View { shape: m.module("Flag").prototype() }.function("terms");
+    assert_eq!(reads.len(), 2, "the terms function reads the two pins only: {reads:?}");
+    let h = m.instance("Flag");
+    for (vp, vn) in [(0.75, -0.25), (-3.0, 2.0), (0.0, 0.0)] {
+        let out = Models::eval(&h, k, &[In::F64(vp), In::F64(vn)], None).expect("an unread param in dead code is no fault");
+        assert_eq!(out.values[0].to_bits(), (vp - vn).to_bits());
+        assert_eq!(out.jac, [1.0, -1.0]);
+    }
 }

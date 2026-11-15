@@ -45,7 +45,7 @@ impl Interpreted {
 
     /// The frame and params of function `f` from the call's reads: each differentiable read
     /// seeded in its slot, every other read a plain value; a cell `f` does not read is `None`
-    /// (a real param `NaN`, see `walk`). With `pins_at_zero`, every continuous pin reads 0 (its
+    /// and a param it does not read `Value::Unread` (see `walk`). With `pins_at_zero`, every continuous pin reads 0 (its
     /// tangent kept): the walk of the affine rule.
     fn inputs(&self, f: &FunctionPlan, cx: &Eval<'_>, pins_at_zero: bool) -> (Frame, Vec<Value>) {
         let body = self.body();
@@ -59,7 +59,7 @@ impl Interpreted {
         let mut params: Vec<Value> = body
             .params()
             .iter()
-            .map(|p| if p.ty == ValueType::Bool { Value::Unit } else { Value::Real(Dual::constant(f64::NAN)) })
+            .map(|_| Value::Unread)
             .collect();
         for (i, source) in f.reads.iter().enumerate() {
             if matches!(source, Source::LimitLast(_) | Source::LimitAge(_) | Source::Static) {
@@ -100,6 +100,9 @@ impl Interpreted {
         let missing = |what: &str, b: u32| {
             Fault::new(Walk::UNEXECUTED, format!("{}: branch {b} has no {what} sum after the walk", body.name()))
         };
+        let unread = |what: &str, b: u32| {
+            Fault::new(Walk::UNDECLARED, format!("{}: branch {b}'s {what} is not a read of its function", body.name()))
+        };
         Ok(match t {
             Term::Flow(b) => sum(&sums.direct, b).ok_or_else(|| missing("direct", b))?,
             Term::Charge(b) => {
@@ -107,10 +110,10 @@ impl Interpreted {
                 let potential = body.branches().get(b as usize).is_some_and(|x| x.kind == BranchKind::Potential);
                 if potential { -q } else { q }
             }
-            Term::Current(b) => frame.flow(b),
+            Term::Current(b) => frame.flow(b).ok_or_else(|| unread("flow pin", b))?,
             Term::Eq(b) => {
                 let branch = &body.branches()[b as usize];
-                let v = frame.probe(branch.plus, branch.minus);
+                let v = frame.probe(branch.plus, branch.minus).ok_or_else(|| unread("probe", b))?;
                 match sum(&sums.direct, b) {
                     Some(s) => v - s,
                     None => v,

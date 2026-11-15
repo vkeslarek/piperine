@@ -566,6 +566,12 @@ Proof: run circuit | test an_unset_param_keeps_its_default ... ok
 **C44** - IF a contribution evaluates to a non-finite value THEN the system SHALL write it as it is; the solver fails the solve (abi.md A4, `E0507`). (INT edge case 4; T7)
 Proof: run terms | test a_non_finite_value_is_written_as_is ... ok
 
+**C45** - WHEN a function's walk passes dead code over a `bool` param and a real param the function does not read THEN the system SHALL run no arm decided by them and SHALL write the declared values exactly. (INT edge case 5, verification F4)
+Proof: run terms | test an_undeclared_read_never_steers_the_walk ... ok
+
+**C46** - IF a value or a decision is taken from a cell the function does not read THEN the system SHALL give `Unread` through operators, `if`, `&&`, `||` and calls, run no arm it decides, and fault (`Walk::UNDECLARED`) where a number or a decision is needed; a comparison over an unread real SHALL NOT choose an arm. (INT edge case 5, verification F4)
+Proof: run lib | test walk::tests::an_unread_value_steers_nothing ... ok
+
 ---
 
 ## Handoff

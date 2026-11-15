@@ -158,8 +158,20 @@ pub(crate) enum Source { Node(u32), BranchFlow(u32), LimitValue(u32), StimValue(
                          Param(u32), Temperature, Gmin, SourceScale, LimitLast(u32), LimitAge(u32), Static }
 pub(crate) enum Target { Flow(u32), Charge(u32), BranchEq(u32), Proposed(u32), Limited(u32), StimRe(u32), StimIm(u32), Check(u32) }
 
-pub(crate) enum Value { Real(Dual), Bool(bool), Unit, Closure(piperine_ir::ExprId) }
+pub(crate) enum Value { Real(Dual), Bool(bool), Unit, Unread, Closure(piperine_ir::ExprId) }
 ```
+
+**Undeclared reads (verification F4).** A function's reads are its `Body::dependencies`, yet its walk
+passes the whole `analog` block, including code over cells it does not read (a `let` only another
+site uses, a dead `if` over a param). Every such cell, real or `bool`, reads `Value::Unread`, a poison
+that never steers control flow: arithmetic, a method, a comparison or a call over it gives `Unread`; an
+`if`, `&&` or `||` whose deciding operand is `Unread` runs no arm and gives `Unread`; and every place
+that needs a number or a decision faults on it with `Walk::UNDECLARED` (a contribution's addend in the
+`terms` walk, a site's arguments, a `where`, a term's probe or flow pin). Skipping an arm cannot drop a
+write, because contributions sit at the top level and sites unconditionally (`Ir::check`). A correct
+plan never reaches a fault; a wrong dependency set faults instead of choosing a branch on a stand-in
+value (the earlier `NaN` stand-in took the `else` arm of `NaN > x`, and an unread `bool` was `Unit`,
+which faulted dead code on an IR that passes `check()`).
 
 ---
 

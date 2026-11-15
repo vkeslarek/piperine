@@ -6,8 +6,13 @@
 //!
 //! A cell the running function does not read cannot reach what it writes (its dependency set,
 //! `msl-ir` IR-09, is the reason it is not read), yet the walk may pass code that reads it: a
-//! `let` only another site uses. Such a read is `NaN`, never a plausible number, so a wrong
-//! dependency set shows as a non-finite write the solver refuses (abi.md A4).
+//! `let` only another site uses, a dead `if` over a param. Such a read is [`Value::Unread`], a
+//! poison that never steers the walk: an operator, a method or a call over it gives `Unread`,
+//! an `if`, `&&` or `||` whose condition is `Unread` runs no arm and gives `Unread`, and every
+//! place that needs a number or a decision (a contribution, a site's arguments, a `where`, a
+//! term) faults on it. Contributions sit at the top level and sites unconditionally
+//! (`Ir::check`), so an arm skipped this way holds no write; a wrong dependency set faults
+//! instead of choosing a branch.
 
 use piperine_abi::device::Fault;
 use piperine_ir::{
@@ -23,6 +28,8 @@ pub enum Value {
     Real(Dual),
     Bool(bool),
     Unit,
+    /// A cell the running function does not declare as a read, or a value computed from one.
+    Unread,
     /// A closure expression; called with plain reals through [`Walk::call_closure`].
     Closure(ExprId),
 }
@@ -42,26 +49,26 @@ pub(crate) struct Frame {
 }
 
 impl Frame {
-    /// A read value, or `NaN` when the function does not read the cell.
-    fn read(cell: Option<&Option<Dual>>) -> Dual {
-        cell.and_then(|c| c.clone()).unwrap_or_else(|| Dual::constant(f64::NAN))
+    /// A read value, or `None` when the function does not read the cell.
+    fn read(cell: Option<&Option<Dual>>) -> Option<Dual> {
+        cell.and_then(|c| c.clone())
     }
 
     /// The potential of a terminal: its node's pin, or 0 for ground.
-    pub fn potential(&self, t: Terminal) -> Dual {
+    pub fn potential(&self, t: Terminal) -> Option<Dual> {
         match t {
             Terminal::Node(i) => Self::read(self.nodes.get(i as usize)),
-            Terminal::Ground => Dual::constant(0.0),
+            Terminal::Ground => Some(Dual::constant(0.0)),
         }
     }
 
     /// `plus − minus`: what a probe reads.
-    pub fn probe(&self, plus: Terminal, minus: Terminal) -> Dual {
-        self.potential(plus) - self.potential(minus)
+    pub fn probe(&self, plus: Terminal, minus: Terminal) -> Option<Dual> {
+        Some(self.potential(plus)? - self.potential(minus)?)
     }
 
     /// The private flow pin of branch `b`.
-    pub fn flow(&self, b: u32) -> Dual {
+    pub fn flow(&self, b: u32) -> Option<Dual> {
         Self::read(self.flows.get(b as usize))
     }
 }
@@ -124,13 +131,16 @@ impl<'a> Walk<'a> {
     /// The fault code of a form or a type the walk does not execute.
     pub const UNEXECUTED: u32 = 1;
 
+    /// The fault code of a number or a decision taken from a cell the function does not read.
+    pub const UNDECLARED: u32 = 3;
+
     /// A walk with `params` bound and one frame of `locals` unset (`Unit`) locals.
     pub fn new(ir: &'a Ir, params: Vec<Value>, locals: usize) -> Walk<'a> {
         Walk { ir, params, frames: vec![vec![Value::Unit; locals]], analog: None }
     }
 
     /// An analog walk of `body` in `mode`, over the reads in `frame` and `params` (one per param
-    /// of the body; an unread real param is `NaN`).
+    /// of the body; an unread param is `Unread`).
     pub(crate) fn analog(body: Body<'a>, mode: Mode, frame: Frame, params: Vec<Value>) -> Walk<'a> {
         let branches = body.branches().len();
         let sums = Sums { direct: vec![None; branches], ddt: vec![None; branches] };
@@ -274,20 +284,48 @@ impl<'a> Walk<'a> {
         self.frames.last_mut().expect("a walk always has a frame")
     }
 
-    /// Evaluates `id` and requires a real.
+    /// Evaluates `id` and requires a real; `Unread` faults (`UNDECLARED`).
     pub fn eval_real(&mut self, id: ExprId) -> Result<Dual, Fault> {
         match self.eval(id)? {
             Value::Real(d) => Ok(d),
+            Value::Unread => Err(self.undeclared(id)),
             other => Err(self.fault(id, &format!("expected a real, found {}", Self::kind(&other)))),
         }
     }
 
-    /// Evaluates `id` and requires a bool.
+    /// Evaluates `id` and requires a bool; `Unread` faults (`UNDECLARED`).
     pub fn eval_bool(&mut self, id: ExprId) -> Result<bool, Fault> {
         match self.eval(id)? {
             Value::Bool(b) => Ok(b),
+            Value::Unread => Err(self.undeclared(id)),
             other => Err(self.fault(id, &format!("expected a bool, found {}", Self::kind(&other)))),
         }
+    }
+
+    /// A real or `Unread`; any other value faults.
+    fn real_or_unread(&mut self, id: ExprId) -> Result<Option<Dual>, Fault> {
+        match self.eval(id)? {
+            Value::Real(d) => Ok(Some(d)),
+            Value::Unread => Ok(None),
+            other => Err(self.fault(id, &format!("expected a real, found {}", Self::kind(&other)))),
+        }
+    }
+
+    /// A bool or `Unread`; any other value faults.
+    fn bool_or_unread(&mut self, id: ExprId) -> Result<Option<bool>, Fault> {
+        match self.eval(id)? {
+            Value::Bool(b) => Ok(Some(b)),
+            Value::Unread => Ok(None),
+            other => Err(self.fault(id, &format!("expected a bool, found {}", Self::kind(&other)))),
+        }
+    }
+
+    fn undeclared(&self, id: ExprId) -> Fault {
+        let origin = Self::origin(self.ir.expr_origin(id));
+        Fault::new(
+            Self::UNDECLARED,
+            format!("a value is taken from a cell the function does not read (a wrong dependency set, at {origin})"),
+        )
     }
 
     fn kind(value: &Value) -> &'static str {
@@ -295,6 +333,7 @@ impl<'a> Walk<'a> {
             Value::Real(_) => "a real",
             Value::Bool(_) => "a bool",
             Value::Unit => "a unit",
+            Value::Unread => "a cell the function does not read",
             Value::Closure(_) => "a closure (only `limit` calls one)",
         }
     }
@@ -302,7 +341,7 @@ impl<'a> Walk<'a> {
     /// Evaluates one expression.
     pub fn eval(&mut self, id: ExprId) -> Result<Value, Fault> {
         if let Some(v) = self.read_form(id) {
-            return Ok(Value::Real(v));
+            return Ok(v);
         }
         let ir = self.ir;
         match ir.expr(id) {
@@ -315,14 +354,15 @@ impl<'a> Walk<'a> {
                 None => Err(self.fault(id, &format!("param {i} is not bound"))),
             },
             Expr::Unary { op, expr } => match op {
-                UnaryOp::Neg => Ok(Value::Real(-self.eval_real(*expr)?)),
-                UnaryOp::Not => Ok(Value::Bool(!self.eval_bool(*expr)?)),
+                UnaryOp::Neg => Ok(self.real_or_unread(*expr)?.map_or(Value::Unread, |x| Value::Real(-x))),
+                UnaryOp::Not => Ok(self.bool_or_unread(*expr)?.map_or(Value::Unread, |b| Value::Bool(!b))),
             },
             Expr::Binary { op, lhs, rhs } => self.binary(id, *op, *lhs, *rhs),
-            Expr::If { cond, then, otherwise } => {
-                let taken = if self.eval_bool(*cond)? { *then } else { *otherwise };
-                self.eval(taken)
-            }
+            Expr::If { cond, then, otherwise } => match self.bool_or_unread(*cond)? {
+                Some(true) => self.eval(*then),
+                Some(false) => self.eval(*otherwise),
+                None => Ok(Value::Unread),
+            },
             Expr::Block { stmts, value } => {
                 for s in stmts {
                     self.exec(*s)?;
@@ -343,7 +383,7 @@ impl<'a> Walk<'a> {
                 let Some(first) = args.first() else {
                     return Err(self.fault(id, "a math function with no argument"));
                 };
-                let x = self.eval_real(*first)?;
+                let Some(x) = self.real_or_unread(*first)? else { return Ok(Value::Unread) };
                 Ok(Value::Real(match f {
                     MathFn::Exp => x.exp(),
                     MathFn::Ln => x.ln(),
@@ -364,40 +404,44 @@ impl<'a> Walk<'a> {
         self.analog.as_ref().map(|a| a.mode)
     }
 
-    /// The value of an analog read form (probe, environment, a site read in `Terms`), or `None`
-    /// when `id` is not one this walk answers from its frame.
-    fn read_form(&self, id: ExprId) -> Option<Dual> {
+    /// The value of an analog read form (probe, environment, a site read in `Terms`), `Unread`
+    /// when the function does not read its cell, or `None` when `id` is not one this walk
+    /// answers from its frame.
+    fn read_form(&self, id: ExprId) -> Option<Value> {
         let analog = self.analog.as_ref()?;
         let f = &analog.frame;
-        match self.ir.expr(id) {
-            Expr::Probe { plus, minus } => Some(f.probe(*plus, *minus)),
-            Expr::Env(env) => Some(Frame::read(Some(match env {
+        let read = match self.ir.expr(id) {
+            Expr::Probe { plus, minus } => f.probe(*plus, *minus),
+            Expr::Env(env) => Frame::read(Some(match env {
                 piperine_ir::Env::Temperature => &f.temperature,
                 piperine_ir::Env::Gmin => &f.gmin,
                 piperine_ir::Env::SourceScale => &f.source_scale,
-            }))),
+            })),
             // §18 rule 3, abi.md A2: the held value stands in for `x`; `x`, `f` and the seed are
             // the site function's, not evaluated here.
             // Any other site's function reads the site's value too, never its arguments.
-            Expr::Limit { site, .. } if analog.mode != Mode::Limit(*site) => Some(Frame::read(f.limits.get(*site as usize))),
-            Expr::Stim { site, .. } if analog.mode != Mode::Stim(*site) => Some(Frame::read(f.stims.get(*site as usize))),
-            _ => None,
-        }
+            Expr::Limit { site, .. } if analog.mode != Mode::Limit(*site) => Frame::read(f.limits.get(*site as usize)),
+            Expr::Stim { site, .. } if analog.mode != Mode::Stim(*site) => Frame::read(f.stims.get(*site as usize)),
+            _ => return None,
+        };
+        Some(read.map_or(Value::Unread, Value::Real))
     }
 
     fn binary(&mut self, id: ExprId, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> Result<Value, Fault> {
         match op {
-            BinaryOp::And => {
-                let left = self.eval_bool(lhs)?;
-                Ok(Value::Bool(left && self.eval_bool(rhs)?))
-            }
-            BinaryOp::Or => {
-                let left = self.eval_bool(lhs)?;
-                Ok(Value::Bool(left || self.eval_bool(rhs)?))
+            // An `Unread` left side decides nothing: the right side is not run.
+            BinaryOp::And | BinaryOp::Or => {
+                let Some(left) = self.bool_or_unread(lhs)? else { return Ok(Value::Unread) };
+                if left == (op == BinaryOp::Or) {
+                    return Ok(Value::Bool(left));
+                }
+                Ok(self.bool_or_unread(rhs)?.map_or(Value::Unread, Value::Bool))
             }
             BinaryOp::Eq | BinaryOp::Ne => {
                 let (l, r) = (self.eval(lhs)?, self.eval(rhs)?);
                 let same = match (&l, &r) {
+                    (Value::Unread, Value::Real(_) | Value::Bool(_) | Value::Unread)
+                    | (Value::Real(_) | Value::Bool(_), Value::Unread) => return Ok(Value::Unread),
                     (Value::Real(a), Value::Real(b)) => a.v == b.v,
                     (Value::Bool(a), Value::Bool(b)) => a == b,
                     _ => return Err(self.fault(id, "equality needs two reals or two bools")),
@@ -405,7 +449,8 @@ impl<'a> Walk<'a> {
                 Ok(Value::Bool(same == (op == BinaryOp::Eq)))
             }
             _ => {
-                let (a, b) = (self.eval_real(lhs)?, self.eval_real(rhs)?);
+                let (a, b) = (self.real_or_unread(lhs)?, self.real_or_unread(rhs)?);
+                let (Some(a), Some(b)) = (a, b) else { return Ok(Value::Unread) };
                 Ok(match op {
                     BinaryOp::Add => Value::Real(a + b),
                     BinaryOp::Sub => Value::Real(a - b),
@@ -448,10 +493,11 @@ impl<'a> Walk<'a> {
                 }
                 Ok(())
             }
-            // A site walk evaluates the addends only to reach a site inside them.
+            // A site walk evaluates the addends only to reach a site inside them; what they read
+            // past the site's own dependencies is `Unread` and decides nothing.
             Stmt::Contribute { addends, .. } if self.analog.is_some() => {
                 for a in addends {
-                    self.eval_real(a.value)?;
+                    self.real_or_unread(a.value)?;
                 }
                 Ok(())
             }
@@ -601,6 +647,45 @@ mod tests {
         assert!(w.eval(run_and).is_err(), "`true && x` must evaluate x");
         assert_eq!(real(w.eval(taken).unwrap()), 1.0);
         assert_eq!(real(w.eval(other).unwrap()), 1.0);
+    }
+
+    #[test]
+    fn an_unread_value_steers_nothing() {
+        // Param 0 is a real, param 1 a bool, both unread. `if p0 > 1 { probe } else { 2 }` would
+        // take the else arm on a NaN stand-in; on `Unread` it runs neither (the probe arm would
+        // fault in this walk) and gives `Unread`, and so does every operator over it. A number or a
+        // decision taken from it faults.
+        let mut lab = Lab::new();
+        let mut e = lab.ex(1, 1);
+        let p0 = e.param(0);
+        let one = e.real(1.0);
+        let two = e.real(2.0);
+        let probe = e.probe(Terminal::Node(0), Terminal::Ground);
+        let above = e.binary(BinaryOp::Gt, p0, one);
+        let pick = e.if_f64(above, probe, two);
+        let sum = e.binary(BinaryOp::Add, p0, one);
+        let ex = e.math(MathFn::Exp, p0);
+        let neg = e.unary(UnaryOp::Neg, p0);
+        let eq = e.binary(BinaryOp::Eq, p0, one);
+        let flag = lab.b.expr(piperine_ir::Expr::Param(1), ValueType::Bool, Origin { file: "t.msl".into(), line: 2, col: 1 });
+        let mut e = lab.ex(2, 1);
+        let f = e.boolean(false);
+        let t = e.boolean(true);
+        let and_left = e.binary(BinaryOp::And, flag, probe);
+        let or_left = e.binary(BinaryOp::Or, flag, probe);
+        let and_right = e.binary(BinaryOp::And, t, flag);
+        let and_short = e.binary(BinaryOp::And, f, flag);
+        let not = e.unary(UnaryOp::Not, flag);
+        let on_flag = e.if_f64(flag, probe, two);
+        let ir = lab.finish();
+        let mut w = Walk::new(&ir, vec![Value::Unread, Value::Unread], 0);
+        for id in [above, pick, sum, ex, neg, eq, and_left, or_left, and_right, not, on_flag] {
+            assert_eq!(w.eval(id).unwrap(), Value::Unread, "{id:?}");
+        }
+        assert_eq!(w.eval(and_short).unwrap(), Value::Bool(false), "a decided left side needs no right side");
+        assert_eq!(w.eval_real(pick).unwrap_err().code, Walk::UNDECLARED);
+        assert_eq!(w.eval_bool(above).unwrap_err().code, Walk::UNDECLARED);
+        assert_eq!(w.eval_bool(flag).unwrap_err().code, Walk::UNDECLARED);
     }
 
     /// `pnjlim` as the standard library writes it, in plain Rust.
