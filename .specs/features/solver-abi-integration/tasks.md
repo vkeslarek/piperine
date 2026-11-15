@@ -782,8 +782,9 @@ Proof: `cargo test -p piperine-abi -p piperine-analog-solver -p piperine-digital
 ## Handoff
 
 **Settled mid-build:** T5 divergence (orchestrator 2026-11-15): tolerances are NOT loosened; an Opus diagnosis finds the cause in the device transient path first (parity is the user priority); T5 resumes after; none
-**Dispatched:** B1 (Sonnet) at 43876aec - returned (T1-T4 84457807..6fec3889 + docs e4d45ebf; numbers unchanged (parity_baseline 161 steps); instance created twice (one per side)); B2 (Sonnet) at 1aa57598 - returned (T5 c2d99474, 8d6a8b26 (Opus diagnosis: resistor double value vs partial products; bit-identical now)); B2 cont. T6+ (Sonnet) at d5aa7cf4
+**Dispatched:** B1 (Sonnet) at 43876aec - returned (T1-T4 84457807..6fec3889 + docs e4d45ebf; numbers unchanged (parity_baseline 161 steps); instance created twice (one per side)); B2 (Sonnet) at 1aa57598 - returned (T5 c2d99474, 8d6a8b26 (Opus diagnosis: resistor double value vs partial products; bit-identical now)); B2 cont. T6+ (Sonnet) at d5aa7cf4 - returned (B2 T6-T10 fda2979d..a9a23f55 + param_stamps fbe7f2e8; pz device failure -> NaN matrix (silent))
 **Settled mid-build:** one device instance per placement, shared by both sides (an external device such as an emulator holds state; two copies would diverge) - fix in B2 (orchestrator)
+**Settled mid-build:** pz must fail loud on a device-evaluation failure (project rule: never silent); fix as first commit of B3 (orchestrator)
 **Walked:** not applicable - no screen
 
 ---
