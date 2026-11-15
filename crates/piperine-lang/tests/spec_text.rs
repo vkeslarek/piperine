@@ -1168,3 +1168,14 @@ fn extern_c_interface_is_the_device_abi() {
     let row = rows.iter().find(|r| r[0] == "G.65").expect("G.65 row");
     assert!(!row.join(" ").contains("Open"), "{row:?}");
 }
+
+#[test]
+fn structure_changing_set_is_refused() {
+    let host = spec("part_viii_host.md");
+    let s = flat(&section(&host, "### 23.1"));
+    let start = s.find(" 7. A `set`").expect("rule 7");
+    let end = s[start..].find(" 8. ").expect("rule 8") + start;
+    let rule = &s[start..end];
+    assert!(rule.contains("E0803") && rule.contains("extern"), "{rule}");
+    assert!(rule.contains("re-elaborates"), "{rule}");
+}

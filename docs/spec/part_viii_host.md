@@ -65,7 +65,8 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 6. A `set` is checked against the param's `where` (§8.1.1). A `set` that fails is
    refused (`E0802`) and changes nothing.
 7. A `set` of a structural param during a run is refused (`E0803`); the host re-elaborates
-   (§8.1.2).
+   (§8.1.2). A `set` that would change the structure of an extern module (§8.5.10) is
+   refused the same way, with `E0803`; in a `Dc` sweep that point re-elaborates the instance.
 8. A `set` of a non-structural param during a run follows §9 rule 4.
 9. A top-level `in` port the host never drives has no initial value and stays unknown (§5.2).
 10. At time 0, a reset held low by the host and one held low by `= false` inside the design
@@ -120,7 +121,7 @@ Nodesets and Monte Carlo distributions are given by path in the same way:
 | --- | --- | --- |
 | `E0801` | A host operation names a path that is not in the metadata (§21). | host |
 | `E0802` | A `set` gives a value of the wrong type, or one that fails the param's `where`. Refused. | host |
-| `E0803` | A `set` of a structural param during a run. Refused. | host |
+| `E0803` | A `set` of a structural param during a run, or one that would change the structure of an extern module. Refused. | host |
 | `E0804` | A host drive of a carrier of which the host holds no drive (rule 1). | host |
 | `E0805` | A subscription to a stream after the run has started (§21). | host |
 | `E0806` | A host action scheduled for a time already past. | host |

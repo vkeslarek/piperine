@@ -728,7 +728,9 @@ module** is implemented outside the language.
 - **§8.5.10** Ports and params are checked against the foreign descriptor at elaboration: every
   listed param **MUST** exist there with a compatible type, and the ports **MUST** match its
   terminals in number and order. A descriptor param the body does not list keeps its foreign
-  default and is visible to the host only (§21).
+  default and is visible to the host only (§21). A host `set` that would change the structure
+  of an extern module is refused like a structural param (`E0803`, §23.1 rule 7); in a `Dc`
+  sweep that point re-elaborates the instance.
 - **§8.5.11** Port kinds follow the ABI:
 
   | ABI | Ports |
@@ -832,7 +834,7 @@ A named expression and a value input are not quantities: they are expressions ov
 | Code | Condition | Phase |
 | --- | --- | --- |
 | §5.2 | a definition or commit whose target is a param (`E0222`) | elaboration |
-| §23.1 | a host `set` of a structural param during a run (`E0803`) | host |
+| §23.1 | a host `set` of a structural param, or one that changes the structure of an extern module, during a run (`E0803`) | host |
 
 **Examples**
 

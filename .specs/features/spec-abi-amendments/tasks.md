@@ -146,11 +146,11 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] §8.5.10 says a `set` that would change the structure of an extern module is refused like a structural param
-- [ ] §23.1 rule 7 and the `E0803` row say the same, and that in a `Dc` sweep that point re-elaborates the instance
-- [ ] `E0803` is still defined once (the existing code guard of `spec_text.rs` passes)
-- [ ] Test `structure_changing_set_is_refused` asserts `E0803` and `extern` inside §23.1 rule 7's section and `re-elaborates` in the same section
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] §8.5.10 says a `set` that would change the structure of an extern module is refused like a structural param
+- [x] §23.1 rule 7 and the `E0803` row say the same, and that in a `Dc` sweep that point re-elaborates the instance
+- [x] `E0803` is still defined once (the existing code guard of `spec_text.rs` passes)
+- [x] Test `structure_changing_set_is_refused` asserts `E0803` and `extern` inside §23.1 rule 7's section and `re-elaborates` in the same section
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
