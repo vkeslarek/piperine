@@ -357,6 +357,7 @@ Phase A is complete and mergeable without phase B.
 - WHEN a body has no `analog` block THEN the system SHALL generate its discrete code only.
 - IF two builds race for one cache entry THEN the system SHALL leave no temporary directory behind after both finish.
 - WHEN an MSL identifier is a Rust keyword THEN the system SHALL print it as a raw identifier and SHALL keep the ABI name unchanged.
+- WHEN an MSL identifier equals a name the generated code uses (a variable the printer makes, an import, one of the four keywords Rust refuses raw: `crate`, `self`, `Self`, `super`) or ends in `_` THEN the system SHALL print every identifier so that the source compiles and SHALL give the interpreter's values bit for bit (verification F2, F3: names the printer makes end in one `_`; such an MSL name takes one more `_`).
 
 ---
 

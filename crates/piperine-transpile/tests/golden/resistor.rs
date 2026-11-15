@@ -70,40 +70,40 @@ pub mod resistor {
         // Resistor.analog @ devices.msl:5:1
         fn terms_block<R: Real>(p: R, n: R, r: R) -> [R; 1] {
             // contribution to i(p, n), branch b0 @ devices.msl:8:32
-            let b0_flow = (p - n) / r;
-            [b0_flow]
+            let b0_flow_ = (p - n) / r;
+            [b0_flow_]
         }
 
         // function 0 `terms`: reads p, n, r; writes b0.flow @ devices.msl:5:1
-        fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let p = cx.f64(0);
-            let n = cx.f64(1);
-            let r = cx.f64(2);
+        fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let p = cx_.f64(0);
+            let n = cx_.f64(1);
+            let r = cx_.f64(2);
             // the evaluation with every continuous pin read as 0 (the affine rule)
-            let at_zero = Self::terms_block(Dual::<2>::seeded(0.0, 0), Dual::<2>::seeded(0.0, 1), Dual::<2>::constant(r));
+            let at_zero_ = Self::terms_block(Dual::<2>::seeded(0.0, 0), Dual::<2>::seeded(0.0, 1), Dual::<2>::constant(r));
             // term 0 `b0.flow`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0
-            cx.set(0, at_zero[0].v + (0.0 + at_zero[0].d[0] * p + at_zero[0].d[1] * n));
+            cx_.set(0, at_zero_[0].v + (0.0 + at_zero_[0].d[0] * p + at_zero_[0].d[1] * n));
             // partial 0: d b0.flow / d p
-            if cx.wanted(0) {
-                cx.jac()[0] = at_zero[0].d[0];
+            if cx_.wanted(0) {
+                cx_.jac()[0] = at_zero_[0].d[0];
             }
             // partial 1: d b0.flow / d n
-            if cx.wanted(1) {
-                cx.jac()[1] = at_zero[0].d[1];
+            if cx_.wanted(1) {
+                cx_.jac()[1] = at_zero_[0].d[1];
             }
             Ok(())
         }
 
         // Resistor.r: its `where` @ devices.msl:6:5
-        fn check_r_block<R: Real>(r: R) -> bool {
+        fn r_check_block<R: Real>(r: R) -> bool {
             r.value() > 0.0
         }
 
         // function 1 `check:r`: reads r; writes check:r @ devices.msl:6:5
-        fn check_r(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let r = cx.f64(0);
-            let ok = Self::check_r_block::<f64>(r);
-            cx.set(0, if ok { HIGH } else { LOW });
+        fn r_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let r = cx_.f64(0);
+            let ok_ = Self::r_check_block::<f64>(r);
+            cx_.set(0, if ok_ { HIGH } else { LOW });
             Ok(())
         }
     }
@@ -125,7 +125,7 @@ pub mod resistor {
                 // function 0 `terms` @ devices.msl:5:1
                 0 => Self::terms(cx),
                 // function 1 `check:r` @ devices.msl:6:5
-                1 => Self::check_r(cx),
+                1 => Self::r_check(cx),
                 _ => Err(Fault::new(2, format!("Resistor: function {k} does not exist"))),
             }
         }

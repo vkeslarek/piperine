@@ -32,13 +32,13 @@ impl<'a> AnalogPrinter<'a> {
         None
     }
 
-    /// `let x = cx.f64(i);` for each read, `cx.bool` for a `bool` param.
+    /// `let x = cx_.f64(i);` for each read, `cx_.bool` for a `bool` param.
     fn bind_reads(&self, reads: &[(usize, Source)]) -> Vec<String> {
         reads
             .iter()
             .map(|(i, s)| {
                 let get = if self.is_bool(*s) { "bool" } else { "f64" };
-                format!("let {} = cx.{get}({i});", self.read_name(*s))
+                format!("let {} = cx_.{get}({i});", self.read_name(*s))
             })
             .collect()
     }
@@ -55,7 +55,7 @@ impl<'a> AnalogPrinter<'a> {
         reads.iter().map(|(_, s)| self.read_name(*s)).collect::<Vec<_>>().join(", ")
     }
 
-    /// `stim_<site>_block` and `stim_<site>`, for function `k` of the plan, which runs
+    /// `<site>_stim_block` and `<site>_stim`, for function `k` of the plan, which runs
     /// `Mode::Stim`.
     pub fn stim(&self, k: usize) -> Result<String, Error> {
         let Some((f, site_index)) = self.plan.functions().get(k).and_then(|f| match f.mode {
@@ -68,7 +68,7 @@ impl<'a> AnalogPrinter<'a> {
             return Err(self.unsupported(&format!("ac_stim site {site_index}, found in no statement")));
         };
         let site = self.body.stims().get(site_index as usize);
-        let name = site.map_or_else(|| site_index.to_string(), |s| s.name.clone());
+        let name = site.map_or_else(|| format!("site{site_index}"), |s| s.name.clone());
         let origin = site.map_or_else(|| self.body.origin(), |s| &s.origin);
         let exprs: Vec<ExprId> = [mag].into_iter().chain(phase).collect();
         let slice = self.slice_of(Mode::Stim(site_index), &exprs, stmt);
@@ -78,7 +78,7 @@ impl<'a> AnalogPrinter<'a> {
         let mut t = Text::new();
         let returns = if phase.is_some() { "(R, R)" } else { "R" };
         t.comment(&format!("{}.analog, `ac_stim` site `{name}`: its magnitude and phase", self.body.name()), origin);
-        t.line(&format!("fn stim_{name}_block<R: Real>({}) -> {returns} {{", self.block_params(&reads)));
+        t.line(&format!("fn {name}_stim_block<R: Real>({}) -> {returns} {{", self.block_params(&reads)));
         let mut lines = Vec::new();
         for id in &slice.stmts {
             lines.push(self.values.stmt(*id)?);
@@ -103,22 +103,22 @@ impl<'a> AnalogPrinter<'a> {
             writes.join(", "),
             self.function_origin(k)
         ));
-        t.line(&format!("fn stim_{name}(cx: &mut Eval<'_>) -> Result<(), Fault> {{"));
+        t.line(&format!("fn {name}_stim(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
         let mut body = self.bind_reads(&reads);
-        let call = format!("Self::stim_{name}_block::<f64>({})", self.block_args(&reads));
+        let call = format!("Self::{name}_stim_block::<f64>({})", self.block_args(&reads));
         let (re, im) = if phase.is_some() {
-            body.push(format!("let (mag, phase) = {call};"));
+            body.push(format!("let (mag_, phase_) = {call};"));
             body.push("// RE = mag·cos(phase), IM = mag·sin(phase)".to_string());
-            ("mag * phase.cos()", "mag * phase.sin()")
+            ("mag_ * phase_.cos()", "mag_ * phase_.sin()")
         } else {
-            body.push(format!("let mag = {call};"));
+            body.push(format!("let mag_ = {call};"));
             body.push("// no phase: RE is the magnitude, IM is 0".to_string());
-            ("mag", "0.0")
+            ("mag_", "0.0")
         };
         for (j, w) in f.writes.iter().enumerate() {
             match w {
-                Target::StimRe(_) => body.push(format!("cx.set({j}, {re});")),
-                Target::StimIm(_) => body.push(format!("cx.set({j}, {im});")),
+                Target::StimRe(_) => body.push(format!("cx_.set({j}, {re});")),
+                Target::StimIm(_) => body.push(format!("cx_.set({j}, {im});")),
                 other => return Err(self.unsupported(&format!("the write {other:?} of stimulus {name}"))),
             }
         }
@@ -134,7 +134,7 @@ impl<'a> AnalogPrinter<'a> {
         Ok(text)
     }
 
-    /// `check_<param>_block` and `check_<param>`, for function `k` of the plan, which runs
+    /// `<param>_check_block` and `<param>_check`, for function `k` of the plan, which runs
     /// `Mode::Check`.
     pub fn check(&self, k: usize) -> Result<String, Error> {
         let Some((f, p)) = self.plan.functions().get(k).and_then(|f| match f.mode {
@@ -150,7 +150,7 @@ impl<'a> AnalogPrinter<'a> {
         let reads: Vec<(usize, Source)> = f.reads.iter().copied().enumerate().collect();
         let mut t = Text::new();
         t.comment(&format!("{}.{name}: its `where`", self.body.name()), &param.origin);
-        t.line(&format!("fn check_{name}_block<R: Real>({}) -> bool {{", self.block_params(&reads)));
+        t.line(&format!("fn {name}_check_block<R: Real>({}) -> bool {{", self.block_params(&reads)));
         let condition = self.values.expr(condition)?;
         t.indented(|t| t.line(&condition));
         t.line("}");
@@ -163,12 +163,12 @@ impl<'a> AnalogPrinter<'a> {
             writes.join(", "),
             self.function_origin(k)
         ));
-        t.line(&format!("fn check_{name}(cx: &mut Eval<'_>) -> Result<(), Fault> {{"));
+        t.line(&format!("fn {name}_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
         let mut body = self.bind_reads(&reads);
-        body.push(format!("let ok = Self::check_{name}_block::<f64>({});", self.block_args(&reads)));
+        body.push(format!("let ok_ = Self::{name}_check_block::<f64>({});", self.block_args(&reads)));
         for (j, w) in f.writes.iter().enumerate() {
             match w {
-                Target::Check(_) => body.push(format!("cx.set({j}, if ok {{ HIGH }} else {{ LOW }});")),
+                Target::Check(_) => body.push(format!("cx_.set({j}, if ok_ {{ HIGH }} else {{ LOW }});")),
                 other => return Err(self.unsupported(&format!("the write {other:?} of the check of {name}"))),
             }
         }
@@ -260,17 +260,17 @@ mod tests {
         // has no phase: RE is the magnitude, IM is 0
         let vsource = "\
 // Vsource.analog, `ac_stim` site `ac`: its magnitude and phase @ devices.msl:21:62
-fn stim_ac_block<R: Real>(ac: R) -> R {
+fn ac_stim_block<R: Real>(ac: R) -> R {
     ac
 }
 
 // function 0 `stim:0`: reads ac; writes ac.RE, ac.IM @ devices.msl:21:62
-fn stim_ac(cx: &mut Eval<'_>) -> Result<(), Fault> {
-    let ac = cx.f64(0);
-    let mag = Self::stim_ac_block::<f64>(ac);
+fn ac_stim(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+    let ac = cx_.f64(0);
+    let mag_ = Self::ac_stim_block::<f64>(ac);
     // no phase: RE is the magnitude, IM is 0
-    cx.set(0, mag);
-    cx.set(1, 0.0);
+    cx_.set(0, mag_);
+    cx_.set(1, 0.0);
     Ok(())
 }";
         assert_eq!(printed(&ir, v, |m| matches!(m, Mode::Stim(_))), vsource);
@@ -278,29 +278,29 @@ fn stim_ac(cx: &mut Eval<'_>) -> Result<(), Fault> {
         // a stimulus with a phase: RE = mag·cos(phase), IM = mag·sin(phase)
         let (ac, body) = phased();
         let text = printed(&ac, body, |m| matches!(m, Mode::Stim(_)));
-        assert!(text.contains("fn stim_s_block<R: Real>(mag: R, phase: R) -> (R, R) {\n    (mag, phase)\n}"), "{text}");
-        assert!(text.contains("let (mag, phase) = Self::stim_s_block::<f64>(mag, phase);"), "{text}");
-        assert!(text.contains("cx.set(0, mag * phase.cos());\n    cx.set(1, mag * phase.sin());"), "{text}");
+        assert!(text.contains("fn s_stim_block<R: Real>(mag: R, phase: R) -> (R, R) {\n    (mag, phase)\n}"), "{text}");
+        assert!(text.contains("let (mag_, phase_) = Self::s_stim_block::<f64>(mag, phase);"), "{text}");
+        assert!(text.contains("cx_.set(0, mag_ * phase_.cos());\n    cx_.set(1, mag_ * phase_.sin());"), "{text}");
 
         // devices.msl:6: `r: f64 where r > 0.0`, read as the function's read 0, written as a BIT
         let resistor = "\
 // Resistor.r: its `where` @ devices.msl:6:5
-fn check_r_block<R: Real>(r: R) -> bool {
+fn r_check_block<R: Real>(r: R) -> bool {
     r.value() > 0.0
 }
 
 // function 1 `check:r`: reads r; writes check:r @ devices.msl:6:5
-fn check_r(cx: &mut Eval<'_>) -> Result<(), Fault> {
-    let r = cx.f64(0);
-    let ok = Self::check_r_block::<f64>(r);
-    cx.set(0, if ok { HIGH } else { LOW });
+fn r_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+    let r = cx_.f64(0);
+    let ok_ = Self::r_check_block::<f64>(r);
+    cx_.set(0, if ok_ { HIGH } else { LOW });
     Ok(())
 }";
         assert_eq!(printed(&ir, r, |m| matches!(m, Mode::Check(_))), resistor);
 
         // devices.msl:34: `cj0: f64 = 0.0 where cj0 >= 0.0`, the diode's third check
         let cj0 = printed(&ir, d, |m| m == Mode::Check(2));
-        assert!(cj0.contains("fn check_cj0_block<R: Real>(cj0: R) -> bool {\n    cj0.value() >= 0.0\n}"), "{cj0}");
+        assert!(cj0.contains("fn cj0_check_block<R: Real>(cj0: R) -> bool {\n    cj0.value() >= 0.0\n}"), "{cj0}");
         assert!(cj0.starts_with("// Diode.cj0: its `where` @ devices.msl:34:5\n"), "{cj0}");
         assert!(cj0.contains("// function 4 `check:cj0`: reads cj0; writes check:cj0 @ devices.msl:34:5"), "{cj0}");
     }

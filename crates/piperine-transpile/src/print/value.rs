@@ -5,10 +5,11 @@
 //! compares their values (`a.value() > b.value()`, a literal operand plain), as the
 //! interpreter's walk compares the values of its duals; `exp`, `ln`, `sqrt` and `abs` are
 //! `Real`'s methods. An `if` and a block print over several lines, one statement each. A local
-//! prints under its MSL name, suffixed `_<index>` when another local of its owner shares that
-//! name. An environment read (`temperature()`, `gmin()`, `source_scale()`) is a variable of
-//! that name: a function that reads one, itself or through a call, takes it as a trailing
-//! parameter, and a call passes it on. A probe, a `limit` or an `ac_stim` site prints only
+//! prints under its MSL name (`Text::ident`), as the generated `<name>_<index>_` when another
+//! local of its owner shares that name; a parameter the code never reads prints as `_`. An
+//! environment read (`temperature()`, `gmin()`, `source_scale()`) is a generated variable of
+//! that name (`temperature_`): a function that reads one, itself or through a call, takes it as
+//! a trailing parameter, and a call passes it on. A probe, a `limit` or an `ac_stim` site prints only
 //! inside an `analog` block, as the variables its `Reads` name; elsewhere it, like a
 //! contribution, has no lowering here and is `Error::Unsupported` with its form, path and
 //! origin.
@@ -192,16 +193,17 @@ impl<'a> ValuePrinter<'a> {
         found.into_iter().collect()
     }
 
-    /// The variable an environment read is: `temperature`, `gmin`, `source_scale`.
+    /// The generated variable an environment read is: `temperature_`, `gmin_`, `source_scale_`.
     pub fn env_name(env: Env) -> &'static str {
         match env {
-            Env::Temperature => "temperature",
-            Env::Gmin => "gmin",
-            Env::SourceScale => "source_scale",
+            Env::Temperature => "temperature_",
+            Env::Gmin => "gmin_",
+            Env::SourceScale => "source_scale_",
         }
     }
 
-    /// `name`, or `_name` when `body` never reads local `local`: a parameter the code ignores.
+    /// `name`, or `_` when `body` never reads local `local`: a parameter the code ignores. Not
+    /// `_name`, which an MSL name could spell.
     fn unused_prefix(ir: &Ir, body: ExprId, local: u32, name: &str) -> String {
         let mut exprs = vec![body];
         while let Some(e) = exprs.pop() {
@@ -210,7 +212,7 @@ impl<'a> ValuePrinter<'a> {
                 other => Self::children(ir, other, &mut exprs),
             }
         }
-        format!("_{name}")
+        "_".to_string()
     }
 
     /// The expressions `expr` holds, statements included.
@@ -243,15 +245,15 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
-    /// Each local's MSL name, raw where Rust reserves it, suffixed `_<index>` when another local
-    /// of the same owner has the same name.
+    /// Each local's MSL name as `Text::ident` prints it; the generated `<name>_<index>_` when
+    /// another local of the same owner has the same name.
     fn names(locals: &[Local]) -> Vec<String> {
         locals
             .iter()
             .enumerate()
             .map(|(i, l)| {
                 let shared = locals.iter().filter(|o| o.name == l.name).count() > 1;
-                if shared { format!("{}_{i}", l.name) } else { Text::ident(&l.name) }
+                if shared { Text::generated(&format!("{}_{i}", l.name)) } else { Text::ident(&l.name) }
             })
             .collect()
     }
@@ -477,38 +479,38 @@ mod tests {
     fn a_function_prints_as_a_generic_fn() {
         let ir = library();
         // std/analog.msl:10: `pub fn vt() -> f64 { K_B * temperature() / Q }`, the constants
-        // folded; `temperature()` becomes a trailing param
+        // folded; `temperature()` becomes the trailing param `temperature_`
         let vt = "\
 // fn vt @ analog.msl:10:1
-fn vt<R: Real>(temperature: R) -> R {
-    R::constant(1.380649e-23) * temperature / R::constant(1.602176634e-19)
+fn vt<R: Real>(temperature_: R) -> R {
+    R::constant(1.380649e-23) * temperature_ / R::constant(1.602176634e-19)
 }
 ";
         assert_eq!(function(&ir, "vt"), vt);
 
-        // std/analog.msl:21-31, line by line; its two `let arg` are distinct locals of one owner
+        // std/analog.msl:21-31, line by line; its two `let arg` are distinct locals of one owner, printed `arg_4_` and `arg_5_`
         let pnjlim = "\
 // fn pnjlim @ analog.msl:21:1
 fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
     if new.value() > vcrit.value() && (new - old).abs().value() > (R::constant(2.0) * nvt).value() {
         if old.value() > 0.0 {
-            let arg_4 = (new - old) / nvt;
-            if arg_4.value() > 0.0 {
-                old + nvt * (R::constant(2.0) + (arg_4 - R::constant(2.0)).ln())
+            let arg_4_ = (new - old) / nvt;
+            if arg_4_.value() > 0.0 {
+                old + nvt * (R::constant(2.0) + (arg_4_ - R::constant(2.0)).ln())
             } else {
-                old - nvt * (R::constant(2.0) + (R::constant(2.0) - arg_4).ln())
+                old - nvt * (R::constant(2.0) + (R::constant(2.0) - arg_4_).ln())
             }
         } else {
             nvt * (new / nvt).ln()
         }
     } else if new.value() < 0.0 {
-        let arg_5 = if old.value() > 0.0 {
+        let arg_5_ = if old.value() > 0.0 {
             -old - R::constant(1.0)
         } else {
             R::constant(2.0) * old - R::constant(1.0)
         };
-        if new.value() < arg_5.value() {
-            arg_5
+        if new.value() < arg_5_.value() {
+            arg_5_
         } else {
             new
         }

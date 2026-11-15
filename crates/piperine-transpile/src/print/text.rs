@@ -1,6 +1,15 @@
 //! `Text`: the source writer every printer writes through. It owns the layout rules of RS-02 AC 3:
 //! 4 spaces per level, one statement per line, reals in the shortest decimal that parses back to
 //! the same bits, and identifiers that stay MSL names, raw where Rust reserves the word.
+//!
+//! Two name spaces never meet. A name the printer makes (`cx_`, `at_iterate_`, `vd_limit_`,
+//! `b0_flow_`, `arg_4_`, `temperature_`) ends in exactly one `_` after a character that is not
+//! `_`: [`Text::generated`]. An MSL name prints as written ([`Text::ident`]) unless it ends in
+//! `_` or is a name the generated code itself refers to (an import, `Ok`, `f64`, the four
+//! keywords Rust refuses raw); then it prints with one more `_`. That map is one to one (an
+//! escaped name ends in `_` again, so it is escaped again), and no MSL name prints as a
+//! generated one: an escaped name either ends in `__` or is a reserved word plus `_`, and the
+//! printer makes neither.
 
 use piperine_ir::Origin;
 
@@ -15,6 +24,32 @@ const KEYWORDS: &[&str] = &[
 /// The keywords Rust does not accept as raw identifiers: an MSL name among them prints with a
 /// trailing `_`.
 const UNRAWABLE: &[&str] = &["crate", "self", "Self", "super"];
+
+/// The names generated code refers to besides MSL names, in the scopes MSL names print in: the
+/// crates, the runtime module and the export, every name the printer imports, the type
+/// parameter `R`, and the prelude's names a generated line spells. An MSL name among them
+/// prints with a trailing `_`, so it never shadows one of them.
+const RESERVED: &[&str] = &[
+    // crates, the runtime module, the export and the two thunks
+    "std", "core", "alloc", "piperine_abi", "rt", "piperine_abi_1", "library", "module",
+    // the prelude and the primitive types generated code spells
+    "Ok", "Err", "Some", "None", "Result", "Option", "Fn", "Box", "Vec", "String", "f64", "u8", "u32", "bool",
+    "str", "R",
+    // rt
+    "Real", "Dual",
+    // piperine_abi::device
+    "Device", "Eval", "Fault", "Flow", "React", "Values",
+    // piperine_abi::layout
+    "BIT", "BYTE", "F64", "HIGH", "LOW", "NONE", "REAL",
+    // piperine_abi::raw
+    "Cell", "DEFAULT", "Field", "GROUND", "Layout", "Library", "List", "Module", "Partial", "Shape", "Statement",
+    "Str", "ambient", "cell", "field_flag", "fn_flag", "global", "input", "kind", "leaf", "op", "part", "pin_flag",
+    "reaction_flag", "role", "statement_flag", "watch",
+    // piperine_abi::shape
+    "FunctionSpec", "InputSpec", "PinSpec", "ReactionSpec", "ShapeBuf", "ShapeRef", "TermSpec", "WatchSpec",
+    // std::sync
+    "Arc", "OnceLock",
+];
 
 /// A source text being written, line by line.
 #[derive(Debug, Default)]
@@ -74,16 +109,24 @@ impl Text {
         }
     }
 
-    /// `name` as a Rust identifier: unchanged, `r#name` for a keyword, `name_` for the four
-    /// keywords Rust refuses as raw identifiers.
+    /// The MSL name `name` as a Rust identifier: unchanged; `r#name` for a keyword; `name_` for
+    /// a name that ends in `_`, one of the four keywords Rust refuses as raw identifiers, or a
+    /// name the generated code refers to.
     pub fn ident(name: &str) -> String {
-        if UNRAWABLE.contains(&name) {
+        if name.ends_with('_') || UNRAWABLE.contains(&name) || RESERVED.contains(&name) {
             format!("{name}_")
         } else if KEYWORDS.contains(&name) {
             format!("r#{name}")
         } else {
             name.to_string()
         }
+    }
+
+    /// A name the printer makes from `word` (`cx`, `vd_limit`, `b0_flow`): `word_`, a name no
+    /// MSL name prints as. `word` must not end in `_` and must not be a reserved name.
+    pub fn generated(word: &str) -> String {
+        debug_assert!(!word.ends_with('_') && !RESERVED.contains(&word) && !UNRAWABLE.contains(&word), "{word}");
+        format!("{word}_")
     }
 }
 
@@ -181,6 +224,48 @@ mod tests {
             ("Resistor", "Resistor"),
         ] {
             assert_eq!(Text::ident(msl), rust, "{msl}");
+        }
+    }
+
+    #[test]
+    fn an_msl_name_never_prints_as_a_generated_one() {
+        // a name that ends in `_`, one of the four unrawable keywords, or a name the generated
+        // code refers to takes one more `_`; any other name prints as written
+        for (msl, rust) in [
+            ("self", "self_"),
+            ("self_", "self__"),
+            ("self__", "self___"),
+            ("cx", "cx"),
+            ("cx_", "cx__"),
+            ("vd_limit_", "vd_limit__"),
+            ("limit_vd_last", "limit_vd_last"),
+            ("arg_4", "arg_4"),
+            ("Ok", "Ok_"),
+            ("f64", "f64_"),
+            ("Real", "Real_"),
+            ("rt", "rt_"),
+            ("module", "module_"),
+            ("library", "library_"),
+            ("_new", "_new"),
+        ] {
+            assert_eq!(Text::ident(msl), rust, "{msl}");
+        }
+        // the printer's own names: one trailing `_` after a character that is not `_`
+        for (word, rust) in [("cx", "cx_"), ("vd_limit", "vd_limit_"), ("x__limit", "x__limit_"), ("arg_4", "arg_4_")] {
+            assert_eq!(Text::generated(word), rust, "{word}");
+        }
+        // one to one over names that differ only in their `_`s and the reserved words, and
+        // apart from every generated name
+        let msl = ["x", "x_", "x__", "self", "self_", "self__", "Ok", "Ok_", "cx", "cx_", "vd_limit", "vd_limit_"];
+        let printed: Vec<String> = msl.iter().map(|n| Text::ident(n)).collect();
+        for (i, a) in printed.iter().enumerate() {
+            for (j, b) in printed.iter().enumerate() {
+                assert!(i == j || a != b, "`{}` and `{}` both print as `{a}`", msl[i], msl[j]);
+            }
+        }
+        for word in ["x", "cx", "vd_limit", "arg_4", "b0_flow", "temperature", "is_static"] {
+            let generated = Text::generated(word);
+            assert!(!printed.contains(&generated), "{generated} is also an MSL name's print");
         }
     }
 

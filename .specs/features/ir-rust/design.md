@@ -48,21 +48,21 @@ pub mod resistor {
         // Resistor.analog @ tests/ngspice/devices.msl:8:1
         fn terms_block<R: Real>(p: R, n: R, r: R) -> [R; 1] {
             // b0.flow: i(p, n) +> v(p, n) / r @ tests/ngspice/devices.msl:8:23
-            let b0_flow = (p - n) / r;
-            [b0_flow]
+            let b0_flow_ = (p - n) / r;
+            [b0_flow_]
         }
 
         // function 0 `terms`: reads p, n, r; writes b0.flow
-        fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let p = cx.f64(0);
-            let n = cx.f64(1);
-            let r = cx.f64(2);
+        fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let p = cx_.f64(0);
+            let n = cx_.f64(1);
+            let r = cx_.f64(2);
             // every term is affine in the pins: evaluated with pins read as 0,
             // written as c + (0.0 + g0 * p + g1 * n)
-            let [b0_flow] = Self::terms_block(Dual::<2>::seeded(0.0, 0), Dual::<2>::seeded(0.0, 1), Dual::constant(r));
-            cx.set(0, b0_flow.v + (0.0 + b0_flow.d[0] * p + b0_flow.d[1] * n));
-            if cx.wanted(0) { cx.jac()[0] = b0_flow.d[0]; }
-            if cx.wanted(1) { cx.jac()[1] = b0_flow.d[1]; }
+            let [b0_flow_] = Self::terms_block(Dual::<2>::seeded(0.0, 0), Dual::<2>::seeded(0.0, 1), Dual::constant(r));
+            cx_.set(0, b0_flow_.v + (0.0 + b0_flow_.d[0] * p + b0_flow_.d[1] * n));
+            if cx_.wanted(0) { cx_.jac()[0] = b0_flow_.d[0]; }
+            if cx_.wanted(1) { cx_.jac()[1] = b0_flow_.d[1]; }
             Ok(())
         }
     }
@@ -73,6 +73,8 @@ pub mod resistor {
 #[unsafe(no_mangle)]
 pub extern "C" fn piperine_abi_1() -> *const piperine_abi::raw::Library { /* OnceLock over thunk::library */ }
 ```
+
+**Names** (verification F2, F3). Two name spaces never meet. A name the printer makes ends in exactly one `_` after a character that is not `_`: the evaluator `cx_`, the evaluations `at_iterate_` and `at_zero_`, the environment variables `temperature_`, `gmin_`, `source_scale_`, a site's reads with its MSL name first (`vd_limit_`, `vd_last_`, `vd_age_`, `ac_stim_`), branch sums (`b0_flow_`), a duplicate local (`arg_4_`), and the limit rules' `proposed_`, `f_`, `seed_`, `from_seed_`, `old_`, `limited_`. An MSL name prints as written, raw if a keyword, unless it ends in `_`, is one of `crate`, `self`, `Self`, `super`, or is a name the generated code refers to (an import, `rt`, `Ok`, `f64`, `R`, …): then it takes one more `_` (`self` is `self_`, `self_` is `self__`). The map is one to one and never reaches a generated name. Functions of a body's `impl` put the MSL name first too (`vd_limit`, `vd_limit_block`, `ac_stim`, `r_check`), so no site or param name makes two of them meet. A parameter the code never reads prints as `_`.
 
 ### From an IR function to a Rust function
 

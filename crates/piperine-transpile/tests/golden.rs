@@ -194,7 +194,7 @@ fn a_keyword_identifier_is_raw_and_the_abi_name_is_not() {
     // in Rust: raw identifiers (RS-02 AC 2)
     assert!(text.contains("pub mod r#loop {"), "{text}");
     assert!(text.contains("fn terms_block<R: Real>(r#fn: R, r#in: R, r#type: R) -> [R; 1] {"), "{text}");
-    assert!(text.contains("let b0_flow = (r#fn - r#in) / r#type;"), "{text}");
+    assert!(text.contains("let b0_flow_ = (r#fn - r#in) / r#type;"), "{text}");
     // in the ABI: the MSL names as written (edge case 4)
     assert!(text.contains("PinSpec::discrete(\"type\", role::PARAM, &F64)"), "{text}");
     assert!(text.contains("PinSpec::continuous(\"fn\", role::PORT)"), "{text}");
@@ -251,5 +251,5 @@ fn a_body_without_analog_prints_no_terms_function() {
     assert!(held.contains("fn eval(&self, k: u32, _cx: &mut Eval<'_>) -> Result<(), Fault> {"), "{held}");
     assert!(held.contains("// pin 1 `out` @ "), "{held}");
     // the bodies that have one keep their terms function
-    assert_eq!(text.matches("fn terms(cx: &mut Eval<'_>)").count(), 3, "Vsource, Resistor, Capacitor");
+    assert_eq!(text.matches("fn terms(cx_: &mut Eval<'_>)").count(), 3, "Vsource, Resistor, Capacitor");
 }

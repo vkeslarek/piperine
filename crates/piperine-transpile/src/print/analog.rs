@@ -43,8 +43,8 @@ impl<'a> AnalogPrinter<'a> {
     pub fn new(body: Body<'a>, plan: &'a BodyPlan) -> AnalogPrinter<'a> {
         let reads = Reads {
             nodes: body.nodes().iter().map(|n| Text::ident(&n.name)).collect(),
-            limits: body.limits().iter().map(|s| format!("limit_{}", s.name)).collect(),
-            stims: body.stims().iter().map(|s| format!("stim_{}", s.name)).collect(),
+            limits: body.limits().iter().map(|s| Text::generated(&format!("{}_limit", s.name))).collect(),
+            stims: body.stims().iter().map(|s| Text::generated(&format!("{}_stim", s.name))).collect(),
         };
         let values = ValuePrinter::of_body(body.ir(), body).with_reads(reads);
         AnalogPrinter { ir: body.ir(), body, plan, values }
@@ -55,23 +55,30 @@ impl<'a> AnalogPrinter<'a> {
         &self.values
     }
 
-    /// The variable a read of a function is bound to.
+    /// The variable a read of a function is bound to: a node's or a param's MSL name
+    /// (`Text::ident`); for every other read a generated name, the site's MSL name first
+    /// (`vd_limit_`, `vd_last_`, `vd_age_`, `ac_stim_`, `b0_flow_`, `is_static_`).
     pub fn read_name(&self, s: Source) -> String {
-        let site = |list: &[piperine_ir::Site], k: u32, prefix: &str| {
-            list.get(k as usize).map_or_else(|| format!("{prefix}_{k}"), |x| format!("{prefix}_{}", x.name))
+        let site = |list: &[piperine_ir::Site], k: u32, role: &str| {
+            let name = list.get(k as usize).map_or_else(|| format!("site{k}"), |x| x.name.clone());
+            Text::generated(&format!("{name}_{role}"))
         };
         match s {
-            Source::Node(i) => self.body.nodes().get(i as usize).map_or_else(|| format!("node_{i}"), |n| Text::ident(&n.name)),
-            Source::BranchFlow(b) => format!("b{b}_flow"),
+            Source::Node(i) => {
+                self.body.nodes().get(i as usize).map_or_else(|| Text::generated(&format!("node{i}")), |n| Text::ident(&n.name))
+            }
+            Source::BranchFlow(b) => Text::generated(&format!("b{b}_flow")),
             Source::LimitValue(k) => site(self.body.limits(), k, "limit"),
             Source::StimValue(k) => site(self.body.stims(), k, "stim"),
-            Source::Param(p) => self.body.params().get(p as usize).map_or_else(|| format!("param_{p}"), |x| Text::ident(&x.name)),
+            Source::Param(p) => {
+                self.body.params().get(p as usize).map_or_else(|| Text::generated(&format!("param{p}")), |x| Text::ident(&x.name))
+            }
             Source::Temperature => ValuePrinter::env_name(Env::Temperature).to_string(),
             Source::Gmin => ValuePrinter::env_name(Env::Gmin).to_string(),
             Source::SourceScale => ValuePrinter::env_name(Env::SourceScale).to_string(),
-            Source::LimitLast(k) => format!("{}_last", site(self.body.limits(), k, "limit")),
-            Source::LimitAge(k) => format!("{}_age", site(self.body.limits(), k, "limit")),
-            Source::Static => "is_static".to_string(),
+            Source::LimitLast(k) => site(self.body.limits(), k, "last"),
+            Source::LimitAge(k) => site(self.body.limits(), k, "age"),
+            Source::Static => Text::generated("is_static"),
         }
     }
 
@@ -245,13 +252,18 @@ impl<'a> AnalogPrinter<'a> {
         }
     }
 
-    /// The variable of a branch's direct sum: `b0_flow` on a flow branch, `b0_potential` on a
-    /// potential branch (whose `b0_flow` is its flow pin).
+    /// The variable of a branch's direct sum: `b0_flow_` on a flow branch, `b0_potential_` on a
+    /// potential branch (whose `b0_flow_` is its flow pin).
     fn direct_sum(&self, branch: u32) -> String {
         match self.body.branches().get(branch as usize).map(|b| b.kind) {
-            Some(BranchKind::Potential) => format!("b{branch}_potential"),
-            _ => format!("b{branch}_flow"),
+            Some(BranchKind::Potential) => Text::generated(&format!("b{branch}_potential")),
+            _ => Text::generated(&format!("b{branch}_flow")),
         }
+    }
+
+    /// The variable of a branch's charge sum: `b0_charge_`.
+    fn charge_sum(branch: u32) -> String {
+        Text::generated(&format!("b{branch}_charge"))
     }
 
     /// `terms_block` and `terms`, for function `k` of the plan, which runs `Mode::Terms`.
@@ -314,7 +326,7 @@ impl<'a> AnalogPrinter<'a> {
                     for a in addends {
                         let sum = match a.operator {
                             Operator::Direct => self.direct_sum(*branch),
-                            Operator::Ddt => format!("b{branch}_charge"),
+                            Operator::Ddt => Self::charge_sum(*branch),
                         };
                         if defined.insert(sum.clone()) {
                             let value = if a.negated { self.values.negated(a.value)? } else { self.values.expr(a.value)? };
@@ -337,7 +349,7 @@ impl<'a> AnalogPrinter<'a> {
                 Term::Flow(b) => self.direct_sum(b),
                 Term::Charge(b) => {
                     let potential = self.body.branches().get(b as usize).is_some_and(|x| x.kind == BranchKind::Potential);
-                    if potential { format!("-b{b}_charge") } else { format!("b{b}_charge") }
+                    if potential { format!("-{}", Self::charge_sum(b)) } else { Self::charge_sum(b) }
                 }
                 Term::Current(b) => self.read_name(Source::BranchFlow(b)),
                 Term::Eq(b) => {
@@ -374,11 +386,11 @@ impl<'a> AnalogPrinter<'a> {
             writes.join(", "),
             self.function_origin(k)
         ));
-        t.line("fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {");
+        t.line("fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {");
         t.indented(|t| {
             for (i, s) in reads {
                 let get = if self.is_bool(*s) { "bool" } else { "f64" };
-                t.line(&format!("let {} = cx.{get}({i});", names[*i]));
+                t.line(&format!("let {} = cx_.{get}({i});", names[*i]));
             }
             let call = |zero: bool| {
                 let args: Vec<String> = reads
@@ -399,11 +411,11 @@ impl<'a> AnalogPrinter<'a> {
             };
             if at_iterate {
                 t.line("// the evaluation at the iterate");
-                t.line(&format!("let at_iterate = {};", call(false)));
+                t.line(&format!("let at_iterate_ = {};", call(false)));
             }
             if at_zero {
                 t.line("// the evaluation with every continuous pin read as 0 (the affine rule)");
-                t.line(&format!("let at_zero = {};", call(true)));
+                t.line(&format!("let at_zero_ = {};", call(true)));
             }
             for (w, name) in writes.iter().enumerate() {
                 if affine(w) {
@@ -411,24 +423,24 @@ impl<'a> AnalogPrinter<'a> {
                         .partials
                         .iter()
                         .filter(|(pw, slot)| *pw == w && pin(*slot))
-                        .map(|(_, slot)| format!(" + at_zero[{w}].d[{slot}] * {}", names[*slot]))
+                        .map(|(_, slot)| format!(" + at_zero_[{w}].d[{slot}] * {}", names[*slot]))
                         .collect();
                     t.line(&format!("// term {w} `{name}`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0"));
                     if fold.is_empty() {
-                        t.line(&format!("cx.set({w}, at_zero[{w}].v + 0.0);"));
+                        t.line(&format!("cx_.set({w}, at_zero_[{w}].v + 0.0);"));
                     } else {
-                        t.line(&format!("cx.set({w}, at_zero[{w}].v + (0.0{}));", fold.concat()));
+                        t.line(&format!("cx_.set({w}, at_zero_[{w}].v + (0.0{}));", fold.concat()));
                     }
                 } else {
                     t.line(&format!("// term {w} `{name}`: its value at the iterate"));
-                    t.line(&format!("cx.set({w}, at_iterate[{w}].v);"));
+                    t.line(&format!("cx_.set({w}, at_iterate_[{w}].v);"));
                 }
             }
             for (p, (w, slot)) in f.partials.iter().enumerate() {
-                let from = if affine(*w) && pin(*slot) { "at_zero" } else { "at_iterate" };
+                let from = if affine(*w) && pin(*slot) { "at_zero_" } else { "at_iterate_" };
                 t.line(&format!("// partial {p}: d {} / d {}", writes[*w], names[*slot]));
-                t.line(&format!("if cx.wanted({p}) {{"));
-                t.indented(|t| t.line(&format!("cx.jac()[{p}] = {from}[{w}].d[{slot}];")));
+                t.line(&format!("if cx_.wanted({p}) {{"));
+                t.indented(|t| t.line(&format!("cx_.jac()[{p}] = {from}[{w}].d[{slot}];")));
                 t.line("}");
             }
             t.line("Ok(())");
@@ -480,26 +492,26 @@ mod tests {
 // Resistor.analog @ devices.msl:5:1
 fn terms_block<R: Real>(p: R, n: R, r: R) -> [R; 1] {
     // contribution to i(p, n), branch b0 @ devices.msl:8:32
-    let b0_flow = (p - n) / r;
-    [b0_flow]
+    let b0_flow_ = (p - n) / r;
+    [b0_flow_]
 }
 
 // function 0 `terms`: reads p, n, r; writes b0.flow @ devices.msl:5:1
-fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-    let p = cx.f64(0);
-    let n = cx.f64(1);
-    let r = cx.f64(2);
+fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+    let p = cx_.f64(0);
+    let n = cx_.f64(1);
+    let r = cx_.f64(2);
     // the evaluation with every continuous pin read as 0 (the affine rule)
-    let at_zero = Self::terms_block(Dual::<2>::seeded(0.0, 0), Dual::<2>::seeded(0.0, 1), Dual::<2>::constant(r));
+    let at_zero_ = Self::terms_block(Dual::<2>::seeded(0.0, 0), Dual::<2>::seeded(0.0, 1), Dual::<2>::constant(r));
     // term 0 `b0.flow`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0
-    cx.set(0, at_zero[0].v + (0.0 + at_zero[0].d[0] * p + at_zero[0].d[1] * n));
+    cx_.set(0, at_zero_[0].v + (0.0 + at_zero_[0].d[0] * p + at_zero_[0].d[1] * n));
     // partial 0: d b0.flow / d p
-    if cx.wanted(0) {
-        cx.jac()[0] = at_zero[0].d[0];
+    if cx_.wanted(0) {
+        cx_.jac()[0] = at_zero_[0].d[0];
     }
     // partial 1: d b0.flow / d n
-    if cx.wanted(1) {
-        cx.jac()[1] = at_zero[0].d[1];
+    if cx_.wanted(1) {
+        cx_.jac()[1] = at_zero_[0].d[1];
     }
     Ok(())
 }";
@@ -511,26 +523,26 @@ fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
 // Capacitor.analog @ devices.msl:11:1
 fn terms_block<R: Real>(p: R, n: R, c: R) -> [R; 1] {
     // contribution to i(p, n), branch b0 @ devices.msl:14:40
-    let b0_charge = c * (p - n);
-    [b0_charge]
+    let b0_charge_ = c * (p - n);
+    [b0_charge_]
 }
 
 // function 0 `terms`: reads p, n, c; writes b0.charge @ devices.msl:11:1
-fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-    let p = cx.f64(0);
-    let n = cx.f64(1);
-    let c = cx.f64(2);
+fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+    let p = cx_.f64(0);
+    let n = cx_.f64(1);
+    let c = cx_.f64(2);
     // the evaluation at the iterate
-    let at_iterate = Self::terms_block(Dual::<2>::seeded(p, 0), Dual::<2>::seeded(n, 1), Dual::<2>::constant(c));
+    let at_iterate_ = Self::terms_block(Dual::<2>::seeded(p, 0), Dual::<2>::seeded(n, 1), Dual::<2>::constant(c));
     // term 0 `b0.charge`: its value at the iterate
-    cx.set(0, at_iterate[0].v);
+    cx_.set(0, at_iterate_[0].v);
     // partial 0: d b0.charge / d p
-    if cx.wanted(0) {
-        cx.jac()[0] = at_iterate[0].d[0];
+    if cx_.wanted(0) {
+        cx_.jac()[0] = at_iterate_[0].d[0];
     }
     // partial 1: d b0.charge / d n
-    if cx.wanted(1) {
-        cx.jac()[1] = at_iterate[0].d[1];
+    if cx_.wanted(1) {
+        cx_.jac()[1] = at_iterate_[0].d[1];
     }
     Ok(())
 }";
@@ -542,42 +554,42 @@ fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
         let (ir, [.., d]) = library();
         // devices.msl:36-42. The terms read the limited `vd` (the site's held value, slot 0), not
         // `v(a, k)`; `vcrit` reaches only the `limit` site's seed and closure, so the terms' slice
-        // has no `let vcrit`, and `limit(…)` is the held value `limit_vd`. Reads in the plan's
-        // order: the limit value, the params is, n, cj0, then temperature (through `vt()`) and
-        // gmin. Neither term is affine (`exp` of the limited value; a charge).
+        // has no `let vcrit`, and `limit(…)` is the held value `vd_limit_`. Reads in the plan's
+        // order: the limit value, the params is, n, cj0, then temperature_ (through `vt()`) and
+        // gmin_. Neither term is affine (`exp` of the limited value; a charge).
         let diode = "\
 // Diode.analog @ devices.msl:31:1
-fn terms_block<R: Real>(limit_vd: R, is: R, n: R, cj0: R, temperature: R, gmin: R) -> [R; 2] {
-    let nvt = n * vt(temperature);
-    let vd = limit_vd;
+fn terms_block<R: Real>(vd_limit_: R, is: R, n: R, cj0: R, temperature_: R, gmin_: R) -> [R; 2] {
+    let nvt = n * vt(temperature_);
+    let vd = vd_limit_;
     let id = is * ((vd / nvt).exp() - R::constant(1.0));
     // contribution to i(a, k), branch b0 @ devices.msl:41:17
-    let b0_flow = id + gmin * vd;
-    let b0_charge = cj0 * vd;
-    [b0_flow, b0_charge]
+    let b0_flow_ = id + gmin_ * vd;
+    let b0_charge_ = cj0 * vd;
+    [b0_flow_, b0_charge_]
 }
 
-// function 1 `terms`: reads limit_vd, is, n, cj0, temperature, gmin; writes b0.flow, b0.charge @ devices.msl:31:1
-fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-    let limit_vd = cx.f64(0);
-    let is = cx.f64(1);
-    let n = cx.f64(2);
-    let cj0 = cx.f64(3);
-    let temperature = cx.f64(4);
-    let gmin = cx.f64(5);
+// function 1 `terms`: reads vd_limit_, is, n, cj0, temperature_, gmin_; writes b0.flow, b0.charge @ devices.msl:31:1
+fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+    let vd_limit_ = cx_.f64(0);
+    let is = cx_.f64(1);
+    let n = cx_.f64(2);
+    let cj0 = cx_.f64(3);
+    let temperature_ = cx_.f64(4);
+    let gmin_ = cx_.f64(5);
     // the evaluation at the iterate
-    let at_iterate = Self::terms_block(Dual::<1>::seeded(limit_vd, 0), Dual::<1>::constant(is), Dual::<1>::constant(n), Dual::<1>::constant(cj0), Dual::<1>::constant(temperature), Dual::<1>::constant(gmin));
+    let at_iterate_ = Self::terms_block(Dual::<1>::seeded(vd_limit_, 0), Dual::<1>::constant(is), Dual::<1>::constant(n), Dual::<1>::constant(cj0), Dual::<1>::constant(temperature_), Dual::<1>::constant(gmin_));
     // term 0 `b0.flow`: its value at the iterate
-    cx.set(0, at_iterate[0].v);
+    cx_.set(0, at_iterate_[0].v);
     // term 1 `b0.charge`: its value at the iterate
-    cx.set(1, at_iterate[1].v);
-    // partial 0: d b0.flow / d limit_vd
-    if cx.wanted(0) {
-        cx.jac()[0] = at_iterate[0].d[0];
+    cx_.set(1, at_iterate_[1].v);
+    // partial 0: d b0.flow / d vd_limit_
+    if cx_.wanted(0) {
+        cx_.jac()[0] = at_iterate_[0].d[0];
     }
-    // partial 1: d b0.charge / d limit_vd
-    if cx.wanted(1) {
-        cx.jac()[1] = at_iterate[1].d[0];
+    // partial 1: d b0.charge / d vd_limit_
+    if cx_.wanted(1) {
+        cx_.jac()[1] = at_iterate_[1].d[0];
     }
     Ok(())
 }";
@@ -589,50 +601,50 @@ fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
     #[test]
     fn a_potential_branch_prints_its_flow_and_equation_terms() {
         let (ir, [_, _, v, ..]) = library();
-        // `v(p, n) +> dc * source_scale() + ac_stim(ac)` (devices.msl:21), abi.md A1: term 0
+        // `v(p, n) +> dc * source_scale_() + ac_stim(ac)` (devices.msl:21), abi.md A1: term 0
         // `b0.flow` is the branch's flow pin, term 1 `b0.eq` is v(p, n) minus the contributed
-        // potential. Reads: p, n, the flow pin, the stimulus (slots 0 to 3), dc, ac, source_scale;
+        // potential. Reads: p, n, the flow pin, the stimulus (slots 0 to 3), dc, ac, source_scale_;
         // `ac` is read for the stimulus's site, not by the terms, so it is not bound. Both terms
         // are affine; the partial of `b0.eq` against the stimulus comes from the iterate.
         let vsource = "\
 // Vsource.analog @ devices.msl:17:1
-fn terms_block<R: Real>(p: R, n: R, b0_flow: R, stim_ac: R, dc: R, source_scale: R) -> [R; 2] {
+fn terms_block<R: Real>(p: R, n: R, b0_flow_: R, ac_stim_: R, dc: R, source_scale_: R) -> [R; 2] {
     // contribution to v(p, n), branch b0 @ devices.msl:21:30
-    let b0_potential = dc * source_scale + stim_ac;
-    [b0_flow, p - n - b0_potential]
+    let b0_potential_ = dc * source_scale_ + ac_stim_;
+    [b0_flow_, p - n - b0_potential_]
 }
 
-// function 1 `terms`: reads p, n, b0_flow, stim_ac, dc, ac, source_scale; writes b0.flow, b0.eq @ devices.msl:17:1
-fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-    let p = cx.f64(0);
-    let n = cx.f64(1);
-    let b0_flow = cx.f64(2);
-    let stim_ac = cx.f64(3);
-    let dc = cx.f64(4);
-    let source_scale = cx.f64(6);
+// function 1 `terms`: reads p, n, b0_flow_, ac_stim_, dc, ac, source_scale_; writes b0.flow, b0.eq @ devices.msl:17:1
+fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+    let p = cx_.f64(0);
+    let n = cx_.f64(1);
+    let b0_flow_ = cx_.f64(2);
+    let ac_stim_ = cx_.f64(3);
+    let dc = cx_.f64(4);
+    let source_scale_ = cx_.f64(6);
     // the evaluation at the iterate
-    let at_iterate = Self::terms_block(Dual::<4>::seeded(p, 0), Dual::<4>::seeded(n, 1), Dual::<4>::seeded(b0_flow, 2), Dual::<4>::seeded(stim_ac, 3), Dual::<4>::constant(dc), Dual::<4>::constant(source_scale));
+    let at_iterate_ = Self::terms_block(Dual::<4>::seeded(p, 0), Dual::<4>::seeded(n, 1), Dual::<4>::seeded(b0_flow_, 2), Dual::<4>::seeded(ac_stim_, 3), Dual::<4>::constant(dc), Dual::<4>::constant(source_scale_));
     // the evaluation with every continuous pin read as 0 (the affine rule)
-    let at_zero = Self::terms_block(Dual::<4>::seeded(0.0, 0), Dual::<4>::seeded(0.0, 1), Dual::<4>::seeded(0.0, 2), Dual::<4>::seeded(stim_ac, 3), Dual::<4>::constant(dc), Dual::<4>::constant(source_scale));
+    let at_zero_ = Self::terms_block(Dual::<4>::seeded(0.0, 0), Dual::<4>::seeded(0.0, 1), Dual::<4>::seeded(0.0, 2), Dual::<4>::seeded(ac_stim_, 3), Dual::<4>::constant(dc), Dual::<4>::constant(source_scale_));
     // term 0 `b0.flow`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0
-    cx.set(0, at_zero[0].v + (0.0 + at_zero[0].d[2] * b0_flow));
+    cx_.set(0, at_zero_[0].v + (0.0 + at_zero_[0].d[2] * b0_flow_));
     // term 1 `b0.eq`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0
-    cx.set(1, at_zero[1].v + (0.0 + at_zero[1].d[0] * p + at_zero[1].d[1] * n));
-    // partial 0: d b0.flow / d b0_flow
-    if cx.wanted(0) {
-        cx.jac()[0] = at_zero[0].d[2];
+    cx_.set(1, at_zero_[1].v + (0.0 + at_zero_[1].d[0] * p + at_zero_[1].d[1] * n));
+    // partial 0: d b0.flow / d b0_flow_
+    if cx_.wanted(0) {
+        cx_.jac()[0] = at_zero_[0].d[2];
     }
     // partial 1: d b0.eq / d p
-    if cx.wanted(1) {
-        cx.jac()[1] = at_zero[1].d[0];
+    if cx_.wanted(1) {
+        cx_.jac()[1] = at_zero_[1].d[0];
     }
     // partial 2: d b0.eq / d n
-    if cx.wanted(2) {
-        cx.jac()[2] = at_zero[1].d[1];
+    if cx_.wanted(2) {
+        cx_.jac()[2] = at_zero_[1].d[1];
     }
-    // partial 3: d b0.eq / d stim_ac
-    if cx.wanted(3) {
-        cx.jac()[3] = at_iterate[1].d[3];
+    // partial 3: d b0.eq / d ac_stim_
+    if cx_.wanted(3) {
+        cx_.jac()[3] = at_iterate_[1].d[3];
     }
     Ok(())
 }";

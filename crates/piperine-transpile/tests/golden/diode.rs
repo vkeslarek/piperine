@@ -11,31 +11,31 @@ use rt::{Dual, Real};
 use std::sync::{Arc, OnceLock};
 
 // fn vt @ analog.msl:10:1
-fn vt<R: Real>(temperature: R) -> R {
-    R::constant(1.380649e-23) * temperature / R::constant(1.602176634e-19)
+fn vt<R: Real>(temperature_: R) -> R {
+    R::constant(1.380649e-23) * temperature_ / R::constant(1.602176634e-19)
 }
 
 // fn pnjlim @ analog.msl:21:1
 fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
     if new.value() > vcrit.value() && (new - old).abs().value() > (R::constant(2.0) * nvt).value() {
         if old.value() > 0.0 {
-            let arg_4 = (new - old) / nvt;
-            if arg_4.value() > 0.0 {
-                old + nvt * (R::constant(2.0) + (arg_4 - R::constant(2.0)).ln())
+            let arg_4_ = (new - old) / nvt;
+            if arg_4_.value() > 0.0 {
+                old + nvt * (R::constant(2.0) + (arg_4_ - R::constant(2.0)).ln())
             } else {
-                old - nvt * (R::constant(2.0) + (R::constant(2.0) - arg_4).ln())
+                old - nvt * (R::constant(2.0) + (R::constant(2.0) - arg_4_).ln())
             }
         } else {
             nvt * (new / nvt).ln()
         }
     } else if new.value() < 0.0 {
-        let arg_5 = if old.value() > 0.0 {
+        let arg_5_ = if old.value() > 0.0 {
             -old - R::constant(1.0)
         } else {
             R::constant(2.0) * old - R::constant(1.0)
         };
-        if new.value() < arg_5.value() {
-            arg_5
+        if new.value() < arg_5_.value() {
+            arg_5_
         } else {
             new
         }
@@ -170,118 +170,118 @@ pub mod diode {
         }
 
         // Diode.analog, `limit` site `vd`: its input, its function and its seed @ devices.msl:39:17
-        fn limit_vd_block<R: Real>(a: R, k: R, is: R, n: R, temperature: R) -> (R, impl Fn(R, R) -> R, R) {
-            let nvt = n * vt(temperature);
+        fn vd_limit_block<R: Real>(a: R, k: R, is: R, n: R, temperature_: R) -> (R, impl Fn(R, R) -> R, R) {
+            let nvt = n * vt(temperature_);
             let vcrit = nvt * (nvt / (R::constant(2.0).sqrt() * is)).ln();
             (a - k, move |new, old| pnjlim(new, old, nvt, vcrit), vcrit)
         }
 
-        // function 0 `limit:vd`: reads a, k, is, n, temperature, limit_vd_last, limit_vd_age, is_static; writes vd.PROPOSED, vd.LIMITED @ devices.msl:39:17
-        fn limit_vd(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let a = cx.f64(0);
-            let k = cx.f64(1);
-            let is = cx.f64(2);
-            let n = cx.f64(3);
-            let temperature = cx.f64(4);
-            let limit_vd_last = cx.f64(5);
-            let limit_vd_age = cx.u8(6);
-            let is_static = cx.bool(7);
+        // function 0 `limit:vd`: reads a, k, is, n, temperature_, vd_last_, vd_age_, is_static_; writes vd.PROPOSED, vd.LIMITED @ devices.msl:39:17
+        fn vd_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let a = cx_.f64(0);
+            let k = cx_.f64(1);
+            let is = cx_.f64(2);
+            let n = cx_.f64(3);
+            let temperature_ = cx_.f64(4);
+            let vd_last_ = cx_.f64(5);
+            let vd_age_ = cx_.u8(6);
+            let is_static_ = cx_.bool(7);
             // PROPOSED: the input x and its partials, at the iterate
-            let (proposed, _, _) = Self::limit_vd_block(Dual::<2>::seeded(a, 0), Dual::<2>::seeded(k, 1), Dual::<2>::constant(is), Dual::<2>::constant(n), Dual::<2>::constant(temperature));
+            let (proposed_, _, _) = Self::vd_limit_block(Dual::<2>::seeded(a, 0), Dual::<2>::seeded(k, 1), Dual::<2>::constant(is), Dual::<2>::constant(n), Dual::<2>::constant(temperature_));
             // the function and the seed, over plain f64
-            let (_, f, seed) = Self::limit_vd_block(a, k, is, n, temperature);
+            let (_, f_, seed_) = Self::vd_limit_block(a, k, is, n, temperature_);
             // rule `the seed start`: nothing held (AGE 0), or in an equilibrium solve a value held from the last accepted solution (STATIC, AGE 1)
-            let from_seed = limit_vd_age == 0 || (is_static && limit_vd_age == 1);
+            let from_seed_ = vd_age_ == 0 || (is_static_ && vd_age_ == 1);
             // rule `old`: LAST, or where the seed starts the seed
-            let old = if from_seed { seed } else { limit_vd_last };
-            let limited = f(proposed.v, old);
+            let old_ = if from_seed_ { seed_ } else { vd_last_ };
+            let limited_ = f_(proposed_.v, old_);
             // rule `the seed kept`: starting from the seed, a limited value below it is raised to it
-            let limited = if from_seed && limited < seed { seed } else { limited };
-            cx.set(0, proposed.v);
-            cx.set(1, limited);
+            let limited_ = if from_seed_ && limited_ < seed_ { seed_ } else { limited_ };
+            cx_.set(0, proposed_.v);
+            cx_.set(1, limited_);
             // partial 0: d vd.PROPOSED / d a
-            if cx.wanted(0) {
-                cx.jac()[0] = proposed.d[0];
+            if cx_.wanted(0) {
+                cx_.jac()[0] = proposed_.d[0];
             }
             // partial 1: d vd.PROPOSED / d k
-            if cx.wanted(1) {
-                cx.jac()[1] = proposed.d[1];
+            if cx_.wanted(1) {
+                cx_.jac()[1] = proposed_.d[1];
             }
             Ok(())
         }
 
         // Diode.analog @ devices.msl:31:1
-        fn terms_block<R: Real>(limit_vd: R, is: R, n: R, cj0: R, temperature: R, gmin: R) -> [R; 2] {
-            let nvt = n * vt(temperature);
-            let vd = limit_vd;
+        fn terms_block<R: Real>(vd_limit_: R, is: R, n: R, cj0: R, temperature_: R, gmin_: R) -> [R; 2] {
+            let nvt = n * vt(temperature_);
+            let vd = vd_limit_;
             let id = is * ((vd / nvt).exp() - R::constant(1.0));
             // contribution to i(a, k), branch b0 @ devices.msl:41:17
-            let b0_flow = id + gmin * vd;
-            let b0_charge = cj0 * vd;
-            [b0_flow, b0_charge]
+            let b0_flow_ = id + gmin_ * vd;
+            let b0_charge_ = cj0 * vd;
+            [b0_flow_, b0_charge_]
         }
 
-        // function 1 `terms`: reads limit_vd, is, n, cj0, temperature, gmin; writes b0.flow, b0.charge @ devices.msl:31:1
-        fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let limit_vd = cx.f64(0);
-            let is = cx.f64(1);
-            let n = cx.f64(2);
-            let cj0 = cx.f64(3);
-            let temperature = cx.f64(4);
-            let gmin = cx.f64(5);
+        // function 1 `terms`: reads vd_limit_, is, n, cj0, temperature_, gmin_; writes b0.flow, b0.charge @ devices.msl:31:1
+        fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let vd_limit_ = cx_.f64(0);
+            let is = cx_.f64(1);
+            let n = cx_.f64(2);
+            let cj0 = cx_.f64(3);
+            let temperature_ = cx_.f64(4);
+            let gmin_ = cx_.f64(5);
             // the evaluation at the iterate
-            let at_iterate = Self::terms_block(Dual::<1>::seeded(limit_vd, 0), Dual::<1>::constant(is), Dual::<1>::constant(n), Dual::<1>::constant(cj0), Dual::<1>::constant(temperature), Dual::<1>::constant(gmin));
+            let at_iterate_ = Self::terms_block(Dual::<1>::seeded(vd_limit_, 0), Dual::<1>::constant(is), Dual::<1>::constant(n), Dual::<1>::constant(cj0), Dual::<1>::constant(temperature_), Dual::<1>::constant(gmin_));
             // term 0 `b0.flow`: its value at the iterate
-            cx.set(0, at_iterate[0].v);
+            cx_.set(0, at_iterate_[0].v);
             // term 1 `b0.charge`: its value at the iterate
-            cx.set(1, at_iterate[1].v);
-            // partial 0: d b0.flow / d limit_vd
-            if cx.wanted(0) {
-                cx.jac()[0] = at_iterate[0].d[0];
+            cx_.set(1, at_iterate_[1].v);
+            // partial 0: d b0.flow / d vd_limit_
+            if cx_.wanted(0) {
+                cx_.jac()[0] = at_iterate_[0].d[0];
             }
-            // partial 1: d b0.charge / d limit_vd
-            if cx.wanted(1) {
-                cx.jac()[1] = at_iterate[1].d[0];
+            // partial 1: d b0.charge / d vd_limit_
+            if cx_.wanted(1) {
+                cx_.jac()[1] = at_iterate_[1].d[0];
             }
             Ok(())
         }
 
         // Diode.is: its `where` @ devices.msl:32:5
-        fn check_is_block<R: Real>(is: R) -> bool {
+        fn is_check_block<R: Real>(is: R) -> bool {
             is.value() > 0.0
         }
 
         // function 2 `check:is`: reads is; writes check:is @ devices.msl:32:5
-        fn check_is(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let is = cx.f64(0);
-            let ok = Self::check_is_block::<f64>(is);
-            cx.set(0, if ok { HIGH } else { LOW });
+        fn is_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let is = cx_.f64(0);
+            let ok_ = Self::is_check_block::<f64>(is);
+            cx_.set(0, if ok_ { HIGH } else { LOW });
             Ok(())
         }
 
         // Diode.n: its `where` @ devices.msl:33:5
-        fn check_n_block<R: Real>(n: R) -> bool {
+        fn n_check_block<R: Real>(n: R) -> bool {
             n.value() > 0.0
         }
 
         // function 3 `check:n`: reads n; writes check:n @ devices.msl:33:5
-        fn check_n(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let n = cx.f64(0);
-            let ok = Self::check_n_block::<f64>(n);
-            cx.set(0, if ok { HIGH } else { LOW });
+        fn n_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let n = cx_.f64(0);
+            let ok_ = Self::n_check_block::<f64>(n);
+            cx_.set(0, if ok_ { HIGH } else { LOW });
             Ok(())
         }
 
         // Diode.cj0: its `where` @ devices.msl:34:5
-        fn check_cj0_block<R: Real>(cj0: R) -> bool {
+        fn cj0_check_block<R: Real>(cj0: R) -> bool {
             cj0.value() >= 0.0
         }
 
         // function 4 `check:cj0`: reads cj0; writes check:cj0 @ devices.msl:34:5
-        fn check_cj0(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let cj0 = cx.f64(0);
-            let ok = Self::check_cj0_block::<f64>(cj0);
-            cx.set(0, if ok { HIGH } else { LOW });
+        fn cj0_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let cj0 = cx_.f64(0);
+            let ok_ = Self::cj0_check_block::<f64>(cj0);
+            cx_.set(0, if ok_ { HIGH } else { LOW });
             Ok(())
         }
     }
@@ -301,15 +301,15 @@ pub mod diode {
         fn eval(&self, k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
             match k {
                 // function 0 `limit:vd` @ devices.msl:39:17
-                0 => Self::limit_vd(cx),
+                0 => Self::vd_limit(cx),
                 // function 1 `terms` @ devices.msl:31:1
                 1 => Self::terms(cx),
                 // function 2 `check:is` @ devices.msl:32:5
-                2 => Self::check_is(cx),
+                2 => Self::is_check(cx),
                 // function 3 `check:n` @ devices.msl:33:5
-                3 => Self::check_n(cx),
+                3 => Self::n_check(cx),
                 // function 4 `check:cj0` @ devices.msl:34:5
-                4 => Self::check_cj0(cx),
+                4 => Self::cj0_check(cx),
                 _ => Err(Fault::new(2, format!("Diode: function {k} does not exist"))),
             }
         }

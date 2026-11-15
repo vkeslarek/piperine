@@ -71,41 +71,41 @@ pub mod isource {
         }
 
         // Isource.analog, `ac_stim` site `ac`: its magnitude and phase @ devices.msl:28:62
-        fn stim_ac_block<R: Real>(ac: R) -> R {
+        fn ac_stim_block<R: Real>(ac: R) -> R {
             ac
         }
 
         // function 0 `stim:0`: reads ac; writes ac.RE, ac.IM @ devices.msl:28:62
-        fn stim_ac(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let ac = cx.f64(0);
-            let mag = Self::stim_ac_block::<f64>(ac);
+        fn ac_stim(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let ac = cx_.f64(0);
+            let mag_ = Self::ac_stim_block::<f64>(ac);
             // no phase: RE is the magnitude, IM is 0
-            cx.set(0, mag);
-            cx.set(1, 0.0);
+            cx_.set(0, mag_);
+            cx_.set(1, 0.0);
             Ok(())
         }
 
         // Isource.analog @ devices.msl:24:1
-        fn terms_block<R: Real>(stim_ac: R, dc: R, source_scale: R) -> [R; 1] {
+        fn terms_block<R: Real>(ac_stim_: R, dc: R, source_scale_: R) -> [R; 1] {
             // contribution to i(p, n), branch b0 @ devices.msl:28:30
-            let b0_flow = dc * source_scale + stim_ac;
-            [b0_flow]
+            let b0_flow_ = dc * source_scale_ + ac_stim_;
+            [b0_flow_]
         }
 
-        // function 1 `terms`: reads stim_ac, dc, ac, source_scale; writes b0.flow @ devices.msl:24:1
-        fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let stim_ac = cx.f64(0);
-            let dc = cx.f64(1);
-            let source_scale = cx.f64(3);
+        // function 1 `terms`: reads ac_stim_, dc, ac, source_scale_; writes b0.flow @ devices.msl:24:1
+        fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let ac_stim_ = cx_.f64(0);
+            let dc = cx_.f64(1);
+            let source_scale_ = cx_.f64(3);
             // the evaluation at the iterate
-            let at_iterate = Self::terms_block(Dual::<1>::seeded(stim_ac, 0), Dual::<1>::constant(dc), Dual::<1>::constant(source_scale));
+            let at_iterate_ = Self::terms_block(Dual::<1>::seeded(ac_stim_, 0), Dual::<1>::constant(dc), Dual::<1>::constant(source_scale_));
             // the evaluation with every continuous pin read as 0 (the affine rule)
-            let at_zero = Self::terms_block(Dual::<1>::seeded(stim_ac, 0), Dual::<1>::constant(dc), Dual::<1>::constant(source_scale));
+            let at_zero_ = Self::terms_block(Dual::<1>::seeded(ac_stim_, 0), Dual::<1>::constant(dc), Dual::<1>::constant(source_scale_));
             // term 0 `b0.flow`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0
-            cx.set(0, at_zero[0].v + 0.0);
-            // partial 0: d b0.flow / d stim_ac
-            if cx.wanted(0) {
-                cx.jac()[0] = at_iterate[0].d[0];
+            cx_.set(0, at_zero_[0].v + 0.0);
+            // partial 0: d b0.flow / d ac_stim_
+            if cx_.wanted(0) {
+                cx_.jac()[0] = at_iterate_[0].d[0];
             }
             Ok(())
         }
@@ -126,7 +126,7 @@ pub mod isource {
         fn eval(&self, k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
             match k {
                 // function 0 `stim:0` @ devices.msl:28:62
-                0 => Self::stim_ac(cx),
+                0 => Self::ac_stim(cx),
                 // function 1 `terms` @ devices.msl:24:1
                 1 => Self::terms(cx),
                 _ => Err(Fault::new(2, format!("Isource: function {k} does not exist"))),

@@ -70,40 +70,40 @@ pub mod capacitor {
         // Capacitor.analog @ devices.msl:11:1
         fn terms_block<R: Real>(p: R, n: R, c: R) -> [R; 1] {
             // contribution to i(p, n), branch b0 @ devices.msl:14:40
-            let b0_charge = c * (p - n);
-            [b0_charge]
+            let b0_charge_ = c * (p - n);
+            [b0_charge_]
         }
 
         // function 0 `terms`: reads p, n, c; writes b0.charge @ devices.msl:11:1
-        fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let p = cx.f64(0);
-            let n = cx.f64(1);
-            let c = cx.f64(2);
+        fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let p = cx_.f64(0);
+            let n = cx_.f64(1);
+            let c = cx_.f64(2);
             // the evaluation at the iterate
-            let at_iterate = Self::terms_block(Dual::<2>::seeded(p, 0), Dual::<2>::seeded(n, 1), Dual::<2>::constant(c));
+            let at_iterate_ = Self::terms_block(Dual::<2>::seeded(p, 0), Dual::<2>::seeded(n, 1), Dual::<2>::constant(c));
             // term 0 `b0.charge`: its value at the iterate
-            cx.set(0, at_iterate[0].v);
+            cx_.set(0, at_iterate_[0].v);
             // partial 0: d b0.charge / d p
-            if cx.wanted(0) {
-                cx.jac()[0] = at_iterate[0].d[0];
+            if cx_.wanted(0) {
+                cx_.jac()[0] = at_iterate_[0].d[0];
             }
             // partial 1: d b0.charge / d n
-            if cx.wanted(1) {
-                cx.jac()[1] = at_iterate[0].d[1];
+            if cx_.wanted(1) {
+                cx_.jac()[1] = at_iterate_[0].d[1];
             }
             Ok(())
         }
 
         // Capacitor.c: its `where` @ devices.msl:12:5
-        fn check_c_block<R: Real>(c: R) -> bool {
+        fn c_check_block<R: Real>(c: R) -> bool {
             c.value() >= 0.0
         }
 
         // function 1 `check:c`: reads c; writes check:c @ devices.msl:12:5
-        fn check_c(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let c = cx.f64(0);
-            let ok = Self::check_c_block::<f64>(c);
-            cx.set(0, if ok { HIGH } else { LOW });
+        fn c_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let c = cx_.f64(0);
+            let ok_ = Self::c_check_block::<f64>(c);
+            cx_.set(0, if ok_ { HIGH } else { LOW });
             Ok(())
         }
     }
@@ -125,7 +125,7 @@ pub mod capacitor {
                 // function 0 `terms` @ devices.msl:11:1
                 0 => Self::terms(cx),
                 // function 1 `check:c` @ devices.msl:12:5
-                1 => Self::check_c(cx),
+                1 => Self::c_check(cx),
                 _ => Err(Fault::new(2, format!("Capacitor: function {k} does not exist"))),
             }
         }

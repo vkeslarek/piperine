@@ -52,12 +52,12 @@ impl LibraryPrinter {
         let mut modules = Vec::new();
         let mut taken = BTreeSet::new();
         for (body, plan) in &running {
-            let mut module = Self::snake(body.name());
+            let snake = Self::snake(body.name());
+            let mut module = Text::ident(&snake);
             if !taken.insert(module.clone()) {
-                module = format!("{module}_{}", body.id().index());
+                module = Text::generated(&format!("{snake}_{}", body.id().index()));
                 taken.insert(module.clone());
             }
-            let module = Text::ident(&module);
             let strukt = Text::ident(&Self::camel(body.name()));
             let text = Self::body(body, plan, &module, &strukt, &mut shapes, &mut uses)?;
             modules.push((body.name(), module, strukt, text));
@@ -131,13 +131,13 @@ impl LibraryPrinter {
         for (k, f) in plan.functions().iter().enumerate() {
             let (text, call) = match f.mode {
                 Mode::Terms => (analog.terms(k)?, "terms".to_string()),
-                Mode::Limit(s) => (analog.limit(k)?, format!("limit_{}", Self::site(body.limits(), s))),
-                Mode::Stim(s) => (analog.stim(k)?, format!("stim_{}", Self::site(body.stims(), s))),
+                Mode::Limit(s) => (analog.limit(k)?, format!("{}_limit", Self::site(body.limits(), s))),
+                Mode::Stim(s) => (analog.stim(k)?, format!("{}_stim", Self::site(body.stims(), s))),
                 Mode::Check(p) => {
                     uses.insert("piperine_abi::layout::HIGH");
                     uses.insert("piperine_abi::layout::LOW");
                     let param = body.params().get(p as usize).map_or_else(|| p.to_string(), |x| x.name.clone());
-                    (analog.check(k)?, format!("check_{param}"))
+                    (analog.check(k)?, format!("{param}_check"))
                 }
             };
             if matches!(f.mode, Mode::Terms | Mode::Limit(_)) {
@@ -234,7 +234,7 @@ impl LibraryPrinter {
     }
 
     fn site(sites: &[piperine_ir::Site], k: u32) -> String {
-        sites.get(k as usize).map_or_else(|| k.to_string(), |s| s.name.clone())
+        sites.get(k as usize).map_or_else(|| format!("site{k}"), |s| s.name.clone())
     }
 
     /// The IR functions the running bodies call, directly or through other functions, in arena

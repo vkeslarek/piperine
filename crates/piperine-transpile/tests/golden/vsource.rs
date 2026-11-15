@@ -82,58 +82,58 @@ pub mod vsource {
         }
 
         // Vsource.analog, `ac_stim` site `ac`: its magnitude and phase @ devices.msl:21:62
-        fn stim_ac_block<R: Real>(ac: R) -> R {
+        fn ac_stim_block<R: Real>(ac: R) -> R {
             ac
         }
 
         // function 0 `stim:0`: reads ac; writes ac.RE, ac.IM @ devices.msl:21:62
-        fn stim_ac(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let ac = cx.f64(0);
-            let mag = Self::stim_ac_block::<f64>(ac);
+        fn ac_stim(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let ac = cx_.f64(0);
+            let mag_ = Self::ac_stim_block::<f64>(ac);
             // no phase: RE is the magnitude, IM is 0
-            cx.set(0, mag);
-            cx.set(1, 0.0);
+            cx_.set(0, mag_);
+            cx_.set(1, 0.0);
             Ok(())
         }
 
         // Vsource.analog @ devices.msl:17:1
-        fn terms_block<R: Real>(p: R, n: R, b0_flow: R, stim_ac: R, dc: R, source_scale: R) -> [R; 2] {
+        fn terms_block<R: Real>(p: R, n: R, b0_flow_: R, ac_stim_: R, dc: R, source_scale_: R) -> [R; 2] {
             // contribution to v(p, n), branch b0 @ devices.msl:21:30
-            let b0_potential = dc * source_scale + stim_ac;
-            [b0_flow, p - n - b0_potential]
+            let b0_potential_ = dc * source_scale_ + ac_stim_;
+            [b0_flow_, p - n - b0_potential_]
         }
 
-        // function 1 `terms`: reads p, n, b0_flow, stim_ac, dc, ac, source_scale; writes b0.flow, b0.eq @ devices.msl:17:1
-        fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
-            let p = cx.f64(0);
-            let n = cx.f64(1);
-            let b0_flow = cx.f64(2);
-            let stim_ac = cx.f64(3);
-            let dc = cx.f64(4);
-            let source_scale = cx.f64(6);
+        // function 1 `terms`: reads p, n, b0_flow_, ac_stim_, dc, ac, source_scale_; writes b0.flow, b0.eq @ devices.msl:17:1
+        fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
+            let p = cx_.f64(0);
+            let n = cx_.f64(1);
+            let b0_flow_ = cx_.f64(2);
+            let ac_stim_ = cx_.f64(3);
+            let dc = cx_.f64(4);
+            let source_scale_ = cx_.f64(6);
             // the evaluation at the iterate
-            let at_iterate = Self::terms_block(Dual::<4>::seeded(p, 0), Dual::<4>::seeded(n, 1), Dual::<4>::seeded(b0_flow, 2), Dual::<4>::seeded(stim_ac, 3), Dual::<4>::constant(dc), Dual::<4>::constant(source_scale));
+            let at_iterate_ = Self::terms_block(Dual::<4>::seeded(p, 0), Dual::<4>::seeded(n, 1), Dual::<4>::seeded(b0_flow_, 2), Dual::<4>::seeded(ac_stim_, 3), Dual::<4>::constant(dc), Dual::<4>::constant(source_scale_));
             // the evaluation with every continuous pin read as 0 (the affine rule)
-            let at_zero = Self::terms_block(Dual::<4>::seeded(0.0, 0), Dual::<4>::seeded(0.0, 1), Dual::<4>::seeded(0.0, 2), Dual::<4>::seeded(stim_ac, 3), Dual::<4>::constant(dc), Dual::<4>::constant(source_scale));
+            let at_zero_ = Self::terms_block(Dual::<4>::seeded(0.0, 0), Dual::<4>::seeded(0.0, 1), Dual::<4>::seeded(0.0, 2), Dual::<4>::seeded(ac_stim_, 3), Dual::<4>::constant(dc), Dual::<4>::constant(source_scale_));
             // term 0 `b0.flow`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0
-            cx.set(0, at_zero[0].v + (0.0 + at_zero[0].d[2] * b0_flow));
+            cx_.set(0, at_zero_[0].v + (0.0 + at_zero_[0].d[2] * b0_flow_));
             // term 1 `b0.eq`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0
-            cx.set(1, at_zero[1].v + (0.0 + at_zero[1].d[0] * p + at_zero[1].d[1] * n));
-            // partial 0: d b0.flow / d b0_flow
-            if cx.wanted(0) {
-                cx.jac()[0] = at_zero[0].d[2];
+            cx_.set(1, at_zero_[1].v + (0.0 + at_zero_[1].d[0] * p + at_zero_[1].d[1] * n));
+            // partial 0: d b0.flow / d b0_flow_
+            if cx_.wanted(0) {
+                cx_.jac()[0] = at_zero_[0].d[2];
             }
             // partial 1: d b0.eq / d p
-            if cx.wanted(1) {
-                cx.jac()[1] = at_zero[1].d[0];
+            if cx_.wanted(1) {
+                cx_.jac()[1] = at_zero_[1].d[0];
             }
             // partial 2: d b0.eq / d n
-            if cx.wanted(2) {
-                cx.jac()[2] = at_zero[1].d[1];
+            if cx_.wanted(2) {
+                cx_.jac()[2] = at_zero_[1].d[1];
             }
-            // partial 3: d b0.eq / d stim_ac
-            if cx.wanted(3) {
-                cx.jac()[3] = at_iterate[1].d[3];
+            // partial 3: d b0.eq / d ac_stim_
+            if cx_.wanted(3) {
+                cx_.jac()[3] = at_iterate_[1].d[3];
             }
             Ok(())
         }
@@ -154,7 +154,7 @@ pub mod vsource {
         fn eval(&self, k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
             match k {
                 // function 0 `stim:0` @ devices.msl:21:62
-                0 => Self::stim_ac(cx),
+                0 => Self::ac_stim(cx),
                 // function 1 `terms` @ devices.msl:17:1
                 1 => Self::terms(cx),
                 _ => Err(Fault::new(2, format!("Vsource: function {k} does not exist"))),
