@@ -888,8 +888,9 @@ with `mag` and `phase` evaluated at the operating point.
 
 **Dynamic semantics.** Per solve: the environment rows of §16.2.
 
-- **§14.4.4** In a reaction, `now()` is the time `t` of its instant, `freq()` is 0, and
-  `analysis(Static)` follows §11.1.3.
+- **§14.4.4** In a reaction, `now()` is the time `t` of its instant, `freq()` is 0,
+  `gmin()` is the session `gmin` and `source_scale()` is 1.0 (their values at rest, §14.4.7),
+  and `analysis(Static)` follows §11.1.3.
 - **§14.4.5** In a periodic analysis the last column is taken at each point of the trajectory,
   with `now()` its time. In an analysis run at a transient's last instant, `now()` is that instant
   (§16.2, §16.4).
