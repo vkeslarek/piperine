@@ -15,7 +15,8 @@
 //!   keep the other operand's class; any other operator touching a non-`Constant` operand gives
 //!   `Nonlinear`;
 //! - a call reads its arguments and what the callee reads itself (walked with its parameters
-//!   bound to the arguments); it is `Constant` when every argument is, `Nonlinear` otherwise;
+//!   bound to the arguments, once per distinct function and argument values); it is `Constant`
+//!   when every argument is, `Nonlinear` otherwise;
 //! - an `if` reads its condition and both arms; it joins the arms when the condition is
 //!   `Constant`, and is `Nonlinear` otherwise (IR-10).
 //!
@@ -131,7 +132,7 @@ pub(crate) struct BodyDeps {
     checks: Vec<Sources>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 struct Sources {
     nodes: BTreeSet<u32>,
     params: BTreeSet<u32>,
@@ -161,7 +162,7 @@ impl Sources {
 }
 
 /// How a value depends on the node potentials.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Class {
     Constant,
     Affine,
@@ -169,7 +170,7 @@ enum Class {
 }
 
 /// The abstract value of an expression.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Value {
     sources: Sources,
     class: Class,
@@ -234,7 +235,7 @@ enum Task {
     /// A closure's parameters are bound before its body is walked.
     BindParams(ExprId),
     /// A callee's body has been walked (its value on the stack): leave its scope.
-    Return { at: ExprId, args: Vec<Value> },
+    Return { at: ExprId, function: FunctionId, args: Vec<Value> },
 }
 
 /// One abstract walk of a body, and of the functions it calls. The walk is iterative (an
@@ -245,6 +246,11 @@ struct Walk<'a> {
     calls: Vec<FunctionId>,
     /// The owners being walked, innermost (the current one) last.
     scopes: Vec<Scope>,
+    /// The value of each callee body already walked, by function and argument values. A
+    /// function reads only its arguments and what it reads itself, and its walk has no side
+    /// effect on a checked IR (sites and contributions live in bodies), so equal arguments give
+    /// an equal value: a call chain costs one walk per distinct signature, not one per path.
+    returns: HashMap<(FunctionId, Vec<Value>), Value>,
     values: Vec<Value>,
     flow: Vec<Sources>,
     charge: Vec<Sources>,
@@ -260,6 +266,7 @@ impl<'a> Walk<'a> {
             ir,
             calls: Vec::new(),
             scopes: Vec::new(),
+            returns: HashMap::new(),
             values: Vec::new(),
             flow: vec![Sources::default(); branches],
             charge: vec![Sources::default(); branches],
@@ -365,11 +372,12 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                Task::Return { at, args } => {
+                Task::Return { at, function, args } => {
                     let callee = self.pop();
                     self.scopes.pop();
                     self.calls.pop();
                     self.called(at, &args, &callee);
+                    self.returns.insert((function, args), callee);
                 }
             }
             // `next` holds the follow-up tasks in evaluation order.
@@ -573,6 +581,10 @@ impl<'a> Walk<'a> {
     /// its parameters (its first locals) bound to the arguments; `Return` leaves it.
     fn enter(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>, next: &mut Vec<Task>) {
         let ir = self.ir;
+        if let Some(callee) = self.returns.get(&(function, args.clone())).cloned() {
+            self.called(at, &args, &callee);
+            return;
+        }
         let data = &ir.functions[function.index()];
         if self.calls.contains(&function) {
             self.refuse(at, &format!("recursive call of {}", data.name));
@@ -586,7 +598,7 @@ impl<'a> Walk<'a> {
         }
         self.calls.push(function);
         self.scopes.push(callee);
-        next.extend([Task::Expr(data.body), Task::Return { at, args }]);
+        next.extend([Task::Expr(data.body), Task::Return { at, function, args }]);
     }
 
     /// A call at `at` returned `callee`: the call reads its arguments and what the callee reads.

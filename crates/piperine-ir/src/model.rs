@@ -229,7 +229,7 @@ pub enum MathFn {
 }
 
 /// Ordered as declared: the order of `Deps::env`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Env {
     Temperature,
     Gmin,

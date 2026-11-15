@@ -456,3 +456,40 @@ fn a_deep_expression_is_walked_without_native_stack() {
         .expect("the walk returns");
     assert_eq!(deps, (Want::deps(&[0, 1], &[], &[], &[], &[]), true));
 }
+
+#[test]
+fn a_doubling_call_chain_is_walked_once_per_signature() {
+    // 25 functions: `f24(x) = x`, `f_i(x) = f_{i+1}(x) + f_{i+1}(x)`, `f0` called once from the
+    // addend: 2^25 call paths, one per distinct (function, argument) pair to walk.
+    let ir = Row::ir(|b| {
+        let x = Local { name: "x".into(), ty: ValueType::F64 };
+        let function = |b: &mut IrBuilder, name: String, body: ExprId| {
+            b.function(FunctionSpec {
+                name,
+                origin: Row::origin(),
+                params: vec![x.clone()],
+                ret: ValueType::F64,
+                locals: vec![x.clone()],
+                body,
+            })
+        };
+        let mut e = Row::ex(b);
+        let body = e.local(0);
+        let mut callee = function(b, "f24".into(), body);
+        for i in (0..24).rev() {
+            let mut e = Row::ex(b);
+            let (a, c) = (e.local(0), e.local(0));
+            let (l, r) = (e.call(callee, vec![a]), e.call(callee, vec![c]));
+            let sum = e.binary(BinaryOp::Add, l, r);
+            callee = function(b, format!("f{i}"), sum);
+        }
+        let mut e = Row::ex(b);
+        let v = Row::v(&mut e);
+        (vec![], e.call(callee, vec![v]))
+    });
+    let started = std::time::Instant::now();
+    let body = ir.body(BodyId(0));
+    assert_eq!(body.dependencies(Target::Flow(0)), Want::deps(&[0, 1], &[], &[], &[], &[]));
+    assert!(!body.is_affine(0));
+    assert!(started.elapsed() < std::time::Duration::from_secs(1), "took {:?}", started.elapsed());
+}
