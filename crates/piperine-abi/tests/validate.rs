@@ -6,7 +6,7 @@
 
 use piperine_abi::layout::{BIT, F64, LOW};
 use piperine_abi::raw::{
-    Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role, watch,
+    Shape, Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role, watch,
 };
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::validate::{Rule, validate};
@@ -133,6 +133,9 @@ fn resistor_writing_a_limit(flags: u32) -> Specs {
     s
 }
 
+/// (rule, a defect planted in the raw shape, the entry the error names, its origin)
+type RawRow = (Rule, fn(&mut Shape), &'static str, &'static str);
+
 /// (rule, the defect, the entry the error names, its origin)
 type Row = (Rule, fn() -> Specs, &'static str, &'static str);
 
@@ -181,8 +184,23 @@ fn every_shape_local_rule_is_enforced() {
         }, "watch up", "dff.msl:5:5"),
         (Rule::TermBoundNotDiscreteF64, || { let mut s = resistor(); s.terms[0].abstol = 1; s }, "term i", "res.msl:3:5"),
     ];
+    // Defects below the specs (a list read by a stride the producer did not use).
+    let raw_rows: [RawRow; 1] = [(
+        Rule::UnreadableList,
+        |s| s.terms.stride = 8,
+        "shape",
+        "",
+    )];
     for rule in Rule::ALL {
-        assert_eq!(table.iter().filter(|row| row.0 == rule).count(), 1, "one row for {rule:?}");
+        let rows = table.iter().filter(|row| row.0 == rule).count() + raw_rows.iter().filter(|row| row.0 == rule).count();
+        assert_eq!(rows, 1, "one row for {rule:?}");
+    }
+    for (rule, plant, entry, origin) in raw_rows {
+        let built = resistor().build();
+        let mut shape = *built.shape();
+        plant(&mut shape);
+        let err = validate(&shape).expect_err(&format!("{rule:?} is not refused"));
+        assert_eq!((err.rule, err.entry.as_str(), err.origin.as_str()), (rule, entry, origin));
     }
     for (rule, plant, entry, origin) in table {
         let shape = plant().build();
@@ -278,4 +296,20 @@ fn the_valid_fixtures_pass() {
     let ff = flip_flop().build();
     let kinds: Vec<u32> = ff.shape().pins.iter().map(|p| p.kind).collect();
     assert_eq!(kinds, [kind::DISCRETE, kind::DISCRETE, kind::DISCRETE, kind::EVENT]);
+}
+
+#[test]
+fn a_shape_with_an_unreadable_list_is_refused() {
+    let built = resistor().build();
+    let mut shape = *built.shape();
+    shape.pins.stride = size_of::<piperine_abi::raw::Pin>() - 8;
+    let err = validate(&shape).expect_err("a pin list read below its element size");
+    assert_eq!(err.rule, Rule::UnreadableList);
+    let mut shape = *built.shape();
+    let mut f = *shape.functions.get(0).unwrap();
+    f.reads.stride = 4;
+    let fs = [f];
+    shape.functions = piperine_abi::raw::List::from_slice(&fs);
+    let err = validate(&shape).expect_err("a cell list read below its element size");
+    assert_eq!((err.rule, err.entry.as_str()), (Rule::UnreadableList, "function i"));
 }

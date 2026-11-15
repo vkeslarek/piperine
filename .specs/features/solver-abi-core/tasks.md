@@ -573,6 +573,9 @@ Proof: run owner | test a_write_is_committed_only_after_the_shadow_accepts ... o
 **C40** - A NaN declared partial or a NaN finite difference is a mismatch, not a pass (SAC-19)
 Proof: run abi | test a_non_finite_partial_is_a_mismatch ... ok
 
+**C41** - A list whose stride is below its element is refused, never read past (SAC-20)
+Proof: run abi | test a_list_whose_stride_is_below_its_element_is_refused ... ok
+
 ---
 
 ## Handoff

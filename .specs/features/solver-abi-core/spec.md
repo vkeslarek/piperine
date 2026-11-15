@@ -170,6 +170,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-19** (1). IF a declared partial or its finite difference is not finite THEN `verify_partials` SHALL report it as a mismatch naming the partial (F7).
 
+- **SAC-20** (2). IF a list's stride is below its element's size or breaks its alignment, or its pointer is misaligned, THEN `List::get` SHALL read nothing and `validate` SHALL refuse the shape (`UnreadableList`) (F8).
+
 ---
 
 ## Edge Cases
@@ -204,6 +206,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-17 | P1: Protocol, AC 12, 13 (the sink) | Tasks | In Tasks |
 | SAC-18 | P1: Protocol, AC 15 (host writes) | Tasks | In Tasks |
 | SAC-19 | P1: Verification round 1, AC 1 | Execute | Done |
+| SAC-20 | P1: Verification round 1, AC 2 | Execute | Done |
 
 **Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 

@@ -117,15 +117,26 @@ impl<T> List<T> {
         List { ptr: items.as_ptr(), len: items.len(), stride: size_of::<T>() }
     }
 
-    /// Element `i`, read at `ptr + i * stride`; `None` past the end.
+    /// Whether this consumer can read the elements: the stride holds at least
+    /// a `T` and keeps its alignment, and the pointer is aligned. A producer of
+    /// an older minor (abi.md §12 "Versioning") may compile a smaller element;
+    /// such a list is refused, never read past its elements.
+    pub fn is_readable(&self) -> bool {
+        self.stride >= size_of::<T>()
+            && self.stride.is_multiple_of(align_of::<T>())
+            && (self.ptr as usize).is_multiple_of(align_of::<T>())
+    }
+
+    /// Element `i`, read at `ptr + i * stride`; `None` past the end or when the
+    /// list is not readable (`is_readable`).
     pub fn get(&self, i: usize) -> Option<&T> {
-        if i >= self.len {
+        if i >= self.len || !self.is_readable() {
             return None;
         }
         // SAFETY: abi.md §3 "stride = element size as the producer compiled it"
         // and §12 "Ownership": `len` elements lie `stride` bytes apart and live
-        // as long as the list's owner; the producer compiled at least the
-        // fields of `T` this version knows, so `T` is readable there.
+        // as long as the list's owner; `is_readable` checked that each holds a
+        // whole aligned `T`.
         unsafe { Some(&*self.ptr.cast::<u8>().add(i * self.stride).cast::<T>()) }
     }
 

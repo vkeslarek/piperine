@@ -49,11 +49,14 @@ pub enum Rule {
     /// A term's `abstol` or `max` that is neither `DEFAULT` nor a discrete pin
     /// holding an `F64` at byte 0 (§3).
     TermBoundNotDiscreteF64,
+    /// A list this consumer cannot read: its stride is below the element's
+    /// size or breaks its alignment, or its pointer is misaligned (abi.md §12).
+    UnreadableList,
 }
 
 impl Rule {
     /// Every rule, in the order of the spec's list.
-    pub const ALL: [Rule; 15] = [
+    pub const ALL: [Rule; 16] = [
         Rule::UnknownConstant,
         Rule::IndexOutOfRange,
         Rule::KindRole,
@@ -69,6 +72,7 @@ impl Rule {
         Rule::StatementOnContinuous,
         Rule::CrossEventNotEvent,
         Rule::TermBoundNotDiscreteF64,
+        Rule::UnreadableList,
     ];
 
     fn sentence(self) -> &'static str {
@@ -90,6 +94,7 @@ impl Rule {
             Rule::StatementOnContinuous => "a statement on a continuous pin",
             Rule::CrossEventNotEvent => "a CROSS watch whose event pin is not an event pin",
             Rule::TermBoundNotDiscreteF64 => "a term whose abstol or max pin is not a discrete F64",
+            Rule::UnreadableList => "a list whose stride or pointer does not fit its element",
         }
     }
 }
@@ -225,6 +230,7 @@ const STATEMENT_FLAGS: u32 = statement_flag::LATER | statement_flag::REPLACE;
 
 /// Checks every shape-local rule of abi.md §9; the first broken one is returned.
 pub fn validate(shape: &Shape) -> Result<(), ShapeError> {
+    check_lists(shape)?;
     let mut seen_non_param = false;
     for pin in shape.pins.iter() {
         check_pin(shape, pin)?;
@@ -542,6 +548,50 @@ fn check_reaction(shape: &Shape, r: &Reaction) -> Result<(), ShapeError> {
                 Rule::IndexOutOfRange,
                 format!("statement {i}: bytes {}..+{} past pin {}", s.offset, s.len, pin.name.as_str()),
             ));
+        }
+    }
+    Ok(())
+}
+
+/// Every list of the shape is readable before any is walked (abi.md §12).
+fn check_lists(shape: &Shape) -> Result<(), ShapeError> {
+    let unreadable = |entry: String, origin: &Str, what: &str| ShapeError {
+        rule: Rule::UnreadableList,
+        entry,
+        origin: origin.as_str().to_string(),
+        detail: format!("the {what} list"),
+    };
+    let none = Str::EMPTY;
+    for (ok, what) in [
+        (shape.pins.is_readable(), "pins"),
+        (shape.terms.is_readable(), "terms"),
+        (shape.inputs.is_readable(), "inputs"),
+        (shape.watches.is_readable(), "watches"),
+        (shape.functions.is_readable(), "functions"),
+        (shape.reactions.is_readable(), "reactions"),
+    ] {
+        if !ok {
+            return Err(unreadable("shape".into(), &none, what));
+        }
+    }
+    for p in shape.pins.iter() {
+        if !p.layout.fields.is_readable() {
+            return Err(unreadable(format!("pin {}", p.name.as_str()), &p.origin, "layout fields"));
+        }
+    }
+    for w in shape.watches.iter() {
+        if !w.layout.fields.is_readable() {
+            return Err(unreadable(format!("watch {}", w.name.as_str()), &w.origin, "layout fields"));
+        }
+    }
+    for f in shape.functions.iter() {
+        if !(f.reads.is_readable() && f.writes.is_readable() && f.partials.is_readable()) {
+            return Err(unreadable(format!("function {}", f.name.as_str()), &f.origin, "reads, writes or partials"));
+        }
+    }
+    for r in shape.reactions.iter() {
+        if !(r.on.is_readable() && r.reads.is_readable() && r.writes.is_readable()) {
+            return Err(unreadable(format!("reaction {}", r.name.as_str()), &r.origin, "on, reads or writes"));
         }
     }
     Ok(())

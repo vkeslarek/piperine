@@ -346,3 +346,25 @@ fn crate_declares_no_dependency() {
         "piperine-abi declares a dependency through a dotted table"
     );
 }
+
+#[test]
+fn a_list_whose_stride_is_below_its_element_is_refused() {
+    // An older producer's element is 4 bytes; this consumer's `T` is 8: reading
+    // element 3 would run past the producer's 16 bytes.
+    let buf: [[u8; 8]; 2] = [[1; 8], [2; 8]];
+    let short: List<[u8; 8]> = List { ptr: buf.as_ptr(), len: 4, stride: 4 };
+    assert!(!short.is_readable());
+    assert!(short.get(0).is_none() && short.get(3).is_none(), "no element is read");
+    assert_eq!(short.iter().count(), 0);
+    // A stride that breaks the element's alignment is refused too.
+    let pins = [pin_named("p"), pin_named("n")];
+    let odd: List<Pin> = List { ptr: pins.as_ptr(), len: 1, stride: size_of::<Pin>() + 1 };
+    assert!(!odd.is_readable() && odd.get(0).is_none());
+    // A misaligned pointer is refused.
+    let skewed: List<Pin> = List { ptr: pins.as_ptr().cast::<u8>().wrapping_add(4).cast::<Pin>(), len: 1, stride: size_of::<Pin>() };
+    assert!(!skewed.is_readable() && skewed.get(0).is_none());
+    // The producer's own stride, and a larger one, are read.
+    assert!(List::from_slice(&pins).is_readable());
+    assert_eq!(List::from_slice(&pins).get(1).map(|p| p.name.as_str()), Some("n"));
+    assert!(List::<Pin>::empty().is_readable());
+}
