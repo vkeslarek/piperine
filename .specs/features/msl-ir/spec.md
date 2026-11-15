@@ -1,6 +1,8 @@
 # MSL IR (object model, M1 node set) Specification
 
-**Status**: Draft. Not approved. Rewritten for M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S4, S6).
+**Approved**: 2026-11-15 - user: "Concordo e pode disparar"; M1 questions: all recommended options accepted
+
+**Status**: Approved. Rewritten for M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S4, S6).
 
 ## Problem Statement
 
@@ -9,7 +11,7 @@ The POM mirrors the source and stops before elaboration. The solver needs the el
 ## Goals
 
 - [ ] One `Ir` value holds an elaborated design: one body per module variant, the functions they call, and a flat table of instances and nodes (S6).
-- [ ] The node set covers the M1 analog subset: every construct of `.specs/features/e2e-m1/models/*.msl` has a node.
+- [ ] The node set covers the M1 analog subset: every construct of `tests/ngspice/*.msl` has a node.
 - [ ] The IR round-trips through `serde`, prints a deterministic text, and states whether it is well formed.
 - [ ] The crate depends on no in-tree crate: a backend that reads an IR does not link the front end.
 
@@ -27,14 +29,14 @@ The POM mirrors the source and stops before elaboration. The solver needs the el
 | Operating-point variables, `///` text and the rest of the §21 metadata beyond paths, params and origins | M2, with the host |
 | A textual format with a parser | C2: the printer is one-way |
 | Reference documentation under `docs/ir/` | deferred until the node set covers the digital side (IR-Q7 closed); rustdoc carries M1 |
-| Amending Appendix C, which names "AIR v2" | a spec edit; Q8 of `.specs/features/e2e-m1/questions.md` |
+| Amending Appendix C, which names "AIR v2" | a spec edit; Q8, decided: after M1 runs, with `spec-abi-amendments` |
 | Optimization passes | not requested |
 
 ---
 
 ## Assumptions & Open Questions
 
-Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. Rows marked `n` wait for the user in `.specs/features/e2e-m1/questions.md`.
+Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. No row is left open: the user answered `.specs/features/e2e-m1/questions.md` on 2026-11-15.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
@@ -46,10 +48,10 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 | POM properties carried over (IR-Q5) | immutable after build, `Send + Sync`, deterministic ids, `check()` | all four hold for `Design` today; golden tests and a cache key need them | y |
 | A backend reads the IR only | the IR is self-sufficient for execution; it holds origins as text, not POM ids | a serialized IR must run without its sources; it also keeps the crate free of the front end | y |
 | Ids | `u32` newtypes written without a macro | `pom/ids.rs`: "no macro: ids are data"; AGENTS rule 5 | y |
-| Crate name (Q6) | `piperine-ir`, a new crate; the guard that lists it as retired is edited in the task that creates it | `crates/piperine-solver/tests/workspace_shape.rs:22` fails on a crate of that name today | n |
+| Crate name (Q6) | `piperine-ir`, a new crate; the guard that lists it as retired is edited in the task that creates it | `crates/piperine-solver/tests/workspace_shape.rs:22` fails on a crate of that name today | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
 | Static dependency analysis lives in this crate | `Body::dependencies` is a query over the IR, not stored data | both backends need the same sets for reads and partials; a stored copy could disagree with the code it describes | y |
 
-**Open questions:** Q6 (the crate name) and Q8 (Appendix C) of `.specs/features/e2e-m1/questions.md`. Everything else is resolved above.
+**Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.
 
 **Implicit-requirement dimensions.** Input validation and bounds: IR-06 (a hand-built or deserialized IR is checked). Failure states: IR-03 AC 3, IR-06. Idempotency: IR-01 AC 3, IR-04 AC 2. Auth and rate limits: N/A because the IR is an in-process value. Concurrency and ordering: IR-01 AC 4 (`Send + Sync`), IR-02 AC 2 (fixed orders). Data lifecycle: N/A because an IR lives as long as its owner. Observability: IR-04 (the printer). External-dependency failure: N/A because the crate reads nothing external. State-transition integrity: IR-01 AC 2 (no mutation after `finish`).
 
@@ -242,7 +244,7 @@ IR-05 of the first draft (the IR is a side artifact of the POM) is now `msl-elab
 ## Sources
 
 - `.specs/features/codegen/context.md` C1 to C7, S1, S4, S6, S7 - the decisions.
-- `.specs/features/e2e-m1/models/*.msl` - the constructs the node set must hold.
+- `tests/ngspice/*.msl` - the constructs the node set must hold.
 - `.specs/features/device-abi/abi.md` §4, §8 - what a backend must declare, hence IR-09.
 - `crates/piperine-lang/src/pom/` (`ids.rs`, `body.rs`, `design.rs`) - the style carried over.
 
