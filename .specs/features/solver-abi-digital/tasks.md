@@ -370,12 +370,12 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `the_crate_depends_on_the_abi_crate_only` reads this crate's manifest
-- [ ] Test `abi_modules_name_no_analog_or_owner_item` scans `src/abi/` for `piperine_analog_solver`, `piperine_solver`, `Netlist`, `Stamp`, `AnalogReference` (C44); test `abi_modules_hold_no_unsafe` passes
-- [ ] Test `the_facade_offers_every_operation_of_the_discrete_side` calls each of `start`, `next_due`, `advance`, `preview_boundary`, `fire`, `run_instant`, `checkpoint`, `restore`, `shadow`, `host_commit`, `drain_observations` once on a small plan, with the argument and result shapes the trait of `solver-abi-core` uses after the obvious conversions (`Tick` and `i64`, `NetId` and `u32`)
-- [ ] `git diff <base>..HEAD --stat -- . ':!crates/piperine-digital-solver'` is empty, and so is the diff of `src/{drivers,events,interface,scheduler,state,topology}.rs`, where `<base>` is the commit before T1; the commit body states the base hash
-- [ ] `cargo test -p piperine-digital-solver --lib` reports the 27 old tests passing (C45), and `cargo test -p piperine-solver` is green
-- [ ] Gate: build
+- [x] Test `the_crate_depends_on_the_abi_crate_only` reads this crate's manifest
+- [x] Test `abi_modules_name_no_analog_or_owner_item` scans `src/abi/` for `piperine_analog_solver`, `piperine_solver`, `Netlist`, `Stamp`, `AnalogReference` (C44); test `abi_modules_hold_no_unsafe` passes
+- [x] Test `the_facade_offers_every_operation_of_the_discrete_side` calls each of `start`, `next_due`, `advance`, `preview_boundary`, `fire`, `run_instant`, `checkpoint`, `restore`, `shadow`, `host_commit`, `drain_observations` once on a small plan, with the argument and result shapes the trait of `solver-abi-core` uses after the obvious conversions (`Tick` and `i64`, `NetId` and `u32`)
+- [x] `git diff <base>..HEAD --stat -- . ':!crates/piperine-digital-solver'` is empty, and so is the diff of `src/{drivers,events,interface,scheduler,state,topology}.rs`, where `<base>` is the commit before T1; the commit body states the base hash
+- [x] `cargo test -p piperine-digital-solver --lib` reports the 27 old tests passing (C45), and `cargo test -p piperine-solver` is green
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build
