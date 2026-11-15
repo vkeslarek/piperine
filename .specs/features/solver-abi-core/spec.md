@@ -190,6 +190,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-29** (11). WHEN the protocol runs an instant THEN it SHALL bound the `HORIZON` of a reaction a `CROSS` watch can reach by the current instant while the analog side has unknowns (by the stop time when it has none), and of any other reaction by the stop time (abi.md R5) (F6).
 
+- **SAC-30** (12). The sink SHALL receive trace records and observations as one stream in time order: a trace (even of a rejected attempt) is delivered once an acceptance reaches its time, before that time's instant observations (F13).
+
 ---
 
 ## Edge Cases
@@ -234,6 +236,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-27 | P1: Verification round 1, AC 9 | Execute | Done |
 | SAC-28 | P1: Verification round 1, AC 10 | Execute | Done |
 | SAC-29 | P1: Verification round 1, AC 11 | Execute | Done |
+| SAC-30 | P1: Verification round 1, AC 12 | Execute | Done |
 
 **Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 

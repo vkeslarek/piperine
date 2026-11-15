@@ -39,7 +39,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 rounds += 1;
                 let accepted = self.analog.equilibrium()?;
                 let analog = &mut self.analog;
-                self.delivery.deliver_now(analysis, |out| analog.drain_traces(out));
+                self.delivery.keep_traces(analysis, |out| analog.drain_traces(out));
                 for net in &accepted.fired {
                     self.discrete.fire(*net, at)?;
                 }
@@ -53,6 +53,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             }
             if rounds >= self.options.max_rounds {
                 let nets: Vec<String> = outcome.boundary.iter().map(|b| self.discrete.net_name(b.slot)).collect();
+                self.delivery.flush_all();
                 return Err(too_many_rounds(self.options.max_rounds, &nets));
             }
             self.analog.deliver(&outcome.boundary, Restart::None);
@@ -65,7 +66,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         finish |= settled.finish;
         self.samples = samples;
         self.collect(analysis);
-        self.delivery.flush();
+        self.delivery.flush_all();
         if finish {
             self.finished = Some(self.now);
             return Ok(Ended::Finish(self.now));

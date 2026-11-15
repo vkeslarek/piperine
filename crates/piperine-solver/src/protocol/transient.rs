@@ -158,6 +158,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         }
         self.in_transient = true;
         let ended = self.transient_loop(stop);
+        self.delivery.flush_all();
         self.in_transient = false;
         ended
     }
@@ -210,7 +211,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 let exempt = !matches!(advanced, Advance::Reached);
                 let attempt = self.analog.attempt(t_c, exempt).map_err(|e| at(t_c, e))?;
                 let analog = &mut self.analog;
-                self.delivery.deliver_now(AnalysisKind::Transient, |out| analog.drain_traces(out));
+                self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
                 match attempt {
                     Attempt::Converged => {}
                     Attempt::Rejected => {
@@ -256,7 +257,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             }
             // Step 6.
             self.collect(AnalysisKind::Transient);
-            self.delivery.flush();
+            self.delivery.flush(t_c);
             self.now = t_c;
             if final_mark || outcome.finish {
                 self.finished = Some(t_c);

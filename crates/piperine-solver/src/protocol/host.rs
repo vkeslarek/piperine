@@ -105,7 +105,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             }
             let analysis = if self.now > 0.0 { AnalysisKind::Transient } else { AnalysisKind::OperatingPoint };
             self.collect(analysis);
-            self.delivery.flush();
+            self.delivery.flush(self.now);
         }
         Ok(outcome)
     }

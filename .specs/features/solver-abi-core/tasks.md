@@ -597,6 +597,9 @@ Proof: run owner | test consecutive_rejections_beyond_the_cap_fail_loud ... ok
 **C48** - Reactions a crossing can reach are bounded by the current instant while analog unknowns exist (SAC-29)
 Proof: run owner | test irreversible_reactions_are_bounded_by_the_current_instant ... ok
 
+**C49** - Traces and observations reach the sink in time order (SAC-30)
+Proof: run owner | test traces_reach_the_sink_in_time_order ... ok
+
 ---
 
 ## Handoff
