@@ -155,12 +155,12 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `a_ddt_term_is_silent_in_an_equilibrium_solve` passes (C3)
-- [ ] Test `a_ddt_term_stamps_the_capacitor_companion` asserts conductance and right side for both phases, with `prev_h = 0` and `prev_h > 0`, against values computed in the test from `stage_coeffs` and `phase_coeffs` on a four-row history (C4)
-- [ ] Test `an_rc_step_reads_one_minus_exp` runs two TR-BDF2 stages per step by hand over `assemble_tran` and meets the tolerance of `helper_devices.rs::rc_step_reads_one_minus_exp`
-- [ ] Test `a_restore_returns_histories_and_limit_state` passes for the `DDT` half (C5)
-- [ ] `h <= 0` contributes nothing, as `C::load_transient` does
-- [ ] Gate: full
+- [x] Test `a_ddt_term_is_silent_in_an_equilibrium_solve` passes (C3)
+- [x] Test `a_ddt_term_stamps_the_capacitor_companion` asserts conductance and right side for both phases, with `prev_h = 0` and `prev_h > 0`, against values computed in the test from `stage_coeffs` and `phase_coeffs` on a four-row history (C4)
+- [x] Test `an_rc_step_reads_one_minus_exp` runs two TR-BDF2 stages per step by hand over `assemble_tran` and meets the tolerance of `helper_devices.rs::rc_step_reads_one_minus_exp`
+- [x] Test `a_restore_returns_histories_and_limit_state` passes for the `DDT` half (C5)
+- [x] `h <= 0` contributes nothing, as `C::load_transient` does
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

@@ -4,10 +4,12 @@
 //! called through `piperine_abi::caller::Handle`; nothing here is `unsafe`.
 
 pub mod assembly;
+mod ddt;
 mod flow;
 pub mod plan;
 
-pub use assembly::{Ambient, Assembly};
+pub use assembly::{Ambient, Assembly, AssemblySnapshot};
+pub use ddt::Stage;
 pub use plan::{AnalogBinding, AnalogInstance, AnalogPlan};
 
 use crate::error::{Error, SolverDomain};

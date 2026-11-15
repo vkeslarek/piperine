@@ -8,8 +8,9 @@
 
 use piperine_abi::raw::{ambient, op};
 
+use super::ddt::{History, Stage, stamp_ddt};
 use super::device_error;
-use super::flow::{direct, stamp_flow};
+use super::flow::{direct, stamp_flow, stamp_rows};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source};
 use crate::error::Error;
 use crate::math::linear::Stamp;
@@ -67,6 +68,14 @@ impl FnState {
 pub(crate) struct InstanceState {
     pub fns: Vec<FnState>,
     pub held: Vec<Held>,
+    /// Per term; used by `DDT` terms only.
+    pub ddt: Vec<History>,
+}
+
+/// What a rejected step must undo (abi.md §5 I8): every term history.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AssemblySnapshot {
+    ddt: Vec<Vec<History>>,
 }
 
 /// The device assembly of one circuit: its plan, the discrete slots its
@@ -99,6 +108,7 @@ impl Assembly {
                     })
                     .collect(),
                 held: vec![Held::default(); inst.inputs.len()],
+                ddt: vec![History::default(); inst.terms.len()],
             })
             .collect();
         Assembly { previous: slots.clone(), slots, plan, state, scratch: Vec::new() }
@@ -140,18 +150,76 @@ impl Assembly {
 
 impl Assembly {
     /// The stamps of an equilibrium solve at iterate `x`: every `FLOW` term
-    /// in its Norton form.
+    /// in its Norton form; a `DDT` term adds nothing (its positions carry 0).
     pub fn assemble_dc(&mut self, x: &[f64], amb: Ambient) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
+        self.assemble(x, amb, None)
+    }
+
+    /// The stamps of transient stage `stage` at iterate `x`: `FLOW` terms in
+    /// their Norton form, `DDT` terms through the TR-BDF2 companion over
+    /// their own history.
+    pub fn assemble_tran(
+        &mut self,
+        x: &[f64],
+        amb: Ambient,
+        stage: Stage,
+    ) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
+        self.assemble(x, amb, Some(stage))
+    }
+
+    fn assemble(
+        &mut self,
+        x: &[f64],
+        amb: Ambient,
+        stage: Option<Stage>,
+    ) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
         self.evaluate(x, amb)?;
         let mut out = Vec::new();
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
-            for t in &inst.terms {
-                if t.op == op::FLOW {
-                    stamp_flow(t, &direct(t, st), x, &mut out);
+            for (ti, t) in inst.terms.iter().enumerate() {
+                let lin = direct(t, st);
+                match (t.op, stage) {
+                    (op::FLOW, _) => stamp_flow(t, &lin, x, &mut out),
+                    (op::DDT, Some(stage)) => stamp_ddt(t, &lin, &st.ddt[ti], stage, x, &mut out),
+                    (op::DDT, None) => stamp_rows(t, &lin, 0.0, 0.0, &mut out),
+                    _ => {}
                 }
             }
         }
         Ok(out)
+    }
+
+    /// Records, for every `DDT` term, its value at the converged solution `x`
+    /// as the newest history row. Called once per converged solve, where the
+    /// Newton state buffer gains its row (a stage, an operating point, an
+    /// initial-condition row), so the two stay aligned.
+    // SPEC_DEVIATION: design.md gives `push_stage(&mut self)`; it takes the
+    // solution and its ambient.
+    // Reason: the buffer row the companion reads is the converged `x`, which
+    // no assembly evaluated (the last assemble ran at the iterate before it).
+    pub fn push_stage(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
+        self.evaluate(x, amb)?;
+        for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
+            for (ti, t) in inst.terms.iter().enumerate() {
+                if t.op == op::DDT {
+                    let q = direct(t, st).v;
+                    st.ddt[ti].push(q);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The term histories, to restore when a step is rejected.
+    pub fn snapshot(&self) -> AssemblySnapshot {
+        AssemblySnapshot { ddt: self.state.iter().map(|s| s.ddt.clone()).collect() }
+    }
+
+    /// Returns every term history to `snap`.
+    pub fn restore(&mut self, snap: &AssemblySnapshot) {
+        for (st, ddt) in self.state.iter_mut().zip(&snap.ddt) {
+            st.ddt.clone_from(ddt);
+        }
     }
 }
 

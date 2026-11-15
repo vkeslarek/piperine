@@ -1,0 +1,167 @@
+//! `DDT` terms (feature `solver-abi-analog`, SAN-03, T4): the solver-owned
+//! TR-BDF2 companion. A `DDT` term is silent in an equilibrium solve (C3) and
+//! when the step is not positive; in a stage it stamps the companion of
+//! `TrBdf2::stage_coeffs` over its own history, with the trapezoidal stage's
+//! previous-derivative correction (C4); an RC step driven by hand through
+//! both stages of every step reads `1 − exp(−t/RC)`; a restore returns the
+//! histories (C5, the `DDT` half).
+//!
+//! Numerically sensitive: the expected stamps are computed here from
+//! `stage_coeffs` and `phase_coeffs`, as `C::load_transient` of
+//! `piperine-solver/tests/helpers/devices.rs` reads `states.view(k)`.
+
+#[allow(dead_code)]
+#[path = "support/circuit.rs"]
+mod circuit;
+#[allow(dead_code)]
+#[path = "support/devices.rs"]
+mod devices;
+#[allow(dead_code)]
+#[path = "support/system.rs"]
+mod system;
+
+use circuit::{at, f64_bytes, instance, netlist};
+use devices::modules;
+use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
+use piperine_analog_solver::device::{AnalogPlan, Assembly, Stage};
+use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
+use piperine_analog_solver::math::iv::InitialValue;
+use system::{Solver, Tran, at_rest, at_time, close, dense, matrix_positions, size, solve_stage};
+
+const C: f64 = 1e-6;
+
+/// A capacitor between unknowns 0 and 1.
+fn capacitor() -> Assembly {
+    let m = modules();
+    let (net, n) = netlist(2, &[]);
+    let c = instance("c1", m.capacitor, vec![Discrete(0), at(&n[0]), at(&n[1])]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    asm.set_discrete(0, &f64_bytes(C));
+    asm
+}
+
+#[test]
+fn a_ddt_term_is_silent_in_an_equilibrium_solve() {
+    let mut asm = capacitor();
+    let stamps = asm.assemble_dc(&[0.8, 0.3], at_rest()).expect("assemble");
+    let (a, b) = dense(&stamps, 2);
+    assert_eq!(a, vec![vec![0.0; 2]; 2]);
+    assert_eq!(b, vec![0.0; 2]);
+    assert_eq!(matrix_positions(&stamps).len(), 4, "its positions stay in the pattern");
+
+    // A step that is not positive adds nothing either, as `C::load_transient`.
+    asm.push_stage(&[0.5, 0.1], at_time(0.0)).expect("push");
+    for h in [0.0, -1e-6] {
+        let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 1e-6 };
+        let stamps = asm.assemble_tran(&[0.8, 0.3], at_time(1e-6), stage).expect("assemble");
+        let (a, b) = dense(&stamps, 2);
+        assert_eq!((a, b), (vec![vec![0.0; 2]; 2], vec![0.0; 2]), "h = {h}");
+    }
+}
+
+#[test]
+fn a_ddt_term_stamps_the_capacitor_companion() {
+    // Three accepted rows behind the iterate: lookbacks 3, 2, 1.
+    let rows = [[0.10, 0.00], [0.25, 0.05], [0.45, 0.10]];
+    let x = [0.70, 0.20];
+    let q = |r: &[f64; 2]| C * (r[0] - r[1]);
+    let (q3, q2, q1) = (q(&rows[0]), q(&rows[1]), q(&rows[2]));
+    let q_now = C * (x[0] - x[1]);
+    let h = 2e-6;
+    for (phase, prev_h) in [
+        (TrBdf2Phase::Trapezoidal, 0.0),
+        (TrBdf2Phase::Trapezoidal, 1.5e-6),
+        (TrBdf2Phase::Bdf2, 0.0),
+        (TrBdf2Phase::Bdf2, 1.5e-6),
+    ] {
+        let mut asm = capacitor();
+        for r in &rows {
+            asm.push_stage(r, at_time(0.0)).expect("push");
+        }
+        let stamps = asm.assemble_tran(&x, at_time(h), Stage { phase, h, prev_h }).expect("assemble");
+
+        // C::load_transient, term for term.
+        let (c0, c1, c2) = TrBdf2::stage_coeffs(phase, h, prev_h);
+        let mut i_c = c0 * q_now + c1 * q1 + c2 * q2;
+        if matches!(phase, TrBdf2Phase::Trapezoidal) && prev_h > 0.0 {
+            let (d0, d1, d2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, prev_h);
+            i_c -= d0 * q1 + d1 * q2 + d2 * q3;
+        }
+        let rhs = c0 * q_now - i_c;
+        let (a, b) = dense(&stamps, 2);
+        let what = format!("{phase:?} prev_h = {prev_h}");
+        let rel = 1e-12;
+        close(a[0][0], c0 * C, rel, &format!("{what} (p, p)"));
+        close(a[0][1], -c0 * C, rel, &format!("{what} (p, n)"));
+        close(a[1][0], -c0 * C, rel, &format!("{what} (n, p)"));
+        close(a[1][1], c0 * C, rel, &format!("{what} (n, n)"));
+        close(b[0], rhs, rel, &format!("{what} rhs(p)"));
+        close(b[1], -rhs, rel, &format!("{what} rhs(n)"));
+    }
+}
+
+#[test]
+fn an_rc_step_reads_one_minus_exp() {
+    let m = modules();
+    let (net, n) = netlist(2, &["v1.f"]);
+    let (top, out, f) = (&n[0], &n[1], &n[2]);
+    let (r, c) = (1.0e3, 1.0e-6);
+    let tau = r * c;
+    let v = instance("v1", m.vsource, vec![Discrete(0), at(top), Ground, at(f)]);
+    let r1 = instance("r1", m.resistor, vec![Discrete(1), at(top), at(out)]);
+    let c1 = instance("c1", m.capacitor, vec![Discrete(2), at(out), Ground]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![v, r1, c1], &net).expect("bind"));
+    asm.set_discrete(0, &f64_bytes(1.0));
+    asm.set_discrete(1, &f64_bytes(r));
+    asm.set_discrete(2, &f64_bytes(c));
+
+    // The initial row: the source at 1 V, the capacitor uncharged.
+    let x0 = [1.0, 0.0, 0.0];
+    let first = Stage { phase: TrBdf2Phase::Trapezoidal, h: tau / 100.0, prev_h: 0.0 };
+    let mut solver = Solver::new(&mut Tran { asm: &mut asm, net: &net, amb: at_time(0.0), stage: first }, size(&net), 4)
+        .expect("dry run");
+    let ivs = n.iter().zip(x0).map(|(r, value)| InitialValue { reference: r.clone(), value }).collect();
+    solver.push_initial_conditions(ivs);
+    asm.push_stage(&x0, at_time(0.0)).expect("push the initial row");
+
+    let (dt, steps) = (tau / 100.0, 100);
+    let (mut t, mut prev_h) = (0.0, 0.0);
+    let mut x = x0.to_vec();
+    for _ in 0..steps {
+        let gamma = TrBdf2::GAMMA * dt;
+        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h: dt, prev_h };
+        solve_stage(&mut solver, &mut asm, &net, at_time(t + gamma), trap);
+        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h: dt, prev_h };
+        x = solve_stage(&mut solver, &mut asm, &net, at_time(t + dt), bdf2).to_vec();
+        t += dt;
+        prev_h = dt;
+    }
+    let got = x[out.idx().expect("out")];
+    let analytic = 1.0 - (-1.0_f64).exp();
+    assert!((t - tau).abs() < 1.0e-12, "stopped at t = {t}");
+    assert!((got - analytic).abs() < 1.0e-3, "v(rc) = {got} vs 1 - 1/e = {analytic}");
+}
+
+#[test]
+fn a_restore_returns_histories_and_limit_state() {
+    let x = [0.70, 0.20];
+    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 2e-6, prev_h: 1e-6 };
+    let mut asm = capacitor();
+    asm.push_stage(&[0.1, 0.0], at_time(0.0)).expect("push");
+    asm.push_stage(&[0.3, 0.1], at_time(1e-6)).expect("push");
+    let before = asm.assemble_tran(&x, at_time(3e-6), stage).expect("assemble");
+    let snap = asm.snapshot();
+
+    // A rejected step: its two stages pushed rows the retry must not see.
+    asm.push_stage(&[0.9, 0.0], at_time(2e-6)).expect("push");
+    asm.push_stage(&[1.4, 0.2], at_time(3e-6)).expect("push");
+    let moved = asm.assemble_tran(&x, at_time(3e-6), stage).expect("assemble");
+    assert_ne!(dense(&moved, 2).1, dense(&before, 2).1, "the pushed rows reach the companion");
+
+    asm.restore(&snap);
+    let after = asm.assemble_tran(&x, at_time(3e-6), stage).expect("assemble");
+    assert_eq!(dense(&after, 2), dense(&before, 2), "the histories are those before the step");
+    asm.restore(&snap);
+    let again = asm.assemble_tran(&x, at_time(3e-6), stage).expect("assemble");
+    assert_eq!(dense(&again, 2), dense(&before, 2), "restoring twice gives the same stamps");
+}

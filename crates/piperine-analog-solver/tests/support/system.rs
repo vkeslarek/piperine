@@ -5,7 +5,7 @@
 
 use ndarray::Array1;
 use piperine_analog_solver::convergence::DampedNewton;
-use piperine_analog_solver::device::{Ambient, Assembly};
+use piperine_analog_solver::device::{Ambient, Assembly, Stage};
 use piperine_analog_solver::error::Result;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
@@ -23,6 +23,28 @@ pub struct Dc<'a> {
     pub asm: &'a mut Assembly,
     pub net: &'a Netlist,
     pub amb: Ambient,
+}
+
+/// One transient stage over an assembly.
+pub struct Tran<'a> {
+    pub asm: &'a mut Assembly,
+    pub net: &'a Netlist,
+    pub amb: Ambient,
+    pub stage: Stage,
+}
+
+impl NonLinearSystem<AnalogReference, f64> for Tran<'_> {
+    fn assemble(&mut self, state: &CircularArrayBuffer2<f64>) -> Result<Stamps> {
+        self.asm.assemble_tran(&iterate(state), self.amb, self.stage)
+    }
+    fn netlist(&self) -> &Netlist {
+        self.net
+    }
+}
+
+/// The transient ambient at time `t`.
+pub fn at_time(t: f64) -> Ambient {
+    Ambient { time: t, freq: 0.0, is_static: false, gmin: 1e-12, source_scale: 1.0 }
 }
 
 /// The iterate a system assembles at: the buffer's latest row, else zeros.
@@ -63,6 +85,17 @@ pub fn solve_dc(asm: &mut Assembly, net: &Netlist, start: &[f64]) -> Array1<f64>
     solver
         .solve_with_strategy(&mut sys, &DampedNewton, &Tolerances::default(), &Policy::default())
         .expect("the Newton solve converges")
+}
+
+/// Solves one transient stage with the engine's own Newton loop, then
+/// records the converged solution as the stage's history row.
+pub fn solve_stage(solver: &mut Solver, asm: &mut Assembly, net: &Netlist, amb: Ambient, stage: Stage) -> Array1<f64> {
+    let mut sys = Tran { asm, net, amb, stage };
+    let x = solver
+        .solve_with_strategy(&mut sys, &DampedNewton, &Tolerances::default(), &Policy::default())
+        .expect("the stage converges");
+    sys.asm.push_stage(x.as_slice().expect("contiguous"), amb).expect("push the stage");
+    x
 }
 
 /// The dense matrix and right side a stamp list sums to.
