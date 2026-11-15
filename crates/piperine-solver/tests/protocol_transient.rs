@@ -244,3 +244,49 @@ fn settle_runs_at_time_points_and_at_the_stop_time_only() {
         .collect();
     assert_eq!(instants, [(2, false, false), (4, true, false), (6, true, false), (8, true, false)]);
 }
+
+/// The (attempted time, instant tick) pairs of a run, in order.
+fn attempts_and_instants(log: &Log) -> Vec<Call> {
+    calls(log, |c| matches!(c, Call::Advance(_) | Call::Attempt { .. } | Call::RunInstant { .. }))
+        .into_iter()
+        .map(|c| match c {
+            Call::RunInstant { at, .. } => Call::RunInstant { at, samples: vec![], limit: 0, mode: InstantMode { is_static: false, settle: false } },
+            other => other,
+        })
+        .collect()
+}
+
+#[test]
+fn an_off_grid_step_lands_on_the_tick_grid() {
+    let run = |at: i64| Call::RunInstant { at, samples: vec![], limit: 0, mode: InstantMode { is_static: false, settle: false } };
+    // One second per tick; the analog side proposes 1.6 s, then 2.4 s.
+    let (log, d, mut a) = sides();
+    a.proposals.extend([1.6, 2.4]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(1.0));
+    p.transient(3.0).unwrap();
+    assert_eq!(
+        attempts_and_instants(&log),
+        [
+            Call::Advance(1),
+            Call::Attempt { to: 1.0, exempt: false },
+            run(1),
+            Call::Advance(2),
+            Call::Attempt { to: 2.0, exempt: false },
+            run(2),
+            Call::Advance(3),
+            Call::Attempt { to: 3.0, exempt: false },
+            run(3),
+        ],
+        "every step ends on a tick and the instant run is that tick's own"
+    );
+    assert_eq!(p.now(), 3.0);
+
+    // A crossing located off the grid lands on its nearest tick inside the step.
+    let (log, d, mut a) = sides();
+    a.proposals.extend([2.6]);
+    a.attempts.push_back(Attempt::LandedEarlier(1.4));
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(1.0));
+    p.transient(2.0).unwrap();
+    let seq = attempts_and_instants(&log);
+    assert_eq!(&seq[..5], [Call::Advance(2), Call::Attempt { to: 2.0, exempt: false }, Call::Advance(1), Call::Attempt { to: 1.0, exempt: false }, run(1)]);
+}

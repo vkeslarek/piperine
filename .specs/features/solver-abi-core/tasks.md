@@ -585,6 +585,9 @@ Proof: run abi | test no_unsafe_outside_raw_thunk_and_caller ... ok
 **C44** - A landing is solved on the left value; its instant runs after the acceptance and its changes are delivered after that solve, with a restart (SAC-24)
 Proof: run owner | test a_landing_is_solved_on_the_left_value_then_its_instant_runs ... ok
 
+**C45** - An off-grid proposal or crossing lands on the tick grid and runs that tick's instant (SAC-25)
+Proof: run owner | test an_off_grid_step_lands_on_the_tick_grid ... ok
+
 ---
 
 ## Handoff

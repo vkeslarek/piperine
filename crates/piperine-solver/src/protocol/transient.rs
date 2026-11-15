@@ -109,6 +109,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         (t / self.options.seconds_per_tick).round() as Tick
     }
 
+    /// The last tick not after `t` (a step never ends past what was proposed).
+    fn floor_tick(&self, t: f64) -> Tick {
+        (t / self.options.seconds_per_tick + 1e-9).floor() as Tick
+    }
+
     pub(super) fn time(&self, tick: Tick) -> f64 {
         tick as f64 * self.options.seconds_per_tick
     }
@@ -139,39 +144,46 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     }
 
     fn transient_loop(&mut self, stop: f64) -> Result<Ended> {
+        // Every step ends on the tick grid, so the instant run at a step's end
+        // is that tick's own (an instant runs only at its own tick).
         let stop_tick = self.tick(stop);
+        let stop = self.time(stop_tick);
         let at = |t: f64, e: Error| Error::wrap(SolverDomain::Transient, format!("at t = {t:e} s"), e);
-        let mut forced: Option<f64> = None;
-        while self.now < stop {
+        let mut forced: Option<Tick> = None;
+        while self.tick(self.now) < stop_tick {
             let c = self.checkpoint();
+            let now_tick = self.tick(self.now);
             let unknowns = self.analog.has_unknowns();
-            let mut t_c = match forced.take() {
+            let mut tick_c = match forced.take() {
                 Some(t) => t,
-                None if unknowns => self.analog.propose(self.now, stop).min(stop),
-                None => stop,
+                None if unknowns => {
+                    let proposed = self.analog.propose(self.now, stop);
+                    self.floor_tick(proposed).clamp(now_tick + 1, stop_tick)
+                }
+                None => stop_tick,
             };
-            if t_c <= self.now {
-                return Err(Error::simple(
-                    SolverDomain::Transient,
-                    format!("the proposed step to {t_c:e} s does not advance from {:e} s", self.now),
-                ));
-            }
             // Step 2: the discrete instants before t_c, stopping before a landing.
             let (mut settle, mut final_mark) = (true, false);
-            let advanced = self.discrete.advance(self.tick(t_c)).map_err(|e| at(t_c, e))?;
+            let advanced = self.discrete.advance(tick_c).map_err(|e| at(self.time(tick_c), e))?;
             match advanced {
                 Advance::Reached => {}
                 Advance::Landing { tick, time_point } => {
-                    t_c = self.time(tick);
+                    tick_c = tick;
                     settle = time_point;
                 }
                 Advance::Final(tick) => {
-                    t_c = self.time(tick);
+                    tick_c = tick;
                     final_mark = true;
                 }
             }
+            if tick_c <= now_tick {
+                return Err(Error::simple(
+                    SolverDomain::Transient,
+                    format!("a landing at tick {tick_c} does not advance from tick {now_tick} ({:e} s)", self.now),
+                ));
+            }
+            let t_c = self.time(tick_c);
             self.collect(AnalysisKind::Transient);
-            let tick_c = self.tick(t_c);
 
             // Steps 3 and 4: one analog attempt to t_c.
             let samples = if unknowns {
@@ -187,7 +199,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                     }
                     Attempt::LandedEarlier(t) => {
                         self.restore(&c);
-                        forced = Some(t);
+                        // The nearest tick inside the step.
+                        forced = Some(self.tick(t).clamp(now_tick + 1, tick_c));
                         continue;
                     }
                 }

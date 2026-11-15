@@ -180,6 +180,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-24** (6). WHEN a step lands on a scheduled instant THEN the protocol SHALL solve at that time on the value before the instant (the left value), exempt from the truncation test, accept, run the instant (its reactions read the solution at that time), and only then deliver what the instant changed (microstep 0 included) with the restart the next step starts from; user (solver-completeness context.md, 2026-11-15): "ABI order: solve, then react (Recommended)" (F1).
 
+- **SAC-25** (7). Every step of a transient SHALL end on the tick grid (a proposal is floored to a tick, at least one past the last acceptance; a located crossing lands on its nearest tick inside the step), and the instant run at a step's end SHALL be that tick's own (F2).
+
 ---
 
 ## Edge Cases
@@ -219,6 +221,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-22 | P1: Verification round 1, AC 4 | Execute | Done |
 | SAC-23 | P1: Verification round 1, AC 5 | Execute | Done |
 | SAC-24 | P1: Verification round 1, AC 6 | Execute | Done |
+| SAC-25 | P1: Verification round 1, AC 7 | Execute | Done |
 
 **Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 
