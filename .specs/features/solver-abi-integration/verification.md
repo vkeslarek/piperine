@@ -1,9 +1,10 @@
 # Solver ABI Integration verification
 
-**Verdict**: FAIL - 9 findings, none of them moves a number. The numerics hold: every surviving numeric literal and tolerance matches the base, `parity_baseline` gives 161 steps, and the differential oracle still passes 6 of 6 at the last commit that had both contracts.
+**Verdict**: PASS. Round 2 closes all 9 round-1 findings at 9806e693. It records 3 new findings, all Low, which are left open for the user (none moves a number).
+**Round**: 2
 **Proofs**: `proofs.md` at 6d73aa03 (34 pass). This round re-ran the four suites at fcc38c6e: all green, zero warnings (`cargo build --all-targets`, four crates).
 **Verifier**: independent sub-agent (author != verifier), Opus
-**Range**: 43876aec..fcc38c6e (parity literals also diffed against 98b30ad6)
+**Range**: 43876aec..fcc38c6e (round 1); f928e331..331883bb (round 2, fixes 294bbc05..9806e693). `parity_baseline` literals diffed against 98b30ad6.
 
 ## Numerics
 
@@ -36,7 +37,7 @@
 | C3 | `abi_tran.rs` `a_continuous_init_starts_newton_and_is_held_through_the_operating_point` | yes |
 | C4 | `bind.rs` `a_pin_abstol_tightens_its_node` | yes |
 | C5 | `protocol_real.rs` `a_clock_nothing_analog_reads_adds_no_step` | yes - equal step counts and every accepted time; my probe repeated it with crossings |
-| C6 | `protocol_real.rs` `a_boundary_change_is_read_by_the_arriving_step_and_restarts_the_next` | yes for the superseded AC 6 (left value at the landing, new code after, no rejections). The C6 text and the test name still state the old order: F2 |
+| C6 | `protocol_real.rs` `a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next` | yes. Round 2: the claim text and the test name now state the left-value order (F2 closed) |
 | C7 | `protocol_real.rs` `a_rejected_step_leaves_no_trace` | yes - the store holds 50 edges, the instants replayed, and the final value is within 1e-4 of a run with no fault |
 | C8 | `host_surface.rs` `an_irreversible_reaction_runs_once_at_an_accepted_time` | yes |
 | C9 | `host_surface.rs` `finish_ends_the_analysis_at_an_accepted_time` | yes |
@@ -51,16 +52,35 @@
 | C18 | `host_set.rs` `a_scheduled_host_write_lands_and_restarts_small` | yes |
 | C19 | `operating_point.rs` `globals_hold_the_session_values` | yes for TEMPERATURE, RESOLUTION, DC and NAMED; TRAN, AC and NOISE are not read |
 | C20 | `abi_sens.rs` `sensitivity_uses_declared_partials_and_falls_back_to_a_finite_difference` | yes |
-| C21 | `abi_dc.rs` `divider_reads_the_analytic_ratio_on_devices` | partly - a DC divider proves neither the veto, nor GMIN/SOURCE_SCALE, nor the other drivers: F3 |
-| C22 | `protocol_crossings.rs` `a_cap_watch_bounds_the_next_step` | partly - one CAP, not "the smallest", and the crossing half of the claim is not in the proof: F4. A long run can pass the cap: F1 |
+| C21 | shell proof over `abi_dc`/`abi_tran`/`abi_ac`/`abi_noise`/`limiting_report` (7 named tests, `gmin_stepping_reaches_a_device_through_the_ambient_input` and `source_stepping_scales_sources_through_the_ambient_input` among them) | yes. Round 2: each of the seven tests must print its pass line (F3 closed) |
+| C22 | `protocol_crossings.rs` `a_cap_watch_bounds_the_next_step`, `a_fired_crossing_is_a_commit_at_the_landing` | yes. Round 2: caps of 4 ns and 1 ns in both orders. Every step is at most 1 ns, the widest step exceeds 0.99 ns, so the 4 ns cap alone would fail it (F4 closed) |
 | C23 | `parity_baseline.rs`, diffed against 98b30ad6 | yes |
-| C24 | `removed_surface.rs` `removed_tests_are_listed_with_their_item` | partly - proves the listed names are gone, not that every removed test is listed: F5 |
+| C24 | `removed_surface.rs` `removed_tests_are_listed_with_their_item` | yes. Round 2: `base_tests.txt` holds 527 names, every base test of the four crates (I counted 44+69+120+296 from 43876aec). Every name that vanished in either round is in it or in `removed.txt` (F5 closed) |
 | C25 | `removed_surface.rs` `the_element_contract_is_gone` | yes - a grep of src and tests of the four crates finds no name |
 | C26 | `removed_surface.rs` `the_old_digital_engine_is_gone` | yes |
-| C27 | `abi_devices.rs` `every_device_function_passes_the_partials_verifier` | partly - covers one function of each helper module, not "any function of any test device": F9 |
+| C27 | shell proof: `every_device_function_passes_the_partials_verifier`, `every_helper_device_passes_at_generic_points`, `every_hand_written_device_is_in_a_partials_check` and one `its_devices_pass_the_partials_verifier` per target (more than 20) | yes. The guard matches a device by its label string, not its module: N3 (F9 closed) |
 | C28 | `crate_boundaries.rs` `analog_sources_name_no_digital_type` | yes |
 | C29 | `crate_boundaries.rs` `digital_sources_name_no_analog_type` | yes |
 | C30 | the four suites | yes - re-run green, zero warnings |
+
+## Round 2
+
+- **Numerics unchanged.**
+  - The literal diff f928e331..HEAD over every test only adds: the 0.99e-9 floor in `a_cap_watch_bounds_the_next_step`, the AGE asserts, and the `transient_step_lookup` bytes. No surviving literal or tolerance was removed or changed.
+  - Against 43876aec the only removed literal is still the intended `live_params` 10 V to 5 V.
+  - `parity_baseline` asserts match 98b30ad6 and all 7 pass with 161 steps.
+  - The four suites are green, with zero warnings under `--all-targets`.
+- **F1, the cap at half a tick, is sound.**
+  - A proposal less than half a tick past tick k ends at k. One between half a tick and a tick past ends at k+1, at most half a tick after the proposal.
+  - `analyses/transient.rs:1215` then ends the analog step at the proposal itself, because it lies within one tick of the tick. So no accepted step passes the proposal, and none passes the `CAP` bound the proposal honours. The instant runs on its tick at most half a tick later, as the design's tick-grid tolerance allows.
+  - A few ulps short of a tick still rounds to that tick: the ulp of `ticks` stays below 0.5 up to about 2^51 ticks, which is 2 s at 1 fs per tick.
+  - My round-1 probe now ends 0.4 ticks past the proposal, below f64 resolution at 1 s. The new stub test fails with the old formula (99.5 ticks past).
+- **F6 is real now.** The glitch test asserts that `c` reads HIGH inside the flip, using a lag inverter so the glitch exists. The homotopy test asserts the limit's AGE sequence 0, >0, >0, >0, 0, >0..., which fails if there is no restore, or if the converging attempt is restored.
+- **F7 is restored.**
+  - Every step carries its digital net bytes and names. The value is the settled one after that time's instant, so a landing step pairs the analog left value with the post-instant digital value. That is documented.
+  - Re-entry works from any recorded step. `reentry_from_any_captured_step_matches_the_continuous_run` re-enters at every 7th step plus the last and checks the digital end state exactly.
+- **Probes re-run.** No regressions: the round-1 crossings, the free clock, simultaneous crossings, the non-zero start and the `parity_baseline` partials probes all hold.
+- **New re-entry probe.** Re-entering at each clock-edge step gives the results in N1.
 
 ## Findings
 
@@ -75,6 +95,9 @@
 | F7 - Two host-visible capabilities were narrowed with no `removed.txt` line and no MD-62 text. `TransientStep` no longer carries per-step digital net values. A transient can now re-enter only from the first or the last step; before, every step was a full state. | `core/result.rs`: `digital`, `with_digital`, `digital(idx)` and `digital_hidden` are removed. `transient_step_lookup_by_net_returns_analog_and_digital_values` now asserts `get_net(digital) == None`, the opposite of its name. `transient_reentry.rs` `reentry_needs_a_captured_device_state`. | Record both in MD-62 (the sink's Change observations replace the digital waveform; re-entry only from the first or last step), add a ROADMAP line if they are gaps, and rename the lookup test. | 7dbfbd79 |
 | F8 - The CLAUDE.md crate table says `piperine-solver` "depends on no other in-tree crate" besides the sub-solvers, but it depends on `piperine-abi`. | `crates/piperine-solver/Cargo.toml:17`; `crate_boundaries.rs` `owner_depends_on_the_abi_and_both_sub_solvers_only`. CLAUDE.md line 38 has the same omission. | Name `piperine-abi` in both places, in CLAUDE.md and AGENTS.md. | 92da5f96 |
 | F9 - C27 claims "every function of every test device", but the table holds one function per helper module. It omits `noise_pair` fn 0 "a" and every device defined inside a target (about 25, including the six in `parity_baseline`). | `abi_devices.rs:49` `table()`. My probe found `parity_baseline`'s Diode, SineVsrc, Comparator and GatedISink `Exact`, so no mismatch was found. | Add `noise_pair` fn 0 and the target-local devices with declared partials, or narrow the C27 claim to the helper library. | e663a22b |
+| N1 (Low) - Re-entry approximates the continuous run; it is not a replay. The captured state does not hold the controller's step history, nor the restart pending after a landing's delivery, so the continuation takes another step grid. | Probe: re-entering `build_clocked_rc` at each of its 9 clock-edge steps ends with v(c) up to 7.3e-4 relative from the continuous run (worst at 0.9 ms), with 15 to 154 steps against 21 to 151. `reentry_from_any_captured_step_matches_the_continuous_run` allows 1e-3 relative, which only just covers this. | Carry the last step and a pending `Restart` in `ReentryState`, then tighten the test. Or state the tolerance class of re-entry in MD-62. Left to the user. | |
+| N2 (Low) - Every transient step now keeps a full re-entry state: the digital checkpoint, every net's bytes and the assembly snapshot. `DigitalSide::mark` also copies every net's bytes on each attempt, rejected ones included. Memory and time grow with steps times state, and there is no opt-out. | `adapters.rs` `mark` and `record_settled`; `analyses/transient.rs` `device_capture` runs for every step | Make per-step re-entry state opt-in (like `record_device_state`), or share unchanged net bytes. Left to the user. | |
+| N3 (Low) - `every_hand_written_device_is_in_a_partials_check` matches a device by the label string passed to `verify_every_function`, not by the module verified. `verify_every_function("X", other_module)` satisfies the guard for device `X`. | `abi_devices.rs:192-199` | Match the module expression (`module::<X>`), or the struct name in the call's second argument. Left to the user. | |
 
 Also checked, no finding:
 
