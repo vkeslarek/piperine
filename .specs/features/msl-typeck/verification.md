@@ -47,6 +47,12 @@ Method: read spec.md, design.md, tasks.md `## Checks`, proofs.md, `.specs/featur
 | C35 | `types_values.rs` `a_let_without_type_or_value_is_p0001` | yes |
 | C36 | `types_entry.rs` `a_const_is_typed_once_by_its_declared_type` | yes |
 | C37 | `types_values.rs` `a_closure_outside_an_argument_is_p0001` | yes |
+| C38 | `types_modules.rs` `a_where_on_a_module_or_fn_is_bool` | yes - round 2: `E0304` for the module `where`, `P0001` for a value parameter in a `fn` `where`, `P0002` for a non-`bool` one |
+| C39 | `types_modules.rs` `a_core_primitive_is_checked_where_it_is_written` | yes - against AC 4.8 as amended; the code it pins for `ddt`/`limit` is F9 |
+| C40 | `types_modules.rs` `an_environment_function_in_a_const_context_is_e0323` | yes - four const contexts and two run-time positions; the `fn` `where` is untested but refused (probed) |
+| C41 | `types_values.rs` `a_function_is_a_value_only_as_an_argument` | yes - a `fn` value inside an `if` in the argument is not covered (F10) |
+| C42 | `types_values.rs` `an_unsupported_form_does_not_hide_an_independent_error` | yes - for its three cases; the exception's boundary is untested (F11) |
+| C43 | `types_subset.rs` `std_types_outside_the_subset_are_p0001` | yes - real std, one `P0001` each, construct named |
 
 ## Specific questions
 
@@ -95,12 +101,6 @@ Method: read the round-1 diff `e4a2d88c` (code, the two edited tests, the spec a
 
 | Check | Test | Holds | Note |
 | --- | --- | --- | --- |
-| C38 | `types_modules.rs` `a_where_on_a_module_or_fn_is_bool` | yes | round 2: `E0304` for the module `where`, `P0001` for a value parameter in a `fn` `where`, `P0002` for a non-`bool` one |
-| C39 | `types_modules.rs` `a_core_primitive_is_checked_where_it_is_written` | yes | against AC 4.8 as amended; the code it pins for `ddt`/`limit` is F9 |
-| C40 | `types_modules.rs` `an_environment_function_in_a_const_context_is_e0323` | yes | four const contexts and two run-time positions; the `fn` `where` is untested but refused (probed) |
-| C41 | `types_values.rs` `a_function_is_a_value_only_as_an_argument` | yes | a `fn` value inside an `if` in the argument is not covered (F10) |
-| C42 | `types_values.rs` `an_unsupported_form_does_not_hide_an_independent_error` | yes | for its three cases; the exception's boundary is untested (F11) |
-| C43 | `types_subset.rs` `std_types_outside_the_subset_are_p0001` | yes | real std, one `P0001` each, construct named |
 
 ### Round 2 findings
 
