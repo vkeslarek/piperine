@@ -7,7 +7,7 @@
 
 use piperine_analog_solver::error::Result;
 
-use super::sides::{AnalogSide, AnalysisKind, DiscreteSide, InstantMode, Outcome, Restart, Shadow, Tick};
+use super::sides::{AnalogSide, AnalysisKind, DiscreteSide, Horizon, InstantMode, Outcome, Restart, Shadow, Tick};
 use super::transient::Protocol;
 
 /// What became of a host write.
@@ -93,7 +93,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         if outcome == SetOutcome::Committed && self.started && !self.in_transient && tick == now_tick {
             let samples = std::mem::take(&mut self.samples);
             let mode = InstantMode { is_static: false, settle: false };
-            let ran = self.run_whole_instant(now_tick, &samples, now_tick, mode);
+            let ran = self.run_whole_instant(now_tick, &samples, Horizon { stop: now_tick, crossing: now_tick }, mode);
             self.samples = samples;
             let ran = ran?;
             if self.analog.has_unknowns() && !ran.boundary.is_empty() {
@@ -118,7 +118,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 
     /// Runs the instant `at` to its end, calling the waiters of each host event
     /// it fires and queuing their writes at the next microstep.
-    pub(super) fn run_whole_instant(&mut self, at: Tick, samples: &[f64], limit: Tick, mode: InstantMode) -> Result<Outcome> {
+    pub(super) fn run_whole_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome> {
         let mut whole = Outcome::default();
         loop {
             let part = self.discrete.run_instant(at, samples, limit, mode)?;

@@ -20,7 +20,7 @@ use piperine_solver::protocol::{
     Accepted, Advance, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
     Protocol, ProtocolOptions, Restart, SetOutcome, Sink,
 };
-use stub_sides::{Call, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
+use stub_sides::{Call, horizon, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
 /// Half a second per tick: every time below is exact in binary.
 const SPT: f64 = 0.5;
@@ -93,14 +93,14 @@ fn a_landing_is_solved_on_the_left_value_then_its_instant_runs() {
             Call::Attempt { to: 1.0, exempt: true },
             Call::Accept,
             // The instant runs after the solve; its reactions read the solution at 1 s.
-            Call::RunInstant { at: 2, samples: vec![0.5], limit: 6, mode },
+            Call::RunInstant { at: 2, samples: vec![0.5], limit: horizon(6, 2), mode },
             // What it changed (microstep 0 included) reaches the analog side after
             // that solve, and the next step restarts from the jump.
             Call::Deliver(vec![boundary()], Restart::Integrator),
             Call::Advance(6),
             Call::Attempt { to: 3.0, exempt: false },
             Call::Accept,
-            Call::RunInstant { at: 6, samples: vec![], limit: 6, mode },
+            Call::RunInstant { at: 6, samples: vec![], limit: horizon(6, 6), mode },
         ]
     );
 }
@@ -181,10 +181,10 @@ fn acceptance_fires_crossings_runs_the_instant_and_asks_for_restart() {
         [
             Call::Accept,
             Call::Fire(5, 2),
-            Call::RunInstant { at: 2, samples: vec![0.25], limit: 4, mode },
+            Call::RunInstant { at: 2, samples: vec![0.25], limit: horizon(4, 2), mode },
             Call::Deliver(vec![boundary()], Restart::Integrator),
             Call::Accept,
-            Call::RunInstant { at: 4, samples: vec![], limit: 4, mode },
+            Call::RunInstant { at: 4, samples: vec![], limit: horizon(4, 4), mode },
         ]
     );
 }
@@ -218,11 +218,11 @@ fn a_host_param_write_asks_for_the_small_restart() {
                 Call::Shadow(5, vec![2]),
                 Call::HostCommit { net: 5, offset: 0, bytes: vec![2], at: 2 },
                 // The write is applied at once at 1 s, reading the accepted solution there.
-                Call::RunInstant { at: 2, samples: vec![0.25], limit: 2, mode: quiet },
+                Call::RunInstant { at: 2, samples: vec![0.25], limit: horizon(2, 2), mode: quiet },
                 Call::Deliver(vec![boundary()], restart),
                 // No zero-length step: the next attempt goes forward.
                 Call::Attempt { to: 2.0, exempt: false },
-                Call::RunInstant { at: 4, samples: vec![], limit: 4, mode: step },
+                Call::RunInstant { at: 4, samples: vec![], limit: horizon(4, 4), mode: step },
             ],
             "param write: {param}"
         );
@@ -290,7 +290,7 @@ fn attempts_and_instants(log: &Log) -> Vec<Call> {
     calls(log, |c| matches!(c, Call::Advance(_) | Call::Attempt { .. } | Call::RunInstant { .. }))
         .into_iter()
         .map(|c| match c {
-            Call::RunInstant { at, .. } => Call::RunInstant { at, samples: vec![], limit: 0, mode: InstantMode { is_static: false, settle: false } },
+            Call::RunInstant { at, .. } => Call::RunInstant { at, samples: vec![], limit: horizon(0, 0), mode: InstantMode { is_static: false, settle: false } },
             other => other,
         })
         .collect()
@@ -298,7 +298,7 @@ fn attempts_and_instants(log: &Log) -> Vec<Call> {
 
 #[test]
 fn an_off_grid_step_lands_on_the_tick_grid() {
-    let run = |at: i64| Call::RunInstant { at, samples: vec![], limit: 0, mode: InstantMode { is_static: false, settle: false } };
+    let run = |at: i64| Call::RunInstant { at, samples: vec![], limit: horizon(0, 0), mode: InstantMode { is_static: false, settle: false } };
     // One second per tick; the analog side proposes 1.6 s, then 2.4 s.
     let (log, d, mut a) = sides();
     a.proposals.extend([1.6, 2.4]);

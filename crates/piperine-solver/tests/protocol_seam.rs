@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use piperine_solver::protocol::{
     Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, InstantMode, Outcome, Restart, Shadow,
 };
-use stub_sides::{Call, ScriptedAnalog, ScriptedDiscrete, new_log};
+use stub_sides::{Call, horizon, ScriptedAnalog, ScriptedDiscrete, new_log};
 
 /// Each line of `text` that names an item of a sub-solver other than the
 /// analog crate's `error` module.
@@ -70,7 +70,7 @@ fn the_stubs_replay_their_script_and_record_calls() {
     assert_eq!(d.advance(10).unwrap(), Advance::Landing { tick: 7, time_point: true });
     assert_eq!(d.advance(10).unwrap(), Advance::Reached, "an exhausted script answers Reached");
     a.deliver(&[Boundary { slot: 1, bytes: vec![1, 1] }], Restart::Integrator);
-    assert!(d.run_instant(7, &[0.5], 99, mode).unwrap().finish);
+    assert!(d.run_instant(7, &[0.5], horizon(99, 7), mode).unwrap().finish);
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Refused { check: "r > 0".into() });
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Accept);
     let m = d.mark();
@@ -87,7 +87,7 @@ fn the_stubs_replay_their_script_and_record_calls() {
         Call::Advance(10),
         Call::Advance(10),
         Call::Deliver(vec![Boundary { slot: 1, bytes: vec![1, 1] }], Restart::Integrator),
-        Call::RunInstant { at: 7, samples: vec![0.5], limit: 99, mode },
+        Call::RunInstant { at: 7, samples: vec![0.5], limit: horizon(99, 7), mode },
         Call::Shadow(2, vec![9]),
         Call::Shadow(2, vec![9]),
         Call::DiscreteMark(0),

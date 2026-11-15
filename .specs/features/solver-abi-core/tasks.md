@@ -594,6 +594,9 @@ Proof: run owner | test finish_at_the_operating_point_ends_the_run ... ok
 **C47** - Consecutive rejected attempts beyond the cap fail loud naming the instant (SAC-27)
 Proof: run owner | test consecutive_rejections_beyond_the_cap_fail_loud ... ok
 
+**C48** - Reactions a crossing can reach are bounded by the current instant while analog unknowns exist (SAC-29)
+Proof: run owner | test irreversible_reactions_are_bounded_by_the_current_instant ... ok
+
 ---
 
 ## Handoff

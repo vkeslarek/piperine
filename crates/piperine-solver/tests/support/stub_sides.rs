@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use piperine_analog_solver::error::Result;
 use piperine_solver::protocol::{
-    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, InstantMode, Observation, Outcome, Restart,
+    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Observation, Outcome, Restart,
     Shadow, Tick,
 };
 
@@ -21,7 +21,7 @@ pub enum Call {
     Start,
     Advance(Tick),
     Fire(u32, Tick),
-    RunInstant { at: Tick, samples: Vec<f64>, limit: Tick, mode: InstantMode },
+    RunInstant { at: Tick, samples: Vec<f64>, limit: Horizon, mode: InstantMode },
     DiscreteMark(u32),
     DiscreteRestore(u32),
     Shadow(u32, Vec<u8>),
@@ -38,6 +38,11 @@ pub enum Call {
     DrainTraces,
     /// Pushed by a test's host waiter.
     Waiter(u32),
+}
+
+/// The horizon bounds of a `run_instant` call.
+pub fn horizon(stop: Tick, crossing: Tick) -> Horizon {
+    Horizon { stop, crossing }
 }
 
 /// The log both stubs write.
@@ -106,7 +111,7 @@ impl DiscreteSide for ScriptedDiscrete {
         self.record(Call::Fire(net, at));
         Ok(())
     }
-    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Tick, mode: InstantMode) -> Result<Outcome> {
+    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome> {
         self.record(Call::RunInstant { at, samples: samples.to_vec(), limit, mode });
         self.buffer.extend(self.instant_observations.pop_front().unwrap_or_default());
         Ok(self.instants.pop_front().unwrap_or_default())

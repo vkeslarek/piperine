@@ -21,7 +21,7 @@
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
 use super::host::Waiter;
-use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, InstantMode, Restart, Tick};
+use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Restart, Tick};
 use super::sink::{Delivery, Sink};
 
 /// How the protocol maps time and bounds its loops.
@@ -247,7 +247,9 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             };
             self.samples.clone_from(&samples);
             let mode = InstantMode { is_static: false, settle };
-            let outcome = self.run_whole_instant(tick_c, &samples, stop_tick, mode).map_err(|e| at(t_c, e))?;
+            let crossing = if unknowns { tick_c } else { stop_tick };
+            let limit = Horizon { stop: stop_tick, crossing };
+            let outcome = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
             if unknowns && !outcome.boundary.is_empty() {
                 let restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
                 self.analog.deliver(&outcome.boundary, restart);

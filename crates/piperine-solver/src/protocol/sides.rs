@@ -43,6 +43,17 @@ pub struct InstantMode {
     pub settle: bool,
 }
 
+/// The latest ticks a reaction's `HORIZON` may reach at an instant (abi.md R5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Horizon {
+    /// The stop time: the bound when nothing queued reaches the reaction.
+    pub stop: Tick,
+    /// The bound for a reaction a `CROSS` watch can reach: the current instant
+    /// while the analog side has unknowns (a crossing may fire in the very next
+    /// step, which is not proposed yet), the stop time when it has none.
+    pub crossing: Tick,
+}
+
 /// What running (or resuming) an instant did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Outcome {
@@ -153,9 +164,11 @@ pub trait DiscreteSide {
     /// Commits a firing of event pin `net` due at microstep 0 of `at` (C6).
     fn fire(&mut self, net: u32, at: Tick) -> Result<()>;
     /// Runs (or, after a suspension, continues) the instant `at`. `samples` are
-    /// the accepted continuous values reactions read; `limit` is the latest tick
-    /// a `HORIZON` may reach (the stop time).
-    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Tick, mode: InstantMode) -> Result<Outcome>;
+    /// the accepted continuous values reactions read; `limit` bounds each
+    /// reaction's `HORIZON` (R5): `limit.crossing` for one a `CROSS` watch can
+    /// reach, `limit.stop` otherwise. An `IRREVERSIBLE` reaction never runs its
+    /// own clock past its bound.
+    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome>;
     fn mark(&self) -> Self::Mark;
     fn restore(&mut self, mark: &Self::Mark);
     /// Runs the parameter cone downstream of a host write on a shadow (P6).

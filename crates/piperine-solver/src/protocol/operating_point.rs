@@ -5,7 +5,7 @@
 
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
-use super::sides::{AnalogSide, AnalysisKind, Boundary, DiscreteSide, InstantMode, Restart};
+use super::sides::{AnalogSide, AnalysisKind, Boundary, DiscreteSide, Horizon, InstantMode, Restart};
 use super::transient::{Ended, Protocol};
 
 /// The `E0506` error: the rounds of an operating point exceeded `max`.
@@ -36,6 +36,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         let mut finish = false;
         let mut samples = Vec::new();
         let quiet = InstantMode { is_static: true, settle: false };
+        // Time does not advance in an operating point.
+        let bound = Horizon { stop: at, crossing: at };
         loop {
             if unknowns {
                 rounds += 1;
@@ -47,7 +49,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 }
                 samples = accepted.samples;
             }
-            let outcome = self.run_whole_instant(at, &samples, at, quiet)?;
+            let outcome = self.run_whole_instant(at, &samples, bound, quiet)?;
             finish |= outcome.finish;
             self.collect(analysis);
             if !unknowns || outcome.boundary.is_empty() || finish {
@@ -58,7 +60,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             }
             self.analog.deliver(&outcome.boundary, Restart::None);
         }
-        let settled = self.run_whole_instant(at, &samples, at, InstantMode { is_static: true, settle: true })?;
+        let settled = self.run_whole_instant(at, &samples, bound, InstantMode { is_static: true, settle: true })?;
         if unknowns && !settled.boundary.is_empty() {
             // A settle commit is read by the solve that arrives next (abi.md §10 step 4).
             self.analog.deliver(&settled.boundary, Restart::None);

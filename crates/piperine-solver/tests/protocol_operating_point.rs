@@ -9,7 +9,7 @@
 mod stub_sides;
 
 use piperine_solver::protocol::{Accepted, Boundary, Ended, InstantMode, Outcome, Protocol, ProtocolOptions, Restart};
-use stub_sides::{Call, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
+use stub_sides::{Call, horizon, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
 const QUIET: InstantMode = InstantMode { is_static: true, settle: false };
 const SETTLE: InstantMode = InstantMode { is_static: true, settle: true };
@@ -39,13 +39,13 @@ fn the_operating_point_follows_the_call_sequence() {
         [
             Call::Start,
             Call::Equilibrium,
-            Call::RunInstant { at: 0, samples: vec![0.5], limit: 0, mode: QUIET },
+            Call::RunInstant { at: 0, samples: vec![0.5], limit: horizon(0, 0), mode: QUIET },
             Call::Deliver(vec![Boundary { slot: 7, bytes: vec![1] }], Restart::None),
             Call::Equilibrium,
             // A crossing between rounds is due at the next microstep.
             Call::Fire(9, 0),
-            Call::RunInstant { at: 0, samples: vec![0.75], limit: 0, mode: QUIET },
-            Call::RunInstant { at: 0, samples: vec![0.75], limit: 0, mode: SETTLE },
+            Call::RunInstant { at: 0, samples: vec![0.75], limit: horizon(0, 0), mode: QUIET },
+            Call::RunInstant { at: 0, samples: vec![0.75], limit: horizon(0, 0), mode: SETTLE },
         ]
     );
 }
@@ -90,8 +90,8 @@ fn an_operating_point_without_unknowns_runs_the_instant_only() {
         sequence(&log),
         [
             Call::Start,
-            Call::RunInstant { at: 0, samples: vec![], limit: 0, mode: QUIET },
-            Call::RunInstant { at: 0, samples: vec![], limit: 0, mode: SETTLE },
+            Call::RunInstant { at: 0, samples: vec![], limit: horizon(0, 0), mode: QUIET },
+            Call::RunInstant { at: 0, samples: vec![], limit: horizon(0, 0), mode: SETTLE },
         ]
     );
 }
