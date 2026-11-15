@@ -1162,10 +1162,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The expected widths (166 in the five periods whose bit-reversed frame index is below 5, else 165), the 4-count dead times and the 396 limit are computed in the test from SPEC §5, not read back from the model
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test dpwm`: `the_oscillator_toggles_every_half_period`, `the_dpwm_dithers_keeps_dead_time_and_never_overlaps`, `two_runs_give_the_same_changes`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+- [x] The expected widths (166 in the five periods whose bit-reversed frame index is below 5, else 165), the 4-count dead times and the 396 limit are computed in the test from SPEC §5, not read back from the model
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test dpwm`: `the_oscillator_toggles_every_half_period`, `the_dpwm_dithers_keeps_dead_time_and_never_overlaps`, `two_runs_give_the_same_changes`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
