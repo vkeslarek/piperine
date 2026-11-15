@@ -6,10 +6,12 @@
 pub mod assembly;
 mod ddt;
 mod flow;
+mod limit;
 pub mod plan;
 
 pub use assembly::{Ambient, Assembly, AssemblySnapshot};
 pub use ddt::Stage;
+pub use limit::LimitState;
 pub use plan::{AnalogBinding, AnalogInstance, AnalogPlan};
 
 use crate::error::{Error, SolverDomain};

@@ -10,7 +10,8 @@ use piperine_abi::raw::{ambient, op};
 
 use super::ddt::{History, Stage, stamp_ddt};
 use super::device_error;
-use super::flow::{direct, stamp_flow, stamp_rows};
+use super::flow::{stamp_flow, stamp_rows};
+use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source};
 use crate::error::Error;
 use crate::math::linear::Stamp;
@@ -36,6 +37,8 @@ pub struct Ambient {
 pub(crate) struct Held {
     /// `VALUE`: for a `LIMIT`, the iterate `x̂` held for this iteration.
     pub value: f64,
+    /// For a `LIMIT`, the `PROPOSED` value `x` of this iteration.
+    pub proposed: f64,
     /// `LAST`: the value held.
     pub last: f64,
     /// `AGE`: 0 none held, 1 from the last accepted solution, 2 from the
@@ -72,10 +75,12 @@ pub(crate) struct InstanceState {
     pub ddt: Vec<History>,
 }
 
-/// What a rejected step must undo (abi.md §5 I8): every term history.
+/// What a rejected step must undo (abi.md §5 I8): every term history and
+/// every limit's held state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AssemblySnapshot {
     ddt: Vec<Vec<History>>,
+    held: Vec<Vec<Held>>,
 }
 
 /// The device assembly of one circuit: its plan, the discrete slots its
@@ -133,16 +138,55 @@ impl Assembly {
 
     /// Evaluates, at iterate `x`, every analog function a Newton solve needs
     /// (those writing terms or limits) whose read bytes changed since its
-    /// last call, then checks every value and seeded partial the solve reads.
+    /// last call: the functions writing limits first, then, with each
+    /// limit's `x̂` taken from them, the rest. Then checks every value and
+    /// seeded partial the solve reads.
     pub fn evaluate(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
-            for (fi, f) in inst.functions.iter().enumerate() {
-                if f.rows {
-                    let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
-                    run(inst, f, &mut st.fns[fi], &ctx, &mut self.scratch)?;
+            for pass in [true, false] {
+                for (fi, f) in inst.functions.iter().enumerate() {
+                    if f.rows && f.limits == pass {
+                        let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
+                        run(inst, f, &mut st.fns[fi], &ctx, &mut self.scratch)?;
+                    }
+                }
+                if pass {
+                    take_iterates(inst, st);
                 }
             }
             check_finite(inst, st)?;
+        }
+        Ok(())
+    }
+
+    /// The limits that veto convergence of the iteration just assembled:
+    /// those with `|x̂ − x| > 1e-6 + 1e-4·|x|`.
+    pub fn limiting_active(&self) -> Vec<LimitState> {
+        let mut out = Vec::new();
+        for (inst, st) in self.plan.instances.iter().zip(&self.state) {
+            vetoes(inst, st, &mut out);
+        }
+        out
+    }
+
+    /// Ends a Newton iteration: every written limit's `LAST` becomes the `x̂`
+    /// of the iteration just assembled, with `AGE = 2`.
+    // SPEC_DEVIATION: design.md gives `end_iteration(&mut self, x)`; it takes
+    // no solution.
+    // Reason: `x̂` is the `LIMITED` written in the iteration's own evaluation,
+    // which already ran at the iterate; the next solution is not read.
+    pub fn end_iteration(&mut self) {
+        for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
+            advance(inst, st, 2);
+        }
+    }
+
+    /// Accepts the solution `x`: evaluates there, and every written limit's
+    /// `LAST` becomes its `x̂` with `AGE = 1`.
+    pub fn accept(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
+        self.evaluate(x, amb)?;
+        for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
+            advance(inst, st, 1);
         }
         Ok(())
     }
@@ -177,7 +221,7 @@ impl Assembly {
         let mut out = Vec::new();
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
             for (ti, t) in inst.terms.iter().enumerate() {
-                let lin = direct(t, st);
+                let lin = linear(t, inst, st);
                 match (t.op, stage) {
                     (op::FLOW, _) => stamp_flow(t, &lin, x, &mut out),
                     (op::DDT, Some(stage)) => stamp_ddt(t, &lin, &st.ddt[ti], stage, x, &mut out),
@@ -202,7 +246,7 @@ impl Assembly {
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DDT {
-                    let q = direct(t, st).v;
+                    let q = linear(t, inst, st).v;
                     st.ddt[ti].push(q);
                 }
             }
@@ -210,15 +254,19 @@ impl Assembly {
         Ok(())
     }
 
-    /// The term histories, to restore when a step is rejected.
+    /// The term histories and limit states, to restore when a step is rejected.
     pub fn snapshot(&self) -> AssemblySnapshot {
-        AssemblySnapshot { ddt: self.state.iter().map(|s| s.ddt.clone()).collect() }
+        AssemblySnapshot {
+            ddt: self.state.iter().map(|s| s.ddt.clone()).collect(),
+            held: self.state.iter().map(|s| s.held.clone()).collect(),
+        }
     }
 
-    /// Returns every term history to `snap`.
+    /// Returns every term history and limit state to `snap`.
     pub fn restore(&mut self, snap: &AssemblySnapshot) {
-        for (st, ddt) in self.state.iter_mut().zip(&snap.ddt) {
+        for ((st, ddt), held) in self.state.iter_mut().zip(&snap.ddt).zip(&snap.held) {
             st.ddt.clone_from(ddt);
+            st.held.clone_from(held);
         }
     }
 }

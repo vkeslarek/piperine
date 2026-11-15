@@ -76,6 +76,8 @@ pub(crate) struct FnPlan {
     pub seed: Vec<u8>,
     /// Writes a term or a limit: needed by every Newton solve.
     pub rows: bool,
+    /// Writes a limit's `PROPOSED` or `LIMITED`: runs before the readers.
+    pub limits: bool,
 }
 
 /// One term: its rows and the columns its partials reach.
@@ -410,9 +412,8 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
                 u8::from(wanted)
             })
             .collect();
-        let rows = writes.iter().any(|c| {
-            c.kind == cell::TERM || (c.kind == cell::INPUT && matches!(c.part, part::PROPOSED | part::LIMITED))
-        });
+        let limits = writes.iter().any(|c| c.kind == cell::INPUT && matches!(c.part, part::PROPOSED | part::LIMITED));
+        let rows = limits || writes.iter().any(|c| c.kind == cell::TERM);
         functions.push(FnPlan {
             k: k as u32,
             name: f.name.as_str().into(),
@@ -421,6 +422,7 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
             write_lens: cell_lens(shape, &f.writes, Access::FunctionWrite).expect("validated"),
             seed,
             rows,
+            limits,
         });
     }
     if functions.is_empty() {

@@ -179,13 +179,13 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `a_limit_reader_is_linearized_at_the_held_iterate` asserts Jacobian `g·p` and the right side for a hand-computed `x`, `x̂` (C6)
-- [ ] Test `an_active_limit_vetoes_convergence` passes at both sides of `1e-6 + 1e-4·abs(x)` (C7)
-- [ ] Test `owns_correction_gets_no_correction_and_keeps_the_veto` passes (C8)
-- [ ] Test `a_limited_diode_reaches_the_unlimited_operating_point` solves the diode of abi.md §11.2 from a 5 V start and reads the same `vd` as the unlimited diode within 1e-9
-- [ ] Test `age_and_last_follow_the_table_of_the_abi` passes: 0 before any solve, 2 after an iteration, 1 after an accept; `STATIC` with `AGE = 1` re-seeds
-- [ ] Test `an_unevaluated_limit_answers_last` passes (A3)
-- [ ] Gate: full
+- [x] Test `a_limit_reader_is_linearized_at_the_held_iterate` asserts Jacobian `g·p` and the right side for a hand-computed `x`, `x̂` (C6)
+- [x] Test `an_active_limit_vetoes_convergence` passes at both sides of `1e-6 + 1e-4·abs(x)` (C7)
+- [x] Test `owns_correction_gets_no_correction_and_keeps_the_veto` passes (C8)
+- [x] Test `a_limited_diode_reaches_the_unlimited_operating_point` solves the diode of abi.md §11.2 from a 5 V start and reads the same `vd` as the unlimited diode within 1e-9
+- [x] Test `age_and_last_follow_the_table_of_the_abi` passes: 0 before any solve, 2 after an iteration, 1 after an accept; `STATIC` with `AGE = 1` re-seeds
+- [x] Test `an_unevaluated_limit_answers_last` passes (A3)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

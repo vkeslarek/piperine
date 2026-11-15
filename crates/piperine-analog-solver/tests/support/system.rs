@@ -40,6 +40,14 @@ impl NonLinearSystem<AnalogReference, f64> for Tran<'_> {
     fn netlist(&self) -> &Netlist {
         self.net
     }
+    fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<f64>, iteration: usize) {
+        if iteration > 0 {
+            self.asm.end_iteration();
+        }
+    }
+    fn any_limiting_report(&self) -> bool {
+        !self.asm.limiting_active().is_empty()
+    }
 }
 
 /// The transient ambient at time `t`.
@@ -59,6 +67,16 @@ impl NonLinearSystem<AnalogReference, f64> for Dc<'_> {
     fn netlist(&self) -> &Netlist {
         self.net
     }
+    /// Every iteration after the first starts by advancing the limits.
+    fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<f64>, iteration: usize) {
+        if iteration > 0 {
+            self.asm.end_iteration();
+        }
+    }
+    /// An active limit vetoes convergence.
+    fn any_limiting_report(&self) -> bool {
+        !self.asm.limiting_active().is_empty()
+    }
 }
 
 /// The equilibrium ambient at rest.
@@ -72,8 +90,20 @@ pub fn size(net: &Netlist) -> usize {
 }
 
 /// Solves an equilibrium from `start` (one value per unknown) with the
-/// engine's own Newton loop.
+/// engine's own Newton loop and the default tolerances.
 pub fn solve_dc(asm: &mut Assembly, net: &Netlist, start: &[f64]) -> Array1<f64> {
+    solve_dc_with(asm, net, start, &Tolerances::default())
+}
+
+/// Tolerances far tighter than the defaults, for comparing two solves of one
+/// equation that took different Newton paths: the defaults stop each within
+/// `1e-3` relative of the root, so two paths may differ by more than that.
+pub fn tight() -> Tolerances {
+    Tolerances { reltol: 1e-10, vntol: 1e-12, abstol: 1e-14, ..Tolerances::default() }
+}
+
+/// [`solve_dc`] under `tol`.
+pub fn solve_dc_with(asm: &mut Assembly, net: &Netlist, start: &[f64], tol: &Tolerances) -> Array1<f64> {
     let mut sys = Dc { asm, net, amb: at_rest() };
     let mut solver = Solver::new(&mut sys, size(net), 4).expect("dry run");
     let ivs = net
@@ -82,9 +112,7 @@ pub fn solve_dc(asm: &mut Assembly, net: &Netlist, start: &[f64]) -> Array1<f64>
         .filter_map(|r| r.idx().map(|i| InitialValue { reference: r.clone(), value: start[i] }))
         .collect();
     solver.push_initial_conditions(ivs);
-    solver
-        .solve_with_strategy(&mut sys, &DampedNewton, &Tolerances::default(), &Policy::default())
-        .expect("the Newton solve converges")
+    solver.solve_with_strategy(&mut sys, &DampedNewton, tol, &Policy::default()).expect("the Newton solve converges")
 }
 
 /// Solves one transient stage with the engine's own Newton loop, then

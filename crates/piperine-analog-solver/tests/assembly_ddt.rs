@@ -20,8 +20,8 @@ mod devices;
 #[path = "support/system.rs"]
 mod system;
 
-use circuit::{at, f64_bytes, instance, netlist};
-use devices::modules;
+use circuit::{at, f64_bytes, f64_of, instance, netlist, tagged};
+use devices::{calls, modules};
 use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
 use piperine_analog_solver::device::{AnalogPlan, Assembly, Stage};
 use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
@@ -164,4 +164,21 @@ fn a_restore_returns_histories_and_limit_state() {
     asm.restore(&snap);
     let again = asm.assemble_tran(&x, at_time(3e-6), stage).expect("assemble");
     assert_eq!(dense(&again, 2), dense(&before, 2), "restoring twice gives the same stamps");
+
+    // The limit half: LAST and AGE come back to their values at the snapshot.
+    let m = modules();
+    let (net, n) = netlist(2, &[]);
+    let tr = tagged("tr", m.tracker, 502, vec![Discrete(0), at(&n[0]), at(&n[1])]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![tr], &net).expect("bind"));
+    asm.accept(&[0.75, 0.25], at_rest()).expect("accept");
+    let snap = asm.snapshot();
+    asm.evaluate(&[1.0, 0.25], at_time(1e-9)).expect("evaluate");
+    asm.end_iteration();
+    asm.evaluate(&[1.25, 0.25], at_time(1e-9)).expect("evaluate");
+    asm.restore(&snap);
+    asm.evaluate(&[1.25, 0.25], at_time(2e-9)).expect("evaluate");
+    let c = calls(502);
+    let held = |c: &devices::Call| (f64_of(&c.reads[2]), c.reads[3][0]);
+    assert_eq!(held(&c[2]), (0.75, 2), "the rejected iteration advanced LAST");
+    assert_eq!(held(&c[3]), (0.5, 1), "restored: LAST from the accepted solution, AGE 1");
 }

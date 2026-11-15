@@ -12,7 +12,7 @@ use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW};
 use piperine_abi::raw::{
     Cell, Created, DEFAULT, Eval as RawEval, GROUND, Instance, List, Module, Note, Partial, React as RawReact, Shape,
-    Statement, Str, Value, ambient, cell, global, input, op, part, pin_flag, role, status, watch,
+    Statement, Str, Value, ambient, cell, fn_flag, global, input, op, part, pin_flag, role, status, watch,
 };
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::thunk::module;
@@ -440,7 +440,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 14] = [const { OnceLock::new() }; 14];
+    static M: [OnceLock<Module>; 18] = [const { OnceLock::new() }; 18];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -456,6 +456,10 @@ pub fn modules() -> Modules {
         faulty: module_of::<Faulty>(&M[11], "Faulty"),
         plain_diode: module_of::<PlainDiode>(&M[12], "PlainDiode"),
         vsource: module_of::<VSource>(&M[13], "VSource"),
+        clamp: module_of::<Clamp>(&M[14], "Clamp"),
+        owner: module_of::<Owner>(&M[15], "Owner"),
+        reader: module_of::<Reader>(&M[16], "Reader"),
+        tracker: module_of::<Tracker>(&M[17], "Tracker"),
     }
 }
 
@@ -476,6 +480,10 @@ pub struct Modules {
     pub faulty: &'static Module,
     pub plain_diode: &'static Module,
     pub vsource: &'static Module,
+    pub clamp: &'static Module,
+    pub owner: &'static Module,
+    pub reader: &'static Module,
+    pub tracker: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)
@@ -875,6 +883,232 @@ impl Device for VSource {
         cx.set(0, cx.f64(2));
         cx.set(1, cx.f64(0) - cx.f64(1) - cx.f64(3) * scale);
         cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -scale]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+// ─── Limiting fixtures ──────────────────────────────────────────────────────
+
+/// The conductance scale of the limiting fixtures.
+pub const G_LIMIT: f64 = 1e-3;
+
+fn limit_reads_and_partials(a: u32, k: u32, extra: Vec<Cell>) -> (Vec<Cell>, Vec<Partial>) {
+    let mut reads = vec![pin(a), pin(k)];
+    reads.extend(extra);
+    (reads, vec![partial(0, 0), partial(0, 1)])
+}
+
+/// A limit whose held iterate is offset from the proposed value by a param.
+/// pins: off=0 (PARAM F64); a=1, k=2 (PORT continuous)
+/// inputs: I0 LIMIT "x"     terms: T0 FLOW {a, k} "i" = G_LIMIT·x̂²
+/// fn 0 "limit": reads [a, k, off] writes [I0.PROPOSED = v(a) − v(k), I0.LIMITED = PROPOSED + off]
+///               partials (0←0)=1 (0←1)=−1
+/// fn 1 "i":     reads [I0] writes [T0] partials (0←0)=2·G_LIMIT·x̂
+pub struct Clamp;
+static CLAMP: OnceLock<ShapeRef> = OnceLock::new();
+
+fn clamp_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let off = s.pin(param("off"));
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let k = s.pin(PinSpec::continuous("k", role::PORT));
+    let i0 = s.input(InputSpec { name: "x", origin: "fixture:clamp:I0", kind: input::LIMIT });
+    let t0 = s.term(flow("i", op::FLOW, a, k));
+    let (reads, partials) = limit_reads_and_partials(a, k, vec![pin(off)]);
+    s.function(FunctionSpec {
+        name: "limit",
+        reads,
+        writes: vec![inp(i0, part::PROPOSED), inp(i0, part::LIMITED)],
+        partials,
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "i",
+        reads: vec![inp(i0, part::VALUE)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Clamp {
+    fn prototype() -> &'static Shape {
+        shared(&CLAMP, clamp_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Clamp, Arc::clone(shared(&CLAMP, clamp_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            let x = cx.f64(0) - cx.f64(1);
+            let off = cx.f64(2);
+            cx.set(0, x);
+            cx.set(1, x + off);
+            cx.jac().copy_from_slice(&[1.0, -1.0]);
+        } else {
+            let xh = cx.f64(0);
+            cx.set(0, G_LIMIT * xh * xh);
+            cx.jac()[0] = 2.0 * G_LIMIT * xh;
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A function that writes a limit and the term depending on it in one call
+/// (a compiled foreign model, abi.md A3): flagged `OWNS_CORRECTION`.
+/// pins: off=0 (PARAM F64); a=1, k=2 (PORT continuous)
+/// inputs: I0 LIMIT "x"     terms: T0 FLOW {a, k} "i" = G_LIMIT·(v(a) − v(k)) + 1e-3
+/// fn 0 "all" OWNS_CORRECTION: reads [a, k, off]
+///     writes [I0.PROPOSED = v, I0.LIMITED = v + off, T0]
+///     partials (0←0)=1 (0←1)=−1 (2←0)=G_LIMIT (2←1)=−G_LIMIT
+pub struct Owner;
+static OWNER: OnceLock<ShapeRef> = OnceLock::new();
+
+fn owner_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let off = s.pin(param("off"));
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let k = s.pin(PinSpec::continuous("k", role::PORT));
+    let i0 = s.input(InputSpec { name: "x", origin: "fixture:owner:I0", kind: input::LIMIT });
+    let t0 = s.term(flow("i", op::FLOW, a, k));
+    s.function(FunctionSpec {
+        name: "all",
+        flags: fn_flag::OWNS_CORRECTION,
+        reads: vec![pin(a), pin(k), pin(off)],
+        writes: vec![inp(i0, part::PROPOSED), inp(i0, part::LIMITED), term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1), partial(2, 0), partial(2, 1)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Owner {
+    fn prototype() -> &'static Shape {
+        shared(&OWNER, owner_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Owner, Arc::clone(shared(&OWNER, owner_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let v = cx.f64(0) - cx.f64(1);
+        cx.set(0, v);
+        cx.set(1, v + cx.f64(2));
+        cx.set(2, G_LIMIT * v + 1e-3);
+        cx.jac().copy_from_slice(&[1.0, -1.0, G_LIMIT, -G_LIMIT]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A limit that no function writes, read by one (abi.md A3).
+/// pins: tag=0 (PARAM F64); a=1 (PORT continuous)
+/// inputs: I0 LIMIT "x"     terms: T0 FLOW {a, GROUND} "i" = 2·x̂
+/// fn 0 "i": reads [I0] writes [T0] partials (0←0)=2        (records every call)
+pub struct Reader {
+    tag: u64,
+}
+static READER: OnceLock<ShapeRef> = OnceLock::new();
+
+fn reader_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(param("tag"));
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let i0 = s.input(InputSpec { name: "x", origin: "fixture:reader:I0", kind: input::LIMIT });
+    let t0 = s.term(flow("i", op::FLOW, a, GROUND));
+    s.function(FunctionSpec {
+        name: "i",
+        reads: vec![inp(i0, part::VALUE)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Reader {
+    fn prototype() -> &'static Shape {
+        shared(&READER, reader_shape).shape()
+    }
+    fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Reader { tag: tag_of(values) }, Arc::clone(shared(&READER, reader_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        record(self.tag, cx, 1);
+        let xh = cx.f64(0);
+        cx.set(0, 2.0 * xh);
+        cx.jac()[0] = 2.0;
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A limit that never limits, recording what its function reads of it.
+/// pins: tag=0 (PARAM F64); a=1, k=2 (PORT continuous)
+/// inputs: I0 LIMIT "x"     terms: T0 FLOW {a, k} "i" = G_LIMIT·x̂
+/// fn 0 "limit": reads [a, k, I0.LAST, I0.AGE, STATIC] writes [I0.PROPOSED, I0.LIMITED] = v, v
+///               partials (0←0)=1 (0←1)=−1            (records every call)
+/// fn 1 "i":     reads [I0] writes [T0] partials (0←0)=G_LIMIT
+pub struct Tracker {
+    tag: u64,
+}
+static TRACKER: OnceLock<ShapeRef> = OnceLock::new();
+
+fn tracker_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(param("tag"));
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let k = s.pin(PinSpec::continuous("k", role::PORT));
+    let i0 = s.input(InputSpec { name: "x", origin: "fixture:tracker:I0", kind: input::LIMIT });
+    let t0 = s.term(flow("i", op::FLOW, a, k));
+    let extra = vec![inp(i0, part::LAST), inp(i0, part::AGE), ambient(ambient::STATIC)];
+    let (reads, partials) = limit_reads_and_partials(a, k, extra);
+    s.function(FunctionSpec {
+        name: "limit",
+        reads,
+        writes: vec![inp(i0, part::PROPOSED), inp(i0, part::LIMITED)],
+        partials,
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "i",
+        reads: vec![inp(i0, part::VALUE)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Tracker {
+    fn prototype() -> &'static Shape {
+        shared(&TRACKER, tracker_shape).shape()
+    }
+    fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Tracker { tag: tag_of(values) }, Arc::clone(shared(&TRACKER, tracker_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            record(self.tag, cx, 2);
+            let v = cx.f64(0) - cx.f64(1);
+            cx.set(0, v);
+            cx.set(1, v);
+            cx.jac().copy_from_slice(&[1.0, -1.0]);
+        } else {
+            let xh = cx.f64(0);
+            cx.set(0, G_LIMIT * xh);
+            cx.jac()[0] = G_LIMIT;
+        }
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
