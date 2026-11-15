@@ -257,11 +257,11 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Test `exact_partials_verify` passes on a resistor and a capacitor (C17)
-- [ ] Test `a_wrong_partial_is_reported_with_its_index` flips one partial by 1 % and reads index, declared and finite values (C18)
-- [ ] Test `a_point_where_the_limit_is_active_is_skipped` passes (C19)
-- [ ] The verifier calls nothing but `Handle::eval`
-- [ ] Gate: full
+- [x] Test `exact_partials_verify` passes on a resistor and a capacitor (C17)
+- [x] Test `a_wrong_partial_is_reported_with_its_index` flips one partial by 1 % and reads index, declared and finite values (C18)
+- [x] Test `a_point_where_the_limit_is_active_is_skipped` passes (C19)
+- [x] The verifier calls nothing but `Handle::eval`
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
