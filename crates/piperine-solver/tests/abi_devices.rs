@@ -7,9 +7,14 @@
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
 
+#[allow(dead_code)]
+#[path = "helpers/abi_mixed.rs"]
+mod abi_mixed;
+
 use abi_devices::{
     capacitor, current_ac, diode, inductor, noise_pair, resistor, resistor_noisy, resistor_opt, vramp, vsine, vsrc,
 };
+use abi_mixed::{capped, clock_src, comparator, dac, flaky_g, tracer};
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::Module;
 use piperine_abi::validate::validate;
@@ -18,6 +23,16 @@ use piperine_abi::verify::{Verdict, verify_partials};
 /// The bytes of each read cell when every read is one `F64`.
 fn reals(point: &[f64]) -> Vec<Vec<u8>> {
     point.iter().map(|v| v.to_le_bytes().to_vec()).collect()
+}
+
+/// A `BIT` read followed by `F64` reads.
+fn bit_then(bit: &[u8; 2], point: &[f64]) -> Vec<Vec<u8>> {
+    std::iter::once(bit.to_vec()).chain(reals(point)).collect()
+}
+
+/// `F64` reads followed by a `BIT` read.
+fn reals_then(point: &[f64], bit: &[u8; 2]) -> Vec<Vec<u8>> {
+    reals(point).into_iter().chain(std::iter::once(bit.to_vec())).collect()
 }
 
 /// `ROpt`'s third read is a `REAL`: the value and its known byte.
@@ -66,6 +81,18 @@ fn table() -> Vec<(&'static str, &'static Module, u32, Vec<Vec<Vec<u8>>>)> {
         ("Pair b", noise_pair(), 1, vec![reals(&[0.0, -1.0]), reals(&[2.0, 0.5])]),
         // fn 1 "load" reads: I0.VALUE
         ("Iac load", current_ac(), 1, vec![reals(&[0.0]), reals(&[2.5])]),
+        // abi_mixed.rs. reads: inp, inn
+        ("Comparator", comparator(), 0, vec![reals(&[0.7, 0.5]), reals(&[-1.0, 2.0])]),
+        // reads: code (BIT), out, f, vref
+        ("Dac", dac(), 0, vec![bit_then(&[1, 1], &[0.4, 0.01, 1.0]), bit_then(&[0, 1], &[-0.2, 0.0, 3.3])]),
+        // reads: clk_a, gnd, f, hi (BIT)
+        ("ClockSrc", clock_src(), 0, vec![reals_then(&[1.0, 0.0, 0.02], &[1, 1]), reals_then(&[0.3, 0.1, -0.5], &[0, 1])]),
+        // reads: p
+        ("Tracer", tracer(), 0, vec![reals(&[0.7]), reals(&[-3.0])]),
+        // reads: p, n, TIME (never armed in this target)
+        ("FlakyG", flaky_g(), 0, vec![reals(&[0.7, 0.2, 1.0e-4]), reals(&[-1.0, 1.0, 0.0])]),
+        // reads: p, cap
+        ("Capped", capped(), 0, vec![reals(&[0.7, 1.0e-9])]),
     ]
 }
 

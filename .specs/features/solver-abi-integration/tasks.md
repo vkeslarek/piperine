@@ -465,11 +465,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] `ClockSrc` is a timer reaction plus a discrete phase pin its analog function reads; its waveform values are those of `ClockSrc::at`
-- [ ] Each of the 25 tests is ported (name, quantities, tolerances unchanged) or removed by the rule; the commit body lists both sets
-- [ ] `.specs/features/solver-abi-integration/removed.txt` has one line per removed test: its name, a tab, the removed item it was about
-- [ ] Test `every_device_function_passes_the_partials_verifier` covers the new devices
-- [ ] Gate: full
+- [x] `ClockSrc` is a timer reaction plus a discrete phase pin its analog function reads; its waveform values are those of `ClockSrc::at`
+- [x] Each of the 25 tests is ported (name, quantities, tolerances unchanged) or removed by the rule; the commit body lists both sets
+- [x] `.specs/features/solver-abi-integration/removed.txt` has one line per removed test: its name, a tab, the removed item it was about
+- [x] Test `every_device_function_passes_the_partials_verifier` covers the new devices
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

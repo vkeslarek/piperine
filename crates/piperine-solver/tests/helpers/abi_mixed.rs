@@ -928,3 +928,165 @@ impl Device for Capped {
 pub fn capped() -> &'static Module {
     module_of::<Capped>(&CAPPED, "Capped")
 }
+
+// ─── ClockSrc (tests/helpers/devices.rs) ────────────────────────────────────
+
+const ONE_MS: [u8; 8] = 1e-3f64.to_le_bytes();
+
+/// ```verilog
+/// module ClockSrc (inout electrical clk_a, inout electrical gnd);
+///     parameter real period = 1.0e-3;
+///     real ph;
+///     analog begin
+///         ph = $abstime - period * floor($abstime / period);
+///         V(clk_a, gnd) <+ (ph > period * 0.25 && ph < period * 0.75) ? 1.0 : 0.0;
+///     end
+/// endmodule
+/// ```
+/// A timer reaction toggles the private phase pin `hi` at `period/4` and every
+/// `period/2` after; the analog function drives `V(clk_a, gnd)` from it, so each
+/// edge is a landing solved on the level before it (the user's order: at the
+/// falling edge's own instant the source still reads 1, `ClockSrc::at` 0).
+///
+/// pins: period=0 (PARAM F64, default 1 ms); clk_a=1, gnd=2 (PORT); f=3 (PRIVATE continuous);
+///       hi=4 (PRIVATE BIT, init LOW); tick=5 (PRIVATE event); start=6 (GLOBAL START)
+/// terms: T0 FLOW{clk_a, gnd} "i", T1 FLOW{f, GROUND} "eq"
+/// fn 0: reads [clk_a, gnd, f, hi] writes [T0, T1] partials (0<-f) (1<-clk_a) (1<-gnd)
+/// reaction 0 "start": on [start] reads [period] writes [S0 {tick, REPLACE}]; tick after period/4
+/// reaction 1 "edge": on [tick] reads [hi, period] writes [S0 {hi}, S1 {tick, REPLACE}];
+///   hi <- not hi, no delay; tick after period/2
+pub struct ClockSrc;
+static CLOCK_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static CLOCK: OnceLock<Module> = OnceLock::new();
+
+fn clock_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let period = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_MS, ..PinSpec::discrete("period", role::PARAM, &F64) });
+    let a = s.pin(PinSpec::continuous("clk_a", role::PORT));
+    let g = s.pin(PinSpec::continuous("gnd", role::PORT));
+    let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
+    let hi = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("hi", role::PRIVATE, &BIT) });
+    let tick = s.pin(PinSpec::event("tick", role::PRIVATE));
+    let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
+    let t0 = s.term(flow("i", a, g));
+    let t1 = s.term(flow("eq", f, GROUND));
+    s.function(FunctionSpec {
+        name: "v",
+        origin: ORIGIN,
+        reads: vec![pin(a), pin(g), pin(f), pin(hi)],
+        writes: vec![term(t0), term(t1)],
+        partials: vec![partial(0, 2), partial(1, 0), partial(1, 1)],
+        ..FunctionSpec::default()
+    });
+    s.reaction(ReactionSpec {
+        name: "start",
+        origin: ORIGIN,
+        on: vec![start],
+        reads: vec![pin(period)],
+        writes: vec![statement(tick, 0, statement_flag::REPLACE)],
+        ..ReactionSpec::default()
+    });
+    s.reaction(ReactionSpec {
+        name: "edge",
+        origin: ORIGIN,
+        on: vec![tick],
+        reads: vec![pin(hi), pin(period)],
+        writes: vec![statement(hi, 2, 0), statement(tick, 0, statement_flag::REPLACE)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for ClockSrc {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&CLOCK_SHAPE, clock_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((ClockSrc, Arc::clone(shared(&CLOCK_SHAPE, clock_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let level = if cx.bytes(3) == HIGH { 1.0 } else { 0.0 };
+        cx.set(0, cx.f64(2));
+        cx.set(1, cx.f64(0) - cx.f64(1) - level);
+        cx.jac().copy_from_slice(&[1.0, 1.0, -1.0]);
+        Ok(())
+    }
+    fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("clock");
+        if k == 0 {
+            cx.commit(0, &[], 0.25 * cx.f64(0))?;
+        } else {
+            cx.commit(0, &bit(cx.bytes(0) != HIGH), 0.0)?;
+            cx.commit(1, &[], 0.5 * cx.f64(1))?;
+        }
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn clock_src() -> &'static Module {
+    module_of::<ClockSrc>(&CLOCK, "ClockSrc")
+}
+
+// ─── ToggleDff (tests/helpers/devices.rs) ───────────────────────────────────
+
+/// ```verilog
+/// module ToggleDff (input logic clk, output logic q);
+///     integer st;
+///     always begin
+///         q <= (st % 2) > 0;
+///         @(posedge clk) st = st + 1;
+///     end
+/// endmodule
+/// ```
+/// pins: clk=0 (PORT BIT); q=1 (PORT BIT, init LOW); rise=2 (PRIVATE event)
+/// fn 0 "rise": as the flip-flop's, writes [rise]
+/// reaction 0: on [rise] reads [q] writes [S0 {q}]; q <- not q, no delay
+pub struct ToggleDff;
+static TOGGLE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static TOGGLE: OnceLock<Module> = OnceLock::new();
+
+fn toggle_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let clk = s.pin(PinSpec::discrete("clk", role::PORT, &BIT));
+    let q = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("q", role::PORT, &BIT) });
+    let rise = s.pin(PinSpec::event("rise", role::PRIVATE));
+    s.function(FunctionSpec {
+        name: "rise",
+        origin: ORIGIN,
+        reads: vec![pin(clk), pin_part(clk, part::PREVIOUS), pin_part(clk, part::CHANGED)],
+        writes: vec![pin_part(rise, part::CHANGED)],
+        ..FunctionSpec::default()
+    });
+    s.reaction(ReactionSpec {
+        name: "toggle",
+        origin: ORIGIN,
+        on: vec![rise],
+        reads: vec![pin(q)],
+        writes: vec![statement(q, 2, 0)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for ToggleDff {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&TOGGLE_SHAPE, toggle_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((ToggleDff, Arc::clone(shared(&TOGGLE_SHAPE, toggle_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let rising = cx.bytes(2) == [1] && cx.bytes(0) == HIGH && cx.bytes(1) == LOW;
+        cx.set(0, rising as u8);
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("toggle");
+        cx.commit(0, &bit(cx.bytes(0) != HIGH), 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn toggle_dff() -> &'static Module {
+    module_of::<ToggleDff>(&TOGGLE, "ToggleDff")
+}
