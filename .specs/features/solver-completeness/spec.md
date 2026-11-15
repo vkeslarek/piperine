@@ -1,6 +1,6 @@
 # Solver Completeness Specification
 
-Umbrella for six ordered features. Each feature has its own directory with spec, design and tasks; this document holds the shared goal, the user's decisions and the requirement map. The first feature, `solver-restructure`, is planned in `.specs/features/solver-restructure/`.
+Umbrella. Each feature has its own directory with spec, design and tasks; this document holds the shared goal, the user's decisions and the requirement map. `solver-restructure` (feature A) is done. Feature B, `solver-event-boundary`, was never planned under that name: the device ABI (`.specs/features/device-abi/abi.md`, 2026-11-15) replaced it with five features, `spec-abi-amendments`, `solver-abi-core`, `solver-abi-digital`, `solver-abi-analog` and `solver-abi-integration`. The section "After the device ABI" says what they take and what is left for `solver-time-point`, `solver-crossings`, `solver-host-seam` and `solver-numerics`.
 
 ## Problem Statement
 
@@ -53,12 +53,12 @@ The user's vision (2026-11-14): the solver is the owner of events and dispatches
 | Crates removed (Q10) | `piperine-ir`, `piperine-codegen`, `piperine-python`, `piperine-plugin`, `piperine-plugin-macros`; the root package's VAMS end-to-end tests; `examples/*.vams` | user: "Vamos remover o IR, cranelift e Python por agora. Vamos deixar apenas a API testável em RUST, solver, linguagem, apenas o core"; round 2: "plugin pro enquanto vai embora" | y |
 | Crates kept | `piperine-lang`, `piperine-project`, the solver crates, `piperine-api` (to be reduced), `piperine-cli`, `piperine-lang-server` | user: "lang-server é bom ficar... cli também... api aceito" | y |
 | The `Element` ABI | may change freely in this refactor | user: "fica a vontade para mudar o ABI também ok?" | y |
-| Feature split and who builds what | (A) `solver-restructure`, structure only: Sonnet implements, Opus verifies. (B) `solver-event-boundary`, logic: Opus implements, Fable verifies. Then `solver-time-point`, `solver-crossings`, `solver-host-seam`, `solver-numerics` | user: "Core cleanup + solver-split poderia ser uma feature só pois é refactor de estrtura. Digital dag + analog split uma feature separada pois quero que mexer no core core (mudança de logica) seja implementada por opus e verificada com fable" | y |
+| Feature split and who builds what | (A) `solver-restructure`, structure only, done. (B) replaced on 2026-11-15 by `spec-abi-amendments`, then `solver-abi-core`, then `solver-abi-digital` and `solver-abi-analog` in parallel worktrees, then `solver-abi-integration`. Sonnet implements and Opus verifies by default; a feature that is delicate and not large is implemented by Opus and verified by a different Opus, as the orchestrator decides (user, 2026-11-15, superseding the round-2 roles). Then `solver-time-point`, `solver-crossings`, `solver-host-seam`, `solver-numerics`, each reduced as listed in "After the device ABI" | user: "Core cleanup + solver-split poderia ser uma feature só pois é refactor de estrtura. Digital dag + analog split uma feature separada pois quero que mexer no core core (mudança de logica) seja implementada por opus e verificada com fable" | y |
 | Proof vehicle | unit tests on hand-written Rust `Element`s, per crate | user: unit tests only for now | y |
-| Spec amendments | §15.2 (the jump), Appendix C.2 (the rows "the jump" and "restart", and G.6's jump row) and §17.1.2 are rewritten to describe the solver's present behavior. They land in `solver-event-boundary`, the first feature that owns the discontinuity path, in the commit whose tests pin that behavior (MD-57) | follows from Q7 and Q9; user, round 3: "Amend §15.2 to the solver" | y |
+| Spec amendments | §15.2 (the jump), Appendix C.2 (the rows "the jump" and "restart", and G.6's jump row) and §17.1.2 are rewritten to describe the solver's present behavior. They land in `spec-abi-amendments`, with the seven accepted amendments of the device ABI, each with its `spec_text` guard (MD-57) | follows from Q7 and Q9; user, round 3: "Amend §15.2 to the solver" | y |
 | Numeric defaults | Appendix C.2.1 | the spec's reference values; most are the code's already | y - settled by the spec |
 
-**Open questions:** none. The one that was open is answered (user, round 3: "Amend §15.2 to the solver"): `solver-event-boundary` amends §15.2 itself, together with Appendix C.2 and §17.1.2, to describe the kept algorithm. The value a jump produces is then defined one analog step after the event, not at the same `t`.
+**Open questions:** none. The one that was open is answered (user, round 3: "Amend §15.2 to the solver"): `spec-abi-amendments` amends §15.2 itself, together with Appendix C.2 and §17.1.2, to describe the kept algorithm. The value a jump produces is then defined one analog step after the event, not at the same `t`.
 
 **Implicit-requirement dimensions.** Input validation & bounds: SCI-02, SCX-03, SCH-04. Failure / partial failure: SCI-07, SCT-07, SCN-02. Idempotency / retry: SCT-09. Auth and rate limits: N/A because the solver is an in-process library. Concurrency / ordering: SCI-04, SCI-05, SCI-09. Data lifecycle: SCT-11, SCT-12. Observability: SCE-04, SCH-05. External-dependency failure: SCH-07, otherwise N/A because the solver calls no service. State-transition integrity: SCE-01 to SCE-03, SCT-05.
 
@@ -89,7 +89,7 @@ Roles: the **codegen author** writes the elaborator and device code that will ta
 
 **User Story**: As a codegen author, I want the digital sub-solver to hold typed carriers and propagate over a levelized DAG, and the analog and digital sides to meet only through events owned by the solver, so that every `digital` block of MSL has deterministic execution and mixed-signal coupling has one seam.
 
-**Why P1**: It is the core logic change. Feature (B) `solver-event-boundary`; Opus implements, Fable verifies.
+**Why P1**: It is the core logic change. It is delivered by the `solver-abi-*` features on the device ABI, where a carrier is a discrete pin, a drive and a `resolve` are a resolver instance with `RELAX` pins (abi.md D1; criteria 10 and 11 are met by relaxation, with no `resolve` call in the solver), and an element is a `Device`.
 
 **Acceptance Criteria**:
 
@@ -213,49 +213,76 @@ Roles: the **codegen author** writes the elaborator and device code that will ta
 
 ---
 
+## After the device ABI
+
+Decided 2026-11-15 (`.specs/features/codegen/context.md`, "Device ABI decisions"). The device ABI is the element contract of this umbrella: `Element` is replaced, not extended.
+
+**What replaces feature B, in order.**
+
+| Feature | What it delivers | Tasks | Delicate |
+| --- | --- | --- | --- |
+| `spec-abi-amendments` | `docs/spec` edits: ABI amendments 1, 2, 3a, 4, 6, 8, 9; §15.2, Appendix C.2 and §17.1.2 describe the kept algorithm and tolerances | 11 | no |
+| `solver-abi-core` | the crate `piperine-abi` (contract types, `Device`, thunks, shape checks, partials verifier) and the owner's protocol over two traits, proven on stubs | 16 | protocol |
+| `solver-abi-digital` (parallel) | the digital sub-solver on the ABI: byte nets, levelized DAG to a fixed point, reactions, commits with transport, checkpoint, look-ahead | 13 | protocol |
+| `solver-abi-analog` (parallel) | the analog sub-solver on the ABI: rows from terms and partials, solver-owned companion, limiting, delay, noise, watches | 10 | numeric |
+| `solver-abi-integration` | bind, drivers on the assembly, adapters, differential oracle, every surviving test on `Device`, `Element` and the old digital engine removed | 25 | numeric and protocol |
+
+**What remains of the four later features.** Each keeps its name and shrinks to the rows below; its criteria in this document that are not listed are met by the `solver-abi-*` features.
+
+| Feature | Still to build | Requirements |
+| --- | --- | --- |
+| `solver-time-point` | the settle commit (due at the next time point, moved when a step is rejected; until then a commit made on `SETTLE` with no delay fails loud); discrete state carried across `Dc` sweep points with inits at the first point only; dropping what waits for time when an analysis without time ends; continuing a transient and running `Dc`, `Ac`, `Noise` at its last instant (the re-entry state exists; the rules do not) | SCT-05 AC 2 and 3, SCT-10, SCT-11, SCT-12 |
+| `solver-crossings` | locating a crossing inside a step (retake until within `ttol` plus one tick or `etol`), earliest of several, crossings across operating-point rounds and sweep points, `E0510`, `E0509`. The `CROSS` and `CAP` watches, the event pin and the protocol's "landed earlier" path exist; only the locator and the two validations are missing | SCX-01, SCX-02, SCX-03 AC 3 and 7 |
+| `solver-host-seam` | `force` and `release` (abi.md P8), host drives of ports before and during a run, scheduled probes as an API, `E0806`. Host commits, the parameter cone, waiters, the sink, records and `FINISH` exist | SCH-01, SCH-02, SCH-03, SCH-04 |
+| `solver-numerics` | residual tolerance per row from `Pin.abstol[1]` (the per-unknown half is wired), singular solves that name their unknowns (`E0503`), the truncation test per `ddt` state from `Term.abstol` | SCN-01, SCN-02, SCN-03 |
+
+No jump solve is planned anywhere: Q7 stands, and `spec-abi-amendments` writes the kept algorithm into §15.2.
+
+---
+
 ## Requirement Traceability
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| SCR-01 | P1: Restructure, AC 1 to 4 (detailed as SR-01 to SR-06 in `solver-restructure`) | solver-restructure | In Tasks |
-| SCE-01 | P1: Event boundary, AC 1, 2 (event-only boundary) | solver-event-boundary | Pending |
-| SCE-02 | P1: Event boundary, AC 3, 15 (DAG propagation to convergence or `E0501`) | solver-event-boundary | Pending |
-| SCE-03 | P1: Event boundary, AC 5, 6 (which events cut an analog step) | solver-event-boundary | Pending |
-| SCE-04 | P1: Event boundary, AC 4 (the event sink) | solver-event-boundary | Pending |
-| SCI-01 | P1: Event boundary, AC 7 (ticks) | solver-event-boundary | Pending |
-| SCI-02 | P1: Event boundary, AC 8, 16 (`E0502`, `E0435`) | solver-event-boundary | Pending |
-| SCI-03 | P1: Event boundary, AC 9 (byte carriers) | solver-event-boundary | Pending |
-| SCI-04 | P1: Event boundary, AC 12, 13 (commit order, transport) | solver-event-boundary | Pending |
-| SCI-05 | P1: Event boundary, AC 14 (snapshot) | solver-event-boundary | Pending |
-| SCI-06 | P1: Event boundary, AC 10, 11 (resolve, others) | solver-event-boundary | Pending |
-| SCI-07 | P1: Event boundary, AC 19 (typed run errors) | solver-event-boundary | Pending |
-| SCI-08 | P1: Event boundary, AC 18 (scheduled events) | solver-event-boundary | Pending |
-| SCI-09 | P1: Event boundary, AC 17 (determinism) | solver-event-boundary | Pending |
-| SCT-05 | P2: Time point, AC 1, 2, 3 (settle, settle commit) | solver-time-point | Pending |
-| SCT-07 | P2: Time point, AC 4 (`E0506`) | solver-time-point | Pending |
-| SCT-08 | P2: Time point, AC 6 (held nodes) | solver-time-point | Pending |
-| SCT-09 | P2: Time point, AC 5 (rejection leaves no trace) | solver-time-point | Pending |
+| SCR-01 | P1: Restructure, AC 1 to 4 (detailed as SR-01 to SR-06 in `solver-restructure`) | solver-restructure | Verified |
+| SCE-01 | P1: Event boundary, AC 1, 2 (event-only boundary) | solver-abi-core, -digital, -integration | In Tasks |
+| SCE-02 | P1: Event boundary, AC 3, 15 (DAG propagation to convergence or `E0501`) | solver-abi-digital | In Tasks |
+| SCE-03 | P1: Event boundary, AC 5, 6 (which events cut an analog step) | solver-abi-core, -digital, -integration | In Tasks |
+| SCE-04 | P1: Event boundary, AC 4 (the event sink) | solver-abi-core, -digital, -integration | In Tasks |
+| SCI-01 | P1: Event boundary, AC 7 (ticks) | solver-abi-digital | In Tasks |
+| SCI-02 | P1: Event boundary, AC 8, 16 (`E0502`, `E0435`) | solver-abi-digital | In Tasks |
+| SCI-03 | P1: Event boundary, AC 9 (byte carriers) | solver-abi-digital | In Tasks |
+| SCI-04 | P1: Event boundary, AC 12, 13 (commit order, transport) | solver-abi-digital | In Tasks |
+| SCI-05 | P1: Event boundary, AC 14 (snapshot) | solver-abi-digital | In Tasks |
+| SCI-06 | P1: Event boundary, AC 10, 11 (resolve, others) | solver-abi-digital | In Tasks |
+| SCI-07 | P1: Event boundary, AC 19 (typed run errors) | solver-abi-digital | In Tasks |
+| SCI-08 | P1: Event boundary, AC 18 (scheduled events) | solver-abi-digital | In Tasks |
+| SCI-09 | P1: Event boundary, AC 17 (determinism) | solver-abi-digital | In Tasks |
+| SCT-05 | P2: Time point, AC 1, 2, 3 (settle, settle commit) | AC 1: solver-abi-core, -digital; AC 2, 3: solver-time-point | Pending |
+| SCT-07 | P2: Time point, AC 4 (`E0506`) | solver-abi-core, -integration | In Tasks |
+| SCT-08 | P2: Time point, AC 6 (held nodes) | solver-abi-integration | In Tasks |
+| SCT-09 | P2: Time point, AC 5 (rejection leaves no trace) | solver-abi-core, -integration | In Tasks |
 | SCT-10 | P2: Time point, AC 7 (sweep points) | solver-time-point | Pending |
 | SCT-11 | P2: Time point, AC 8 (what waits for time is dropped) | solver-time-point | Pending |
 | SCT-12 | P2: Time point, AC 9, 10 (continuation) | solver-time-point | Pending |
-| SCT-13 | P2: Time point, AC 11 (analysis and solve kind) | solver-time-point | Pending |
+| SCT-13 | P2: Time point, AC 11 (analysis and solve kind) | solver-abi-integration | In Tasks |
 | SCX-01 | P2: Crossings, AC 1, 2, 4 (location) | solver-crossings | Pending |
 | SCX-02 | P2: Crossings, AC 5 (across rounds and sweep points) | solver-crossings | Pending |
-| SCX-03 | P2: Crossings, AC 3, 6, 7 (`E0510`, step cap, `E0509`) | solver-crossings | Pending |
+| SCX-03 | P2: Crossings, AC 3, 6, 7 (`E0510`, step cap, `E0509`) | AC 6: solver-abi-analog, -integration; AC 3, 7: solver-crossings | Pending |
 | SCH-01 | P2: Host seam, AC 1, 2 (drives and scheduled actions) | solver-host-seam | Pending |
 | SCH-02 | P2: Host seam, AC 3 (force, release) | solver-host-seam | Pending |
 | SCH-03 | P2: Host seam, AC 5 (scheduled probe) | solver-host-seam | Pending |
 | SCH-04 | P2: Host seam, AC 4 (`E0806`) | solver-host-seam | Pending |
-| SCH-05 | P2: Host seam, AC 6, 7, 8 (records, `finish`) | solver-host-seam | Pending |
-| SCH-06 | P2: Host seam, AC 9 (session parameters) | solver-host-seam | Pending |
-| SCH-07 | P2: Host seam, AC 10 (wake request, no rollback) | solver-host-seam | Pending |
+| SCH-05 | P2: Host seam, AC 6, 7, 8 (records, `finish`) | solver-abi-core, -digital, -integration | In Tasks |
+| SCH-06 | P2: Host seam, AC 9 (session parameters) | solver-abi-integration | In Tasks |
+| SCH-07 | P2: Host seam, AC 10 (wake request, no rollback) | solver-abi-core, -digital, -integration | In Tasks |
 | SCN-01 | P3: Numerics, AC 1 (tolerances per nature, present mapping) | solver-numerics | Pending |
 | SCN-02 | P3: Numerics, AC 2 (`E0503` named) | solver-numerics | Pending |
 | SCN-03 | P3: Numerics, AC 3 (truncation per state) | solver-numerics | Pending |
-| SCN-04 | P3: Numerics, AC 4 (switch-branch pattern) | solver-numerics | Pending |
-| SCN-05 | P3: Numerics, AC 5, 6 (correlated and potential noise) | solver-numerics | Pending |
+| SCN-04 | P3: Numerics, AC 4 (switch-branch pattern) | solver-abi-analog | In Tasks |
+| SCN-05 | P3: Numerics, AC 5, 6 (correlated and potential noise) | solver-abi-analog | In Tasks |
 
-**Coverage:** 37 total, 1 mapped to tasks (SCR-01, through `solver-restructure`), 36 unmapped: tasks are written per feature, in order.
+**Coverage:** 37 total. 1 verified (SCR-01). 20 mapped to the tasks of the `solver-abi-*` features (SCE-01 to SCE-04, SCI-01 to SCI-09, SCT-07, SCT-08, SCT-09, SCT-13, SCH-05, SCH-06, SCH-07, SCN-04, SCN-05), plus SCT-05 AC 1 and SCX-03 AC 6. 14 still to plan, in whole or in part: see "After the device ABI".
 
 ---
 
@@ -265,7 +292,9 @@ Roles: the **codegen author** writes the elaborator and device code that will ta
 - `docs/spec/part_v_execution.md` §15 to §18; `part_iv_behavior.md` §11 to §14; `part_ii_carriers.md` §4, §5; `part_iii_structure.md` §8.2.3, §8.5; `part_vi_io.md` §19, §21; `part_viii_host.md` §23.
 - `docs/spec/appendix_c_implementation.md` C.2 (to be amended, see Assumptions) and `appendix_g_scope.md` G.0, G.6.
 - `analysis.md`: the traceability matrix, the surplus list, the split.
-- `.specs/STATE.md` MD-01, MD-17, MD-18, MD-31, MD-57.
+- `.specs/STATE.md` MD-01, MD-17, MD-18, MD-31, MD-57, MD-60.
+- `.specs/features/device-abi/abi.md` and `.specs/features/codegen/context.md` ("Device ABI decisions", 2026-11-15): the contract that replaces `Element` and feature B.
+- `.specs/features/{spec-abi-amendments,solver-abi-core,solver-abi-digital,solver-abi-analog,solver-abi-integration}/`: the five features that replace feature B.
 
 ---
 

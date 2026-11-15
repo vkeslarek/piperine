@@ -160,3 +160,12 @@ User's words: "lang-server é bom ficar... cli também mas ambos vão ter sua pr
 | solver-restructure approval | "Approve and run (Recommended)" | approved; Sonnet implements, Opus verifies; merge + push at the end |
 | `tests/suite_hygiene.rs`, `examples/*.py` + plots | "Move guard, delete py (Recommended)" | the hygiene guard moves into a crate that builds (piperine-lang tests) and keeps enforcing; `examples/*.py` and plots are deleted |
 | §15.2 instantaneous jump vs the kept algorithm | "Amend §15.2 to the solver (Recommended)" | the logic feature amends §15.2 (with C.2 and §17.1.2) to describe the kept algorithm |
+
+## User answers (2026-11-15, through the coordinator)
+
+| Topic | Decision | Effect |
+| ----- | -------- | ------ |
+| Goal for the day | "a ideia é sair hoje ainda com ABI feito e reestruturação do solver (+ logica do dag eval + analog) prontos" | the plans are lean; the port of the tests is the long pole |
+| The element contract | the device ABI (`.specs/features/device-abi/abi.md`); amendments 1, 2, 3a, 4, 6, 8, 9 accepted, 3b not now, 5 and 7 withdrawn | `Element` is replaced; feature B (`solver-event-boundary`) is replaced by the `solver-abi-*` features |
+| Split | `spec-abi-amendments` (docs); `solver-abi-core` (the crate `piperine-abi` and the owner protocol); `solver-abi-digital` and `solver-abi-analog` in parallel in separate worktrees, neither touching the other's crate; `solver-abi-integration` (the owner wires both, test devices and mixed tests ported) | five feature directories; see the umbrella's "After the device ABI" |
+| Model roles | Sonnet implements and Opus verifies by default; a feature that is delicate and not large is implemented by Opus and verified by a different Opus; the orchestrator decides | supersedes the round-2 row "Opus implements, Fable verifies" above |
