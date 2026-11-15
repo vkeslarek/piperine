@@ -497,7 +497,7 @@ Proof: run analog | test a_single_addend_is_one_direct_addend ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** 2026-11-15 batch 1 (T1-T6, Sonnet) done 57fb5f9b; batch 2 (T7, Opus) done
+**Dispatched:** 2026-11-15 batches 1-2 done (315f72f6); batch 3 (T8-T10, Sonnet) in ../piperine-msl-elab
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---
