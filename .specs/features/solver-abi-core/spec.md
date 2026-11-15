@@ -194,6 +194,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-31** (13). IF the value list passed to `create` is not readable (stride below a `Value` or misaligned) THEN the thunk SHALL return `FAULT` with a note, never create the device on its defaults; `ShapeBuf` SHALL refuse a layout whose field list is unreadable (N3).
 
+- **SAC-32** (14). WHEN an attempt reports a crossing (`LandedEarlier`) THEN the protocol SHALL retry at the nearest tick at least one tick short of the target, SHALL take the step at its end when the crossing is at or past the target or rounds to the end of a one-tick step, and SHALL count every retry toward `max_rejections`, so no identical step is retried and no loop is unbounded (N1).
+
 ---
 
 ## Edge Cases
@@ -240,6 +242,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-29 | P1: Verification round 1, AC 11 | Execute | Done |
 | SAC-30 | P1: Verification round 1, AC 12 | Execute | Done |
 | SAC-31 | P1: Verification round 1, AC 13 | Execute | Done |
+| SAC-32 | P1: Verification round 1, AC 14 | Execute | Done |
 
 **Coverage:** 30 total (SAC-19 to SAC-30 from verification round 1), 30 mapped to tasks or checks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 

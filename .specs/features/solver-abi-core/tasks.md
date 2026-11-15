@@ -603,6 +603,9 @@ Proof: run owner | test traces_reach_the_sink_in_time_order ... ok
 **C50** - An unreadable value list at create is a FAULT, not an instance on its defaults (SAC-31)
 Proof: run abi | test an_unreadable_value_list_is_a_fault ... ok
 
+**C51** - A crossing within half a tick of the target, or at or past it, never loops (SAC-32)
+Proof: run owner | test a_crossing_within_half_a_tick_of_the_target_does_not_loop ... ok
+
 ---
 
 ## Handoff

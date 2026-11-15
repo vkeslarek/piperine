@@ -358,3 +358,53 @@ fn consecutive_rejections_beyond_the_cap_fail_loud() {
     assert_eq!(p.transient(2.0).unwrap(), Ended::StopTime);
     assert_eq!(attempts(&log).len(), 6);
 }
+
+#[test]
+fn a_crossing_within_half_a_tick_of_the_target_does_not_loop() {
+    // The analog side locates the same crossing at 0.9 s on every attempt; at
+    // 0.5 s per tick it rounds to the target tick 2 (1.0 s).
+    let (log, d, mut a) = sides();
+    a.attempts.extend((0..5_000).map(|_| Attempt::LandedEarlier(0.9)));
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(1.0).unwrap(), Ended::StopTime);
+    assert_eq!(
+        calls(&log, |c| matches!(c, Call::Attempt { .. } | Call::Accept)),
+        [
+            Call::Attempt { to: 1.0, exempt: false },
+            // Shrunk by one tick, never the identical step again.
+            Call::Attempt { to: 0.5, exempt: false },
+            // The crossing lies past this step's end: taken at the end.
+            Call::Accept,
+            // A one-tick step whose crossing rounds to its end: taken at the end.
+            Call::Attempt { to: 1.0, exempt: false },
+            Call::Accept,
+        ]
+    );
+}
+
+#[test]
+fn a_crossing_at_or_after_the_target_is_taken_at_the_end() {
+    let (log, d, mut a) = sides();
+    a.attempts.extend((0..5_000).map(|_| Attempt::LandedEarlier(7.0)));
+    a.proposals.push_back(1.0);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(2.0).unwrap(), Ended::StopTime);
+    assert_eq!(
+        calls(&log, |c| matches!(c, Call::Attempt { .. } | Call::Accept)),
+        [Call::Attempt { to: 1.0, exempt: false }, Call::Accept, Call::Attempt { to: 2.0, exempt: false }, Call::Accept]
+    );
+}
+
+#[test]
+fn crossing_retries_count_toward_the_rejection_cap() {
+    // Each attempt to tick n locates a crossing 0.4 tick before it: one tick less each time.
+    let (log, d, mut a) = sides();
+    a.attempts.extend((0..20).map(|i| Attempt::LandedEarlier(99.6 - i as f64)));
+    a.proposals.push_back(100.0);
+    let mut options = ProtocolOptions::new(1.0);
+    options.max_rejections = 5;
+    let mut p = Protocol::new(d, a, options);
+    let err = p.transient(100.0).expect_err("retries beyond the cap");
+    assert!(err.to_string().contains("5 consecutive rejected attempts"), "{err}");
+    assert_eq!(attempts(&log).len(), 5);
+}
