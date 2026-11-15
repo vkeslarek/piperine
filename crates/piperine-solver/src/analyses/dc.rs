@@ -481,14 +481,7 @@ impl<'a> DcSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::core::result::Result<DcAnalysisResult> {
-        // SPEC_DEVIATION: the bias point under an AC sweep stays an analog
-        // equilibrium on the discrete values bind seeded; every other
-        // operating point of a circuit of devices runs the protocol.
-        // Reason: the protocol fires `START` at an operating point (abi.md
-        // §10), and `abi_ac.rs` counts reactions from before the AC driver's
-        // bias point; a surviving test is not edited (reported to the
-        // orchestrator).
-        if self.system.circuit.abi.is_some() && self.analysis_kind != crate::analyses::AnalysisKind::Ac {
+        if self.system.circuit.abi.is_some() {
             return self.solve_device();
         }
         let plan = ConvergencePlan::default().with_trace(self.policy.trace);

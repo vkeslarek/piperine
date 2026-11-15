@@ -71,14 +71,18 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     b.device(spy, "spy", &[], &[]);
     let mut circuit = b.build().expect("build");
 
+    let opts = AcSweepAnalysisOptions { start_frequency: 1e4, stop_frequency: 1e6, steps: 200, logarithmic: true };
+    // The bias point is an operating point: `START` fires there. The sweep is
+    // measured from after it.
+    let mut ac = circuit.ac(Context::default()).expect("ac");
+    let reactions_before = REACTIONS.load(Ordering::SeqCst);
     let nets_before: Vec<Vec<u8>> = {
-        let bound = circuit.bound().expect("bound");
+        let bound = ac.system.circuit.bound().expect("bound");
         (0..bound.digital.plan().nets.len())
             .map(|i| bound.digital.read(piperine_digital_solver::abi::net::NetId(i as u32)).to_vec())
             .collect()
     };
-    let opts = AcSweepAnalysisOptions { start_frequency: 1e4, stop_frequency: 1e6, steps: 200, logarithmic: true };
-    let res = circuit.ac(Context::default()).expect("ac").solve_sweep(opts).expect("sweep");
+    let res = ac.solve_sweep(opts).expect("sweep");
 
     let mut peak_mag = 0.0_f64;
     let mut peak_freq = 0.0_f64;
@@ -94,7 +98,7 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     assert!((peak_freq - 160_705.281_826_163_85).abs() < 1e-3, "peak_freq = {peak_freq}");
 
     // No reaction ran and no pin changed during the sweep.
-    assert_eq!(REACTIONS.load(Ordering::SeqCst), 0, "a reaction ran");
+    assert_eq!(REACTIONS.load(Ordering::SeqCst), reactions_before, "a reaction ran");
     let bound = circuit.bound().expect("bound");
     for (i, before) in nets_before.iter().enumerate() {
         let now = bound.digital.read(piperine_digital_solver::abi::net::NetId(i as u32));
