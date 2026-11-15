@@ -308,7 +308,7 @@ module ScIntegrator(vin: Electrical, vout: Electrical, in clk: Bit) {
 | Transfer phase | `phi2` high: `x` is grounded and `y` joins the virtual ground `vg`. The charge `cs · v(vin)` moves onto `cf`. |
 | Result per period | Charge at the `vg` cut is conserved: `vout[n] = vout[n − 1] + (cs / cf) · vin[n]`. The integrator is non-inverting with gain 0.25. |
 | Time points | Four per period, one at each phase edge (§17.2.2). Each is a jump: an `RSwitch` conductance read by `analog` changes. |
-| The jumps | A resistive switch forces nothing. Both capacitor states are continuous (§15.2.1) and no flow is impulsive. Only the flows step. |
+| The jumps | A resistive switch forces nothing. Both capacitor states are continuous (§15.2.1) and nothing is forced. Only the flows step. |
 | `Dc` | Solvable, by the operating point above. It is the all-switches-off circuit, not the sampled system. |
 | `Ac` | Linearized with both phases low (§11.1). The sampled transfer function needs a periodic analysis (§16.3). |
 | `Noise` | `RSwitch` and `OpAmpIdeal` place no `noise` instance. |

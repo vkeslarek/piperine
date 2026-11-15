@@ -350,22 +350,21 @@ module ShareCharge(in close: Bit) {
 | First step | The holds are removed; `1p · v(a)` and `3p · v(b)` are the states. Nothing moves until the switch closes. |
 | `close` rises at `(t, 0)` | The commit applies; `analog` reads `close`: a jump in that microstep (§15 step 3.4). |
 
-At that instant the jump rule (§15.2) writes, with `i` the switch flow and `h → 0`:
+At that instant the step that arrives at `t` reads `close` (§15.2). With `i` the switch flow and
+`h` the length of that step, its node rows are:
 
 | Row | Equation | Source |
 | --- | --- | --- |
-| node `a` | `1p · (v(a) − 1) / h + i = 0` | `ddt` reads `(q − q⁻) / h` |
+| node `a` | `1p · (v(a) − 1) / h + i = 0` | `ddt` as the step discretizes it |
 | node `b` | `3p · (v(b) − 0) / h − i = 0` | the same |
 | switch | `v(a) − v(b) = 0` | the constraint that forces the jump |
 
 | Step | Trace |
 | --- | --- |
-| First pass | Adding the node rows removes `i`: `1p · (v − 1) + 3p · v = 0`. So `v(a) = v(b) = 0.25 V`. |
+| The step | Adding the node rows removes `i`: `1p · (v − 1) + 3p · v = 0`. So `v(a) = v(b) = 0.25 V`: the right values are those of the first step that reads the jump. |
 | Conservation | The cut that the switch closes holds 1 pC before and `4p · 0.25 = 1 pC` after (§15.2.2). |
-| The impulse | `i = 0.75 pC / h`. It exists only inside the solve; no probe reads it (§15.2.2). |
-| Second pass | It starts from 0.25 V on both nodes and moves nothing. Every `ddt` is 0, so `i = 0` (§15.2.4). |
-| `(t, 1)` | A probe or a `cross` reads 0.25 V and zero switch flow. |
-| Restart | Both states moved: the integrator drops their history and starts from the right value (§15.2.6). |
+| No solve of its own | The change has no solve at an unchanged `t`; the step to `t` is the solve that reads it (§15.2.4). |
+| Restart | The step after it drops the previous derivative and runs its trapezoidal stage as backward Euler (§15.2.6). |
 | Afterwards | `a` and `b` float together at 0.25 V. The transient is determined by the states (§15.2.1). |
 | `Dc` | Singular with the switch open or closed: no node has a DC path. Nothing is held outside a transient's operating point (§16). |
 | `Ac`, `Noise` | Their operating point fails the same way. |

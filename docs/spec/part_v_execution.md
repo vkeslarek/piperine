@@ -7,7 +7,7 @@ reference implementation meets these guarantees, and where it does not yet, is A
 
 **Terms defined here:** instant, microstep, time point, event time, tick, time resolution,
 due, pending, solve, equilibrium solve, transient step, jump solve, small-signal sweep,
-left value, right value, jump, state (of the jump rule), impulsive flow, settle phase,
+left value, right value, jump, state (of the jump rule), settle phase,
 settle commit, operating point, round, sweep point, held node, hold, continued transient,
 converged, accepted step, rejected step, scheduled time, located crossing, active (of a
 `limit` instance), nodeset.
@@ -67,10 +67,10 @@ constant. There are four kinds, and §16.2 states what each primitive is in each
 | --- | --- | --- |
 | **equilibrium solve** | Newton on the equations with every `ddt` equal to 0 | each round of an operating point; each `Dc` sweep point (§16, §16.1) |
 | **transient step** | Newton on the equations discretized from the previous time point to a later time | advancing a `Tran` analysis (§17.2) |
-| **jump solve** | Newton on the equations of the jump rule, at an unchanged `t` | step 3.4 below (§15.2) |
+| **jump solve** | the transient step that reads a jump: the step arriving at its time point, or the first one after it | §15.2 |
 | **small-signal sweep** | one linear solve per frequency of the linearized equations | `Ac`, `Noise` and host analyses built on them (§11.1, §16.3) |
 
-The first three converge under §17.1. A sweep has no instants: no reaction runs in it and no
+The first three converge under §17.1. A jump solve is a transient step, not a fourth kind of solve on its own. A sweep has no instants: no reaction runs in it and no
 carrier changes (§16.2).
 
 ### The time-point procedure
@@ -400,8 +400,8 @@ not executed.
 
 | In `analog` | Equilibrium solve (a `Dc` point, every operating point) | Transient step | Jump solve (§15.2) | Small-signal sweep |
 | --- | --- | --- | --- | --- |
-| probes, `p.inflow()` | the iterate | the iterate | the iterate; the impulsive part of a flow is not read | the complex response |
-| `ddt(x)` | 0 | the derivative | `(x − x⁻)/h`, `h → 0` | `jω·x` |
+| probes, `p.inflow()` | the iterate | the iterate | the iterate | the complex response |
+| `ddt(x)` | 0 | the derivative | the derivative of the step that reads the jump | `jω·x` |
 | `delay(x, td)` | `x` | `x(t − td)`; the operating point's `x` while `t < td` | as in the step | `exp(−jω·td)·x` |
 | `limit(x, f)` | bounds the Newton path; equals `x` at convergence | the same | the same | `x` |
 | `ddx(e, probe)` | the partial derivative at the iterate | the same | the same | its value at the operating point |
@@ -660,7 +660,7 @@ module with a result (§14); each use is an instance.
 5. An instance is **active** while its limited value differs from its input beyond a
    tolerance. An active instance vetoes convergence (§17.1.3). At convergence the model
    is exactly the unlimited one.
-6. On the first iteration of a transient step or a jump solve, `x̂_{k−1}` is the instance's
+6. On the first iteration of a transient step (a jump solve included), `x̂_{k−1}` is the instance's
    value at the last accepted solution. `seed` is not read there.
 7. In a small-signal sweep `limit(x, f)` is `x` (§16.2). The instance's last value advances
    only on accepted steps (§17.2.4) and is untouched by a jump (§15.2.5).

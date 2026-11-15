@@ -1238,3 +1238,10 @@ fn residual_test_uses_the_present_mapping() {
     let branch = s.split(". ").find(|x| x.contains("branch row is tested")).expect("branch sentence");
     assert!(branch.contains("flow"), "{branch}");
 }
+
+#[test]
+fn jump_solve_is_a_transient_step() {
+    let exec = spec("part_v_execution.md");
+    let row = exec.lines().find(|l| l.starts_with("| **jump solve**")).expect("jump solve row");
+    assert!(row.contains("transient step"), "{row}");
+}

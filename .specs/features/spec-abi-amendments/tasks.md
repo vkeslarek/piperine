@@ -305,12 +305,12 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] The "Solves" table defines the jump solve as the transient step that reads a jump (the step arriving at its time point, or the first one after it), so the "Jump solve" columns of Parts IV and VII need no edit
-- [ ] `index.md`: the rows for *jump, right value*, *impulsive flow* and *state (of the jump rule)* match the new §15.2 (a row whose term no longer exists is removed)
-- [ ] F.5 says its right values (0.25 V on both capacitors) are those of the first step that reads the jump, and drops the `h → 0` derivation as normative
-- [ ] No other sentence of `docs/spec/` says a jump is solved at the same `t` (grep `jump solve`, `right value`, `second pass`)
-- [ ] Test `jump_solve_is_a_transient_step` asserts the "Solves" table row that starts with `| **jump solve**` contains `transient step`
-- [ ] Gate: build (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] The "Solves" table defines the jump solve as the transient step that reads a jump (the step arriving at its time point, or the first one after it), so the "Jump solve" columns of Parts IV and VII need no edit
+- [x] `index.md`: the rows for *jump, right value*, *impulsive flow* and *state (of the jump rule)* match the new §15.2 (a row whose term no longer exists is removed)
+- [x] F.5 says its right values (0.25 V on both capacitors) are those of the first step that reads the jump, and drops the `h → 0` derivation as normative
+- [x] No other sentence of `docs/spec/` says a jump is solved at the same `t` (grep `jump solve`, `right value`, `second pass`)
+- [x] Test `jump_solve_is_a_transient_step` asserts the "Solves" table row that starts with `| **jump solve**` contains `transient step`
+- [x] Gate: build (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: build

@@ -183,8 +183,8 @@ conjunction of the conditions of the `if` and `match` arms that enclose it.
 
   | | Equilibrium solve | Transient step | Jump solve (§15.2) | Small-signal sweep |
   | --- | --- | --- | --- | --- |
-  | the block | executed each iteration | executed each iteration | executed each iteration, twice solved (§15.2.4) | linearized, not executed |
-  | a contribution `x` | `x` with `ddt` terms 0 | `x` with `ddt` as the derivative | `x` with `ddt` as `(q − q⁻)/h`, `h → 0` | `Σ ∂x/∂probe · response`, plus `ac_stim` and `noise` terms |
+  | the block | executed each iteration | executed each iteration | executed each iteration | linearized, not executed |
+  | a contribution `x` | `x` with `ddt` terms 0 | `x` with `ddt` as the derivative | `x` with `ddt` as the derivative of the step that reads the jump | `Σ ∂x/∂probe · response`, plus `ac_stim` and `noise` terms |
   | a branch's kind | from the selectors, `analysis(Static)` true | from the selectors | from the selectors after the change | from the selectors under the sweep's flags (§11.1.4) |
 
 - **§11 rule 18** A change of kind happens only between solves. A discrete carrier or param that
@@ -911,13 +911,13 @@ state of the jump rule (§15.2).
 > text for it.
 
 **Dynamic semantics.** Per solve: the `ddt` row of §16.2. In a transient step the derivative is
-the integration method's (§17.2); in a jump solve `x⁻` is the argument at the previous solve of
-the instant (§15.2).
+the integration method's (§17.2); in a jump solve, which is a transient step (§15.2), it is the
+same.
 
 - **§14.5.3** State: the accepted history of `x`. Across a jump `x` is continuous wherever the
   equations allow (§15.2.1); the history is dropped only when the jump moved it (§15.2.6).
 - **§14.5.4** Read in a reaction or an event argument, the result is the derivative in the
-  solution read: 0 at an equilibrium solution, the finite right-hand value after a jump (§15.2.4).
+  solution read: 0 at an equilibrium solution, the derivative of the step that read the jump, after one (§15.2.4).
 - **§14.5.5** In `Noise`, `ddt(n)` of a noise result is `jω·n` (§11.1.9).
 
 ### 14.6 `delay`

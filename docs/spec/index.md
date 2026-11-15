@@ -291,7 +291,6 @@ Each term has one defining occurrence. The table points at it.
 | high impedance, strength | [§22.3.1](part_vii_stdlib.md#2231-strength-logic) |
 | host action, host drive, `set` | [§23.1](part_viii_host.md#231-testbenches) |
 | host, session, testbench | [§23](part_viii_host.md#23-testbenches-and-optimization) |
-| impulsive flow | [§15.2.2](part_v_execution.md#152-the-jump) |
 | inertial delay | [§22.5.8](part_vii_stdlib.md#2258-inertial) |
 | instance, placement | [§8.3](part_iii_structure.md#83-instances-inside-expressions) |
 | instant, microstep | [§15](part_v_execution.md#15-time-and-the-instant) |
