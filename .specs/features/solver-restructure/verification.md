@@ -54,15 +54,15 @@ Own examples, run at HEAD as throwaway tests (deleted, tree clean):
 | C12 | `workspace_shape.rs` `default_members_are_the_green_crates` | yes |
 | C13 | `workspace_shape.rs` `workflows_name_no_retired_crate` | yes |
 | C14 | `removed_surface.rs` `disto_is_gone` | yes |
-| C15 | `removed_surface.rs` `text_io_is_gone` | no - leaves out `Channel`, `FileId` and `FileError` from SR-03 AC 2; a planted re-export passes (F1) |
+| C15 | `removed_surface.rs` `text_io_is_gone` | yes - closed (F1 d230d0df) |
 | C16 | `removed_surface.rs` `verification_channels_are_gone` | yes |
 | C17 | `removed_surface.rs` `specify_timing_is_gone` | yes |
-| C18 | `removed_surface.rs` `regions_are_gone` | no - scans `Region::` and `pub region:` but not a bare `Region`; `pub use x::Region` passes (F1) |
+| C18 | `removed_surface.rs` `regions_are_gone` | yes - closed (F1 d230d0df) |
 | C19 | `removed_surface.rs` `simprobe_is_gone` | yes |
-| C20 | `removed_surface.rs` `the_scan_catches_a_planted_name` | yes for the scan itself; SR-03 AC 7 is still open through the name lists (F1) |
+| C20 | `removed_surface.rs` `the_scan_catches_a_planted_name` | yes for the scan itself; SR-03 AC 7 is still open through the name lists (F1); closed (F1 d230d0df) |
 | C21 | `crate_boundaries.rs` `the_three_solver_crates_exist` | yes |
 | C22 | `crate_boundaries.rs` `sub_solvers_depend_on_no_workspace_crate` | yes - `path =` also catches table-form entries |
-| C23 | `crate_boundaries.rs` `owner_depends_on_both_sub_solvers_only` | weak - a `[dependencies.piperine-lang]` table header is not a line that starts with `piperine-` (F6) |
+| C23 | `crate_boundaries.rs` `owner_depends_on_both_sub_solvers_only` | yes - closed (F6 0c98cf15) |
 | C24 | `crate_boundaries.rs` `analog_sources_name_no_digital_type` | yes |
 | C25 | `crate_boundaries.rs` `digital_sources_name_no_analog_type` | yes |
 | C26 | `crate_boundaries.rs` `each_sub_solver_holds_its_modules` | yes |
@@ -73,11 +73,11 @@ Own examples, run at HEAD as throwaway tests (deleted, tree clean):
 | C31 | `parity_baseline` byte-identical and green | yes |
 | C32 | baseline minus `removed.txt` all `... ok` | yes - independently confirmed against the e129b869 test-fn set |
 | C33 | `cargo build --all-targets` on the four crates, no warning | yes |
-| C34 | `workspace_shape.rs` `instructions_list_the_kept_crates` | weak - checks only the set of crate names; the role text is stale (F3) |
+| C34 | `workspace_shape.rs` `instructions_list_the_kept_crates` | yes - closed (F3 480bb9d6) |
 | C35 | `workspace_shape.rs` `instructions_have_no_entry_for_a_retired_crate` | yes for the table and map; the body text still names `piperine-plugin` paths (F3) |
 | C36 | `workspace_shape.rs` `state_records_the_solver_structure_decision` | yes - quotes checked against `context.md` |
 | C37 | `git diff` with no added `assert` line outside the ported targets | yes - every modified kept test file was read by hand |
-| C38 | `baseline.txt` has at least 250 lines | weak - a line count; corroborated: baseline = all 353 e129b869 test fns + 1 guard |
+| C38 | `baseline.txt` has at least 250 lines | yes - closed (tightened in the closing commit) |
 | C39 | `cargo test -p piperine-lang --test suite_hygiene` | yes |
 | C40 | 11 e129b869 fn names present | yes - 12 `#[test]` fns run: the 11 originals plus the walk test |
 | C41 | no removed-crate path in the guard | yes |
@@ -89,12 +89,12 @@ Own examples, run at HEAD as throwaway tests (deleted, tree clean):
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| F1 (Medium) `removed_surface` does not guard every name in SR-03 AC 2 and AC 5, so AC 7 ("fail if `prelude.rs` or `abi.rs` names any item") is not held | `removed_surface.rs` lists leave out `Channel`, `FileId`, `FileError` and bare `Region`. Probe 2 planted `pub use removed::{Region, Channel, FileId, FileError};` in `abi.rs` and all 7 tests passed | add the four names. For the short ones, scan with an identifier-boundary match (`\bRegion\b`, `\bChannel\b`), or scan only `prelude.rs`/`abi.rs` for them, so that unrelated words do not trip it | |
-| F2 (Low) `StepLimits` cannot be reached through the facade, while `StepperStrategy`, whose methods take it, is exported by `prelude` (MD-17) | `prelude.rs:45` exports `StepperStrategy`, and neither `prelude` nor `abi` exports `StepLimits`. `tests/stepper_fold.rs` had to add `use piperine_analog_solver::convergence::StepLimits` | re-export `StepLimits` beside `StepperStrategy` in `prelude` (and in `abi`), and switch `stepper_fold.rs` to the facade path | |
-| F3 (Low) `CLAUDE.md` and `AGENTS.md` describe the moved code at its old place and state the target boundary as if it were in place now (SR-06 AC 1) | The `CLAUDE.md` `piperine-solver` row lists `math/`, `ConvergencePlan` and `TrBdf2`. Its "Solver architecture" section cites `analyses/convergence.rs` and `math/integration.rs` and says "Scheduler: Returns `Result<(), Error>`". The `AGENTS.md` map gives `piperine-solver/ ... math/`. Both say the sub-solvers "meet through events only", but the spec's Out of Scope keeps the `digital: &[LogicValue]` snapshot until feature (B). `CLAUDE.md` still names `crates/piperine-plugin/tests/extern_stub.rs`, `PluginHost::seed_schemas` and "codegen's own operator registry". The root `piperine` package is not listed as non-building | move `math/`, the convergence plan, `TrBdf2`/LTE and `Tolerances` to the analog row and update the paths. Phrase the event-only boundary as the target (MD-60 item 1) with today's state (a crate boundary, with the shared digital snapshot). Drop the deleted-crate references and add the root shell to the non-building list | |
-| F4 (Low) The generic scheduler signature breaks inference at call sites that pass `&mut []`, which the design said would "compile unchanged" | `tests/digital_driver_segregation.rs` (3 sites) and the `events.rs` unit test needed `&mut [] as &mut [Box<...>]` | disclose this in `design.md` under the digital crate's Interfaces (no behaviour change). No code change needed | |
-| F5 (Low) Two new module-level free functions break MD-13 rule 2 ("No loose functions", `AGENTS.md`) | `pub(crate) fn digital_failure` in `core/result.rs:428`, and `pub fn analog_nets` in `core/net.rs:157` | make them owned, for example `Net::analog(&Netlist)` as an associated fn and a method on `CircuitInstance` (or a local extension trait) for the digital error | |
-| F6 (Low) The owner's manifest scan misses table-form dependencies | `workspace_dependencies` keeps only lines that start with `piperine-`; a `[dependencies.piperine-lang]` header with `path = ...` would pass `owner_depends_on_both_sub_solvers_only` | also read `[dependencies.piperine-*]`, `[dev-dependencies.piperine-*]` and `[build-dependencies.piperine-*]` headers as dependency keys | |
+| F1 (Medium) `removed_surface` does not guard every name in SR-03 AC 2 and AC 5, so AC 7 ("fail if `prelude.rs` or `abi.rs` names any item") is not held | `removed_surface.rs` lists leave out `Channel`, `FileId`, `FileError` and bare `Region`. Probe 2 planted `pub use removed::{Region, Channel, FileId, FileError};` in `abi.rs` and all 7 tests passed | add the four names. For the short ones, scan with an identifier-boundary match (`\bRegion\b`, `\bChannel\b`), or scan only `prelude.rs`/`abi.rs` for them, so that unrelated words do not trip it |closed d230d0df |
+| F2 (Low) `StepLimits` cannot be reached through the facade, while `StepperStrategy`, whose methods take it, is exported by `prelude` (MD-17) | `prelude.rs:45` exports `StepperStrategy`, and neither `prelude` nor `abi` exports `StepLimits`. `tests/stepper_fold.rs` had to add `use piperine_analog_solver::convergence::StepLimits` | re-export `StepLimits` beside `StepperStrategy` in `prelude` (and in `abi`), and switch `stepper_fold.rs` to the facade path |closed 09f4fc62 |
+| F3 (Low) `CLAUDE.md` and `AGENTS.md` describe the moved code at its old place and state the target boundary as if it were in place now (SR-06 AC 1) | The `CLAUDE.md` `piperine-solver` row lists `math/`, `ConvergencePlan` and `TrBdf2`. Its "Solver architecture" section cites `analyses/convergence.rs` and `math/integration.rs` and says "Scheduler: Returns `Result<(), Error>`". The `AGENTS.md` map gives `piperine-solver/ ... math/`. Both say the sub-solvers "meet through events only", but the spec's Out of Scope keeps the `digital: &[LogicValue]` snapshot until feature (B). `CLAUDE.md` still names `crates/piperine-plugin/tests/extern_stub.rs`, `PluginHost::seed_schemas` and "codegen's own operator registry". The root `piperine` package is not listed as non-building | move `math/`, the convergence plan, `TrBdf2`/LTE and `Tolerances` to the analog row and update the paths. Phrase the event-only boundary as the target (MD-60 item 1) with today's state (a crate boundary, with the shared digital snapshot). Drop the deleted-crate references and add the root shell to the non-building list |closed 480bb9d6 |
+| F4 (Low) The generic scheduler signature breaks inference at call sites that pass `&mut []`, which the design said would "compile unchanged" | `tests/digital_driver_segregation.rs` (3 sites) and the `events.rs` unit test needed `&mut [] as &mut [Box<...>]` | disclose this in `design.md` under the digital crate's Interfaces (no behaviour change). No code change needed |closed e153e614 |
+| F5 (Low) Two new module-level free functions break MD-13 rule 2 ("No loose functions", `AGENTS.md`) | `pub(crate) fn digital_failure` in `core/result.rs:428`, and `pub fn analog_nets` in `core/net.rs:157` | make them owned, for example `Net::analog(&Netlist)` as an associated fn and a method on `CircuitInstance` (or a local extension trait) for the digital error |closed 7ea89680 |
+| F6 (Low) The owner's manifest scan misses table-form dependencies | `workspace_dependencies` keeps only lines that start with `piperine-`; a `[dependencies.piperine-lang]` header with `path = ...` would pass `owner_depends_on_both_sub_solvers_only` | also read `[dependencies.piperine-*]`, `[dev-dependencies.piperine-*]` and `[build-dependencies.piperine-*]` headers as dependency keys |closed 0c98cf15 |
 
 ## Notes (process, no fix owed)
 

@@ -812,8 +812,8 @@ Proof: run solver | test state_records_the_solver_structure_decision ... ok
 **C37** - No assertion line was added to or changed in a test file that existed at e129b869, outside the five ported targets (SR-05, AC 4)
 Proof: `! git diff --diff-filter=M e129b869 -- crates/piperine-solver/tests ':(exclude)crates/piperine-solver/tests/sens.rs' ':(exclude)crates/piperine-solver/tests/adjoint_dc.rs' ':(exclude)crates/piperine-solver/tests/adjoint_vs_sens.rs' ':(exclude)crates/piperine-solver/tests/transient_reentry.rs' ':(exclude)crates/piperine-solver/tests/pss.rs' ':(exclude)crates/piperine-solver/tests/helpers/mod.rs' | grep -E '^\+[^+].*assert'`
 
-**C38** - The baseline of the first green run is recorded, so a red test at that point was visible before any structure moved (SR-01, AC 5)
-Proof: `test "$(wc -l < .specs/features/solver-restructure/baseline.txt)" -ge 250`
+**C38** - The baseline of the first green run is recorded, so a red test at that point was visible before any structure moved: it holds every test function the solver crate had at e129b869 (SR-01, AC 5)
+Proof: `a=$(mktemp); git grep -h -A2 -e '#\[test\]' e129b869 -- crates/piperine-solver | grep -oE 'fn [A-Za-z_0-9]+' | sed 's/^fn //' | sort -u > "$a"; test -s "$a" && sort -u .specs/features/solver-restructure/baseline.txt > "$a.b" && test -z "$(comm -23 "$a" "$a.b")"`
 
 **C39** - The moved guard passes on the kept sources (SR-07, AC 2)
 Proof: `cargo test -p piperine-lang --test suite_hygiene`
