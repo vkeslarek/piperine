@@ -1,9 +1,9 @@
 # msl-ir proofs
 
-**HEAD**: d6a95fa7
+**HEAD**: c96af47a
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 42 pass, 0 fail
+**Result**: 46 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -46,6 +46,10 @@
 | C37 | `run model / test a_body_without_analog_has_no_branches ... ok` | pass |
 | C38 | `run check / test a_duplicated_path_is_named ... ok` | pass |
 | C39 | `run deps / test a_limit_read_and_a_constant_if_keep_the_class ... ok` | pass |
+| C40 | `run print / test structural_text_is_the_tree_with_types ... ok` | pass |
+| C41 | `run print / test structural_text_ignores_origins_and_arena_order ... ok` | pass |
+| C42 | `run print / test structural_text_shows_forms_and_types ... ok` | pass |
+| C43 | `run print / test display_stays_the_full_form ... ok` | pass |
 | Build | `cargo build -p piperine-solver --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 | Build | `cargo build -p piperine-lang --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` | pass |
 | Build | `test ! -d crates/piperine-ir // cargo build -p piperine-ir --all-targets 2>&1 / tee /dev/stderr / (! grep -qE ` | pass |
@@ -55,15 +59,15 @@
 `Run model` - exit 0
 
 ```
-test every_expression_records_its_type ... ok
-test ir_is_send_and_sync ... ok
 test instances_are_stored_in_pre_order ... ok
-test one_body_serves_every_instance_of_it ... ok
+test handles_are_copy ... ok
+test ir_is_send_and_sync ... ok
 test limit_and_stim_sites_are_indexed ... ok
 test path_lookup_finds_instances_and_nodes ... ok
-test the_node_table_names_nature_declarer_and_init ... ok
-test the_authored_tree_is_walkable ... ok
+test one_body_serves_every_instance_of_it ... ok
 test value_code_of_the_subset_is_representable ... ok
+test the_authored_tree_is_walkable ... ok
+test the_node_table_names_nature_declarer_and_init ... ok
 test a_finished_ir_has_no_mutating_operation ... ok
 
 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -77,8 +81,8 @@ test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 4 tests
 test storage_types_implement_serde ... ok
-test json_round_trip_gives_an_equal_ir ... ok
 test text_that_is_no_ir_fails_to_deserialize ... ok
+test json_round_trip_gives_an_equal_ir ... ok
 test reals_survive_bit_for_bit ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
@@ -90,14 +94,18 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run print` - exit 0
 
 ```
-running 5 tests
+running 9 tests
 test no_parser_of_the_text_exists ... ok
 test printed_text_shows_every_item ... ok
+test structural_text_is_the_tree_with_types ... ok
+test structural_text_shows_forms_and_types ... ok
 test printing_twice_is_byte_identical ... ok
+test display_stays_the_full_form ... ok
 test unequal_irs_print_different_texts ... ok
+test structural_text_ignores_origins_and_arena_order ... ok
 test a_cyclic_deep_or_shared_ir_prints ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/print.rs (/var/tmp/piperine-target/debug/deps/print-15cc330508aed8f3)
@@ -109,9 +117,9 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 9 tests
 test a_top_alone_prints_and_checks ... ok
 test a_recursive_call_or_an_unbound_local_is_named ... ok
-test a_duplicated_path_is_named ... ok
 test a_cyclic_expression_is_named_without_hanging ... ok
 test an_instance_with_wrong_arity_is_named ... ok
+test a_duplicated_path_is_named ... ok
 test a_wrong_type_in_an_analog_position_is_named ... ok
 test an_out_of_range_id_is_named ... ok
 test a_misplaced_or_duplicated_site_is_named ... ok
@@ -126,14 +134,16 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run deps` - exit 0
 
 ```
-running 5 tests
+running 7 tests
 test dependency_sets_have_a_fixed_order ... ok
-test a_limit_read_and_a_constant_if_keep_the_class ... ok
 test a_shared_expression_is_walked_once ... ok
 test affine_means_probes_meet_only_linear_operators ... ok
+test a_limit_read_and_a_constant_if_keep_the_class ... ok
+test a_doubling_call_chain_is_walked_once_per_signature ... ok
 test dependencies_follow_locals_and_calls ... ok
+test a_deep_expression_is_walked_without_native_stack ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/deps.rs (/var/tmp/piperine-target/debug/deps/deps-0fbf51e077f2aa9a)
