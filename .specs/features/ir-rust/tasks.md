@@ -271,10 +271,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] `pnjlim` and `vt` of the M1 fixtures print as the texts the test holds, written from the MSL source, not from the printer
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::value::tests::a_function_prints_as_a_generic_fn`, `print::value::tests::an_unsupported_form_is_named_with_path_and_origin`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] `pnjlim` and `vt` of the M1 fixtures print as the texts the test holds, written from the MSL source, not from the printer
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::value::tests::a_function_prints_as_a_generic_fn`, `print::value::tests::an_unsupported_form_is_named_with_path_and_origin`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full

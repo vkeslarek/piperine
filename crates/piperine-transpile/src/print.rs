@@ -3,5 +3,7 @@
 //! origin) so the text reads the same on every build (RS-02).
 
 pub mod text;
+pub mod value;
 
 pub use text::Text;
+pub use value::ValuePrinter;

@@ -14,6 +14,11 @@ pub mod rt;
 
 pub use error::Error;
 
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../piperine-ir/tests/support/devices.rs"]
+mod devices;
+
 /// A checked `Ir`, each body that runs planned.
 #[derive(Debug)]
 pub struct Transpiler {

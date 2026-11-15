@@ -28,15 +28,18 @@ impl Text {
         Text::default()
     }
 
-    /// One line at the current depth; an empty `text` is an empty line, with no indentation.
+    /// One line at the current depth; an empty `text` is an empty line, with no indentation. A
+    /// `text` of several lines (an `if` or a block) has each of its lines placed at that depth.
     pub fn line(&mut self, text: &str) {
-        if !text.is_empty() {
-            for _ in 0..self.depth {
-                self.out.push_str("    ");
+        for line in text.split('\n') {
+            if !line.is_empty() {
+                for _ in 0..self.depth {
+                    self.out.push_str("    ");
+                }
+                self.out.push_str(line);
             }
-            self.out.push_str(text);
+            self.out.push('\n');
         }
-        self.out.push('\n');
     }
 
     /// The lines `write` writes, one level deeper.
