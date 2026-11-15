@@ -52,3 +52,7 @@ The duel converged (`.specs/features/device-abi/abi.md`, elegance 8.1, 13 concep
 | 5, 7 | withdrawn by the critic | - |
 
 These spec edits land in their own small feature (`spec-abi-amendments`), not yet planned.
+
+## Lesson from solver-abi-integration T5 (2026-11-15)
+
+The analog assembly builds a term's RHS as `-(v - Σ g·x)` from the partials. A device whose value is not the same floating-point expression as `Σ g·x` (e.g. a resistor writing `(vp-vn)/r` instead of `g·vp - g·vn`) leaves a last-bit RHS residue every solve; the step controller amplified it to 1e-12 relative drift after a zero crossing. Open item for msl-ir / ir-interp / ir-rust: for terms linear in their reads, emit the value as the exact `Σ partial·read` products the assembly uses (or have the assembly treat declared-linear terms as RHS-free), so generated devices match the hand-written ones bit for bit and ngspice parity holds.
