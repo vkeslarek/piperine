@@ -1,0 +1,733 @@
+//! Calling the devices (abi.md §4 functions, §5 reactions): the discrete
+//! functions to a fixed point over the levelized order (D), and the reactions
+//! of one microstep on one snapshot with the commit path (R).
+//!
+//! Both read and write through `Store` and call devices only through
+//! `piperine_abi::caller::Handle`.
+
+use piperine_abi::caller::{CallError, Commit};
+use piperine_abi::device::{Access, Flow, cell_lens};
+use piperine_abi::layout::{is_canonical, leaf_size};
+use piperine_abi::raw::{Cell, Statement, cell, field_flag, reaction_flag, statement_flag, status};
+
+use super::dag::Step;
+use super::net::{NetId, NetKind};
+use super::observe::{Obs, Observation};
+use super::plan::{Binding, DigitalPlan, InstancePlan};
+use super::queue::{Instant, Pending, Queue, Writer};
+use super::store::{Aligned, Store};
+use super::tick::{Due, Tick};
+use crate::error::DigitalError;
+
+/// The values a call reads that are not pins: time, `STATIC`, `TICK`, `HORIZON`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ambient {
+    pub tick: Tick,
+    /// Seconds: the tick times the resolution.
+    pub time: f64,
+    pub is_static: bool,
+    pub horizon: Tick,
+    /// The `HORIZON` of a reaction a `CROSS` watch can reach.
+    pub crossing_horizon: Tick,
+}
+
+impl Ambient {
+    /// The ambient of an instant at `tick`, with `HORIZON` the tick itself.
+    pub fn at(tick: Tick, seconds_per_tick: f64) -> Ambient {
+        Ambient { tick, time: tick.0 as f64 * seconds_per_tick, is_static: false, horizon: tick, crossing_horizon: tick }
+    }
+}
+
+/// Which functions will run in the next evaluation: one flag per function of the dag.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DirtySet(Vec<bool>);
+
+impl DirtySet {
+    /// Every function dirty: the first instant of a run (F3).
+    pub fn all(plan: &DigitalPlan) -> DirtySet {
+        DirtySet(vec![true; plan.dag().len()])
+    }
+
+    pub fn none(plan: &DigitalPlan) -> DirtySet {
+        DirtySet(vec![false; plan.dag().len()])
+    }
+
+    /// Marks every function that reads `net`.
+    pub fn mark_net(&mut self, plan: &DigitalPlan, net: NetId) {
+        for f in plan.dag().readers(net) {
+            self.0[*f] = true;
+        }
+    }
+
+    pub fn is_dirty(&self, f: usize) -> bool {
+        self.0[f]
+    }
+
+    pub fn any(&self) -> bool {
+        self.0.iter().any(|d| *d)
+    }
+}
+
+/// Why a walk over the functions stopped.
+enum Stop {
+    Error(DigitalError),
+    /// A function of the cone returned `RESHAPE`: the instance's path.
+    Reshape(String),
+}
+
+impl From<DigitalError> for Stop {
+    fn from(e: DigitalError) -> Stop {
+        Stop::Error(e)
+    }
+}
+
+fn fault(e: CallError, tick: Tick, instance: &str) -> DigitalError {
+    DigitalError::Fault { code: e.code, message: e.message, tick: tick.0, instance: instance.to_string() }
+}
+
+/// Writes `bytes` at `offset` of `net`: observes and dirties the readers on a change.
+pub fn write_net(
+    plan: &DigitalPlan,
+    store: &mut Store,
+    dirty: &mut DirtySet,
+    obs: &mut Obs,
+    net: NetId,
+    offset: u32,
+    bytes: &[u8],
+    at: Instant,
+) -> bool {
+    let changed = store.write(net, offset, bytes);
+    if changed {
+        obs.push(Observation::Change { net: plan.nets[net.0 as usize].name.clone(), at, bytes: store.value(net).to_vec() });
+        dirty.mark_net(plan, net);
+    }
+    changed
+}
+
+/// Fires event net `net`: observes it and dirties the functions that read its `CHANGED`.
+pub fn fire_net(plan: &DigitalPlan, store: &mut Store, dirty: &mut DirtySet, obs: &mut Obs, net: NetId, at: Instant) {
+    store.fire(net);
+    obs.push(Observation::Fire { net: plan.nets[net.0 as usize].name.clone(), at });
+    dirty.mark_net(plan, net);
+}
+
+/// P3 on a net after a write: a field whose known byte is 0 holds no value, so its value bytes are
+/// zero. `who` names the writer.
+pub fn check_canonical(plan: &DigitalPlan, store: &Store, net: NetId, at: Tick, who: &str) -> Result<(), DigitalError> {
+    let spec = &plan.nets[net.0 as usize];
+    match plan.net_layout(net) {
+        Some(layout) if spec.kind == NetKind::Discrete && !is_canonical(layout, store.value(net)) => {
+            Err(DigitalError::Fault {
+                code: 0,
+                message: format!("net `{}` holds non-canonical bytes after a write (P3: a field with a known byte of 0 is all zero)", spec.name),
+                tick: at.0,
+                instance: who.to_string(),
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
+/// One input or output buffer of `len` bytes, filled with what `cell` names.
+fn cell_bytes(
+    pins: &[Binding],
+    c: &Cell,
+    len: usize,
+    store: &Store,
+    ambient: &Ambient,
+    samples: &[f64],
+) -> Aligned {
+    let mut buf = Aligned::zeroed(len);
+    let fill = |buf: &mut Aligned, src: &[u8]| {
+        let n = src.len().min(len);
+        buf.bytes_mut()[..n].copy_from_slice(&src[..n]);
+    };
+    match c.kind {
+        cell::PIN => match pins[c.index as usize] {
+            Binding::Net(id) => match c.part {
+                piperine_abi::raw::part::VALUE => fill(&mut buf, store.value(id)),
+                piperine_abi::raw::part::PREVIOUS => fill(&mut buf, store.previous(id)),
+                piperine_abi::raw::part::CHANGED => fill(&mut buf, &[store.changed(id) as u8]),
+                _ => {}
+            },
+            Binding::Sample(i) => fill(&mut buf, &samples.get(i as usize).copied().unwrap_or(0.0).to_le_bytes()),
+            Binding::Absent => {}
+        },
+        cell::AMBIENT => match c.index {
+            piperine_abi::raw::ambient::TIME => fill(&mut buf, &ambient.time.to_le_bytes()),
+            piperine_abi::raw::ambient::STATIC => fill(&mut buf, &[ambient.is_static as u8]),
+            piperine_abi::raw::ambient::TICK => fill(&mut buf, &ambient.tick.0.to_le_bytes()),
+            piperine_abi::raw::ambient::HORIZON => fill(&mut buf, &ambient.horizon.0.to_le_bytes()),
+            _ => {}
+        },
+        _ => {}
+    }
+    buf
+}
+
+/// What a function wrote to one net.
+struct Out {
+    net: NetId,
+    event: bool,
+    bytes: Vec<u8>,
+}
+
+/// Calls function `f` of the dag on the store's current bytes and returns what it wrote.
+fn call_function(
+    plan: &DigitalPlan,
+    store: &Store,
+    at: Instant,
+    ambient: &Ambient,
+    f: usize,
+    cone: bool,
+) -> Result<Vec<Out>, Stop> {
+    let node = plan.dag().function(f);
+    let inst = &plan.instances[node.instance as usize];
+    let shape = inst.handle.shape();
+    let func = shape.functions.get(node.k as usize).expect("bind took this function from the shape");
+    let reads = cell_lens(shape, &func.reads, Access::FunctionRead).expect("bind validated the shape");
+    let writes = cell_lens(shape, &func.writes, Access::FunctionWrite).expect("bind validated the shape");
+    let inputs: Vec<Aligned> = func
+        .reads
+        .iter()
+        .zip(&reads)
+        .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, &[]))
+        .collect();
+    let mut outputs: Vec<Aligned> = func
+        .writes
+        .iter()
+        .zip(&writes)
+        .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, &[]))
+        .collect();
+    let input_refs: Vec<&[u8]> = inputs.iter().map(|b| b.bytes()).collect();
+    let mut output_refs: Vec<&mut [u8]> = outputs.iter_mut().map(|b| b.bytes_mut()).collect();
+    let partials = func.partials.len();
+    let seed = vec![0u8; partials];
+    let mut jac = vec![0.0f64; partials];
+    if let Err(e) = inst.handle.eval(node.k, &input_refs, &mut output_refs, &seed, &mut jac) {
+        if e.status == status::RESHAPE && cone {
+            return Err(Stop::Reshape(inst.path.clone()));
+        }
+        return Err(Stop::Error(fault(e, at.0, &inst.path)));
+    }
+    let mut out = Vec::new();
+    for (c, buf) in func.writes.iter().zip(&outputs) {
+        let Binding::Net(net) = inst.pins[c.index as usize] else { continue };
+        let pin = shape.pins.get(c.index as usize).expect("bind validated the index");
+        let event = plan.nets[net.0 as usize].kind == NetKind::Event;
+        let bytes = buf.bytes().to_vec();
+        if !event && !is_canonical(&pin.layout, &bytes) {
+            return Err(Stop::Error(DigitalError::Fault {
+                code: 0,
+                message: format!("function {} wrote non-canonical bytes to pin {} (P3)", func.name.as_str(), pin.name.as_str()),
+                tick: at.0.0,
+                instance: inst.path.clone(),
+            }));
+        }
+        out.push(Out { net, event, bytes });
+    }
+    Ok(out)
+}
+
+/// Applies a function's outputs the way a microstep sees them.
+fn apply(plan: &DigitalPlan, store: &mut Store, dirty: &mut DirtySet, obs: &mut Obs, at: Instant, outs: Vec<Out>) {
+    for o in outs {
+        if o.event {
+            if o.bytes[0] != 0 {
+                fire_net(plan, store, dirty, obs, o.net, at);
+            }
+        } else {
+            write_net(plan, store, dirty, obs, o.net, 0, &o.bytes, at);
+        }
+    }
+}
+
+/// D: runs the dirty functions in the dag's order, relaxing the cycles through `RELAX` nets,
+/// until the order is done (abi.md §3.1 P2, §9 D1). A fault, or a `RESHAPE` (which a committed
+/// store never produces, P6), is a `Fault`.
+pub fn run_functions(
+    plan: &DigitalPlan,
+    store: &mut Store,
+    dirty: &mut DirtySet,
+    at: Instant,
+    ambient: &Ambient,
+    obs: &mut Obs,
+) -> Result<(), DigitalError> {
+    match walk(plan, store, dirty, at, ambient, obs, None) {
+        Ok(()) => Ok(()),
+        Err(Stop::Error(e)) => Err(e),
+        Err(Stop::Reshape(instance)) => unreachable!("a walk without a cone filter turns RESHAPE into a fault: {instance}"),
+    }
+}
+
+/// D restricted to the parameter cone, for a shadow of the store (abi.md P6): the path of the instance
+/// whose function returned `RESHAPE`, if one did.
+pub fn run_cone(
+    plan: &DigitalPlan,
+    store: &mut Store,
+    dirty: &mut DirtySet,
+    at: Instant,
+    ambient: &Ambient,
+    obs: &mut Obs,
+) -> Result<Option<String>, DigitalError> {
+    match walk(plan, store, dirty, at, ambient, obs, Some(plan.cone())) {
+        Ok(()) => Ok(None),
+        Err(Stop::Error(e)) => Err(e),
+        Err(Stop::Reshape(instance)) => Ok(Some(instance)),
+    }
+}
+
+fn walk(
+    plan: &DigitalPlan,
+    store: &mut Store,
+    dirty: &mut DirtySet,
+    at: Instant,
+    ambient: &Ambient,
+    obs: &mut Obs,
+    cone: Option<&[bool]>,
+) -> Result<(), Stop> {
+    let allowed = |f: usize| cone.is_none_or(|c| c[f]);
+    for step in plan.dag().order() {
+        match step {
+            Step::Run(f) => {
+                if !dirty.0[*f] || !allowed(*f) {
+                    continue;
+                }
+                dirty.0[*f] = false;
+                let outs = call_function(plan, store, at, ambient, *f, cone.is_some())?;
+                apply(plan, store, dirty, obs, at, outs);
+            }
+            Step::Relax { fns, nets } => {
+                if !fns.iter().any(|f| dirty.0[*f]) || !fns.iter().all(|f| allowed(*f)) {
+                    continue;
+                }
+                for f in fns {
+                    dirty.0[*f] = false;
+                }
+                relax(plan, store, dirty, at, ambient, obs, fns, nets, cone.is_some())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The cycle of `fns` through the `RELAX` nets `nets` (abi.md §9 D1): those nets start at zero
+/// bytes, the functions run in order until no byte changes, at most `nets.len() + 1` passes; what
+/// still moves is zeroed where it has a known byte and a fault where it has none.
+fn relax(
+    plan: &DigitalPlan,
+    store: &mut Store,
+    dirty: &mut DirtySet,
+    at: Instant,
+    ambient: &Ambient,
+    obs: &mut Obs,
+    fns: &[usize],
+    nets: &[NetId],
+    cone: bool,
+) -> Result<(), Stop> {
+    let mut written: Vec<NetId> = Vec::new();
+    for f in fns {
+        for w in &plan.dag().function(*f).writes {
+            if !written.contains(w) {
+                written.push(*w);
+            }
+        }
+    }
+    let saved: Vec<_> = written.iter().map(|n| store.save_net(*n)).collect();
+    for n in nets {
+        let zeros = vec![0u8; store.value(*n).len()];
+        store.write(*n, 0, &zeros);
+    }
+    let snapshot = |store: &Store| -> Vec<Vec<u8>> { written.iter().map(|n| store.value(*n).to_vec()).collect() };
+    let mut fires: Vec<NetId> = Vec::new();
+    let bound = nets.len() + 1;
+    let mut settled = false;
+    let (mut before, mut after) = (snapshot(store), snapshot(store));
+    for _ in 0..bound {
+        before = snapshot(store);
+        for f in fns {
+            let outs = call_function(plan, store, at, ambient, *f, cone)?;
+            for o in outs {
+                if o.event {
+                    if o.bytes[0] != 0 && !fires.contains(&o.net) {
+                        fires.push(o.net);
+                    }
+                    continue;
+                }
+                store.write(o.net, 0, &o.bytes);
+            }
+        }
+        after = snapshot(store);
+        if before == after {
+            settled = true;
+            break;
+        }
+    }
+    if !settled {
+        for (i, net) in written.iter().enumerate() {
+            if before[i] == after[i] {
+                continue;
+            }
+            let name = &plan.nets[net.0 as usize].name;
+            let layout = plan.net_layout(*net).expect("a written net has a pin");
+            let mut value = after[i].clone();
+            for field in layout.fields.iter() {
+                let width = leaf_size(field.leaf).expect("bind validated the layout");
+                for e in 0..field.count as usize {
+                    let at_v = field.offset as usize + e * width..field.offset as usize + (e + 1) * width;
+                    let known = field.known as usize + e;
+                    let has_known = field.flags & field_flag::HAS_KNOWN != 0;
+                    let moved = before[i][at_v.clone()] != after[i][at_v.clone()]
+                        || (has_known && before[i][known] != after[i][known]);
+                    if !moved {
+                        continue;
+                    }
+                    if !has_known {
+                        let instance = plan.dag().function(fns[0]).name.clone();
+                        return Err(Stop::Error(DigitalError::Fault {
+                            code: 0,
+                            message: format!("net `{name}` did not settle and its field holds no known byte (D1)"),
+                            tick: at.0.0,
+                            instance,
+                        }));
+                    }
+                    value[at_v].fill(0);
+                    value[known] = 0;
+                }
+            }
+            store.write(*net, 0, &value);
+            obs.push(Observation::Unsettled { net: name.clone(), at });
+            after[i] = value;
+        }
+    }
+    // the run sees one change per net: from the value it had before the group, to the settled one
+    for (i, net) in written.iter().enumerate() {
+        store.restore_net(*net, &saved[i]);
+        write_net(plan, store, dirty, obs, *net, 0, &after[i], at);
+    }
+    // the group has just settled on what its closing writes show: they are no reason to run it again
+    for f in fns {
+        dirty.0[*f] = false;
+    }
+    for net in fires {
+        fire_net(plan, store, dirty, obs, net, at);
+    }
+    Ok(())
+}
+
+/// A reaction that runs in the current microstep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Firing {
+    pub instance: usize,
+    pub reaction: usize,
+    /// One of the events it ran for is `SETTLE`.
+    pub on_settle: bool,
+}
+
+/// R1: the reactions with an event pin in `on` that fired in this microstep, in (instance, reaction) order.
+pub fn fired_reactions(instances: &[InstancePlan], settle: &[NetId], store: &Store) -> Vec<Firing> {
+    let mut out = Vec::new();
+    for (i, inst) in instances.iter().enumerate() {
+        for (r, reaction) in inst.handle.shape().reactions.iter().enumerate() {
+            let on: Vec<NetId> = reaction
+                .on
+                .iter()
+                .filter_map(|p| match inst.pins[*p as usize] {
+                    Binding::Net(id) if store.fired(id) => Some(id),
+                    _ => None,
+                })
+                .collect();
+            if !on.is_empty() {
+                out.push(Firing { instance: i, reaction: r, on_settle: on.iter().any(|n| settle.contains(n)) });
+            }
+        }
+    }
+    out
+}
+
+/// What the reactions of one microstep asked for beyond their commits.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Fired {
+    /// A reaction returned `FINISH`.
+    pub finish: bool,
+    /// A reaction that ran is flagged `IRREVERSIBLE`.
+    pub irreversible: bool,
+    /// How many reactions ran.
+    pub ran: u32,
+}
+
+/// One commit a reaction made, validated and waiting to be applied to the queue.
+struct Planned {
+    statement: u32,
+    offset: u32,
+    bytes: Vec<u8>,
+    net: Option<NetId>,
+    /// `None`: it never comes due.
+    due: Option<Instant>,
+    replace: bool,
+    record: Option<String>,
+}
+
+/// What one call of a reaction made.
+struct Ran {
+    plan: Vec<Planned>,
+    finish: bool,
+}
+
+/// A reaction of the microstep.
+struct Job {
+    instance: usize,
+    reaction: usize,
+    on_settle: bool,
+    crossing: bool,
+    irreversible: bool,
+}
+
+/// Calls reaction `job` once with `ambient` and `samples`, validating each commit it makes (statement
+/// range, `LATER` bound, `Resolution::due`, the settle refusal). Nothing of the engine changes.
+fn call_reaction(
+    plan: &mut DigitalPlan,
+    store: &Store,
+    samples: &[f64],
+    ambient: &Ambient,
+    at: Instant,
+    job: &Job,
+) -> Result<Ran, DigitalError> {
+    let DigitalPlan { nets, instances, resolution, analysis, .. } = plan;
+    let inst = &mut instances[job.instance];
+    let path = inst.path.clone();
+    let pins = inst.pins.clone();
+    let (statements, pin_names, inputs) = {
+        let shape = inst.handle.shape();
+        let reaction = shape.reactions.get(job.reaction).expect("listed from this shape");
+        let lens = cell_lens(shape, &reaction.reads, Access::ReactionRead).expect("bind validated the shape");
+        let inputs: Vec<Aligned> = reaction
+            .reads
+            .iter()
+            .zip(&lens)
+            .map(|(c, len)| cell_bytes(&pins, c, *len, store, ambient, samples))
+            .collect();
+        (
+            reaction.writes.iter().copied().collect::<Vec<Statement>>(),
+            shape.pins.iter().map(|p| p.name.as_str().to_string()).collect::<Vec<String>>(),
+            inputs,
+        )
+    };
+    let refs: Vec<&[u8]> = inputs.iter().map(|b| b.bytes()).collect();
+    let mut made: Vec<Planned> = Vec::new();
+    let mut failure: Option<DigitalError> = None;
+    let mut sink = |c: Commit<'_>| -> u32 {
+        if failure.is_some() {
+            return status::FAULT;
+        }
+        let reject = |message: String| DigitalError::Fault { code: 0, message, tick: at.0.0, instance: path.clone() };
+        let Some(s) = statements.get(c.statement as usize) else {
+            failure = Some(reject(format!("reaction {} committed through statement {}, which it does not have", job.reaction, c.statement)));
+            return status::FAULT;
+        };
+        let end = c.offset as u64 + c.bytes.len() as u64;
+        if c.offset < s.offset || end > s.offset as u64 + s.len as u64 {
+            failure = Some(reject(format!(
+                "reaction {} statement {} committed bytes {}..{} outside its declared range {}..{}",
+                job.reaction,
+                c.statement,
+                c.offset,
+                end,
+                s.offset,
+                s.offset as u64 + s.len as u64
+            )));
+            return status::FAULT;
+        }
+        let later = analysis.later(job.instance as u32, job.reaction as u32, c.statement);
+        if later && c.after < s.min_after {
+            failure = Some(reject(format!(
+                "reaction {} statement {} is LATER with a bound of {} s and committed after {} s",
+                job.reaction, c.statement, s.min_after, c.after
+            )));
+            return status::FAULT;
+        }
+        let due = match resolution.due(at.0, c.after) {
+            Ok(d) => d,
+            Err(DigitalError::NanDelay { code, .. }) => {
+                failure = Some(DigitalError::NanDelay { code, instance: path.clone(), statement: c.statement });
+                return status::FAULT;
+            }
+            Err(e) => {
+                failure = Some(e);
+                return status::FAULT;
+            }
+        };
+        if job.on_settle && due == Due::NextMicrostep {
+            failure = Some(DigitalError::Unsupported { what: "settle commit" });
+            return status::FAULT;
+        }
+        let due = match due {
+            Due::NextMicrostep => Some((at.0, at.1 + 1)),
+            Due::At(t) => Some((t, 0)),
+            Due::Never => None,
+        };
+        let net = match pins[s.pin as usize] {
+            Binding::Net(n) => Some(n),
+            _ => None,
+        };
+        let record = net
+            .filter(|n| nets[n.0 as usize].record)
+            .map(|_| format!("{path}.{}", pin_names[s.pin as usize]));
+        made.push(Planned {
+            statement: c.statement,
+            offset: c.offset,
+            bytes: c.bytes.to_vec(),
+            net,
+            due,
+            replace: s.flags & statement_flag::REPLACE != 0,
+            record,
+        });
+        status::OK
+    };
+    let result = inst.handle.react(job.reaction as u32, &refs, &mut sink);
+    let finish = match result {
+        Ok(Flow::Finish) => true,
+        Ok(Flow::Continue) => false,
+        Err(e) => return Err(failure.take().unwrap_or_else(|| fault(e, at.0, &path))),
+    };
+    if let Some(e) = failure.take() {
+        return Err(e);
+    }
+    Ok(Ran { plan: made, finish })
+}
+
+/// The earliest tick a commit of any reaction but `except` is due at.
+fn earliest_other(ran: &[Option<Ran>], except: usize) -> Option<Tick> {
+    ran.iter()
+        .enumerate()
+        .filter(|(k, _)| *k != except)
+        .filter_map(|(_, r)| r.as_ref())
+        .flat_map(|r| r.plan.iter().filter_map(|p| p.due.map(|d| d.0)))
+        .min()
+}
+
+/// R: runs, once each, the reactions with an event pin in `on` that fired in this microstep.
+/// Every one reads the same snapshot (R2). `HORIZON` is bounded by what the other reactions of the
+/// microstep commit (abi.md R5 "other than as a consequence of the commits this call makes"): a
+/// reaction is called again with a smaller horizon while another's commits are due before it (a
+/// reaction has no memory, R3, so that is sound); an `IRREVERSIBLE` one runs last and once, with
+/// the horizon the others leave it (the instant itself when several are irreversible). Each commit
+/// then goes through the queue and is observed. `call` numbers the commits of the microstep (C2).
+#[allow(clippy::too_many_arguments)]
+pub fn run_reactions(
+    plan: &mut DigitalPlan,
+    store: &Store,
+    samples: &[f64],
+    ambient: &Ambient,
+    queue: &mut Queue,
+    obs: &mut Obs,
+    at: Instant,
+    call: &mut u32,
+) -> Result<Fired, DigitalError> {
+    let settle = plan.analysis().settle_nets().to_vec();
+    let jobs: Vec<Job> = fired_reactions(&plan.instances, &settle, store)
+        .into_iter()
+        .map(|f| Job {
+            instance: f.instance,
+            reaction: f.reaction,
+            on_settle: f.on_settle,
+            crossing: plan.analysis().crossing_reach(f.instance as u32, f.reaction as u32),
+            irreversible: plan.instances[f.instance]
+                .handle
+                .shape()
+                .reactions
+                .get(f.reaction)
+                .is_some_and(|r| r.flags & reaction_flag::IRREVERSIBLE != 0),
+        })
+        .collect();
+    let with = |horizon: Tick| Ambient { horizon, ..*ambient };
+    let base = |j: &Job| if j.crossing { ambient.crossing_horizon } else { ambient.horizon };
+    let reversible: Vec<usize> = (0..jobs.len()).filter(|j| !jobs[*j].irreversible).collect();
+    let irreversible: Vec<usize> = (0..jobs.len()).filter(|j| jobs[*j].irreversible).collect();
+    // an IRREVERSIBLE reaction runs last and once, so what it commits cannot bound the others: when one
+    // fires together with other reactions every reaction of the microstep gets the instant itself
+    let pinned = !irreversible.is_empty() && jobs.len() > 1;
+    let mut horizon: Vec<Tick> = jobs.iter().map(|j| if pinned { at.0 } else { base(j) }).collect();
+    let mut ran: Vec<Option<Ran>> = (0..jobs.len()).map(|_| None).collect();
+
+    for j in &reversible {
+        ran[*j] = Some(call_reaction(plan, store, samples, &with(horizon[*j]), at, &jobs[*j])?);
+    }
+    // another reaction's commit due before a horizon cuts it down; a cut can move a commit, so repeat
+    let mut settled = false;
+    for _ in 0..=reversible.len() {
+        let mut changed = false;
+        for j in &reversible {
+            let Some(e) = earliest_other(&ran, *j) else { continue };
+            let cap = Tick(e.0.saturating_sub(1)).max(at.0);
+            if cap < horizon[*j] {
+                horizon[*j] = cap;
+                ran[*j] = Some(call_reaction(plan, store, samples, &with(cap), at, &jobs[*j])?);
+                changed = true;
+            }
+        }
+        if !changed {
+            settled = true;
+            break;
+        }
+    }
+    if !settled {
+        // no fixed point within the bound: the instant itself is always sound
+        for j in &reversible {
+            if horizon[*j] > at.0 {
+                horizon[*j] = at.0;
+                ran[*j] = Some(call_reaction(plan, store, samples, &with(at.0), at, &jobs[*j])?);
+            }
+        }
+    }
+    for j in &irreversible {
+        let cap = match irreversible.len() {
+            _ if pinned => at.0,
+            1 => earliest_other(&ran, *j).map_or(base(&jobs[*j]), |e| base(&jobs[*j]).min(Tick(e.0.saturating_sub(1)).max(at.0))),
+            _ => at.0,
+        };
+        ran[*j] = Some(call_reaction(plan, store, samples, &with(cap), at, &jobs[*j])?);
+    }
+
+    let mut fired = Fired::default();
+    for (job, result) in jobs.iter().zip(ran) {
+        let result = result.expect("every job ran");
+        fired.ran += 1;
+        fired.irreversible |= job.irreversible;
+        fired.finish |= result.finish;
+        let path = plan.instances[job.instance].path.clone();
+        for p in result.plan {
+            obs.push(Observation::Commit {
+                instance: path.clone(),
+                reaction: job.reaction as u32,
+                statement: p.statement,
+                made: at,
+                due: p.due,
+            });
+            let Some(net) = p.net else { continue };
+            if let Some(stream) = p.record {
+                obs.push(Observation::Record { stream, at, bytes: p.bytes.clone() });
+            }
+            *call += 1;
+            let mut pending = Pending {
+                net,
+                offset: p.offset,
+                bytes: p.bytes,
+                writer: Writer::Reaction { instance: job.instance as u32, reaction: job.reaction as u32 },
+                statement: p.statement,
+                made: at,
+                call: *call,
+                due: (at.0, 0),
+            };
+            match p.due {
+                Some(due) => {
+                    pending.due = due;
+                    queue.push(pending, p.replace);
+                }
+                None if p.replace => queue.cancel(&pending),
+                None => {}
+            }
+        }
+    }
+    Ok(fired)
+}

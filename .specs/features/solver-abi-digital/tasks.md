@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/solver-abi-digital/design.md`
-**Status**: Draft
+**Status**: Done
 **Build**: `cargo build -p piperine-digital-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run digital**: `cargo test -p piperine-digital-solver`
 
@@ -85,14 +85,14 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] `piperine-digital-solver` depends on `piperine-abi` and nothing else in the tree; `cargo test -p piperine-solver --test crate_boundaries` passes unedited (`sub_solvers_depend_on_the_abi_crate_only`)
-- [ ] Test `a_delay_is_due_at_the_nearest_tick` passes for delays below, at and above half a tick (C1)
-- [ ] Test `a_time_outside_the_tick_range_is_e0502` passes (C2)
-- [ ] Test `a_nan_delay_is_e0435` and test `an_infinite_delay_never_comes_due` pass (C3, C4)
-- [ ] Test `a_non_advancing_delay_is_the_next_microstep` passes for 0, negative and a quarter of a tick
-- [ ] Test `the_default_tick_is_one_femtosecond` passes
-- [ ] `error::tests::display_is_the_scheduler_message_text` still passes
-- [ ] Gate: full
+- [x] `piperine-digital-solver` depends on `piperine-abi` and nothing else in the tree; `cargo test -p piperine-solver --test crate_boundaries` passes unedited (`sub_solvers_depend_on_the_abi_crate_only`)
+- [x] Test `a_delay_is_due_at_the_nearest_tick` passes for delays below, at and above half a tick (C1)
+- [x] Test `a_time_outside_the_tick_range_is_e0502` passes (C2)
+- [x] Test `a_nan_delay_is_e0435` and test `an_infinite_delay_never_comes_due` pass (C3, C4)
+- [x] Test `a_non_advancing_delay_is_the_next_microstep` passes for 0, negative and a quarter of a tick
+- [x] Test `the_default_tick_is_one_femtosecond` passes
+- [x] `error::tests::display_is_the_scheduler_message_text` still passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -110,13 +110,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_net_starts_as_zero_bytes` passes (C5)
-- [ ] Test `a_write_of_equal_bytes_is_not_a_change` and test `a_change_keeps_the_previous_bytes` pass (C6); `0.0` to `-0.0` is a change and the same NaN bytes are not
-- [ ] Test `changed_reads_one_for_exactly_one_microstep` passes (C7)
-- [ ] Test `an_event_net_fires_without_bytes` passes
-- [ ] Test `a_quiet_net_keeps_no_previous` passes
-- [ ] `Store` is `Clone` and a clone compares equal byte for byte (used by the checkpoint)
-- [ ] Gate: full
+- [x] Test `a_net_starts_as_zero_bytes` passes (C5)
+- [x] Test `a_write_of_equal_bytes_is_not_a_change` and test `a_change_keeps_the_previous_bytes` pass (C6); `0.0` to `-0.0` is a change and the same NaN bytes are not
+- [x] Test `changed_reads_one_for_exactly_one_microstep` passes (C7)
+- [x] Test `an_event_net_fires_without_bytes` passes
+- [x] Test `a_quiet_net_keeps_no_previous` passes
+- [x] `Store` is `Clone` and a clone compares equal byte for byte (used by the checkpoint)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -134,12 +134,12 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `commits_apply_in_made_statement_call_order` passes with three commits to overlapping bytes made in a shuffled order (C13)
-- [ ] Test `transport_removes_later_commits_of_the_same_statement_only` passes: a later-due commit of the same statement and range goes, an earlier-due one stays, another statement's stays (C14)
-- [ ] Test `replace_removes_every_pending_commit_of_the_statement` passes (C15)
-- [ ] Test `disjoint_byte_ranges_of_one_statement_do_not_remove_each_other` passes
-- [ ] Test `next_due_is_the_earliest_instant` passes
-- [ ] Gate: full
+- [x] Test `commits_apply_in_made_statement_call_order` passes with three commits to overlapping bytes made in a shuffled order (C13)
+- [x] Test `transport_removes_later_commits_of_the_same_statement_only` passes: a later-due commit of the same statement and range goes, an earlier-due one stays, another statement's stays (C14)
+- [x] Test `replace_removes_every_pending_commit_of_the_statement` passes (C15)
+- [x] Test `disjoint_byte_ranges_of_one_statement_do_not_remove_each_other` passes
+- [x] Test `next_due_is_the_earliest_instant` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -157,13 +157,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `two_writers_of_one_net_are_refused_naming_both` passes for function against function and function against statement (C8)
-- [ ] Test `unequal_layouts_on_one_net_are_refused` passes (C9)
-- [ ] Test `an_unbound_global_is_refused_unless_optional` passes, with the `OPTIONAL` pin reading zero bytes
-- [ ] Test `later_is_dropped_when_its_bound_is_under_one_tick` passes at resolutions of 1 fs and 1 ns (C18)
-- [ ] Test `a_shape_that_fails_validation_fails_bind` passes
-- [ ] Test `a_net_nobody_writes_is_written_by_the_host` passes
-- [ ] Gate: full
+- [x] Test `two_writers_of_one_net_are_refused_naming_both` passes for function against function and function against statement (C8)
+- [x] Test `unequal_layouts_on_one_net_are_refused` passes (C9)
+- [x] Test `an_unbound_global_is_refused_unless_optional` passes, with the `OPTIONAL` pin reading zero bytes
+- [x] Test `later_is_dropped_when_its_bound_is_under_one_tick` passes at resolutions of 1 fs and 1 ns (C18)
+- [x] Test `a_shape_that_fails_validation_fails_bind` passes
+- [x] Test `a_net_nobody_writes_is_written_by_the_host` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -181,11 +181,11 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_function_runs_after_every_writer_of_its_reads` passes on a diamond and a chain of ten built in a shuffled order (C11, first half)
-- [ ] Test `a_cycle_through_no_relax_net_is_refused_naming_its_functions` passes for two cross-coupled gates and for a self-loop (C10)
-- [ ] Test `a_cycle_through_relax_nets_is_one_relax_step` passes
-- [ ] Test `the_order_is_stable_across_runs` passes: the same input gives the same order (instance index, then function index, break ties)
-- [ ] Gate: full
+- [x] Test `a_function_runs_after_every_writer_of_its_reads` passes on a diamond and a chain of ten built in a shuffled order (C11, first half)
+- [x] Test `a_cycle_through_no_relax_net_is_refused_naming_its_functions` passes for two cross-coupled gates and for a self-loop (C10)
+- [x] Test `a_cycle_through_relax_nets_is_one_relax_step` passes
+- [x] Test `the_order_is_stable_across_runs` passes: the same input gives the same order (instance index, then function index, break ties)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -203,11 +203,11 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Devices: `Inverter` and `And2` (one function), `Dff` (abi.md §11.4), `Timer` (a `START` reaction and a delayed `REPLACE` commit to a private event pin, toggling a `BIT` output), `Counter` (state in a private pin), `Resolver` (two `RELAX` drive pins, one value pin, wired-or with unknown), `Recorder` (a `RECORD` pin), `Checked` (a param with a `check` pin and a setup function that returns `RESHAPE` above a threshold), `Sampler` (a reaction that reads a continuous pin), `Stub` (an `IRREVERSIBLE` reaction)
-- [ ] `bind_by_name(devices, wires) -> DigitalPlan` is a plain function taking a list of (device, pin name to net name); no macro
-- [ ] Test `every_fixture_shape_is_valid` passes
-- [ ] Test `fixtures_bind_into_a_plan` binds a timer, a flip-flop and an inverter
-- [ ] Gate: build
+- [x] Devices: `Inverter` and `And2` (one function), `Dff` (abi.md §11.4), `Timer` (a `START` reaction and a delayed `REPLACE` commit to a private event pin, toggling a `BIT` output), `Counter` (state in a private pin), `Resolver` (two `RELAX` drive pins, one value pin, wired-or with unknown), `Recorder` (a `RECORD` pin), `Checked` (a param with a `check` pin and a setup function that returns `RESHAPE` above a threshold), `Sampler` (a reaction that reads a continuous pin), `Stub` (an `IRREVERSIBLE` reaction)
+- [x] `bind_by_name(devices, wires) -> DigitalPlan` is a plain function taking a list of (device, pin name to net name); no macro
+- [x] Test `every_fixture_shape_is_valid` passes
+- [x] Test `fixtures_bind_into_a_plan` binds a timer, a flip-flop and an inverter
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build
@@ -225,13 +225,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_function_runs_when_a_read_net_changed` and test `a_function_with_unchanged_inputs_is_not_called` pass, counting calls in the device (C11, C12)
-- [ ] Test `every_function_runs_once_at_the_first_instant` passes
-- [ ] Test `a_relax_group_settles_within_its_bound` passes on the resolver with two drivers (C16)
-- [ ] Test `a_moving_known_field_is_zeroed_and_observed` and test `a_moving_field_without_a_known_byte_fails` pass (C17)
-- [ ] Test `a_function_fault_carries_code_tick_and_instance` passes; `RESHAPE` from a function outside the cone is the same error (C25)
-- [ ] Test `changed_is_zero_one_microstep_later` passes
-- [ ] Gate: full
+- [x] Test `a_function_runs_when_a_read_net_changed` and test `a_function_with_unchanged_inputs_is_not_called` pass, counting calls in the device (C11, C12)
+- [x] Test `every_function_runs_once_at_the_first_instant` passes
+- [x] Test `a_relax_group_settles_within_its_bound` passes on the resolver with two drivers (C16)
+- [x] Test `a_moving_known_field_is_zeroed_and_observed` and test `a_moving_field_without_a_known_byte_fails` pass (C17)
+- [x] Test `a_function_fault_carries_code_tick_and_instance` passes; `RESHAPE` from a function outside the cone is the same error (C25)
+- [x] Test `changed_is_zero_one_microstep_later` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -249,13 +249,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_reaction_runs_once_when_its_event_fired` passes (C19)
-- [ ] Test `reactions_of_one_microstep_read_one_snapshot` passes: two flip-flops in a ring swap values (C20)
-- [ ] Test `a_zero_delay_commit_applies_at_the_next_microstep` passes (C21)
-- [ ] Test `a_commit_outside_its_statement_range_is_a_fault` and test `a_later_commit_below_its_bound_is_a_fault` pass (C22)
-- [ ] Test `finish_marks_the_instant_final` passes (C26)
-- [ ] Test `a_reaction_fault_carries_code_tick_and_instance` passes
-- [ ] Gate: full
+- [x] Test `a_reaction_runs_once_when_its_event_fired` passes (C19)
+- [x] Test `reactions_of_one_microstep_read_one_snapshot` passes: two flip-flops in a ring swap values (C20)
+- [x] Test `a_zero_delay_commit_applies_at_the_next_microstep` passes (C21)
+- [x] Test `a_commit_outside_its_statement_range_is_a_fault` and test `a_later_commit_below_its_bound_is_a_fault` pass (C22)
+- [x] Test `finish_marks_the_instant_final` passes (C26)
+- [x] Test `a_reaction_fault_carries_code_tick_and_instance` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -273,14 +273,14 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `the_traced_instant_of_section_15_1` reproduces the table of `docs/spec/part_v_execution.md` §15.1 with `Timer`, `Dff` and a commit standing for the crossing: applied nets, fired events and commits per microstep (C23)
-- [ ] Test `an_instant_that_never_goes_quiet_is_e0501_naming_the_nets` passes with a reaction that toggles its own trigger (C24)
-- [ ] Test `a_quiet_commit_does_not_start_a_microstep` passes (C27)
-- [ ] Test `start_commits_inits_and_fires_start` passes (C28)
-- [ ] Test `a_settle_commit_with_no_delay_is_refused` passes (C29)
-- [ ] Test `an_instant_reports_boundary_fired_and_final` passes with `Sampler` reading its sample (C33)
-- [ ] Test `a_plan_with_no_code_applies_host_commits_only` passes
-- [ ] Gate: full
+- [x] Test `the_traced_instant_of_section_15_1` reproduces the table of `docs/spec/part_v_execution.md` §15.1 with `Timer`, `Dff` and a commit standing for the crossing: applied nets, fired events and commits per microstep (C23)
+- [x] Test `an_instant_that_never_goes_quiet_is_e0501_naming_the_nets` passes with a reaction that toggles its own trigger (C24)
+- [x] Test `a_quiet_commit_does_not_start_a_microstep` passes (C27)
+- [x] Test `start_commits_inits_and_fires_start` passes (C28)
+- [x] Test `a_settle_commit_with_no_delay_is_refused` passes (C29)
+- [x] Test `an_instant_reports_boundary_fired_and_final` passes with `Sampler` reading its sample (C33)
+- [x] Test `a_plan_with_no_code_applies_host_commits_only` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -298,11 +298,11 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `restore_returns_store_queue_and_observations_byte_for_byte` passes and counts zero device calls during `restore` (C30)
-- [ ] Test `two_runs_give_identical_observations` passes on a design with five instances built in two different insertion orders of equal paths (C31)
-- [ ] Test `every_change_commit_and_record_is_observed_in_order` passes; eight records through one statement give eight `Record`s (C37)
-- [ ] Test `observations_after_a_checkpoint_are_gone_after_restore` passes (C38)
-- [ ] Gate: full
+- [x] Test `restore_returns_store_queue_and_observations_byte_for_byte` passes and counts zero device calls during `restore` (C30)
+- [x] Test `two_runs_give_identical_observations` passes on a design with five instances built in two different insertion orders of equal paths (C31)
+- [x] Test `every_change_commit_and_record_is_observed_in_order` passes; eight records through one statement give eight `Record`s (C37)
+- [x] Test `observations_after_a_checkpoint_are_gone_after_restore` passes (C38)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -320,15 +320,16 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `advance_stops_before_the_first_time_point_and_leaves_it_untouched` passes: after `Landing(s)` the store, queue and observations equal their state before instant `s` (C32)
-- [ ] Test `each_clause_of_the_time_point_test_stops_advance` passes with one case per clause: an analog-read net changes; a reaction with a sample read fires; a reaction with a non-`LATER` statement that reaches an analog-read net fires; an `IRREVERSIBLE` reaction fires (C34, first half)
-- [ ] Test `a_free_running_clock_does_not_stop_advance` runs 1000 edges of a `Timer` nobody on the analog side reads inside one `advance` (C34, second half)
-- [ ] Test `a_later_statement_does_not_make_its_instant_a_time_point` passes, and its due instant is tested on its own
-- [ ] Test `a_landing_found_at_a_later_microstep_restores_the_whole_instant` passes (abi.md §5 step 2: a firing at microstep `n > 0`)
-- [ ] Test `horizon_is_before_the_earliest_pending_commit_and_the_limit` and test `tick_is_the_instants_tick` pass (C35)
-- [ ] Test `a_commit_due_after_the_target_stays_pending` and test `times_that_round_to_one_tick_are_one_instant` pass (C36)
-- [ ] Test `advance_returns_final_at_a_finish` passes
-- [ ] Gate: full
+- [x] Test `advance_stops_before_the_first_time_point_and_leaves_it_untouched` passes: after `Landing(s)` the store, queue and observations equal their state before instant `s` (C32)
+- [x] Test `each_clause_of_the_time_point_test_stops_advance` passes with one case per clause: an analog-read net changes; a reaction with a sample read fires; a reaction with a non-`LATER` statement that reaches an analog-read net fires; an `IRREVERSIBLE` reaction fires (C34, first half)
+- [x] Test `a_free_running_clock_does_not_stop_advance` runs 1000 edges of a `Timer` nobody on the analog side reads inside one `advance` (C34, second half)
+- [x] Test `a_later_statement_does_not_make_its_instant_a_time_point` passes, and its due instant is tested on its own
+- [x] Test `a_landing_found_at_a_later_microstep_restores_the_whole_instant` passes (abi.md §5 step 2: a firing at microstep `n > 0`)
+- [x] Test `horizon_is_before_the_earliest_pending_commit_and_the_limit` and test `tick_is_the_instants_tick` pass (C35)
+- [x] Test `a_commit_due_after_the_target_stays_pending` and test `times_that_round_to_one_tick_are_one_instant` pass (C36)
+- [x] Test `horizon_counts_the_commits_other_reactions_make_in_the_same_microstep` passes (C46, added by the round-1 fix: `tests/round1.rs`)
+- [x] Test `advance_returns_final_at_a_finish` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -338,7 +339,7 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 ### T12: Host commits, the parameter cone and the shadow
 
-**What**: `host_commit`, the cone computed at bind, `shadow`, `preview_boundary`.
+**What**: `host_commit`, the cone computed at bind, `shadow` (`preview_boundary` was built here and removed afterwards: see the note under `## Checks`).
 **Where**: `crates/piperine-digital-solver/src/abi/engine.rs` (+ `plan.rs` for the cone, target `tests/host.rs`)
 **Depends on**: T11
 **Reuses**: design `plan` (cone), `engine`; abi.md P5, P6, C6
@@ -346,13 +347,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_host_write_is_a_commit_at_microstep_zero` passes (C39)
-- [ ] Test `a_structural_param_write_during_a_run_is_refused` passes (C40)
-- [ ] Test `the_cone_is_the_functions_fed_by_params_and_globals_only` passes: a function with an input reachable from a statement or a written port is outside it
-- [ ] Test `a_false_check_refuses_the_write_and_changes_nothing` passes with `Checked` (C41)
-- [ ] Test `reshape_on_the_shadow_names_the_instance_and_changes_nothing` passes (C42)
-- [ ] Test `preview_boundary_applies_microstep_zero_on_a_copy` passes: the returned bytes are the post-commit values, the store is unchanged, no reaction ran, nothing was observed (C43)
-- [ ] Gate: full
+- [x] Test `a_host_write_is_a_commit_at_microstep_zero` passes (C39)
+- [x] Test `a_structural_param_write_during_a_run_is_refused` passes (C40)
+- [x] Test `the_cone_is_the_functions_fed_by_params_and_globals_only` passes: a function with an input reachable from a statement or a written port is outside it
+- [x] Test `a_false_check_refuses_the_write_and_changes_nothing` passes with `Checked` (C41)
+- [x] Test `reshape_on_the_shadow_names_the_instance_and_changes_nothing` passes (C42)
+- [x] ~~Test `preview_boundary_applies_microstep_zero_on_a_copy`~~ superseded: the owner solves first, then runs the instant (user: "ABI order: solve, then react (Recommended)"); removed with C43
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
@@ -370,12 +371,12 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `the_crate_depends_on_the_abi_crate_only` reads this crate's manifest
-- [ ] Test `abi_modules_name_no_analog_or_owner_item` scans `src/abi/` for `piperine_analog_solver`, `piperine_solver`, `Netlist`, `Stamp`, `AnalogReference` (C44); test `abi_modules_hold_no_unsafe` passes
-- [ ] Test `the_facade_offers_every_operation_of_the_discrete_side` calls each of `start`, `next_due`, `advance`, `preview_boundary`, `fire`, `run_instant`, `checkpoint`, `restore`, `shadow`, `host_commit`, `drain_observations` once on a small plan, with the argument and result shapes the trait of `solver-abi-core` uses after the obvious conversions (`Tick` and `i64`, `NetId` and `u32`)
-- [ ] `git diff <base>..HEAD --stat -- . ':!crates/piperine-digital-solver'` is empty, and so is the diff of `src/{drivers,events,interface,scheduler,state,topology}.rs`, where `<base>` is the commit before T1; the commit body states the base hash
-- [ ] `cargo test -p piperine-digital-solver --lib` reports the 27 old tests passing (C45), and `cargo test -p piperine-solver` is green
-- [ ] Gate: build
+- [x] Test `the_crate_depends_on_the_abi_crate_only` reads this crate's manifest
+- [x] Test `abi_modules_name_no_analog_or_owner_item` scans `src/abi/` for `piperine_analog_solver`, `piperine_solver`, `Netlist`, `Stamp`, `AnalogReference` (C44); test `abi_modules_hold_no_unsafe` passes
+- [x] Test `the_facade_offers_every_operation_of_the_discrete_side` calls each of `start`, `next_due`, `advance`, `fire`, `run_instant`, `checkpoint`, `restore`, `shadow`, `host_commit`, `drain_observations` once on a small plan, with the argument and result shapes the trait of `solver-abi-core` uses after the obvious conversions (`Tick` and `i64`, `NetId` and `u32`)
+- [x] `git diff <base>..HEAD --stat -- . ':!crates/piperine-digital-solver'` is empty, and so is the diff of `src/{drivers,events,interface,scheduler,state,topology}.rs`, where `<base>` is the commit before T1; the commit body states the base hash
+- [x] `cargo test -p piperine-digital-solver --lib` reports the 27 old tests passing (C45), and `cargo test -p piperine-solver` is green
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build
@@ -487,7 +488,7 @@ Proof: run digital | test an_instant_reports_boundary_fired_and_final ... ok
 **C34** - Each clause of the time-point test stops `advance`, and an instant that reaches nothing analog does not (SAD-15, AC 4 and 5)
 Proof: run digital | test each_clause_of_the_time_point_test_stops_advance ... ok
 
-**C35** - `TICK` is the instant's tick and `HORIZON` is before the earliest pending commit and the owner's limit (SAD-17, AC 7)
+**C35** - `TICK` is the instant's tick and `HORIZON` is before the earliest pending commit and the owner's limit, with one reaction in the microstep (SAD-17, AC 7; the behaviour with several reactions is C46)
 Proof: run digital | test horizon_is_before_the_earliest_pending_commit_and_the_limit ... ok
 
 **C36** - A commit due after the target stays pending; times that round to one tick are one instant (SAD-15, AC 8 and 9)
@@ -511,8 +512,7 @@ Proof: run digital | test a_false_check_refuses_the_write_and_changes_nothing ..
 **C42** - `RESHAPE` on the shadow names the instance and changes nothing (SAD-18, AC 5)
 Proof: run digital | test reshape_on_the_shadow_names_the_instance_and_changes_nothing ... ok
 
-**C43** - The boundary preview of a landing applies microstep 0 on a copy, runs no reaction and changes nothing (SAD-22, AC 10)
-Proof: run digital | test preview_boundary_applies_microstep_zero_on_a_copy ... ok
+*(C43, the boundary preview of a landing, is removed: SAD-22 is superseded by the user's decision "ABI order: solve, then react (Recommended)", solver-completeness context.md. The numbering of the other checks stands.)*
 
 **C44** - The digital crate depends on `piperine-abi` only and its new modules name no analog or owner item (SAD-01, AC 1)
 Proof: run digital | test abi_modules_name_no_analog_or_owner_item ... ok
@@ -520,12 +520,15 @@ Proof: run digital | test abi_modules_name_no_analog_or_owner_item ... ok
 **C45** - The old engine's unit tests pass unchanged (SAD-21)
 Proof: `cargo test -p piperine-digital-solver --lib 2>&1 | grep -E '^test result: ok\. 27 passed'`
 
+**C46** - `HORIZON` is bounded by the commits other reactions make in the same microstep, whatever the call order (SAD-23, AC 11; round-1 finding 1)
+Proof: run digital | test horizon_counts_the_commits_other_reactions_make_in_the_same_microstep ... ok
+
 ---
 
 ## Handoff
 
-**Settled mid-build:** none
-**Dispatched:** none
+**Settled mid-build:** round-2 finding 7 (orchestrator, fix + merge without a third round): when an IRREVERSIBLE reaction fires in a microstep together with others, every reaction of that microstep gets the current tick as HORIZON (the verifier's sound fix); C46 gains an irreversible case; round-1 fix (orchestrator 2026-11-15): HORIZON after the reactions of the microstep (new SAD requirement + check); RELAX rule = every directed cycle must pass through at least one RELAX net, checked per cycle (graph with RELAX nets removed is acyclic), not per component; never-due REPLACE still removes pending commits; host_commit range-checked; P3 canonical check on every write (functions and commits), release builds included, with tests; none
+**Dispatched:** B1 at daa75d37 - returned (T1-T6 bd1bce87..516c7a37; RELAX cycle rule per abi.md D1; host commits never transported); B2 (Sonnet) at f2000f5f - returned (T7-T13 771e775a..f438e312; advance strictly before 'to'; HostWrite error; fixtures Succ..Clockwatch) - returned (core seam adapted 3d000240..28b73be3; preview_boundary + C43 superseded; NetSpec.crossing for integration); Verifier (Opus) at ada78474 - returned (FAIL: 6 findings); Fix pass (Sonnet) + core N2 adapt at 79d28c66 - returned (adapt a7e34a77 + fixes e01e8c0b..dba31035, Closed fbd89891; HORIZON as re-call fixed point (SAD-23/C46)); Verifier round 2 at 7da5885d - returned (finding 7 closed fd84748f)
 **Walked:** not applicable - no screen
 
 ---
