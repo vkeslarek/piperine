@@ -1,6 +1,8 @@
 # IR Interpreter (reference backend, M1 subset) Specification
 
-**Status**: Draft. Not approved. Rewritten for M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S4, S8).
+**Approved**: 2026-11-15 - user: "Concordo e pode disparar"; M1 questions: all recommended options accepted
+
+**Status**: Approved. Rewritten for M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S4, S8).
 
 ## Problem Statement
 
@@ -31,14 +33,14 @@ After `msl-elab` an MSL design exists as an `Ir`, and nothing executes it. The s
 
 ## Assumptions & Open Questions
 
-Rows marked `y` are settled by a recorded decision, by `docs/spec/`, by `abi.md` or by code. Rows marked `n` wait for the user in `.specs/features/e2e-m1/questions.md`.
+Rows marked `y` are settled by a recorded decision, by `docs/spec/`, by `abi.md` or by code. No row is left open: the user answered `.specs/features/e2e-m1/questions.md` on 2026-11-15.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
 | The interpreter is the reference backend and executes the IR | as stated | C3, C6 | y |
 | Jacobians by forward-mode dual numbers | one tangent per differentiable read of the function | S4, user: "Concordo e pode disparar"; abi.md §8 | y |
 | One generic device for every body (INT-Q5) | `Interpreted`, created by a per-body factory that holds the plan | abi.md §3: `Module.data` is "the module's own (an interpreter's IR, an OSDI descriptor)"; §7 "One path" | y |
-| The ABI crate gains a constructor of a `Module` that carries data (Q1) | `piperine_abi::thunk::module_with::<F: Factory>(name, &'static F)`; `Device` and `module::<D>` stay as they are | `Device::prototype()` and `Device::create()` are static functions and `module::<D>` sets `data` to null (`thunk.rs:28`), so one Rust type cannot serve many bodies today. The alternative is `unsafe` thunks outside `piperine-abi`, which its own rule forbids | n |
+| The ABI crate gains a constructor of a `Module` that carries data (Q1) | `piperine_abi::thunk::module_with::<F: Factory>(name, &'static F)`; `Device` and `module::<D>` stay as they are | `Device::prototype()` and `Device::create()` are static functions and `module::<D>` sets `data` to null (`thunk.rs:28`), so one Rust type cannot serve many bodies today. The alternative is `unsafe` thunks outside `piperine-abi`, which its own rule forbids | y - Q1, user 2026-11-15: "Add Factory to abi (Recommended)" |
 | Crate (INT-Q6) | `piperine-interp`: depends on the IR crate, `piperine-abi` and `piperine-solver` | the solver crates may depend only on `piperine-abi` (MD-61), so the arrow can only point this way; the solver dependency is for `Interpreter::circuit` alone | y |
 | Where the IR is turned into a solver circuit | `Interpreter::circuit`, in this crate, until a host crate builds | `piperine-api` does not compile; the function reads only the instance table and a body-to-module map, so moving it later changes no logic | y |
 | Modules live for the process | one leaked `Module` and one leaked factory per body per `Interpreter` | `CircuitBuilder::device` and `Handle::create` take `&'static Module` (`builder.rs:99`, `caller.rs:130`); the count is bounded by the bodies of a design | y |
@@ -47,7 +49,7 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/`, by `abi.md`
 | `limit` on its first iteration | from the seed, and never below it (§18 rule 2) | abi.md A2 gives the seed rule; its §11.2 example omits rule 2, the specification states it | y |
 | Backend comparison (INT-Q3) | discrete bit for bit, analog within the session tolerances | S8; nothing to compare in M1 | y |
 
-**Open questions:** Q1 of `.specs/features/e2e-m1/questions.md` (the addition to `piperine-abi`). Everything else is resolved above.
+**Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.
 
 **Implicit-requirement dimensions.** Input validation and bounds: INT-01 AC 3 (an IR that fails `check()`), INT-05. Failure states: INT-05. Idempotency: INT-02 AC 5 (purity, abi.md F1). Auth and rate limits: N/A because it is an in-process library. Concurrency and ordering: INT-02 AC 5; the device is `Send` and keeps no state between calls. Data lifecycle: the leaked modules, stated above. Observability: INT-05 AC 2 (origins in faults); every pin, term, input and function carries its `origin`. External-dependency failure: N/A because nothing external is called. State-transition integrity: N/A because the device has no memory (abi.md §0 item 2).
 
