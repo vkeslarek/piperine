@@ -344,12 +344,12 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] The adapters convert and forward; neither holds a rule of its own (the commit body lists every method and the call it forwards to)
-- [ ] Test `a_mixed_loop_settles_at_its_operating_point` passes with a comparator, a flip-flop and a DAC: the consistent point is reached and a counting device sees `SETTLE` once
-- [ ] Test `operating_point_rounds_beyond_the_bound_are_e0506` passes with the loop wired as an oscillator, naming its nets
-- [ ] Test `globals_hold_the_session_values` reads `TEMPERATURE`, `RESOLUTION`, `DC` and a `NAMED` session parameter from inside a device
-- [ ] The `Element` branch of the mixed loop is unchanged (it is deleted in Phase 5)
-- [ ] Gate: full
+- [x] The adapters convert and forward; neither holds a rule of its own (the commit body lists every method and the call it forwards to)
+- [x] Test `a_mixed_loop_settles_at_its_operating_point` passes with a comparator, a flip-flop and a DAC: the consistent point is reached and a counting device sees `SETTLE` once
+- [x] Test `operating_point_rounds_beyond_the_bound_are_e0506` passes with the loop wired as an oscillator, naming its nets
+- [x] Test `globals_hold_the_session_values` reads `TEMPERATURE`, `RESOLUTION`, `DC` and a `NAMED` session parameter from inside a device
+- [x] The `Element` branch of the mixed loop is unchanged (it is deleted in Phase 5)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

@@ -10,6 +10,7 @@
 //! analysis, never up into the host.
 
 pub mod ac;
+pub(crate) mod adapters;
 pub mod adjoint;
 pub mod context;
 pub mod dc;

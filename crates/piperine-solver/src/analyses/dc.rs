@@ -257,13 +257,7 @@ impl DcSystem<'_> {
             Some(row) => row.to_vec(),
             None => vec![0.0; state.size()],
         };
-        let amb = Ambient {
-            time: 0.0,
-            freq: 0.0,
-            is_static: true,
-            gmin: self.context.tolerances.gmin + self.gmin_extra,
-            source_scale: self.src_scale,
-        };
+        let amb = self.ambient();
         let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
         let mut all_stamps = bound.analog.assemble_dc(&x, amb)?;
         if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", &all_stamps) {
@@ -271,6 +265,18 @@ impl DcSystem<'_> {
         }
         self.push_solver_stamps(&mut all_stamps);
         Ok(all_stamps)
+    }
+
+    /// The coordinates of an equilibrium solve (abi.md §4.2): `STATIC`, with
+    /// the homotopy's continuation values as `GMIN` and `SOURCE_SCALE`.
+    pub(crate) fn ambient(&self) -> Ambient {
+        Ambient {
+            time: 0.0,
+            freq: 0.0,
+            is_static: true,
+            gmin: self.context.tolerances.gmin + self.gmin_extra,
+            source_scale: self.src_scale,
+        }
     }
 
     /// What the solver adds to every circuit: the gmin-stepping shunt, the
@@ -329,6 +335,8 @@ pub struct DcSolver<'a> {
     /// the bias point under an AC sweep) overrides it via
     /// [`Self::set_analysis_kind`] — the outer analysis owns `finish_analysis`.
     analysis_kind: crate::analyses::AnalysisKind,
+    /// The homotopy that converged the first equilibrium of a circuit of devices.
+    homotopy_strategy: Option<&'static str>,
 }
 
 impl<'a> DcSolver<'a> {
@@ -379,6 +387,7 @@ impl<'a> DcSolver<'a> {
             device_checkpoint: Vec::new(),
             assembly_checkpoint: None,
             analysis_kind: crate::analyses::AnalysisKind::Dc,
+            homotopy_strategy: None,
         })
     }
 
@@ -408,7 +417,74 @@ impl<'a> DcSolver<'a> {
         Ok(invalidation)
     }
 
+    /// One equilibrium solve of a circuit of devices: the first runs the
+    /// convergence plan (plain Newton, then the homotopies), a later round
+    /// re-solves from the last solution with damped Newton, as the mixed
+    /// loop of the `Element` branch does.
+    pub(crate) fn equilibrium(&mut self, first: bool) -> crate::core::result::Result<ndarray::Array1<f64>> {
+        if first {
+            let plan = ConvergencePlan::default().with_trace(self.policy.trace);
+            let outcome = plan.solve(self)?;
+            self.homotopy_strategy = outcome.strategy;
+            return Ok(outcome.solution);
+        }
+        let strategy = piperine_analog_solver::convergence::DampedNewton;
+        let policy = self.policy.clone();
+        let tolerances = self.system.context.tolerances.clone();
+        self.solver.solve_with_strategy(&mut self.system, &strategy, &tolerances, &policy)
+    }
+
+    /// The operating point of a circuit of devices, through the protocol
+    /// (abi.md §10): the digital engine leaves the circuit for the run and
+    /// comes back after it, whatever the outcome.
+    fn solve_device(&mut self) -> crate::core::result::Result<DcAnalysisResult> {
+        use crate::analyses::adapters::{DigitalSide, EquilibriumSide, empty_digital};
+        use crate::protocol::{Protocol, ProtocolOptions};
+        self.solver.reset_iteration_counter();
+        self.newton_calls = 0;
+        let bound = self.system.circuit.abi.as_mut().expect("a circuit of devices");
+        let spt = bound.digital.plan().resolution.seconds_per_tick;
+        let digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        let side = DigitalSide::new(digital, bound, piperine_abi::raw::global::DC);
+        let mut protocol =
+            Protocol::new(side, EquilibriumSide { dc: self, solution: None }, ProtocolOptions::new(spt));
+        let ran = protocol.operating_point();
+        let (side, analog) = protocol.into_sides();
+        let solution = analog.solution;
+        if let Some(bound) = self.system.circuit.abi.as_mut() {
+            bound.digital = side.into_digital();
+        }
+        ran?;
+        // A design with no continuous pin runs its instants with no solve.
+        let mut values = HashMap::new();
+        if let Some(solution) = solution {
+            for reference in self.system.circuit.netlist().all_references() {
+                if let Some(i) = reference.idx() {
+                    values.insert(reference.variable().clone(), solution[i]);
+                }
+            }
+        }
+        let mut result = DcAnalysisResult::new(values);
+        result.stats.newton_iterations = self.solver.total_iterations();
+        result.stats.converged = true;
+        result.stats.homotopy_strategy = self.homotopy_strategy.map(str::to_string);
+        result.stats.homotopy_levels = self.newton_calls.saturating_sub(1);
+        result.stats.assembly_time_ns = self.solver.assembly_time_ns();
+        result.stats.solve_time_ns = self.solver.solve_time_ns();
+        Ok(result)
+    }
+
     pub fn solve(&mut self) -> crate::core::result::Result<DcAnalysisResult> {
+        // SPEC_DEVIATION: the bias point under an AC sweep stays an analog
+        // equilibrium on the discrete values bind seeded; every other
+        // operating point of a circuit of devices runs the protocol.
+        // Reason: the protocol fires `START` at an operating point (abi.md
+        // §10), and `abi_ac.rs` counts reactions from before the AC driver's
+        // bias point; a surviving test is not edited (reported to the
+        // orchestrator).
+        if self.system.circuit.abi.is_some() && self.analysis_kind != crate::analyses::AnalysisKind::Ac {
+            return self.solve_device();
+        }
         let plan = ConvergencePlan::default().with_trace(self.policy.trace);
         let max_ms_iter = plan.limits().max_mixed_signal_iter;
         self.solver.reset_iteration_counter();

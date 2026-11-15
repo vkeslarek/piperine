@@ -114,6 +114,9 @@ pub struct Bound {
     pub holds: Vec<Hold>,
     /// The smallest non-zero `abstol` of the pins on each node.
     pub vntol: HashMap<NodeIdentifier, f64>,
+    /// The analysis-kind globals some pin reads (`DC`, `TRAN`, `AC`, `NOISE`):
+    /// the constant, its net and the bytes that mean "this analysis runs".
+    pub analyses: Vec<(u32, NetId, Vec<u8>)>,
 }
 
 impl Bound {
@@ -302,6 +305,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
     let mut holds = Vec::new();
     let mut vntol: HashMap<NodeIdentifier, f64> = HashMap::new();
     let mut params = HashMap::new();
+    let mut analyses: Vec<(u32, NetId, Vec<u8>)> = Vec::new();
 
     for spec in &specs {
         let path = spec.path.as_str();
@@ -455,6 +459,13 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                             if nets.specs[n].init.is_empty() {
                                 nets.specs[n].init = seed.unwrap_or_default();
                             }
+                            let flag = matches!(pin.global, global::DC | global::TRAN | global::AC | global::NOISE);
+                            if flag && !analyses.iter().any(|(g, _, _)| *g == pin.global) {
+                                let on = encode(&pin.layout, &ParamValue::Bool(true))
+                                    .or_else(|_| encode(&pin.layout, &ParamValue::Real(1.0)))
+                                    .map_err(|e| bind_error(path, format!("`{pname}`: {e}")))?;
+                                analyses.push((pin.global, NetId(n as u32), on));
+                            }
                             Some(n)
                         }
                         _ => Some(nets.add(&private, pin)),
@@ -577,5 +588,5 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         }
     }
     let digital = Digital::new(digital_plan, DigitalLimits::default());
-    Ok(Bound { analog, digital, names, holds, vntol })
+    Ok(Bound { analog, digital, names, holds, vntol, analyses })
 }

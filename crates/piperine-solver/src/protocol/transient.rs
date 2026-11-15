@@ -111,6 +111,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         &self.analog
     }
 
+    /// Gives both sides back.
+    pub fn into_sides(self) -> (D, A) {
+        (self.discrete, self.analog)
+    }
+
     /// The last accepted time.
     pub fn now(&self) -> f64 {
         self.now
