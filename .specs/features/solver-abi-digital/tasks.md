@@ -110,13 +110,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_net_starts_as_zero_bytes` passes (C5)
-- [ ] Test `a_write_of_equal_bytes_is_not_a_change` and test `a_change_keeps_the_previous_bytes` pass (C6); `0.0` to `-0.0` is a change and the same NaN bytes are not
-- [ ] Test `changed_reads_one_for_exactly_one_microstep` passes (C7)
-- [ ] Test `an_event_net_fires_without_bytes` passes
-- [ ] Test `a_quiet_net_keeps_no_previous` passes
-- [ ] `Store` is `Clone` and a clone compares equal byte for byte (used by the checkpoint)
-- [ ] Gate: full
+- [x] Test `a_net_starts_as_zero_bytes` passes (C5)
+- [x] Test `a_write_of_equal_bytes_is_not_a_change` and test `a_change_keeps_the_previous_bytes` pass (C6); `0.0` to `-0.0` is a change and the same NaN bytes are not
+- [x] Test `changed_reads_one_for_exactly_one_microstep` passes (C7)
+- [x] Test `an_event_net_fires_without_bytes` passes
+- [x] Test `a_quiet_net_keeps_no_previous` passes
+- [x] `Store` is `Clone` and a clone compares equal byte for byte (used by the checkpoint)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
