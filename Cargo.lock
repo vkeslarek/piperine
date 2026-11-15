@@ -1485,6 +1485,7 @@ dependencies = [
  "chumsky",
  "logos",
  "miette",
+ "piperine-ir",
  "serde",
  "serde_json",
  "stacker",

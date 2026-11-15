@@ -120,12 +120,12 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `crates/piperine-lang/Cargo.toml` depends on `piperine-ir` by path; `lib.rs` exports `elab`
-- [ ] `Origin` of every IR item is `file:line:col` computed from its span
-- [ ] Any diagnostic means `Err` and no `Ir`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `front_end_diagnostics_are_returned_without_an_ir`, `an_unknown_or_ported_top_is_one_diagnostic`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `crates/piperine-lang/Cargo.toml` depends on `piperine-ir` by path; `lib.rs` exports `elab`
+- [x] `Origin` of every IR item is `file:line:col` computed from its span
+- [x] Any diagnostic means `Err` and no `Ir`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `front_end_diagnostics_are_returned_without_an_ir`, `an_unknown_or_ported_top_is_one_diagnostic`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
