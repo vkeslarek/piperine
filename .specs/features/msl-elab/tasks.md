@@ -19,7 +19,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run analog**: `cargo test -p piperine-lang --test elab_analog`
 **Run unlowered**: `cargo test -p piperine-lang --test elab_unlowered`
 
-Executors: Sonnet implements T1 to T6 and T8 to T10; Opus implements T7 (the contribution split: a wrong sign or a misplaced `ddt` is a silent wrong answer); Opus verifies the feature. The worktree and branch are told at dispatch. This feature runs in wave 2: it needs `msl-ir` (the crate `piperine-ir`, its `IrBuilder`, printer, `check()` and golden texts) and `msl-typeck` (`piperine_lang::types`) merged into the worktree first.
+Executors: Sonnet implements T1 to T6 and T8 to T10; Opus implements T7 (the contribution split: a wrong sign or a misplaced `ddt` is a silent wrong answer); Opus verifies the feature. The worktree and branch are told at dispatch. This feature runs in wave 2: it needs `msl-ir` (the crate `piperine-ir`, its `IrBuilder`, printer, `check()` and structural golden texts) and `msl-typeck` (`piperine_lang::types`) merged into the worktree first.
 
 Rules every task follows:
 
@@ -30,7 +30,7 @@ Rules every task follows:
 - The M1 corpus is `tests/ngspice/devices.msl` and the six twins beside it, read from disk by tests (`CARGO_MANIFEST_DIR/../../tests/ngspice`). They are not edited.
 - **Every `Ir` returned passes `Ir::check()`**; each test that gets an `Ir` asserts it.
 - **Constants are folded, params never** (ELAB-02 AC 5 and 6): a host `set` must reach the solver without re-elaboration (MD-18).
-- **The printed IR is the contract with `ir-interp`.** The bodies elaborated from `tests/ngspice/devices.msl` must print byte for byte as `crates/piperine-ir/tests/golden/{resistor,capacitor,vsource,isource,diode}.txt`. A difference is settled by reading `devices.msl`: whichever side misreads it is fixed, and a change to a golden of `piperine-ir` is reported in the batch summary.
+- **The printed IR is the contract with `ir-interp`.** The bodies elaborated from `tests/ngspice/devices.msl`, printed in structural form (`Ir::print_structural`: no origins, arena order not significant), must equal `crates/piperine-ir/tests/golden/{resistor,capacitor,vsource,isource,diode}.txt` byte for byte. A difference is settled by reading `devices.msl`: whichever side misreads it is fixed, and a change to a golden of `piperine-ir` is reported in the batch summary.
 - Tests compare printed IR, paths and diagnostics; they never reach into crate-private lowering state.
 - **Fail loud.** A form the code does not handle is a diagnostic, a `Fault` or an entry of `check()`, never a silent default.
 - **AGENTS.md idiom rules bind**: no loose function (every `fn` is a method of a struct or a trait), no macro of your own (`macro_rules!`, proc-macros; derives are fine), modules named after what they do, no `unwrap()`/`expect()` on a user-input path.
@@ -48,7 +48,7 @@ Rules every task follows:
 
 | Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
 | ---------- | ------------------ | -------------------- | ---------------- | ----------- |
-| Entry point, determinism, the corpus, golden IR | unit | each AC of ELAB-01 and ELAB-05; one golden file per twin; device bodies equal to `piperine-ir`'s goldens | `crates/piperine-lang/tests/elab_entry.rs`, `tests/fixtures/elab/*.txt` | `cargo test -p piperine-lang --test elab_entry` |
+| Entry point, determinism, the corpus, golden IR | unit | each AC of ELAB-01 and ELAB-05; one golden file per twin; device bodies equal to `piperine-ir`'s structural goldens | `crates/piperine-lang/tests/elab_entry.rs`, `tests/fixtures/elab/*.txt` | `cargo test -p piperine-lang --test elab_entry` |
 | Constants and params | unit | each AC of ELAB-02, each code with its span and path | `crates/piperine-lang/tests/elab_params.rs` | `cargo test -p piperine-lang --test elab_params` |
 | Instances, nodes, paths | unit | each AC of ELAB-03 and edge cases 1 to 3 | `crates/piperine-lang/tests/elab_instances.rs` | `cargo test -p piperine-lang --test elab_instances` |
 | Analog lowering | unit | each AC of ELAB-04 and edge case 4; every sign and parenthesis form of the split | `crates/piperine-lang/tests/elab_analog.rs` | `cargo test -p piperine-lang --test elab_analog` |
@@ -280,7 +280,7 @@ T8 → T9 → T10
 - [ ] `a - (b + ddt(x))` gives a direct addend `a - b` and a negated `ddt` addend `x`; `-ddt(x)` and `i(n, p) +> ddt(x)` both negate
 - [ ] `E0241` and `E0415` each asserted with its span
 - [ ] A `ddt` that is not a whole top-level leaf of a flow contribution is refused (the code and message land in T8's table)
-- [ ] The five device bodies print byte for byte as `crates/piperine-ir/tests/golden/*.txt`
+- [ ] The five device bodies, printed in structural form, equal `crates/piperine-ir/tests/golden/*.txt` byte for byte
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `a_branch_is_one_unordered_pair_with_its_kind`, `a_sum_splits_into_direct_and_ddt_addends`, `a_reversed_pair_negates_its_addends`, `a_branch_from_a_node_to_itself_is_e0241`, `potential_and_flow_on_one_branch_is_e0415`, `a_single_addend_is_one_direct_addend`
 - [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
 - [ ] Test count: the tests named above, and no existing test removed
@@ -330,7 +330,7 @@ T8 → T9 → T10
 **Done when**:
 
 - [ ] `crates/piperine-lang/tests/fixtures/elab/{divider,diode_iv,diode_series,ac_rc,tran_rc,isrc_r}.txt` exist and are compared byte for byte
-- [ ] `device_bodies_match_the_ir_goldens` compares the five bodies with `crates/piperine-ir/tests/golden/*.txt`
+- [ ] `device_bodies_match_the_ir_goldens` compares the five bodies, in structural form (`Ir::print_structural`), with `crates/piperine-ir/tests/golden/*.txt`
 - [ ] Every `Ir` has an empty `check()`; `TranRc.out` has initial potential 0
 - [ ] Every negative test of the feature asserts a code and a span inside the source, and a path where an instance is named
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_entry`: `a_twin_elaborates_to_a_checked_ir`, `the_design_is_unchanged_by_elaboration`, `elaborating_twice_prints_the_same_text`, `every_diagnostic_has_code_span_and_path`, `the_twins_elaborate_without_diagnostics`

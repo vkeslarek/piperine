@@ -225,6 +225,6 @@ ELAB-07 (metadata), ELAB-08 (boundary reachability) and ELAB-09 (definition orde
 ## Success Criteria
 
 - [ ] The five twins elaborate, and one golden file per twin pins the printed IR.
-- [ ] The printed bodies of the five devices equal the golden texts `msl-ir` pins for its hand-built ones: that text is the contract `ir-interp` is tested on.
+- [ ] The bodies of the five devices, printed in structural form (`Ir::print_structural`: no origins, arena order not significant), equal the structural golden texts `msl-ir` pins for its hand-built ones: that form is the contract `ir-interp` is tested on.
 - [ ] Every error code named in this spec has a negative fixture asserting the code and the span.
 - [ ] No test finds a `Design` changed by elaboration.
