@@ -1,6 +1,6 @@
 # msl-typeck proofs
 
-**HEAD**: 01bae5c9
+**HEAD**: fb93fde8
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 44 pass, 0 fail
@@ -58,10 +58,10 @@
 
 ```
 running 7 tests
-test a_design_with_diagnostics_gives_them_back ... ok
 test checking_twice_gives_equal_tables ... ok
-test a_const_is_typed_once_by_its_declared_type ... ok
 test an_unknown_top_is_one_diagnostic ... ok
+test a_design_with_diagnostics_gives_them_back ... ok
+test a_const_is_typed_once_by_its_declared_type ... ok
 test every_diagnostic_has_a_span_and_a_code ... ok
 test the_design_is_unchanged_by_the_check ... ok
 test the_reachable_set_of_a_twin_is_typed ... ok
@@ -75,12 +75,12 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run values` - exit 0
 
 ```
-test an_unsupported_form_does_not_hide_an_independent_error ... ok
-test catalogue_methods_on_f64_are_f64 ... ok
-test a_closure_outside_an_argument_is_p0001 ... ok
 test literals_are_f64_or_bool ... ok
-test a_function_is_a_value_only_as_an_argument ... ok
+test a_closure_outside_an_argument_is_p0001 ... ok
+test catalogue_methods_on_f64_are_f64 ... ok
 test diagnostics_come_in_source_order_one_per_expression ... ok
+test a_function_is_a_value_only_as_an_argument ... ok
+test an_unsupported_form_does_not_hide_an_independent_error ... ok
 test a_closure_takes_its_types_from_the_parameter ... ok
 test operators_type_as_rust_types_them ... ok
 test a_call_takes_its_declared_result ... ok
@@ -95,15 +95,15 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run modules` - exit 0
 
 ```
-test a_default_of_the_wrong_type_is_rejected ... ok
-test a_where_on_a_module_or_fn_is_bool ... ok
-test a_node_of_another_nature_is_e0251 ... ok
 test a_node_init_that_is_not_f64_is_e0210 ... ok
 test a_where_that_is_not_bool_is_e0318 ... ok
-test an_environment_function_in_a_const_context_is_e0323 ... ok
-test ports_and_signals_are_nodes_and_gnd_fits_any ... ok
-test a_core_primitive_is_checked_where_it_is_written ... ok
+test a_default_of_the_wrong_type_is_rejected ... ok
 test params_are_f64_or_bool ... ok
+test a_node_of_another_nature_is_e0251 ... ok
+test an_environment_function_in_a_const_context_is_e0323 ... ok
+test a_core_primitive_is_checked_where_it_is_written ... ok
+test ports_and_signals_are_nodes_and_gnd_fits_any ... ok
+test a_where_on_a_module_or_fn_is_bool ... ok
 test a_placement_checks_nodes_count_and_params ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
@@ -116,16 +116,16 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 8 tests
+test probe_nodes_of_two_natures_are_e0240 ... ok
 test a_contribution_that_is_not_f64_is_e0417 ... ok
 test a_contribution_target_that_is_no_probe_is_e0410 ... ok
-test probe_nodes_of_two_natures_are_e0240 ... ok
 test a_core_primitive_in_a_fn_is_e0450 ... ok
 test potential_probes_are_f64 ... ok
 test limit_checks_its_input_function_and_seed ... ok
 test ddt_ac_stim_and_environment_are_f64 ... ok
 test the_std_vt_checks_clean ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
      Running tests/types_analog.rs (/var/tmp/piperine-target/debug/deps/types_analog-560800edb3a3438e)

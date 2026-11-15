@@ -11,7 +11,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/msl-typeck/design.md`
-**Status**: Approved
+**Status**: Done
+**Verdict**: PASS
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run entry**: `cargo test -p piperine-lang --test types_entry`
 **Run values**: `cargo test -p piperine-lang --test types_values`
@@ -690,7 +691,7 @@ Proof: run values | test a_closure_outside_an_argument_is_p0001 ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** 2026-11-15 batches 1-2 done (0f7d03cf); proofs 38/38; Verifier round 1 (Opus) in ../piperine-msl-typeck
+**Dispatched:** 2026-11-15 batches 1-2 done (0f7d03cf); proofs 38/38; Verifier rounds 1-2 (Opus) done; round-2 findings F7-F11 closed by 8a9228d5; no third round, ready to merge
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---
