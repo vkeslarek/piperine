@@ -1,7 +1,8 @@
 //! The owner's one sink (abi.md C5, A5, §12 "Watch it"). Observations of the
 //! discrete side wait in a buffer the checkpoint covers and reach the host's
 //! `Sink` only after the acceptance that makes them final, in instant order;
-//! an undone instant leaves nothing. With no sink nothing is kept.
+//! an undone instant leaves nothing. Trace records of the analog side are
+//! delivered after every attempt, rejected or not. With no sink nothing is kept.
 
 use super::sides::{AnalysisKind, Observation};
 
@@ -44,6 +45,19 @@ impl Delivery {
             o.analysis = analysis;
             self.pending.push(o);
         }
+    }
+
+    /// Delivers what `drain` yields at once, whatever happens to the step
+    /// (abi.md A5: traces of a rejected attempt are delivered too).
+    pub(super) fn deliver_now(&mut self, analysis: AnalysisKind, drain: impl FnOnce(&mut Vec<Observation>)) {
+        drain(&mut self.scratch);
+        if let Some(sink) = self.sink.as_mut() {
+            for o in self.scratch.iter_mut() {
+                o.analysis = analysis;
+                sink.observe(o);
+            }
+        }
+        self.scratch.clear();
     }
 
     /// Delivers everything buffered: it is final.

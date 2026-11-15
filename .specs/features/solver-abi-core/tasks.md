@@ -394,11 +394,11 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Test `observations_reach_the_sink_after_acceptance_in_instant_order` passes with path, analysis kind and time on each (C36)
-- [ ] Test `an_undone_instant_delivers_nothing` passes (C37)
-- [ ] Test `a_trace_of_a_rejected_attempt_is_delivered_with_its_iteration` passes
-- [ ] Test `no_sink_means_observations_are_dropped_not_kept` passes (no unbounded buffer)
-- [ ] Gate: full
+- [x] Test `observations_reach_the_sink_after_acceptance_in_instant_order` passes with path, analysis kind and time on each (C36)
+- [x] Test `an_undone_instant_delivers_nothing` passes (C37)
+- [x] Test `a_trace_of_a_rejected_attempt_is_delivered_with_its_iteration` passes
+- [x] Test `no_sink_means_observations_are_dropped_not_kept` passes (no unbounded buffer)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

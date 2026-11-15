@@ -36,6 +36,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             if unknowns {
                 rounds += 1;
                 let accepted = self.analog.equilibrium()?;
+                let analog = &mut self.analog;
+                self.delivery.deliver_now(analysis, |out| analog.drain_traces(out));
                 for net in &accepted.fired {
                     self.discrete.fire(*net, at)?;
                 }

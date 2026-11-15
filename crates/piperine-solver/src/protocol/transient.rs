@@ -179,7 +179,10 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 if exempt {
                     self.analog.deliver(&preview);
                 }
-                match self.analog.attempt(t_c, exempt).map_err(|e| at(t_c, e))? {
+                let attempt = self.analog.attempt(t_c, exempt).map_err(|e| at(t_c, e))?;
+                let analog = &mut self.analog;
+                self.delivery.deliver_now(AnalysisKind::Transient, |out| analog.drain_traces(out));
+                match attempt {
                     Attempt::Converged => {}
                     Attempt::Rejected => {
                         self.restore(&c);
