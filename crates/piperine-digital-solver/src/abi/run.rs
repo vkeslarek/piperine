@@ -111,6 +111,23 @@ pub fn fire_net(plan: &DigitalPlan, store: &mut Store, dirty: &mut DirtySet, obs
     dirty.mark_net(plan, net);
 }
 
+/// P3 on a net after a write: a field whose known byte is 0 holds no value, so its value bytes are
+/// zero. `who` names the writer.
+pub fn check_canonical(plan: &DigitalPlan, store: &Store, net: NetId, at: Tick, who: &str) -> Result<(), DigitalError> {
+    let spec = &plan.nets[net.0 as usize];
+    match plan.net_layout(net) {
+        Some(layout) if spec.kind == NetKind::Discrete && !is_canonical(layout, store.value(net)) => {
+            Err(DigitalError::Fault {
+                code: 0,
+                message: format!("net `{}` holds non-canonical bytes after a write (P3: a field with a known byte of 0 is all zero)", spec.name),
+                tick: at.0,
+                instance: who.to_string(),
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
 /// One input or output buffer of `len` bytes, filled with what `cell` names.
 fn cell_bytes(
     pins: &[Binding],
@@ -199,7 +216,7 @@ fn call_function(
         let pin = shape.pins.get(c.index as usize).expect("bind validated the index");
         let event = plan.nets[net.0 as usize].kind == NetKind::Event;
         let bytes = buf.bytes().to_vec();
-        if cfg!(debug_assertions) && !event && !is_canonical(&pin.layout, &bytes) {
+        if !event && !is_canonical(&pin.layout, &bytes) {
             return Err(Stop::Error(DigitalError::Fault {
                 code: 0,
                 message: format!("function {} wrote non-canonical bytes to pin {} (P3)", func.name.as_str(), pin.name.as_str()),

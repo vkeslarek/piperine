@@ -102,3 +102,37 @@ fn a_host_write_outside_its_net_fails_loud_and_changes_nothing() {
     d.host_commit(NetId(0), 0, &[1, 1], Tick(1)).expect("the whole net is in range");
     instant(&mut d, Tick(1));
 }
+
+#[test]
+fn a_non_canonical_write_is_a_fault_through_a_function_a_commit_and_the_host() {
+    // finding 6, abi.md P3: a field whose known byte is 0 holds no value, so its value bytes are zero.
+    // Checked on every write, in release builds too.
+    use piperine_digital_solver::error::DigitalError;
+    let fault = |r: Result<_, DigitalError>, what: &str| match r {
+        Err(DigitalError::Fault { message, .. }) => assert!(message.contains("P3") && message.contains(what), "{message}"),
+        other => panic!("expected a P3 fault naming {what}, got {other:?}"),
+    };
+    let mut d = engine(vec![("s", sloppy(), vec![("a", "a"), ("y", "y"), ("z", "z"), ("go", "go")])]);
+    d.start().unwrap();
+    d.host_commit(net(&d, "a"), 0, &HIGH, Tick(1)).unwrap();
+    fault(d.run_instant(Tick(1), &[], Horizon::uniform(Tick(9)), Mode::default()), "y");
+
+    let mut d = engine(vec![("s", sloppy(), vec![("a", "a"), ("y", "y"), ("z", "z"), ("go", "go")])]);
+    d.start().unwrap();
+    d.fire(net(&d, "go"), Tick(1)).unwrap();
+    fault(d.run_instant(Tick(1), &[], Horizon::uniform(Tick(9)), Mode::default()), "z");
+
+    // a host commit is a write too
+    let mut d = engine(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])]);
+    d.start().unwrap();
+    d.host_commit(net(&d, "a"), 0, &[1, 0], Tick(1)).unwrap();
+    fault(d.run_instant(Tick(1), &[], Horizon::uniform(Tick(9)), Mode::default()), "a");
+
+    // canonical bytes pass: known high, and no value at all
+    let mut d = engine(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])]);
+    d.start().unwrap();
+    d.host_commit(net(&d, "a"), 0, &HIGH, Tick(1)).unwrap();
+    d.host_commit(net(&d, "a"), 0, &[0, 0], Tick(2)).unwrap();
+    instant(&mut d, Tick(1));
+    instant(&mut d, Tick(2));
+}

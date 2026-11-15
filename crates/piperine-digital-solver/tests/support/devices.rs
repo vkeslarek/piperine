@@ -947,6 +947,51 @@ pub fn clockwatch() -> Handle {
     make::<Clockwatch>(&CLOCKWATCH, "clockwatch")
 }
 
+// ─── Sloppy ─────────────────────────────────────────────────────────────────
+
+/// Writes a value with its known byte clear (`[1, 0]`: abi.md P3 says such a field is all zero), once
+/// through a function and once through a commit.
+///
+/// pins: a=0, y=1, z=2 (PORT BIT); go=3 (PORT event)
+/// fn 0 "bad": reads [a] writes [y]; y <- [1, 0] when a is high     reaction 0: on [go] writes [S0 {z}]; z <- [1, 0]
+pub struct Sloppy;
+static SLOPPY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SLOPPY: OnceLock<Module> = OnceLock::new();
+
+fn sloppy_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
+    let y = s.pin(PinSpec::discrete("y", role::PORT, &BIT));
+    let z = s.pin(PinSpec::discrete("z", role::PORT, &BIT));
+    let go = s.pin(PinSpec::event("go", role::PORT));
+    s.function(FunctionSpec { name: "bad", reads: vec![pin(a)], writes: vec![pin(y)], ..FunctionSpec::default() });
+    s.reaction(ReactionSpec { name: "bad", on: vec![go], writes: vec![statement(z, 2, 0)], ..ReactionSpec::default() });
+    s.freeze()
+}
+
+impl Device for Sloppy {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SLOPPY_SHAPE, sloppy_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Sloppy, Arc::clone(shared(&SLOPPY_SHAPE, sloppy_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if cx.bytes(0) == HIGH {
+            cx.out_bytes(0).copy_from_slice(&[1, 0]);
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        cx.commit(0, &[1, 0], 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn sloppy() -> Handle {
+    make::<Sloppy>(&SLOPPY, "sloppy")
+}
+
 // ─── Binding by name ────────────────────────────────────────────────────────
 
 /// One device to place: its path, the live instance and `(pin name, net name)` wires.

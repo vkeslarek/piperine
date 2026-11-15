@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use super::engine::{Digital, Horizon, Mode, Outcome};
 use super::net::{NetId, NetKind};
 use super::queue::Writer;
-use super::run::{Ambient, fire_net, fired_reactions, run_functions, run_reactions, write_net};
+use super::run::{Ambient, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
 use piperine_abi::raw::reaction_flag;
 use super::tick::Tick;
 use crate::error::DigitalError;
@@ -23,6 +23,14 @@ pub(crate) enum Stepped {
 }
 
 impl Digital {
+    /// Who made a commit, for an error: the instance's path, or the host.
+    fn writer_name(&self, writer: Writer) -> String {
+        match writer {
+            Writer::Host => "host".to_string(),
+            Writer::Reaction { instance, .. } => self.plan.instances[instance as usize].path.clone(),
+        }
+    }
+
     /// `HORIZON`: the last tick before the earliest pending commit and before `limit`, never
     /// before the instant itself (abi.md §5 R5).
     pub(crate) fn horizon(&self, at: Tick, limit: Tick) -> Tick {
@@ -68,6 +76,7 @@ impl Digital {
             let here = (at, n);
             self.store.begin_microstep();
             self.call = 0;
+            let mut written: Vec<(NetId, String)> = Vec::new();
             for p in self.queue.take_due(here) {
                 if self.plan.nets[p.net.0 as usize].kind == NetKind::Event {
                     fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, p.net, here);
@@ -83,7 +92,11 @@ impl Digital {
                         here,
                     );
                     out.host_param_write |= changed && p.writer == Writer::Host && self.plan.analysis().is_param_net(p.net);
+                    written.push((p.net, self.writer_name(p.writer)));
                 }
+            }
+            for (net, who) in &written {
+                check_canonical(&self.plan, &self.store, *net, at, who)?;
             }
             let mut ambient = Ambient::at(at, res);
             ambient.is_static = mode.is_static;
@@ -140,6 +153,7 @@ impl Digital {
                 // what is left for this instant applies as it exits
                 for p in self.queue.take_due(next) {
                     write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, p.net, p.offset, &p.bytes, next);
+                    check_canonical(&self.plan, &self.store, p.net, at, &self.writer_name(p.writer))?;
                 }
                 self.obs.flush();
                 break;

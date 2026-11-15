@@ -29,6 +29,7 @@ fn every_fixture_shape_is_valid() {
         ("stub", stub()),
         ("odd", odd()),
         ("rogue", rogue()),
+        ("sloppy", sloppy()),
         ("setter", setter()),
         ("settler", settler()),
         ("delayed", delayed()),
