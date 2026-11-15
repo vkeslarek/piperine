@@ -2,7 +2,7 @@
 //! the module of each body.
 
 use piperine_abi::raw::Module;
-use piperine_ir::{BodyId, Constant, Ir, NodeRef};
+use piperine_ir::{BodyId, CarrierRole, Constant, Ir, NodeRef};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result};
 
 /// Who supplies the module of a body: the interpreter, or a compiled library.
@@ -15,11 +15,18 @@ pub trait Modules {
 #[derive(Clone, Copy, Debug)]
 pub struct Netlist<'a> {
     ir: &'a Ir,
+    resolution: Option<f64>,
 }
 
 impl<'a> Netlist<'a> {
     pub fn new(ir: &'a Ir) -> Netlist<'a> {
-        Netlist { ir }
+        Netlist { ir, resolution: None }
+    }
+
+    /// This netlist with the session's tick length (the `RESOLUTION` global), in seconds; the
+    /// solver's own default (one femtosecond) when never given.
+    pub fn with_resolution(self, seconds_per_tick: f64) -> Netlist<'a> {
+        Netlist { resolution: Some(seconds_per_tick), ..self }
     }
 
     /// The design as a solver circuit: one solver node per design node, in the IR's node order
@@ -28,15 +35,26 @@ impl<'a> Netlist<'a> {
     /// A body node is bound by position to the instance's design node (`NodeRef::Ground` to the
     /// reference). Each param is passed by name, except one that holds its body's default: it
     /// is given no value and its pin keeps the default.
+    ///
+    /// A carrier port (an `in` or `out` carrier, never a `signal`) is bound, after the node
+    /// ports and in the body's order, to the design net the instance gives it
+    /// (`Port::Net` named by the net's path, so the net is read by that name); a carrier the
+    /// instance gives no net is left open, its pin private to the instance. A carrier's initial
+    /// value is its pin's `HAS_INIT`, in the shape: it reaches the solver with the pin, and a
+    /// net's own `init` is not passed (the builder has no way to take it; the carriers bound to
+    /// the net carry it).
     pub fn circuit(&self, modules: &impl Modules) -> Result<CircuitInstance> {
         let ir = self.ir;
         let mut builder = CircuitBuilder::new(ir.top().path());
         let nodes: Vec<_> = ir.nodes().map(|n| builder.node(n.path())).collect();
         let ground = builder.ground();
+        if let Some(seconds) = self.resolution {
+            builder.resolution(seconds);
+        }
         for instance in ir.instances() {
             let body = instance.body();
             let Some(module) = modules.module(body.id()) else { continue };
-            let ports: Vec<Port> = instance
+            let mut ports: Vec<Port> = instance
                 .bindings()
                 .iter()
                 .map(|r| match r {
@@ -44,6 +62,15 @@ impl<'a> Netlist<'a> {
                     NodeRef::Ground => Port::Node(ground.clone()),
                 })
                 .collect();
+            for (c, carrier) in body.carriers().iter().enumerate() {
+                if carrier.role == CarrierRole::Signal {
+                    continue;
+                }
+                ports.push(match instance.net(c) {
+                    Some(net) => Port::Net(net.path().to_string()),
+                    None => Port::Open,
+                });
+            }
             let values: Vec<(&str, ParamValue)> = body
                 .params()
                 .iter()
