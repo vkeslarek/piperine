@@ -373,10 +373,10 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Test `the_operating_point_follows_the_call_sequence` asserts the recorded order: `start`, `equilibrium`, `run_instant`, `deliver` and `equilibrium` again while the instant reports a boundary change, then one `run_instant` with `settle` (C34)
-- [ ] Test `rounds_beyond_the_bound_are_e0506_naming_the_nets` passes with a stub that always reports a change, at the default 20 and at a bound of 3 (C35)
-- [ ] Test `an_operating_point_without_unknowns_runs_the_instant_only` passes
-- [ ] Gate: full
+- [x] Test `the_operating_point_follows_the_call_sequence` asserts the recorded order: `start`, `equilibrium`, `run_instant`, `deliver` and `equilibrium` again while the instant reports a boundary change, then one `run_instant` with `settle` (C34)
+- [x] Test `rounds_beyond_the_bound_are_e0506_naming_the_nets` passes with a stub that always reports a change, at the default 20 and at a bound of 3 (C35)
+- [x] Test `an_operating_point_without_unknowns_runs_the_instant_only` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
