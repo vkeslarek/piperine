@@ -1149,3 +1149,11 @@ fn later_commit_is_not_a_time_point() {
     assert!(s.contains("at that instant"), "{s}");
     assert!(s.contains("by at least one tick"), "{s}");
 }
+
+#[test]
+fn time_point_runs_the_procedure() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "## 15."));
+    assert!(s.contains("and runs the time-point procedure"), "{s}");
+    assert!(s.contains("MAY accept solutions at other times"), "{s}");
+}

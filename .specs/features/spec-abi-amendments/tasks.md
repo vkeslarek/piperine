@@ -102,11 +102,11 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] The definition says a time point is a time at which the analog solver produces an accepted solution `and runs the time-point procedure`
-- [ ] It says a simulator `MAY accept solutions at other times`, that those are not time points and that `settle` does not fire there
-- [ ] §17.2 rule 4 still says instance state advances on every accepted step, and the glossary row of `index.md` for *time point* matches the new definition
-- [ ] Test `time_point_runs_the_procedure` asserts both quoted phrases inside `## 15.`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] The definition says a time point is a time at which the analog solver produces an accepted solution `and runs the time-point procedure`
+- [x] It says a simulator `MAY accept solutions at other times`, that those are not time points and that `settle` does not fire there
+- [x] §17.2 rule 4 still says instance state advances on every accepted step, and the glossary row of `index.md` for *time point* matches the new definition
+- [x] Test `time_point_runs_the_procedure` asserts both quoted phrases inside `## 15.`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full

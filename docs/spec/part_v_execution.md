@@ -26,8 +26,9 @@ where they have a left value and a right value.
 A **microstep** is one iteration of the microstep loop (step 3 below). At each time `t` the
 microsteps are numbered from 0.
 
-A **time point** is a time at which the analog solver produces an accepted solution. The set
-of time points is fixed by §17.2.2. An **event time** is a time at which a commit, an
+A **time point** is a time at which the analog solver produces an accepted solution and runs
+the time-point procedure. A simulator MAY accept solutions at other times; those are not time
+points and `settle` does not fire there. The set of time points is fixed by §17.2.2. An **event time** is a time at which a commit, an
 `at` event, a located crossing or a host action is due. An event time is a time point only
 when §17.2.2 makes it one.
 
