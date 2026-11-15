@@ -6,7 +6,7 @@
 //! `set_discrete` (abi.md §10). A non-finite value or seeded partial that the
 //! solve reads fails it, naming instance, cell and origin (A4).
 
-use piperine_abi::raw::{ambient, op};
+use piperine_abi::raw::{ambient, op, watch};
 
 use super::ddt::{History, Stage, stamp_ddt};
 use super::delay::{Delayed, stamp_delay};
@@ -233,6 +233,24 @@ impl Assembly {
         let i = self.plan.instances.iter().position(|inst| inst.path == path)?;
         let w = self.plan.instances[i].watches.iter().position(|w| w.name == name)?;
         self.state[i].watched[w].var.as_deref()
+    }
+
+    /// The names of the terms and of the `VAR` watches of instance `path`, in
+    /// declaration order; `None` for an unknown instance.
+    pub fn observable_names(&self, path: &str) -> Option<(Vec<&str>, Vec<&str>)> {
+        let inst = self.plan.instances.iter().find(|inst| inst.path == path)?;
+        let terms = inst.terms.iter().map(|t| t.name.as_str()).collect();
+        let vars = inst.watches.iter().filter(|w| w.kind == watch::VAR).map(|w| w.name.as_str()).collect();
+        Some((terms, vars))
+    }
+
+    /// The value of term `name` of instance `path` at its last evaluation;
+    /// `None` for an unknown name, a term with no value or one not yet evaluated.
+    pub fn term_value(&self, path: &str, name: &str) -> Option<f64> {
+        let i = self.plan.instances.iter().position(|inst| inst.path == path)?;
+        let (f, w) = self.plan.instances[i].terms.iter().find(|t| t.name == name)?.value?;
+        let state = &self.state[i].fns[f];
+        state.valid.then(|| state.f64(w))
     }
 
     /// Every `TRACE` record written since the last drain, in order.

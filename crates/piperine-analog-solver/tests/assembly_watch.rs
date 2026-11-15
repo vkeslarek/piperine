@@ -43,6 +43,27 @@ fn a_var_watch_is_readable_at_an_accepted_solution() {
 }
 
 #[test]
+fn an_instance_lists_its_terms_and_var_watches_and_reads_a_term() {
+    let m = modules();
+    let (net, n) = netlist(1, &[]);
+    let d = instance("top.d1", m.diode, vec![Discrete(0), Discrete(1), Discrete(2), at(&n[0]), Ground, Discrete(3)]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![d], &net).expect("bind"));
+    let (names_terms, names_vars) = asm.observable_names("top.d1").expect("the instance");
+    assert!(!names_terms.is_empty() && names_vars.contains(&"gd"), "{names_terms:?} {names_vars:?}");
+    assert_eq!(asm.observable_names("other"), None);
+
+    let term = names_terms[0].to_string();
+    assert_eq!(asm.term_value("top.d1", &term), None, "not before an evaluation");
+    for (slot, v) in [(0, 1e-14), (1, 1.0), (2, 0.0), (3, 300.15)] {
+        asm.set_discrete(slot, &f64_bytes(v));
+    }
+    asm.assemble_dc(&[0.6], at_rest()).expect("assemble");
+    assert!(asm.term_value("top.d1", &term).expect("evaluated") > 0.0);
+    assert_eq!(asm.term_value("top.d1", "nope"), None);
+    assert_eq!(asm.term_value("other", &term), None);
+}
+
+#[test]
 fn a_cross_watch_fires_on_a_rising_sign_change() {
     let m = modules();
     let (net, n) = netlist(2, &[]);
