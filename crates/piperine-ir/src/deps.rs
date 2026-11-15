@@ -12,8 +12,8 @@
 //! - an `ac_stim` read is the site plus its magnitude and phase, which are evaluated where the
 //!   stimulus appears; it is `Constant` when they are;
 //! - `+`, `-` and unary `-` join; `*` by a `Constant` operand and `/` by a `Constant` divisor
-//!   keep the other operand's class; any other operator touching a non-`Constant` operand gives
-//!   `Nonlinear`;
+//!   keep the other operand's class; any other operator, cast or method touching a
+//!   non-`Constant` operand gives `Nonlinear`;
 //! - a call reads its arguments and what the callee reads itself (walked with its parameters
 //!   bound to the arguments, once per distinct function and argument values); it is `Constant`
 //!   when every argument is, `Nonlinear` otherwise;
@@ -438,7 +438,7 @@ impl<'a> Walk<'a> {
         }
         let in_body = self.scope().in_body;
         match &ir.exprs[id.index()].kind {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit => return self.done(id, Value::constant()),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) => return self.done(id, Value::constant()),
             Expr::Local(i) => {
                 let value = match self.scope().locals.get(*i as usize) {
                     Some(Some(value)) => value.clone(),
@@ -472,7 +472,11 @@ impl<'a> Walk<'a> {
                 }
                 return self.done(id, Value::of(sources, Class::Affine));
             }
-            Expr::Unary { expr, .. } => next.push(Task::Expr(*expr)),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => next.push(Task::Expr(*expr)),
+            Expr::Method { receiver, args, .. } => {
+                next.push(Task::Expr(*receiver));
+                next.extend(args.iter().map(|&a| Task::Expr(a)));
+            }
             Expr::Binary { lhs, rhs, .. } => next.extend([Task::Expr(*lhs), Task::Expr(*rhs)]),
             Expr::If { cond, then, otherwise } => {
                 next.extend([Task::Expr(*cond), Task::Expr(*then), Task::Expr(*otherwise)]);
@@ -548,6 +552,14 @@ impl<'a> Walk<'a> {
                 let values = self.pop_n(args.len());
                 Value::nonlinear(&values)
             }
+            Expr::Cast { .. } => {
+                let value = self.pop();
+                Value::nonlinear([&value])
+            }
+            Expr::Method { args, .. } => {
+                let values = self.pop_n(1 + args.len());
+                Value::nonlinear(&values)
+            }
             Expr::Closure { .. } => {
                 let value = self.pop();
                 Value::of(value.sources, Class::Nonlinear)
@@ -575,7 +587,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

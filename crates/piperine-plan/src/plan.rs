@@ -200,7 +200,9 @@ impl BodyPlan {
             .map(|p| match p.default {
                 Some(Constant::Real(r)) => r.get().to_le_bytes().to_vec(),
                 Some(Constant::Bool(b)) => vec![u8::from(b), 1],
-                None => Vec::new(),
+                // An integer param has no pin layout in the M1 plan: no default is written, so
+                // the bind of an instance that gives no value fails loud.
+                Some(Constant::Int(_)) | None => Vec::new(),
             })
             .collect();
         // A param with a `where` names its check pin, the last pins of the shape (P6): the pins

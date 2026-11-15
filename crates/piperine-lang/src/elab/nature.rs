@@ -69,6 +69,7 @@ impl Elaboration<'_, '_> {
                 "abstol" => match self.consts.value(attr.value, &Bindings::new()) {
                     Ok(Constant::Real(value)) => abstol = value,
                     Ok(Constant::Bool(_)) => self.unsupported(data.file, self.design.expr_node(attr.value).span, "a `bool` abstol"),
+                    Ok(Constant::Int(_)) => self.unsupported(data.file, self.design.expr_node(attr.value).span, "an integer abstol"),
                     Err(fault) => self.const_fault(&fault, "an `abstol`"),
                 },
                 _ => {}

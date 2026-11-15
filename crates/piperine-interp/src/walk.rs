@@ -277,6 +277,9 @@ impl<'a> Walk<'a> {
             Expr::Env(_) => "Env",
             Expr::Limit { .. } => "Limit",
             Expr::Stim { .. } => "Stim",
+            Expr::Int(_) => "Int",
+            Expr::Cast { .. } => "Cast",
+            Expr::Method { .. } => "Method",
         }
     }
 
@@ -462,6 +465,9 @@ impl<'a> Walk<'a> {
                     BinaryOp::Ge => Value::Bool(a.v >= b.v),
                     BinaryOp::And | BinaryOp::Or | BinaryOp::Eq | BinaryOp::Ne => {
                         return Err(self.fault(id, "unreachable operator"));
+                    }
+                    BinaryOp::Rem | BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+                        return Err(self.fault(id, &format!("the IR operator `{op:?}` is not executed by this walk")));
                     }
                 })
             }

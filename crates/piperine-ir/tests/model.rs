@@ -233,8 +233,14 @@ impl Reach {
         out.push(id);
         match ir.expr(id) {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) => {}
-            Expr::Unary { expr, .. } => Reach::expr(ir, *expr, out),
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) => {}
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => Reach::expr(ir, *expr, out),
+            Expr::Method { receiver, args, .. } => {
+                Reach::expr(ir, *receiver, out);
+                for a in args {
+                    Reach::expr(ir, *a, out);
+                }
+            }
             Expr::Binary { lhs, rhs, .. } => {
                 Reach::expr(ir, *lhs, out);
                 Reach::expr(ir, *rhs, out);

@@ -218,7 +218,8 @@ impl<'a> ValuePrinter<'a> {
     /// The expressions `expr` holds, statements included.
     pub(crate) fn children(ir: &Ir, expr: &Expr, out: &mut Vec<ExprId>) {
         match expr {
-            Expr::Unary { expr, .. } => out.push(*expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => out.push(*expr),
+            Expr::Method { receiver, args, .. } => out.extend([*receiver].into_iter().chain(args.iter().copied())),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
             Expr::If { cond, then, otherwise } => out.extend([*cond, *then, *otherwise]),
             Expr::Block { stmts, value } => {
@@ -241,7 +242,8 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Local(_)
             | Expr::Param(_)
             | Expr::Probe { .. }
-            | Expr::Env(_) => {}
+            | Expr::Env(_)
+            | Expr::Int(_) => {}
         }
     }
 
@@ -266,6 +268,11 @@ impl<'a> ValuePrinter<'a> {
             ValueType::Unit => Ok("()"),
             ValueType::Fn(..) => Err(Error::Unsupported {
                 form: "a function-typed value".into(),
+                path: path.to_string(),
+                origin: self.origin.clone(),
+            }),
+            ValueType::UInt(_) | ValueType::Int(_) => Err(Error::Unsupported {
+                form: format!("the integer type {ty}"),
                 path: path.to_string(),
                 origin: self.origin.clone(),
             }),
@@ -300,7 +307,7 @@ impl<'a> ValuePrinter<'a> {
                 let sign = if *op == UnaryOp::Neg { "-" } else { "!" };
                 Ok(Piece::new(format!("{sign}{operand}"), Prec::Unary))
             }
-            Expr::Binary { op, lhs, rhs } => self.binary(*op, *lhs, *rhs),
+            Expr::Binary { op, lhs, rhs } => self.binary(e, *op, *lhs, *rhs),
             Expr::If { cond, then, otherwise } => Ok(Piece::new(self.if_else(*cond, *then, *otherwise)?, Prec::Low)),
             Expr::Block { stmts, value } => {
                 let lines = self.block_lines(stmts, *value)?;
@@ -346,10 +353,13 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(name.clone()),
                 None => Err(self.unsupported(e, "ac_stim")),
             },
+            Expr::Int(_) => Err(self.unsupported(e, "an integer literal")),
+            Expr::Cast { .. } => Err(self.unsupported(e, "a cast")),
+            Expr::Method { .. } => Err(self.unsupported(e, "a value method")),
         }
     }
 
-    fn binary(&self, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> Result<Piece, Error> {
+    fn binary(&self, e: ExprId, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> Result<Piece, Error> {
         let (symbol, prec) = match op {
             BinaryOp::Add => ("+", Prec::Add),
             BinaryOp::Sub => ("-", Prec::Add),
@@ -363,6 +373,9 @@ impl<'a> ValuePrinter<'a> {
             BinaryOp::Ne => ("!=", Prec::Compare),
             BinaryOp::And => ("&&", Prec::And),
             BinaryOp::Or => ("||", Prec::Or),
+            BinaryOp::Rem | BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+                return Err(self.unsupported(e, &format!("the operator {op:?}")));
+            }
         };
         let (l, r) = if prec == Prec::Compare {
             (self.compared(lhs)?, self.compared(rhs)?)

@@ -33,10 +33,11 @@ use std::fmt::{self, Display, Write};
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
     BinaryOp, BodyData, BodyNode, BranchKind, Constant, Env, Expr, ExprData, FunctionData, InstanceData, Ir,
-    Local, MathFn, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Terminal,
+    Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Terminal,
     UnaryOp, ValueType,
 };
 use crate::real::Real;
+use crate::typing::Typing;
 
 impl Display for Ir {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -69,6 +70,8 @@ impl Display for ValueType {
                 let params: Vec<String> = params.iter().map(ToString::to_string).collect();
                 write!(f, "fn({}) -> {ret}", params.join(", "))
             }
+            ValueType::UInt(n) => write!(f, "u{n}"),
+            ValueType::Int(n) => write!(f, "i{n}"),
         }
     }
 }
@@ -78,6 +81,7 @@ impl Display for Constant {
         match self {
             Constant::Real(r) => f.write_str(&Printer::real(*r)),
             Constant::Bool(b) => write!(f, "{b}"),
+            Constant::Int(v) => write!(f, "{v}"),
         }
     }
 }
@@ -455,7 +459,7 @@ impl<'a> Printer<'a> {
         self.on_stack.insert(id);
         let text = |t: String| Piece::Text(t);
         // The structural form writes a type its form does not imply.
-        let note = self.structural && self.implied(scope, &data.kind).as_ref() != Some(&data.ty);
+        let note = self.structural && self.implied(scope, data).as_ref() != Some(&data.ty);
         if note {
             next.push(text("(".into()));
         }
@@ -535,6 +539,17 @@ impl<'a> Printer<'a> {
                 }
                 next.push(text(")".into()));
             }
+            // An integer literal carries its type as a suffix: `5u9`, `-3i16`.
+            Expr::Int(v) => {
+                let suffix = if data.ty.is_integer() { data.ty.to_string() } else { String::new() };
+                next.push(text(format!("{v}{suffix}")));
+            }
+            Expr::Cast { expr, to } => next.extend([text("(".into()), Piece::Expr(*expr), text(format!(" as {to})"))]),
+            Expr::Method { method, receiver, args } => {
+                next.extend([Piece::Expr(*receiver), text(format!(".{}(", Printer::method_name(*method)))]);
+                Printer::list(next, args);
+                next.push(text(")".into()));
+            }
         }
         if note {
             next.push(text(format!(" : {})", data.ty)));
@@ -560,8 +575,31 @@ impl<'a> Printer<'a> {
     }
 
     /// The type an expression's form implies, given the recorded types of its operands; `None`
-    /// when an id it needs is out of range.
-    fn implied(&self, scope: Scope<'_>, kind: &Expr) -> Option<ValueType> {
+    /// when an id it needs is out of range or the operands fit no rule. An operand outside `f64`
+    /// and `bool`, or an operator M1 does not have, selects the digital rules of `Typing`.
+    fn implied(&self, scope: Scope<'_>, data: &ExprData) -> Option<ValueType> {
+        let ir = self.ir;
+        let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
+        match &data.kind {
+            Expr::Int(_) => data.ty.is_integer().then(|| data.ty.clone()),
+            Expr::Cast { expr, to } => Typing::cast(&ty(expr)?, to),
+            Expr::Method { method, receiver, args } => {
+                let args: Option<Vec<ValueType>> = args.iter().map(ty).collect();
+                let args = args?;
+                Typing::method(*method, &ty(receiver)?, &args.iter().collect::<Vec<_>>())
+            }
+            Expr::Unary { op, expr } if ty(expr).is_some_and(|t| Typing::digital(&t)) => Typing::unary(*op, &ty(expr)?),
+            Expr::Binary { op, lhs, rhs }
+                if Typing::digital_op(*op) || [lhs, rhs].iter().any(|e| ty(e).is_some_and(|t| Typing::digital(&t))) =>
+            {
+                Typing::binary(*op, &ty(lhs)?, &ty(rhs)?)
+            }
+            kind => self.implied_m1(scope, kind),
+        }
+    }
+
+    /// The M1 rule of `implied`, unchanged: every M1 golden print keeps its bytes.
+    fn implied_m1(&self, scope: Scope<'_>, kind: &Expr) -> Option<ValueType> {
         let ir = self.ir;
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
@@ -583,6 +621,7 @@ impl<'a> Printer<'a> {
                 let params: Option<Vec<ValueType>> = params.iter().map(|p| scope.locals.get(*p as usize).map(|l| l.ty.clone())).collect();
                 Some(ValueType::Fn(params?, Box::new(ty(body)?)))
             }
+            Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
         }
     }
 
@@ -693,6 +732,9 @@ impl<'a> Printer<'a> {
             Expr::Env(env) => format!("env {}", Printer::env_name(*env)),
             Expr::Limit { site, x, f, seed } => format!("limit L{site} {} {} {}", e(x), e(f), opt(seed)),
             Expr::Stim { site, mag, phase } => format!("ac_stim S{site} {} {}", e(mag), opt(phase)),
+            Expr::Int(v) => format!("int {v}"),
+            Expr::Cast { expr, to } => format!("cast {} to {to}", e(expr)),
+            Expr::Method { method, receiver, args } => format!("{} {} ({})", Printer::method_name(*method), e(receiver), ids(args)),
         }
     }
 
@@ -730,6 +772,12 @@ impl<'a> Printer<'a> {
             BinaryOp::Ne => "!=",
             BinaryOp::And => "&&",
             BinaryOp::Or => "||",
+            BinaryOp::Rem => "%",
+            BinaryOp::BitAnd => "&",
+            BinaryOp::BitOr => "|",
+            BinaryOp::BitXor => "^",
+            BinaryOp::Shl => "<<",
+            BinaryOp::Shr => ">>",
         }
     }
 
@@ -747,6 +795,21 @@ impl<'a> Printer<'a> {
             BinaryOp::Ne => "ne",
             BinaryOp::And => "and",
             BinaryOp::Or => "or",
+            BinaryOp::Rem => "rem",
+            BinaryOp::BitAnd => "bitand",
+            BinaryOp::BitOr => "bitor",
+            BinaryOp::BitXor => "bitxor",
+            BinaryOp::Shl => "shl",
+            BinaryOp::Shr => "shr",
+        }
+    }
+
+    fn method_name(method: Method) -> &'static str {
+        match method {
+            Method::Min => "min",
+            Method::Max => "max",
+            Method::Clamp => "clamp",
+            Method::Floor => "floor",
         }
     }
 

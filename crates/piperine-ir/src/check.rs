@@ -22,6 +22,7 @@ use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
     BinaryOp, BranchKind, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp, ValueType,
 };
+use crate::typing::Typing;
 
 /// One broken invariant: the item, where it was written, and what is wrong.
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +39,7 @@ impl Ir {
         checker.ids();
         checker.instances();
         checker.paths();
+        checker.types();
         checker.code();
         checker.out
     }
@@ -257,7 +259,12 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) => {}
+            Expr::Cast { expr, .. } => exprs.push(*expr),
+            Expr::Method { receiver, args, .. } => {
+                exprs.push(*receiver);
+                exprs.extend(args);
+            }
             Expr::Unary { expr, .. } => exprs.push(*expr),
             Expr::Binary { lhs, rhs, .. } => exprs.extend([*lhs, *rhs]),
             Expr::If { cond, then, otherwise } => exprs.extend([*cond, *then, *otherwise]),
@@ -348,6 +355,60 @@ impl<'a> Checker<'a> {
         for (item, origin, what) in found {
             self.report(item, origin, what);
         }
+    }
+
+    // ---- types -----------------------------------------------------------------------------
+
+    /// Every type written in the IR is well formed: an integer width in 1..=64 (RS-Q6: the ABI's
+    /// leaves end at 64 bits).
+    fn types(&mut self) {
+        let ir = self.ir;
+        let mut found: Vec<(String, Origin, ValueType)> = Vec::new();
+        for body in &ir.bodies {
+            let item = format!("body {}", body.name);
+            for p in &body.params {
+                found.push((format!("{item} param {}", p.name), p.origin.clone(), p.ty.clone()));
+            }
+            for l in &body.locals {
+                found.push((format!("{item} local {}", l.name), body.origin.clone(), l.ty.clone()));
+            }
+        }
+        for function in &ir.functions {
+            let item = format!("function {}", function.name);
+            for l in &function.locals {
+                found.push((format!("{item} local {}", l.name), function.origin.clone(), l.ty.clone()));
+            }
+            found.push((format!("{item} result"), function.origin.clone(), function.ret.clone()));
+        }
+        for (i, data) in ir.exprs.iter().enumerate() {
+            found.push((format!("expr {i}"), data.origin.clone(), data.ty.clone()));
+            if let Expr::Cast { to, .. } = &data.kind {
+                found.push((format!("expr {i}"), data.origin.clone(), to.clone()));
+            }
+        }
+        for (item, origin, ty) in found {
+            if let Some(what) = Checker::malformed(&ty) {
+                self.report(item, origin, what);
+            }
+        }
+    }
+
+    /// What is wrong with `ty`, read through function types.
+    fn malformed(ty: &ValueType) -> Option<String> {
+        let mut stack = vec![ty];
+        while let Some(t) = stack.pop() {
+            match t {
+                ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => {
+                    return Some(format!("type {t} has a width outside 1..=64"));
+                }
+                ValueType::Fn(params, ret) => {
+                    stack.extend(params);
+                    stack.push(ret);
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     // ---- code ------------------------------------------------------------------------------
@@ -577,6 +638,12 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            Expr::Unary { op, expr } if self.ty(*expr).is_some_and(Typing::digital) => {
+                if first {
+                    self.typed(w, &origin, ty, self.ty(*expr).and_then(|t| Typing::unary(*op, t)), "a unary operator");
+                }
+                next.push(Task::Expr(*expr, ctx));
+            }
             Expr::Unary { op, expr } => {
                 if first {
                     let operand = if *op == UnaryOp::Neg { ValueType::F64 } else { ValueType::Bool };
@@ -585,6 +652,20 @@ impl<'a> Checker<'a> {
                 }
                 next.push(Task::Expr(*expr, ctx));
             }
+            Expr::Binary { op, lhs, rhs }
+                if Typing::digital_op(*op) || [*lhs, *rhs].iter().any(|e| self.ty(*e).is_some_and(Typing::digital)) =>
+            {
+                if first {
+                    let want = match (self.ty(*lhs), self.ty(*rhs)) {
+                        (Some(l), Some(r)) => Typing::binary(*op, l, r),
+                        _ => None,
+                    };
+                    self.typed(w, &origin, ty, want, "a binary operator");
+                }
+                next.push(Task::Expr(*lhs, ctx));
+                let short = matches!(op, BinaryOp::And | BinaryOp::Or);
+                next.push(Task::Expr(*rhs, Ctx { conditional: ctx.conditional || short, ..ctx }));
+            }
             Expr::Binary { op, lhs, rhs } => {
                 if first {
                     let (operands, result) = match op {
@@ -592,6 +673,10 @@ impl<'a> Checker<'a> {
                         BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => (Some(ValueType::F64), ValueType::Bool),
                         BinaryOp::And | BinaryOp::Or => (Some(ValueType::Bool), ValueType::Bool),
                         BinaryOp::Eq | BinaryOp::Ne => (None, ValueType::Bool),
+                        // Taken by the digital arm above.
+                        BinaryOp::Rem | BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+                            (None, ValueType::Bool)
+                        }
                     };
                     self.own(w, &origin, ty, &result);
                     match operands {
@@ -743,8 +828,47 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*mag, ctx));
                 next.extend(phase.iter().map(|p| Task::Expr(*p, ctx)));
             }
+            Expr::Int(value) => {
+                if first {
+                    match ty.integer_range() {
+                        Some((lo, hi)) if !(lo..=hi).contains(value) => {
+                            self.wrong(w, origin, format!("integer literal {value} is outside the range of {ty}"));
+                        }
+                        Some(_) => {}
+                        None if ty.is_integer() => {}
+                        None => self.wrong(w, origin, format!("an integer literal must have an integer type, found {ty}")),
+                    }
+                }
+            }
+            Expr::Cast { expr, to } => {
+                if first {
+                    self.typed(w, &origin, ty, self.ty(*expr).and_then(|t| Typing::cast(t, to)), "a cast");
+                }
+                next.push(Task::Expr(*expr, ctx));
+            }
+            Expr::Method { method, receiver, args } => {
+                if first {
+                    let arg_types: Option<Vec<&ValueType>> = args.iter().map(|a| self.ty(*a)).collect();
+                    let want = match (self.ty(*receiver), arg_types) {
+                        (Some(r), Some(a)) => Typing::method(*method, r, &a),
+                        _ => None,
+                    };
+                    self.typed(w, &origin, ty, want, "a method");
+                }
+                next.push(Task::Expr(*receiver, ctx));
+                next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
+            }
         }
         next.push(Task::Exit(id));
+    }
+
+    /// The recorded type `got` of a digital form must be `want`, the type its form gives its
+    /// operands; `None` when the operands fit no rule of `what`.
+    fn typed(&mut self, w: &Walk, origin: &Origin, got: &ValueType, want: Option<ValueType>, what: &str) {
+        match want {
+            Some(want) => self.own(w, origin, got, &want),
+            None => self.wrong(w, origin.clone(), format!("the operands of {what} do not fit its types")),
+        }
     }
 
     /// The recorded type `got` of an expression must be what its form produces.

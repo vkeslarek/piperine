@@ -11,6 +11,7 @@ mod ids;
 mod model;
 mod print;
 mod real;
+mod typing;
 
 pub use check::Broken;
 pub use deps::{BranchIndex, Deps, ParamIndex, SiteIndex, Target};
@@ -19,7 +20,7 @@ pub use handle::{Body, Function, Instance, Nature, Node};
 pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
 pub use model::{
     Addend, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Child, Constant, Env, Expr,
-    ExprData, FunctionData, InstanceData, Ir, Local, MathFn, NatureData, NodeData, NodeRef,
+    ExprData, FunctionData, InstanceData, Ir, Local, MathFn, Method, NatureData, NodeData, NodeRef,
     NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Site, Stmt, Terminal, UnaryOp,
     ValueType,
 };

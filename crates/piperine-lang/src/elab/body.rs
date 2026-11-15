@@ -134,6 +134,10 @@ impl Elaboration<'_, '_> {
                     self.unsupported(data.file, self.design.expr_node(expr).span, "a `bool` initial value");
                     return None;
                 }
+                Ok(Constant::Int(_)) => {
+                    self.unsupported(data.file, self.design.expr_node(expr).span, "an integer initial value");
+                    return None;
+                }
                 Err(fault) => {
                     self.const_fault(&fault, "a node's initial value");
                     return None;

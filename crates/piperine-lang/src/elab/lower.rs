@@ -92,7 +92,7 @@ impl Elaboration<'_, '_> {
         };
         match &node.kind {
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
-                Ok(value) => Some(self.constant_expr(value, origin)),
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a literal");
                     None
@@ -311,11 +311,13 @@ impl Elaboration<'_, '_> {
         })
     }
 
-    /// A folded value as the IR expression of its type.
-    pub(super) fn constant_expr(&mut self, value: Constant, origin: Origin) -> LoweredExpr {
+    /// A folded value as the IR expression of its type; an integer takes `ty`, its expression's
+    /// value type.
+    pub(super) fn constant_expr(&mut self, value: Constant, ty: ValueType, origin: Origin) -> LoweredExpr {
         match value {
             Constant::Real(r) => self.emit(Expr::Real(r), ValueType::F64, origin),
             Constant::Bool(b) => self.emit(Expr::Bool(b), ValueType::Bool, origin),
+            Constant::Int(v) => self.emit(Expr::Int(v), ty, origin),
         }
     }
 
@@ -330,7 +332,7 @@ impl Elaboration<'_, '_> {
         };
         match &self.design.decl_data(decl).kind {
             DeclKind::Const(_) => match self.consts.constant(decl) {
-                Ok(value) => Some(self.constant_expr(value, origin)),
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a `const`");
                     None

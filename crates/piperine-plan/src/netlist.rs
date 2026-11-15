@@ -53,6 +53,8 @@ impl<'a> Netlist<'a> {
                     let value = match given {
                         Constant::Real(r) => ParamValue::Real(r.get()),
                         Constant::Bool(b) => ParamValue::Bool(*b),
+                        // The solver's integer leaf; an `N`-bit value fits its 64 bits.
+                        Constant::Int(v) => ParamValue::Int(*v as i64),
                     };
                     (param.name.as_str(), value)
                 })

@@ -169,6 +169,12 @@ pub enum Expr {
     Env(Env),
     Limit { site: u32, x: ExprId, f: ExprId, seed: Option<ExprId> },
     Stim { site: u32, mag: ExprId, phase: Option<ExprId> },
+    /// An integer literal; its `UInt<N>` or `Int<N>` type is the expression's type.
+    Int(i128),
+    /// `expr as to`: among integer types and `f64`, or from `bool` to an integer type.
+    Cast { expr: ExprId, to: ValueType },
+    /// `receiver.method(args)`: one of the closed set of value methods.
+    Method { method: Method, receiver: ExprId, args: Vec<ExprId> },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -203,7 +209,8 @@ pub enum UnaryOp {
     Not,
 }
 
-/// `And` and `Or` short-circuit, as in the source.
+/// `And` and `Or` short-circuit, as in the source. `BitAnd`, `BitOr` and `BitXor` are the
+/// non-short-circuit `&`, `|` and `^`, on `bool` or on integers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BinaryOp {
     Add,
@@ -218,6 +225,22 @@ pub enum BinaryOp {
     Ne,
     And,
     Or,
+    Rem,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+}
+
+/// The value methods an expression may call: `a.min(b)`, `a.max(b)`, `x.clamp(lo, hi)` on an
+/// integer or `f64`, and `x.floor()` on `f64`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Method {
+    Min,
+    Max,
+    Clamp,
+    Floor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -242,12 +265,34 @@ pub enum ValueType {
     Bool,
     Unit,
     Fn(Vec<ValueType>, Box<ValueType>),
+    /// `UInt<N>` (`uN`): `N` bits, arithmetic modulo `2^N`.
+    UInt(u32),
+    /// `Int<N>` (`iN`): `N` bits, two's complement, arithmetic modulo `2^N`.
+    Int(u32),
+}
+
+impl ValueType {
+    /// Whether this is `UInt<N>` or `Int<N>`.
+    pub fn is_integer(&self) -> bool {
+        matches!(self, ValueType::UInt(_) | ValueType::Int(_))
+    }
+
+    /// The range of an integer type, `None` for any other type.
+    pub fn integer_range(&self) -> Option<(i128, i128)> {
+        match *self {
+            ValueType::UInt(n) if (1..=64).contains(&n) => Some((0, (1i128 << n) - 1)),
+            ValueType::Int(n) if (1..=64).contains(&n) => Some((-(1i128 << (n - 1)), (1i128 << (n - 1)) - 1)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Constant {
     Real(Real),
     Bool(bool),
+    /// An integer; its width and sign are the type of the param or carrier it initializes.
+    Int(i128),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -125,6 +125,7 @@ impl<'d, 't> ConstEval<'d, 't> {
         match value {
             Constant::Real(r) => Ok(r.get()),
             Constant::Bool(_) => Err(ConstFault::Unsupported { expr, what: "a `bool` where an `f64` is required".to_string() }),
+            Constant::Int(_) => Err(ConstFault::Unsupported { expr, what: "an integer where an `f64` is required".to_string() }),
         }
     }
 
@@ -132,6 +133,7 @@ impl<'d, 't> ConstEval<'d, 't> {
         match value {
             Constant::Bool(b) => Ok(b),
             Constant::Real(_) => Err(ConstFault::Unsupported { expr, what: "an `f64` where a `bool` is required".to_string() }),
+            Constant::Int(_) => Err(ConstFault::Unsupported { expr, what: "an integer where a `bool` is required".to_string() }),
         }
     }
 
