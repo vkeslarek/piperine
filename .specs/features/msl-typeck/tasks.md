@@ -176,7 +176,7 @@ T6 → T7 → T8 → T9
 
 - [x] `callee(expr)` is `Callee::Function(decl)` for a call of a function
 - [x] A closure anywhere but as an argument whose parameter has a function type is `P0001`
-- [ ] `pnjlim` and `vt` of the embedded `std` check with no diagnostic (SPEC_DEVIATION: `pnjlim` calls `.abs()`/`.ln()` (T5 catalogue) and `vt` calls `temperature()` (T7 core table), so neither can check clean at T4; `pnjlim` is proven in T5 by `the_std_pnjlim_checks_clean`, `vt` in T7)
+- [x] `pnjlim` and `vt` of the embedded `std` check with no diagnostic (SPEC_DEVIATION: `pnjlim` calls `.abs()`/`.ln()` (T5 catalogue) and `vt` calls `temperature()` (T7 core table), so neither can check clean at T4; `pnjlim` is proven in T5 by `the_std_pnjlim_checks_clean`, `vt` in T7 by `the_std_vt_checks_clean`)
 - [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_call_takes_its_declared_result`, `a_closure_takes_its_types_from_the_parameter`, `a_recursive_function_is_typed_from_its_signature`, `a_closure_outside_an_argument_is_p0001`
 - [x] Gate check passes: `cargo test -p piperine-lang`
 - [x] Test count: the tests named above, and no existing test removed
@@ -249,12 +249,12 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] `limit(x, f)` and `limit(x, f, seed)`, `ac_stim(mag)` and `ac_stim(mag, phase)` all check
-- [ ] A core built-in with no row in `Core` (`delay`, `noise`, `ddx`, `cross`, `at`, `now`, `freq`, `analysis`, `simparam`) is `P0001`
-- [ ] `E0240`, `E0410`, `E0417`, `E0450` each asserted with its span
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_analog`: `potential_probes_are_f64`, `probe_nodes_of_two_natures_are_e0240`, `a_contribution_target_that_is_no_probe_is_e0410`, `a_contribution_that_is_not_f64_is_e0417`, `ddt_ac_stim_and_environment_are_f64`, `limit_checks_its_input_function_and_seed`, `a_core_primitive_in_a_fn_is_e0450`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `limit(x, f)` and `limit(x, f, seed)`, `ac_stim(mag)` and `ac_stim(mag, phase)` all check
+- [x] A core built-in with no row in `Core` (`delay`, `noise`, `ddx`, `cross`, `at`, `now`, `freq`, `analysis`, `simparam`) is `P0001`
+- [x] `E0240`, `E0410`, `E0417`, `E0450` each asserted with its span
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_analog`: `potential_probes_are_f64`, `probe_nodes_of_two_natures_are_e0240`, `a_contribution_target_that_is_no_probe_is_e0410`, `a_contribution_that_is_not_f64_is_e0417`, `ddt_ac_stim_and_environment_are_f64`, `limit_checks_its_input_function_and_seed`, `a_core_primitive_in_a_fn_is_e0450`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

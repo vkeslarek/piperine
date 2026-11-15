@@ -5,7 +5,7 @@
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, PatKind, Resolution};
 
 use super::catalogue::Catalogue;
-use super::check::Checker;
+use super::check::{Checker, Context};
 use super::unsupported::Unsupported;
 use super::{Callee, Ty};
 
@@ -30,20 +30,19 @@ impl Checker<'_> {
         match class {
             CallClass::Function => {}
             CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),
+            CallClass::Instance { module: None, .. } if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(_))) => {}
             CallClass::Instance { module: None, .. } => {
-                self.unsupported(file, node.span, "core module placement");
+                self.unsupported(file, node.span, "placement through a template value or a function");
                 return None;
             }
-            CallClass::Probe => {
-                self.unsupported(file, node.span, "probe");
-                return None;
-            }
+            CallClass::Probe => return self.probe(expr, false),
             CallClass::Unclassified => {
                 self.unsupported(file, node.span, "call that is not a function call");
                 return None;
             }
         }
         match self.callee_resolution(*callee) {
+            Some(Resolution::Builtin(id)) => self.core_call(expr, id, args),
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
                 DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, *callee, args),
@@ -161,7 +160,9 @@ impl Checker<'_> {
             let span = self.design.type_node(*annotation).span;
             self.mismatch(file, span, result, &written);
         }
+        let outer = std::mem::replace(&mut self.context, Context::Function);
         self.check(*body, result);
+        self.context = outer;
         Some(expected.clone())
     }
 }

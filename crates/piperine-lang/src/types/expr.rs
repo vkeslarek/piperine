@@ -262,7 +262,8 @@ impl Checker<'_> {
                     }
                 }
                 StmtKind::Empty => {}
-                StmtKind::Item(_) | StmtKind::Contribution { .. } | StmtKind::Commit { .. } | StmtKind::Signal(_) | StmtKind::Reaction(_) => {
+                StmtKind::Contribution { lhs, rhs } => self.contribution(file, node.span, *lhs, *rhs),
+                StmtKind::Item(_) | StmtKind::Commit { .. } | StmtKind::Signal(_) | StmtKind::Reaction(_) => {
                     self.unsupported(file, node.span, Unsupported::stmt(&node.kind));
                 }
             }

@@ -8,6 +8,17 @@ use crate::pom::{BehaviorKind, BlockNode, DeclData, DeclId, DeclKind, Design, De
 
 use super::{Callee, Method, Ty, Types};
 
+/// Where the expression being checked is written: the §14 table allows a core primitive by it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Context {
+    /// A module body.
+    Module,
+    /// An `analog` block.
+    Analog,
+    /// A `fn` or a closure.
+    Function,
+}
+
 /// One pass over the reachable set. Everything it learns goes into side tables; the design is
 /// only read.
 pub(super) struct Checker<'d> {
@@ -17,6 +28,7 @@ pub(super) struct Checker<'d> {
     pub(super) methods: BTreeMap<ExprId, Method>,
     pub(super) callees: BTreeMap<ExprId, Callee>,
     pub(super) reached: Vec<DeclId>,
+    pub(super) context: Context,
     queued: BTreeSet<DeclId>,
     queue: VecDeque<DeclId>,
     diagnostics: Vec<DesignDiagnostic>,
@@ -33,6 +45,7 @@ impl<'d> Checker<'d> {
             methods: BTreeMap::new(),
             callees: BTreeMap::new(),
             reached: Vec::new(),
+            context: Context::Module,
             queued: BTreeSet::new(),
             queue: VecDeque::new(),
             diagnostics: Vec::new(),
@@ -238,10 +251,12 @@ impl<'d> Checker<'d> {
         for (param, ty) in named.zip(params) {
             self.locals.insert(param, ty);
         }
+        self.context = Context::Function;
         match &f.body {
             Some(body) => self.function_body(body, &ret, data.file),
             None => self.unsupported(data.file, data.span, "function without a body"),
         }
+        self.context = Context::Module;
     }
 
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
@@ -285,7 +300,9 @@ impl<'d> Checker<'d> {
             let DeclKind::Behavior(bd) = &b.kind else { continue };
             match bd.kind {
                 BehaviorKind::Analog => {
+                    self.context = Context::Analog;
                     self.statements(&bd.body, None);
+                    self.context = Context::Module;
                 }
                 BehaviorKind::Digital => self.unsupported(b.file, b.span, "`digital` block"),
             }

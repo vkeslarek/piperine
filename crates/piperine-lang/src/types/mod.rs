@@ -7,6 +7,7 @@
 //!
 //! The result is a table or the reasons there is none, never both.
 
+mod analog;
 mod call;
 mod catalogue;
 mod check;
