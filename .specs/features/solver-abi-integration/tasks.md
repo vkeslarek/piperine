@@ -782,7 +782,7 @@ Proof: `cargo test -p piperine-abi -p piperine-analog-solver -p piperine-digital
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 (Sonnet) at 43876aec
 **Walked:** not applicable - no screen
 
 ---
