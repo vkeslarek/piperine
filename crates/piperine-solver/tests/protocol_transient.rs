@@ -290,3 +290,31 @@ fn an_off_grid_step_lands_on_the_tick_grid() {
     let seq = attempts_and_instants(&log);
     assert_eq!(&seq[..5], [Call::Advance(2), Call::Attempt { to: 2.0, exempt: false }, Call::Advance(1), Call::Attempt { to: 1.0, exempt: false }, run(1)]);
 }
+
+#[test]
+fn consecutive_rejections_beyond_the_cap_fail_loud() {
+    for cap in [None, Some(5u32)] {
+        let (log, d, mut a) = sides();
+        a.attempts.extend((0..20_000).map(|_| Attempt::Rejected));
+        let mut options = ProtocolOptions::new(SPT);
+        if let Some(c) = cap {
+            options.max_rejections = c;
+        }
+        let want = cap.unwrap_or(ProtocolOptions::MAX_REJECTIONS);
+        let mut p = Protocol::new(d, a, options);
+        let err = p.transient(1.0).expect_err("a step that never converges");
+        let text = err.to_string();
+        assert!(text.contains(&format!("{want} consecutive rejected attempts")), "{text}");
+        assert!(text.contains("from t = 0e0 s"), "the error names the instant it could not leave: {text}");
+        assert_eq!(attempts(&log).len(), want as usize);
+    }
+    // An acceptance resets the count.
+    let (log, d, mut a) = sides();
+    a.attempts.extend([Attempt::Rejected, Attempt::Rejected, Attempt::Converged, Attempt::Rejected, Attempt::Rejected]);
+    a.proposals.extend([1.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
+    let mut options = ProtocolOptions::new(SPT);
+    options.max_rejections = 3;
+    let mut p = Protocol::new(d, a, options);
+    assert_eq!(p.transient(2.0).unwrap(), Ended::StopTime);
+    assert_eq!(attempts(&log).len(), 6);
+}

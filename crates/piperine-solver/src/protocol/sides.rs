@@ -171,7 +171,10 @@ pub trait DiscreteSide {
 
 /// The analog sub-solver as the owner drives it.
 pub trait AnalogSide {
-    /// A checkpoint of the solution, histories and step control.
+    /// A checkpoint of the solution and the histories. The step reduction a
+    /// rejected attempt made is not part of it: it survives `restore`, so the
+    /// next `propose` after a rejection is smaller (the protocol also caps
+    /// consecutive rejections, `ProtocolOptions::max_rejections`).
     type Mark;
     /// Whether any continuous unknown exists.
     fn has_unknowns(&self) -> bool;

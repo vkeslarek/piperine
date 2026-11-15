@@ -591,6 +591,9 @@ Proof: run owner | test an_off_grid_step_lands_on_the_tick_grid ... ok
 **C46** - A FINISH at the operating point ends the run (SAC-26)
 Proof: run owner | test finish_at_the_operating_point_ends_the_run ... ok
 
+**C47** - Consecutive rejected attempts beyond the cap fail loud naming the instant (SAC-27)
+Proof: run owner | test consecutive_rejections_beyond_the_cap_fail_loud ... ok
+
 ---
 
 ## Handoff

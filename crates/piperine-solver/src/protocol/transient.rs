@@ -31,12 +31,18 @@ pub struct ProtocolOptions {
     pub seconds_per_tick: f64,
     /// The bound on the equilibrium solves of an operating point (`E0506`).
     pub max_rounds: u32,
+    /// The bound on consecutive rejected attempts from one accepted time;
+    /// beyond it the transient fails naming that time.
+    pub max_rejections: u32,
 }
 
 impl ProtocolOptions {
-    /// Options with the default bound of 20 rounds.
+    /// The default bound on consecutive rejected attempts.
+    pub const MAX_REJECTIONS: u32 = 64;
+
+    /// Options with the default bounds: 20 rounds, 64 rejections.
     pub fn new(seconds_per_tick: f64) -> ProtocolOptions {
-        ProtocolOptions { seconds_per_tick, max_rounds: 20 }
+        ProtocolOptions { seconds_per_tick, max_rounds: 20, max_rejections: Self::MAX_REJECTIONS }
     }
 }
 
@@ -157,6 +163,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         let stop = self.time(stop_tick);
         let at = |t: f64, e: Error| Error::wrap(SolverDomain::Transient, format!("at t = {t:e} s"), e);
         let mut forced: Option<Tick> = None;
+        let mut rejections = 0u32;
         while self.tick(self.now) < stop_tick {
             let c = self.checkpoint();
             let now_tick = self.tick(self.now);
@@ -202,6 +209,17 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                     Attempt::Converged => {}
                     Attempt::Rejected => {
                         self.restore(&c);
+                        rejections += 1;
+                        if rejections >= self.options.max_rejections {
+                            return Err(Error::simple(
+                                SolverDomain::Transient,
+                                format!(
+                                    "{rejections} consecutive rejected attempts from t = {:e} s (last toward {t_c:e} s): \
+                                     the step does not converge",
+                                    self.now
+                                ),
+                            ));
+                        }
                         continue;
                     }
                     Attempt::LandedEarlier(t) => {
@@ -213,6 +231,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 }
                 // Step 5: accept, fire the crossings at (t_c, 0).
                 let accepted = self.analog.accept().map_err(|e| at(t_c, e))?;
+                rejections = 0;
                 for net in &accepted.fired {
                     self.discrete.fire(*net, tick_c).map_err(|e| at(t_c, e))?;
                 }
