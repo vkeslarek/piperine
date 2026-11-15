@@ -19,6 +19,13 @@ pub static REAL: Layout = Layout { size: 16, align: 8, fields: List::from_slice(
 /// `{ v: U8 @0, known @1 }`, size 2, align 1.
 pub static BYTE: Layout = Layout { size: 2, align: 1, fields: List::from_slice(&BYTE_FIELDS) };
 
+/// One `F64` with no known byte: the layout of a continuous pin (abi.md §3).
+pub static F64: Layout = Layout { size: 8, align: 8, fields: List::from_slice(&F64_FIELDS) };
+static F64_FIELDS: [Field; 1] =
+    [Field { name: V, leaf: leaf::F64, offset: 0, count: 1, flags: 0, known: 0 }];
+/// No bytes: the layout of an event pin (abi.md §3).
+pub static NONE: Layout = Layout { size: 0, align: 1, fields: List::empty() };
+
 /// A known false `BIT`.
 pub const LOW: [u8; 2] = [0, 1];
 /// A known true `BIT`.

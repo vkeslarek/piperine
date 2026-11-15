@@ -140,11 +140,11 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] `ShapeBuf` has `pin`, `term`, `input`, `watch`, `function`, `reaction`, `freeze`; each adder returns the entry's index
-- [ ] Test `resistor_shape_reads_back_through_raw_pointers` builds abi.md §11.1 and reads pins, term, function, reads, writes, partials, names and origins back through `as_raw()` (C7)
-- [ ] Test `shape_outlives_its_builder_scope` drops every `ShapeRef` but one clone and still reads the shape; under `cargo miri` it is not required
-- [ ] `ShapeRef` is `Send + Sync` (a compile-time assertion function in the test)
-- [ ] Gate: full
+- [x] `ShapeBuf` has `pin`, `term`, `input`, `watch`, `function`, `reaction`, `freeze`; each adder returns the entry's index
+- [x] Test `resistor_shape_reads_back_through_raw_pointers` builds abi.md §11.1 and reads pins, term, function, reads, writes, partials, names and origins back through `as_raw()` (C7)
+- [x] Test `shape_outlives_its_builder_scope` drops every `ShapeRef` but one clone and still reads the shape; under `cargo miri` it is not required
+- [x] `ShapeRef` is `Send + Sync` (a compile-time assertion function in the test)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
