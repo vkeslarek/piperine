@@ -165,12 +165,8 @@ impl Pins {
 
 /// Everything computed once per body: the shape and what each of its entries means.
 #[derive(Debug)]
-#[allow(dead_code, reason = "`pins`, `terms` and `functions` are read by the walk, T7")]
 pub struct BodyPlan {
     pub(crate) shape: ShapeRef,
-    pub(crate) pins: Pins,
-    /// What each term of the shape computes, in the shape's order.
-    pub(crate) terms: Vec<Term>,
     /// What each function of the shape computes, in the shape's order.
     pub(crate) functions: Vec<FunctionPlan>,
 }
@@ -315,7 +311,7 @@ impl BodyPlan {
             functions.push(plan);
         }
 
-        BodyPlan { shape: s.freeze(), pins, terms, functions }
+        BodyPlan { shape: s.freeze(), functions }
     }
 
     /// What term `t` reads.

@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use piperine_abi::caller::Handle;
+use piperine_abi::caller::{CallError, Handle};
 use piperine_abi::raw::{Cell, Module, Partial, Shape};
 use piperine_interp::Interpreter;
 use piperine_ir::{BodyId, Ir, IrBuilder};
@@ -47,6 +47,48 @@ impl Models {
     /// An instance of `name` at its defaults.
     pub fn instance(&self, name: &str) -> Handle {
         Handle::create(self.module(name), &[]).unwrap_or_else(|e| panic!("create `{name}`: {e}"))
+    }
+}
+
+/// What one call wrote: each write as an `F64`, and the partials.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Out {
+    pub values: Vec<f64>,
+    pub jac: Vec<f64>,
+}
+
+/// One read cell's bytes.
+pub enum In {
+    F64(f64),
+    Byte(u8),
+}
+
+impl Models {
+    /// Runs function `k` of `h` on `input`, every partial seeded unless `seed` is given. Every
+    /// write is an `F64` (terms, `PROPOSED`/`LIMITED`, `RE`/`IM`).
+    pub fn eval(h: &Handle, k: u32, input: &[In], seed: Option<&[u8]>) -> Result<Out, CallError> {
+        let f = h.shape().functions.get(k as usize).unwrap_or_else(|| panic!("no function {k}"));
+        let (writes, partials) = (f.writes.len(), f.partials.len());
+        let bytes: Vec<Vec<u8>> = input
+            .iter()
+            .map(|x| match x {
+                In::F64(v) => v.to_le_bytes().to_vec(),
+                In::Byte(b) => vec![*b],
+            })
+            .collect();
+        let input: Vec<&[u8]> = bytes.iter().map(|b| b.as_slice()).collect();
+        let mut out = vec![[0u8; 8]; writes];
+        let mut output: Vec<&mut [u8]> = out.iter_mut().map(|b| &mut b[..]).collect();
+        let all = vec![1u8; partials];
+        let seed = seed.unwrap_or(&all);
+        let mut jac = vec![0.0; partials];
+        h.eval(k, &input, &mut output, seed, &mut jac)?;
+        Ok(Out { values: out.iter().map(|b| f64::from_le_bytes(*b)).collect(), jac })
+    }
+
+    /// The bytes of `eval`'s writes and partials, for bit-for-bit comparison.
+    pub fn bits(out: &Out) -> (Vec<u64>, Vec<u64>) {
+        (out.values.iter().map(|v| v.to_bits()).collect(), out.jac.iter().map(|v| v.to_bits()).collect())
     }
 }
 

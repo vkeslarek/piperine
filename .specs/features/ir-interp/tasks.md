@@ -279,13 +279,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Capacitor at `v = 2`, `c = 1e-9`: charge `2e-9`, partials `c`, `-c`
-- [ ] Diode at `vd.VALUE = 0.6`, 300.15 K: flow `is·(exp(vd/vt) − 1) + gmin·vd` and partial `is·exp(vd/vt)/vt + gmin`, both to 1e-12 relative; charge `cj0·vd`
-- [ ] Vsource: `b0.flow` term equals the private pin with partial 1; `b0.eq` equals `vp − vn − dc·source_scale` with `source_scale` read from the ambient
-- [ ] An unseeded partial is left zero; two evaluations with equal inputs write equal bytes
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `evaluating_twice_writes_the_same_bytes`, `the_terms_function_sums_addends_with_signs`, `seeded_partials_are_the_dual_derivatives`, `environment_reads_come_from_pin_and_ambients`, `a_non_finite_value_is_written_as_is`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Capacitor at `v = 2`, `c = 1e-9`: charge `2e-9`, partials `c`, `-c`
+- [x] Diode at `vd.VALUE = 0.6`, 300.15 K: flow `is·(exp(vd/vt) − 1) + gmin·vd` and partial `is·exp(vd/vt)/vt + gmin`, both to 1e-12 relative; charge `cj0·vd`
+- [x] Vsource: `b0.flow` term equals the private pin with partial 1; `b0.eq` equals `vp − vn − dc·source_scale` with `source_scale` read from the ambient
+- [x] An unseeded partial is left zero; two evaluations with equal inputs write equal bytes
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `evaluating_twice_writes_the_same_bytes`, `the_terms_function_sums_addends_with_signs`, `seeded_partials_are_the_dual_derivatives`, `environment_reads_come_from_pin_and_ambients`, `a_non_finite_value_is_written_as_is`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

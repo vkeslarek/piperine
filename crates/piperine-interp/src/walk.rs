@@ -1,13 +1,21 @@
-//! The value walk: evaluation of IR value code over [`Dual`] numbers. Constants, locals, params,
-//! operators (`&&`/`||` short-circuit), `if`, blocks, `let`, calls, `Math`, and closures called
-//! with plain reals. A form it does not execute here (probes, environment reads, `limit`,
-//! `ac_stim` sites, contributions) is a `Fault` naming the form and its origin: the analog
-//! modes of the interpreter add those.
+//! The walk: evaluation of IR code over [`Dual`] numbers. Constants, locals, params, operators
+//! (`&&`/`||` short-circuit), `if`, blocks, `let`, calls, `Math`, and closures called with plain
+//! reals. An analog walk (`Walk::analog`) runs a body's `analog` block over a [`Frame`] of the
+//! values its function reads, and adds probes, environment reads, the sites and the
+//! contributions; a value walk (`Walk::new`) faults on those, naming the form and its origin.
+//!
+//! A cell the running function does not read cannot reach what it writes (its dependency set,
+//! `msl-ir` IR-09, is the reason it is not read), yet the walk may pass code that reads it: a
+//! `let` only another site uses. Such a read is `NaN`, never a plausible number, so a wrong
+//! dependency set shows as a non-finite write the solver refuses (abi.md A4).
 
 use piperine_abi::device::Fault;
-use piperine_ir::{BinaryOp, Expr, ExprId, FunctionId, Ir, MathFn, Origin, Stmt, StmtId, UnaryOp};
+use piperine_ir::{
+    Body, BinaryOp, Expr, ExprId, FunctionId, Ir, MathFn, Operator, Origin, Stmt, StmtId, Terminal, UnaryOp,
+};
 
 use crate::dual::Dual;
+use crate::plan::Mode;
 
 /// What an expression evaluates to.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,11 +27,75 @@ pub enum Value {
     Closure(ExprId),
 }
 
+/// The values an analog walk reads: one per body node, branch flow pin, site and ambient. `None`
+/// is a cell the running function does not read.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Frame {
+    pub nodes: Vec<Option<Dual>>,
+    /// The private flow pin of each branch (potential branches only).
+    pub flows: Vec<Option<Dual>>,
+    pub limits: Vec<Option<Dual>>,
+    pub stims: Vec<Option<Dual>>,
+    pub temperature: Option<Dual>,
+    pub gmin: Option<Dual>,
+    pub source_scale: Option<Dual>,
+}
+
+impl Frame {
+    /// A read value, or `NaN` when the function does not read the cell.
+    fn read(cell: Option<&Option<Dual>>) -> Dual {
+        cell.and_then(|c| c.clone()).unwrap_or_else(|| Dual::constant(f64::NAN))
+    }
+
+    /// The potential of a terminal: its node's pin, or 0 for ground.
+    pub fn potential(&self, t: Terminal) -> Dual {
+        match t {
+            Terminal::Node(i) => Self::read(self.nodes.get(i as usize)),
+            Terminal::Ground => Dual::constant(0.0),
+        }
+    }
+
+    /// `plus − minus`: what a probe reads.
+    pub fn probe(&self, plus: Terminal, minus: Terminal) -> Dual {
+        self.potential(plus) - self.potential(minus)
+    }
+
+    /// The private flow pin of branch `b`.
+    pub fn flow(&self, b: u32) -> Dual {
+        Self::read(self.flows.get(b as usize))
+    }
+}
+
+/// The sums a `Terms` walk builds: per branch, its direct and its `ddt` addends, each signed.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Sums {
+    pub direct: Vec<Option<Dual>>,
+    pub ddt: Vec<Option<Dual>>,
+}
+
+impl Sums {
+    fn add(slot: &mut Option<Dual>, v: Dual) {
+        *slot = Some(match slot.take() {
+            Some(acc) => acc + v,
+            None => v,
+        });
+    }
+}
+
+/// What an analog walk runs over.
+struct Analog<'a> {
+    body: Body<'a>,
+    mode: Mode,
+    frame: Frame,
+    sums: Sums,
+}
+
 /// One evaluation: the params of the body, and a stack of local frames (a call pushes one).
 pub struct Walk<'a> {
     ir: &'a Ir,
     params: Vec<Value>,
     frames: Vec<Vec<Value>>,
+    analog: Option<Analog<'a>>,
 }
 
 impl<'a> Walk<'a> {
@@ -32,7 +104,38 @@ impl<'a> Walk<'a> {
 
     /// A walk with `params` bound and one frame of `locals` unset (`Unit`) locals.
     pub fn new(ir: &'a Ir, params: Vec<Value>, locals: usize) -> Walk<'a> {
-        Walk { ir, params, frames: vec![vec![Value::Unit; locals]] }
+        Walk { ir, params, frames: vec![vec![Value::Unit; locals]], analog: None }
+    }
+
+    /// An analog walk of `body` in `mode`, over the reads in `frame` and `params` (one per param
+    /// of the body; an unread real param is `NaN`).
+    pub(crate) fn analog(body: Body<'a>, mode: Mode, frame: Frame, params: Vec<Value>) -> Walk<'a> {
+        let branches = body.branches().len();
+        let sums = Sums { direct: vec![None; branches], ddt: vec![None; branches] };
+        let locals = body.locals().len();
+        Walk {
+            ir: body.ir(),
+            params,
+            frames: vec![vec![Value::Unit; locals]],
+            analog: Some(Analog { body, mode, frame, sums }),
+        }
+    }
+
+    /// Runs the `analog` block once, statement by statement.
+    pub(crate) fn run(&mut self) -> Result<(), Fault> {
+        let Some(analog) = &self.analog else {
+            return Err(Fault::new(Self::UNEXECUTED, "a value walk has no `analog` block to run"));
+        };
+        let body = analog.body;
+        for id in body.analog().unwrap_or(&[]) {
+            self.exec(*id)?;
+        }
+        Ok(())
+    }
+
+    /// The sums the walk built, and the frame it read.
+    pub(crate) fn finish(self) -> Option<(Sums, Frame)> {
+        self.analog.map(|a| (a.sums, a.frame))
     }
 
     fn origin(origin: &Origin) -> String {
@@ -65,7 +168,7 @@ impl<'a> Walk<'a> {
         }
     }
 
-    fn frame(&mut self) -> &mut Vec<Value> {
+    fn locals(&mut self) -> &mut Vec<Value> {
         self.frames.last_mut().expect("a walk always has a frame")
     }
 
@@ -96,12 +199,15 @@ impl<'a> Walk<'a> {
 
     /// Evaluates one expression.
     pub fn eval(&mut self, id: ExprId) -> Result<Value, Fault> {
+        if let Some(v) = self.read_form(id) {
+            return Ok(Value::Real(v));
+        }
         let ir = self.ir;
         match ir.expr(id) {
             Expr::Real(r) => Ok(Value::Real(Dual::constant(r.get()))),
             Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::Unit => Ok(Value::Unit),
-            Expr::Local(i) => Ok(self.frame()[*i as usize].clone()),
+            Expr::Local(i) => Ok(self.locals()[*i as usize].clone()),
             Expr::Param(i) => match self.params.get(*i as usize) {
                 Some(v) => Ok(v.clone()),
                 None => Err(self.fault(id, &format!("param {i} is not bound"))),
@@ -144,7 +250,31 @@ impl<'a> Walk<'a> {
                 }))
             }
             Expr::Closure { .. } => Ok(Value::Closure(id)),
-            other => Err(self.fault(id, &format!("the IR form `{}` is not executed by the value walk", Self::form(other)))),
+            other => Err(self.fault(id, &format!("the IR form `{}` is not executed by this walk", Self::form(other)))),
+        }
+    }
+
+    fn mode(&self) -> Option<Mode> {
+        self.analog.as_ref().map(|a| a.mode)
+    }
+
+    /// The value of an analog read form (probe, environment, a site read in `Terms`), or `None`
+    /// when `id` is not one this walk answers from its frame.
+    fn read_form(&self, id: ExprId) -> Option<Dual> {
+        let analog = self.analog.as_ref()?;
+        let f = &analog.frame;
+        match self.ir.expr(id) {
+            Expr::Probe { plus, minus } => Some(f.probe(*plus, *minus)),
+            Expr::Env(env) => Some(Frame::read(Some(match env {
+                piperine_ir::Env::Temperature => &f.temperature,
+                piperine_ir::Env::Gmin => &f.gmin,
+                piperine_ir::Env::SourceScale => &f.source_scale,
+            }))),
+            // §18 rule 3, abi.md A2: the held value stands in for `x`; `x`, `f` and the seed are
+            // the site function's, not evaluated here.
+            Expr::Limit { site, .. } if analog.mode == Mode::Terms => Some(Frame::read(f.limits.get(*site as usize))),
+            Expr::Stim { site, .. } if analog.mode == Mode::Terms => Some(Frame::read(f.stims.get(*site as usize))),
+            _ => None,
         }
     }
 
@@ -186,17 +316,31 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Runs one statement: `let` and expression statements. A contribution is not a value form
-    /// and faults here.
+    /// Runs one statement: `let`, expression statements, and in a `Terms` walk a contribution,
+    /// each addend added with its sign to its branch's direct or `ddt` sum. Elsewhere a
+    /// contribution faults.
     pub fn exec(&mut self, id: StmtId) -> Result<(), Fault> {
         let ir = self.ir;
         match ir.stmt(id) {
             Stmt::Let { local, init } => {
                 let v = self.eval(*init)?;
-                self.frame()[*local as usize] = v;
+                self.locals()[*local as usize] = v;
                 Ok(())
             }
             Stmt::Expr(e) => self.eval(*e).map(|_| ()),
+            Stmt::Contribute { branch, addends, .. } if self.mode() == Some(Mode::Terms) => {
+                for a in addends {
+                    let v = self.eval_real(a.value)?;
+                    let v = if a.negated { -v } else { v };
+                    let Some(analog) = self.analog.as_mut() else { break };
+                    let sums = if a.operator == Operator::Direct { &mut analog.sums.direct } else { &mut analog.sums.ddt };
+                    match sums.get_mut(*branch as usize) {
+                        Some(slot) => Sums::add(slot, v),
+                        None => return Err(self.fault(a.value, &format!("a contribution to branch {branch}, out of range"))),
+                    }
+                }
+                Ok(())
+            }
             Stmt::Contribute { addends, .. } => {
                 let at = addends.first().map_or_else(|| "<unknown>".to_string(), |a| Self::origin(ir.expr_origin(a.value)));
                 Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Contribute` is not executed by the value walk (at {at})")))
@@ -228,7 +372,7 @@ impl<'a> Walk<'a> {
             return Err(self.fault(id, &format!("a closure of {} params called with {}", params.len(), args.len())));
         }
         for (local, value) in params.iter().zip(args) {
-            self.frame()[*local as usize] = Value::Real(Dual::constant(*value));
+            self.locals()[*local as usize] = Value::Real(Dual::constant(*value));
         }
         Ok(self.eval_real(*body)?.v)
     }
