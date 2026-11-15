@@ -38,3 +38,17 @@ high level para uma geração intermediária."
 | O6 | Order of delivery. | `msl-elab` + `msl-ir` + `ir-interp` first (first end-to-end MSL→solver, enables integration tests and ngspice parity), `ir-rust` after. |
 | O7 | Shipping `rustc` with the binary. | later (C5). |
 | O8 | Everything the ABI duel decides (device shape, state, events, small-signal/noise, introspection, external devices, versioning). | duel output. |
+
+## Device ABI decisions (user, 2026-11-15)
+
+The duel converged (`.specs/features/device-abi/abi.md`, elegance 8.1, 13 concepts, 6 entry points). Spec amendments of its §15:
+
+| # | Amendment | User's choice |
+| - | --------- | ------------- |
+| 1 | §17.2 rule 2: a commit always advancing time by at least one tick does not make its instant a time point (`LATER`) | "Accept (Recommended)" |
+| 8 | continuation variables visible to models as core environment functions `gmin()`, `source_scale()` | "Core fns gmin()/source_scale() (Recommended)" |
+| 3b | `extern "cosim"` modules with continuous ports | "Not now (Recommended)" - stays discrete-only |
+| 6, 2, 3a, 4, 9 | two canonical-byte sentences in Part I; time-point definition; extern C interface = device ABI; structure-changing `set` refused like a structural param; Appendix C note on records | "Yes, all of them (Recommended)" |
+| 5, 7 | withdrawn by the critic | - |
+
+These spec edits land in their own small feature (`spec-abi-amendments`), not yet planned.
