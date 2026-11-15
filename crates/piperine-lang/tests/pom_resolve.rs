@@ -1372,6 +1372,21 @@ fn a_blanket_trait_out_of_scope_never_links() {
 }
 
 #[test]
+fn a_local_item_named_like_a_prelude_trait_keeps_its_methods() {
+    // N1: the trait is in scope through the prelude although a model item takes its name; the
+    // check is by the trait's declaration, not by the text `Known`.
+    let std = "pub trait Known { fn known(self) -> bool; fn known_or(self, d: bool) -> bool; fn is_known(self) -> bool; }\n\
+        impl<T: Repr> Known for T { fn known(self) -> bool { true } fn known_or(self, d: bool) -> bool { true } fn is_known(self) -> bool { true } }\n";
+    for item in ["struct Known { x: f64 }", "module Known() {}"] {
+        let design = std_lib(Design::builder(), std).source("top.msl", &format!("nature Lvl {{ value: f64 }}\n{item}\nmodule M(p: Lvl) {{ let a = p.known(); let b = p.known_or(true); let c = p.is_known(); }}\n")).build();
+        for call in ["p.known()", "p.known_or(true)", "p.is_known()"] {
+            let want = Resolution::Decl(design.std_crate().find(&format!("prelude::Known::{}", &call[2..call.find('(').unwrap()])).expect("std declares it").id());
+            assert_eq!(member_res(&design, call), want, "{item}: {call}");
+        }
+    }
+}
+
+#[test]
 fn two_visible_blankets_keep_declaration_order() {
     // G.67: no ambiguity code exists; with two visible blanket traits of one method name the first
     // in declaration order links, silently.
