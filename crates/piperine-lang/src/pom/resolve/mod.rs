@@ -36,10 +36,11 @@ pub(super) struct Ctx<'a> {
     design: &'a Design,
     scopes: scopes::Scopes,
     imports: imports::Imports,
-    /// The root namespace of each prelude source.
-    prelude: Vec<DeclId>,
-    /// The root file's namespace: what `crate` names.
-    root: DeclId,
+    /// The namespace `prelude` of the standard library's root: its `pub` items are implicit.
+    prelude: Option<DeclId>,
+    /// The dependency names of each crate (by `CrateId`) and the root namespace each names:
+    /// the declared dependencies, and `std`.
+    deps: Vec<BTreeMap<String, DeclId>>,
     /// The module each behavior block is bound to (stage 4).
     links: BTreeMap<DeclId, DeclId>,
     /// The `impl` blocks of each declaration, by the declaration their self
@@ -61,8 +62,8 @@ pub(super) fn run(design: &mut Design) {
             design,
             scopes: scopes::Scopes::build(design),
             imports: imports::Imports::build(design),
-            prelude: design.files.iter().filter(|f| f.prelude).map(|f| f.root).collect(),
-            root: design.root_id(),
+            prelude: std_prelude(design),
+            deps: dependency_names(design),
             links: BTreeMap::new(),
             impls: BTreeMap::new(),
             access: classify::access_table(design),
@@ -126,4 +127,26 @@ pub(super) fn run(design: &mut Design) {
     }
     design.sort_diagnostics();
     design.index = super::index::build(design);
+}
+
+/// The `pub` namespace `prelude` declared at the root of the standard library (its first file).
+fn std_prelude(design: &Design) -> Option<DeclId> {
+    let root = design.crate_data(design.std_crate).root;
+    design.decl_data(root).children.iter().copied().find(|c| {
+        let data = design.decl_data(*c);
+        data.public && matches!(data.kind, super::decl::DeclKind::Namespace(_)) && data.name.as_ref().is_some_and(|n| n.text == "prelude")
+    })
+}
+
+/// The dependency names of every crate, each mapped to the root namespace of the crate it names.
+fn dependency_names(design: &Design) -> Vec<BTreeMap<String, DeclId>> {
+    let std_root = design.crate_data(design.std_crate).root;
+    (0..design.crates.len())
+        .map(|i| {
+            let data = design.crate_data(super::ids::CrateId(i as u32));
+            let mut names: BTreeMap<String, DeclId> = data.dependencies.iter().map(|d| (d.name.clone(), design.crate_data(d.krate).root)).collect();
+            names.insert("std".to_string(), std_root);
+            names
+        })
+        .collect()
 }

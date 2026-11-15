@@ -348,6 +348,7 @@ This table, together with §1 rule 2, §3.2 and A.1, is the complete list of wha
 | double borrows (`&&x`) | `E0900` | one borrow: `&x` |
 | `union` items | `E0900` | a `struct` or an `enum` |
 | `extern` blocks | `E0900` | an `extern "C" fn` item |
+| `extern crate` items | `E0900` | a dependency named under `[dependencies]` of the manifest |
 
 Taken from Rust. Two forms look removed and are part of the language:
 

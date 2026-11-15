@@ -1193,6 +1193,22 @@ makes every task span four layers.
 **Scope:** every feature that edits `docs/spec/`.
 **Status:** Locked (msl-polish spec approved 2026-11-14).
 
+### MD-58: packages follow Cargo; the front end takes a crate graph as data
+
+`msl-packages` design decision (2026-11-14).
+
+A crate reaches another only through a dependency named in `Piperine.toml` (user, 2026-11-14: "faremos modelo RUST 100%"); there is no search path. A local name that equals a dependency name wins in an ordinary path and is an ambiguity error (`E0163`) in a `use` path (user, U6). `piperine-lang` takes a `CrateGraph` (names, root files, named edges, acyclic by construction) and never reads a manifest or a repository; `piperine-project` owns `Piperine.toml`, path and git resolution and `Piperine.lock`, and nothing else. One `Design` holds every crate as its own tree (navigability rule); a dependency name resolves to the root namespace of the other crate. Trade-off: no include path, ever, and a `Design` whose serialized form carries crates. Scope: `docs/spec` §3.5 and §3.6, `piperine-lang`, `piperine-project`, and every host.
+
+**Status:** Locked (msl-packages approved 2026-11-14).
+
+### MD-59: `std` is a crate embedded in `piperine-lang`; the prelude is `std::prelude`
+
+`msl-packages` design decision (2026-11-14).
+
+(user, 2026-11-14: "std fica embutida o binário"). Its sources are `crates/piperine-lang/std/*.msl`, compiled in with `include_str!`; every crate depends on it implicitly; the builder's prelude sources are gone (`std_source` replaces the library in tests). Supersedes the "prelude sources" of MD-54's builder and closes the open half of MD-55 (the extension `.msl` is now in §3.6). Scope: `piperine-lang`, `msl-stdlib`.
+
+**Status:** Locked (msl-packages approved 2026-11-14).
+
 ---
 
 ### MD-60: the solver is three crates; events are the only boundary

@@ -16,7 +16,7 @@ A name that cannot be resolved is a hole in the navigation, not a failure: the s
 | 0. Load | finds and reads the files of the source tree (`mod b;` follows Rust's layout) | files, `E0161` for a missing, ambiguous or cyclic `mod` file |
 | 1. Lower | builds the declaration tree and the body arenas from the syntax tree, with every slot unset | all nodes |
 | 2. Scopes | per-namespace type and value tables, per-module member tables | `E0457`, `E0330`, `E0162` |
-| 3. Imports | `use` items, `self`/`super`/`crate`, visibility, prelude sources | import resolution |
+| 3. Imports | `use` items, `self`/`super`/`crate`, visibility, `std::prelude` | import resolution |
 | 4. Behaviors | binds each `analog`/`digital` block to its module | `BehaviorData::module`, `ModuleData::behaviors`, `E0401`, `E0402`, `E0403` |
 | 5. Names | every path with its lexical scope stack | `PathSegment::res`, `E0161` |
 | 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle`, `E0130` |
@@ -40,8 +40,9 @@ A single-segment name is looked up in this order; the first hit wins.
    does not resolve is one `E0161`, as at the top level.
 2. **The items and imports of the enclosing namespace**: its own declarations, its `use` leaves
    and its glob imports.
-3. **The prelude sources**: the `pub` items of every prelude source are visible in every file.
-4. **The built-in table** (below).
+3. **The dependency names of the crate** that holds the path (`std` among them): the name resolves to the root namespace of that crate, so `util::cells::Cell` reads a module of the dependency `util`. In an ordinary path an item or an import of step 2 wins over a dependency of the same name, when it is in the type namespace (a `mod`, `struct`, `enum`, `nature`, `module` or `trait`, or an import of one): the first segment of a longer path is looked up there only, so a `fn` or `const` of that name hides nothing; the first segment of a `use` path that names both is `E0163`. `crate` is the root namespace of the crate that holds the path.
+4. **The prelude**: the `pub` items of the namespace `prelude` of the standard library (`std::prelude`) are visible in every file; a dependency name hides a prelude item.
+5. **The built-in table** (below).
 
 A multi-segment path resolves one segment at a time: the first as above (or `crate`, `self`,
 `super`), each next one inside what the previous named (a namespace's items, a module's
@@ -108,19 +109,30 @@ let k = design.root().children().into_iter().find_map(|d| d.as_const()).unwrap()
 assert!(k.decl().references().is_empty());
 ```
 
-### Imports and the prelude
+### Crates and the standard library
+
+A crate names another by the dependency name its graph gives it; `std` is a dependency of every
+crate, and its `prelude` namespace is visible everywhere. Only `pub` items cross a crate.
 
 ```rust
-use piperine_lang::pom::{Design, Reflect};
+use piperine_lang::pom::{CrateGraph, Design, Reflect};
 
+let mut graph = CrateGraph::new();
+let app = graph.add_crate("app", "app/lib.msl").unwrap();
+let util = graph.add_crate("util", "util/lib.msl").unwrap();
+graph.add_dependency(app, "util", util).unwrap();
 let design = Design::builder()
-    .prelude("std.msl", "pub nature Bit { value: bool }")
-    .source("top.msl", "mod lib { pub module Cell(p: Bit) {} }\nuse lib::Cell;\nmodule Top(p: Bit) { let c = Cell(p); }")
+    .std_source("lib.msl", "pub mod prelude { pub nature Bit { value: bool } }")
+    .source("app/lib.msl", "module Top(p: Bit) { let c = util::Cell(p); }")
+    .source("util/lib.msl", "pub module Cell(p: Bit) {}")
+    .crates(graph)
     .build();
 assert!(design.diagnostics().is_empty());
-// `Bit` comes from the prelude, `Cell` through the `use`; the instance is linked.
+// `util` is a dependency name, `Bit` comes from `std::prelude`; the instance is linked across crates.
 let top = design.module("Top").unwrap();
-assert_eq!(top.instance("c").unwrap().module(), design.module("Cell"));
+let cell = design.module("Cell").unwrap();
+assert_eq!(top.instance("c").unwrap().module(), Some(cell));
+assert_eq!(cell.krate().name(), "util");
 assert_eq!(top.port("p").unwrap().nature(), design.nature("Bit"));
 ```
 
@@ -148,7 +160,7 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 
 The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, `f16`, `f32`,
 `f64`, `f128`). Standard-library modules such as `idt`, `transition` and `above` are *not*
-built in: they are declared in the standard library's prelude sources (Part VII of the
+built in: they are declared in the standard library's `std::prelude` (Part VII of the
 specification), and a design that does not load them leaves them `Unresolved`. The `Trait` and `Type` rows are kept equal to the tables H.8 and H.9 of Appendix H (plus `Repr`, `Nature`, `Fn` and the §1 types). Methods of the catalogue get no row: a method on a value needs its receiver's type and stays `Deferred(ReceiverTypeUnknown)`. An associated name written through a generic (`A::WIDTH`) resolves through its bounds: an item of a user trait, a `Repr` member row, `E0161` when `Repr` is the only bound and has no such member, and `Deferred(BuiltinTraitMember)` (silently) through any other built-in trait. A namespace item named like a core
 primitive of §14, or `gnd`, `Nature` or `str`, is `E0457` (`m` and `dtemp` are `E0375`, left to elaboration).
 
@@ -301,8 +313,10 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one | the function's name |
 | `E0130` | 6 | `§3.1` | an `impl` block written for a module | the self type of the `impl` |
 | `E0140` | 6 | `§3.2` | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
-| `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path; an unreadable root file; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
+| `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path, including a private item or a private namespace of another crate; a first segment that names a crate of the design that is no dependency of the containing crate (the help reads `name it under [dependencies] in Piperine.toml`); `super` at a crate root; an unreadable root file or crate root; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
 | `E0162` | 2, 3, 5 | `§3.4` | a name declared twice in one table of a namespace or of a block (§3.4.10); an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
+| `E0163` | 3, 5 | `§3.5` | the first segment of a `use` path (also in a block) names both a dependency of the crate and an item or an import of the enclosing namespace (a type-namespace one: a `fn` or `const` of that name is no clash); the path stays `Unresolved`, no `E0161`; the name the `use` binds is an errored binding, so a later read of it reports nothing more; the help names `package = ".."` in the manifest and `crate::<name>` | the `use` path |
+| `E0171` | 0 | `§3.6` | the file stem of a single root file is a keyword or `std`, so it cannot name the root crate; the crate is named with a `_` appended | the start of the root file |
 | `E0201` | 8 | `§4` | a nature that repeats a field, mixes discrete and continuous fields, or has neither `value` nor `potential`; its `kind()` is `Invalid` | the nature's name |
 | `E0206` | 6 | `§4` | an access call whose first argument has a declared nature that declares no access of that name; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
 | `E0211` | 7 | `§5.1` | a carrier method (one of B.1, or a function of the element nature's `impl`) called on an array of carriers; the method stays `Unresolved` and `arr[i].m()` resolves | the method name |

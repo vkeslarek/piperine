@@ -57,7 +57,7 @@ fn builtin_table_has_every_core_primitive() {
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{Design, DesignDiagnostic, PathId, Reflect, Resolution};
+use piperine_lang::pom::{Design, DesignBuilder, DesignDiagnostic, PathId, Reflect, Resolution};
 use support::{build, codes};
 
 /// The diagnostics of one code.
@@ -170,7 +170,7 @@ use a::deep::g;
 fn prelude_source_items_are_visible_everywhere() {
     let prelude = "pub enum Mode { A, B }\npub struct Shared {}\nstruct Hidden {}\npub const LIMIT: u32 = 3;\n";
     let src = "use Mode::A;\nmod m { use Shared; mod deep { fn f(x: Shared) -> u32 { let y: Mode = Mode::B; LIMIT } } }\nuse Hidden;\n";
-    let design = Design::builder().prelude("std.msl", prelude).source("top.msl", src).build();
+    let design = std_lib(Design::builder(), prelude).source("top.msl", src).build();
     // From the root and from a nested namespace, without any `use` of the prelude.
     let mode = Resolution::Decl(
         (0..design.decl_count()).map(|i| piperine_lang::pom::DeclId(i as u32)).find(|d| design.decl_data(*d).name.as_ref().is_some_and(|n| n.text == "Mode")).unwrap(),
@@ -179,13 +179,13 @@ fn prelude_source_items_are_visible_everywhere() {
     assert_eq!(a[0], mode);
     assert!(matches!(a[1], Resolution::Decl(_)));
     // Names read in a signature, a type and a body of a nested namespace, with no `use`.
-    let shared = Resolution::Decl(design.decl_data(design.decl(piperine_lang::pom::DeclId(0)).id()).children.iter().copied().find(|c| design.decl_data(*c).name.as_ref().is_some_and(|n| n.text == "Shared")).unwrap());
+    let shared = Resolution::Decl((0..design.decl_count()).map(|i| piperine_lang::pom::DeclId(i as u32)).find(|d| design.decl_data(*d).name.as_ref().is_some_and(|n| n.text == "Shared")).unwrap());
     assert_eq!(resolutions(&design, "Shared"), [[shared], [shared]], "the `use` in `m` and the parameter type in `deep`");
     let limit = &resolutions(&design, "LIMIT")[0];
     assert_eq!(limit.len(), 1);
     let Resolution::Decl(limit) = limit[0] else { panic!("LIMIT resolves") };
     assert_eq!(design.decl_data(limit).kind.label(), "Const");
-    assert_eq!(design.decl_data(limit).file, design.files()[0].id(), "the prelude's const, not a guess");
+    assert_eq!(design.decl_data(limit).file, design.files().iter().find(|f| f.name() == "prelude.msl").unwrap().id(), "the prelude's const, not a guess");
     assert_eq!(resolutions(&design, "Mode"), [[mode]], "the type annotation");
     assert_eq!(resolutions(&design, "Mode::B")[0][0], mode);
     // Only the `pub` items are visible: `Hidden` is not found.
@@ -194,14 +194,14 @@ fn prelude_source_items_are_visible_everywhere() {
     assert_eq!(missing.len(), 1, "{missing:?}");
     assert_eq!(primary_text(&design, missing[0]), "Hidden");
     // The same through the spec fixture: its natures are there for the asking.
-    let design = Design::builder().prelude("prelude.msl", PRELUDE_FIXTURE).source("top.msl", "use Electrical;\nuse Bit;\n").build();
+    let design = std_lib(Design::builder(), PRELUDE_FIXTURE).source("top.msl", "use Electrical;\nuse Bit;\n").build();
     // (Whether the fixture builds clean by itself is `fixture_prelude_builds_clean`'s question.)
     let root_file = design.root().file().id();
     assert!(design.diagnostics().iter().all(|d| d.file != root_file), "{:?}", design.diagnostics());
     let Resolution::Decl(electrical) = one(&design, "Electrical")[0] else { panic!("Electrical resolves") };
     assert!(design.decl_data(electrical).file != design.root().file().id());
-    assert!(design.root().file().id() != piperine_lang::pom::FileId(0));
-    assert!(design.files()[0].is_prelude());
+    assert!(design.root().file().id() == piperine_lang::pom::FileId(0));
+    assert!(design.files().last().unwrap().krate().is_std());
 }
 
 #[test]
@@ -420,16 +420,16 @@ fn ddt() {}
 mod nofile;
 ";
     let prelude = "pub fn pf() { prelude_missing; }\n";
-    let design = Design::builder().prelude("std.msl", prelude).source("top.msl", src).build();
+    let design = std_lib(Design::builder(), prelude).source("top.msl", src).build();
     let found: Vec<(u32, usize, String)> = design.diagnostics().iter().map(|d| (d.file.0, d.diagnostic.span().start, d.diagnostic.code.to_string())).collect();
     let mut sorted = found.clone();
     sorted.sort();
     assert_eq!(found, sorted, "ordered by file, then offset, then code");
-    // Nothing is lost by the ordering: the prelude's error, then the root's, one of each code.
+    // Nothing is lost by the ordering: the root's errors, then the library's, one of each code.
     let codes: Vec<&str> = found.iter().map(|(_, _, c)| c.as_str()).collect();
-    assert_eq!(codes, ["E0161", "E0161", "E0330", "E0161", "E0457", "E0161"]);
-    assert_eq!(found[0].0, 0);
-    assert!(found[1..].iter().all(|(f, _, _)| *f == 1));
+    assert_eq!(codes, ["E0161", "E0330", "E0161", "E0457", "E0161", "E0161"]);
+    assert!(found[..5].iter().all(|(f, _, _)| *f == 0));
+    assert!(found[5].0 > 0, "the library's file is numbered after the project's");
 }
 
 #[test]
@@ -561,7 +561,7 @@ fn f() -> u32 { Mode::B(1); S::K + S::make() + S::X + Tr::run() }
 #[test]
 fn fixture_prelude_builds_clean() {
     // As a prelude beside an empty root, and as the root itself: no diagnostics either way.
-    let as_prelude = Design::builder().prelude("prelude.msl", PRELUDE_FIXTURE).source("top.msl", "").build();
+    let as_prelude = std_lib(Design::builder(), PRELUDE_FIXTURE).source("top.msl", "").build();
     assert!(as_prelude.diagnostics().is_empty(), "{:?}", as_prelude.diagnostics());
     let as_root = Design::builder().source("prelude.msl", PRELUDE_FIXTURE).build();
     assert!(as_root.diagnostics().is_empty(), "{:?}", as_root.diagnostics());
@@ -1163,4 +1163,10 @@ fn duplicate_items_in_a_block_are_e0162() {
         let design = build(clean);
         assert!(design.diagnostics().is_empty(), "{clean}: {:?}", design.diagnostics());
     }
+}
+
+/// `items` as the `pub` content of `std::prelude` (what `.prelude(name, items)` used to register).
+/// It is a second std file so the fixture's own `//!` comments stay legal.
+fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
+    builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
 }

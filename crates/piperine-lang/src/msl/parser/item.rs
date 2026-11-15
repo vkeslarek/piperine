@@ -456,6 +456,10 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
             ItemKind::Error
         })
         .boxed();
+    let extern_crate = skipped(
+        kw(Kw::Extern).map_with(|_, e| e.span()).then_ignore(kw(Kw::Crate)).boxed(),
+        "`extern crate` items",
+    );
     let extern_block = kw(Kw::Extern)
         .map_with(|_, e| e.span())
         .then_ignore(string_lit().or_not())
@@ -482,6 +486,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         type_alias,
         static_item,
         union_item,
+        extern_crate,
         extern_block,
     ]);
     let item = meta(h)

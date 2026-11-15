@@ -26,13 +26,14 @@ read is in [Model](model.md).
 
 ### `Design`
 
-The entry point. Lookups, whole-design listings, files, diagnostics and the raw arenas. Every by-name lookup prefers the project's declaration over a prelude source's; every typed collection (`modules()`, `natures()`, `structs()`, `enums()`, `traits()`, `consts()`, `impls()`, `functions()`, `namespaces()`) lists the non-prelude files only, in source order. `decls()` and `files()` list everything, prelude sources included; `prelude_files()` gives the prelude's own files.
+The entry point. Lookups, whole-design listings, files, diagnostics and the raw arenas. Every by-name lookup (`module`, `function`, `struct_named`, `nature`, `find`) prefers the root crate's declaration, else the first in crate order; every typed collection (`modules()`, `natures()`, `structs()`, `enums()`, `traits()`, `consts()`, `impls()`, `functions()`, `namespaces()`) lists the root crate only, in source order; `Crate::decls()` and `Crate::modules()` list one crate. `decls()` and `files()` list everything, `std` included; `std_crate().files()` gives the standard library's own files.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `check(&self)` | `Vec<String>` | The internal inconsistencies of the arenas, one message each; empty when the design is well formed. |
 | `builder()` | `DesignBuilder` | A builder with no sources. |
 | `load(root: impl Into<PathBuf>)` | `Design` | Read the tree rooted at `root` from disk: `mod b;` follows Rust's layout. An unreadable root gives an empty root and one `E0161`. |
+| `load_crates(graph: CrateGraph)` | `Design` | Read every crate of the graph from disk, `std` last: each crate root and the files its `mod` items name. An unreadable root gives an empty crate and one `E0161`. |
 | `from_json(text: &str)` | `Result<Design, Vec<String>>` | Read a design back from its JSON and validate it: `Err` lists the problems when the text is not a design or `check()` rejects what it holds; never panics. The derived `Deserialize` is unvalidated, so `from_json` is the entry point for text that did not come from `build`. |
 | `diagnostics(&self)` | `&[DesignDiagnostic]` | Every diagnostic of the build, every diagnostic sorted by file, offset and code. |
 | `expr_node(&self, id: ExprId)` | `&ExprNode` | The expression with this id. Ids come from this design. |
@@ -48,7 +49,7 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `decl_data(&self, id: DeclId)` | `&DeclData` | The declaration with this id. Ids come from this design. |
 | `decl_count(&self)` | `usize` | The number of declarations. |
 | `dump(&self)` | `String` | One line per declaration, depth first, roots in file order: indent (two spaces per level), kind, name (`-` when none), `start..end`. |
-| `files(&self)` | `Vec<SourceFile<'_>>` | Every file, prelude sources first, then the root, then loaded files. |
+| `files(&self)` | `Vec<SourceFile<'_>>` | Every file: the project's (the root, then loaded files), then the standard library's. |
 | `expr(&self, id: ExprId)` | `Expr<'_>` | A handle on the expression with this id. |
 | `stmt(&self, id: StmtId)` | `Stmt<'_>` | A handle on the statement with this id. |
 | `pat(&self, id: PatId)` | `Pat<'_>` | A handle on the pattern with this id. |
@@ -56,20 +57,23 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `path(&self, id: PathId)` | `Path<'_>` | A handle on the path with this id. |
 | `root(&self)` | `Decl<'_>` | The root file's namespace. |
 | `decl(&self, id: DeclId)` | `Decl<'_>` | The declaration with this id, as a handle: the way from a `Resolution::Decl(id)` to the declaration. Ids come from this design. |
-| `decls(&self)` | `Vec<Decl<'_>>` | Every declaration of the design in arena (source) order, prelude files first. |
-| `prelude_files(&self)` | `Vec<SourceFile<'_>>` | The prelude sources, in registration order. |
-| `modules(&self)` | `Vec<Module<'_>>` | Every module of the non-prelude files, in source order. |
-| `module(&self, name: &str)` | `Option<Module<'_>>` | The module named `name`: the first match in a non-prelude file, else the first match in a prelude source. |
-| `functions(&self)` | `Vec<Function<'_>>` | Every free function (a `fn` directly in a namespace) of the non-prelude files, in source order. |
+| `decls(&self)` | `Vec<Decl<'_>>` | Every declaration of the design in arena (source) order, the project's files first. |
+| `crates(&self)` | `Vec<Crate<'_>>` | Every crate in graph order: the root crate first, `std` last. |
+| `krate(&self, name: &str)` | `Option<Crate<'_>>` | The first crate of this name, in crate order; a dependency name is not a crate name. |
+| `root_crate(&self)` | `Crate<'_>` | The crate the design was built from. |
+| `std_crate(&self)` | `Crate<'_>` | The standard library. |
+| `modules(&self)` | `Vec<Module<'_>>` | Every module of the root crate, in source order. |
+| `module(&self, name: &str)` | `Option<Module<'_>>` | The module named `name`: the root crate's, else the first match in crate order. |
+| `functions(&self)` | `Vec<Function<'_>>` | Every free function (a `fn` directly in a namespace) of the root crate, in source order. |
 | `function(&self, name: &str)` | `Option<Function<'_>>` | The free function named `name`, project files first. |
-| `structs(&self)` | `Vec<Struct<'_>>` | Every struct of the non-prelude files, in source order. |
+| `structs(&self)` | `Vec<Struct<'_>>` | Every struct of the root crate, in source order. |
 | `struct_named(&self, name: &str)` | `Option<Struct<'_>>` | The struct named `name`, project files first. |
-| `enums(&self)` | `Vec<Enum<'_>>` | Every enum of the non-prelude files, in source order. |
-| `traits(&self)` | `Vec<Trait<'_>>` | Every trait of the non-prelude files, in source order. |
-| `consts(&self)` | `Vec<Const<'_>>` | Every `const` item of the non-prelude files, in source order. |
-| `impls(&self)` | `Vec<Impl<'_>>` | Every `impl` block of the non-prelude files, in source order. |
-| `namespaces(&self)` | `Vec<Namespace<'_>>` | Every named namespace (`mod a { .. }` or `mod a;`) of the non-prelude files; a file's unnamed root is not listed. |
-| `natures(&self)` | `Vec<Nature<'_>>` | Every nature of the non-prelude files, in source order. |
+| `enums(&self)` | `Vec<Enum<'_>>` | Every enum of the root crate, in source order. |
+| `traits(&self)` | `Vec<Trait<'_>>` | Every trait of the root crate, in source order. |
+| `consts(&self)` | `Vec<Const<'_>>` | Every `const` item of the root crate, in source order. |
+| `impls(&self)` | `Vec<Impl<'_>>` | Every `impl` block of the root crate, in source order. |
+| `namespaces(&self)` | `Vec<Namespace<'_>>` | Every named namespace (`mod a { .. }` or `mod a;`) of the root crate; a file's unnamed root is not listed. |
+| `natures(&self)` | `Vec<Nature<'_>>` | Every nature of the root crate, in source order. |
 | `nature(&self, name: &str)` | `Option<Nature<'_>>` | The nature named `name`, project files first. |
 | `find(&self, path: &str)` | `Option<Decl<'_>>` | The declaration at a `::` path from the root, each segment a child name: `a::M` is `M` inside namespace `a`; or a name `qualified_name` printed (`a::E.A`, `impl S.X`), the first declaration with exactly it, project files first. |
 
@@ -99,7 +103,7 @@ assert_eq!(design.modules().len(), 2);
 assert_eq!(design.functions().len(), 1);
 assert_eq!(design.structs().len(), 1);
 assert_eq!(design.namespaces().len(), 1);
-assert_eq!(design.files().len(), 1);
+assert_eq!(design.files().iter().filter(|f| !f.krate().is_std()).count(), 1);
 
 // A design checks itself and prints its declaration tree.
 assert!(design.check().is_empty());
@@ -130,29 +134,30 @@ Collects sources and builds. `build()` never fails.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
-| `prelude(self, name: impl Into<String>, text: impl Into<String>)` | `Self` | A prelude source: its `pub` items are visible in every file. |
+| `std_source(self, path: impl Into<String>, text: impl Into<String>)` | `Self` | A virtual file of the standard library, replacing the embedded one: the first is its root, the others are found by `mod`. The `pub` items of the namespace `prelude` of the root are visible in every file. |
 | `source(self, path: impl Into<String>, text: impl Into<String>)` | `Self` | A virtual source file. The first one is the root; the others are found by the `mod` items of the files that name them. |
+| `crates(self, graph: CrateGraph)` | `Self` | The crates to build, the first being the root crate. Each crate root is read from the virtual sources when any `source` was given, else from disk; a graph replaces `root_file`. An empty graph is no graph. |
 | `root_file(self, path: impl Into<PathBuf>)` | `Self` | The root file, read from disk with the files its `mod` items name. A root file replaces the virtual sources. |
-| `build(self)` | `Design` | Parse every file and assemble the design. Files are numbered prelude sources first, then the root. A parse error never stops the build: the recovered tree is kept and each diagnostic is listed with its file. |
+| `build(self)` | `Design` | Parse every file and assemble the design. Files are numbered the project's first (the root, then the files it loads), then the standard library's. A parse error never stops the build: the recovered tree is kept and each diagnostic is listed with its file. |
 
 Sources are virtual files; the first is the root and the others are found by the `mod` items
-that name them (`mod b;` loads `b.msl`, or `b/mod.msl`, beside the declaring file). A prelude
-source is parsed first and its `pub` items are visible everywhere.
+that name them (`mod b;` loads `b.msl`, or `b/mod.msl`, beside the declaring file). The standard library is lowered after
+the project and the `pub` items of its `prelude` are visible everywhere.
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};
 
 let design = Design::builder()
-    .prelude("std.msl", "pub nature Bit { value: bool }")
+    .std_source("lib.msl", "pub mod prelude { pub nature Bit { value: bool } }")
     .source("top.msl", "mod b;\nmodule Top(p: Bit) {}")
     .source("b.msl", "pub module Inner() {}")
     .build();
 assert!(design.diagnostics().is_empty());
 
-// Files: prelude sources first, then the root, then loaded files.
+// Files: the root, then loaded files, then the standard library's.
 let names: Vec<_> = design.files().iter().map(|f| f.name().to_string()).collect();
-assert_eq!(names, ["std.msl", "top.msl", "b.msl"]);
-assert!(design.files()[0].is_prelude());
+assert_eq!(names, ["top.msl", "b.msl", "lib.msl"]);
+assert!(design.files()[2].krate().is_std());
 
 // `mod b;` is a namespace whose source file was loaded.
 let b = design.find("b").unwrap().as_namespace().unwrap();
@@ -185,7 +190,7 @@ One source file: its text, the syntax tree the parser returned, and the tree reb
 | `path(self)` | `Option<&'d FsPath>` | The path it was read from, virtual or on disk. |
 | `text(self)` | `&'d str` | The text of the file, verbatim. |
 | `ast(self)` | `&'d ast::File` | The syntax tree the parser returned, errors recovered. |
-| `is_prelude(self)` | `bool` | Whether the file is a prelude source. |
+| `krate(self)` | `Crate<'d>` | The crate the file belongs to. |
 
 ```rust
 use piperine_lang::pom::Design;
@@ -195,10 +200,37 @@ let design = Design::builder().source("top.msl", src).build();
 let file = &design.files()[0];
 assert_eq!(file.name(), "top.msl");
 assert_eq!(file.text(), src);
-assert!(!file.is_prelude());
+assert!(!file.krate().is_std());
 
 // The POM is lossless: the syntax tree rebuilt from it equals the one the parser returned.
 assert_eq!(file.to_ast(), *file.ast());
+```
+
+### `Crate`
+
+A crate of the design: the root crate, a dependency, or `std`. A design always holds its root crate first and `std` last.
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `id(self)` | `CrateId` | The id of the crate. |
+| `name(self)` | `&'d str` | The crate's name: its name in the graph, the stem of the root file (every other character `_`, a `_` before a digit) for a design built from one root file, `std` for the standard library. |
+| `root(self)` | `Namespace<'d>` | The root namespace: the namespace of the root file. |
+| `files(self)` | `Vec<SourceFile<'d>>` | Every file of the crate: its root file, then the files its `mod` items load. |
+| `dependencies(self)` | `Vec<(&'d str, Crate<'d>)>` | The declared dependencies in declaration order, each as the name this crate gives it and the crate it names; `std` is implicit and not listed. |
+| `dependency(self, name: &str)` | `Option<Crate<'d>>` | The crate this one reaches under that dependency name. |
+| `decls(self)` | `Vec<Decl<'d>>` | Every declaration of this crate, in source order. |
+| `modules(self)` | `Vec<Module<'d>>` | Every module of this crate, in source order. |
+| `find(self, path: &str)` | `Option<Decl<'d>>` | The declaration at a `::` path from this crate's root, or at the text `qualified_name()` prints for a declaration of this crate. |
+| `is_root(self)` | `bool` | Whether this is the crate the design was built from. |
+| `is_std(self)` | `bool` | Whether this is the standard library. |
+
+```rust
+use piperine_lang::pom::Design;
+
+let design = Design::builder().source("top.msl", "mod b;").source("b.msl", "").build();
+assert_eq!(design.root_crate().name(), "top");
+assert_eq!(design.root_crate().files().len(), 2);
+assert_eq!(design.crates().last().unwrap().name(), "std");
 ```
 
 ### `Reflect`
@@ -211,6 +243,7 @@ The trait every declaration handle implements. Only `decl()` is required; everyt
 | `name(self)` | `Option<&'d str>` | The declared name; none for an `impl`, a `use`, a behavior block, an error item or a file's root namespace. |
 | `span(self)` | `Span` | The range of the whole declaration (an item's span includes its attributes and docs). |
 | `file(self)` | `SourceFile<'d>` | The file the declaration is written in. |
+| `krate(self)` | `Crate<'d>` | The crate the declaration is written in. |
 | `text(self)` | `&'d str` | The authored text of the declaration. |
 | `docs(self)` | `&'d [Doc]` | The doc comments in order, one per comment. On a file's root namespace these are the file's `//!` comments. |
 | `attrs(self)` | `Vec<Attr<'d>>` | The attributes in order. |
@@ -1199,7 +1232,7 @@ A call argument, positional or `name: value`. Reached from `Expr::args`.
 use piperine_lang::pom::{Design, Reflect};
 
 let src = "module R(p: Bit, tc: Option<f64>) {}\nmodule T() { signal a: Bit; let x = R(a, tc: 0.5); }";
-let design = Design::builder().prelude("p.msl", "pub nature Bit { value: bool }").source("top.msl", src).build();
+let design = Design::builder().std_source("lib.msl", "pub mod prelude { pub nature Bit { value: bool } }").source("top.msl", src).build();
 let x = design.module("T").unwrap().instance("x").unwrap();
 let args = x.expr().args();
 assert_eq!(args[0].name(), None);

@@ -15,7 +15,7 @@ use super::super::decl::{DeclKind, FieldsForm, FnParamData, GenerationData, Gene
 use super::super::decl::BehaviorData;
 use super::super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use super::super::resolution::Resolution;
-use super::imports::{Prefer, Visit, path_diagnostic};
+use super::imports::{Prefer, Visit, WalkError, path_diagnostic};
 use super::{Ctx, Output};
 
 /// One level of the scope stack.
@@ -34,7 +34,7 @@ enum Frame {
     Items(Vec<(String, DeclId)>),
     /// The names the `use` items of one block bring in: visible in the whole
     /// block like its other items. A glob keeps the declaration it names.
-    Imports { named: Vec<(String, Resolution)>, globs: Vec<DeclId> },
+    Imports { named: Vec<(String, Resolution)>, globs: Vec<DeclId>, errored: Vec<String> },
     /// An item nested in a block does not see the locals and generics around
     /// it, only the items of the blocks it sits in.
     Barrier,
@@ -312,6 +312,14 @@ impl Names<'_, '_> {
         }
     }
 
+    /// Can `res` start a longer path (`prefer` is `Head`: only a type-namespace item can)?
+    fn in_head(&self, prefer: Prefer, res: Resolution) -> bool {
+        match res {
+            Resolution::Decl(d) if prefer == Prefer::Head => super::imports::occupies(self.ctx.design, d).0,
+            _ => true,
+        }
+    }
+
     /// A single name seen from here.
     fn lookup(&self, name: &str, prefer: Prefer, visiting: &mut Vec<Visit>) -> Option<Resolution> {
         let mut hidden = false;
@@ -319,12 +327,12 @@ impl Names<'_, '_> {
             match frame {
                 Frame::Barrier => hidden = true,
                 Frame::Items(items) => {
-                    if let Some((_, d)) = items.iter().find(|(n, _)| n == name) {
+                    if let Some((_, d)) = items.iter().find(|(n, d)| n == name && (prefer != Prefer::Head || super::imports::occupies(self.ctx.design, *d).0)) {
                         return Some(Resolution::Decl(*d));
                     }
                 }
-                Frame::Imports { named, globs } => {
-                    if let Some((_, res)) = named.iter().find(|(n, res)| n == name && *res != Resolution::Unresolved) {
+                Frame::Imports { named, globs, .. } => {
+                    if let Some((_, res)) = named.iter().find(|(n, res)| n == name && *res != Resolution::Unresolved && self.in_head(prefer, *res)) {
                         return Some(*res);
                     }
                     let mut found = None;
@@ -343,14 +351,16 @@ impl Names<'_, '_> {
                     }
                 }
                 _ if hidden => {}
+                // A local is a value, but for a generic parameter: only a generic starts a longer path.
                 Frame::Locals(names) => {
-                    if let Some((_, d)) = names.iter().rev().find(|(n, _)| n == name) {
+                    let head_ok = |d: &DeclId| prefer != Prefer::Head || matches!(self.ctx.design.decl_data(*d).kind, DeclKind::GenericParam(_));
+                    if let Some((_, d)) = names.iter().rev().find(|(n, d)| n == name && head_ok(d)) {
                         return Some(Resolution::Decl(*d));
                     }
                 }
                 Frame::Module(module) => {
                     let members = self.ctx.scopes.members.get(module);
-                    if let Some(d) = members.and_then(|m| m.get(name)) {
+                    if let Some(d) = members.and_then(|m| m.get(name)).filter(|d| prefer != Prefer::Head || super::imports::occupies(self.ctx.design, *d).0) {
                         return Some(Resolution::Decl(d));
                     }
                     // `m` and `dtemp` read the instance's effective values (§8.5.2).
@@ -375,6 +385,11 @@ impl Names<'_, '_> {
         self.ctx.scope_lookup(self.ns, name, prefer, visiting)
     }
 
+    /// Is `name` bound here by a `use` that reported `E0163`: in a block, or in the namespace?
+    fn names_errored_import(&self, name: &str) -> bool {
+        self.frames.iter().any(|f| matches!(f, Frame::Imports { errored, .. } if errored.iter().any(|n| n == name))) || self.ctx.errored_import(self.ns, name)
+    }
+
     /// Resolve one path: record each segment, report the first problem. The
     /// answer is the last segment's.
     fn path(&mut self, id: PathId, prefer: Prefer) -> Resolution {
@@ -382,14 +397,22 @@ impl Names<'_, '_> {
         let node = ctx.design.path_node(id);
         let walked = {
             let this = &*self;
-            ctx.walk(&node.segments, this.ns, prefer, &mut Vec::new(), &mut |_, name, visiting| this.lookup(name, prefer, visiting))
+            ctx.walk(&node.segments, this.ns, prefer, &mut Vec::new(), &mut |_, name, prefer, visiting| this.lookup(name, prefer, visiting))
         };
         for (i, res) in walked.res.iter().enumerate() {
             self.out.segments.push((id, i, *res));
         }
         if let (Some(error), 0) = (walked.error, self.quiet) {
+            if matches!(error, WalkError::Missing { at: 0 }) && self.names_errored_import(&node.segments[0].name.text) {
+                for segment in &node.segments {
+                    if let Some(args) = &segment.args {
+                        self.generic_args(args);
+                    }
+                }
+                return Resolution::Unresolved;
+            }
             let file = ctx.design.decl_data(node.owner).file;
-            self.out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, error)));
+            self.out.diagnostics.push((file, path_diagnostic(self.ctx.design, &node.segments, node.span, error)));
         }
         for segment in &node.segments {
             if let Some(args) = &segment.args {
@@ -566,7 +589,7 @@ impl Names<'_, '_> {
         self.block_duplicates(&items);
         self.frames.push(Frame::Items(items));
         let imports_at = self.frames.len();
-        self.frames.push(Frame::Imports { named: Vec::new(), globs: Vec::new() });
+        self.frames.push(Frame::Imports { named: Vec::new(), globs: Vec::new(), errored: Vec::new() });
         self.block_uses(stmts, imports_at);
         self.frames.push(Frame::Locals(Vec::new()));
         for s in stmts {
@@ -612,6 +635,22 @@ impl Names<'_, '_> {
         self.frames.pop();
     }
 
+    /// Does the first segment of a block-level `use` path name both a dependency and an item or
+    /// import of the block or of the enclosing namespace (§3.5 rule 5)?
+    fn block_clash(&self, segments: &[crate::pom::PathSegment]) -> bool {
+        let Some(head) = segments.first() else { return false };
+        let name = head.name.text.as_str();
+        if matches!(name, "crate" | "self" | "super") || !self.ctx.is_dependency_name(self.ns, name) {
+            return false;
+        }
+        let in_block = self.frames.iter().any(|f| match f {
+            Frame::Items(items) => items.iter().any(|(n, d)| n == name && super::imports::occupies(self.ctx.design, *d).0),
+            Frame::Imports { named, .. } => named.iter().any(|(n, res)| n == name && self.in_head(Prefer::Head, *res)),
+            _ => false,
+        });
+        in_block || self.ctx.has_ns_item(self.ns, name)
+    }
+
     /// The `use` items of one block, in source order: each path resolves
     /// from the namespace and the block items (never the locals), and its
     /// name joins the `Imports` frame at `at`, so a later `use` can build on
@@ -622,10 +661,23 @@ impl Names<'_, '_> {
             let StmtKind::Item(d) = &design.stmt_node(*s).kind else { continue };
             let DeclKind::Use(u) = &design.decl_data(*d).kind else { continue };
             for import in &u.imports {
+                let node = design.path_node(import.path);
+                if self.block_clash(&node.segments) {
+                    let file = design.decl_data(node.owner).file;
+                    self.out.diagnostics.push((file, path_diagnostic(self.ctx.design, &node.segments, node.span, WalkError::CrateClash { at: 0 })));
+                    if !import.glob {
+                        let last = node.segments.last().map(|seg| seg.name.text.clone()).unwrap_or_default();
+                        let bound = import.alias.as_ref().map_or(last, |a| a.text.clone());
+                        if let Frame::Imports { errored, .. } = &mut self.frames[at] {
+                            errored.push(bound);
+                        }
+                    }
+                    continue;
+                }
                 self.frames.push(Frame::Barrier);
-                let res = self.path(import.path, Prefer::Types);
+                let res = self.path(import.path, super::imports::import_prefer(import.glob));
                 self.frames.pop();
-                let Frame::Imports { named, globs } = &mut self.frames[at] else { continue };
+                let Frame::Imports { named, globs, .. } = &mut self.frames[at] else { continue };
                 match (import.glob, res) {
                     (true, Resolution::Decl(target)) => globs.push(target),
                     (true, _) => {}

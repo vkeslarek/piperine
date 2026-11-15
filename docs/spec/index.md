@@ -98,8 +98,8 @@ The words **MUST**, **MUST NOT**, **SHALL**, **SHOULD** and **MAY** are used as 
    this specification defines. An implementation that violates a **MUST** is non-conforming.
 2. A **conforming model** is source text that raises no parse error and no elaboration error
    under this specification.
-3. An implementation **MUST** reject a model that meets an error condition of phase *parse* or
-   *elaboration*. It **MUST** fail the analysis when a condition of phase *run* is met. A
+3. An implementation **MUST** reject a model that meets an error condition of phase *package*,
+   *parse* or *elaboration*. It **MUST** fail the analysis when a condition of phase *run* is met. A
    condition of phase *host* refuses one host operation, or answers it with a diagnostic; the
    analysis continues.
 4. A diagnostic **MUST** identify the source location or the hierarchical path the condition
@@ -109,10 +109,11 @@ The words **MUST**, **MUST NOT**, **SHALL**, **SHOULD** and **MAY** are used as 
 6. Numeric defaults of the reference implementation ([Appendix C.2](appendix_c_implementation.md))
    are informative. The guarantees of [Part V](part_v_execution.md) are normative.
 
-An error is raised in one of four phases.
+An error is raised in one of five phases.
 
 | Phase | When | Defined in |
 | --- | --- | --- |
+| **package** | the manifests are read, the dependencies located and the crate graph fixed | [§3.6](part_i_values.md#36-packages) |
 | **parse** | the source text is turned into tokens and a syntax tree | [Appendix A](appendix_a_lexical.md), [Appendix B](appendix_b_grammar.md) |
 | **elaboration** | names and types are resolved, generics and generation are expanded, params are checked, and the netlist is fixed | [Part III](part_iii_structure.md), [§16](part_v_execution.md#16-the-operating-point) step 1 |
 | **run** | an analysis executes | [Part V](part_v_execution.md) |
@@ -217,7 +218,7 @@ traced in [§15.1](part_v_execution.md#151-an-instant-traced).
 | File | Content | Sections | Error codes |
 | --- | --- | --- | --- |
 | [`index.md`](index.md) | scope, notation, conformance terms, the concept table, who writes what, reading guide, file map, glossary index | §0 | — |
-| [`part_i_values.md`](part_i_values.md) | value types, `Repr`, functions, `impl`, calls, unknown values, files | §1–3 | `E01xx` |
+| [`part_i_values.md`](part_i_values.md) | value types, `Repr`, functions, `impl`, calls, unknown values, files, crates and packages | §1–3 | `E01xx` |
 | [`part_ii_carriers.md`](part_ii_carriers.md) | natures, discrete carriers, drives, history, continuous carriers, bundles | §4–7 | `E02xx` |
 | [`part_iii_structure.md`](part_iii_structure.md) | modules, ports, params, the body, instances in expressions, templates, `extern` modules, quantities | §8–9 | `E03xx` |
 | [`part_iv_behavior.md`](part_iv_behavior.md) | behavior blocks, `analog`, `digital`, events, core primitives | §10–14 | `E04xx` |
@@ -261,8 +262,11 @@ Each term has one defining occurrence. The table points at it.
 | converged | [§17.1](part_v_execution.md#171-convergence) |
 | converter | [§22.4](part_vii_stdlib.md#224-converters) |
 | core primitive | [§14](part_iv_behavior.md#14-core-primitives) |
+| crate, crate root | [§3.5](part_i_values.md#35-crates) |
 | definition, delayed definition, anonymous definition | [§8.2](part_iii_structure.md#82-the-body) |
 | `digital` block | [§12](part_iv_behavior.md#12-digital) |
+| dependency | [§3.6](part_i_values.md#36-packages) |
+| dependency name | [§3.5](part_i_values.md#35-crates) |
 | direct dependence | [§8.3.5](part_iii_structure.md#83-instances-inside-expressions) |
 | discrete carrier | [§5](part_ii_carriers.md#5-discrete-carriers) |
 | discrete expression, continuous expression | [§8.2](part_iii_structure.md#82-the-body) |
@@ -297,7 +301,9 @@ Each term has one defining occurrence. The table points at it.
 | level | [§2](part_i_values.md#2-repr) |
 | limiting | [§18](part_v_execution.md#18-limiting) |
 | located crossing | [§17.3](part_v_execution.md#173-locating-crossings) |
+| lockfile | [§3.6](part_i_values.md#36-packages) |
 | loop, relaxation | [§8.2.3](part_iii_structure.md#82-the-body) |
+| manifest | [§3.6](part_i_values.md#36-packages) |
 | merge | [§3.3.3](part_i_values.md#33-unknown-values) |
 | metadata, path | [§21](part_vi_io.md#21-metadata) |
 | module | [§8](part_iii_structure.md#8-modules) |
@@ -314,9 +320,10 @@ Each term has one defining occurrence. The table points at it.
 | operating point, round | [§16](part_v_execution.md#16-the-operating-point) |
 | operating-point variable | [§11](part_iv_behavior.md#11-analog) rule 6 |
 | optional parameters | [§3.2.7](part_i_values.md#32-parameters-and-calls) |
+| package | [§3.6](part_i_values.md#36-packages) |
 | panic | [§1](part_i_values.md#1-value-types) rule 11 |
 | param, structural param | [§8.1](part_iii_structure.md#81-ports-and-params) |
-| parse, elaboration, run, host (phases) | [§0.3](#03-conformance) |
+| package, parse, elaboration, run, host (phases) | [§0.3](#03-conformance) |
 | port, value input | [§8.1](part_iii_structure.md#81-ports-and-params) |
 | probe | [§6](part_ii_carriers.md#6-continuous-carriers) |
 | quantity | [§9](part_iii_structure.md#9-quantities) |

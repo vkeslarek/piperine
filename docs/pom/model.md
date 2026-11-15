@@ -53,6 +53,16 @@ A source file of the design.
 | --- | --- | --- |
 | `0` | `u32` | Index into the file list. |
 
+### `CrateId`
+
+*struct* in `src/pom/ids.rs`.
+
+A crate of a design, or of a crate graph.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `0` | `u32` | Index into the crate list. |
+
 ### `DeclId`
 
 *struct* in `src/pom/ids.rs`.
@@ -129,7 +139,7 @@ Read through the handle `SourceFile` (see [Reflection](reflection.md#sourcefile)
 | --- | --- | --- |
 | `name` | `String` | As registered, or the file name on disk. |
 | `path` | `Option<PathBuf>` | The path it was read from (virtual or on disk). |
-| `prelude` | `bool` | Whether the file is a prelude source. |
+| `krate` | `CrateId` | The crate the file belongs to. |
 | `text` | `String` | The text, verbatim. |
 | `ast` | `ast::File` | The retained syntax tree; not serialized, rebuilt from `text`. |
 | `root` | `DeclId` | The file's `Namespace` declaration. |
@@ -144,7 +154,7 @@ The serialized shape of a `SourceFileData`: every field but the tree.
 | --- | --- | --- |
 | `name` | `String` | As in `SourceFileData`. |
 | `path` | `Option<PathBuf>` | As in `SourceFileData`. |
-| `prelude` | `bool` | As in `SourceFileData`. |
+| `krate` | `CrateId` | As in `SourceFileData`. |
 | `text` | `String` | As in `SourceFileData`. |
 | `root` | `DeclId` | As in `SourceFileData`. |
 
@@ -167,7 +177,9 @@ The owning, immutable object model of one set of sources. Build it with `Design:
 
 | Storage (private) | Type | Meaning |
 | --- | --- | --- |
-| `files` | `Vec<SourceFileData>` | Every file: prelude sources first, then the root, then files loaded by `mod name;`. Read with `files()`. |
+| `files` | `Vec<SourceFileData>` | Every file: the project's (the root, then files loaded by `mod name;`), then the standard library's. Read with `files()`. |
+| `crates` | `Vec<CrateData>` | The crates in graph order, `std` last. Read with `crates()`, `root_crate()`, `std_crate()` and `Crate`. |
+| `root_crate / std_crate` | `CrateId` | The crate the design was built from, and the standard library. |
 | `decls` | `Vec<DeclData>` | The declaration arena. Read with `decl_data`, `decls`, `Decl`. |
 | `exprs / stmts / pats / types / paths` | `Vec<..Node>` | The body arenas. Read with `expr_node`, `stmt_node`, `pat_node`, `type_node`, `path_node` or the handles `expr`, `stmt`, `pat`, `ty`, `path`. |
 | `diagnostics` | `Vec<DesignDiagnostic>` | Parse, loading and resolution diagnostics, in file then source order. Read with `diagnostics()`. |
@@ -179,11 +191,12 @@ The owning, immutable object model of one set of sources. Build it with `Design:
 
 *struct* in `src/pom/design.rs`.
 
-Collects prelude and virtual sources, then builds the [`Design`](#design). `build` never fails: a parse error keeps the recovered tree and is listed in `diagnostics()`.
+Collects virtual sources and the standard library's, then builds the [`Design`](#design). `build` never fails: a parse error keeps the recovered tree and is listed in `diagnostics()`.
 
 | Storage (private) | Type | Meaning |
 | --- | --- | --- |
-| `prelude` | `Vec<(String, String)>` | Prelude sources: their `pub` items are visible in every file. |
+| `std_sources` | `Vec<(String, String)>` | Virtual files of `std`, replacing the embedded ones; the first is its root. |
+| `graph` | `CrateGraph` | The crates to build; empty means one root crate from `sources` or `root_file`. |
 | `sources` | `Vec<(String, String)>` | Virtual files; the first is the root. |
 | `root_file` | `Option<PathBuf>` | A root file on disk; replaces the virtual sources. |
 
@@ -217,6 +230,93 @@ Files held in memory, keyed by their normalized path (`.` removed, `..` folded).
 *struct* in `src/pom/source.rs`.
 
 The filesystem. `canonical` is `std::fs::canonicalize`, falling back to the path itself.
+
+## Crates
+
+A design is built over a crate graph: the root crate first, its dependencies in graph order and
+`std` last. The storage keeps the crates as plain data beside the arenas, and every file knows
+its crate; no declaration of one crate is a child of another's (the
+[rule](index.md#the-one-rule)), so each crate keeps its authored tree.
+
+```text
+Design
+ ├─ crates:      Vec<CrateData>      name, root file, root namespace, declared dependencies
+ ├─ root_crate:  CrateId             the crate the design was built from
+ ├─ std_crate:   CrateId             the standard library, last in `crates`
+ └─ files:       Vec<SourceFileData> each with its `krate`; numbered crate by crate
+```
+
+`Design::check()` verifies the crate table: every link in range, each crate rooted at a file of
+its own whose root namespace is the crate's root declaration, and no dependency cycle. Read it
+through `Design::crates()`, `krate(name)` and the `Crate` handle; see [Reflection](reflection.md).
+
+## The crate graph
+
+A build over several crates takes a `CrateGraph`: plain data, built by the host (the package loader or a test), with no manifest and no file read. A rejected call leaves the graph unchanged.
+
+### `CrateGraph`
+
+*struct* in `src/pom/crates.rs`.
+
+The crates of a build in insertion order; the first is the root crate.
+
+| Method | Meaning |
+| --- | --- |
+| `new() -> CrateGraph` | An empty graph. |
+| `add_crate(&mut self, name: &str, root: impl Into<PathBuf>) -> Result<CrateId, GraphError>` | Add a crate; `InvalidName` unless `is_crate_name(name)`. |
+| `add_dependency(&mut self, from: CrateId, name: &str, to: CrateId) -> Result<(), GraphError>` | Give `from` a dependency called `name` on `to`; `UnknownCrate`, `InvalidName`, `DuplicateDependency` or `Cycle`. |
+| `crates(&self) -> &[CrateNode]` | The crates in insertion order. |
+
+`is_crate_name(name: &str) -> bool` is true for one identifier that is no keyword and not `std`.
+
+### `CrateNode`
+
+*struct* in `src/pom/crates.rs`.
+
+One crate of a graph.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `String` | The crate's name. |
+| `root` | `PathBuf` | The crate root file. |
+| `dependencies` | `Vec<DependencyData>` | Its named dependencies, in the order added. |
+
+### `DependencyData`
+
+*struct* in `src/pom/crates.rs`.
+
+An edge of the graph.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `String` | The name the depending crate gives it. |
+| `krate` | `CrateId` | The crate it names. |
+
+### `CrateData`
+
+*struct* in `src/pom/crates.rs`.
+
+A crate as the design stores it. Read through the handle `Crate` (see [Reflection](reflection.md#crate)).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `String` | The crate's name. |
+| `root_file` | `FileId` | The file the crate is read from. |
+| `root` | `DeclId` | The root `Namespace` declaration: the root file's. |
+| `dependencies` | `Vec<DependencyData>` | As declared; `std` is implicit and not listed. |
+
+### `GraphError`
+
+*enum* in `src/pom/crates.rs`.
+
+Why a call on a `CrateGraph` was refused.
+
+| Variant | Meaning |
+| --- | --- |
+| `InvalidName { name }` | Not an identifier, a keyword, or `std`. |
+| `DuplicateDependency { krate, name }` | The crate already has a dependency of this name. |
+| `UnknownCrate { id }` | The id does not belong to the graph. |
+| `Cycle { names }` | The edge would close a cycle; `names` lists it, the first crate repeated last. |
 
 ## Declarations
 

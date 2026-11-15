@@ -115,7 +115,7 @@ fn codes_in(text: &str) -> Vec<String> {
     out
 }
 
-const REMOVED_FORMS: [&str; 20] = [
+const REMOVED_FORMS: [&str; 21] = [
     "type aliases",
     "associated types",
     "`static` items",
@@ -133,6 +133,7 @@ const REMOVED_FORMS: [&str; 20] = [
     "raw-pointer types",
     "`union` items",
     "`extern` blocks",
+    "`extern crate` items",
     "named function-pointer parameters",
     "attributes and doc comments on a parameter",
     "double borrows",
@@ -151,7 +152,7 @@ fn b36_lists_every_removed_form() {
         let hits = rows.iter().filter(|r| r[0].starts_with(form)).count();
         assert_eq!(hits, 1, "B.3.6 must hold exactly one row for `{form}`: {rows:?}");
     }
-    assert_eq!(rows.len(), REMOVED_FORMS.len(), "B.3.6 holds no row beyond the 20 forms");
+    assert_eq!(rows.len(), REMOVED_FORMS.len(), "B.3.6 holds no row beyond the 21 forms");
     assert!(sec.contains("complete list"), "B.3.6 must say its list is the complete list");
     for part in ["§1 rule 2", "§3.2", "A.1"] {
         assert!(sec.contains(part), "B.3.6 must name {part} beside the table");
@@ -178,7 +179,7 @@ fn b36_rows_carry_a_code_and_a_replacement() {
     // third, and no first cell is a code (the parse-phase fixture guard of
     // `msl_errors` scrapes first cells).
     let rows = table_rows(&b36());
-    assert_eq!(rows.len(), 20);
+    assert_eq!(rows.len(), 21);
     for row in rows {
         assert_eq!(row.len(), 3, "Removed | Reported as | Write instead: {row:?}");
         assert!(!row[0].trim_matches('`').starts_with('E'), "first cell is a code: {row:?}");
@@ -792,4 +793,346 @@ fn block_items_follow_the_namespace_rules() {
     let r = spec("part_i_values.md");
     let row = r.lines().find(|l| l.starts_with("| `E0162`")).unwrap();
     assert!(row.contains("one table of one namespace or of one block"), "{row}");
+}
+
+// ---- msl-packages: §3.5 Crates (PKG-01 AC 1 to 7 and 10) ----
+
+fn s35() -> String {
+    section(&spec("part_i_values.md"), "### 3.5 ")
+}
+
+fn s35_text() -> String {
+    one_line(&s35())
+}
+
+#[test]
+fn s35_defines_crate_root_and_dependency_name() {
+    // PKG-01 AC 1: three bold defining occurrences, and §3.4's lead points at §3.5.
+    let s = s35_text();
+    assert!(s.contains("A **crate** is one tree of namespace modules rooted at one file"), "{s}");
+    assert!(s.contains("The **crate root** is the file the tree starts from"), "{s}");
+    assert!(s.contains("A **dependency name** names one other crate inside this crate"), "{s}");
+    for term in ["**crate**", "**crate root**", "**dependency name**"] {
+        assert_eq!(s.matches(term).count(), 1, "{term} is bold once");
+    }
+    let lead = one_line(&s34());
+    assert!(lead.contains("a package of models is a crate ([§3.5](#35-crates))"), "{lead}");
+    assert!(lead.contains("[§3.6](#36-packages)"), "{lead}");
+}
+
+#[test]
+fn s35_orders_the_first_segment_lookup() {
+    // PKG-01 AC 2: the five steps, in order.
+    let s = s35_text();
+    let steps = [
+        "the scopes of the enclosing blocks and declarations",
+        "the items and imports of the enclosing namespace",
+        "the dependency names of the crate",
+        "the prelude",
+        "the core names",
+    ];
+    let mut at = s.find("The first segment of a path is looked up in this order").expect("rule 4");
+    for step in steps {
+        let hit = s[at..].find(step).unwrap_or_else(|| panic!("`{step}` out of order in {s}"));
+        at += hit + step.len();
+    }
+}
+
+#[test]
+fn s35_local_names_win_in_paths_and_clash_in_use() {
+    // PKG-01 AC 3.
+    let s = s35_text();
+    assert!(s.contains("an ordinary path follows rule 4: the item or import wins, without a diagnostic"), "{s}");
+    assert!(s.contains("A `use` path whose first segment is that name is ambiguous (`E0163`)"), "{s}");
+    assert!(s.contains("There is no leading `::`"), "{s}");
+    assert!(s.contains("the dependency wins"), "dependency against a prelude item: {s}");
+}
+
+#[test]
+fn s35_crate_and_super_are_per_crate() {
+    // PKG-01 AC 4.
+    let s = s35_text();
+    assert!(s.contains("`crate` names the root of the crate that contains the path"), "{s}");
+    assert!(s.contains("A crate's own name is not in scope inside it"), "{s}");
+    assert!(s.contains("`super` at a crate root does not resolve (`E0161`)"), "{s}");
+}
+
+#[test]
+fn s35_only_pub_crosses_a_crate() {
+    // PKG-01 AC 5.
+    let s = s35_text();
+    assert!(
+        s.contains("an item is visible only when it is `pub` and every namespace on the path from its crate root to it is `pub`"),
+        "{s}"
+    );
+}
+
+#[test]
+fn std_is_implicit_and_the_prelude_is_std_prelude() {
+    // PKG-01 AC 6.
+    let s = s35_text();
+    assert!(s.contains("`std` is a dependency of every crate"), "{s}");
+    assert!(s.contains("No manifest names it and no dependency may be called `std`"), "{s}");
+    assert!(s.contains("The prelude is implied in every file of every crate, the files of `std` included"), "{s}");
+    let t = one_line(&s34());
+    assert!(t.contains("the `pub` items of `std::prelude`"), "§3.4.2: {t}");
+}
+
+#[test]
+fn e0161_row_covers_an_unknown_crate() {
+    // PKG-01 AC 7: the §3.4 row names a first segment that is no dependency.
+    let rows = table_rows(&s34());
+    let row = rows.iter().find(|r| r[0] == "`E0161`").expect("§3.4 defines E0161");
+    assert!(row[1].contains("a first segment that names no dependency of the crate"), "{row:?}");
+    assert_eq!(row[2], "elaboration", "{row:?}");
+}
+
+#[test]
+fn e0163_is_defined_in_3_5() {
+    // PKG-01 AC 10: the defining row, its phase and the two ways out.
+    let rows = table_rows(&s35());
+    let row = rows.iter().find(|r| r[0] == "`E0163`").expect("§3.5 defines E0163");
+    assert_eq!(row[2], "elaboration", "{row:?}");
+    assert!(row[1].contains("first segment names both a dependency and an item or an import of the enclosing namespace"), "{row:?}");
+    assert_eq!(defining_rows()["E0163"], ["part_i_values.md"], "one defining row");
+    let s = s35_text();
+    assert!(s.contains("`other = { package = \"<name>\", .. }`"), "{s}");
+    assert!(s.contains("`crate::<name>`"), "{s}");
+}
+
+// ---- msl-packages: §0.3 and §3.6 Packages, layout and manifest keys (PKG-02 AC 1 to 4) ----
+
+fn s36() -> String {
+    section(&spec("part_i_values.md"), "### 3.6 ")
+}
+
+fn s36_text() -> String {
+    one_line(&s36())
+}
+
+#[test]
+fn phase_package_is_listed() {
+    // PKG-02 AC 1: five phases, `package` first, rule 3 rejects on it.
+    let index = spec("index.md");
+    let s03 = section(&index, "### 0.3 ");
+    let text = one_line(&s03);
+    assert!(text.contains("An error is raised in one of five phases"), "{text}");
+    let rows = table_rows(&s03);
+    assert_eq!(rows[0][0], "**package**", "package is the first phase: {rows:?}");
+    assert!(rows[0][1].contains("manifests are read") && rows[0][1].contains("crate graph fixed"), "{rows:?}");
+    assert!(rows[0][2].contains("§3.6"), "{rows:?}");
+    assert!(text.contains("*package*"), "rule 3 names the phase: {text}");
+    assert!(text.contains("reject a model that meets an error condition of phase *package*, *parse* or *elaboration*"), "{text}");
+}
+
+#[test]
+fn s36_fixes_the_package_layout() {
+    // PKG-02 AC 2.
+    let s = s36_text();
+    assert!(s.contains("A **package** is a directory with a manifest"), "{s}");
+    assert!(s.contains("The **manifest** is the file `Piperine.toml` in the package directory"), "{s}");
+    assert!(s.contains("The crate root is `src/lib.msl`"), "{s}");
+    assert!(s.contains("A source file has the extension `.msl`"), "{s}");
+    assert!(s.contains("`mod name;` loads `name.msl` or `name/mod.msl`"), "{s}");
+    assert!(s.contains("neither or both is `E0161`"), "{s}");
+    assert_eq!(s.matches("**package**").count(), 1);
+    assert_eq!(s.matches("**manifest**").count(), 1);
+}
+
+#[test]
+fn s36_lists_every_manifest_key() {
+    // PKG-02 AC 3: one table; each key has a row; any other is `E0171`.
+    let sec = s36();
+    let rows = table_rows(&sec);
+    let key_rows: Vec<&Vec<String>> = rows.iter().filter(|r| r.len() == 4 && r[0].starts_with("`[")).collect();
+    let keys: String = key_rows.iter().map(|r| format!("{} {}", r[0], r[1])).collect::<Vec<_>>().join("; ");
+    for (table, key) in [
+        ("`[package]`", "`name`"),
+        ("`[package]`", "`version`"),
+        ("`[package]`", "`authors`"),
+        ("`[package]`", "`description`"),
+        ("`[dependencies]` entry", "`path`"),
+        ("`[dependencies]` entry", "`git`"),
+        ("`[dependencies]` entry", "`version`"),
+        ("`[dependencies]` entry", "`package`"),
+    ] {
+        assert!(key_rows.iter().any(|r| r[0] == table && r[1].contains(key)), "no row for {table} {key}: {keys}");
+    }
+    // "Exactly those eleven": nine rows, and eleven keys (`branch`, `tag`, `rev` share one row).
+    assert_eq!(key_rows.len(), 9, "{keys}");
+    let key_count: usize = key_rows.iter().map(|r| r[1].matches('`').count() / 2).sum();
+    assert_eq!(key_count, 11, "{keys}");
+    let refs = key_rows.iter().find(|r| r[1].contains("`branch`")).expect("branch, tag, rev row");
+    assert!(refs[1].contains("`tag`") && refs[1].contains("`rev`"), "{refs:?}");
+    let s = one_line(&sec);
+    assert!(s.contains("holds the tables and keys of the table below and no other (`E0171`)"), "{s}");
+}
+
+#[test]
+fn s36_names_are_identifiers() {
+    // PKG-02 AC 4.
+    let s = s36_text();
+    assert!(
+        s.contains("A package name and a dependency name are identifiers (A.1) that are no keyword of the language and not `std`"),
+        "{s}"
+    );
+    assert!(s.contains("The package name is the crate's name"), "{s}");
+    assert!(s.contains("A version is `MAJOR.MINOR.PATCH`, three decimal integers"), "{s}");
+}
+
+// ---- msl-packages: §3.6 dependencies, requirements, lockfile, errors (PKG-02 AC 5 to 9) ----
+
+#[test]
+fn s36_states_the_dependency_sources() {
+    // PKG-02 AC 5.
+    let s = s36_text();
+    assert!(s.contains("A **dependency** is an entry of `[dependencies]`"), "{s}");
+    assert!(s.contains("It has exactly one source: `path` or `git`"), "{s}");
+    assert!(s.contains("it takes at most one of `branch`, `tag` and `rev`"), "{s}");
+    assert!(s.contains("none means the repository's default branch"), "{s}");
+    assert!(s.contains("relative to the directory of the manifest that names it"), "{s}");
+    assert!(s.contains("`package` gives the located package's own name when it differs from the key"), "{s}");
+    assert!(s.contains("Two dependencies that locate the same package"), "{s}");
+}
+
+#[test]
+fn s36_gives_the_version_requirement_table() {
+    // PKG-02 AC 6: the eight forms and the range each admits.
+    let rows = table_rows(&s36());
+    let expect = [
+        ("`1.2.3`", "`>=1.2.3, <2.0.0`"),
+        ("`1.2`", "`>=1.2.0, <2.0.0`"),
+        ("`1`", "`>=1.0.0, <2.0.0`"),
+        ("`0.2.3`", "`>=0.2.3, <0.3.0`"),
+        ("`0.2`", "`>=0.2.0, <0.3.0`"),
+        ("`0.0.3`", "`>=0.0.3, <0.0.4`"),
+        ("`0.0`", "`>=0.0.0, <0.1.0`"),
+        ("`0`", "`>=0.0.0, <1.0.0`"),
+    ];
+    for (req, range) in expect {
+        let row = rows.iter().find(|r| r.len() == 2 && r[0] == req).unwrap_or_else(|| panic!("no requirement row {req}"));
+        assert_eq!(row[1], range, "{req}");
+    }
+    assert!(s36_text().contains("`version` is a requirement the located package's version **MUST** satisfy (`E0173`)"));
+}
+
+#[test]
+fn s36_has_no_search_path_and_no_cycle() {
+    // PKG-02 AC 7, and §3.5 rule 10 now carries the code.
+    let s = s36_text();
+    assert!(s.contains("The graph **MUST NOT** hold a cycle (`E0174`)"), "{s}");
+    assert!(s.contains("an implementation **MUST NOT** find a crate through a search path, a registry or an environment variable"), "{s}");
+    let c = s35_text();
+    assert!(c.contains("The dependencies of the crates form no cycle ([§3.6](#36-packages), `E0174`)"), "{c}");
+    let rows = table_rows(&s35());
+    let row = rows.iter().find(|r| r[0].starts_with("[§3.6]")).expect("§3.5 keyed row for §3.6");
+    assert!(row[1].contains("`E0174`") && row[2] == "package", "{row:?}");
+}
+
+#[test]
+fn s36_states_the_lockfile_rule() {
+    // PKG-02 AC 8.
+    let s = s36_text();
+    assert!(s.contains("The **lockfile** is `Piperine.lock` beside the root package's manifest"), "{s}");
+    assert!(s.contains("the recorded commit **MUST** be used"), "{s}");
+    assert!(s.contains("An explicit update resolves again"), "{s}");
+    assert!(s.contains("A lockfile inside a dependency is not read"), "{s}");
+    assert!(s.contains("`version = 1`"), "{s}");
+    for key in ["`name`", "`version`", "`source`", "`commit`"] {
+        assert!(s.contains(key), "{key}");
+    }
+    assert!(s.contains("`git+<url>`") && s.contains("`?branch=<b>`") && s.contains("`?tag=<t>`") && s.contains("`?rev=<r>`"), "{s}");
+    assert!(s.contains("40 hexadecimal digits"), "{s}");
+}
+
+#[test]
+fn s36_defines_the_package_codes() {
+    // PKG-02 AC 9: E0170 to E0176, each defined once, in phase `package`, none in `parse`.
+    let rows = table_rows(&s36());
+    let defs = defining_rows();
+    for n in 170..=176 {
+        let code = format!("`E0{n}`");
+        let row = rows.iter().find(|r| r[0] == code).unwrap_or_else(|| panic!("§3.6 does not define {code}"));
+        assert_eq!(row[2], "package", "{row:?}");
+        assert_eq!(defs[&format!("E0{n}")], ["part_i_values.md"], "{code} is defined once");
+    }
+    let table: Vec<_> = rows.iter().filter(|r| r.len() == 3 && r[0].starts_with("`E017")).collect();
+    assert_eq!(table.len(), 7);
+    assert!(table.iter().all(|r| r[2] != "parse"));
+}
+
+#[test]
+fn b36_lists_extern_crate() {
+    // PKG-01 AC 8: the row, its code and what to write instead.
+    let rows = table_rows(&b36());
+    let row = rows.iter().find(|r| r[0].starts_with("`extern crate` items")).expect("B.3.6 lists `extern crate` items");
+    assert_eq!(codes_in(&row[1]), ["E0900"], "{row:?}");
+    assert!(row[2].contains("[dependencies]"), "{row:?}");
+    assert_eq!(rows.iter().filter(|r| r[0].starts_with("`extern`")).count(), 1, "the `extern` blocks row is its own");
+}
+
+// ---- msl-packages: Appendix G, glossary and file map (PKG-02 AC 10 and 11) ----
+
+/// What each package decision cites as its deciding sections: substrings of the `Where` cell.
+const PACKAGE_DECISIONS: [(&str, &[&str]); 6] = [
+    ("P1", &["§3.6 rule 2"]),
+    ("P2", &["§3.5 rules 4, 5, 11"]),
+    ("P3", &["§3.5 rules 3 and 9", "§3.4.2"]),
+    ("P4", &["§3.6 rule 3"]),
+    ("P5", &["§3.6 rules 7, 13, 14"]),
+    ("P6", &["§0.3"]),
+];
+
+#[test]
+fn appendix_g_records_the_package_decisions() {
+    // PKG-02 AC 10: G.0 lists the two exclusions; P1 to P6 are closed rows citing §3.5, §3.6 or §0.3.
+    let g = spec("appendix_g_scope.md");
+    let g0 = table_rows(&section(&g, "## G.0"));
+    let search = g0.iter().find(|r| r[0].contains("source search paths")).expect("G.0 lists source search paths");
+    assert!(search[0].contains("`-I`") && search[1].contains("§3.6 rule 12"), "{search:?}");
+    let registry = g0.iter().find(|r| r[0].contains("a package registry")).expect("G.0 lists a package registry");
+    assert!(registry[1].contains("`path`") && registry[1].contains("`git`") && registry[1].contains("§3.6"), "{registry:?}");
+    let closed = section(&g, "### Closed in this specification");
+    let rows = table_rows(&closed);
+    for (id, cited) in PACKAGE_DECISIONS {
+        let row = rows.iter().find(|r| r[0] == id).unwrap_or_else(|| panic!("no row for {id}"));
+        assert_eq!(row.len(), 4, "{id}: Item, Question, Decision, Where: {row:?}");
+        assert!(!row[1].is_empty() && !row[2].is_empty(), "{id}: {row:?}");
+        for c in cited {
+            assert!(row[3].contains(c), "{id} cites {c}: {}", row[3]);
+        }
+    }
+    assert_eq!(rows.iter().filter(|r| r[0].starts_with('P')).count(), 6);
+    let closing = one_line(&closed);
+    assert!(closing.contains("P1 to P6 number the decisions of the crate and package model"), "{closing}");
+    // G.38 is untouched: the library as a source stays open.
+    assert!(one_line(&section(&g, "### G.38")).contains("**Status: Open.**"));
+}
+
+#[test]
+fn glossary_and_file_map_name_crates_and_packages() {
+    // PKG-02 AC 11: a row for each term, linked to its defining section; `prelude` stays at §3.4.
+    let index = spec("index.md");
+    let rows = table_rows(&section(&index, "### 0.9 "));
+    let expect = [
+        ("crate", "§3.5", "#35-crates"),
+        ("crate root", "§3.5", "#35-crates"),
+        ("dependency name", "§3.5", "#35-crates"),
+        ("dependency", "§3.6", "#36-packages"),
+        ("package", "§3.6", "#36-packages"),
+        ("manifest", "§3.6", "#36-packages"),
+        ("lockfile", "§3.6", "#36-packages"),
+        ("prelude", "§3.4", "#34-files-and-imports"),
+    ];
+    for (term, sec, anchor) in expect {
+        let row = rows
+            .iter()
+            .find(|r| r[0].split(", ").any(|t| t == term))
+            .unwrap_or_else(|| panic!("§0.9 has no row for {term}"));
+        assert!(row[1].contains(sec) && row[1].contains(anchor), "{term}: {row:?}");
+    }
+    let map = table_rows(&section(&index, "### 0.8 "));
+    let part_i = map.iter().find(|r| r[0].contains("part_i_values.md")).expect("Part I row");
+    assert!(part_i[1].contains("crates") && part_i[1].contains("packages"), "{part_i:?}");
+    assert!(part_i[2].contains("§1–3"), "{part_i:?}");
 }

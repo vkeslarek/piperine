@@ -8,7 +8,8 @@ Error codes of this part: `E01xx`.
 
 **Terms defined here:** value, value type, level, `Repr`, function class, closure, handle,
 known, unknown, known flag, merge, flag-total function, panic, optional parameters, namespace
-module, prelude.
+module, prelude, crate, crate root, dependency name, package, manifest, dependency,
+lockfile.
 
 ## 1. Value types
 
@@ -552,7 +553,8 @@ on fref.rise() || fvco.rise() {          // state has no initial value here
 ### 3.4 Files and imports
 
 One file is one module of the namespace. `mod` declares submodules, `use` brings names into
-scope, `pub` controls visibility, and a package of models is a crate.
+scope, `pub` controls visibility, a package of models is a crate ([§3.5](#35-crates)), and
+the package holds it ([§3.6](#36-packages)).
 
 **Static semantics**
 
@@ -560,7 +562,8 @@ scope, `pub` controls visibility, and a package of models is a crate.
   qualification always means a hardware module
   ([§8](part_iii_structure.md#8-modules)).
 - **§3.4.2** The **prelude** is the set of names imported implicitly into every file: the
-  standard library ([§22](part_vii_stdlib.md#22-standard-library)). The **core names** need no
+  `pub` items of `std::prelude`, which re-exports the standard library
+  ([§22](part_vii_stdlib.md#22-standard-library)) ([§3.5](#35-crates) rule 9). The **core names** need no
   import and no declaration: `gnd`, `Nature`, `m`, `dtemp`, `str` and the core primitives
   ([§14](part_iv_behavior.md#14-core-primitives)).
 - **§3.4.3** A hardware module and all its behavior blocks **MUST** be in one file. Each is an
@@ -598,5 +601,166 @@ scope, `pub` controls visibility, and a package of models is a crate.
 | Code | Condition | Phase |
 | --- | --- | --- |
 | [§10](part_iv_behavior.md#10-behavior-blocks) | a behavior block for a module declared in another file (`E0401`) | elaboration |
-| `E0161` | a path, `use` or `mod` that does not resolve, or names a private item | elaboration |
+| `E0161` | a path, `use` or `mod` that does not resolve, a first segment that names no dependency of the crate ([§3.5](#35-crates)), or a path that names a private item | elaboration |
 | `E0162` | a name declared twice in one table of one namespace or of one block; an explicit `use` whose name collides with an item or with another explicit `use` of the same table; a name that is used while only two glob imports provide it, for different declarations | elaboration |
+
+### 3.5 Crates
+
+A **crate** is one tree of namespace modules rooted at one file. A crate reaches another only
+through a dependency.
+
+**Static semantics**
+
+- **§3.5.1** The **crate root** is the file the tree starts from. Its namespace has no name.
+  `mod` items add the files below it ([§3.6](#36-packages) rule 2).
+- **§3.5.2** A crate has a name and a set of dependencies. A **dependency name** names one
+  other crate inside this crate. It need not be the other crate's own name
+  ([§3.6](#36-packages) rule 8).
+- **§3.5.3** `std` is a dependency of every crate. No manifest names it and no dependency may
+  be called `std`.
+- **§3.5.4** The first segment of a path is looked up in this order, and the first hit wins.
+  The path may sit in an expression, a type, a pattern or a `use`; the segment is not `crate`,
+  `self` or `super`.
+    1. the scopes of the enclosing blocks and declarations;
+    2. the items and imports of the enclosing namespace;
+    3. the dependency names of the crate;
+    4. the prelude ([§3.4.2](#34-files-and-imports));
+    5. the core names.
+- **§3.5.5** The first segment of a path of several segments is looked up in the type
+  namespace, as in Rust 2018. A `mod`, `struct`, `enum`, `nature`, `module` or `trait`, or an
+  import of one, is in it. A `fn`, a `const` or a local binding is in the value namespace and
+  hides no dependency: `util::K` and `use util::K` reach the dependency `util` beside a local
+  `fn util`. Where an item or an import of the type namespace of the enclosing namespace has
+  the name of a dependency, an ordinary path follows rule 4: the item or import wins, without a diagnostic.
+  A `use` path whose first segment is that name is ambiguous (`E0163`); the name that `use` binds is an errored binding, and a later read of it reports nothing further. There is no leading
+  `::` ([Appendix B.3.6](appendix_b_grammar.md)). Reach the dependency under another key,
+  `other = { package = "<name>", .. }` ([§3.6](#36-packages) rule 8), and the local item as
+  `crate::<name>`.
+- **§3.5.6** A dependency name resolves to the root namespace of that crate. A crate's own name
+  is not in scope inside it.
+- **§3.5.7** `crate` names the root of the crate that contains the path. `self` and `super`
+  are relative to the namespace that contains them. `super` at a crate root does not resolve
+  (`E0161`).
+- **§3.5.8** From another crate an item is visible only when it is `pub` and every namespace on
+  the path from its crate root to it is `pub`. `pub use` re-exports, as in Rust.
+- **§3.5.9** The prelude is implied in every file of every crate, the files of `std` included.
+- **§3.5.10** The dependencies of the crates form no cycle ([§3.6](#36-packages), `E0174`).
+- **§3.5.11** `extern crate` is not part of the language
+  ([Appendix B.3.6](appendix_b_grammar.md)).
+
+> **Resolution.** Rules 4 and 5 are Rust 2018's: dependency names sit below a namespace's own
+> type-namespace names in a path, and an import that could mean either is an error, never a
+> silent choice. A value item of the same name is not a clash.
+> They are stated because no `::` exists to disambiguate. A dependency name against a prelude
+> item is not a clash: the dependency wins.
+
+> **Resolution.** Rule 9 has no exception for `std`, so one rule holds in every crate.
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0163` | a `use` path whose first segment names both a dependency and an item or an import of the enclosing namespace (one of the type namespace, rule 5) | elaboration |
+| [§3.4](#34-files-and-imports) | a first segment that names no item, import, dependency, prelude item or core name, or an item not visible from the crate (`E0161`) | elaboration |
+| [§3.6](#36-packages) | a cycle among the dependencies (`E0174`) | package |
+
+**Examples**
+
+```rust
+use util::cells::Cell;
+```
+
+`util` is a dependency name. A local `mod util;` makes this `use` ambiguous (`E0163`).
+
+### 3.6 Packages
+
+A **package** is a directory with a manifest. It holds one crate.
+
+**Static semantics**
+
+- **§3.6.1** The **manifest** is the file `Piperine.toml` in the package directory, written in
+  TOML.
+- **§3.6.2** The crate root is `src/lib.msl`. A source file has the extension `.msl`.
+  `mod name;` loads `name.msl` or `name/mod.msl` below the declaring file, as Rust places
+  `name.rs` and `name/mod.rs`; neither or both is `E0161`.
+- **§3.6.3** The manifest holds the tables and keys of the table below and no other (`E0171`).
+- **§3.6.4** A package name and a dependency name are identifiers (A.1) that are no keyword of
+  the language and not `std`. The package name is the crate's name. A single root file that is no package names its crate
+  by its file stem, each character that is no letter, digit or `_` replaced by `_` and a `_`
+  before a leading digit; a stem that is then a keyword or `std` is `E0171`, and the crate is
+  named with a `_` appended.
+- **§3.6.5** A version is `MAJOR.MINOR.PATCH`, three decimal integers.
+- **§3.6.6** A **dependency** is an entry of `[dependencies]`; its key is the dependency name.
+  It has exactly one source: `path` or `git`.
+- **§3.6.7** `path` is a directory, relative to the directory of the manifest that names it, or
+  absolute. `git` is a repository URL; it takes at most one of `branch`, `tag` and `rev`, and
+  none means the repository's default branch. A `rev` is a commit id, 7 to 40
+  hexadecimal digits (`E0171`), never a branch, tag or other revision expression. The package is at the root of the repository.
+- **§3.6.8** `package` gives the located package's own name when it differs from the key. The
+  located package's name **MUST** equal `package`, or the key when there is none (`E0173`).
+- **§3.6.9** `version` is a requirement the located package's version **MUST** satisfy
+  (`E0173`), in one of the forms of the requirement table.
+- **§3.6.10** Two dependencies that locate the same package (one directory; one repository at
+  one commit) name the same crate. A repository URL is compared without a trailing `/` and a
+  trailing `.git`, so one repository spelled two ways is one repository.
+- **§3.6.11** Dependencies are followed transitively. The graph **MUST NOT** hold a cycle
+  (`E0174`).
+- **§3.6.12** A crate is reached through a dependency and in no other way: an implementation
+  **MUST NOT** find a crate through a search path, a registry or an environment variable.
+- **§3.6.13** The **lockfile** is `Piperine.lock` beside the root package's manifest. It
+  records the commit each git package resolved to. While an entry's source (URL and requested
+  reference) equals a dependency's, the recorded commit **MUST** be used. An explicit update
+  resolves again. A lockfile inside a dependency is not read.
+- **§3.6.14** The lockfile is TOML: `version = 1`, then one `[[package]]` per git package with
+  `name`, `version`, `source` (`git+<url>`, then `?branch=<b>`, `?tag=<t>` or `?rev=<r>` when
+  one is given) and `commit` (40 hexadecimal digits, lowercase), sorted by `name`, then `source`.
+
+Manifest keys:
+
+| Table | Key | Type | Required |
+| --- | --- | --- | --- |
+| `[package]` | `name` | string | yes |
+| `[package]` | `version` | string | yes |
+| `[package]` | `authors` | array of strings | no |
+| `[package]` | `description` | string | no |
+| `[dependencies]` entry | `path` | string | one of `path`, `git` |
+| `[dependencies]` entry | `git` | string | one of `path`, `git` |
+| `[dependencies]` entry | `branch`, `tag`, `rev` | string | no, at most one, with `git` only |
+| `[dependencies]` entry | `version` | string | no |
+| `[dependencies]` entry | `package` | string | no |
+
+Requirement table (Cargo's caret rule):
+
+| Requirement | Admits |
+| --- | --- |
+| `1.2.3` | `>=1.2.3, <2.0.0` |
+| `1.2` | `>=1.2.0, <2.0.0` |
+| `1` | `>=1.0.0, <2.0.0` |
+| `0.2.3` | `>=0.2.3, <0.3.0` |
+| `0.2` | `>=0.2.0, <0.3.0` |
+| `0.0.3` | `>=0.0.3, <0.0.4` |
+| `0.0` | `>=0.0.0, <0.1.0` |
+| `0` | `>=0.0.0, <1.0.0` |
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0170` | a package directory without `Piperine.toml`, or a manifest that is not UTF-8 or not valid TOML | package |
+| `E0171` | a manifest entry rules 3 to 9 do not allow: an unknown table or key, a missing `name` or `version`, a value of the wrong type, a name that breaks rule 4, a version or requirement of another form, a dependency without exactly one source, a `branch`, `tag` or `rev` beside another or beside `path`, a `rev` that is not 7 to 40 hexadecimal digits, a root file stem that rule 4 forbids | package |
+| `E0172` | a dependency that cannot be located: a `path` with no manifest, a repository that cannot be fetched, a reference the repository does not hold | package |
+| `E0173` | a located package that is not the one asked for: another name, or a version that does not satisfy `version` | package |
+| `E0174` | a cycle among the dependencies | package |
+| `E0175` | a package without its crate root `src/lib.msl` | package |
+| `E0176` | a lockfile that cannot be used: not readable or not valid TOML, no `version` or one that is not `1`, an entry that is no table, has an unknown key, lacks one of its four keys or gives a value of the wrong form (a `commit` that is not 40 lowercase hexadecimal digits included), or one that cannot be written | package |
+
+**Examples**
+
+```toml
+[package]
+name = "cells"
+version = "0.1.0"
+
+[dependencies]
+util = { path = "../util" }
+```

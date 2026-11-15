@@ -1,435 +1,251 @@
-use std::collections::{HashMap, HashSet};
+//! The resolver: a depth-first walk from the root package that locates every dependency and
+//! returns the crate graph. A package is identified by where it is, so a package reached twice
+//! is one crate.
+
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use thiserror::Error;
 
-use crate::git::{GitError, sync_and_checkout};
-use crate::{DependencySource, GitRequirement, PiperineToml};
+use piperine_lang::msl::{Diagnostic, Span};
+use piperine_lang::pom::{CrateGraph, CrateId, GraphError};
 
-use crate::lockfile::{LockEntry, LockError, PiperineLock};
+use crate::error::PackageError;
+use crate::git::{GitError, normalize_url, source_text, sync_and_checkout};
+use crate::lockfile::{LOCKFILE, LockedPackage, Lockfile};
+use crate::manifest::{Dependency, GitRef, MANIFEST, Manifest, Source};
 
-#[derive(Error, Debug)]
-pub enum ResolverError {
-    #[error(
-        "Conflict detected for package '{package}'. Cannot satisfy requirement {new_req:?} because {existing_req:?} was already requested."
-    )]
-    Conflict {
-        package: String,
-        existing_req: GitRequirement,
-        new_req: GitRequirement,
-    },
-    #[error("Git error for package '{package}': {source}")]
-    Git {
-        package: String,
-        #[source]
-        source: GitError,
-    },
-    #[error("Failed to load Piperine.toml from {path}: {source}")]
-    ManifestLoad {
-        path: PathBuf,
-        #[source]
-        source: crate::ProjectError,
-    },
-    #[error("Failed to process Piperine.lock: {0}")]
-    LockfileError(#[from] LockError),
-    #[error(
-        "Bad `subdir` for package '{package}': {reason} (subdir = {subdir:?})"
-    )]
-    Subdir {
-        package: String,
-        subdir: String,
-        reason: String,
-    },
+/// What a resolution may do beyond reading.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Options {
+    /// Resolve every reference again, ignoring the recorded commits, and rewrite the lockfile.
+    pub update: bool,
 }
 
-/// Resolve a git dependency's `subdir` inside its checkout: relative,
-/// no `..`, and the directory must exist — anything else fails loud.
-fn apply_subdir(
-    package: &str,
-    checkout: &Path,
-    subdir: Option<&str>,
-) -> Result<PathBuf, ResolverError> {
-    let Some(subdir) = subdir else { return Ok(checkout.to_path_buf()) };
-    let bad = |reason: &str| ResolverError::Subdir {
-        package: package.to_string(),
-        subdir: subdir.to_string(),
-        reason: reason.to_string(),
-    };
-    let rel = Path::new(subdir);
-    if rel.is_absolute() {
-        return Err(bad("must be a relative path inside the repository"));
-    }
-    if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-        return Err(bad("must not contain `..`"));
-    }
-    let dir = checkout.join(rel);
-    if !dir.is_dir() {
-        return Err(bad("no such directory in the checked-out repository"));
-    }
-    Ok(dir)
+/// The packages of a project as a crate graph, and what each crate was read from.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PackageGraph {
+    /// The root package is the first crate.
+    pub graph: CrateGraph,
+    /// One per crate of `graph`, in crate order.
+    pub packages: Vec<ResolvedPackage>,
 }
 
-/// A fully resolved dependency map, mapping package names to their local on-disk paths.
-pub type ResolvedMap = HashMap<String, PathBuf>;
-
-/// Whether the package rooted at `dir` declares plugin contributions (D9):
-/// a dedicated `piperine-plugin.toml`, or a `[plugin]` section in its own
-/// `Piperine.toml`. Either spelling makes it a loadable plugin.
-pub fn declares_contributions(dir: &Path) -> bool {
-    if dir.join("piperine-plugin.toml").is_file() {
-        return true;
-    }
-    PiperineToml::load(&dir.join("Piperine.toml"))
-        .map(|toml| toml.declares_plugin())
-        .unwrap_or(false)
+/// A package the walk located.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedPackage {
+    pub krate: CrateId,
+    /// The package directory, canonical.
+    pub dir: PathBuf,
+    pub manifest: Manifest,
+    /// The commit of a package fetched by git.
+    pub commit: Option<String>,
 }
 
-pub struct Resolver {
-    project_root: PathBuf,
-    deps_dir: PathBuf,
-    resolved_reqs: HashMap<String, GitRequirement>,
-    resolved_paths: ResolvedMap,
-    visited: HashSet<String>,
-    lockfile: PiperineLock,
-    update_mode: bool,
+/// Where a package is: the thing two dependencies must share to be one crate.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Identity {
+    Path(PathBuf),
+    /// A repository and the commit checked out of it.
+    Git(String, String),
 }
 
-impl Resolver {
-    pub fn new(project_root: &Path, update_mode: bool) -> Self {
-        let deps_dir = project_root.join("target").join("deps");
-        Self {
-            project_root: project_root.to_path_buf(),
-            deps_dir,
-            resolved_reqs: HashMap::new(),
-            resolved_paths: HashMap::new(),
-            visited: HashSet::new(),
-            lockfile: PiperineLock::new(),
-            update_mode,
-        }
-    }
+type Errors = Vec<PackageError>;
 
-    /// Resolve every loadable plugin of `root_manifest` into a local path.
-    ///
-    /// Two sources, one map (plugin-interface v2, D9 — a plugin *is* a
-    /// contributing dependency):
-    ///
-    /// - the explicit `[plugins]` section — an artifact-only plugin with no
-    ///   PHDL to import. Path sources resolve relative to the project root;
-    ///   git sources sync into `target/plugins/<name>/`. Plugins have no
-    ///   transitive PHDL dependencies — no recursive walk (SPEC Part VI §5).
-    /// - every `[dependencies]` entry whose resolved root carries a
-    ///   `piperine-plugin.toml`, so `piperine add <git>` is the whole
-    ///   install: the dependency's PHDL resolves via `use` AND its declared
-    ///   contributions load. An entry listed in both sections keeps its
-    ///   `[plugins]` path.
-    pub fn resolve_plugins(
-        &mut self,
-        root_manifest: &PiperineToml,
-    ) -> Result<ResolvedMap, ResolverError> {
-        let plugins_dir = self.project_root.join("target").join("plugins");
-        if !root_manifest.plugins.is_empty() {
-            std::fs::create_dir_all(&plugins_dir).ok();
-        }
-        let mut resolved = ResolvedMap::new();
-        for (name, source) in &root_manifest.plugins {
-            match source {
-                DependencySource::Path(path_dep) => {
-                    let path = PathBuf::from(&path_dep.path);
-                    let path = if path.is_absolute() { path } else { self.project_root.join(path) };
-                    resolved.insert(name.clone(), path);
-                }
-                DependencySource::Git(git_dep) => {
-                    let req = git_dep.requirement();
-                    let target_dir = plugins_dir.join(name);
-                    let target_str = match req {
-                        GitRequirement::Version(ref v) => format!("release/v{}", v),
-                        GitRequirement::Branch(ref b) => b.clone(),
-                        GitRequirement::Rev(ref r) => r.clone(),
-                        GitRequirement::Latest => "latest".to_string(),
-                    };
-                    sync_and_checkout(&git_dep.git, &target_dir, &target_str).map_err(|e| {
-                        ResolverError::Git { package: name.clone(), source: e }
-                    })?;
-                    let dir = apply_subdir(name, &target_dir, git_dep.subdir.as_deref())?;
-                    resolved.insert(name.clone(), dir);
-                }
-            }
-        }
-        if !root_manifest.dependencies.is_empty() {
-            let project_root = self.project_root.clone();
-            for (name, dir) in self.resolve(root_manifest)? {
-                if resolved.contains_key(&name) {
-                    continue;
-                }
-                // A path dependency records its manifest-relative path; the
-                // plugin host resolves artifacts against an absolute root.
-                let dir = if dir.is_absolute() { dir } else { project_root.join(dir) };
-                if declares_contributions(&dir) {
-                    resolved.insert(name, dir);
-                }
-            }
-        }
-        Ok(resolved)
-    }
-
-    pub fn resolve(&mut self, root_manifest: &PiperineToml) -> Result<ResolvedMap, ResolverError> {
-        if !self.deps_dir.exists() {
-            std::fs::create_dir_all(&self.deps_dir).ok();
-        }
-
-        let lock_path = self.project_root.join("Piperine.lock");
-        if !self.update_mode
-            && let Some(existing_lock) = PiperineLock::load(&lock_path)? {
-                self.lockfile = existing_lock;
-            }
-
-        self.resolve_deps(&root_manifest.dependencies)?;
-
-        self.lockfile.save(&lock_path)?;
-        Ok(self.resolved_paths.clone())
-    }
-
-    fn resolve_deps(
-        &mut self,
-        deps: &HashMap<String, DependencySource>,
-    ) -> Result<(), ResolverError> {
-        // Clone keys to avoid borrowing issues during recursive resolution
-        let packages: Vec<(String, DependencySource)> =
-            deps.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-
-        for (pkg_name, source) in packages {
-            if self.visited.contains(&pkg_name) {
-                // Already resolved or in process, skip to avoid infinite loop
-                continue;
-            }
-
-            match source {
-                DependencySource::Path(path_dep) => {
-                    // For path dependencies, we assume they are always compatible.
-                    let path = PathBuf::from(path_dep.path);
-                    self.resolved_paths.insert(pkg_name.clone(), path.clone());
-                    self.visited.insert(pkg_name.clone());
-
-                    // Recursively resolve the path dependency
-                    let manifest_path = path.join("Piperine.toml");
-                    if manifest_path.exists() {
-                        let manifest = PiperineToml::load(&manifest_path).map_err(|e| {
-                            ResolverError::ManifestLoad {
-                                path: manifest_path,
-                                source: e,
-                            }
-                        })?;
-                        self.resolve_deps(&manifest.dependencies)?;
-                    }
-                }
-                DependencySource::Git(git_dep) => {
-                    let req = git_dep.requirement();
-
-                    // Conflict check
-                    if let Some(existing_req) = self.resolved_reqs.get(&pkg_name) {
-                        if existing_req != &req {
-                            return Err(ResolverError::Conflict {
-                                package: pkg_name,
-                                existing_req: existing_req.clone(),
-                                new_req: req,
-                            });
-                        }
-                        continue;
-                    }
-
-                    self.resolved_reqs.insert(pkg_name.clone(), req.clone());
-                    self.visited.insert(pkg_name.clone());
-
-                    // Fetch and checkout
-                    let target_dir = self.deps_dir.join(&pkg_name);
-
-                    let target_str = match req {
-                        GitRequirement::Version(ref v) => format!("release/v{}", v),
-                        GitRequirement::Branch(ref b) => b.clone(),
-                        GitRequirement::Rev(ref r) => r.clone(),
-                        GitRequirement::Latest => "latest".to_string(),
-                    };
-
-                    let locked_hash = self.lockfile.get_hash(&pkg_name);
-                    let target_to_checkout = locked_hash.as_deref().unwrap_or(&target_str);
-
-                    let commit_hash =
-                        sync_and_checkout(&git_dep.git, &target_dir, target_to_checkout).map_err(
-                            |e| ResolverError::Git {
-                                package: pkg_name.clone(),
-                                source: e,
-                            },
-                        )?;
-
-                    if locked_hash.is_none() {
-                        // Update lockfile with the new hash
-                        self.lockfile.package.push(LockEntry::dependency(
-                            pkg_name.clone(),
-                            git_dep.git.clone(),
-                            commit_hash,
-                        ));
-                    }
-
-                    let pkg_dir =
-                        apply_subdir(&pkg_name, &target_dir, git_dep.subdir.as_deref())?;
-                    self.resolved_paths.insert(pkg_name.clone(), pkg_dir.clone());
-
-                    // Recursively resolve
-                    let manifest_path = pkg_dir.join("Piperine.toml");
-                    if manifest_path.exists() {
-                        let manifest = PiperineToml::load(&manifest_path).map_err(|e| {
-                            ResolverError::ManifestLoad {
-                                path: manifest_path,
-                                source: e,
-                            }
-                        })?;
-                        self.resolve_deps(&manifest.dependencies)?;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
+/// The crate root of a package directory.
+fn crate_root(dir: &Path) -> PathBuf {
+    dir.join("src").join("lib.msl")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Resolve the package at `dir` and everything it depends on.
+pub fn resolve(dir: &Path, options: Options) -> Result<PackageGraph, Vec<PackageError>> {
+    let manifest = Manifest::load(dir)?;
+    let root = dir.canonicalize().map_err(|e| {
+        let message = format!("cannot read the package directory `{}`: {e}", dir.display());
+        vec![fault(dir, Span::new(0, 0), "E0170", message, "a package holds a `Piperine.toml`", None)]
+    })?;
+    let lock = Lockfile::load(&root).map_err(|e| vec![e])?.unwrap_or_default();
+    let mut walk = Walk {
+        lock: lock.packages.iter().filter(|_| !options.update).map(|p| (p.source.clone(), p.commit.clone())).collect(),
+        recorded: BTreeSet::new(), deps: root.join("target").join("deps"), graph: CrateGraph::new(), packages: Vec::new(), ids: HashMap::new(), stack: Vec::new(), resolved: HashMap::new() };
+    if !crate_root(&root).is_file() {
+        let message = format!("the package `{}` has no crate root `{}`", manifest.package.name, crate_root(&root).display());
+        return Err(vec![fault(&root, Span::new(0, 0), "E0175", message, "the crate root is `src/lib.msl`", None)]);
+    }
+    walk.enter(&root, Identity::Path(root.clone()), manifest, None)?;
+    write_lockfile(&root, &Lockfile { packages: walk.recorded.into_iter().collect() })?;
+    Ok(PackageGraph { graph: walk.graph, packages: walk.packages })
+}
 
-    #[test]
-    fn subdir_none_is_the_checkout_itself() {
-        let dir = std::env::temp_dir();
-        assert_eq!(apply_subdir("p", &dir, None).unwrap(), dir);
+/// A package error in the manifest of the package at `dir`.
+fn fault(dir: &Path, span: Span, code: &'static str, message: String, label: &str, help: Option<String>) -> PackageError {
+    let file = dir.join(MANIFEST);
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let mut diagnostic = Diagnostic::new(code, message, span, label);
+    diagnostic.help = help;
+    PackageError { file, text, diagnostic }
+}
+
+/// Write `Piperine.lock` beside the root manifest when its text changes; none is made for a
+/// graph without a git package.
+fn write_lockfile(root: &Path, lockfile: &Lockfile) -> Result<(), Errors> {
+    let file = root.join(LOCKFILE);
+    let existing = std::fs::read_to_string(&file).ok();
+    if lockfile.packages.is_empty() && existing.is_none() {
+        return Ok(());
+    }
+    let text = lockfile.render();
+    if existing.as_deref() != Some(text.as_str()) {
+        std::fs::write(&file, &text).map_err(|e| {
+            let message = format!("cannot write the lockfile `{}`: {e}", file.display());
+            vec![crate::lockfile::error(&file, String::new(), Span::new(0, 0), message, "unwritable")]
+        })?;
+    }
+    Ok(())
+}
+
+struct Walk {
+    /// The commit the lockfile records for each git source.
+    lock: HashMap<String, String>,
+    /// The git packages of this run: what the lockfile will say.
+    recorded: BTreeSet<LockedPackage>,
+    /// `<root package>/target/deps`: the repositories and checkouts of git dependencies.
+    deps: PathBuf,
+    /// The commit each git source resolved to in this run.
+    resolved: HashMap<String, String>,
+    graph: CrateGraph,
+    packages: Vec<ResolvedPackage>,
+    ids: HashMap<Identity, CrateId>,
+    /// The packages being walked, outermost first, with their names.
+    stack: Vec<(Identity, String)>,
+}
+
+impl Walk {
+    /// Make the crate of the package at `dir` and walk its dependencies.
+    fn enter(&mut self, dir: &Path, identity: Identity, manifest: Manifest, commit: Option<String>) -> Result<CrateId, Errors> {
+        let name = manifest.package.name.clone();
+        let id = self.graph.add_crate(&name, crate_root(dir)).map_err(|e| vec![graph_fault(dir, Span::new(0, 0), &e)])?;
+        self.ids.insert(identity.clone(), id);
+        self.packages.push(ResolvedPackage { krate: id, dir: dir.to_path_buf(), manifest: manifest.clone(), commit });
+        self.stack.push((identity, name));
+        for dependency in &manifest.dependencies {
+            let child = self.dependency(dir, dependency)?;
+            self.graph.add_dependency(id, &dependency.name, child).map_err(|e| vec![graph_fault(dir, dependency.name_span, &e)])?;
+        }
+        self.stack.pop();
+        Ok(id)
     }
 
-    #[test]
-    fn subdir_resolves_inside_the_checkout() {
-        let root = std::env::temp_dir().join("piperine-subdir-test");
-        let inner = root.join("piperine-spice");
-        std::fs::create_dir_all(&inner).unwrap();
-        assert_eq!(apply_subdir("spice", &root, Some("piperine-spice")).unwrap(), inner);
-    }
-
-    #[test]
-    fn subdir_escapes_fail_loud() {
-        let root = std::env::temp_dir();
-        apply_subdir("p", &root, Some("../outside")).unwrap_err();
-        apply_subdir("p", &root, Some("/etc")).unwrap_err();
-        apply_subdir("p", &root, Some("no-such-dir-here")).unwrap_err();
-    }
-
-    #[test]
-    fn subdir_parses_from_toml() {
-        let toml = r#"
-[project]
-name = "demo"
-version = "0.1.0"
-authors = []
-edition = "2024"
-
-[plugins.spice]
-git = "https://example.com/plugins"
-subdir = "piperine-spice"
-"#;
-        let manifest: crate::PiperineToml = toml::from_str(toml).unwrap();
-        let crate::DependencySource::Git(dep) = &manifest.plugins["spice"] else {
-            panic!("expected a git source");
+    /// The directory holding the commit of `url` that `reference` names: the repository is
+    /// cloned or fetched into `<deps>/<url>/db`, and the commit checked out into
+    /// `<deps>/<url>/<commit>`.
+    fn checkout(&mut self, url: &str, reference: &GitRef) -> Result<(PathBuf, String), GitError> {
+        let home = self.deps.join(sanitize(&normalize_url(url)));
+        let source = source_text(&normalize_url(url), reference);
+        let commit = match self.resolved.get(&source) {
+            Some(commit) => commit.clone(),
+            None => {
+                let commit = match self.lock.get(&source) {
+                    // Pinned, and checked out already: the repository is not opened.
+                    Some(locked) if home.join(locked).is_dir() => locked.clone(),
+                    Some(locked) => sync_and_checkout(url, &home.join("db"), &GitRef::Rev(locked.clone()))?,
+                    None => sync_and_checkout(url, &home.join("db"), reference)?,
+                };
+                self.resolved.insert(source, commit.clone());
+                commit
+            }
         };
-        assert_eq!(dep.subdir.as_deref(), Some("piperine-spice"));
-    }
-
-    /// A scratch project with two path dependencies: one carrying a plugin
-    /// manifest, one a plain PHDL library.
-    fn project_with_two_deps(tag: &str) -> PathBuf {
-        let root = std::env::temp_dir()
-            .join(format!("piperine-plugin-dep-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        for dep in ["contributor", "plain"] {
-            std::fs::create_dir_all(root.join(dep).join("src")).unwrap();
-            std::fs::write(
-                root.join(dep).join("Piperine.toml"),
-                format!(
-                    "[project]\nname = \"{dep}\"\nversion = \"0.1.0\"\nauthors = []\n\
-                     edition = \"2024\"\n"
-                ),
-            )
-            .unwrap();
+        let checkout = home.join(&commit);
+        if !checkout.is_dir() {
+            // Checked out beside, then renamed: a failure leaves no commit directory.
+            let partial = home.join(format!("{commit}.partial"));
+            let _ = std::fs::remove_dir_all(&partial);
+            let db = home.join("db");
+            let made = sync_and_checkout(&db.to_string_lossy(), &partial, &GitRef::Rev(commit.clone())).and_then(|_| {
+                std::fs::rename(&partial, &checkout).map_err(|e| GitError::CheckoutFailed { path: checkout.clone(), target: commit.clone(), msg: e.to_string() })
+            });
+            if let Err(e) = made {
+                let _ = std::fs::remove_dir_all(&partial);
+                return Err(e);
+            }
         }
-        std::fs::write(
-            root.join("contributor").join("piperine-plugin.toml"),
-            "[plugin]\nname = \"contributor\"\n",
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("Piperine.toml"),
-            "[project]\nname = \"demo\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n\n\
-             [dependencies.contributor]\npath = \"contributor\"\n\n\
-             [dependencies.plain]\npath = \"plain\"\n",
-        )
-        .unwrap();
-        root
+        let checkout = checkout.canonicalize().map_err(|e| GitError::CheckoutFailed { path: checkout.clone(), target: commit.clone(), msg: e.to_string() })?;
+        Ok((checkout, commit))
     }
 
-    /// D9: `piperine add <git>` is the whole install — a dependency whose
-    /// root carries a `piperine-plugin.toml` is a loadable plugin, with no
-    /// second `[plugins]` entry to hand-write. A plain dependency is not.
-    #[test]
-    fn a_contributing_dependency_resolves_as_a_plugin() {
-        let root = project_with_two_deps("deps");
-        let toml = crate::PiperineToml::load(&root.join("Piperine.toml")).unwrap();
-        let mut resolver = Resolver::new(&root, false);
-        let plugins = resolver.resolve_plugins(&toml).unwrap();
-
-        assert_eq!(plugins.keys().collect::<Vec<_>>(), vec!["contributor"]);
-        assert_eq!(plugins["contributor"], root.join("contributor"));
-        let _ = std::fs::remove_dir_all(&root);
+    /// Locate one dependency of the package at `dir`.
+    fn dependency(&mut self, dir: &Path, dependency: &Dependency) -> Result<CrateId, Errors> {
+        let (target, identity, commit) = match &dependency.source {
+            Source::Path(path) => {
+                let target = dir.join(path);
+                if !target.join(MANIFEST).is_file() {
+                    let message = format!("dependency `{}` is not at `{}`: no `{MANIFEST}` there", dependency.name, target.display());
+                    return Err(vec![fault(dir, dependency.name_span, "E0172", message, "no package at this path", None)]);
+                }
+                let target = target.canonicalize().map_err(|e| {
+                    let message = format!("dependency `{}` is not at `{}`: {e}", dependency.name, target.display());
+                    vec![fault(dir, dependency.name_span, "E0172", message, "no package at this path", None)]
+                })?;
+                let identity = Identity::Path(target.clone());
+                (target, identity, None)
+            }
+            Source::Git { url, reference } => {
+                let (target, commit) = self.checkout(url, reference).map_err(|e| {
+                    let message = format!("dependency `{}` cannot be fetched: {e}", dependency.name);
+                    vec![fault(dir, dependency.name_span, "E0172", message, "git could not provide this", None)]
+                })?;
+                if !target.join(MANIFEST).is_file() {
+                    let message = format!("dependency `{}` is not at `{url}`: no `{MANIFEST}` at the root of commit {commit}", dependency.name);
+                    return Err(vec![fault(dir, dependency.name_span, "E0172", message, "no package in this repository", None)]);
+                }
+                let identity = Identity::Git(normalize_url(url), commit.clone());
+                (target, identity, Some(commit))
+            }
+        };
+        let manifest = Manifest::load(&target)?;
+        let wanted = dependency.package.as_deref().unwrap_or(&dependency.name);
+        if manifest.package.name != wanted {
+            let message = format!("dependency `{}` asks for the package `{wanted}`, but `{}` holds the package `{}`", dependency.name, target.display(), manifest.package.name);
+            let help = (dependency.package.is_none()).then(|| format!("name the package with `package = \"{}\"`, or rename the dependency", manifest.package.name));
+            return Err(vec![fault(dir, dependency.name_span, "E0173", message, "not the package asked for", help)]);
+        }
+        if let Some(requirement) = dependency.requirement {
+            if !requirement.admits(manifest.package.version) {
+                let message = format!("dependency `{}` requires version `{requirement}`, but the package `{}` is `{}`", dependency.name, manifest.package.name, manifest.package.version);
+                return Err(vec![fault(dir, dependency.name_span, "E0173", message, "the version does not satisfy the requirement", None)]);
+            }
+        }
+        if let (Source::Git { url, reference }, Some(commit)) = (&dependency.source, &commit) {
+            let (name, version) = (manifest.package.name.clone(), manifest.package.version);
+            self.recorded.insert(LockedPackage { name, version, source: source_text(&normalize_url(url), reference), commit: commit.clone() });
+        }
+        if let Some(at) = self.stack.iter().position(|(on_stack, _)| *on_stack == identity) {
+            let mut chain: Vec<&str> = self.stack[at..].iter().map(|(_, name)| name.as_str()).collect();
+            chain.push(&self.stack[at].1);
+            let message = format!("the dependencies form a cycle: {}", chain.join(" -> "));
+            return Err(vec![fault(dir, dependency.name_span, "E0174", message, "closes the cycle", None)]);
+        }
+        if !crate_root(&target).is_file() {
+            let message = format!("the package `{}` has no crate root `{}`", manifest.package.name, crate_root(&target).display());
+            return Err(vec![fault(dir, dependency.name_span, "E0175", message, "this package has no `src/lib.msl`", None)]);
+        }
+        match self.ids.get(&identity) {
+            Some(id) => Ok(*id),
+            None => self.enter(&target, identity, manifest, commit),
+        }
     }
+}
 
-    /// The inline spelling counts too: a dependency whose own `Piperine.toml`
-    /// carries a `[plugin]` section is a plugin without a second manifest
-    /// file (D9).
-    #[test]
-    fn an_inline_plugin_section_marks_a_dependency_as_a_plugin() {
-        let root = project_with_two_deps("inline");
-        std::fs::remove_file(root.join("contributor").join("piperine-plugin.toml")).unwrap();
-        let manifest = std::fs::read_to_string(root.join("contributor").join("Piperine.toml")).unwrap();
-        std::fs::write(
-            root.join("contributor").join("Piperine.toml"),
-            format!("{manifest}\n[plugin]\npython = \"plugin.py\"\n"),
-        )
-        .unwrap();
-
-        let toml = crate::PiperineToml::load(&root.join("Piperine.toml")).unwrap();
-        let mut resolver = Resolver::new(&root, false);
-        let plugins = resolver.resolve_plugins(&toml).unwrap();
-
-        assert_eq!(plugins.keys().collect::<Vec<_>>(), vec!["contributor"]);
-        let _ = std::fs::remove_dir_all(&root);
+/// A rejected graph call, reported where it was made.
+fn graph_fault(dir: &Path, span: Span, error: &GraphError) -> PackageError {
+    match error {
+        GraphError::Cycle { names } => {
+            let chain = names.join(" -> ");
+            fault(dir, span, "E0174", format!("the dependencies form a cycle: {chain}"), "closes the cycle", None)
+        }
+        other => fault(dir, span, "E0171", format!("the crate graph refused the dependency: {other:?}"), "refused", None),
     }
+}
 
-    /// A `[plugins]` entry still wins for a name declared in both sections —
-    /// the explicit artifact path is never shadowed by the dependency copy.
-    #[test]
-    fn an_explicit_plugins_entry_wins_over_the_dependency_path() {
-        let root = project_with_two_deps("both");
-        std::fs::create_dir_all(root.join("vendored")).unwrap();
-        std::fs::write(
-            root.join("vendored").join("piperine-plugin.toml"),
-            "[plugin]\nname = \"contributor\"\n",
-        )
-        .unwrap();
-        let manifest = std::fs::read_to_string(root.join("Piperine.toml")).unwrap();
-        std::fs::write(
-            root.join("Piperine.toml"),
-            format!("{manifest}\n[plugins.contributor]\npath = \"vendored\"\n"),
-        )
-        .unwrap();
-
-        let toml = crate::PiperineToml::load(&root.join("Piperine.toml")).unwrap();
-        let mut resolver = Resolver::new(&root, false);
-        let plugins = resolver.resolve_plugins(&toml).unwrap();
-
-        assert_eq!(plugins["contributor"], root.join("vendored"));
-        let _ = std::fs::remove_dir_all(&root);
-    }
+/// A URL as a directory name: every character outside `[A-Za-z0-9._-]` becomes `_`.
+fn sanitize(url: &str) -> String {
+    url.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '_' }).collect()
 }

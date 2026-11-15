@@ -3,6 +3,7 @@
 //! [`Reflect`] trait every declaration handle shares.
 
 mod body;
+mod crates;
 mod hardware;
 mod index;
 mod items;
@@ -15,6 +16,7 @@ use super::index::ReferenceId;
 use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
 
+pub use crates::Crate;
 pub use body::{Argument, Block, FieldBinding, Commit, Contribution, Expr, Path, Pat, SourceFile, Stmt, Type};
 pub use hardware::{Behavior, Binding, Definition, GenArm, Generation, Instance, Let, Module, Nature, Param, Port, Quantity, Reaction, Signal};
 pub use index::{Reference, Writer};
@@ -88,6 +90,11 @@ pub trait Reflect<'d>: Copy {
     fn file(self) -> SourceFile<'d> {
         let d = self.decl();
         SourceFile::new(d.design, d.data().file)
+    }
+
+    /// The crate the declaration is written in.
+    fn krate(self) -> Crate<'d> {
+        self.file().krate()
     }
 
     /// The authored text of the declaration.
@@ -388,24 +395,24 @@ impl Design {
         Decl::new(self, id)
     }
 
-    /// Every declaration of the design in arena (source) order, prelude
-    /// files first.
+    /// Every declaration of the design in arena (source) order: the project's files first, `std`
+    /// last.
     pub fn decls(&self) -> Vec<Decl<'_>> {
         (0..self.decl_count()).map(|i| Decl::new(self, DeclId(i as u32))).collect()
     }
 
-    /// The declarations of the files that are not prelude sources.
+    /// The declarations of the root crate.
     fn authored(&self) -> impl Iterator<Item = Decl<'_>> {
-        self.decls().into_iter().filter(|d| !d.file().is_prelude())
+        self.decls().into_iter().filter(|d| d.krate().is_root())
     }
 
-    /// Every module of the non-prelude files, in source order.
+    /// Every module of the root crate, in source order.
     pub fn modules(&self) -> Vec<Module<'_>> {
         self.authored().filter_map(Decl::as_module).collect()
     }
 
-    /// The first declaration `accept` takes: one of a non-prelude file, else
-    /// one of a prelude source. The one precedence of every by-name lookup.
+    /// The first declaration `accept` takes: one of the root crate, else the first in crate
+    /// order. The one precedence of every by-name lookup.
     fn first_project_first(&self, accept: impl Fn(Decl<'_>) -> bool) -> Option<Decl<'_>> {
         self.authored().find(|d| accept(*d)).or_else(|| self.decls().into_iter().find(|d| accept(*d)))
     }
@@ -417,22 +424,23 @@ impl Design {
         let mut candidates = ids.iter().map(|id| Decl::new(self, *id)).filter(|d| accept(*d));
         let mut first = None;
         for d in candidates.by_ref() {
-            if !d.file().is_prelude() {
+            if d.krate().is_root() {
                 return Some(d);
             }
-            first.get_or_insert(d);
+            if first.is_none_or(|f: Decl<'_>| d.krate().id() < f.krate().id()) {
+                first = Some(d);
+            }
         }
         first
     }
 
-    /// The module named `name`: the first match in a non-prelude file, else
-    /// the first match in a prelude source.
+    /// The module named `name`: the root crate's, else the first match in crate order.
     pub fn module(&self, name: &str) -> Option<Module<'_>> {
         self.first_named(name, |d| d.as_module().is_some()).and_then(Decl::as_module)
     }
 
-    /// Every free function (a `fn` directly in a namespace) of the non-prelude
-    /// files, in source order.
+    /// Every free function (a `fn` directly in a namespace) of the root
+    /// crate, in source order.
     pub fn functions(&self) -> Vec<Function<'_>> {
         self.authored().filter(Design::is_free).filter_map(Decl::as_function).collect()
     }
@@ -441,61 +449,55 @@ impl Design {
         d.declared_in().is_some_and(|p| p.as_namespace().is_some())
     }
 
-    /// The free function named `name`, project files first.
+    /// The free function named `name`, the root crate first.
     pub fn function(&self, name: &str) -> Option<Function<'_>> {
         self.first_named(name, |d| Design::is_free(&d) && d.as_function().is_some()).and_then(Decl::as_function)
     }
 
-    /// Every struct of the non-prelude files, in source order.
+    /// Every struct of the root crate, in source order.
     pub fn structs(&self) -> Vec<Struct<'_>> {
         self.authored().filter_map(Decl::as_struct).collect()
     }
 
-    /// The struct named `name`, project files first.
+    /// The struct named `name`, the root crate first.
     pub fn struct_named(&self, name: &str) -> Option<Struct<'_>> {
         self.first_named(name, |d| d.as_struct().is_some()).and_then(Decl::as_struct)
     }
 
-    /// Every enum of the non-prelude files, in source order.
+    /// Every enum of the root crate, in source order.
     pub fn enums(&self) -> Vec<Enum<'_>> {
         self.authored().filter_map(Decl::as_enum).collect()
     }
 
-    /// Every trait of the non-prelude files, in source order.
+    /// Every trait of the root crate, in source order.
     pub fn traits(&self) -> Vec<Trait<'_>> {
         self.authored().filter_map(Decl::as_trait).collect()
     }
 
-    /// Every `const` item of the non-prelude files, in source order.
+    /// Every `const` item of the root crate, in source order.
     pub fn consts(&self) -> Vec<Const<'_>> {
         self.authored().filter_map(Decl::as_const).collect()
     }
 
-    /// Every `impl` block of the non-prelude files, in source order.
+    /// Every `impl` block of the root crate, in source order.
     pub fn impls(&self) -> Vec<Impl<'_>> {
         self.authored().filter_map(Decl::as_impl).collect()
     }
 
-    /// Every named namespace (`mod a { .. }` or `mod a;`) of the non-prelude
-    /// files; a file's unnamed root is not listed.
+    /// Every named namespace (`mod a { .. }` or `mod a;`) of the root
+    /// crate; a file's unnamed root is not listed.
     pub fn namespaces(&self) -> Vec<Namespace<'_>> {
         self.authored().filter_map(Decl::as_namespace).filter(|n| n.name().is_some()).collect()
     }
 
-    /// Every nature of the non-prelude files, in source order.
+    /// Every nature of the root crate, in source order.
     pub fn natures(&self) -> Vec<Nature<'_>> {
         self.authored().filter_map(Decl::as_nature).collect()
     }
 
-    /// The nature named `name`, project files first.
+    /// The nature named `name`, the root crate first.
     pub fn nature(&self, name: &str) -> Option<Nature<'_>> {
         self.first_named(name, |d| d.as_nature().is_some()).and_then(Decl::as_nature)
-    }
-
-    /// The prelude sources, in registration order. The typed collections do
-    /// not list their items; `decls()` does.
-    pub fn prelude_files(&self) -> Vec<SourceFile<'_>> {
-        self.files().into_iter().filter(|f| f.is_prelude()).collect()
     }
 
     /// The declaration at a `::` path from the root, each segment a child

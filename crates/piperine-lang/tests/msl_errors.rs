@@ -933,6 +933,7 @@ const REMOVED: &[Removed] = &[
     removed("raw-pointer types", "fn f(p: *mut u8) { }", "E0900", "raw-pointer types are not part of the language", "a value or an array"),
     removed("`union` items", "union U { a: u8 }", "E0900", "`union` items are not part of the language", "`struct`"),
     removed("`extern` blocks", "extern \"C\" { fn f(); }", "E0900", "`extern` blocks are not part of the language", "`extern \"C\" fn`"),
+    removed("`extern crate` items", "extern crate util;", "E0900", "`extern crate` is not part of the language", "[dependencies]"),
 ];
 
 #[test]
@@ -981,7 +982,7 @@ fn every_b36_row_has_a_fixture() {
         .filter_map(|l| l.trim_matches('|').split('|').next())
         .map(str::trim)
         .collect();
-    assert_eq!(cells.len(), 20, "{cells:?}");
+    assert_eq!(cells.len(), 21, "{cells:?}");
     for cell in &cells {
         assert!(REMOVED.iter().any(|r| cell.starts_with(r.row)), "B.3.6 row `{cell}` has no fixture");
     }
@@ -1217,4 +1218,20 @@ fn reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing() {
     assert_eq!(r.diagnostics[0].code, "E0900");
     assert!(r.diagnostics[0].message.contains("documents nothing"), "{}", r.diagnostics[0].message);
     assert_eq!(&src[r.diagnostics[0].span().start..r.diagnostics[0].span().end], "/// x");
+}
+
+#[test]
+fn extern_crate_is_a_removed_form() {
+    // PKG-01 AC 9: exactly one E0900 at `extern`, the item kept as an error, the rest of the file parsed.
+    let parsed = parse("extern crate util;");
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    let d = &parsed.diagnostics[0];
+    assert_eq!(d.code, "E0900");
+    assert!(d.message.contains("`extern crate` is not part of the language"), "{}", d.message);
+    assert!(d.help.as_deref().is_some_and(|h| h.contains("[dependencies]")), "{:?}", d.help);
+    assert_eq!(codes("extern crate util;"), [("E0900", Span::new(0, 6))]);
+    assert_eq!(codes("extern crate util as u;\nfn f() { }"), [("E0900", Span::new(0, 6))]);
+    // `extern "C" fn` and an `extern` block keep their own behaviour.
+    assert!(faults("extern \"C\" fn f();").is_empty());
+    assert_eq!(faults("extern \"C\" { fn f(); }").len(), 1);
 }

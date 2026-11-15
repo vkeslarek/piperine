@@ -32,6 +32,7 @@ pub mod guide;
 mod body;
 mod builtin;
 mod check;
+mod crates;
 mod decl;
 mod design;
 mod ids;
@@ -42,6 +43,7 @@ mod reflect;
 mod resolve;
 mod resolution;
 mod source;
+mod stdlib;
 mod to_ast;
 
 pub use body::*;
@@ -49,8 +51,9 @@ pub use builtin::{BUILTINS, BuiltinId, BuiltinInfo, BuiltinKind, builtin, builti
 pub use decl::*;
 pub use design::{Design, DesignBuilder, DesignDiagnostic, SourceFileData, SourceFileRepr};
 pub use index::{Index, ReferenceId, WriterId};
-pub use ids::{DeclId, ExprId, FileId, PathId, PatId, StmtId, TypeId};
+pub use crates::{CrateData, CrateGraph, CrateNode, DependencyData, GraphError, is_crate_name};
+pub use ids::{CrateId, DeclId, ExprId, FileId, PathId, PatId, StmtId, TypeId};
 pub use meta::{AttrArgNode, AttrInputNode, AttrNode, Doc, Meta};
-pub use reflect::{Argument, Attr, Block, FieldBinding, Behavior, Binding, Commit, Const, Contribution, Definition, GenArm, Generation, Instance, Let, Reference, Writer, Module, Nature, Param, Port, Quantity, Reaction, Signal, Decl, Enum, Expr, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Path, Pat, Reflect, SourceFile, Stmt, Struct, Trait, Type, Use, Variant};
+pub use reflect::{Crate, Argument, Attr, Block, FieldBinding, Behavior, Binding, Commit, Const, Contribution, Definition, GenArm, Generation, Instance, Let, Reference, Writer, Module, Nature, Param, Port, Quantity, Reaction, Signal, Decl, Enum, Expr, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Path, Pat, Reflect, SourceFile, Stmt, Struct, Trait, Type, Use, Variant};
 pub use resolution::*;
 pub use source::{DiskSources, MemorySources, SourceProvider};

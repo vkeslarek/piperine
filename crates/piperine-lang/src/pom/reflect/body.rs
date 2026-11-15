@@ -50,8 +50,9 @@ impl<'d> SourceFile<'d> {
         &self.design.file_data(self.id).ast
     }
 
-    pub fn is_prelude(self) -> bool {
-        self.design.file_data(self.id).prelude
+    /// The crate the file belongs to.
+    pub fn krate(self) -> super::Crate<'d> {
+        super::Crate::new(self.design, self.design.file_data(self.id).krate)
     }
 }
 
@@ -68,7 +69,7 @@ impl std::fmt::Debug for SourceFile<'_> {
 }
 
 impl Design {
-    /// Every file, prelude sources first, then the root, then loaded files.
+    /// Every file: the project's (the root, then loaded files), then the standard library's.
     pub fn files(&self) -> Vec<SourceFile<'_>> {
         (0..self.file_count()).map(|i| SourceFile::new(self, FileId(i as u32))).collect()
     }

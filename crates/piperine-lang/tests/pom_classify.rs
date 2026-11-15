@@ -8,14 +8,14 @@
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{CallClass, Design, DesignDiagnostic, ExprId, ExprKind, PortKind, Reflect, Resolution, StructClass};
+use piperine_lang::pom::{CallClass, Design, DesignBuilder, DesignDiagnostic, ExprId, ExprKind, PortKind, Reflect, Resolution, StructClass};
 use support::build;
 
 const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
 
 /// A design of `src` with the fixture prelude beside it.
 fn with_prelude(src: &str) -> Design {
-    Design::builder().prelude("prelude.msl", PRELUDE).source("top.msl", src).build()
+    std_lib(Design::builder(), PRELUDE).source("top.msl", src).build()
 }
 
 fn with_code<'a>(design: &'a Design, code: &str) -> Vec<&'a DesignDiagnostic> {
@@ -172,7 +172,7 @@ struct E { c: C }
 fn call_classes(design: &Design) -> Vec<(String, CallClass)> {
     (0..design.expr_count())
         .map(|i| design.expr(ExprId(i as u32)))
-        .filter(|e| !e.enclosing().file().is_prelude())
+        .filter(|e| !e.enclosing().file().krate().is_std())
         .filter_map(|e| match e.kind() {
             ExprKind::Call { class, .. } => Some((e.text().to_string(), *class)),
             _ => None,
@@ -184,7 +184,7 @@ fn call_classes(design: &Design) -> Vec<(String, CallClass)> {
 fn struct_classes(design: &Design) -> Vec<(String, StructClass)> {
     (0..design.expr_count())
         .map(|i| design.expr(ExprId(i as u32)))
-        .filter(|e| !e.enclosing().file().is_prelude())
+        .filter(|e| !e.enclosing().file().krate().is_std())
         .filter_map(|e| match e.kind() {
             ExprKind::Struct { class, .. } => Some((e.text().to_string(), *class)),
             _ => None,
@@ -294,7 +294,7 @@ module Top() {
     assert_eq!(with_code(&design, "E0161").len(), 1);
     // The names of a template's fields are its module's params, a literal's are the struct's fields.
     let field_res = |text: &str| -> Vec<Resolution> {
-        let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == text && !e.enclosing().file().is_prelude()).unwrap();
+        let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == text && !e.enclosing().file().krate().is_std()).unwrap();
         let ExprKind::Struct { fields, .. } = e.kind() else { panic!("a struct expression") };
         fields.iter().map(|f| f.res).collect()
     };
@@ -415,7 +415,7 @@ analog for M {
 ";
     let design = with_prelude(src);
     let callee_res = |call: &str| -> Resolution {
-        let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == call && !e.enclosing().file().is_prelude()).unwrap_or_else(|| panic!("call `{call}`"));
+        let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == call && !e.enclosing().file().krate().is_std()).unwrap_or_else(|| panic!("call `{call}`"));
         let ExprKind::Call { callee, .. } = e.kind() else { panic!("a call") };
         let ExprKind::Path(p) = design.expr(*callee).kind() else { panic!("a path callee") };
         design.path(*p).segments()[0].res
@@ -451,7 +451,7 @@ analog for M {
 fn member_res(design: &Design, text: &str) -> Resolution {
     let e = (0..design.expr_count())
         .map(|i| design.expr(ExprId(i as u32)))
-        .find(|e| e.text() == text && !e.enclosing().file().is_prelude() && matches!(e.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }))
+        .find(|e| e.text() == text && !e.enclosing().file().krate().is_std() && matches!(e.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }))
         .unwrap_or_else(|| panic!("member expression `{text}`"));
     match e.kind() {
         ExprKind::Field { res, .. } | ExprKind::MethodCall { res, .. } => *res,
@@ -833,7 +833,7 @@ module Top() {
     assert_eq!(design.path(*p).segments()[0].res, Resolution::Decl(top.param("r").unwrap().decl().id()));
     let parsed = piperine_lang::msl::parser::parse(src).file;
     let files = design.files();
-    let top_file = files.iter().find(|f| !f.is_prelude()).expect("the root file");
+    let top_file = files.iter().find(|f| !f.krate().is_std()).expect("the root file");
     assert_eq!(top_file.to_ast(), parsed);
 }
 
@@ -1106,4 +1106,10 @@ fn builtin_instance_names_its_primitive() {
     let user = design.module("V").unwrap().instance("u").unwrap();
     assert_eq!(user.module(), design.module("U"));
     assert_eq!(user.builtin(), None);
+}
+
+/// `items` as the `pub` content of `std::prelude` (what `.prelude(name, items)` used to register).
+/// It is a second std file so the fixture's own `//!` comments stay legal.
+fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
+    builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
 }

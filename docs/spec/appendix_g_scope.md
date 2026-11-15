@@ -40,6 +40,8 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | lints as part of the language | a tool may warn about anything; no rule depends on a warning |
 | `uic` | a held node gives the same start, solved (§16) |
 | an end-of-analysis event | the host keeps the last record (§22.6.3) |
+| source search paths (`-I`) | a dependency named in the manifest (§3.6 rule 12) |
+| a package registry | `path` and `git` dependencies (§3.6 rule 7) |
 
 **Highest impact:** G.6 (crossings landed on time, the jump solve), G.8 (import), G.21 (lossy lines), G.22 (load-dependent delay).
 
@@ -381,8 +383,14 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 | D15 | Raw identifiers (G.15) | `r#name` is accepted for the seven added keywords and for no other word. | A.1 rule 6, G.15 |
 | D16 | Field-init shorthand (G.14) | `{ r }` is accepted in param blocks and templates as in a Rust struct expression, and the tree keeps the authored form. | B.3.2, G.14 |
 | D17 | `(s)` as a place | a place is a path with indexes and fields; parentheses are rejected in a definition and in a commit (`E0900`). | B.3.2 note 4 |
+| P1 | Where a crate starts and what its files are called | the crate root is `src/lib.msl` and a source file has the extension `.msl`; `mod name;` loads `name.msl` or `name/mod.msl`. | §3.6 rule 2 |
+| P2 | A dependency name against a local name | a dependency name is the first segment of a path below the names of the enclosing namespace; a local type-namespace name wins in an ordinary path and clashes in a `use` (`E0163`); a value item of that name hides nothing; `extern crate` is removed. | §3.5 rules 4, 5, 11 |
+| P3 | Where `std` comes from | `std` is a dependency of every crate that no manifest names; the prelude is `std::prelude`, implied in every file. | §3.5 rules 3 and 9, §3.4.2 |
+| P4 | Which manifest keys exist | the manifest holds the tables and keys of one closed table; any other is `E0171`. | §3.6 rule 3 |
+| P5 | How a git dependency is pinned | one of `branch`, `tag` or `rev`, or the default branch; the lockfile records the commit and is honoured while the source is unchanged. | §3.6 rules 7, 13, 14 |
+| P6 | When the manifests are read | in a fifth phase, `package`, before parse and elaboration; a model that meets its conditions is rejected. | §0.3 |
 
-G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38).
+G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)).
 
 ### Other closed items
 

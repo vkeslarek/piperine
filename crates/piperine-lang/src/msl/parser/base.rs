@@ -50,6 +50,7 @@ pub(crate) const REMOVED_FORMS: &[RemovedForm] = &[
     RemovedForm { row: "double borrows", code: "E0900", message: "double borrows are not part of the language", help: "write one borrow: `&a`" },
     RemovedForm { row: "`union` items", code: "E0900", message: "`union` items are not part of the language", help: "write a `struct` or an `enum`" },
     RemovedForm { row: "`extern` blocks", code: "E0900", message: "`extern` blocks are not part of the language", help: "write an `extern \"C\" fn` item" },
+    RemovedForm { row: "`extern crate` items", code: "E0900", message: "`extern crate` is not part of the language", help: "name the dependency under `[dependencies]` in Piperine.toml" },
 ];
 
 /// The diagnostic of a removed form, by the start of its B.3.6 row.
