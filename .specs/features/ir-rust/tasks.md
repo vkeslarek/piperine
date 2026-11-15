@@ -410,10 +410,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] No test calls `std::env::set_var`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `settings::tests::the_cache_directory_follows_the_four_rules`, `settings::tests::the_compiler_is_the_variable_then_the_path`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] No test calls `std::env::set_var`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `settings::tests::the_cache_directory_follows_the_four_rules`, `settings::tests::the_compiler_is_the_variable_then_the_path`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full

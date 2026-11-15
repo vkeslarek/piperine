@@ -13,8 +13,10 @@ use crate::print::LibraryPrinter;
 mod error;
 pub mod print;
 pub mod rt;
+mod settings;
 
 pub use error::Error;
+pub use settings::Settings;
 
 #[cfg(test)]
 #[allow(dead_code)]
