@@ -176,6 +176,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-22** (4). No source of `piperine-abi` other than `raw.rs`, `thunk.rs` and `caller.rs` SHALL use `unsafe`, and a test SHALL scan for it (F11).
 
+- **SAC-23** (5). IF an event pin's layout is not empty, a continuous pin's layout is not one `F64`, a `check` is not a discrete pin holding a `BOOL` at byte 0, or a reaction reads `PREVIOUS` or `CHANGED` of a `QUIET` pin, THEN `validate` SHALL refuse the shape naming the rule and the entry; proven by rows of check C8 (F12).
+
 ---
 
 ## Edge Cases
@@ -213,6 +215,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-20 | P1: Verification round 1, AC 2 | Execute | Done |
 | SAC-21 | P1: Verification round 1, AC 3 | Execute | Done |
 | SAC-22 | P1: Verification round 1, AC 4 | Execute | Done |
+| SAC-23 | P1: Verification round 1, AC 5 | Execute | Done |
 
 **Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 

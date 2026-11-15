@@ -7,7 +7,7 @@
 
 use std::fmt;
 
-use crate::layout::leaf_size;
+use crate::layout::{F64, layout_eq, leaf_size};
 use crate::raw::{
     Cell, DEFAULT, Function, GROUND, Layout, Pin, Reaction, Shape, Str, ambient, cell, field_flag, fn_flag, global,
     input, kind, leaf, op, part, pin_flag, reaction_flag, role, statement_flag, watch,
@@ -52,11 +52,19 @@ pub enum Rule {
     /// A list this consumer cannot read: its stride is below the element's
     /// size or breaks its alignment, or its pointer is misaligned (abi.md §12).
     UnreadableList,
+    /// An event pin whose layout is not empty (§3: `EVENT`: empty; C4).
+    EventNotEmpty,
+    /// A continuous pin whose layout is not one `F64` (§3).
+    ContinuousNotF64,
+    /// A `check` that is not a discrete pin holding a `BOOL` at byte 0 (§3).
+    CheckNotBool,
+    /// `PREVIOUS` or `CHANGED` of a `QUIET` pin read by a reaction (P7).
+    QuietChangeRead,
 }
 
 impl Rule {
     /// Every rule, in the order of the spec's list.
-    pub const ALL: [Rule; 16] = [
+    pub const ALL: [Rule; 20] = [
         Rule::UnknownConstant,
         Rule::IndexOutOfRange,
         Rule::KindRole,
@@ -73,6 +81,10 @@ impl Rule {
         Rule::CrossEventNotEvent,
         Rule::TermBoundNotDiscreteF64,
         Rule::UnreadableList,
+        Rule::EventNotEmpty,
+        Rule::ContinuousNotF64,
+        Rule::CheckNotBool,
+        Rule::QuietChangeRead,
     ];
 
     fn sentence(self) -> &'static str {
@@ -95,6 +107,10 @@ impl Rule {
             Rule::CrossEventNotEvent => "a CROSS watch whose event pin is not an event pin",
             Rule::TermBoundNotDiscreteF64 => "a term whose abstol or max pin is not a discrete F64",
             Rule::UnreadableList => "a list whose stride or pointer does not fit its element",
+            Rule::EventNotEmpty => "an event pin whose layout is not empty",
+            Rule::ContinuousNotF64 => "a continuous pin whose layout is not one F64",
+            Rule::CheckNotBool => "a check that is not a discrete BOOL pin",
+            Rule::QuietChangeRead => "PREVIOUS or CHANGED of a QUIET pin read by a reaction",
         }
     }
 }
@@ -332,8 +348,20 @@ fn check_pin(shape: &Shape, pin: &Pin) -> Result<(), ShapeError> {
     if !allowed {
         return Err(e.fail(Rule::KindRole, format!("kind {} with role {}", pin.kind, pin.role)));
     }
-    if pin.flags & pin_flag::HAS_CHECK != 0 && shape.pins.get(pin.check as usize).is_none() {
-        return Err(e.fail(Rule::IndexOutOfRange, format!("check = {}", pin.check)));
+    if pin.kind == kind::EVENT && pin.layout.size != 0 {
+        return Err(e.fail(Rule::EventNotEmpty, format!("layout of {} bytes", pin.layout.size)));
+    }
+    if pin.kind == kind::CONTINUOUS && !layout_eq(&pin.layout, &F64) {
+        return Err(e.fail(Rule::ContinuousNotF64, format!("layout of {} bytes", pin.layout.size)));
+    }
+    if pin.flags & pin_flag::HAS_CHECK != 0 {
+        let Some(check) = shape.pins.get(pin.check as usize) else {
+            return Err(e.fail(Rule::IndexOutOfRange, format!("check = {}", pin.check)));
+        };
+        let bool_at_0 = check.layout.fields.iter().any(|f| f.leaf == leaf::BOOL && f.offset == 0);
+        if check.kind != kind::DISCRETE || !bool_at_0 {
+            return Err(e.fail(Rule::CheckNotBool, format!("check is pin {}", check.name.as_str())));
+        }
     }
     Ok(())
 }
@@ -529,6 +557,10 @@ fn check_reaction(shape: &Shape, r: &Reaction) -> Result<(), ShapeError> {
     }
     for c in r.reads.iter() {
         cell_bytes(shape, c, Access::ReactionRead).map_err(|(rule, d)| e.fail(rule, d))?;
+        let quiet = shape.pins.get(c.index as usize).is_some_and(|p| p.flags & (pin_flag::QUIET | pin_flag::RECORD) != 0);
+        if c.kind == cell::PIN && quiet && (c.part == part::PREVIOUS || c.part == part::CHANGED) {
+            return Err(e.fail(Rule::QuietChangeRead, format!("reads part {} of quiet pin {}", c.part, c.index)));
+        }
     }
     for (i, s) in r.writes.iter().enumerate() {
         if !known_bits(s.flags, STATEMENT_FLAGS) {

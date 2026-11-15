@@ -595,7 +595,10 @@ dlopen ─► piperine_abi_1()        major = symbol; check Library.size / minor
   of a `QUIET` pin by a function; two writers (P1); unequal layouts on a net (P4); a reaction
   listening to a non-event pin; a statement on a continuous pin; a `CROSS` watch whose `event`
   is not an event pin; a term whose `abstol` or `max` is neither `DEFAULT` nor a discrete pin
-  holding an `F64` at byte 0; a cycle among discrete functions that passes through no
+  holding an `F64` at byte 0; an event pin whose layout is not empty; a continuous pin whose
+  layout is not one `F64`; a `check` that is not a discrete pin holding a `BOOL` at byte 0;
+  `PREVIOUS` or `CHANGED` of a `QUIET` pin read by a reaction; a list whose stride or pointer
+  does not fit its element; a cycle among discrete functions that passes through no
   `RELAX` net.
 
 **D1. Cycles** (resolved nets). The elaborator lowers a resolved carrier to one-writer nets

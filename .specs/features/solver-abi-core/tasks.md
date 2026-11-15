@@ -474,7 +474,7 @@ Proof: run abi | test a_valueless_field_with_value_bytes_is_not_canonical ... ok
 **C7** - A frozen shape reads back through its raw pointers (SAC-07, AC 7)
 Proof: run abi | test resistor_shape_reads_back_through_raw_pointers ... ok
 
-**C8** - Each of the fifteen shape-local rules (the spec's twelve and the three settled mid-build) refuses its planted defect, naming rule and entry (SAC-09, AC 1)
+**C8** - Each of the twenty shape-local rules (the spec's twelve, the three settled mid-build, `UnreadableList` and the four §3 rules of round 1) refuses its planted defect, naming rule and entry (SAC-09, AC 1)
 Proof: run abi | test every_shape_local_rule_is_enforced ... ok
 
 **C9** - The pointers of `module::<D>` call the device (SAC-04, AC 1)
