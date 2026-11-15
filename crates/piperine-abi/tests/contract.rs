@@ -220,3 +220,32 @@ fn raw_views_have_no_public_pointer_field() {
     let b = Bytes::from_static(&[1, 2]);
     assert_eq!(b.as_slice(), [1, 2]);
 }
+
+/// Code lines (comments aside) of `text` that use `unsafe`.
+fn unsafe_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim_start)
+        .filter(|l| !l.starts_with("//") && l.contains("unsafe"))
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn no_unsafe_outside_raw_thunk_and_caller() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut seen = 0;
+    for entry in std::fs::read_dir(&src).expect("read src") {
+        let path = entry.expect("dir entry").path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        if ["raw.rs", "thunk.rs", "caller.rs"].contains(&name.as_str()) {
+            continue;
+        }
+        seen += 1;
+        let found = unsafe_lines(&std::fs::read_to_string(&path).expect("read a source"));
+        assert!(found.is_empty(), "{name} uses unsafe: {found:?}");
+    }
+    assert!(seen >= 6, "the scan saw {seen} files");
+    // The scan catches what it forbids and ignores comments.
+    assert_eq!(unsafe_lines("    let x = unsafe { *p };").len(), 1);
+    assert!(unsafe_lines("    // nothing here is `unsafe`").is_empty());
+}

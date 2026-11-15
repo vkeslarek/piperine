@@ -579,6 +579,9 @@ Proof: run abi | test a_list_whose_stride_is_below_its_element_is_refused ... ok
 **C42** - The raw views have no public pointer field and one unsafe constructor each (SAC-21)
 Proof: run abi | test raw_views_have_no_public_pointer_field ... ok
 
+**C43** - No unsafe outside raw.rs, thunk.rs and caller.rs (SAC-22)
+Proof: run abi | test no_unsafe_outside_raw_thunk_and_caller ... ok
+
 ---
 
 ## Handoff
