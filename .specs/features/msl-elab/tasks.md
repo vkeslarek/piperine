@@ -170,13 +170,13 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `Electrical` is lowered once with `abstol` 1e-6 (potential) and 1e-12 (flow) and its units
-- [ ] A signal `r#out` is a node named `out`
-- [ ] A node initial value that reads a param is `P0001` at the value
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_where_is_recorded_over_the_body_params`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_instances`: `a_node_init_that_reads_a_param_is_p0001`, `an_empty_module_is_an_empty_body`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `Electrical` is lowered once with `abstol` 1e-6 (potential) and 1e-12 (flow) and its units
+- [x] A signal `r#out` is a node named `out`
+- [x] A node initial value that reads a param is `P0001` at the value
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_where_is_recorded_over_the_body_params`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_instances`: `a_node_init_that_reads_a_param_is_p0001`, `an_empty_module_is_an_empty_body`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

@@ -1,13 +1,16 @@
 //! The entry point and the pass order of one elaboration run: `Types::check` first, then the
 //! passes over what it reached, each writing through `IrBuilder`.
 
-use piperine_ir::{BodySpec, InstanceSpec, Ir, IrBuilder};
+use std::collections::BTreeMap;
 
-use crate::msl::Diagnostic;
+use piperine_ir::{Ir, IrBuilder, NatureId};
+
+use super::body::ModulePlan;
+use super::consts::ConstEval;
+use super::origin::Locator;
+use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
 use crate::types::Types;
-
-use super::origin::Locator;
 
 /// The entry point: `Elaborator::new(&design).run("Top")`.
 #[derive(Debug, Clone, Copy)]
@@ -28,49 +31,54 @@ impl<'d> Elaborator<'d> {
     pub fn run(self, top: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
         let types = Types::check(self.design, top)?;
         let top_decl = types.reached()[0];
-        Elaboration::new(self.design).run(top_decl)
+        Elaboration::new(self.design, &types).run(top_decl)
     }
 }
 
-/// The state of one run.
-struct Elaboration<'d> {
-    design: &'d Design,
-    ir: IrBuilder,
-    locator: Locator<'d>,
-    diagnostics: Vec<DesignDiagnostic>,
+/// The state of one run. Its passes are `impl` blocks in the files named after them.
+pub(super) struct Elaboration<'d, 't> {
+    pub(super) design: &'d Design,
+    pub(super) types: &'t Types<'d>,
+    pub(super) consts: ConstEval<'d, 't>,
+    pub(super) ir: IrBuilder,
+    pub(super) locator: Locator<'d>,
+    pub(super) natures: BTreeMap<DeclId, NatureId>,
+    pub(super) plans: BTreeMap<DeclId, ModulePlan>,
+    pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
-impl<'d> Elaboration<'d> {
-    fn new(design: &'d Design) -> Self {
-        Elaboration { design, ir: IrBuilder::new(), locator: Locator::new(design), diagnostics: Vec::new() }
+impl<'d, 't> Elaboration<'d, 't> {
+    fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
+        Elaboration {
+            design,
+            types,
+            consts: ConstEval::new(design, types),
+            ir: IrBuilder::new(),
+            locator: Locator::new(design),
+            natures: BTreeMap::new(),
+            plans: BTreeMap::new(),
+            diagnostics: Vec::new(),
+        }
     }
 
     fn run(mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
         if self.top_has_a_port(top) {
             return Err(self.diagnostics);
         }
-        let data = self.design.decl_data(top);
-        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let origin = self.locator.decl(top);
-        let body = self.ir.body(BodySpec {
-            name: name.clone(),
-            origin: origin.clone(),
-            params: Vec::new(),
-            nodes: Vec::new(),
-            branches: Vec::new(),
-            limits: Vec::new(),
-            stims: Vec::new(),
-            locals: Vec::new(),
-            analog: None,
-            children: Vec::new(),
-        });
-        let instance = self.ir.instance(InstanceSpec { path: name.clone(), name, body, parent: None, nodes: Vec::new(), params: Vec::new(), origin });
-        if !self.diagnostics.is_empty() {
-            return Err(self.diagnostics);
+        let modules: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
+        self.lower_natures(&modules);
+        for module in &modules {
+            self.lower_body(*module);
         }
-        let ir = self.ir.finish(instance);
-        debug_assert!(ir.check().is_empty(), "elaboration produced an ill-formed IR: {:?}", ir.check());
-        Ok(ir)
+        let top_instance = self.place_top(top);
+        match top_instance {
+            Some(instance) if self.diagnostics.is_empty() => {
+                let ir = self.ir.finish(instance);
+                debug_assert!(ir.check().is_empty(), "elaboration produced an ill-formed IR: {:?}", ir.check());
+                Ok(ir)
+            }
+            _ => Err(self.diagnostics),
+        }
     }
 
     /// `P0001` and `true` when the top has a port.
@@ -85,7 +93,12 @@ impl<'d> Elaboration<'d> {
         has_port
     }
 
-    fn report(&mut self, file: FileId, diagnostic: Diagnostic) {
+    pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {
         self.diagnostics.push(DesignDiagnostic { file, diagnostic });
+    }
+
+    /// `P0001`: a construct inside the type-checked subset that M1 elaboration does not lower.
+    pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
+        self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
     }
 }

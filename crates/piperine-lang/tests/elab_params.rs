@@ -118,3 +118,15 @@ fn an_environment_function_is_dynamic() {
     let mut eval = ConstEval::new(&design, &types);
     assert!(matches!(eval.value(value, &Bindings::new()), Err(ConstFault::Dynamic { .. })));
 }
+
+#[test]
+fn a_where_is_recorded_over_the_body_params() {
+    let ir = Elab::ir("module Top() { r: f64 = 1.0 where r > 0.0; k: f64 = 2.0 where k * r >= 0.0; }", "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("param r: f64 = 1.0 where (r > 0.0)"), "{text}");
+    assert!(text.contains("param k: f64 = 2.0 where ((k * r) >= 0.0)"), "{text}");
+    // The condition reads the body's own params, not numbers: a host `set` of `r` reaches it.
+    let body = ir.bodies().next().expect("one body");
+    let check = body.params()[0].check.expect("a recorded condition");
+    assert!(matches!(ir.expr(check), piperine_ir::Expr::Binary { lhs, .. } if matches!(ir.expr(*lhs), piperine_ir::Expr::Param(0))));
+}
