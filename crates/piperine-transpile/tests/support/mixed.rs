@@ -7,9 +7,10 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use piperine_ir::{BodyId, BodySpec, Constant, InstanceId, InstanceSpec, Ir, IrBuilder, NetId, NetSpec, Origin, ValueType};
-use piperine_plan::Netlist;
-use piperine_solver::prelude::{Solver, TransientAnalysisOptions};
+use piperine_ir::{
+    BodyId, BodySpec, Constant, InstanceId, InstanceSpec, Ir, IrBuilder, NetId, NetSpec, NodeRef, NodeSpec, Origin, Real, ValueType,
+};
+use piperine_solver::prelude::{Solver, TransientAnalysisOptions, TransientAnalysisResult};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
@@ -22,6 +23,7 @@ pub struct Wire {
     pub b: IrBuilder,
     top: InstanceId,
     nets: BTreeMap<String, NetId>,
+    nodes: BTreeMap<String, NodeRef>,
 }
 
 impl Wire {
@@ -48,7 +50,7 @@ impl Wire {
             params: vec![],
             origin: at(),
         });
-        Wire { b, top, nets: BTreeMap::new() }
+        Wire { b, top, nets: BTreeMap::new(), nodes: BTreeMap::new() }
     }
 
     fn net(&mut self, name: &str, ty: ValueType) -> NetId {
@@ -58,21 +60,49 @@ impl Wire {
         })
     }
 
-    /// Places `body` as `Top.<name>`; `nets` is the design net of each carrier, in the body's
-    /// order, by name under `Top` and with the carrier's type.
-    pub fn place(&mut self, name: &str, body: BodyId, params: Vec<Constant>, nets: &[(&str, ValueType)]) {
+    /// The analog node `Top.<name>` (an `Electrical` node, made once); `"gnd"` is the reference.
+    pub fn node(&mut self, name: &str) -> NodeRef {
+        if name == "gnd" {
+            return NodeRef::Ground;
+        }
+        let (top, b) = (self.top, &mut self.b);
+        self.nodes
+            .entry(name.to_string())
+            .or_insert_with(|| {
+                let nature = crate::digital::Buck::electrical(b);
+                NodeRef::Node(b.node(NodeSpec { path: format!("Top.{name}"), nature, declared_by: top, init: None, origin: at() }))
+            })
+            .clone()
+    }
+
+    /// Places an analog body: `nodes` are its ports, in order, `params` its `f64` params.
+    pub fn place_analog(&mut self, name: &str, body: BodyId, nodes: &[&str], params: &[f64]) {
+        self.place_with(name, body, nodes, params.iter().map(|v| Constant::Real(Real::new(*v))).collect(), &[]);
+    }
+
+    /// Places `body` as `Top.<name>` on `nodes` and `nets`, as `place` does.
+    pub fn place_with(&mut self, name: &str, body: BodyId, nodes: &[&str], params: Vec<Constant>, nets: &[(&str, ValueType)]) {
+        let refs: Vec<NodeRef> = nodes.iter().map(|n| self.node(n)).collect();
         let top = self.top;
         let instance = self.b.instance(InstanceSpec {
             path: format!("Top.{name}"),
             name: name.into(),
             body,
             parent: Some(top),
-            nodes: vec![],
+            nodes: refs,
             params,
             origin: at(),
         });
         let ids: Vec<NetId> = nets.iter().map(|(n, ty)| self.net(n, ty.clone())).collect();
-        self.b.bind_nets(instance, ids);
+        if !ids.is_empty() {
+            self.b.bind_nets(instance, ids);
+        }
+    }
+
+    /// Places `body` as `Top.<name>`; `nets` is the design net of each carrier, in the body's
+    /// order, by name under `Top` and with the carrier's type.
+    pub fn place(&mut self, name: &str, body: BodyId, params: Vec<Constant>, nets: &[(&str, ValueType)]) {
+        self.place_with(name, body, &[], params, nets);
     }
 
     pub fn finish(self) -> Ir {
@@ -186,14 +216,21 @@ impl Built {
     /// Runs a transient to `stop` seconds, at most `step` between points, and returns what the
     /// solver observed.
     pub fn run(&self, stop: f64, step: f64) -> Seen {
-        let circuit = Netlist::new(&self.ir).circuit(&self.compiled).unwrap_or_else(|e| panic!("{e}"));
+        self.run_with(stop, step).0
+    }
+
+    /// The same, with the analog result of the transient.
+    pub fn run_with(&self, stop: f64, step: f64) -> (Seen, TransientAnalysisResult) {
+        let circuit = self.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
         let seen = Seen::default();
+        let mut options = TransientAnalysisOptions::new(stop, step);
+        options.dt_max = step;
         let mut solver = Solver::new(circuit)
-            .with_tran_opts(TransientAnalysisOptions::new(stop, step))
+            .with_tran_opts(options)
             .with_sink(Box::new(Keep(seen.clone())))
             .build();
-        solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("{e}"));
-        seen
+        let result = solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("{e}"));
+        (seen, result)
     }
 }
 

@@ -1221,6 +1221,1174 @@ T42 → T43 → T44 → T45 → T46
 
 ---
 
+## Checks` cites. No test sets an environment variable.
+- **AGENTS.md idiom rules bind**: no loose function, no macro of your own, modules named after what they do, no `unwrap()`/`expect()` on a user-input path. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
+- Zero warnings on every crate the `**Build**` line names. Cargo only with `-p <crate>`: never `--workspace`, never `cargo clean`.
+- One atomic commit per task, message as given, with the `Co-Authored-By:` trailer the session gives. No push, no merge.
+- If `lessons.py` is run, `git status` afterwards and restore `.specs/lessons.json` and `.specs/LESSONS.md` if they changed.
+
+---
+
+## Test Coverage Matrix
+
+> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `CLAUDE.md` and `AGENTS.md` (zero warnings; fail loud; the Rust idiom rules of MD-13; test placement MD-28; every target opens with a `//!` scope header), `crates/piperine-lang/tests/suite_hygiene.rs` (no `#[ignore]`, no file-scope lint suppression), `crates/piperine-parity/tests/parity_corpus.rs` (a test per twin; no literal tolerance), `.specs/features/codegen/context.md` (S8, S10, R1 to R4).
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| `piperine-plan` (the moved plan and netlist; the digital plan) | unit | each AC of RS-12; the M1 shapes unchanged; abi.md §11.4 and §11.5 entry by entry | `crates/piperine-plan/tests/{shared,digital_shape}.rs` | `cargo test -p piperine-plan` |
+| The printer and the runtime source | unit | each AC of RS-02, RS-10, RS-11 (1 to 4); expected texts written from the MSL source; every operator and method of `rt` | unit tests in `crates/piperine-transpile/src/{print,rt}/*.rs`, `tests/{reject,golden}.rs` | `cargo test -p piperine-transpile --lib --test reject --test golden` |
+| Settings, compiler, ABI sources, cache, loader | integration | each AC of RS-03, RS-04 (3, 4, 5, 8, 9), RS-05 (3, 4); every failure state with its error | `crates/piperine-transpile/tests/{rustc,abi_source,cache,load}.rs` | `cargo test -p piperine-transpile --test rustc --test abi_source --test cache --test load` |
+| `Transpiler::compile`, `Compiled` | integration | RS-01 AC 1, RS-02 AC 4, RS-03 AC 3, RS-04 (1, 2, 5 to 7), RS-05 (1, 2), RS-08; compiler invocations counted by a wrapper | `crates/piperine-transpile/tests/{compile,compiled,session}.rs` | `cargo test -p piperine-transpile --test compile --test compiled --test session` |
+| Compiled analog functions | integration | each AC of RS-06 (1 to 4, 7) over all five bodies; bit equality, never a tolerance | `crates/piperine-transpile/tests/{differential,residue}.rs` | `cargo test -p piperine-transpile --test differential --test residue` |
+| Parity on either backend | integration | each AC of RS-07, RS-06 AC 5; the seven twins on both backends | `crates/piperine-parity/tests/{backend,backends,parity_*}.rs` | `cargo test -p piperine-parity` |
+| The IR's digital node set | unit | each AC of RS-09 (1 to 5); golden prints of the ten buck-slice bodies | `crates/piperine-ir/tests/digital.rs` | `cargo test -p piperine-ir --test digital` |
+| The interpreter's refusal | unit | RS-09 AC 6 | `crates/piperine-interp/tests/frozen.rs` | `cargo test -p piperine-interp --test frozen` |
+| Compiled reactions and circuits | integration | RS-11 (5, 6), RS-06 AC 6, each AC of RS-13; expected values computed in the test from the specification | `crates/piperine-transpile/tests/{reaction,digital_circuit,commits,dpwm,pid}.rs`, `crates/piperine-parity/tests/boundary.rs` | `cargo test -p piperine-transpile`; `cargo test -p piperine-parity --test boundary` |
+
+## Gate Check Commands
+
+> Generated from codebase - confirm before Execute.
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | while iterating on one target | the task's `Run` line |
+| Full | every task | the task's `Run` line, then `cargo test -p <the crate the task edits>` |
+| Build | the last task of each phase and every task that adds a crate, an `unsafe` block or a cross-crate edit | Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries` |
+
+---
+
+## Execution Plan
+
+Eight phases, run in order, one batch each. Phases 1 to 4 are phase A of the spec; phases 5 to 8 are phase B.
+
+### Phase 1: The shared plan, the crate, the runtime
+
+Executor: Sonnet; T3 is Opus's.
+
+```
+T1 → T2 → T3 → T4
+```
+
+### Phase 2: Printing the analog subset
+
+Executor: Sonnet; T7 and T8 are Opus's.
+
+```
+T5 → T6 → T7 → T8 → T9 → T10
+```
+
+### Phase 3: Build, cache, load
+
+Executor: Sonnet; T15 is Opus's.
+
+```
+T11 → T12 → T13 → T14 → T15 → T16 → T17
+```
+
+### Phase 4: Equal to the interpreter, equal to ngspice
+
+Executor: Sonnet.
+
+```
+T18 → T19 → T20 → T21 → T22 → T23
+```
+
+### Phase 5: The IR's digital node set
+
+Executor: Sonnet; T26 and T27 are Opus's.
+
+```
+T24 → T25 → T26 → T27 → T28 → T29 → T30
+```
+
+### Phase 6: The digital plan and runtime
+
+Executor: Opus for T31, T33, T35; Sonnet for the rest.
+
+```
+T31 → T32 → T33 → T34 → T35 → T36
+```
+
+### Phase 7: Lowering digital and mixed forms
+
+Executor: Sonnet; T39 is Opus's.
+
+```
+T37 → T38 → T39 → T40 → T41
+```
+
+### Phase 8: Behavior on the solver
+
+Executor: Sonnet.
+
+```
+T42 → T43 → T44 → T45 → T46
+```
+
+---
+
+## Task Breakdown
+
+## Phase 1 tasks
+
+### T1: Move the plan and the netlist to piperine-plan
+
+**What**: The new crate `piperine-plan`: `plan.rs` moved from `piperine-interp` with `BodyPlan`, `FunctionPlan`, `Mode`, `Source`, `Target`, `Term` and `Pins` made `pub`; `netlist.rs` moved as `Netlist::new(&Ir).circuit(&impl Modules)` with the trait `Modules`; `piperine-interp` depends on it, re-exports `BodyPlan`, implements `Modules`, and `Interpreter::circuit` calls `Netlist`. A move: no logic changes.
+**Where**: `crates/piperine-plan/src/plan.rs`
+**Depends on**: None
+**Reuses**: `crates/piperine-interp/src/{plan,netlist}.rs`; the manifest and guard edits of `ir-interp` T2
+**Requirement**: RS-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `git diff --stat` shows no change under `crates/piperine-interp/tests/` and every test there passes
+- [x] `DEFAULT_MEMBERS`, the workspace manifest and `default-members` gain `crates/piperine-plan`; `crate_boundaries` still passes (the crate sits above the solver)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-plan --test shared`: `the_interpreter_and_the_plan_crate_share_one_body_plan`, `the_netlist_binds_whatever_supplies_the_modules`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `refactor(plan): the shape plan and the netlist in piperine-plan`
+
+---
+
+### T2: The crate and Transpiler::new
+
+**What**: The crate `piperine-transpile` (dependencies: `piperine-ir`, `piperine-abi`, `piperine-plan`, `sha2`, `libloading`; dev: `piperine-interp`, `tempfile`), `Error` (design Data Models), `Transpiler::new(Arc<Ir>)` that returns `Error::Rejected` with `check()`'s entries and plans each body that runs; MD-63 in `.specs/STATE.md`; the crate rows of `CLAUDE.md` and `AGENTS.md`.
+**Where**: `crates/piperine-transpile/src/lib.rs`
+**Depends on**: T1
+**Reuses**: `piperine_interp::Interpreter::new` (the same acceptance rule)
+**Requirement**: RS-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `DEFAULT_MEMBERS` and the manifests gain the crate; `workspace_shape` and `crate_boundaries` pass
+- [x] MD-63 is written as the design states it
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test reject`: `an_ir_that_fails_check_gives_no_source`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(transpile): the crate, its errors and Transpiler::new`
+
+---
+
+### T3: rt: Real and Dual
+
+**What**: `rt::Real` (`constant`, `value`, the four operators, `exp`, `ln`, `sqrt`, `abs`), implemented by `f64` and by `Dual<const N: usize> { v, d: [f64; N] }` with `seeded`, `constant` and the interpreter's formulas component by component (design "Dual numbers in generated code"). The file is a module of the crate and is embedded with `include_str!`.
+**Where**: `crates/piperine-transpile/src/rt/real.rs`
+**Depends on**: T2
+**Reuses**: `crates/piperine-interp/src/dual.rs` (the formulas and its tests)
+**Requirement**: RS-06
+**Executor**: Opus
+
+**Done when**:
+
+- [x] The first test sweeps every operator and method over 200 points against `piperine_interp::Dual`: values with equal bits, tangents equal as `f64`
+- [x] The file uses `core` only and compiles alone: `rustc --edition 2024 --crate-type rlib` on it exits 0
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `rt::real::tests::dual_gives_the_interpreters_values_and_tangents`, `rt::real::tests::abs_has_the_derivative_of_sign`, `rt::real::tests::f64_is_a_real`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): rt Real and Dual`
+
+---
+
+### T4: Text: the source writer
+
+**What**: `print::Text`: `line`, `indented`, `comment(path, origin)`, `real(f64)` (shortest decimal that parses back to the same bits; `f64::INFINITY`, `f64::NEG_INFINITY`, `f64::NAN` by name) and `ident(&str)` (raw identifier for a Rust keyword).
+**Where**: `crates/piperine-transpile/src/print/text.rs`
+**Depends on**: T3
+**Reuses**: `crates/piperine-ir/src/print.rs` (the IR printer's writer shape)
+**Requirement**: RS-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `real` is checked over the subnormals, `-0.0`, `1e-14`, `0.1` and 1000 random bit patterns
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::text::tests::reals_round_trip_in_the_shortest_form`, `print::text::tests::keywords_become_raw_identifiers`, `print::text::tests::lines_are_indented_by_four_one_statement_each`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): the source writer`
+
+---
+
+## Phase 2 tasks
+
+### T5: ValuePrinter: expressions and functions
+
+**What**: `ValuePrinter`: every M1 value form (`Real`, `Bool`, `Unit`, `Local`, `Param`, `Unary`, `Binary`, `If`, `Block`, `Call`, `Math`, `Closure`) as a Rust expression, and an IR function as `fn name<R: Real>(…) -> R` under its comment; any other form is `Error::Unsupported` with the form's name, IR path and origin.
+**Where**: `crates/piperine-transpile/src/print/value.rs`
+**Depends on**: None in this phase (phase 1 complete)
+**Reuses**: `piperine_ir` handles; `Text`
+**Requirement**: RS-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `pnjlim` and `vt` of the M1 fixtures print as the texts the test holds, written from the MSL source, not from the printer
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::value::tests::a_function_prints_as_a_generic_fn`, `print::value::tests::an_unsupported_form_is_named_with_path_and_origin`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): value expressions and functions as Rust`
+
+---
+
+### T6: ShapePrinter
+
+**What**: `ShapePrinter::prototype(&Shape)`: any shape as `ShapeBuf` builder calls, one call per pin, term, input, watch, function and reaction, each under a comment with the entry's name and origin.
+**Where**: `crates/piperine-transpile/src/print/shape.rs`
+**Depends on**: T5
+**Reuses**: `crates/piperine-abi/src/shape.rs` (`ShapeBuf`, the specs); `abi_devices.rs` for the look
+**Requirement**: RS-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The test counts calls and comments against the entries of the diode's and the Vsource's plan shapes
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::shape::tests::every_shape_entry_is_one_call_under_its_comment`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): a shape as ShapeBuf calls`
+
+---
+
+### T7: AnalogPrinter: terms and the affine rule
+
+**What**: `AnalogPrinter::terms`: the generic `terms_block<R: Real>` as the backward slice of the contributions, and the `terms` function that instantiates it at the iterate, at pins read as 0, or both, per the plan's `affine` flags, writing an affine term as `c + (0.0 + g0 * x0 + …)` in declared partial order (design "From an IR function to a Rust function").
+**Where**: `crates/piperine-transpile/src/print/analog.rs`
+**Depends on**: T6
+**Reuses**: `Interpreted::terms` and `walk_terms` in `crates/piperine-interp/src/device.rs`; `FunctionPlan`
+**Requirement**: RS-06
+**Executor**: Opus
+
+**Done when**:
+
+- [x] Expected texts for `Resistor`, `Capacitor`, `Vsource` and `Diode` are written in the test from design.md's sample and the plan's read order
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::analog::tests::an_affine_term_is_printed_as_constant_plus_fold`, `print::analog::tests::a_slice_holds_only_what_its_outputs_reach`, `print::analog::tests::a_potential_branch_prints_its_flow_and_equation_terms`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): the terms function and the affine rule`
+
+---
+
+### T8: AnalogPrinter: limit
+
+**What**: The `limit:<site>` function: the slice of `x`, `f` and `seed`; `PROPOSED` and its partials over `Dual<N>`; `old` from `LAST`, `AGE` and `STATIC`; `LIMITED` over plain `f64` with the closure printed as a Rust closure; the seed kept as INT-10 AC 3. Ported rule by rule from `walk.rs`.
+**Where**: `crates/piperine-transpile/src/print/limit.rs`
+**Depends on**: T7
+**Reuses**: `crates/piperine-interp/src/walk.rs` (`Held`, the limit site); `crates/piperine-interp/tests/limit.rs` for the cases
+**Requirement**: RS-06
+**Executor**: Opus
+
+**Done when**:
+
+- [x] A comment in the generated function names each of the three rules (`old`, the seed start, the seed kept)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::limit::tests::a_limit_function_reads_last_age_and_static`, `print::limit::tests::the_terms_function_reads_the_limit_value_only`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): the limit function`
+
+---
+
+### T9: Site printers: stim and check
+
+**What**: The `stim:<site>` function (`RE`, `IM` from `mag` and `phase` over plain `f64`) and the `check:<param>` function (the `where` as a `bool`, written `HIGH`/`LOW`).
+**Where**: `crates/piperine-transpile/src/print/site.rs`
+**Depends on**: T8
+**Reuses**: `Interpreted::{stim,check}`
+**Requirement**: RS-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::site::tests::stim_and_check_print_plain_values`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): the stim and check functions`
+
+---
+
+### T10: LibraryPrinter and the golden sources
+
+**What**: `LibraryPrinter::design`: the file header, `mod rt;`, one `mod` per body that runs with its `Device` impl (`prototype`, `create`, `eval` as a `match` with one commented arm per function, `react`), and `piperine_abi_1` over `thunk::library`; `Transpiler::source`. The five M1 bodies pinned under `tests/golden/`.
+**Where**: `crates/piperine-transpile/src/print/library.rs`
+**Depends on**: T9
+**Reuses**: T5 to T9; `thunk::{module, library}`
+**Requirement**: RS-01, RS-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The golden files are read by an Opus reviewer before the commit: each is followed from MSL line to Rust line with no line unexplained
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test golden`: `the_five_m1_bodies_print_as_the_golden_files`, `transpiling_twice_gives_the_same_bytes`, `every_item_sits_under_its_path_and_origin`, `each_function_is_a_generic_fn_and_each_body_a_device_mod`, `a_keyword_identifier_is_raw_and_the_abi_name_is_not`, `a_design_with_nothing_to_run_has_no_module`, `a_body_without_analog_prints_no_terms_function`
+- [x] Verification F8 (C100): `a_design_with_nothing_to_run_has_no_module` also compiles the empty design and asserts a library of 0 modules and a circuit that binds no device; C8 cites `lines_are_indented_by_four_one_statement_each` beside the reals test
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 7 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(transpile): the design as one Rust source, with golden files`
+
+---
+
+## Phase 3 tasks
+
+### T11: Settings
+
+**What**: `Settings::resolve(lookup)` and `from_environment()`: the compiler (`PIPERINE_RUSTC`, else `rustc` on `PATH`) and the cache directory (the four rules of RS-04 AC 9), pure over the lookup.
+**Where**: `crates/piperine-transpile/src/settings.rs`
+**Depends on**: None in this phase (phase 2 complete)
+**Reuses**: none
+**Requirement**: RS-03, RS-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] No test calls `std::env::set_var`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `settings::tests::the_cache_directory_follows_the_four_rules`, `settings::tests::the_compiler_is_the_variable_then_the_path`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): settings from the environment`
+
+---
+
+### T12: Rustc
+
+**What**: `Rustc::locate`, `version_text`, `rlib`, `cdylib` with the flags of RS-Q4, the invocation counter, and the errors `NoCompiler` and `CompilerTooOld`.
+**Where**: `crates/piperine-transpile/src/rustc.rs`
+**Depends on**: T11
+**Reuses**: `Settings`
+**Requirement**: RS-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The old-compiler and no-cargo tests use shell wrappers written into a `tempdir` (`#[cfg(unix)]`): one prints an old `-vV`, one logs its own invocations while a `cargo` beside it logs any call
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test rustc`: `a_missing_compiler_is_named_and_the_interpreter_is_offered`, `a_compiler_below_1_85_is_refused_with_both_versions`, `the_compiler_is_run_directly_and_cargo_never`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(transpile): locating and running rustc`
+
+---
+
+### T13: AbiSource
+
+**What**: `AbiSource::FILES` (each file of `crates/piperine-abi/src` by `include_str!`), `write_to(dir)`, and the `rlib` built from it by `Rustc::rlib`.
+**Where**: `crates/piperine-transpile/src/abi_source.rs`
+**Depends on**: T12
+**Reuses**: `crates/piperine-abi/src/*.rs`
+**Requirement**: RS-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The first test lists the directory and compares names and bytes with the table
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test abi_source`: `the_embedded_sources_are_the_abi_crate`, `the_abi_builds_with_rustc_alone`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(transpile): the ABI sources, embedded and built`
+
+---
+
+### T14: Cache
+
+**What**: `Cache::at`, `Key::of`, `entry`, `build` (a staging sibling renamed into place; the loser of a race removes its staging), `Entry`, the manifest, `clear`.
+**Where**: `crates/piperine-transpile/src/cache.rs`
+**Depends on**: T13
+**Reuses**: `sha2`
+**Requirement**: RS-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The race test runs 8 threads through `build` on one key and lists the directory afterwards
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test cache`: `two_racing_builds_leave_one_entry_and_no_staging`, `an_unwritable_directory_is_named`, `the_key_changes_with_any_part`, `a_directory_is_created_private`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(transpile): the cache`
+
+---
+
+### T15: Loaded
+
+**What**: `Loaded::open(&Entry)`: the recorded hash checked, `libloading` open, `piperine_abi_1`, `Library.size` and `minor` checked, the handle leaked; `module(name)`. The only `unsafe` of the feature, each block with a `// SAFETY:` line citing abi.md.
+**Where**: `crates/piperine-transpile/src/load.rs`
+**Depends on**: T14
+**Reuses**: `crates/piperine-abi/src/{raw,caller}.rs` (`SYMBOL`, `Library`, how a `Module` is read)
+**Requirement**: RS-05, RS-04
+**Executor**: Opus
+
+**Done when**:
+
+- [x] The test libraries are small sources compiled by T12's `Rustc` into a `tempdir`
+- [x] `unsafe_lives_in_load_only` scans `src/` of the crate and the golden files
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test load`: `a_file_that_is_no_library_is_named`, `a_library_without_the_symbol_is_named`, `a_library_of_a_newer_minor_is_refused`, `a_library_whose_bytes_changed_is_not_loaded`, `unsafe_lives_in_load_only`
+- [x] Verification F7 (C31): `a_library_smaller_than_the_host_reads_is_refused` passes in the same target: the `Library.size` refusal of RS-05 AC 3, with the host's own size loading
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 5 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `feat(transpile): loading a library through piperine_abi_1`
+
+---
+
+### T16: Transpiler::compile
+
+**What**: `Transpiler::compile(&Settings)`: source, key, cache lookup, the ABI `rlib` once, the `cdylib`, the manifest, `Loaded::open`, one rebuild when the hash check fails; `Report`; the staging directory kept and named when `rustc` fails.
+**Where**: `crates/piperine-transpile/src/compile.rs`
+**Depends on**: T15
+**Reuses**: T10 to T15
+**Requirement**: RS-01, RS-02, RS-03, RS-04, RS-08
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] Compiler invocations are counted by a wrapper script's log, not by the crate's own counter
+- [x] The warning test reads `rustc`'s standard error for each of the five M1 bodies and requires it empty
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test compile`: `the_m1_design_compiles_with_no_error_and_no_warning`, `a_second_build_runs_no_compiler`, `a_changed_ir_is_another_entry`, `another_compiler_version_is_another_entry`, `a_compile_error_keeps_the_source_and_shows_stderr`, `a_corrupted_library_is_rebuilt`, `the_source_is_kept_beside_the_library_and_reported`, `a_build_reports_its_cost`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 8 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `feat(transpile): compile, cache and load a design`
+
+---
+
+### T17: Compiled: modules and the circuit
+
+**What**: `Compiled` implements `Modules`; `Compiled::circuit()` through `Netlist`; every loaded prototype compared entry by entry with the plan's shape (`Error::ShapeMismatch`).
+**Where**: `crates/piperine-transpile/src/compiled.rs`
+**Depends on**: T16
+**Reuses**: `piperine_plan::Netlist`; `crates/piperine-interp/tests/circuit.rs` for the circuits
+**Requirement**: RS-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The divider's `Dc` gives `mid` = half of `vin` to 1e-12 relative, as `ir-interp`'s circuit test does
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test compiled`: `modules_come_through_the_symbol_and_bind_like_the_interpreter`, `loaded_shapes_equal_the_plans_entry_by_entry`, `a_shape_that_differs_from_its_plan_is_refused`, `the_compiled_divider_solves`
+- [x] Verification F6 (C16): RS-04 AC 1 amended by recorded decision (a warm build may run `rustc -vV`, never a compilation); `a_second_build_runs_no_compiler` keeps asserting zero builds and now also that the warm build's only call is the one `-vV`
+- [x] Verification F5 (T16, C19): `Transpiler::compile` removes a cache entry only when something stood at the key's path when it looked (an incomplete entry or one that fails to open), never on a plain miss; `two_racing_builds_leave_one_entry_and_no_staging` also races eight `Transpiler::compile` calls of the resistor, starts spread over the build
+- [x] Verification F1 (C105): `a_panic_in_compiled_code_is_a_fault_and_the_instance_survives` passes in the same target; a `rustc` wrapper injects a conditional `panic!` into the resistor's `terms`, the call faults with the message and the next call on the instance returns its value
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `feat(transpile): the compiled design as a circuit`
+
+---
+
+## Phase 4 tasks
+
+### T18: Function by function against the interpreter
+
+**What**: The differential target: every function of the five M1 bodies evaluated through `caller::Handle` on the interpreter's module and on the compiled one with the same bytes: three bias points each, the six `AGE`/`STATIC` cases for the limit, seeds all on. `verify_partials` on every compiled function. A non-finite value.
+**Where**: `crates/piperine-transpile/tests/differential.rs`
+**Depends on**: None in this phase (phase 3 complete)
+**Reuses**: `crates/piperine-interp/tests/{terms,limit,stim,partials}.rs` (the points and the calls)
+**Requirement**: RS-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] A difference is a defect of T3, T7 or T8: it goes back to Opus with the function, the inputs and both outputs. No comparison is loosened
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test differential`: `every_m1_function_gives_the_interpreters_bytes`, `every_compiled_function_passes_verify_partials`, `a_non_finite_value_is_written_as_is`
+- [x] Verification F4 (C33): `every_m1_function_gives_the_interpreters_bytes` also runs 300 seeded points (the xorshift of `residue`, moved to `support/both.rs`), wide and narrow, every arm of `pnjlim` reached, bit equality kept; red under the affine-association mutation that left it green
+- [x] Verification F2, F3 (C104): `msl_names_that_equal_generated_names_give_the_interpreters_bytes` passes in the same target; the comparison loop moved into the helper `compare`, its assertions unchanged
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(transpile): compiled functions equal the interpreter's`
+
+---
+
+### T19: The linear-term residue on compiled code
+
+**What**: The interpreter's residue tests on compiled functions: the resistor over 1000 points (bits of `g*vp - g*vn`, right side exactly 0) and the Vsource `eq` term over 2000 points (within 1 ulp, exactly 0 at `dc = 0`, with inexact points present).
+**Where**: `crates/piperine-transpile/tests/residue.rs`
+**Depends on**: T18
+**Reuses**: `crates/piperine-interp/tests/terms.rs` (C28, C29, C48)
+**Requirement**: RS-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test residue`: `the_compiled_resistor_matches_the_hand_written_products_bit_for_bit`, `a_compiled_affine_constant_leaves_at_most_one_ulp`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(transpile): no residue on linear rows of compiled devices`
+
+---
+
+### T20: No compiler during a session
+
+**What**: A session on the compiled RC and diode circuits with the counting wrapper: `Dc`, `Ac`, transient and a `set` of a non-structural param between analyses; the wrapper's log does not grow after the build.
+**Where**: `crates/piperine-transpile/tests/session.rs`
+**Depends on**: T19
+**Reuses**: T16's wrapper; `crates/piperine-interp/tests/circuit.rs`
+**Requirement**: RS-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The `set` test reads the changed result of the next `Dc`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test session`: `no_analysis_runs_the_compiler`, `a_set_between_analyses_runs_no_compiler_and_applies`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(transpile): nothing compiles after the build`
+
+---
+
+### T21: Backend in piperine-parity
+
+**What**: `Backend { Interp, Rust }`, `Backend::parse` (pure), `Backend::selected()`, `Bench::load_on(fixture, backend)` (the `Rust` arm goes through `Transpiler::compile`), `Point::with_backend`; `Bench::load` stays the interpreter.
+**Where**: `crates/piperine-parity/src/backend.rs`
+**Depends on**: T20
+**Reuses**: `crates/piperine-parity/src/{bench,contract}.rs`
+**Requirement**: RS-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `contract.rs` changes by one field and one line of the rejection text; no bound moves
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test backend`: `the_variable_selects_one_backend`, `an_unknown_backend_is_refused_naming_both`, `a_rejection_names_the_backend`, `the_rust_bench_runs_loaded_modules`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(parity): a twin on either backend`
+
+---
+
+### T22: Every parity test on both backends
+
+**What**: Each comparison of `parity_op`, `parity_dc`, `parity_ac` and `parity_tran` loops over `Backend::selected()` inside its test function, running ngspice once per twin and naming the backend at every point.
+**Where**: `crates/piperine-parity/tests/parity_op.rs` and its three siblings
+**Depends on**: T21
+**Reuses**: T21; the four targets as they are
+**Requirement**: RS-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] No tolerance, no row count and no expected value of the four targets changes; `parity_corpus` passes
+- [x] A twin that fails on the `Rust` backend only is a transpiler defect: it is reported with the point, never met by a looser bound
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran`: `divider`, `diode_series`, `isrc_r`, `diode_iv`, `diode_rev`, `ac_rc`, `tran_rc`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 7 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test(parity): the seven twins on the compiled backend`
+
+---
+
+### T23: The M1 circuits on both backends
+
+**What**: A target that runs the divider, the diode series, the AC RC and the transient RC on both backends and compares every result under the contract of its domain.
+**Where**: `crates/piperine-parity/tests/backends.rs`
+**Depends on**: T22
+**Reuses**: `Bench::load_on`; `ToleranceContract`
+**Requirement**: RS-06, RS-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The target has no numeric literal beside a comparison: every bound is a `ToleranceContract`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test backends`: `both_backends_agree_on_the_m1_circuits`
+- [x] Verification F9 (C39): `both_backends_agree_on_the_m1_circuits` keeps every contract assertion and also requires the operating points, the AC phasors (real and imaginary parts) and the transient steps (times and values) bit-equal across the backends; red under a 1 % error in the compiled `exp`, which the contract absorbed
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test(parity): the two backends agree on the M1 circuits`
+
+---
+
+## Phase 5 tasks
+
+### T24: IR: integer types and operators
+
+**What**: `ValueType::{UInt, Int}`, `Expr::{Int, Cast, Method}`, `BinaryOp::{Rem, BitAnd, BitOr, BitXor, Shl, Shr}`, `Constant::Int`, their builder methods, typing rules in `check()` and printer forms (design "Phase B: the IR additions").
+**Where**: `crates/piperine-ir/src/model.rs`
+**Depends on**: None in this phase (phase 4 complete)
+**Reuses**: the M1 node set and its builder, check and printer
+**Requirement**: RS-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `piperine-interp` and `piperine-transpile` still build: each new variant gets a refusal arm (`UNEXECUTED`, `Unsupported`)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `integers_and_their_operators_print`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): integer types, casts and bit operators`
+
+---
+
+### T25: IR: unknown values
+
+**What**: `ValueType::Flagged`, `Expr::{Unknown, KnownOr, IsKnown, High}` with builder, check and printer.
+**Where**: `crates/piperine-ir/src/model.rs` (modify)
+**Depends on**: T24
+**Reuses**: T24
+**Requirement**: RS-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `unknown_values_and_their_reads_print`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): unknown values and their reads`
+
+---
+
+### T26: IR: carriers, drives and nets
+
+**What**: `Carrier`, `Drive`, `Expr::Carrier`, `BodyData::{carriers, drives}`, `Ir::nets` with `NetData`, `InstanceData::nets`, handles and builder methods, printer sections written only when not empty.
+**Where**: `crates/piperine-ir/src/model.rs` (modify)
+**Depends on**: T25
+**Reuses**: `NodeData`, `BodyNode` and their handles (the continuous twins)
+**Requirement**: RS-09
+**Executor**: Opus
+
+**Done when**:
+
+- [x] Dependency sets (`Deps`) cover carrier reads: a drive's and an analog block's
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `carriers_and_drives_print`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): discrete carriers, drives and nets`
+
+---
+
+### T27: IR: events, reactions and commits
+
+**What**: `Event` (`Changed`, `Cross`, guard), `Reaction`, `Stmt::Commit`, `BodyData::{events, reactions}`, builder, printer, and the dependency set of a reaction (carriers, params and nodes its body reads).
+**Where**: `crates/piperine-ir/src/model.rs` (modify)
+**Depends on**: T26
+**Reuses**: T26; `Site` (how a body-level list is indexed)
+**Requirement**: RS-09
+**Executor**: Opus
+
+**Done when**:
+
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `events_and_reactions_print`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): events, reactions and commits`
+
+---
+
+### T28: IR: check() for the digital forms
+
+**What**: `check()` entries: a commit or drive on a carrier the body may not write (`In`); a carrier with both a drive and a commit; a carrier read in `analog` outside `known_or`, `is_known`, `high`; an event index out of range; a commit outside a reaction; a `Cross` over a non-real expression.
+**Where**: `crates/piperine-ir/src/check.rs`
+**Depends on**: T27
+**Reuses**: the M1 rules of the same file
+**Requirement**: RS-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The second test prints every M1 fixture and compares with `crates/piperine-ir/tests/golden/`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `a_defective_digital_body_gives_one_entry_per_defect`, `the_m1_prints_are_unchanged`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): check() for carriers, drives and reactions`
+
+---
+
+### T29: The buck-slice fixtures
+
+**What**: Hand-built bodies, each beside the `.msl` text it transcribes: `Osc`, `Dpwm` (with `rev3`, `dithered_width`), `SetpointReg`, `RefRamp`, `Pid`, `GateDriver`, `Adc`, `Comparator` (the two `cross` reactions of `A2D`), `Switch` (an `analog` block reading `g.high()`), and the D flip-flop of abi.md §11.4; their printed IR pinned as golden texts.
+**Where**: `crates/piperine-ir/tests/support/digital.rs`
+**Depends on**: T28
+**Reuses**: `crates/piperine-ir/tests/support/devices.rs`; `examples/buck/src/*.msl`; `crates/piperine-lang/std/convert.msl`
+**Requirement**: RS-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `rise()` is written as `Changed` with the guard `high()`; `above(e)` as `Cross(e)`; no body uses a form outside spec RS-09
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test digital`: `the_buck_slice_bodies_pass_check_and_print_as_their_golden_texts`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `test(ir): the buck-slice bodies, hand-built`
+
+---
+
+### T30: The interpreter refuses digital bodies
+
+**What**: `Interpreter::new` returns `Rejected` naming each body that has a carrier, a drive or a reaction (R1: the interpreter is frozen).
+**Where**: `crates/piperine-interp/src/lib.rs`
+**Depends on**: T29
+**Reuses**: `Rejected`
+**Requirement**: RS-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] No other line of `piperine-interp` changes beyond the refusal arms T24 to T27 added
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test frozen`: `a_digital_body_is_rejected_by_name`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(interp): digital bodies are refused by name`
+
+---
+
+## Phase 6 tasks
+
+### T31: Plan: carriers as pins
+
+**What**: Carrier pins after the M1 pins: kind, role, the layout of RS-12 AC 1, `HAS_INIT` with canonical bytes; `Source::Carrier`, `Target::Carrier`.
+**Where**: `crates/piperine-plan/src/digital.rs`
+**Depends on**: None in this phase (phase 5 complete)
+**Reuses**: `plan.rs` (`Pins`); `crates/piperine-abi/src/layout.rs` (`BIT`, `REAL`, `BYTE`)
+**Requirement**: RS-12
+**Executor**: Opus
+
+**Done when**:
+
+- [x] Every M1 shape is unchanged: `cargo test -p piperine-interp --test shape` passes untouched
+- [x] Tests with exactly these names pass in `cargo test -p piperine-plan --test digital_shape`: `carriers_are_discrete_pins_with_a_known_byte`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(plan): carriers as discrete pins`
+
+---
+
+### T32: Plan: drives and events
+
+**What**: `Mode::{Drive, Event}`: a drive as a discrete function; a `Changed` event as an event pin and its function reading `VALUE`, `CHANGED` and the guard's pins; a drive with `after` as a private pin, an event and a one-statement reaction.
+**Where**: `crates/piperine-plan/src/digital.rs` (modify)
+**Depends on**: T31
+**Reuses**: T31; abi.md §11.4
+**Requirement**: RS-12
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The flip-flop's shape equals abi.md §11.4 entry by entry
+- [x] Tests with exactly these names pass in `cargo test -p piperine-plan --test digital_shape`: `a_drive_is_a_discrete_function`, `an_event_is_an_event_pin_and_its_function`, `a_delayed_drive_is_a_pin_an_event_and_a_reaction`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(plan): drives and events as discrete functions`
+
+---
+
+### T33: Plan: reactions and statements
+
+**What**: `ReactionPlan`: the event pins, the reads (carriers, params, probed nodes), one `StatementPlan` per commit in source order with `LATER` and `min_after` only for a literal delay greater than 0.
+**Where**: `crates/piperine-plan/src/digital.rs` (modify)
+**Depends on**: T32
+**Reuses**: T32; abi.md §5, §6 C1
+**Requirement**: RS-12
+**Executor**: Opus
+
+**Done when**:
+
+- [x] Tests with exactly these names pass in `cargo test -p piperine-plan --test digital_shape`: `a_reaction_lists_its_events_reads_and_statements`, `only_a_literal_positive_delay_is_later`, `a_probing_reaction_reads_the_continuous_pin`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(plan): reactions and their statements`
+
+---
+
+### T34: Plan: the two crossings
+
+**What**: `Mode::Cross`: a `CROSS` watch, its event pin and the analog function with partials; a carrier read in `analog` as a non-differentiable read of `terms`; every buck-slice shape validated.
+**Where**: `crates/piperine-plan/src/digital.rs` (modify)
+**Depends on**: T33
+**Reuses**: T33; abi.md §11.5, §11.6
+**Requirement**: RS-12
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The comparator's shape equals abi.md §11.5 entry by entry
+- [x] Tests with exactly these names pass in `cargo test -p piperine-plan --test digital_shape`: `a_cross_event_is_a_watch_with_partials`, `an_analog_read_of_a_carrier_is_a_read_of_terms`, `every_buck_slice_shape_validates`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(plan): cross watches and analog reads of carriers`
+
+---
+
+### T35: rt: UInt and Int
+
+**What**: `rt::UInt<const N: u32>` and `rt::Int<const N: u32>` over `u64`/`i64`: `new`, the operators as trait impls masked to `N` bits, comparisons, `min`, `max`, `clamp`, casts among widths and signs, from and to `f64` (saturating, NaN to 0), shifts by any amount, division by zero a panic naming the operation.
+**Where**: `crates/piperine-transpile/src/rt/int.rs`
+**Depends on**: T34
+**Reuses**: `rt/real.rs` (how a runtime file is embedded and tested)
+**Requirement**: RS-10
+**Executor**: Opus
+
+**Done when**:
+
+- [x] The wrap test compares every operator with `i128` arithmetic reduced modulo `2^N` for N in {1, 3, 8, 9, 12, 16, 31, 32, 63, 64} at the boundaries and 1000 random pairs
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `rt::int::tests::arithmetic_wraps_at_every_width`, `rt::int::tests::casts_truncate_and_extend_by_the_source_sign`, `rt::int::tests::a_float_cast_saturates_and_nan_is_zero`, `rt::int::tests::a_shift_by_the_width_or_more_is_the_truncated_result`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): rt UInt and Int`
+
+---
+
+### T36: rt: Flagged and Commits
+
+**What**: `rt::Flagged<T>`: decode from and encode to a pin's bytes (canonical zero when unknown), all-or-nothing operators, the `bool` level rules, `known_or`, `is_known`, `high`, `decide(origin)`; `rt::Commits`: collected commits flushed to `React` in order.
+**Where**: `crates/piperine-transpile/src/rt/flag.rs`
+**Depends on**: T35
+**Reuses**: `crates/piperine-abi/src/layout.rs` (`HIGH`, `LOW`, the known byte)
+**Requirement**: RS-11
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The level-rule test is the full nine-case table of `&` and `|` and the three cases of `!`, written from §3.3.2
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `rt::flag::tests::an_unknown_operand_gives_an_unknown_result`, `rt::flag::tests::bool_operators_follow_the_level_rules`, `rt::flag::tests::known_or_is_known_and_high`, `rt::flag::tests::an_unknown_value_is_written_as_zero_bytes`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(transpile): rt Flagged and Commits`
+
+---
+
+## Phase 7 tasks
+
+### T37: ValuePrinter: integers and unknown values
+
+**What**: The phase B value forms as Rust over `rt::UInt`, `rt::Int` and `rt::Flagged`; `Error::Unsupported` naming `UInt<N>`/`Int<N>` with `N > 64`, `Float<16>` and `Float<128>`.
+**Where**: `crates/piperine-transpile/src/print/value.rs` (modify)
+**Depends on**: None in this phase (phase 6 complete)
+**Reuses**: T5, T35, T36
+**Requirement**: RS-10, RS-11
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `rev3` and `dithered_width` print as the texts the test holds, written from `dpwm.msl`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::value::tests::integer_and_flagged_expressions_print`, `print::value::tests::a_type_rust_lacks_is_refused_by_name`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): integer and unknown-value expressions`
+
+---
+
+### T38: DigitalPrinter: drives and events
+
+**What**: The `drive:<carrier>` and `event:<k>` functions as Rust over `Eval`: reads decoded as `Flagged`, the drive's value encoded to its pin, the event byte from `CHANGED` and the guard.
+**Where**: `crates/piperine-transpile/src/print/digital.rs`
+**Depends on**: T37
+**Reuses**: T37; abi.md §11.4 `eval`
+**Requirement**: RS-12
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::digital::tests::drives_and_events_print_as_discrete_functions`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): drive and event functions`
+
+---
+
+### T39: DigitalPrinter: reactions
+
+**What**: A reaction as one Rust `fn` over `React`: reads decoded, `let` and `if` reprinted with `decide`, each commit pushed to `rt::Commits` with its statement index, value bytes and delay (an unknown delay commits `Unknown` at delay 0), flushed at the end.
+**Where**: `crates/piperine-transpile/src/print/reaction.rs`
+**Depends on**: T38
+**Reuses**: T36 to T38; abi.md §5, §6
+**Requirement**: RS-11, RS-06
+**Executor**: Opus
+
+**Done when**:
+
+- [x] Each test compiles a small hand-built body and calls its reaction through `caller::Handle` with a recording commit closure
+- [x] The panic is an integer division by zero in a drive; the next call on the same instance succeeds
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test reaction`: `a_reaction_commits_in_source_order`, `an_unknown_condition_faults_and_commits_nothing`, `an_unknown_delay_commits_unknown_at_the_next_microstep`, `a_known_or_over_an_unwritten_input_gives_the_default`, `a_panic_in_compiled_code_is_a_fault_and_the_instance_survives`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 5 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(transpile): reactions and commits`
+
+---
+
+### T40: AnalogPrinter: cross watches and carrier reads
+
+**What**: The `cross:<k>` function (the watch's value and partials over `Dual<N>`) and a carrier read inside `terms_block` (decoded once, passed as a plain value).
+**Where**: `crates/piperine-transpile/src/print/cross.rs`
+**Depends on**: T39
+**Reuses**: T7; abi.md §11.5, §11.6
+**Requirement**: RS-12
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::cross::tests::a_cross_function_prints_its_watch_and_partials`, `print::cross::tests::terms_reads_a_carrier_as_a_plain_value`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(transpile): cross watches and analog reads of carriers`
+
+---
+
+### T41: Netlist: discrete nets
+
+**What**: `Netlist::circuit` binds each carrier port to its design net with `Port::Net` and sets the session resolution; an instance's carrier params and initial values reach their pins.
+**Where**: `crates/piperine-plan/src/netlist.rs`
+**Depends on**: T40
+**Reuses**: `crates/piperine-solver/src/core/{builder,bind}.rs` (`Port::Net`, `resolution`)
+**Requirement**: RS-05, RS-12
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The first test runs the oscillator into the flip-flop and reads `q` by its net name
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test digital_circuit`: `carrier_ports_bind_to_design_nets`, `every_buck_slice_body_compiles_with_no_warning`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `feat(plan): discrete nets in the netlist`
+
+---
+
+## Phase 8 tasks
+
+### T42: Commit semantics on the solver
+
+**What**: Four small compiled circuits, each the example of its rule in `docs/spec/part_iv_behavior.md` §12.1: the exchange, the later statement, the pulse, the unchanged commit.
+**Where**: `crates/piperine-transpile/tests/commits.rs`
+**Depends on**: None in this phase (phase 7 complete)
+**Reuses**: T41; `crates/piperine-solver/tests/` (how a discrete net is read and an event awaited)
+**Requirement**: RS-13
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Expected instants and values are written from §12.1.1, .2, .4 and .18, each cited at its assertion
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test commits`: `two_commits_exchange_two_carriers`, `the_later_statement_wins`, `two_statements_make_a_pulse`, `an_unchanged_commit_fires_nothing`
+- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(transpile): commit semantics of compiled reactions`
+
+---
+
+### T43: The oscillator and the DPWM
+
+**What**: The compiled `Osc` alone for 100 ns, then into `Dpwm` with `run` true and duty word 1325 for 8 periods; the determinism run.
+**Where**: `crates/piperine-transpile/tests/dpwm.rs`
+**Depends on**: T42
+**Reuses**: T29's fixtures; buck SPEC §5, §9
+**Requirement**: RS-13
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The expected widths (166 in the five periods whose bit-reversed frame index is below 5, else 165), the 4-count dead times and the 396 limit are computed in the test from SPEC §5, not read back from the model
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test dpwm`: `the_oscillator_toggles_every_half_period`, `the_dpwm_dithers_keeps_dead_time_and_never_overlaps`, `two_runs_give_the_same_changes`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(transpile): the oscillator and the DPWM behave as specified`
+
+---
+
+### T44: The reference ramp and the PID
+
+**What**: The compiled `RefRamp` and `Pid` under a scripted sequence of 200 samples (soft-start, a step of the measurement, saturation both ways, `run` dropped and raised), against a reference written in the test from the difference equations of SPEC §6.2 to §6.4 and §7.2 in plain `i32` arithmetic.
+**Where**: `crates/piperine-transpile/tests/pid.rs`
+**Depends on**: T43
+**Reuses**: T29's fixtures; buck SPEC §6, §7
+**Requirement**: RS-13
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] Every committed `duty`, `integ`, `deriv`, `e_prev` and `reference` is compared, bit for bit, at every sample
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test pid`: `the_ramp_and_the_pid_follow_their_difference_equations`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(transpile): the ramp and the PID match their equations`
+
+---
+
+### T45: Analog to digital
+
+**What**: The compiled `Adc` on a held node at five voltages (0, one LSB, mid-scale, full scale, above full scale) and the compiled `Comparator` on an RC charge and discharge.
+**Where**: `crates/piperine-parity/tests/boundary.rs`
+**Depends on**: T44
+**Reuses**: `Bench`-free: circuits from `Compiled::circuit`; `ToleranceContract::TRAN_VOLTAGE`; buck SPEC §4.1
+**Requirement**: RS-13
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] The comparator's trip times are judged by the analytic RC voltage at each time against the threshold under `TRAN_VOLTAGE`; no time tolerance is written
+- [ ] A solver defect on this path stops the task and is reported with a hand-written ABI device that reproduces it
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test boundary`: `the_adc_commits_the_rounded_code_after_tconv`, `the_comparator_trips_at_its_thresholds`
+- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `test(parity): compiled reactions sample and detect crossings`
+
+---
+
 ### T46: Digital to analog
 
 **What**: The compiled `Switch` between a source and an RC, its gate committed high at `t0` by a compiled reaction: `t0` is a time point and the response from `t0` is the analytic one.
@@ -1571,8 +2739,8 @@ Proof: run compiled | test a_panic_in_compiled_code_is_a_fault_and_the_instance_
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** T1 - the dispatch said "do not edit solver crates"; T1 and T2's Done-when require `DEFAULT_MEMBERS` (which lives in `crates/piperine-solver/tests/workspace_shape.rs`) to gain the new crate, or the guard fails. The one-line list entry is made there, as `ir-interp` T2 did; no solver source is touched. T2 likewise adds `piperine-plan` and `piperine-transpile` to that file's `KEPT_CRATES`, which `instructions_list_the_kept_crates` compares with the crate rows T2 adds to `CLAUDE.md` and `AGENTS.md`. T4 - RS-02 AC 2 says a keyword prints as a raw identifier, but Rust refuses `r#crate`, `r#self`, `r#Self` and `r#super`; `Text::ident` prints those four as `crate_`, `self_`, `Self_`, `super_` (the ABI name stays unchanged). T10 - exporting `piperine_abi_1` from an edition-2024 crate takes the attribute `#[unsafe(no_mangle)]` (RS-Q2 needs the symbol, RS-Q4 the edition); it is no `unsafe` block, and every unsafe operation stays in the ABI crate's thunks. C32's scan (T15, `unsafe_lives_in_load_only`) has to allow that one attribute line in generated source and the goldens, or RS-05 AC 4 reads as `unsafe` blocks only. T10 - the goldens were read MSL line to Rust line by the Opus batch worker that wrote the printer (no second Opus was available in the batch), and each of the five, with three more designs (keywords, RcHeld, DiodeCircuit), was compiled with rustc 1.98 `--edition 2024 --crate-type cdylib` against an rlib of `piperine-abi`: no error, no warning. T12 - `Rustc::invocations()` counts builds (`rlib`, `cdylib`) only, not the `-vV` probe; `cdylib` and `rlib` return the compiler's standard error on success. T14 - `Cache` gains `abi` (the ABI `rlib` entry, same staging-and-rename) and `remove` (a failed hash rebuilds once); `Cache::build` keeps its staging directory when the build closure fails, so `CompileFailed` can name the source on disk. T15 - the hash is checked before `dlopen`, on a cache directory created `0700`; a mapped library must never be rewritten in place (a test that did crashed the process), so a rebuild unlinks and writes a new file. T16 - `Report` gains `warnings` (the compiler's standard error of the build, empty on a hit) so the zero-warning check reads it from `compile`. T17 - the shape check runs inside `compile` (`Compiled::bind`), not in `circuit()`, so a mismatched library is refused before it is handed out; `piperine-transpile` gains the `piperine-solver` dependency for `CircuitInstance`; the task text says the divider gives `mid` half of `vin`, but the shared fixture is 10 V across 1 k and 3 k, so the test asserts the divider ratio (7.5 V) to 1e-12 relative and equality with the interpreter's value. T18 - the differential target's compiled-vs-interpreted comparison is on bits for every written cell and for the partials (stricter than `==` as `f64`); the third bias point stands at the knee (0.95 V, `LAST` 0.70) so the diode's `pnjlim` limits and a difference there would show; `verify_partials` holds `LAST` at the proposed value as the interpreter's own `partials.rs` does. The two-backend helper lives in `crates/piperine-transpile/tests/support/both.rs` (shared by `differential`, `residue`). T21 - `Bench::load_on` builds the Rust backend in a temporary cache directory of the bench's own unless `PIPERINE_CACHE_DIR` is set (tests never write the user's real cache); `OperatingPoint` gains `compare_on(reference, backend)` (`compare` stays the interpreter and its `Outcome` count), so ngspice runs once per twin while each selected backend is held to it; `Point` gains `backend` and `with_backend`, and the rejection text one `backend:` line. T23 - the compiled waveform is read at the interpreter's step times by linear interpolation, as `Waveform` does everywhere in the harness. T24 - `Expr::Int(i128)` holds the value only: its `UInt<N>`/`Int<N>` type is the `ExprData` type every expression has (the design's `{ value, ty }` would store it twice); `Constant::Int(i128)` takes its width from the param or carrier it initializes. Widths outside 1..=64 are a `check()` entry, as the design says (`UInt<65>` is therefore refused by `check()`, before any printer). The typing rules of the digital forms live in `piperine-ir/src/typing.rs`, shared by `check()` and the structural printer; the M1 rules stay as they were while every operand is `f64` or `bool`, so every M1 print and entry keeps its bytes. A new variant breaks every exhaustive `match` on it, test helpers included: `tests/model.rs`'s `Reach::expr` (a reachability walk, no assertion) gains the arms; `piperine-lang` gains `Constant::Int` arms that refuse an integer where M1 wants `f64` or `bool`, and `constant_expr` takes the expression's type for an integer; `piperine-plan` passes an integer param as the solver's `ParamValue::Int` and writes no default bytes for one (the M1 plan has no integer layout). T26 - `InstanceData::nets` binds every carrier of the body, signals included, as `nodes` binds every body node (the design says "each carrier port"): a parent's signal is the net its children's ports meet on, and msl-digital's anonymous definition (`Child(a, expr)` at an `in` port) needs the parent's signal and the child's port on one net. `BodySpec` and `InstanceSpec` keep their fields (every M1 test builds them literally): carriers and drives are added by `IrBuilder::carrier`/`drive` on a body id, nets bound by `IrBuilder::bind_nets`. `Deps` keeps its M1 fields (a test builds it literally); the carriers a target reads are `Body::carrier_reads(target)`, with `Target::Drive(k)` and `Target::DriveAfter(k)` for a drive's value and delay. A carrier read is `Constant` in the node potentials, so an `analog` term over `g.high()` stays affine. `Child` has no carrier binding: the authored tree records node bindings only, the instance's `nets` carry the carrier wiring. The transpiler refuses a body with a carrier or a drive (`Error::Unsupported`) until phase 7 lowers them. T27 - an `if` with no `else` (a reaction's `if c { q <- x; }`) keeps M1's lowering (`piperine-lang` `elab/lower.rs`): `Expr::If` with `otherwise` the unit literal, typed `()`; a condition that may be unknown leaves a `()` `if` unflagged. `EventSource::Cross(e)` holds the crossed expression only (no `ttol`/`etol`: the buck's `above` passes none). The dependency targets of the digital forms are `Target::Guard(k)`, `Target::Cross(k)` (an event's guard and crossed expression) and `Target::Reaction(k)` (every source of every expression the reaction evaluates, conditions, commit values and delays included). A reaction's `let`s bind `Reaction::locals`; a drive's and an event's expressions see the body's locals table, as a `where` does. The transpiler refuses a body with an event or a reaction as it does a carrier. T29 - the fixtures write `&&` and `||` over a value that may be unknown as `&` and `|` (msl-digital's lowering, §3.3.12), fold every `const` (`spec.msl`), lower `if let Some(d) = x.known()` as `if x.is_known() { let d = x.known_or(0); … }`, and call the variants `rev3~1` and `dithered_width~01` the call `dithered_width(duty.known_or(0), frame + 1)` reaches. `Dpwm` leaves out its `Never` monitor (a stdlib module with an `emit!`, out of the slice); `Switch` is `PowerSwitch` with the gate level in place of the stdlib `transition`; the comparator is std `A2D`. Each body is pinned alone (with an empty `Top`) in both forms: `tests/golden/buck/*.txt` (structural, the contract with msl-digital) and `tests/golden/buck/full/*.txt`. T30 - `Interpreter::new` names a body with an event as well as one with a carrier, a drive or a reaction (an event without the others cannot occur in a checked IR but would run as nothing); its entries come after `check()`, which runs first and alone. T31 - a carrier pin of `UInt<N>`/`Int<N>` (RS-12 AC 1 names the leaf only) puts its known byte right after the value and rounds the size to the value's alignment, as `BIT`, `BYTE` and `REAL` do: `U16` is `{ v @0, known @2 }` size 4 align 2, `U32`/`I32` size 8 align 4, `U64`/`I64` size 16 align 8 (`piperine_plan::CarrierLayout`). This settles batch 4's open item: an integer param takes the same layout and canonical default bytes as a carrier of its type (the solver's `encode` already writes `ParamValue::Int` into an integer leaf with its known byte). Carrier pins follow the check pins, so the M1 rule "check pins are the last pins" now reads "the last M1 pins". `Source::{Carrier, CarrierChanged}` sit after `Param` and before the ambients in read order (non-differentiable); the new plan variants force one arm each in `piperine-interp` (`device.rs`, the frame fill: a carrier read reads nothing, since `Interpreter::new` refuses every body with a carrier) and in the transpiler's name tables. A carrier initial value that is not a value of its type (not caught by `check()`) panics in `BodyPlan::new` with the carrier and origin, as the dependency walk does on an IR it cannot read. T32 - abi.md §11.4's event function reads `[clk.VALUE, clk.PREVIOUS, clk.CHANGED]`; RS-12 AC 3 and the IR's `rise()` (`changed` guarded by `high()`) give `[clk.VALUE, clk.CHANGED]`: `PREVIOUS` has no IR form here and is msl-digital's A7 (`Source::CarrierPrevious`), so the flip-flop is compared with §11.4 entry by entry except that read, and names are the plan's (`event:<k>` for §11.4's `rise`). §11.4's reaction 0 is a body reaction, T33's work: its comparison is in T33's `a_reaction_lists_its_events_reads_and_statements`. A delayed drive's pins are named `drive:<carrier>.now` and `drive:<carrier>.changed` (also the name of its event function); its reaction is `drive:<carrier>`; they follow the event pins `event:<k>`, which follow the carrier pins. The plan gains `Mode::DelayedEvent(k)`, `Source::{Delayed, DelayedChanged}(k)`, `Target::{EventPin, Delayed, DelayedEventPin}(k)`, `Pins::{events, delayed}` and `ReactionPlan`/`StatementPlan`/`ReactionMode` (design's `ReactionPlan` plus a `mode` naming what the reaction runs); every new `Mode` forces a refusal arm in `piperine-interp` (`device.rs` eval, `walk.rs`) and in the transpiler's `LibraryPrinter` (unreachable: `discrete` refuses digital bodies first). T33 - a body reaction is the ABI reaction `reaction:<k>`; "source order" of commits is a depth-first walk of the reaction's statements (operands in order, a block's statements before its value, `then` before `else`), so RefRamp's `if`/`else if` chain gives three statements on `reference`; "a literal delay greater than 0" is an `Expr::Real` literal `> 0` (a param, an expression, `0.0` or a negative literal give no flag), and the reaction of a delayed drive follows the same rule. T34 - abi.md §4.1 writes an event pin through its `CHANGED` byte ("one byte: nonzero fires it"), not `VALUE`: `validate` refused the `VALUE` write T32 had declared, so T34 corrects `Target::{EventPin, DelayedEventPin}` to `PIN CHANGED` and, with it, the five write assertions of T32's tests that had encoded the wrong part (a fix toward abi.md, no weakening). The buck's comparator is std `A2D` (one node, two params) where §11.5 has two nodes, and the plan gives one analog function per watch (`cross:<k>`, F4) where §11.5 has one for both: it is compared with §11.5 entry by entry on watches, event pins, reactions and each function's partial pattern. A guarded `cross` (none in the slice) is declared, since `BodyPlan::new` cannot refuse, as design "a second event function on that pin" read with P1's one writer: the watch fires a private event pin `cross:<k>` and the event function `event:<k>` reads its `CHANGED` and the guard's pins and fires the event pin (`Source::Crossed`, `Pins::crossed`). Every M1 dependency set (`terms`, `limit`, `stim`, `check`) now carries the carriers it reads (`ReadSet::target`), and `reads_temperature` also asks the digital targets; an M1 body has neither, so its shape is unchanged. T35 - `rt::UInt<N>`/`rt::Int<N>` (`rt/int.rs`): `new` reduces modulo `2^N`; casts are methods `to_uint::<M>()`, `to_int::<M>()`, `to_f64()`, `from_f64(x)`, `from_bool(b)` (Rust has no generic `as`); a shift amount is any `UInt<M>`/`Int<M>` (trait impls `Shl`/`Shr` over both), and a negative amount, which has no mathematical result here and which Rust also refuses, panics naming the shift; division truncates toward zero and the remainder takes the dividend's sign, as Rust's (`MIN / -1` wraps to `MIN`, `MIN % -1` is 0); a width outside 1..=64 fails to compile (a const assertion). The text is embedded as `rt::INT` but not yet written into the cache entry: `compile.rs` keeps writing `rt::REAL` alone as `rt.rs` and hashing it alone, so every phase-A cache key and generated file stays bit-identical; gathering the runtime files into `rt.rs` is the phase-7 printer's, when generated code first names an integer. T36 - `rt::Flagged<T>` keeps one known flag per value, the pin's one known byte (RS-12 AC 1), so §3.3.2's per-level rules apply to the whole value: `&` is known all-false when either operand is known all-false and `|` known all-true when either is known all-true (`bool`, `UInt`, `Int`: trait `Levels`), `^` is all-or-nothing; a shift by a known amount of `N` or more of an unknown value is known 0 except a signed `>>` (§3.3.11). An unknown operand is never evaluated (an unknown divisor is no division by zero). Comparisons are methods (`equal`, `not_equal`, `less`, `less_or_equal`, `greater`, `greater_or_equal`) returning `Flagged<bool>`; casts and methods go through `map`/`zip`. `decide(origin)` faults with code `Flagged::UNKNOWN_CONTROL` (3). `Commits::commit` takes the delay as `Flagged<f64>` and already applies RS-11 AC 6 (unknown delay: `Unknown` at the next microstep); `flush` hands each commit to `React` in the order made. `rt::FLAG` is embedded but, like `rt::INT`, not yet written into the cache entry (phase 7). T37 - integers and unknown values print by their `rt::` path (`rt::UInt::<9>::new(1)`, `rt::Flagged<…>`), so generated code imports nothing new. An operand that may not be unknown is lifted (`rt::Flagged::known(x)`) where the other operand or the place it flows to may be; every operand of a bit operator or a shift keeps its parentheses. A comparison with an operand that may be unknown is a `Flagged` method (`less`, `equal`, …); `&&`/`||` over one is `Error::Unsupported` (msl-digital lowers them to `&`/`|`). An `if` on an unknown condition is `c.decide("<file:line:col of the if>")?`: a function holding one, directly or through a call, returns `Result<T, Fault>` and its value is wrapped in `Ok`; analog code has no `?`, so there such an `if` or such a call is refused by name. An IR function is generic over `Real` only when a real appears in it (`ValuePrinter::is_generic`; every M1 function does, so every M1 text is unchanged). `~`, the variant separator of msl-digital (`rev3~1`), is no character of a Rust name nor of an MSL name: `Text::ident` prints it as `_v` (`rev3_v1`, `dithered_width_v01`: a snake-case name, where `__` draws `non_snake_case`); two functions printing as one name (`rev3_v1` written in MSL beside the variant) are a collision `LibraryPrinter` refuses (T39). The IR has no `Float<16>` or `Float<128>` (its one real is `f64`), so there is no `Ir` holding one to refuse; `UInt<N>`/`Int<N>` with `N` outside 1..=64 is refused by name (`UInt<65>`) with the path of the param, the return or the expression. `rt::Flagged` gains `zip3` (the `clamp` of a value that may be unknown). `rt.rs` is gathered by `rt::Runtime::files(digital)`: an analog-only design keeps `real.rs` alone as `rt.rs` and the key it always had (`Transpiler::digital()`: some body has a carrier); a design with digital forms writes `rt.rs` (modules `flag`, `int`, `real`, their names re-exported) and `rt/{real,int,flag}.rs` beside it, all hashed into the key. T38 - the discrete functions print in `print/digital.rs` and are named from the MSL name first: `<carrier>_drive`, `event<k>`, `<carrier>_drive_changed` (T40: `cross<k>`; T39: `reaction<k>`, `<carrier>_drive_after`). A function binds only the reads its code uses (`ValuePrinter::uses`), plus the `CHANGED` byte of its source: a drive decodes each carrier into `rt::Flagged<T>`, writes its pin with `Flagged::write` (new, the bytes at the start of the write cell); an event writes `u8::from(fired_)` to its `CHANGED` byte, `fired_` being `<source changed> && <guard>`, the guard evaluated only when the source fired (a guard that may be unknown is decided: an unknown guard is a fault naming it). The printers of drives and events are not yet called by `LibraryPrinter` (T39 wires them with the reactions, since a compiled design needs all three). T39 - `LibraryPrinter` no longer refuses a body with carriers, drives, events or reactions (a body with a carrier runs); only a `cross` watch is still refused, until T40. A reaction is the Rust fn `reaction<k>` (a delayed drive's, `<carrier>_drive_after`) over `React`: it binds the reads it uses, makes `rt::Commits` (`let mut commits_`, plain `let` when the reaction commits nothing), pushes each commit as `commits_.commit(<statement>, <value>, <delay>)`, and calls `commits_.flush(cx_)?` after the last statement, so a fault (`?` on a `decide`, a panic) returns before any commit goes out. The statement number is the order the printer prints the commits, which is the plan's depth-first walk (value and delay before the commit, `then` before `else`); the printer compares the carriers it numbered with the plan's statements and refuses the reaction (`Error::Unsupported`, a transpiler defect) when they differ. A value committed is lifted to `Flagged<carrier type>`, a delay to `Flagged<f64>`; no delay is `Flagged::known(0.0)`. A unit `if` with no `else` prints with none, and a unit `if` statement carries no `;`. A local that has the name of a param, node or carrier of its body prints `<name>_<index>_` instead (a `let` would shadow the read). `rt::Real` and `rt::Dual` are imported only where an analog function needs them. The shared design of `tests/reaction.rs` is compiled once per test binary under a mutex, and asserts `Report::warnings` is empty. T40 - a `cross` watch is two Rust fns, `cross<e>_block<R: Real>` (the crossed expression over the reads it uses) and `cross<e>` (binds them, `Dual<N>` at the iterate, `cx_.set(0, at_iterate_.v)` and one `cx_.jac()` write per partial); `DigitalPrinter::cross` in `print/cross.rs`. In `terms` (and in a cross block) a carrier read is a block parameter `rt::Flagged<T>` decoded once in the wrapper and passed as it is (no `Dual`, never in the slots); a bool or integer param is passed as it is too (`AnalogPrinter::{is_plain, block_type, decode}`); a limit or stim function that reads a carrier is not handled (no body of the slice has one). Every M1 text is unchanged. The ten buck-slice bodies each compile with an empty compiler standard error (checked here by a scratch target, T41 owns the test). T41 - `Netlist::circuit` appends, after a body's node ports and in the body's order, one `Port::Net` per `in`/`out` carrier (a `signal` is a private pin and takes no port), named by the path of the net the instance gives that carrier, so the solver has the net as `net:<path>` (the test reads `Top.q` so); a carrier with no net is `Port::Open`. `Netlist::with_resolution(seconds)` sets the session resolution (never set, the solver's own one femtosecond stands: the IR carries none). A carrier's initial value reaches the solver as its pin's `HAS_INIT` (shape); a net's own `init` is not passed (`CircuitBuilder` has no way to take it), and a parent's `signal` stays the instance's private pin, not the net its children's ports meet on (the builder binds no `PRIVATE` pin to a named net): neither is met by the slice, both are M2's. A carrier param is a body param and goes by name as before (`ParamValue::Int` for an integer). The flip-flop test wires `d` to the clock's own net (so `q` is true after the first rising edge) and checks the negative control (`d` on a net nothing writes: `q` is not true). `tests/support/alone.rs` places bodies under an empty top for the unit and integration tests.
-**Dispatched:** batch 1 (phases 1-2, T1-T10) - Opus worker, 2026-11-15, done. Batch 2 (phase 3, T11-T17) - Sonnet worker, 2026-11-15, done. C32 ruling: the export attribute is allowed (see C32). Batch 2 done. Batch 3 (phase 4, T18-T23) - Sonnet worker, 2026-11-15, done. Phase A verifier (Opus, T1-T23, C1-C phase-A checks) - 2026-11-15. Phase A fixes F1-F9 closed; phase A merged to main e4f767dd. Batch 4 (phase 5, T24-T30) - Opus worker, 2026-11-15, done. Batch 4 done. Batch 5 (phase 6, T31-T36) - Opus worker, 2026-11-15, done. Batch 5 done. Batch 6 (phase 7, T37-T41) - Sonnet worker, 2026-11-15. Batch 6 done. Batch 7 (phase 8, T42-T46) - Sonnet worker, 2026-11-15.
+**Settled mid-build:** T1 - the dispatch said "do not edit solver crates"; T1 and T2's Done-when require `DEFAULT_MEMBERS` (which lives in `crates/piperine-solver/tests/workspace_shape.rs`) to gain the new crate, or the guard fails. The one-line list entry is made there, as `ir-interp` T2 did; no solver source is touched. T2 likewise adds `piperine-plan` and `piperine-transpile` to that file's `KEPT_CRATES`, which `instructions_list_the_kept_crates` compares with the crate rows T2 adds to `CLAUDE.md` and `AGENTS.md`. T4 - RS-02 AC 2 says a keyword prints as a raw identifier, but Rust refuses `r#crate`, `r#self`, `r#Self` and `r#super`; `Text::ident` prints those four as `crate_`, `self_`, `Self_`, `super_` (the ABI name stays unchanged). T10 - exporting `piperine_abi_1` from an edition-2024 crate takes the attribute `#[unsafe(no_mangle)]` (RS-Q2 needs the symbol, RS-Q4 the edition); it is no `unsafe` block, and every unsafe operation stays in the ABI crate's thunks. C32's scan (T15, `unsafe_lives_in_load_only`) has to allow that one attribute line in generated source and the goldens, or RS-05 AC 4 reads as `unsafe` blocks only. T10 - the goldens were read MSL line to Rust line by the Opus batch worker that wrote the printer (no second Opus was available in the batch), and each of the five, with three more designs (keywords, RcHeld, DiodeCircuit), was compiled with rustc 1.98 `--edition 2024 --crate-type cdylib` against an rlib of `piperine-abi`: no error, no warning. T12 - `Rustc::invocations()` counts builds (`rlib`, `cdylib`) only, not the `-vV` probe; `cdylib` and `rlib` return the compiler's standard error on success. T14 - `Cache` gains `abi` (the ABI `rlib` entry, same staging-and-rename) and `remove` (a failed hash rebuilds once); `Cache::build` keeps its staging directory when the build closure fails, so `CompileFailed` can name the source on disk. T15 - the hash is checked before `dlopen`, on a cache directory created `0700`; a mapped library must never be rewritten in place (a test that did crashed the process), so a rebuild unlinks and writes a new file. T16 - `Report` gains `warnings` (the compiler's standard error of the build, empty on a hit) so the zero-warning check reads it from `compile`. T17 - the shape check runs inside `compile` (`Compiled::bind`), not in `circuit()`, so a mismatched library is refused before it is handed out; `piperine-transpile` gains the `piperine-solver` dependency for `CircuitInstance`; the task text says the divider gives `mid` half of `vin`, but the shared fixture is 10 V across 1 k and 3 k, so the test asserts the divider ratio (7.5 V) to 1e-12 relative and equality with the interpreter's value. T18 - the differential target's compiled-vs-interpreted comparison is on bits for every written cell and for the partials (stricter than `==` as `f64`); the third bias point stands at the knee (0.95 V, `LAST` 0.70) so the diode's `pnjlim` limits and a difference there would show; `verify_partials` holds `LAST` at the proposed value as the interpreter's own `partials.rs` does. The two-backend helper lives in `crates/piperine-transpile/tests/support/both.rs` (shared by `differential`, `residue`). T21 - `Bench::load_on` builds the Rust backend in a temporary cache directory of the bench's own unless `PIPERINE_CACHE_DIR` is set (tests never write the user's real cache); `OperatingPoint` gains `compare_on(reference, backend)` (`compare` stays the interpreter and its `Outcome` count), so ngspice runs once per twin while each selected backend is held to it; `Point` gains `backend` and `with_backend`, and the rejection text one `backend:` line. T23 - the compiled waveform is read at the interpreter's step times by linear interpolation, as `Waveform` does everywhere in the harness. T24 - `Expr::Int(i128)` holds the value only: its `UInt<N>`/`Int<N>` type is the `ExprData` type every expression has (the design's `{ value, ty }` would store it twice); `Constant::Int(i128)` takes its width from the param or carrier it initializes. Widths outside 1..=64 are a `check()` entry, as the design says (`UInt<65>` is therefore refused by `check()`, before any printer). The typing rules of the digital forms live in `piperine-ir/src/typing.rs`, shared by `check()` and the structural printer; the M1 rules stay as they were while every operand is `f64` or `bool`, so every M1 print and entry keeps its bytes. A new variant breaks every exhaustive `match` on it, test helpers included: `tests/model.rs`'s `Reach::expr` (a reachability walk, no assertion) gains the arms; `piperine-lang` gains `Constant::Int` arms that refuse an integer where M1 wants `f64` or `bool`, and `constant_expr` takes the expression's type for an integer; `piperine-plan` passes an integer param as the solver's `ParamValue::Int` and writes no default bytes for one (the M1 plan has no integer layout). T26 - `InstanceData::nets` binds every carrier of the body, signals included, as `nodes` binds every body node (the design says "each carrier port"): a parent's signal is the net its children's ports meet on, and msl-digital's anonymous definition (`Child(a, expr)` at an `in` port) needs the parent's signal and the child's port on one net. `BodySpec` and `InstanceSpec` keep their fields (every M1 test builds them literally): carriers and drives are added by `IrBuilder::carrier`/`drive` on a body id, nets bound by `IrBuilder::bind_nets`. `Deps` keeps its M1 fields (a test builds it literally); the carriers a target reads are `Body::carrier_reads(target)`, with `Target::Drive(k)` and `Target::DriveAfter(k)` for a drive's value and delay. A carrier read is `Constant` in the node potentials, so an `analog` term over `g.high()` stays affine. `Child` has no carrier binding: the authored tree records node bindings only, the instance's `nets` carry the carrier wiring. The transpiler refuses a body with a carrier or a drive (`Error::Unsupported`) until phase 7 lowers them. T27 - an `if` with no `else` (a reaction's `if c { q <- x; }`) keeps M1's lowering (`piperine-lang` `elab/lower.rs`): `Expr::If` with `otherwise` the unit literal, typed `()`; a condition that may be unknown leaves a `()` `if` unflagged. `EventSource::Cross(e)` holds the crossed expression only (no `ttol`/`etol`: the buck's `above` passes none). The dependency targets of the digital forms are `Target::Guard(k)`, `Target::Cross(k)` (an event's guard and crossed expression) and `Target::Reaction(k)` (every source of every expression the reaction evaluates, conditions, commit values and delays included). A reaction's `let`s bind `Reaction::locals`; a drive's and an event's expressions see the body's locals table, as a `where` does. The transpiler refuses a body with an event or a reaction as it does a carrier. T29 - the fixtures write `&&` and `||` over a value that may be unknown as `&` and `|` (msl-digital's lowering, §3.3.12), fold every `const` (`spec.msl`), lower `if let Some(d) = x.known()` as `if x.is_known() { let d = x.known_or(0); … }`, and call the variants `rev3~1` and `dithered_width~01` the call `dithered_width(duty.known_or(0), frame + 1)` reaches. `Dpwm` leaves out its `Never` monitor (a stdlib module with an `emit!`, out of the slice); `Switch` is `PowerSwitch` with the gate level in place of the stdlib `transition`; the comparator is std `A2D`. Each body is pinned alone (with an empty `Top`) in both forms: `tests/golden/buck/*.txt` (structural, the contract with msl-digital) and `tests/golden/buck/full/*.txt`. T30 - `Interpreter::new` names a body with an event as well as one with a carrier, a drive or a reaction (an event without the others cannot occur in a checked IR but would run as nothing); its entries come after `check()`, which runs first and alone. T31 - a carrier pin of `UInt<N>`/`Int<N>` (RS-12 AC 1 names the leaf only) puts its known byte right after the value and rounds the size to the value's alignment, as `BIT`, `BYTE` and `REAL` do: `U16` is `{ v @0, known @2 }` size 4 align 2, `U32`/`I32` size 8 align 4, `U64`/`I64` size 16 align 8 (`piperine_plan::CarrierLayout`). This settles batch 4's open item: an integer param takes the same layout and canonical default bytes as a carrier of its type (the solver's `encode` already writes `ParamValue::Int` into an integer leaf with its known byte). Carrier pins follow the check pins, so the M1 rule "check pins are the last pins" now reads "the last M1 pins". `Source::{Carrier, CarrierChanged}` sit after `Param` and before the ambients in read order (non-differentiable); the new plan variants force one arm each in `piperine-interp` (`device.rs`, the frame fill: a carrier read reads nothing, since `Interpreter::new` refuses every body with a carrier) and in the transpiler's name tables. A carrier initial value that is not a value of its type (not caught by `check()`) panics in `BodyPlan::new` with the carrier and origin, as the dependency walk does on an IR it cannot read. T32 - abi.md §11.4's event function reads `[clk.VALUE, clk.PREVIOUS, clk.CHANGED]`; RS-12 AC 3 and the IR's `rise()` (`changed` guarded by `high()`) give `[clk.VALUE, clk.CHANGED]`: `PREVIOUS` has no IR form here and is msl-digital's A7 (`Source::CarrierPrevious`), so the flip-flop is compared with §11.4 entry by entry except that read, and names are the plan's (`event:<k>` for §11.4's `rise`). §11.4's reaction 0 is a body reaction, T33's work: its comparison is in T33's `a_reaction_lists_its_events_reads_and_statements`. A delayed drive's pins are named `drive:<carrier>.now` and `drive:<carrier>.changed` (also the name of its event function); its reaction is `drive:<carrier>`; they follow the event pins `event:<k>`, which follow the carrier pins. The plan gains `Mode::DelayedEvent(k)`, `Source::{Delayed, DelayedChanged}(k)`, `Target::{EventPin, Delayed, DelayedEventPin}(k)`, `Pins::{events, delayed}` and `ReactionPlan`/`StatementPlan`/`ReactionMode` (design's `ReactionPlan` plus a `mode` naming what the reaction runs); every new `Mode` forces a refusal arm in `piperine-interp` (`device.rs` eval, `walk.rs`) and in the transpiler's `LibraryPrinter` (unreachable: `discrete` refuses digital bodies first). T33 - a body reaction is the ABI reaction `reaction:<k>`; "source order" of commits is a depth-first walk of the reaction's statements (operands in order, a block's statements before its value, `then` before `else`), so RefRamp's `if`/`else if` chain gives three statements on `reference`; "a literal delay greater than 0" is an `Expr::Real` literal `> 0` (a param, an expression, `0.0` or a negative literal give no flag), and the reaction of a delayed drive follows the same rule. T34 - abi.md §4.1 writes an event pin through its `CHANGED` byte ("one byte: nonzero fires it"), not `VALUE`: `validate` refused the `VALUE` write T32 had declared, so T34 corrects `Target::{EventPin, DelayedEventPin}` to `PIN CHANGED` and, with it, the five write assertions of T32's tests that had encoded the wrong part (a fix toward abi.md, no weakening). The buck's comparator is std `A2D` (one node, two params) where §11.5 has two nodes, and the plan gives one analog function per watch (`cross:<k>`, F4) where §11.5 has one for both: it is compared with §11.5 entry by entry on watches, event pins, reactions and each function's partial pattern. A guarded `cross` (none in the slice) is declared, since `BodyPlan::new` cannot refuse, as design "a second event function on that pin" read with P1's one writer: the watch fires a private event pin `cross:<k>` and the event function `event:<k>` reads its `CHANGED` and the guard's pins and fires the event pin (`Source::Crossed`, `Pins::crossed`). Every M1 dependency set (`terms`, `limit`, `stim`, `check`) now carries the carriers it reads (`ReadSet::target`), and `reads_temperature` also asks the digital targets; an M1 body has neither, so its shape is unchanged. T35 - `rt::UInt<N>`/`rt::Int<N>` (`rt/int.rs`): `new` reduces modulo `2^N`; casts are methods `to_uint::<M>()`, `to_int::<M>()`, `to_f64()`, `from_f64(x)`, `from_bool(b)` (Rust has no generic `as`); a shift amount is any `UInt<M>`/`Int<M>` (trait impls `Shl`/`Shr` over both), and a negative amount, which has no mathematical result here and which Rust also refuses, panics naming the shift; division truncates toward zero and the remainder takes the dividend's sign, as Rust's (`MIN / -1` wraps to `MIN`, `MIN % -1` is 0); a width outside 1..=64 fails to compile (a const assertion). The text is embedded as `rt::INT` but not yet written into the cache entry: `compile.rs` keeps writing `rt::REAL` alone as `rt.rs` and hashing it alone, so every phase-A cache key and generated file stays bit-identical; gathering the runtime files into `rt.rs` is the phase-7 printer's, when generated code first names an integer. T36 - `rt::Flagged<T>` keeps one known flag per value, the pin's one known byte (RS-12 AC 1), so §3.3.2's per-level rules apply to the whole value: `&` is known all-false when either operand is known all-false and `|` known all-true when either is known all-true (`bool`, `UInt`, `Int`: trait `Levels`), `^` is all-or-nothing; a shift by a known amount of `N` or more of an unknown value is known 0 except a signed `>>` (§3.3.11). An unknown operand is never evaluated (an unknown divisor is no division by zero). Comparisons are methods (`equal`, `not_equal`, `less`, `less_or_equal`, `greater`, `greater_or_equal`) returning `Flagged<bool>`; casts and methods go through `map`/`zip`. `decide(origin)` faults with code `Flagged::UNKNOWN_CONTROL` (3). `Commits::commit` takes the delay as `Flagged<f64>` and already applies RS-11 AC 6 (unknown delay: `Unknown` at the next microstep); `flush` hands each commit to `React` in the order made. `rt::FLAG` is embedded but, like `rt::INT`, not yet written into the cache entry (phase 7). T37 - integers and unknown values print by their `rt::` path (`rt::UInt::<9>::new(1)`, `rt::Flagged<…>`), so generated code imports nothing new. An operand that may not be unknown is lifted (`rt::Flagged::known(x)`) where the other operand or the place it flows to may be; every operand of a bit operator or a shift keeps its parentheses. A comparison with an operand that may be unknown is a `Flagged` method (`less`, `equal`, …); `&&`/`||` over one is `Error::Unsupported` (msl-digital lowers them to `&`/`|`). An `if` on an unknown condition is `c.decide("<file:line:col of the if>")?`: a function holding one, directly or through a call, returns `Result<T, Fault>` and its value is wrapped in `Ok`; analog code has no `?`, so there such an `if` or such a call is refused by name. An IR function is generic over `Real` only when a real appears in it (`ValuePrinter::is_generic`; every M1 function does, so every M1 text is unchanged). `~`, the variant separator of msl-digital (`rev3~1`), is no character of a Rust name nor of an MSL name: `Text::ident` prints it as `_v` (`rev3_v1`, `dithered_width_v01`: a snake-case name, where `__` draws `non_snake_case`); two functions printing as one name (`rev3_v1` written in MSL beside the variant) are a collision `LibraryPrinter` refuses (T39). The IR has no `Float<16>` or `Float<128>` (its one real is `f64`), so there is no `Ir` holding one to refuse; `UInt<N>`/`Int<N>` with `N` outside 1..=64 is refused by name (`UInt<65>`) with the path of the param, the return or the expression. `rt::Flagged` gains `zip3` (the `clamp` of a value that may be unknown). `rt.rs` is gathered by `rt::Runtime::files(digital)`: an analog-only design keeps `real.rs` alone as `rt.rs` and the key it always had (`Transpiler::digital()`: some body has a carrier); a design with digital forms writes `rt.rs` (modules `flag`, `int`, `real`, their names re-exported) and `rt/{real,int,flag}.rs` beside it, all hashed into the key. T38 - the discrete functions print in `print/digital.rs` and are named from the MSL name first: `<carrier>_drive`, `event<k>`, `<carrier>_drive_changed` (T40: `cross<k>`; T39: `reaction<k>`, `<carrier>_drive_after`). A function binds only the reads its code uses (`ValuePrinter::uses`), plus the `CHANGED` byte of its source: a drive decodes each carrier into `rt::Flagged<T>`, writes its pin with `Flagged::write` (new, the bytes at the start of the write cell); an event writes `u8::from(fired_)` to its `CHANGED` byte, `fired_` being `<source changed> && <guard>`, the guard evaluated only when the source fired (a guard that may be unknown is decided: an unknown guard is a fault naming it). The printers of drives and events are not yet called by `LibraryPrinter` (T39 wires them with the reactions, since a compiled design needs all three). T39 - `LibraryPrinter` no longer refuses a body with carriers, drives, events or reactions (a body with a carrier runs); only a `cross` watch is still refused, until T40. A reaction is the Rust fn `reaction<k>` (a delayed drive's, `<carrier>_drive_after`) over `React`: it binds the reads it uses, makes `rt::Commits` (`let mut commits_`, plain `let` when the reaction commits nothing), pushes each commit as `commits_.commit(<statement>, <value>, <delay>)`, and calls `commits_.flush(cx_)?` after the last statement, so a fault (`?` on a `decide`, a panic) returns before any commit goes out. The statement number is the order the printer prints the commits, which is the plan's depth-first walk (value and delay before the commit, `then` before `else`); the printer compares the carriers it numbered with the plan's statements and refuses the reaction (`Error::Unsupported`, a transpiler defect) when they differ. A value committed is lifted to `Flagged<carrier type>`, a delay to `Flagged<f64>`; no delay is `Flagged::known(0.0)`. A unit `if` with no `else` prints with none, and a unit `if` statement carries no `;`. A local that has the name of a param, node or carrier of its body prints `<name>_<index>_` instead (a `let` would shadow the read). `rt::Real` and `rt::Dual` are imported only where an analog function needs them. The shared design of `tests/reaction.rs` is compiled once per test binary under a mutex, and asserts `Report::warnings` is empty. T40 - a `cross` watch is two Rust fns, `cross<e>_block<R: Real>` (the crossed expression over the reads it uses) and `cross<e>` (binds them, `Dual<N>` at the iterate, `cx_.set(0, at_iterate_.v)` and one `cx_.jac()` write per partial); `DigitalPrinter::cross` in `print/cross.rs`. In `terms` (and in a cross block) a carrier read is a block parameter `rt::Flagged<T>` decoded once in the wrapper and passed as it is (no `Dual`, never in the slots); a bool or integer param is passed as it is too (`AnalogPrinter::{is_plain, block_type, decode}`); a limit or stim function that reads a carrier is not handled (no body of the slice has one). Every M1 text is unchanged. The ten buck-slice bodies each compile with an empty compiler standard error (checked here by a scratch target, T41 owns the test). T41 - `Netlist::circuit` appends, after a body's node ports and in the body's order, one `Port::Net` per `in`/`out` carrier (a `signal` is a private pin and takes no port), named by the path of the net the instance gives that carrier, so the solver has the net as `net:<path>` (the test reads `Top.q` so); a carrier with no net is `Port::Open`. `Netlist::with_resolution(seconds)` sets the session resolution (never set, the solver's own one femtosecond stands: the IR carries none). A carrier's initial value reaches the solver as its pin's `HAS_INIT` (shape); a net's own `init` is not passed (`CircuitBuilder` has no way to take it), and a parent's `signal` stays the instance's private pin, not the net its children's ports meet on (the builder binds no `PRIVATE` pin to a named net): neither is met by the slice, both are M2's. A carrier param is a body param and goes by name as before (`ParamValue::Int` for an integer). The flip-flop test wires `d` to the clock's own net (so `q` is true after the first rising edge) and checks the negative control (`d` on a net nothing writes: `q` is not true). `tests/support/alone.rs` places bodies under an empty top for the unit and integration tests. T42 - BLOCKED on a solver defect, not committed: the digital solver applies each commit of a microstep to the net one by one (`piperine-digital-solver/src/instant.rs`, `run.rs::write_net`), so two commits to one net in one microstep (`x <- 1; x <- 2;`) show as two `Change` observations and stamp `changed` for the microstep, although the settled value after the last-wins rule (§12.1.2) is the one the net held before: `changed()` fires at 7.5 ns where `x` stays 2, against part_iii §8.2.1 ("only the settled value is observable: `changed()` compares it with the value before the microstep") and §12.1.18. Three of the four tests of T42 pass; `the_later_statement_wins` fails and is kept as written in `.specs/features/ir-rust/parked/t42_commits.rs.txt` (to be put back as `crates/piperine-transpile/tests/commits.rs` once the solver is fixed), with the pure-ABI repro `parked/t42_repro_changed.rs.txt` (two statements writing one pin, a `changed()` counter: 2 fires where 1 is right, the other being the initial value, §13 rule 6). T45 - BLOCKED on a solver gap, not committed: the analog side fires a `CROSS` watch at the first accepted point after the sign change and never locates it (abi.md §4.3 "located in the step", part_v §17.3 rules 1 and 3; `piperine-solver/tests/protocol_crossings.rs` says "solver-crossings will locate the crossing ... today it fires at the first accepted solution"), so the comparator trips late by up to a step (RC charge, 10 ns cap: trip at 3.5342 us where v(x) = 0.6352 V against 0.625 V, 10 mV over `etol` = 1e-6 V; a cap of 1 ns or less passes TRAN_VOLTAGE by shrinking the grid, which hides the missing locator). The ADC test of T45 passes (five voltages, code after `tconv`, `done` for `tstrobe`); both T45 tests are kept in `parked/t45_boundary.rs.txt` and the pure-ABI repro (a sine against a reference, fires 0.97 us late with e = 5.3 mV) in `parked/t45_repro_cross.rs.txt`. T46 was run without T45 (its `Depends on` is a file order only): `boundary.rs` holds T46's test alone and the parked file's two tests join it when T45 lands. T43 - the first period (rising edges 1 to 399) runs on the reset width 0: no high side and a low side from count 4 to 396 (SPEC §5.3 with width 0), which the test states; the index of the dither is the frame counter after its increment at the wrap (`dpwm.msl` `frame + 1`), so the extra count falls in periods 1, 2, 4, 6, 8 of the first frame. T43/T44 - `tests/support/mixed.rs` (Wire, Built, Seen) places hand-built bodies under a top with `Wire::place`/`place_analog`, compiles once, and runs the solver with a sink: the Change/Commit observations are the record of instants (ticks); a constant input is a `Hold` body whose carrier only has an initial value; the compiled `Script` of `pid.rs` moves `run`, `target` and `meas` at the falling edge of the clock (half a period before a rising edge), its sample counter starting at 0 because the operating point fires the first `fall` at 0. Private pins (`integ`, `deriv`, `e_prev`) are read from the solver's own nets `Top.<instance>.<pin>`. T46 - the gate is committed at t0 = 3.0037 us, off the 1 ns grid of the step cap, so the accepted solution at t0 is a time point and not a coincidence of the grid; the step is capped at 1 ns because the first step after the jump is first order and its error, at a node still at 20 mV, exceeds `TRAN_VOLTAGE` at 10 ns (2.8e-5 V against 2.1e-5 V allowed), which is the integrator's truncation and no defect; no tolerance is written or moved.
+**Dispatched:** batch 1 (phases 1-2, T1-T10) - Opus worker, 2026-11-15, done. Batch 2 (phase 3, T11-T17) - Sonnet worker, 2026-11-15, done. C32 ruling: the export attribute is allowed (see C32). Batch 2 done. Batch 3 (phase 4, T18-T23) - Sonnet worker, 2026-11-15, done. Phase A verifier (Opus, T1-T23, C1-C phase-A checks) - 2026-11-15. Phase A fixes F1-F9 closed; phase A merged to main e4f767dd. Batch 4 (phase 5, T24-T30) - Opus worker, 2026-11-15, done. Batch 4 done. Batch 5 (phase 6, T31-T36) - Opus worker, 2026-11-15, done. Batch 5 done. Batch 6 (phase 7, T37-T41) - Sonnet worker, 2026-11-15. Batch 6 done. Batch 7 (phase 8, T42-T46) - Sonnet worker, 2026-11-15: T43, T44, T46 done; T42 and T45 blocked on the solver (see Settled).
 **Walked:** none (no screen; each story's Independent Test is a check above)
 
 ---
