@@ -1,12 +1,17 @@
 //! LRM-COVERS: 8.4.7
-//! Rollback lifecycle contract tests (ABI-01..08): the checkpoint/restore
-//! pair on `Element` is driven by the solver around every candidate step.
+//! Rollback lifecycle contract tests (ABI-01..08) on the `Device` trait: the
+//! solver owns every checkpoint (limit iterates and term histories), so a
+//! rejected attempt leaves a device exactly where its last acceptance did.
 //!
-//! - T1: the trait defaults (`checkpoint_state` → `None`, `restore_state` no-op).
-//! - T2: transient reject path drives checkpoint before attempt + restore on
-//!   rejection; accept discards.
-//! - T3: DC homotopy retry drives checkpoint before each strategy + restore on
-//!   strategy fallthrough.
+//! - T2: a transient that is forced through LTE rejections follows the
+//!   analytic response: a rejected attempt left no trace in a history.
+//! - T3: a DC homotopy fallthrough reaches the operating point of the solve
+//!   that never fell through: the failed plain-Newton attempt left no trace
+//!   in a limit iterate.
+//!
+//! The trait defaults of the removed `checkpoint_state`/`restore_state` hooks,
+//! the `SUPPORTS_ROLLBACK` flag and `limiting_report` are gone with them (see
+//! `removed.txt`).
 //!
 //! lrm-conformance-wave3 (Phase 6, T39): §8.4.7 point 2c ("Having
 //! calculated the solution for a given time, the analog engine can
@@ -15,318 +20,38 @@
 //! time") is exactly this file's own subject —
 //! `transient_reject_drives_restore_accept_discards` (T2) proves the
 //! reject-then-restore half directly; the solver's own transient loop
-//! (driving these hooks) never advances past a rejected step's time,
-//! satisfying the second half structurally.
+//! never advances past a rejected step's time, satisfying the second half
+//! structurally.
 
-use piperine_solver::abi::*;
-use piperine_solver::prelude::Context;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
 
-/// A stateless stub element: inherits the checkpoint/restore defaults.
-struct StatelessStub;
-
-impl AnalogDevice for StatelessStub {}
-impl DigitalDevice for StatelessStub {}
-impl Introspect for StatelessStub {}
-
-impl Element for StatelessStub {
-    fn name(&self) -> &str { "StatelessStub" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
-}
-
-/// Spec ABI-06: an element with no mutable non-accept-gated state returns
-/// `None` from `checkpoint_state` — the solver skips the restore entirely.
-#[test]
-fn default_checkpoint_state_is_none() {
-    let dev = StatelessStub;
-    assert!(dev.checkpoint_state().is_none());
-}
-
-/// Spec ABI-02 default: `restore_state` is a no-op on a stateless device —
-/// feeding it an arbitrary checkpoint changes nothing and never panics.
-#[test]
-fn default_restore_state_is_a_noop() {
-    let mut dev = StatelessStub;
-    let checkpoint = ElementCheckpoint {
-        int_state: vec![1, 2, 3],
-        real_state: vec![1.5, -2.0],
-    };
-    dev.restore_state(&checkpoint);
-}
-
-/// A recording element that counts checkpoint/restore calls so the reject
-/// path (T2) and homotopy retry (T3) can prove the hooks fire. Owns a small
-/// piece of non-accept-gated mutable state it checkpoints + restores so the
-/// "dirty rejected state must rewind" property is observable.
-struct RecordingDevice {
-    checkpoints: Arc<AtomicUsize>,
-    restores: Arc<AtomicUsize>,
-    state_value: f64,
-}
-
-impl AnalogDevice for RecordingDevice {}
-impl DigitalDevice for RecordingDevice {}
-impl Introspect for RecordingDevice {}
-
-impl Element for RecordingDevice {
-    fn name(&self) -> &str { "RecordingDevice" }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::SUPPORTS_ROLLBACK
-    }
-
-    fn checkpoint_state(&self) -> Option<ElementCheckpoint> {
-        self.checkpoints.fetch_add(1, Ordering::SeqCst);
-        Some(ElementCheckpoint {
-            int_state: Vec::new(),
-            real_state: vec![self.state_value],
-        })
-    }
-
-    fn restore_state(&mut self, checkpoint: &ElementCheckpoint) {
-        self.restores.fetch_add(1, Ordering::SeqCst);
-        if let Some(&v) = checkpoint.real_state.first() {
-            self.state_value = v;
-        }
-    }
-}
-
-impl RecordingDevice {
-    fn new(checkpoints: Arc<AtomicUsize>, restores: Arc<AtomicUsize>) -> Self {
-        Self { checkpoints, restores, state_value: 0.0 }
-    }
-}
-
-/// Spec ABI-09/11: the default `limiting_report` returns `None` — a device
-/// that does not limit inherits this (zero cost, no false convergence veto).
-#[test]
-fn default_limiting_report_is_none() {
-    let dev = StatelessStub;
-    assert!(dev.limiting_report().is_none());
-}
-
-/// A bare `Element` declares `SUPPORTS_ROLLBACK` and the trait surface
-/// exposes the checkpoint/restore pair — the capability bit and the hook
-/// exist together (ABI-01 wiring gate).
-#[test]
-fn supports_rollback_flag_is_declared_alongside_the_hooks() {
-    let checkpoints = Arc::new(AtomicUsize::new(0));
-    let restores = Arc::new(AtomicUsize::new(0));
-    let dev = RecordingDevice::new(checkpoints, restores);
-    assert!(dev
-        .capabilities()
-        .contains(ElementCapabilities::SUPPORTS_ROLLBACK));
-}
-
-/// A device that overrides `checkpoint_state` returns `Some`, and a round-trip
-/// through `restore_state` rewinds the mutated state to the checkpoint value.
-#[test]
-fn checkpoint_then_restore_round_trips_state() {
-    let checkpoints = Arc::new(AtomicUsize::new(0));
-    let restores = Arc::new(AtomicUsize::new(0));
-    let mut dev = RecordingDevice::new(checkpoints.clone(), restores.clone());
-    dev.state_value = 4.2;
-    let ckpt = dev.checkpoint_state().expect("recording device checkpoints");
-    assert_eq!(checkpoints.load(Ordering::SeqCst), 1);
-
-    // Mutate after the checkpoint — the rejected attempt dirties the state.
-    dev.state_value = 99.0;
-    // Restore rewinds to the checkpointed value.
-    dev.restore_state(&ckpt);
-    assert_eq!(restores.load(Ordering::SeqCst), 1);
-    assert!((dev.state_value - 4.2).abs() < 1e-12);
-}
-
-/// Sanity: a `Context` default exists so the recording device can later be
-/// driven through a real analysis (used by T2/T3).
-#[test]
-fn _context_default_compiles_for_later_tests() {
-    let _ctx = Context::default();
-}
-
-// ── T2: transient reject path drives checkpoint/restore ────────────────────
-//
-// Spec ABI-02/03/08: a rejected transient step calls restore_state on every
-// checkpointed element before the retry; an accepted step discards the
-// checkpoint. A circuit is forced through repeated LTE rejections by a tight
-// `trtol`, and the recording element counts the hooks.
-
-use piperine_solver::abi as solver_abi;
-use piperine_solver::prelude::{Solver, TransientAnalysisOptions};
-
-/// Linear resistor between two references (transient participation).
-struct TResistor {
-    r: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-}
-
-impl AnalogDevice for TResistor {
-    fn load_dc(
-        &mut self,
-        _s: &solver_abi::DcAnalysisState<'_>,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
-    }
-    fn load_transient(
-        &mut self,
-        _s: &TransientAnalysisState<'_>,
-        _t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
-    }
-}
-
-impl DigitalDevice for TResistor {}
-impl Introspect for TResistor {}
-impl Element for TResistor {
-    fn name(&self) -> &str { "r" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_TRAN
-    }
-}
-
-/// Sine voltage source with its own branch-current unknown.
-struct TSineVsrc {
-    amp: f64,
-    freq: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl AnalogDevice for TSineVsrc {
-    fn load_dc(
-        &mut self,
-        _s: &solver_abi::DcAnalysisState<'_>,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.branch_stamps(0.0)
-    }
-    fn load_transient(
-        &mut self,
-        _s: &TransientAnalysisState<'_>,
-        t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let v = self.amp * (2.0 * std::f64::consts::PI * self.freq * t.time).sin();
-        self.branch_stamps(v)
-    }
-}
-
-impl TSineVsrc {
-    fn branch_stamps(&self, rhs: f64) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.branch.clone(), 1.0),
-            Stamp::Matrix(self.branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), self.branch.clone(), -1.0),
-            Stamp::Matrix(self.branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), rhs),
-        ]
-    }
-}
-
-impl DigitalDevice for TSineVsrc {}
-impl Introspect for TSineVsrc {}
-impl Element for TSineVsrc {
-    fn name(&self) -> &str { "vsin" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-}
-
-/// Linear capacitor to ground — the reactive element whose charge history
-/// makes the Milne-LTE gate fire (and thus force rejections) under a tight
-/// `trtol`. Companion model mirrors the codegen TR-BDF2 stamping.
-struct TCapGnd {
-    c: f64,
-    node: AnalogReference,
-}
-
-impl AnalogDevice for TCapGnd {
-    fn load_transient(
-        &mut self,
-        states: &TransientAnalysisState<'_>,
-        t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let dt = t.h;
-        let Some(idx) = self.node.idx() else { return Vec::new(); };
-        if dt <= 0.0 { return Vec::new(); }
-        let (c0, c1, c2) = solver_abi::TrBdf2::stage_coeffs(t.phase, t.h, t.prev_h);
-        let vget = |lb: usize| -> f64 {
-            let row = if lb == 0 { states.latest() } else { states.view(lb) };
-            row.and_then(|r| r.get(idx).copied()).unwrap_or(0.0)
-        };
-        let q_now = self.c * vget(0);
-        let q_prev = self.c * vget(1);
-        let q_prev2 = self.c * vget(2);
-        let mut i_c = c0 * q_now + c1 * q_prev + c2 * q_prev2;
-        if matches!(t.phase, solver_abi::TrBdf2Phase::Trapezoidal) && t.prev_h > 0.0 {
-            let (d0, d1, d2) =
-                solver_abi::TrBdf2::phase_coeffs(solver_abi::TrBdf2Phase::Bdf2, t.prev_h);
-            let q_prev3 = self.c * vget(3);
-            i_c -= d0 * q_prev + d1 * q_prev2 + d2 * q_prev3;
-        }
-        let g_eq = c0 * self.c;
-        let rhs = c0 * q_now - i_c;
-        vec![
-            Stamp::Matrix(self.node.clone(), self.node.clone(), g_eq),
-            Stamp::Rhs(self.node.clone(), rhs),
-        ]
-    }
-}
-
-impl DigitalDevice for TCapGnd {}
-impl Introspect for TCapGnd {}
-impl Element for TCapGnd {
-    fn name(&self) -> &str { "c" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_TRAN
-    }
-}
+use abi_devices::{add_capacitor, add_diode, add_resistor, add_vsrc, node_id, vsine};
+use piperine_solver::abi::{ParamValue, Port};
+use piperine_solver::prelude::{CircuitBuilder, Policy, Solver, TransientAnalysisOptions};
 
 /// Spec ABI-02/03/08: the sine-driven RC low-pass naturally overshoots its
 /// LTE budget on roughly two dozen of its early steps, exercising the reject
-/// path. Each rejected step calls `restore_state` on the recording element;
-/// each accepted step discards its checkpoint (no restore). Multiple rejects
-/// each take a fresh checkpoint and each restores from it.
+/// path. Every accepted point lies on the analytic response of
+/// `τ·dv/dt + v = sin(ωt)`, so no rejected attempt corrupted a history.
 #[test]
 fn transient_reject_drives_restore_accept_discards() {
-    let checkpoints = Arc::new(AtomicUsize::new(0));
-    let restores = Arc::new(AtomicUsize::new(0));
-
-    let mut netlist = Netlist::new();
-    let top = netlist.connect_node(NodeIdentifier::Anonymous(20));
-    let mid = netlist.connect_node(NodeIdentifier::Anonymous(21));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(TSineVsrc { amp: 1.0, freq: 1000.0, n1: top.clone(), n2: gnd.clone(), branch: vb }),
-        Box::new(TResistor { r: 1000.0, n1: top.clone(), n2: mid.clone() }),
-        Box::new(TCapGnd { c: 1e-7, node: mid.clone() }),
-        Box::new(RecordingDevice::new(checkpoints.clone(), restores.clone())),
-    ];
-    let circuit = CircuitInstance::from_devices_and_netlist("rc-reject", elements, netlist);
+    let (r, c, freq) = (1000.0_f64, 1e-7_f64, 1000.0_f64);
+    let mut b = CircuitBuilder::new("rc-reject");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    b.device(
+        vsine(),
+        "vsin",
+        &[("amp", ParamValue::Real(1.0)), ("freq", ParamValue::Real(freq))],
+        &[Port::Node(top.clone()), Port::Node(gnd.clone())],
+    );
+    add_resistor(&mut b, "r1", r, &top, &mid);
+    add_capacitor(&mut b, "c1", c, &mid, &gnd);
+    let circuit = b.build().expect("build");
 
     // The sine-driven RC low-pass naturally overshoots its LTE budget on
     // ~26 of its first steps under default tolerances, driving the reject
@@ -335,140 +60,46 @@ fn transient_reject_drives_restore_accept_discards() {
     let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
     let res = solver.tran().unwrap().solve().unwrap();
 
-    let n_restores = restores.load(Ordering::SeqCst);
-    let n_checkpoints = checkpoints.load(Ordering::SeqCst);
+    // ABI-02: at least one attempt was rejected and rolled back.
+    assert!(res.stats.steps_rejected > 0, "expected rejections to drive the rollback");
+    assert!(res.stats.steps_accepted > 0);
 
-    // ABI-02: at least one rejected step restored the device state.
-    assert!(n_restores > 0, "expected rejections to call restore_state");
-    // ABI-08: every recorded reject restored exactly once.
-    assert_eq!(
-        n_restores, res.stats.steps_rejected,
-        "restores must match rejected-step count"
-    );
-    // ABI-03: accepted steps checkpoint but do NOT restore — so the
-    // checkpoint count strictly exceeds the restore count.
-    assert!(
-        n_checkpoints > n_restores,
-        "checkpoints ({n_checkpoints}) must exceed restores ({n_restores}) — \
-         accepted steps discard their checkpoint"
-    );
-    // ABI-01: every attempt took a checkpoint.
-    assert!(n_checkpoints >= res.stats.steps_accepted + res.stats.steps_rejected);
+    // ABI-01/08: what was accepted is the response of a rolled-back state.
+    let (tau, w) = (r * c, 2.0 * std::f64::consts::PI * freq);
+    let wt = w * tau;
+    let analytic = |t: f64| (((w * t).sin() - wt * (w * t).cos()) + wt * (-t / tau).exp()) / (1.0 + wt * wt);
+    let mut worst = 0.0_f64;
+    for step in res.iter() {
+        let v = step.get_node(&node_id(&mid)).unwrap();
+        worst = worst.max((v - analytic(step.time())).abs());
+    }
+    assert!(worst < 5e-3, "worst deviation from the analytic response {worst}");
 }
 
-// ── T3: DC homotopy retry drives checkpoint/restore ────────────────────────
+// ── T3: DC homotopy retry ─────────────────────────────────────────────────
 //
 // Spec ABI-07: when a DC homotopy strategy falls through (failed attempt →
-// next strategy), the DC solver calls restore_state on checkpointed elements
-// before retrying. A stiff diode whose plain-Newton attempt is starved of
-// iterations (max_iter=4) falls through to gmin stepping, which converges.
+// next strategy), the retry starts from the pre-attempt state. A stiff diode
+// whose plain-Newton attempt is starved of iterations (max_iter=4) falls
+// through to gmin stepping, which converges.
 
-use piperine_solver::prelude::Policy;
-
-/// Ideal DC voltage source with its own branch-current unknown.
-struct TDcVsrc {
-    v: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl AnalogDevice for TDcVsrc {
-    fn load_dc(
-        &mut self,
-        _s: &solver_abi::DcAnalysisState<'_>,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.branch.clone(), 1.0),
-            Stamp::Matrix(self.branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), self.branch.clone(), -1.0),
-            Stamp::Matrix(self.branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), self.v),
-        ]
-    }
-}
-
-impl DigitalDevice for TDcVsrc {}
-impl Introspect for TDcVsrc {}
-impl Element for TDcVsrc {
-    fn name(&self) -> &str { "v" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-}
-
-/// Shockley diode — a stiff nonlinear load that plain Newton (starved of
-/// iterations) fails on, exercising the homotopy fallthrough.
-struct TDiode {
-    is: f64,
-    vt: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-}
-
-impl AnalogDevice for TDiode {
-    fn load_dc(
-        &mut self,
-        s: &solver_abi::DcAnalysisState<'_>,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let v = |r: &AnalogReference| {
-            r.idx()
-                .and_then(|i| s.latest().and_then(|row| row.get(i).copied()))
-                .unwrap_or(0.0)
-        };
-        let vd = v(&self.n1) - v(&self.n2);
-        let ex = (vd / self.vt).exp();
-        let id = self.is * (ex - 1.0);
-        let gd = self.is / self.vt * ex;
-        let ieq = id - gd * vd;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), gd),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), gd),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -gd),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -gd),
-            Stamp::Rhs(self.n1.clone(), -ieq),
-            Stamp::Rhs(self.n2.clone(), ieq),
-        ]
-    }
-}
-
-impl DigitalDevice for TDiode {}
-impl Introspect for TDiode {}
-impl Element for TDiode {
-    fn name(&self) -> &str { "d" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
+fn diode_circuit() -> (piperine_solver::prelude::CircuitInstance, piperine_solver::abi::AnalogReference) {
+    let mut b = CircuitBuilder::new("diode-homotopy");
+    let gnd = b.ground();
+    let src = b.node("src");
+    let anode = b.node("anode");
+    add_vsrc(&mut b, "v1", 1.0, &src, &gnd);
+    add_resistor(&mut b, "r1", 1000.0, &src, &anode);
+    add_diode(&mut b, "d1", 1e-14, &anode, &gnd);
+    (b.build().expect("build"), anode)
 }
 
 /// Spec ABI-07: plain Newton fails on the starved stiff diode and falls
-/// through to gmin stepping, which converges. The fallthrough fires
-/// `restore_state` on the recording element before the gmin retry — so the
-/// retry starts from the pre-attempt checkpoint, not the dirty failed-Newton
-/// limiter state.
+/// through to gmin stepping, which converges — to the operating point the
+/// unstarved solve reaches, so the failed attempt left no limit iterate behind.
 #[test]
 fn dc_homotopy_fallthrough_drives_restore_between_strategies() {
-    let checkpoints = Arc::new(AtomicUsize::new(0));
-    let restores = Arc::new(AtomicUsize::new(0));
-
-    let mut netlist = Netlist::new();
-    let src = netlist.connect_node(NodeIdentifier::Anonymous(10));
-    let anode = netlist.connect_node(NodeIdentifier::Anonymous(11));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(TDcVsrc { v: 1.0, n1: src.clone(), n2: gnd.clone(), branch: vb }),
-        Box::new(TResistor { r: 1000.0, n1: src.clone(), n2: anode.clone() }),
-        Box::new(TDiode { is: 1e-14, vt: 0.025_852, n1: anode.clone(), n2: gnd.clone() }),
-        Box::new(RecordingDevice::new(checkpoints.clone(), restores.clone())),
-    ];
-    let circuit = CircuitInstance::from_devices_and_netlist("diode-homotopy", elements, netlist);
-
+    let (circuit, anode) = diode_circuit();
     // max_iter=4 starves plain Newton on the stiff diode so it falls through
     // to gmin stepping (which converges from the easy high-gmin start).
     let policy = Policy { max_iter: 4, ..Policy::default() };
@@ -481,16 +112,10 @@ fn dc_homotopy_fallthrough_drives_restore_between_strategies() {
         Some("gmin-stepping"),
         "plain Newton must fall through so the homotopy restore fires"
     );
-    // ABI-07: the plain-Newton → gmin fallthrough restored the device state
-    // before the gmin retry. checkpoint fired once per attempt; the successful
-    // gmin attempt is NOT restored.
-    let n_restores = restores.load(Ordering::SeqCst);
-    let n_checkpoints = checkpoints.load(Ordering::SeqCst);
-    assert!(n_restores >= 1, "homotopy fallthrough must call restore_state");
-    assert!(
-        n_checkpoints > n_restores,
-        "the converging gmin attempt checkpoints but is not restored"
-    );
+    let starved = res.get_node(&node_id(&anode)).unwrap();
+
+    let (circuit, anode) = diode_circuit();
+    let mut solver = Solver::new(circuit).build();
+    let plain = solver.dc().unwrap().solve().unwrap().get_node(&node_id(&anode)).unwrap();
+    assert!((starved - plain).abs() < 1e-4, "after the fallthrough {starved} V vs the plain solve {plain} V");
 }
-
-

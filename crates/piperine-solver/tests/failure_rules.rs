@@ -197,8 +197,8 @@ fn section_12_unresolvable_noise_reference_node_is_an_analysis_error() {
 /// which device produced a bad entry) to `analyses::non_finite_stamp_error`
 /// — checked per-device, right where `NanSource::load_dc`'s own stamps are
 /// collected (`analyses/dc.rs`'s `assemble`), before they are summed into
-/// the shared matrix/RHS alongside every other device. The device's own
-/// `Element::name()` ("nan") is what makes the branch nameable.
+/// the shared matrix/RHS alongside every other device. The instance path
+/// ("nan") is what makes the branch nameable.
 #[test]
 fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
     let mut b = CircuitBuilder::new("nan");

@@ -8,7 +8,7 @@
 //! mixed-signal / digital settle through the owner protocol), and pins the
 //! value(s) captured from the pre-refactor solver to a tight tolerance. A later
 //! change that moves any pinned number is a defect, not a deviation. The
-//! literals and tolerances are byte-identical to their `Element` originals.
+//! literals and tolerances are byte-identical to their pre-port originals.
 
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]

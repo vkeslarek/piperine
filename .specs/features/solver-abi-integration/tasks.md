@@ -579,11 +579,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Each test is ported or removed by the rule; whole targets with no surviving test are deleted and every one of their tests is listed in `removed.txt`
-- [ ] `abi_surface.rs`: a device written against `piperine_solver::abi` alone builds and solves; `prelude_surface.rs`: a host written against `prelude` alone builds a circuit of devices and runs DC and transient
-- [ ] `removed.txt` is complete for Phase 4: the commit body gives the count of ported and removed tests per target
-- [ ] After this task no test target of the crate except `differential.rs` and the old-engine targets names `Element`
-- [ ] Gate: build
+- [x] Each test is ported or removed by the rule; whole targets with no surviving test are deleted and every one of their tests is listed in `removed.txt`
+- [x] `abi_surface.rs`: a device written against `piperine_solver::abi` alone builds and solves; `prelude_surface.rs`: a host written against `prelude` alone builds a circuit of devices and runs DC and transient
+- [x] `removed.txt` is complete for Phase 4: the commit body gives the count of ported and removed tests per target
+- [x] After this task no test target of the crate except `differential.rs` and the old-engine targets names `Element`
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build

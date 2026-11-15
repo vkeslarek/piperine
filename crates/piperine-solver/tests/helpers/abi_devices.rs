@@ -179,7 +179,7 @@ pub fn add_vsrc(b: &mut CircuitBuilder, path: &str, dc: f64, p: &AnalogReference
 ///
 /// The value is written as `g·V_p − g·V_n`, the same products the assembly's
 /// Norton right side `−(v − Σ g_j·x_j)` subtracts, so that side is exactly 0
-/// as the conductance-only stamp of the `Element` double has none. Written
+/// as the conductance-only stamp of the earlier hand-written double has none. Written
 /// `(V_p − V_n)/r`, it carries a last-bit residue every solve, which the
 /// step controller turns into diverging step times (the differential oracle).
 pub struct R;

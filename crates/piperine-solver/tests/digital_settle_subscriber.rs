@@ -1,334 +1,236 @@
-//! T23 (DVT-27) — the dynamic digital subscriber, the one solver change
-//! this batch makes: `Element::on_digital_settled` is dispatched once per
-//! accepted step, strictly after `CircuitInstance::accept_and_run_digital`'s
-//! scheduler reaches quiescence. Proven here at the solver level (the
-//! sequencer-side edge-wait built on top lives in
-//! `piperine-api/tests/sequencer_edge_waits.rs`):
-//! - a classic AND-gate glitch fixture whose intermediate (mid-delta-cycle)
-//!   value genuinely differs from its settled one — the subscriber must see
-//!   only the settled value;
-//! - the mechanism is not a new `EventKind` variant;
-//! - a rejected step never dispatches the subscriber (reached only from the
-//!   same call chain `accept_timestep` already proved reject-safe in T19).
+//! T23 (DVT-27) on the `Device` trait — the settle subscriber: a reaction on
+//! the `SETTLE` global runs once per time point, strictly after the instant
+//! reached quiescence, so it reads the settled value of a net and never a
+//! value from before the instant:
+//! - a fixture whose settled value differs from the one before the instant
+//!   (`c = a OR NOT(NOT(a))`): the subscriber sees the settled one;
+//! - a classic AND-gate glitch fixture (`c = a AND NOT(a)`) whose settled value
+//!   is the same before and after: the subscriber sees only that value.
+//!
+//! The premise of the second fixture in the original (that `c` really reads
+//! `One` for an intermediate delta cycle) was about the two-phase engine's
+//! delta cycles, which a reaction cannot observe; it is not asserted here.
+//!
+//! The two structural claims of the original (`EventKind` keeps its four
+//! variants; `on_digital_settled` has one call site) were about the removed
+//! per-hook contract and its event queue; they are listed in `removed.txt`.
 
-use std::sync::{Arc, Mutex};
+#[allow(dead_code)]
+#[path = "helpers/abi_mixed.rs"]
+mod abi_mixed;
 
-use piperine_solver::abi::{
-    AnalogDevice, DigitalDevice, DigitalNet, DigitalPorts, DigitalState, Element, ElementCapabilities, EvalCtx,
-    EventSink, Introspect, LogicValue, Netlist,
-};
-use piperine_solver::prelude::CircuitInstance;
+use std::cell::RefCell;
+use std::result::Result;
+use std::sync::{Arc, OnceLock};
 
-/// Drives net `a` from `Zero` to `One` at a scripted instant via the
-/// analog-accept hook's `EventSink` — the ordinary A2D seeding path,
-/// unrelated to the new post-settle dispatch this test exercises.
-struct InputDriver {
-    a: DigitalNet,
-    flip_at: f64,
-    fired: bool,
-}
-impl AnalogDevice for InputDriver {}
-impl DigitalDevice for InputDriver {}
-impl Introspect for InputDriver {}
-impl Element for InputDriver {
-    fn name(&self) -> &str {
-        "input_driver"
-    }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL
-    }
-    fn accept_timestep(
-        &mut self,
-        _state: &piperine_solver::abi::CircularArrayBuffer2<f64>,
-        t: f64,
-        _nets: &[LogicValue],
-        sink: &mut dyn EventSink,
-    ) {
-        if !self.fired && t >= self.flip_at {
-            self.fired = true;
-            sink.emit(self.a, LogicValue::One, 0.0);
-        }
-    }
+use abi_mixed::{delay, inverter};
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::layout::{BIT, HIGH, LOW};
+use piperine_abi::raw::{Cell, Module, Shape, Statement, ambient, cell, global, part, pin_flag, role};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::{ParamValue, Port};
+use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Solver, TransientAnalysisOptions};
+
+fn pin(index: u32) -> Cell {
+    Cell { kind: cell::PIN, index, part: part::VALUE }
 }
 
-struct Inverter {
-    input: DigitalNet,
-    output: DigitalNet,
-    delay: f64,
+fn net(name: &str) -> Port {
+    Port::Net(name.to_string())
 }
-impl AnalogDevice for Inverter {}
-impl DigitalDevice for Inverter {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: std::slice::from_ref(&self.input), outputs: std::slice::from_ref(&self.output) }
+
+thread_local! {
+    /// `(time, value)` of every `SETTLE` the subscriber saw on this thread.
+    static SETTLED: RefCell<Vec<(f64, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Drives `a` from `LOW` to `HIGH` when `go` fires.
+/// pins: a=0 (PORT BIT, init LOW); go=1 (PORT event); reaction 0: on [go] writes [S0 {a}]
+struct Setter;
+static SETTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTER: OnceLock<Module> = OnceLock::new();
+
+fn setter_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let a = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("a", role::PORT, &BIT) });
+    let go = s.pin(PinSpec::event("go", role::PORT));
+    s.reaction(ReactionSpec {
+        name: "flip",
+        origin: "digital_settle_subscriber.rs",
+        on: vec![go],
+        writes: vec![Statement { pin: a, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Setter {
+    fn prototype() -> &'static Shape<'static> {
+        SETTER_SHAPE.get_or_init(setter_shape).shape()
     }
-    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        let out = match ctx.nets[self.input.0] {
-            LogicValue::Zero => LogicValue::One,
-            LogicValue::One => LogicValue::Zero,
-            _ => LogicValue::X,
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Setter, Arc::clone(SETTER_SHAPE.get_or_init(setter_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        cx.commit(0, &HIGH, 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+/// A two-input gate: `AND` or `OR`.
+/// pins: a=0, b=1, y=2 (PORT BIT); fn 0: reads [a, b] writes [y]
+struct Gate<const AND: bool>;
+static AND_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static AND_MODULE: OnceLock<Module> = OnceLock::new();
+static OR_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static OR_MODULE: OnceLock<Module> = OnceLock::new();
+
+fn gate_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
+    let b = s.pin(PinSpec::discrete("b", role::PORT, &BIT));
+    let y = s.pin(PinSpec::discrete("y", role::PORT, &BIT));
+    s.function(FunctionSpec {
+        name: "gate",
+        origin: "digital_settle_subscriber.rs",
+        reads: vec![pin(a), pin(b)],
+        writes: vec![pin(y)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl<const AND: bool> Device for Gate<AND> {
+    fn prototype() -> &'static Shape<'static> {
+        let slot = if AND { &AND_SHAPE } else { &OR_SHAPE };
+        slot.get_or_init(gate_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        let slot = if AND { &AND_SHAPE } else { &OR_SHAPE };
+        Ok((Gate::<AND>, Arc::clone(slot.get_or_init(gate_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (a, b) = (cx.bytes(0), cx.bytes(1));
+        let y = if AND {
+            if a == LOW || b == LOW { LOW } else if a == HIGH && b == HIGH { HIGH } else { [0, 0] }
+        } else if a == HIGH || b == HIGH {
+            HIGH
+        } else if a == LOW && b == LOW {
+            LOW
+        } else {
+            [0, 0]
         };
-        sink.emit(self.output, out, self.delay);
+        cx.out_bytes(0).copy_from_slice(&y);
+        Ok(())
     }
-}
-impl Introspect for Inverter {}
-impl Element for Inverter {
-    fn name(&self) -> &str {
-        "inverter"
-    }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
-struct AndGate {
-    inputs: [DigitalNet; 2],
-    output: DigitalNet,
+/// Records the value of `c` at every `SETTLE`.
+/// pins: settle=0 (GLOBAL SETTLE event); c=1 (PORT BIT)
+/// reaction 0 "settled": on [settle] reads [TIME, c]
+struct Subscriber;
+static SUB_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SUB: OnceLock<Module> = OnceLock::new();
+
+fn sub_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    let c = s.pin(PinSpec::discrete("c", role::PORT, &BIT));
+    s.reaction(ReactionSpec {
+        name: "settled",
+        origin: "digital_settle_subscriber.rs",
+        on: vec![settle],
+        reads: vec![Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE }, pin(c)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
 }
-impl AnalogDevice for AndGate {}
-impl DigitalDevice for AndGate {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
+
+impl Device for Subscriber {
+    fn prototype() -> &'static Shape<'static> {
+        SUB_SHAPE.get_or_init(sub_shape).shape()
     }
-    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        let out =
-            if self.inputs.iter().all(|n| ctx.nets[n.0] == LogicValue::One) { LogicValue::One } else { LogicValue::Zero };
-        sink.emit(self.output, out, 0.0);
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Subscriber, Arc::clone(SUB_SHAPE.get_or_init(sub_shape))))
     }
-}
-impl Introspect for AndGate {}
-impl Element for AndGate {
-    fn name(&self) -> &str {
-        "and_gate"
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
     }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        let (t, c) = (cx.f64(0), cx.bytes(1).to_vec());
+        SETTLED.with(|s| s.borrow_mut().push((t, c)));
+        Ok(Flow::Continue)
     }
 }
 
-struct OrGate {
-    inputs: [DigitalNet; 2],
-    output: DigitalNet,
-}
-impl AnalogDevice for OrGate {}
-impl DigitalDevice for OrGate {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
-    }
-    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        let out =
-            if self.inputs.iter().any(|n| ctx.nets[n.0] == LogicValue::One) { LogicValue::One } else { LogicValue::Zero };
-        sink.emit(self.output, out, 0.0);
-    }
-}
-impl Introspect for OrGate {}
-impl Element for OrGate {
-    fn name(&self) -> &str {
-        "or_gate"
-    }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL
-    }
+const FLIP_AT: f64 = 1.0e-7;
+
+fn start(b: &mut CircuitBuilder) {
+    b.device(delay(), "kick", &[("at", ParamValue::Real(FLIP_AT))], &[net("go")]);
+    b.device(SETTER.get_or_init(|| module::<Setter>("Setter")), "driver", &[], &[net("a"), net("go")]);
 }
 
-/// Records every value `probed` takes on during **each `comb_phase`
-/// evaluation** (mid-delta-cycle, before quiescence) — the ground truth for
-/// "did a glitch actually occur," independent of the new subscriber seam.
-struct Probe {
-    probed: DigitalNet,
-    other_input: DigitalNet, // present only so this device has SOME input to re-evaluate on
-    mid_cycle_values: Arc<Mutex<Vec<LogicValue>>>,
-}
-impl AnalogDevice for Probe {}
-impl DigitalDevice for Probe {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: std::slice::from_ref(&self.probed), outputs: &[] }
-    }
-    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {
-        let _ = self.other_input;
-        self.mid_cycle_values.lock().unwrap().push(ctx.nets[self.probed.0]);
-    }
-}
-impl Introspect for Probe {}
-impl Element for Probe {
-    fn name(&self) -> &str {
-        "probe"
-    }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL
-    }
+fn subscribe(b: &mut CircuitBuilder) {
+    b.device(SUB.get_or_init(|| module::<Subscriber>("Subscriber")), "subscriber", &[], &[net("c")]);
 }
 
-/// The new hook under test: records the settled value it was handed, and
-/// the count of times it fired (T23's "resumed only after settling" +
-/// "a rejected step never dispatches" proofs).
-struct Subscriber {
-    watch: DigitalNet,
-    calls: Arc<Mutex<Vec<(f64, LogicValue)>>>,
-}
-impl AnalogDevice for Subscriber {}
-impl DigitalDevice for Subscriber {}
-impl Introspect for Subscriber {}
-impl Element for Subscriber {
-    fn name(&self) -> &str {
-        "subscriber"
-    }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL
-    }
-    fn on_digital_settled(&mut self, nets: &[LogicValue], t: f64) {
-        self.calls.lock().unwrap().push((t, nets[self.watch.0]));
-    }
+/// A transient that stops at the flip: the instant of the flip is the last one,
+/// and the `SETTLE` of the stop time follows its quiescence.
+fn run(circuit: CircuitInstance) {
+    SETTLED.with(|s| s.borrow_mut().clear());
+    let mut solver = Solver::new(circuit).with_tran_opts(TransientAnalysisOptions::new(FLIP_AT, 1.0e-8)).build();
+    solver.tran().expect("transient").solve().expect("runs");
 }
 
-/// Builds the classic AND-gate glitch: `c = a AND NOT(a)` (zero-delay
-/// inverter, zero-delay AND) — driving `a` from 0 to 1 makes `c` read
-/// `One` for one intermediate delta cycle (the AND still sees the stale
-/// `b = NOT(old a) = 1` before the inverter's own zero-delay update
-/// lands) before settling to its correct final value, `Zero`.
-fn build_glitch_circuit(
-    flip_at: f64,
-    mid_cycle: Arc<Mutex<Vec<LogicValue>>>,
-    settled_calls: Arc<Mutex<Vec<(f64, LogicValue)>>>,
-) -> CircuitInstance {
-    let a = DigitalNet(0);
-    let b = DigitalNet(1); // b = NOT(a)
-    let c = DigitalNet(2); // c = a AND b  (the glitching net)
-
-    let mut circuit = CircuitInstance::from_devices_and_netlist("glitch", vec![], Netlist::new());
-    circuit.digital_state = DigitalState::new(3);
-    circuit.digital_state.nets[a.0] = LogicValue::Zero;
-    circuit.digital_state.nets[b.0] = LogicValue::One; // NOT(Zero)
-    circuit.digital_state.nets[c.0] = LogicValue::Zero; // a AND b = Zero AND One
-    circuit.devices.push(Box::new(InputDriver { a, flip_at, fired: false }));
-    circuit.devices.push(Box::new(Inverter { input: a, output: b, delay: 0.0 }));
-    circuit.devices.push(Box::new(AndGate { inputs: [a, b], output: c }));
-    circuit.devices.push(Box::new(Probe { probed: c, other_input: a, mid_cycle_values: mid_cycle }));
-    circuit.devices.push(Box::new(Subscriber { watch: c, calls: settled_calls }));
-    circuit
+fn settled_at(time: f64) -> Vec<Vec<u8>> {
+    SETTLED.with(|s| s.borrow().iter().filter(|(t, _)| (t - time).abs() < 1.0e-12).map(|(_, c)| c.clone()).collect())
 }
 
-/// A two-stage double-inverter feeding an OR gate: `c = a OR NOT(NOT(a))`.
-/// At rest this is consistent (`b2` always catches up to `NOT(NOT(a))`), so
-/// `c` tracks `a` — but only after the two inverter stages settle, meaning
-/// the **pre-accept snapshot of `c` differs from its post-settle value**
-/// whenever `a` flips: before the flip, `c = a_old`; after the flip and full
-/// settle, `c = a_new`. This is the fixture that catches a dispatch bug
-/// where `on_digital_settled` is fed the pre-accept snapshot instead of the
-/// post-settle nets — the AND-gate glitch fixture above cannot catch that
-/// bug because its `c` is tautologically `Zero` both before and after every
-/// settle (`a AND NOT(a)` is always `Zero`), so a pre- vs. post-settle mixup
-/// is invisible to it.
-fn build_before_after_differs_circuit(
-    flip_at: f64,
-    settled_calls: Arc<Mutex<Vec<(f64, LogicValue)>>>,
-) -> CircuitInstance {
-    let a = DigitalNet(0);
-    let b1 = DigitalNet(1); // b1 = NOT(a)
-    let b2 = DigitalNet(2); // b2 = NOT(b1) = NOT(NOT(a)), one delta cycle behind a
-    let c = DigitalNet(3); // c = a OR b2 — settles to a's new value, differing from its own pre-flip value
-
-    let mut circuit = CircuitInstance::from_devices_and_netlist("before_after", vec![], Netlist::new());
-    circuit.digital_state = DigitalState::new(4);
-    circuit.digital_state.nets[a.0] = LogicValue::Zero;
-    circuit.digital_state.nets[b1.0] = LogicValue::One; // NOT(Zero)
-    circuit.digital_state.nets[b2.0] = LogicValue::Zero; // NOT(One)
-    circuit.digital_state.nets[c.0] = LogicValue::Zero; // Zero OR Zero
-    circuit.devices.push(Box::new(InputDriver { a, flip_at, fired: false }));
-    circuit.devices.push(Box::new(Inverter { input: a, output: b1, delay: 0.0 }));
-    circuit.devices.push(Box::new(Inverter { input: b1, output: b2, delay: 0.0 }));
-    circuit.devices.push(Box::new(OrGate { inputs: [a, b2], output: c }));
-    circuit.devices.push(Box::new(Subscriber { watch: c, calls: settled_calls }));
-    circuit
+fn settled_before(time: f64) -> Vec<Vec<u8>> {
+    SETTLED.with(|s| s.borrow().iter().filter(|(t, _)| *t < time - 1.0e-12).map(|(_, c)| c.clone()).collect())
 }
 
 #[test]
 fn the_subscriber_sees_the_post_settle_value_even_when_it_differs_from_the_pre_accept_snapshot() {
-    let settled_calls = Arc::new(Mutex::new(Vec::new()));
-    let mut circuit = build_before_after_differs_circuit(0.0, settled_calls.clone());
+    // c = a OR NOT(NOT(a)): before the flip c = LOW, after the flip and the
+    // two inverter stages' settle c = HIGH.
+    let mut b = CircuitBuilder::new("before_after");
+    start(&mut b);
+    b.device(inverter(), "inv1", &[], &[net("a"), net("b1")]);
+    b.device(inverter(), "inv2", &[], &[net("b1"), net("b2")]);
+    b.device(OR_MODULE.get_or_init(|| module::<Gate<false>>("Or2")), "or", &[], &[net("a"), net("b2"), net("c")]);
+    subscribe(&mut b);
+    run(b.build().expect("build"));
 
-    // Read the pre-accept snapshot ourselves, exactly like the dispatch
-    // site's own `before` local — proves the fixture's premise that this
-    // snapshot genuinely differs from the settled value asserted below.
-    let before_c = circuit.digital_state.nets[3];
-    assert_eq!(before_c, LogicValue::Zero, "c starts at Zero (a=Zero OR b2=Zero) before the flip");
-
-    let _ = circuit.accept_and_run_digital(&[], 0.0).expect("settles");
-
-    let settled = settled_calls.lock().unwrap().clone();
-    assert_eq!(settled.len(), 1, "on_digital_settled must fire exactly once for this one settle: {settled:?}");
+    assert!(settled_before(FLIP_AT).iter().all(|c| *c == LOW), "c starts LOW (a = LOW OR b2 = LOW) before the flip");
+    let settled = settled_at(FLIP_AT);
+    assert_eq!(settled.len(), 1, "SETTLE fires exactly once for this one settle: {settled:?}");
     assert_eq!(
-        settled[0],
-        (0.0, LogicValue::One),
-        "the subscriber must see c's SETTLED value (One, once a=One propagates through both inverters), \
-         not the pre-accept snapshot (Zero) — a dispatch bug that fed the pre-accept snapshot instead of \
-         the post-settle nets would report Zero here instead"
+        settled[0], HIGH,
+        "the subscriber must see c's SETTLED value (HIGH, once a = HIGH propagates through both inverters), \
+         not the value before the instant (LOW)"
     );
 }
 
 #[test]
 fn the_subscriber_sees_only_the_settled_value_never_the_mid_delta_cycle_glitch() {
-    let mid_cycle = Arc::new(Mutex::new(Vec::new()));
-    let settled_calls = Arc::new(Mutex::new(Vec::new()));
-    let mut circuit = build_glitch_circuit(0.0, mid_cycle.clone(), settled_calls.clone());
+    // c = a AND NOT(a): always LOW once settled, though it may read HIGH for
+    // an intermediate round.
+    let mut b = CircuitBuilder::new("glitch");
+    start(&mut b);
+    b.device(inverter(), "inv", &[], &[net("a"), net("nb")]);
+    b.device(AND_MODULE.get_or_init(|| module::<Gate<true>>("And2")), "and", &[], &[net("a"), net("nb"), net("c")]);
+    subscribe(&mut b);
+    run(b.build().expect("build"));
 
-    // Settle at t=0: the InputDriver's accept hook flips `a` to One,
-    // cascading through the inverter/AND gate.
-    let _ = circuit.accept_and_run_digital(&[], 0.0).expect("settles");
-
-    let mid = mid_cycle.lock().unwrap().clone();
-    assert!(
-        mid.contains(&LogicValue::One),
-        "the fixture must actually glitch (c reads One at some intermediate delta cycle): {mid:?}"
-    );
-
-    let settled = settled_calls.lock().unwrap().clone();
-    assert_eq!(settled.len(), 1, "on_digital_settled must fire exactly once for this one settle: {settled:?}");
-    assert_eq!(
-        settled[0],
-        (0.0, LogicValue::Zero),
-        "the subscriber must see c's correct SETTLED value (Zero), never the transient glitch (One)"
-    );
-}
-
-/// The mechanism is a subscriber dispatch on the existing `Element` ABI,
-/// not a new `EventKind` variant — mechanical proof, not by inspection:
-/// `EventKind`'s own declaration still names exactly its four original
-/// variants.
-#[test]
-fn the_mechanism_adds_no_new_eventkind_variant() {
-    let src = include_str!("../src/analyses/events.rs");
-    let start = src.find("pub enum EventKind").expect("EventKind must still exist");
-    let body_start = src[start..].find('{').unwrap() + start;
-    let body_end = src[body_start..].find("\n}").unwrap() + body_start;
-    let body = &src[body_start..body_end];
-    let variants: Vec<&str> = body
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with("//") && !l.starts_with('#'))
-        .filter(|l| l.ends_with(','))
-        .collect();
-    assert_eq!(
-        variants,
-        vec!["Digital,", "Breakpoint,", "StepHint,", "Crossing,"],
-        "T23 must not add a new EventKind variant for the digital subscriber seam: {variants:?}"
-    );
-}
-
-/// D11 holds for the subscriber too: `on_digital_settled` is reached only
-/// from `accept_and_run_digital`, itself reachable only when a step is
-/// already accepted — calling it directly here (as a solver-internal
-/// integration proof) at a time nothing ever settles at is simply never
-/// invoked by a rejected transient step in the real driver, the same
-/// property `checkpoint_restore.rs`'s reject fixture already proves for
-/// `accept_timestep`'s call site (identical call chain).
-#[test]
-fn calling_accept_and_run_digital_is_the_only_way_to_reach_the_new_hook() {
-    // Structural proof: the call site added in this task lives inside
-    // `accept_and_run_digital` only — grep the solver's own source for any
-    // other call site of `on_digital_settled`.
-    let src = include_str!("../src/core/circuit.rs");
-    // Search for the functional call pattern specifically (`.on_digital_
-    // settled(`), not any doc-comment mention of the method's name.
-    let occurrences = src.matches(".on_digital_settled(").count();
-    assert_eq!(occurrences, 1, "on_digital_settled must be dispatched from exactly one call site in circuit.rs");
+    let settled = settled_at(FLIP_AT);
+    assert_eq!(settled.len(), 1, "SETTLE fires exactly once for this one settle: {settled:?}");
+    assert_eq!(settled[0], LOW, "the subscriber must see c's correct SETTLED value (LOW), never a transient glitch (HIGH)");
 }

@@ -1,102 +1,53 @@
-//! `piperine_solver::prelude` is enough on its own: a hand-written `Element`
-//! (resistor) is declared, built, and DC-solved using only prelude imports —
-//! the host-facing surface stays self-sufficient (MD-17).
+//! `piperine_solver::prelude` is enough on its own: a host builds a circuit of
+//! devices, runs DC and transient, and reads the results using only prelude
+//! imports — the host-facing surface stays self-sufficient (MD-17). The device
+//! modules come from a device library (`helpers/abi_devices.rs`); the host
+//! never names their types.
+
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
 
 use piperine_solver::prelude::*;
-use piperine_solver::abi::{AnalogDevice, DigitalDevice, Introspect};
 
-struct Resistor {
-    r: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
+/// 10 V over `r1` (top→mid) and `r2` (mid→gnd), with a capacitor on `mid`.
+fn host_circuit() -> (CircuitInstance, AnalogReference) {
+    let mut b = CircuitBuilder::new("test");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    let port = |n: &AnalogReference| Port::Node(n.clone());
+    b.device(abi_devices::vsrc(), "v1", &[("dc", ParamValue::Real(10.0))], &[port(&top), port(&gnd)]);
+    b.device(abi_devices::resistor(), "r1", &[("r", ParamValue::Real(1000.0))], &[port(&top), port(&mid)]);
+    b.device(abi_devices::resistor(), "r2", &[("r", ParamValue::Real(1000.0))], &[port(&mid), port(&gnd)]);
+    b.device(abi_devices::capacitor(), "c1", &[("c", ParamValue::Real(1.0e-9))], &[port(&mid), port(&gnd)]);
+    (b.build().expect("build"), mid)
 }
 
-impl AnalogDevice for Resistor {
-    fn load_dc(
-        &mut self,
-        _state: &piperine_solver::abi::DcAnalysisState,
-        _ctx: &Context,
-    ) -> Vec<piperine_solver::abi::Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r;
-        vec![
-            piperine_solver::abi::Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            piperine_solver::abi::Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            piperine_solver::abi::Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            piperine_solver::abi::Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
-    }
-}
-
-impl DigitalDevice for Resistor {}
-
-impl Introspect for Resistor {}
-
-impl Element for Resistor {
-    fn name(&self) -> &str { "r" }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
-}
-
-struct Vdc {
-    v: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl AnalogDevice for Vdc {
-    fn load_dc(
-        &mut self,
-        _state: &piperine_solver::abi::DcAnalysisState,
-        _ctx: &Context,
-    ) -> Vec<piperine_solver::abi::Stamp<AnalogReference, f64>> {
-        let branch = self.branch.clone();
-        vec![
-            piperine_solver::abi::Stamp::Matrix(self.n1.clone(), branch.clone(), 1.0),
-            piperine_solver::abi::Stamp::Matrix(branch.clone(), self.n1.clone(), 1.0),
-            piperine_solver::abi::Stamp::Matrix(self.n2.clone(), branch.clone(), -1.0),
-            piperine_solver::abi::Stamp::Matrix(branch.clone(), self.n2.clone(), -1.0),
-            piperine_solver::abi::Stamp::Rhs(branch, self.v),
-        ]
-    }
-}
-
-impl DigitalDevice for Vdc {}
-
-impl Introspect for Vdc {}
-
-impl Element for Vdc {
-    fn name(&self) -> &str { "v" }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
+fn net_of(reference: &AnalogReference) -> Net {
+    reference.into()
 }
 
 #[test]
 fn prelude_voltage_divider() {
-    let mut netlist = Netlist::new();
-    let top = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let mid = netlist.connect_node(NodeIdentifier::Anonymous(2));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let v_branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let v1 = Vdc { v: 10.0, n1: top.clone(), n2: gnd.clone(), branch: v_branch };
-    let r1 = Resistor { r: 1000.0, n1: top.clone(), n2: mid.clone() };
-    let r2 = Resistor { r: 1000.0, n1: mid.clone(), n2: gnd.clone() };
-
-    let elements: Vec<Box<dyn Element>> = vec![Box::new(v1), Box::new(r1), Box::new(r2)];
-    let mut circuit = CircuitInstance::from_devices_and_netlist("test", elements, netlist);
-
+    let (mut circuit, mid) = host_circuit();
     let ctx = Context::default();
     let mut dc = circuit.dc(ctx).unwrap();
     let res = dc.solve().unwrap();
 
-    let mid_val = res.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+    let mid_val = res.get_net(&net_of(&mid)).unwrap();
     assert!((mid_val - 5.0).abs() < 1e-9);
-    
+
     // Use SolverStats and Error to verify they are available
     let _stats: &SolverStats = &res.stats;
+}
+
+#[test]
+fn prelude_transient_holds_the_divider() {
+    let (mut circuit, mid) = host_circuit();
+    let mut tran = circuit.transient(TransientAnalysisOptions::new(1.0e-6, 1.0e-7), Context::default()).unwrap();
+    let res = tran.solve().unwrap();
+    let last = res.last().expect("steps");
+    assert!((last.get_net(&net_of(&mid)).unwrap() - 5.0).abs() < 1e-6);
 }

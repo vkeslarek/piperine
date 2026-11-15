@@ -51,5 +51,8 @@ pub use crate::core::result::{NoiseContribution, Result, SolverStats};
 pub use piperine_analog_solver::error::{Error, SolverDomain};
 // Element lifecycle allocator (ABI-09)
 pub use crate::core::builder::UnknownAllocator;
+// The device contract (abi.md): what a device author writes against.
+pub use piperine_abi::{device, layout, raw, shape, thunk};
+pub use crate::core::builder::CircuitBuilder;
 // Bind (the device contract): what a netlist of device instances is made of.
 pub use crate::core::bind::{Bound, Hold, NameMap, NetName, ParamValue, Port, Site};
