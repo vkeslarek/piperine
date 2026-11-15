@@ -111,6 +111,10 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         &self.analog
     }
 
+    pub fn analog_mut(&mut self) -> &mut A {
+        &mut self.analog
+    }
+
     /// Gives both sides back.
     pub fn into_sides(self) -> (D, A) {
         (self.discrete, self.analog)

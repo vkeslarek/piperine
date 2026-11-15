@@ -28,6 +28,7 @@ use crate::protocol::{
     Outcome, Restart, Shadow, Tick,
 };
 use crate::analyses::dc::DcSolver;
+use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
 use crate::core::bind::{Bound, NameMap, Site};
 
 /// A digital failure as the owner reports it (the text keeps every typed field).
@@ -257,5 +258,61 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
 
     fn drain_traces(&mut self, out: &mut Vec<Observation>) {
         traces(self.bound(), 0.0, out);
+    }
+}
+
+/// The analog side of a transient: the transient driver and the assembly.
+pub(crate) struct TransientSide<'s, 'a> {
+    pub(crate) tran: &'s mut TransientSolver<'a>,
+    pub(crate) run: DeviceRun,
+}
+
+impl TransientSide<'_, '_> {
+    /// After the operating point: the history rows and the recorded start.
+    pub(crate) fn begin(&mut self) -> Result<()> {
+        self.tran.device_begin(&mut self.run)
+    }
+}
+
+impl AnalogSide for TransientSide<'_, '_> {
+    type Mark = DeviceMark;
+
+    fn has_unknowns(&self) -> bool {
+        self.tran.device_has_unknowns()
+    }
+
+    fn propose(&mut self, _now: f64, _stop: f64) -> f64 {
+        self.tran.device_propose(&mut self.run)
+    }
+
+    fn deliver(&mut self, boundary: &[Boundary], restart: Restart) {
+        self.tran.device_deliver(&mut self.run, boundary, restart);
+    }
+
+    fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
+        self.tran.device_attempt(&mut self.run, to, exempt)
+    }
+
+    fn accept(&mut self) -> Result<Accepted> {
+        self.tran.device_accept(&mut self.run)
+    }
+
+    fn equilibrium(&mut self) -> Result<Accepted> {
+        let (x, amb) = self.tran.device_op_round(&mut self.run)?;
+        let (acc, _cap) = accepted(self.tran.device_bound(), x.as_slice().expect("a contiguous solution"), amb)?;
+        Ok(acc)
+    }
+
+    fn mark(&self) -> DeviceMark {
+        self.tran.device_mark()
+    }
+
+    fn restore(&mut self, mark: &DeviceMark) {
+        self.tran.device_restore(mark);
+    }
+
+    fn drain_traces(&mut self, out: &mut Vec<Observation>) {
+        let time = self.run.attempted();
+        traces(self.tran.device_bound(), time, out);
     }
 }

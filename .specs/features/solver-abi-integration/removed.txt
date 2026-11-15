@@ -1,0 +1,1 @@
+a_device_circuit_with_a_net_an_analog_function_reads_is_refused_by_the_transient_driver	the transient driver's refusal of a discrete net an analog function reads, until the protocol delivered it (T4)

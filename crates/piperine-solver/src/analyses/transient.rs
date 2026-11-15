@@ -641,7 +641,6 @@ impl<'a> TransientSolver<'a> {
         Context::init_global();
         circuit.setup_all(&context)?;
         Self::validate_probe_selection(circuit, &options.probe_selection)?;
-        Self::refuse_unprotocolled_nets(circuit)?;
 
         // Build DAG topology once before simulation begins
         circuit.rebuild_digital_topology();
@@ -703,34 +702,6 @@ impl<'a> TransientSolver<'a> {
     /// otherwise fail loud with a named error before the run starts, not
     /// silently record nothing. Runs once after `setup_all` so the device
     /// catalog (`list_observables`) is populated.
-    /// Until the protocol drives the discrete side (feature phase 3), a
-    /// device circuit may not read a discrete net the design itself writes
-    /// from an analog function: nothing would deliver its changes.
-    fn refuse_unprotocolled_nets(circuit: &CircuitInstance) -> crate::core::result::Result<()> {
-        use piperine_digital_solver::abi::net::NetId;
-        use piperine_digital_solver::abi::plan::NetWriter;
-        let Some(bound) = &circuit.abi else { return Ok(()) };
-        let plan = bound.digital.plan();
-        let driven: Vec<String> = plan
-            .nets
-            .iter()
-            .enumerate()
-            .filter(|(i, n)| n.analog_reads && plan.analysis().writer(NetId(*i as u32)) != NetWriter::Host)
-            .map(|(_, n)| format!("`{}`", n.name))
-            .collect();
-        if driven.is_empty() {
-            return Ok(());
-        }
-        Err(piperine_analog_solver::error::Error::simple(
-            piperine_analog_solver::error::SolverDomain::Transient,
-            format!(
-                "an analog function reads discrete net(s) {} the design writes; the transient driver \
-                 cannot deliver their changes yet",
-                driven.join(", ")
-            ),
-        ))
-    }
-
     fn validate_probe_selection(
         circuit: &CircuitInstance,
         selection: &crate::core::introspect::ProbeSelection,
@@ -1499,6 +1470,9 @@ impl<'a> TransientSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::core::result::Result<TransientAnalysisResult> {
+        if self.system.circuit.abi.is_some() {
+            return self.solve_device();
+        }
         let (mut steps, node_indices) = self.begin_run()?;
         let mut st = TimeLoop::new(self.options.start_time, self.options.dt);
 
@@ -1586,11 +1560,12 @@ impl<'a> TransientSolver<'a> {
     fn snapshot(&self, time: f64) -> TransientStep {
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
-        let latest_state = self.solver.current_guess().unwrap();
-
-        for reference in netlist.all_references() {
-            if let Some(idx) = reference.idx() {
-                values.insert(reference.variable().clone(), latest_state[idx]);
+        // A circuit of devices with no unknown has no solution row.
+        if let Some(latest_state) = self.solver.current_guess() {
+            for reference in netlist.all_references() {
+                if let Some(idx) = reference.idx() {
+                    values.insert(reference.variable().clone(), latest_state[idx]);
+                }
             }
         }
 
@@ -1694,6 +1669,367 @@ impl<'a> TransientSolver<'a> {
                 dev.restore_state(c);
             }
         }
+    }
+}
+
+/// What the protocol's analog side of a circuit of devices carries between
+/// its calls (design "The two adapters"): the time loop, the recorded steps,
+/// and the converged attempt waiting for its acceptance.
+pub(crate) struct DeviceRun {
+    st: TimeLoop,
+    steps: Vec<TransientStep>,
+    node_indices: Vec<usize>,
+    pending: Option<PendingStep>,
+    /// The end of the step this side proposed last, on its own clock.
+    proposed: f64,
+    /// The time of the last attempt, for its trace records.
+    attempted: f64,
+    /// The size of the last accepted step.
+    last_dt: f64,
+    /// Attempts made (the `max_steps` budget).
+    attempts: usize,
+    /// The last operating-point solution.
+    op: Option<ndarray::Array1<f64>>,
+    /// A Newton failure at the step floor: reported by the next attempt, after
+    /// the protocol restored its checkpoint for the rejection.
+    failed: Option<piperine_analog_solver::error::Error>,
+    /// The session's tick length.
+    spt: f64,
+}
+
+/// A converged attempt and its truncation verdict, until `device_accept`.
+struct PendingStep {
+    prediction: StepPrediction,
+    snapshot: TransientStep,
+    milne: f64,
+    post_set_step: bool,
+}
+
+/// A checkpoint of the analog side: the Newton history and the assembly's.
+pub(crate) type DeviceMark = (CircularArrayBuffer2<f64>, AssemblySnapshot);
+
+impl TransientSolver<'_> {
+    /// A transient of a circuit of devices, through the protocol (abi.md §5,
+    /// §10): the operating point with every continuous `init` held, then the
+    /// step loop. The digital engine leaves the circuit for the run and comes
+    /// back after it, whatever the outcome.
+    fn solve_device(&mut self) -> crate::core::result::Result<TransientAnalysisResult> {
+        use crate::analyses::adapters::{DigitalSide, TransientSide, empty_digital};
+        use crate::protocol::{Protocol, ProtocolOptions};
+        use piperine_analog_solver::error::{Error, SolverDomain};
+        if self.reentry_state.is_some() || self.options.start_time != 0.0 {
+            return Err(Error::simple(
+                SolverDomain::Transient,
+                "a circuit of devices does not re-enter a transient yet (solver-abi-integration T18)",
+            ));
+        }
+        if !self.sets.entries.is_empty() {
+            return Err(Error::simple(
+                SolverDomain::Transient,
+                "a circuit of devices takes scheduled writes through the protocol (solver-abi-integration T14)",
+            ));
+        }
+        let bound = self.system.circuit.abi.as_mut().expect("a circuit of devices");
+        let spt = bound.digital.plan().resolution.seconds_per_tick;
+        let digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        let side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
+        let run = DeviceRun {
+            st: TimeLoop::new(self.options.start_time, self.options.dt),
+            steps: Vec::new(),
+            node_indices: Vec::new(),
+            pending: None,
+            proposed: self.options.start_time,
+            attempted: self.options.start_time,
+            last_dt: 0.0,
+            attempts: 0,
+            op: None,
+            failed: None,
+            spt,
+        };
+        let stop = self.options.stop_time;
+        let mut protocol = Protocol::new(side, TransientSide { tran: self, run }, ProtocolOptions::new(spt));
+        let ran = protocol
+            .operating_point()
+            .and_then(|_| protocol.analog_mut().begin())
+            .and_then(|_| protocol.transient(stop));
+        let (side, analog) = protocol.into_sides();
+        let run = analog.run;
+        if let Some(bound) = self.system.circuit.abi.as_mut() {
+            bound.digital = side.into_digital();
+        }
+        ran?;
+        if self.top_level {
+            self.system.circuit.finish_analysis(&self.system.context, crate::analyses::AnalysisKind::Tran);
+        }
+        Ok(self.finish_run(&run.st, run.steps))
+    }
+
+    pub(crate) fn device_has_unknowns(&self) -> bool {
+        self.system.circuit.netlist().max_index().is_some()
+    }
+
+    /// One equilibrium round of the transient's operating point: the DC plan
+    /// with the hold clamps, started from each pin's `init` (the first round)
+    /// or from the last round's solution; then the assembly accepts it.
+    pub(crate) fn device_op_round(
+        &mut self,
+        run: &mut DeviceRun,
+    ) -> crate::core::result::Result<(ndarray::Array1<f64>, Ambient)> {
+        let uic_clamps: Vec<UicClamp> = self
+            .initial_seeds()
+            .into_iter()
+            .filter_map(|(plus, minus, ic)| plus.map(|plus| UicClamp { plus, minus, ic }))
+            .collect();
+        let guess: Vec<InitialValue<AnalogReference, f64>> = match &run.op {
+            None => uic_clamps
+                .iter()
+                .filter(|c| c.minus.is_none())
+                .map(|c| InitialValue { reference: c.plus.clone(), value: c.ic })
+                .collect(),
+            Some(x) => self.system.circuit.netlist().initial_values(&self.values_of(x)),
+        };
+        let x = {
+            let mut dc = DcSolver::new(self.system.circuit, Context::default())?;
+            dc.set_analysis_kind(crate::analyses::AnalysisKind::Tran);
+            dc.system.uic_clamps = uic_clamps.clone();
+            dc.apply_initial_conditions(guess);
+            dc.equilibrium(true)?
+        };
+        self.system.uic_clamps = uic_clamps;
+        run.op = Some(x.clone());
+        let amb = Ambient { time: self.options.start_time, is_static: true, ..self.system.ambient() };
+        Ok((x, amb))
+    }
+
+    /// The solution vector `x` by variable, as a DC result holds it.
+    fn values_of(&self, x: &ndarray::Array1<f64>) -> HashMap<std::sync::Arc<piperine_analog_solver::netlist::AnalogVariable>, f64> {
+        let mut values = HashMap::new();
+        for reference in self.system.circuit.netlist().all_references() {
+            if let Some(i) = reference.idx() {
+                values.insert(reference.variable().clone(), x[i]);
+            }
+        }
+        values
+    }
+
+    /// After the operating point: its solution seeds the history rows as
+    /// `compute_initial_conditions` does, and the start is recorded.
+    pub(crate) fn device_begin(&mut self, run: &mut DeviceRun) -> crate::core::result::Result<()> {
+        self.system.uic_hold = false;
+        if let Some(x) = run.op.take() {
+            let iv_dc = self.system.circuit.netlist().initial_values(&self.values_of(&x));
+            let device_ic = self.device_initial_conditions(&iv_dc);
+            self.push_initial(iv_dc.clone())?;
+            self.push_initial(iv_dc)?;
+            if !device_ic.is_empty() {
+                self.push_initial(device_ic.clone())?;
+                self.push_initial(device_ic)?;
+            }
+            if !self.initial_conditions.is_empty() {
+                self.push_initial(self.initial_conditions.clone())?;
+                self.push_initial(self.initial_conditions.clone())?;
+            }
+        }
+        let start_time = self.options.start_time;
+        if start_time >= self.options.record_from {
+            run.steps.push(self.snapshot(start_time));
+        }
+        self.solver.reset_iteration_counter();
+        run.node_indices = self
+            .system
+            .circuit
+            .netlist()
+            .all_references()
+            .iter()
+            .filter(|r| !r.is_branch())
+            .filter_map(|r| r.idx())
+            .collect();
+        Ok(())
+    }
+
+    /// The end of the next step: the controller's proposal, at most the stop time.
+    pub(crate) fn device_propose(&mut self, run: &mut DeviceRun) -> f64 {
+        let st = &run.st;
+        run.proposed = (st.current_time + st.dt).min(self.options.stop_time);
+        run.proposed
+    }
+
+    /// One step to `to`. The protocol puts every step's end on the tick grid;
+    /// a step that is not a landing ends at this side's own proposal, which
+    /// lies within one tick of `to`, so the time grid is the controller's.
+    // SPEC_DEVIATION: the step solves to its own proposal, not to `to`, when
+    // the two are less than one tick apart and the step is not a landing.
+    // Reason: the parity oracles pin the controller's time grid (`parity_baseline`
+    // 161 steps, `differential` 1e-15); a femtosecond floor moves every step.
+    pub(crate) fn device_attempt(
+        &mut self,
+        run: &mut DeviceRun,
+        to: f64,
+        exempt: bool,
+    ) -> crate::core::result::Result<crate::protocol::Attempt> {
+        use crate::protocol::Attempt;
+        if let Some(e) = run.failed.take() {
+            return Err(e);
+        }
+        run.attempts += 1;
+        if run.attempts > self.options.max_steps {
+            let st = &run.st;
+            let progress = (st.current_time - self.options.start_time)
+                / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
+                format!(
+                    "exceeded the {} step budget at t = {:.6e} s of {:.6e} s \
+                     ({:.2}% of the run) with dt = {:.3e} s \
+                     (accepted {}, rejected {}, dt_min floor hits {}, \
+                     smallest dt seen {:.3e} s). \
+                     The timestep has collapsed: the circuit is either stiff \
+                     at a switching edge or has a discontinuity the stepper \
+                     cannot land on. Raise `max_steps` to let it run longer, \
+                     raise `dt_min` to make the floor fail instead of crawl, \
+                     or soften the discontinuity.",
+                    self.options.max_steps,
+                    st.current_time,
+                    self.options.stop_time,
+                    progress * 100.0,
+                    st.dt,
+                    st.steps_accepted,
+                    st.steps_rejected,
+                    st.dt_min_floor_hits,
+                    if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 },
+                ),
+            ));
+        }
+        let t_next = if !exempt && (run.proposed - to).abs() < run.spt { run.proposed } else { to };
+        run.attempted = t_next;
+        let st = &mut run.st;
+        let prediction = StepPrediction {
+            t_next,
+            dt_actual: t_next - st.current_time,
+            dt_proposed: st.dt,
+            landed_on_breakpoint: exempt,
+        };
+        let post_set_step = st.sets_just_applied;
+        let outcome = self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
+        if let Ok(Some(snapshot)) = outcome {
+            let assessment = self.assess_step(&prediction, post_set_step, &run.node_indices);
+            if assessment.accept || self.device_reject_lte(st, &prediction, assessment.milne) {
+                run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, post_set_step });
+                return Ok(Attempt::Converged);
+            }
+            return Ok(Attempt::Rejected);
+        }
+        st.steps_rejected += 1;
+        st.last_step_accepted = false;
+        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
+        if st.dt <= self.options.dt_min
+            && let Err(e) = outcome
+        {
+            run.failed = Some(e);
+        }
+        Ok(Attempt::Rejected)
+    }
+
+    /// `reject_lte_step` without the restores (the protocol restores its
+    /// checkpoint): true when the step is accepted at the step floor.
+    fn device_reject_lte(&mut self, st: &mut TimeLoop, prediction: &StepPrediction, milne: f64) -> bool {
+        if self.policy.trace.transient {
+            eprintln!(
+                "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
+                st.current_time,
+                prediction.dt_actual,
+                milne,
+                self.system.context.tolerances.trtol
+            );
+        }
+        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
+        if st.dt <= self.options.dt_min {
+            st.dt_min_floor_hits += 1;
+            tracing::warn!(
+                "transient LTE exceeded trtol at dt_min ({:.3e}); \
+                 accepting step at t={:.3e} with reduced accuracy",
+                st.dt, st.current_time
+            );
+            return true;
+        }
+        st.steps_rejected += 1;
+        st.last_step_accepted = false;
+        false
+    }
+
+    /// Accepts the converged attempt: `accept_step`'s bookkeeping without the
+    /// old discrete engine; the restart comes with `device_deliver`.
+    pub(crate) fn device_accept(&mut self, run: &mut DeviceRun) -> crate::core::result::Result<crate::protocol::Accepted> {
+        let PendingStep { prediction, snapshot, milne, post_set_step } =
+            run.pending.take().expect("accept follows a converged attempt");
+        let StepPrediction { t_next, dt_actual, dt_proposed, .. } = prediction;
+        let st = &mut run.st;
+        st.steps_accepted += 1;
+        st.last_step_accepted = true;
+        self.system.uic_hold = false;
+        st.dt_min_seen = st.dt_min_seen.min(dt_actual);
+        st.dt_max_seen = st.dt_max_seen.max(dt_actual);
+        self.accept_assembly(t_next)?;
+        self.record_step(&mut run.steps, t_next, snapshot);
+        st.current_time = t_next;
+        self.system.prev_h = dt_actual;
+        st.dt = self.propose_dt(milne, dt_actual, dt_proposed, post_set_step, false);
+        st.sets_just_applied = false;
+        run.last_dt = dt_actual;
+        Ok(crate::protocol::Accepted::default())
+    }
+
+    /// The analog copy takes the boundary; after a jump the next step starts
+    /// first-order (`prev_h = 0`) and is exempt from the truncation test and
+    /// the controller, as after a scheduled set; after a host write it is also
+    /// `1e-3` of the last step, floored at `dt_min`.
+    pub(crate) fn device_deliver(
+        &mut self,
+        run: &mut DeviceRun,
+        boundary: &[crate::protocol::Boundary],
+        restart: crate::protocol::Restart,
+    ) {
+        use crate::protocol::Restart;
+        if let Some(bound) = self.system.circuit.abi.as_mut() {
+            for b in boundary {
+                bound.analog.set_discrete(b.slot, &b.bytes);
+            }
+        }
+        match restart {
+            Restart::None => {}
+            Restart::Integrator => {
+                self.system.prev_h = 0.0;
+                run.st.sets_just_applied = true;
+            }
+            Restart::IntegratorSmall => {
+                self.system.prev_h = 0.0;
+                run.st.dt = (1e-3 * run.last_dt).max(self.options.dt_min);
+                run.st.sets_just_applied = true;
+            }
+        }
+    }
+
+    pub(crate) fn device_mark(&self) -> DeviceMark {
+        let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
+        (self.solver.state_snapshot(), bound.analog.snapshot())
+    }
+
+    pub(crate) fn device_restore(&mut self, mark: &DeviceMark) {
+        self.solver.restore_state(mark.0.clone());
+        if let Some(bound) = self.system.circuit.abi.as_mut() {
+            bound.analog.restore(&mark.1);
+        }
+    }
+
+    pub(crate) fn device_bound(&mut self) -> &mut crate::core::bind::Bound {
+        self.system.circuit.abi.as_mut().expect("a circuit of devices")
+    }
+}
+
+impl DeviceRun {
+    /// The time of the last attempt.
+    pub(crate) fn attempted(&self) -> f64 {
+        self.attempted
     }
 }
 

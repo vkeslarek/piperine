@@ -11,7 +11,10 @@ use std::sync::{Arc, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW, REAL};
-use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Partial, Shape, Statement, cell, global, op, part, pin_flag, reaction_flag, role, statement_flag, watch};
+use piperine_abi::raw::{
+    Cell, DEFAULT, Field, GROUND, Layout, List, Module, Partial, Shape, Statement, Str, ambient, cell, global, leaf, op, part, pin_flag,
+    reaction_flag, role, statement_flag, watch,
+};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::thunk::module;
 
@@ -557,4 +560,124 @@ impl Device for Stub {
 
 pub fn stub() -> &'static Module {
     module_of::<Stub>(&STUB, "Stub")
+}
+
+// ─── Counter (solver-abi-digital) ───────────────────────────────────────────
+
+static COUNT_FIELDS: [Field; 1] =
+    [Field { name: Str::from_static("v"), leaf: leaf::U32, offset: 0, count: 1, flags: 0, known: 0 }];
+/// One `U32` with no known byte.
+pub static COUNT: Layout = Layout { size: 4, align: 4, fields: List::from_slice(&COUNT_FIELDS) };
+
+/// The `u32` held in a `COUNT` pin's bytes.
+pub fn count_of(bytes: &[u8]) -> u32 {
+    u32::from_le_bytes(bytes[..4].try_into().expect("a COUNT is four bytes"))
+}
+
+/// Counts rising edges in a `QUIET` state pin only its own reaction reads.
+/// pins: clk=0 (PORT BIT); n=1 (PORT COUNT, QUIET); inc=2 (PRIVATE event)
+/// fn 0 "rise": as the flip-flop's, writes [inc]
+/// reaction 0: on [inc] reads [n] writes [S0 {n}]; n <- n + 1, no delay
+pub struct Counter;
+static COUNTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static COUNTER: OnceLock<Module> = OnceLock::new();
+
+fn counter_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let clk = s.pin(PinSpec::discrete("clk", role::PORT, &BIT));
+    let n = s.pin(PinSpec { flags: pin_flag::QUIET, ..PinSpec::discrete("n", role::PORT, &COUNT) });
+    let inc = s.pin(PinSpec::event("inc", role::PRIVATE));
+    s.function(FunctionSpec {
+        name: "rise",
+        origin: ORIGIN,
+        reads: vec![pin(clk), pin_part(clk, part::PREVIOUS), pin_part(clk, part::CHANGED)],
+        writes: vec![pin_part(inc, part::CHANGED)],
+        ..FunctionSpec::default()
+    });
+    s.reaction(ReactionSpec {
+        name: "count",
+        origin: ORIGIN,
+        on: vec![inc],
+        reads: vec![pin(n)],
+        writes: vec![statement(n, 4, 0)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Counter {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&COUNTER_SHAPE, counter_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Counter, Arc::clone(shared(&COUNTER_SHAPE, counter_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let rising = cx.bytes(2) == [1] && cx.bytes(0) == HIGH && cx.bytes(1) == LOW;
+        cx.set(0, rising as u8);
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("counter");
+        let n = count_of(cx.bytes(0)) + 1;
+        cx.commit(0, &n.to_le_bytes(), 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn counter() -> &'static Module {
+    module_of::<Counter>(&COUNTER, "Counter")
+}
+
+// ─── SettleTime ─────────────────────────────────────────────────────────────
+
+thread_local! {
+    static SETTLES: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The times of the `SETTLE` firings this thread's `SettleTime` devices saw.
+pub fn settle_times() -> Vec<f64> {
+    SETTLES.with(|s| s.borrow().clone())
+}
+
+/// Writes down, per thread, the time of each `SETTLE` it sees (`settle_times`).
+/// pins: settle=0 (GLOBAL SETTLE event)
+/// reaction 0: on [settle] reads [TIME]
+pub struct SettleTime;
+static SETTLE_TIME_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLE_TIME: OnceLock<Module> = OnceLock::new();
+
+fn settle_time_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    s.reaction(ReactionSpec {
+        name: "stamp",
+        origin: ORIGIN,
+        on: vec![settle],
+        reads: vec![Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE }],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for SettleTime {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SETTLE_TIME_SHAPE, settle_time_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SettleTime, Arc::clone(shared(&SETTLE_TIME_SHAPE, settle_time_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("settle_time");
+        let t = cx.f64(0);
+        SETTLES.with(|s| s.borrow_mut().push(t));
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn settle_time() -> &'static Module {
+    module_of::<SettleTime>(&SETTLE_TIME, "SettleTime")
 }

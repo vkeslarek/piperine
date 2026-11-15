@@ -2,8 +2,7 @@
 //! `1 - e^-1` with the literal and tolerance of `helper_devices.rs`; a
 //! continuous pin's `init` starts Newton and is held through a transient's
 //! operating point only; a rejected stage leaves the term histories as they
-//! were; a circuit whose analog function reads a net the design writes is
-//! refused until the protocol delivers its changes.
+//! were.
 
 use std::sync::{Arc, OnceLock};
 
@@ -14,8 +13,8 @@ mod abi_devices;
 
 use abi_devices::{add_capacitor, add_resistor, add_vsrc, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BYTE, F64};
-use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, ambient, cell, op, part, pin_flag, role};
+use piperine_abi::layout::F64;
+use piperine_abi::raw::{Cell, DEFAULT, Module, Shape, ambient, cell, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port};
@@ -149,60 +148,6 @@ fn flaky_c() -> &'static Module {
 }
 
 // ---------------------------------------------------------------------------
-// Driven: an analog function that reads a net the design itself writes
-// ---------------------------------------------------------------------------
-
-/// pins: v=0 (PARAM F64); out=1 (PORT); code=2 (PRIVATE BYTE)
-/// terms: T0 FLOW{out, GROUND}
-/// fn 0 "code": reads [v] writes [code]  (discrete)
-/// fn 1 "load": reads [out, code] writes [T0]  (analog)
-struct Driven;
-static DRIVEN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static DRIVEN_MODULE: OnceLock<Module> = OnceLock::new();
-
-fn driven_shape() -> ShapeRef {
-    let mut s = ShapeBuf::new();
-    s.pin(PinSpec::discrete("v", role::PARAM, &F64));
-    let out = s.pin(PinSpec::continuous("out", role::PORT));
-    let code = s.pin(PinSpec::discrete("code", role::PRIVATE, &BYTE));
-    let t0 = s.term(flow("i", op::FLOW, out, GROUND));
-    s.function(FunctionSpec { name: "code", origin: "abi_tran.rs", reads: vec![pin(0)], writes: vec![pin(code)], ..FunctionSpec::default() });
-    s.function(FunctionSpec {
-        name: "load",
-        origin: "abi_tran.rs",
-        reads: vec![pin(out), pin(code)],
-        writes: vec![term(t0)],
-        ..FunctionSpec::default()
-    });
-    s.freeze()
-}
-
-impl Device for Driven {
-    fn prototype() -> &'static Shape<'static> {
-        DRIVEN_SHAPE.get_or_init(driven_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Driven, Arc::clone(DRIVEN_SHAPE.get_or_init(driven_shape))))
-    }
-    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        if k == 0 {
-            let high = cx.f64(0) > 0.0;
-            cx.out_bytes(0).copy_from_slice(&[high as u8, 1]);
-        } else {
-            cx.set(0, cx.f64(0) / 1.0e3 + cx.bytes(1)[0] as f64);
-        }
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-fn driven() -> &'static Module {
-    DRIVEN_MODULE.get_or_init(|| module::<Driven>("Driven"))
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -307,19 +252,4 @@ fn a_rejected_stage_restores_the_term_history() {
         let _ = still.transient(options, Context::default()).expect("tran").solve();
     }
     assert_ne!(running.bound().expect("bound").analog.snapshot(), still.bound().expect("bound").analog.snapshot());
-}
-
-#[test]
-fn a_device_circuit_with_a_net_an_analog_function_reads_is_refused_by_the_transient_driver() {
-    let mut b = CircuitBuilder::new("driven");
-    let out = b.node("out");
-    b.device(driven(), "x1", &[("v", ParamValue::Real(1.0))], &[Port::Node(out)]);
-    let mut circuit = b.build().expect("bind accepts it");
-
-    let err = circuit
-        .transient(TransientAnalysisOptions::new(1.0e-3, 1.0e-5), Context::default())
-        .err()
-        .expect("nothing delivers the net's changes yet")
-        .to_string();
-    assert!(err.contains("`x1.code`"), "the error names the net: {err}");
 }
