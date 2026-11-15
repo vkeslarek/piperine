@@ -1,6 +1,6 @@
 # solver-restructure proofs
 
-**HEAD**: 21f77c4f
+**HEAD**: f9e81d02
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 46 pass, 0 fail
@@ -44,7 +44,7 @@
 | C35 | `run solver / test instructions_have_no_entry_for_a_retired_crate ... ok` | pass |
 | C36 | `run solver / test state_records_the_solver_structure_decision ... ok` | pass |
 | C37 | `! git diff --diff-filter=M e129b869 -- crates/piperine-solver/tests ':(exclude)crates/piperine-solver/tests/se` | pass |
-| C38 | `test "$(wc -l < .specs/features/solver-restructure/baseline.txt)" -ge 250` | pass |
+| C38 | `a=$(mktemp); git grep -h -A2 -e '#\[test\]' e129b869 -- crates/piperine-solver / grep -oE 'fn [A-Za-z_0-9]+' /` | pass |
 | C39 | `cargo test -p piperine-lang --test suite_hygiene` | pass |
 | C40 | `a=$(mktemp); b=$(mktemp); git show e129b869:tests/suite_hygiene.rs / grep -A1 '^#\[test\]' / grep -oE '^fn [a-` | pass |
 | C41 | `! grep -nE 'crates/piperine-(codegen/ir/python/plugin/plugin-macros)/' crates/piperine-lang/tests/suite_hygien` | pass |
@@ -79,10 +79,10 @@
 `Run analog` - exit 0
 
 ```
-test math::integration::tests::trbdf2_trapezoidal_phase_coeffs_match_formula ... ok
+test math::integration::tests::trbdf2_gamma_is_two_minus_sqrt2 ... ok
 test math::faer::tests::real_transpose_solve_matches_a_hand_computed_lambda ... ok
-test math::faer::tests::one_symbolic_factorization_serves_both_forward_and_transpose_solves ... ok
 test math::faer::tests::singular_system_fails_loud_through_the_existing_error_family ... ok
+test math::faer::tests::one_symbolic_factorization_serves_both_forward_and_transpose_solves ... ok
 
 test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -91,7 +91,7 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_analog_solver-4b654c63946687cc)
    Doc-tests piperine_analog_solver
 ```
@@ -99,10 +99,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run digital` - exit 0
 
 ```
+test events::tests::test_logic_resolution ... ok
+test interface::tests::external_model_emits_through_the_sink ... ok
 test interface::tests::non_crossing_samples_yield_no_interpolation ... ok
-test interface::tests::predict_crossing_interpolates_a_linear_bracket_exactly ... ok
-test interface::tests::predict_crossing_rejects_a_non_bracketing_pair ... ok
-test limits::tests::digital_limits_defaults_are_the_literals ... ok
+test interface::tests::a2d_crossing_interpolates_within_the_published_error_bound ... ok
 
 test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -111,7 +111,7 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_digital_solver-1d0eee47bdaa1c7d)
    Doc-tests piperine_digital_solver
 ```
@@ -119,20 +119,20 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run hygiene` - exit 0
 
 ```
-test root_targets_match_the_naming_rule ... ok
-test the_walk_covers_the_three_solver_crates ... ok
-test every_integration_target_declares_its_scope ... ok
 test mod_rs_declares_only ... ok
+test the_walk_covers_the_three_solver_crates ... ok
+test root_targets_match_the_naming_rule ... ok
 test every_ignored_doc_example_is_registered ... ok
 test no_file_scope_lint_suppression ... ok
-test no_dead_architecture_identifiers ... ok
 test no_ignored_tests ... ok
 test lrm_covers_declarations_are_well_formed ... ok
+test no_dead_architecture_identifiers ... ok
 test no_disabled_test_code ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-lang)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.98s
      Running tests/suite_hygiene.rs (/var/tmp/piperine-target/debug/deps/suite_hygiene-cfb978c38d167293)
 ```
 
@@ -222,7 +222,7 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 (no output)
 ```
 
-`test "$(wc -l < .specs/features/solver-restructure/baseline.txt)" -ge 250` - exit 0
+`a=$(mktemp); git grep -h -A2 -e '#\[test\]' e129b869 -- crates/piperine-solver / grep -oE 'fn [A-Za-z_0-9]+' /` - exit 0
 
 ```
 (no output)
@@ -231,20 +231,20 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `cargo test -p piperine-lang --test suite_hygiene` - exit 0
 
 ```
-test root_targets_match_the_naming_rule ... ok
-test the_walk_covers_the_three_solver_crates ... ok
-test every_integration_target_declares_its_scope ... ok
 test mod_rs_declares_only ... ok
+test the_walk_covers_the_three_solver_crates ... ok
+test root_targets_match_the_naming_rule ... ok
 test every_ignored_doc_example_is_registered ... ok
 test no_file_scope_lint_suppression ... ok
-test no_dead_architecture_identifiers ... ok
 test no_ignored_tests ... ok
 test lrm_covers_declarations_are_well_formed ... ok
+test no_dead_architecture_identifiers ... ok
 test no_disabled_test_code ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-lang)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.98s
      Running tests/suite_hygiene.rs (/var/tmp/piperine-target/debug/deps/suite_hygiene-cfb978c38d167293)
 ```
 
