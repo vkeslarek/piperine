@@ -1333,7 +1333,7 @@ Proof: run load | test a_library_without_the_symbol_is_named ... ok
 **C31** - A library of a newer minor: an error naming the file. (RS-05, AC 3; T15)
 Proof: run load | test a_library_of_a_newer_minor_is_refused ... ok
 
-**C32** - `unsafe` appears in `src/load.rs` and in no other source of the crate nor in a golden file. (RS-05, AC 4; T15)
+**C32** - `unsafe` appears in `src/load.rs` and in no other source of the crate nor in a golden file, except the one export attribute `#[unsafe(no_mangle)]` on `piperine_abi_1` in generated source and goldens (orchestrator ruling, 2026-11-15: RS-05 AC 4 means no `unsafe` block or `unsafe fn` outside `load.rs`). (RS-05, AC 4; T15)
 Proof: run load | test unsafe_lives_in_load_only ... ok
 
 **C33** - Every function of the five M1 bodies: output cells with equal bits and partials equal as `f64` on the two backends, the six `AGE`/`STATIC` cases included. (RS-06, AC 1; T18)
@@ -1556,7 +1556,7 @@ Proof: run golden | test a_keyword_identifier_is_raw_and_the_abi_name_is_not ...
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** T1 - the dispatch said "do not edit solver crates"; T1 and T2's Done-when require `DEFAULT_MEMBERS` (which lives in `crates/piperine-solver/tests/workspace_shape.rs`) to gain the new crate, or the guard fails. The one-line list entry is made there, as `ir-interp` T2 did; no solver source is touched. T2 likewise adds `piperine-plan` and `piperine-transpile` to that file's `KEPT_CRATES`, which `instructions_list_the_kept_crates` compares with the crate rows T2 adds to `CLAUDE.md` and `AGENTS.md`. T4 - RS-02 AC 2 says a keyword prints as a raw identifier, but Rust refuses `r#crate`, `r#self`, `r#Self` and `r#super`; `Text::ident` prints those four as `crate_`, `self_`, `Self_`, `super_` (the ABI name stays unchanged). T10 - exporting `piperine_abi_1` from an edition-2024 crate takes the attribute `#[unsafe(no_mangle)]` (RS-Q2 needs the symbol, RS-Q4 the edition); it is no `unsafe` block, and every unsafe operation stays in the ABI crate's thunks. C32's scan (T15, `unsafe_lives_in_load_only`) has to allow that one attribute line in generated source and the goldens, or RS-05 AC 4 reads as `unsafe` blocks only. T10 - the goldens were read MSL line to Rust line by the Opus batch worker that wrote the printer (no second Opus was available in the batch), and each of the five, with three more designs (keywords, RcHeld, DiodeCircuit), was compiled with rustc 1.98 `--edition 2024 --crate-type cdylib` against an rlib of `piperine-abi`: no error, no warning.
-**Dispatched:** batch 1 (phases 1-2, T1-T10) - Opus worker, 2026-11-15
+**Dispatched:** batch 1 (phases 1-2, T1-T10) - Opus worker, 2026-11-15, done. Batch 2 (phase 3, T11-T17) - Sonnet worker, 2026-11-15. C32 ruling: the export attribute is allowed (see C32).
 **Walked:** none (no screen; each story's Independent Test is a check above)
 
 ---
