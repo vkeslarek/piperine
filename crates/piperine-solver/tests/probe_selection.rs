@@ -1,7 +1,8 @@
-//! Save/probe selection (ABI-34): `TransientAnalysisOptions::probe_selection`
-//! filters `collect_device_banks` to record only the requested observables
-//! per device — not every device's full `(state, vars)` bank every step.
-//! Memory cost is `O(requested × steps)`, not `O(devices × steps)`.
+//! Save/probe selection (ABI-34) on the `Device` trait:
+//! `TransientAnalysisOptions::probe_selection` filters the recorded
+//! `device_state` to the requested observables per device instance: a term's
+//! value (the `state` slice) and a `VAR` watch (the `vars` slice), by instance
+//! path and name. Memory cost is `O(requested × steps)`, not `O(devices × steps)`.
 //!
 //! Also covers ABI-33 wiring (the field + builder) and the backward-compat
 //! contract:
@@ -9,100 +10,116 @@
 //! - `record_device_state = true` = "record everything" shorthand.
 //! - non-empty selection = record only requested observables.
 
-use piperine_solver::abi::*;
-use piperine_solver::prelude::{Context, ProbeSelection, Solver, TransientAnalysisOptions};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
 
-/// A device that owns a small runtime bank and declares it as an
-/// observable. The bank is `[step_count]` — a single state slot — bumped
-/// on each `load_transient` so the recording visibly advances per step.
-struct StatefulStub {
-    label: &'static str,
-    state: Vec<f64>,
-    vars: Vec<f64>,
-    loads: Arc<AtomicUsize>,
+use std::sync::{Arc, OnceLock};
+
+use abi_devices::vramp;
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::layout::F64;
+use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, op, part, role, watch};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::Port;
+use piperine_solver::prelude::{
+    CircuitBuilder, CircuitInstance, ProbeSelection, Solver, TransientAnalysisOptions,
+};
+
+const ORIGIN: &str = "probe_selection.rs";
+
+fn cell_of(kind: u32, index: u32) -> Cell {
+    Cell { kind, index, part: part::VALUE }
 }
 
-impl StatefulStub {
-    fn new(label: &'static str, loads: Arc<AtomicUsize>) -> Self {
-        Self {
-            label,
-            state: vec![0.0],
-            vars: vec![0.0],
-            loads,
+/// A conductor to ground that declares two observables: its term `state[0]`
+/// (the current `1 mS · V(p)`) and its `VAR` watch `var[0]` (`10 · V(p)`).
+/// Driven by a ramp both advance with the time.
+/// pins: p=0 (PORT); terms: T0 FLOW{p, GROUND} "state[0]"; watches: W0 VAR "var[0]"
+/// fn 0 "i": reads [p] writes [T0] partials (0<-0); fn 1 "show": reads [p] writes [W0]
+struct Stub;
+static STUB_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static STUB: OnceLock<Module> = OnceLock::new();
+
+fn stub_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let t0 = s.term(TermSpec {
+        name: "state[0]",
+        origin: ORIGIN,
+        op: op::FLOW,
+        plus: p,
+        minus: piperine_abi::raw::GROUND,
+        abstol: DEFAULT,
+        max: DEFAULT,
+    });
+    let w0 = s.watch(WatchSpec {
+        name: "var[0]",
+        origin: ORIGIN,
+        kind: watch::VAR,
+        layout: &F64,
+        event: DEFAULT,
+        ttol: DEFAULT,
+        etol: DEFAULT,
+    });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![cell_of(cell::PIN, p)],
+        writes: vec![cell_of(cell::TERM, t0)],
+        partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "show",
+        origin: ORIGIN,
+        reads: vec![cell_of(cell::PIN, p)],
+        writes: vec![cell_of(cell::WATCH, w0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Stub {
+    fn prototype() -> &'static Shape<'static> {
+        STUB_SHAPE.get_or_init(stub_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Stub, Arc::clone(STUB_SHAPE.get_or_init(stub_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let vp = cx.f64(0);
+        if k == 1 {
+            cx.set(0, 10.0 * vp);
+        } else {
+            cx.set(0, 1.0e-3 * vp);
+            cx.jac().copy_from_slice(&[1.0e-3]);
         }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
-impl AnalogDevice for StatefulStub {
-    fn load_transient(
-        &mut self,
-        _s: &TransientAnalysisState<'_>,
-        _t: &TransientAnalysisContext,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.loads.fetch_add(1, Ordering::SeqCst);
-        self.state[0] += 1.0;
-        self.vars[0] += 10.0;
-        Vec::new()
+/// A ramp source over `labels.len()` stubs on one node.
+fn circuit_of(labels: &[&str]) -> CircuitInstance {
+    let mut b = CircuitBuilder::new("probe-sel");
+    let gnd = b.ground();
+    let src = b.node("src");
+    b.device(vramp(), "ramp", &[], &[Port::Node(src.clone()), Port::Node(gnd)]);
+    for label in labels {
+        b.device(STUB.get_or_init(|| module::<Stub>("Stub")), label, &[], &[Port::Node(src.clone())]);
     }
-
-    fn load_dc(
-        &mut self,
-        _s: &DcAnalysisState<'_>,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        Vec::new()
-    }
+    b.build().expect("build")
 }
 
-impl DigitalDevice for StatefulStub {}
-
-impl Introspect for StatefulStub {
-    fn list_observables(&self) -> Vec<ObservableDescriptor> {
-        vec![
-            ObservableDescriptor {
-                name: "state[0]".to_string(),
-                kind: ObservableKind::State,
-                cost: 0.2,
-            },
-            ObservableDescriptor {
-                name: "var[0]".to_string(),
-                kind: ObservableKind::Var,
-                cost: 0.1,
-            },
-        ]
-    }
-}
-
-impl Element for StatefulStub {
-    fn name(&self) -> &str {
-        self.label
-    }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_TRAN
-    }
-
-    fn runtime_banks(&self) -> (&[f64], &[f64]) {
-        (&self.state, &self.vars)
-    }
-}
-
-/// A trivial transient driver: source-free circuit, only the stub's load
-/// runs each step. The stub is the only device — the recorded device_state
-/// map reflects exactly what `collect_device_banks` chose to put there.
+/// A transient of one stub: the recorded `device_state` map reflects exactly
+/// what the selection chose to put there.
 fn run_with(opts: TransientAnalysisOptions) -> piperine_solver::prelude::TransientAnalysisResult {
-    let loads = Arc::new(AtomicUsize::new(0));
-    let dev = StatefulStub::new("stub", loads);
-    let netlist = Netlist::new();
-    let circuit = CircuitInstance::from_devices_and_netlist(
-        "probe-sel",
-        vec![Box::new(dev)],
-        netlist,
-    );
-    let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
+    let mut solver = Solver::new(circuit_of(&["stub"])).with_tran_opts(opts).build();
     solver.tran().expect("transient solves").solve().expect("transient runs")
 }
 
@@ -230,27 +247,21 @@ fn selective_recording_advances_per_accepted_step() {
 /// every step's `device_state` map. Memory is O(1 device), not O(10).
 fn run_with_devices(
     opts: TransientAnalysisOptions,
-    devices: Vec<Box<dyn Element>>,
+    labels: &[&str],
 ) -> piperine_solver::prelude::TransientAnalysisResult {
-    let netlist = Netlist::new();
-    let circuit = CircuitInstance::from_devices_and_netlist("probe-sel", devices, netlist);
-    let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
+    let mut solver = Solver::new(circuit_of(labels)).with_tran_opts(opts).build();
     solver.tran().expect("transient solves").solve().expect("transient runs")
 }
 
 #[test]
 fn ten_devices_one_observable_records_only_that_device() {
     const N: usize = 10;
-    let loads = Arc::new(AtomicUsize::new(0));
-    let mut devices: Vec<Box<dyn Element>> = Vec::with_capacity(N);
-    for i in 0..N {
-        let label = Box::leak(format!("dev{i}").into_boxed_str());
-        devices.push(Box::new(StatefulStub::new(label, loads.clone())));
-    }
+    let labels: Vec<String> = (0..N).map(|i| format!("dev{i}")).collect();
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
     let opts = TransientAnalysisOptions::new(1e-5, 1e-7)
         .with_dt_max(1e-7)
         .with_probe_selection(ProbeSelection::new().request("dev3", "state[0]"));
-    let res = run_with_devices(opts, devices);
+    let res = run_with_devices(opts, &labels);
     assert!(res.len() >= 100, "at least 100 steps recorded");
 
     for step in res.iter() {
@@ -282,12 +293,7 @@ fn ten_devices_one_observable_records_only_that_device() {
 fn tran_setup_result(
     opts: TransientAnalysisOptions,
 ) -> piperine_solver::Result<()> {
-    let loads = Arc::new(AtomicUsize::new(0));
-    let dev = StatefulStub::new("stub", loads);
-    let netlist = Netlist::new();
-    let circuit =
-        CircuitInstance::from_devices_and_netlist("probe-sel", vec![Box::new(dev)], netlist);
-    let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
+    let mut solver = Solver::new(circuit_of(&["stub"])).with_tran_opts(opts).build();
     solver.tran().map(|_| ())
 }
 

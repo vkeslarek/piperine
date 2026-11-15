@@ -374,6 +374,9 @@ impl CircuitInstance {
 
     pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::core::result::Result<()> {
         if self.is_set_up { return Ok(()); }
+        if let Some(bound) = self.abi.as_mut() {
+            bound.set_temperature(ctx.tolerances.temperature);
+        }
         for d in self.devices.iter_mut() { d.setup(ctx)?; }
         // ABI-19: seed every element with the run's nominal temperature during
         // setup, after `allocate_unknowns` (run in `CircuitBuilder::build`)
@@ -399,6 +402,9 @@ impl CircuitInstance {
     /// unaffected — they keep reading `$temperature` at eval time
     /// (backward compatible).
     pub fn set_temperature(&mut self, t: f64) -> crate::core::introspect::Invalidation {
+        if let Some(bound) = self.abi.as_mut() {
+            bound.set_temperature(t);
+        }
         for d in self.devices.iter_mut() {
             d.set_temperature(t);
         }

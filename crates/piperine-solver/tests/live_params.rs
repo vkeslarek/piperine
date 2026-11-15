@@ -1,210 +1,55 @@
-//! Live parameter mutation on a compiled circuit (solver-live-params
-//! feature): loud addressing errors, bypass-cache invalidation, and idle
-//! sets applying to the next analysis run — LIVE-03/04/05/08.
+//! Live parameter mutation on a compiled circuit of devices: loud addressing
+//! errors, idle sets applying to the next analysis run, and scheduled sets
+//! landing mid-transient (LIVE-03/04/05/08), on the `Device` trait. A write
+//! is a host commit through the parameter cone; the observable effect is the
+//! operating point or the waveform, and a param's value reads from its net.
 
-use piperine_solver::prelude::*;
-use piperine_solver::abi::{
-    AnalogDevice, DcAnalysisState, DigitalDevice, Introspect, Stamp, TransientAnalysisContext,
-    TransientAnalysisState,
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
+
+use std::sync::{Arc, OnceLock};
+
+use abi_devices::{add_resistor, add_vsrc, node_id};
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::raw::{Module, Shape, role};
+use piperine_abi::shape::{PinSpec, ShapeBuf, ShapeRef};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::{AnalogReference, ParamValue, Port, Value};
+use piperine_solver::prelude::{
+    CircuitBuilder, CircuitInstance, Context, DcAnalysisResult, TransientAnalysisOptions,
 };
 
-/// A linear resistor with one writable parameter `r` (bounds: r > 0),
-/// declared `BYPASS_OK` so the DC device-bypass stamp cache applies to it.
-struct Resistor {
-    label: String,
-    r: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-}
-
-impl AnalogDevice for Resistor {
-    fn load_dc(
-        &mut self,
-        _state: &DcAnalysisState<'_>,
-        _ctx: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
-    }
-
-    fn load_transient(
-        &mut self,
-        state: &TransientAnalysisState<'_>,
-        _tran_ctx: &TransientAnalysisContext,
-        ctx: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.load_dc(&DcAnalysisState::new(state.history(), state.digital, 1.0), ctx)
-    }
-}
-
-impl DigitalDevice for Resistor {}
-
-impl Introspect for Resistor {
-    fn read_opvars(&self) -> Vec<(String, f64)> {
-        vec![("g".into(), 1.0 / self.r)]
-    }
-
-    fn list_params(&self) -> Vec<ParamDescriptor> {
-        vec![ParamDescriptor {
-            name: "r".into(),
-            kind: ValueKind::Real,
-            default: Value::Real(self.r),
-            unit: Some("ohm".into()),
-            bounds: Bounds { min: Some(1e-9), max: None },
-            scope: ParamScope::Instance,
-            invalidation: Invalidation::Restamp,
-            desc: None,
-        }]
-    }
-
-    fn get_param(&self, name: &str) -> Option<Value> {
-        (name == "r").then_some(Value::Real(self.r))
-    }
-
-    fn set_param(&mut self, name: &str, value: Value) -> std::result::Result<Invalidation, ParamError> {
-        if name != "r" {
-            return Err(ParamError::Unknown(name.into()));
-        }
-        let Some(v) = value.as_real() else {
-            return Err(ParamError::TypeMismatch { name: name.into(), expected: ValueKind::Real });
-        };
-        if v <= 0.0 {
-            return Err(ParamError::OutOfRange { name: name.into(), value });
-        }
-        self.r = v;
-        Ok(Invalidation::Restamp)
-    }
-}
-
-impl Element for Resistor {
-    fn name(&self) -> &str {
-        &self.label
-    }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::BYPASS_OK
-    }
-}
-
-/// An ideal DC voltage source; writes to `dc` invalidate the operating point.
-struct Vdc {
-    label: String,
-    v: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl AnalogDevice for Vdc {
-    fn load_dc(
-        &mut self,
-        _state: &DcAnalysisState<'_>,
-        _ctx: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let branch = self.branch.clone();
-        vec![
-            Stamp::Matrix(self.n1.clone(), branch.clone(), 1.0),
-            Stamp::Matrix(branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), branch.clone(), -1.0),
-            Stamp::Matrix(branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(branch, self.v),
-        ]
-    }
-
-    fn load_transient(
-        &mut self,
-        state: &TransientAnalysisState<'_>,
-        _tran_ctx: &TransientAnalysisContext,
-        ctx: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.load_dc(&DcAnalysisState::new(state.history(), state.digital, 1.0), ctx)
-    }
-}
-
-impl DigitalDevice for Vdc {}
-
-impl Introspect for Vdc {
-    fn list_params(&self) -> Vec<ParamDescriptor> {
-        vec![ParamDescriptor {
-            name: "dc".into(),
-            kind: ValueKind::Real,
-            default: Value::Real(self.v),
-            unit: Some("V".into()),
-            bounds: Bounds::UNBOUNDED,
-            scope: ParamScope::Instance,
-            invalidation: Invalidation::OperatingPoint,
-            desc: None,
-        }]
-    }
-
-    fn get_param(&self, name: &str) -> Option<Value> {
-        (name == "dc").then_some(Value::Real(self.v))
-    }
-
-    fn set_param(&mut self, name: &str, value: Value) -> std::result::Result<Invalidation, ParamError> {
-        if name != "dc" {
-            return Err(ParamError::Unknown(name.into()));
-        }
-        let Some(v) = value.as_real() else {
-            return Err(ParamError::TypeMismatch { name: name.into(), expected: ValueKind::Real });
-        };
-        self.v = v;
-        Ok(Invalidation::OperatingPoint)
-    }
-}
-
-impl Element for Vdc {
-    fn name(&self) -> &str {
-        &self.label
-    }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-}
-
 /// 10 V source over r1 (top→mid) and r2 (mid→gnd): v(mid) = 10·r2/(r1+r2).
-fn divider(r1: f64, r2: f64) -> CircuitInstance {
-    let mut netlist = Netlist::new();
-    let top = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let mid = netlist.connect_node(NodeIdentifier::Anonymous(2));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let v1 = Vdc { label: "v1".into(), v: 10.0, n1: top.clone(), n2: gnd.clone(), branch };
-    let r1 = Resistor { label: "r1".into(), r: r1, n1: top, n2: mid.clone() };
-    let r2 = Resistor { label: "r2".into(), r: r2, n1: mid, n2: gnd };
-
-    CircuitInstance::from_devices_and_netlist(
-        "divider",
-        vec![Box::new(v1), Box::new(r1), Box::new(r2)],
-        netlist,
-    )
+fn divider(r1: f64, r2: f64) -> (CircuitInstance, AnalogReference) {
+    let mut b = CircuitBuilder::new("divider");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", 10.0, &top, &gnd);
+    add_resistor(&mut b, "r1", r1, &top, &mid);
+    add_resistor(&mut b, "r2", r2, &mid, &gnd);
+    (b.build().expect("build"), mid)
 }
 
-fn v_mid(result: &DcAnalysisResult) -> f64 {
-    result.get_node(&NodeIdentifier::Anonymous(2)).expect("v(mid)")
+fn v_mid(result: &DcAnalysisResult, mid: &AnalogReference) -> f64 {
+    result.get_node(&node_id(mid)).expect("v(mid)")
+}
+
+/// The value a `PARAM` pin reads now.
+fn param(circuit: &CircuitInstance, path: &str, name: &str) -> f64 {
+    let bound = circuit.bound().expect("a circuit of devices");
+    let net = bound.names.params[&(path.to_string(), name.to_string())];
+    f64::from_le_bytes(bound.digital.read(net)[..8].try_into().expect("an F64 param"))
 }
 
 // ── LIVE-04: unknown path fails loud with the path ──────────────────────────
 
 #[test]
 fn unknown_label_fails_loud_with_the_path() {
-    let mut circuit = divider(1000.0, 1000.0);
-    let err = circuit
-        .set_element_param("nope", "r", Value::Real(1.0))
-        .expect_err("unknown label must fail");
+    let (mut circuit, _) = divider(1000.0, 1000.0);
+    let err = circuit.set("nope", "r", ParamValue::Real(1.0)).expect_err("unknown label must fail");
     assert!(err.to_string().contains("nope"), "error names the path: {err}");
 }
 
@@ -212,10 +57,8 @@ fn unknown_label_fails_loud_with_the_path() {
 
 #[test]
 fn unknown_param_fails_loud_and_lists_available_params() {
-    let mut circuit = divider(1000.0, 1000.0);
-    let err = circuit
-        .set_element_param("r1", "bogus", Value::Real(1.0))
-        .expect_err("unknown param must fail");
+    let (mut circuit, _) = divider(1000.0, 1000.0);
+    let err = circuit.set("r1", "bogus", ParamValue::Real(1.0)).expect_err("unknown param must fail");
     let msg = err.to_string();
     assert!(msg.contains("r1"), "error names the element: {msg}");
     assert!(msg.contains("bogus"), "error names the bad param: {msg}");
@@ -223,125 +66,78 @@ fn unknown_param_fails_loud_and_lists_available_params() {
     assert!(msg.contains("`r`") || msg.contains(": r"), "candidate list holds `r`: {msg}");
 }
 
-#[test]
-fn unknown_param_on_paramless_element_says_so() {
-    struct Mute;
-    impl AnalogDevice for Mute {}
-    impl DigitalDevice for Mute {}
-    impl Introspect for Mute {}
-    impl Element for Mute {
-        fn name(&self) -> &str { "mute" }
-        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::empty() }
-    }
-    let mut circuit = CircuitInstance::from_devices_and_netlist(
-        "mute",
-        vec![Box::new(Mute) as Box<dyn Element>],
-        Netlist::new(),
-    );
-    let err = circuit
-        .set_element_param("mute", "x", Value::Real(1.0))
-        .expect_err("element with no params must reject");
-    assert!(
-        err.to_string().contains("declares no writable parameters"),
-        "empty-list case is explicit: {err}"
-    );
+/// A device whose shape declares no param: one port and nothing else.
+struct Mute;
+static MUTE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static MUTE: OnceLock<Module> = OnceLock::new();
+
+fn mute_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(PinSpec::continuous("p", role::PORT));
+    s.freeze()
 }
 
-// ── Edge case: out-of-bounds set fails loud via ParamDescriptor bounds ──────
+impl Device for Mute {
+    fn prototype() -> &'static Shape<'static> {
+        MUTE_SHAPE.get_or_init(mute_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Mute, Arc::clone(MUTE_SHAPE.get_or_init(mute_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
 
 #[test]
-fn out_of_bounds_set_fails_loud_and_leaves_value_unchanged() {
-    let mut circuit = divider(1000.0, 1000.0);
-    // 1e-12 is positive (the element itself would accept it) but below the
-    // declared bounds minimum 1e-9 — only the central ParamDescriptor
-    // bounds gate can reject it, proving no partial apply happened.
-    let err = circuit
-        .set_element_param("r1", "r", Value::Real(1e-12))
-        .expect_err("below-bounds value must fail");
-    let msg = err.to_string();
-    assert!(msg.contains("out of bounds"), "bounds rejection is explicit: {msg}");
-    assert!(msg.contains("1e-9") || msg.contains("0.000000001"), "bounds in message: {msg}");
-    let r1 = circuit.all_devices().iter().find(|d| d.name() == "r1").unwrap();
-    assert_eq!(r1.get_param("r"), Some(Value::Real(1000.0)), "value unchanged");
+fn unknown_param_on_paramless_element_says_so() {
+    let mut b = CircuitBuilder::new("mute");
+    let gnd = b.ground();
+    b.device(MUTE.get_or_init(|| module::<Mute>("Mute")), "mute", &[], &[Port::Node(gnd)]);
+    let mut circuit = b.build().expect("build");
+    let err = circuit.set("mute", "x", ParamValue::Real(1.0)).expect_err("element with no params must reject");
+    assert!(err.to_string().contains("declares no writable parameters"), "empty-list case is explicit: {err}");
 }
 
 // ── LIVE-08: an idle set applies to the next analysis run ───────────────────
 
 #[test]
 fn idle_set_applies_to_the_next_analysis_run() {
-    let mut circuit = divider(1000.0, 1000.0);
+    let (mut circuit, mid) = divider(1000.0, 1000.0);
     let first = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    assert!((v_mid(&first) - 5.0).abs() < 1e-9, "10·1k/2k = 5 V");
+    assert!((v_mid(&first, &mid) - 5.0).abs() < 1e-9, "10·1k/2k = 5 V");
 
     // No analysis running — the set simply lands on the element and the
-    // next run picks it up. Numeric-only change reports `Restamp`.
-    let inv = circuit
-        .set_element_param("r2", "r", Value::Real(3000.0))
-        .expect("live set on idle circuit");
-    assert_eq!(inv, Invalidation::Restamp);
+    // next run picks it up.
+    circuit.set("r2", "r", ParamValue::Real(3000.0)).expect("live set on idle circuit");
 
     let second = circuit.dc(Context::default()).unwrap().solve().unwrap();
     assert!(
-        (v_mid(&second) - 7.5).abs() < 1e-9,
+        (v_mid(&second, &mid) - 7.5).abs() < 1e-9,
         "10·3k/4k = 7.5 V after the set, got {}",
-        v_mid(&second)
+        v_mid(&second, &mid)
     );
 
-    // A source-value set reports `OperatingPoint` and the next run reflects it.
-    let inv = circuit
-        .set_element_param("v1", "dc", Value::Real(20.0))
-        .expect("source set");
-    assert_eq!(inv, Invalidation::OperatingPoint);
+    // A source-value set and the next run reflects it.
+    circuit.set("v1", "dc", ParamValue::Real(20.0)).expect("source set");
     let third = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    assert!((v_mid(&third) - 15.0).abs() < 1e-9, "20·3k/4k = 15 V, got {}", v_mid(&third));
-}
-
-// ── LIVE-05: a set through a held analysis drops the bypass stamp cache ─────
-
-#[test]
-fn set_through_held_dc_analysis_invalidates_bypass_cache() {
-    let mut circuit = divider(1000.0, 1000.0);
-    let mut dc = circuit.dc(Context::default()).unwrap();
-
-    let first = dc.solve().unwrap();
-    assert!((v_mid(&first) - 5.0).abs() < 1e-9);
-
-    // The set lands while the analysis holds a warm stamp cache. Without
-    // invalidation the re-solve's unmoved warm start reuses the stale
-    // stamps and silently locks in the old operating point (CP-11 trap).
-    dc.set_element_param("r2", "r", Value::Real(3000.0)).expect("live set");
-
-    let second = dc.solve().unwrap();
-    assert!(
-        (v_mid(&second) - 7.5).abs() < 1e-9,
-        "stale bypass froze the linearization: got {} V, want 7.5 V",
-        v_mid(&second)
-    );
-}
-
-// ── Addressing errors through a held analysis stay loud ─────────────────────
-
-#[test]
-fn set_through_held_dc_analysis_keeps_loud_errors() {
-    let mut circuit = divider(1000.0, 1000.0);
-    let mut dc = circuit.dc(Context::default()).unwrap();
-    let err = dc
-        .set_element_param("r1", "bogus", Value::Real(1.0))
-        .expect_err("unknown param must fail");
-    assert!(err.to_string().contains("available parameters"), "{err}");
+    assert!((v_mid(&third, &mid) - 15.0).abs() < 1e-9, "20·3k/4k = 15 V, got {}", v_mid(&third, &mid));
 }
 
 // ── LIVE-06/09: scheduled sets land on breakpoints mid-transient ─────────────
 
 #[test]
 fn scheduled_op_strength_set_resolves_consistently_at_the_breakpoint() {
-    let mut circuit = divider(1000.0, 1000.0);
+    let (mut circuit, mid) = divider(1000.0, 1000.0);
     let opts = TransientAnalysisOptions::new(10e-6, 0.5e-6);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
 
-    // Source value 10 → 20 V at t = 5 µs: `dc` declares `OperatingPoint`
-    // strength, so the driver must re-solve consistently at the breakpoint —
-    // the recorded point AT 5 µs already reflects the new source.
+    // Source value 10 → 20 V at t = 5 µs. The landing is solved on the left
+    // value (the user's order for a boundary change), then the write is
+    // delivered: every point after it reflects the new source.
     tran.schedule_set(5e-6, "v1", "dc", Value::Real(20.0));
     let result = tran.solve().unwrap();
 
@@ -349,15 +145,15 @@ fn scheduled_op_strength_set_resolves_consistently_at_the_breakpoint() {
         .iter()
         .find(|s| (s.time() - 5e-6).abs() < 1e-18)
         .expect("a step lands exactly on the set time");
-    let v_at = landing.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+    let v_at = landing.get_node(&node_id(&mid)).unwrap();
     assert!(
-        (v_at - 10.0).abs() < 1e-9,
-        "OP-strength set re-solves at t: v(mid) at 5 µs is {v_at}, want 10 (post-set)"
+        (v_at - 5.0).abs() < 1e-9,
+        "the landing is solved on the left value: v(mid) at 5 µs is {v_at}, want 5 (pre-set)"
     );
 
     for step in result.iter() {
-        let v = step.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
-        if step.time() < 5e-6 - 1e-18 {
+        let v = step.get_node(&node_id(&mid)).unwrap();
+        if step.time() < 5e-6 + 1e-18 {
             assert!((v - 5.0).abs() < 1e-9, "pre-set point at {}: {v}", step.time());
         } else {
             assert!((v - 10.0).abs() < 1e-9, "post-set point at {}: {v}", step.time());
@@ -367,7 +163,7 @@ fn scheduled_op_strength_set_resolves_consistently_at_the_breakpoint() {
 
 #[test]
 fn same_param_sets_at_one_time_apply_last_write_wins_with_one_breakpoint() {
-    let mut circuit = divider(1000.0, 1000.0);
+    let (mut circuit, mid) = divider(1000.0, 1000.0);
     let opts = TransientAnalysisOptions::new(10e-6, 0.5e-6);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
 
@@ -381,34 +177,34 @@ fn same_param_sets_at_one_time_apply_last_write_wins_with_one_breakpoint() {
         result.iter().map(|s| s.time()).filter(|t| (t - 5e-6).abs() < 1e-18).collect();
     assert_eq!(landings.len(), 1, "exactly one recorded landing at the set time");
 
-    // Restamp strength: the value applies from the next accepted step.
+    // The value applies from the next accepted step.
     let last = result.last().unwrap();
-    let v_end = last.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+    let v_end = last.get_node(&node_id(&mid)).unwrap();
     assert!(
         (v_end - 7.5).abs() < 1e-9,
         "last write wins: 10·3k/4k = 7.5 V, got {v_end} (9 V would mean first write won)"
     );
 
-    let r2 = circuit.all_devices().iter().find(|d| d.name() == "r2").unwrap();
-    assert_eq!(r2.get_param("r"), Some(Value::Real(3000.0)));
+    drop(result);
+    assert_eq!(param(&circuit, "r2", "r"), 3000.0);
 }
 
 #[test]
 fn scheduled_set_at_or_before_zero_applies_to_the_whole_run() {
-    let mut circuit = divider(1000.0, 1000.0);
+    let (mut circuit, mid) = divider(1000.0, 1000.0);
     let opts = TransientAnalysisOptions::new(2e-6, 0.5e-6);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
     tran.schedule_set(0.0, "r2", "r", Value::Real(3000.0));
     let result = tran.solve().unwrap();
     for step in result.iter() {
-        let v = step.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+        let v = step.get_node(&node_id(&mid)).unwrap();
         assert!((v - 7.5).abs() < 1e-9, "t={}: {v}", step.time());
     }
 }
 
 #[test]
 fn scheduled_set_with_bad_addressing_fails_the_run_loud() {
-    let mut circuit = divider(1000.0, 1000.0);
+    let (mut circuit, _) = divider(1000.0, 1000.0);
     let opts = TransientAnalysisOptions::new(2e-6, 0.5e-6);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
     tran.schedule_set(1e-6, "r2", "bogus", Value::Real(1.0));
@@ -416,26 +212,23 @@ fn scheduled_set_with_bad_addressing_fails_the_run_loud() {
     assert!(err.to_string().contains("bogus"), "{err}");
 }
 
-// ── T9 (host-library HOST-07..12): `device_introspect` addressing seam ──────
+// ── T9 (host-library HOST-07..12): the labeled device's parameters ──────────
 
 #[test]
 fn device_introspect_reaches_the_labeled_devices_introspect_surface() {
-    let circuit = divider(1000.0, 1000.0);
-
-    let r1 = circuit.device_introspect("r1").expect("r1 is a labeled device");
-    assert_eq!(r1.read_opvars(), vec![("g".to_string(), 1.0 / 1000.0)]);
-    assert_eq!(r1.get_param("r"), Some(Value::Real(1000.0)));
-    let params = r1.list_params();
-    assert_eq!(params.len(), 1);
-    assert_eq!(params[0].name, "r");
-
-    let v1 = circuit.device_introspect("v1").expect("v1 is a labeled device");
-    assert_eq!(v1.get_param("dc"), Some(Value::Real(10.0)));
+    let (mut circuit, _) = divider(1000.0, 1000.0);
+    // The parameter nets hold their values once an analysis has started.
+    circuit.dc(Context::default()).unwrap().solve().unwrap();
+    assert_eq!(param(&circuit, "r1", "r"), 1000.0);
+    assert_eq!(param(&circuit, "v1", "dc"), 10.0);
+    let bound = circuit.bound().unwrap();
+    let r1_params: Vec<_> = bound.names.params.keys().filter(|(p, _)| p == "r1").collect();
+    assert_eq!(r1_params.len(), 1);
+    assert_eq!(r1_params[0].1, "r");
 }
 
 #[test]
 fn device_introspect_returns_none_for_an_unknown_label() {
-    let circuit = divider(1000.0, 1000.0);
-    assert!(circuit.device_introspect("nope").is_none());
+    let (circuit, _) = divider(1000.0, 1000.0);
+    assert!(!circuit.bound().unwrap().names.params.keys().any(|(p, _)| p == "nope"));
 }
-

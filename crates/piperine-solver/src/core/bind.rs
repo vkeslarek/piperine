@@ -121,6 +121,10 @@ pub struct Bound {
     /// start of every analysis after the `init`s (abi.md §10 "the host's
     /// initial writes").
     pub host_writes: Vec<(NetId, Vec<u8>)>,
+    /// The run's temperature when it is not the one the net was seeded with:
+    /// committed at the start of every analysis (the `TEMPERATURE` global
+    /// holds the session's value, abi.md §9).
+    pub temperature: Option<(NetId, Vec<u8>)>,
 }
 
 /// What bind ran on, kept so that an instance can be created and bound again
@@ -137,11 +141,16 @@ pub(crate) struct Recipe {
 impl Bound {
     /// The param net of `(path, param)` and the bytes of `value` in its layout.
     pub(crate) fn param_bytes(&self, path: &str, param: &str, value: &ParamValue) -> Result<(NetId, Vec<u8>)> {
-        let net = *self
-            .names
-            .params
-            .get(&(path.to_string(), param.to_string()))
-            .ok_or_else(|| bind_error(path, format!("no PARAM pin `{param}`")))?;
+        let net = *self.names.params.get(&(path.to_string(), param.to_string())).ok_or_else(|| {
+            let mut declared: Vec<&str> =
+                self.names.params.keys().filter(|(p, _)| p == path).map(|(_, n)| n.as_str()).collect();
+            declared.sort_unstable();
+            if declared.is_empty() {
+                bind_error(path, format!("no PARAM pin `{param}`; the instance declares no writable parameters"))
+            } else {
+                bind_error(path, format!("no PARAM pin `{param}`; available parameters: {}", declared.join(", ")))
+            }
+        })?;
         let layout = self.digital.plan().net_layout(net).ok_or_else(|| bind_error(path, format!("`{param}` has no layout")))?;
         let bytes = encode(layout, value).map_err(|e| bind_error(path, format!("`{param}`: {e}")))?;
         Ok((net, bytes))
@@ -149,6 +158,19 @@ impl Bound {
 }
 
 impl Bound {
+    /// The `TEMPERATURE` global holds `t` from the next analysis on; a net
+    /// seeded with `t` and never moved needs no write.
+    pub(crate) fn set_temperature(&mut self, t: f64) {
+        let Some(net) = self.names.nets.get("global:temperature").copied() else { return };
+        let Some(layout) = self.digital.plan().net_layout(net) else { return };
+        let Ok(bytes) = encode(layout, &ParamValue::Real(t)) else { return };
+        let seeded = self.digital.plan().nets[net.0 as usize].init == bytes;
+        if let Some(slot) = self.names.slots.get(&net) {
+            self.analog.set_discrete(*slot, &bytes);
+        }
+        self.temperature = (!seeded || self.temperature.is_some()).then_some((net, bytes));
+    }
+
     /// Tightens `tol` with the per-node tolerances of the pins: a node keeps
     /// the smaller of its present override and the pins' (design AC 4).
     pub fn tighten(&self, tol: &mut Tolerances) {
@@ -617,5 +639,5 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         }
     }
     let digital = Digital::new(digital_plan, DigitalLimits::default());
-    Ok(Bound { analog, digital, names, holds, vntol, analyses, host_writes: Vec::new() })
+    Ok(Bound { analog, digital, names, holds, vntol, analyses, host_writes: Vec::new(), temperature: None })
 }

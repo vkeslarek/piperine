@@ -534,10 +534,10 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Each of the 29 tests is ported or removed by the rule; a test that asserted an `Invalidation` class asserts the observable effect instead only when it already asserted one; otherwise it is removed and listed
-- [ ] The numeric assertions of `live_params.rs` are byte-identical
-- [ ] `ProbeSelection` selects `VAR` watches and term values by instance path and name
-- [ ] Gate: full
+- [x] Each of the 29 tests is ported or removed by the rule; a test that asserted an `Invalidation` class asserts the observable effect instead only when it already asserted one; otherwise it is removed and listed
+- [x] The numeric assertions of `live_params.rs` are byte-identical
+- [x] `ProbeSelection` selects `VAR` watches and term values by instance path and name
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

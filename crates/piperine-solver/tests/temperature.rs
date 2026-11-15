@@ -1,253 +1,137 @@
-//! Temperature protocol contract tests (ABI-19/20): the solver wires
-//! `set_temperature` into the setup lifecycle, and a host running a
-//! temperature sweep re-seeds every element through
-//! `CircuitInstance::set_temperature`.
+//! Temperature protocol contract tests (ABI-19/20) on the `Device` trait: the
+//! `TEMPERATURE` global holds the run's temperature before the first
+//! evaluation, a host running a temperature sweep re-seeds it through
+//! `CircuitInstance::set_temperature`, and a device with no `TEMPERATURE` pin
+//! is untouched by either.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+// The target uses the library selectively.
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
 
-use piperine_solver::abi::*;
-use piperine_solver::prelude::*;
+use std::sync::{Arc, OnceLock};
 
-/// A recording element that captures every `set_temperature` value in
-/// arrival order and records the global event sequence at each hook so the
-/// test can prove `set_temperature` fired before the first `load_dc`.
-struct RecordingDevice {
-    temperatures: Arc<Mutex<Vec<f64>>>,
-    event_seq: Arc<AtomicU64>,
-    set_temp_seq: Arc<AtomicU64>,
-    load_seq: Arc<AtomicU64>,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    r: f64,
+use abi_devices::{add_resistor, add_vsrc, node_id};
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::raw::{Cell, DEFAULT, Module, Shape, cell, global, op, part, role};
+use piperine_abi::layout::F64;
+use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::{AnalogReference, Port};
+use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, Solver, Tolerances};
+
+const ORIGIN: &str = "temperature.rs";
+
+/// A current of `T · 1 µA` drawn out of `p` into `n`, `T` the `TEMPERATURE`
+/// global.
+/// pins: t=0 (GLOBAL TEMPERATURE F64); p=1, n=2 (PORT)
+/// terms: T0 FLOW{p, n}; fn 0: reads [t] writes [T0], no partial (constant in the unknowns)
+struct Thermo;
+static THERMO_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static THERMO: OnceLock<Module> = OnceLock::new();
+
+fn thermo_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(PinSpec { global: global::TEMPERATURE, ..PinSpec::discrete("t", role::GLOBAL, &F64) });
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![Cell { kind: cell::PIN, index: 0, part: part::VALUE }],
+        writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
 }
 
-impl RecordingDevice {
-    fn new(
-        n1: AnalogReference,
-        n2: AnalogReference,
-        temperatures: Arc<Mutex<Vec<f64>>>,
-        event_seq: Arc<AtomicU64>,
-        set_temp_seq: Arc<AtomicU64>,
-        load_seq: Arc<AtomicU64>,
-    ) -> Self {
-        Self { temperatures, event_seq, set_temp_seq, load_seq, n1, n2, r: 1000.0 }
+impl Device for Thermo {
+    fn prototype() -> &'static Shape<'static> {
+        THERMO_SHAPE.get_or_init(thermo_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Thermo, Arc::clone(THERMO_SHAPE.get_or_init(thermo_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let t = cx.f64(0);
+        cx.set(0, -t * 1.0e-6);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }
 
-impl AnalogDevice for RecordingDevice {
-    fn set_temperature(&mut self, t: f64) {
-        let seq = self.event_seq.fetch_add(1, Ordering::SeqCst);
-        // Record only the most-recent set_temperature's sequence — the
-        // ordering assertion is against the LAST set_temperature before
-        // the FIRST load_dc.
-        self.set_temp_seq.store(seq + 1, Ordering::SeqCst);
-        self.temperatures.lock().expect("temperatures poisoned").push(t);
-    }
-
-    fn load_dc(
-        &mut self,
-        _state: &DcAnalysisState<'_>,
-        _ctx: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        // Record the first load's sequence only.
-        if self.load_seq.load(Ordering::SeqCst) == 0 {
-            let seq = self.event_seq.fetch_add(1, Ordering::SeqCst);
-            self.load_seq.store(seq + 1, Ordering::SeqCst);
-        }
-        let g = 1.0 / self.r;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
-    }
+/// 1 kΩ from `out` to ground, a `Thermo` pulling `T` µA out of `out`:
+/// `v(out) = T` millivolts. Also a source and a resistor the device does not touch.
+fn circuit() -> (CircuitInstance, AnalogReference) {
+    let mut b = CircuitBuilder::new("temp");
+    let gnd = b.ground();
+    let out = b.node("out");
+    let src = b.node("src");
+    add_resistor(&mut b, "r1", 1.0e3, &out, &gnd);
+    b.device(THERMO.get_or_init(|| module::<Thermo>("Thermo")), "t1", &[], &[Port::Node(out.clone()), Port::Node(gnd.clone())]);
+    add_vsrc(&mut b, "v1", 1.0, &src, &gnd);
+    add_resistor(&mut b, "r2", 1.0e3, &src, &gnd);
+    (b.build().expect("build"), out)
 }
 
-impl DigitalDevice for RecordingDevice {}
-impl Introspect for RecordingDevice {}
-
-impl Element for RecordingDevice {
-    fn name(&self) -> &str { "r1" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
+fn v_out(circuit: &mut CircuitInstance, out: &AnalogReference) -> f64 {
+    circuit.dc(Context::default()).unwrap().solve().unwrap().get_node(&node_id(out)).unwrap()
 }
 
-/// Ideal DC voltage source with its own branch-current unknown — biases the
-/// recording resistor so the DC solver has something to solve.
-struct Vdc {
-    v: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
-
-impl AnalogDevice for Vdc {
-    fn allocate_unknowns(&mut self, alloc: &mut UnknownAllocator<'_>) {
-        let _ = alloc.branch("v", "i");
-    }
-    fn load_dc(
-        &mut self,
-        _s: &DcAnalysisState<'_>,
-        _c: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.branch.clone(), 1.0),
-            Stamp::Matrix(self.branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), self.branch.clone(), -1.0),
-            Stamp::Matrix(self.branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), self.v),
-        ]
-    }
-}
-
-impl DigitalDevice for Vdc {}
-impl Introspect for Vdc {}
-impl Element for Vdc {
-    fn name(&self) -> &str { "v1" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-}
-
-/// A pure-digital element with no analog side — proves `set_temperature`'s
-/// default no-op leaves non-analog elements untouched.
-struct PureDigital;
-impl AnalogDevice for PureDigital {}
-impl DigitalDevice for PureDigital {
-    fn init(&mut self, _sink: &mut dyn EventSink) {}
-}
-impl Introspect for PureDigital {}
-impl Element for PureDigital {
-    fn name(&self) -> &str { "pure_digital" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
-}
-
-/// ABI-19: when the solver enters setup for an analysis, it SHALL call
-/// `set_temperature(t_nominal)` on every analog element after
-/// `allocate_unknowns` (run by `CircuitBuilder::build`) and before the first
-/// `load_*`. The DC solver's first solve drives both hooks; the recorder
-/// captures the ordering.
+/// ABI-19: when the solver enters an analysis, the `TEMPERATURE` global
+/// holds the run's temperature before the first evaluation: the very first
+/// operating point already reads it.
 #[test]
 fn set_temperature_called_before_first_load() {
-    let temperatures = Arc::new(Mutex::new(Vec::new()));
-    let event_seq = Arc::new(AtomicU64::new(0));
-    let set_temp_seq = Arc::new(AtomicU64::new(0));
-    let load_seq = Arc::new(AtomicU64::new(0));
-
-    let mut netlist = Netlist::new();
-    let n_src = netlist.connect_node(NodeIdentifier::Anonymous(0));
-    let n_out = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let recorder = RecordingDevice::new(
-        n_src.clone(),
-        n_out.clone(),
-        temperatures.clone(),
-        event_seq.clone(),
-        set_temp_seq.clone(),
-        load_seq.clone(),
-    );
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Vdc { v: 1.0, n1: n_src.clone(), n2: gnd.clone(), branch }),
-        Box::new(recorder),
-    ];
-    let circuit =
-        CircuitInstance::from_devices_and_netlist("temp-order", elements, netlist);
-
-    // Custom run temperature — the wiring must propagate this through
-    // `setup_all` (called by the DC solver constructor).
+    let (circuit, out) = circuit();
     let run_temperature = 325.0;
     let ctx = Context {
         tolerances: Tolerances { temperature: run_temperature, ..Tolerances::default() },
         ..Context::default()
     };
     let mut solver = Solver::new(circuit).with_context(ctx).build();
-    let _ = solver.dc().unwrap().solve().unwrap();
-
-    let temps = temperatures.lock().expect("temperatures poisoned").clone();
-    assert!(!temps.is_empty(), "set_temperature must be called");
+    let result = solver.dc().unwrap().solve().unwrap();
+    let v = result.get_node(&node_id(&out)).unwrap();
     assert!(
-        temps.iter().any(|&t| (t - run_temperature).abs() < 1e-9),
-        "run temperature {run_temperature} must be in observed temperatures {temps:?}"
-    );
-
-    let set_at = set_temp_seq.load(Ordering::SeqCst);
-    let load_at = load_seq.load(Ordering::SeqCst);
-    assert!(set_at > 0, "set_temperature must have fired");
-    assert!(load_at > 0, "load_dc must have fired");
-    assert!(
-        set_at < load_at,
-        "set_temperature (seq {set_at}) must precede the first load_dc (seq {load_at})"
+        (v - run_temperature * 1.0e-3).abs() < 1e-9,
+        "the first solve read the run temperature {run_temperature}: v(out) = {v}"
     );
 }
 
-/// ABI-20: a temperature sweep point change calls `set_temperature(t_new)`
-/// on every element and reports `Invalidation::Temperature` (recompute
-/// constants → restamp). The next solve uses the new temperature.
+/// ABI-20: a temperature sweep point change re-seeds the global; the next
+/// solve uses the new temperature.
 #[test]
 fn temperature_sweep_reseeds_every_element() {
-    let temperatures = Arc::new(Mutex::new(Vec::new()));
-    let event_seq = Arc::new(AtomicU64::new(0));
-    let set_temp_seq = Arc::new(AtomicU64::new(0));
-    let load_seq = Arc::new(AtomicU64::new(0));
-
-    let mut netlist = Netlist::new();
-    let n_src = netlist.connect_node(NodeIdentifier::Anonymous(0));
-    let n_out = netlist.connect_node(NodeIdentifier::Anonymous(1));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-
-    let recorder = RecordingDevice::new(
-        n_src.clone(),
-        n_out.clone(),
-        temperatures.clone(),
-        event_seq.clone(),
-        set_temp_seq.clone(),
-        load_seq.clone(),
-    );
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Vdc { v: 1.0, n1: n_src.clone(), n2: gnd.clone(), branch }),
-        Box::new(recorder),
-    ];
-    let mut circuit =
-        CircuitInstance::from_devices_and_netlist("temp-sweep", elements, netlist);
+    let (mut circuit, out) = circuit();
+    let nominal = Tolerances::default().temperature;
+    assert!((v_out(&mut circuit, &out) - nominal * 1.0e-3).abs() < 1e-9);
 
     let sweep_t = 380.0;
-    let inv = circuit.set_temperature(sweep_t);
-    assert_eq!(
-        inv,
-        piperine_solver::prelude::Invalidation::Temperature,
-        "circuit-wide set_temperature must report Temperature invalidation"
-    );
+    circuit.set_temperature(sweep_t);
+    let v = v_out(&mut circuit, &out);
+    assert!((v - sweep_t * 1.0e-3).abs() < 1e-9, "sweep temperature {sweep_t} reached the device: v(out) = {v}");
 
-    let temps = temperatures.lock().expect("temperatures poisoned").clone();
-    assert!(
-        temps.iter().any(|&t| (t - sweep_t).abs() < 1e-9),
-        "sweep temperature {sweep_t} must reach every element, observed {temps:?}"
-    );
+    // Back to the seeded temperature: nothing stays written.
+    circuit.set_temperature(nominal);
+    assert!((v_out(&mut circuit, &out) - nominal * 1.0e-3).abs() < 1e-9);
 }
 
-/// ABI-19 edge case: a device that does not override `set_temperature` is
-/// unaffected — the default no-op leaves it untouched (backward compatible).
+/// ABI-19 edge case: a device with no `TEMPERATURE` pin is unaffected.
 #[test]
 fn default_set_temperature_is_noop() {
-    let mut netlist = Netlist::new();
-    let n_src = netlist.connect_node(NodeIdentifier::Anonymous(0));
-    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-    let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
-    let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(Vdc { v: 1.0, n1: n_src.clone(), n2: gnd.clone(), branch }),
-        Box::new(PureDigital),
-    ];
-    let mut circuit =
-        CircuitInstance::from_devices_and_netlist("default-noop", elements, netlist);
-
-    let inv = circuit.set_temperature(350.0);
-    assert_eq!(inv, piperine_solver::prelude::Invalidation::Temperature);
+    let mut b = CircuitBuilder::new("default-noop");
+    let gnd = b.ground();
+    let src = b.node("src");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", 1.0, &src, &gnd);
+    add_resistor(&mut b, "r1", 1.0e3, &src, &mid);
+    add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
+    let mut circuit = b.build().expect("build");
+    let before = v_out(&mut circuit, &mid);
+    circuit.set_temperature(350.0);
+    assert_eq!(v_out(&mut circuit, &mid), before);
+    assert!((before - 0.5).abs() < 1e-12);
 }

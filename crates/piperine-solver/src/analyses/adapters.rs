@@ -65,7 +65,15 @@ impl DigitalSide {
     /// constant `analysis` (`DC`, `TRAN`, `AC` or `NOISE`).
     pub(crate) fn new(digital: Digital, bound: &Bound, analysis: u32) -> DigitalSide {
         let names: &NameMap = &bound.names;
-        let written = |net: NetId| bound.host_writes.iter().rev().find(|(n, _)| *n == net).map(|(_, b)| b.clone());
+        let written = |net: NetId| {
+            bound
+                .host_writes
+                .iter()
+                .rev()
+                .chain(bound.temperature.iter())
+                .find(|(n, _)| *n == net)
+                .map(|(_, b)| b.clone())
+        };
         let copy = names
             .slot_nets
             .iter()
@@ -76,6 +84,7 @@ impl DigitalSide {
             .iter()
             .filter(|(g, _, _)| *g == analysis)
             .map(|(_, n, b)| (*n, b.clone()))
+            .chain(bound.temperature.iter().cloned())
             .chain(bound.host_writes.iter().cloned())
             .collect();
         DigitalSide { digital, slots: names.slots.clone(), slot_nets: names.slot_nets.clone(), copy, on_start }

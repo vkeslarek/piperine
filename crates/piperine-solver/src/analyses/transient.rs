@@ -710,6 +710,22 @@ impl<'a> TransientSolver<'a> {
         selection: &crate::core::introspect::ProbeSelection,
     ) -> crate::core::result::Result<()> {
         for (label, observable) in &selection.requests {
+            if let Some(bound) = circuit.abi.as_ref() {
+                // A device instance: its terms and `VAR` watches by name.
+                let Some((terms, vars)) = bound.analog.observable_names(label) else {
+                    return Err(piperine_analog_solver::error::Error::simple(
+                        piperine_analog_solver::error::SolverDomain::Element,
+                        format!("device `{label}` not found"),
+                    ));
+                };
+                if !terms.contains(&observable.as_str()) && !vars.contains(&observable.as_str()) {
+                    return Err(piperine_analog_solver::error::Error::simple(
+                        piperine_analog_solver::error::SolverDomain::Element,
+                        format!("device `{label}` has no observable `{observable}`"),
+                    ));
+                }
+                continue;
+            }
             let Some(dev) = circuit.devices.iter().find(|d| d.name() == label) else {
                 return Err(piperine_analog_solver::error::Error::simple(
                     piperine_analog_solver::error::SolverDomain::Element,
@@ -1607,6 +1623,9 @@ impl<'a> TransientSolver<'a> {
         let mut device_state = HashMap::new();
         let selection = &self.options.probe_selection;
         let selective = !selection.requests.is_empty();
+        if let Some(bound) = self.system.circuit.abi.as_ref() {
+            return Self::collect_instance_banks(bound, selection);
+        }
         for dev in &self.system.circuit.devices {
             let (state, vars) = dev.runtime_banks();
             if selective {
@@ -1639,6 +1658,36 @@ impl<'a> TransientSolver<'a> {
                 device_state.insert(label.to_string(), (filt_state, filt_vars));
             } else if !state.is_empty() || !vars.is_empty() {
                 device_state.insert(dev.name().to_string(), (state.to_vec(), vars.to_vec()));
+            }
+        }
+        device_state
+    }
+
+    /// The recorded `(terms, VARs)` of each device instance: the terms' last
+    /// values and the `VAR` watches' accepted values, all of them when the
+    /// selection is empty (`record_device_state`), else the requested ones.
+    fn collect_instance_banks(
+        bound: &crate::core::bind::Bound,
+        selection: &crate::core::introspect::ProbeSelection,
+    ) -> HashMap<String, (Vec<f64>, Vec<f64>)> {
+        let mut device_state = HashMap::new();
+        let selective = !selection.requests.is_empty();
+        for path in &bound.names.instances {
+            if selective && !selection.requests.iter().any(|(d, _)| d == path) {
+                continue;
+            }
+            let Some((terms, vars)) = bound.analog.observable_names(path) else { continue };
+            let wanted = |name: &str| !selective || selection.contains(path, name);
+            let state: Vec<f64> =
+                terms.iter().filter(|n| wanted(n)).filter_map(|n| bound.analog.term_value(path, n)).collect();
+            let vars: Vec<f64> = vars
+                .iter()
+                .filter(|n| wanted(n))
+                .filter_map(|n| bound.analog.var(path, n))
+                .filter_map(|b| b.get(..8).and_then(|b| b.try_into().ok()).map(f64::from_le_bytes))
+                .collect();
+            if selective || !state.is_empty() || !vars.is_empty() {
+                device_state.insert(path.clone(), (state, vars));
             }
         }
         device_state
