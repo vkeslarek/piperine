@@ -273,7 +273,12 @@ fn instruction_text_places_the_moved_code_and_states_the_boundary_as_target() {
     for (name, text) in [("CLAUDE.md", &claude), ("AGENTS.md", &agents)] {
         assert!(!text.contains("meet through events only"), "{name} states the events-only boundary as current");
         assert!(!text.contains("through events only."), "{name} states the events-only boundary as current");
-        assert!(text.contains("target"), "{name} does not call the events-only boundary the target");
+        assert!(!text.contains("Events are the only boundary"), "{name} states the events-only boundary as current");
+        assert!(
+            text.contains("events as the target boundary") || text.contains("events are the target boundary")
+                || text.contains("The target is that the analog and the digital side meet only through events"),
+            "{name} does not call the events-only boundary the target"
+        );
         assert!(text.contains("root `piperine`"), "{name} omits the root shell from the non-building list");
         for gone in ["crates/piperine-plugin", "PluginHost", "codegen's own"] {
             assert!(!text.contains(gone), "{name} still references {gone}");

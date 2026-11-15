@@ -2,14 +2,13 @@
 
 ## Project summary
 
-Piperine is a mixed-signal language and simulator. `piperine-lang` parses and elaborates
-the source (Verilog-AMS, LRM 2.4, `.vams`/`.va`, from `VAMS-LRM-2-4.md` Annex A only; the
-Piperine MSL surface described in `docs/spec/`) into the POM `Design`. The native
-solver is three crates: `piperine-solver` (the analysis engine and the `Element` ABI) and
-two sub-solvers, `piperine-analog-solver` and `piperine-digital-solver`, which the
-solver owner combines. Events are the only boundary between the analog and the digital
-side is the target boundary (MD-60); today the digital snapshot (`&[LogicValue]`) is still
-shared until feature B. Rust workspace, edition 2024.
+Piperine is a mixed-signal language and simulator. `piperine-lang` parses the Piperine
+mixed-signal language (MSL, specified in `docs/spec/`) and builds the POM `Design` from it;
+elaboration and code generation are not built yet. The native solver is three crates:
+`piperine-solver` (the analysis engine and the `Element` ABI) and two sub-solvers,
+`piperine-analog-solver` and `piperine-digital-solver`, which the solver owner combines.
+The target is that the analog and the digital side meet only through events (MD-60);
+today the digital snapshot (`&[LogicValue]`) is still shared until feature B. Rust workspace, edition 2024.
 
 **Today only `piperine-lang` and the three solver crates compile.** The root `piperine`
 shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` are kept in the tree but do not
@@ -66,7 +65,7 @@ compile). Never pass `--workspace`: the root shell and the other four crates do 
 
 | Crate | Role |
 |-------|------|
-| `piperine-lang` | Parser **and** elaborator for Verilog-AMS (LRM 2.4) in one crate (MD-47 — merged from the former `piperine-vams` + `piperine-lang` split, MD-43's purity-gate boundary retired as a cost with no independent consumer). Lexer/preprocessor/grammar (`` `define``/`` `include``/`` `ifdef`` in `preprocessor.rs`, the Annex A grammar in `grammar/`) into `ast::SourceFile`, then the elaborator over that AST: source → POM `Design` (`elab/`, `pom/`), a const evaluator over `ast::Expr` directly (`elab/const_eval.rs` — no PHDL-era tree-walking `Interpreter`/`Host`, see `eval/mod.rs`'s own `//!`), and pure ch. 9 system-task/VPI-registration helpers in `eval/tasks.rs`. `parse_and_elaborate` is the entry point. Grammar/semantics come from `VAMS-LRM-2-4.md` Annex A only, never a third-party Verilog-A compiler. Builtin stdlib headers in `headers/` (Annex D: `constants.vams`, `disciplines.vams`) and `headers/spice/` (the ngspice-faithful `.va` device models — `` `include "spice/<file>.va" `` resolves in any project with no dependency, via the builtin `spice` namespace `SourceMap` seeds). |
+| `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`). Spec: `docs/spec/`; POM guide: `docs/pom/`. |
 | `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
 | `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors. Depends on no in-tree crate; the events-only boundary to the digital side is the target (the digital snapshot is shared until feature B). |
 | `piperine-digital-solver` | The digital sub-solver (event-driven scheduler `scheduler.rs`, drivers, topology, `DigitalLimits`). Depends on no in-tree crate; the events-only boundary to the analog side is the target. |
