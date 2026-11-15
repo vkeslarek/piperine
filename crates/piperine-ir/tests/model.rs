@@ -9,7 +9,7 @@ mod devices;
 
 use devices::Devices;
 use piperine_ir::{
-    BinaryOp, Body, BodyId, BodySpec, BranchKind, Constant, Env, Expr, ExprId, Function,
+    BinaryOp, Body, BodyId, BodyNode, BodySpec, Branch, BranchKind, NodeRef, Site, Constant, Env, Expr, ExprId, Function,
     FunctionId, Instance, InstanceId, InstanceSpec, Ir, IrBuilder, MathFn, Nature, NatureId, Node,
     NodeId, NodeRole, NodeSpec, Operator, Origin, Quantity, QuantityRole, Real, Stmt, StmtId,
     Terminal, UnaryOp, ValueType,
@@ -143,6 +143,65 @@ impl Library {
 
     fn body<'a>(ir: &'a Ir, name: &str) -> Body<'a> {
         ir.bodies().find(|b| b.name() == name).expect("body present")
+    }
+}
+
+/// A body with three branches, two `limit` and two `ac_stim` sites and two signals, placed as the
+/// top; the design declares its two nodes, the second with an initial potential.
+struct Lists;
+
+impl Lists {
+    fn origin(line: u32) -> Origin {
+        Origin { file: "lists.msl".into(), line, col: 1 }
+    }
+
+    fn ir() -> Ir {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let signal = |name: &str, init: Option<f64>, line: u32| BodyNode {
+            name: name.into(),
+            nature: el,
+            role: NodeRole::Signal,
+            init: init.map(Real::new),
+            origin: Lists::origin(line),
+        };
+        let site = |name: &str, line: u32| Site { name: name.into(), origin: Lists::origin(line) };
+        let (x, y, gnd) = (Terminal::Node(0), Terminal::Node(1), Terminal::Ground);
+        let body = b.body(BodySpec {
+            name: "Lists".into(),
+            origin: Lists::origin(1),
+            params: vec![],
+            nodes: vec![signal("x", None, 2), signal("y", Some(0.25), 3)],
+            branches: vec![
+                Branch { plus: y, minus: gnd, kind: BranchKind::Flow },
+                Branch { plus: x, minus: y, kind: BranchKind::Potential },
+                Branch { plus: x, minus: gnd, kind: BranchKind::Flow },
+            ],
+            limits: vec![site("lb", 4), site("la", 5)],
+            stims: vec![site("sb", 6), site("sa", 7)],
+            locals: vec![],
+            analog: None,
+            children: vec![],
+        });
+        let top = b.next_instance_id();
+        let n_x = b.node(NodeSpec { path: "Lists.x".into(), nature: el, declared_by: top, init: None, origin: Lists::origin(2) });
+        let n_y = b.node(NodeSpec {
+            path: "Lists.y".into(),
+            nature: el,
+            declared_by: top,
+            init: Some(Real::new(0.25)),
+            origin: Lists::origin(3),
+        });
+        let top = b.instance(InstanceSpec {
+            path: "Lists".into(),
+            name: "Lists".into(),
+            body,
+            parent: None,
+            nodes: vec![NodeRef::Node(n_x), NodeRef::Node(n_y)],
+            params: vec![],
+            origin: Lists::origin(1),
+        });
+        b.finish(top)
     }
 }
 
@@ -440,6 +499,22 @@ fn contained_items_come_in_declaration_order() {
     assert_eq!(children, ["v1", "r1", "r2"]);
     let kids: Vec<&str> = ir.top().children().map(|i| i.name()).collect();
     assert_eq!(kids, ["v1", "r1", "r2"]);
+    // Branches and sites on lists of more than one item, declared out of name order.
+    let ir = Lists::ir();
+    let body = ir.top().body();
+    let branches: Vec<(Terminal, Terminal, BranchKind)> = body.branches().iter().map(|b| (b.plus, b.minus, b.kind)).collect();
+    assert_eq!(
+        branches,
+        [
+            (Terminal::Node(1), Terminal::Ground, BranchKind::Flow),
+            (Terminal::Node(0), Terminal::Node(1), BranchKind::Potential),
+            (Terminal::Node(0), Terminal::Ground, BranchKind::Flow),
+        ]
+    );
+    let limits: Vec<&str> = body.limits().iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(limits, ["lb", "la"]);
+    let stims: Vec<&str> = body.stims().iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(stims, ["sb", "sa"]);
 }
 
 #[test]
@@ -505,6 +580,13 @@ fn the_node_table_names_nature_declarer_and_init() {
         assert_eq!(node.declared_by().path(), "Divider");
         assert!(node.init().is_none());
     }
+    // A design node with an initial potential keeps it; its neighbour has none.
+    let ir = Lists::ir();
+    let inits: Vec<(&str, Option<f64>)> = ir.nodes().map(|n| (n.path(), n.init().map(Real::get))).collect();
+    assert_eq!(inits, [("Lists.x", None), ("Lists.y", Some(0.25))]);
+    let y = ir.node_at("Lists.y").expect("y");
+    assert_eq!(y.nature().name(), "Electrical");
+    assert_eq!(y.declared_by().path(), "Lists");
 }
 
 #[test]
