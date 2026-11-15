@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
 use crate::real::Real;
 
@@ -59,6 +60,9 @@ pub struct BodyData {
     pub(crate) locals: Vec<Local>,
     pub(crate) analog: Option<Vec<StmtId>>,
     pub(crate) children: Vec<Child>,
+    /// The memo of `Body::dependencies`: derived, so outside equality and serialization.
+    #[serde(skip)]
+    pub(crate) deps: DepsMemo,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -224,7 +228,8 @@ pub enum MathFn {
     Abs,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Ordered as declared: the order of `Deps::env`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Env {
     Temperature,
     Gmin,

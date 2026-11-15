@@ -274,6 +274,251 @@ T8
 
 ## Phase 3 tasks
 
+## Checks` cites. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
+- Zero warnings on every crate the `**Build**` line names. Cargo only with `-p <crate>`: never `--workspace`, never `cargo clean`, never set `CARGO_TARGET_DIR`.
+- A numeric assertion or tolerance of an existing test is never edited. A number you cannot explain: stop and report, never retune.
+- One atomic commit per task, message as given, with the `Co-Authored-By:` trailer the session gives. No push, no merge.
+- If `lessons.py` is run, `git status` afterwards and restore `.specs/lessons.json` and `.specs/LESSONS.md` if they changed.
+
+---
+
+## Test Coverage Matrix
+
+> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `CLAUDE.md` and `AGENTS.md` (zero warnings; fail loud; the five Rust idiom rules of MD-13; test placement MD-28; every target opens with a `//!` scope header), `crates/piperine-lang/tests/suite_hygiene.rs` (no `#[ignore]`, no file-scope lint suppression), `.specs/features/codegen/context.md` (S1 to S10; ngspice parity is the proof of M1).
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| Storage, ids, builder, handles, node set | unit | 1:1 to the ACs of IR-01, IR-02, IR-07, IR-08 and edge case 2, on hand-built IRs | `crates/piperine-ir/tests/model.rs`, `tests/support/devices.rs` | `cargo test -p piperine-ir --test model` |
+| Serialization | unit | each AC of IR-03; `inf` and `-0.0` round-trip | `crates/piperine-ir/tests/serde.rs` | `cargo test -p piperine-ir --test serde` |
+| Printer | unit | each AC of IR-04; one golden text per device body and one for the divider | `crates/piperine-ir/tests/print.rs`, `tests/golden/*.txt` | `cargo test -p piperine-ir --test print` |
+| `Ir::check` | unit | each AC of IR-06, edge cases 1 and 3; one broken IR per entry kind | `crates/piperine-ir/tests/check.rs` | `cargo test -p piperine-ir --test check` |
+| Dependency analysis | unit | each AC of IR-09 on all five device bodies; every operator row of the affine rule | `crates/piperine-ir/tests/deps.rs` | `cargo test -p piperine-ir --test deps` |
+| Workspace manifests and guards | unit | the existing guards stay green with the new member | `crates/piperine-solver/tests/workspace_shape.rs` | `cargo test -p piperine-solver --test workspace_shape` |
+
+## Gate Check Commands
+
+> Generated from codebase - confirm before Execute.
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | a task that touches one target | `cargo test -p piperine-ir --test <the task's target>` |
+| Full | every task from T2 on | `cargo test -p piperine-ir` |
+| Build | T1 and the last task of each phase | `cargo test -p piperine-ir`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries` |
+
+---
+
+## Execution Plan
+
+Three phases, run in order. Two batches: Phases 1 and 2 (T1 to T7, one Sonnet worker), Phase 3 (T8, Opus).
+
+### Phase 1: Storage, builder, node set, handles
+
+Executor: Sonnet.
+
+```
+T1 → T2 → T3 → T4
+```
+
+### Phase 2: Serialization, printer, check
+
+Executor: Sonnet.
+
+```
+T5 → T6 → T7
+```
+
+### Phase 3: Static dependencies
+
+Executor: Opus.
+
+```
+T8
+```
+
+---
+
+## Task Breakdown
+
+## Phase 1 tasks
+
+### T1: Create the crate, the ids and the storage
+
+**What**: The crate `piperine-ir` with `ids.rs` (one `u32` newtype per arena: `NatureId`, `BodyId`, `FunctionId`, `ExprId`, `StmtId`, `InstanceId`, `NodeId`) and `model.rs` (every struct and enum of design "Data Models", fields crate-private), joined to the workspace.
+**Where**: `crates/piperine-ir/` (the new crate)
+**Depends on**: None
+**Reuses**: `crates/piperine-lang/src/pom/ids.rs` (the id pattern), design "Data Models"
+**Requirement**: IR-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] The crate has `Cargo.toml`, `src/lib.rs`, `src/ids.rs` and `src/model.rs`, and the root manifest lists it in `members` and `default-members`
+- [x] `crates/piperine-solver/tests/workspace_shape.rs`: `RETIRED_CRATES` drops `piperine-ir` and `DEFAULT_MEMBERS` gains `crates/piperine-ir` (Q6, decided); the stale note in `crates/piperine-lang/tests/suite_hygiene.rs` about the name is updated
+- [x] Every type of design "Data Models" exists with `Debug, Clone, PartialEq`; ids also `Copy, Eq, Hash, PartialOrd, Ord`
+- [x] `Constant::Real` and `Expr::Real` compare by bit pattern
+- [x] `cargo tree -p piperine-ir` lists no in-tree crate
+- [x] `workspace_shape` and `suite_hygiene` are green
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test model`: `ids_are_u32_newtypes_one_per_arena`, `ir_is_send_and_sync`
+- [x] Gate check passes: `cargo test -p piperine-ir`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(ir): the piperine-ir crate, typed ids and storage`
+
+---
+
+### T2: IrBuilder
+
+**What**: `IrBuilder` with `new`, `nature`, `body`, `function`, `expr`, `stmt`, `node`, `instance`, `finish(top)`; ids handed out in call order; `Ir` has no `&mut self` method.
+**Where**: `crates/piperine-ir/src/build.rs`
+**Depends on**: T1
+**Reuses**: T1 storage
+**Requirement**: IR-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `finish` consumes the builder and returns an `Ir`
+- [x] `a_finished_ir_has_no_mutating_operation` scans `crates/piperine-ir/src` and finds no `&mut self` method on `Ir` or a handle
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test model`: `a_finished_ir_has_no_mutating_operation`, `equal_builder_sequences_give_equal_irs`
+- [x] Gate check passes: `cargo test -p piperine-ir`
+- [x] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): IrBuilder, the only writer`
+
+---
+
+### T3: The node set and the hand-built device bodies
+
+**What**: Builder entry points for every node of IR-07, and the test support that builds `Resistor`, `Capacitor`, `Vsource`, `Isource` and `Diode` (with the functions `vt` and `pnjlim`) exactly as `tests/ngspice/devices.msl` reads.
+**Where**: `crates/piperine-ir/tests/support/devices.rs`
+**Depends on**: T2
+**Reuses**: `tests/ngspice/devices.msl`, `crates/piperine-lang/std/analog.msl` (`vt`, `pnjlim`), `std/constants.msl` (`K_B`, `Q` folded to reals)
+**Requirement**: IR-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `Devices::resistor(&mut IrBuilder) -> BodyId` and its four siblings exist, each one function of a `Devices` struct
+- [ ] Every `Expr`, `Stmt`, `Addend`, `Terminal` and `Site` variant of the design is constructed by at least one fixture or test
+- [ ] The diode's contribution is two addends: direct `id + gmin() * vd` and `ddt` of `cj0 * vd`; its `limit` site is named `vd` with seed `vcrit`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test model`: `value_code_of_the_subset_is_representable`, `a_body_holds_params_nodes_branches_and_sites`, `a_probe_spans_two_terminals`, `environment_reads_are_nodes`, `limit_and_stim_sites_are_indexed`, `a_contribution_is_addends_direct_or_ddt`, `a_nature_carries_abstol_and_units`, `every_expression_records_its_type`, `a_body_without_analog_has_no_branches`
+- [ ] Gate check passes: `cargo test -p piperine-ir`
+- [ ] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): the M1 node set and the five hand-built device bodies`
+
+---
+
+### T4: Handles and path lookup
+
+**What**: `Copy` handles `Body`, `Function`, `Instance`, `Node`, `Nature` with the methods of design "Handles", `Ir::instance_at`, `Ir::node_at`, and a hand-built `Divider` design (top, `v1`, `r1`, `r2`, nodes `vin`, `mid`) in the test support.
+**Where**: `crates/piperine-ir/src/handle.rs`
+**Depends on**: T3
+**Reuses**: `crates/piperine-lang/src/pom/reflect/mod.rs` (the handle pattern); T3 fixtures
+**Requirement**: IR-02, IR-08
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `Devices::divider(&mut IrBuilder) -> InstanceId` builds the twin `tests/ngspice/divider.msl` with paths `Divider`, `Divider.v1`, `Divider.r1`, `Divider.r2`, `Divider.vin`, `Divider.mid`
+- [ ] `Node::instances()` lists the instances bound to a node
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test model`: `handles_are_copy`, `contained_items_come_in_declaration_order`, `an_instance_reaches_its_parent_and_body`, `path_lookup_finds_instances_and_nodes`, `one_body_serves_every_instance_of_it`, `instances_are_stored_in_pre_order`, `the_node_table_names_nature_declarer_and_init`, `the_authored_tree_is_walkable`
+- [ ] Gate check passes: `cargo test -p piperine-ir`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [ ] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(ir): navigable handles and lookup by path`
+
+---
+
+## Phase 2 tasks
+
+### T5: Serialization
+
+**What**: `Serialize` and `Deserialize` for `Ir` and every storage type, reals written as their `u64` bit pattern.
+**Where**: `crates/piperine-ir/tests/serde.rs`
+**Depends on**: None
+**Reuses**: `serde` derives on T1's types; `Design::from_json` as the precedent
+**Requirement**: IR-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `inf`, `-0.0` and `1e-14` survive a JSON round trip bit for bit
+- [ ] Arbitrary JSON and a truncated IR both fail to deserialize
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test serde`: `storage_types_implement_serde`, `json_round_trip_gives_an_equal_ir`, `text_that_is_no_ir_fails_to_deserialize`
+- [ ] Gate check passes: `cargo test -p piperine-ir`
+- [ ] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): serde for the whole model, reals by bit pattern`
+
+---
+
+### T6: The one-way printer and the golden texts
+
+**What**: `impl Display for Ir` in the form of design "Printed form", and one golden file per device body plus one for the divider.
+**Where**: `crates/piperine-ir/src/print.rs`
+**Depends on**: T5
+**Reuses**: `Design::dump` (`pom/design.rs`) as the style; golden-file pattern of `crates/piperine-lang/tests/msl_print.rs`
+**Requirement**: IR-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `crates/piperine-ir/tests/golden/{resistor,capacitor,vsource,isource,diode,divider}.txt` exist and the tests compare byte for byte
+- [ ] `no_parser_of_the_text_exists` scans the crate's public API for a `FromStr` impl or a `parse` function and finds none
+- [ ] Every origin prints as `file:line:col`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test print`: `printed_text_shows_every_item`, `printing_twice_is_byte_identical`, `no_parser_of_the_text_exists`, `unequal_irs_print_different_texts`
+- [ ] Gate check passes: `cargo test -p piperine-ir`
+- [ ] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): deterministic one-way printer with golden texts`
+
+---
+
+### T7: Ir::check
+
+**What**: `Ir::check(&self) -> Vec<Broken>` covering every invariant of IR-06 and the duplicated-path edge case; it never panics.
+**Where**: `crates/piperine-ir/src/check.rs`
+**Depends on**: T6
+**Reuses**: `crates/piperine-lang/src/pom/check.rs` (a list of broken invariants)
+**Requirement**: IR-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Each test corrupts a serialized fixture (JSON edit) and reads the entry that names the item and its origin
+- [ ] A site or a contribution under an `if`, in a function or in a closure is an entry
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test check`: `a_built_ir_checks_clean`, `an_out_of_range_id_is_named`, `an_instance_with_wrong_arity_is_named`, `a_misplaced_or_duplicated_site_is_named`, `a_wrong_type_in_an_analog_position_is_named`, `a_top_alone_prints_and_checks`, `a_duplicated_path_is_named`
+- [ ] Gate check passes: `cargo test -p piperine-ir`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [ ] Test count: the tests named above, and no existing test removed
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(ir): Ir::check lists broken invariants`
+
+---
+
+## Phase 3 tasks
+
 ### T8: Static dependencies and the affine test
 
 **What**: `Body::dependencies(Target) -> Deps` and `Body::is_affine(branch)`: one memoized abstract walk per body with the lattice `Constant < Affine < Nonlinear` of design "Deps".

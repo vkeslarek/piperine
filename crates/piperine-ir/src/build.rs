@@ -2,6 +2,7 @@
 //! equal call sequences give equal IRs.
 
 use crate::real::Real;
+use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
 use crate::model::{
     BodyData, BodyNode, Branch, Child, Constant, Expr, ExprData, FunctionData, InstanceData, Ir,
@@ -94,6 +95,7 @@ impl IrBuilder {
             locals: spec.locals,
             analog: spec.analog,
             children: spec.children,
+            deps: DepsMemo::default(),
         });
         BodyId(self.bodies.len() as u32 - 1)
     }

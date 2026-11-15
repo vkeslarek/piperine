@@ -5,6 +5,7 @@
 
 mod build;
 mod check;
+mod deps;
 mod handle;
 mod ids;
 mod model;
@@ -12,6 +13,7 @@ mod print;
 mod real;
 
 pub use check::Broken;
+pub use deps::{BranchIndex, Deps, ParamIndex, SiteIndex, Target};
 pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NodeSpec};
 pub use handle::{Body, Function, Instance, Nature, Node};
 pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
