@@ -120,6 +120,15 @@ impl Dag {
         &self.order
     }
 
+    /// The number of functions.
+    pub fn len(&self) -> usize {
+        self.functions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.functions.is_empty()
+    }
+
     /// The function behind an index of `Step`.
     pub fn function(&self, i: usize) -> &FnNode {
         &self.functions[i]

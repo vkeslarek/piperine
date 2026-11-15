@@ -7,7 +7,7 @@
 
 use piperine_abi::caller::Handle;
 use piperine_abi::layout::layout_eq;
-use piperine_abi::raw::{Shape, cell, kind, pin_flag, role, statement_flag};
+use piperine_abi::raw::{Layout, Shape, cell, kind, pin_flag, role, statement_flag};
 use piperine_abi::validate::validate;
 
 use super::dag::Dag;
@@ -292,8 +292,8 @@ pub struct DigitalPlan {
     pub nets: Vec<NetSpec>,
     pub instances: Vec<InstancePlan>,
     pub resolution: Resolution,
-    analysis: Analysis,
-    dag: Dag,
+    pub(crate) analysis: Analysis,
+    pub(crate) dag: Dag,
 }
 
 impl DigitalPlan {
@@ -306,6 +306,16 @@ impl DigitalPlan {
         };
         let dag = Dag::build(analysis.functions(), &nets)?;
         Ok(DigitalPlan { nets, instances, resolution, analysis, dag })
+    }
+
+    /// The layout of the pins on `net` (P4 made them equal): the first pin's.
+    pub fn net_layout(&self, net: NetId) -> Option<&Layout> {
+        self.instances.iter().find_map(|inst| {
+            inst.pins.iter().enumerate().find_map(|(i, b)| match b {
+                Binding::Net(id) if *id == net => inst.handle.shape().pins.get(i).map(|p| &p.layout),
+                _ => None,
+            })
+        })
     }
 
     /// The order the discrete functions run in.

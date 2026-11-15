@@ -12,24 +12,24 @@ const ALIGN: usize = 16;
 
 /// `len` bytes starting on a 16-byte boundary inside a larger allocation.
 #[derive(Debug)]
-struct Aligned {
+pub(crate) struct Aligned {
     buf: Vec<u8>,
     start: usize,
     len: usize,
 }
 
 impl Aligned {
-    fn zeroed(len: usize) -> Aligned {
+    pub(crate) fn zeroed(len: usize) -> Aligned {
         let buf = vec![0u8; len + ALIGN];
         let start = buf.as_ptr().align_offset(ALIGN);
         Aligned { buf, start, len }
     }
 
-    fn bytes(&self) -> &[u8] {
+    pub(crate) fn bytes(&self) -> &[u8] {
         &self.buf[self.start..self.start + self.len]
     }
 
-    fn bytes_mut(&mut self) -> &mut [u8] {
+    pub(crate) fn bytes_mut(&mut self) -> &mut [u8] {
         &mut self.buf[self.start..self.start + self.len]
     }
 }
@@ -60,6 +60,11 @@ struct NetBytes {
     /// The microstep of the last firing (0: never).
     fired_at: u64,
 }
+
+/// One net's bytes and stamps, saved to put it back (the relaxation of a cycle writes
+/// intermediate values the run must not see).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NetState(NetBytes);
 
 /// Every net's bytes at one point of a run.
 #[derive(Clone, Debug, PartialEq)]
@@ -136,6 +141,16 @@ impl Store {
         }
         n.value.bytes_mut()[at..at + bytes.len()].copy_from_slice(bytes);
         true
+    }
+
+    /// The saved state of `net`.
+    pub fn save_net(&self, net: NetId) -> NetState {
+        NetState(self.net(net).clone())
+    }
+
+    /// Puts `net` back as `state` saved it.
+    pub fn restore_net(&mut self, net: NetId, state: &NetState) {
+        self.nets[net.0 as usize] = state.0.clone();
     }
 
     /// Fires an event net in this microstep.

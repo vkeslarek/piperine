@@ -4,7 +4,9 @@
 
 pub mod dag;
 pub mod net;
+pub mod observe;
 pub mod plan;
 pub mod queue;
+pub mod run;
 pub mod store;
 pub mod tick;

@@ -349,7 +349,7 @@ pub fn counter() -> Handle {
 
 /// A wired-or over two drives, `unknown` when neither is known (abi.md §9 D1).
 ///
-/// pins: d0=0, d1=1 (PORT BIT, RELAX); v=2 (PORT BIT)
+/// pins: d0=0 (PORT BIT, RELAX); d1=1 (PORT BIT, RELAX, OPTIONAL: unbound it reads as unknown); v=2 (PORT BIT)
 /// fn 0 "resolve": reads [d0, d1] writes [v]
 pub struct Resolver;
 static RESOLVER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
@@ -358,7 +358,7 @@ static RESOLVER: OnceLock<Module> = OnceLock::new();
 fn resolver_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let d0 = s.pin(PinSpec { flags: pin_flag::RELAX, ..PinSpec::discrete("d0", role::PORT, &BIT) });
-    let d1 = s.pin(PinSpec { flags: pin_flag::RELAX, ..PinSpec::discrete("d1", role::PORT, &BIT) });
+    let d1 = s.pin(PinSpec { flags: pin_flag::RELAX | pin_flag::OPTIONAL, ..PinSpec::discrete("d1", role::PORT, &BIT) });
     let v = s.pin(PinSpec::discrete("v", role::PORT, &BIT));
     s.function(FunctionSpec { name: "resolve", reads: vec![pin(d0), pin(d1)], writes: vec![pin(v)], ..FunctionSpec::default() });
     s.freeze()
@@ -660,8 +660,8 @@ pub type Placed<'a> = (&'a str, Handle, Vec<(&'a str, &'a str)>);
 /// Binds `devices` by net name. A wired pin goes to the named net, created on first use from the
 /// pin's layout and flags (`QUIET`, `RECORD`, `RELAX`, `STRUCTURAL` of any pin on it, and the
 /// first `init`). A pin with no wire gets a net of its own, named `<path>.<pin>`; an unwired
-/// `GLOBAL` pin goes to the design-wide net `global:<constant>` (an unwired `OPTIONAL` one to
-/// nothing). A continuous pin binds to the sample slot of its wire's name, slots numbered in the
+/// `GLOBAL` pin goes to the design-wide net `global:<constant>`; an unwired `OPTIONAL` pin goes to
+/// nothing. A continuous pin binds to the sample slot of its wire's name, slots numbered in the
 /// order the names first appear.
 pub fn bind_by_name(devices: Vec<Placed<'_>>, resolution: Resolution) -> Result<DigitalPlan, DigitalError> {
     bind_by_name_with(devices, resolution, |_| {})
@@ -689,7 +689,7 @@ pub fn bind_by_name_with(
                 pins.push(Binding::Sample(*samples.entry(key).or_insert(next)));
                 continue;
             }
-            if wired.is_none() && p.role == role::GLOBAL && p.flags & pin_flag::OPTIONAL != 0 {
+            if wired.is_none() && p.flags & pin_flag::OPTIONAL != 0 {
                 pins.push(Binding::Absent);
                 continue;
             }

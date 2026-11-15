@@ -225,13 +225,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_function_runs_when_a_read_net_changed` and test `a_function_with_unchanged_inputs_is_not_called` pass, counting calls in the device (C11, C12)
-- [ ] Test `every_function_runs_once_at_the_first_instant` passes
-- [ ] Test `a_relax_group_settles_within_its_bound` passes on the resolver with two drivers (C16)
-- [ ] Test `a_moving_known_field_is_zeroed_and_observed` and test `a_moving_field_without_a_known_byte_fails` pass (C17)
-- [ ] Test `a_function_fault_carries_code_tick_and_instance` passes; `RESHAPE` from a function outside the cone is the same error (C25)
-- [ ] Test `changed_is_zero_one_microstep_later` passes
-- [ ] Gate: full
+- [x] Test `a_function_runs_when_a_read_net_changed` and test `a_function_with_unchanged_inputs_is_not_called` pass, counting calls in the device (C11, C12)
+- [x] Test `every_function_runs_once_at_the_first_instant` passes
+- [x] Test `a_relax_group_settles_within_its_bound` passes on the resolver with two drivers (C16)
+- [x] Test `a_moving_known_field_is_zeroed_and_observed` and test `a_moving_field_without_a_known_byte_fails` pass (C17)
+- [x] Test `a_function_fault_carries_code_tick_and_instance` passes; `RESHAPE` from a function outside the cone is the same error (C25)
+- [x] Test `changed_is_zero_one_microstep_later` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
