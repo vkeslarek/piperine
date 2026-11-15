@@ -236,7 +236,7 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [x] §15.2 states, from `transient.rs`: the solver lands exactly on the time of the change (`predict_step`); what is due at microstep 0 is applied before the solve, so the step that arrives there reads it (`attempt_step`); a change made in a later microstep is read by the first step after it; the landing step is exempt from the truncation-error test (`assess_step`); the next step restarts the integrator, the trapezoidal stage dropping its previous derivative and running as backward Euler (`accept_step`, `TrBdf2::stage_coeffs`)
+- [x] §15.2 states, from `transient.rs`: the solver lands exactly on the time of the change (`predict_step`); what is due at microstep 0 is applied before the solve, so the step that arrives there reads it (`attempt_step`); a change made after the step's solve is read by the next, ordinary step and a host `set` applies after acceptance and is read by the next, restarting step (verification F2/F3); the landing step is exempt from the truncation-error test (`assess_step`); the next step restarts the integrator, the trapezoidal stage dropping its previous derivative and running as backward Euler (`accept_step`, `TrBdf2::stage_coeffs`)
 - [x] The backward-Euler limit `h → 0`, the repeated solve (old rule 4) and the impulsive flow are gone as normative text; the two `Resolution` notes that depended on them are removed or rewritten
 - [x] States under `ddt` are said to be carried by the integrator's history across the jump to the accuracy of the step, not as an exact limit at one time
 - [x] Every rule number of §15.2 that another page cites (grep `§15.2.` in `docs/spec/`) still exists or its citing sentence is updated in this commit

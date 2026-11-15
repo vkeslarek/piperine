@@ -75,7 +75,7 @@ The device ABI (`.specs/features/device-abi/abi.md`) and the kept solver algorit
 
 **Acceptance Criteria**:
 
-1. §15.2 SHALL say that a jump has no solve of its own: a change due at microstep 0 of a time point is read by the step that arrives there, and a change made in a later microstep is read by the first step after it.
+1. §15.2 SHALL say that a jump has no solve of its own: a change due at microstep 0 of a time point is read by the step that arrives there; a change made after that step's solve (a reaction reading the solution at t) is read by the next step, which is an ordinary step; a host `set` applies after the step to t is accepted and is read by the next step, which restarts (verification F2/F3, describing `transient.rs`).
 2. §15.2 SHALL say that the step landing on a jump is exempt from the truncation-error test and that the next step restarts the integrator: the trapezoidal stage drops its previous derivative and runs as backward Euler.
 3. §15.2 SHALL NOT state the backward-Euler limit `h → 0`, the repeated solve or the impulsive flow as normative.
 4. The row of `E0504` SHALL stay defined exactly once and SHALL name the failure of a transient step that reads a jump.
