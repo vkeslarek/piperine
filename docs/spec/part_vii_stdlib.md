@@ -365,11 +365,15 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
 pub module limexp(x: f64) -> f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
 
 pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
-    if !(new > vcrit && (new - old).abs() > 2.0 * nvt) { new }
-    else if old > 0.0 {
-        let arg = 1.0 + (new - old) / nvt;
-        if arg > 0.0 { old + nvt * arg.ln() } else { vcrit }
-    } else { nvt * (new / nvt).ln() }
+    if new > vcrit && (new - old).abs() > 2.0 * nvt {
+        if old > 0.0 {
+            let arg = 1.0 + (new - old) / nvt;
+            if arg > 0.0 { old + nvt * arg.ln() } else { vcrit }
+        } else { nvt * (new / nvt).ln() }
+    } else if new < 0.0 {
+        let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };
+        if new < arg { arg } else { new }
+    } else { new }
 }
 
 pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
@@ -415,7 +419,7 @@ pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 { new.clamp(old - delta, 
 4. `limexp` is one `limit` instance per use. It vetoes convergence while active (§17.1.3).
 5. For differentiation `limit` is transparent (§18 rule 3): the derivative of `limexp(x)` is `limexp(x)`.
 
-> **Resolution.** `deltalim(new, old, delta)` is `new.clamp(old − delta, old + delta)`. `pnjlim`, `fetlim` and `limvds` are the ngspice functions of the same names (Appendix C.2) written in MSL, branch by branch. Their exact step is not observable at convergence and is not normative.
+> **Resolution.** `deltalim(new, old, delta)` is `new.clamp(old − delta, old + delta)`. `pnjlim`, `fetlim` and `limvds` are the ngspice functions of the same names (Appendix C.2) written in MSL, branch by branch; `pnjlim` has the forward-bias step of `DEVpnjlim` (`vold + vt·ln(1 + (vnew − vold)/vt)` for `vold > 0`, else `vt·ln(vnew/vt)`) and its reverse-bias branch (a `vnew < 0` below `−vold − 1`, or below `2·vold − 1` when `vold <= 0`, is raised to that bound). Their exact step is not observable at convergence and is not normative.
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |

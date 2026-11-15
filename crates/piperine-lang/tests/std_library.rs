@@ -310,6 +310,136 @@ fn laplace_nd_requires_a_nonzero_leading_denominator_coefficient() {
     assert_eq!(clause.replace(' ', ""), "den[D-1]!=0.0", "the where of den: {clause}");
 }
 
+/// A tiny evaluator of the f64 subset the limiter bodies use (`let`, `if`, arithmetic,
+/// comparisons, `abs`, `ln`), over the parsed body: no other construct is accepted.
+mod f64_eval {
+    use piperine_lang::msl::ast::*;
+    use std::collections::BTreeMap;
+
+    #[derive(Clone, Copy)]
+    pub enum V {
+        F(f64),
+        B(bool),
+    }
+
+    fn num(v: V) -> f64 {
+        match v {
+            V::F(x) => x,
+            V::B(_) => panic!("a number was expected"),
+        }
+    }
+
+    fn truth(v: V) -> bool {
+        match v {
+            V::B(b) => b,
+            V::F(_) => panic!("a bool was expected"),
+        }
+    }
+
+    pub fn block(b: &Block, env: &mut BTreeMap<String, V>) -> V {
+        let mut last = V::F(f64::NAN);
+        for stmt in &b.stmts {
+            match &stmt.kind {
+                StmtKind::Let { pat, init: Some(init), .. } => {
+                    let PatKind::Ident { name, .. } = &pat.kind else { panic!("a plain `let` name") };
+                    let v = expr(init, env);
+                    env.insert(name.name.clone(), v);
+                }
+                StmtKind::Expr { expr: e, semi: false } => last = expr(e, env),
+                other => panic!("unsupported statement {other:?}"),
+            }
+        }
+        last
+    }
+
+    pub fn expr(e: &Expr, env: &mut BTreeMap<String, V>) -> V {
+        match &e.kind {
+            ExprKind::Lit(Lit { kind: LitKind::Float { value, .. }, .. }) => V::F(*value),
+            ExprKind::Lit(Lit { kind: LitKind::Int(t), .. }) => V::F(t.parse().expect("an integer literal")),
+            ExprKind::Path(p) if p.segments.len() == 1 => *env.get(&p.segments[0].ident.name).unwrap_or_else(|| panic!("unbound `{}`", p.segments[0].ident.name)),
+            ExprKind::Paren(inner) => expr(inner, env),
+            ExprKind::Block(b) => block(b, env),
+            ExprKind::Unary { op: UnOp::Not, expr: inner } => V::B(!truth(expr(inner, env))),
+            ExprKind::Unary { op: UnOp::Neg, expr: inner } => V::F(-num(expr(inner, env))),
+            ExprKind::MethodCall { recv, method, args, .. } if args.is_empty() => {
+                let x = num(expr(recv, env));
+                V::F(match method.name.as_str() {
+                    "abs" => x.abs(),
+                    "ln" => x.ln(),
+                    other => panic!("unsupported method {other}"),
+                })
+            }
+            ExprKind::If { cond, then, else_ } => {
+                if truth(expr(cond, env)) {
+                    block(then, env)
+                } else {
+                    expr(else_.as_deref().expect("an `else`"), env)
+                }
+            }
+            ExprKind::Binary { op, lhs, rhs } => {
+                let (l, r) = (expr(lhs, env), expr(rhs, env));
+                match op {
+                    BinOp::And => V::B(truth(l) && truth(r)),
+                    BinOp::Or => V::B(truth(l) || truth(r)),
+                    BinOp::Add => V::F(num(l) + num(r)),
+                    BinOp::Sub => V::F(num(l) - num(r)),
+                    BinOp::Mul => V::F(num(l) * num(r)),
+                    BinOp::Div => V::F(num(l) / num(r)),
+                    BinOp::Lt => V::B(num(l) < num(r)),
+                    BinOp::Le => V::B(num(l) <= num(r)),
+                    BinOp::Gt => V::B(num(l) > num(r)),
+                    BinOp::Ge => V::B(num(l) >= num(r)),
+                    other => panic!("unsupported operator {other:?}"),
+                }
+            }
+            other => panic!("unsupported expression {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn pnjlim_follows_ngspice_devpnjlim_branch_by_branch() {
+    // F4: every branch of the ngspice `DEVpnjlim` as the orchestrator transcribed it, evaluated on
+    // the body of `std::analog::pnjlim` as shipped.
+    use std::collections::BTreeMap;
+    let file = piperine_lang::msl::parser::parse(&std::fs::read_to_string(std_dir().join("analog.msl")).expect("analog.msl")).file;
+    let body = file
+        .items
+        .iter()
+        .find_map(|i| match &i.kind {
+            piperine_lang::msl::ast::ItemKind::Fn(f) if f.name.name == "pnjlim" => f.body.clone(),
+            _ => None,
+        })
+        .expect("analog.msl declares pnjlim with a body");
+    let run = |new: f64, old: f64| -> f64 {
+        let mut env = BTreeMap::from([("new".to_string(), f64_eval::V::F(new)), ("old".to_string(), f64_eval::V::F(old)), ("nvt".to_string(), f64_eval::V::F(0.025)), ("vcrit".to_string(), f64_eval::V::F(0.6))]);
+        match f64_eval::block(&body, &mut env) {
+            f64_eval::V::F(x) => x,
+            f64_eval::V::B(_) => panic!("pnjlim returns a number"),
+        }
+    };
+    let (vt, vcrit) = (0.025_f64, 0.6_f64);
+    // 1. forward step above vcrit, old > 0, arg > 0: old + vt * ln(arg).
+    assert!((run(0.9, 0.7) - (0.7 + vt * (1.0 + 0.2 / vt).ln())).abs() < 1e-15);
+    // 2. the same, arg <= 0 (new - old <= -vt is impossible above vcrit with old > 0 unless
+    //    old is large): old = 5.0, new = 0.7 gives arg = 1 + (0.7 - 5)/vt < 0, so vcrit.
+    assert_eq!(run(0.7, 5.0), vcrit);
+    // 3. forward step above vcrit, old <= 0: vt * ln(new / vt).
+    assert!((run(0.9, -0.1) - vt * (0.9 / vt).ln()).abs() < 1e-15);
+    assert!((run(0.9, 0.0) - vt * (0.9 / vt).ln()).abs() < 1e-15);
+    // 4. new <= vcrit or a small step: unchanged.
+    assert_eq!(run(0.5, 0.0), 0.5);
+    assert_eq!(run(0.62, 0.6), 0.62);
+    // 5. reverse bias, new < 0, old > 0: limited to -old - 1.
+    assert_eq!(run(-3.0, 0.5), -1.5);
+    assert_eq!(run(-1.0, 0.5), -1.0);
+    // 6. reverse bias, new < 0, old <= 0: limited to 2 * old - 1.
+    assert_eq!(run(-5.0, -1.0), -3.0);
+    assert_eq!(run(-2.0, -1.0), -2.0);
+    // 7. new == 0 is not reverse bias; the vnew > vcrit test fails: unchanged.
+    assert_eq!(run(0.0, 1.0), 0.0);
+}
+
 /// The declaration the expression of the root crate with text `text` resolves to, if it does.
 fn resolved_decl<'d>(design: &'d Design, text: &str) -> Option<piperine_lang::pom::Decl<'d>> {
     let expr = design.root_crate().decls().into_iter().flat_map(|d| d.exprs()).find(|e| e.text() == text)?;

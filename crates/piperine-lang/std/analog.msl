@@ -19,11 +19,15 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
 pub module limexp(x: f64) -> f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
 
 pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
-    if !(new > vcrit && (new - old).abs() > 2.0 * nvt) { new }
-    else if old > 0.0 {
-        let arg = 1.0 + (new - old) / nvt;
-        if arg > 0.0 { old + nvt * arg.ln() } else { vcrit }
-    } else { nvt * (new / nvt).ln() }
+    if new > vcrit && (new - old).abs() > 2.0 * nvt {
+        if old > 0.0 {
+            let arg = 1.0 + (new - old) / nvt;
+            if arg > 0.0 { old + nvt * arg.ln() } else { vcrit }
+        } else { nvt * (new / nvt).ln() }
+    } else if new < 0.0 {
+        let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };
+        if new < arg { arg } else { new }
+    } else { new }
 }
 
 pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
