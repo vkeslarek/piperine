@@ -105,12 +105,12 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Root `Cargo.toml` lists the crate in `members` and `default-members`; `workspace_shape.rs::DEFAULT_MEMBERS` gains it
-- [ ] `the_cir_fixtures_are_byte_identical` pins each of the six `.cir` by its length and an FNV-1a 64-bit hash computed by a method of the test's own `Fixture` struct (no new dependency); the pinned values are taken from the files at the commit this task starts from, where `git diff origin/main -- tests/ngspice/*.cir` shows only the new `isrc_r.cir`
-- [ ] Top nodes: `divider` has `vin`, `mid`; `diode_iv` `vin`, `a`; `diode_series` `vin`, `a`, `b`; `ac_rc` and `tran_rc` `vin`, `out`; `isrc_r` `a`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test twins`: `the_corpus_holds_the_library_and_the_twins`, `every_twin_builds_without_diagnostics`, `top_nodes_carry_the_cir_names`, `the_cir_fixtures_are_byte_identical`, `the_current_source_twin_exists`
-- [ ] Gate check passes: `cargo test -p piperine-parity`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Root `Cargo.toml` lists the crate in `members` and `default-members`; `workspace_shape.rs::DEFAULT_MEMBERS` gains it
+- [x] `the_cir_fixtures_are_byte_identical` pins each of the six `.cir` by its length and an FNV-1a 64-bit hash computed by a method of the test's own `Fixture` struct (no new dependency); the pinned values are taken from the files at the commit this task starts from, where `git diff origin/main -- tests/ngspice/*.cir` shows only the new `isrc_r.cir`
+- [x] Top nodes: `divider` has `vin`, `mid`; `diode_iv` `vin`, `a`; `diode_series` `vin`, `a`, `b`; `ac_rc` and `tran_rc` `vin`, `out`; `isrc_r` `a`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test twins`: `the_corpus_holds_the_library_and_the_twins`, `every_twin_builds_without_diagnostics`, `top_nodes_carry_the_cir_names`, `the_cir_fixtures_are_byte_identical`, `the_current_source_twin_exists`
+- [x] Gate check passes: `cargo test -p piperine-parity`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

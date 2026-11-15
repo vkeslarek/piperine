@@ -1499,6 +1499,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-parity"
+version = "0.2.0"
+dependencies = [
+ "piperine-lang",
+ "tempfile",
+]
+
+[[package]]
 name = "piperine-project"
 version = "0.2.0"
 dependencies = [

@@ -32,6 +32,7 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-analog-solver",
     "crates/piperine-digital-solver",
     "crates/piperine-lang",
+    "crates/piperine-parity",
     "crates/piperine-solver",
 ];
 
@@ -186,7 +187,7 @@ fn workflows_name_no_retired_crate() {
     assert!(!ci.contains("requirements.txt"), "ci.yml installs Python requirements");
 }
 
-/// The eight crates the workspace keeps.
+/// The ten crates the workspace keeps.
 const KEPT_CRATES: &[&str] = &[
     "piperine-abi",
     "piperine-lang",
@@ -197,6 +198,7 @@ const KEPT_CRATES: &[&str] = &[
     "piperine-api",
     "piperine-cli",
     "piperine-lang-server",
+    "piperine-parity",
 ];
 
 /// The crate names in the rows of the table under `## Crate responsibilities`

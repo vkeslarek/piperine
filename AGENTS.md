@@ -53,7 +53,8 @@ crates/
 ├── piperine-api/             the library face: session, results, waveform (does not build yet)
 ├── piperine-cli/             `piperine` CLI (does not build yet)
 ├── piperine-project/         Piperine.toml + dependency resolver (does not build yet)
-└── piperine-lang-server/     LSP server (does not build yet)
+├── piperine-lang-server/     LSP server (does not build yet)
+└── piperine-parity/          M1 parity harness: ngspice goldens vs the MSL twins (test-only)
 ```
 
 ## Hard rules

@@ -1,0 +1,9 @@
+[package]
+name = "piperine-parity"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+piperine-lang = { path = "../piperine-lang" }
+tempfile.workspace = true
