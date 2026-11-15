@@ -247,7 +247,7 @@ const fn poly_s<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
 
 pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 1 && N <= D {
     num: [f64; N];
-    den: [f64; D] where den.iter().any(|d| *d != 0.0);
+    den: [f64; D] where den[D - 1] != 0.0;
     signal w: [State; D - 1];                // w[k]: the k-th derivative of W, where den(s)·W = x
     let top = if D > 1 { ddt(pos(w[D - 2])) } else { x / den[0] };
     let y = (0..N).map(|k| num[k] * if k + 1 < D { pos(w[k]) } else { top }).sum();

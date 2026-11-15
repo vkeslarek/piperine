@@ -298,6 +298,18 @@ fn laplace_nd_has_state_signals_and_an_analog_block() {
     assert_eq!(module.analog_blocks().len(), 1, "one analog block");
 }
 
+#[test]
+fn laplace_nd_requires_a_nonzero_leading_denominator_coefficient() {
+    // STD-02 AC 8 (F3): `den: [1.0, 0.0]` makes H(s) = s, improper and with fewer poles than the
+    // D - 1 states promise, so the `where` of `den` tests the top coefficient `den[D - 1]`, not
+    // "some coefficient". The POM evaluates no `where`: the guard is on the written clause.
+    let design = embedded();
+    let module = design.std_crate().find("analog::laplace_nd").and_then(|d| d.as_module()).expect("std declares laplace_nd");
+    let den = module.params().into_iter().find(|p| p.name() == Some("den")).expect("laplace_nd has den");
+    let clause = den.where_clause().expect("den has a where").text().to_string();
+    assert_eq!(clause.replace(' ', ""), "den[D-1]!=0.0", "the where of den: {clause}");
+}
+
 /// The declaration the expression of the root crate with text `text` resolves to, if it does.
 fn resolved_decl<'d>(design: &'d Design, text: &str) -> Option<piperine_lang::pom::Decl<'d>> {
     let expr = design.root_crate().decls().into_iter().flat_map(|d| d.exprs()).find(|e| e.text() == text)?;

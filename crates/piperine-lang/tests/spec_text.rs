@@ -1312,6 +1312,8 @@ fn laplace_states_the_proper_rule() {
     // STD-02 AC 8: `laplace_nd` requires `D >= 1` and `N <= D`; breaking it is E0304.
     let s = one_line(&section(&spec("part_vii_stdlib.md"), "#### 22.2.14"));
     assert!(s.contains("`D >= 1`") && s.contains("`N <= D`") && s.contains("`E0304`"), "{s}");
+    // F3: the leading denominator coefficient must be non-zero (`den: [1.0, 0.0]` is `E0317`).
+    assert!(s.contains("`den[D - 1] != 0.0`") && s.contains("[1.0, 0.0]") && s.contains("`E0317`"), "{s}");
 }
 
 #[test]

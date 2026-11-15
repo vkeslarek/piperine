@@ -840,7 +840,7 @@ const fn poly_s<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
 
 pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 1 && N <= D {
     num: [f64; N];
-    den: [f64; D] where den.iter().any(|d| *d != 0.0);
+    den: [f64; D] where den[D - 1] != 0.0;
     signal w: [State; D - 1];                // w[k]: the k-th derivative of W, where den(s)·W = x
     let top = if D > 1 { ddt(pos(w[D - 2])) } else { x / den[0] };
     let y = (0..N).map(|k| num[k] * if k + 1 < D { pos(w[k]) } else { top }).sum();
@@ -876,7 +876,7 @@ pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= 
 
 1. In the `nd` form, `H(s) = Σ num[k]·s^k / Σ den[k]·s^k`, coefficients in ascending powers of `s`.
 2. A root `ρ` contributes the factor `1 − s/ρ`. A root at zero contributes the factor `s` (VAMS 4.5.11).
-3. A complex root **MUST** appear with its conjugate. A denominator that is identically zero is an error. Each is a false `where` of the param: `E0317`.
+3. A complex root **MUST** appear with its conjugate. The leading denominator coefficient of `laplace_nd` **MUST** be non-zero (`den[D - 1] != 0.0`): `den: [1.0, 0.0]` would give `H(s) = s`, improper, with fewer poles than the `D - 1` states of rule 5. A zero leading coefficient (so also a denominator that is identically zero) is an error. Each is a false `where` of the param: `E0317`.
 4. `laplace_nd` requires `D >= 1` and `N <= D`: a proper transfer function. A placement that breaks it is `E0304`.
 5. The filter is realized with `ddt` on internal `State` nodes, in the controllable canonical form. Its states obey the jump rule (§15.2.1). With `D == 1` there is no state and the result is `num[0] * x / den[0]`.
 6. `x` is a value input: it **MAY** probe and is differentiated.
