@@ -51,6 +51,29 @@ impl Dag {
             })
             .collect();
 
+        // abi.md §9 D1: every directed cycle passes through a RELAX net. Take the edges through
+        // RELAX nets away; what remains must have no cycle.
+        let strict: Vec<Vec<usize>> = functions
+            .iter()
+            .map(|f| {
+                let mut to: Vec<usize> = f
+                    .writes
+                    .iter()
+                    .filter(|w| !nets[w.0 as usize].relax)
+                    .flat_map(|w| readers[w.0 as usize].iter().copied())
+                    .collect();
+                to.sort_unstable();
+                to.dedup();
+                to
+            })
+            .collect();
+        for members in components(&strict) {
+            if members.len() > 1 || strict[members[0]].contains(&members[0]) {
+                let what = members.iter().map(|m| functions[*m].name.clone()).collect();
+                return Err(DigitalError::Bind { rule: "cycle", what });
+            }
+        }
+
         let comps = components(&edges);
         let mut comp_of = vec![0usize; functions.len()];
         for (c, members) in comps.iter().enumerate() {

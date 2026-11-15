@@ -142,3 +142,22 @@ fn readers_lists_the_functions_that_read_a_net() {
     assert_eq!(names, ["b", "c"]);
     assert!(dag.readers(NetId(3)).is_empty());
 }
+
+#[test]
+fn an_inner_cycle_through_no_relax_net_inside_a_relax_component_is_refused() {
+    // round-1 finding 3, abi.md §9 D1: every directed cycle needs a RELAX net. g1 <-> g2 passes
+    // through n1 and n2 only; the loop through r passes through n3, which is RELAX.
+    let fns = vec![func("g1", 0, 0, &[2], &[1]), func("g2", 1, 0, &[1, 3], &[2]), func("r", 2, 0, &[2], &[3])];
+    match Dag::build(&fns, &nets(4, &[3])) {
+        Err(DigitalError::Bind { rule, what }) => {
+            assert_eq!(rule, "cycle");
+            let text = what.join(" ");
+            assert!(text.contains("g1") && text.contains("g2"), "the offending cycle is named: {text}");
+            assert!(!what.iter().any(|w| w == "r"), "the resolver is not part of it: {what:?}");
+        }
+        other => panic!("expected a cycle error, got {other:?}"),
+    }
+    // the resolver loop alone, through the RELAX net, is accepted
+    let ok = vec![func("g2", 1, 0, &[3], &[2]), func("r", 2, 0, &[2], &[3])];
+    assert!(Dag::build(&ok, &nets(4, &[3])).is_ok());
+}
