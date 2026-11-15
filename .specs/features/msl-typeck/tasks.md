@@ -100,12 +100,12 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] `Types::check` on a design with diagnostics returns exactly those and no table
-- [ ] An unknown top, or a top outside the root crate, is one diagnostic naming it
-- [ ] `ty`, `method`, `callee`, `local`, `reached` exist with the signatures of design "Types" (returning nothing yet for an empty reachable set)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_entry`: `a_design_with_diagnostics_gives_them_back`, `an_unknown_top_is_one_diagnostic`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `Types::check` on a design with diagnostics returns exactly those and no table
+- [x] An unknown top, or a top outside the root crate, is one diagnostic naming it
+- [x] `ty`, `method`, `callee`, `local`, `reached` exist with the signatures of design "Types" (returning nothing yet for an empty reachable set)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_entry`: `a_design_with_diagnostics_gives_them_back`, `an_unknown_top_is_one_diagnostic`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
