@@ -296,7 +296,7 @@ Each term has one defining occurrence. The table points at it.
 | instant, microstep | [§15](part_v_execution.md#15-time-and-the-instant) |
 | jump, right value | [§15.2](part_v_execution.md#152-the-jump) |
 | known, unknown, known flag | [§3.3](part_i_values.md#33-unknown-values) |
-| left value | [§15](part_v_execution.md#15-time-and-the-instant) step 1 |
+| left value | [§15.2](part_v_execution.md#152-the-jump) |
 | level | [§2](part_i_values.md#2-repr) |
 | limiting | [§18](part_v_execution.md#18-limiting) |
 | located crossing | [§17.3](part_v_execution.md#173-locating-crossings) |

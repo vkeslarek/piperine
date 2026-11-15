@@ -62,8 +62,8 @@ analog<N> for Pwl<N> {
 | Events | `N − 1` instances of `at`, one per unrolled reaction (§8.3.4). Each fires once at its tick (§13 rule 4, §15). |
 | `(0, 0)` | `seg ← 0` is committed and `seg.changed()` fires (§13 rule 6). No reaction listens. |
 | Operating point | `now()` is 0 (§16.2). With `points[0].0 == 0`, `y = points[0].1`. A first time above 0 clamps to the same value. |
-| Corner `t_k` | `(t_k, 0)`: `at` fires, the reaction commits `seg`. `(t_k, 1)`: `seg ← k` applies, `analog` reads it, and the jump is solved (§15 step 3.4). |
-| The jump | Left value with `seg = k − 1`: the clamp is 1, so `y = y_k`. Right value with `seg = k`: the clamp is 0, so `y = y_k`. The source is continuous; only its slope changes. Tick rounding (§15) can leave a difference of at most the slope times half a tick, which the jump absorbs. |
+| Corner `t_k` | `(t_k, 0)`: `at` fires, the reaction commits `seg`. `(t_k, 1)`: `seg ← k` applies; nothing is pending, so the step that arrives at `t_k` is solved and reads it: a jump (§15 step 3.4). |
+| The jump | Left value: the solution of the previous time point, on segment `k − 1`, which ends at `y_k` at `t_k`. Right value: the step to `t_k` reads `seg = k`; the clamp is 0, so `y = y_k`. The source is continuous; only its slope changes. Tick rounding (§15) can leave a difference of at most the slope times half a tick, which the jump absorbs. |
 | After the last corner | `seg = N − 1`, so `k + 1 >= N` and `y` stays at `points[N − 1].1`. |
 | Time points | Every corner (§17.2.2: its reaction changes a carrier that `analog` reads). No other instant. |
 | `Dc` | `at` never fires (§16.1.3). `seg` stays 0 and `now()` is 0: the source holds its value at time 0. |
@@ -232,7 +232,7 @@ digital for DeltaSigma1 {
 | Operating point of `Tran` | `x` has `= 0.0`, so it is held at 0 V by a source to `gnd` (§16). The hold's flow balances `(v(vin) − fb) / r`. `fb = −vref`, since `bit` starts false. |
 | `(0, 0)` | `bit ← false` is committed. If `clk` starts high, `clk.rise()` fires (§13 rule 6): the reaction reads `v(x) = 0` and commits `false`, which changes nothing. |
 | First step | The hold is removed. `c · v(x)` is a `ddt` state, so the step starts from 0 V with no jump (§16, §15.2.1). |
-| Rising edge, `(t, 0)` | `t` is a time point: the reaction probes (§12.1.5, §17.2.2). The left value is solved first (§15 step 1). The reaction reads it and commits `bit`. |
+| Rising edge, `(t, 0)` | `t` is a time point: the reaction probes (§12.1.5, §17.2.2). The reaction runs before the step to `t` is solved and reads the solution of the previous time point (§15 step 3.3). It commits `bit`. |
 | Rising edge, `(t, 1)` | If `bit` changed, `analog` reads the change: a jump (§15 step 3.4). `c · v(x)` stays (§15.2.1). The flow term changes by `2 · vref / r`. |
 | Restart | The state's derivative differs across the jump, so the integrator restarts for it (§15.2.6). |
 | Unchanged `bit` | A commit of the value already held changes nothing. No jump; the instant is still a time point. |

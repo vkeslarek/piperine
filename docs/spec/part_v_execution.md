@@ -78,10 +78,10 @@ carrier changes (§16.2).
 At each time point `t` of a transient, after the operating point (§16), a simulator **SHALL**
 produce the result of the following procedure.
 
-1. *Solve* at `t`. The result is the **left value** at `t`.
-2. *Collect* what is due at `t`: `at` events, delayed commits, located crossings, host
-   `set`s and host drives (§23.1.4). Collected commits are due at `(t, 0)`. Collected
-   events fire at `(t, 0)`.
+1. *Land* on `t` (§17.2). The transient step that arrives at `t` is solved once, in step
+   3.4. Until then the latest solution is the one accepted at the previous time point.
+2. *Collect* what is due at `t`: `at` events, delayed commits, host `set`s and host drives
+   (§23.1.4). Collected commits are due at `(t, 0)`. Collected events fire at `(t, 0)`.
 3. *Microstep loop*, for `n = 0, 1, …`:
    1. *Apply* the commits due at `(t, n)`. Commits to one level of one drive are ordered by
       §12.1.2; the last one is the value.
@@ -89,15 +89,18 @@ produce the result of the following procedure.
       changed, in dependency order, loops by relaxation (§8.2.3). Every carrier or param
       whose value changed, here or in 3.1, fires its `changed()` at `(t, n)`.
    3. *React.* Run each reaction whose event fires at `(t, n)`, once, to completion. Each
-      reads the state settled in 3.2 and the analog solution after microstep `n − 1` (for
-      `n = 0`, the left value). Its commits are due at `(t, n + 1)`, or later under T2. An
-      `extern "cosim"` module runs here as one reaction (§8.5).
-   4. *Jump.* No solve runs here (§15.2). A carrier or param that `analog` reads and that
-      changed in this microstep is read by the first transient step after `t`; a change due at
-      `(t, 0)` was already read by the step that arrived at `t`.
-   5. *Exit test.* Leave the loop when nothing is pending at `(t, n + 1)`.
+      reads the state settled in 3.2 and the latest solution: the one accepted at the previous
+      time point while step 3.4 has not run, the solution at `t` after it. Its commits are due
+      at `(t, n + 1)`, or later under T2. An `extern "cosim"` module runs here as one reaction
+      (§8.5).
+   4. *Solve, once.* The first time nothing is pending at `(t, n + 1)`, the transient step
+      that arrives at `t` is solved. It reads the discrete state settled at microstep `n`, so
+      every change made so far at `t` is read by it (§15.2). Its solution is the solution at
+      `t`. A later microstep does not solve again: a change it makes is read by the first step
+      after `t`.
+   5. *Exit test.* Leave the loop when step 3.4 has run and nothing is pending at `(t, n + 1)`.
 4. *Settle.* Every reaction on `settle` runs once, reading the final discrete state and the
-   final solution of `t`. This is the **settle phase**.
+   solution at `t`. This is the **settle phase**.
 5. *Advance* to the next time point (§17.2).
 
 Something is **pending** at `(t, n + 1)` when a commit is due there or an event fires there.
@@ -108,7 +111,7 @@ The table fixes the microstep at which each event fires; §13 defines the events
 | `s.changed()` | `(t, n)`, when `s` changed in step 3.1 or 3.2 of microstep `n` |
 | `at(x)`, scheduled at tick `t` before `t` was reached | `(t, 0)` |
 | `at(x)`, armed or re-armed in microstep `n` with a time equal to `t` (§13 rule 4) | `(t, n + 1)` |
-| `cross(e)`, located at `t` (§17.3) | `(t, 0)` |
+| `cross(e)`, located at `t` (§17.3) | `(t, n + 1)`, where `n` is the microstep at which step 3.4 solved `t` |
 | `settle` | the settle phase of `t`; no microstep |
 | `a \|\| b`, `ev && c`, a function or module returning `Event` | whenever its definition (§13) fires from the rows above |
 
@@ -116,8 +119,8 @@ The table fixes the microstep at which each event fires; §13 defines the events
 > An event read as a `bool` there (§13 rule 2) is true only if `settle` makes it fire.
 
 **Event times that are not time points.** At such a time `t`, steps 2, 3.1, 3.2, 3.3 and 3.5
-run, in the same order. Steps 1, 3.4 and 4 do not: by §17.2.2 nothing at `t` probes and
-nothing that `analog` reads can change. These instants run in increasing order of `(t, n)`,
+run, in the same order; the exit test does not wait for step 3.4. Steps 1, 3.4 and 4 do not:
+by §17.2.2 nothing at `t` probes and nothing that `analog` reads can change. These instants run in increasing order of `(t, n)`,
 interleaved with the time points.
 
 > **Resolution.** The step list for an event time that is not a time point is stated here; the
@@ -136,10 +139,11 @@ A conforming execution satisfies all of the following at every instant.
 - **I3. Order.** Instants take effect in increasing order of `(t, n)`. A commit never applies
   at an instant earlier than or equal to the one that made it.
 - **I4. Constancy.** Every discrete carrier and every param is constant during a solve.
-- **I5. Agreement.** When the loop of a time point exits, the analog solution was solved with
-  the final discrete state of that time point.
-- **I6. Lag of one microstep.** The solution a reaction reads at `(t, n)` was solved with the
-  discrete state `analog` read at `(t, n − 1)`.
+- **I5. Agreement.** The solution at a time point `t` was solved with the discrete state
+  settled in the microstep at which step 3.4 ran. A change made after it is read by the first
+  step after `t` (§15.2).
+- **I6. One solve per time point.** A reaction at `(t, n)` reads the solution accepted at the
+  previous time point while step 3.4 has not run, and the solution at `t` after it.
 - **I7. Termination.** The loop exits or the analysis fails with `E0501`. The bound on the
   number of microsteps per time is a session option (Appendix C.2 gives the default). Raising
   a bound never changes a result that did not hit it.
@@ -159,12 +163,13 @@ next microstep under T3. It is an ordinary commit with one fixed due instant.
 - **S1.** A settle commit made at time point `t` is due at `(t_next, 0)`, where `t_next` is
   the next time point. There it fires `changed()`, and reactions to it run in that instant's
   loop like any others.
-- **S2.** The solver knows the commit before it takes the step. The solve that arrives at
-  `t_next` (step 1) already reads the value `(t_next, 0)` will apply to that carrier, and
-  the definitions and `resolve`s that follow from it. When other commits to the same level
-  are due at `(t_next, 0)`, the solve reads the winner under §12.1.2.
-- **S3.** There is therefore no left and right value for that carrier at `t_next`: no second
-  solve, no jump, no integrator restart. A settle commit is an explicit lag of one step.
+- **S2.** Like every change due at `(t_next, 0)`, the commit applies before the step that
+  arrives at `t_next` is solved (step 3.4). That step reads the value `(t_next, 0)` applies to
+  that carrier, and the definitions and `resolve`s that follow from it. When other commits to
+  the same level are due at `(t_next, 0)`, the step reads the winner under §12.1.2.
+- **S3.** A settle commit is therefore read by an ordinary step: it does not make `t_next` a
+  time point, so that step is not exempt from the truncation-error test and the integrator
+  does not restart for it (§15.2). A settle commit is an explicit lag of one step.
 - **S4.** Event times strictly between `t` and `t_next` read the old value.
 - **S5.** If the step to `t_next` is rejected, the commit moves with `t_next`.
 - **S6.** Where time does not advance, the next time point is the next sweep point (§16.1).
@@ -181,8 +186,8 @@ next microstep under T3. It is an ordinary commit with one fixed due instant.
 | Code | Discrete carriers and params | Analog values |
 | --- | --- | --- |
 | `analog` | constant for the whole solve | the current iterate |
-| a reaction at `(t, n)` | settled at microstep `n` (step 3.2) | the solution after microstep `n − 1` |
-| a reaction on `settle` | the final values of the time point | the final solution |
+| a reaction at `(t, n)` | settled at microstep `n` (step 3.2) | the solution of the previous time point before step 3.4, the solution at `t` after it |
+| a reaction on `settle` | the final values of the time point | the solution at `t` |
 | a definition | settled in dependency order within the microstep | none (§8.2.5) |
 | a located `cross` expression | constant between event times | the solver's solution along the step |
 
@@ -203,15 +208,17 @@ The operating point and the instant an analysis ends are always time points (§1
 
 | Step | Instant | Applied (3.1) | Definitions (3.2) | Events fired | Reactions commit (3.3) |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 10 ns | — | — | — | the left value is solved |
-| 2 | 10 ns | — | — | — | collected: the commit of `clk`, the located crossing |
-| 3 | (10 ns, 0) | `clk ← H`, from its clock source | `d` unchanged | `clk.rise()`, the crossing | `q <- d` reads the old `d`; `above_th <- true` |
-| 3 | (10 ns, 1) | `q`, `above_th` | `d ← H` | `d.changed()` | none listens to `d` |
+| 1 | 10 ns | — | — | — | the solver lands on the located crossing |
+| 2 | 10 ns | — | — | — | collected: the commit of `clk` |
+| 3 | (10 ns, 0) | `clk ← H`, from its clock source | `d` unchanged | `clk.rise()` | `q <- d` reads the old `d` |
+| 3 | (10 ns, 1) | `q` | — | `q.changed()` | none listens to `q`; nothing is pending, so step 3.4 solves `t` |
+| 3 | (10 ns, 2) | — | — | the crossing | `above_th <- true` |
+| 3 | (10 ns, 3) | `above_th` | `d ← H` | `d.changed()` | none listens to `d` |
 | 4 | 10 ns | — | — | `settle` | no reaction on `settle` |
 | 5 | — | — | — | — | time advances |
 
-No jump is read: `Front` has no `analog` block, so step 3.4 never holds. At `(10 ns, 1)`
-nothing is pending at microstep 2, so the loop exits.
+No jump: `Front` has no `analog` block, so no step reads a change made at 10 ns. At
+`(10 ns, 3)` nothing is pending at microstep 4, so the loop exits.
 
 The flip-flop took the value from before the edge, as hardware does. The comparator's new
 output reaches `q` at the next clock edge.
@@ -219,14 +226,15 @@ output reaches `q` at the next clock edge.
 ### 15.2 The jump
 
 A **jump** is the change, at one time `t`, of something `analog` reads at `(t, n)`: a discrete
-carrier or a param. The solution accepted before the change is its **left value**; the
-**right value** is the solution of the first transient step that reads the change. One rule
-defines the jump:
+carrier or a param. The last solution accepted before the change is its **left value**: the
+solution of the previous time point for a change made before step 3.4 of §15 solves `t`, the
+solution at `t` for a change made after it. The **right value** is the solution of the first
+transient step that reads the change. One rule defines the jump:
 
 **A jump has no solve of its own.** The change is read by a transient step (§17.2) and by
 nothing else. The solver lands exactly on the time `t` of the change (§17.2.2). What is due at
-microstep 0 of `t` is applied before the step that arrives at `t` is solved, so that step reads
-it. A change made in a later microstep of `t` is read by the first step after `t`. The step
+microstep 0 of `t` is applied before the step that arrives at `t` is solved (§15 step 3.4), so
+that step reads it. A change made after that solve is read by the first step after `t`. The step
 that lands on a jump is exempt from the truncation-error test (§17.2.1), and the step after it
 restarts the integrator (rule 6).
 
@@ -247,7 +255,7 @@ reads them all.
 3. **A state multiplied by a carrier keeps the product.** In `ddt(c * v(p, n))` with `c` a
    `Bit<f64>` that jumps, `c·v` is carried and `v` moves. Charge is conserved.
 4. **Probes and `cross` read solutions that exist.** There is no second pass. A reaction at
-   `(t, n)` reads the solution after microstep `n − 1` (§15), which is the left value until a
+   `(t, n)` reads the latest solution (§15 step 3.3), which is the left value until a
    step has read the change. A crossing that a change makes is detected between the solution
    of the step before it and that of the step that reads it (§17.3).
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
@@ -281,8 +289,10 @@ reads them all.
 ## 16. The operating point
 
 The **operating point** is the state an analysis starts from: an analog equilibrium and a
-digital state that agree. It is the instant `(0, ·)` of §15 with one difference. There is no
-left value, so the first solve comes after the commits of microstep 0 instead of before them.
+digital state that agree. It is the instant `(0, ·)` of §15 with an equilibrium solve in place
+of the transient step, since there is no earlier time point to step from. The solve comes after
+the commits of microstep 0 and before its reactions, and a change `analog` reads made after it
+starts another round (step 4) instead of waiting for a step.
 
 **Procedure.**
 
@@ -560,7 +570,9 @@ three hold:
 
 - **A1.** Choose a candidate `t_c > t`, no later than the next scheduled time that is a time
   point, the stop time, and `t` plus the cap of rule 5.
-- **A2.** Perform the transient step to `t_c`, reading the settle commits of `t` (§15 S2).
+- **A2.** Run the instant `t_c` up to step 3.4 of §15 and perform the transient step to `t_c`
+  there. It reads the discrete state settled before it, the settle commits of `t` included
+  (§15 S2).
 - **A3.** If Newton does not converge, or rule 1 fails, reject the step and go to A1 with a
   smaller candidate.
 - **A4.** If a `cross` expression went from `≤ 0` to `> 0` in the step, locate it (§17.3).
@@ -580,7 +592,7 @@ solver **MUST** land is rule 2.
 | reaction at `t` that probes | yes | no |
 | `cross` located at `t` | yes | only if what `analog` reads changes |
 | `on settle` | runs only at time points; adds none | no |
-| a commit from `on settle`, read by `analog` | no: it is due at the next one | no (§15 S3) |
+| a commit from `on settle`, read by `analog` | no: it is due at the next one | yes, read by the step that arrives there as an ordinary step (§15 S3) |
 | `bound_step(dt)` | no: caps the step | no |
 
 A digital clock that nothing analog depends on costs the solver nothing.

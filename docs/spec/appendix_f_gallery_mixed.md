@@ -348,7 +348,7 @@ module ShareCharge(in close: Bit) {
 | Operating point | `close` must be low. The switch is open; neither node has a DC path; both are held at their `= value` (§16). |
 | `close` high at 0 | The holds on `a` and `b` and the short between them close a loop of potential contributions. The solve is singular and names them (§16). |
 | First step | The holds are removed; `1p · v(a)` and `3p · v(b)` are the states. Nothing moves until the switch closes. |
-| `close` rises at `(t, 0)` | The commit applies; `analog` reads `close`: a jump in that microstep (§15 step 3.4). |
+| `close` rises at `(t, 0)` | The commit applies before the step to `t` is solved; that step reads `close`: a jump (§15 step 3.4). |
 
 At that instant the step that arrives at `t` reads `close` (§15.2). With `i` the switch flow and
 `h` the length of that step, its node rows are:

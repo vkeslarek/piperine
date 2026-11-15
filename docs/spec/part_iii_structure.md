@@ -849,7 +849,7 @@ analog for DigiPot { i(p, n) +> v(p, n) / r.known_or(r0); }
 module VcResistor(p: Electrical, n: Electrical, ctl: Electrical) { r0: f64 = 1k; k: f64 = 0.1; }
 analog for VcResistor { i(p, n) +> v(p, n) / (r0 * (1.0 + k * v(ctl))); }
 
-// C. Updated after each time point: an explicit lag of one step. No time point of its own, no jump (§15).
+// C. Updated after each time point: an explicit lag of one step. No time point of its own, no restart (§15 S3).
 module LaggedResistor(p: Electrical, n: Electrical, ctl: Electrical) {
     r0: f64 = 1k; k: f64 = 0.1;
     signal r: Bit<f64> = r0;
