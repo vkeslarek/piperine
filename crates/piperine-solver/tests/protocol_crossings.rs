@@ -1,7 +1,8 @@
 //! Crossings, samples and step caps on the transient of a circuit of devices
 //! (SAI-11, SAI-02; abi.md C6, R2, §4.3): a `CROSS` watch that fired is a
 //! commit to its event pin at microstep 0 of the landing; a reaction reads the
-//! accepted solution; the smallest `CAP` bounds the next step.
+//! accepted solution; the smallest of several `CAP` watches bounds the next
+//! step, whatever their order.
 
 // The targets use the libraries selectively.
 #[allow(dead_code)]
@@ -109,14 +110,23 @@ fn a_reaction_reads_the_accepted_solution() {
 
 #[test]
 fn a_cap_watch_bounds_the_next_step() {
-    let mut b = CircuitBuilder::new("capped sine");
-    let top = sine(&mut b);
-    b.device(capped(), "cap", &[], &[Port::Node(top)]);
-    let mut solver = Solver::new(b.build().expect("build")).with_tran_opts(TransientAnalysisOptions::new(2.0e-7, 1.0e-8)).build();
-    let result = solver.tran().expect("tran").solve().expect("solve");
-    assert!(result.len() > 200, "at least 200 steps of 1 ns: {}", result.len());
-    for pair in result.iter().collect::<Vec<_>>().windows(2) {
-        let dt = pair[1].time() - pair[0].time();
-        assert!(dt <= 1.0e-9 * (1.0 + 1.0e-9), "a step of {dt:e} s past the 1 ns cap at t = {:e}", pair[0].time());
+    // Two CAP watches, 4 ns and 1 ns, placed in both orders: the smallest bounds
+    // every step, and the controller reaches it (a 10 ns dt asks for more).
+    for caps in [[4.0e-9, 1.0e-9], [1.0e-9, 4.0e-9]] {
+        let mut b = CircuitBuilder::new("capped sine");
+        let top = sine(&mut b);
+        for (i, cap) in caps.into_iter().enumerate() {
+            b.device(capped(), &format!("cap{i}"), &[("cap", ParamValue::Real(cap))], &[Port::Node(top.clone())]);
+        }
+        let mut solver = Solver::new(b.build().expect("build")).with_tran_opts(TransientAnalysisOptions::new(2.0e-7, 1.0e-8)).build();
+        let result = solver.tran().expect("tran").solve().expect("solve");
+        assert!(result.len() > 200, "at least 200 steps of 1 ns: {}", result.len());
+        let mut widest = 0.0_f64;
+        for pair in result.iter().collect::<Vec<_>>().windows(2) {
+            let dt = pair[1].time() - pair[0].time();
+            assert!(dt <= 1.0e-9 * (1.0 + 1.0e-9), "caps {caps:?}: a step of {dt:e} s past the 1 ns cap at t = {:e}", pair[0].time());
+            widest = widest.max(dt);
+        }
+        assert!(widest > 0.99e-9, "caps {caps:?}: the steps reach the smallest cap, widest {widest:e} s");
     }
 }

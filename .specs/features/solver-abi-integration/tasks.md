@@ -751,7 +751,7 @@ Proof: run solver | test sensitivity_uses_declared_partials_and_falls_back_to_a_
 Proof: `o=$(cargo test -p piperine-solver --test abi_dc --test abi_tran --test abi_ac --test abi_noise --test limiting_report 2>&1); for t in divider_reads_the_analytic_ratio_on_devices rc_step_reads_one_minus_exp_on_devices an_rlc_peak_matches_the_baseline_on_devices a_resistor_divider_has_its_thermal_noise_on_devices active_limiter_vetoes_newton_convergence gmin_stepping_reaches_a_device_through_the_ambient_input source_stepping_scales_sources_through_the_ambient_input; do printf '%s\n' "$o" | grep -q "test $t ... ok" || { echo "no pass line for $t"; exit 1; }; done`
 
 **C22** - The smallest `CAP` bounds the next step and a fired `CROSS` is committed at the landing (SAI-11, Protocol AC 22)
-Proof: run solver | test a_cap_watch_bounds_the_next_step ... ok
+Proof: `o=$(cargo test -p piperine-solver --test protocol_crossings 2>&1); for t in a_cap_watch_bounds_the_next_step a_fired_crossing_is_a_commit_at_the_landing; do printf '%s\n' "$o" | grep -q "test $t ... ok" || { echo "no pass line for $t"; exit 1; }; done`
 
 **C23** - The numeric assertions of `parity_baseline` are byte-identical to the base commit and the suite passes (SAI-12, Port AC 1)
 Proof: `a=$(mktemp); b=$(mktemp); git show 98b30ad6:crates/piperine-solver/tests/parity_baseline.rs | grep -E 'abs\(\) <|res\.len\(\)' > "$a"; grep -E 'abs\(\) <|res\.len\(\)' crates/piperine-solver/tests/parity_baseline.rs > "$b"; test -s "$a" && diff "$a" "$b" && cargo test -p piperine-solver`
