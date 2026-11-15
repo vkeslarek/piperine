@@ -1,6 +1,6 @@
 # msl-stdlib proofs
 
-**HEAD**: ed1fc2fd
+**HEAD**: 3526871c
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 114 pass, 0 fail
@@ -128,59 +128,59 @@
 
 ```
 test value_blocks_may_hold_contributions_and_commits ... ok
-test e0162_is_defined_in_3_4 ... ok
 test std_is_implicit_and_the_prelude_is_std_prelude ... ok
-test e0163_is_defined_in_3_5 ... ok
 test tran_in_fences_is_the_module ... ok
+test e0163_is_defined_in_3_5 ... ok
+test e0162_is_defined_in_3_4 ... ok
+test s3_states_the_intrinsic_contract ... ok
 test every_method_called_in_a_spec_fence_is_catalogued ... ok
 test s36_defines_the_package_codes ... ok
-test s3_states_the_intrinsic_contract ... ok
-test gnd_and_the_implicit_params_are_core_names ... ok
 test every_error_code_is_defined_exactly_once ... ok
+test gnd_and_the_implicit_params_are_core_names ... ok
 
-test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running tests/spec_text.rs (/var/tmp/piperine-target/debug/deps/spec_text-8e0716f5857daff9)
 ```
 
 `Run resolve` - exit 0
 
 ```
-test two_visible_blankets_keep_declaration_order ... ok
+test use_in_a_block_resolves_with_block_scope ... ok
 test use_leaf_text_is_its_own_segments ... ok
+test type_paths_resolve_to_declarations ... ok
 test use_self_imports_the_namespace ... ok
 test use_self_with_alias_and_nesting ... ok
-test unresolved_path_is_one_e0161 ... ok
-test embedded_std_declares_no_core_name ... ok
 test embedded_std_builds_clean ... ok
 test k_b_resolves_to_std_constants ... ok
 test a_model_constant_hides_the_prelude_constant ... ok
+test embedded_std_declares_no_core_name ... ok
 test prelude_source_items_are_visible_everywhere ... ok
 
-test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+test result: ok. 71 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running tests/pom_resolve.rs (/var/tmp/piperine-target/debug/deps/pom_resolve-f44ddda9709d3f18)
 ```
 
 `Run std` - exit 0
 
 ```
-test std_root_comment_names_the_namespaces ... ok
-test pure_bodies_name_no_primitive ... ok
-test prelude_is_eight_reexports ... ok
-test root_params_carry_a_where ... ok
-test root_forms_place_their_coefficient_form ... ok
-test std_declares_no_core_name ... ok
-test std_has_no_unresolved_member ... ok
-test transient_is_the_kind_and_tran_the_module ... ok
 test tgate_places_two_tran ... ok
+test prelude_is_eight_reexports ... ok
+test transient_is_the_kind_and_tran_the_module ... ok
+test root_params_carry_a_where ... ok
+test pure_bodies_name_no_primitive ... ok
+test std_declares_no_core_name ... ok
+test root_forms_place_their_coefficient_form ... ok
+test std_has_no_unresolved_member ... ok
+test std_root_comment_names_the_namespaces ... ok
 test std_root_declares_nine_namespaces ... ok
 
-test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.18s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running tests/std_library.rs (/var/tmp/piperine-target/debug/deps/std_library-d659b89a2fdefd78)
 ```
 
@@ -189,97 +189,97 @@ test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 test a_missing_fence_is_named ... ok
 test part_vii_examples_are_fragments ... ok
+test a_missing_item_is_named ... ok
 test the_reverse_guard_counts_only_valid_fences_by_whole_line ... ok
 test the_forward_guard_covers_part_vii ... ok
-test a_missing_item_is_named ... ok
 test every_part_vii_fence_is_in_its_file ... ok
 test prelude_items_outside_part_vii_are_shown_pub ... ok
 test every_std_behavior_block_is_in_a_fence ... ok
-test every_std_item_is_in_a_fence ... ok
 test the_reverse_guard_covers_std ... ok
+test every_std_item_is_in_a_fence ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
      Running tests/std_excerpts.rs (/var/tmp/piperine-target/debug/deps/std_excerpts-420843ec3999f39a)
 ```
 
 `Run galleries` - exit 0
 
 ```
-test every_fixture_line_is_spec_text ... ok
 test the_fixture_table_covers_every_gallery ... ok
+test every_fixture_line_is_spec_text ... ok
 test the_fixture_table_names_only_used_models ... ok
 test galleries_fail_against_an_empty_prelude ... ok
 test a_dirty_gallery_is_reported_by_fence ... ok
-test no_gallery_has_an_unresolved_member ... ok
+test every_gallery_references_its_std_items ... ok
 test the_gate_builds_18_fences ... ok
 test every_gallery_builds_with_no_diagnostics ... ok
-test every_gallery_references_its_std_items ... ok
 test every_gallery_passes_check ... ok
+test no_gallery_has_an_unresolved_member ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.42s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
      Running tests/std_galleries.rs (/var/tmp/piperine-target/debug/deps/std_galleries-f0c43a9b8d6704b6)
 ```
 
 `Run docs` - exit 0
 
 ```
-test resolution_doc_describes_the_supertrait_rule ... ok
 test resolution_doc_describes_intrinsics ... ok
-test every_b3_production_is_mapped ... ok
-test place_has_no_parenthesized_form_in_the_docs ... ok
+test resolution_doc_describes_the_supertrait_rule ... ok
 test the_builtin_table_doc_has_no_const_row ... ok
-test every_code_the_pom_reports_is_documented ... ok
+test docs_describe_crates_and_no_prelude_sources ... ok
 test every_public_pom_type_has_a_heading ... ok
+test every_code_the_pom_reports_is_documented ... ok
+test every_b3_production_is_mapped ... ok
 test every_b1_construct_is_mapped ... ok
 test msl_fences_parse_clean ... ok
 test every_reflection_method_is_documented ... ok
 
 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
      Running tests/pom_docs.rs (/var/tmp/piperine-target/debug/deps/pom_docs-031147b33902f8bc)
 ```
 
 `Run book` - exit 0
 
 ```
-test the_core_std_chapter_follows_packages ... ok
 test the_book_says_transient ... ok
-/home/keslarek/Git/piperine-msl-stdlib/docs/book/index.html 142913
+test the_chapter_names_every_core_name ... ok
+/home/keslarek/Git/piperine-msl-stdlib/docs/book/index.html 166544
 test build_py_writes_an_ignored_index ... ok
 test every_msl_block_parses ... ok
-test packages_and_cheatsheet_name_std ... ok
 test the_chapter_explains_the_prelude_and_the_engine_items ... ok
 test the_chapter_names_every_prelude_export ... ok
+test packages_and_cheatsheet_name_std ... ok
 test the_chapter_has_a_part_per_namespace ... ok
 test chapter_blocks_build_against_std ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.25s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.21s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
      Running tests/book.rs (/var/tmp/piperine-target/debug/deps/book-ca9323b66dec99ca)
 ```
 
 `cargo test -p piperine-lang --doc` - exit 0
 
 ```
-test crates/piperine-lang/src/pom/guide.rs - pom::guide::reflection (line 888) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::reflection (line 955) ... ok
-test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 187) ... ok
-test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 111) ... ok
-test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 294) ... ok
-test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 238) ... ok
+test crates/piperine-lang/src/pom/guide.rs - pom::guide::reflection (line 93) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::reflection (line 129) ... ok
+test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 111) ... ok
+test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 187) ... ok
+test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 238) ... ok
+test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 294) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 395) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 370) ... ok
 
-test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.56s
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.45s
 
-all doctests ran in 3.62s; merged doctests compilation took 1.03s
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+all doctests ran in 3.48s; merged doctests compilation took 1.00s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
    Doc-tests piperine_lang
 ```
