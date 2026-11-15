@@ -479,10 +479,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The race test runs 8 threads through `build` on one key and lists the directory afterwards
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test cache`: `two_racing_builds_leave_one_entry_and_no_staging`, `an_unwritable_directory_is_named`, `the_key_changes_with_any_part`, `a_directory_is_created_private`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+- [x] The race test runs 8 threads through `build` on one key and lists the directory afterwards
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test cache`: `two_racing_builds_leave_one_entry_and_no_staging`, `an_unwritable_directory_is_named`, `the_key_changes_with_any_part`, `a_directory_is_created_private`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
