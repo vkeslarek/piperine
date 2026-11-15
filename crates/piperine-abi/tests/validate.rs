@@ -187,7 +187,8 @@ fn every_shape_local_rule_is_enforced() {
     // Defects below the specs (a list read by a stride the producer did not use).
     let raw_rows: [RawRow; 1] = [(
         Rule::UnreadableList,
-        |s| s.terms.stride = 8,
+        // SAFETY: the same live pointer and length, read by a stride that is refused.
+        |s| s.terms = unsafe { piperine_abi::raw::List::from_raw_parts(s.terms.as_ptr(), s.terms.len(), 8) },
         "shape",
         "",
     )];
@@ -302,12 +303,14 @@ fn the_valid_fixtures_pass() {
 fn a_shape_with_an_unreadable_list_is_refused() {
     let built = resistor().build();
     let mut shape = *built.shape();
-    shape.pins.stride = size_of::<piperine_abi::raw::Pin>() - 8;
+    // SAFETY: the shape's live pins, read by a stride below the element (refused).
+    shape.pins = unsafe { piperine_abi::raw::List::from_raw_parts(shape.pins.as_ptr(), shape.pins.len(), size_of::<piperine_abi::raw::Pin>() - 8) };
     let err = validate(&shape).expect_err("a pin list read below its element size");
     assert_eq!(err.rule, Rule::UnreadableList);
     let mut shape = *built.shape();
     let mut f = *shape.functions.get(0).unwrap();
-    f.reads.stride = 4;
+    // SAFETY: the function's live reads, read by a stride of 4 (refused).
+    f.reads = unsafe { piperine_abi::raw::List::from_raw_parts(f.reads.as_ptr(), f.reads.len(), 4) };
     let fs = [f];
     shape.functions = piperine_abi::raw::List::from_slice(&fs);
     let err = validate(&shape).expect_err("a cell list read below its element size");

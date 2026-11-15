@@ -576,6 +576,9 @@ Proof: run abi | test a_non_finite_partial_is_a_mismatch ... ok
 **C41** - A list whose stride is below its element is refused, never read past (SAC-20)
 Proof: run abi | test a_list_whose_stride_is_below_its_element_is_refused ... ok
 
+**C42** - The raw views have no public pointer field and one unsafe constructor each (SAC-21)
+Proof: run abi | test raw_views_have_no_public_pointer_field ... ok
+
 ---
 
 ## Handoff

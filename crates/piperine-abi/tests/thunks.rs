@@ -157,7 +157,7 @@ fn note_text(note: &Note) -> &str {
 
 fn create_with(m: &Module, values: &[Value], note: &mut Note) -> Created {
     // SAFETY: `m` comes from `module::<Probe>`, `values` and `note` live for the call.
-    unsafe { (m.create)(m, List::from_slice(values), note) }
+    unsafe { (m.create())(m, List::from_slice(values), note) }
 }
 
 /// Calls function `k` with the given reads; returns (status, output, jac).
@@ -176,7 +176,7 @@ fn eval_with(m: &Module, inst: &Created, k: u32, reads: &[&[u8]], note: &mut Not
         note,
     };
     // SAFETY: the frame holds one pointer per read and write of function `k`, each to its cell's bytes.
-    let s = unsafe { (m.eval)(inst.instance, k, &frame) };
+    let s = unsafe { (m.eval())(inst.instance, k, &frame) };
     (s, out, jac)
 }
 
@@ -209,13 +209,13 @@ fn react_with(m: &Module, inst: &Created, k: u32, reads: &[&[u8]], answer: u32, 
         note,
     };
     // SAFETY: the frame holds one pointer per read of reaction `k`; `host` and `rec` outlive the call.
-    let s = unsafe { (m.react)(inst.instance, k, &frame) };
+    let s = unsafe { (m.react())(inst.instance, k, &frame) };
     (s, rec.seen)
 }
 
 fn destroy(m: &Module, inst: &Created) {
     // SAFETY: `inst` came from `m.create` and is destroyed once.
-    unsafe { (m.destroy)(inst.instance) }
+    unsafe { (m.destroy())(inst.instance) }
 }
 
 fn gain_value(bytes: &'static [u8; 8]) -> Value {
@@ -229,9 +229,9 @@ static GAIN_NEG: [u8; 8] = [0, 0, 0, 0, 0, 0, 0xF0, 0xBF]; // -1.0f64
 fn module_pointers_call_the_device() {
     assert_eq!(f64::from_le_bytes(GAIN_3), 3.0);
     let m = module::<Probe>("probe");
-    assert_eq!(m.name.as_str(), "probe");
-    assert_eq!(m.prototype, Probe::prototype() as *const Shape);
-    assert!(m.data.is_null());
+    assert_eq!(m.name().as_str(), "probe");
+    assert_eq!(m.prototype_ptr(), Probe::prototype() as *const Shape);
+    assert!(m.data().is_null());
 
     let mut note = empty_note();
     let inst = create_with(&m, &[gain_value(&GAIN_3)], &mut note);
@@ -373,5 +373,5 @@ fn library_fills_its_header() {
     assert_eq!(lib.size as usize, size_of::<piperine_abi::raw::Library>());
     assert_eq!(lib.minor, MINOR);
     assert_eq!((lib.name.as_str(), lib.build.as_str()), ("probes", "test"));
-    assert_eq!(lib.modules.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["probe"]);
+    assert_eq!(lib.modules.iter().map(|m| m.name().as_str()).collect::<Vec<_>>(), ["probe"]);
 }

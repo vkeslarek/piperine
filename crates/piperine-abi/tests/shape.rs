@@ -96,7 +96,7 @@ fn resistor_shape_reads_back_through_raw_pointers() {
     ]);
 
     assert!(shape.inputs.is_empty() && shape.watches.is_empty() && shape.reactions.is_empty());
-    assert!(!shape.inputs.ptr.is_null() && !shape.reactions.ptr.is_null(), "empty lists are non-null");
+    assert!(!shape.inputs.as_ptr().is_null() && !shape.reactions.as_ptr().is_null(), "empty lists are non-null");
 }
 
 #[test]

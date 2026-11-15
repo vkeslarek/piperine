@@ -1,182 +1,13 @@
 //! The C contract of abi.md §3 as `piperine-abi` compiles it (feature
-//! `solver-abi-core`, SAC-01, SAC-02): every struct's size, alignment and
-//! field offsets on a 64-bit target against a hand-written C-layout table,
-//! every constant's pinned value, stride-aware list reading, and the crate's
-//! empty dependency list.
+//! `solver-abi-core`, SAC-01, SAC-02, SAC-20, SAC-21, SAC-22): every constant's
+//! pinned value, stride-aware list reading and its refusal of a stride below
+//! the element, the crate's empty dependency list, the raw views' private
+//! pointer fields, and `unsafe` confined to `raw.rs`, `thunk.rs` and
+//! `caller.rs`. The struct layout table (size, alignment, field offsets) is a
+//! unit test of `raw.rs`, where the private pointer fields can be named.
 
-use core::mem::{align_of, offset_of, size_of};
+use core::mem::{align_of, size_of};
 use piperine_abi::raw::*;
-
-/// One struct of the table: its measured size and alignment against the C
-/// layout, and each field's measured offset against the expected one.
-fn check(name: &str, size: (usize, usize), align: (usize, usize), fields: &[(&str, usize, usize)]) {
-    assert_eq!(size.0, size.1, "size_of::<{name}>()");
-    assert_eq!(align.0, align.1, "align_of::<{name}>()");
-    for (field, got, want) in fields {
-        assert_eq!(got, want, "offset of {name}.{field}");
-    }
-}
-
-#[test]
-fn struct_layouts_match_the_abi() {
-    assert_eq!(size_of::<usize>(), 8, "the table is for a 64-bit target");
-
-    check("Str", (size_of::<Str>(), 16), (align_of::<Str>(), 8), &[
-        ("ptr", offset_of!(Str, ptr), 0),
-        ("len", offset_of!(Str, len), 8),
-    ]);
-    check("Bytes", (size_of::<Bytes>(), 16), (align_of::<Bytes>(), 8), &[
-        ("ptr", offset_of!(Bytes, ptr), 0),
-        ("len", offset_of!(Bytes, len), 8),
-    ]);
-    check("List", (size_of::<List<Pin>>(), 24), (align_of::<List<Pin>>(), 8), &[
-        ("ptr", offset_of!(List<Pin>, ptr), 0),
-        ("len", offset_of!(List<Pin>, len), 8),
-        ("stride", offset_of!(List<Pin>, stride), 16),
-    ]);
-    check("Library", (size_of::<Library>(), 64), (align_of::<Library>(), 8), &[
-        ("size", offset_of!(Library, size), 0),
-        ("minor", offset_of!(Library, minor), 4),
-        ("name", offset_of!(Library, name), 8),
-        ("build", offset_of!(Library, build), 24),
-        ("modules", offset_of!(Library, modules), 40),
-    ]);
-    check("Module", (size_of::<Module>(), 64), (align_of::<Module>(), 8), &[
-        ("name", offset_of!(Module, name), 0),
-        ("prototype", offset_of!(Module, prototype), 16),
-        ("data", offset_of!(Module, data), 24),
-        ("create", offset_of!(Module, create), 32),
-        ("destroy", offset_of!(Module, destroy), 40),
-        ("eval", offset_of!(Module, eval), 48),
-        ("react", offset_of!(Module, react), 56),
-    ]);
-    check("Value", (size_of::<Value>(), 24), (align_of::<Value>(), 8), &[
-        ("pin", offset_of!(Value, pin), 0),
-        ("bytes", offset_of!(Value, bytes), 8),
-    ]);
-    check("Created", (size_of::<Created>(), 24), (align_of::<Created>(), 8), &[
-        ("status", offset_of!(Created, status), 0),
-        ("instance", offset_of!(Created, instance), 8),
-        ("shape", offset_of!(Created, shape), 16),
-    ]);
-    check("Instance", (size_of::<Instance>(), 0), (align_of::<Instance>(), 1), &[]);
-    check("Note", (size_of::<Note>(), 256), (align_of::<Note>(), 4), &[
-        ("code", offset_of!(Note, code), 0),
-        ("len", offset_of!(Note, len), 4),
-        ("text", offset_of!(Note, text), 8),
-    ]);
-    check("Shape", (size_of::<Shape>(), 152), (align_of::<Shape>(), 8), &[
-        ("size", offset_of!(Shape, size), 0),
-        ("pins", offset_of!(Shape, pins), 8),
-        ("terms", offset_of!(Shape, terms), 32),
-        ("inputs", offset_of!(Shape, inputs), 56),
-        ("watches", offset_of!(Shape, watches), 80),
-        ("functions", offset_of!(Shape, functions), 104),
-        ("reactions", offset_of!(Shape, reactions), 128),
-    ]);
-    check("Pin", (size_of::<Pin>(), 136), (align_of::<Pin>(), 8), &[
-        ("name", offset_of!(Pin, name), 0),
-        ("origin", offset_of!(Pin, origin), 16),
-        ("kind", offset_of!(Pin, kind), 32),
-        ("role", offset_of!(Pin, role), 36),
-        ("global", offset_of!(Pin, global), 40),
-        ("flags", offset_of!(Pin, flags), 44),
-        ("layout", offset_of!(Pin, layout), 48),
-        ("unit", offset_of!(Pin, unit), 80),
-        ("init", offset_of!(Pin, init), 96),
-        ("check", offset_of!(Pin, check), 112),
-        ("abstol", offset_of!(Pin, abstol), 120),
-    ]);
-    check("Layout", (size_of::<Layout>(), 32), (align_of::<Layout>(), 8), &[
-        ("size", offset_of!(Layout, size), 0),
-        ("align", offset_of!(Layout, align), 4),
-        ("fields", offset_of!(Layout, fields), 8),
-    ]);
-    check("Field", (size_of::<Field>(), 40), (align_of::<Field>(), 8), &[
-        ("name", offset_of!(Field, name), 0),
-        ("leaf", offset_of!(Field, leaf), 16),
-        ("offset", offset_of!(Field, offset), 20),
-        ("count", offset_of!(Field, count), 24),
-        ("flags", offset_of!(Field, flags), 28),
-        ("known", offset_of!(Field, known), 32),
-    ]);
-    check("Term", (size_of::<Term>(), 56), (align_of::<Term>(), 8), &[
-        ("name", offset_of!(Term, name), 0),
-        ("origin", offset_of!(Term, origin), 16),
-        ("op", offset_of!(Term, op), 32),
-        ("plus", offset_of!(Term, plus), 36),
-        ("minus", offset_of!(Term, minus), 40),
-        ("abstol", offset_of!(Term, abstol), 44),
-        ("max", offset_of!(Term, max), 48),
-    ]);
-    check("Input", (size_of::<Input>(), 40), (align_of::<Input>(), 8), &[
-        ("name", offset_of!(Input, name), 0),
-        ("origin", offset_of!(Input, origin), 16),
-        ("kind", offset_of!(Input, kind), 32),
-    ]);
-    check("Watch", (size_of::<Watch>(), 88), (align_of::<Watch>(), 8), &[
-        ("name", offset_of!(Watch, name), 0),
-        ("origin", offset_of!(Watch, origin), 16),
-        ("kind", offset_of!(Watch, kind), 32),
-        ("layout", offset_of!(Watch, layout), 40),
-        ("event", offset_of!(Watch, event), 72),
-        ("ttol", offset_of!(Watch, ttol), 76),
-        ("etol", offset_of!(Watch, etol), 80),
-    ]);
-    check("Cell", (size_of::<Cell>(), 12), (align_of::<Cell>(), 4), &[
-        ("kind", offset_of!(Cell, kind), 0),
-        ("index", offset_of!(Cell, index), 4),
-        ("part", offset_of!(Cell, part), 8),
-    ]);
-    check("Partial", (size_of::<Partial>(), 16), (align_of::<Partial>(), 4), &[
-        ("write", offset_of!(Partial, write), 0),
-        ("to", offset_of!(Partial, to), 4),
-        ("read", offset_of!(Partial, read), 8),
-        ("at", offset_of!(Partial, at), 12),
-    ]);
-    check("Function", (size_of::<Function>(), 112), (align_of::<Function>(), 8), &[
-        ("name", offset_of!(Function, name), 0),
-        ("origin", offset_of!(Function, origin), 16),
-        ("flags", offset_of!(Function, flags), 32),
-        ("reads", offset_of!(Function, reads), 40),
-        ("writes", offset_of!(Function, writes), 64),
-        ("partials", offset_of!(Function, partials), 88),
-    ]);
-    check("Reaction", (size_of::<Reaction>(), 112), (align_of::<Reaction>(), 8), &[
-        ("name", offset_of!(Reaction, name), 0),
-        ("origin", offset_of!(Reaction, origin), 16),
-        ("flags", offset_of!(Reaction, flags), 32),
-        ("on", offset_of!(Reaction, on), 40),
-        ("reads", offset_of!(Reaction, reads), 64),
-        ("writes", offset_of!(Reaction, writes), 88),
-    ]);
-    check("Statement", (size_of::<Statement>(), 24), (align_of::<Statement>(), 8), &[
-        ("pin", offset_of!(Statement, pin), 0),
-        ("offset", offset_of!(Statement, offset), 4),
-        ("len", offset_of!(Statement, len), 8),
-        ("flags", offset_of!(Statement, flags), 12),
-        ("min_after", offset_of!(Statement, min_after), 16),
-    ]);
-    check("Eval", (size_of::<Eval>(), 48), (align_of::<Eval>(), 8), &[
-        ("size", offset_of!(Eval, size), 0),
-        ("input", offset_of!(Eval, input), 8),
-        ("output", offset_of!(Eval, output), 16),
-        ("seed", offset_of!(Eval, seed), 24),
-        ("jac", offset_of!(Eval, jac), 32),
-        ("note", offset_of!(Eval, note), 40),
-    ]);
-    check("React", (size_of::<React>(), 40), (align_of::<React>(), 8), &[
-        ("size", offset_of!(React, size), 0),
-        ("input", offset_of!(React, input), 8),
-        ("host", offset_of!(React, host), 16),
-        ("host_data", offset_of!(React, host_data), 24),
-        ("note", offset_of!(React, note), 32),
-    ]);
-    check("Host", (size_of::<Host>(), 16), (align_of::<Host>(), 8), &[
-        ("size", offset_of!(Host, size), 0),
-        ("commit", offset_of!(Host, commit), 8),
-    ]);
-}
 
 /// A group of constants: no member is 0 and no two are equal.
 fn assert_group(name: &str, group: &[u32]) {
@@ -277,11 +108,9 @@ fn list_reads_by_the_producers_stride() {
         WiderPin { pin: pin_named("f"), appended: [0xCC; 16] },
     ];
     assert_eq!(size_of::<WiderPin>(), size_of::<Pin>() + 16);
-    let list: List<Pin> = List {
-        ptr: wide.as_ptr().cast::<Pin>(),
-        len: wide.len(),
-        stride: size_of::<Pin>() + 16,
-    };
+    // SAFETY: `wide` holds three elements `size_of::<Pin>() + 16` bytes apart
+    // and outlives `list`.
+    let list: List<Pin> = unsafe { List::from_raw_parts(wide.as_ptr().cast::<Pin>(), wide.len(), size_of::<Pin>() + 16) };
     let names: Vec<&str> = list.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, ["p", "n", "f"]);
     assert_eq!(list.get(1).map(|p| p.name.as_str()), Some("n"));
@@ -292,14 +121,14 @@ fn list_reads_by_the_producers_stride() {
 #[test]
 fn empty_list_yields_nothing() {
     let list: List<Pin> = List::empty();
-    assert!(!list.ptr.is_null(), "an empty list's pointer is non-null");
-    assert_eq!(list.ptr as usize % align_of::<Pin>(), 0, "and aligned");
-    assert_eq!(list.len, 0);
+    assert!(!list.as_ptr().is_null(), "an empty list's pointer is non-null");
+    assert_eq!(list.as_ptr() as usize % align_of::<Pin>(), 0, "and aligned");
+    assert_eq!(list.len(), 0);
     assert!(list.get(0).is_none());
     assert_eq!(list.iter().count(), 0);
 
     let from_empty: List<Cell> = List::from_slice(&[]);
-    assert!(!from_empty.ptr.is_null());
+    assert!(!from_empty.as_ptr().is_null());
     assert_eq!(from_empty.iter().count(), 0);
     assert_eq!(Str::EMPTY.as_str(), "");
     assert!(Bytes::EMPTY.as_slice().is_empty());
@@ -352,19 +181,42 @@ fn a_list_whose_stride_is_below_its_element_is_refused() {
     // An older producer's element is 4 bytes; this consumer's `T` is 8: reading
     // element 3 would run past the producer's 16 bytes.
     let buf: [[u8; 8]; 2] = [[1; 8], [2; 8]];
-    let short: List<[u8; 8]> = List { ptr: buf.as_ptr(), len: 4, stride: 4 };
+    // SAFETY: 4 elements of 4 bytes lie in `buf`'s 16 bytes.
+    let short: List<[u8; 8]> = unsafe { List::from_raw_parts(buf.as_ptr(), 4, 4) };
     assert!(!short.is_readable());
     assert!(short.get(0).is_none() && short.get(3).is_none(), "no element is read");
     assert_eq!(short.iter().count(), 0);
     // A stride that breaks the element's alignment is refused too.
     let pins = [pin_named("p"), pin_named("n")];
-    let odd: List<Pin> = List { ptr: pins.as_ptr(), len: 1, stride: size_of::<Pin>() + 1 };
+    // SAFETY: one element at `pins`, which outlives the list.
+    let odd: List<Pin> = unsafe { List::from_raw_parts(pins.as_ptr(), 1, size_of::<Pin>() + 1) };
     assert!(!odd.is_readable() && odd.get(0).is_none());
     // A misaligned pointer is refused.
-    let skewed: List<Pin> = List { ptr: pins.as_ptr().cast::<u8>().wrapping_add(4).cast::<Pin>(), len: 1, stride: size_of::<Pin>() };
+    // SAFETY: the pointer lies inside `pins`; the list is never read (it is refused).
+    let skewed: List<Pin> =
+        unsafe { List::from_raw_parts(pins.as_ptr().cast::<u8>().wrapping_add(4).cast::<Pin>(), 1, size_of::<Pin>()) };
     assert!(!skewed.is_readable() && skewed.get(0).is_none());
     // The producer's own stride, and a larger one, are read.
     assert!(List::from_slice(&pins).is_readable());
     assert_eq!(List::from_slice(&pins).get(1).map(|p| p.name.as_str()), Some("n"));
     assert!(List::<Pin>::empty().is_readable());
+}
+
+#[test]
+fn raw_views_have_no_public_pointer_field() {
+    let raw = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/raw.rs")).expect("read raw.rs");
+    for field in [
+        "pub ptr:", "pub len: usize", "pub stride:", "pub prototype:", "pub data:", "pub create:", "pub destroy:",
+        "pub eval:", "pub react:",
+    ] {
+        let found: Vec<&str> = raw.lines().filter(|l| l.trim_start().starts_with(field)).collect();
+        assert!(found.is_empty(), "raw.rs exposes `{field}`: {found:?}");
+    }
+    let unsafe_constructors = raw.lines().filter(|l| l.contains("pub const unsafe fn from_raw_parts")).count();
+    assert_eq!(unsafe_constructors, 4, "Str, Bytes, List and Module each have one unsafe constructor");
+    // Safe code builds only valid views.
+    let s = Str::from_static("abc");
+    assert_eq!((s.as_str(), s.len()), ("abc", 3));
+    let b = Bytes::from_static(&[1, 2]);
+    assert_eq!(b.as_slice(), [1, 2]);
 }
