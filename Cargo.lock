@@ -1535,6 +1535,7 @@ dependencies = [
  "piperine-ir",
  "piperine-lang",
  "piperine-solver",
+ "piperine-transpile",
  "tempfile",
 ]
 

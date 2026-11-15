@@ -2,6 +2,7 @@
 //! of those fixtures are compared against it under one tolerance contract. The library serves the
 //! integration targets of this crate only.
 
+pub mod backend;
 pub mod bench;
 pub mod contract;
 pub mod golden;

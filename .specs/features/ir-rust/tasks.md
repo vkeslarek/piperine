@@ -643,10 +643,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] `contract.rs` changes by one field and one line of the rejection text; no bound moves
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test backend`: `the_variable_selects_one_backend`, `an_unknown_backend_is_refused_naming_both`, `a_rejection_names_the_backend`, `the_rust_bench_runs_loaded_modules`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+- [x] `contract.rs` changes by one field and one line of the rejection text; no bound moves
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test backend`: `the_variable_selects_one_backend`, `an_unknown_backend_is_refused_naming_both`, `a_rejection_names_the_backend`, `the_rust_bench_runs_loaded_modules`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

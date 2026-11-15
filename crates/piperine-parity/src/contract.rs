@@ -25,23 +25,29 @@ impl Coordinate {
 }
 
 /// One compared pair's place: the fixture, the quantity and the coordinate, plus the first line of
-/// `ngspice --version` once the reference run is known.
+/// `ngspice --version` once the reference run is known and the backend that produced the value.
 #[derive(Clone, Copy, Debug)]
 pub struct Point<'a> {
     pub fixture: &'a str,
     pub quantity: &'a str,
     pub at: Coordinate,
     pub ngspice: Option<&'a str>,
+    pub backend: Option<&'a str>,
 }
 
 impl<'a> Point<'a> {
     pub fn new(fixture: &'a str, quantity: &'a str, at: Coordinate) -> Self {
-        Point { fixture, quantity, at, ngspice: None }
+        Point { fixture, quantity, at, ngspice: None, backend: None }
     }
 
     /// The same point, recording the `ngspice --version` line the golden came from.
     pub fn with_ngspice(self, version: &'a str) -> Self {
         Point { ngspice: Some(version), ..self }
+    }
+
+    /// The same point, naming the backend (`interp` or `rust`) whose value is compared.
+    pub fn with_backend(self, backend: &'a str) -> Self {
+        Point { backend: Some(backend), ..self }
     }
 }
 
@@ -123,7 +129,7 @@ impl ToleranceContract {
         panic!(
             "parity failure: {fixture} / {quantity} at {place}\n  ngspice: {golden:e}\n  piperine: {actual:e}\n  \
              |difference| = {difference:e} > abstol {abstol:e} + reltol {reltol:e} * max(|values|) = {bound:e}\n  \
-             rationale: {rationale}\n  reference: {version}",
+             rationale: {rationale}\n  reference: {version}\n  backend: {backend}",
             fixture = at.fixture,
             quantity = at.quantity,
             place = at.at.describe(),
@@ -133,6 +139,7 @@ impl ToleranceContract {
             bound = self.abstol + self.reltol * golden.abs().max(actual.abs()),
             rationale = self.rationale,
             version = at.ngspice.unwrap_or("ngspice version not recorded"),
+            backend = at.backend.unwrap_or("not recorded"),
         );
     }
 }

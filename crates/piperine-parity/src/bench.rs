@@ -10,13 +10,22 @@ use piperine_lang::elab::Elaborator;
 use piperine_lang::types::Types;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_solver::prelude::{BranchIdentifier, CircuitInstance, NodeIdentifier, ParamValue};
+use piperine_transpile::{Compiled, Settings, Transpiler};
+
+use crate::backend::Backend;
 
 /// A twin as a bound circuit that answers to the `.cir` names.
+///
+/// The fields drop in order: the circuit, which holds the loaded library's modules, goes before
+/// the library and before the cache directory the library was built in.
 pub struct Bench {
+    circuit: CircuitInstance,
+    compiled: Option<Compiled>,
+    _cache: Option<tempfile::TempDir>,
     fixture: String,
     top: String,
     ir: Ir,
-    circuit: CircuitInstance,
+    backend: Backend,
 }
 
 impl Bench {
@@ -25,13 +34,25 @@ impl Bench {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice").join(format!("{fixture}.msl"))
     }
 
-    /// Loads `tests/ngspice/<fixture>.msl`.
+    /// Loads `tests/ngspice/<fixture>.msl` on the interpreter.
     pub fn load(fixture: &str) -> Bench {
-        Self::load_file(fixture, Self::twin_path(fixture))
+        Self::load_on(fixture, Backend::Interp)
     }
 
-    /// Loads the twin text at `path`, reported under the name `fixture`.
+    /// Loads `tests/ngspice/<fixture>.msl` on `backend`.
+    pub fn load_on(fixture: &str, backend: Backend) -> Bench {
+        Self::load_file_on(fixture, Self::twin_path(fixture), backend)
+    }
+
+    /// Loads the twin text at `path` on the interpreter, reported under the name `fixture`.
     pub fn load_file(fixture: &str, path: impl Into<PathBuf>) -> Bench {
+        Self::load_file_on(fixture, path, Backend::Interp)
+    }
+
+    /// Loads the twin text at `path` on `backend`, reported under the name `fixture`. The Rust
+    /// backend transpiles the design and builds it with `rustc` into a cache directory of this
+    /// bench's own, unless `PIPERINE_CACHE_DIR` names one; a failure names its stage.
+    pub fn load_file_on(fixture: &str, path: impl Into<PathBuf>, backend: Backend) -> Bench {
         let design = Design::builder().root_file(path).build();
         if !design.diagnostics().is_empty() {
             Self::fail(fixture, "parse", design.diagnostics());
@@ -44,12 +65,49 @@ impl Bench {
             Self::fail(fixture, "typeck", &found);
         }
         let ir = Elaborator::new(&design).run(top).unwrap_or_else(|found| Self::fail(fixture, "elaborate", &found));
-        let interpreter = match Interpreter::new(Arc::new(ir.clone())) {
-            Ok(interpreter) => interpreter,
-            Err(rejected) => panic!("{fixture}: stage `interpret`: {} entries\n{:#?}", rejected.entries.len(), rejected.entries),
+        let (circuit, compiled, cache) = match backend {
+            Backend::Interp => {
+                let interpreter = match Interpreter::new(Arc::new(ir.clone())) {
+                    Ok(interpreter) => interpreter,
+                    Err(rejected) => panic!("{fixture}: stage `interpret`: {} entries\n{:#?}", rejected.entries.len(), rejected.entries),
+                };
+                let circuit = interpreter.circuit().unwrap_or_else(|error| panic!("{fixture}: stage `bind`: {error}"));
+                (circuit, None, None)
+            }
+            Backend::Rust => {
+                let (settings, cache) = Self::settings(fixture);
+                let transpiler = Transpiler::new(Arc::new(ir.clone())).unwrap_or_else(|error| panic!("{fixture}: stage `transpile`: {error}"));
+                let compiled = transpiler.compile(&settings).unwrap_or_else(|error| panic!("{fixture}: stage `compile`: {error}"));
+                let circuit = compiled.circuit().unwrap_or_else(|error| panic!("{fixture}: stage `bind`: {error}"));
+                (circuit, Some(compiled), cache)
+            }
         };
-        let circuit = interpreter.circuit().unwrap_or_else(|error| panic!("{fixture}: stage `bind`: {error}"));
-        Bench { fixture: fixture.to_string(), top: top.clone(), ir, circuit }
+        Bench { circuit, compiled, _cache: cache, fixture: fixture.to_string(), top: top.clone(), ir, backend }
+    }
+
+    /// The compiler settings of a Rust bench: those of the environment when it names a cache
+    /// directory, else the environment's compiler with a fresh temporary cache, so a test run
+    /// never writes the user's own cache.
+    fn settings(fixture: &str) -> (Settings, Option<tempfile::TempDir>) {
+        let named = std::env::var("PIPERINE_CACHE_DIR").ok().filter(|dir| !dir.is_empty());
+        let cache = named.is_none().then(|| tempfile::tempdir().unwrap_or_else(|error| panic!("{fixture}: stage `settings`: a temporary cache: {error}")));
+        let temporary = cache.as_ref().map(|dir| dir.path().to_string_lossy().into_owned());
+        let settings = Settings::resolve(&|name| match (name, &temporary) {
+            ("PIPERINE_CACHE_DIR", Some(dir)) => Some(dir.clone()),
+            _ => std::env::var(name).ok(),
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: stage `settings`: {error}"));
+        (settings, cache)
+    }
+
+    /// The backend this bench runs on.
+    pub fn backend(&self) -> Backend {
+        self.backend
+    }
+
+    /// The compiled design of a Rust bench; `None` on the interpreter.
+    pub fn compiled(&self) -> Option<&Compiled> {
+        self.compiled.as_ref()
     }
 
     fn fail(fixture: &str, stage: &str, found: &[DesignDiagnostic]) -> ! {
