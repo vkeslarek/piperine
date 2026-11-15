@@ -73,3 +73,21 @@ fn parallel_runs_do_not_share_a_scratch_directory() {
         }
     }
 }
+
+#[test]
+fn the_exports_of_the_corpus_parse_to_their_row_counts() {
+    let diode = run("diode_iv");
+    let sweep = diode.real("diode_iv_sweep");
+    diode.expect_rows("diode_iv_sweep", &sweep, 37);
+    assert_eq!(sweep[0], (-1.0, 1.01008091e-12));
+
+    let ac = run("ac_rc");
+    let response = ac.complex("ac_rc_ac");
+    ac.expect_rows("ac_rc_ac", &response, 41);
+    let corner = response.iter().find(|(frequency, _)| (frequency - 1e5).abs() < 1.0).expect("the 100 kHz point");
+    assert!((corner.1.re - 0.5).abs() < 1e-6 && (corner.1.im + 0.5).abs() < 1e-6, "{:?}", corner.1);
+
+    let tran = run("tran_rc");
+    let rows = tran.real("tran_rc_tran");
+    tran.expect_rows("tran_rc_tran", &rows, 100);
+}

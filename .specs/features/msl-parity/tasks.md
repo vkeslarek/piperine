@@ -182,11 +182,11 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `diode_iv_sweep` parses to 37 rows, first `(-1.0, 1.01008091e-12)`; `ac_rc_ac` to 41 complex rows with `(0.5, -0.5)` at 100 kHz; `tran_rc_tran` to 100 rows (asserted in `tests/harness.rs` against the real binary)
-- [ ] A row `1.0 abc` is an error naming file and row; a wrong row count names both counts; a grid point off by 2e-9 relative is named
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --lib`: `golden::tests::an_unparsable_row_names_file_and_row`, `golden::tests::an_export_is_found_with_or_without_data_suffix`, `golden::tests::a_grid_mismatch_names_the_point`, `golden::tests::a_wrong_row_count_names_both_counts`
-- [ ] Gate check passes: `cargo test -p piperine-parity`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `diode_iv_sweep` parses to 37 rows, first `(-1.0, 1.01008091e-12)`; `ac_rc_ac` to 41 complex rows with `(0.5, -0.5)` at 100 kHz; `tran_rc_tran` to 100 rows (asserted in `tests/harness.rs` against the real binary)
+- [x] A row `1.0 abc` is an error naming file and row; a wrong row count names both counts; a grid point off by 2e-9 relative is named
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --lib`: `golden::tests::an_unparsable_row_names_file_and_row`, `golden::tests::an_export_is_found_with_or_without_data_suffix`, `golden::tests::a_grid_mismatch_names_the_point`, `golden::tests::a_wrong_row_count_names_both_counts`
+- [x] Gate check passes: `cargo test -p piperine-parity`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
