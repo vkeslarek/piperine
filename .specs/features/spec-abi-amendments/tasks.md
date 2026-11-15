@@ -168,11 +168,11 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] Part I §2 says `all-zero bytes` are the all-unknown value of a `Repr` type
-- [ ] Part II §5.3 says the value bytes of an unknown level are zero
-- [ ] Neither page says where the known flags live ("one known byte per level" was rejected)
-- [ ] Test `zero_bytes_are_the_unknown_value` asserts `all-zero bytes` in `part_i_values.md` and `value bytes` in the §5.3 section of `part_ii_carriers.md`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] Part I §2 says `all-zero bytes` are the all-unknown value of a `Repr` type
+- [x] Part II §5.3 says the value bytes of an unknown level are zero
+- [x] Neither page says where the known flags live ("one known byte per level" was rejected)
+- [x] Test `zero_bytes_are_the_unknown_value` asserts `all-zero bytes` in `part_i_values.md` and `value bytes` in the §5.3 section of `part_ii_carriers.md`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full

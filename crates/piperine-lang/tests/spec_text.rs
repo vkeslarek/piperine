@@ -1179,3 +1179,11 @@ fn structure_changing_set_is_refused() {
     assert!(rule.contains("E0803") && rule.contains("extern"), "{rule}");
     assert!(rule.contains("re-elaborates"), "{rule}");
 }
+
+#[test]
+fn zero_bytes_are_the_unknown_value() {
+    assert!(flat(&spec("part_i_values.md")).contains("all-zero bytes"));
+    let carriers = spec("part_ii_carriers.md");
+    let s = flat(&section(&carriers, "### 5.3 "));
+    assert!(s.contains("value bytes"), "{s}");
+}

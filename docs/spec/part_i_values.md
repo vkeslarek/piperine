@@ -169,6 +169,7 @@ pub trait Repr: Copy {
   ([§3.3.1](#33-unknown-values)).
 - **§2 rule 10.** A hand-written `encode` or `decode` propagates flags through its body by the
   ordinary rules of [§3.3](#33-unknown-values). It has no rule of its own.
+- **§2 rule 11.** In the byte form of a value, all-zero bytes are the all-unknown value of a `Repr` type.
 
 **Errors**
 

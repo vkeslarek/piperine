@@ -326,6 +326,7 @@ Every discrete carrier, and every param, keeps one previous value.
   by a `set` made before the run, is not a change
   ([§13](part_iv_behavior.md#13-events) rule 16). Before the first `set` during a run,
   `p.prev()` equals `p`.
+- **§5.3.12** The value bytes of an unknown level are zero.
 
 > **Resolution.** Rules 4, 5 and 7 define "changed" at the level of flags, as the stdlib's
 > `rise` and `fall` assume ("a change never goes from unknown to unknown"). Whether one
