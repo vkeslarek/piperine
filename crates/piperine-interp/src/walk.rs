@@ -653,8 +653,8 @@ mod tests {
     fn an_unread_value_steers_nothing() {
         // Param 0 is a real, param 1 a bool, both unread. `if p0 > 1 { probe } else { 2 }` would
         // take the else arm on a NaN stand-in; on `Unread` it runs neither (the probe arm would
-        // fault in this walk) and gives `Unread`, and so does every operator over it. A number or a
-        // decision taken from it faults.
+        // fault in this walk) and gives `Unread`, and so does every operator over it, a call's body
+        // over its argument among them. A number or a decision taken from it faults.
         let mut lab = Lab::new();
         let mut e = lab.ex(1, 1);
         let p0 = e.param(0);
@@ -677,13 +677,30 @@ mod tests {
         let and_short = e.binary(BinaryOp::And, f, flag);
         let not = e.unary(UnaryOp::Not, flag);
         let on_flag = e.if_f64(flag, probe, two);
+        // fn f(a) { if a > 1 { probe } else { 2 } }, called with the unread param.
+        let mut e = lab.ex(3, 1);
+        let a = e.local(0);
+        let a_above = e.binary(BinaryOp::Gt, a, one);
+        let body = e.if_f64(a_above, probe, two);
+        let f_a = lab.b.function(FunctionSpec {
+            name: "f".into(),
+            origin: Origin { file: "t.msl".into(), line: 3, col: 1 },
+            params: vec![Local { name: "a".into(), ty: ValueType::F64 }],
+            ret: ValueType::F64,
+            locals: vec![Local { name: "a".into(), ty: ValueType::F64 }],
+            body,
+        });
+        let mut e = lab.ex(4, 1);
+        let called = e.call(f_a, vec![p0]);
         let ir = lab.finish();
         let mut w = Walk::new(&ir, vec![Value::Unread, Value::Unread], 0);
-        for id in [above, pick, sum, ex, neg, eq, and_left, or_left, and_right, not, on_flag] {
+        assert!(matches!(ir.expr(called), piperine_ir::Expr::Call { .. }), "the call is an `Expr::Call`");
+        for id in [above, pick, sum, ex, neg, eq, and_left, or_left, and_right, not, on_flag, called] {
             assert_eq!(w.eval(id).unwrap(), Value::Unread, "{id:?}");
         }
         assert_eq!(w.eval(and_short).unwrap(), Value::Bool(false), "a decided left side needs no right side");
         assert_eq!(w.eval_real(pick).unwrap_err().code, Walk::UNDECLARED);
+        assert_eq!(w.eval_real(called).unwrap_err().code, Walk::UNDECLARED);
         assert_eq!(w.eval_bool(above).unwrap_err().code, Walk::UNDECLARED);
         assert_eq!(w.eval_bool(flag).unwrap_err().code, Walk::UNDECLARED);
     }
