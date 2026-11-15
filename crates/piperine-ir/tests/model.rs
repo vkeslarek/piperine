@@ -9,7 +9,7 @@ mod devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BinaryOp, Body, BodyId, BodyNode, BodySpec, Branch, BranchKind, Constant, Env, Expr,
+    Addend, BinaryOp, Body, BodyId, Function, Instance, Nature, Node, BodyNode, BodySpec, Branch, BranchKind, Constant, Env, Expr,
     ExprId, FunctionId, FunctionSpec, InstanceId, InstanceSpec, Ir, IrBuilder, Local, MathFn,
     NatureId, NodeId, NodeRole, NodeSpec, Operator, Origin, Param, Quantity, QuantityRole, Real,
     Site, Stmt, StmtId, Terminal, UnaryOp, ValueType,
@@ -498,4 +498,121 @@ fn a_body_without_analog_has_no_branches() {
     assert!(divider.branches().is_empty());
     assert!(divider.limits().is_empty());
     assert!(divider.stims().is_empty());
+}
+
+/// A handle is `Copy`: a static fact of the type.
+struct CopyBound<T: Copy>(std::marker::PhantomData<T>);
+
+#[test]
+fn handles_are_copy() {
+    let _ = CopyBound::<Body<'static>>(std::marker::PhantomData);
+    let _ = CopyBound::<Function<'static>>(std::marker::PhantomData);
+    let _ = CopyBound::<Instance<'static>>(std::marker::PhantomData);
+    let _ = CopyBound::<Node<'static>>(std::marker::PhantomData);
+    let _ = CopyBound::<Nature<'static>>(std::marker::PhantomData);
+    let ir = Library::ir();
+    let top = ir.top();
+    let again = top; // used after the copy
+    assert_eq!(top.path(), again.path());
+}
+
+#[test]
+fn contained_items_come_in_declaration_order() {
+    let ir = Library::ir();
+    let diode = Library::body(&ir, "Diode");
+    let params: Vec<&str> = diode.params().iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(params, ["is", "n", "cj0"]);
+    let nodes: Vec<&str> = diode.nodes().iter().map(|n| n.name.as_str()).collect();
+    assert_eq!(nodes, ["a", "k"]);
+    let divider = Library::body(&ir, "Divider");
+    let children: Vec<&str> = divider.children().iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(children, ["v1", "r1", "r2"]);
+    let kids: Vec<&str> = ir.top().children().map(|i| i.name()).collect();
+    assert_eq!(kids, ["v1", "r1", "r2"]);
+}
+
+#[test]
+fn an_instance_reaches_its_parent_and_body() {
+    let ir = Library::ir();
+    let r1 = ir.instance_at("Divider.r1").expect("r1");
+    assert_eq!(r1.parent().map(|p| p.path()), Some("Divider"));
+    assert_eq!(r1.body().name(), "Resistor");
+    assert!(ir.top().parent().is_none());
+    assert_eq!(r1.param(0), Some(&Constant::Real(Real::new(1000.0))));
+    assert!(r1.param(1).is_none());
+    assert_eq!(r1.node(0).map(|n| n.path()), Some("Divider.vin"));
+    assert!(ir.instance_at("Divider.r2").expect("r2").node(1).is_none(), "ground has no node");
+}
+
+#[test]
+fn path_lookup_finds_instances_and_nodes() {
+    let ir = Library::ir();
+    assert_eq!(ir.instance_at("Divider").map(|i| i.id()), Some(ir.top().id()));
+    assert_eq!(ir.instance_at("Divider.v1").map(|i| i.name()), Some("v1"));
+    assert!(ir.instance_at("Divider.nope").is_none());
+    assert_eq!(ir.node_at("Divider.mid").map(|n| n.path()), Some("Divider.mid"));
+    assert!(ir.node_at("Divider.nope").is_none());
+    assert!(ir.node_at("Divider").is_none(), "an instance path is not a node path");
+    let mid = ir.node_at("Divider.mid").expect("mid");
+    let wired: Vec<&str> = mid.instances().into_iter().map(|i| i.path()).collect();
+    assert_eq!(wired, ["Divider.r1", "Divider.r2"]);
+}
+
+#[test]
+fn one_body_serves_every_instance_of_it() {
+    let ir = Library::ir();
+    let r1 = ir.instance_at("Divider.r1").expect("r1");
+    let r2 = ir.instance_at("Divider.r2").expect("r2");
+    assert_eq!(r1.body().id(), r2.body().id());
+    assert_eq!(ir.bodies().filter(|b| b.name() == "Resistor").count(), 1);
+}
+
+#[test]
+fn instances_are_stored_in_pre_order() {
+    let ir = Library::ir();
+    let paths: Vec<&str> = ir.instances().map(|i| i.path()).collect();
+    assert_eq!(paths, ["Divider", "Divider.v1", "Divider.r1", "Divider.r2"]);
+    for inst in ir.instances() {
+        if let Some(parent) = inst.parent() {
+            assert!(parent.id() < inst.id(), "a parent precedes its children");
+        }
+        assert_eq!(inst.bindings().len(), inst.body().nodes().len());
+        assert_eq!(inst.params().len(), inst.body().params().len());
+    }
+    let v1 = ir.instance_at("Divider.v1").expect("v1");
+    assert_eq!(v1.params(), [Constant::Real(Real::new(10.0)), Constant::Real(Real::new(0.0))]);
+    assert_eq!(v1.binding(1), Some(piperine_ir::NodeRef::Ground));
+}
+
+#[test]
+fn the_node_table_names_nature_declarer_and_init() {
+    let ir = Library::ir();
+    let paths: Vec<&str> = ir.nodes().map(|n| n.path()).collect();
+    assert_eq!(paths, ["Divider.vin", "Divider.mid"]);
+    for node in ir.nodes() {
+        assert_eq!(node.nature().name(), "Electrical");
+        assert_eq!(node.declared_by().path(), "Divider");
+        assert!(node.init().is_none());
+    }
+}
+
+#[test]
+fn the_authored_tree_is_walkable() {
+    let ir = Library::ir();
+    let mut leaves = Vec::new();
+    let mut stack = vec![ir.top()];
+    while let Some(inst) = stack.pop() {
+        let kids: Vec<_> = inst.children().collect();
+        if kids.is_empty() {
+            leaves.push(inst.path());
+        }
+        stack.extend(kids.into_iter().rev());
+    }
+    assert_eq!(leaves, ["Divider.v1", "Divider.r1", "Divider.r2"]);
+    // The functions the bodies call are reachable too.
+    let names: Vec<&str> = ir.functions().map(|f| f.name()).collect();
+    assert!(names.contains(&"vt") && names.contains(&"pnjlim"));
+    let pnjlim = ir.functions().find(|f| f.name() == "pnjlim").expect("pnjlim");
+    assert_eq!(pnjlim.params().len(), 4);
+    assert_eq!(*pnjlim.ret(), ValueType::F64);
 }

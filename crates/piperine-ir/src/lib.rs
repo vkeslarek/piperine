@@ -10,7 +10,7 @@ mod model;
 mod real;
 
 pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NodeSpec};
-pub use handle::{Body, Nature};
+pub use handle::{Body, Function, Instance, Nature, Node};
 pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
 pub use model::{
     Addend, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Child, Constant, Env, Expr,
