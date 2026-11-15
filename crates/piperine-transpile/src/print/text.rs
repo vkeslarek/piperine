@@ -114,8 +114,8 @@ impl Text {
     /// name the generated code refers to.
     pub fn ident(name: &str) -> String {
         // `~` marks a variant the front end minted (`rev3~1`); Rust has no such character in a
-        // name, and an MSL name has none, so it prints as `__`.
-        let name = name.replace('~', "__");
+        // name, and an MSL name has none, so it prints as `_v` (`rev3_v1`, a snake-case name).
+        let name = name.replace('~', "_v");
         let name = name.as_str();
         if name.ends_with('_') || UNRAWABLE.contains(&name) || RESERVED.contains(&name) {
             format!("{name}_")

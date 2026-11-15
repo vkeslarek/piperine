@@ -55,8 +55,8 @@ pub struct Transpiler {
 
 impl Transpiler {
     /// Accepts an `Ir` whose `check()` is empty, by the interpreter's rule; otherwise returns
-    /// `Error::Rejected` with the entries. A body runs when it has an `analog` block or a node
-    /// with an initial potential.
+    /// `Error::Rejected` with the entries. A body runs when it has an `analog` block, a node
+    /// with an initial potential or a carrier.
     pub fn new(ir: Arc<Ir>) -> Result<Transpiler, Error> {
         let entries = ir.check();
         if !entries.is_empty() {
@@ -65,7 +65,7 @@ impl Transpiler {
         let plans = ir
             .bodies()
             .map(|body| {
-                let runs = body.analog().is_some() || body.nodes().iter().any(|n| n.init.is_some());
+                let runs = body.analog().is_some() || body.nodes().iter().any(|n| n.init.is_some()) || !body.carriers().is_empty();
                 runs.then(|| BodyPlan::new(body))
             })
             .collect();

@@ -6,6 +6,7 @@ pub mod analog;
 pub mod digital;
 pub mod library;
 pub mod limit;
+pub mod reaction;
 pub mod shape;
 pub mod site;
 pub mod text;

@@ -1186,10 +1186,10 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
         assert_eq!(function(&ir, "dithered_width"), dithered_text);
 
         // the variant for a frame that may be unknown (msl-digital's `rev3~1`, `~` printing as
-        // `__`): every operand is lifted to `Flagged`, the `i32` shift amount too
+        // `_v`): every operand is lifted to `Flagged`, the `i32` shift amount too
         let rev3_flagged_text = "\
 // fn rev3~1 @ dpwm.msl:14:1
-fn rev3__1(k: rt::Flagged<rt::UInt<3>>) -> rt::Flagged<rt::UInt<3>> {
+fn rev3_v1(k: rt::Flagged<rt::UInt<3>>) -> rt::Flagged<rt::UInt<3>> {
     (((k & rt::Flagged::known(rt::UInt::<3>::new(1))) << rt::Flagged::known(rt::Int::<32>::new(2))) | (k & rt::Flagged::known(rt::UInt::<3>::new(2)))) | ((k >> rt::Flagged::known(rt::Int::<32>::new(2))) & rt::Flagged::known(rt::UInt::<3>::new(1)))
 }
 ";
@@ -1200,10 +1200,10 @@ fn rev3__1(k: rt::Flagged<rt::UInt<3>>) -> rt::Flagged<rt::UInt<3>> {
         // known branches are lifted to the `if`'s type
         let dithered_flagged_text = "\
 // fn dithered_width~01 @ dpwm.msl:18:1
-fn dithered_width__01(duty: rt::UInt<12>, frame: rt::Flagged<rt::UInt<3>>) -> Result<rt::Flagged<rt::UInt<9>>, Fault> {
+fn dithered_width_v01(duty: rt::UInt<12>, frame: rt::Flagged<rt::UInt<3>>) -> Result<rt::Flagged<rt::UInt<9>>, Fault> {
     let coarse = (duty >> rt::Int::<32>::new(3)).to_uint::<9>();
     let fine = (duty & rt::UInt::<12>::new(7)).to_uint::<3>();
-    Ok(if rev3__1(frame).less(rt::Flagged::known(fine)).decide(\"dpwm.msl:21:5\")? {
+    Ok(if rev3_v1(frame).less(rt::Flagged::known(fine)).decide(\"dpwm.msl:21:5\")? {
         rt::Flagged::known(coarse + rt::UInt::<9>::new(1))
     } else {
         rt::Flagged::known(coarse)

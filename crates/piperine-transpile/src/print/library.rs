@@ -7,7 +7,8 @@
 //! `impl` holds the shape (the plan's, printed by `ShapePrinter`, built once) and one Rust
 //! function per function of the shape (`AnalogPrinter`); its `Device` impl gives every instance
 //! that shape (no M1 param is structural), runs function `k` through a `match` with one commented
-//! arm per function, and has no reaction. `piperine_abi_1` returns the library of the modules,
+//! arm per function and reaction `k` through another per reaction of the shape (a body with none
+//! answers every `k` with a `Fault`). `piperine_abi_1` returns the library of the modules,
 //! built once, in body order; each module keeps its body's MSL name as its ABI name.
 //!
 //! Exporting the symbol takes `#[unsafe(no_mangle)]` in edition 2024: an attribute, no `unsafe`
@@ -15,39 +16,20 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Expr, ExprId, FunctionId, Ir, Stmt};
+use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, Stmt, StmtId};
 use piperine_plan::{BodyPlan, Mode};
 
 use crate::Error;
-use crate::print::{AnalogPrinter, ShapePrinter, Text, ValuePrinter};
+use crate::print::{AnalogPrinter, DigitalPrinter, ShapePrinter, Text, ValuePrinter};
 
 /// Prints a design.
 #[derive(Debug)]
 pub struct LibraryPrinter;
 
 impl LibraryPrinter {
-    /// The digital forms have no lowering yet (ir-rust phases 6 and 7): a body that holds one is
-    /// `Error::Unsupported`, never printed without it.
-    fn discrete(ir: &Ir) -> Result<(), Error> {
-        for body in ir.bodies() {
-            let first = body
-                .carriers()
-                .first()
-                .map(|c| ("a discrete carrier", format!("body {} carrier {}", body.name(), c.name), c.origin.clone()))
-                .or_else(|| body.drives().first().map(|d| ("a drive", format!("body {} drive {}", body.name(), d.carrier), d.origin.clone())))
-                .or_else(|| body.events().first().map(|e| ("an event", format!("body {} event 0", body.name()), e.origin.clone())))
-                .or_else(|| body.reactions().first().map(|r| ("a reaction", format!("body {} reaction 0", body.name()), r.origin.clone())));
-            if let Some((form, path, origin)) = first {
-                return Err(Error::Unsupported { form: form.to_string(), path, origin });
-            }
-        }
-        Ok(())
-    }
-
     /// `ir` as one Rust source text; `plans` holds one entry per body, `None` for a body with
     /// nothing to run.
     pub fn design(ir: &Ir, plans: &[Option<BodyPlan>]) -> Result<String, Error> {
-        Self::discrete(ir)?;
         let top = ir.top();
         let design = top.body().name();
         let at = top.body().origin().clone();
@@ -59,11 +41,22 @@ impl LibraryPrinter {
 
         // The IR functions the running bodies reach, in arena order.
         let functions = Self::reached(ir, &running);
+        let mut printed_names = BTreeSet::new();
+        for f in &functions {
+            let name = Text::ident(ir.function(*f).name());
+            if !printed_names.insert(name.clone()) {
+                return Err(Error::Unsupported {
+                    form: format!("two functions that print as `{name}`"),
+                    path: format!("fn {}", ir.function(*f).name()),
+                    origin: ir.function(*f).origin().clone(),
+                });
+            }
+        }
         let mut function_texts = Vec::new();
         for f in &functions {
             function_texts.push(ValuePrinter::function(ir, *f)?);
         }
-        if !functions.is_empty() {
+        if functions.iter().any(|f| ValuePrinter::is_generic(ir, *f)) {
             uses.insert("rt::Real");
         }
 
@@ -145,8 +138,11 @@ impl LibraryPrinter {
         let name = body.name();
         let at = body.origin();
         let analog = AnalogPrinter::new(*body, plan);
+        let digital = DigitalPrinter::new(*body, plan);
         let mut functions = Vec::new();
         let mut arms = Vec::new();
+        let mut reaction_arms = Vec::new();
+        let mut fn_names: Vec<String> = Vec::new();
         for (k, f) in plan.functions().iter().enumerate() {
             let (text, call) = match f.mode {
                 Mode::Terms => (analog.terms(k)?, "terms".to_string()),
@@ -158,22 +154,35 @@ impl LibraryPrinter {
                     let param = body.params().get(p as usize).map_or_else(|| p.to_string(), |x| x.name.clone());
                     (analog.check(k)?, format!("{param}_check"))
                 }
-                // `discrete` refused every body that has a digital function before any printing.
-                Mode::Cross(_) | Mode::Drive(_) | Mode::Event(_) | Mode::DelayedEvent(_) => {
-                    return Err(Error::Unsupported { form: format!("the digital function {:?}", f.mode), path: format!("body {name} function {k}"), origin: at.clone() });
+                Mode::Drive(_) => (digital.drive(k)?, digital.function_name(f)),
+                Mode::Event(_) | Mode::DelayedEvent(_) => (digital.event(k)?, digital.function_name(f)),
+                Mode::Cross(_) => {
+                    return Err(Error::Unsupported { form: "a cross watch".to_string(), path: format!("body {name} function {k}"), origin: at.clone() });
                 }
             };
             if matches!(f.mode, Mode::Terms | Mode::Limit(_)) {
                 uses.insert("rt::Dual");
             }
-            uses.insert("rt::Real");
+            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_)) {
+                uses.insert("rt::Real");
+            }
             uses.insert("piperine_abi::device::Eval");
             functions.push(text);
+            fn_names.push(call.clone());
             let shape = plan.shape().shape();
             let entry = shape.functions.get(k);
             let (fname, origin) = entry.map_or(("", ""), |e| (e.name.as_str(), e.origin.as_str()));
             arms.push(format!("// function {k} `{fname}` @ {origin}\n{k} => Self::{call}(cx),"));
         }
+        for (k, r) in plan.reactions().iter().enumerate() {
+            let call = digital.reaction_name(r);
+            functions.push(digital.reaction(k)?);
+            fn_names.push(call.clone());
+            let shape = plan.shape().shape();
+            let (rname, origin) = shape.reactions.get(k).map_or(("", ""), |x| (x.name.as_str(), x.origin.as_str()));
+            reaction_arms.push(format!("// reaction {k} `{rname}` @ {origin}\n{k} => Self::{call}(cx),"));
+        }
+        Self::distinct(body, &fn_names)?;
         for path in [
             "piperine_abi::device::Device",
             "piperine_abi::device::Fault",
@@ -242,10 +251,26 @@ impl LibraryPrinter {
                 });
                 t.line("}");
                 t.line("");
-                t.comment(&format!("body {name}: it has no reaction"), at);
-                t.line("fn react(&self, k: u32, _cx: &mut React<'_>) -> Result<Flow, Fault> {");
-                t.indented(|t| t.line(&format!("Err(Fault::new(2, format!(\"{name}: reaction {{k}} does not exist\")))")));
-                t.line("}");
+                if reaction_arms.is_empty() {
+                    t.comment(&format!("body {name}: it has no reaction"), at);
+                    t.line("fn react(&self, k: u32, _cx: &mut React<'_>) -> Result<Flow, Fault> {");
+                    t.indented(|t| t.line(&format!("Err(Fault::new(2, format!(\"{name}: reaction {{k}} does not exist\")))")));
+                    t.line("}");
+                } else {
+                    t.comment(&format!("body {name}: reaction `k` of the shape"), at);
+                    t.line("fn react(&self, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault> {");
+                    t.indented(|t| {
+                        t.line("match k {");
+                        t.indented(|t| {
+                            for arm in &reaction_arms {
+                                t.line(arm);
+                            }
+                            t.line(&format!("_ => Err(Fault::new(2, format!(\"{name}: reaction {{k}} does not exist\"))),"));
+                        });
+                        t.line("}");
+                    });
+                    t.line("}");
+                }
             });
             t.line("}");
         });
@@ -254,6 +279,22 @@ impl LibraryPrinter {
         let mut text = t.finish();
         text.pop();
         Ok(text)
+    }
+
+    /// No two Rust functions of a body print as one name: an MSL name and a variant name
+    /// (`rev3~1` prints as `rev3_v1`) may spell alike, and that is refused, not shadowed.
+    fn distinct(body: &piperine_ir::Body<'_>, names: &[String]) -> Result<(), Error> {
+        let mut seen = BTreeSet::new();
+        for (k, name) in names.iter().enumerate() {
+            if !seen.insert(name) {
+                return Err(Error::Unsupported {
+                    form: format!("two functions that print as `{name}`"),
+                    path: format!("body {} function {k}", body.name()),
+                    origin: body.origin().clone(),
+                });
+            }
+        }
+        Ok(())
     }
 
     fn site(sites: &[piperine_ir::Site], k: u32) -> String {
@@ -265,15 +306,20 @@ impl LibraryPrinter {
     fn reached(ir: &Ir, running: &[(piperine_ir::Body<'_>, &BodyPlan)]) -> Vec<FunctionId> {
         let mut exprs: Vec<ExprId> = Vec::new();
         for (body, _) in running {
-            for s in body.analog().unwrap_or(&[]) {
-                match ir.stmt(*s) {
-                    Stmt::Let { init, .. } => exprs.push(*init),
-                    Stmt::Expr(e) => exprs.push(*e),
-                    Stmt::Contribute { addends, .. } => exprs.extend(addends.iter().map(|a| a.value)),
-                    Stmt::Commit { value, after, .. } => exprs.extend([*value].into_iter().chain(*after)),
+            exprs.extend(Self::statement_exprs(ir, body.analog().unwrap_or(&[])));
+            exprs.extend(body.params().iter().filter_map(|p| p.check));
+            for d in body.drives() {
+                exprs.extend([d.value].into_iter().chain(d.after));
+            }
+            for e in body.events() {
+                exprs.extend(e.guard);
+                if let EventSource::Cross(x) = e.source {
+                    exprs.push(x);
                 }
             }
-            exprs.extend(body.params().iter().filter_map(|p| p.check));
+            for r in body.reactions() {
+                exprs.extend(Self::statement_exprs(ir, &r.stmts));
+            }
         }
         let mut found = BTreeSet::new();
         while let Some(e) = exprs.pop() {
@@ -288,6 +334,20 @@ impl LibraryPrinter {
             }
         }
         ir.functions().filter(|f| found.contains(&f.id().index())).map(|f| f.id()).collect()
+    }
+
+    /// The expressions the statements `stmts` hold directly.
+    fn statement_exprs(ir: &Ir, stmts: &[StmtId]) -> Vec<ExprId> {
+        let mut exprs = Vec::new();
+        for s in stmts {
+            match ir.stmt(*s) {
+                Stmt::Let { init, .. } => exprs.push(*init),
+                Stmt::Expr(e) => exprs.push(*e),
+                Stmt::Contribute { addends, .. } => exprs.extend(addends.iter().map(|a| a.value)),
+                Stmt::Commit { value, after, .. } => exprs.extend([*value].into_iter().chain(*after)),
+            }
+        }
+        exprs
     }
 
     /// The `use` lines of `uses`, one per module path, names sorted.
