@@ -363,9 +363,9 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::site::tests::stim_and_check_print_plain_values`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `print::site::tests::stim_and_check_print_plain_values`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: full
