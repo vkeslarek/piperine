@@ -289,9 +289,9 @@ of its own.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
-6. **The integrator restarts after a landing and after a host `set`.** Two steps restart the
-   integrator: the step after one that landed on `t` because something was due there, and
-   the step that reads a host `set`. Restarting, the trapezoidal stage drops the previous
+6. **The integrator restarts after a landing and after a host `set`.** Three steps restart
+   the integrator: the first step after the operating point (H2), the step after one that
+   landed on `t` because something was due there, and the step that reads a host `set`. Restarting, the trapezoidal stage drops the previous
    derivative and runs as backward Euler over its sub-step. A change made after the solve of
    `t`, and a settle commit, restart nothing. After a host `set` the step size also restarts
    at 10⁻³ of the last step (Appendix C.2); in every other case the controller's proposal is
