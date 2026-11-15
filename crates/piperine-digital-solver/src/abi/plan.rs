@@ -7,7 +7,7 @@
 
 use piperine_abi::caller::Handle;
 use piperine_abi::layout::layout_eq;
-use piperine_abi::raw::{Layout, Shape, cell, kind, pin_flag, role, statement_flag};
+use piperine_abi::raw::{Layout, Shape, cell, global, kind, pin_flag, role, statement_flag};
 use piperine_abi::validate::validate;
 
 use super::dag::Dag;
@@ -63,9 +63,21 @@ pub struct Analysis {
     functions: Vec<FnNode>,
     /// `[instance][reaction][statement]`: whether the statement keeps `LATER`.
     later: Vec<Vec<Vec<bool>>>,
+    start_nets: Vec<NetId>,
+    settle_nets: Vec<NetId>,
 }
 
 impl Analysis {
+    /// The nets of the global event `START`.
+    pub fn start_nets(&self) -> &[NetId] {
+        &self.start_nets
+    }
+
+    /// The nets of the global event `SETTLE`.
+    pub fn settle_nets(&self) -> &[NetId] {
+        &self.settle_nets
+    }
+
     /// The writer of `net`.
     pub fn writer(&self, net: NetId) -> NetWriter {
         self.writers[net.0 as usize]
@@ -158,7 +170,21 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
                 .collect(),
         );
     }
-    Ok(Analysis { writers, functions, later })
+    let globals = |which: u32| -> Vec<NetId> {
+        let mut found: Vec<NetId> = Vec::new();
+        for input in inputs {
+            for (i, pin) in input.shape.pins.iter().enumerate() {
+                if let (role::GLOBAL, Binding::Net(id)) = (pin.role, input.pins[i])
+                    && pin.global == which
+                    && !found.contains(&id)
+                {
+                    found.push(id);
+                }
+            }
+        }
+        found
+    };
+    Ok(Analysis { writers, functions, later, start_nets: globals(global::START), settle_nets: globals(global::SETTLE) })
 }
 
 /// Every pin is bound as its kind allows, to a net that exists and has its kind.

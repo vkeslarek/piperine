@@ -27,6 +27,8 @@ fn every_fixture_shape_is_valid() {
         ("faulty", faulty()),
         ("sampler", sampler()),
         ("stub", stub()),
+        ("odd", odd()),
+        ("rogue", rogue()),
     ];
     for (name, handle) in &all {
         validate(handle.shape()).unwrap_or_else(|e| panic!("{name}: {e}"));

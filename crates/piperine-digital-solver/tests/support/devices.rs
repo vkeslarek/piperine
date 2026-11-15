@@ -15,8 +15,8 @@ use piperine_abi::caller::Handle;
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW, REAL};
 use piperine_abi::raw::{
-    Cell, Field, Layout, List, Module, Shape, Statement, Str, cell, global, kind, leaf, part, pin_flag, reaction_flag,
-    role, statement_flag,
+    Cell, Created, Eval as RawEval, Field, Instance, Layout, List, Module, Note, React as RawReact, Shape, Statement, Str,
+    Value, cell, global, kind, leaf, part, pin_flag, reaction_flag, role, statement_flag, status,
 };
 use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
 use piperine_abi::thunk::module;
@@ -650,6 +650,111 @@ impl Device for Stub {
 
 pub fn stub() -> Handle {
     make::<Stub>(&STUB, "stub")
+}
+
+// ─── Odd ────────────────────────────────────────────────────────────────────
+
+/// A reaction that misbehaves in a way each event picks.
+///
+/// pins: out=0 (PORT BIT); e0..e2=1..3 (PORT event)
+/// reaction k on [e_k], statements [S0 {out}] (reaction 0: S0 {out, LATER, min_after 1 ns}):
+///   0  commits after 0.5 ns through the LATER statement above
+///   1  returns FINISH
+///   2  returns a FAULT, code 9, "bang"
+pub struct Odd;
+static ODD_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static ODD: OnceLock<Module> = OnceLock::new();
+
+fn odd_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    let events: Vec<u32> = (0..3).map(|k| s.pin(PinSpec::event(&format!("e{k}"), role::PORT))).collect();
+    for (k, e) in events.iter().enumerate() {
+        let later = if k == 0 {
+            Statement { flags: statement_flag::LATER, min_after: 1e-9, ..statement(out, 2, 0) }
+        } else {
+            statement(out, 2, 0)
+        };
+        s.reaction(ReactionSpec { name: "odd", on: vec![*e], writes: vec![later], ..ReactionSpec::default() });
+    }
+    s.freeze()
+}
+
+impl Device for Odd {
+    fn prototype() -> &'static Shape {
+        shared(&ODD_SHAPE, odd_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Odd, Arc::clone(shared(&ODD_SHAPE, odd_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("odd", true);
+        match k {
+            0 => cx.commit(0, &[1, 1], 0.5e-9)?,
+            1 => return Ok(Flow::Finish),
+            _ => return Err(Fault::new(9, "bang")),
+        }
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn odd() -> Handle {
+    make::<Odd>(&ODD, "odd")
+}
+
+// ─── Rogue (a foreign device) ───────────────────────────────────────────────
+
+/// A device written against the C contract directly, so nothing between it and the engine checks
+/// its commits (the Rust `Device` path refuses a commit longer than its statement before the host
+/// sees it). Its commits break the statement's range.
+///
+/// pins: out=0 (PORT BIT); go0=1, go1=2 (PORT event)
+/// reaction 0 on [go0] commits three bytes through S0 {out, 2 bytes}
+/// reaction 1 on [go1] commits through statement 9, which does not exist
+static ROGUE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static ROGUE: OnceLock<Module> = OnceLock::new();
+
+fn rogue_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    for k in 0..2 {
+        let go = s.pin(PinSpec::event(&format!("go{k}"), role::PORT));
+        s.reaction(ReactionSpec { name: "rogue", on: vec![go], writes: vec![statement(out, 2, 0)], ..ReactionSpec::default() });
+    }
+    s.freeze()
+}
+
+unsafe extern "C" fn rogue_create(_: *const Module, _: List<Value>, _: *mut Note) -> Created {
+    let shape = shared(&ROGUE_SHAPE, rogue_shape).as_raw();
+    Created { status: status::OK, instance: std::ptr::NonNull::<Instance>::dangling().as_ptr(), shape }
+}
+unsafe extern "C" fn rogue_destroy(_: *mut Instance) {}
+unsafe extern "C" fn rogue_eval(_: *mut Instance, _: u32, _: *const RawEval) -> u32 {
+    status::OK
+}
+unsafe extern "C" fn rogue_react(_: *mut Instance, k: u32, frame: *const RawReact) -> u32 {
+    // SAFETY: abi.md §3 React: `frame` and its `host` are valid for this call.
+    let (host, data) = unsafe { (&*(*frame).host, (*frame).host_data) };
+    let bytes = [1u8, 1, 1];
+    let (statement, len) = if k == 0 { (0, 3) } else { (9, 2) };
+    // SAFETY: abi.md §2 entry 6: `commit` is called inside `react` with the frame's own `host_data`.
+    unsafe { (host.commit)(data, statement, 0, len, bytes.as_ptr(), 0.0) }
+}
+
+pub fn rogue() -> Handle {
+    let module = ROGUE.get_or_init(|| Module {
+        name: Str::from_static("rogue"),
+        prototype: shared(&ROGUE_SHAPE, rogue_shape).as_raw(),
+        data: std::ptr::null(),
+        create: rogue_create,
+        destroy: rogue_destroy,
+        eval: rogue_eval,
+        react: rogue_react,
+    });
+    Handle::create(module, &[]).expect("a fixture device creates")
 }
 
 // ─── Binding by name ────────────────────────────────────────────────────────

@@ -249,13 +249,13 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_reaction_runs_once_when_its_event_fired` passes (C19)
-- [ ] Test `reactions_of_one_microstep_read_one_snapshot` passes: two flip-flops in a ring swap values (C20)
-- [ ] Test `a_zero_delay_commit_applies_at_the_next_microstep` passes (C21)
-- [ ] Test `a_commit_outside_its_statement_range_is_a_fault` and test `a_later_commit_below_its_bound_is_a_fault` pass (C22)
-- [ ] Test `finish_marks_the_instant_final` passes (C26)
-- [ ] Test `a_reaction_fault_carries_code_tick_and_instance` passes
-- [ ] Gate: full
+- [x] Test `a_reaction_runs_once_when_its_event_fired` passes (C19)
+- [x] Test `reactions_of_one_microstep_read_one_snapshot` passes: two flip-flops in a ring swap values (C20)
+- [x] Test `a_zero_delay_commit_applies_at_the_next_microstep` passes (C21)
+- [x] Test `a_commit_outside_its_statement_range_is_a_fault` and test `a_later_commit_below_its_bound_is_a_fault` pass (C22)
+- [x] Test `finish_marks_the_instant_final` passes (C26)
+- [x] Test `a_reaction_fault_carries_code_tick_and_instance` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

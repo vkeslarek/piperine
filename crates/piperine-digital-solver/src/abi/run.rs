@@ -5,18 +5,18 @@
 //! Both read and write through `Store` and call devices only through
 //! `piperine_abi::caller::Handle`.
 
-use piperine_abi::caller::CallError;
-use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::caller::{CallError, Commit};
+use piperine_abi::device::{Access, Flow, cell_lens};
 use piperine_abi::layout::{is_canonical, leaf_size};
-use piperine_abi::raw::{Cell, cell, field_flag, status};
+use piperine_abi::raw::{Cell, Statement, cell, field_flag, reaction_flag, statement_flag, status};
 
 use super::dag::Step;
 use super::net::{NetId, NetKind};
 use super::observe::{Obs, Observation};
 use super::plan::{Binding, DigitalPlan};
-use super::queue::Instant;
+use super::queue::{Instant, Pending, Queue, Writer};
 use super::store::{Aligned, Store};
-use super::tick::Tick;
+use super::tick::{Due, Tick};
 use crate::error::DigitalError;
 
 /// The values a call reads that are not pins: time, `STATIC`, `TICK`, `HORIZON`.
@@ -111,8 +111,7 @@ pub fn fire_net(plan: &DigitalPlan, store: &mut Store, dirty: &mut DirtySet, obs
 
 /// One input or output buffer of `len` bytes, filled with what `cell` names.
 fn cell_bytes(
-    plan: &DigitalPlan,
-    instance: usize,
+    pins: &[Binding],
     c: &Cell,
     len: usize,
     store: &Store,
@@ -125,7 +124,7 @@ fn cell_bytes(
         buf.bytes_mut()[..n].copy_from_slice(&src[..n]);
     };
     match c.kind {
-        cell::PIN => match plan.instances[instance].pins[c.index as usize] {
+        cell::PIN => match pins[c.index as usize] {
             Binding::Net(id) => match c.part {
                 piperine_abi::raw::part::VALUE => fill(&mut buf, store.value(id)),
                 piperine_abi::raw::part::PREVIOUS => fill(&mut buf, store.previous(id)),
@@ -173,13 +172,13 @@ fn call_function(
         .reads
         .iter()
         .zip(&reads)
-        .map(|(c, len)| cell_bytes(plan, node.instance as usize, c, *len, store, ambient, &[]))
+        .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, &[]))
         .collect();
     let mut outputs: Vec<Aligned> = func
         .writes
         .iter()
         .zip(&writes)
-        .map(|(c, len)| cell_bytes(plan, node.instance as usize, c, *len, store, ambient, &[]))
+        .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, &[]))
         .collect();
     let input_refs: Vec<&[u8]> = inputs.iter().map(|b| b.bytes()).collect();
     let mut output_refs: Vec<&mut [u8]> = outputs.iter_mut().map(|b| b.bytes_mut()).collect();
@@ -374,4 +373,179 @@ fn relax(
         fire_net(plan, store, dirty, obs, net, at);
     }
     Ok(())
+}
+
+/// What the reactions of one microstep asked for beyond their commits.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Fired {
+    /// A reaction returned `FINISH`.
+    pub finish: bool,
+    /// A reaction that ran is flagged `IRREVERSIBLE`.
+    pub irreversible: bool,
+    /// How many reactions ran.
+    pub ran: u32,
+}
+
+/// R: runs, once each, the reactions with an event pin in `on` that fired in this microstep.
+/// Every one reads the same snapshot (R2: frames are built before the first call). Each commit goes
+/// through the range check, the `LATER` bound check, `Resolution::due` and the queue (abi.md §6),
+/// and is observed. `call` numbers the commits of the microstep (C2).
+pub fn run_reactions(
+    plan: &mut DigitalPlan,
+    store: &Store,
+    samples: &[f64],
+    ambient: &Ambient,
+    queue: &mut Queue,
+    obs: &mut Obs,
+    at: Instant,
+    call: &mut u32,
+) -> Result<Fired, DigitalError> {
+    let DigitalPlan { nets, instances, resolution, analysis, .. } = plan;
+    let settle = analysis.settle_nets();
+    let mut fired = Fired::default();
+
+    // which reactions run, and what each reads
+    struct Job {
+        instance: usize,
+        reaction: usize,
+        inputs: Vec<Aligned>,
+        on_settle: bool,
+    }
+    let mut jobs: Vec<Job> = Vec::new();
+    for (i, inst) in instances.iter().enumerate() {
+        let shape = inst.handle.shape();
+        for (r, reaction) in shape.reactions.iter().enumerate() {
+            let on: Vec<NetId> = reaction
+                .on
+                .iter()
+                .filter_map(|p| match inst.pins[*p as usize] {
+                    Binding::Net(id) if store.fired(id) => Some(id),
+                    _ => None,
+                })
+                .collect();
+            if on.is_empty() {
+                continue;
+            }
+            let lens = cell_lens(shape, &reaction.reads, Access::ReactionRead).expect("bind validated the shape");
+            let inputs = reaction
+                .reads
+                .iter()
+                .zip(&lens)
+                .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, samples))
+                .collect();
+            jobs.push(Job { instance: i, reaction: r, inputs, on_settle: on.iter().any(|n| settle.contains(n)) });
+        }
+    }
+
+    for job in jobs {
+        let inst = &mut instances[job.instance];
+        let path = inst.path.clone();
+        let pins = inst.pins.clone();
+        let (statements, pin_names, irreversible) = {
+            let shape = inst.handle.shape();
+            let reaction = shape.reactions.get(job.reaction).expect("listed above");
+            (
+                reaction.writes.iter().copied().collect::<Vec<Statement>>(),
+                shape.pins.iter().map(|p| p.name.as_str().to_string()).collect::<Vec<String>>(),
+                reaction.flags & reaction_flag::IRREVERSIBLE != 0,
+            )
+        };
+        fired.irreversible |= irreversible;
+        fired.ran += 1;
+        let refs: Vec<&[u8]> = job.inputs.iter().map(|b| b.bytes()).collect();
+        let mut failure: Option<DigitalError> = None;
+        let mut sink = |c: Commit<'_>| -> u32 {
+            if failure.is_some() {
+                return status::FAULT;
+            }
+            let reject = |message: String| DigitalError::Fault { code: 0, message, tick: at.0.0, instance: path.clone() };
+            let Some(s) = statements.get(c.statement as usize) else {
+                failure = Some(reject(format!("reaction {} committed through statement {}, which it does not have", job.reaction, c.statement)));
+                return status::FAULT;
+            };
+            let end = c.offset as u64 + c.bytes.len() as u64;
+            if c.offset < s.offset || end > s.offset as u64 + s.len as u64 {
+                failure = Some(reject(format!(
+                    "reaction {} statement {} committed bytes {}..{} outside its declared range {}..{}",
+                    job.reaction,
+                    c.statement,
+                    c.offset,
+                    end,
+                    s.offset,
+                    s.offset as u64 + s.len as u64
+                )));
+                return status::FAULT;
+            }
+            let later = analysis.later(job.instance as u32, job.reaction as u32, c.statement);
+            if later && c.after < s.min_after {
+                failure = Some(reject(format!(
+                    "reaction {} statement {} is LATER with a bound of {} s and committed after {} s",
+                    job.reaction, c.statement, s.min_after, c.after
+                )));
+                return status::FAULT;
+            }
+            let due = match resolution.due(at.0, c.after) {
+                Ok(d) => d,
+                Err(DigitalError::NanDelay { code, .. }) => {
+                    failure = Some(DigitalError::NanDelay { code, instance: path.clone(), statement: c.statement });
+                    return status::FAULT;
+                }
+                Err(e) => {
+                    failure = Some(e);
+                    return status::FAULT;
+                }
+            };
+            if job.on_settle && due == Due::NextMicrostep {
+                failure = Some(DigitalError::Unsupported { what: "settle commit" });
+                return status::FAULT;
+            }
+            let due_at = match due {
+                Due::NextMicrostep => Some((at.0, at.1 + 1)),
+                Due::At(t) => Some((t, 0)),
+                Due::Never => None,
+            };
+            obs.push(Observation::Commit {
+                instance: path.clone(),
+                reaction: job.reaction as u32,
+                statement: c.statement,
+                made: at,
+                due: due_at,
+            });
+            let Binding::Net(net) = pins[s.pin as usize] else { return status::OK };
+            if nets[net.0 as usize].record {
+                obs.push(Observation::Record {
+                    stream: format!("{path}.{}", pin_names[s.pin as usize]),
+                    at,
+                    bytes: c.bytes.to_vec(),
+                });
+            }
+            *call += 1;
+            if let Some(due) = due_at {
+                queue.push(
+                    Pending {
+                        net,
+                        offset: c.offset,
+                        bytes: c.bytes.to_vec(),
+                        writer: Writer::Reaction { instance: job.instance as u32, reaction: job.reaction as u32 },
+                        statement: c.statement,
+                        made: at,
+                        call: *call,
+                        due,
+                    },
+                    s.flags & statement_flag::REPLACE != 0,
+                );
+            }
+            status::OK
+        };
+        let result = inst.handle.react(job.reaction as u32, &refs, &mut sink);
+        match result {
+            Ok(Flow::Finish) => fired.finish = true,
+            Ok(Flow::Continue) => {}
+            Err(e) => return Err(failure.take().unwrap_or_else(|| fault(e, at.0, &path))),
+        }
+        if let Some(e) = failure.take() {
+            return Err(e);
+        }
+    }
+    Ok(fired)
 }
