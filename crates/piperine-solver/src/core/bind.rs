@@ -199,7 +199,7 @@ pub(crate) struct BindInput<'a> {
 }
 
 fn bind_error(path: &str, detail: impl std::fmt::Display) -> Error {
-    Error::simple(SolverDomain::Element, format!("instance `{path}`: {detail}"))
+    Error::simple(SolverDomain::Device, format!("instance `{path}`: {detail}"))
 }
 
 /// The bytes of `value` in `layout` (P3: a field with a known byte gets it set).
@@ -346,7 +346,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
     let mut shared_by_name: HashMap<String, ParamValue> = HashMap::new();
     for (name, seed) in shared {
         if shared_by_name.insert(name.clone(), seed).is_some() {
-            return Err(Error::simple(SolverDomain::Element, format!("shared param net `{name}` is declared twice")));
+            return Err(Error::simple(SolverDomain::Device, format!("shared param net `{name}` is declared twice")));
         }
     }
     let session: HashMap<String, ParamValue> = session.into_iter().collect();
@@ -615,7 +615,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
     for spec in &nets.specs {
         if !spec.init.is_empty() && spec.init.len() != spec.size as usize {
             return Err(Error::simple(
-                SolverDomain::Element,
+                SolverDomain::Device,
                 format!("net `{}` holds {} bytes and its seed {}", spec.name, spec.size, spec.init.len()),
             ));
         }

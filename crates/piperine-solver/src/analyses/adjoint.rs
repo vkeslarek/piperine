@@ -13,28 +13,25 @@
 //!
 //! The driver is a DC analysis variant: it solves the operating point
 //! through [`DcSolver`], re-stamps the converged Jacobian once, and asks
-//! each element for `∂F/∂p` through the element ABI
-//! ([`AnalogDevice::param_stamps`](crate::core::element::AnalogDevice::param_stamps)).
+//! each instance for `∂F/∂p` through the device ABI
+//! (the assembly's `param_stamps`).
 //! The solver never depends on codegen — `∂F/∂p` arrives through the ABI.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::analyses::context::Context;
-use crate::analyses::dc::{DcAnalysisState, DcSolver};
+use crate::analyses::dc::DcSolver;
 use crate::analyses::sensitivity::{ParamRequest, ParamStampCollector};
 use piperine_analog_solver::tolerances::Policy;
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::core::circuit::CircuitInstance;
 use crate::core::net::Net;
 use crate::core::result::Result;
-use piperine_digital_solver::events::LogicValue;
 use piperine_analog_solver::error::{Error, SolverDomain};
-use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use piperine_analog_solver::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
 use crate::prelude::DcAnalysisResult;
 
-use ndarray::Array1;
 
 /// One DC adjoint request: a scalar output (solved node voltage or branch
 /// current, optionally differential) and the parameters to differentiate
@@ -145,16 +142,7 @@ impl<'a> AdjointSolver<'a> {
         let op = op_vector(self.circuit, &dc_result);
         let size = self.circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
-        // 3. Seed the OP into each device's `last_volts` (dv-gradients B1
-        //    note: a pure-analog DC solve does not call
-        //    `accept_and_run_digital`, so the adjoint seeds the same way
-        //    before reading `param_stamps` — the JIT kernel reads its
-        //    cached terminal voltages off the accept-gated `last_volts`).
-        if self.circuit.abi.is_none() {
-            let _ = self.circuit.accept_and_run_digital(&op, 0.0);
-        }
-
-        // 4. Re-stamp the Jacobian once at the converged op. Only Matrix
+        // 3. Re-stamp the Jacobian once at the converged op. Only Matrix
         //    entries feed the transpose solve's LHS; the residual Rhs the
         //    devices also produced here is the DC source vector, not the
         //    adjoint's ∂f/∂x RHS (which is set explicitly below).
@@ -229,39 +217,24 @@ impl<'a> AdjointSolver<'a> {
     }
 }
 
-/// Re-stamp the Jacobian at the converged operating point: build the
-/// 1-row history buffer the devices read from `op`, call `load_dc` on each
-/// device once, and concatenate the stamps. This is the same shape the
-/// noise driver's `assemble_linearized` uses for AC, applied to the DC
-/// residual — the matrix half is `∂F/∂x`, the adjoint's `J`.
+/// Re-stamp the Jacobian at the converged operating point: the assembly's DC
+/// stamps at `op`. This is the same shape the noise driver's
+/// `assemble_linearized` uses for AC, applied to the DC residual — the matrix
+/// half is `∂F/∂x`, the adjoint's `J`.
 fn restamp_jacobian(
     circuit: &mut CircuitInstance,
     op: &[f64],
     ctx: &Context,
 ) -> Result<Vec<Stamp<AnalogReference, f64>>> {
-    if let Some(bound) = circuit.abi.as_mut() {
-        let amb = piperine_analog_solver::device::Ambient {
-            time: 0.0,
-            freq: 0.0,
-            is_static: true,
-            gmin: ctx.tolerances.gmin,
-            source_scale: 1.0,
-        };
-        return bound.analog.assemble_dc(op, amb);
-    }
-    let mut buf = CircularArrayBuffer2::new(1, op.len());
-    let row = Array1::from_vec(op.to_vec());
-    buf.push(&row.view());
-    let digital: &[LogicValue] = &[];
-    let dc_state = DcAnalysisState::new(&buf, digital, 1.0);
-    // refresh cached voltages from the op before stamping (mirrors
-    // `DcSystem::assemble`'s `update_all` step).
-    circuit.update_all(&buf, ctx);
-    let mut stamps = Vec::new();
-    for dc in circuit.devices.iter_mut() {
-        stamps.extend(dc.load_dc(&dc_state, ctx));
-    }
-    Ok(stamps)
+    let bound = circuit.abi.as_mut().expect("a circuit of devices");
+    let amb = piperine_analog_solver::device::Ambient {
+        time: 0.0,
+        freq: 0.0,
+        is_static: true,
+        gmin: ctx.tolerances.gmin,
+        source_scale: 1.0,
+    };
+    bound.analog.assemble_dc(op, amb)
 }
 
 /// Materialize the converged DC solution into the index-addressed vector

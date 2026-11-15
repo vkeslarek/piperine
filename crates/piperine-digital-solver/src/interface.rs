@@ -79,7 +79,7 @@ pub struct EvalCtx<'a> {
     /// Logic state of every digital net, indexed by [`DigitalNet`].
     pub nets: &'a [LogicValue],
     /// Per-analog-terminal voltages for A2D-sampling elements (those that
-    /// declare `ElementCapabilities::SAMPLES_ANALOG`); empty otherwise.
+    /// sample analog terminals); empty otherwise.
     pub analog: &'a [f64],
 }
 
@@ -179,7 +179,7 @@ impl EventSink for QueueSink<'_> {
 ///
 /// **Real consumer (T63, LRMW2-60):**
 /// [`piperine_codegen::device::A2dComparator`](../../../piperine_codegen/device/struct.A2dComparator.html)
-/// — a hand-written `Element` (no JIT involved, the same non-JIT-
+/// — a hand-written device (no JIT involved, the same non-JIT-
 /// participant pattern this module's own `ExternalInverter` test proves
 /// needs nothing else) samples one analog terminal via `EvalCtx::analog`,
 /// tracks the previous sample, and on a threshold crossing schedules the

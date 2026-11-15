@@ -54,7 +54,7 @@ impl DigitalState {
     ///
     /// `limits` controls the delta-cycle cap and the time-equality epsilon.
     /// `analog_slice` is the latest analog solution handed to elements that
-    /// declared `ElementCapabilities::SAMPLES_ANALOG`; pass `&[]` when no
+    /// sample analog terminals; pass `&[]` when no
     /// element in the circuit samples analog voltages (the common case for
     /// pure-digital circuits).
     /// Returns `Err` if the cap is reached — the scheduler used to log a
@@ -128,7 +128,7 @@ impl DigitalState {
     /// DAG-ordered evaluation (Verilator-style).
     ///
     /// `analog_slice` is forwarded to elements that declared
-    /// `ElementCapabilities::SAMPLES_ANALOG` via `EvalCtx.analog`.
+    /// analog sampling via `EvalCtx.analog`.
     /// Returns `Err` if the iteration cap is reached instead of warning; the
     /// cap is shared with [`Self::evaluate_until_stable`] through `limits`.
     pub fn evaluate_dag_ordered<D: DigitalParticipant + ?Sized>(

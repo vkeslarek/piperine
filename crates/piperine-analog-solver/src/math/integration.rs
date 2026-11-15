@@ -5,8 +5,7 @@
 //! reactive form `i_C = c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}` come from
 //! [`TrBdf2::phase_coeffs`] / [`TrBdf2::stage_coeffs`], so the codegen
 //! kernel does not need to know the integration formula family. (Breakpoint
-//! forcing is an `Element` ABI method,
-//! `next_breakpoints`, not a separate trait.)
+//! landing belongs to the owner protocol, not to a separate trait.)
 
 /// BDF2 (non-uniform) coefficients for `dQ/dt ≈ c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}`.
 ///

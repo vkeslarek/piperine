@@ -218,7 +218,7 @@ fn event_net(names: &NameMap, instance: usize, pin: u32) -> Result<u32> {
     match names.pins.get(instance).and_then(|p| p.get(pin as usize)) {
         Some(Site::Net(n)) => Ok(n.0),
         _ => Err(Error::simple(
-            SolverDomain::Element,
+            SolverDomain::Device,
             format!("instance `{}`: crossing event pin {pin} is bound to no net", names.instances[instance]),
         )),
     }

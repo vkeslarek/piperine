@@ -1,23 +1,17 @@
-//! Transient (`.tran`) — the element-facing state/options, the UIC hold
-//! clamps (ngspice `CKTsetIC`), and the adaptive TR-BDF2 driver: unified
-//! breakpoint table, Milne-LTE accept gate, PI timestep control, and live
-//! scheduled parameter sets.
+//! Transient (`.tran`) — the options, the UIC hold clamps (ngspice `CKTsetIC`),
+//! and the adaptive TR-BDF2 driver over the device assembly: Milne-LTE accept
+//! gate, PI timestep control, and live scheduled parameter sets, the time loop
+//! itself run by the owner protocol.
 //!
 //! There is no per-analysis `TransientContext`: MD-03 is superseded
 //! (p6-cleanup-architecture D2). The step tunables stay on
-//! [`TransientAnalysisOptions`], the per-step kernel state is
-//! [`TransientAnalysisContext`], and the shared
+//! [`TransientAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot, Stage};
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
-use crate::analyses::events::{
-    EventEntry, EventKind, EventQueue, EventSource,
-};
 use crate::analyses::Context;
 use crate::core::circuit::CircuitInstance;
-use crate::core::element::ElementCheckpoint;
-use piperine_digital_solver::events::{DigitalNet, LogicValue};
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
@@ -26,39 +20,10 @@ use piperine_analog_solver::math::linear::{AsIndex, Stamp};
 use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::{TransientAnalysisResult, TransientStep};
 
-use log::debug;
 use ndarray::ArrayView1;
 use std::collections::HashMap;
-use std::ops::Deref;
 
 // ── request/state ────────────────────────────────────────────────────────
-
-/// The read-only state an element sees while stamping the transient system: the
-/// analog solution history **and** the digital net snapshot it may read (D2A,
-/// no device-side cache). Derefs to the analog history buffer.
-pub struct TransientAnalysisState<'a> {
-    history: &'a CircularArrayBuffer2<f64>,
-    /// Every digital net's logic value for this step, indexed by `DigitalNet`.
-    pub digital: &'a [LogicValue],
-}
-
-impl<'a> TransientAnalysisState<'a> {
-    pub fn new(history: &'a CircularArrayBuffer2<f64>, digital: &'a [LogicValue]) -> Self {
-        Self { history, digital }
-    }
-
-    /// The analog solution history buffer.
-    pub fn history(&self) -> &CircularArrayBuffer2<f64> {
-        self.history
-    }
-}
-
-impl Deref for TransientAnalysisState<'_> {
-    type Target = CircularArrayBuffer2<f64>;
-    fn deref(&self) -> &Self::Target {
-        self.history
-    }
-}
 
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
@@ -190,39 +155,10 @@ impl TransientAnalysisOptions {
     }
 }
 
-/// Per-step transient context handed to the kernel. Carries the TR-BDF2
-/// phase being stamped and the step sizes; the kernel calls
-/// `TrBdf2::phase_coeffs(phase, h)` for the reactive companion — there is no
-/// method-selection surface (TR-BDF2 is the sole integration scheme).
-#[derive(Clone, Copy)]
-pub struct TransientAnalysisContext {
-    pub time: f64,
-    pub tfinal: f64,
-    /// Which sub-step the kernel is stamping: [`Trapezoidal`][TrBdf2Phase::Trapezoidal]
-    /// over `γh` (solving for `x_{n+γ}`) or [`Bdf2`][TrBdf2Phase::Bdf2] over
-    /// `(1−γ)h` (solving for `x_{n+1}` from `x_{n+γ}` and `x_n`).
-    pub phase: piperine_analog_solver::math::integration::TrBdf2Phase,
-    /// The full step size `h = t_{n+1} − t_n`. The companion sub-step (`γh` or
-    /// `(1−γ)h`) is derived from `phase` inside `TrBdf2::phase_coeffs`.
-    pub h: f64,
-    /// The previous accepted step size. The TR stage's trapezoidal companion
-    /// needs the capacitor current at `t_n`, which the kernel re-derives from
-    /// the prior step's BDF2 formula using this. Zero on the first step (no
-    /// history → no current, matching the DC operating point).
-    pub prev_h: f64,
-}
-
-
-
-
 #[cfg(test)]
 mod step_tests {
-    #[allow(unused_imports)]
     use super::*;
-    use crate::prelude::TransientStep;
     use crate::core::net::Net;
-    use piperine_digital_solver::events::LogicValue;
-    use std::collections::HashMap;
     use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
     use std::sync::Arc;
 
@@ -231,20 +167,13 @@ mod step_tests {
         let var: Arc<AnalogVariable> = Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0)));
         let mut values = HashMap::new();
         values.insert(var.clone(), 1.25);
-        let step = TransientStep::new(0.0, values).with_digital(vec![LogicValue::One, LogicValue::Zero]);
+        let step = TransientStep::new(0.0, values);
 
         let analog_net: Net = (&AnalogReference::new(var.clone(), 0)).into();
         assert_eq!(step.get_net(&analog_net), Some(1.25));
 
-        let digital_net = Net::digital(1, "top.clk");
-        assert_eq!(step.digital_net(&digital_net), Some(LogicValue::Zero));
-        assert_eq!(step.digital_net(&Net::digital(0, "d0")), Some(LogicValue::One));
-
-        // Wrong kind returns None — analog_net is not a digital net.
-        assert_eq!(step.digital_net(&analog_net), None);
-
-        // Digital net past the recorded snapshot returns None.
-        assert_eq!(step.digital_net(&Net::digital(99, "x")), None);
+        // A digital net carries no analog value.
+        assert_eq!(step.get_net(&Net::digital(1, "top.clk")), None);
     }
 }
 
@@ -313,52 +242,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         &mut self,
         state: &CircularArrayBuffer2<f64>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
-        if self.circuit.abi.is_some() {
-            return self.assemble_device(state);
-        }
-        // TR-BDF2 is the sole integration scheme — no Gear order ramp. The
-        // kernel derives the companion from `phase` + `h` via the centralised
-        // `TrBdf2::phase_coeffs` (MD-07); the TR stage's previous-current
-        // term is re-derived from `prev_h` inside the kernel.
-        let tran_ctx = TransientAnalysisContext {
-            time: self.time,
-            tfinal: self.tfinal,
-            phase: self.phase,
-            h: self.h,
-            prev_h: self.prev_h,
-        };
-
-        let mut all_stamps = Vec::new();
-
-        self.circuit.update_all(state, &self.context);
-        let CircuitInstance { devices, digital_state, .. } = &mut *self.circuit;
-        let tran_state = TransientAnalysisState::new(state, &digital_state.nets);
-        for tran in devices.iter_mut() {
-            let device_stamps = tran.load_transient(&tran_state, &tran_ctx, &self.context);
-            if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error(tran.name(), &device_stamps) {
-                return Err(err);
-            }
-            all_stamps.extend(device_stamps);
-        }
-
-        // gshunt: user-set circuit-wide diagonal conductance on every node.
-        let gshunt = self.context.tolerances.gshunt;
-        if gshunt > 0.0 {
-            for r in self.circuit.netlist().all_references() {
-                if r.variable().is_node() && !r.variable().is_ground() {
-                    all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
-                }
-            }
-        }
-
-        // UIC hold clamps: pinned through the first accepted step.
-        if self.uic_hold {
-            for clamp in &self.uic_clamps {
-                clamp.stamp(&mut all_stamps);
-            }
-        }
-
-        Ok(all_stamps)
+        self.assemble_device(state)
     }
 
     fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
@@ -366,10 +250,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
     }
 
     fn any_limiting_report(&self) -> bool {
-        if let Some(bound) = &self.circuit.abi {
-            return !bound.analog.limiting_active().is_empty();
-        }
-        self.circuit.devices.iter().any(|d| d.limiting_report().is_some())
+        self.circuit.abi.as_ref().is_some_and(|bound| !bound.analog.limiting_active().is_empty())
     }
 
     /// Every Newton iteration but the first ends here (abi.md A2).
@@ -379,10 +260,6 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         {
             bound.analog.end_iteration();
         }
-    }
-
-    fn apply_limiting_reports(&self, guess: ndarray::ArrayViewMut1<f64>) {
-        self.circuit.apply_limiting_reports(guess);
     }
 
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
@@ -466,42 +343,6 @@ pub struct ScheduledSet {
     pub value: crate::core::introspect::Value,
 }
 
-/// Pending live sets for a running transient (LIVE-06). Entries keep their
-/// scheduling order, so applying a drained batch in order gives
-/// last-write-wins per param; every entry's `t` feeds the unified
-/// breakpoint table (TRB-11), so the integrator lands exactly on each set
-/// time with the discontinuity edge rules (skip LTE, reset `prev_h`).
-#[derive(Debug, Default)]
-struct SetQueue {
-    entries: Vec<ScheduledSet>,
-}
-
-impl SetQueue {
-    fn push(&mut self, set: ScheduledSet) {
-        self.entries.push(set);
-    }
-
-    /// The earliest pending set time strictly after `from` — the next
-    /// landing point this queue asks of the breakpoint table. Absolute
-    /// time, so it survives step rollback.
-    fn next_breakpoint(&self, from: f64) -> Option<f64> {
-        self.entries
-            .iter()
-            .map(|s| s.t)
-            .filter(|&t| t > from)
-            .min_by(f64::total_cmp)
-    }
-
-    /// Remove and return every entry due at or before `now`, preserving
-    /// scheduling order (application order = last-write-wins per param).
-    fn drain_due(&mut self, now: f64) -> Vec<ScheduledSet> {
-        let (due, pending): (Vec<_>, Vec<_>) =
-            std::mem::take(&mut self.entries).into_iter().partition(|s| s.t <= now);
-        self.entries = pending;
-        due
-    }
-}
-
 /// Phase 1 output — the candidate landing point chosen over the unified
 /// breakpoint table from the PI-proposed step size.
 struct StepPrediction {
@@ -514,22 +355,6 @@ struct StepPrediction {
     /// The step lands on a declared discontinuity → exempt from the
     /// Milne-LTE accept gate.
     landed_on_breakpoint: bool,
-}
-
-/// Phase 2 output — the Newton candidate solve plus the rollback
-/// checkpoints a rejection must restore.
-struct StepAttempt {
-    prediction: StepPrediction,
-    /// The TR-BDF2 solve: `Ok(Some(snapshot))` when both phases converged.
-    outcome: crate::core::result::Result<Option<TransientStep>>,
-    /// Analog history checkpoint, restored on rejection.
-    analog_history: CircularArrayBuffer2<f64>,
-    /// Per-element device-state checkpoints (ABI-02): restored on rejection,
-    /// dropped on acceptance. `None` entries = stateless devices.
-    device_checkpoints: Vec<Option<ElementCheckpoint>>,
-    /// The same for a circuit of devices: term histories and limit states,
-    /// restored with the Newton history.
-    assembly: Option<AssemblySnapshot>,
 }
 
 /// Phase 3 output — the Milne-LTE accept-gate verdict for a converged
@@ -595,29 +420,15 @@ pub struct TransientSolver<'a> {
     /// plan is the single strategy owner across analyses (Newton +
     /// Homotopy + Stepper).
     plan: piperine_analog_solver::convergence::ConvergencePlan,
-    /// Unified event queue (ABI-36..41). Populated each `predict_step`
-    /// from the four sources (digital peek, analog breakpoints, scheduled
-    /// sets, `$bound_step` hints). `attempt_step` checkpoints + drains
-    /// it; `accept_step` commits, `reject_step` / `reject_lte_step`
-    /// roll back — each entry's [`RollbackBehavior`] is honored (digital
-    /// restored, breakpoints re-polled, hints discarded).
-    event_queue: EventQueue,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
     pub policy: piperine_analog_solver::tolerances::Policy,
-    /// Host-scheduled live parameter writes (LIVE-06/09).
-    sets: SetQueue,
+    /// Host-scheduled live parameter writes (LIVE-06/09), in scheduling order:
+    /// last write wins per param.
+    sets: Vec<ScheduledSet>,
     /// Full-state re-entry point (PSS shooting enabler): when set, the run
     /// starts from this captured step instead of a DC operating point.
     reentry_state: Option<TransientStep>,
-    /// Whether this run is a genuine top-level analysis (LRMW2-08):
-    /// `true` by default (a plain `circuit.transient(...)`), `false` for
-    /// an internal segment PSS's shooting method drives underneath itself
-    /// (`analyses::pss.rs`'s own `TransientSolver::new` calls, via
-    /// [`Self::mark_nested`]) — those are not a real analysis end from
-    /// the LRM's perspective, so `final_step` must not fire for them.
-    /// Gates [`Self::solve`]'s `Element::finish_analysis` call.
-    top_level: bool,
     /// The host's sink and waiters, for a circuit of devices.
     pub(crate) host: crate::analyses::adapters::HostHooks,
 }
@@ -643,10 +454,6 @@ impl<'a> TransientSolver<'a> {
         Context::init_global();
         circuit.setup_all(&context)?;
         Self::validate_probe_selection(circuit, &options.probe_selection)?;
-
-        // Build DAG topology once before simulation begins
-        circuit.rebuild_digital_topology();
-        circuit.init_digital()?;
 
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
@@ -676,21 +483,11 @@ impl<'a> TransientSolver<'a> {
             options,
             initial_conditions: Vec::new(),
             plan,
-            event_queue: EventQueue::new(),
             policy: piperine_analog_solver::tolerances::Policy::default(),
-            sets: SetQueue::default(),
+            sets: Vec::new(),
             reentry_state: None,
-            top_level: true,
             host: Default::default(),
         })
-    }
-
-    /// Mark this run as an internal segment (PSS's shooting method drives
-    /// `TransientSolver` underneath itself, not through
-    /// `CircuitInstance::transient`) rather than a genuine top-level
-    /// analysis — suppresses `final_step` for it (LRMW2-08).
-    pub(crate) fn mark_nested(&mut self) {
-        self.top_level = false;
     }
 
     /// Replace the convergence plan (ABI-42). The host plugs in a plan with a
@@ -700,42 +497,25 @@ impl<'a> TransientSolver<'a> {
     }
 
     /// Validate the `ProbeSelection` against the assembled circuit at setup
-    /// time (ABI-35). Each `(device_label, observable_name)` request must
-    /// name a device that exists and an observable that device declares —
+    /// time (ABI-35). Each `(instance path, observable name)` request must
+    /// name an instance that exists and a term or `VAR` watch of its shape —
     /// otherwise fail loud with a named error before the run starts, not
-    /// silently record nothing. Runs once after `setup_all` so the device
-    /// catalog (`list_observables`) is populated.
+    /// silently record nothing.
     fn validate_probe_selection(
         circuit: &CircuitInstance,
         selection: &crate::core::introspect::ProbeSelection,
     ) -> crate::core::result::Result<()> {
+        let bound = circuit.abi.as_ref().expect("a circuit of devices");
         for (label, observable) in &selection.requests {
-            if let Some(bound) = circuit.abi.as_ref() {
-                // A device instance: its terms and `VAR` watches by name.
-                let Some((terms, vars)) = bound.analog.observable_names(label) else {
-                    return Err(piperine_analog_solver::error::Error::simple(
-                        piperine_analog_solver::error::SolverDomain::Element,
-                        format!("device `{label}` not found"),
-                    ));
-                };
-                if !terms.contains(&observable.as_str()) && !vars.contains(&observable.as_str()) {
-                    return Err(piperine_analog_solver::error::Error::simple(
-                        piperine_analog_solver::error::SolverDomain::Element,
-                        format!("device `{label}` has no observable `{observable}`"),
-                    ));
-                }
-                continue;
-            }
-            let Some(dev) = circuit.devices.iter().find(|d| d.name() == label) else {
+            let Some((terms, vars)) = bound.analog.observable_names(label) else {
                 return Err(piperine_analog_solver::error::Error::simple(
-                    piperine_analog_solver::error::SolverDomain::Element,
+                    piperine_analog_solver::error::SolverDomain::Device,
                     format!("device `{label}` not found"),
                 ));
             };
-            let declared = dev.list_observables();
-            if !declared.iter().any(|d| &d.name == observable) {
+            if !terms.contains(&observable.as_str()) && !vars.contains(&observable.as_str()) {
                 return Err(piperine_analog_solver::error::Error::simple(
-                    piperine_analog_solver::error::SolverDomain::Element,
+                    piperine_analog_solver::error::SolverDomain::Device,
                     format!("device `{label}` has no observable `{observable}`"),
                 ));
             }
@@ -762,11 +542,9 @@ impl<'a> TransientSolver<'a> {
     /// Schedule a live parameter write for simulation time `t` (LIVE-06):
     /// the integrator lands exactly on `t` (unified breakpoint table), the
     /// write applies there, and the new value takes effect from the next
-    /// accepted step. Writes reporting ≥
-    /// [`Invalidation::Restamp`](crate::core::introspect::Invalidation)
-    /// restamp naturally; ≥ `OperatingPoint` triggers a consistent re-solve
-    /// at `t` before the run continues (LIVE-09). Several sets on the same
-    /// param apply in scheduling order — last write wins.
+    /// accepted step (the landing is solved on the value before the write).
+    /// Several sets on the same param apply in scheduling order — last write
+    /// wins.
     pub fn schedule_set(
         &mut self,
         t: f64,
@@ -782,44 +560,6 @@ impl<'a> TransientSolver<'a> {
     /// point in `compute_initial_conditions`.
     pub fn apply_initial_conditions(&mut self, ivs: Vec<InitialValue<AnalogReference, f64>>) {
         self.initial_conditions = ivs;
-    }
-
-    /// Full-state re-entry (PSS shooting seam): seed both
-    /// companion-history rows from the captured solution and restore the
-    /// digital snapshot — no DC solve, no device/user seeds (the captured
-    /// state is the whole story).
-    fn apply_reentry_state(&mut self, state: TransientStep) -> crate::core::result::Result<TransientStep> {
-        let ivs: Vec<InitialValue<AnalogReference, f64>> = {
-            let netlist = self.system.circuit.netlist();
-            netlist
-                .all_references()
-                .into_iter()
-                .filter_map(|reference| {
-                    state
-                        .get(reference.variable().clone())
-                        .map(|value| InitialValue { reference: reference.clone(), value })
-                })
-                .collect()
-        };
-        for idx in 0..self.system.circuit.digital_state.nets.len() {
-            if let Some(lv) = state.digital(idx) {
-                self.system.circuit.digital_state.nets[idx] = lv;
-            }
-        }
-        // Hidden register state (module vars, edge memory) round-trips
-        // with the nets — the full-state shot contract (PSS). Restored
-        // after `init_digital` (constructor) so the restore wins over the
-        // power-on reset; unknown labels are skipped (a structurally
-        // rebuilt circuit starts its new devices fresh).
-        for dev in &mut self.system.circuit.devices {
-            if let Some(hidden) = state.digital_hidden(dev.name()) {
-                let hidden = hidden.clone();
-                dev.digital_hidden_restore(&hidden);
-            }
-        }
-        self.push_initial(ivs.clone())?;
-        self.push_initial(ivs)?;
-        Ok(self.snapshot(self.options.start_time))
     }
 
     /// Pushes one row of initial values onto the Newton history and, for a
@@ -838,16 +578,14 @@ impl<'a> TransientSolver<'a> {
         Ok(())
     }
 
-    /// The `(plus, minus, ic)` seeds of the circuit: an element's
-    /// `initial_conditions()`, or a continuous pin's `init` (abi.md §3.1).
+    /// The `(plus, minus, ic)` seeds of the circuit: a continuous pin's `init`
+    /// (abi.md §3.1).
     fn initial_seeds(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
-        if let Some(bound) = &self.system.circuit.abi {
-            return bound.holds.iter().map(|h| (Some(h.reference.clone()), None, h.value)).collect();
-        }
-        self.system.circuit.devices.iter().flat_map(|dev| dev.initial_conditions()).collect()
+        let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
+        bound.holds.iter().map(|h| (Some(h.reference.clone()), None, h.value)).collect()
     }
 
-    /// Element `@initial { V(p,n) <- ic }` UIC seeds: the t=0 branch
+    /// `@initial { V(p,n) <- ic }` UIC seeds: the t=0 branch
     /// voltage `v(plus) = v(minus) + ic` (cap/ind/dio initial condition,
     /// SPICE `.ic`), overlaid on the DC point so unconstrained nodes keep
     /// their operating-point values.
@@ -865,77 +603,6 @@ impl<'a> TransientSolver<'a> {
             device_ic.push(InitialValue { reference: plus_ref, value: v_minus + ic });
         }
         device_ic
-    }
-
-    fn compute_initial_conditions(&mut self) -> crate::core::result::Result<TransientStep> {
-        if let Some(state) = self.reentry_state.take() {
-            return self.apply_reentry_state(state);
-        }
-
-        debug!("Calculating DC Operating Point...");
-        // UIC hold clamps (ngspice `CKTsetIC`): the `@initial` branch seeds
-        // pin the t=0 solve so the seed is the *consistent* operating point,
-        // and stay stamped through the first accepted step.
-        let uic_clamps: Vec<UicClamp> = self
-            .initial_seeds()
-            .into_iter()
-            .filter_map(|(plus, minus, ic)| {
-                plus.map(|plus| UicClamp { plus, minus, ic })
-            })
-            .collect();
-        // The t=0 operating point runs under the default tolerances (numeric
-        // behavior unchanged).
-        let op_context = Context::default();
-        let mut dc_solver = DcSolver::new(self.system.circuit, op_context)?;
-        // The t = 0 OP belongs to the transient run: the DC analysis owns
-        // DC points; tran owns its own startup.
-        dc_solver.set_analysis_kind(crate::analyses::AnalysisKind::Tran);
-        dc_solver.system.uic_clamps = uic_clamps.clone();
-        // A continuous pin's `init` is also Newton's starting value.
-        if dc_solver.system.circuit.abi.is_some() {
-            dc_solver.apply_initial_conditions(
-                uic_clamps
-                    .iter()
-                    .filter(|c| c.minus.is_none())
-                    .map(|c| InitialValue { reference: c.plus.clone(), value: c.ic })
-                    .collect(),
-            );
-        }
-        let dc_result = dc_solver.solve()?;
-        self.system.uic_clamps = uic_clamps;
-        // The clamp's job is done once the DC operating point in
-        // `dc_result` has propagated the seed into the rest of the circuit
-        // (NGP-10): the t=0 node values are seeded into the companion's
-        // history buffer by `push_initial_conditions` below, and the first
-        // integration step reads them naturally. Holding the clamp through
-        // that first step instead introduces a startup error ngspice's
-        // `CKTsetIC` does not have — it pins the seeded node to its seed
-        // value for the entire first step's width, costing ~step/τ of
-        // integration time. Releasing the clamp here lets the natural
-        // companion integration take over from the seeded history.
-        self.system.uic_hold = false;
-
-        let _netlist = self.system.circuit.netlist();
-        let iv_dc = self.system.circuit.netlist().initial_values(dc_result.values());
-
-        let device_ic = self.device_initial_conditions(&iv_dc);
-
-        self.push_initial(iv_dc.clone())?;
-        self.push_initial(iv_dc)?;
-        if !device_ic.is_empty() {
-            self.push_initial(device_ic.clone())?;
-            self.push_initial(device_ic)?;
-        }
-        // User `ic` seeds the t=0 state. Pushed twice so both rows of the
-        // companion's history buffer see the ic values (avoids a
-        // discontinuity that would spike the first transient step) —
-        // milestone-1 seed; full enforced-hold is deferred.
-        if !self.initial_conditions.is_empty() {
-            self.push_initial(self.initial_conditions.clone())?;
-            self.push_initial(self.initial_conditions.clone())?;
-        }
-
-        Ok(self.snapshot(self.options.start_time))
     }
 
     /// Advance one TR-BDF2 step over `[t_n, t_n + dt]`. Two Newton solves:
@@ -986,126 +653,6 @@ impl<'a> TransientSolver<'a> {
         Ok(Some(self.snapshot(t_next)))
     }
 
-    /// Phase 1 — predict: from the PI-proposed `dt_proposed`, pick the
-    /// landing point `t_next` over the unified breakpoint table (TRB-11):
-    /// the nearest of (a) the PI-proposed step, (b) the next DIGITAL event
-    /// — digital-var/enum `if`s in analog bodies switch at these times, so
-    /// landing here covers them — and (c) ANALOG `@timer` fires / source
-    /// edges declared via `Element::next_breakpoints`. Absolute times →
-    /// survive rollback.
-    ///
-    /// A step that lands on a declared discontinuity is ACCEPTED without
-    /// the Milne-LTE gate: the LTE would otherwise see the intentional
-    /// source jump (e.g. V(in) 0→5 at a pulse edge) as a huge error and
-    /// reject, thrashing the integrator against the edge it already hit.
-    ///
-    /// The four ad-hoc sources merge through a single [`EventQueue`]
-    /// (ABI-36): digital events, analog breakpoints, scheduled live sets,
-    /// and `$bound_step` hints each enter the queue with their own
-    /// [`RollbackBehavior`](crate::analyses::events::RollbackBehavior);
-    /// `predict_step` reads the earliest from one place.
-    fn predict_step(&mut self, st: &TimeLoop) -> StepPrediction {
-        let pi_target = st.current_time + st.dt;
-        let mut t_next = pi_target.min(self.options.stop_time);
-        let mut landed_on_breakpoint = false;
-
-        // Unified event queue (ABI-36/T26): one read path for all four
-        // time-discontinuity sources. The queue persists across the
-        // predict→attempt→reject cycle (ABI-40/41) so the reject path can
-        // honor each entry's `RollbackBehavior` (T27): digital events
-        // restored, breakpoints re-polled (dropped), hints discarded.
-        let mut queue = EventQueue::new();
-
-        // Digital events — peek the scheduler's heap.
-        let t_digital = self.system.circuit.digital_state.peek_next_event_time();
-        if t_digital.is_finite() {
-            queue.push(EventEntry::digital(t_digital, DigitalNet(0), "scheduler"));
-        }
-
-        // Analog breakpoints (pulse edges, PWL corners, `@timer` fires).
-        for (idx, dev) in self.system.circuit.devices.iter().enumerate() {
-            for bp in dev.next_breakpoints(st.current_time, st.dt) {
-                if bp > st.current_time {
-                    queue.push_breakpoint(bp, idx, dev.name());
-                }
-            }
-        }
-
-        // Scheduled live sets (LIVE-06) — host-scheduled parameter writes.
-        if let Some(ts) = self.sets.next_breakpoint(st.current_time) {
-            queue.push_scheduled_set(ts);
-        }
-
-        // Stash the queue for the attempt/reject phases (T27). Replacing
-        // each prediction is correct: predict is the read-side authority,
-        // and the queue carries only the events predicted for THIS landing
-        // point. Per-entry rollback semantics fire on the queue snapshot
-        // taken by `attempt_step`.
-        self.event_queue = queue;
-
-        // One read path: peek the earliest event. Per-source semantics:
-        // digital/breakpoints use strict `<`; sets additionally snap
-        // within a float tolerance (LIVE-06 — absolute scheduled times
-        // accumulate ulp drift across long runs).
-        if let Some(front) = self.event_queue.peek() {
-            let time = front.time;
-            if time > st.current_time {
-                let is_set = matches!(front.source, EventSource::ScheduledSet);
-                let snap = 1e-9 * time.abs().max(f64::MIN_POSITIVE);
-                let lands = if is_set {
-                    time <= t_next + snap
-                } else {
-                    time < t_next
-                };
-                if lands {
-                    t_next = time;
-                    landed_on_breakpoint = matches!(
-                        front.kind,
-                        EventKind::Digital | EventKind::Breakpoint
-                    );
-                }
-            }
-        }
-
-        StepPrediction {
-            t_next,
-            dt_actual: t_next - st.current_time,
-            dt_proposed: st.dt,
-            landed_on_breakpoint,
-        }
-    }
-
-    /// Phase 2 — attempt: checkpoint the digital state and the analog
-    /// history (a rejected attempt leaves its rows in the Newton buffer,
-    /// and the retry's charge-history views would integrate off the
-    /// rejected trajectory), process digital events EXACTLY at `t_next`
-    /// BEFORE the analog solve, then solve the TR-BDF2 candidate step
-    /// `[current_time, t_next]` (two phases).
-    fn attempt_step(
-        &mut self,
-        st: &TimeLoop,
-        prediction: StepPrediction,
-    ) -> crate::core::result::Result<StepAttempt> {
-        self.system.circuit.digital_state.checkpoint();
-        // Per-element checkpoint (ABI-01): snapshot each device's mutable
-        // non-accept-gated state BEFORE the digital settle + Newton solve can
-        // dirty it, so a rejected attempt restores to the last accepted state.
-        let device_checkpoints = self.snapshot_device_checkpoints();
-        let analog_history = self.solver.state_snapshot();
-        let assembly = self.system.circuit.abi.as_ref().map(|b| b.analog.snapshot());
-        // Unified event queue checkpoint (ABI-40/41): snapshot the queue
-        // before draining the events due at this landing point. On reject,
-        // `rollback()` honors each entry's `RollbackBehavior` — digital
-        // events restored, breakpoints dropped (re-polled next predict),
-        // hints discarded. On accept, `commit()` drops the snapshot.
-        self.event_queue.checkpoint();
-        let _due_events = self.event_queue.drain_due(prediction.t_next);
-        self.system.circuit.run_digital_at(prediction.t_next)?;
-        let outcome =
-            self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
-        Ok(StepAttempt { prediction, outcome, analog_history, device_checkpoints, assembly })
-    }
-
     /// Phase 3 — assess: the global Milne-LTE accept gate (TRB-05/06). The
     /// two-phase buffer holds x_{n+1} (view 0), x_{n+γ} (view 1), x_n
     /// (view 2). The Milne predictor is evaluated only over
@@ -1134,138 +681,6 @@ impl<'a> TransientSolver<'a> {
         let reject =
             !prediction.landed_on_breakpoint && !post_set_step && milne > tolerances.trtol;
         StepAssessment { milne, accept: !reject }
-    }
-
-    /// Phase 4 — accept: commit the converged candidate step. Bookkeeping,
-    /// the D2A settle + digital commit, recording inside the `record_from`
-    /// window, the clock/history advance, the scheduled live sets due at
-    /// the accepted point (LIVE-06/09), and the next step-size proposal.
-    fn accept_step(
-        &mut self,
-        st: &mut TimeLoop,
-        steps: &mut Vec<TransientStep>,
-        prediction: StepPrediction,
-        snapshot: TransientStep,
-        milne: f64,
-        post_set_step: bool,
-    ) -> crate::core::result::Result<()> {
-        let StepPrediction {
-            t_next,
-            dt_actual,
-            dt_proposed,
-            mut landed_on_breakpoint,
-        } = prediction;
-        st.steps_accepted += 1;
-        st.last_step_accepted = true;
-        // UIC clamps release after the first accepted step (CKTsetIC).
-        self.system.uic_hold = false;
-        st.dt_min_seen = st.dt_min_seen.min(dt_actual);
-        st.dt_max_seen = st.dt_max_seen.max(dt_actual);
-        self.settle_digital(t_next)?;
-        self.accept_assembly(t_next)?;
-        // Unified event queue commit (ABI-40): the attempt's drained events
-        // fired; the snapshot is dropped. Predict rebuilds the queue next
-        // step from the live sources.
-        self.event_queue.commit();
-        self.record_step(steps, t_next, snapshot);
-        st.current_time = t_next;
-        if self.apply_scheduled_sets(st, steps, dt_actual)? {
-            // The value jump is a discontinuity: the next TR stage
-            // must not re-derive a previous current across it.
-            landed_on_breakpoint = true;
-        }
-        // LRMC-C7-11 (T42): a device announcing `$discontinuity` at this
-        // accepted point gets the identical treatment — "the simulator
-        // shall not use information prior to the current time step in any
-        // prediction for time steps after this one" (§8.4.4/§9.5.3), the
-        // same restart a scheduled-set jump or a landed breakpoint forces.
-        if self.system.circuit.devices.iter().any(|dev| dev.discontinuity()) {
-            landed_on_breakpoint = true;
-        }
-        // This step's size seeds the next step's TR-stage
-        // previous-current re-derivation — UNLESS the step landed on a
-        // declared discontinuity, in which case the history spans a
-        // jump (e.g. a source edge) and must not feed the next TR
-        // stage; reset so the next step starts clean (i_{C,n} = 0).
-        self.system.prev_h = if landed_on_breakpoint { 0.0 } else { dt_actual };
-        st.dt = self.propose_dt(milne, dt_actual, dt_proposed, post_set_step, st.sets_just_applied);
-        Ok(())
-    }
-
-    /// Apply the scheduled live sets due at the just-accepted point
-    /// (LIVE-06/09): scheduling order = last-write-wins per param. The new
-    /// values take effect from the next accepted step; a write of
-    /// ≥ OperatingPoint strength additionally re-solves the just-closed
-    /// step with the new values so the point at t is the post-set
-    /// consistent solution. Rebuild is beyond the solver (no POM here) —
-    /// fail loud. Returns true when any set applied.
-    fn apply_scheduled_sets(
-        &mut self,
-        st: &mut TimeLoop,
-        steps: &mut [TransientStep],
-        dt_actual: f64,
-    ) -> crate::core::result::Result<bool> {
-        let due = self.sets.drain_due(st.current_time);
-        st.sets_just_applied = !due.is_empty();
-        if due.is_empty() {
-            return Ok(false);
-        }
-        use crate::core::introspect::Invalidation;
-        let mut strongest = Invalidation::None;
-        for set in due {
-            let inv = self.system.circuit.set_element_param(
-                &set.label, &set.param, set.value,
-            )?;
-            strongest = strongest.max(inv);
-        }
-        if strongest >= Invalidation::Rebuild {
-            return Err(piperine_analog_solver::error::Error::simple(
-                piperine_analog_solver::error::SolverDomain::Transient,
-                format!(
-                    "scheduled set at t={:.3e} needs a structural \
-                     rebuild — re-elaborate at the host layer (MD-18)",
-                    st.current_time
-                ),
-            ));
-        }
-        if strongest >= Invalidation::OperatingPoint
-            && let Some(re) =
-                self.execute_timestep(st.current_time - dt_actual, dt_actual, false)?
-            && st.current_time >= self.options.record_from
-            && let Some(last) = steps.last_mut()
-        {
-            *last = re;
-        }
-        Ok(true)
-    }
-
-    /// An accepted solution of a circuit of devices: every `DELAY` term's
-    /// history gains its value and every limit's `LAST` its `x̂` (abi.md A5).
-    /// The crossings and the step bound it reports belong to the protocol.
-    fn accept_assembly(&mut self, t: f64) -> crate::core::result::Result<()> {
-        if self.system.circuit.abi.is_none() {
-            return Ok(());
-        }
-        let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
-        let amb = Ambient { time: t, ..self.system.ambient() };
-        if let Some(bound) = self.system.circuit.abi.as_mut() {
-            bound.analog.accept(&x, amb)?;
-        }
-        Ok(())
-    }
-
-    /// D2A settle on acceptance: the analog accept-hooks seed the digital
-    /// queue from the converged solution and the scheduler runs to
-    /// quiescence, then the digital checkpoint is committed (the one
-    /// mixed-signal seam on the accept path).
-    fn settle_digital(&mut self, t_next: f64) -> crate::core::result::Result<()> {
-        let solution = self.solver.current_guess().unwrap().to_owned();
-        let _changed = self
-            .system
-            .circuit
-            .accept_and_run_digital(solution.as_slice().unwrap(), t_next)?;
-        self.system.circuit.digital_state.commit();
-        Ok(())
     }
 
     /// Record an accepted step's snapshot when it falls inside the
@@ -1321,80 +736,7 @@ impl<'a> TransientSolver<'a> {
         if sets_just_applied {
             dt = (1e-3 * dt_actual).max(self.options.dt_min);
         }
-        let tran_state = TransientAnalysisState::new(
-            self.solver.state(),
-            &self.system.circuit.digital_state.nets,
-        );
-        let time_history = [self.system.prev_h, dt_actual];
-        for dev in &self.system.circuit.devices {
-            if let Some(dt_floor) = dev.suggest_transient_step(
-                &tran_state,
-                &time_history,
-                &self.system.context,
-            ) {
-                dt = dt.min(dt_floor);
-            }
-        }
         dt
-    }
-
-    /// Run preamble: apply the sets scheduled at or before the start time
-    /// (LIVE-08 — equivalent to an idle set before the run: the whole run
-    /// sees the new values, no breakpoint), compute the initial operating
-    /// point, record the start snapshot when in the window, seed runtime
-    /// operators at the operating point, and build the Milne gate's
-    /// node-index list.
-    fn begin_run(&mut self) -> crate::core::result::Result<(Vec<TransientStep>, Vec<usize>)> {
-        let start_time = self.options.start_time;
-        for set in self.sets.drain_due(start_time) {
-            self.system.circuit.set_element_param(&set.label, &set.param, set.value)?;
-        }
-
-        let initial_snapshot = self.compute_initial_conditions()?;
-        let mut steps = Vec::new();
-        // The start-time operating point is only part of the recorded output
-        // when recording starts at (or before) it; a delayed `record_from`
-        // drops it but still computes it — the initial state seeds the
-        // integration.
-        if start_time >= self.options.record_from {
-            steps.push(initial_snapshot);
-        }
-
-        // Seed runtime operators at the operating point (t = start_time) so
-        // history-based operators anchor on the quiescent solution. Without
-        // this a `delay(x, td)` returns the first *stepped* sample for
-        // `t < td` instead of the op value — a spurious pre-arrival leak on a
-        // transmission line. The op point is not a stepped advance, so this
-        // only records history; it does not integrate anything.
-        if let Some(op) = self.solver.current_guess().map(|g| g.to_owned()) {
-            self.system
-                .circuit
-                .accept_and_run_digital(op.as_slice().unwrap(), start_time)?;
-            self.system.circuit.digital_state.commit();
-            // The same anchor for the `DELAY` terms of a circuit of devices.
-            if self.system.circuit.abi.is_some() {
-                let amb = Ambient { time: start_time, is_static: true, ..self.system.ambient() };
-                if let Some(bound) = self.system.circuit.abi.as_mut() {
-                    bound.analog.accept(&op.to_vec(), amb)?;
-                }
-            }
-        }
-
-        self.solver.reset_iteration_counter();
-
-        // The Milne accept gate reads only node-voltage unknowns; the netlist
-        // is structurally stable for the whole run, so build the index list
-        // once instead of per accepted step.
-        let node_indices: Vec<usize> = self
-            .system
-            .circuit
-            .netlist()
-            .all_references()
-            .iter()
-            .filter(|r| !r.is_branch())
-            .filter_map(|r| r.idx())
-            .collect();
-        Ok((steps, node_indices))
     }
 
     /// Assemble the run result: the recorded steps plus the statistics
@@ -1413,169 +755,6 @@ impl<'a> TransientSolver<'a> {
         result
     }
 
-    /// Reject a converged candidate on LTE: trace, roll back the digital
-    /// checkpoint, and halve dt via the stepper (resetting the PI memory).
-    /// At the dt floor, accept the step as-is rather than stall — the
-    /// accuracy concession is surfaced (audit C2) and the analog history
-    /// is kept. Returns true when the step must be accepted at the floor.
-    fn reject_lte_step(
-        &mut self,
-        st: &mut TimeLoop,
-        prediction: &StepPrediction,
-        milne: f64,
-        analog_history: CircularArrayBuffer2<f64>,
-        device_checkpoints: Vec<Option<ElementCheckpoint>>,
-        assembly: Option<AssemblySnapshot>,
-    ) -> bool {
-        if self.policy.trace.transient {
-            eprintln!(
-                "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
-                st.current_time,
-                prediction.dt_actual,
-                milne,
-                self.system.context.tolerances.trtol
-            );
-        }
-        self.system.circuit.digital_state.rollback();
-        // Unified event queue rollback (ABI-40/41): honor each drained
-        // entry's `RollbackBehavior` — digital events restored (re-fire
-        // on retry), scheduled sets restored (still pending), breakpoints
-        // dropped (re-declared by next_breakpoints next predict), step
-        // hints discarded (re-emitted by the device).
-        self.event_queue.rollback();
-        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
-        if st.dt <= self.options.dt_min {
-            st.dt_min_floor_hits += 1;
-            tracing::warn!(
-                "transient LTE exceeded trtol at dt_min ({:.3e}); \
-                 accepting step at t={:.3e} with reduced accuracy",
-                st.dt, st.current_time
-            );
-            return true;
-        }
-        st.steps_rejected += 1;
-        st.last_step_accepted = false;
-        // Restore device-internal state (limiter/digital registers) so the
-        // retry starts from the pre-attempt checkpoint (ABI-02).
-        self.restore_device_checkpoints(&device_checkpoints);
-        self.solver.restore_state(analog_history);
-        self.restore_assembly(assembly);
-        false
-    }
-
-    /// Reject a candidate whose Newton phases failed to converge: roll back
-    /// the digital + analog checkpoints, halve dt, reset the PI memory
-    /// (TRB-05/09).
-    fn reject_step(
-        &mut self,
-        st: &mut TimeLoop,
-        dt_proposed: f64,
-        analog_history: CircularArrayBuffer2<f64>,
-        device_checkpoints: Vec<Option<ElementCheckpoint>>,
-        assembly: Option<AssemblySnapshot>,
-    ) {
-        st.steps_rejected += 1;
-        st.last_step_accepted = false;
-        self.system.circuit.digital_state.rollback();
-        // Restore device-internal state (limiter/digital registers) so the
-        // retry starts from the pre-attempt checkpoint (ABI-02).
-        self.restore_device_checkpoints(&device_checkpoints);
-        self.solver.restore_state(analog_history);
-        self.restore_assembly(assembly);
-        st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options.step_limits());
-        // Unified event queue rollback — same per-entry semantics as the
-        // LTE reject path (ABI-40/41).
-        self.event_queue.rollback();
-    }
-
-    pub fn solve(&mut self) -> crate::core::result::Result<TransientAnalysisResult> {
-        if self.system.circuit.abi.is_some() {
-            return self.solve_device();
-        }
-        let (mut steps, node_indices) = self.begin_run()?;
-        let mut st = TimeLoop::new(self.options.start_time, self.options.dt);
-
-        let mut iterations: usize = 0;
-        while st.current_time < self.options.stop_time {
-            // Termination guarantee (see `TransientAnalysisOptions::max_steps`):
-            // the loop condition alone does not bound the run, because a step
-            // accepted at the `dt_min` floor advances time by `dt_min`. Fail
-            // loud, naming everything needed to diagnose which of the two
-            // shapes it is — a collapsed `dt` or a genuinely oversized run.
-            iterations += 1;
-            if iterations > self.options.max_steps {
-                let progress = (st.current_time - self.options.start_time)
-                    / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
-                return Err(piperine_analog_solver::error::Error::simple(
-                    piperine_analog_solver::error::SolverDomain::Transient,
-                    format!(
-                        "exceeded the {} step budget at t = {:.6e} s of {:.6e} s \
-                         ({:.2}% of the run) with dt = {:.3e} s \
-                         (accepted {}, rejected {}, dt_min floor hits {}, \
-                         smallest dt seen {:.3e} s). \
-                         The timestep has collapsed: the circuit is either stiff \
-                         at a switching edge or has a discontinuity the stepper \
-                         cannot land on. Raise `max_steps` to let it run longer, \
-                         raise `dt_min` to make the floor fail instead of crawl, \
-                         or soften the discontinuity.",
-                        self.options.max_steps,
-                        st.current_time,
-                        self.options.stop_time,
-                        progress * 100.0,
-                        st.dt,
-                        st.steps_accepted,
-                        st.steps_rejected,
-                        st.dt_min_floor_hits,
-                        if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 },
-                    ),
-                ));
-            }
-            let prediction = self.predict_step(&st);
-            let attempt = self.attempt_step(&st, prediction)?;
-            // Whether this step's Milne window spans a live-set value jump
-            // (consumed here; re-armed below when new sets apply).
-            let post_set_step = st.sets_just_applied;
-            let StepAttempt { prediction, outcome, analog_history, device_checkpoints, assembly } = attempt;
-
-            if let Ok(Some(snapshot)) = outcome {
-                // Both Newton phases converged.
-                let assessment = self.assess_step(&prediction, post_set_step, &node_indices);
-                if assessment.accept {
-                    // ABI-03: discard the checkpoints — accept_timestep advances
-                    // accept-gated state, the non-accept-gated state is kept.
-                    self.accept_step(
-                        &mut st, &mut steps, prediction, snapshot,
-                        assessment.milne, post_set_step,
-                    )?;
-                } else if self.reject_lte_step(
-                    &mut st, &prediction, assessment.milne, analog_history, device_checkpoints, assembly,
-                ) {
-                    // dt floor: accept the step as-is rather than stall.
-                    self.accept_step(
-                        &mut st, &mut steps, prediction, snapshot,
-                        assessment.milne, post_set_step,
-                    )?;
-                }
-            } else {
-                // Either phase failed to converge — reject the whole step.
-                self.reject_step(&mut st, prediction.dt_proposed, analog_history, device_checkpoints, assembly);
-                if st.dt <= self.options.dt_min && let Err(e) = outcome {
-                    return Err(e);
-                }
-            }
-        }
-
-        // LRM §5.10.2 `@(final_step)` (LRMW2-08): once, after the last
-        // accepted point of a genuine top-level analysis — never for an
-        // internal PSS shooting segment (`mark_nested`, not a real
-        // analysis end).
-        if self.top_level {
-            self.system.circuit.finish_analysis(&self.system.context, crate::analyses::AnalysisKind::Tran);
-        }
-
-        Ok(self.finish_run(&st, steps))
-    }
-
     fn snapshot(&self, time: f64) -> TransientStep {
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
@@ -1588,9 +767,7 @@ impl<'a> TransientSolver<'a> {
             }
         }
 
-        let step = TransientStep::new(time, values)
-            .with_digital(self.system.circuit.digital_state.nets.clone())
-            .with_digital_hidden(self.collect_digital_hidden());
+        let step = TransientStep::new(time, values);
         if !self.options.record_device_state
             && self.options.probe_selection.requests.is_empty()
         {
@@ -1599,68 +776,13 @@ impl<'a> TransientSolver<'a> {
         step.with_device_state(self.collect_device_banks())
     }
 
-    /// Snapshot each digital device's hidden state (module vars + edge
-    /// memory) — the register half of the full-state contract, always
-    /// recorded so any step can seed a re-entry.
-    fn collect_digital_hidden(&self) -> HashMap<String, (Vec<i64>, Vec<f64>)> {
-        let mut hidden = HashMap::new();
-        for dev in &self.system.circuit.devices {
-            if let Some(state) = dev.digital_hidden_snapshot() {
-                hidden.insert(dev.name().to_string(), state);
-            }
-        }
-        hidden
-    }
-
-    /// Clone each stateful device's runtime banks — either the full
-    /// `(state, vars)` banks (when `record_device_state` is on, the
-    /// "record everything" shorthand — ABI-34) or only the slices the
-    /// `probe_selection` requested (when non-empty). Empty
-    /// `probe_selection` + `record_device_state = false` records nothing
-    /// (today's default-off). The selection is consulted per-(device,
-    /// observable): only requested observables land in the returned map.
+    /// The recorded device state: the terms' values and the `VAR` watches'
+    /// values of every instance (`record_device_state`), or only those the
+    /// `probe_selection` requested. Empty `probe_selection` +
+    /// `record_device_state = false` records nothing.
     fn collect_device_banks(&self) -> HashMap<String, (Vec<f64>, Vec<f64>)> {
-        let mut device_state = HashMap::new();
-        let selection = &self.options.probe_selection;
-        let selective = !selection.requests.is_empty();
-        if let Some(bound) = self.system.circuit.abi.as_ref() {
-            return Self::collect_instance_banks(bound, selection);
-        }
-        for dev in &self.system.circuit.devices {
-            let (state, vars) = dev.runtime_banks();
-            if selective {
-                let label = dev.name();
-                if !selection.requests.iter().any(|(d, _)| d == label) {
-                    continue;
-                }
-                let (mut filt_state, mut filt_vars) = (Vec::new(), Vec::new());
-                for (i, slot) in dev.list_observables().into_iter().enumerate() {
-                    if !selection.contains(label, &slot.name) {
-                        continue;
-                    }
-                    match slot.kind {
-                        crate::core::introspect::ObservableKind::State
-                        | crate::core::introspect::ObservableKind::Charge
-                        | crate::core::introspect::ObservableKind::Flux => {
-                            if i < state.len() {
-                                filt_state.push(state[i]);
-                            }
-                        }
-                        crate::core::introspect::ObservableKind::Var => {
-                            let vi = i.saturating_sub(state.len());
-                            if vi < vars.len() {
-                                filt_vars.push(vars[vi]);
-                            }
-                        }
-                        crate::core::introspect::ObservableKind::BranchCurrent => {}
-                    }
-                }
-                device_state.insert(label.to_string(), (filt_state, filt_vars));
-            } else if !state.is_empty() || !vars.is_empty() {
-                device_state.insert(dev.name().to_string(), (state.to_vec(), vars.to_vec()));
-            }
-        }
-        device_state
+        let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
+        Self::collect_instance_banks(bound, &self.options.probe_selection)
     }
 
     /// The recorded `(terms, VARs)` of each device instance: the terms' last
@@ -1693,35 +815,6 @@ impl<'a> TransientSolver<'a> {
         device_state
     }
 
-    /// Snapshot every element's non-accept-gated state for the rollback
-    /// checkpoint (ABI-01). Stateless devices return `None`; the Vec is
-    /// indexed parallel to `circuit.devices`.
-    fn snapshot_device_checkpoints(&self) -> Vec<Option<ElementCheckpoint>> {
-        self.system
-            .circuit
-            .devices
-            .iter()
-            .map(|d| d.checkpoint_state())
-            .collect()
-    }
-
-    /// Return a circuit of devices to the term histories and limit states of
-    /// the checkpoint taken before the rejected attempt.
-    fn restore_assembly(&mut self, snapshot: Option<AssemblySnapshot>) {
-        if let (Some(bound), Some(snapshot)) = (self.system.circuit.abi.as_mut(), snapshot) {
-            bound.analog.restore(&snapshot);
-        }
-    }
-
-    /// Restore each element that produced a checkpoint before the rejected
-    /// attempt (ABI-02). `None` entries are skipped (stateless device).
-    fn restore_device_checkpoints(&mut self, checkpoints: &[Option<ElementCheckpoint>]) {
-        for (dev, ckpt) in self.system.circuit.devices.iter_mut().zip(checkpoints) {
-            if let Some(c) = ckpt {
-                dev.restore_state(c);
-            }
-        }
-    }
 }
 
 /// What the protocol's analog side of a circuit of devices carries between
@@ -1767,7 +860,7 @@ impl TransientSolver<'_> {
     /// §10): the operating point with every continuous `init` held, then the
     /// step loop. The digital engine leaves the circuit for the run and comes
     /// back after it, whatever the outcome.
-    fn solve_device(&mut self) -> crate::core::result::Result<TransientAnalysisResult> {
+    pub fn solve(&mut self) -> crate::core::result::Result<TransientAnalysisResult> {
         use crate::analyses::adapters::{DigitalSide, TransientSide, empty_digital};
         use crate::protocol::{Protocol, ProtocolOptions};
         use piperine_analog_solver::error::{Error, SolverDomain};
@@ -1801,7 +894,7 @@ impl TransientSolver<'_> {
         // Scheduled host writes: one at or before the start is a write before the
         // run; a later one is a host commit the protocol lands on.
         let mut later = Vec::new();
-        for set in std::mem::take(&mut self.sets.entries) {
+        for set in std::mem::take(&mut self.sets) {
             let value = match set.value {
                 crate::core::introspect::Value::Real(v) => crate::core::bind::ParamValue::Real(v),
                 crate::core::introspect::Value::Integer(v) => crate::core::bind::ParamValue::Int(v),
@@ -1933,9 +1026,6 @@ impl TransientSolver<'_> {
         if let Some(last) = run.steps.last_mut() {
             last.set_reentry(Some(std::sync::Arc::new(state)));
         }
-        if self.top_level {
-            self.system.circuit.finish_analysis(&self.system.context, crate::analyses::AnalysisKind::Tran);
-        }
         Ok(self.finish_run(&run.st, run.steps))
     }
 
@@ -1965,7 +1055,6 @@ impl TransientSolver<'_> {
         };
         let x = {
             let mut dc = DcSolver::new(self.system.circuit, Context::default())?;
-            dc.set_analysis_kind(crate::analyses::AnalysisKind::Tran);
             dc.system.uic_clamps = uic_clamps.clone();
             dc.apply_initial_conditions(guess);
             dc.equilibrium(true)?
@@ -2262,51 +1351,5 @@ impl DeviceRun {
     /// The smallest `CAP` of an accepted solution bounds the next step.
     pub(crate) fn set_cap(&mut self, cap: f64) {
         self.cap = cap;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::introspect::Value;
-
-    fn set(t: f64, param: &str, v: f64) -> ScheduledSet {
-        ScheduledSet { t, label: "r1".into(), param: param.into(), value: Value::Real(v) }
-    }
-
-    #[test]
-    fn next_breakpoint_is_the_earliest_pending_time_strictly_after_from() {
-        let mut q = SetQueue::default();
-        q.push(set(5e-6, "r", 1.0));
-        q.push(set(3e-6, "r", 2.0));
-        q.push(set(8e-6, "r", 3.0));
-        assert_eq!(q.next_breakpoint(0.0), Some(3e-6));
-        assert_eq!(q.next_breakpoint(3e-6), Some(5e-6), "strictly after `from`");
-        assert_eq!(q.next_breakpoint(8e-6), None);
-    }
-
-    #[test]
-    fn drain_preserves_scheduling_order_for_last_write_wins() {
-        let mut q = SetQueue::default();
-        q.push(set(5e-6, "r", 3000.0));
-        q.push(set(5e-6, "r", 1000.0));
-        let due = q.drain_due(5e-6);
-        // Application order is scheduling order: the later push lands last,
-        // so the element ends at 1000 — last write wins.
-        assert_eq!(due.len(), 2);
-        assert_eq!(due[0].value, Value::Real(3000.0));
-        assert_eq!(due[1].value, Value::Real(1000.0));
-        assert!(q.next_breakpoint(0.0).is_none(), "queue drained");
-    }
-
-    #[test]
-    fn drain_takes_only_due_entries_and_keeps_the_rest_pending() {
-        let mut q = SetQueue::default();
-        q.push(set(5e-6, "r", 1.0));
-        q.push(set(2e-6, "c", 2.0));
-        q.push(set(9e-6, "r", 3.0));
-        let due = q.drain_due(5e-6);
-        assert_eq!(due.iter().map(|s| s.t).collect::<Vec<_>>(), vec![5e-6, 2e-6]);
-        assert_eq!(q.next_breakpoint(0.0), Some(9e-6), "later entry stays pending");
     }
 }

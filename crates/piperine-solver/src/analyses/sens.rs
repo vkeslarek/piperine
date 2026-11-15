@@ -13,7 +13,6 @@
 use std::collections::HashMap;
 
 use crate::core::circuit::CircuitInstance;
-use crate::core::introspect::{Invalidation, Value};
 use crate::core::net::Net;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::analyses::dc::DcSolver;
@@ -24,8 +23,8 @@ use crate::Context;
 
 /// What to differentiate and with respect to what. `outputs` are solved
 /// analog nets (node voltages / branch currents); `params` are
-/// `(element label, parameter name)` pairs addressed exactly like
-/// [`CircuitInstance::set_element_param`](crate::core::circuit::CircuitInstance::set_element_param).
+/// `(instance path, parameter name)` pairs addressed exactly like
+/// [`CircuitInstance::set`](crate::core::circuit::CircuitInstance::set).
 #[derive(Debug, Clone)]
 pub struct SensAnalysisOptions {
     pub outputs: Vec<Net>,
@@ -74,58 +73,13 @@ impl<'a> SensSolver<'a> {
         Ok(Self { circuit, options, context, policy: Policy::default() })
     }
 
-    /// Validate one `(label, param)` pair and return its current value.
-    /// Loud on: unknown element, unknown/non-real parameter, and parameters
-    /// whose write would invalidate the compiled structure
-    /// ([`Invalidation::Rebuild`]) — a finite difference across a rebuild
-    /// boundary is not a sensitivity.
+    /// Validate one `(label, param)` pair and return its current value: the
+    /// instance by path, the `PARAM` pin by name, its value the host's last
+    /// write or the net's `init`. Loud on an unknown instance, an unknown or
+    /// non-real parameter, and a `STRUCTURAL` param (the rebuild class: writing
+    /// it re-creates the instances, so a difference across it is not a
+    /// sensitivity).
     fn param_value(&self, label: &str, param: &str) -> crate::core::result::Result<f64> {
-        if self.circuit.abi.is_some() {
-            return self.device_param_value(label, param);
-        }
-        let device =
-            self.circuit.devices.iter().find(|d| d.name() == label).ok_or_else(|| {
-                Error::simple(SolverDomain::Sens, format!("no element labeled `{label}`"))
-            })?;
-        let desc =
-            device.list_params().into_iter().find(|d| d.name == param).ok_or_else(|| {
-                let names: Vec<String> =
-                    device.list_params().into_iter().map(|p| p.name).collect();
-                Error::simple(
-                    SolverDomain::Sens,
-                    format!(
-                        "`{label}` declares no parameter `{param}`; available: {}",
-                        if names.is_empty() { "(none)".to_string() } else { names.join(", ") }
-                    ),
-                )
-            })?;
-        if desc.invalidation == Invalidation::Rebuild {
-            return Err(Error::simple(
-                SolverDomain::Sens,
-                format!(
-                    "`{label}.{param}` invalidates the compiled circuit (Rebuild) — \
-                     sensitivities are only defined for restampable parameters"
-                ),
-            ));
-        }
-        match device.get_param(param) {
-            Some(Value::Real(v)) => Ok(v),
-            Some(other) => Err(Error::simple(
-                SolverDomain::Sens,
-                format!("`{label}.{param}` is not a real parameter (got {other:?})"),
-            )),
-            None => Err(Error::simple(
-                SolverDomain::Sens,
-                format!("`{label}.{param}` is not readable"),
-            )),
-        }
-    }
-
-    /// `param_value` for a circuit of devices: the instance by path, the
-    /// `PARAM` pin by name, its value the host's last write or the net's `init`.
-    /// A `STRUCTURAL` param is the rebuild class: writing it re-creates the
-    /// instances, so a difference across it is not a sensitivity.
-    fn device_param_value(&self, label: &str, param: &str) -> crate::core::result::Result<f64> {
         use piperine_abi::raw::{leaf, pin_flag, role};
         let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
         let bound = self.circuit.abi.as_ref().expect("a circuit of devices");
@@ -162,13 +116,9 @@ impl<'a> SensSolver<'a> {
         value.ok_or_else(|| sens(format!("`{label}.{param}` holds no value")))
     }
 
-    /// Writes `value` to `label.param`: the element's restamp path, or a host
-    /// write between analyses on a circuit of devices.
+    /// Writes `value` to `label.param`: a host write between analyses.
     fn write_param(&mut self, label: &str, param: &str, value: f64) -> crate::core::result::Result<()> {
-        if self.circuit.abi.is_some() {
-            return self.circuit.set(label, param, crate::core::bind::ParamValue::Real(value));
-        }
-        self.circuit.set_element_param(label, param, Value::Real(value)).map(|_| ())
+        self.circuit.set(label, param, crate::core::bind::ParamValue::Real(value))
     }
 
     fn solve_op(&mut self) -> crate::core::result::Result<crate::core::result::DcAnalysisResult> {

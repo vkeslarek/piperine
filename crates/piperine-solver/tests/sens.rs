@@ -86,7 +86,7 @@ fn sens_error_paths_are_loud() {
     assert!(err.to_string().contains("bogus"), "names the param: {err}");
 
     // Non-addressable output: a digital net is not a solved analog net — loud.
-    let digital = Net::from(piperine_solver::abi::DigitalNet(0));
+    let digital = Net::digital(0, "d0");
     let err = circuit
         .sens(
             SensAnalysisOptions::new(vec![digital], vec![("r2".into(), "r".into())]),

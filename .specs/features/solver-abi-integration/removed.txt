@@ -51,3 +51,84 @@ supports_rollback_flag_is_declared_alongside_the_hooks	ElementCapabilities::SUPP
 checkpoint_then_restore_round_trips_state	Element::checkpoint_state and restore_state
 the_mechanism_adds_no_new_eventkind_variant	EventKind and EventQueue
 calling_accept_and_run_digital_is_the_only_way_to_reach_the_new_hook	Element::on_digital_settled and accept_and_run_digital
+ac4_digital_net_sequential_indices	CircuitBuilder::digital_net and the old engine's DigitalState labels
+ac6_build_runs_digital_init	CircuitBuilder::build running init_digital over Element devices
+abi09_allocator_grows_matrix	UnknownAllocator and AnalogDevice::allocate_unknowns (a private pin allocates its unknown at bind: bind.rs)
+abi09_missing_flag_returns_err	HAS_INTERNAL_UNKNOWNS and the allocation check
+parameters_are_discoverable_and_writable	Introspect, ParamDescriptor and Invalidation
+queries_default_through_opvars	Introspect::read_opvars and QueryDescriptor
+terminal_descriptor_new_sets_defaults	TerminalDescriptor
+terminal_descriptor_with_custom_values	TerminalDescriptor
+terminal_kind_distinguishes_external_internal_auxiliary	TerminalKind
+model_descriptor_default_is_empty_sentinel	ModelDescriptor
+named_catalogs_default_empty_for_simple_element	Introspect named catalogs
+observable_catalog_defaults_empty_for_simple_element	Introspect::list_observables
+next_breakpoint_is_the_earliest_pending_time_strictly_after_from	SetQueue::next_breakpoint (the protocol plans the landing of a scheduled write)
+drain_preserves_scheduling_order_for_last_write_wins	SetQueue::drain_due (a scheduled write is a host commit of the protocol; last write wins is proven by live_params)
+drain_takes_only_due_entries_and_keeps_the_rest_pending	SetQueue::drain_due
+event_entry_orders_by_time_then_priority	EventQueue
+binary_heap_peek_returns_earliest_via_reverse	EventQueue
+drain_due_returns_earliest_entries_in_time_order	EventQueue
+empty_queue_peek_is_positive_infinity	EventQueue
+constructors_set_correct_kind_priority_and_rollback	EventQueue
+all_four_sources_coexist_in_unified_queue	EventQueue
+rollback_honors_per_source_rollback_behavior	EventQueue
+checkpoint_rollback_restores_only_restore_tagged_entries	EventQueue
+rollback_drops_non_restore_drained_entries	EventQueue
+rollback_drops_entries_pushed_during_attempt	EventQueue
+commit_drops_checkpoint_so_rollback_is_noop	EventQueue
+dc_agrees_on_both_contracts	the differential oracle between the Element and Device contracts (its record, differential.txt, and the tag stay)
+transient_takes_the_same_steps_on_both_contracts	the differential oracle between the Element and Device contracts (its record, differential.txt, and the tag stay)
+newton_takes_the_same_iterations_on_both_contracts	the differential oracle between the Element and Device contracts (its record, differential.txt, and the tag stay)
+ac_agrees_on_both_contracts	the differential oracle between the Element and Device contracts (its record, differential.txt, and the tag stay)
+noise_agrees_on_both_contracts	the differential oracle between the Element and Device contracts (its record, differential.txt, and the tag stay)
+sensitivities_agree_on_both_contracts	the differential oracle between the Element and Device contracts (its record, differential.txt, and the tag stay)
+multiply_driven_net_resolves_per_table_7_3_and_driver_table_is_live	the two-phase digital engine (seq/comb contract, driver segregation, strength table)
+equal_strength_opposing_drivers_contend_to_x_on_the_live_net	the two-phase digital engine (seq/comb contract, driver segregation, strength table)
+single_driver_net_is_unaffected_by_strength_resolution	the two-phase digital engine (seq/comb contract, driver segregation, strength table)
+segregation_routing_keeps_ordinary_and_connect_module_populations_apart_on_a_mixed_net	the two-phase digital engine (seq/comb contract, driver segregation, strength table)
+test_topology_empty	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_topology_single_device	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_topology_linear_chain	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_topology_diamond	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_topology_ring_has_back_edge	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_topology_disconnected_subgraphs	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_zero_delay_chain_propagates_in_one_pass	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_fan_out_topology	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_diamond_propagation	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_rs_nor_latch_set	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_rs_nor_latch_reset	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_rs_nor_latch_holds_state	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_dff_rising_edge_capture	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_dff_does_not_capture_on_falling_edge	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_dff_pipeline_three_stages	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_ring_oscillator_five_inv	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_d2a_voltage_ramp	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_d2a_no_restart_on_same_value	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_d2a_x_holds_voltage	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_d2a_interrupted_ramp	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_a2d_rising_crossing	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_a2d_falling_crossing	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_a2d_hysteresis_blocks_small_swing	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_a2d_no_duplicate_crossings	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_a2d_rising_then_falling	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_cosim_d2a_event_at_correct_time	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+test_cosim_d2a_multiple_events	the old digital engine (DigitalTopology, seq/comb contract, LogicValue, DigitalState)
+digital_event_enters_unified_queue_with_correct_semantics	EventQueue and the old digital engine
+digital_event_peek_next_time_matches_event_time	EventQueue and the old digital engine
+digital_events_drain_in_time_order	EventQueue and the old digital engine
+drained_digital_events_return_on_rollback	EventQueue and the old digital engine
+digital_event_round_trips_through_event_entry_digital_constructor	EventQueue and the old digital engine
+digital_scheduler_emission_surface_unchanged	EventQueue and the old digital engine
+breakpoint_adapter_sets_correct_semantics	EventQueue and the Element event sources
+drained_breakpoint_stays_out_on_rollback	EventQueue and the Element event sources
+scheduled_set_adapter_sets_correct_semantics	EventQueue and the Element event sources
+drained_scheduled_set_returns_on_rollback	EventQueue and the Element event sources
+step_hint_adapter_sets_correct_semantics	EventQueue and the Element event sources
+step_hint_yields_to_exact_priority_at_equal_time	EventQueue and the Element event sources
+drained_step_hint_stays_out_on_rollback	EventQueue and the Element event sources
+unified_queue_reads_earliest_across_all_sources	EventQueue and the Element event sources
+same_time_events_order_by_seq	EventQueue ordering
+mixed_event_sources_survive_rejected_steps	EventQueue rollback of Element events
+event_rollback_is_deterministic_across_runs	EventQueue rollback of Element events
+a_circuit_mixing_elements_and_devices_is_refused	the mixed Element/Device circuit (the Element contract is gone)

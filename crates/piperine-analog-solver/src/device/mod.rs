@@ -23,5 +23,5 @@ use crate::error::{Error, SolverDomain};
 
 /// A device-side error of the analog assembly.
 pub(crate) fn device_error(detail: String) -> Error {
-    Error::simple(SolverDomain::Element, detail)
+    Error::simple(SolverDomain::Device, detail)
 }

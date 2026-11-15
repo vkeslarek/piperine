@@ -8,7 +8,7 @@
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
-use crate::analyses::dc::{DcAnalysisState, DcSolver};
+use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::faer::FaerSymbolicMatrix;
 use piperine_analog_solver::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
@@ -206,8 +206,8 @@ impl<'a> TransferFunctionSolver<'a> {
 
     /// Assembles DC stamps at the operating point for linearized system.
     ///
-    /// This creates the Jacobian matrix (linearized system) at the DC operating point.
-    /// We use the DC point values to update all devices, then collect their DC stamps.
+    /// This creates the Jacobian matrix (linearized system) at the DC operating
+    /// point from the device assembly.
     fn assemble_dc_stamps(
         circuit: &mut CircuitInstance,
         dc_point: &DcAnalysisResult,
@@ -226,36 +226,15 @@ impl<'a> TransferFunctionSolver<'a> {
             }
         }
 
-        // Create a temporary state buffer for update_all
-        // CircularArrayBuffer2::new(capacity, size) where:
-        // - capacity = number of state snapshots to keep
-        // - size = number of variables in each snapshot
-        let mut state = piperine_analog_solver::math::circular_array::CircularArrayBuffer2::new(1, size);
-        state.push(&dc_state_array.view());
-
-        if let Some(bound) = circuit.abi.as_mut() {
-            let amb = piperine_analog_solver::device::Ambient {
-                time: 0.0,
-                freq: 0.0,
-                is_static: true,
-                gmin: context.tolerances.gmin,
-                source_scale: 1.0,
-            };
-            return bound.analog.assemble_dc(&dc_state_array.to_vec(), amb);
-        }
-
-        // Update all devices at DC operating point
-        circuit.update_all(&state, context);
-
-        // Collect DC stamps (these are linearized around DC point)
-        let mut all_stamps = Vec::new();
-        let CircuitInstance { devices, digital_state, .. } = &mut *circuit;
-        let dc_state = DcAnalysisState::new(&state, &digital_state.nets, 1.0);
-        for dc in devices.iter_mut() {
-            all_stamps.extend(dc.load_dc(&dc_state, context));
-        }
-
-        Ok(all_stamps)
+        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let amb = piperine_analog_solver::device::Ambient {
+            time: 0.0,
+            freq: 0.0,
+            is_static: true,
+            gmin: context.tolerances.gmin,
+            source_scale: 1.0,
+        };
+        bound.analog.assemble_dc(&dc_state_array.to_vec(), amb)
     }
 
     /// Determines the type of transfer function based on input/output variables.

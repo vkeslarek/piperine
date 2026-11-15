@@ -144,9 +144,7 @@ impl<'a> PssSolver<'a> {
         for ((_, var), &v) in vars.iter().zip(x) {
             values.insert(var.clone(), v);
         }
-        let digital: Vec<piperine_digital_solver::events::LogicValue> =
-            (0..usize::MAX).map_while(|i| digital_from.digital(i)).collect();
-        let mut step = TransientStep::new(time, values).with_digital(digital);
+        let mut step = TransientStep::new(time, values);
         // A circuit of devices re-enters from the state the step carries.
         step.set_reentry(digital_from.reentry().cloned());
         step
@@ -163,7 +161,6 @@ impl<'a> PssSolver<'a> {
         let dt = self.options.dt.unwrap_or(self.options.period / 100.0);
         let opts = TransientAnalysisOptions::new(t0 + span, dt).with_start(t0);
         let mut solver = TransientSolver::new(self.circuit, opts, self.context.clone())?;
-        solver.mark_nested();
         solver.policy = self.policy.clone();
         solver.with_initial_state(state);
         solver.solve()
@@ -182,8 +179,7 @@ impl<'a> PssSolver<'a> {
                 let opts = TransientAnalysisOptions::new(t0, dt);
                 let mut solver =
                     TransientSolver::new(self.circuit, opts, self.context.clone())?;
-                solver.mark_nested();
-                solver.policy = self.policy.clone();
+                        solver.policy = self.policy.clone();
                 solver.solve()?.last().expect("pre-roll has steps").clone()
             } else {
                 // A zero-length "shot" is not defined; take the DC point via
@@ -192,8 +188,7 @@ impl<'a> PssSolver<'a> {
                 let opts = TransientAnalysisOptions::new(dt, dt);
                 let mut solver =
                     TransientSolver::new(self.circuit, opts, self.context.clone())?;
-                solver.mark_nested();
-                solver.policy = self.policy.clone();
+                        solver.policy = self.policy.clone();
                 let r = solver.solve()?;
                 r.iter().next().expect("transient records t=0").clone()
             }
@@ -340,17 +335,11 @@ impl<'a> PssSolver<'a> {
         period: f64,
     ) -> crate::core::result::Result<()> {
         let matches = |a: &TransientStep, b: &TransientStep| -> bool {
-            // A circuit of devices: every discrete net holds the same bytes.
-            if let (Some(x), Some(y)) = (a.reentry(), b.reentry()) {
-                return x.nets == y.nets;
+            // Every discrete net holds the same bytes.
+            match (a.reentry(), b.reentry()) {
+                (Some(x), Some(y)) => x.nets == y.nets,
+                _ => true,
             }
-            (0..usize::MAX)
-                .map_while(|i| match (a.digital(i), b.digital(i)) {
-                    (Some(x), Some(y)) => Some(x == y),
-                    (None, None) => None,
-                    _ => Some(false),
-                })
-                .all(|eq| eq)
         };
         if matches(start, arrival) {
             return Ok(());

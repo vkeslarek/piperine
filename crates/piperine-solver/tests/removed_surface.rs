@@ -192,6 +192,23 @@ fn simprobe_is_gone() {
     assert!(found.is_empty(), "removed $simprobe helper still named: {found:#?}");
 }
 
+/// The `Element` contract of `solver-abi-integration`: the one device contract
+/// is the `Device` trait (MD-62).
+#[test]
+fn the_element_contract_is_gone() {
+    let found = words_found(&[
+        "Element",
+        "AnalogDevice",
+        "Introspect",
+        "ElementCapabilities",
+        "ElementCheckpoint",
+        "LimitingReport",
+        "Invalidation",
+        "next_breakpoints",
+    ]);
+    assert!(found.is_empty(), "removed Element contract still named: {found:#?}");
+}
+
 #[test]
 fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";
@@ -202,4 +219,6 @@ fn the_scan_catches_a_planted_name() {
         vec!["Region", "Channel", "FileId", "FileError"]
     );
     assert!(words_in("struct RegionQueueless; fn channels() {}", &["Region", "Channel"]).is_empty());
+    assert_eq!(words_in("impl Element for Resistor {}", &["Element", "Introspect"]), vec!["Element"]);
+    assert!(words_in("struct ElementCount; fn elements() {}", &["Element"]).is_empty());
 }

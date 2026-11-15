@@ -14,7 +14,6 @@ pub(crate) mod adapters;
 pub mod adjoint;
 pub mod context;
 pub mod dc;
-pub mod events;
 pub mod noise;
 pub mod pss;
 pub mod pz;

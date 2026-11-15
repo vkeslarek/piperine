@@ -1,7 +1,6 @@
 //! Analysis result containers handed back to hosts (waveforms, operating points).
 use piperine_analog_solver::netlist::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
-use piperine_digital_solver::events::LogicValue;
 use ndarray::Array2;
 use num_complex::Complex;
 use std::collections::HashMap;
@@ -26,19 +25,12 @@ pub struct SolverStats {
     pub dt_min_floor_hits: usize,
     pub dt_min: f64,
     pub dt_max: f64,
-    // Device-level
-    pub bypass_hits: usize,
-    pub bypass_misses: usize,
     // Homotopy / convergence strategy
     pub homotopy_strategy: Option<String>,
     pub homotopy_levels: usize,
     // Timing (nanoseconds)
     pub assembly_time_ns: u64,
     pub solve_time_ns: u64,
-    // HOST-10: structured limiting diagnostics from the final Newton step —
-    // one entry per device whose limiter clamped a value. Empty when no
-    // device limited (the common case for linear / well-converged circuits).
-    pub limiting: Vec<crate::core::element::LimitingReport>,
 }
 
 #[derive(Debug)]
@@ -137,21 +129,11 @@ impl TransientAnalysisResult {
 pub struct TransientStep {
     time: f64,
     values: HashMap<Arc<AnalogVariable>, f64>,
-    /// Snapshot of every digital net's logic value at this step, indexed by
-    /// `DigitalNet` id. Lets a transient trace read sequential logic over time
-    /// (`Trace.v(bit_net)` → 0/1/NaN), which `$op` cannot express (it is a
-    /// stateless operating point).
-    digital: Vec<LogicValue>,
     /// Opt-in per-step device runtime banks (state, vars), keyed by device
     /// label. Recorded only when the run enables
     /// `TransientAnalysisOptions::record_device_state`; lets a host recompute
     /// a stateful device's branch current at this step (`Trace.i`).
     device_state: HashMap<String, (Vec<f64>, Vec<f64>)>,
-    /// Per-step hidden digital state (module vars + edge memory), keyed by
-    /// device label. Always recorded — it is what makes a step a *full*
-    /// circuit state for re-entry (PSS shots): register state round-trips
-    /// with the digital nets (the shot-state contract).
-    digital_hidden: HashMap<String, (Vec<i64>, Vec<f64>)>,
     /// For a circuit of devices, the state a transient re-enters from at this
     /// step: recorded on the first and the last step of a run.
     reentry: Option<Arc<ReentryState>>,
@@ -175,9 +157,7 @@ impl TransientStep {
         Self {
             time,
             values,
-            digital: Vec::new(),
             device_state: HashMap::new(),
-            digital_hidden: HashMap::new(),
             reentry: None,
         }
     }
@@ -191,30 +171,10 @@ impl TransientStep {
         self.reentry = state;
     }
 
-    /// Attach a digital-net snapshot (by `DigitalNet` id).
-    pub fn with_digital(mut self, digital: Vec<LogicValue>) -> Self {
-        self.digital = digital;
-        self
-    }
-
     /// Attach the per-step device runtime banks (label → (state, vars)).
     pub fn with_device_state(mut self, device_state: HashMap<String, (Vec<f64>, Vec<f64>)>) -> Self {
         self.device_state = device_state;
         self
-    }
-
-    /// Attach the per-step hidden digital state (label → (ints, reals)).
-    pub fn with_digital_hidden(
-        mut self,
-        digital_hidden: HashMap<String, (Vec<i64>, Vec<f64>)>,
-    ) -> Self {
-        self.digital_hidden = digital_hidden;
-        self
-    }
-
-    /// This step's logic value for digital net `idx`, or `None` if unrecorded.
-    pub fn digital(&self, idx: usize) -> Option<LogicValue> {
-        self.digital.get(idx).copied()
     }
 
     /// This step's recorded runtime banks (state, vars) for the device
@@ -229,12 +189,6 @@ impl TransientStep {
     /// requesting one device yields exactly that device's label here.
     pub fn device_state_keys(&self) -> impl Iterator<Item = &str> {
         self.device_state.keys().map(String::as_str)
-    }
-
-    /// This step's hidden digital state for the device labelled `label`
-    /// (always recorded), or `None` when the device is stateless/unknown.
-    pub fn digital_hidden(&self, label: &str) -> Option<&(Vec<i64>, Vec<f64>)> {
-        self.digital_hidden.get(label)
     }
 
     pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {
@@ -254,17 +208,6 @@ impl TransientStep {
     pub fn get_net(&self, net: &Net) -> Option<f64> {
         let var = net.analog_variable()?;
         self.values.get(var).copied()
-    }
-
-    /// Read the digital logic value by [`Net`]. Returns `None` for analog
-    /// and pseudo nets, or for digital nets that were not recorded this
-    /// step.
-    pub fn digital_net(&self, net: &Net) -> Option<LogicValue> {
-        if !matches!(net.kind(), crate::core::net::NetKind::Digital) {
-            return None;
-        }
-        let idx = net.dense()?;
-        self.digital.get(idx).copied()
     }
 
     pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {

@@ -602,13 +602,13 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] No `if circuit.abi` branch remains: the drivers have one path
-- [ ] `core/introspect.rs` keeps only what a shape provides (names, units, origins, layouts, defaults, `STRUCTURAL`); its unit tests are ported or listed in `removed.txt`
-- [ ] `DcAnalysisState.digital`, `TransientAnalysisState.digital` and `accept_timestep`'s `&[LogicValue]` are gone
-- [ ] `tests/differential.rs` is deleted; `differential.txt` and the tag stay
-- [ ] Test `the_element_contract_is_gone` of `removed_surface.rs` scans the three solver crates for the names of the Port story's AC 5 that this task removes
-- [ ] The four crates' suites are green
-- [ ] Gate: full
+- [x] No `if circuit.abi` branch remains: the drivers have one path
+- [x] `core/introspect.rs` keeps only what a shape provides (names, units, origins, layouts, defaults, `STRUCTURAL`); its unit tests are ported or listed in `removed.txt`
+- [x] `DcAnalysisState.digital`, `TransientAnalysisState.digital` and `accept_timestep`'s `&[LogicValue]` are gone
+- [x] `tests/differential.rs` is deleted; `differential.txt` and the tag stay
+- [x] Test `the_element_contract_is_gone` of `removed_surface.rs` scans the three solver crates for the names of the Port story's AC 5 that this task removes
+- [x] The four crates' suites are green
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

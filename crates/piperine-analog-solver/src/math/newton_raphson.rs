@@ -65,7 +65,7 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
 
     /// Whether any device in this system reports active limiting (ABI-10).
     /// The Newton strategy calls this each iteration as part of convergence:
-    /// a device that returns a `LimitingReport` vetoes convergence until the
+    /// a device whose `LIMIT` input is limiting vetoes convergence until the
     /// limited value settles.
     fn any_limiting_report(&self) -> bool {
         false

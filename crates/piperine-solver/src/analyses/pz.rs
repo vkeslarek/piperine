@@ -7,12 +7,12 @@
 //! `C` the reactive (charge/flux) matrix. Its transfer function is
 //! `H(s) = lᵀ(sC + G)⁻¹b`.
 //!
-//! **`G` extraction.** Exactly the `tf.rs::assemble_dc_stamps` recipe: update
-//! every device at the DC point, collect `load_dc` matrix stamps (dropping
+//! **`G` extraction.** Exactly the `tf.rs::assemble_dc_stamps` recipe: the
+//! assembly's DC stamps at the operating point, matrix entries only (dropping
 //! `Rhs`), into a dense `n×n` matrix.
 //!
 //! **`C` extraction.** Every Piperine AC stamp is affine in `jω`:
-//! `Y(jω) = G + jω·C`. One `load_ac` probe at `ω0` gives `C = Im(Y(jω0))/ω0`.
+//! `Y(jω) = G + jω·C`. One AC probe at `ω0` gives `C = Im(Y(jω0))/ω0`.
 //! A second probe at `ω1` guards the assumption: `Im(Y(jω1))/ω1` must match
 //! `Im(Y(jω0))/ω0`, and `Re(Y(jω1))` must match `Re(Y(jω0))` — a device whose
 //! AC stamp is *not* affine in `jω` (frequency-nonlinear) fails this
@@ -32,11 +32,9 @@
 
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
-use crate::analyses::ac::AcAnalysisContext;
-use crate::analyses::dc::{DcAnalysisState, DcSolver};
+use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::error::{Error, SolverDomain};
-use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::linear::Stamp;
 use crate::prelude::DcAnalysisResult;
 
@@ -253,9 +251,9 @@ impl<'a> PoleZeroSolver<'a> {
         Ok(roots)
     }
 
-    /// `G`: update every device at the DC point, collect `load_dc` matrix
-    /// stamps (dropping `Rhs`) into a dense matrix — exactly the
-    /// `tf.rs::assemble_dc_stamps` recipe.
+    /// `G`: the assembly's DC matrix stamps at the operating point (dropping
+    /// `Rhs`) into a dense matrix — exactly the `tf.rs::assemble_dc_stamps`
+    /// recipe.
     fn assemble_g(
         circuit: &mut CircuitInstance,
         dc_point: &DcAnalysisResult,
@@ -271,45 +269,27 @@ impl<'a> PoleZeroSolver<'a> {
             }
         }
 
-        let mut state = CircularArrayBuffer2::new(1, size);
-        state.push(&dc_state_array.view());
-        circuit.update_all(&state, context);
-
         let mut g = Array2::<f64>::zeros((size, size));
-        if let Some(bound) = circuit.abi.as_mut() {
-            let amb = piperine_analog_solver::device::Ambient {
-                time: 0.0,
-                freq: 0.0,
-                is_static: true,
-                gmin: context.tolerances.gmin,
-                source_scale: 1.0,
-            };
-            let op = state.latest().map(|r| r.to_vec()).unwrap_or_default();
-            for stamp in bound.analog.assemble_dc(&op, amb)? {
-                if let Stamp::Matrix(r, c, val) = stamp
-                    && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
-                {
-                    g[[ri, ci]] += val;
-                }
-            }
-            return Ok(g);
-        }
-        let CircuitInstance { devices, digital_state, .. } = &mut *circuit;
-        let dc_state = DcAnalysisState::new(&state, &digital_state.nets, 1.0);
-        for dev in devices.iter_mut() {
-            for stamp in dev.load_dc(&dc_state, context) {
-                if let Stamp::Matrix(r, c, val) = stamp
-                    && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
-                {
-                    g[[ri, ci]] += val;
-                }
+        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let amb = piperine_analog_solver::device::Ambient {
+            time: 0.0,
+            freq: 0.0,
+            is_static: true,
+            gmin: context.tolerances.gmin,
+            source_scale: 1.0,
+        };
+        for stamp in bound.analog.assemble_dc(&dc_state_array.to_vec(), amb)? {
+            if let Stamp::Matrix(r, c, val) = stamp
+                && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
+            {
+                g[[ri, ci]] += val;
             }
         }
         Ok(g)
     }
 
-    /// One AC probe: collects every device's `load_ac` matrix stamps at
-    /// angular frequency `omega` into a dense complex matrix `Y(jω)`.
+    /// One AC probe: the assembly's AC matrix stamps at angular frequency
+    /// `omega` into a dense complex matrix `Y(jω)`.
     fn assemble_y(
         circuit: &mut CircuitInstance,
         dc_point: &DcAnalysisResult,
@@ -317,34 +297,21 @@ impl<'a> PoleZeroSolver<'a> {
         context: &Context,
         size: usize,
     ) -> crate::core::result::Result<Array2<Complex<f64>>> {
-        let ac_ctx = AcAnalysisContext { frequency: omega / (2.0 * std::f64::consts::PI) };
         let mut y = Array2::<Complex<f64>>::zeros((size, size));
-        if circuit.abi.is_some() {
-            let op = crate::analyses::ac::operating_vector(circuit, dc_point);
-            let amb = piperine_analog_solver::device::Ambient {
-                time: 0.0,
-                freq: ac_ctx.frequency,
-                is_static: false,
-                gmin: context.tolerances.gmin,
-                source_scale: 1.0,
-            };
-            let bound = circuit.abi.as_mut().expect("a circuit of devices");
-            for stamp in bound.analog.assemble_ac(&op, amb)?.0 {
-                if let Stamp::Matrix(r, c, val) = stamp
-                    && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
-                {
-                    y[[ri, ci]] += val;
-                }
-            }
-            return Ok(y);
-        }
-        for dev in circuit.devices.iter_mut() {
-            for stamp in dev.load_ac(dc_point, &ac_ctx, context) {
-                if let Stamp::Matrix(r, c, val) = stamp
-                    && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
-                {
-                    y[[ri, ci]] += val;
-                }
+        let op = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let amb = piperine_analog_solver::device::Ambient {
+            time: 0.0,
+            freq: omega / (2.0 * std::f64::consts::PI),
+            is_static: false,
+            gmin: context.tolerances.gmin,
+            source_scale: 1.0,
+        };
+        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        for stamp in bound.analog.assemble_ac(&op, amb)?.0 {
+            if let Stamp::Matrix(r, c, val) = stamp
+                && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
+            {
+                y[[ri, ci]] += val;
             }
         }
         Ok(y)

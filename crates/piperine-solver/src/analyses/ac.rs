@@ -1,5 +1,4 @@
-//! AC small-signal sweep (`.ac`) — the sweep options and the element-facing
-//! `AcAnalysisContext`, plus the driver that linearizes the circuit around
+//! AC small-signal sweep (`.ac`) — the sweep options, plus the driver that linearizes the circuit around
 //! the DC operating point and solves the complex system at each frequency.
 //!
 //! There is no per-analysis `AcContext`: MD-03 is superseded (p6-cleanup-
@@ -22,10 +21,6 @@ use num_complex::Complex;
 use std::collections::HashMap;
 
 // ── request/state ────────────────────────────────────────────────────────
-
-pub struct AcAnalysisContext {
-    pub frequency: f64,
-}
 
 #[derive(Clone, Debug)]
 pub struct AcSweepAnalysisOptions {
@@ -91,30 +86,14 @@ pub struct AcSystem<'a> {
 }
 
 impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
-    /// Assembles the linearized AC system matrix for the current frequency.
-    ///
-    /// AC analysis is inherently linear (small-signal approximation around DC bias),
-    /// so this simply collects the complex-valued stamps from all AC-capable devices.
-    /// No iterative updates are needed since the system doesn't change during solving.
+    /// Assembles the linearized AC system matrix for the current frequency from
+    /// the device assembly: AC analysis is inherently linear (small-signal
+    /// approximation around the DC bias), so no iterative update is needed.
     fn assemble(
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
-        if self.circuit.abi.is_some() {
-            return self.assemble_device();
-        }
-        let ac_ctx = AcAnalysisContext {
-            frequency: self.frequency,
-        };
-
-        let mut all_stamps = Vec::new();
-
-        // AC analysis is linear - no need to update runtimes
-        // We use the DC operating point that was already computed
-        for ac in &mut self.circuit.devices {
-            all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
-        }
-        Ok(all_stamps)
+        self.assemble_device()
     }
 
     fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
@@ -186,10 +165,6 @@ impl<'a> AcSolver<'a> {
         circuit.setup_all(&context)?;
 
         let mut dc_solver = DcSolver::new(circuit, context.clone())?;
-        // The DC bias under an AC sweep belongs to the AC run (DVC-19):
-        // the DC solver that computes the bias must not run the DC
-        // `finish_analysis` hook; this keeps the analysis kind honest.
-        dc_solver.set_analysis_kind(crate::analyses::AnalysisKind::Ac);
         let dc_point = dc_solver.solve()?;
 
         let netlist = circuit.netlist();

@@ -6,7 +6,9 @@
 //! Typical flow:
 //! ```ignore
 //! use piperine_solver::prelude::*;
-//! let mut circuit = CircuitInstance::from_devices_and_netlist("top", devices, netlist);
+//! let mut b = CircuitBuilder::new("top");
+//! b.device(module, "x1", &[], &[Port::Node(b.ground())]);
+//! let mut circuit = b.build()?;
 //! let op = circuit.dc(Context::default())?.solve()?;
 //! ```
 
@@ -15,14 +17,8 @@ pub use piperine_analog_solver::netlist::{AnalogReference, BranchIdentifier, Net
 pub use crate::core::bind::{ParamValue, Port};
 pub use crate::core::builder::CircuitBuilder;
 pub use crate::core::circuit::CircuitInstance;
-pub use crate::core::element::{Element, ElementCapabilities};
-pub use crate::core::introspect::{
-    Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
-    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind,
-    SignConvention, TerminalDescriptor, TerminalKind, Value, ValueKind,
-};
+pub use crate::core::introspect::{ProbeSelection, Value, ValueKind};
 pub use crate::core::net::{Net, NetKind};
-pub use piperine_digital_solver::events::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;

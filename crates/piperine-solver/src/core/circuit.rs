@@ -1,16 +1,11 @@
-//! `CircuitInstance` — the built, simulatable circuit: owns the devices
-//! and the analog/digital state behind five contracted responsibilities
-//! (circuit state, analysis entry, the mixed-signal seam, live mutation;
-//! construction stays in `CircuitBuilder`).
+//! `CircuitInstance` — the built, simulatable circuit: owns the bound device
+//! instances behind four contracted responsibilities (circuit state, analysis
+//! entry, live mutation; construction stays in `CircuitBuilder`).
 use crate::analyses::noise::NoiseAnalysisOptions;
 use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analyses::transient::TransientAnalysisOptions;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::netlist::Netlist;
-use crate::core::element::{Element, ElementCapabilities, Introspect};
-use piperine_digital_solver::state::DigitalState;
-use piperine_digital_solver::topology::DigitalTopology;
-use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::Context;
 use crate::analyses::ac::AcSolver;
 use crate::analyses::dc::DcSolver;
@@ -25,29 +20,22 @@ use crate::analyses::transient::TransientSolver;
 
 /// The instantiated, ready-to-simulate circuit.
 ///
-/// `CircuitInstance` has exactly five jobs (design §6b), and every method
-/// below sits under one of them — the impl is grouped into five contracted
+/// `CircuitInstance` has exactly four jobs (design §6b), and every method
+/// below sits under one of them — the impl is grouped into four contracted
 /// sections:
 ///
 /// 1. **Circuit state** — read-only views of the built circuit's structure.
 /// 2. **Analysis entry** — hand a driver a borrow of the circuit + a
 ///    [`Context`]; uniform shape, one line each.
-/// 3. **Mixed-signal seam** — the one place analog acceptance seeds digital
-///    events and the scheduler runs.
-/// 4. **Live mutation** — the MD-18 restamp path + per-solve hooks.
-/// 5. **Construction** — stays in [`CircuitBuilder`](crate::core::builder::CircuitBuilder);
+/// 3. **Live mutation** — host writes to the bound device instances.
+/// 4. **Construction** — stays in [`CircuitBuilder`](crate::core::builder::CircuitBuilder);
 ///    this type grows no ad-hoc constructor beyond
-///    [`from_devices_and_netlist`](Self::from_devices_and_netlist) (the
+///    [`from_netlist`](Self::from_netlist) (the
 ///    builder's output) and documented re-entry.
 pub struct CircuitInstance {
     pub title: String,
-    /// All devices — both analog and digital. Each device may implement either
-    /// or both sides; the `Element` trait default impls handle the no-op cases.
-    pub devices: Vec<Box<dyn Element>>,
-    pub digital_topology: Option<DigitalTopology>,
-    pub digital_state: DigitalState,
     pub netlist: Netlist,
-    /// The bound device instances (the ABI contract); `None` for a circuit of `Element`s.
+    /// The bound device instances (the device contract); `Some` from `build` on.
     pub(crate) abi: Option<crate::core::bind::Bound>,
     /// What the device instances were bound from (a circuit of devices).
     pub(crate) recipe: Option<crate::core::bind::Recipe>,
@@ -58,8 +46,7 @@ impl CircuitInstance {
     // ── Circuit state ────────────────────────────────────────────────────────
     //
     // Read-only views of the built circuit's structure: the analog netlist,
-    // the unified net naming layer, digital labels, the capability union, and
-    // the device list itself.
+    // the unified net naming layer and the bound device instances.
 
     pub fn netlist(&self) -> &Netlist { &self.netlist }
 
@@ -67,58 +54,11 @@ impl CircuitInstance {
     pub fn bound(&self) -> Option<&crate::core::bind::Bound> { self.abi.as_ref() }
     pub fn bound_mut(&mut self) -> Option<&mut crate::core::bind::Bound> { self.abi.as_mut() }
 
-    /// Every solved signal in the circuit — analog nodes, analog branch
-    /// currents, and digital nets — as one unified `Net` list. This is the
-    /// symmetric naming layer a host, result mapper, or diagnostic uses instead
-    /// of walking the analog netlist and the digital net array separately.
-    ///
-    /// Digital nets carry the label the circuit builder attached via
-    /// [`DigitalState::set_label`], or the anonymous `d{idx}` form when none
-    /// was provided.
+    /// Every solved signal in the circuit — analog nodes and analog branch
+    /// currents — as one unified `Net` list. A design's discrete nets are the
+    /// bound plan's (`bound().names.nets`).
     pub fn nets(&self) -> Vec<crate::core::net::Net> {
-        use crate::core::net::Net;
-        use piperine_digital_solver::events::DigitalNet;
-        let mut nets = Net::analog_nets(&self.netlist);
-        nets.extend(
-            (0..self.digital_state.nets.len())
-                .map(|i| Net::digital(i, self.digital_state.label_or_default(DigitalNet(i)))),
-        );
-        nets
-    }
-
-    /// Look up the digital net's stable source-level label, defaulting to
-    /// `d{idx}` when no label was attached. Convenience for diagnostics and
-    /// result mapping that don't want to construct a full `Net`.
-    pub fn digital_label(&self, net: piperine_digital_solver::events::DigitalNet) -> String {
-        self.digital_state.label_or_default(net)
-    }
-
-    /// Union of every element's declared [`ElementCapabilities`] — what this
-    /// whole circuit participates in. Drivers plan against this (e.g. a
-    /// pure-analog circuit skips the mixed-signal loop) instead of scanning the
-    /// element list by trial downcast.
-    pub fn capabilities(&self) -> ElementCapabilities {
-        self.devices
-            .iter()
-            .fold(ElementCapabilities::empty(), |acc, d| acc | d.capabilities())
-    }
-
-    pub fn all_devices(&self) -> &[Box<dyn Element>] { &self.devices }
-    pub fn all_devices_mut(&mut self) -> &mut [Box<dyn Element>] { &mut self.devices }
-
-    /// Reach one device's [`Introspect`] surface by its source-level label
-    /// (host-library HOST-07..12 enabling seam). `None` when no element
-    /// carries that label — every device is nameable via [`Element::name`],
-    /// so this is the same addressing [`set_element_param`](Self::set_element_param)
-    /// uses, just read-only and returning the whole introspection surface
-    /// (opvars, params, terminals, model descriptor, observables) instead of
-    /// one parameter. No solver-math change — a pure trait-object upcast
-    /// over the already-shipped `Element: Introspect` supertrait.
-    pub fn device_introspect(&self, label: &str) -> Option<&dyn Introspect> {
-        self.devices
-            .iter()
-            .find(|d| d.name() == label)
-            .map(|d| d.as_ref() as &dyn Introspect)
+        crate::core::net::Net::analog_nets(&self.netlist)
     }
 
     // ── Analysis entry ───────────────────────────────────────────────────────
@@ -128,12 +68,10 @@ impl CircuitInstance {
     // `crate::analyses`.
 
     pub fn dc(&mut self, context: Context) -> crate::core::result::Result<DcSolver<'_>> {
-        self.start_analysis(&context, crate::analyses::AnalysisKind::Dc);
         DcSolver::new(self, context)
     }
 
     pub fn ac(&mut self, context: Context) -> crate::core::result::Result<AcSolver<'_>> {
-        self.start_analysis(&context, crate::analyses::AnalysisKind::Ac);
         AcSolver::new(self, context)
     }
 
@@ -142,7 +80,6 @@ impl CircuitInstance {
         transient_options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::core::result::Result<TransientSolver<'_>> {
-        self.start_analysis(&context, crate::analyses::AnalysisKind::Tran);
         TransientSolver::new(self, transient_options, context)
     }
 
@@ -215,256 +152,25 @@ impl CircuitInstance {
         crate::analyses::sp::SpSolver::new(self, options, context)
     }
 
-    // ── Mixed-signal seam ────────────────────────────────────────────────────
-    //
-    // The one place analog acceptance seeds digital events and the scheduler
-    // runs — the named owner of the D2A/A2D crossing (design §1/§6b). Any
-    // `Element` is natively mixed-signal (MD-01), so there is no separate
-    // bridge object; this section is the whole seam.
-    //
-    // Call-order contract:
-    //   1. `init_digital` — once, before the first `run_digital_at*`: collects
-    //      every digital device's `init` events and settles t=0 power-on.
-    //   2. `rebuild_digital_topology` — after the device set changes, before
-    //      the next run: rebuilds the ranked DAG the scheduler walks.
-    //   3. `accept_and_run_digital` — per accepted analog step (the DC
-    //      mixed-signal loop and transient accept path):
-    //      `build_accept_state` → `seed_digital_from_accept_hooks` →
-    //      `run_digital_at_with_analog`; returns whether any output net moved.
-    //   `run_digital_at[_with_analog]` — standalone evaluation at time `t`.
-    //
-    // The analog→digital plumbing (`build_accept_state` +
-    // `seed_digital_from_accept_hooks`, folded from the former `SignalBridge`)
-    // turns an accepted analog solution into the 1-row state buffer the accept
-    // hooks read, then seeds the digital event queue from every device's
-    // `accept_timestep`.
-
-    pub fn rebuild_digital_topology(&mut self) {
-        self.digital_topology = Some(DigitalTopology::build(&self.devices));
-    }
-
-    /// Initialize all digital devices and seed the `DigitalState` with t=0 events.
-    ///
-    /// Must be called once before the first [`Self::run_digital_at`] call.  Collects
-    /// initial events from every device's `init`, schedules them into
-    /// `digital_state`, then runs propagation at t=0 so all downstream logic
-    /// reflects its power-on state.
-    pub fn init_digital(&mut self) -> crate::core::result::Result<()> {
-        use std::cmp::Reverse;
-        use piperine_digital_solver::events::DigitalEvent;
-        use piperine_digital_solver::interface::QueueSink;
-
-        let mut seed_queue = std::collections::BinaryHeap::<Reverse<DigitalEvent>>::new();
-        let mut seq: u64 = 0;
-        for (i, device) in self.devices.iter_mut().enumerate() {
-            if device.capabilities().contains(ElementCapabilities::DIGITAL) {
-                let mut sink = QueueSink::new(&mut seed_queue, 0.0, i, &mut seq);
-                device.init(&mut sink);
-            }
-        }
-        for Reverse(event) in seed_queue {
-            self.digital_state.schedule(event);
-        }
-        self.run_digital_at(0.0)
-    }
-
-    /// Run digital evaluation at time `t`.
-    ///
-    /// Dispatches on the presence of a built [`DigitalTopology`]: with one, it
-    /// walks the ranked DAG in dependency order
-    /// ([`DigitalState::evaluate_dag_ordered`]); without one, it falls back to
-    /// the event/delta-cycle loop ([`DigitalState::evaluate_until_stable`]).
-    ///
-    /// Fused combinational cones are transparent here: codegen emits a fused
-    /// cone as a single `Element`, so the scheduler still only sees one device
-    /// at the event boundary — no fused-specific arm lives in this method.
-    pub fn run_digital_at(&mut self, t: f64) -> crate::core::result::Result<()> {
-        self.run_digital_at_with_analog(t, &[])
-    }
-
-    /// Run digital evaluation at time `t`, supplying the latest analog
-    /// solution to elements that declared [`ElementCapabilities::SAMPLES_ANALOG`].
-    /// Pass `&[]` when no element in the circuit samples analog (the common
-    /// case for pure-digital circuits).
-    pub fn run_digital_at_with_analog(
-        &mut self,
-        t: f64,
-        analog_slice: &[f64],
-    ) -> crate::core::result::Result<()> {
-        let limits = piperine_digital_solver::limits::DigitalLimits::default();
-        match &self.digital_topology {
-            Some(topo) => self.digital_state.evaluate_dag_ordered(
-                t,
-                &mut self.devices,
-                topo,
-                limits,
-                analog_slice,
-            ),
-            None => self.digital_state.evaluate_until_stable(
-                t,
-                &mut self.devices,
-                limits,
-                analog_slice,
-            ),
-        }
-        .map_err(Self::digital_failure)
-    }
-
-    /// The owner's error for a digital scheduler failure: `DigitalError`'s
-    /// `Display` text, unchanged, under the digital domain.
-    fn digital_failure(e: piperine_digital_solver::error::DigitalError) -> Error {
-        Error::simple(SolverDomain::Digital, e.to_string())
-    }
-
-    /// Update all devices' cached analog voltages from a solution vector,
-    /// then run digital evaluation at time `t`. Used by the DC solver's
-    /// mixed-signal convergence loop: after the analog solve converges, the
-    /// digital devices need to see the analog voltages (A2D bridge) and their
-    /// register updates need to propagate back (D2A bridge).
-    ///
-    /// Returns `true` if any digital output net changed value.
-    pub fn accept_and_run_digital(&mut self, solution: &[f64], t: f64) -> crate::core::result::Result<bool> {
-        let state = self.build_accept_state(solution);
-        let before = self.digital_state.nets.clone();
-        self.seed_digital_from_accept_hooks(&state, t);
-        self.run_digital_at_with_analog(t, solution)?;
-        // T23/DVT-27: the dynamic digital subscriber's post-settle
-        // dispatch — strictly after the scheduler above reached
-        // quiescence, using the final settled net values. See
-        // `Element::on_digital_settled`'s doc header for the full
-        // contract (settled-only, no new EventKind, D11 still holds).
-        for device in self.devices.iter_mut() {
-            device.on_digital_settled(&self.digital_state.nets, t);
-        }
-        Ok(before != self.digital_state.nets)
-    }
-
-    /// Build the 1-row analog state buffer the accept hooks read from a
-    /// solution slice.
-    fn build_accept_state(&self, solution: &[f64]) -> CircularArrayBuffer2<f64> {
-        let mut state = CircularArrayBuffer2::new(1, solution.len());
-        let row = ndarray::Array1::from_vec(solution.to_vec());
-        state.push(&row.view());
-        state
-    }
-
-    /// Run every device's analog accept hook at time `t`, seeding the digital
-    /// event queue. The caller must run the scheduler (`run_digital_at`)
-    /// afterward.
-    fn seed_digital_from_accept_hooks(&mut self, state: &CircularArrayBuffer2<f64>, t: f64) {
-        use std::cmp::Reverse;
-        let before = self.digital_state.nets.clone();
-        let mut seed_queue = std::collections::BinaryHeap::new();
-        let mut seq = 0u64;
-        for (i, device) in self.devices.iter_mut().enumerate() {
-            let mut sink =
-                piperine_digital_solver::interface::QueueSink::new(&mut seed_queue, t, i, &mut seq);
-            device.accept_timestep(state, t, &before, &mut sink);
-        }
-        for Reverse(event) in seed_queue {
-            self.digital_state.schedule(event);
-        }
-    }
-
     // ── Live mutation ────────────────────────────────────────────────────────
     //
-    // The MD-18 restamp path + per-solve hooks: parameter writes on the built
-    // circuit, per-iteration convergence steering, and the setup/update
-    // lifecycle the drivers re-enter each solve.
+    // Host writes to the bound device instances, and the per-run temperature.
 
     pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::core::result::Result<()> {
         if self.is_set_up { return Ok(()); }
         if let Some(bound) = self.abi.as_mut() {
             bound.set_temperature(ctx.tolerances.temperature);
         }
-        for d in self.devices.iter_mut() { d.setup(ctx)?; }
-        // ABI-19: seed every element with the run's nominal temperature during
-        // setup, after `allocate_unknowns` (run in `CircuitBuilder::build`)
-        // and before the first `load_*`. Subsequent runs short-circuit on
-        // `is_set_up`; a temperature sweep re-seeds through `set_temperature`.
-        self.set_temperature(ctx.tolerances.temperature);
         self.is_set_up = true;
         Ok(())
     }
 
-    pub fn update_all(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
-        self.devices.iter_mut().for_each(|d| d.update(state, context));
-    }
-
-    /// Set the instance temperature on every element (ABI-19/20): each
-    /// element's `set_temperature` recomputes its temperature-dependent
-    /// constants; the next load restamps naturally. The return value is
-    /// always [`Invalidation::Temperature`](crate::abi::Invalidation::Temperature) — temperature changes never
-    /// leave the matrix shape untouched at a higher level than restamp
-    /// (a structural `Rebuild` from a temperature change is the same
-    /// fail-loud path as a parameter `Rebuild`, surfaced by `set_param`).
-    /// Default no-op devices (no `set_temperature` override) are
-    /// unaffected — they keep reading `$temperature` at eval time
-    /// (backward compatible).
-    pub fn set_temperature(&mut self, t: f64) -> crate::core::introspect::Invalidation {
+    /// Sets the run temperature (ABI-20): the `TEMPERATURE` global holds `t`
+    /// from the next analysis on, and a device that reads it recomputes.
+    pub fn set_temperature(&mut self, t: f64) {
         if let Some(bound) = self.abi.as_mut() {
             bound.set_temperature(t);
         }
-        for d in self.devices.iter_mut() {
-            d.set_temperature(t);
-        }
-        crate::core::introspect::Invalidation::Temperature
-    }
-
-    /// Solver-level restamp path (MD-18): set a parameter on the built
-    /// element labeled `label` — no re-elaboration, no re-compilation. The
-    /// element reports how much solve state the change invalidates
-    /// (numeric-only changes are [`Invalidation::Restamp`](crate::abi::Invalidation::Restamp)); a sweep loop
-    /// re-runs the analysis on the same compiled circuit. Unknown labels
-    /// and parameter errors are loud.
-    pub fn set_element_param(
-        &mut self,
-        label: &str,
-        param: &str,
-        value: crate::core::introspect::Value,
-    ) -> crate::core::result::Result<crate::core::introspect::Invalidation> {
-        let device = self.devices.iter_mut().find(|d| d.name() == label).ok_or_else(|| {
-            piperine_analog_solver::error::Error::simple(
-                piperine_analog_solver::error::SolverDomain::Element,
-                format!("no element labeled `{label}`"),
-            )
-        })?;
-        // Declared-bounds gate (edge case: out-of-bounds set fails loud, no
-        // partial apply): a numeric value outside the parameter's
-        // [`ParamDescriptor`](crate::core::introspect::ParamDescriptor)
-        // bounds is rejected here, before the element sees the write.
-        if let Some(desc) = device.list_params().into_iter().find(|d| d.name == param)
-            && let Some(v) = value.as_real()
-            && !desc.bounds.contains(v)
-        {
-            let lo = desc.bounds.min.map_or("-inf".to_string(), |m| m.to_string());
-            let hi = desc.bounds.max.map_or("inf".to_string(), |m| m.to_string());
-            return Err(piperine_analog_solver::error::Error::simple(
-                piperine_analog_solver::error::SolverDomain::Element,
-                format!(
-                    "`{label}`: value {v} is out of bounds for parameter `{param}` \
-                     (declared bounds [{lo}, {hi}])"
-                ),
-            ));
-        }
-        let outcome = device.set_param(param, value);
-        outcome.map_err(|e| {
-            // Unknown-parameter writes list what the element does declare —
-            // the caller sees the valid names instead of a bare rejection.
-            let detail = match &e {
-                crate::core::introspect::ParamError::Unknown(_) => {
-                    let names: Vec<String> =
-                        device.list_params().into_iter().map(|p| p.name).collect();
-                    if names.is_empty() {
-                        format!("`{label}`: {e}; element declares no writable parameters")
-                    } else {
-                        format!("`{label}`: {e}; available parameters: {}", names.join(", "))
-                    }
-                }
-                _ => format!("`{label}`: {e}"),
-            };
-            piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Element, detail)
-        })
     }
 
     /// Sets `param` of the device instance at `path` to `value` between
@@ -482,7 +188,7 @@ impl CircuitInstance {
     ) -> crate::core::result::Result<()> {
         use piperine_digital_solver::abi::engine::Shadow;
         let bound = self.abi.as_mut().ok_or_else(|| {
-            Error::simple(SolverDomain::Element, "`set` addresses device instances; this circuit has none")
+            Error::simple(SolverDomain::Device, "`set` addresses device instances; this circuit has none")
         })?;
         let (net, bytes) = bound.param_bytes(path, param, &value)?;
         let shadow = bound
@@ -493,7 +199,7 @@ impl CircuitInstance {
         match shadow {
             Shadow::Refused { check } => {
                 return Err(Error::simple(
-                    SolverDomain::Element,
+                    SolverDomain::Device,
                     format!("`{path}.{param}`: the write is refused, check {check} is false"),
                 ));
             }
@@ -534,7 +240,7 @@ impl CircuitInstance {
         for node in &nodes {
             let AnalogVariable::Node(id) = node.variable().as_ref() else { unreachable!("filtered to nodes") };
             if netlist.connect_node(id.clone()).idx() != node.idx() {
-                return Err(Error::simple(SolverDomain::Element, "a node was allocated after bind; cannot bind again"));
+                return Err(Error::simple(SolverDomain::Device, "a node was allocated after bind; cannot bind again"));
             }
         }
         self.abi = None;
@@ -551,43 +257,6 @@ impl CircuitInstance {
         Ok(())
     }
 
-    /// Steer the Newton guess with every device's structured limiting
-    /// feedback ([`AnalogDevice::limiting_report`](crate::core::element::AnalogDevice::limiting_report)):
-    /// each report's `limited_value` overwrites its `net` before the
-    /// convergence test (ABI-10). The DC and transient systems delegate here
-    /// each iteration.
-    pub fn apply_limiting_reports(&self, mut guess: ndarray::ArrayViewMut1<f64>) {
-        use piperine_analog_solver::math::linear::AsIndex;
-        for dev in &self.devices {
-            if let Some(report) = dev.limiting_report()
-                && let Some(i) = report.net.as_index()
-                && i < guess.len()
-            {
-                guess[i] = report.limited_value;
-            }
-        }
-    }
-
-    /// [`Element::start_analysis`] on every device — LRM §5.10.2's
-    /// QUALIFIED `@(initial_step("dc", ...))` form (LRMW2-08). Called from
-    /// [`Self::dc`]/[`Self::ac`]/[`Self::transient`] before the analysis
-    /// driver runs its first stamp.
-    pub fn start_analysis(&mut self, ctx: &Context, analysis: crate::analyses::AnalysisKind) {
-        for device in self.devices.iter_mut() {
-            device.start_analysis(ctx, analysis);
-        }
-    }
-
-    /// [`Element::finish_analysis`] on every device — LRM §5.10.2's
-    /// `@(final_step)` (LRMW2-08). Called by each analysis driver
-    /// (`analyses::dc::DcSolver::solve`, `analyses::transient::
-    /// TransientSolver::solve`) right after its last accepted point.
-    pub fn finish_analysis(&mut self, ctx: &Context, analysis: crate::analyses::AnalysisKind) {
-        for device in self.devices.iter_mut() {
-            device.finish_analysis(ctx, analysis);
-        }
-    }
-
     // ── Construction ─────────────────────────────────────────────────────────
     //
     // Construction stays in [`CircuitBuilder`](crate::core::builder::CircuitBuilder):
@@ -595,31 +264,12 @@ impl CircuitInstance {
     // constructor beyond the builder's output below and documented re-entry
     // (analyses re-enter solve state via e.g.
     // [`TransientSolver::with_initial_state`](crate::analyses::transient::TransientSolver::with_initial_state);
-    // the MD-18 restamp path re-enters via [`set_element_param`](Self::set_element_param)
+    // the MD-18 restamp path re-enters via [`set`](Self::set)
     // + a re-run of the analysis — never via a new constructor).
 
-    /// Build a `CircuitInstance` from pre-built devices and a netlist.
-    /// PHDL modules into devices before handing them to the solver.
-    pub fn from_devices_and_netlist(
-        title: impl Into<String>,
-        devices: Vec<Box<dyn Element>>,
-        netlist: Netlist,
-    ) -> Self {
-        Self {
-            title: title.into(),
-            devices,
-            digital_topology: None,
-            digital_state: DigitalState::new(0),
-            netlist,
-            abi: None,
-            recipe: None,
-            is_set_up: false,
-        }
-    }
-}
-
-impl Drop for CircuitInstance {
-    fn drop(&mut self) {
-        for d in self.devices.iter_mut() { d.destroy(); }
+    /// Build a `CircuitInstance` over a netlist; the builder binds the device
+    /// instances into it.
+    pub(crate) fn from_netlist(title: impl Into<String>, netlist: Netlist) -> Self {
+        Self { title: title.into(), netlist, abi: None, recipe: None, is_set_up: false }
     }
 }

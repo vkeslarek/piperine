@@ -9,7 +9,7 @@ use crate::interface::DigitalParticipant;
 // ---------------------------------------------------------------------------
 
 pub struct DigitalTopology {
-    /// Element indices (into the original `digital_runtimes` vec) in topological order.
+    /// Device indices (into the original `digital_runtimes` vec) in topological order.
     pub topo_order: Vec<usize>,
     /// Back edges as (src_topo_pos, dst_topo_pos) where src > dst.
     /// When the device at src_topo_pos changes its outputs, restart from dst_topo_pos.

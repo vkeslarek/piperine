@@ -213,7 +213,7 @@ fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
         .and_then(|mut dc| dc.solve())
         .map(|_| ())
         .expect_err("§15/§7.3.2.1: a NaN contribution must fail, never converge");
-    assert_rule(&err, SolverDomain::Element, "§7.3.2.1");
+    assert_rule(&err, SolverDomain::Device, "§7.3.2.1");
     let text = err.to_string();
     assert!(
         text.contains("instance `nan`"),

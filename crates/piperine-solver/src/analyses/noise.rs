@@ -1,8 +1,7 @@
 //! Noise (`.noise`) — the noise vocabulary (`Noise`/`NoiseKind`) and options,
 //! plus the adjoint-method driver integrating per-source contributions over
-//! the frequency sweep. A device reports its PSD through
-//! [`Element::noise_current_psd`](crate::core::element::AnalogDevice); this
-//! module owns the vocabulary that method returns, not a contract of its own.
+//! the frequency sweep. A device declares each source as a `NOISE` input of its
+//! shape; the assembly reports its columns and PSDs.
 //!
 //! There is no per-analysis `NoiseContext`: MD-03 is superseded
 //! (p6-cleanup-architecture D2). The sweep, output/reference nodes and input
@@ -11,7 +10,7 @@
 use piperine_analog_solver::device::Ambient;
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
-use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
+use crate::analyses::ac::AcSweepAnalysisOptions;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
@@ -165,42 +164,15 @@ impl<'a> NoiseSolver<'a> {
         let mut psd_map: HashMap<(String, String), (NoiseKind, Vec<f64>)> = HashMap::new();
 
         for (i, &f) in frequencies.iter().enumerate() {
-            let ac_ctx = AcAnalysisContext { frequency: f };
-
             let stamps = Self::assemble_linearized(self.circuit, &self.dc_point, f, &self.context)?;
             let adjoint_sol = self.solve_adjoint_system(stamps)?;
 
+            // Output density `Σ |H·b|²·PSD` over the assembly's noise columns.
             let mut step_density = 0.0;
-            if self.circuit.abi.is_some() {
-                // Output density `Σ |H·b|²·PSD` over the assembly's noise columns.
-                let columns = self.device_columns(f, &adjoint_sol)?;
-                for (element, source, kind, val) in columns {
-                    step_density += val;
-                    Self::record(&mut psd_map, (element, source), kind, val, i, frequencies.len());
-                }
-            }
-            for source in &mut self.circuit.devices {
-                let noises = source.noise_current_psd(&self.dc_point, &ac_ctx);
-                for (idx, n) in noises.into_iter().enumerate() {
-                    let z_p = n.terminals.0
-                        .idx()
-                        .map(|i| adjoint_sol[i])
-                        .unwrap_or_default();
-                    let z_n = n.terminals.1
-                        .idx()
-                        .map(|i| adjoint_sol[i])
-                        .unwrap_or_default();
-                    let gain_sq = (z_p - z_n).norm_sqr();
-
-                    let val = gain_sq * n.value;
-                    step_density += val;
-
-                    let key = (
-                        source.name().to_string(),
-                        n.name.clone().unwrap_or_else(|| idx.to_string())
-                    );
-                    Self::record(&mut psd_map, key, n.kind, val, i, frequencies.len());
-                }
+            let columns = self.device_columns(f, &adjoint_sol)?;
+            for (element, source, kind, val) in columns {
+                step_density += val;
+                Self::record(&mut psd_map, (element, source), kind, val, i, frequencies.len());
             }
             out_noise_sq.push(step_density);
             for (_, entry) in psd_map.iter_mut() {
@@ -331,8 +303,8 @@ impl<'a> NoiseSolver<'a> {
 
     /// Assembles linearized circuit stamps at a given frequency.
     ///
-    /// Uses the DC operating point to get small-signal parameters from all
-    /// AC-capable devices (resistors, capacitors, inductors, diodes, etc.).
+    /// Uses the DC operating point to get the small-signal matrix of the
+    /// device assembly.
     ///
     /// # Arguments
     /// * `circuit` - Circuit instance
@@ -348,26 +320,16 @@ impl<'a> NoiseSolver<'a> {
         f_hz: f64,
         context: &Context,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
-        if circuit.abi.is_some() {
-            let op = crate::analyses::ac::operating_vector(circuit, dc_point);
-            let amb = Ambient {
-                time: 0.0,
-                freq: f_hz,
-                is_static: false,
-                gmin: context.tolerances.gmin,
-                source_scale: 1.0,
-            };
-            let bound = circuit.abi.as_mut().expect("a circuit of devices");
-            return Ok(bound.analog.assemble_ac(&op, amb)?.0);
-        }
-        let ac_ctx = AcAnalysisContext {
-            frequency: f_hz,
+        let op = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let amb = Ambient {
+            time: 0.0,
+            freq: f_hz,
+            is_static: false,
+            gmin: context.tolerances.gmin,
+            source_scale: 1.0,
         };
-        let mut all_stamps = Vec::new();
-        for ac in &mut circuit.devices {
-            all_stamps.extend(ac.load_ac(dc_point, &ac_ctx, context));
-        }
-        Ok(all_stamps)
+        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        Ok(bound.analog.assemble_ac(&op, amb)?.0)
     }
 
     /// Resolves output and reference node identifiers to circuit references.
@@ -413,149 +375,5 @@ impl<'a> NoiseSolver<'a> {
     /// Integrated RMS noise voltage (V)
     fn integrate_noise(&self, freqs: &[f64], psd: &[f64]) -> f64 {
         piperine_analog_solver::math::integration::Integrator::trapezoid(freqs, psd).sqrt()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
-    use piperine_digital_solver::interface::DigitalDevice;
-    use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
-    use piperine_analog_solver::math::linear::Stamp;
-    use num_complex::Complex64;
-    use crate::analyses::ac::{AcSweepAnalysisOptions, AcAnalysisContext};
-    use crate::prelude::DcAnalysisResult;
-    use crate::analyses::noise::{Noise, NoiseKind};
-    use crate::analyses::Context;
-
-    struct NoisyResistor {
-        name: String,
-        r: f64,
-        n1: AnalogReference,
-        n2: AnalogReference,
-    }
-
-    impl AnalogDevice for NoisyResistor {
-        fn load_dc(
-            &mut self,
-            _state: &crate::abi::DcAnalysisState<'_>,
-            _ctx: &Context,
-        ) -> Vec<Stamp<AnalogReference, f64>> {
-            let g = 1.0 / self.r;
-            vec![
-                Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-                Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-                Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-                Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-            ]
-        }
-
-        fn load_ac(
-            &mut self,
-            _dc_op: &DcAnalysisResult,
-            _ac_ctx: &AcAnalysisContext,
-            _context: &Context,
-        ) -> Vec<Stamp<AnalogReference, Complex64>> {
-            let g = Complex64::new(1.0 / self.r, 0.0);
-            vec![
-                Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-                Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-                Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-                Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-            ]
-        }
-
-        fn noise_current_psd(
-            &mut self,
-            _dc_point: &DcAnalysisResult,
-            _ac_context: &AcAnalysisContext,
-        ) -> Vec<Noise> {
-            let thermal_psd = 4.0 * 1.380649e-23 * 300.0 / self.r;
-            vec![
-                Noise::new((self.n1.clone(), self.n2.clone()), thermal_psd).named("thermal", NoiseKind::Thermal),
-                Noise::new((self.n1.clone(), self.n2.clone()), 1e-24).named("flicker", NoiseKind::Flicker)
-            ]
-        }
-    }
-
-    impl DigitalDevice for NoisyResistor {}
-
-    impl Introspect for NoisyResistor {}
-
-    impl Element for NoisyResistor {
-        fn name(&self) -> &str { &self.name }
-
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC | ElementCapabilities::EMITS_NOISE
-        }
-    }
-
-    #[test]
-    fn test_per_source_noise_reporting_and_conservation() {
-        let mut netlist = Netlist::new();
-        let top = netlist.connect_node(NodeIdentifier::Anonymous(1));
-        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
-
-        let r1 = NoisyResistor { name: "r1".to_string(), r: 1000.0, n1: top.clone(), n2: gnd.clone() };
-        let r2 = NoisyResistor { name: "r2".to_string(), r: 1000.0, n1: top.clone(), n2: gnd.clone() };
-
-        let elements: Vec<Box<dyn Element>> = vec![Box::new(r1), Box::new(r2)];
-        let mut circuit = CircuitInstance::from_devices_and_netlist("test", elements, netlist);
-
-        let ctx = Context::default();
-        let mut dc = circuit.dc(ctx).unwrap();
-        let _dc_res = dc.solve().unwrap();
-
-        let sweep = AcSweepAnalysisOptions {
-            start_frequency: 1.0,
-            stop_frequency: 100.0,
-            steps: 10,
-            logarithmic: false,
-        };
-
-        let opts = NoiseAnalysisOptions {
-            sweep_options: sweep,
-            output_node: NodeIdentifier::Anonymous(1),
-            reference_node: NodeIdentifier::Gnd,
-            input_source_name: None,
-        };
-
-        let mut solver = circuit.noise(opts, Context::default()).unwrap();
-        let res = solver.solve().unwrap();
-
-        let contribs = res.contributions();
-        assert_eq!(contribs.len(), 4);
-
-        let mut found_thermal = 0;
-        let mut found_flicker = 0;
-        for c in contribs {
-            if c.source == "thermal" && c.kind == NoiseKind::Thermal {
-                found_thermal += 1;
-                assert_eq!(c.psd.len(), 10);
-            }
-            if c.source == "flicker" && c.kind == NoiseKind::Flicker {
-                found_flicker += 1;
-                assert_eq!(c.psd.len(), 10);
-            }
-        }
-        assert_eq!(found_thermal, 2);
-        assert_eq!(found_flicker, 2);
-
-        for i in 0..res.frequencies.len() {
-            let sum_psd: f64 = contribs.iter().map(|c| c.psd[i]).sum();
-            let total = res.out_noise_sq[i];
-
-            let err = (sum_psd - total).abs();
-            let rel_err = if total > 1e-30 { err / total } else { err };
-            assert!(rel_err < 1e-9, "freq idx {}, sum {} != total {}", i, sum_psd, total);
-        }
-
-        let mut manual_int = 0.0;
-        for i in 0..res.frequencies.len() - 1 {
-            let df = res.frequencies[i + 1] - res.frequencies[i];
-            manual_int += 0.5 * df * (res.out_noise_sq[i] + res.out_noise_sq[i + 1]);
-        }
-        assert!((res.integrated_noise - manual_int.sqrt()).abs() < 1e-12);
     }
 }

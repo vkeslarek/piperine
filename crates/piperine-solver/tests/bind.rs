@@ -14,10 +14,6 @@ use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port, Site};
 use piperine_solver::prelude::{AnalogReference, CircuitBuilder, Tolerances};
 
-#[allow(dead_code)]
-#[path = "helpers/mod.rs"]
-mod helpers;
-
 const R_DEFAULT: [u8; 8] = 1.0e3_f64.to_le_bytes();
 
 /// pins: r=0 (PARAM F64, default 1e3); a=1 (PORT, abstol 1e-9); b=2 (PORT, abstol 4e-10);
@@ -220,17 +216,6 @@ fn a_discrete_net_an_analog_function_reads_is_flagged() {
     assert!(net("named:k").analog_reads);
     // Each flagged net has a slot in the analog copy.
     assert_eq!(bound.names.slot_nets.len(), 4, "code, r, temp and k");
-}
-
-#[test]
-fn a_circuit_mixing_elements_and_devices_is_refused() {
-    let mut b = CircuitBuilder::new("mixed");
-    let n = b.node("n");
-    b.session_param("k", ParamValue::Real(1.0));
-    b.device(probe(), "x1", &[], &[Port::Node(n.clone()), Port::Node(n)]);
-    b.element(Box::new(helpers::D2ADevice::default()));
-    let err = b.build().err().expect("a mix").to_string();
-    assert!(err.contains("elements") && err.contains("devices"), "{err}");
 }
 
 #[test]

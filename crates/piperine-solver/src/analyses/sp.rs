@@ -28,7 +28,7 @@
 
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
-use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
+use crate::analyses::ac::AcSweepAnalysisOptions;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::error::{Error, SolverDomain};
@@ -89,25 +89,19 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for SpSystem<'a> {
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
-        let ac_ctx = AcAnalysisContext { frequency: self.frequency };
         let mut stamps = Vec::new();
-        if self.circuit.abi.is_some() {
-            let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
-            let amb = piperine_analog_solver::device::Ambient {
-                time: 0.0,
-                freq: self.frequency,
-                is_static: false,
-                gmin: self.context.tolerances.gmin,
-                source_scale: 1.0,
-            };
-            let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
-            let (matrix, rhs) = bound.analog.assemble_ac(&op, amb)?;
-            stamps.extend(matrix);
-            stamps.extend(rhs);
-        }
-        for dev in &mut self.circuit.devices {
-            stamps.extend(dev.load_ac(&self.dc_point, &ac_ctx, &self.context));
-        }
+        let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
+        let amb = piperine_analog_solver::device::Ambient {
+            time: 0.0,
+            freq: self.frequency,
+            is_static: false,
+            gmin: self.context.tolerances.gmin,
+            source_scale: 1.0,
+        };
+        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let (matrix, rhs) = bound.analog.assemble_ac(&op, amb)?;
+        stamps.extend(matrix);
+        stamps.extend(rhs);
         for (i, reference) in self.ports.iter().enumerate() {
             let g0 = Complex::new(1.0 / self.z0[i], 0.0);
             stamps.push(Stamp::Matrix(reference.clone(), reference.clone(), g0));
@@ -252,7 +246,6 @@ mod tests {
     use piperine_analog_solver::netlist::{Netlist, NodeIdentifier};
     use crate::analyses::test_devices as td;
     use crate::core::builder::CircuitBuilder;
-    use crate::core::element::Element;
     use num_complex::Complex64;
 
     // ── test doubles: `analyses/test_devices.rs` ────────────────────────
@@ -402,8 +395,7 @@ mod tests {
     fn zero_ports_fails_loud() {
         let mut netlist = Netlist::new();
         let _gnd = netlist.connect_node(NodeIdentifier::Gnd);
-        let devices: Vec<Box<dyn Element>> = vec![];
-        let mut circuit = CircuitInstance::from_devices_and_netlist("empty", devices, netlist);
+        let mut circuit = CircuitInstance::from_netlist("empty", netlist);
         let options = SpOptions {
             ports: vec![],
             sweep: AcSweepAnalysisOptions { start_frequency: 1e6, stop_frequency: 1e6, steps: 1, logarithmic: false },
