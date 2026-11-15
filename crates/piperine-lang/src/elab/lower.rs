@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BinaryOp, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Branch, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
@@ -25,6 +25,8 @@ pub(super) struct Scope {
     pub(super) local_index: BTreeMap<DeclId, u32>,
     pub(super) limits: Vec<Site>,
     pub(super) stims: Vec<Site>,
+    /// The branches the contributions name, in order of first contribution.
+    pub(super) branches: Vec<Branch>,
     /// How many `if` branches and closure bodies the code being lowered sits in: a site there
     /// is not unconditional, which `Ir::check` and the model both forbid.
     pub(super) nesting: u32,
@@ -34,7 +36,7 @@ pub(super) struct Scope {
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), nesting: 0, limit_name: None }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, limit_name: None }
     }
 }
 

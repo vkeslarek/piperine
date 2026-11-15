@@ -68,7 +68,7 @@ impl Elaboration<'_, '_> {
             origin: self.locator.decl(module),
             params: param_specs,
             nodes: node_specs,
-            branches: Vec::new(),
+            branches: scope.branches,
             limits: scope.limits,
             stims: scope.stims,
             locals: scope.locals,

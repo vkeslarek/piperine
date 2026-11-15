@@ -5,7 +5,6 @@ use piperine_ir::{Env, Expr, ExprId as LoweredExpr, Origin, Site, StmtId as Lowe
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::msl::Span;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 impl Elaboration<'_, '_> {
@@ -124,11 +123,5 @@ impl Elaboration<'_, '_> {
                 None
             }
         }
-    }
-
-    /// A contribution statement `lhs +> rhs`; `false` after a diagnostic.
-    pub(super) fn lower_contribution(&mut self, scope: &mut Scope, _out: &mut Vec<LoweredStmt>, _lhs: ExprId, _rhs: ExprId, span: Span) -> bool {
-        self.unsupported(scope.file, span, "a contribution");
-        false
     }
 }

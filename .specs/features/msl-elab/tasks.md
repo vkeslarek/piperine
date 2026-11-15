@@ -276,14 +276,14 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] The diode prints `b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)`
-- [ ] `a - (b + ddt(x))` gives a direct addend `a - b` and a negated `ddt` addend `x`; `-ddt(x)` and `i(n, p) +> ddt(x)` both negate
-- [ ] `E0241` and `E0415` each asserted with its span
-- [ ] A `ddt` that is not a whole top-level leaf of a flow contribution is refused (the code and message land in T8's table)
-- [ ] The five device bodies, printed in structural form, equal `crates/piperine-ir/tests/golden/*.txt` byte for byte
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `a_branch_is_one_unordered_pair_with_its_kind`, `a_sum_splits_into_direct_and_ddt_addends`, `a_reversed_pair_negates_its_addends`, `a_branch_from_a_node_to_itself_is_e0241`, `potential_and_flow_on_one_branch_is_e0415`, `a_single_addend_is_one_direct_addend`
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] The diode prints `b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)`
+- [x] `a - (b + ddt(x))` gives a direct addend `a - b` and a negated `ddt` addend `x`; `-ddt(x)` and `i(n, p) +> ddt(x)` both negate
+- [x] `E0241` and `E0415` each asserted with its span
+- [x] A `ddt` that is not a whole top-level leaf of a flow contribution is refused (the code and message land in T8's table)
+- [x] The five device bodies, printed in structural form, equal `crates/piperine-ir/tests/golden/*.txt` byte for byte
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `a_branch_is_one_unordered_pair_with_its_kind`, `a_sum_splits_into_direct_and_ddt_addends`, `a_reversed_pair_negates_its_addends`, `a_branch_from_a_node_to_itself_is_e0241`, `potential_and_flow_on_one_branch_is_e0415`, `a_single_addend_is_one_direct_addend`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -497,7 +497,7 @@ Proof: run analog | test a_single_addend_is_one_direct_addend ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** 2026-11-15 batch 1 (T1-T6, Sonnet) done 57fb5f9b; batch 2 (T7, Opus) in ../piperine-msl-elab
+**Dispatched:** 2026-11-15 batch 1 (T1-T6, Sonnet) done 57fb5f9b; batch 2 (T7, Opus) done
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---

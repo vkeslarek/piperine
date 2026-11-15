@@ -11,6 +11,7 @@
 mod body;
 mod children;
 mod consts;
+mod contribute;
 mod diagnose;
 mod elaborator;
 mod analog;
