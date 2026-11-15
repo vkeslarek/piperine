@@ -209,15 +209,15 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Test `module_pointers_call_the_device` creates, evaluates and destroys a counting device through the raw pointers (C9)
-- [ ] Test `destroy_drops_the_device_and_releases_the_shape` observes the drop and the `Arc` count (C10)
-- [ ] Test `a_panic_is_a_fault_with_its_message` passes and the test process does not abort (C11)
-- [ ] Test `a_fault_carries_its_code_and_a_cut_message` passes with a 300-byte message that has a multi-byte character at the cut (C12)
-- [ ] Test `commit_reaches_the_host_once` records the arguments of `Host.commit` (C14); `an_event_statement_commits_zero_bytes` and `a_refused_commit_is_an_error` pass
-- [ ] Test `finish_is_a_status` passes (C15)
-- [ ] Test `a_value_for_a_non_param_pin_is_refused` passes
-- [ ] `library(..)` returns a `Library` with `size = size_of::<Library>()` and `minor = MINOR`
-- [ ] Gate: full
+- [x] Test `module_pointers_call_the_device` creates, evaluates and destroys a counting device through the raw pointers (C9)
+- [x] Test `destroy_drops_the_device_and_releases_the_shape` observes the drop and the `Arc` count (C10)
+- [x] Test `a_panic_is_a_fault_with_its_message` passes and the test process does not abort (C11)
+- [x] Test `a_fault_carries_its_code_and_a_cut_message` passes with a 300-byte message that has a multi-byte character at the cut (C12)
+- [x] Test `commit_reaches_the_host_once` records the arguments of `Host.commit` (C14); `an_event_statement_commits_zero_bytes` and `a_refused_commit_is_an_error` pass
+- [x] Test `finish_is_a_status` passes (C15)
+- [x] Test `a_value_for_a_non_param_pin_is_refused` passes
+- [x] `library(..)` returns a `Library` with `size = size_of::<Library>()` and `minor = MINOR`
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
