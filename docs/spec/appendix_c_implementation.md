@@ -60,6 +60,7 @@ Notes on single rows:
 4. **Contributions.** The reactive part of a contribution is what lies under `ddt`. Its argument is a state of the jump rule (§15.2.1).
 5. **Switch branches.** When the selector depends on params only, the kind is fixed at elaboration and a zero-potential branch merges its nodes (§11 rule 3). Otherwise the branch keeps its flow unknown and the kind is chosen per solve.
 6. **`settle` commits.** The solver reads them before it takes the step, so the solve that arrives at the next time point already uses them (§15).
+7. **Records.** An `emit!` record travels as a commit to a quiet pin: it is delivered stamped with the instant it was made and adds no microstep (§19 rule 1).
 
 ## C.2 Reference implementation
 

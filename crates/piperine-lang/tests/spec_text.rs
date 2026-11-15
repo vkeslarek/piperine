@@ -1199,3 +1199,11 @@ fn continuation_variables_are_core_functions() {
     }
     assert!(flat(&s).contains("names no session parameter of `simparam`"), "{s}");
 }
+
+#[test]
+fn records_travel_as_quiet_commits() {
+    let c = spec("appendix_c_implementation.md");
+    let s = flat(&section(&c, "## C.1 "));
+    assert!(s.contains("quiet"), "{s}");
+    assert!(s.contains("no microstep"), "{s}");
+}

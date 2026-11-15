@@ -213,10 +213,10 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] A numbered note of C.1 says an `emit!` record travels as a commit to a quiet pin, is delivered stamped with the instant it was made, and adds no microstep
-- [ ] §19 rule 1 is unchanged
-- [ ] Test `records_travel_as_quiet_commits` asserts `quiet` and `no microstep` inside the `## C.1` section
-- [ ] Gate: build (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] A numbered note of C.1 says an `emit!` record travels as a commit to a quiet pin, is delivered stamped with the instant it was made, and adds no microstep
+- [x] §19 rule 1 is unchanged
+- [x] Test `records_travel_as_quiet_commits` asserts `quiet` and `no microstep` inside the `## C.1` section
+- [x] Gate: build (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: build
