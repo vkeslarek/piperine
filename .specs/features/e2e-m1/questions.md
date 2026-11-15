@@ -1,8 +1,12 @@
-# M1: what is the user's to decide
+# M1: what was the user's to decide
+
+**Answered 2026-11-15. Every question took the recommended option (a).** The user's choice labels, verbatim: Q1 "Add Factory to abi (Recommended)"; Q2 "Fail, opt-out env (Recommended)"; Q3 "Old contract, 1e-12 A floor (Recommended)"; Q4 to Q8 "Accept all (Recommended)". The answers are recorded in `.specs/features/codegen/context.md` and in each spec's assumptions table. The text below is the question as it was asked.
 
 Eight questions, ordered by how much work each answer moves. Each spec is written with the recommended answer, so a "yes" to a recommendation changes nothing, and any other answer names the files to edit. Everything not listed here was closed from code and spec evidence; `.specs/features/codegen/context.md` lists what and where.
 
 ## Q1. May `piperine-abi` gain a constructor for a module that carries data?
+
+**Decided: (a).**
 
 **Why it is asked.** The generic interpreter device is one Rust type serving every IR body. `Device::prototype()` and `Device::create()` are static functions, and `thunk::module::<D>` sets `Module.data` to null (`crates/piperine-abi/src/thunk.rs:28`). So the `Device` trait cannot express "one type, many modules", although abi.md §3 reserves `data` for exactly this ("an interpreter's IR"). It touches a finished crate and the Rust side of abi.md §7; the `#[repr(C)]` contract does not change.
 
@@ -16,6 +20,8 @@ Blocks: `ir-interp` INT-08, and through it the whole slice.
 
 ## Q2. What does a parity test do when ngspice is not installed?
 
+**Decided: (a).**
+
 The old harness passed silently. `ci.yml` does not install ngspice today.
 
 | Option | Consequence |
@@ -28,6 +34,8 @@ Under every option the MSL side (build, elaborate, solve) still runs and must su
 
 ## Q3. Which numbers go in the tolerance contract?
 
+**Decided: (a).**
+
 | Option | Consequence |
 | --- | --- |
 | **(a) The old contract with the current floor corrected: 1e-3 relative everywhere; 1e-6 V; 1e-12 A; AC magnitude floor 1e-12; AC phase 1e-4 rad** (recommended) | the old rationale said "ngspice's abstol for currents" and wrote 1e-9; ngspice's `abstol` is 1e-12, and with `gmin` in the diode model the reverse region agrees far below it |
@@ -37,6 +45,8 @@ Under every option the MSL side (build, elaborate, solve) still runs and must su
 Affects: `msl-parity` PAR-05.
 
 ## Q4. Is the M1 device library a fixture or the start of a library?
+
+**Decided: (a).**
 
 `std` has no `Resistor`, `Capacitor`, source or `Diode`: it holds natures, limiters and operators. M1 needs the five models somewhere.
 
@@ -50,6 +60,8 @@ Affects: `msl-parity` PAR-01. A model library is its own feature after M1 under 
 
 ## Q5. Which codes carry "not supported yet" and "mismatched types"?
 
+**Decided: (a).**
+
 The specification gives every error a code `Eppnn` owned by a part, and has none for a construct the compiler does not handle yet, nor for a plain type mismatch (`let x: bool = 1.0;`): §0.4 leaves that to Rust.
 
 | Option | Consequence |
@@ -62,6 +74,8 @@ Affects: `msl-typeck` TYP-02, TYP-05; `msl-elab` ELAB-06.
 
 ## Q6. What is the IR crate called?
 
+**Decided: (a).**
+
 `piperine-ir` is the name every spec and decision uses, and it is also the name of a retired crate: `crates/piperine-solver/tests/workspace_shape.rs` lists it in `RETIRED_CRATES` and fails if a directory or a manifest names it.
 
 | Option | Consequence |
@@ -72,6 +86,8 @@ Affects: `msl-typeck` TYP-02, TYP-05; `msl-elab` ELAB-06.
 Affects: `msl-ir`, and the dependency lines of three other crates.
 
 ## Q7. Does the current source get a sixth twin?
+
+**Decided: (a).**
 
 S1 lists voltage and current sources; none of the five named fixtures places a current source.
 
@@ -84,6 +100,8 @@ S1 lists voltage and current sources; none of the five named fixtures places a c
 Affects: `msl-parity` PAR-08.
 
 ## Q8. When is Appendix C amended?
+
+**Decided: (a).**
 
 Appendix C.1 (informative) describes lowering to "AIR v2" and says "every function is inlined". S7 keeps functions, and the IR is the object model of `msl-ir`. Nothing normative is contradicted.
 

@@ -1,0 +1,8 @@
+* isrc_r — current source into a resistor: 1 mA pushed into node a, 1 kOhm to ground.
+I1 0 a DC 1m
+R1 a 0 1k
+.control
+op
+print v(a)
+.endc
+.end

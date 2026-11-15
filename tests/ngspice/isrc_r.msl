@@ -1,0 +1,10 @@
+//! Twin of `tests/ngspice/isrc_r.cir`: operating point of a current source into a resistor.
+//! `I1 0 a` drives its current from ground through the source into `a`.
+mod devices;
+use devices::*;
+
+module IsrcR() {
+    signal a: Electrical;
+    let i1 = Isource { dc: 1m }(gnd, a);
+    let r1 = Resistor { r: 1k }(a, gnd);
+}

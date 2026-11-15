@@ -94,3 +94,20 @@ Closed from code and spec evidence, not by a user answer. Each is argued in the 
 | INT-Q6 (crate) | `piperine-interp`, depending on the IR crate, `piperine-abi` and `piperine-solver` | `ir-interp/design.md` |
 | INT-Q7 (wide numerics) | not in M1: the subset has `f64` and `bool` only | `msl-typeck/spec.md` |
 | The linear-term lesson of `solver-abi-integration` T5 | a term affine in its continuous reads is written as `c + Σ partial·read`, the products the assembly subtracts | `ir-interp/design.md` |
+
+## M1 questions answered (user, 2026-11-15)
+
+The eight questions of `.specs/features/e2e-m1/questions.md`, with the user's choice labels verbatim.
+
+| # | Question | User's choice | Decided |
+| - | -------- | ------------- | ------- |
+| Q1 | may `piperine-abi` gain a constructor for a module that carries data | "Add Factory to abi (Recommended)" | `device::Factory` and `thunk::module_with`; `Device` and `module::<D>` unchanged; one sentence added to abi.md §7 |
+| Q2 | a parity test when ngspice is absent | "Fail, opt-out env (Recommended)" | fail, with `PIPERINE_NGSPICE=skip` as the explicit opt-out; CI installs ngspice |
+| Q3 | the tolerance contract's numbers | "Old contract, 1e-12 A floor (Recommended)" | 1e-3 relative; 1e-6 V; 1e-12 A; AC magnitude floor 1e-12; AC phase 1e-4 rad |
+| Q4 | the M1 device library | "Accept all (Recommended)" | a fixture, `tests/ngspice/devices.msl`; a library is a feature after M1 |
+| Q5 | codes for "not supported yet" and "mismatched types" | "Accept all (Recommended)" | compiler-owned `P0001` and `P0002` |
+| Q6 | the IR crate's name | "Accept all (Recommended)" | `piperine-ir`; `RETIRED_CRATES` drops the name in the commit that creates the crate |
+| Q7 | a sixth twin for the current source | "Accept all (Recommended)" | `isrc_r.cir` and `isrc_r.msl` |
+| Q8 | when Appendix C is amended | "Accept all (Recommended)" | after M1 runs, in one spec edit with `spec-abi-amendments` |
+
+With these the five M1 specs are approved (user: "Concordo e pode disparar", and the answers above). Tasks are approved under the user's standing instruction: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida ok?".

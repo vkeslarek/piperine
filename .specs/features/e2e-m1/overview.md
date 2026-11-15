@@ -1,6 +1,6 @@
 # M1: the first path from MSL to the solver
 
-**Status**: planned, not approved. Decided by the user on 2026-11-15 ("Concordo e pode disparar"); recorded in `.specs/features/codegen/context.md` S1 to S10. Open decisions: `questions.md` in this directory.
+**Status**: specs and tasks approved 2026-11-15. The slice was decided by the user ("Concordo e pode disparar", `.specs/features/codegen/context.md` S1 to S10) and the eight questions of `questions.md` were answered, each with the recommended option.
 
 ## The slice
 
@@ -8,14 +8,14 @@ A vertical cut through every stage instead of one finished stage at a time. M1 i
 
 - **Devices**: resistor, capacitor, voltage source, current source, diode with `limit` and `pnjlim`.
 - **Analyses**: operating point, DC sweep, AC, transient.
-- **Fixtures**: `divider`, `diode_series` (operating point), `diode_iv` (DC sweep), `ac_rc` (AC), `tran_rc` (transient). Each is an `.msl` file and the `.cir` twin already in `tests/ngspice/`.
+- **Fixtures**: `divider`, `diode_series`, and `isrc_r` added by Q7 (operating point), `diode_iv` (DC sweep), `ac_rc` (AC), `tran_rc` (transient). Each is an `.msl` file and the `.cir` twin already in `tests/ngspice/`.
 - **Path**: `.msl` → parse and POM → type check → elaboration → IR → interpreter (one generic `Device` through the ABI) → solver, compared with ngspice.
 
 M2 is digital and mixed-signal (galleries E and F, the conformance set of Appendix C.2.3). M3 is `ir-rust`, with the interpreter as its oracle.
 
 ## What M1 needs of the language
 
-Found by writing the models first (`models/` in this directory; they build on today's POM with zero diagnostics). `std` supplies `Electrical`, `vt`, `pnjlim`, `K_B`, `Q`. It has no resistor, capacitor, source or diode, so those five are written in `devices.msl`.
+Found by writing the models first (now `tests/ngspice/*.msl`; they build on today's POM with zero diagnostics). `std` supplies `Electrical`, `vt`, `pnjlim`, `K_B`, `Q`. It has no resistor, capacitor, source or diode, so those five are written in `devices.msl`.
 
 | Area | In M1 | Left for M2 |
 | --- | --- | --- |
@@ -35,9 +35,9 @@ Everything in the right column is refused by name (`P0001`), never skipped.
 | 2 | `msl-typeck` | `piperine-lang` (`types/`) | a type for every expression a top reaches; `Deferred` members resolved; the subset enforced | TYP-01 to TYP-06 | 9 | Sonnet implements, Opus verifies |
 | 3 | `msl-elab` | `piperine-lang` (`elab/`) | `Design` + top → `Ir`: constants, params, instances, nodes, the analog lowering | ELAB-01 to ELAB-06 | 10 | Sonnet implements, Opus verifies; the contribution split is Opus's |
 | 4 | `ir-interp` | `piperine-interp` (new) plus one addition to `piperine-abi` | the generic device: shape from a body, dual-number evaluation, `limit`, `ac_stim`, the affine rule, IR → `CircuitInstance` | INT-01 to INT-14 (10) | 12 | Opus implements the six delicate tasks, Sonnet the rest, Opus verifies |
-| 5 | `msl-parity` | `piperine-parity` (new, `publish = false`) | twins, ngspice runner, `ToleranceContract`, one test per fixture, corpus guard | PAR-01 to PAR-08 | 8 (+1 with Q7) | Sonnet implements, Opus verifies |
+| 5 | `msl-parity` | `piperine-parity` (new, `publish = false`) | twins, ngspice runner, `ToleranceContract`, one test per fixture, corpus guard | PAR-01 to PAR-08 | 10 | Sonnet implements, Opus verifies |
 
-47 tasks, 48 with the sixth twin. Each feature's `design.md` ends with its task list. Tasks files are written per feature after the specs are approved.
+49 tasks. Each feature has its `tasks.md` (approved 2026-11-15, `validate_tasks.py --execute` clean) and a `WORKER.md` brief for batch workers.
 
 **Delicate** means a mistake gives a wrong number with no error: the Jacobian pattern (`msl-ir` `Deps`), the sign and placement of `ddt` in a contribution (`msl-elab`), and in `ir-interp` the shape plan, the `Terms` walk, the affine rule, `limit`, and the one task with `unsafe` (`module_with`). Those go to Opus directly. The rest is tables, plumbing and tests with a clear oracle.
 
