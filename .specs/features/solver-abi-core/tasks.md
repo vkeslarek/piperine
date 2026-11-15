@@ -325,12 +325,12 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] The traits and types have the signatures of the design; every type in a signature is plain data (`i64`, `u32`, `f64`, bytes, `String`) or defined in `sides.rs`
-- [ ] `ScriptedDiscrete` and `ScriptedAnalog` are plain structs driven by a list; each records its calls as a `Vec` of a plain enum; no macro
-- [ ] Test `the_protocol_module_names_no_sub_solver_item` scans `src/protocol/` for `piperine_digital_solver` and for every `piperine_analog_solver` path other than `error::` (C25)
-- [ ] Test `the_stubs_replay_their_script_and_record_calls` passes
-- [ ] Nothing outside `src/protocol/` and `src/lib.rs` (`pub mod protocol;`) changes; `cargo test -p piperine-solver` is green
-- [ ] Gate: full
+- [x] The traits and types have the signatures of the design; every type in a signature is plain data (`i64`, `u32`, `f64`, bytes, `String`) or defined in `sides.rs`
+- [x] `ScriptedDiscrete` and `ScriptedAnalog` are plain structs driven by a list; each records its calls as a `Vec` of a plain enum; no macro
+- [x] Test `the_protocol_module_names_no_sub_solver_item` scans `src/protocol/` for `piperine_digital_solver` and for every `piperine_analog_solver` path other than `error::` (C25)
+- [x] Test `the_stubs_replay_their_script_and_record_calls` passes
+- [x] Nothing outside `src/protocol/` and `src/lib.rs` (`pub mod protocol;`) changes; `cargo test -p piperine-solver` is green
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

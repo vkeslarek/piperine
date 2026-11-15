@@ -1,0 +1,190 @@
+//! The seam between the owner and its two sub-solvers (abi.md §5, §10): the
+//! traits `DiscreteSide` and `AnalogSide` and the plain data they exchange.
+//! Every type in a signature is a number, bytes, a `String` or defined here, so
+//! neither sub-solver depends on the owner; `solver-abi-integration` writes one
+//! thin adapter per side.
+
+use piperine_analog_solver::error::Result;
+
+/// A discrete instant's time in session ticks.
+pub type Tick = i64;
+
+/// A discrete value the analog side reads, changed: `slot` indexes the analog
+/// side's own copy of the discrete pins its functions read (abi.md §10
+/// "its own copy, updated only by boundary events").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Boundary {
+    pub slot: u32,
+    pub bytes: Vec<u8>,
+}
+
+/// How far `DiscreteSide::advance` got (abi.md §5 step 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Advance {
+    /// Every due instant strictly before the target ran; none was a landing.
+    Reached,
+    /// The first instant at `tick` must be a landing: R4 makes it a time point
+    /// (`time_point = true`) or it fires an `IRREVERSIBLE` reaction, a host
+    /// waiter included (`time_point = false`). That instant is untouched (the
+    /// side restored its sub-checkpoint `c_s`); every instant before it ran.
+    Landing { tick: Tick, time_point: bool },
+    /// A reaction at `tick` returned `FINISH`: the step lands there and the
+    /// analysis ends after that instant, which is a time point. As for
+    /// `Landing`, the instant itself is untouched.
+    Final(Tick),
+}
+
+/// The phase an instant runs in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InstantMode {
+    /// An instant of an equilibrium (`STATIC` reads 1).
+    pub is_static: bool,
+    /// Fire `SETTLE` once the microstep loop is quiet (the instant is a time point).
+    pub settle: bool,
+}
+
+/// What running (or resuming) an instant did.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Outcome {
+    /// The values the analog side reads that the instant changed, beyond what
+    /// `preview_boundary` already returned for it.
+    pub boundary: Vec<Boundary>,
+    /// One of those changes came from a host write to a `PARAM` or `GLOBAL` net.
+    pub host_param_write: bool,
+    /// A reaction returned `FINISH`.
+    pub finish: bool,
+    /// Event nets with a host waiter (`DiscreteSide::wait`) that fired in the
+    /// last microstep. When not empty the instant is suspended: the owner calls
+    /// the waiters, queues their writes at this tick (the next microstep) and
+    /// calls `run_instant` again at the same tick to continue it (abi.md R7).
+    pub host_events: Vec<u32>,
+}
+
+/// The discrete side's answer to a host write checked on a shadow (abi.md P6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Shadow {
+    /// Commit it (also the answer for a net outside the parameter cone).
+    Accept,
+    /// A `check` pin of the written param came out false.
+    Refused { check: String },
+    /// A function of the cone returned `RESHAPE` for `instance`.
+    Reshape { instance: String },
+}
+
+/// The result of one analog attempt (abi.md §5 step 3).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Attempt {
+    Converged,
+    /// The step failed (Newton or truncation): propose again from the last acceptance.
+    Rejected,
+    /// A located crossing or a shortened step: the step must land at this time instead.
+    LandedEarlier(f64),
+}
+
+/// How the integrator restarts at an acceptance.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Restart {
+    #[default]
+    None,
+    /// A value the analog side reads changed after the step arrived.
+    Integrator,
+    /// That change came from a host write to a `PARAM` or `GLOBAL` net.
+    IntegratorSmall,
+}
+
+/// An accepted analog solution, as the discrete side needs it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Accepted {
+    /// The event pins of the `CROSS` watches that fired (abi.md §4.3, C6).
+    pub fired: Vec<u32>,
+    /// The continuous values reactions read, in the discrete side's order.
+    pub samples: Vec<f64>,
+}
+
+/// The analysis an observation belongs to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnalysisKind {
+    #[default]
+    OperatingPoint,
+    Transient,
+}
+
+/// One thing the sink sees (abi.md C5, A5, §12 "Watch it"). The sides fill
+/// `path`, `time` and `kind`; the protocol stamps `analysis`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Observation {
+    pub path: String,
+    pub analysis: AnalysisKind,
+    pub time: f64,
+    pub kind: ObservationKind,
+}
+
+/// What was observed.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ObservationKind {
+    /// A net changed to these bytes.
+    Change { bytes: Vec<u8> },
+    /// A commit, with the instants it was made and is due.
+    Commit { statement: u32, made: Tick, due: Tick, bytes: Vec<u8> },
+    /// A `CROSS` watch fired.
+    Crossing,
+    /// A commit to a `RECORD` pin.
+    Record { bytes: Vec<u8> },
+    /// A `TRACE` watch written in Newton iteration `iteration`.
+    Trace { iteration: u32, bytes: Vec<u8> },
+}
+
+/// The discrete sub-solver as the owner drives it.
+pub trait DiscreteSide {
+    /// A checkpoint of the discrete store, the queue and the side's buffers.
+    type Mark;
+    /// From initial values: zero, commit every `init` and the host's initial
+    /// writes, fire `START`, run the discrete functions (abi.md §10 step 1).
+    fn start(&mut self) -> Result<()>;
+    /// The tick of the next queued commit, if any.
+    fn next_due(&self) -> Option<Tick>;
+    /// Runs the due instants strictly before `to`, stopping before a landing (abi.md §5 step 2).
+    fn advance(&mut self, to: Tick) -> Result<Advance>;
+    /// The boundary changes due at microstep 0 of `at`, computed on a copy.
+    /// Returns only slots whose bytes differ from the analog side's copy.
+    fn preview_boundary(&self, at: Tick) -> Result<Vec<Boundary>>;
+    /// Commits a firing of event pin `net` due at microstep 0 of `at` (C6).
+    fn fire(&mut self, net: u32, at: Tick) -> Result<()>;
+    /// Runs (or, after a suspension, continues) the instant `at`. `samples` are
+    /// the accepted continuous values reactions read; `limit` is the latest tick
+    /// a `HORIZON` may reach (the stop time).
+    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Tick, mode: InstantMode) -> Result<Outcome>;
+    fn mark(&self) -> Self::Mark;
+    fn restore(&mut self, mark: &Self::Mark);
+    /// Runs the parameter cone downstream of a host write on a shadow (P6).
+    fn shadow(&self, net: u32, offset: u32, bytes: &[u8]) -> Result<Shadow>;
+    /// Queues a host commit due at `at` (the next microstep when `at` is the
+    /// current instant).
+    fn host_commit(&mut self, net: u32, offset: u32, bytes: &[u8], at: Tick) -> Result<()>;
+    /// Registers a host waiter on event net `net`: an `IRREVERSIBLE` reaction (R7).
+    fn wait(&mut self, net: u32);
+    /// Moves the observations made since the last drain into `out`, in instant order.
+    fn drain(&mut self, out: &mut Vec<Observation>);
+}
+
+/// The analog sub-solver as the owner drives it.
+pub trait AnalogSide {
+    /// A checkpoint of the solution, histories and step control.
+    type Mark;
+    /// Whether any continuous unknown exists.
+    fn has_unknowns(&self) -> bool;
+    /// The next step's end (step control, `CAP` watches), at most `stop`.
+    fn propose(&mut self, now: f64, stop: f64) -> f64;
+    /// Updates the analog copy of discrete values.
+    fn deliver(&mut self, boundary: &[Boundary]);
+    /// Solves a step to `to`; `exempt` skips the truncation test.
+    fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt>;
+    /// Accepts the last converged attempt, restarting the integrator as asked.
+    fn accept(&mut self, restart: Restart) -> Result<Accepted>;
+    /// Solves the equilibrium (`STATIC = 1`) and evaluates watches there.
+    fn equilibrium(&mut self) -> Result<Accepted>;
+    fn mark(&self) -> Self::Mark;
+    fn restore(&mut self, mark: &Self::Mark);
+    /// Moves the trace records of the attempts since the last drain into `out`.
+    fn drain_traces(&mut self, out: &mut Vec<Observation>);
+}
