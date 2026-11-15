@@ -322,10 +322,10 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `ac_agrees_on_both_contracts`, test `noise_agrees_on_both_contracts` and test `sensitivities_agree_on_both_contracts` pass within 1e-12 relative
-- [ ] `.specs/features/solver-abi-integration/differential.txt` holds the full output of `cargo test -p piperine-solver --test differential` at this commit and the commit hash; the commit is tagged `solver-abi-integration-differential` (local tag, not pushed)
-- [ ] The file ends with a `test result: ok.` line counting six tests
-- [ ] Gate: build
+- [x] Test `ac_agrees_on_both_contracts`, test `noise_agrees_on_both_contracts` and test `sensitivities_agree_on_both_contracts` pass within 1e-12 relative
+- [x] `.specs/features/solver-abi-integration/differential.txt` holds the full output of `cargo test -p piperine-solver --test differential` at this commit and the commit hash; the commit is tagged `solver-abi-integration-differential` (local tag, not pushed)
+- [x] The file ends with a `test result: ok.` line counting six tests
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build

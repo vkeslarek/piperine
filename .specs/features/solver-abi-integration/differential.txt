@@ -1,0 +1,15 @@
+commit eba822af938ea86050b03c8f93e0ba9d0798a56a
+cargo test -p piperine-solver --test differential
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running tests/differential.rs (/var/tmp/piperine-target/debug/deps/differential-b95a68296b036d1d)
+
+running 6 tests
+test sensitivities_agree_on_both_contracts ... ok
+test noise_agrees_on_both_contracts ... ok
+test newton_takes_the_same_iterations_on_both_contracts ... ok
+test dc_agrees_on_both_contracts ... ok
+test ac_agrees_on_both_contracts ... ok
+test transient_takes_the_same_steps_on_both_contracts ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
