@@ -361,7 +361,7 @@ Proof: `cargo test -p piperine-lang`
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 at dd805f01
 **Walked:** not applicable - no screen
 
 ---
