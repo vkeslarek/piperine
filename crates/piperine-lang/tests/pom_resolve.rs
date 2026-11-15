@@ -1387,6 +1387,14 @@ fn a_local_item_named_like_a_prelude_trait_keeps_its_methods() {
 }
 
 #[test]
+fn a_trait_imported_under_an_alias_is_in_scope() {
+    // N2: `use a::Hidden as H;` binds `H`, and the trait's methods are in scope all the same.
+    let src = format!("{}use a::Hidden as H;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", "mod a { pub trait Hidden { fn zz(self) -> bool; } impl<T: Repr> Hidden for T { fn zz(self) -> bool { true } } }\nnature Lvl { value: f64 }\n");
+    let design = build(&src);
+    assert_eq!(member_res(&design, "p.zz()"), decl(&design, "a::Hidden::zz"));
+}
+
+#[test]
 fn two_visible_blankets_keep_declaration_order() {
     // G.67: no ambiguity code exists; with two visible blanket traits of one method name the first
     // in declaration order links, silently.
