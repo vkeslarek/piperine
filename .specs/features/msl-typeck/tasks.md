@@ -150,11 +150,11 @@ T6 → T7 → T8 → T9
 
 **Done when**:
 
-- [ ] SI-suffixed and `_f64` literals are `f64`; an unsuffixed integer literal where `f64` is required is `P0002`
-- [ ] Diagnostics of one call come ordered by file then span start, at most one per expression
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `literals_are_f64_or_bool`, `operators_type_as_rust_types_them`, `if_and_block_take_their_value_type`, `a_let_takes_its_initializer_type`, `a_mismatch_names_both_types`, `diagnostics_come_in_source_order_one_per_expression`, `a_let_without_type_or_value_is_p0001`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] SI-suffixed and `_f64` literals are `f64`; an unsuffixed integer literal where `f64` is required is `P0002`
+- [x] Diagnostics of one call come ordered by file then span start, at most one per expression
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `literals_are_f64_or_bool`, `operators_type_as_rust_types_them`, `if_and_block_take_their_value_type`, `a_let_takes_its_initializer_type`, `a_mismatch_names_both_types`, `diagnostics_come_in_source_order_one_per_expression`, `a_let_without_type_or_value_is_p0001`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

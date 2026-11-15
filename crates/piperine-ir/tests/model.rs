@@ -3,9 +3,16 @@
 
 use std::mem::size_of;
 
+#[path = "support/devices.rs"]
+#[allow(dead_code)]
+mod devices;
+
+use devices::{Devices, Ex};
 use piperine_ir::{
-    BodyId, BodySpec, ExprId, FunctionId, InstanceId, InstanceSpec, Ir, IrBuilder, NatureId,
-    NodeId, NodeSpec, Origin, Quantity, Real, StmtId,
+    Addend, BinaryOp, Body, BodyId, BodyNode, BodySpec, Branch, BranchKind, Constant, Env, Expr,
+    ExprId, FunctionId, FunctionSpec, InstanceId, InstanceSpec, Ir, IrBuilder, Local, MathFn,
+    NatureId, NodeId, NodeRole, NodeSpec, Operator, Origin, Param, Quantity, QuantityRole, Real,
+    Site, Stmt, StmtId, Terminal, UnaryOp, ValueType,
 };
 
 #[test]
@@ -111,4 +118,384 @@ impl Sequence {
 #[test]
 fn equal_builder_sequences_give_equal_irs() {
     assert_eq!(Sequence::build(), Sequence::build());
+}
+
+/// The five device bodies, the divider on top of them, and the `Everything` body that uses each
+/// form the devices do not.
+struct Library;
+
+impl Library {
+    fn origin() -> Origin {
+        Origin { file: "all.msl".into(), line: 1, col: 1 }
+    }
+
+    /// A body that constructs every `Expr`, `Stmt`, `Addend`, `Terminal` and `Site` variant the
+    /// five devices leave out.
+    fn everything(b: &mut IrBuilder) -> BodyId {
+        let el = Devices::electrical(b);
+        let f64_local = |name: &str| Local { name: name.to_string(), ty: ValueType::F64 };
+        // fn id(x: f64) -> f64 { x }
+        let mut e = Ex::new(b, "all.msl", 2, 1);
+        let x = e.local(0);
+        let function = b.function(FunctionSpec {
+            name: "identity".into(),
+            origin: Self::origin(),
+            params: vec![f64_local("x")],
+            ret: ValueType::F64,
+            locals: vec![f64_local("x")],
+            body: x,
+        });
+        let mut e = Ex::new(b, "all.msl", 3, 1);
+        let one = e.real(1.0);
+        let two = e.real(2.0);
+        let sum = e.binary(BinaryOp::Add, one, two);
+        let let_x = b.stmt(Stmt::Let { local: 0, init: sum });
+        let mut e = Ex::new(b, "all.msl", 4, 1);
+        // a block with a let and a value, inside a statement
+        let t = e.boolean(true);
+        let not = e.unary(UnaryOp::Not, t);
+        let unit = e.unit();
+        let inner_let = e.local(0);
+        let blk_let = e.b.stmt(Stmt::Let { local: 1, init: inner_let });
+        let mut e = Ex::new(b, "all.msl", 5, 1);
+        let y = e.local(1);
+        let neg = e.unary(UnaryOp::Neg, y);
+        let abs = e.math(MathFn::Abs, neg);
+        let block = e.block(vec![blk_let], Some(abs), ValueType::F64);
+        let block_stmt = b.stmt(Stmt::Expr(block));
+        let unit_stmt = b.stmt(Stmt::Expr(unit));
+        let mut e = Ex::new(b, "all.msl", 6, 1);
+        let tt = e.boolean(true);
+        let cond = e.binary(BinaryOp::Or, not, tt);
+        let a1 = e.real(1.0);
+        let a2 = e.real(2.0);
+        let pick = e.if_f64(cond, a1, a2);
+        let ln = e.math(MathFn::Ln, pick);
+        let ex = e.math(MathFn::Exp, ln);
+        let sq = e.math(MathFn::Sqrt, ex);
+        let call_arg = e.local(0);
+        let called = e.call(function, vec![call_arg]);
+        let temp = e.env(Env::Temperature);
+        let probe = e.probe(Terminal::Node(0), Terminal::Ground);
+        let seed = e.real(0.0);
+        let body_local = e.local(2);
+        let closure = e.closure(vec![2], body_local);
+        let limited = e.limit(0, probe, closure, Some(seed));
+        let mag = e.real(1.0);
+        let phase = e.real(90.0);
+        let stim = e.stim(0, mag, Some(phase));
+        let s1 = e.binary(BinaryOp::Add, sq, called);
+        let s2 = e.binary(BinaryOp::Add, s1, temp);
+        let s3 = e.binary(BinaryOp::Add, s2, limited);
+        let total = e.binary(BinaryOp::Add, s3, stim);
+        let contribute = b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Potential,
+            addends: vec![Addend { operator: Operator::Ddt, negated: true, value: total }],
+        });
+        b.body(BodySpec {
+            name: "Everything".into(),
+            origin: Self::origin(),
+            params: vec![
+                Param {
+                    name: "flag".into(),
+                    ty: ValueType::Bool,
+                    default: Some(Constant::Bool(true)),
+                    check: None,
+                    structural: true,
+                    origin: Self::origin(),
+                },
+            ],
+            nodes: vec![
+                BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: Self::origin() },
+                BodyNode { name: "s".into(), nature: el, role: NodeRole::Signal, init: Some(Real::new(0.5)), origin: Self::origin() },
+            ],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind: BranchKind::Potential }],
+            limits: vec![Site { name: "lim".into(), origin: Self::origin() }],
+            stims: vec![Site { name: "stim".into(), origin: Self::origin() }],
+            locals: vec![f64_local("x"), f64_local("y"), f64_local("t")],
+            analog: Some(vec![let_x, block_stmt, unit_stmt, contribute]),
+            children: vec![],
+        })
+    }
+
+    /// All of it, finished, with the divider as top.
+    fn ir() -> Ir {
+        let mut b = IrBuilder::new();
+        Self::everything(&mut b);
+        Devices::capacitor(&mut b);
+        Devices::isource(&mut b);
+        Devices::diode(&mut b);
+        let top = Devices::divider(&mut b);
+        b.finish(top)
+    }
+
+    fn body<'a>(ir: &'a Ir, name: &str) -> Body<'a> {
+        ir.bodies().find(|b| b.name() == name).expect("body present")
+    }
+}
+
+/// Every expression reachable from a body's `analog` block, in a depth-first walk.
+struct Reach;
+
+impl Reach {
+    fn body(body: Body<'_>) -> Vec<ExprId> {
+        let mut out = Vec::new();
+        for &stmt in body.analog().unwrap_or(&[]) {
+            Reach::stmt(body.ir(), stmt, &mut out);
+        }
+        out
+    }
+
+    fn stmt(ir: &Ir, id: StmtId, out: &mut Vec<ExprId>) {
+        match ir.stmt(id) {
+            Stmt::Let { init, .. } => Reach::expr(ir, *init, out),
+            Stmt::Expr(e) => Reach::expr(ir, *e, out),
+            Stmt::Contribute { addends, .. } => {
+                for a in addends {
+                    Reach::expr(ir, a.value, out);
+                }
+            }
+        }
+    }
+
+    fn expr(ir: &Ir, id: ExprId, out: &mut Vec<ExprId>) {
+        out.push(id);
+        match ir.expr(id) {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) => {}
+            Expr::Unary { expr, .. } => Reach::expr(ir, *expr, out),
+            Expr::Binary { lhs, rhs, .. } => {
+                Reach::expr(ir, *lhs, out);
+                Reach::expr(ir, *rhs, out);
+            }
+            Expr::If { cond, then, otherwise } => {
+                for e in [cond, then, otherwise] {
+                    Reach::expr(ir, *e, out);
+                }
+            }
+            Expr::Block { stmts, value } => {
+                for s in stmts {
+                    Reach::stmt(ir, *s, out);
+                }
+                if let Some(v) = value {
+                    Reach::expr(ir, *v, out);
+                }
+            }
+            Expr::Call { args, .. } | Expr::Math { args, .. } => {
+                for a in args {
+                    Reach::expr(ir, *a, out);
+                }
+            }
+            Expr::Closure { body, .. } => Reach::expr(ir, *body, out),
+            Expr::Limit { x, f, seed, .. } => {
+                Reach::expr(ir, *x, out);
+                Reach::expr(ir, *f, out);
+                if let Some(s) = seed {
+                    Reach::expr(ir, *s, out);
+                }
+            }
+            Expr::Stim { mag, phase, .. } => {
+                Reach::expr(ir, *mag, out);
+                if let Some(p) = phase {
+                    Reach::expr(ir, *p, out);
+                }
+            }
+        }
+    }
+
+    /// The kinds reachable from `body`.
+    fn kinds(body: Body<'_>) -> Vec<Expr> {
+        Reach::body(body).into_iter().map(|id| body.ir().expr(id).clone()).collect()
+    }
+}
+
+#[test]
+fn value_code_of_the_subset_is_representable() {
+    let ir = Library::ir();
+    let kinds = Reach::kinds(Library::body(&ir, "Everything"));
+    let has = |f: fn(&Expr) -> bool| kinds.iter().any(f);
+    assert!(has(|e| matches!(e, Expr::Real(_))));
+    assert!(has(|e| matches!(e, Expr::Bool(true))));
+    assert!(has(|e| matches!(e, Expr::Local(_))));
+    assert!(has(|e| matches!(e, Expr::Unary { op: UnaryOp::Neg, .. })));
+    assert!(has(|e| matches!(e, Expr::Unary { op: UnaryOp::Not, .. })));
+    assert!(has(|e| matches!(e, Expr::Binary { op: BinaryOp::Or, .. })));
+    assert!(has(|e| matches!(e, Expr::If { .. })));
+    assert!(has(|e| matches!(e, Expr::Block { stmts, value: Some(_) } if stmts.len() == 1)));
+    assert!(has(|e| matches!(e, Expr::Call { args, .. } if args.len() == 1)));
+    for f in [MathFn::Exp, MathFn::Ln, MathFn::Sqrt, MathFn::Abs] {
+        assert!(has(|e| matches!(e, Expr::Math { .. })));
+        assert!(kinds.iter().any(|e| matches!(e, Expr::Math { f: g, .. } if *g == f)), "{f:?}");
+    }
+    assert!(has(|e| matches!(e, Expr::Closure { params, .. } if params == &vec![2])));
+    // The devices bring Param, Unit (as a statement) and the rest.
+    let diode = Reach::kinds(Library::body(&ir, "Diode"));
+    assert!(diode.iter().any(|e| matches!(e, Expr::Param(_))));
+    // `Unit` is reachable as a statement expression of the Everything body.
+    let body = Library::body(&ir, "Everything");
+    let stmts = body.analog().expect("analog");
+    assert!(stmts.iter().any(|s| matches!(ir.stmt(*s), Stmt::Expr(e) if matches!(ir.expr(*e), Expr::Unit))));
+    assert!(stmts.iter().any(|s| matches!(ir.stmt(*s), Stmt::Let { .. })));
+    assert!(stmts.iter().any(|s| matches!(ir.stmt(*s), Stmt::Contribute { .. })));
+}
+
+#[test]
+fn a_body_holds_params_nodes_branches_and_sites() {
+    let ir = Library::ir();
+    let diode = Library::body(&ir, "Diode");
+    let names: Vec<&str> = diode.params().iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["is", "n", "cj0"]);
+    let is = &diode.params()[0];
+    assert_eq!(is.ty, ValueType::F64);
+    assert_eq!(is.default, Some(Constant::Real(Real::new(1e-14))));
+    assert!(is.check.is_some());
+    assert!(!is.structural);
+    let flag = &Library::body(&ir, "Everything").params()[0];
+    assert!(flag.structural);
+    assert_eq!(flag.default, Some(Constant::Bool(true)));
+    assert_eq!(flag.ty, ValueType::Bool);
+    assert!(Library::body(&ir, "Resistor").params()[0].default.is_none());
+
+    let nodes = diode.nodes();
+    assert_eq!((nodes[0].name.as_str(), nodes[0].role), ("a", NodeRole::Port));
+    assert_eq!((nodes[1].name.as_str(), nodes[1].role), ("k", NodeRole::Port));
+    let everything = Library::body(&ir, "Everything");
+    assert_eq!(everything.nodes()[0].role, NodeRole::Port);
+    assert_eq!(everything.nodes()[1].role, NodeRole::Signal);
+    assert_eq!(everything.nodes()[1].init, Some(Real::new(0.5)));
+
+    assert_eq!(diode.branches().len(), 1);
+    assert_eq!(diode.branches()[0].kind, BranchKind::Flow);
+    assert_eq!(diode.limits().len(), 1);
+    assert_eq!(diode.limits()[0].name, "vd");
+    assert_eq!(Library::body(&ir, "Vsource").stims().len(), 1);
+    assert_eq!(diode.analog().expect("analog").len(), 5);
+    assert_eq!(diode.origin(), &Origin { file: "devices.msl".into(), line: 31, col: 1 });
+}
+
+#[test]
+fn a_probe_spans_two_terminals() {
+    let ir = Library::ir();
+    let probes = |name: &str| -> Vec<(Terminal, Terminal)> {
+        Reach::kinds(Library::body(&ir, name))
+            .into_iter()
+            .filter_map(|e| match e {
+                Expr::Probe { plus, minus } => Some((plus, minus)),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(probes("Resistor"), [(Terminal::Node(0), Terminal::Node(1))]);
+    assert_eq!(probes("Everything"), [(Terminal::Node(0), Terminal::Ground)]);
+}
+
+#[test]
+fn environment_reads_are_nodes() {
+    let ir = Library::ir();
+    let envs = |name: &str| -> Vec<Env> {
+        Reach::kinds(Library::body(&ir, name))
+            .into_iter()
+            .filter_map(|e| match e {
+                Expr::Env(env) => Some(env),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(envs("Vsource"), [Env::SourceScale]);
+    assert_eq!(envs("Diode"), [Env::Gmin]);
+    assert_eq!(envs("Everything"), [Env::Temperature]);
+}
+
+#[test]
+fn limit_and_stim_sites_are_indexed() {
+    let ir = Library::ir();
+    let diode = Reach::kinds(Library::body(&ir, "Diode"));
+    let limit = diode.iter().find_map(|e| match e {
+        Expr::Limit { site, seed, .. } => Some((*site, seed.is_some())),
+        _ => None,
+    });
+    assert_eq!(limit, Some((0, true)));
+    let vsource = Reach::kinds(Library::body(&ir, "Vsource"));
+    let stim = vsource.iter().find_map(|e| match e {
+        Expr::Stim { site, phase, .. } => Some((*site, phase.is_some())),
+        _ => None,
+    });
+    assert_eq!(stim, Some((0, false)));
+    let everything = Reach::kinds(Library::body(&ir, "Everything"));
+    assert!(everything.iter().any(|e| matches!(e, Expr::Stim { site: 0, phase: Some(_), .. })));
+    // Every used index addresses the body's own site list.
+    assert_eq!(Library::body(&ir, "Diode").limits().len(), 1);
+    assert_eq!(Library::body(&ir, "Everything").stims().len(), 1);
+}
+
+#[test]
+fn a_contribution_is_addends_direct_or_ddt() {
+    let ir = Library::ir();
+    let contribution = |name: &str| -> (u32, QuantityRole, Vec<(Operator, bool)>) {
+        let body = Library::body(&ir, name);
+        let stmt = body.analog().expect("analog").iter().find_map(|s| match ir.stmt(*s) {
+            Stmt::Contribute { branch, quantity, addends } => Some((
+                *branch,
+                *quantity,
+                addends.iter().map(|a| (a.operator, a.negated)).collect(),
+            )),
+            _ => None,
+        });
+        stmt.expect("a contribution")
+    };
+    assert_eq!(
+        contribution("Diode"),
+        (0, QuantityRole::Flow, vec![(Operator::Direct, false), (Operator::Ddt, false)])
+    );
+    assert_eq!(contribution("Capacitor"), (0, QuantityRole::Flow, vec![(Operator::Ddt, false)]));
+    assert_eq!(contribution("Vsource"), (0, QuantityRole::Potential, vec![(Operator::Direct, false)]));
+    assert_eq!(contribution("Everything"), (0, QuantityRole::Potential, vec![(Operator::Ddt, true)]));
+}
+
+#[test]
+fn a_nature_carries_abstol_and_units() {
+    let ir = Library::ir();
+    let electrical = ir.natures().next().expect("a nature");
+    assert_eq!(electrical.name(), "Electrical");
+    let v = electrical.potential();
+    assert_eq!((v.access.as_str(), v.units.as_str(), v.abstol), ("v", "V", Real::new(1e-6)));
+    let i = electrical.flow().expect("flow");
+    assert_eq!((i.access.as_str(), i.units.as_str(), i.abstol), ("i", "A", Real::new(1e-12)));
+    assert_eq!(ir.natures().count(), 1);
+}
+
+#[test]
+fn every_expression_records_its_type() {
+    let ir = Library::ir();
+    for body in ir.bodies() {
+        for id in Reach::body(body) {
+            let ty = ir.expr_type(id);
+            let ok = match ir.expr(id) {
+                Expr::Real(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Math { .. } => *ty == ValueType::F64,
+                Expr::Limit { .. } | Expr::Stim { .. } | Expr::Call { .. } => *ty == ValueType::F64,
+                Expr::Bool(_) | Expr::Unary { op: UnaryOp::Not, .. } => *ty == ValueType::Bool,
+                Expr::Unit => *ty == ValueType::Unit,
+                Expr::Closure { params, .. } => {
+                    *ty == ValueType::Fn(vec![ValueType::F64; params.len()], Box::new(ValueType::F64))
+                }
+                Expr::Binary { op, .. } => match op {
+                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => *ty == ValueType::F64,
+                    _ => *ty == ValueType::Bool,
+                },
+                _ => true,
+            };
+            assert!(ok, "{}: {:?} typed {ty:?}", body.name(), ir.expr(id));
+        }
+    }
+}
+
+#[test]
+fn a_body_without_analog_has_no_branches() {
+    let ir = Library::ir();
+    let divider = Library::body(&ir, "Divider");
+    assert!(divider.analog().is_none());
+    assert!(divider.branches().is_empty());
+    assert!(divider.limits().is_empty());
+    assert!(divider.stims().is_empty());
 }

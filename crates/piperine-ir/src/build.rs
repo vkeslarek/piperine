@@ -137,6 +137,12 @@ impl IrBuilder {
         NodeId(self.nodes.len() as u32 - 1)
     }
 
+    /// The id the next `instance` call returns, for nodes that name their declaring instance
+    /// before it is added.
+    pub fn next_instance_id(&self) -> InstanceId {
+        InstanceId(self.instances.len() as u32)
+    }
+
     pub fn instance(&mut self, spec: InstanceSpec) -> InstanceId {
         let id = InstanceId(self.instances.len() as u32);
         if let Some(parent) = spec.parent {
