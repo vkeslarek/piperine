@@ -214,3 +214,112 @@ Mutations re-run against the fixed tests (each reverted): the affine value print
 - `piperine-transpile` depends on `piperine-solver` (for `CircuitInstance` from `Compiled::circuit`): `piperine-plan` already depends on it per the design; generated code still links `piperine-abi` only. Faithful, no scope cut.
 - `Rustc::invocations` counts builds, not `-vV`: a reading of RS-04 AC 1 the spec text does not state (F6).
 - Hash before `dlopen`, handle leaked (abi.md §12), a mapped library replaced by unlink and write, never rewritten in place: correct; `unsafe` is confined to `load.rs` with `// SAFETY:` lines citing abi.md. Note: `Cache::at` creates `0700` only when it creates; an existing cache or `rust` directory owned by another user or group-writable is used as is (consistent with RS-Q9's "created", worth a later ownership check).
+
+---
+
+# Phase B verification (T24 to T46)
+
+**Verdict**: FAIL (phase B: 0 blocker, 2 major, 7 minor; no runnable proof is red; 6 checks blocked on solver-crossings)
+**Proofs**: every phase-B `Run` line of tasks.md run by the Verifier at `2b189f7f` (rustc 1.98.0, ngspice at `/usr/bin/ngspice`, `PIPERINE_NGSPICE` and `PIPERINE_CACHE_DIR` unset), plus plain `cargo test` at the root (default members: 170 targets, exit 0). The parked T42/T45 files were copied into place, run and removed.
+**Verifier**: independent sub-agent (author != verifier), Opus
+
+## Proof runs at `2b189f7f`
+
+| Run | Result |
+| --- | --- |
+| Build (the three `**Build**` commands) | no warning, no error |
+| irdigital | 7 passed |
+| frozen | 1 passed |
+| planshape | 10 passed |
+| lib | 32 passed |
+| reaction | 5 passed |
+| nets | 2 passed |
+| commits | no target (T42 parked). Parked file run in place: 3 passed, `the_later_statement_wins` FAILED (x shows `[1,1]` then `[2,1]` at 2.5 ns and again at 7.5 ns), as the Handoff reports |
+| dpwm | 3 passed |
+| pid | 1 passed |
+| boundary | 1 passed (T46). Parked T45 file run in place: ADC passed, comparator FAILED under `TRAN_VOLTAGE`, as reported |
+| `cargo test -p` piperine-ir, -plan, -interp, -transpile, -parity (all targets, ngspice really run) | all passed |
+| gate extras: `suite_hygiene` 12, `workspace_shape` 8 + `crate_boundaries` 12 | passed |
+| root `cargo test` (default members) | 170 targets ok |
+
+Phase A unchanged: no diff in `crates/piperine-transpile/tests/golden/`, `crates/piperine-ir/tests/golden/*.txt`, `rt/real.rs`, `contract.rs`, `piperine-abi`, or the three solver crates since `e4f767dd`. For a design with no carrier, `Runtime::files(false)` gives `[("rt.rs", REAL)]` and the key parts are again `[source, REAL, rustc -vV, flags, ABI files]`, the ABI key `parts[2..]`: both keys and every generated file are bit-identical to phase A.
+
+## Mutations (each reverted; tree clean)
+
+Killed: `&`/`|` level shortcut removed (C68, C69); unknown delay keeps the value (C72); `flush` reversed (C72); `decide` unknown gives `Ok(false)` (C70); unknown `<<` by N not known 0 (C68); signed `>>` by N gives 0 (C66); float cast without saturation, signed and unsigned (C65); UInt division by 0 gives 0 (C63); remainder by `rem_euclid` (C63); negative shift gives 0 (C66); signed pin decode without sign extension (C91); `min_after` for a literal `>= 0` (C79); U16 known byte at 3 (C75); signal as `PORT` (C75); the event guard dropped from `fired_` (C98); the analog read of a carrier decoded as unknown (C94).
+Survived: plan statement walk visiting `else` before `then` (F-B3). Equivalent: value bytes encoded while unknown (an unknown `Flagged` always holds `T::default()`).
+
+## Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| C55 | `digital.rs` `integers_and_their_operators_print` | yes |
+| C56 | `digital.rs` `unknown_values_and_their_reads_print` | yes |
+| C57 | `digital.rs` `carriers_and_drives_print` | yes |
+| C58 | `digital.rs` `events_and_reactions_print` | yes |
+| C59 | `digital.rs` `a_defective_digital_body_gives_one_entry_per_defect` | yes - seven defects, item, file and line each, total count pinned |
+| C60 | `digital.rs` `the_m1_prints_are_unchanged` | yes - goldens untouched since `e4f767dd` |
+| C61 | `digital.rs` `the_buck_slice_bodies_pass_check_and_print_as_their_golden_texts` | yes |
+| C62 | `frozen.rs` `a_digital_body_is_rejected_by_name` | yes |
+| C63 | `rt::int::tests::arithmetic_wraps_at_every_width` | yes - i128 reference at ten widths, edges and 1000 pairs; div/rem by 0 panic named |
+| C64 | `rt::int::tests::casts_truncate_and_extend_by_the_source_sign` | yes |
+| C65 | `rt::int::tests::a_float_cast_saturates_and_nan_is_zero` | yes |
+| C66 | `rt::int::tests::a_shift_by_the_width_or_more_is_the_truncated_result` | yes |
+| C67 | `print::value::tests::a_type_rust_lacks_is_refused_by_name` | partly - `UInt<65>`/`Int<65>`/`UInt<0>` by name and path; the `Float<16>`/`Float<128>` half is vacuous (the IR has no such type) and must land where MSL is lowered to IR (F-B8) |
+| C68 | `rt::flag::tests::an_unknown_operand_gives_an_unknown_result` | yes, for one flag per value (F-B4) |
+| C69 | `rt::flag::tests::bool_operators_follow_the_level_rules` | yes - the nine and three cases written from §3.3.2 |
+| C70 | `rt::flag::tests::known_or_is_known_and_high` | yes |
+| C71 | `reaction.rs` `a_known_or_over_an_unwritten_input_gives_the_default` | yes |
+| C72 | `rt::flag::tests::an_unknown_value_is_written_as_zero_bytes` | yes |
+| C73 | `reaction.rs` `an_unknown_condition_faults_and_commits_nothing` | yes - a commit made before the `if` is not flushed; the instance answers the next call |
+| C74 | `reaction.rs` `an_unknown_delay_commits_unknown_at_the_next_microstep` | yes |
+| C75 | `digital_shape.rs` `carriers_are_discrete_pins_with_a_known_byte` | yes |
+| C76 | `digital_shape.rs` `a_drive_is_a_discrete_function` | yes |
+| C77 | `digital_shape.rs` `an_event_is_an_event_pin_and_its_function` | yes - T34's rewrite of T32's five write assertions to `CHANGED` follows abi.md §4.1 ("one byte: nonzero fires it") and `validate`; a correction, not a weakening. §11.4's `PREVIOUS` read is legitimately absent (IR `rise` = changed && high) |
+| C78 | `digital_shape.rs` `a_reaction_lists_its_events_reads_and_statements` | no - a plan walk with `else` before `then` stays green (F-B3) |
+| C79 | `digital_shape.rs` `only_a_literal_positive_delay_is_later` | yes |
+| C80 | `digital_shape.rs` `a_delayed_drive_is_a_pin_an_event_and_a_reaction` | yes (shape); behavior was checked by the Verifier's own example below |
+| C81 | `digital_shape.rs` `a_cross_event_is_a_watch_with_partials` | yes (shape); the compiled watch's behavior is C93, blocked |
+| C82 | `digital_shape.rs` `an_analog_read_of_a_carrier_is_a_read_of_terms` | yes |
+| C83 | `digital_shape.rs` `a_probing_reaction_reads_the_continuous_pin` | yes |
+| C84 | `digital_shape.rs` `every_buck_slice_shape_validates` | yes |
+| C85 | `dpwm.rs` `the_oscillator_toggles_every_half_period` | yes - the whole change list, 40 instants |
+| C86 | parked `two_commits_exchange_two_carriers` | blocked on solver-crossings; the parked test holds (both nets, both edges, the wrong reading named) |
+| C87 | parked `the_later_statement_wins` | blocked on solver-crossings; the parked test holds and is red today for the reported solver defect |
+| C88 | parked `two_statements_make_a_pulse` | blocked on solver-crossings; holds (both statement orders) |
+| C89 | parked `an_unchanged_commit_fires_nothing` | blocked on solver-crossings; holds, slightly loose: the counter's value after the move is not asserted, only one move at 2.5 ns |
+| C90 | `dpwm.rs` `the_dpwm_dithers_keeps_dead_time_and_never_overlaps` | yes - widths, dead times and 396 from SPEC §5.2/§5.3; full `hs` and `ls` change lists |
+| C91 | `pid.rs` `the_ramp_and_the_pid_follow_their_difference_equations` | yes - an independent i32 model of SPEC §6.2-§6.4, §7.2; script reaches both rails, windup hold and resets |
+| C92 | parked `the_adc_commits_the_rounded_code_after_tconv` | blocked on solver-crossings (passes in place); holds |
+| C93 | parked `the_comparator_trips_at_its_thresholds` | blocked on solver-crossings; holds (trip judged by the analytic voltage, no time tolerance) |
+| C94 | `boundary.rs` `a_carrier_change_is_a_time_point_and_starts_the_response` | yes, under a 1 ns step cap (F-B7) |
+| C95 | `dpwm.rs` `two_runs_give_the_same_changes` | yes |
+| C98 | `digital_circuit.rs` `carrier_ports_bind_to_design_nets` | yes - with a negative control |
+| C99 | `digital_circuit.rs` `every_buck_slice_body_compiles_with_no_warning` | yes |
+
+## Own examples (throwaway, not committed)
+
+- `GateDriver` with `hs_cmd` held true, `ls_cmd` false, `tpd` 10 ns: `hs_gate` becomes `HIGH` and `ls_gate` `LOW` at exactly 10 ns, the first commit made at `(0, 0)` as part III §8.2.4 says. Holds.
+- `(x & 1u9) & 2u9` with `x` unknown: §3.3.2 per level gives known 0; the runtime gives unknown (F-B4).
+
+## Findings
+
+| Finding | Severity | Evidence | Fix | Closed |
+| --- | --- | --- | --- | --- |
+| F-B1 A `signal` carrier of a parent that its children's ports meet on is silently a private pin of the parent, disconnected from the children's net: the parent's drives and commits never reach them, with no error | major | `crates/piperine-plan/src/netlist.rs:66` skips every `Signal`; buck `top.msl:28` (`target_codes(setpoint.known_or(0))` at an `in` port) is exactly this shape in M2 | refuse now in `Netlist::circuit` when a signal's net is bound by another instance (`Error`, naming carrier and net); the real binding lands in msl-digital | |
+| F-B2 A net's own `init` is dropped silently | major | `netlist.rs` doc comment ("a net's own `init` is not passed"); `NetSpec.init` is never read | refuse a net with `init` and no carrier init until `CircuitBuilder` can take it (msl-digital) | |
+| F-B3 C78 does not hold its order: the plan's commit walk can visit `else` before `then` and every test stays green; the printer's guard compares carriers only, so a disagreement between plan and printer on two statements of one carrier goes unseen and gives a statement the wrong `LATER`/`min_after` | minor | mutation `Expr::If … each(&[*cond, *otherwise, *then])` in `crates/piperine-plan/src/digital.rs` survives planshape and reaction | a fixture with `if c { b <- 2 after 1e-9 } else { b <- 3 after 2e-9 }` asserting each statement's `min_after`; have the printer compare `(carrier, min_after)` with the plan | |
+| F-B4 One known flag per value (batch 5) diverges from §3.3.2 on partial masks, and the feature spec's own row disagrees with the code. §3.3.2: "`&`, `\|`, `^`, `!` work per level: `unknown & false == false`, `unknown \| true == true`, otherwise unknown"; §3.3.11 "A shift by a known amount fills with known levels". The code is per level only when one operand is all-false/all-true; `(x & 1) & 2` is unknown where the spec gives known 0, so a later `known_or(d)` returns `d` instead of 0. spec.md's row "every other operator is all-or-nothing" says integers `&`/`\|` are all-or-nothing, which the code (rightly, per §3.3.2) does not do | minor | `rt/flag.rs:318-340`; own example above; spec.md "One known flag per scalar" row | amend the spec.md row to what T36 built and state the rounding (fewer known levels than §3.3.2 for partial masks); record it in ROADMAP "MSL spec gaps" until per-level flags exist | |
+| F-B5 A carrier initial value that is not a value of its type panics in `BodyPlan::new` instead of a `check()` entry | minor | `crates/piperine-plan/src/digital.rs:186-189`; `check.rs` validates no carrier `init` | add the `check()` entry (type and range of `Carrier::init`); due before msl-digital produces IR | |
+| F-B6 Forms with no lowering surface late, not as `Error::Unsupported` by name: a reaction reading `temperature`/`gmin`/`source_scale` is planned as an `AMBIENT` read that `piperine_abi::validate` refuses for reactions (only at circuit build); a `limit`/`stim` reading a carrier is unhandled (Handoff T40) | minor | `print/digital.rs:96`, `validate.rs:420`; Handoff T40 | refuse both by name in the printer (or `BodyPlan`), now; note §12.1.12 lets a reaction read the environment, so the ABI's reaction ambient set needs a ruling | |
+| F-B7 T46's 1 ns step cap: with the parity harness's own policy (a 10 ns cap here) the response fails `TRAN_VOLTAGE` 5.55 ns after `t0` (first step after the jump); the cap is 20x tighter than `parity_tran`'s. Not a transpiler defect (the switch's terms are proven), but it hides that the solver's restart after a discrete-to-analog jump does not meet the contract at the harness's step | minor | `boundary.rs` with `run_with(8.9e-6, 1e-8)`: `parity failure: switch_rc / v(x) at time 3.00925e-6 s` | report to the solver (restart step after a boundary event); keep the cap, cite this finding at it | |
+| F-B8 RS-10 AC 5's `Float<16>`/`Float<128>` half cannot be held by the IR, so C67 proves it vacuously | minor | `print/value.rs` test comment | carry the refusal to msl-elab/typeck (the lowering into IR), with its own check there | |
+| F-B9 Hygiene: tasks.md holds a spliced duplicate of phases 1-8 (line 1224 starts mid-sentence "## Checks` cites."; T24-T45 appear twice, T46 once); the parked T42 file keeps a dummy `let _ = UnaryOp::Not;`; a negative shift amount panics (`rt/int.rs:197`) with no spec rule (G5 covers `N` or more only) | minor | `tasks.md:715` and `:1883` | remove the duplicate block; drop the dummy import; add the negative amount to ROADMAP G5 | |
+
+### Item 7 classification (gaps that panic or refuse late)
+
+- Carrier init type mismatch: F-B5, fix in `check()` before msl-digital.
+- Digital code reading gmin/source_scale/temperature: F-B6, refuse by name now; the probe read in a reaction is legal (§12.1.12) and planned correctly (C83).
+- `limit`/`stim` reading a carrier: F-B6, refuse by name now.
+- Parent signal as private pin: F-B1, refuse now, real binding in msl-digital.
+- Net `init` not passed: F-B2, refuse now, pass in msl-digital.
