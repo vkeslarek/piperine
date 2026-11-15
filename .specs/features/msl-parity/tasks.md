@@ -284,11 +284,11 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] The options are built from the count and the end points of the export; `same_grid` is asserted on the solver's frequencies before any value is compared
-- [ ] The row count is asserted (41)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_ac`: `ac_rc`
-- [ ] Gate check passes: `cargo test -p piperine-parity`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] The options are built from the count and the end points of the export; `same_grid` is asserted on the solver's frequencies before any value is compared
+- [x] The row count is asserted (41)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_ac`: `ac_rc`
+- [x] Gate check passes: `cargo test -p piperine-parity`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: e2e
 **Gate**: full
@@ -308,14 +308,14 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `crates/piperine-parity/src/waveform.rs` holds `Waveform` with its unit tests
-- [ ] An exported time outside the result panics naming the time; nothing is extrapolated
-- [ ] `the_transient_step_cap_is_a_tenth_of_the_print_step` asserts the option the test passes, derived from the export's first two times
-- [ ] The row count is asserted (100)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_tran`: `tran_rc`, `the_transient_step_cap_is_a_tenth_of_the_print_step`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --lib`: `waveform::tests::a_time_outside_the_result_is_none`
-- [ ] Gate check passes: `cargo test -p piperine-parity`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `crates/piperine-parity/src/waveform.rs` holds `Waveform` with its unit tests
+- [x] An exported time outside the result panics naming the time; nothing is extrapolated
+- [x] `the_transient_step_cap_is_a_tenth_of_the_print_step` asserts the option the test passes, derived from the export's first two times
+- [x] The row count is asserted (100)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_tran`: `tran_rc`, `the_transient_step_cap_is_a_tenth_of_the_print_step`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --lib`: `waveform::tests::a_time_outside_the_result_is_none`
+- [x] Gate check passes: `cargo test -p piperine-parity`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: e2e
 **Gate**: full
@@ -335,11 +335,11 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Planted: a twin name with no test, a twin with no `.cir`, a line `assert!((a - b).abs() < 1e-3)`: each reported with file and line
-- [ ] Green on the tree with the six twins
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_corpus`: `no_parity_target_compares_against_a_literal`, `every_twin_has_a_cir_and_a_test`, `a_literal_tolerance_in_a_parity_target_is_reported`, `the_guards_report_planted_text`
-- [ ] Gate check passes: `cargo test -p piperine-parity`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Planted: a twin name with no test, a twin with no `.cir`, a line `assert!((a - b).abs() < 1e-3)`: each reported with file and line
+- [x] Green on the tree with the six twins
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_corpus`: `no_parity_target_compares_against_a_literal`, `every_twin_has_a_cir_and_a_test`, `a_literal_tolerance_in_a_parity_target_is_reported`, `the_guards_report_planted_text`
+- [x] Gate check passes: `cargo test -p piperine-parity`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -472,7 +472,7 @@ Proof: run harness | test parallel_runs_do_not_share_a_scratch_directory ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** 2026-11-15 orchestrator, under the user's standing delegation: T8 unblocked by amending PAR-06 AC 5 (the grid is compared at the export's print precision, f9165f89); T9 unblocked by a solver fix (the step whose target is the stop ends at the stop bit for bit, 9b6a38e2). No tolerance, fixture or `.cir` changed.
 **Dispatched:** 2026-11-15 batch 1 (T1-T4, Sonnet) done 432b4763; main (ir, typeck, elab, interp) merged in 54263820; batch 2 (T5-T10, Sonnet) in ../piperine-msl-parity
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
