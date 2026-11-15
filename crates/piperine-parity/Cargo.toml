@@ -6,4 +6,7 @@ publish = false
 
 [dependencies]
 piperine-lang = { path = "../piperine-lang" }
+piperine-interp = { path = "../piperine-interp" }
+piperine-ir = { path = "../piperine-ir" }
+piperine-solver = { path = "../piperine-solver" }
 tempfile.workspace = true

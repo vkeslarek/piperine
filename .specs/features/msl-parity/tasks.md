@@ -208,14 +208,14 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `Cargo.toml` gains `piperine-interp`, `piperine-ir` and `piperine-solver`
-- [ ] `Bench::load("divider")`, `dc()`, `node("mid")` reads 7.5 V within 1e-9
-- [ ] `source("v1")` is the `BranchIdentifier` of the private flow pin of `<Top>.v1`
-- [ ] A twin text with a type error (written in the test to a temporary directory) panics naming the stage `typeck` and the diagnostic's code
-- [ ] With a `Reference::Skipped`, the comparison loop runs zero times after the solve succeeded; a failing solve still panics
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test bench`: `a_twin_loads_into_a_bound_circuit`, `a_failing_stage_is_named_with_its_diagnostics`, `nodes_and_sources_are_reached_by_cir_names`, `a_skipped_reference_still_solves_the_msl_side`
-- [ ] Gate check passes: `cargo test -p piperine-parity`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `Cargo.toml` gains `piperine-interp`, `piperine-ir` and `piperine-solver`
+- [x] `Bench::load("divider")`, `dc()`, `node("mid")` reads 7.5 V within 1e-9
+- [x] `source("v1")` is the `BranchIdentifier` of the private flow pin of `<Top>.v1`
+- [x] A twin text with a type error (written in the test to a temporary directory) panics naming the stage `typeck` and the diagnostic's code
+- [x] With a `Reference::Skipped`, the comparison loop runs zero times after the solve succeeded; a failing solve still panics
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test bench`: `a_twin_loads_into_a_bound_circuit`, `a_failing_stage_is_named_with_its_diagnostics`, `nodes_and_sources_are_reached_by_cir_names`, `a_skipped_reference_still_solves_the_msl_side`
+- [x] Gate check passes: `cargo test -p piperine-parity`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: integration
 **Gate**: full
