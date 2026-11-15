@@ -306,9 +306,9 @@ of its own.
 10. Sensitivities across a jump are those of the states carried and of the step that reads it
     (§23.3.2).
 
-> **Note.** The device ABI (`piperine_abi_1`) runs the instant `t_c` after accepting the
-> solution there, so a change due at `t_c` is read by the next step after a boundary event;
-> the present solver reads it in the step that arrives at `t_c`. `solver-abi` resolves it.
+> **Note.** This section and §15 describe the present solver, which runs the microsteps of
+> `t` before it solves `t`. The device ABI (`piperine_abi_1`) order, solve at `t` and then
+> react, is adopted: `solver-abi` implements it and rewrites §15 when it changes the code.
 
 **Errors**
 
