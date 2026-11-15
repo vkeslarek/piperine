@@ -421,8 +421,9 @@ later microstep.
   latest decision about each future time. Different statements never cancel each other: their
   commits meet only when they apply, under §12.1.2. `p <- true; p <- false after w;` is a pulse in
   either order. This behavior is the **transport delay**.
-- **§12.1.5** **Probes read the solution at the instant** the event fired: at `(t, n)`, the
-  solution after microstep `n − 1` (§15). A reaction that probes makes its instant a time point of
+- **§12.1.5** **Probes read the latest solution at the instant** the event fired: at `(t, n)`,
+  the solution of the previous time point before §15 step 3.4 solves `t`, the solution at `t`
+  after it (§15 step 3.3). A reaction that probes makes its instant a time point of
   the solver (§17.2).
 - **§12.1.6** **A reaction never suspends.** It runs to completion at its instant. A sequence over
   time is visible state (§12.2).
@@ -769,8 +770,8 @@ library (§22), written in the language over this section.
   primitive. §14.1–§14.10 cite its rows, restate one only to add detail, and add what a
   reaction reads. Where they differ, §16.2 governs.
 - **§14 rule 7** A continuous core result read in a reaction, a guard or an event argument has the
-  value it has in the solution that context reads (§15): the solution after microstep `n − 1`, or
-  the final solution in `on settle`.
+  value it has in the solution that context reads (§15 step 3.3): the solution of the previous
+  time point before step 3.4 solves `t`, the solution at `t` after it and in `on settle`.
 - **§14 rule 8** State of a core module advances only on accepted steps (§17.2.4) and is restored by
   a rejected one (§17.2.3). It is kept by an analysis run at a transient's last instant (§16.4).
 - **§14 rule 9** A core module's state advances whatever control flow surrounds its placement

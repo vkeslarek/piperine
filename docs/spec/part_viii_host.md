@@ -193,7 +193,7 @@ piece by piece:
 | Symbol | Meaning |
 | --- | --- |
 | `∂x/∂p` | the derivative of `x` at the fixed instant, through every probe, param and real carrier `x` reads |
-| `ẋ` | the time derivative of `x` along the solution the reaction reads (§15: the solution after microstep `n − 1`) |
+| `ẋ` | the time derivative of `x` along the solution the reaction reads (§15 step 3.3: the previous time point's solution before step 3.4, the solution at `t` after it) |
 | `dt*/dp` | how the instant moves: rule 2 for a located crossing, rule 3 for a scheduled time, 0 for a fixed time |
 | `s_q` | the sensitivity the carrier `q` holds |
 
