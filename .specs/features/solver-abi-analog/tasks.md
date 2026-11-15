@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/solver-abi-analog/design.md`
-**Status**: Draft
+**Status**: Done
 **Build**: `cargo build -p piperine-analog-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run analog**: `cargo test -p piperine-analog-solver`
 
@@ -384,7 +384,7 @@ Proof: `cargo test -p piperine-analog-solver --lib 2>&1 | grep -E '^test result:
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** B1 at daa75d37 - returned (T1-T6 45d8a189..f7cde469 + merge core 1f75003a; limited-diode test at reltol 1e-10 (new test); DELAY history pushed in accept); B2 (Opus) at ecddd47c - returned (T7-T10 92462429..9401619a + core final merge b59184c6 + adapt 50dd951d); Verifier (Opus) at 836b22cb
+**Dispatched:** B1 at daa75d37 - returned (T1-T6 45d8a189..f7cde469 + merge core 1f75003a; limited-diode test at reltol 1e-10 (new test); DELAY history pushed in accept); B2 (Opus) at ecddd47c - returned (T7-T10 92462429..9401619a + core final merge b59184c6 + adapt 50dd951d); Verifier (Opus) at 836b22cb - returned (PASS; F1 docs closed 5cf83310)
 **Walked:** not applicable - no screen
 
 ---

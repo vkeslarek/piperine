@@ -1,6 +1,6 @@
 # Solver ABI Analog verification
 
-**Verdict**: PASS on the numerics; one documentation finding open (F1)
+**Verdict**: PASS - all 23 checks hold; numerics bit-identical to the old Element path; F1 (docs) closed by 5cf83310
 **Round**: 1
 **Proofs**: `proofs.md` at 20d6b2db (25 pass); judged at eaf20e99 (docs-only on top)
 **Verifier**: independent sub-agent (author != verifier)
@@ -75,7 +75,7 @@ not move.
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| F1 - design's `param_stamps` was not built and the "As built" line does not say so | design.md `device::assembly` interfaces list `param_stamps(&mut self, x, param, sink) -> bool`; `grep param_stamps crates/piperine-analog-solver/src/device` is empty; no spec criterion or task names it, so no check fails | add to the "As built" line that `param_stamps` is not built and moves to `solver-abi-integration` (the sensitivity path falls back to a finite difference until then) | |
+| F1 - design's `param_stamps` was not built and the "As built" line does not say so | design.md `device::assembly` interfaces list `param_stamps(&mut self, x, param, sink) -> bool`; `grep param_stamps crates/piperine-analog-solver/src/device` is empty; no spec criterion or task names it, so no check fails | add to the "As built" line that `param_stamps` is not built and moves to `solver-abi-integration` (the sensitivity path falls back to a finite difference until then) | 5cf83310 |
 
 Observations, not findings (each is the spec's own rule or integration's wiring):
 
