@@ -1471,6 +1471,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-interp"
+version = "0.2.0"
+dependencies = [
+ "piperine-abi",
+ "piperine-ir",
+ "piperine-solver",
+]
+
+[[package]]
 name = "piperine-ir"
 version = "0.2.0"
 dependencies = [

@@ -5,6 +5,7 @@ members = [
     "crates/piperine-api",
     "crates/piperine-cli",
     "crates/piperine-digital-solver",
+    "crates/piperine-interp",
     "crates/piperine-ir",
     "crates/piperine-lang",
     "crates/piperine-project",
@@ -12,7 +13,7 @@ members = [
     "crates/piperine-solver",
 ]
 
-default-members = ["crates/piperine-abi", "crates/piperine-analog-solver", "crates/piperine-digital-solver", "crates/piperine-ir", "crates/piperine-lang", "crates/piperine-solver"]
+default-members = ["crates/piperine-abi", "crates/piperine-analog-solver", "crates/piperine-digital-solver", "crates/piperine-interp", "crates/piperine-ir", "crates/piperine-lang", "crates/piperine-solver"]
 
 [workspace.package]
 version = "0.2.0"

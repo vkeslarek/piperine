@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/ir-interp/design.md`
-**Status**: Approved
+**Status**: Done
 **Build**: `cargo build -p piperine-abi --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-interp || cargo build -p piperine-interp --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run factory**: `cargo test -p piperine-abi --test factory`
 **Run lib**: `cargo test -p piperine-interp --lib`
@@ -121,14 +121,14 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] The test factory `Gain { k }` builds two modules with different `k` from one device type; each evaluates with its own `k`
-- [ ] A panic in the factory's `eval` is a `FAULT` with the message in the note; nothing unwinds
-- [ ] `unsafe` stays in `thunk.rs`, every block with its `// SAFETY:` line citing abi.md
-- [ ] `Device`, `module::<D>` and every existing test are untouched: `git diff` shows only additions in `device.rs`/`thunk.rs`, the new target and abi.md §7
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-abi --test factory`: `module_with_carries_the_factory`, `create_goes_through_the_factory_and_validates`, `eval_and_react_run_the_created_instance`
-- [ ] Exits 0: `cargo test -p piperine-abi && cargo test -p piperine-solver`
-- [ ] Gate check passes: `cargo test -p piperine-abi`; `cargo test -p piperine-solver`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] The test factory `Gain { k }` builds two modules with different `k` from one device type; each evaluates with its own `k`
+- [x] A panic in the factory's `eval` is a `FAULT` with the message in the note; nothing unwinds
+- [x] `unsafe` stays in `thunk.rs`, every block with its `// SAFETY:` line citing abi.md
+- [x] `Device`, `module::<D>` and every existing test are untouched: `git diff` shows only additions in `device.rs`/`thunk.rs`, the new target and abi.md §7
+- [x] Tests with exactly these names pass in `cargo test -p piperine-abi --test factory`: `module_with_carries_the_factory`, `create_goes_through_the_factory_and_validates`, `eval_and_react_run_the_created_instance`
+- [x] Exits 0: `cargo test -p piperine-abi && cargo test -p piperine-solver`
+- [x] Gate check passes: `cargo test -p piperine-abi`; `cargo test -p piperine-solver`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -150,13 +150,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Root `Cargo.toml` lists the crate in `members` and `default-members`; `workspace_shape.rs::DEFAULT_MEMBERS` gains it; `crate_boundaries` stays green (no solver crate gains an edge)
-- [ ] `Rejected` carries the `check()` entries
-- [ ] `the_crate_spawns_nothing_and_reads_no_file` scans `crates/piperine-interp/src` for `std::process`, `std::fs` and `unsafe` and finds none
-- [ ] `crates/piperine-interp/tests/support/circuits.rs` builds, over `devices.rs`: the divider, a diode behind a source and 1 Ω, an RC low-pass with an AC source, an RC with the node `out` held at 0
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `an_ir_that_fails_check_is_rejected`, `the_crate_spawns_nothing_and_reads_no_file`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Root `Cargo.toml` lists the crate in `members` and `default-members`; `workspace_shape.rs::DEFAULT_MEMBERS` gains it; `crate_boundaries` stays green (no solver crate gains an edge)
+- [x] `Rejected` carries the `check()` entries
+- [x] `the_crate_spawns_nothing_and_reads_no_file` scans `crates/piperine-interp/src` for `std::process`, `std::fs` and `unsafe` and finds none
+- [x] `crates/piperine-interp/tests/support/circuits.rs` builds, over `devices.rs`: the divider, a diode behind a source and 1 Ω, an RC low-pass with an AC source, an RC with the node `out` held at 0
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `an_ir_that_fails_check_is_rejected`, `the_crate_spawns_nothing_and_reads_no_file`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -176,12 +176,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Each operator and method is tested for value and tangent against the analytic formula at three points
-- [ ] Arithmetic between two constants allocates no tangent
-- [ ] `abs` at a negative value gives the negated tangent
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --lib`: `dual::tests::abs_has_the_derivative_of_sign`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Each operator and method is tested for value and tangent against the analytic formula at three points
+- [x] Arithmetic between two constants allocates no tangent
+- [x] `abs` at a negative value gives the negated tangent
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --lib`: `dual::tests::abs_has_the_derivative_of_sign`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -201,12 +201,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] `pnjlim` evaluated at the six branch points of its source equals the same formula written in the test
-- [ ] `1.0 / 0.0` is `inf` and nothing fails
-- [ ] A closure reached outside a `limit` faults with the closure's origin in the message
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --lib`: `walk::tests::f64_arithmetic_and_methods_match_rust`, `walk::tests::division_by_zero_is_ieee`, `walk::tests::short_circuit_and_if_evaluate_one_side`, `walk::tests::calls_bind_parameters_and_closures_see_locals`, `walk::tests::an_unexecuted_form_faults_with_its_origin`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `pnjlim` evaluated at the six branch points of its source equals the same formula written in the test
+- [x] `1.0 / 0.0` is `inf` and nothing fails
+- [x] A closure reached outside a `limit` faults with the closure's origin in the message
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --lib`: `walk::tests::f64_arithmetic_and_methods_match_rust`, `walk::tests::division_by_zero_is_ieee`, `walk::tests::short_circuit_and_if_evaluate_one_side`, `walk::tests::calls_bind_parameters_and_closures_see_locals`, `walk::tests::an_unexecuted_form_faults_with_its_origin`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -228,12 +228,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Resistor pins `r, p, n` and term `FLOW{p,n}`; Capacitor term `DDT{p,n}`; Vsource pins `dc, ac, p, n, b0.flow` and terms `FLOW{p,n}`, `FLOW{b0.flow, GROUND}`; Diode pins `is, n, cj0, a, k, temperature`, one `LIMIT` input `vd`, terms `FLOW{a,k}` and `DDT{a,k}`
-- [ ] A node with `= value` has `HAS_INIT` and the value as `init`; continuous pins carry `abstol = [1e-6, 1e-12]` for `Electrical`
-- [ ] `Handle::create` with 4 bytes for an `f64` param faults naming the param
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `a_held_node_gives_has_init`, `pins_come_in_the_declared_order`, `a_flow_branch_declares_flow_and_ddt_terms`, `a_potential_branch_declares_its_pin_and_two_terms`, `sites_declare_limit_and_stim_inputs`, `a_value_of_the_wrong_layout_faults_naming_the_param`, `a_block_without_contributions_gives_no_term`, `a_held_node_without_analog_is_ports_only`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Resistor pins `r, p, n` and term `FLOW{p,n}`; Capacitor term `DDT{p,n}`; Vsource pins `dc, ac, p, n, b0.flow` and terms `FLOW{p,n}`, `FLOW{b0.flow, GROUND}`; Diode pins `is, n, cj0, a, k, temperature`, one `LIMIT` input `vd`, terms `FLOW{a,k}` and `DDT{a,k}`
+- [x] A node with `= value` has `HAS_INIT` and the value as `init`; continuous pins carry `abstol = [1e-6, 1e-12]` for `Electrical`
+- [x] `Handle::create` with 4 bytes for an `f64` param faults naming the param
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `a_held_node_gives_has_init`, `pins_come_in_the_declared_order`, `a_flow_branch_declares_flow_and_ddt_terms`, `a_potential_branch_declares_its_pin_and_two_terms`, `sites_declare_limit_and_stim_inputs`, `a_value_of_the_wrong_layout_faults_naming_the_param`, `a_block_without_contributions_gives_no_term`, `a_held_node_without_analog_is_ports_only`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -253,13 +253,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Diode: `limit:vd` reads `[a, k, is, n, temperature, vd.LAST, vd.AGE, STATIC]`, writes `[vd.PROPOSED, vd.LIMITED]`, partials `(PROPOSED←a)`, `(PROPOSED←k)`; `terms` reads `[vd.VALUE, is, n, cj0, temperature, GMIN]`, partials `(flow←vd)`, `(charge←vd)`
-- [ ] Resistor `terms`: reads `[p, n, r]`, partials `(flow←p)`, `(flow←n)`, none against `r`
-- [ ] No function writes both a limit and a term
-- [ ] `validate` accepts all five device shapes and the two edge-case shapes
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `one_function_per_site_and_one_for_terms`, `reads_and_partials_are_the_dependency_sets`, `every_entry_carries_its_origin`, `every_m1_shape_validates`, `no_function_writes_a_limit_and_a_term`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Diode: `limit:vd` reads `[a, k, is, n, temperature, vd.LAST, vd.AGE, STATIC]`, writes `[vd.PROPOSED, vd.LIMITED]`, partials `(PROPOSED←a)`, `(PROPOSED←k)`; `terms` reads `[vd.VALUE, is, n, cj0, temperature, GMIN]`, partials `(flow←vd)`, `(charge←vd)`
+- [x] Resistor `terms`: reads `[p, n, r]`, partials `(flow←p)`, `(flow←n)`, none against `r`
+- [x] No function writes both a limit and a term
+- [x] `validate` accepts all five device shapes and the two edge-case shapes
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `one_function_per_site_and_one_for_terms`, `reads_and_partials_are_the_dependency_sets`, `every_entry_carries_its_origin`, `every_m1_shape_validates`, `no_function_writes_a_limit_and_a_term`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -279,13 +279,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Capacitor at `v = 2`, `c = 1e-9`: charge `2e-9`, partials `c`, `-c`
-- [ ] Diode at `vd.VALUE = 0.6`, 300.15 K: flow `is·(exp(vd/vt) − 1) + gmin·vd` and partial `is·exp(vd/vt)/vt + gmin`, both to 1e-12 relative; charge `cj0·vd`
-- [ ] Vsource: `b0.flow` term equals the private pin with partial 1; `b0.eq` equals `vp − vn − dc·source_scale` with `source_scale` read from the ambient
-- [ ] An unseeded partial is left zero; two evaluations with equal inputs write equal bytes
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `evaluating_twice_writes_the_same_bytes`, `the_terms_function_sums_addends_with_signs`, `seeded_partials_are_the_dual_derivatives`, `environment_reads_come_from_pin_and_ambients`, `a_non_finite_value_is_written_as_is`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Capacitor at `v = 2`, `c = 1e-9`: charge `2e-9`, partials `c`, `-c`
+- [x] Diode at `vd.VALUE = 0.6`, 300.15 K: flow `is·(exp(vd/vt) − 1) + gmin·vd` and partial `is·exp(vd/vt)/vt + gmin`, both to 1e-12 relative; charge `cj0·vd`
+- [x] Vsource: `b0.flow` term equals the private pin with partial 1; `b0.eq` equals `vp − vn − dc·source_scale` with `source_scale` read from the ambient
+- [x] An unseeded partial is left zero; two evaluations with equal inputs write equal bytes
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `evaluating_twice_writes_the_same_bytes`, `the_terms_function_sums_addends_with_signs`, `seeded_partials_are_the_dual_derivatives`, `environment_reads_come_from_pin_and_ambients`, `a_non_finite_value_is_written_as_is`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -305,13 +305,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] For 1000 pseudo-random `(vp, vn, r)` from a fixed seed, the resistor's value minus `0.0 + g*vp + (-g)*vn` is exactly `0.0`, and the value equals `g*vp - g*vn` bit for bit with `g = 1.0/r`
-- [ ] The Vsource's `b0.flow` and `b0.eq` terms follow the same rule
-- [ ] The diode's flow term, not affine, is evaluated at the iterate as in T7
-- [ ] A body with affine and non-affine terms evaluates each by its own rule (hand-built test body)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `an_affine_term_is_constant_plus_folded_products`, `the_resistor_matches_the_hand_written_products_bit_for_bit`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] For 1000 pseudo-random `(vp, vn, r)` from a fixed seed, the resistor's value minus `0.0 + g*vp + (-g)*vn` is exactly `0.0`, and the value equals `g*vp - g*vn` bit for bit with `g = 1.0/r`
+- [x] The Vsource's `b0.flow` and `b0.eq` terms follow the same rule
+- [x] The diode's flow term, not affine, is evaluated at the iterate as in T7
+- [x] A body with affine and non-affine terms evaluates each by its own rule (hand-built test body)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `an_affine_term_is_constant_plus_folded_products`, `the_resistor_matches_the_hand_written_products_bit_for_bit`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -331,14 +331,14 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Diode `limit:vd`: `PROPOSED = va − vk` with partials `1`, `-1`
-- [ ] Each of the four `(AGE, STATIC)` cases picks the `old` the criterion states; a site with no seed uses `x`
-- [ ] With `x` below `vcrit` on the first iteration, `LIMITED` is `vcrit`
-- [ ] In `terms`, the site's `x`, `f` and seed are not evaluated: a test body whose `x` would fault proves it
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test limit`: `a_limit_writes_proposed_and_limited`, `old_is_seed_or_last_by_age_and_static`, `the_seed_is_kept_when_the_limited_value_falls_below`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `the_terms_function_reads_the_limit_value_untouched`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Diode `limit:vd`: `PROPOSED = va − vk` with partials `1`, `-1`
+- [x] Each of the four `(AGE, STATIC)` cases picks the `old` the criterion states; a site with no seed uses `x`
+- [x] With `x` below `vcrit` on the first iteration, `LIMITED` is `vcrit`
+- [x] In `terms`, the site's `x`, `f` and seed are not evaluated: a test body whose `x` would fault proves it
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test limit`: `a_limit_writes_proposed_and_limited`, `old_is_seed_or_last_by_age_and_static`, `the_seed_is_kept_when_the_limited_value_falls_below`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `the_terms_function_reads_the_limit_value_untouched`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build
@@ -360,13 +360,13 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Vsource `stim:0` with `ac = 1` writes `RE = 1.0`, `IM = 0.0`
-- [ ] A hand-built site with phase `π/2` writes `RE` within 1e-16 of 0 and `IM = mag`
-- [ ] In `terms`, the Vsource's `b0.eq` has partial `-1` against the stim's `VALUE`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test stim`: `a_stim_writes_its_phasor`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `the_terms_function_reads_the_stim_value`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Vsource `stim:0` with `ac = 1` writes `RE = 1.0`, `IM = 0.0`
+- [x] A hand-built site with phase `π/2` writes `RE` within 1e-16 of 0 and `IM = mag`
+- [x] In `terms`, the Vsource's `b0.eq` has partial `-1` against the stim's `VALUE`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test stim`: `a_stim_writes_its_phasor`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `the_terms_function_reads_the_stim_value`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
@@ -386,14 +386,14 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] `the_divider_reads_seven_and_a_half_volts`: `Divider.mid` is 7.5 V within 1e-9 in `dc()`
-- [ ] `a_diode_converges_to_the_shockley_point`: 0.8 V, 1 Ω, the current equals the fixed point of the Shockley equation with `gmin` to 1e-9 relative
-- [ ] `an_rc_low_pass_is_at_minus_three_db_at_its_corner`: magnitude `1/√2` to 1e-9 at 100 kHz
-- [ ] `a_held_node_starts_the_transient`: `out` is 0 V at the first step and follows `1 − exp(−t/RC)` within 1e-3 at `t = RC`
-- [ ] If the spike shows bind rejects a function-less shape: stop and report; the design's fallback (`TransientSolver::apply_initial_conditions` from the IR's node inits) is taken only with the orchestrator's word
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `one_module_per_body_with_behaviour_or_a_held_node`, `a_circuit_binds_instances_nodes_and_params`, `an_unset_param_keeps_its_default`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `the_divider_reads_seven_and_a_half_volts`: `Divider.mid` is 7.5 V within 1e-9 in `dc()`
+- [x] `a_diode_converges_to_the_shockley_point`: 0.8 V, 1 Ω, the current equals the fixed point of the Shockley equation with `gmin` to 1e-9 relative
+- [x] `an_rc_low_pass_is_at_minus_three_db_at_its_corner`: magnitude `1/√2` to 1e-9 at 100 kHz
+- [x] `a_held_node_starts_the_transient`: `out` is 0 V at the first step and follows `1 − exp(−t/RC)` within 1e-3 at `t = RC`
+- [x] If the spike shows bind rejects a function-less shape: stop and report; the design's fallback (`TransientSolver::apply_initial_conditions` from the IR's node inits) is taken only with the orchestrator's word
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `one_module_per_body_with_behaviour_or_a_held_node`, `a_circuit_binds_instances_nodes_and_params`, `an_unset_param_keeps_its_default`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: integration
 **Gate**: full
@@ -413,15 +413,15 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] `circuit.set("Divider.r1", "r", ParamValue::Real(-1.0))` is an error and the next `dc()` reads 7.5 V
-- [ ] `set` of a legal value changes the result
-- [ ] Every function of every body passes `verify_partials` at three bias points with `rel_tol` 1e-6, the diode's limit probed where `LIMITED = PROPOSED`
-- [ ] All shapes still validate with the check pins
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test partials`: `every_m1_function_passes_verify_partials`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `a_where_declares_a_check_pin_and_function`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `a_set_that_breaks_a_where_is_refused`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `circuit.set("Divider.r1", "r", ParamValue::Real(-1.0))` is an error and the next `dc()` reads 7.5 V
+- [x] `set` of a legal value changes the result
+- [x] Every function of every body passes `verify_partials` at three bias points with `rel_tol` 1e-6, the diode's limit probed where `LIMITED = PROPOSED`
+- [x] All shapes still validate with the check pins
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test partials`: `every_m1_function_passes_verify_partials`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `a_where_declares_a_check_pin_and_function`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `a_set_that_breaks_a_where_is_refused`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: integration
 **Gate**: build
@@ -566,6 +566,18 @@ Proof: run circuit | test an_unset_param_keeps_its_default ... ok
 **C44** - IF a contribution evaluates to a non-finite value THEN the system SHALL write it as it is; the solver fails the solve (abi.md A4, `E0507`). (INT edge case 4; T7)
 Proof: run terms | test a_non_finite_value_is_written_as_is ... ok
 
+**C45** - WHEN a function's walk passes dead code over a `bool` param and a real param the function does not read THEN the system SHALL run no arm decided by them and SHALL write the declared values exactly. (INT edge case 5, verification F4)
+Proof: run terms | test an_undeclared_read_never_steers_the_walk ... ok
+
+**C46** - IF a value or a decision is taken from a cell the function does not read THEN the system SHALL give `Unread` through operators, `if`, `&&`, `||` and calls, run no arm it decides, and fault (`Walk::UNDECLARED`) where a number or a decision is needed; a comparison over an unread real SHALL NOT choose an arm. (INT edge case 5, verification F4)
+Proof: run lib | test walk::tests::an_unread_value_steers_nothing ... ok
+
+**C47** - WHEN a transient's stop time is off the solver's tick grid THEN the run SHALL end with exactly one record at the stop, the integrated trajectory point, and no two records SHALL share a time. (verification F1; the solver's own proof is `abi_tran.rs` `a_stop_off_the_tick_grid_is_reached_once_by_an_integrating_step`)
+Proof: run circuit | test a_held_node_starts_the_transient ... ok
+
+**C48** - WHEN an affine term's constant `c` is not 0 THEN its right-side residue `(c ⊕ dot) ⊖ dot` SHALL differ from `c` by at most one ulp of `max(|c|, |dot|)`, and SHALL be exactly 0 when `c` is 0. (INT-12, AC 3; verification F3)
+Proof: run terms | test an_affine_constant_leaves_at_most_one_ulp_on_the_right_side ... ok
+
 ---
 
 ## Handoff
@@ -573,7 +585,7 @@ Proof: run terms | test a_non_finite_value_is_written_as_is ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none yet
+**Dispatched:** 2026-11-15 batches 1-4 done (89ae0a27); Verifier round 1 (Opus) in ../piperine-ir-interp; round 1 fixes (F1, F2, F4, F5); Verifier round 2 (460c6cba); round 2 fixes F3 b76f7a60, F6 ab2163db, F7 4d4d5e04, proofs 4c5fb5a5 (51 pass) - done, ready to merge
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---

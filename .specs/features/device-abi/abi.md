@@ -526,7 +526,7 @@ pub fn module<D: Device>(name: &'static str) -> Module;             // generic e
 
 `create` returns a `ShapeRef` (`Arc<ShapeBuf>`), not an `Arc<Shape>`: a `Shape` only points to
 its lists, and `ShapeBuf` is what owns them; `module` is a plain `fn`, not `const fn`, because it
-calls `D::prototype()`, a trait method. A `Fault` is `FAULT` with its code, or `RESHAPE` when
+calls `D::prototype()`, a trait method. A device whose module carries data implements `Factory` instead and is turned into a module by `thunk::module_with(name, &'static factory)`: the factory is the module's `data`, `create` calls the factory's `create` with the same value checks and shape validation, and `eval`/`react`/`destroy` run the instance it made (Q1 of `ir-interp`). A `Fault` is `FAULT` with its code, or `RESHAPE` when
 built with `Fault::reshape`; `cx.set(j, v)` takes any `Pod` (an `F64`, or the byte of an event
 pin). `Pod` is an `unsafe trait` implemented for the numeric leaves and their arrays.
 

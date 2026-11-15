@@ -22,7 +22,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// A reaction that returns `FINISH` there ends the run: the result is
     /// `Ended::Finish` and a later `transient` does nothing.
     pub fn operating_point(&mut self) -> Result<Ended> {
-        let at = self.tick(self.now);
+        let at = self.now_tick;
         let analysis = AnalysisKind::OperatingPoint;
         let unknowns = self.analog.has_unknowns();
         self.discrete.start()?;
