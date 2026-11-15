@@ -7,13 +7,18 @@
 
 // Each target includes the library by path: it uses a different subset of it.
 #[allow(dead_code)]
-#[path = "helpers/devices.rs"]
-mod devices;
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/abi_mixed.rs"]
+mod abi_mixed;
 
-use devices::{ClockSrc, Comparator, NodeMap, ToggleDff, C, R, Vramp, Vsine};
+use abi_devices::{NodeMap, add_capacitor, add_resistor, add_vsrc, vramp, vsine};
+use abi_mixed::{clock_src, comparator, toggle_dff};
+use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, PssAnalysisOptions};
 
-/// The circuits of the former Verilog-A fixture, from hand-written elements.
+/// The circuits of the former Verilog-A fixture, from hand-written devices.
 ///
 /// - `Top`: sine-driven RC, f = 1 kHz, tau = RC = 1 ms, so `wRC` is about 6.283;
 ///   |H| = 1/sqrt(1+(wRC)^2) is about 0.157167 and the steady-state out
@@ -23,7 +28,8 @@ use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, PssAnal
 ///   (rising edges at T/4, 5T/4, ...): its output period is 2*T, the classic
 ///   divider-by-2 (same A2D pattern as example 21). The clock's edges sit at
 ///   T/4 and 3T/4 so every comparison-relevant net is stable in a whole
-///   neighborhood of the k*T boundaries.
+///   neighborhood of the k*T boundaries. The comparator's 0.5 V threshold is
+///   a reference source on its minus input.
 fn build(top: &str) -> (CircuitInstance, NodeMap) {
     let mut b = CircuitBuilder::new(top);
     let gnd = b.ground();
@@ -32,22 +38,26 @@ fn build(top: &str) -> (CircuitInstance, NodeMap) {
         "Top" | "RampTop" => {
             let top_node = b.node("top");
             let out = b.node("out");
+            let ports = [Port::Node(top_node.clone()), Port::Node(gnd.clone())];
             if top == "Top" {
-                b.element(Box::new(Vsine::new("v1", 5.0, 1.0e3, top_node.clone(), gnd.clone())));
+                let params = [("amp", ParamValue::Real(5.0)), ("freq", ParamValue::Real(1.0e3))];
+                b.device(vsine(), "v1", &params, &ports);
             } else {
-                b.element(Box::new(Vramp::new("v1", top_node.clone(), gnd.clone())));
+                b.device(vramp(), "v1", &[], &ports);
             }
-            b.element(Box::new(R::new("r1", 1.0e3, top_node, out.clone())));
-            b.element(Box::new(C::new("c1", 1.0e-6, out.clone(), gnd)));
+            add_resistor(&mut b, "r1", 1.0e3, &top_node, &out);
+            add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
             map.insert("out", out);
         }
         "DivTop" => {
             let clk_a = b.node("clk_a");
-            let clk = b.digital_net(Some("clk"));
-            let q = b.digital_net(Some("q"));
-            b.element(Box::new(ClockSrc::new("ck", 1.0e-3, clk_a.clone(), gnd.clone())));
-            b.element(Box::new(Comparator::new("cmp", clk_a.clone(), gnd, clk)));
-            b.element(Box::new(ToggleDff::new("tg", clk, q)));
+            let vth = b.node("vth");
+            let ports = [Port::Node(clk_a.clone()), Port::Node(gnd.clone())];
+            b.device(clock_src(), "ck", &[("period", ParamValue::Real(1.0e-3))], &ports);
+            add_vsrc(&mut b, "vth", 0.5, &vth, &gnd);
+            let ports = [Port::Node(clk_a.clone()), Port::Node(vth), Port::Net("clk".into())];
+            b.device(comparator(), "cmp", &[], &ports);
+            b.device(toggle_dff(), "tg", &[], &[Port::Net("clk".into()), Port::Net("q".into())]);
             map.insert("clk_a", clk_a);
         }
         other => panic!("no circuit `{other}`"),

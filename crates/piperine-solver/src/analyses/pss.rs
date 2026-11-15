@@ -146,7 +146,10 @@ impl<'a> PssSolver<'a> {
         }
         let digital: Vec<piperine_digital_solver::events::LogicValue> =
             (0..usize::MAX).map_while(|i| digital_from.digital(i)).collect();
-        TransientStep::new(time, values).with_digital(digital)
+        let mut step = TransientStep::new(time, values).with_digital(digital);
+        // A circuit of devices re-enters from the state the step carries.
+        step.set_reentry(digital_from.reentry().cloned());
+        step
     }
 
     /// One shot: integrate `[t0, t0+span]` from `state`, returning the full
@@ -337,6 +340,10 @@ impl<'a> PssSolver<'a> {
         period: f64,
     ) -> crate::core::result::Result<()> {
         let matches = |a: &TransientStep, b: &TransientStep| -> bool {
+            // A circuit of devices: every discrete net holds the same bytes.
+            if let (Some(x), Some(y)) = (a.reentry(), b.reentry()) {
+                return x.nets == y.nets;
+            }
             (0..usize::MAX)
                 .map_while(|i| match (a.digital(i), b.digital(i)) {
                     (Some(x), Some(y)) => Some(x == y),

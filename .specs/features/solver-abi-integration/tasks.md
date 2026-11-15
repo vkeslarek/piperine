@@ -511,11 +511,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] The 17 tests keep their names, quantities and tolerances
-- [ ] Re-entry state is the protocol's checkpoint (digital checkpoint, assembly snapshot, Newton history): `reentry_from_captured_state_matches_continuous_run` passes unchanged
-- [ ] `digital_divider_reports_k_times_period` passes on `ClockSrc`, `Comparator`, `ToggleDff` devices
-- [ ] `sens_rebuild_class_param_fails_loud` passes on the `STRUCTURAL` param
-- [ ] Gate: full
+- [x] The 17 tests keep their names, quantities and tolerances
+- [x] Re-entry state is the protocol's checkpoint (digital checkpoint, assembly snapshot, Newton history): `reentry_from_captured_state_matches_continuous_run` passes unchanged
+- [x] `digital_divider_reports_k_times_period` passes on `ClockSrc`, `Comparator`, `ToggleDff` devices
+- [x] `sens_rebuild_class_param_fails_loud` passes on the `STRUCTURAL` param
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
