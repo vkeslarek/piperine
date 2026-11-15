@@ -1,0 +1,76 @@
+# IR interpreter verification
+
+**Verdict**: FAIL - one Major (a solver bug the feature's transient test works around instead of exposing) and four Minor; the numeric core (duals, affine rule, `pnjlim`, LIMIT protocol, Factory) holds
+**Proofs**: `proofs.md` at 89ae0a27 (HEAD 15daa814 adds only the proofs/dispatch docs)
+**Verifier**: independent sub-agent (author != verifier), round 1
+
+## Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| C1 | `circuit.rs` `one_module_per_body_with_behaviour_or_a_held_node` | yes - four bodies with a module, the divider top without; count 2 |
+| C2 | `circuit.rs` `a_circuit_binds_instances_nodes_and_params` | partly - instance paths and bound params are asserted; "each design node ... named by its path" is not: the test counts `v(` nets only, and the nets are labelled `v(n0)`, `v(n1)` (probe at HEAD), the path being dropped by `CircuitBuilder::node` (F5) |
+| C3 | `circuit.rs` `an_ir_that_fails_check_is_rejected` | yes - entries equal to `check()`'s, each with an origin |
+| C4 | `circuit.rs` `the_crate_spawns_nothing_and_reads_no_file` | yes - text scan of `src/` for `std::process`, `std::fs`, `unsafe`; a `use std::{fs, ...}` form would slip past, none exists |
+| C5 | `shape.rs` `a_held_node_gives_has_init` | yes - flag and `init` bytes, held and unheld node, two bodies |
+| C6 | `factory.rs` `module_with_carries_the_factory` | yes - `data` and `prototype` pointers compared for two factories |
+| C7 | `factory.rs` `create_goes_through_the_factory_and_validates` | yes - value reaches the factory; port value, wrong length and an invalid created shape all FAULT |
+| C8 | `factory.rs` `eval_and_react_run_the_created_instance` | yes - two `k`, panic and fault in `eval`/`react` as `FAULT`, instance survives, `destroy` drops both |
+| C9 | `cargo test -p piperine-abi && cargo test -p piperine-solver` | yes - the T1 diff only adds `Factory`; `create::<D>`/`eval::<D>` bodies moved into shared `create_from`/`eval_on` unchanged in logic |
+| C10 | `shape.rs` `pins_come_in_the_declared_order` | yes |
+| C11 | `shape.rs` `a_flow_branch_declares_flow_and_ddt_terms` | yes |
+| C12 | `shape.rs` `a_potential_branch_declares_its_pin_and_two_terms` | yes |
+| C13 | `shape.rs` `sites_declare_limit_and_stim_inputs` | yes |
+| C14 | `shape.rs` `one_function_per_site_and_one_for_terms` | yes |
+| C15 | `shape.rs` `reads_and_partials_are_the_dependency_sets` | yes - exact read and partial lists for all five bodies |
+| C16 | `shape.rs` `every_entry_carries_its_origin` | yes - exact origins on the diode and the Vsource, non-empty everywhere |
+| C17 | `shape.rs` `every_m1_shape_validates` | yes |
+| C18 | `walk.rs` `walk::tests::f64_arithmetic_and_methods_match_rust` | yes - 1e-12 relative where the criterion says "the results of Rust's f64" (bit-equal); looser than the words, no case found where it matters |
+| C19 | `walk.rs` `walk::tests::division_by_zero_is_ieee` | yes - +inf, -inf, NaN |
+| C20 | `walk.rs` `walk::tests::short_circuit_and_if_evaluate_one_side` | yes - the skipped side is a faulting probe |
+| C21 | `walk.rs` `walk::tests::calls_bind_parameters_and_closures_see_locals` | yes - `sub(5, 2)` order-sensitive, closure over a local, `pnjlim` at all six branch points |
+| C22 | `terms.rs` `evaluating_twice_writes_the_same_bytes` | yes - bit equality, two instances |
+| C23 | `terms.rs` `the_terms_function_sums_addends_with_signs` | yes - negated direct and `ddt` addends, ground probe, two contributions to one branch |
+| C24 | `terms.rs` `seeded_partials_are_the_dual_derivatives` | yes - closed-form `is·exp(vd/vt)/vt + gmin` through a call, locals and `exp` at three biases, 1e-12 |
+| C25 | `terms.rs` `environment_reads_come_from_pin_and_ambients` | yes - each source varied alone |
+| C26 | `partials.rs` `every_m1_function_passes_verify_partials` | yes - 13 functions x 3 points, `Exact` required (a `Skipped` limit fails the test); `verify_partials` has no absolute floor, so the 4e-8 diode partial at 0.3 V is really compared |
+| C27 | `dual.rs` `dual::tests::abs_has_the_derivative_of_sign` | yes |
+| C28 | `terms.rs` `an_affine_term_is_constant_plus_folded_products` | yes - bit equality to `c + (0.0 + g·x...)`, with a guard that the sweep holds points where the naive rounding differs; Vsource `eq` covered. The value is what AC 1 fixes; the right side it leaves when `c ≠ 0` is not (F3) |
+| C29 | `terms.rs` `the_resistor_matches_the_hand_written_products_bit_for_bit` | yes - 1000 points, residue exactly 0.0 and bits of `g*vp - g*vn` |
+| C30 | `limit.rs` `a_limit_writes_proposed_and_limited` | yes - a limited case asserted to differ from `PROPOSED` |
+| C31 | `limit.rs` `old_is_seed_or_last_by_age_and_static` | yes - all six `AGE`/`STATIC` combinations, seeded and unseeded, via a closure returning `old` |
+| C32 | `limit.rs` `the_seed_is_kept_when_the_limited_value_falls_below` | yes - both seed paths, not raised from `LAST`, kept above the seed |
+| C33 | `terms.rs` `the_terms_function_reads_the_limit_value_untouched` | yes - `x` faults if evaluated; terms reads one cell, partial 1 |
+| C34 | `shape.rs` `no_function_writes_a_limit_and_a_term` | yes |
+| C35 | `stim.rs` `a_stim_writes_its_phasor` | yes - bit equality to `mag·cos`, `mag·sin`; exact `IM = 0` without a phase |
+| C36 | `terms.rs` `the_terms_function_reads_the_stim_value` | yes |
+| C37 | `shape.rs` `a_value_of_the_wrong_layout_faults_naming_the_param` | yes - the fault is raised by `piperine-abi`'s shared `create_from`, which the interpreter inherits |
+| C38 | `walk.rs` `walk::tests::an_unexecuted_form_faults_with_its_origin` | yes - three forms, each origin asserted; AC 2's "SHALL not write a value" is held by `device.rs` returning before `cx.set` |
+| C39 | `shape.rs` `a_where_declares_a_check_pin_and_function` | yes |
+| C40 | `circuit.rs` `a_set_that_breaks_a_where_is_refused` | yes - -1 and 0 refused, the next `dc` unchanged, a legal value accepted |
+| C41 | `shape.rs` `a_block_without_contributions_gives_no_term` | yes |
+| C42 | `shape.rs` `a_held_node_without_analog_is_ports_only` | yes |
+| C43 | `circuit.rs` `an_unset_param_keeps_its_default` | no - it reads the pin values after a `dc`; `cj0` reads 0.0 whether or not the value is passed, so the test passes if `netlist.rs:35`'s filter is deleted (F2) |
+| C44 | `terms.rs` `a_non_finite_value_is_written_as_is` | yes - +inf and a NaN param, no fault |
+
+## Findings
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| F1 (Major, root cause in `piperine-solver`) - a transient whose stop time is not on the tick grid ends with a zero-length step: a second record at `t = stop` with every `DDT` term open (the RC's `out` = 1.0, the source value). The feature's test documents the record and steps around it instead of failing | `protocol/transient.rs:195` takes `stop_tick = tick(stop)` (round to nearest) while each step's end is `floor_tick`; `analyses/transient.rs:1206` clamps the proposal to `options.stop_time` and `:1256` snaps the attempt to that proposal when within one tick. With RC/1 fs = 1591549430.92 ticks, the step to `stop_time` lands on tick ...430 < `stop_tick` ...431, the loop runs again, the next attempt snaps to `proposed = stop_time = current_time`, `dt = 0`, `ddt.rs:63` stamps nothing for `h <= 0`, and the step is accepted and recorded; the run's re-entry state is attached to that bogus last record. Probe at HEAD: stop = RC gives `(1.5915e-6, 0.63212)`, `(1.5915e-6, 1.0)`; stop = 1.6e-6 and 2e-6 (on the grid) give one final record. `circuit.rs:160` comments the duplicate and uses `find` for the first match. M1 parity is unaffected only because `tran_rc` stops at 10 us, on the grid | in the solver: one rounding for the stop (floor the proposal against the same `stop_tick`, or refuse/skip a step with `dt = 0`); here: `a_held_node_starts_the_transient` asserts the last record is the trajectory point at RC and no two records share a time | |
+| F2 (Minor) - C43's test does not hold "SHALL pass no value"; and the IR cannot tell "not given" from "given equal to the default", so the edge case is implemented as the latter | `netlist.rs:35` filters `param.default == given`; the test reads only pin values, equal either way | assert on the values `circuit()` passes (for example a `CircuitBuilder` spy, or the created `Values` count through a recording factory), and state in the spec that "not given" means "equal to the default" | |
+| F3 (Minor) - an affine term with a non-zero constant still leaves round-off on the right side: the Goal "a term that is linear in the node potentials leaves no round-off" holds only for `c = 0` (resistor, branch current) | the assembly forms `-(v - dot)` (`flow.rs:64`) with `v = c + dot` (`device.rs:148`); `(c ⊕ dot) ⊖ dot ≠ c` at 18% of random Vsource `eq` points (`dc`, `vp`, `vn` uniform). No check covers the right side for `c ≠ 0` | either have the assembly treat a declared-affine row's right side as `-c` (ABI-level, as `codegen/context.md` already offers), or narrow the Goal to `c = 0` and record the residue in the T5 lesson | |
+| F4 (Minor) - a `bool` param the running function does not read is `Value::Unit`, so any statement the walk passes that branches on it faults the function, on an IR that passes `check()` | `device.rs:62`; probe at HEAD: body `Flag` with `let g = if flag {1} else {2};` (dead) and `I(p,n) <+ V(p,n)`: `check()` is empty, the terms function returns `FAULT "expected a bool, found a unit (at flag.msl:1:1)"`. Same for a `let` that only a site uses. No M1 fixture has a `bool` param. The `NaN` stand-in for an unread real is not "never a plausible number" either: `if NaN > x` silently takes the else arm (harmless only because IR-09's sets are sound) | read every param in every function, or skip statements whose result reaches no write of the running function; add a check with a `bool` param | |
+| F5 (Minor) - C2's "each design node is one solver node named by its path" is not true at the solver surface and not asserted | `CircuitBuilder::node` keeps the name only in the builder's map (`builder.rs:88`) and the built circuit labels the nodes `v(n0)`, `v(n1)`; `circuit.rs:189` counts `v(` nets; hosts and tests address nodes as `Anonymous(i)` | assert a lookup by path on the built circuit, or reword AC 2 to "in IR node order, so node `i` is `Anonymous(i)`" as `netlist.rs`'s own doc says | |
+
+## Reported oddities
+
+- (a) Root cause and severity: F1.
+- (b) Legitimate. At default tolerances the diode sits 4.8e-8 relative from the Shockley point (probe at HEAD), set by Newton's stopping test and the limiting tolerance (`x̂` vs `x`), not by the partials; the parity contract is 1e-3 relative (`codegen/context.md` Q3). Tightening the `Context` is what lets the test show the Jacobian is exact to 1e-9; it does not hide a defect.
+- (c) Legitimate. `1.5915494309189535e-9 = 1/(2π·1e8)` exactly in f64, the value of the `ac_rc`/`tran_rc` `.cir` and `.msl` twins; the earlier `1e-9` put the corner at 159 kHz, off the spec's 100 kHz point.
+- (d) See F2: equivalent in effect (the pin holds the default either way), untested as stated.
+- (e) See F4.
+- `pnjlim` (`std/analog.msl:21`) is ngspice's current `DEVpnjlim` branch for branch: `old + nvt·(2 + ln(arg − 2))` for `arg > 0`, `old − nvt·(2 + ln(2 − arg))` otherwise, `nvt·ln(new/nvt)` for `old ≤ 0`, the reverse floor `−old − 1` / `2·old − 1`.
+- LIMIT protocol per abi.md A2/A3: separate `limit:` and `terms` functions, no `OWNS_CORRECTION`, `PROPOSED` with pin partials, no partial on `LIMITED`, `old` from the seed at `AGE` 0 or `STATIC` and `AGE` 1. A consequence of A2 rather than of this feature: every DC-sweep point restarts its junctions from `vcrit`, which ngspice does not do; iteration counts differ, converged values do not.
+- Affine rule: pin partials come from the pins-at-zero walk and are the same `Dual` the fold uses, so the written `jac` and the folded products are bit-identical; a ground-bound pin adds `g·0.0`, which leaves the fold unchanged. A `limit` read is affine and an `ac_stim` with constant arguments is `Constant`; both are read at the iterate in the zero walk, so `ac_stim(1)·V` and `g·limit(...)` stay correct.
+- Unsafe: none in `piperine-interp`; in `piperine-abi` only `raw`, `thunk`, `caller` (the `device.rs`/`lib.rs` hits are comments). The new thunks each carry a `// SAFETY:` line citing abi.md §2/§3/§12; `module_with` needs no `unsafe` because `&'static F` makes the prototype `'static`. One leaked `Module`, `BodyFactory` and name per running body per `Interpreter::new`, as the spec accepts; repeated `new` calls leak again.
