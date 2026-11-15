@@ -71,6 +71,22 @@ fn no_landing_means_one_attempt_to_the_proposed_time() {
 }
 
 #[test]
+fn a_proposal_a_few_ulps_short_of_a_tick_is_that_tick() {
+    let (log, d, mut a) = sides();
+    // 5e9 ticks, less two ulps: the rounding error of a sum of controller steps.
+    let stop: f64 = 2.5e9;
+    let short = f64::from_bits(stop.to_bits() - 2);
+    a.proposals.push_back(short);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(stop).unwrap(), Ended::StopTime);
+    assert_eq!(
+        calls(&log, |c| matches!(c, Call::Advance(_) | Call::Attempt { .. })),
+        [Call::Advance(5_000_000_000), Call::Attempt { to: stop, exempt: false }],
+        "one step to the tick, not a step a tick short and a sliver after it"
+    );
+}
+
+#[test]
 fn a_landing_is_solved_on_the_left_value_then_its_instant_runs() {
     let (log, mut d, mut a) = sides();
     // An R4 landing at 1 s whose instant changes a value the analog side reads.
