@@ -1,6 +1,6 @@
 # solver-restructure proofs
 
-**HEAD**: f9e81d02
+**HEAD**: 31cee52f
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 46 pass, 0 fail
@@ -79,7 +79,7 @@
 `Run analog` - exit 0
 
 ```
-test math::integration::tests::trbdf2_gamma_is_two_minus_sqrt2 ... ok
+test math::integration::tests::trbdf2_bdf2_phase_coeffs_match_nonuniform_formula ... ok
 test math::faer::tests::real_transpose_solve_matches_a_hand_computed_lambda ... ok
 test math::faer::tests::singular_system_fails_loud_through_the_existing_error_family ... ok
 test math::faer::tests::one_symbolic_factorization_serves_both_forward_and_transpose_solves ... ok
@@ -91,7 +91,7 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_analog_solver-4b654c63946687cc)
    Doc-tests piperine_analog_solver
 ```
@@ -99,10 +99,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run digital` - exit 0
 
 ```
-test events::tests::test_logic_resolution ... ok
-test interface::tests::external_model_emits_through_the_sink ... ok
 test interface::tests::non_crossing_samples_yield_no_interpolation ... ok
-test interface::tests::a2d_crossing_interpolates_within_the_published_error_bound ... ok
+test interface::tests::predict_crossing_interpolates_a_linear_bracket_exactly ... ok
+test interface::tests::predict_crossing_rejects_a_non_bracketing_pair ... ok
+test limits::tests::digital_limits_defaults_are_the_literals ... ok
 
 test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -111,7 +111,7 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
      Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_digital_solver-1d0eee47bdaa1c7d)
    Doc-tests piperine_digital_solver
 ```
@@ -119,20 +119,20 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run hygiene` - exit 0
 
 ```
-test mod_rs_declares_only ... ok
 test the_walk_covers_the_three_solver_crates ... ok
 test root_targets_match_the_naming_rule ... ok
-test every_ignored_doc_example_is_registered ... ok
+test mod_rs_declares_only ... ok
+test every_integration_target_declares_its_scope ... ok
 test no_file_scope_lint_suppression ... ok
 test no_ignored_tests ... ok
 test lrm_covers_declarations_are_well_formed ... ok
 test no_dead_architecture_identifiers ... ok
 test no_disabled_test_code ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.98s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.06s
      Running tests/suite_hygiene.rs (/var/tmp/piperine-target/debug/deps/suite_hygiene-cfb978c38d167293)
 ```
 
@@ -182,7 +182,7 @@ test prelude_voltage_divider ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s
      Running tests/abi_surface.rs (/var/tmp/piperine-target/debug/deps/abi_surface-0849349ee130faf8)
      Running tests/prelude_surface.rs (/var/tmp/piperine-target/debug/deps/prelude_surface-2373959a57aa03f9)
 ```
@@ -192,15 +192,15 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 6 tests
 test parity_digital_scheduler_snapshot ... ok
+test parity_divider_op_dc ... ok
 test parity_diode_dc_point ... ok
 test parity_mixed_signal_dc_settle ... ok
-test parity_divider_op_dc ... ok
 test parity_rlc_ac_resonant_peak ... ok
 test parity_rc_transient ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
      Running tests/parity_baseline.rs (/var/tmp/piperine-target/debug/deps/parity_baseline-8c30d9e988a59aee)
 ```
 
@@ -231,20 +231,20 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `cargo test -p piperine-lang --test suite_hygiene` - exit 0
 
 ```
-test mod_rs_declares_only ... ok
 test the_walk_covers_the_three_solver_crates ... ok
 test root_targets_match_the_naming_rule ... ok
-test every_ignored_doc_example_is_registered ... ok
+test mod_rs_declares_only ... ok
+test every_integration_target_declares_its_scope ... ok
 test no_file_scope_lint_suppression ... ok
 test no_ignored_tests ... ok
 test lrm_covers_declarations_are_well_formed ... ok
 test no_dead_architecture_identifiers ... ok
 test no_disabled_test_code ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-solver-completeness/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.98s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.06s
      Running tests/suite_hygiene.rs (/var/tmp/piperine-target/debug/deps/suite_hygiene-cfb978c38d167293)
 ```
 
