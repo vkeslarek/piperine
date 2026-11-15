@@ -2,13 +2,13 @@
 //! over the body's own params), its nodes (ports first, then signals, with nature and initial
 //! potential). A body is a function of its module alone: one variant per module in M1.
 
-use piperine_ir::{BodyNode, BodySpec, Child, Constant, NatureId, NodeRole, Origin, Param, Real, ValueType};
+use piperine_ir::{BodyNode, BodySpec, Child, Constant, NatureId, NodeRole, Origin, Param, Real};
 
 use super::children::ChildPlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::pom::{DeclId, DeclKind, ExprId, FileId, Resolution, TypeId};
+use crate::pom::{DeclId, DeclKind, ExprId};
 
 /// A param of a module, as placement needs it.
 #[derive(Clone)]
@@ -60,6 +60,7 @@ impl Elaboration<'_, '_> {
         }
         let nodes = self.lower_nodes(&mut scope, module);
         let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = nodes.into_iter().unzip();
+        let analog = self.lower_analog(&mut scope, module);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
         let expected = self.body_ids.get(&module).copied();
         let body = self.ir.body(BodySpec {
@@ -71,31 +72,19 @@ impl Elaboration<'_, '_> {
             limits: scope.limits,
             stims: scope.stims,
             locals: scope.locals,
-            analog: None,
+            analog,
             children,
         });
         debug_assert_eq!(Some(body), expected, "bodies are built in first-reach order");
         self.plans.insert(module, ModulePlan { body, params: param_plans, nodes: node_plans, children: child_plans });
     }
 
-    /// The IR type of a param's declared type.
-    fn param_type(&mut self, file: FileId, ty: TypeId) -> Option<ValueType> {
-        let node = self.design.type_node(ty).clone();
-        match self.design.type_resolution(ty) {
-            Resolution::Builtin(id) if id.info().name == "fN" && id.width() == Some(64) => Some(ValueType::F64),
-            Resolution::Builtin(id) if id.info().name == "bool" => Some(ValueType::Bool),
-            _ => {
-                self.unsupported(file, node.span, "a param type other than `f64` and `bool`");
-                None
-            }
-        }
-    }
 
     fn lower_param(&mut self, scope: &mut Scope, param: DeclId) -> Option<(Param, ParamPlan)> {
         let data = self.design.decl_data(param).clone();
         let DeclKind::Param(p) = &data.kind else { return None };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let ty = self.param_type(data.file, p.ty)?;
+        let ty = self.lower_type(data.file, p.ty)?;
         let default = match p.default {
             Some(expr) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(value),

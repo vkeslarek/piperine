@@ -13,6 +13,8 @@ mod children;
 mod consts;
 mod diagnose;
 mod elaborator;
+mod analog;
+mod functions;
 mod lower;
 mod nature;
 mod origin;

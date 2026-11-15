@@ -224,13 +224,13 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `pnjlim` is one `FunctionId` however many bodies call it
-- [ ] Every lowered expression carries its `ValueType` and origin
-- [ ] A param read inside an `analog` `let` prints as a param read, never as a number
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_param_read_is_never_folded`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `value_code_lowers_to_the_same_forms_and_functions_once`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `pnjlim` is one `FunctionId` however many bodies call it
+- [x] Every lowered expression carries its `ValueType` and origin
+- [x] A param read inside an `analog` `let` prints as a param read, never as a number
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_param_read_is_never_folded`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `value_code_lowers_to_the_same_forms_and_functions_once`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full

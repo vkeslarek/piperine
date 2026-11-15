@@ -6,12 +6,13 @@
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BinaryOp, Constant, Expr, ExprId as LoweredExpr, Local, Origin, Site, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
-use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution, UnOp};
-use crate::types::Ty;
+use crate::msl::Span;
+use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, PatKind, Resolution, StmtId, StmtKind, UnOp};
+use crate::types::{Callee, Method, Ty};
 
 /// What names the code being lowered: the owner's params, nodes and locals.
 pub(super) struct Scope {
@@ -52,6 +53,17 @@ impl ValueTypes {
 }
 
 impl Elaboration<'_, '_> {
+    /// Add an expression to the IR, remembering its type (the builder does not hand it back).
+    pub(super) fn emit(&mut self, kind: Expr, ty: ValueType, origin: Origin) -> LoweredExpr {
+        self.expr_types.push(ty.clone());
+        self.ir.expr(kind, ty, origin)
+    }
+
+    /// The type of an expression already added.
+    pub(super) fn type_of(&self, expr: LoweredExpr) -> ValueType {
+        self.expr_types[expr.index()].clone()
+    }
+
     /// The origin of an expression: where its construct starts.
     pub(super) fn expr_origin(&self, expr: ExprId) -> Origin {
         let node = self.design.expr_node(expr);
@@ -88,7 +100,7 @@ impl Elaboration<'_, '_> {
                     }
                 };
                 let operand = self.lower_expr(scope, *operand)?;
-                Some(self.ir.expr(Expr::Unary { op, expr: operand }, ty, origin))
+                Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
             }
             ExprKind::Binary { op, lhs, rhs } => {
                 let (lhs, rhs) = (self.lower_expr(scope, *lhs), self.lower_expr(scope, *rhs));
@@ -97,13 +109,152 @@ impl Elaboration<'_, '_> {
                     self.unsupported(file, node.span, "this operator");
                     return None;
                 };
-                Some(self.ir.expr(Expr::Binary { op, lhs, rhs }, ty, origin))
+                Some(self.emit(Expr::Binary { op, lhs, rhs }, ty, origin))
+            }
+            ExprKind::If { cond, then, else_ } => {
+                let cond = self.lower_expr(scope, *cond);
+                let then = self.lower_block(scope, file, &then.stmts, node.span);
+                let otherwise = match else_ {
+                    Some(else_) => self.lower_expr(scope, *else_),
+                    None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
+                };
+                Some(self.emit(Expr::If { cond: cond?, then: then?, otherwise: otherwise? }, ty, origin))
+            }
+            ExprKind::Block(block) => self.lower_block(scope, file, &block.stmts, node.span),
+            ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
+            ExprKind::MethodCall { recv, .. } => {
+                let Some(method) = self.types.method(expr) else {
+                    self.unsupported(file, node.span, "a method outside the catalogue");
+                    return None;
+                };
+                let recv = self.lower_expr(scope, *recv)?;
+                let f = match method {
+                    Method::Exp => MathFn::Exp,
+                    Method::Ln => MathFn::Ln,
+                    Method::Sqrt => MathFn::Sqrt,
+                    Method::Abs => MathFn::Abs,
+                };
+                Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
+            }
+            ExprKind::Closure { params, body, .. } => {
+                let mut locals = Vec::new();
+                for param in params {
+                    match self.design.pat_node(param.pat).kind.clone() {
+                        PatKind::Ident { binding, sub: None, .. } => locals.push(self.bind_local(scope, binding)?),
+                        _ => {
+                            self.unsupported(file, node.span, "a closure parameter that is not a name");
+                            return None;
+                        }
+                    }
+                }
+                let body = self.lower_expr(scope, *body)?;
+                Some(self.emit(Expr::Closure { params: locals, body }, ty, origin))
             }
             _ => {
                 self.unsupported(file, node.span, "this expression form");
                 None
             }
         }
+    }
+
+    /// A call: of a function of the reachable set (one `Call` node, the function lowered once
+    /// however many bodies call it), or of a core primitive or a probe (see `analog.rs`).
+    fn lower_call(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], class: CallClass, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.design.expr_node(expr).span;
+        match (class, self.types.callee(expr)) {
+            (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
+            (_, Some(Callee::Function(function))) => {
+                let id = self.function_ids.get(&function).copied()?;
+                let mut lowered = Vec::new();
+                let mut ok = true;
+                for arg in args {
+                    match self.lower_expr(scope, *arg) {
+                        Some(arg) => lowered.push(arg),
+                        None => ok = false,
+                    }
+                }
+                ok.then(|| self.emit(Expr::Call { function: id, args: lowered }, ty, origin))
+            }
+            (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
+            (_, Some(Callee::Module(_))) => {
+                self.unsupported(scope.file, span, "a placement used as a value");
+                None
+            }
+            (_, None) => {
+                self.unsupported(scope.file, span, "a call the type checker did not resolve");
+                None
+            }
+        }
+    }
+
+    /// Allocate the local a `Binding` declaration names: its name and its type, in declaration
+    /// order. `None` after a diagnostic when the checker typed it with a non-value type.
+    pub(super) fn bind_local(&mut self, scope: &mut Scope, binding: DeclId) -> Option<u32> {
+        let data = self.design.decl_data(binding);
+        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let (file, span) = (data.file, data.span);
+        let Some(ty) = self.types.local(binding).and_then(ValueTypes::of) else {
+            self.unsupported(file, span, "a name whose type is not a value type");
+            return None;
+        };
+        let index = scope.locals.len() as u32;
+        scope.locals.push(Local { name, ty });
+        scope.local_index.insert(binding, index);
+        Some(index)
+    }
+
+    /// The statements of a block as one expression: a block with statements is a `Block`, one
+    /// that is only its value is that value (`{ x }` is `x`).
+    pub(super) fn lower_block(&mut self, scope: &mut Scope, file: FileId, stmts: &[StmtId], span: Span) -> Option<LoweredExpr> {
+        let origin = self.locator.origin(file, span);
+        let (stmts, value) = self.lower_statements(scope, stmts)?;
+        match (stmts.is_empty(), value) {
+            (true, Some(value)) => Some(value),
+            (_, value) => {
+                let ty = value.map_or(ValueType::Unit, |v| self.type_of(v));
+                Some(self.emit(Expr::Block { stmts, value }, ty, origin))
+            }
+        }
+    }
+
+    /// The statements of a block in order and its value (the last expression without `;`).
+    /// `None` after the diagnostics of every statement that could not be lowered.
+    pub(super) fn lower_statements(&mut self, scope: &mut Scope, stmts: &[StmtId]) -> Option<(Vec<LoweredStmt>, Option<LoweredExpr>)> {
+        let mut out = Vec::new();
+        let mut value = None;
+        let mut ok = true;
+        for (i, stmt) in stmts.iter().enumerate() {
+            let node = self.design.stmt_node(*stmt).clone();
+            let file = self.design.decl_data(node.owner).file;
+            match &node.kind {
+                StmtKind::Let { pat, init: Some(init), else_: None, .. } => match self.design.pat_node(*pat).kind.clone() {
+                    PatKind::Ident { binding, sub: None, .. } => {
+                        let local = self.bind_local(scope, binding);
+                        let init = self.lower_expr(scope, *init);
+                        match (local, init) {
+                            (Some(local), Some(init)) => out.push(self.ir.stmt(Stmt::Let { local, init })),
+                            _ => ok = false,
+                        }
+                    }
+                    _ => {
+                        self.unsupported(file, node.span, "a `let` pattern that is not a name");
+                        ok = false;
+                    }
+                },
+                StmtKind::Expr { expr, semi } => match self.lower_expr(scope, *expr) {
+                    Some(lowered) if i + 1 == stmts.len() && !semi => value = Some(lowered),
+                    Some(lowered) => out.push(self.ir.stmt(Stmt::Expr(lowered))),
+                    None => ok = false,
+                },
+                StmtKind::Empty => {}
+                StmtKind::Contribution { lhs, rhs } => ok &= self.lower_contribution(scope, &mut out, *lhs, *rhs, node.span),
+                _ => {
+                    self.unsupported(file, node.span, "this statement");
+                    ok = false;
+                }
+            }
+        }
+        ok.then_some((out, value))
     }
 
     fn binary_op(op: BinOp) -> Option<BinaryOp> {
@@ -127,8 +278,8 @@ impl Elaboration<'_, '_> {
     /// A folded value as the IR expression of its type.
     pub(super) fn constant_expr(&mut self, value: Constant, origin: Origin) -> LoweredExpr {
         match value {
-            Constant::Real(r) => self.ir.expr(Expr::Real(r), ValueType::F64, origin),
-            Constant::Bool(b) => self.ir.expr(Expr::Bool(b), ValueType::Bool, origin),
+            Constant::Real(r) => self.emit(Expr::Real(r), ValueType::F64, origin),
+            Constant::Bool(b) => self.emit(Expr::Bool(b), ValueType::Bool, origin),
         }
     }
 
@@ -150,14 +301,14 @@ impl Elaboration<'_, '_> {
                 }
             },
             DeclKind::Param(_) => match scope.params.get(&decl) {
-                Some(index) => Some(self.ir.expr(Expr::Param(*index), ty, origin)),
+                Some(index) => Some(self.emit(Expr::Param(*index), ty, origin)),
                 None => {
                     self.unsupported(scope.file, node.span, "a param of another module");
                     None
                 }
             },
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match scope.local_index.get(&decl) {
-                Some(index) => Some(self.ir.expr(Expr::Local(*index), ty, origin)),
+                Some(index) => Some(self.emit(Expr::Local(*index), ty, origin)),
                 None => {
                     self.unsupported(scope.file, node.span, "a name with no value here");
                     None

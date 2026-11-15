@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BodyId, Ir, IrBuilder, NatureId};
+use piperine_ir::{BodyId, FunctionId, Ir, IrBuilder, NatureId, ValueType};
 
 use super::body::ModulePlan;
 use super::consts::ConstEval;
@@ -46,6 +46,10 @@ pub(super) struct Elaboration<'d, 't> {
     /// The body each reached module will get: bodies are built in first-reach order, so a
     /// placement can name its child's body before that body exists.
     pub(super) body_ids: BTreeMap<DeclId, BodyId>,
+    /// The function each reached `fn` will get, by the same first-reach argument.
+    pub(super) function_ids: BTreeMap<DeclId, FunctionId>,
+    /// The type of every IR expression added so far, by id.
+    pub(super) expr_types: Vec<ValueType>,
     pub(super) plans: BTreeMap<DeclId, ModulePlan>,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
@@ -60,6 +64,8 @@ impl<'d, 't> Elaboration<'d, 't> {
             locator: Locator::new(design),
             natures: BTreeMap::new(),
             body_ids: BTreeMap::new(),
+            function_ids: BTreeMap::new(),
+            expr_types: Vec::new(),
             plans: BTreeMap::new(),
             diagnostics: Vec::new(),
         }
@@ -71,7 +77,10 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
         let modules: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         self.body_ids = modules.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
+        let functions: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Fn(_))).collect();
+        self.function_ids = functions.iter().enumerate().map(|(k, f)| (*f, FunctionId(k as u32))).collect();
         self.lower_natures(&modules);
+        self.lower_functions(&functions);
         for module in &modules {
             self.lower_body(*module);
         }

@@ -178,3 +178,18 @@ fn a_bound_value_that_is_not_constant_is_refused() {
     assert_eq!(text(0), "k", "a param of the parent is P0001 (M2)");
     assert_eq!(text(1), "temperature()", "anything that needs a run is E0321");
 }
+
+#[test]
+fn a_param_read_is_never_folded() {
+    // A `const` is its value in the body; a param stays a read, however constant its default.
+    let src = "const C: f64 = 2.0;\nmodule Top() { k: f64 = 3.0; }\nanalog for Top { let x = k * 2.0; let y = C * 4.0; }";
+    let ir = Elab::ir(src, "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("let x = (k * 2.0)"), "a param read prints as a read: {text}");
+    assert!(text.contains("let y = (2.0 * 4.0)"), "a const read is its value: {text}");
+    let body = ir.bodies().next().expect("one body");
+    let first = body.analog().expect("an analog block")[0];
+    let piperine_ir::Stmt::Let { init, .. } = ir.stmt(first) else { panic!("a `let`") };
+    let piperine_ir::Expr::Binary { lhs, .. } = ir.expr(*init) else { panic!("a product") };
+    assert_eq!(ir.expr(*lhs), &piperine_ir::Expr::Param(0));
+}
