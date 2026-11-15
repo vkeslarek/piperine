@@ -353,6 +353,90 @@ impl Assembly {
         Ok(())
     }
 
+    /// `∂F/∂param` of one instance at the equilibrium iterate `x` (abi.md §10
+    /// "Host procedures"): the residual-shaped right-side stamps
+    /// `Rhs(plus, Σ g·d)` and `Rhs(minus, −Σ g·d)` of every `FLOW` term whose
+    /// value has a partial `g` against a discrete pin of `wrt`. `wrt` lists
+    /// each such pin with `d`, the derivative of its bytes with respect to the
+    /// param (1 for the param's own pin, the chained product through discrete
+    /// functions for a derived pin). Partials against a param are seeded only
+    /// here (never in a Newton solve); a `DDT` or `DELAY` term adds nothing at
+    /// an equilibrium. A term with no declared path yields no stamp.
+    pub fn param_stamps(
+        &mut self,
+        instance: usize,
+        wrt: &[(u32, f64)],
+        x: &[f64],
+        amb: Ambient,
+    ) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
+        let inst = &self.plan.instances[instance];
+        let st = &self.state[instance];
+        let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
+        let shape = inst.handle.shape();
+        let mut d = vec![0.0; inst.terms.len()];
+        let mut scratch: Vec<u8> = Vec::new();
+        for f in inst.functions.iter().filter(|f| f.rows && !f.limits) {
+            let sf = shape.functions.get(f.k as usize).expect("validated");
+            let pin_d = |c: &piperine_abi::raw::Cell| {
+                let discrete = shape
+                    .pins
+                    .get(c.index as usize)
+                    .is_some_and(|p| p.kind == piperine_abi::raw::kind::DISCRETE);
+                (c.kind == piperine_abi::raw::cell::PIN && discrete)
+                    .then(|| wrt.iter().find(|(q, _)| *q == c.index))
+                    .flatten()
+            };
+            let seed: Vec<u8> = sf
+                .partials
+                .iter()
+                .map(|p| u8::from(sf.reads.get(p.read as usize).is_some_and(|c| pin_d(c).is_some())))
+                .collect();
+            if seed.iter().all(|s| *s == 0) {
+                continue;
+            }
+            scratch.clear();
+            for (source, len) in &f.reads {
+                ctx.push(*source, *len, &mut scratch);
+            }
+            let mut at = 0;
+            let input: Vec<&[u8]> = f
+                .reads
+                .iter()
+                .map(|(_, len)| {
+                    let cell = &scratch[at..at + len];
+                    at += len;
+                    cell
+                })
+                .collect();
+            let mut out: Vec<Vec<u8>> = f.write_lens.iter().map(|n| vec![0; *n]).collect();
+            let mut output: Vec<&mut [u8]> = out.iter_mut().map(Vec::as_mut_slice).collect();
+            let mut jac = vec![0.0; seed.len()];
+            inst.handle.eval(f.k, &input, &mut output, &seed, &mut jac).map_err(|e| {
+                device_error(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
+            })?;
+            for (pi, p) in sf.partials.iter().enumerate() {
+                let (Some(r), Some(w)) = (sf.reads.get(p.read as usize), sf.writes.get(p.write as usize)) else { continue };
+                let Some((_, dp)) = pin_d(r) else { continue };
+                if w.kind == piperine_abi::raw::cell::TERM && w.part == piperine_abi::raw::part::VALUE {
+                    d[w.index as usize] += jac[pi] * dp;
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for (t, g) in inst.terms.iter().zip(d) {
+            if g == 0.0 || t.op != op::FLOW {
+                continue;
+            }
+            if let Some(p) = &t.plus {
+                out.push(Stamp::Rhs(p.clone(), g));
+            }
+            if let Some(m) = &t.minus {
+                out.push(Stamp::Rhs(m.clone(), -g));
+            }
+        }
+        Ok(out)
+    }
+
     /// The term histories and limit states, to restore when a step is rejected.
     pub fn snapshot(&self) -> AssemblySnapshot {
         AssemblySnapshot {
