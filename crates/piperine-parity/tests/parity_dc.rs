@@ -3,6 +3,7 @@
 //! under `DC_CURRENT`, sign unchanged. `diode_iv` covers -1 V to 0.8 V; `diode_rev` covers
 //! -1 V to -20 V, where the `gmin` shunt (1e-12 S times the bias) clears the current floor.
 
+use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::ngspice::{Ngspice, Reference};
@@ -19,9 +20,17 @@ impl Sweep {
     fn compare(&self) {
         let fixture = self.fixture;
         let reference = Ngspice::from_environment().run(fixture);
-        let mut bench = Bench::load(fixture);
+        for backend in Backend::selected() {
+            self.compare_on(&reference, backend);
+        }
+    }
+
+    /// The sweep on `backend` against the reference run already made.
+    fn compare_on(&self, reference: &Reference, backend: Backend) {
+        let fixture = self.fixture;
+        let mut bench = Bench::load_on(fixture, backend);
         let source = bench.source("v1");
-        let rows = match &reference {
+        let rows = match reference {
             Reference::Golden(golden) => {
                 let rows = golden.real(self.export);
                 golden.expect_rows(self.export, &rows, self.rows);
@@ -31,10 +40,10 @@ impl Sweep {
         };
         for (sweep, wanted) in rows {
             bench.set("v1", "dc", sweep);
-            let result = bench.circuit().dc(Context::default()).expect("dc").solve().unwrap_or_else(|error| panic!("{fixture}: solve at {sweep}: {error}"));
-            let actual = result.get_branch(source.clone()).unwrap_or_else(|| panic!("{fixture}: no flow of v1 at {sweep}"));
-            if let Reference::Golden(golden) = &reference {
-                let at = Point::new(fixture, "i(v1)", Coordinate::Sweep(sweep)).with_ngspice(golden.version());
+            let result = bench.circuit().dc(Context::default()).expect("dc").solve().unwrap_or_else(|error| panic!("{fixture}: solve at {sweep} on {}: {error}", backend.name()));
+            let actual = result.get_branch(source.clone()).unwrap_or_else(|| panic!("{fixture}: no flow of v1 at {sweep} on {}", backend.name()));
+            if let Reference::Golden(golden) = reference {
+                let at = Point::new(fixture, "i(v1)", Coordinate::Sweep(sweep)).with_ngspice(golden.version()).with_backend(backend.name());
                 ToleranceContract::DC_CURRENT.assert(&at, wanted, actual);
             }
         }

@@ -666,11 +666,11 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] No tolerance, no row count and no expected value of the four targets changes; `parity_corpus` passes
-- [ ] A twin that fails on the `Rust` backend only is a transpiler defect: it is reported with the point, never met by a looser bound
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran`: `divider`, `diode_series`, `isrc_r`, `diode_iv`, `diode_rev`, `ac_rc`, `tran_rc`
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the 7 test(s) named above, and no existing test removed or edited
+- [x] No tolerance, no row count and no expected value of the four targets changes; `parity_corpus` passes
+- [x] A twin that fails on the `Rust` backend only is a transpiler defect: it is reported with the point, never met by a looser bound
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran`: `divider`, `diode_series`, `isrc_r`, `diode_iv`, `diode_rev`, `ac_rc`, `tran_rc`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 7 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build

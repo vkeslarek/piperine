@@ -2,6 +2,7 @@
 //! twin, run to 10 us with a step cap of a tenth of ngspice's print step and read at the exported
 //! times by linear interpolation, agrees with ngspice under `TRAN_VOLTAGE`.
 
+use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::ngspice::{Ngspice, Reference};
@@ -38,9 +39,16 @@ fn the_transient_step_cap_is_a_tenth_of_the_print_step() {
 #[test]
 fn tran_rc() {
     let reference = Ngspice::from_environment().run("tran_rc");
-    let mut bench = Bench::load("tran_rc");
+    for backend in Backend::selected() {
+        compare_on(&reference, backend);
+    }
+}
+
+/// The transient of the RC twin on `backend` against the reference run already made.
+fn compare_on(reference: &Reference, backend: Backend) {
+    let mut bench = Bench::load_on("tran_rc", backend);
     let out = bench.node("out");
-    let rows = match &reference {
+    let rows = match reference {
         Reference::Golden(golden) => {
             let rows = golden.real("tran_rc_tran");
             golden.expect_rows("tran_rc_tran", &rows, 100);
@@ -50,13 +58,13 @@ fn tran_rc() {
     };
     let times: Vec<f64> = rows.iter().map(|(t, _)| *t).collect();
     let options = TranRun::options(&times);
-    let result = bench.circuit().transient(options, Context::default()).expect("transient").solve().expect("the transient solves");
+    let result = bench.circuit().transient(options, Context::default()).expect("transient").solve().unwrap_or_else(|error| panic!("tran_rc: the transient does not solve on {}: {error}", backend.name()));
     let steps: Vec<_> = result.iter().collect();
     let waveform = Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).expect("v(out)")).collect());
-    let Reference::Golden(golden) = &reference else { return };
+    let Reference::Golden(golden) = reference else { return };
     for (time, wanted) in rows {
-        let actual = waveform.at(time).unwrap_or_else(|| panic!("tran_rc: the time {time:e} s lies outside the solver's result"));
-        let at = Point::new("tran_rc", "v(out)", Coordinate::Time(time)).with_ngspice(golden.version());
+        let actual = waveform.at(time).unwrap_or_else(|| panic!("tran_rc: the time {time:e} s lies outside the solver's result on {}", backend.name()));
+        let at = Point::new("tran_rc", "v(out)", Coordinate::Time(time)).with_ngspice(golden.version()).with_backend(backend.name());
         ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
     }
 }
