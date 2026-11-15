@@ -161,3 +161,48 @@ pub fn matrix_positions(stamps: &Stamps) -> std::collections::HashSet<(usize, us
 pub fn close(a: f64, b: f64, rel: f64, what: &str) {
     assert!((a - b).abs() <= rel * a.abs().max(b.abs()), "{what}: {a} vs {b} (rel {rel})");
 }
+
+/// The ambient of a small-signal sweep point at `freq` hertz.
+pub fn at_freq(freq: f64) -> Ambient {
+    Ambient { time: 0.0, freq, is_static: false, gmin: 1e-12, source_scale: 1.0 }
+}
+
+/// Solves a complex system with this crate's sparse LU.
+pub fn solve_complex(
+    n: usize,
+    matrix: Vec<Stamp<AnalogReference, num_complex::Complex64>>,
+    rhs: Vec<Stamp<AnalogReference, num_complex::Complex64>>,
+) -> Array1<num_complex::Complex64> {
+    use piperine_analog_solver::math::faer::FaerSymbolicMatrix;
+    use piperine_analog_solver::math::linear::{LinearSystem, SymbolicLinearSystem, SymbolicMatrix};
+    let symbolic = FaerSymbolicMatrix::new(n, matrix.clone()).expect("symbolic");
+    let mut sys = FaerSparseLinearSystem::<num_complex::Complex64>::new(n);
+    sys.apply_stamps(matrix);
+    sys.apply_stamps(rhs);
+    sys.solve_with_backend(&symbolic).expect("solve")
+}
+
+/// The dense complex matrix and right side of a small-signal system.
+pub fn dense_complex(
+    matrix: &[Stamp<AnalogReference, num_complex::Complex64>],
+    rhs: &[Stamp<AnalogReference, num_complex::Complex64>],
+    n: usize,
+) -> (Vec<Vec<num_complex::Complex64>>, Vec<num_complex::Complex64>) {
+    let zero = num_complex::Complex64::new(0.0, 0.0);
+    let (mut a, mut b) = (vec![vec![zero; n]; n], vec![zero; n]);
+    for s in matrix.iter().chain(rhs) {
+        match s {
+            Stamp::Matrix(r, c, v) => {
+                if let (Some(r), Some(c)) = (r.idx(), c.idx()) {
+                    a[r][c] += v;
+                }
+            }
+            Stamp::Rhs(r, v) => {
+                if let Some(r) = r.idx() {
+                    b[r] += v;
+                }
+            }
+        }
+    }
+    (a, b)
+}

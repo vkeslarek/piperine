@@ -78,6 +78,8 @@ pub(crate) struct FnPlan {
     pub rows: bool,
     /// Writes a limit's `PROPOSED` or `LIMITED`: runs before the readers.
     pub limits: bool,
+    /// Writes a `STIM` input's `RE` or `IM`: needed by a small-signal sweep.
+    pub stim: bool,
 }
 
 /// One term: its rows and the columns its partials reach.
@@ -111,6 +113,9 @@ pub(crate) struct InputPlan {
     /// The function and write slot of `PROPOSED` and of `LIMITED`.
     pub proposed: Option<(usize, usize)>,
     pub limited: Option<(usize, usize)>,
+    /// The function and write slot of a `STIM` input's `RE` and `IM`.
+    pub re: Option<(usize, usize)>,
+    pub im: Option<(usize, usize)>,
     /// `(partial, column)`: partials of `PROPOSED` (a `LIMIT`) against a
     /// continuous pin, in the function that writes it.
     pub p: Vec<(usize, AnalogReference)>,
@@ -353,6 +358,8 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
             kind: x.kind,
             proposed: None,
             limited: None,
+            re: None,
+            im: None,
             p: Vec::new(),
         })
         .collect();
@@ -369,6 +376,8 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
             match (c.kind, c.part) {
                 (cell::INPUT, part::PROPOSED) => inputs[c.index as usize].proposed = Some((fi, w)),
                 (cell::INPUT, part::LIMITED) => inputs[c.index as usize].limited = Some((fi, w)),
+                (cell::INPUT, part::RE) => inputs[c.index as usize].re = Some((fi, w)),
+                (cell::INPUT, part::IM) => inputs[c.index as usize].im = Some((fi, w)),
                 (cell::TERM, part::TIME) => terms[c.index as usize].td = Some((fi, w)),
                 _ => {}
             }
@@ -434,6 +443,7 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
             seed,
             rows,
             limits,
+            stim: writes.iter().any(|c| c.kind == cell::INPUT && matches!(c.part, part::RE | part::IM)),
         });
     }
     if functions.is_empty() {

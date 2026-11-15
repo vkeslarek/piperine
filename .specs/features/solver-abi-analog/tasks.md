@@ -227,10 +227,10 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `small_signal_weights_each_operator` asserts 1, `jω` and `exp(−jω·td)` on one term of each kind (C14)
-- [ ] Test `a_stim_input_is_the_right_side` asserts `−g·(RE + j·IM)`
-- [ ] Test `an_rc_low_pass_has_its_corner` solves one frequency by hand and reads `1/√2` at `1/(2πRC)` within 1e-9
-- [ ] Gate: full
+- [x] Test `small_signal_weights_each_operator` asserts 1, `jω` and `exp(−jω·td)` on one term of each kind (C14)
+- [x] Test `a_stim_input_is_the_right_side` asserts `−g·(RE + j·IM)`
+- [x] Test `an_rc_low_pass_has_its_corner` solves one frequency by hand and reads `1/√2` at `1/(2πRC)` within 1e-9
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

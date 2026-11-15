@@ -440,7 +440,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 19] = [const { OnceLock::new() }; 19];
+    static M: [OnceLock<Module>; 21] = [const { OnceLock::new() }; 21];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -461,6 +461,8 @@ pub fn modules() -> Modules {
         reader: module_of::<Reader>(&M[16], "Reader"),
         tracker: module_of::<Tracker>(&M[17], "Tracker"),
         delay_line: module_of::<DelayLine>(&M[18], "DelayLine"),
+        trio: module_of::<Trio>(&M[19], "Trio"),
+        ac_vsource: module_of::<AcVSource>(&M[20], "AcVSource"),
     }
 }
 
@@ -486,6 +488,8 @@ pub struct Modules {
     pub reader: &'static Module,
     pub tracker: &'static Module,
     pub delay_line: &'static Module,
+    pub trio: &'static Module,
+    pub ac_vsource: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)
@@ -1160,6 +1164,114 @@ impl Device for DelayLine {
         cx.set(0, v);
         cx.set(1, td);
         cx.jac()[0] = 1.0;
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+// ─── Small-signal fixtures ──────────────────────────────────────────────────
+
+/// One term of each operator, each on its own pin.
+/// pins: a=0, b=1, c=2, td=3 (PARAM F64); p0=4, p1=5, p2=6 (PORT continuous)
+/// terms: T0 FLOW {p0, GROUND} = a·v(p0);  T1 DDT {p1, GROUND} = b·v(p1);
+///        T2 DELAY {p2, GROUND} = c·v(p2), delay td
+/// fn 0 "all": reads [p0, p1, p2, a, b, c, td] writes [T0, T1, T2, T2.TIME]
+///             partials (0←0)=a (1←1)=b (2←2)=c
+pub struct Trio;
+static TRIO: OnceLock<ShapeRef> = OnceLock::new();
+
+fn trio_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let (a, b, c, td) = (s.pin(param("a")), s.pin(param("b")), s.pin(param("c")), s.pin(param("td")));
+    let p0 = s.pin(PinSpec::continuous("p0", role::PORT));
+    let p1 = s.pin(PinSpec::continuous("p1", role::PORT));
+    let p2 = s.pin(PinSpec::continuous("p2", role::PORT));
+    let t0 = s.term(flow("f", op::FLOW, p0, GROUND));
+    let t1 = s.term(flow("q", op::DDT, p1, GROUND));
+    let t2 = s.term(flow("d", op::DELAY, p2, GROUND));
+    s.function(FunctionSpec {
+        name: "all",
+        reads: vec![pin(p0), pin(p1), pin(p2), pin(a), pin(b), pin(c), pin(td)],
+        writes: vec![term(t0), term(t1), term(t2), Cell { kind: cell::TERM, index: t2, part: part::TIME }],
+        partials: vec![partial(0, 0), partial(1, 1), partial(2, 2)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Trio {
+    fn prototype() -> &'static Shape {
+        shared(&TRIO, trio_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Trio, Arc::clone(shared(&TRIO, trio_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (a, b, c, td) = (cx.f64(3), cx.f64(4), cx.f64(5), cx.f64(6));
+        cx.set(0, a * cx.f64(0));
+        cx.set(1, b * cx.f64(1));
+        cx.set(2, c * cx.f64(2));
+        cx.set(3, td);
+        cx.jac().copy_from_slice(&[a, b, c]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// The potential source of abi.md A1 with a small-signal stimulus.
+/// pins: dc=0, re=1, im=2 (PARAM F64); p=3, n=4 (PORT continuous); f=5 (PRIVATE continuous)
+/// inputs: I0 STIM "ac"
+/// terms: T0 FLOW {p, n} "i" = f;  T1 FLOW {f, GROUND} "eq" = x(p) − x(n) − dc − I0
+/// fn 0 "v":  reads [p, n, f, dc, I0] writes [T0, T1] partials (0←2)=1 (1←0)=1 (1←1)=−1 (1←4)=−1
+/// fn 1 "ac": reads [re, im] writes [I0.RE, I0.IM]
+pub struct AcVSource;
+static AC_VSOURCE: OnceLock<ShapeRef> = OnceLock::new();
+
+fn ac_vsource_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let (dc, re, im) = (s.pin(param("dc")), s.pin(param("re")), s.pin(param("im")));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
+    let i0 = s.input(InputSpec { name: "ac", origin: "fixture:ac_vsource:I0", kind: input::STIM });
+    let t0 = s.term(flow("i", op::FLOW, p, n));
+    let t1 = s.term(flow("eq", op::FLOW, f, GROUND));
+    s.function(FunctionSpec {
+        name: "v",
+        reads: vec![pin(p), pin(n), pin(f), pin(dc), inp(i0, part::VALUE)],
+        writes: vec![term(t0), term(t1)],
+        partials: vec![partial(0, 2), partial(1, 0), partial(1, 1), partial(1, 4)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "ac",
+        reads: vec![pin(re), pin(im)],
+        writes: vec![inp(i0, part::RE), inp(i0, part::IM)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for AcVSource {
+    fn prototype() -> &'static Shape {
+        shared(&AC_VSOURCE, ac_vsource_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((AcVSource, Arc::clone(shared(&AC_VSOURCE, ac_vsource_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            cx.set(0, cx.f64(2));
+            cx.set(1, cx.f64(0) - cx.f64(1) - cx.f64(3) - cx.f64(4));
+            cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -1.0]);
+        } else {
+            cx.set(0, cx.f64(0));
+            cx.set(1, cx.f64(1));
+        }
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {

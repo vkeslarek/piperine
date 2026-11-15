@@ -13,6 +13,7 @@ use super::delay::{Delayed, stamp_delay};
 use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
+use super::small_signal::{ComplexStamps, response, stamp_matrix, stimulus};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
 use crate::error::Error;
 use crate::math::linear::Stamp;
@@ -147,19 +148,25 @@ impl Assembly {
     /// limit's `x̂` taken from them, the rest. Then checks every value and
     /// seeded partial the solve reads.
     pub fn evaluate(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
+        self.evaluate_for(x, amb, Need::NEWTON)
+    }
+
+    /// [`evaluate`](Self::evaluate) for the outputs `need` names.
+    pub(crate) fn evaluate_for(&mut self, x: &[f64], amb: Ambient, need: Need) -> Result<(), Error> {
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             for pass in [true, false] {
                 for (fi, f) in inst.functions.iter().enumerate() {
-                    if f.rows && f.limits == pass {
+                    let needed = f.rows || (need.stim && f.stim);
+                    if needed && f.limits == pass {
                         let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
                         run(inst, f, &mut st.fns[fi], &ctx, &mut self.scratch)?;
                     }
                 }
                 if pass {
-                    take_iterates(inst, st);
+                    take_iterates(inst, st, need.small_signal);
                 }
             }
-            check_finite(inst, st)?;
+            check_finite(inst, st, need)?;
         }
         Ok(())
     }
@@ -250,6 +257,27 @@ impl Assembly {
         Ok(out)
     }
 
+    /// The small-signal system at operating point `op` and sweep frequency
+    /// `amb.freq`: the matrix `Σ resp(ω)·∂v` and the stimulus right side
+    /// `−Σ w·g·(RE + j·IM)`. Every limit holds `x̂ = x`.
+    // SPEC_DEVIATION: design.md gives `assemble_ac(op, omega)`; it takes the
+    // ambient, whose `freq` gives `ω = 2π·freq`.
+    // Reason: functions read `FREQ` and the continuation values as ambient
+    // inputs (abi.md §4.2); the caller supplies all of them.
+    pub fn assemble_ac(&mut self, op: &[f64], amb: Ambient) -> Result<(ComplexStamps, ComplexStamps), Error> {
+        self.evaluate_for(op, amb, Need::AC)?;
+        let omega = 2.0 * std::f64::consts::PI * amb.freq;
+        let (mut matrix, mut rhs) = (Vec::new(), Vec::new());
+        for (inst, st) in self.plan.instances.iter().zip(&self.state) {
+            for t in &inst.terms {
+                let w = response(t, st, omega);
+                stamp_matrix(t, &linear(t, inst, st), w, &mut matrix);
+                stimulus(t, inst, st, w, &mut rhs);
+            }
+        }
+        Ok((matrix, rhs))
+    }
+
     /// Records, for every `DDT` term, its value at the converged solution `x`
     /// as the newest history row. Called once per converged solve, where the
     /// Newton state buffer gains its row (a stage, an operating point, an
@@ -294,6 +322,20 @@ impl Assembly {
 /// unbounded.
 fn max_of(t: &TermPlan, slots: &[Vec<u8>]) -> f64 {
     t.max.map_or(f64::INFINITY, |s| f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0")))
+}
+
+/// Which outputs one evaluation needs beyond the rows of a Newton solve.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Need {
+    /// `STIM` strengths (a small-signal sweep).
+    pub stim: bool,
+    /// A small-signal linearization: every limit holds `x̂ = x`.
+    pub small_signal: bool,
+}
+
+impl Need {
+    pub const NEWTON: Need = Need { stim: false, small_signal: false };
+    pub const AC: Need = Need { stim: true, small_signal: true };
 }
 
 /// Everything a read cell's bytes come from.
@@ -369,8 +411,8 @@ pub(crate) fn run(
 }
 
 /// A4: every term value, limit iterate and seeded partial a Newton solve
-/// reads is finite.
-fn check_finite(inst: &InstancePlan, st: &InstanceState) -> Result<(), Error> {
+/// reads is finite, and the strengths the sweep `need` names.
+fn check_finite(inst: &InstancePlan, st: &InstanceState, need: Need) -> Result<(), Error> {
     let fail = |cell: String, origin: &str, v: f64| {
         Err(device_error(format!(
             "instance `{}`: {cell} ({origin}) is not finite: {v} (abi.md A4; LRM §7.3.2.1: an analog \
@@ -404,6 +446,15 @@ fn check_finite(inst: &InstancePlan, st: &InstanceState) -> Result<(), Error> {
             let v = st.fns[fi].f64(w);
             if !v.is_finite() {
                 return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
+            }
+        }
+        if need.stim {
+            for (what, at) in [("RE", x.re), ("IM", x.im)] {
+                let Some((fi, w)) = at else { continue };
+                let v = st.fns[fi].f64(w);
+                if !v.is_finite() {
+                    return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
+                }
             }
         }
         if let Some((fi, _)) = x.proposed {

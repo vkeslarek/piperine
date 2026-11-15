@@ -42,8 +42,9 @@ pub(crate) fn active(held: f64, proposed: f64) -> bool {
 }
 
 /// Sets each limit's `x̂` and `x` from the functions that just wrote them,
-/// or to `LAST` for a limit no function writes (A3).
-pub(crate) fn take_iterates(inst: &InstancePlan, st: &mut InstanceState) {
+/// or to `LAST` for a limit no function writes (A3). In a small-signal sweep
+/// `x̂ = x` (abi.md §4.3).
+pub(crate) fn take_iterates(inst: &InstancePlan, st: &mut InstanceState, small_signal: bool) {
     for (i, x) in inst.inputs.iter().enumerate() {
         if x.kind != input::LIMIT {
             continue;
@@ -52,7 +53,7 @@ pub(crate) fn take_iterates(inst: &InstancePlan, st: &mut InstanceState) {
         let read = |at: Option<(usize, usize)>| at.map_or(last, |(f, w)| st.fns[f].f64(w));
         let (limited, proposed) = (read(x.limited), read(x.proposed));
         let h = &mut st.held[i];
-        h.value = limited;
+        h.value = if small_signal { proposed } else { limited };
         h.proposed = proposed;
     }
 }
