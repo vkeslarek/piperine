@@ -573,7 +573,7 @@ Proof: run terms | test a_non_finite_value_is_written_as_is ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** 2026-11-15 batches 1-3 done (2da88c99); batch 4 (T10-T12, Sonnet) in ../piperine-ir-interp
+**Dispatched:** 2026-11-15 batches 1-4 done (89ae0a27); Verifier round 1 (Opus) in ../piperine-ir-interp
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---
