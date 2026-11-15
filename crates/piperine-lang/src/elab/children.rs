@@ -113,30 +113,6 @@ impl Elaboration<'_, '_> {
         format!("{module}#{ordinal}")
     }
 
-    /// A connection: a node of the parent, or ground.
-    fn lower_terminal(&mut self, scope: &Scope, arg: ExprId) -> Option<Terminal> {
-        let node = self.design.expr_node(arg).clone();
-        let file = self.design.decl_data(node.owner).file;
-        let ExprKind::Path(path) = &node.kind else {
-            self.unsupported(file, node.span, "a connection that is not a node");
-            return None;
-        };
-        match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
-            Resolution::Decl(decl) => match scope.nodes.get(&decl) {
-                Some(index) => Some(Terminal::Node(*index)),
-                None => {
-                    self.unsupported(file, node.span, "a connection that is not a node of this module");
-                    None
-                }
-            },
-            Resolution::Builtin(id) if id.info().kind == crate::pom::BuiltinKind::Node => Some(Terminal::Ground),
-            _ => {
-                self.unsupported(file, node.span, "a connection that is not a node");
-                None
-            }
-        }
-    }
-
     /// The param values a placement writes, each folded; `None` after a diagnostic.
     fn lower_given(&mut self, file: FileId, module: DeclId, fields: &[FieldInit]) -> Option<Vec<(u32, Constant, ExprId)>> {
         let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();

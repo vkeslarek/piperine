@@ -250,11 +250,11 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `v(a)` is a probe to ground; `v(a, k)` between two body nodes
-- [ ] The diode's site prints `limit L0 "vd"` with its seed
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `probes_and_environment_lower_to_their_nodes`, `sites_are_numbered_in_source_order_and_named`
-- [ ] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `v(a)` is a probe to ground; `v(a, k)` between two body nodes
+- [x] The diode's site prints `limit L0 "vd"` with its seed
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_analog`: `probes_and_environment_lower_to_their_nodes`, `sites_are_numbered_in_source_order_and_named`
+- [x] Gate check passes: `cargo test -p piperine-lang`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

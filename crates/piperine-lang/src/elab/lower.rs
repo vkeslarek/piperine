@@ -25,11 +25,16 @@ pub(super) struct Scope {
     pub(super) local_index: BTreeMap<DeclId, u32>,
     pub(super) limits: Vec<Site>,
     pub(super) stims: Vec<Site>,
+    /// How many `if` branches and closure bodies the code being lowered sits in: a site there
+    /// is not unconditional, which `Ir::check` and the model both forbid.
+    pub(super) nesting: u32,
+    /// The name the `let` being lowered gives the `limit` call that is its whole initializer.
+    pub(super) limit_name: Option<(ExprId, String)>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new() }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), nesting: 0, limit_name: None }
     }
 }
 
@@ -113,11 +118,13 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::If { cond, then, else_ } => {
                 let cond = self.lower_expr(scope, *cond);
+                scope.nesting += 1;
                 let then = self.lower_block(scope, file, &then.stmts, node.span);
                 let otherwise = match else_ {
                     Some(else_) => self.lower_expr(scope, *else_),
                     None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
                 };
+                scope.nesting -= 1;
                 Some(self.emit(Expr::If { cond: cond?, then: then?, otherwise: otherwise? }, ty, origin))
             }
             ExprKind::Block(block) => self.lower_block(scope, file, &block.stmts, node.span),
@@ -147,8 +154,10 @@ impl Elaboration<'_, '_> {
                         }
                     }
                 }
-                let body = self.lower_expr(scope, *body)?;
-                Some(self.emit(Expr::Closure { params: locals, body }, ty, origin))
+                scope.nesting += 1;
+                let body = self.lower_expr(scope, *body);
+                scope.nesting -= 1;
+                Some(self.emit(Expr::Closure { params: locals, body: body? }, ty, origin))
             }
             _ => {
                 self.unsupported(file, node.span, "this expression form");
@@ -185,6 +194,14 @@ impl Elaboration<'_, '_> {
                 None
             }
         }
+    }
+
+    /// `expr` without the parentheses around it.
+    pub(super) fn peel_parens(&self, mut expr: ExprId) -> ExprId {
+        while let ExprKind::Paren(inner) = &self.design.expr_node(expr).kind {
+            expr = *inner;
+        }
+        expr
     }
 
     /// Allocate the local a `Binding` declaration names: its name and its type, in declaration
@@ -230,7 +247,10 @@ impl Elaboration<'_, '_> {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => match self.design.pat_node(*pat).kind.clone() {
                     PatKind::Ident { binding, sub: None, .. } => {
                         let local = self.bind_local(scope, binding);
+                        let name = self.design.decl_data(binding).name.as_ref().map(|n| n.text.clone());
+                        scope.limit_name = name.map(|n| (self.peel_parens(*init), n));
                         let init = self.lower_expr(scope, *init);
+                        scope.limit_name = None;
                         match (local, init) {
                             (Some(local), Some(init)) => out.push(self.ir.stmt(Stmt::Let { local, init })),
                             _ => ok = false,
