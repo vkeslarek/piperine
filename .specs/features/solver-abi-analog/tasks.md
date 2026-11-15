@@ -204,11 +204,11 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `a_delay_term_reads_its_history_at_t_minus_td` passes on a ramp, between two accepted points (C9)
-- [ ] Test `a_delay_term_is_its_value_in_an_equilibrium_solve` passes
-- [ ] Test `a_delay_beyond_its_max_fails_naming_the_term` passes (C10)
-- [ ] Test `a_restore_returns_the_delay_history` passes
-- [ ] Gate: build
+- [x] Test `a_delay_term_reads_its_history_at_t_minus_td` passes on a ramp, between two accepted points (C9)
+- [x] Test `a_delay_term_is_its_value_in_an_equilibrium_solve` passes
+- [x] Test `a_delay_beyond_its_max_fails_naming_the_term` passes (C10)
+- [x] Test `a_restore_returns_the_delay_history` passes
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build

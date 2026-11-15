@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use piperine_abi::caller::Handle;
 use piperine_abi::device::{Access, cell_lens};
-use piperine_abi::raw::{Cell, Function, GROUND, Shape, cell, input, kind, part};
+use piperine_abi::raw::{Cell, DEFAULT, Function, GROUND, Shape, cell, input, kind, part};
 use piperine_abi::validate::validate;
 
 use super::device_error;
@@ -92,6 +92,10 @@ pub(crate) struct TermPlan {
     /// The function (index into `InstancePlan::functions`) and write slot of
     /// its `VALUE`.
     pub value: Option<(usize, usize)>,
+    /// The function and write slot of a `DELAY` term's `TIME` (its `td`).
+    pub td: Option<(usize, usize)>,
+    /// The discrete slot of a `DELAY` term's `max`; `None`: unbounded.
+    pub max: Option<usize>,
     /// `(partial, column)`: partials of the value against a continuous pin.
     pub direct: Vec<(usize, AnalogReference)>,
     /// `(partial, input)`: partials of the value against a held input's `VALUE`.
@@ -273,6 +277,10 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
         };
         let plus = side("plus", t.plus)?;
         let minus = side("minus", t.minus)?;
+        let max = match pins.get(t.max as usize) {
+            Some(AnalogBinding::Discrete(s)) if t.max != DEFAULT => Some(*s as usize),
+            _ => None,
+        };
         terms.push(TermPlan {
             name: t.name.as_str().into(),
             origin: t.origin.as_str().into(),
@@ -280,6 +288,8 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
             plus,
             minus,
             value: None,
+            td: None,
+            max,
             direct: Vec::new(),
             via: Vec::new(),
         });
@@ -359,6 +369,7 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option
             match (c.kind, c.part) {
                 (cell::INPUT, part::PROPOSED) => inputs[c.index as usize].proposed = Some((fi, w)),
                 (cell::INPUT, part::LIMITED) => inputs[c.index as usize].limited = Some((fi, w)),
+                (cell::TERM, part::TIME) => terms[c.index as usize].td = Some((fi, w)),
                 _ => {}
             }
             if c.kind == cell::TERM && c.part == part::VALUE {

@@ -9,10 +9,11 @@
 use piperine_abi::raw::{ambient, op};
 
 use super::ddt::{History, Stage, stamp_ddt};
+use super::delay::{Delayed, stamp_delay};
 use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
-use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source};
+use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
 use crate::error::Error;
 use crate::math::linear::Stamp;
 use crate::netlist::AnalogReference;
@@ -73,6 +74,8 @@ pub(crate) struct InstanceState {
     pub held: Vec<Held>,
     /// Per term; used by `DDT` terms only.
     pub ddt: Vec<History>,
+    /// Per term; used by `DELAY` terms only.
+    pub delay: Vec<Delayed>,
 }
 
 /// What a rejected step must undo (abi.md §5 I8): every term history and
@@ -81,6 +84,7 @@ pub(crate) struct InstanceState {
 pub struct AssemblySnapshot {
     ddt: Vec<Vec<History>>,
     held: Vec<Vec<Held>>,
+    delay: Vec<Vec<Delayed>>,
 }
 
 /// The device assembly of one circuit: its plan, the discrete slots its
@@ -114,6 +118,7 @@ impl Assembly {
                     .collect(),
                 held: vec![Held::default(); inst.inputs.len()],
                 ddt: vec![History::default(); inst.terms.len()],
+                delay: vec![Delayed::default(); inst.terms.len()],
             })
             .collect();
         Assembly { previous: slots.clone(), slots, plan, state, scratch: Vec::new() }
@@ -181,27 +186,35 @@ impl Assembly {
         }
     }
 
-    /// Accepts the solution `x`: evaluates there, and every written limit's
-    /// `LAST` becomes its `x̂` with `AGE = 1`.
+    /// Accepts the solution `x` at `amb.time`: evaluates there, every written
+    /// limit's `LAST` becomes its `x̂` with `AGE = 1`, and every `DELAY`
+    /// term's history gains its value.
     pub fn accept(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
         self.evaluate(x, amb)?;
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             advance(inst, st, 1);
+            for (ti, t) in inst.terms.iter().enumerate() {
+                if t.op == op::DELAY {
+                    let v = linear(t, inst, st).v;
+                    st.delay[ti].push(amb.time, v, max_of(t, &self.slots));
+                }
+            }
         }
         Ok(())
     }
 }
 
 impl Assembly {
-    /// The stamps of an equilibrium solve at iterate `x`: every `FLOW` term
-    /// in its Norton form; a `DDT` term adds nothing (its positions carry 0).
+    /// The stamps of an equilibrium solve at iterate `x`: every `FLOW` and
+    /// `DELAY` term in its Norton form; a `DDT` term adds nothing (its
+    /// positions carry 0).
     pub fn assemble_dc(&mut self, x: &[f64], amb: Ambient) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
         self.assemble(x, amb, None)
     }
 
     /// The stamps of transient stage `stage` at iterate `x`: `FLOW` terms in
     /// their Norton form, `DDT` terms through the TR-BDF2 companion over
-    /// their own history.
+    /// their own history, `DELAY` terms at `amb.time − td` of theirs.
     pub fn assemble_tran(
         &mut self,
         x: &[f64],
@@ -223,10 +236,14 @@ impl Assembly {
             for (ti, t) in inst.terms.iter().enumerate() {
                 let lin = linear(t, inst, st);
                 match (t.op, stage) {
-                    (op::FLOW, _) => stamp_flow(t, &lin, x, &mut out),
                     (op::DDT, Some(stage)) => stamp_ddt(t, &lin, &st.ddt[ti], stage, x, &mut out),
                     (op::DDT, None) => stamp_rows(t, &lin, 0.0, 0.0, &mut out),
-                    _ => {}
+                    (op::DELAY, Some(_)) => {
+                        let td = t.td.map_or(0.0, |(f, w)| st.fns[f].f64(w));
+                        let at = (amb.time, td, max_of(t, &self.slots));
+                        stamp_delay(&inst.path, t, &lin, &st.delay[ti], at, x, &mut out)?;
+                    }
+                    _ => stamp_flow(t, &lin, x, &mut out),
                 }
             }
         }
@@ -259,16 +276,24 @@ impl Assembly {
         AssemblySnapshot {
             ddt: self.state.iter().map(|s| s.ddt.clone()).collect(),
             held: self.state.iter().map(|s| s.held.clone()).collect(),
+            delay: self.state.iter().map(|s| s.delay.clone()).collect(),
         }
     }
 
     /// Returns every term history and limit state to `snap`.
     pub fn restore(&mut self, snap: &AssemblySnapshot) {
-        for ((st, ddt), held) in self.state.iter_mut().zip(&snap.ddt).zip(&snap.held) {
-            st.ddt.clone_from(ddt);
-            st.held.clone_from(held);
+        for (i, st) in self.state.iter_mut().enumerate() {
+            st.ddt.clone_from(&snap.ddt[i]);
+            st.held.clone_from(&snap.held[i]);
+            st.delay.clone_from(&snap.delay[i]);
         }
     }
+}
+
+/// The bound of a `DELAY` term: the `F64` at byte 0 of its `max` slot, or
+/// unbounded.
+fn max_of(t: &TermPlan, slots: &[Vec<u8>]) -> f64 {
+    t.max.map_or(f64::INFINITY, |s| f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0")))
 }
 
 /// Everything a read cell's bytes come from.
@@ -359,6 +384,12 @@ fn check_finite(inst: &InstancePlan, st: &InstanceState) -> Result<(), Error> {
         let v = fs.f64(w);
         if !v.is_finite() {
             return fail(format!("term `{}`", t.name), &t.origin, v);
+        }
+        if let Some((tf, tw)) = t.td {
+            let td = st.fns[tf].f64(tw);
+            if !td.is_finite() {
+                return fail(format!("term `{}`.TIME", t.name), &t.origin, td);
+            }
         }
         for p in t.direct.iter().map(|(p, _)| p).chain(t.via.iter().map(|(p, _)| p)) {
             if !fs.jac[*p].is_finite() {

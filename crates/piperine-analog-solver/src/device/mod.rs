@@ -5,6 +5,7 @@
 
 pub mod assembly;
 mod ddt;
+mod delay;
 mod flow;
 mod limit;
 pub mod plan;

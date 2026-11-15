@@ -440,7 +440,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 18] = [const { OnceLock::new() }; 18];
+    static M: [OnceLock<Module>; 19] = [const { OnceLock::new() }; 19];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -460,6 +460,7 @@ pub fn modules() -> Modules {
         owner: module_of::<Owner>(&M[15], "Owner"),
         reader: module_of::<Reader>(&M[16], "Reader"),
         tracker: module_of::<Tracker>(&M[17], "Tracker"),
+        delay_line: module_of::<DelayLine>(&M[18], "DelayLine"),
     }
 }
 
@@ -484,6 +485,7 @@ pub struct Modules {
     pub owner: &'static Module,
     pub reader: &'static Module,
     pub tracker: &'static Module,
+    pub delay_line: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)
@@ -1109,6 +1111,50 @@ impl Device for Tracker {
             cx.set(0, G_LIMIT * xh);
             cx.jac()[0] = G_LIMIT;
         }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+// ─── Delay fixture ──────────────────────────────────────────────────────────
+
+/// pins: td=0, max=1 (PARAM F64); a=2, o=3 (PORT continuous)
+/// terms: T0 DELAY {o, GROUND} "d" = v(a), delay td, bound `max`;  origin "fixture:delay:T0"
+/// fn 0 "d": reads [a, td] writes [T0.VALUE, T0.TIME] partials (0←0)=1
+pub struct DelayLine;
+static DELAY_LINE: OnceLock<ShapeRef> = OnceLock::new();
+
+fn delay_line_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let td = s.pin(param("td"));
+    let max = s.pin(param("max"));
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let o = s.pin(PinSpec::continuous("o", role::PORT));
+    let t0 = s.term(TermSpec { origin: "fixture:delay:T0", max, ..flow("d", op::DELAY, o, GROUND) });
+    s.function(FunctionSpec {
+        name: "d",
+        reads: vec![pin(a), pin(td)],
+        writes: vec![term(t0), Cell { kind: cell::TERM, index: t0, part: part::TIME }],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for DelayLine {
+    fn prototype() -> &'static Shape {
+        shared(&DELAY_LINE, delay_line_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((DelayLine, Arc::clone(shared(&DELAY_LINE, delay_line_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (v, td) = (cx.f64(0), cx.f64(1));
+        cx.set(0, v);
+        cx.set(1, td);
+        cx.jac()[0] = 1.0;
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {

@@ -133,7 +133,7 @@ fn an_analog_bind_error_names_its_entry() {
 }
 
 /// The fixtures that must pass every rule (all but `bad_limit`).
-fn valid(m: &Modules) -> [(&'static str, &'static Module); 17] {
+fn valid(m: &Modules) -> [(&'static str, &'static Module); 18] {
     [
         ("resistor", m.resistor),
         ("diode", m.diode),
@@ -152,6 +152,7 @@ fn valid(m: &Modules) -> [(&'static str, &'static Module); 17] {
         ("owner", m.owner),
         ("reader", m.reader),
         ("tracker", m.tracker),
+        ("delay_line", m.delay_line),
     ]
 }
 
@@ -198,6 +199,7 @@ fn every_fixture_function_passes_the_partials_verifier() {
         ("reader", m.reader, 0, vec![f(0.4)]),
         ("tracker limit", m.tracker, 0, vec![f(0.9), f(0.2), f(0.5), vec![2], vec![0]]),
         ("tracker i", m.tracker, 1, vec![f(0.4)]),
+        ("delay_line", m.delay_line, 0, vec![f(0.4), f(1e-9)]),
     ];
     for (name, module, k, input) in points {
         let h = Handle::create(module, &[]).expect("create");
