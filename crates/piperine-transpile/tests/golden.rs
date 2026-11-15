@@ -4,7 +4,8 @@
 //! same bytes; every module, function, shape entry and function arm sits under a comment with its
 //! IR path and `file:line:col`; each IR function is a generic `fn` and each running body a `mod`
 //! with a `Device` impl; a keyword name is raw in Rust and unchanged as an ABI name; a design
-//! with nothing to run has no module, and a body with no `analog` block no `terms` function.
+//! with nothing to run has no module, builds a library of 0 modules and gives a circuit with no
+//! device, and a body with no `analog` block no `terms` function.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use piperine_ir::{
     Addend, BodyId, BodyNode, BodySpec, Branch, BranchKind, InstanceSpec, Ir, IrBuilder, NodeRole, Operator,
     Origin, Param, QuantityRole, Stmt, Terminal, ValueType,
 };
-use piperine_transpile::Transpiler;
+use piperine_transpile::{Settings, Transpiler};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/devices.rs"]
@@ -228,12 +229,24 @@ fn a_design_with_nothing_to_run_has_no_module() {
         params: vec![],
         origin: Origin { file: "empty.msl".into(), line: 1, col: 1 },
     });
-    let text = source(b.finish(top));
+    let ir = b.finish(top);
+    let text = source(ir.clone());
     let mods: Vec<&str> = text.lines().filter(|l| l.trim_start().starts_with("pub mod ")).collect();
     assert_eq!(mods, ["pub mod rt;"], "{text}");
     assert!(!text.contains("impl Device"), "{text}");
     assert!(text.contains("static MODULES: OnceLock<[Module; 0]> = OnceLock::new();"), "{text}");
     assert!(text.contains("let modules = MODULES.get_or_init(|| []);"), "{text}");
+
+    // verification F8: the library is built and loads with 0 modules, and the circuit made from
+    // it binds no device
+    let cache = tempfile::tempdir().unwrap();
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let compiled = Transpiler::new(Arc::new(ir)).and_then(|t| t.compile(&settings)).unwrap_or_else(|e| panic!("{e}"));
+    assert!(compiled.loaded().file().is_file(), "a library is built");
+    assert_eq!(compiled.loaded().names(), Vec::<&str>::new(), "0 modules");
+    let circuit = compiled.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
+    let bound = circuit.bound().expect("the circuit is bound");
+    assert_eq!(bound.names.instances, Vec::<String>::new(), "a circuit with zero devices");
 }
 
 #[test]

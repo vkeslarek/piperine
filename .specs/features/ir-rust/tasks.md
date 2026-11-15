@@ -387,6 +387,7 @@ T42 → T43 → T44 → T45 → T46
 
 - [x] The golden files are read by an Opus reviewer before the commit: each is followed from MSL line to Rust line with no line unexplained
 - [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test golden`: `the_five_m1_bodies_print_as_the_golden_files`, `transpiling_twice_gives_the_same_bytes`, `every_item_sits_under_its_path_and_origin`, `each_function_is_a_generic_fn_and_each_body_a_device_mod`, `a_keyword_identifier_is_raw_and_the_abi_name_is_not`, `a_design_with_nothing_to_run_has_no_module`, `a_body_without_analog_prints_no_terms_function`
+- [x] Verification F8 (C100): `a_design_with_nothing_to_run_has_no_module` also compiles the empty design and asserts a library of 0 modules and a circuit that binds no device; C8 cites `lines_are_indented_by_four_one_statement_each` beside the reals test
 - [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 - [x] Test count: the 7 test(s) named above, and no existing test removed or edited
 
@@ -1269,6 +1270,7 @@ Proof: run lib | test print::text::tests::keywords_become_raw_identifiers ... ok
 
 **C8** - 4-space indentation, one statement per line, reals in the shortest decimal that parses back to the same bits. (RS-02, AC 3; T4)
 Proof: run lib | test print::text::tests::reals_round_trip_in_the_shortest_form ... ok
+Proof: run lib | test print::text::tests::lines_are_indented_by_four_one_statement_each ... ok
 
 **C9** - A build keeps `design.rs` in the cache entry beside the library and reports its path. (RS-02, AC 4; T16)
 Proof: run compile | test the_source_is_kept_beside_the_library_and_reported ... ok
@@ -1544,7 +1546,7 @@ Proof: run nets | test carrier_ports_bind_to_design_nets ... ok
 **C99** - Each of the ten buck-slice bodies compiles with `rustc` standard error empty. (RS-01, AC 1; T41)
 Proof: run nets | test every_buck_slice_body_compiles_with_no_warning ... ok
 
-**C100** - A design with no body that runs builds a library with 0 modules. (edge case 1; T10)
+**C100** - A design with no body that runs builds a library with 0 modules and a circuit with zero devices (verification F8). (edge case 1; T10)
 Proof: run golden | test a_design_with_nothing_to_run_has_no_module ... ok
 
 **C101** - A body without `analog` generates no `terms` function. (edge case 2; T10)
