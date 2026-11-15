@@ -21,8 +21,8 @@ pub module limexp(x: f64) -> f64 { limit(x, |new, old| deltalim(new, old, 1.0)).
 pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
     if new > vcrit && (new - old).abs() > 2.0 * nvt {
         if old > 0.0 {
-            let arg = 1.0 + (new - old) / nvt;
-            if arg > 0.0 { old + nvt * arg.ln() } else { vcrit }
+            let arg = (new - old) / nvt;
+            if arg > 0.0 { old + nvt * (2.0 + (arg - 2.0).ln()) } else { old - nvt * (2.0 + (2.0 - arg).ln()) }
         } else { nvt * (new / nvt).ln() }
     } else if new < 0.0 {
         let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };

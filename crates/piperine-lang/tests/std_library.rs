@@ -399,7 +399,7 @@ mod f64_eval {
 
 #[test]
 fn pnjlim_follows_ngspice_devpnjlim_branch_by_branch() {
-    // F4: every branch of the ngspice `DEVpnjlim` as the orchestrator transcribed it, evaluated on
+    // F4: every branch of the ngspice `DEVpnjlim` as ngspice devsup.c has it, evaluated on
     // the body of `std::analog::pnjlim` as shipped.
     use std::collections::BTreeMap;
     let file = piperine_lang::msl::parser::parse(&std::fs::read_to_string(std_dir().join("analog.msl")).expect("analog.msl")).file;
@@ -419,11 +419,11 @@ fn pnjlim_follows_ngspice_devpnjlim_branch_by_branch() {
         }
     };
     let (vt, vcrit) = (0.025_f64, 0.6_f64);
-    // 1. forward step above vcrit, old > 0, arg > 0: old + vt * ln(arg).
-    assert!((run(0.9, 0.7) - (0.7 + vt * (1.0 + 0.2 / vt).ln())).abs() < 1e-15);
-    // 2. the same, arg <= 0 (new - old <= -vt is impossible above vcrit with old > 0 unless
-    //    old is large): old = 5.0, new = 0.7 gives arg = 1 + (0.7 - 5)/vt < 0, so vcrit.
-    assert_eq!(run(0.7, 5.0), vcrit);
+    // 1. forward step above vcrit, old > 0, arg > 0: vold + vt * (2 + ln(arg - 2)).
+    assert!((run(0.9, 0.7) - (0.7 + vt * (2.0 + (0.2 / vt - 2.0).ln()))).abs() < 1e-15);
+    // 2. the same, arg <= 0 (old = 5.0, new = 0.7: arg = (0.7 - 5)/vt): vold - vt * (2 + ln(2 - arg)).
+    assert!((run(0.7, 5.0) - (5.0 - vt * (2.0 + (2.0 - (0.7 - 5.0) / vt).ln()))).abs() < 1e-12);
+    let _ = vcrit;
     // 3. forward step above vcrit, old <= 0: vt * ln(new / vt).
     assert!((run(0.9, -0.1) - vt * (0.9 / vt).ln()).abs() < 1e-15);
     assert!((run(0.9, 0.0) - vt * (0.9 / vt).ln()).abs() < 1e-15);
