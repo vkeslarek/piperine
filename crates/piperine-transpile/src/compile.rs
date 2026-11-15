@@ -10,7 +10,7 @@ use crate::cache::{Cache, Entry, Key};
 use crate::compiled::{Compiled, Report};
 use crate::error::Error;
 use crate::load::Loaded;
-use crate::rt;
+use crate::rt::Runtime;
 use crate::rustc::Rustc;
 use crate::settings::Settings;
 use crate::Transpiler;
@@ -35,14 +35,17 @@ impl Transpiler {
         let flags = Rustc::FLAGS.join(" ");
         // parts: source, runtime, compiler text, flags, then the ABI files; the ABI library's
         // own key leaves out the first two.
-        let mut parts: Vec<&[u8]> =
-            vec![source.as_bytes(), rt::REAL.as_bytes(), rustc.version_text().as_bytes(), flags.as_bytes()];
+        let runtime = Runtime::files(self.digital());
+        let mut abi_parts: Vec<&[u8]> = vec![rustc.version_text().as_bytes(), flags.as_bytes()];
         for (name, text) in AbiSource::FILES {
-            parts.push(name.as_bytes());
-            parts.push(text.as_bytes());
+            abi_parts.push(name.as_bytes());
+            abi_parts.push(text.as_bytes());
         }
+        let mut parts: Vec<&[u8]> = vec![source.as_bytes()];
+        parts.extend(runtime.iter().map(|(_, text)| text.as_bytes()));
+        parts.extend(abi_parts.iter().copied());
         let key = Key::of(&parts);
-        let abi_key = Key::of(&parts[2..]);
+        let abi_key = Key::of(&abi_parts);
 
         // RS-04 AC 5: an entry that is incomplete or fails to open is not what it recorded; it
         // is removed and rebuilt. Only what was there at this look is removed: an entry is placed
@@ -64,7 +67,7 @@ impl Transpiler {
                 if present {
                     cache.remove(&key)?;
                 }
-                self.build_and_open(&cache, &key, &abi_key, &rustc, &source, &mut report)?
+                self.build_and_open(&cache, &key, &abi_key, &rustc, &source, &runtime, &mut report)?
             }
         };
         report.rustc_invocations = rustc.invocations();
@@ -78,6 +81,7 @@ impl Transpiler {
         abi_key: &Key,
         rustc: &Rustc,
         source: &str,
+        runtime: &[(&str, &str)],
         report: &mut Report,
     ) -> Result<(Entry, Loaded), Error> {
         let at = Instant::now();
@@ -90,7 +94,14 @@ impl Transpiler {
         let entry = cache.build(key, rustc.version_text(), Rustc::FLAGS, |staging| {
             let entry = Entry::at(staging);
             Self::write(&entry.source(), source)?;
-            Self::write(&entry.runtime(), rt::REAL)?;
+            for (path, text) in runtime {
+                let file = staging.join(path);
+                if let Some(dir) = file.parent() {
+                    std::fs::create_dir_all(dir)
+                        .map_err(|e| Error::Cache { dir: dir.to_path_buf(), cause: e.to_string() })?;
+                }
+                Self::write(&file, text)?;
+            }
             warnings = rustc.cdylib(&entry.source(), &abi, &entry.library())?;
             Ok(())
         })?;

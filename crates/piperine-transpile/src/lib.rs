@@ -35,6 +35,16 @@ pub use settings::Settings;
 #[path = "../../piperine-ir/tests/support/devices.rs"]
 mod devices;
 
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../piperine-ir/tests/support/digital.rs"]
+mod digital;
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../tests/support/alone.rs"]
+mod alone;
+
 /// A checked `Ir`, each body that runs planned.
 #[derive(Debug)]
 pub struct Transpiler {
@@ -70,6 +80,12 @@ impl Transpiler {
     /// The plan of `body`; `None` for a body with nothing to run, or an id out of range.
     pub fn plan(&self, body: BodyId) -> Option<&BodyPlan> {
         self.plans.get(body.index()).and_then(Option::as_ref)
+    }
+
+    /// Whether the design holds a digital form (a carrier), so its runtime is the three files
+    /// of `rt` and not `real.rs` alone.
+    pub fn digital(&self) -> bool {
+        self.ir.bodies().any(|b| !b.carriers().is_empty())
     }
 
     /// The design as one Rust source text (`design.rs`); a form with no lowering is

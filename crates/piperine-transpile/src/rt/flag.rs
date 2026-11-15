@@ -168,6 +168,20 @@ impl<T: Copy + Default> Flagged<T> {
         if self.known { Flagged::known(f(self.value)) } else { Flagged::unknown() }
     }
 
+    /// `f` of three values, unknown when any is: `clamp` (§3.3.2).
+    pub fn zip3<U: Copy + Default, V: Copy + Default, W: Copy + Default>(
+        self,
+        second: Flagged<U>,
+        third: Flagged<V>,
+        f: impl FnOnce(T, U, V) -> W,
+    ) -> Flagged<W> {
+        if self.known && second.known && third.known {
+            Flagged::known(f(self.value, second.value, third.value))
+        } else {
+            Flagged::unknown()
+        }
+    }
+
     /// `f` of two values, unknown when either is: an all-or-nothing operator (§3.3.2).
     pub fn zip<U: Copy + Default, V: Copy + Default>(self, other: Flagged<U>, f: impl FnOnce(T, U) -> V) -> Flagged<V> {
         if self.known && other.known { Flagged::known(f(self.value, other.value)) } else { Flagged::unknown() }

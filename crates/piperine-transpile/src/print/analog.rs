@@ -45,6 +45,7 @@ impl<'a> AnalogPrinter<'a> {
             nodes: body.nodes().iter().map(|n| Text::ident(&n.name)).collect(),
             limits: body.limits().iter().map(|s| Text::generated(&format!("{}_limit", s.name))).collect(),
             stims: body.stims().iter().map(|s| Text::generated(&format!("{}_stim", s.name))).collect(),
+            carriers: body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
         };
         let values = ValuePrinter::of_body(body.ir(), body).with_reads(reads);
         AnalogPrinter { ir: body.ir(), body, plan, values }
