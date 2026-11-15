@@ -1,6 +1,6 @@
 # msl-typeck proofs
 
-**HEAD**: 0e90445f
+**HEAD**: f0ad60ed
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 44 pass, 0 fail
@@ -58,36 +58,36 @@
 
 ```
 running 7 tests
-test a_design_with_diagnostics_gives_them_back ... ok
 test checking_twice_gives_equal_tables ... ok
-test a_const_is_typed_once_by_its_declared_type ... ok
+test a_design_with_diagnostics_gives_them_back ... ok
 test an_unknown_top_is_one_diagnostic ... ok
+test a_const_is_typed_once_by_its_declared_type ... ok
 test every_diagnostic_has_a_span_and_a_code ... ok
 test the_design_is_unchanged_by_the_check ... ok
 test the_reachable_set_of_a_twin_is_typed ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
 
     Blocking waiting for file lock on build directory
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-typeck/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.38s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.64s
      Running tests/types_entry.rs (/var/tmp/piperine-target/debug/deps/types_entry-7c107df262610793)
 ```
 
 `Run values` - exit 0
 
 ```
+test if_and_block_take_their_value_type ... ok
 test diagnostics_come_in_source_order_one_per_expression ... ok
-test literals_are_f64_or_bool ... ok
-test a_closure_outside_an_argument_is_p0001 ... ok
-test a_closure_takes_its_types_from_the_parameter ... ok
-test a_function_is_a_value_only_as_an_argument ... ok
-test operators_type_as_rust_types_them ... ok
+test a_recursive_function_is_typed_from_its_signature ... ok
 test an_unsupported_form_does_not_hide_an_independent_error ... ok
+test operators_type_as_rust_types_them ... ok
+test a_function_is_a_value_only_as_an_argument ... ok
+test a_closure_takes_its_types_from_the_parameter ... ok
 test a_call_takes_its_declared_result ... ok
 test the_std_pnjlim_checks_clean ... ok
 
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-typeck/crates/piperine-lang)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.37s
@@ -97,20 +97,20 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run modules` - exit 0
 
 ```
-test a_node_init_that_is_not_f64_is_e0210 ... ok
 test a_node_of_another_nature_is_e0251 ... ok
-test params_are_f64_or_bool ... ok
 test a_default_of_the_wrong_type_is_rejected ... ok
-test a_where_on_a_module_or_fn_is_bool ... ok
+test a_node_init_that_is_not_f64_is_e0210 ... ok
 test an_environment_function_in_a_const_context_is_e0323 ... ok
-test ports_and_signals_are_nodes_and_gnd_fits_any ... ok
+test a_where_on_a_module_or_fn_is_bool ... ok
 test a_placement_checks_nodes_count_and_params ... ok
+test params_are_f64_or_bool ... ok
+test ports_and_signals_are_nodes_and_gnd_fits_any ... ok
 test a_core_primitive_is_checked_where_it_is_written ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-typeck/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.37s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
      Running tests/types_modules.rs (/var/tmp/piperine-target/debug/deps/types_modules-248adbc18878d535)
 ```
 
@@ -118,19 +118,19 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 8 tests
-test probe_nodes_of_two_natures_are_e0240 ... ok
 test a_contribution_that_is_not_f64_is_e0417 ... ok
+test probe_nodes_of_two_natures_are_e0240 ... ok
 test a_contribution_target_that_is_no_probe_is_e0410 ... ok
 test potential_probes_are_f64 ... ok
-test a_core_primitive_in_a_fn_is_e0450 ... ok
 test limit_checks_its_input_function_and_seed ... ok
+test a_core_primitive_in_a_fn_is_e0450 ... ok
 test ddt_ac_stim_and_environment_are_f64 ... ok
 test the_std_vt_checks_clean ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-typeck/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.37s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
      Running tests/types_analog.rs (/var/tmp/piperine-target/debug/deps/types_analog-560800edb3a3438e)
 ```
 
@@ -139,13 +139,13 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 4 tests
 test unreached_items_are_not_reported ... ok
-test a_construct_outside_the_subset_is_p0001 ... ok
 test p0001_names_the_construct ... ok
+test a_construct_outside_the_subset_is_p0001 ... ok
 test std_types_outside_the_subset_are_p0001 ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-typeck/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
      Running tests/types_subset.rs (/var/tmp/piperine-target/debug/deps/types_subset-010120436d0f2935)
 ```
