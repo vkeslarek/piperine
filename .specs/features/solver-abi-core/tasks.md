@@ -438,12 +438,12 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] Test `a_write_is_committed_only_after_the_shadow_accepts` asserts `shadow` before `host_commit` (C39)
-- [ ] Test `a_false_check_refuses_and_commits_nothing` passes
-- [ ] Test `reshape_is_refused_in_a_transient_and_reported_outside_one` passes: `SetOutcome::Reshape { instance }` between analyses, `Refused` inside
-- [ ] Test `a_scheduled_write_is_a_host_commit_at_its_tick` passes
-- [ ] `cargo test -p piperine-solver` is green and no file outside `src/protocol/`, `src/lib.rs` and `tests/` changed in this phase (the commit body shows `git diff --stat` against the commit before T11)
-- [ ] Gate: build
+- [x] Test `a_write_is_committed_only_after_the_shadow_accepts` asserts `shadow` before `host_commit` (C39)
+- [x] Test `a_false_check_refuses_and_commits_nothing` passes
+- [x] Test `reshape_is_refused_in_a_transient_and_reported_outside_one` passes: `SetOutcome::Reshape { instance }` between analyses, `Refused` inside
+- [x] Test `a_scheduled_write_is_a_host_commit_at_its_tick` passes
+- [x] `cargo test -p piperine-solver` is green and no file outside `src/protocol/`, `src/lib.rs` and `tests/` changed in this phase (the commit body shows `git diff --stat` against the commit before T11)
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build

@@ -4,7 +4,10 @@
 //! and settles only at a time point; `FINISH` ends the analysis after its
 //! instant and is dropped when the step lands earlier; a host waiter runs once
 //! at an accepted instant, never during `advance`, and its writes are due at
-//! the next microstep; a host write is committed only after the shadow accepts.
+//! the next microstep; a host write is committed only after the shadow
+//! accepts, a false `check` refuses it, a `RESHAPE` is refused inside a
+//! transient and reported outside one, and a scheduled write is a host commit
+//! at its tick.
 
 #[allow(dead_code)]
 #[path = "support/stub_sides.rs"]
@@ -13,7 +16,7 @@ mod stub_sides;
 use std::rc::Rc;
 
 use piperine_solver::protocol::{
-    Advance, Attempt, Ended, InstantMode, Outcome, Protocol, ProtocolOptions, SetOutcome,
+    Advance, Attempt, Ended, InstantMode, Outcome, Protocol, ProtocolOptions, SetOutcome, Shadow,
 };
 use stub_sides::{Call, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
@@ -138,4 +141,66 @@ fn a_waiter_is_never_called_during_advance() {
     let last_accept_before = log[..waiter].iter().rposition(|c| matches!(c, Call::Accept(_)));
     let last_advance_before = log[..waiter].iter().rposition(|c| matches!(c, Call::Advance(_)));
     assert!(last_accept_before > last_advance_before, "an acceptance separates the waiter from any advance");
+}
+
+fn commits(log: &Log) -> Vec<Call> {
+    calls(log, |c| matches!(c, Call::HostCommit { .. }))
+}
+
+#[test]
+fn a_write_is_committed_only_after_the_shadow_accepts() {
+    let (log, d, a) = sides();
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.set(3, 8, &[0, 0, 0, 0, 0, 0, 0xF0, 0x3F], None).unwrap(), SetOutcome::Committed);
+    assert_eq!(
+        calls(&log, |c| matches!(c, Call::Shadow(..) | Call::HostCommit { .. })),
+        [
+            Call::Shadow(3, vec![0, 0, 0, 0, 0, 0, 0xF0, 0x3F]),
+            Call::HostCommit { net: 3, offset: 8, bytes: vec![0, 0, 0, 0, 0, 0, 0xF0, 0x3F], at: 0 },
+        ]
+    );
+}
+
+#[test]
+fn a_false_check_refuses_and_commits_nothing() {
+    let (log, d, a) = sides();
+    d.shadows.borrow_mut().push_back(Shadow::Refused { check: "top.r1.r_ok".into() });
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    let outcome = p.set(3, 0, &[1], None).unwrap();
+    let SetOutcome::Refused { reason } = outcome else { panic!("not refused: {outcome:?}") };
+    assert!(reason.contains("top.r1.r_ok"), "{reason}");
+    assert!(commits(&log).is_empty(), "nothing is committed");
+    assert_eq!(calls(&log, |c| matches!(c, Call::Shadow(..))).len(), 1);
+}
+
+#[test]
+fn reshape_is_refused_in_a_transient_and_reported_outside_one() {
+    // Between analyses: reported, nothing committed.
+    let (log, d, a) = sides();
+    d.shadows.borrow_mut().push_back(Shadow::Reshape { instance: "top.m1".into() });
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.set(5, 0, &[2], None).unwrap(), SetOutcome::Reshape { instance: "top.m1".into() });
+    assert!(commits(&log).is_empty());
+
+    // Inside a transient (a waiter's write): refused.
+    let (log, d, a) = sides();
+    d.shadows.borrow_mut().push_back(Shadow::Reshape { instance: "top.m1".into() });
+    let (mut p, results) = waited(&log, d, a);
+    p.transient(2.0).unwrap();
+    let got = results.borrow().clone();
+    assert_eq!(got.len(), 1);
+    let SetOutcome::Refused { reason } = &got[0] else { panic!("not refused: {got:?}") };
+    assert!(reason.contains("top.m1"), "{reason}");
+    assert!(commits(&log).is_empty(), "nothing is committed inside the transient");
+    // After the transient the same write is reported again, not refused.
+    p.discrete().shadows.borrow_mut().push_back(Shadow::Reshape { instance: "top.m1".into() });
+    assert_eq!(p.set(5, 0, &[2], None).unwrap(), SetOutcome::Reshape { instance: "top.m1".into() });
+}
+
+#[test]
+fn a_scheduled_write_is_a_host_commit_at_its_tick() {
+    let (log, d, a) = sides();
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.set(7, 0, &[1, 1], Some(2.5)).unwrap(), SetOutcome::Committed);
+    assert_eq!(commits(&log), [Call::HostCommit { net: 7, offset: 0, bytes: vec![1, 1], at: 5 }]);
 }

@@ -75,6 +75,16 @@ pub(super) fn host_write<D: DiscreteSide>(
 }
 
 impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
+    /// Writes `bytes` at `offset` of `net` from the host (abi.md §10 "Host
+    /// actions"): checked on the discrete side's shadow first (P6), then queued
+    /// as a host commit at `at` (a scheduled write) or at the current time.
+    /// A false `check` refuses it; a `RESHAPE` is refused inside a transient and
+    /// reported outside one, with nothing committed.
+    pub fn set(&mut self, net: u32, offset: u32, bytes: &[u8], at: Option<f64>) -> Result<SetOutcome> {
+        let tick = self.tick(at.unwrap_or(self.now));
+        host_write(&mut self.discrete, self.in_transient, net, offset, bytes, tick)
+    }
+
     /// Calls `waiter` once each time event net `net` fires at an accepted instant.
     pub fn on_event(&mut self, net: u32, waiter: Waiter) {
         self.discrete.wait(net);
