@@ -1,8 +1,8 @@
 # msl-elab verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at e01e8537 (41 pass, 0 fail); judged over the tree at 1b7a2869 (docs only since e01e8537)
-**Verifier**: independent sub-agent (author != verifier), round 1
+**Proofs**: `proofs.md` at 5b328afb (42 pass, 0 fail; re-run uncommitted at the time of round 2); round 1 judged over 1b7a2869
+**Verifier**: independent sub-agent (author != verifier), rounds 1 and 2
 
 ## Checks
 
@@ -27,7 +27,7 @@
 | C17 | `elab_instances.rs` `a_node_init_is_recorded_on_body_and_design` | yes | both places |
 | C18 | `elab_instances.rs` `a_node_init_that_reads_a_param_is_p0001` | yes | code and span on the value |
 | C19 | `elab_instances.rs` `an_unnamed_placement_is_module_hash_k` | yes | `Leaf#0`, `Leaf#2`: the ordinal counts the named placement, as part_vi_io §21 rule 3 states |
-| C20 | `elab_instances.rs` `a_module_that_places_itself_is_e0341` | partly | only direct self-placement; the criterion's "through other modules" has no case (finding 4). Own probe: `A -> B -> A` gives E0341 through `Top.a.b.a` |
+| C20 | `elab_instances.rs` `a_module_that_places_itself_is_e0341`, `a_module_that_places_itself_through_another_is_e0341` | yes | round 2: `A -> B -> A` asserts E0341 and the path `Top.a.b.a` |
 | C21 | `elab_analog.rs` `value_code_lowers_to_the_same_forms_and_functions_once` | yes | one `FunctionId`, `pnjlim` equal to the `piperine-ir` golden block |
 | C22 | `elab_analog.rs` `probes_and_environment_lower_to_their_nodes` | yes | asserts `Expr::Probe` terminals, not only text |
 | C23 | `elab_analog.rs` `a_branch_is_one_unordered_pair_with_its_kind` | yes | reversed pair, `i(a)` = `i(a, gnd)`, potential kind |
@@ -36,12 +36,12 @@
 | C26 | `elab_analog.rs` `sites_are_numbered_in_source_order_and_named` | yes | `L0 "vd"`, `L1 "w"`, unnamed `limit2`, two stims |
 | C27 | `elab_analog.rs` `a_branch_from_a_node_to_itself_is_e0241` | yes | port pair and `(gnd, gnd)`, spans asserted |
 | C28 | `elab_analog.rs` `potential_and_flow_on_one_branch_is_e0415` | yes | on the reversed second contribution, span asserted |
-| C29 | `elab_unlowered.rs` `a_site_or_contribution_under_if_is_p0001` | partly | covers `if` only. A `limit` or `ac_stim` on the right of `&&` or `&#124;&#124;` is conditional and is not refused (finding 1). Function and closure cases go to the front end (E0121, E0404, E0450), per amendment (d) |
+| C29 | `elab_unlowered.rs` `a_site_or_contribution_under_if_is_p0001` | partly | round 2: `&&`/`&#124;&#124;` right operands now covered (four rows), nested `&#124;&#124; ( && ac_stim)` probe also P0001. A contribution in a plain nested block, which §10 rule 8 makes legal, is neither lowered nor refused with P0001: it reaches E0999 (finding 8) |
 | C30 | `elab_unlowered.rs` `ddt_off_the_top_of_a_flow_contribution_is_p0001` | yes | product, potential, `let`, tolerance. Own probes: `ddt` in an `if` arm or a block is P0001 at the `ddt` |
-| C31 | `elab_unlowered.rs` `m_dtemp_or_extern_at_a_placement_is_p0001` | no | asserts E0320 for `m`/`dtemp` and the `extern` span at the declaration: the test holds amendment (d), not the criterion's P0001 at the placement (finding 6) |
+| C31 | `elab_unlowered.rs` `m_dtemp_or_extern_at_a_placement_is_p0001` | yes | round 2: amendment (d) now carries a `Confirmed` line (d7ebbd36); the test holds the amended criterion |
 | C32 | `elab_unlowered.rs` `a_digital_block_is_p0001` | yes | refused by the type checker, code, name and span asserted |
 | C33 | `elab_unlowered.rs` `a_diagnostic_means_no_ir` | yes | two refusals, `Err` |
-| C34 | `elab_entry.rs` `every_diagnostic_has_code_span_and_path` | partly | the E0319 case asserts "Top" (also the module name) and the E0341 case asserts "Loop" (the module name, not the path `Top.l.again`): either would pass with no path in the message (finding 3) |
+| C34 | `elab_entry.rs` `every_diagnostic_has_code_span_and_path` | yes | round 2: asserts `Top.r1.r`, `Top.l` (nested E0319) and `Top.l.again`, none of which is a bare module name |
 | C35 | `elab_entry.rs` `the_twins_elaborate_without_diagnostics` | yes | all six twins |
 | C36 | `elab_instances.rs` `an_empty_module_is_an_empty_body` | yes | every collection of the body and the instance |
 | C37 | `elab_instances.rs` `a_module_under_two_parents_is_one_body` | yes | one body, two instances |
@@ -63,3 +63,19 @@
 | Minor: the `Child` padding SPEC_DEVIATION is recorded only in a code comment. In the authored-tree view, a child's own signal is printed as bound to `gnd`, which is false. A backend that binds from `Child::nodes` would short that signal to ground | `elab/children.rs:100`; probe `Leaf(p) { signal inner }` prints `child l: Leaf  nodes (s, gnd)` while the instance binds `Top.l.inner`; `piperine-ir/src/check.rs:184` forces one slot per body node; no spec entry and no test | record it in spec.md as an amendment, then either restrict `Child::nodes` to ports in `msl-ir`'s check or add a `Terminal` for "own node"; pin it with a test | 1cafa493 |
 | Minor: amendment (d) changes ELAB-06 AC 3 (`m`/`dtemp` give E0320, not P0001; `extern` is refused at its declaration, not at the placement) without a recorded user approval, and C31's test asserts the amendment, not the approved criterion | `spec.md` "Amendment (T8)" has no `Confirmed`/approval line; `tests/elab_unlowered.rs` `m_dtemp_or_extern_at_a_placement_is_p0001` asserts `["E0320"]` | have the user confirm the amendment in spec.md, or change the criterion through a new requirement ID | d7ebbd36 (C31) |
 | Minor (docs): tasks.md holds its protocol, matrix, plan and task breakdown twice. The copy starts at a broken heading | `.specs/features/msl-elab/tasks.md:347` `## Checks\` cites. ...`; lines 347-681 repeat lines 5-346 | delete the duplicate block | 46d0a20d |
+| Major: (finding 8, round 2) a contribution inside a plain nested block of the `analog` block (`{ i(p, n) +> 1.0; }`, `let x = { i(p, n) +> 1.0; 2.0 };`, a block in an `if` condition) is accepted by the front end (Part IV §10 rule 8 makes it legal at any depth), is lowered at `nesting == 0` into a `Block`, and `Ir::check` rejects it (`contribution outside the top level of an analog block`). The model is refused, but with E0999 "this is a bug in the elaborator", not with P0001 naming the form as ELAB-06 and design.md row "A form outside M1 lowering" require. Same class as round-1 finding 1: the 6141e926 net turns it into `Err`, the lowering gap stays | `elab/contribute.rs:31` refuses only on `scope.nesting > 0`; `elab/lower.rs:138` lowers `ExprKind::Block` without raising anything; `piperine-ir/src/check.rs:481` requires `top`. Round-2 probes at 5b328afb: all three sources give `["E0999 internal error: ... contribution outside the top level of an analog block"]` | refuse a contribution that is not a statement of the analog block's own statement list with P0001 (a block depth counter beside `nesting`, or a `top` flag on `lower_statements`), and add the bare-block and `let`-block rows to `a_site_or_contribution_under_if_is_p0001` (or a new check under a new requirement ID, since AC 1 names only `if`/fn/closure) | |
+| Minor: (finding 9, round 2) `E0999` is not a code the specification owns. `docs/spec/index.md` §0.2 gives every `E09xx` number to Appendix A, whose table stops at `E0910`; a later Appendix A row numbered `E0999` would collide, and codes are never reused. The user decided that conditions owned by the compiler, not the language, take `P` codes (`P0001` M1 subset, `P0002` type mismatch, `P0003` unknown top, msl-typeck spec.md Decisions) | `elab/elaborator.rs:111`, unit test `elab/elaborator.rs:152`; no `E0999` in `docs/spec/`; `P0004` is unused in `crates/` | rename to `P0004` (internal error: the elaborator built an ill-formed IR), record it in spec.md's decisions table beside Q5 with the user's or orchestrator's confirmation, update the unit test | |
+
+## Round 2
+
+Judged over 5b328afb: `elab/lower.rs`, `elab/elaborator.rs`, `elab/analog.rs`, `elab/contribute.rs` against `piperine-ir/src/check.rs`, the tests of the seven closing commits, and throwaway probes (not committed). The twins in `tests/ngspice/*.msl` and `crates/piperine-lang/tests/fixtures/elab/*.txt` are untouched since round 1; `elab_entry`, `elab_instances` and `elab_unlowered` rerun green at 5b328afb (C1 byte-compares every golden).
+
+| Round-1 finding | Closing commit | Holds | Evidence |
+| --- | --- | --- | --- |
+| 1 `limit`/`ac_stim` right of `&&`/`&#124;&#124;` | 4ed25b62 | yes | `lower.rs` raises `nesting` around the right operand only, matching `check.rs:612`. Probes: `a &#124;&#124; (b && ac_stim(1.0) > 0.0)` P0001; `if limit(..) > 0.0` (condition, unconditional) lowers and checks; `limit(limit(x, f), f)`, `ac_stim` as `limit`'s seed and a `limit` in an unconditional block lower and check; `match`, `return`, `loop` are P0001 by the catch-all arm; a site in a closure argument other than `limit`'s, or a closure body, is E0450 / P0001 from the front end. No site path reaches an ill-formed `Ir` |
+| 2 `debug_assert!` on `check()` | 6141e926 | yes, code disputed | `well_formed` runs in every build and returns `Err`; no source can return an ill-formed `Ok` now. The code `E0999` is outside the spec's ownership (new finding) and a source model reaches it (new finding, contributions in a nested block) |
+| 3 C34 paths | 71576aed | yes | three distinct full paths, none equal to a module name |
+| 4 C20 `A -> B -> A` | 908f4608 | yes | E0341 with `Top.a.b.a` |
+| 5 `Child` own-signal `gnd` | 1cafa493 | yes | spec.md amendment (T4), ROADMAP follow-up, test pins both the padding and `Top.l.inner` in the instance table |
+| 6 amendment (d) unconfirmed | d7ebbd36 | yes | `**Confirmed**` line in spec.md amendment (T8), under the user's standing delegation |
+| 7 tasks.md duplicate | 46d0a20d | yes | tasks.md is 537 lines, one copy |
