@@ -1,10 +1,10 @@
 //! Reading: `Copy` handles that pair a borrow of the [`Ir`] with an id.
 
 use crate::real::Real;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
+use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Child, Constant, Expr, FunctionData, InstanceData, Ir, Local,
-    NatureData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Site, Stmt, ValueType,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, Constant, Drive, Expr, FunctionData, InstanceData, Ir, Local,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Site, Stmt, ValueType,
 };
 
 impl Ir {
@@ -75,6 +75,20 @@ impl Ir {
     /// The node with this path, or nothing.
     pub fn node_at(&self, path: &str) -> Option<Node<'_>> {
         self.nodes().find(|n| n.path() == path)
+    }
+
+    pub fn net(&self, id: NetId) -> Net<'_> {
+        Net { ir: self, id }
+    }
+
+    /// Every discrete net of the design, in the order they were added.
+    pub fn nets(&self) -> impl Iterator<Item = Net<'_>> {
+        (0..self.nets.len() as u32).map(|i| Net { ir: self, id: NetId(i) })
+    }
+
+    /// The net with this path, or nothing.
+    pub fn net_at(&self, path: &str) -> Option<Net<'_>> {
+        self.nets().find(|n| n.path() == path)
     }
 
     pub fn nature(&self, id: NatureId) -> Nature<'_> {
@@ -148,6 +162,16 @@ impl<'a> Body<'a> {
     /// The authored placements, in source order.
     pub fn children(&self) -> &'a [Child] {
         &self.data().children
+    }
+
+    /// The discrete carriers, ports first, then signals.
+    pub fn carriers(&self) -> &'a [Carrier] {
+        &self.data().carriers
+    }
+
+    /// The definitions of carriers, in source order.
+    pub fn drives(&self) -> &'a [Drive] {
+        &self.data().drives
     }
 }
 
@@ -290,6 +314,16 @@ impl<'a> Instance<'a> {
     pub fn param(&self, i: usize) -> Option<&'a Constant> {
         self.data().params.get(i)
     }
+
+    /// One net per carrier of the body, in the body's order.
+    pub fn nets(&self) -> &'a [NetId] {
+        &self.data().nets
+    }
+
+    /// The design net bound to carrier `i` of the body; `None` for an index out of range.
+    pub fn net(&self, i: usize) -> Option<Net<'a>> {
+        self.data().nets.get(i).map(|&id| Net { ir: self.ir, id })
+    }
 }
 
 /// A node of the elaborated design.
@@ -338,6 +372,58 @@ impl<'a> Node<'a> {
                 inst.bindings().iter().enumerate().any(|(i, binding)| {
                     *binding == NodeRef::Node(self.id)
                         && body.nodes().get(i).is_some_and(|n| n.role == NodeRole::Port)
+                })
+            })
+            .collect()
+    }
+}
+
+/// A discrete net of the elaborated design.
+#[derive(Debug, Clone, Copy)]
+pub struct Net<'a> {
+    ir: &'a Ir,
+    id: NetId,
+}
+
+impl<'a> Net<'a> {
+    fn data(&self) -> &'a NetData {
+        &self.ir.nets[self.id.index()]
+    }
+
+    pub fn id(&self) -> NetId {
+        self.id
+    }
+
+    pub fn path(&self) -> &'a str {
+        &self.data().path
+    }
+
+    /// The value type every carrier bound to it holds.
+    pub fn ty(&self) -> &'a ValueType {
+        &self.data().ty
+    }
+
+    pub fn declared_by(&self) -> Instance<'a> {
+        Instance { ir: self.ir, id: self.data().declared_by }
+    }
+
+    pub fn init(&self) -> Option<Constant> {
+        self.data().init
+    }
+
+    pub fn origin(&self) -> &'a Origin {
+        &self.data().origin
+    }
+
+    /// The instances this net is wired to through a port carrier of their body, in pre-order. The
+    /// instance that declares it binds it as a signal of its own body and is not listed.
+    pub fn instances(&self) -> Vec<Instance<'a>> {
+        let ir = self.ir;
+        ir.instances()
+            .filter(|inst| {
+                let body = inst.body();
+                inst.nets().iter().enumerate().any(|(i, net)| {
+                    *net == self.id && body.carriers().get(i).is_some_and(|c| c.role != CarrierRole::Signal)
                 })
             })
             .collect()

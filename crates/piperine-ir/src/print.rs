@@ -32,7 +32,7 @@ use std::fmt::{self, Display, Write};
 
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BodyNode, BranchKind, Constant, Env, Expr, ExprData, FunctionData, InstanceData, Ir,
+    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, Constant, Env, Expr, ExprData, FunctionData, InstanceData, Ir,
     Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Terminal,
     UnaryOp, ValueType,
 };
@@ -93,6 +93,7 @@ struct Scope<'a> {
     locals: &'a [Local],
     params: &'a [Param],
     nodes: &'a [BodyNode],
+    carriers: &'a [Carrier],
 }
 
 /// One step of the iterative tree walk.
@@ -206,6 +207,17 @@ impl<'a> Printer<'a> {
             })
             .collect();
         self.items(nodes);
+        let nets = ir
+            .nets
+            .iter()
+            .map(|net| {
+                let declarer = ir.instances.get(net.declared_by.index()).map_or("<bad instance>".to_string(), |i| Printer::name(&i.path));
+                let init = net.init.map_or(String::new(), |c| format!("  init {c}"));
+                let at = self.at(&net.origin);
+                self.chunk(|p| p.line(0, &format!("net {}: {}  declared by {declarer}{init}{at}", Printer::name(&net.path), net.ty)))
+            })
+            .collect();
+        self.items(nets);
         if !self.structural {
             self.arenas();
         }
@@ -228,7 +240,7 @@ impl<'a> Printer<'a> {
     fn body(&mut self, body: &BodyData) {
         let at = self.at(&body.origin);
         self.line(0, &format!("body {}{at}", Printer::name(&body.name)));
-        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes };
+        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers };
         for param in &body.params {
             let mut text = format!("param {}: {}", Printer::name(&param.name), param.ty);
             if let Some(default) = &param.default {
@@ -249,6 +261,16 @@ impl<'a> Printer<'a> {
             let init = node.init.map_or(String::new(), |r| format!(" init {}", Printer::real(r)));
             let at = self.at(&node.origin);
             self.line(1, &format!("node {}: {nature} {role}{init}{at}", Printer::name(&node.name)));
+        }
+        for carrier in &body.carriers {
+            let role = match carrier.role {
+                CarrierRole::In => "in",
+                CarrierRole::Out => "out",
+                CarrierRole::Signal => "signal",
+            };
+            let init = carrier.init.map_or(String::new(), |c| format!(" init {c}"));
+            let at = self.at(&carrier.origin);
+            self.line(1, &format!("carrier {}: {} {role}{init}{at}", Printer::name(&carrier.name), carrier.ty));
         }
         for (i, branch) in body.branches.iter().enumerate() {
             let kind = if branch.kind == BranchKind::Flow { "flow" } else { "potential" };
@@ -283,6 +305,16 @@ impl<'a> Printer<'a> {
                 &format!("child {}: {name}  nodes ({})  params ({}){at}", Printer::name(&child.name), nodes.join(", "), params.join(", ")),
             );
         }
+        for drive in &body.drives {
+            let mut text = format!("drive {} = ", Printer::carrier(scope, drive.carrier));
+            text.push_str(&self.render(scope, Piece::Expr(drive.value)));
+            if let Some(after) = drive.after {
+                text.push_str(" after ");
+                text.push_str(&self.render(scope, Piece::Expr(after)));
+            }
+            text.push_str(&self.at(&drive.origin));
+            self.line(1, &text);
+        }
         if let Some(analog) = &body.analog {
             self.line(1, "analog");
             for &stmt in analog {
@@ -297,7 +329,7 @@ impl<'a> Printer<'a> {
         let at = self.at(&function.origin);
         self.line(0, &format!("fn {}({}) -> {}{at}", Printer::name(&function.name), params.join(", "), function.ret));
         self.locals(1, &function.locals);
-        let scope = Scope { locals: &function.locals, params: &[], nodes: &[] };
+        let scope = Scope { locals: &function.locals, params: &[], nodes: &[], carriers: &[] };
         let body = function.body;
         // A block body prints one statement per line. In the full text its id is printed and on
         // the stack meanwhile. In the structural form each line is a statement of its own,
@@ -354,9 +386,24 @@ impl<'a> Printer<'a> {
             .collect();
         let top = if self.ir.top.index() == index { "  top" } else { "" };
         let at = self.at(&instance.origin);
+        let nets = if instance.nets.is_empty() {
+            String::new()
+        } else {
+            let nets: Vec<String> = instance
+                .nets
+                .iter()
+                .map(|id| self.ir.nets.get(id.index()).map_or(format!("<bad net {}>", id.0), |n| Printer::name(&n.path)))
+                .collect();
+            format!("  nets ({})", nets.join(", "))
+        };
         self.line(
             0,
-            &format!("instance {}: {body_name}  nodes ({})  params ({}){top}{at}", Printer::name(&instance.path), nodes.join(", "), params.join(", ")),
+            &format!(
+                "instance {}: {body_name}  nodes ({})  params ({}){nets}{top}{at}",
+                Printer::name(&instance.path),
+                nodes.join(", "),
+                params.join(", ")
+            ),
         );
     }
 
@@ -365,6 +412,10 @@ impl<'a> Printer<'a> {
             Terminal::Ground => "gnd".to_string(),
             Terminal::Node(i) => scope.nodes.get(i as usize).map_or(format!("<bad node {i}>"), |n| Printer::name(&n.name)),
         }
+    }
+
+    fn carrier(scope: Scope<'_>, i: u32) -> String {
+        scope.carriers.get(i as usize).map_or(format!("<bad carrier {i}>"), |c| Printer::name(&c.name))
     }
 
     fn local(scope: Scope<'_>, i: u32) -> String {
@@ -557,6 +608,7 @@ impl<'a> Printer<'a> {
             }
             Expr::IsKnown(value) => next.extend([Piece::Expr(*value), text(".is_known()".into())]),
             Expr::High(value) => next.extend([Piece::Expr(*value), text(".high()".into())]),
+            Expr::Carrier(i) => next.push(text(Printer::carrier(scope, *i))),
         }
         if note {
             next.push(text(format!(" : {})", data.ty)));
@@ -596,6 +648,7 @@ impl<'a> Printer<'a> {
                 Typing::method(*method, &ty(receiver)?, &args.iter().collect::<Vec<_>>())
             }
             Expr::Unknown => None,
+            Expr::Carrier(i) => scope.carriers.get(*i as usize).map(|c| ValueType::Flagged(Box::new(c.ty.clone()))),
             Expr::KnownOr { value, default } => Typing::known_or(&ty(value)?, &ty(default)?),
             Expr::IsKnown(value) => Typing::flag_read(false, &ty(value)?),
             Expr::High(value) => Typing::flag_read(true, &ty(value)?),
@@ -636,7 +689,7 @@ impl<'a> Printer<'a> {
                 Some(ValueType::Fn(params?, Box::new(ty(body)?)))
             }
             Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
-            Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) => None,
+            Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::Carrier(_) => None,
         }
     }
 
@@ -678,6 +731,14 @@ impl<'a> Printer<'a> {
                     children.join(", ")
                 ),
             );
+            if !body.drives.is_empty() {
+                let drives: Vec<String> = body
+                    .drives
+                    .iter()
+                    .map(|d| format!("(c{} e{} {})", d.carrier, d.value.0, d.after.map_or("-".to_string(), |a| format!("e{}", a.0))))
+                    .collect();
+                self.line(1, &format!("body {i} discrete: drives ({})", drives.join(", ")));
+            }
         }
         for (i, function) in ir.functions.iter().enumerate() {
             self.line(1, &format!("fn {i}: body e{}", function.body.0));
@@ -685,6 +746,12 @@ impl<'a> Printer<'a> {
         for (i, instance) in ir.instances.iter().enumerate() {
             let parent = instance.parent.map_or("-".to_string(), |p| p.0.to_string());
             let children: Vec<String> = instance.children.iter().map(|c| c.0.to_string()).collect();
+            let nets = if instance.nets.is_empty() {
+                String::new()
+            } else {
+                let ids: Vec<String> = instance.nets.iter().map(|n| n.0.to_string()).collect();
+                format!("  nets ({})", ids.join(", "))
+            };
             let nodes: Vec<String> = instance
                 .nodes
                 .iter()
@@ -696,7 +763,7 @@ impl<'a> Printer<'a> {
             self.line(
                 1,
                 &format!(
-                    "instance {i}: name {}  body {}  parent {parent}  children ({})  nodes ({})",
+                    "instance {i}: name {}  body {}  parent {parent}  children ({})  nodes ({}){nets}",
                     Printer::name(&instance.name),
                     instance.body.0,
                     children.join(", "),
@@ -706,6 +773,9 @@ impl<'a> Printer<'a> {
         }
         for (i, node) in ir.nodes.iter().enumerate() {
             self.line(1, &format!("node {i}: nature {}  declared by {}", node.nature.0, node.declared_by.0));
+        }
+        for (i, net) in ir.nets.iter().enumerate() {
+            self.line(1, &format!("net {i}: declared by {}", net.declared_by.0));
         }
         for (i, data) in ir.exprs.iter().enumerate() {
             self.line(1, &format!("e{i}: {} = {}  @{}", data.ty, Printer::form(&data.kind), data.origin));
@@ -754,6 +824,7 @@ impl<'a> Printer<'a> {
             Expr::KnownOr { value, default } => format!("known_or {} {}", e(value), e(default)),
             Expr::IsKnown(value) => format!("is_known {}", e(value)),
             Expr::High(value) => format!("high {}", e(value)),
+            Expr::Carrier(i) => format!("carrier {i}"),
         }
     }
 

@@ -20,6 +20,9 @@
 //! - an `if` reads its condition and both arms; it joins the arms when the condition is
 //!   `Constant`, and is `Nonlinear` otherwise (IR-10).
 //!
+//! - a carrier read is `Constant` in the node potentials and reads the carrier: a discrete value
+//!   holds between events (`Body::carrier_reads` lists them; `Deps` keeps its M1 fields).
+//!
 //! Locals are bound by scope, as `Ir::check` reads them: a `let` until its block ends, a
 //! closure's parameters in its body. The walk assumes an IR that passes `Ir::check`, which names every form the walk cannot give
 //! a meaning to (a local read before its `let`, a recursive call, a cycle); on an IR that fails
@@ -52,6 +55,10 @@ pub enum Target {
     Stim(SiteIndex),
     /// The `where` expression of a param; empty when the param has none.
     Check(ParamIndex),
+    /// The value of a drive (`Body::drives`), by index.
+    Drive(u32),
+    /// The delay of a drive; empty when the drive has no `after`.
+    DriveAfter(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -79,9 +86,30 @@ impl<'a> Body<'a> {
             Target::Limit(i) => (&deps.limits, i, "limit site"),
             Target::Stim(i) => (&deps.stims, i, "ac_stim site"),
             Target::Check(i) => (&deps.checks, i, "param"),
+            Target::Drive(i) => (&deps.drives, i, "drive"),
+            Target::DriveAfter(i) => (&deps.drive_afters, i, "drive"),
         };
         match list.get(i as usize) {
             Some(sources) => sources.to_deps(),
+            None => panic!("body {}: {what} {i} out of range ({} in the body)", self.name(), list.len()),
+        }
+    }
+
+    /// The carriers `target` reads, by index (`Body::carriers`), sorted, through locals and
+    /// function calls: the discrete part of its dependency set.
+    pub fn carrier_reads(&self, target: Target) -> Vec<u32> {
+        let deps = self.deps();
+        let (list, i, what) = match target {
+            Target::Flow(i) => (&deps.flow, i, "branch"),
+            Target::Charge(i) => (&deps.charge, i, "branch"),
+            Target::Limit(i) => (&deps.limits, i, "limit site"),
+            Target::Stim(i) => (&deps.stims, i, "ac_stim site"),
+            Target::Check(i) => (&deps.checks, i, "param"),
+            Target::Drive(i) => (&deps.drives, i, "drive"),
+            Target::DriveAfter(i) => (&deps.drive_afters, i, "drive"),
+        };
+        match list.get(i as usize) {
+            Some(sources) => sources.carriers.iter().copied().collect(),
             None => panic!("body {}: {what} {i} out of range ({} in the body)", self.name(), list.len()),
         }
     }
@@ -131,6 +159,8 @@ pub(crate) struct BodyDeps {
     limits: Vec<Sources>,
     stims: Vec<Sources>,
     checks: Vec<Sources>,
+    drives: Vec<Sources>,
+    drive_afters: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -140,6 +170,7 @@ struct Sources {
     env: BTreeSet<Env>,
     limits: BTreeSet<u32>,
     stims: BTreeSet<u32>,
+    carriers: BTreeSet<u32>,
 }
 
 impl Sources {
@@ -149,6 +180,7 @@ impl Sources {
         self.env.extend(&other.env);
         self.limits.extend(&other.limits);
         self.stims.extend(&other.stims);
+        self.carriers.extend(&other.carriers);
     }
 
     fn to_deps(&self) -> Deps {
@@ -290,6 +322,21 @@ impl<'a> Walk<'a> {
                 None => Sources::default(),
             })
             .collect();
+        let mut drives = Vec::with_capacity(data.drives.len());
+        let mut drive_afters = Vec::with_capacity(data.drives.len());
+        for drive in &data.drives {
+            walk.scopes = vec![Scope::new(owner.clone(), true, data.locals.len())];
+            walk.run(Task::Expr(drive.value));
+            drives.push(walk.pop().sources);
+            drive_afters.push(match drive.after {
+                Some(after) => {
+                    walk.scopes = vec![Scope::new(owner.clone(), true, data.locals.len())];
+                    walk.run(Task::Expr(after));
+                    walk.pop().sources
+                }
+                None => Sources::default(),
+            });
+        }
         if let Some(analog) = &data.analog {
             walk.scopes = vec![Scope::new(owner, true, data.locals.len())];
             for &stmt in analog {
@@ -303,6 +350,8 @@ impl<'a> Walk<'a> {
             limits: walk.limits,
             stims: walk.stims,
             checks,
+            drives,
+            drive_afters,
         }
     }
 
@@ -460,6 +509,14 @@ impl<'a> Walk<'a> {
                 sources.env.insert(*env);
                 return self.done(id, Value::of(sources, Class::Constant));
             }
+            Expr::Carrier(i) => {
+                if !in_body {
+                    self.refuse(id, "carrier read outside a body");
+                }
+                let mut sources = Sources::default();
+                sources.carriers.insert(*i);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
             Expr::Probe { plus, minus } => {
                 if !in_body {
                     self.refuse(id, "probe outside a body");
@@ -592,7 +649,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

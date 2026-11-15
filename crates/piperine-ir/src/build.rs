@@ -3,10 +3,10 @@
 
 use crate::real::Real;
 use crate::deps::DepsMemo;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
+use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Child, Constant, Expr, ExprData, FunctionData, InstanceData, Ir,
-    Local, NatureData, NodeData, NodeRef, Origin, Param, Quantity, Site, Stmt, ValueType,
+    BodyData, BodyNode, Branch, Carrier, Child, Constant, Drive, Expr, ExprData, FunctionData, InstanceData, Ir,
+    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Site, Stmt, ValueType,
 };
 
 /// The parts of a body, in the order a handle lists them.
@@ -43,6 +43,16 @@ pub struct NodeSpec {
     pub origin: Origin,
 }
 
+/// A discrete net of the design, the twin of `NodeSpec`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NetSpec {
+    pub path: String,
+    pub ty: ValueType,
+    pub declared_by: InstanceId,
+    pub init: Option<Constant>,
+    pub origin: Origin,
+}
+
 /// An instance, added after its parent (pre-order); the builder links it into the parent's
 /// children.
 #[derive(Debug, Clone, PartialEq)]
@@ -65,6 +75,7 @@ pub struct IrBuilder {
     stmts: Vec<Stmt>,
     instances: Vec<InstanceData>,
     nodes: Vec<NodeData>,
+    nets: Vec<NetData>,
 }
 
 impl IrBuilder {
@@ -95,9 +106,36 @@ impl IrBuilder {
             locals: spec.locals,
             analog: spec.analog,
             children: spec.children,
+            carriers: Vec::new(),
+            drives: Vec::new(),
             deps: DepsMemo::default(),
         });
         BodyId(self.bodies.len() as u32 - 1)
+    }
+
+    /// The body `id` added before; an id this builder never handed out panics, as a handle given
+    /// an id out of range does.
+    fn body_data(&mut self, id: BodyId) -> &mut BodyData {
+        let count = self.bodies.len();
+        match self.bodies.get_mut(id.index()) {
+            Some(body) => body,
+            None => panic!("body id {} out of range ({count} bodies)", id.0),
+        }
+    }
+
+    /// Adds a carrier to `body`, after the ones added before: returns its index, the identity
+    /// `Expr::Carrier` and `Drive` read it by.
+    pub fn carrier(&mut self, body: BodyId, carrier: Carrier) -> u32 {
+        let carriers = &mut self.body_data(body).carriers;
+        carriers.push(carrier);
+        carriers.len() as u32 - 1
+    }
+
+    /// Adds a definition to `body`, in source order: returns its index.
+    pub fn drive(&mut self, body: BodyId, drive: Drive) -> u32 {
+        let drives = &mut self.body_data(body).drives;
+        drives.push(drive);
+        drives.len() as u32 - 1
     }
 
     pub fn function(&mut self, spec: FunctionSpec) -> FunctionId {
@@ -161,8 +199,24 @@ impl IrBuilder {
             nodes: spec.nodes,
             params: spec.params,
             origin: spec.origin,
+            nets: Vec::new(),
         });
         id
+    }
+
+    pub fn net(&mut self, spec: NetSpec) -> NetId {
+        self.nets.push(NetData { path: spec.path, ty: spec.ty, declared_by: spec.declared_by, init: spec.init, origin: spec.origin });
+        NetId(self.nets.len() as u32 - 1)
+    }
+
+    /// Binds the carriers of `instance`'s body, in their order, to `nets`. An id this builder
+    /// never handed out panics.
+    pub fn bind_nets(&mut self, instance: InstanceId, nets: Vec<NetId>) {
+        let count = self.instances.len();
+        match self.instances.get_mut(instance.index()) {
+            Some(data) => data.nets = nets,
+            None => panic!("instance id {} out of range ({count} instances)", instance.0),
+        }
     }
 
     /// Consumes the builder: the `Ir` has no writer left.
@@ -176,6 +230,7 @@ impl IrBuilder {
             instances: self.instances,
             nodes: self.nodes,
             top,
+            nets: self.nets,
         }
     }
 }

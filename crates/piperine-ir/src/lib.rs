@@ -15,12 +15,12 @@ mod typing;
 
 pub use check::Broken;
 pub use deps::{BranchIndex, Deps, ParamIndex, SiteIndex, Target};
-pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NodeSpec};
-pub use handle::{Body, Function, Instance, Nature, Node};
-pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
+pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NetSpec, NodeSpec};
+pub use handle::{Body, Function, Instance, Nature, Net, Node};
+pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 pub use model::{
-    Addend, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Child, Constant, Env, Expr,
-    ExprData, FunctionData, InstanceData, Ir, Local, MathFn, Method, NatureData, NodeData, NodeRef,
+    Addend, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, Constant, Drive, Env, Expr,
+    ExprData, FunctionData, InstanceData, Ir, Local, MathFn, Method, NatureData, NetData, NodeData, NodeRef,
     NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Site, Stmt, Terminal, UnaryOp,
     ValueType,
 };

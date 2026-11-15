@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::deps::DepsMemo;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NodeId, StmtId};
+use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::real::Real;
 
 /// A source position, printed `file:line:col`.
@@ -30,6 +30,9 @@ pub struct Ir {
     pub(crate) instances: Vec<InstanceData>,
     pub(crate) nodes: Vec<NodeData>,
     pub(crate) top: InstanceId,
+    /// The discrete nets, the twins of `nodes` for carriers; empty in an analog design.
+    #[serde(default)]
+    pub(crate) nets: Vec<NetData>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,6 +63,12 @@ pub struct BodyData {
     pub(crate) locals: Vec<Local>,
     pub(crate) analog: Option<Vec<StmtId>>,
     pub(crate) children: Vec<Child>,
+    /// The discrete carriers (`in`/`out` ports of a `Bit` type, `signal`s): ports first.
+    #[serde(default)]
+    pub(crate) carriers: Vec<Carrier>,
+    /// The definitions `c = value;` and `c = value after d;`, in source order.
+    #[serde(default)]
+    pub(crate) drives: Vec<Drive>,
     /// The memo of `Body::dependencies`: derived, so outside equality and serialization.
     #[serde(skip)]
     pub(crate) deps: DepsMemo,
@@ -109,6 +118,35 @@ pub struct Branch {
 pub enum BranchKind {
     Flow,
     Potential,
+}
+
+/// A discrete carrier of a body: `in clk: Bit`, `out hs: Bit = false`, `signal count: Bit<u9> = 0`.
+/// Its index in the body's list is its identity; a read of it (`Expr::Carrier`) has the type
+/// `Flagged(ty)`, since it is unknown until first written (§3.3.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Carrier {
+    pub name: String,
+    /// The carried value type: `bool`, `f64` or an integer type.
+    pub ty: ValueType,
+    pub role: CarrierRole,
+    pub init: Option<Constant>,
+    pub origin: Origin,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CarrierRole {
+    In,
+    Out,
+    Signal,
+}
+
+/// A definition of a carrier: `sample = count == 0;` or, delayed, `g = x after tpd;`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Drive {
+    pub carrier: u32,
+    pub value: ExprId,
+    pub after: Option<ExprId>,
+    pub origin: Origin,
 }
 
 /// A `limit` or `ac_stim` site; its index in the body's list is its identity.
@@ -183,6 +221,8 @@ pub enum Expr {
     IsKnown(ExprId),
     /// `value.high()` of a `bool`: known and true.
     High(ExprId),
+    /// A read of a carrier of the body, by index; its type is `Flagged`.
+    Carrier(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -316,6 +356,10 @@ pub struct InstanceData {
     pub(crate) nodes: Vec<NodeRef>,
     pub(crate) params: Vec<Constant>,
     pub(crate) origin: Origin,
+    /// One net per carrier of the body, ports and signals, in the body's order; empty when the
+    /// body has no carrier.
+    #[serde(default)]
+    pub(crate) nets: Vec<NetId>,
 }
 
 /// What an instance binds to one node of its body.
@@ -331,5 +375,15 @@ pub struct NodeData {
     pub(crate) nature: NatureId,
     pub(crate) declared_by: InstanceId,
     pub(crate) init: Option<Real>,
+    pub(crate) origin: Origin,
+}
+
+/// A discrete net of the design: the carriers bound to it hold one value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetData {
+    pub(crate) path: String,
+    pub(crate) ty: ValueType,
+    pub(crate) declared_by: InstanceId,
+    pub(crate) init: Option<Constant>,
     pub(crate) origin: Origin,
 }

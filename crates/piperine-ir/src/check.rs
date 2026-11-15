@@ -55,6 +55,8 @@ struct Owner {
     branches: Vec<BranchKind>,
     limits: usize,
     stims: usize,
+    /// The carried types of the body's carriers.
+    carriers: Vec<ValueType>,
     /// A body (probes and params are readable) rather than a function.
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
@@ -179,6 +181,15 @@ impl<'a> Checker<'a> {
             for &stmt in body.analog.iter().flatten() {
                 self.stmt_id(&item, &origin, stmt);
             }
+            for drive in &body.drives {
+                if drive.carrier as usize >= body.carriers.len() {
+                    self.report(item.clone(), drive.origin.clone(), format!("drive of carrier {}, out of range ({} carriers)", drive.carrier, body.carriers.len()));
+                }
+                self.expr_id(&item, &drive.origin, drive.value);
+                if let Some(after) = drive.after {
+                    self.expr_id(&item, &drive.origin, after);
+                }
+            }
             for child in &body.children {
                 match ir.bodies.get(child.body.index()) {
                     None => self.report(item.clone(), child.origin.clone(), format!("child {}: body id {} out of range", child.name, child.body.0)),
@@ -242,6 +253,16 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            for net in &instance.nets {
+                if net.index() >= ir.nets.len() {
+                    self.report(item.clone(), origin.clone(), format!("net id {} out of range", net.0));
+                }
+            }
+        }
+        for net in &ir.nets {
+            if net.declared_by.index() >= ir.instances.len() {
+                self.report(format!("net {}", net.path), net.origin.clone(), format!("declaring instance id {} out of range", net.declared_by.0));
+            }
         }
         for node in &ir.nodes {
             let item = format!("node {}", node.path);
@@ -259,7 +280,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) => {}
             Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
             Expr::IsKnown(value) | Expr::High(value) => exprs.push(*value),
             Expr::Cast { expr, .. } => exprs.push(*expr),
@@ -311,6 +332,16 @@ impl<'a> Checker<'a> {
             if instance.params.len() != body.params.len() {
                 self.report(item.clone(), instance.origin.clone(), format!("binds {} params, body {} has {}", instance.params.len(), body.name, body.params.len()));
             }
+            if instance.nets.len() != body.carriers.len() {
+                self.report(item.clone(), instance.origin.clone(), format!("binds {} nets, body {} has {} carriers", instance.nets.len(), body.name, body.carriers.len()));
+            }
+            for (carrier, net) in body.carriers.iter().zip(&instance.nets) {
+                if let Some(net) = ir.nets.get(net.index()) {
+                    if net.ty != carrier.ty {
+                        self.report(item.clone(), instance.origin.clone(), format!("binds carrier {}: {} to net {}: {}", carrier.name, carrier.ty, net.path, net.ty));
+                    }
+                }
+            }
             match instance.parent.and_then(|p| ir.instances.get(p.index())) {
                 Some(parent) => {
                     if !parent.children.iter().any(|c| c.index() == i) {
@@ -346,8 +377,12 @@ impl<'a> Checker<'a> {
         for n in &ir.nodes {
             nodes.entry(n.path.as_str()).or_insert((0, &n.origin)).0 += 1;
         }
+        let mut nets: BTreeMap<&str, (u32, &Origin)> = BTreeMap::new();
+        for n in &ir.nets {
+            nets.entry(n.path.as_str()).or_insert((0, &n.origin)).0 += 1;
+        }
         let mut found = Vec::new();
-        for (kind, table) in [("instance", instances), ("node", nodes)] {
+        for (kind, table) in [("instance", instances), ("node", nodes), ("net", nets)] {
             for (path, (count, origin)) in table {
                 if count > 1 {
                     found.push((format!("{kind} {path}"), origin.clone(), format!("{count} {kind}s share the path {path}")));
@@ -374,6 +409,15 @@ impl<'a> Checker<'a> {
             for l in &body.locals {
                 found.push((format!("{item} local {}", l.name), body.origin.clone(), l.ty.clone()));
             }
+            for c in &body.carriers {
+                if !Typing::scalar(&c.ty) {
+                    self.report(format!("{item} carrier {}", c.name), c.origin.clone(), format!("a carrier holds `bool`, `f64` or an integer type, found {}", c.ty));
+                }
+                found.push((format!("{item} carrier {}", c.name), c.origin.clone(), c.ty.clone()));
+            }
+        }
+        for net in &ir.nets {
+            found.push((format!("net {}", net.path), net.origin.clone(), net.ty.clone()));
         }
         for function in &ir.functions {
             let item = format!("function {}", function.name);
@@ -431,6 +475,7 @@ impl<'a> Checker<'a> {
                 branches: body.branches.iter().map(|b| b.kind).collect(),
                 limits: body.limits.len(),
                 stims: body.stims.len(),
+                carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
                 in_body: true,
                 analog,
             };
@@ -447,6 +492,18 @@ impl<'a> Checker<'a> {
                 }
                 self.site_uses(&w);
             }
+            for drive in &body.drives {
+                let name = body.carriers.get(drive.carrier as usize).map_or("<bad carrier>", |c| c.name.as_str());
+                let mut w = Walk::new(owner(false, format!("body {} drive {name}", body.name)), 0);
+                if let Some(c) = body.carriers.get(drive.carrier as usize) {
+                    self.carried(&w, drive.value, &c.ty, "the value of a drive");
+                }
+                self.walk(&mut w, Task::Expr(drive.value, Ctx::top()));
+                if let Some(after) = drive.after {
+                    self.carried(&w, after, &ValueType::F64, "the delay of a drive");
+                    self.walk(&mut w, Task::Expr(after, Ctx::top()));
+                }
+            }
         }
         let mut graph: Vec<BTreeSet<FunctionId>> = Vec::new();
         for function in &ir.functions {
@@ -459,6 +516,7 @@ impl<'a> Checker<'a> {
                 branches: Vec::new(),
                 limits: 0,
                 stims: 0,
+                carriers: Vec::new(),
                 in_body: false,
                 analog: false,
             };
@@ -585,6 +643,17 @@ impl<'a> Checker<'a> {
             if got != want {
                 let origin = self.expr_origin(id);
                 self.wrong(w, origin, format!("expression must be {want}, found {got}"));
+            }
+        }
+    }
+
+    /// `id`, a value written to a carrier of type `want` (or a delay, `want` being `f64`), may be
+    /// known or unknown: its type is `want` or `want` flagged.
+    fn carried(&mut self, w: &Walk, id: ExprId, want: &ValueType, position: &str) {
+        if let Some(got) = self.ty(id) {
+            if Typing::base(got) != want {
+                let origin = self.expr_origin(id);
+                self.wrong(w, origin, format!("{position} must be {want}, found {got}"));
             }
         }
     }
@@ -892,6 +961,18 @@ impl<'a> Checker<'a> {
                 }
                 next.push(Task::Expr(*value, ctx));
                 next.push(Task::Expr(*default, ctx));
+            }
+            Expr::Carrier(i) => {
+                if first {
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "carrier read outside a body".to_string());
+                    } else {
+                        match w.owner.carriers.get(*i as usize) {
+                            Some(c) => self.own(w, &origin, ty, &ValueType::Flagged(Box::new(c.clone()))),
+                            None => self.wrong(w, origin, format!("carrier {i} out of range ({} carriers)", w.owner.carriers.len())),
+                        }
+                    }
+                }
             }
             Expr::IsKnown(value) | Expr::High(value) => {
                 if first {

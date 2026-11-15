@@ -245,7 +245,8 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Probe { .. }
             | Expr::Env(_)
             | Expr::Int(_)
-            | Expr::Unknown => {}
+            | Expr::Unknown
+            | Expr::Carrier(_) => {}
         }
     }
 
@@ -362,6 +363,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::KnownOr { .. } => Err(self.unsupported(e, "`known_or`")),
             Expr::IsKnown(_) => Err(self.unsupported(e, "`is_known`")),
             Expr::High(_) => Err(self.unsupported(e, "`high`")),
+            Expr::Carrier(_) => Err(self.unsupported(e, "a carrier read")),
         }
     }
 

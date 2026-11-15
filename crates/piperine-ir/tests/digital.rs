@@ -10,8 +10,9 @@ mod digital;
 
 use digital::{Buck, Dx, Ty};
 use piperine_ir::{
-    BinaryOp, BodyId, BodySpec, FunctionId, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, Method,
-    Origin, UnaryOp, ValueType,
+    BinaryOp, BodyId, BodySpec, CarrierRole, Child, Constant, Deps, Drive, FunctionId, FunctionSpec, InstanceId,
+    InstanceSpec, Ir, IrBuilder, Local, Method, NetId, NetSpec, NodeRef, NodeSpec, Origin, Real, Target, Terminal,
+    UnaryOp, ValueType,
 };
 
 /// Designs for the tests: a set of functions or bodies under an empty top body.
@@ -340,28 +341,28 @@ impl Unknowns {
         Unknowns::function(b, "setpoint_next", "control.msl", 12, params, Ty::flagged(u8_.clone()), vec![Design::local("d", u8_)], body)
     }
 
-    /// `power.msl:57`, the gate level of `PowerSwitch`: `fn gate_level(g: Bit) -> f64 { if g.high() { 1.0 } else { 0.0 } }`.
+    /// `power.msl:65`, the gate level of `PowerSwitch`: `fn gate_level(g: Bit) -> f64 { if g.high() { 1.0 } else { 0.0 } }`.
     fn gate_level(b: &mut IrBuilder) -> FunctionId {
-        let mut x = Dx::new(b, "power.msl", 57, 31);
+        let mut x = Dx::new(b, "power.msl", 65, 27);
         let g = x.local(0, Ty::flagged(ValueType::Bool));
         let cond = x.high(g);
         let on = x.real(1.0);
         let off = x.real(0.0);
         let body = x.if_(cond, on, off, ValueType::F64);
-        Unknowns::function(b, "gate_level", "power.msl", 57, vec![Design::local("g", Ty::flagged(ValueType::Bool))], ValueType::F64, vec![], body)
+        Unknowns::function(b, "gate_level", "power.msl", 65, vec![Design::local("g", Ty::flagged(ValueType::Bool))], ValueType::F64, vec![], body)
     }
 
-    /// `power.msl:85`, the interlock of `GateDriver` over levels that may be unknown:
+    /// `power.msl:76`, the interlock of `GateDriver` over levels that may be unknown:
     /// `fn interlock(hs_cmd: Bit, ls_cmd: Bit) -> Bit { hs_cmd & !ls_cmd }`.
     fn interlock(b: &mut IrBuilder) -> FunctionId {
         let level = Ty::flagged(ValueType::Bool);
-        let mut x = Dx::new(b, "power.msl", 85, 15);
+        let mut x = Dx::new(b, "power.msl", 76, 15);
         let hs = x.local(0, level.clone());
         let ls = x.local(1, level.clone());
         let not_ls = x.un(UnaryOp::Not, ls, level.clone());
         let body = x.bin(BinaryOp::BitAnd, hs, not_ls, level.clone());
         let params = vec![Design::local("hs_cmd", level.clone()), Design::local("ls_cmd", level.clone())];
-        Unknowns::function(b, "interlock", "power.msl", 85, params, level, vec![], body)
+        Unknowns::function(b, "interlock", "power.msl", 76, params, level, vec![], body)
     }
 
     /// §3.3.1 and §3.3.3: the literal `Unknown`, under a condition that may itself be unknown:
@@ -482,4 +483,169 @@ fn unknown_values_and_their_reads_print() {
     assert_eq!(at(5, "expression is typed u9, its form gives flagged<u9>"), 1, "{broken:#?}");
     assert_eq!(at(9, "type flagged<()>: only `bool`, `f64` and an integer type may be unknown"), 1, "{broken:#?}");
     assert_eq!(broken.len(), 6, "{broken:#?}");
+}
+
+/// The power stage of `power.msl:125-143`, cut to its gate path: the driver and the two switches
+/// (`Switch` standing for `PowerSwitch`), the commands as ports, the gates as signals.
+///
+/// ```text
+/// pub module Stage(in hs_cmd: Bit, in ls_cmd: Bit) {
+///     signal vin: Electrical; signal sw: Electrical;
+///     signal hs_gate: Bit; signal ls_gate: Bit;
+///     let drv = GateDriver(hs_cmd, ls_cmd, hs_gate, ls_gate) { tpd: 10n };
+///     let hs = Switch(vin, sw, hs_gate);
+///     let ls = Switch(sw, gnd, ls_gate);
+/// }
+/// ```
+struct Stage;
+
+impl Stage {
+    const F: &'static str = "stage.msl";
+
+    fn instance(b: &mut IrBuilder, path: &str, body: BodyId, parent: Option<InstanceId>, nodes: Vec<NodeRef>, params: Vec<f64>, nets: Vec<NetId>, line: u32) -> InstanceId {
+        let name = path.rsplit('.').next().unwrap_or(path).to_string();
+        let params = params.into_iter().map(|v| Constant::Real(Real::new(v))).collect();
+        let id = b.instance(InstanceSpec { path: path.into(), name, body, parent, nodes, params, origin: Design::origin(Stage::F, line, 5) });
+        b.bind_nets(id, nets);
+        id
+    }
+
+    fn design() -> Ir {
+        let mut b = IrBuilder::new();
+        let driver = Buck::gate_driver(&mut b);
+        let switch = Buck::switch(&mut b);
+        let el = Buck::electrical(&mut b);
+        let child = |name: &str, body: BodyId, nodes: Vec<Terminal>, params: Vec<(u32, f64)>, line: u32| Child {
+            name: name.into(),
+            body,
+            nodes,
+            params: params.into_iter().map(|(i, v)| (i, Constant::Real(Real::new(v)))).collect(),
+            origin: Design::origin(Stage::F, line, 5),
+        };
+        let signal = |name: &str, line: u32| piperine_ir::BodyNode { name: name.into(), nature: el, role: piperine_ir::NodeRole::Signal, init: None, origin: Design::origin(Stage::F, line, 5) };
+        let stage = b.body(BodySpec {
+            nodes: vec![signal("vin", 2), signal("sw", 2)],
+            children: vec![
+                child("drv", driver, vec![], vec![(0, 10e-9)], 4),
+                child("hs", switch, vec![Terminal::Node(0), Terminal::Node(1)], vec![], 5),
+                child("ls", switch, vec![Terminal::Node(1), Terminal::Ground], vec![], 6),
+            ],
+            ..Buck::spec("Stage", Stage::F, 1)
+        });
+        for (name, role, line, col) in [("hs_cmd", CarrierRole::In, 1, 17), ("ls_cmd", CarrierRole::In, 1, 33), ("hs_gate", CarrierRole::Signal, 3, 12), ("ls_gate", CarrierRole::Signal, 3, 33)] {
+            b.carrier(stage, Buck::carrier(name, ValueType::Bool, role, None, Stage::F, line, col));
+        }
+        let top = b.next_instance_id();
+        let vin = b.node(NodeSpec { path: "Stage.vin".into(), nature: el, declared_by: top, init: None, origin: Design::origin(Stage::F, 2, 12) });
+        let sw = b.node(NodeSpec { path: "Stage.sw".into(), nature: el, declared_by: top, init: None, origin: Design::origin(Stage::F, 2, 33) });
+        let nets: Vec<NetId> = ["hs_cmd", "ls_cmd", "hs_gate", "ls_gate"]
+            .into_iter()
+            .map(|n| b.net(NetSpec { path: format!("Stage.{n}"), ty: ValueType::Bool, declared_by: top, init: None, origin: Design::origin(Stage::F, 3, 5) }))
+            .collect();
+        let (vin, sw) = (NodeRef::Node(vin), NodeRef::Node(sw));
+        let top = Stage::instance(&mut b, "Stage", stage, None, vec![vin, sw], vec![], nets.clone(), 1);
+        Stage::instance(&mut b, "Stage.drv", driver, Some(top), vec![], vec![10e-9], nets.clone(), 4);
+        Stage::instance(&mut b, "Stage.hs", switch, Some(top), vec![vin, sw], vec![20e-3, 1e6], vec![nets[2]], 5);
+        Stage::instance(&mut b, "Stage.ls", switch, Some(top), vec![sw, NodeRef::Ground], vec![20e-3, 1e6], vec![nets[3]], 6);
+        b.finish(top)
+    }
+}
+
+#[test]
+fn carriers_and_drives_print() {
+    let ir = Stage::design();
+    assert_eq!(ir.check(), vec![]);
+
+    // Carriers after the nodes, with their role; a drive names its carrier and, delayed, its
+    // `after` (power.msl:74-78).
+    Printed::holds(
+        &ir,
+        &[
+            "body GateDriver",
+            "  param tpd: f64 = 1e-8 where (tpd > 0.0)",
+            "  carrier hs_cmd: bool in",
+            "  carrier ls_cmd: bool in",
+            "  carrier hs_gate: bool out",
+            "  carrier ls_gate: bool out",
+            "  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd",
+            "  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd",
+        ],
+    );
+    // An `analog` block reads the gate through `high()` (§3.3.5).
+    Printed::holds(
+        &ir,
+        &[
+            "body Switch",
+            "  param ron: f64 = 0.02 where (ron > 0.0)",
+            "  param roff: f64 = 1000000.0 where (roff > ron)",
+            "  node p: Electrical port",
+            "  node n: Electrical port",
+            "  carrier g: bool in",
+            "  branch b0 (p, n) flow",
+            "  analog",
+            "    b0.flow +> direct (probe(p, n) * if g.high() { (1.0 / ron) } else { (1.0 / roff) })",
+        ],
+    );
+    Printed::holds(&ir, &["  carrier hs_cmd: bool in", "  carrier ls_cmd: bool in", "  carrier hs_gate: bool signal", "  carrier ls_gate: bool signal"]);
+    // Every carrier of an instance is bound to a net, as every node is bound to a node.
+    Printed::holds(
+        &ir,
+        &[
+            "instance Stage: Stage  nodes (Stage.vin, Stage.sw)  params ()  nets (Stage.hs_cmd, Stage.ls_cmd, Stage.hs_gate, Stage.ls_gate)  top",
+            "instance Stage.drv: GateDriver  nodes ()  params (tpd = 1e-8)  nets (Stage.hs_cmd, Stage.ls_cmd, Stage.hs_gate, Stage.ls_gate)",
+            "instance Stage.hs: Switch  nodes (Stage.vin, Stage.sw)  params (ron = 0.02, roff = 1000000.0)  nets (Stage.hs_gate)",
+            "instance Stage.ls: Switch  nodes (Stage.sw, gnd)  params (ron = 0.02, roff = 1000000.0)  nets (Stage.ls_gate)",
+        ],
+    );
+    Printed::holds(
+        &ir,
+        &[
+            "net Stage.hs_cmd: bool  declared by Stage",
+            "net Stage.hs_gate: bool  declared by Stage",
+            "net Stage.ls_cmd: bool  declared by Stage",
+            "net Stage.ls_gate: bool  declared by Stage",
+        ],
+    );
+    let full = ir.to_string();
+    for line in ["  body 0 discrete: drives ((c2 e", "  nets (0, 1, 2, 3)", "  net 3: declared by 0", "carrier hs_gate: bool out  @power.msl:74:63", "drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd  @power.msl:76:5"] {
+        assert!(full.contains(line), "{line} missing from:\n{full}");
+    }
+
+    // What a drive reads: both commands for the value, the param for the delay.
+    let driver = ir.instance_at("Stage.drv").expect("the driver").body();
+    assert_eq!(driver.carrier_reads(Target::Drive(0)), vec![0, 1]);
+    assert_eq!(driver.carrier_reads(Target::Drive(1)), vec![0, 1]);
+    assert_eq!(driver.dependencies(Target::Drive(0)), Deps::default());
+    assert_eq!(driver.dependencies(Target::DriveAfter(1)), Deps { params: vec![0], ..Deps::default() });
+    assert_eq!(driver.carrier_reads(Target::DriveAfter(1)), Vec::<u32>::new());
+    // What the analog block reads: the probe, both params and the gate; the gate holds between
+    // events, so the term stays affine in the potentials.
+    let switch = ir.instance_at("Stage.hs").expect("a switch").body();
+    assert_eq!(switch.carrier_reads(Target::Flow(0)), vec![0]);
+    assert_eq!(switch.dependencies(Target::Flow(0)), Deps { nodes: vec![0, 1], params: vec![0, 1], ..Deps::default() });
+    assert!(switch.is_affine(0));
+    // A net lists the instances whose ports it reaches; the stage's own gates are its signals.
+    let wired = |path: &str| -> Vec<String> { ir.net_at(path).expect("a net").instances().iter().map(|i| i.path().to_string()).collect() };
+    assert_eq!(wired("Stage.hs_gate"), vec!["Stage.drv", "Stage.hs"]);
+    assert_eq!(wired("Stage.hs_cmd"), vec!["Stage", "Stage.drv"]);
+    assert_eq!(ir.instance_at("Stage.ls").expect("a switch").net(0).map(|n| n.path()), Some("Stage.ls_gate"));
+
+    // A drive of the wrong type, a binding short of a net and a net of another type each give
+    // one entry.
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Bad", "bad.msl", 1));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20));
+    b.carrier(body, Buck::carrier("w", Ty::u(4), CarrierRole::Out, None, "bad.msl", 1, 30));
+    let value = Dx::new(&mut b, "bad.msl", 2, 9).int(3, Ty::u(8));
+    b.drive(body, Drive { carrier: 0, value, after: None, origin: Design::origin("bad.msl", 2, 5) });
+    let top = b.next_instance_id();
+    let net = b.net(NetSpec { path: "Bad.q".into(), ty: Ty::u(8), declared_by: top, init: None, origin: Design::origin("bad.msl", 1, 20) });
+    let top = Stage::instance(&mut b, "Bad", body, None, vec![], vec![], vec![net], 1);
+    let ir = b.finish(top);
+    let broken = ir.check();
+    let has = |what: &str| broken.iter().filter(|e| e.what.contains(what)).count();
+    assert_eq!(has("the value of a drive must be bool, found u8"), 1, "{broken:#?}");
+    assert_eq!(has("binds 1 nets, body Bad has 2 carriers"), 1, "{broken:#?}");
+    assert_eq!(has("binds carrier q: bool to net Bad.q: u8"), 1, "{broken:#?}");
+    assert_eq!(broken.len(), 3, "{broken:#?}");
 }

@@ -26,9 +26,26 @@ use crate::print::{AnalogPrinter, ShapePrinter, Text, ValuePrinter};
 pub struct LibraryPrinter;
 
 impl LibraryPrinter {
+    /// The digital forms have no lowering yet (ir-rust phases 6 and 7): a body that holds one is
+    /// `Error::Unsupported`, never printed without it.
+    fn discrete(ir: &Ir) -> Result<(), Error> {
+        for body in ir.bodies() {
+            let first = body
+                .carriers()
+                .first()
+                .map(|c| ("a discrete carrier", format!("body {} carrier {}", body.name(), c.name), c.origin.clone()))
+                .or_else(|| body.drives().first().map(|d| ("a drive", format!("body {} drive {}", body.name(), d.carrier), d.origin.clone())));
+            if let Some((form, path, origin)) = first {
+                return Err(Error::Unsupported { form: form.to_string(), path, origin });
+            }
+        }
+        Ok(())
+    }
+
     /// `ir` as one Rust source text; `plans` holds one entry per body, `None` for a body with
     /// nothing to run.
     pub fn design(ir: &Ir, plans: &[Option<BodyPlan>]) -> Result<String, Error> {
+        Self::discrete(ir)?;
         let top = ir.top();
         let design = top.body().name();
         let at = top.body().origin().clone();

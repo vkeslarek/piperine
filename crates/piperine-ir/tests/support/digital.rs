@@ -5,7 +5,9 @@
 //! `piperine-transpile` through `#[path]`.
 
 use piperine_ir::{
-    BinaryOp, Expr, ExprId, FunctionId, IrBuilder, Method, Origin, Real, Stmt, StmtId, UnaryOp, ValueType,
+    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Drive, Expr,
+    ExprId, FunctionId, IrBuilder, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Real,
+    Stmt, StmtId, Terminal, UnaryOp, ValueType,
 };
 
 /// The value types of the MSL source, by their aliases.
@@ -134,6 +136,15 @@ impl<'b> Dx<'b> {
     pub fn high(&mut self, value: ExprId) -> ExprId {
         self.emit(Expr::High(value), ValueType::Bool)
     }
+
+    /// A read of carrier `i`, which holds `ty`: unknown until first written.
+    pub fn carrier(&mut self, i: u32, ty: ValueType) -> ExprId {
+        self.emit(Expr::Carrier(i), Ty::flagged(ty))
+    }
+
+    pub fn probe(&mut self, plus: Terminal, minus: Terminal) -> ExprId {
+        self.emit(Expr::Probe { plus, minus }, ValueType::F64)
+    }
 }
 
 /// The buck-slice bodies and the functions they call, each beside the MSL text it transcribes.
@@ -142,6 +153,141 @@ pub struct Buck;
 impl Buck {
     fn local(name: &str, ty: ValueType) -> piperine_ir::Local {
         piperine_ir::Local { name: name.to_string(), ty }
+    }
+
+    pub fn origin(file: &str, line: u32, col: u32) -> Origin {
+        Origin { file: file.to_string(), line, col }
+    }
+
+    /// An empty body named `name`, declared at `file:line:1`.
+    pub fn spec(name: &str, file: &str, line: u32) -> BodySpec {
+        BodySpec {
+            name: name.into(),
+            origin: Buck::origin(file, line, 1),
+            params: vec![],
+            nodes: vec![],
+            branches: vec![],
+            limits: vec![],
+            stims: vec![],
+            locals: vec![],
+            analog: None,
+            children: vec![],
+        }
+    }
+
+    /// An `f64` param at `file:line:5`.
+    pub fn param(name: &str, file: &str, line: u32, default: Option<f64>, check: Option<ExprId>) -> Param {
+        Param {
+            name: name.into(),
+            ty: ValueType::F64,
+            default: default.map(|v| Constant::Real(Real::new(v))),
+            check,
+            structural: false,
+            origin: Buck::origin(file, line, 5),
+        }
+    }
+
+    /// `where <param index> <op> <bound>` at `file:line:col`.
+    pub fn bound(b: &mut IrBuilder, file: &'static str, line: u32, col: u32, index: u32, op: BinaryOp, bound: ExprId) -> ExprId {
+        let mut x = Dx::new(b, file, line, col);
+        let p = x.param(index, ValueType::F64);
+        x.bin(op, p, bound, ValueType::Bool)
+    }
+
+    /// `where <param index> > 0.0`.
+    pub fn positive(b: &mut IrBuilder, file: &'static str, line: u32, col: u32, index: u32) -> ExprId {
+        let zero = Dx::new(b, file, line, col).real(0.0);
+        Buck::bound(b, file, line, col, index, BinaryOp::Gt, zero)
+    }
+
+    pub fn carrier(name: &str, ty: ValueType, role: CarrierRole, init: Option<Constant>, file: &str, line: u32, col: u32) -> Carrier {
+        Carrier { name: name.into(), ty, role, init, origin: Buck::origin(file, line, col) }
+    }
+
+    /// The `Electrical` nature of `std/carriers.msl`, added once per builder.
+    pub fn electrical(b: &mut IrBuilder) -> NatureId {
+        if let Some(id) = b.find_nature("Electrical") {
+            return id;
+        }
+        let voltage = Quantity { name: "Voltage".into(), access: "v".into(), units: "V".into(), abstol: Real::new(1e-6) };
+        let current = Quantity { name: "Current".into(), access: "i".into(), units: "A".into(), abstol: Real::new(1e-12) };
+        b.nature("Electrical", voltage, Some(current))
+    }
+
+    /// `power.msl:74-78`:
+    ///
+    /// ```text
+    /// pub module GateDriver(in hs_cmd: Bit, in ls_cmd: Bit, out hs_gate: Bit, out ls_gate: Bit) {
+    ///     tpd: f64 = 10n where tpd > 0.0;
+    ///     hs_gate = (hs_cmd & !ls_cmd) after tpd;
+    ///     ls_gate = (ls_cmd & !hs_cmd) after tpd;
+    /// }
+    /// ```
+    pub fn gate_driver(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "power.msl";
+        let check = Buck::positive(b, F, 75, 26, 0);
+        let body = b.body(BodySpec { params: vec![Buck::param("tpd", F, 75, Some(10e-9), Some(check))], ..Buck::spec("GateDriver", F, 74) });
+        let level = ValueType::Bool;
+        for (name, role, col) in [("hs_cmd", CarrierRole::In, 30), ("ls_cmd", CarrierRole::In, 46), ("hs_gate", CarrierRole::Out, 63), ("ls_gate", CarrierRole::Out, 81)] {
+            b.carrier(body, Buck::carrier(name, level.clone(), role, None, F, 74, col));
+        }
+        for (target, own, other, line) in [(2, 0, 1, 76), (3, 1, 0, 77)] {
+            let mut x = Dx::new(b, F, line, 15);
+            let cmd = x.carrier(own, ValueType::Bool);
+            let blocker = x.carrier(other, ValueType::Bool);
+            let not = x.un(UnaryOp::Not, blocker, Ty::flagged(ValueType::Bool));
+            let value = x.bin(BinaryOp::BitAnd, cmd, not, Ty::flagged(ValueType::Bool));
+            x.at(line, 38);
+            let after = x.param(0, ValueType::F64);
+            b.drive(body, Drive { carrier: target, value, after: Some(after), origin: Buck::origin(F, line, 5) });
+        }
+        body
+    }
+
+    /// A switch between `p` and `n` whose conductance an `analog` block reads from a gate carrier
+    /// through `high()` (§3.3.5): `PowerSwitch` of `power.msl:52-70` with the channel's
+    /// `transition` (stdlib, out of this slice) replaced by the gate level itself.
+    ///
+    /// ```text
+    /// pub module Switch(p: Electrical, n: Electrical, in g: Bit) {
+    ///     ron: f64 = 20m where ron > 0.0;
+    ///     roff: f64 = 1M where roff > ron;
+    /// }
+    /// analog for Switch { i(p, n) +> v(p, n) * if g.high() { 1.0 / ron } else { 1.0 / roff }; }
+    /// ```
+    pub fn switch(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "switch.msl";
+        let el = Buck::electrical(b);
+        let ron = Buck::positive(b, F, 2, 30, 0);
+        let lower = Dx::new(b, F, 3, 32).param(0, ValueType::F64);
+        let roff = Buck::bound(b, F, 3, 25, 1, BinaryOp::Gt, lower);
+        let mut x = Dx::new(b, F, 5, 21);
+        let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+        let g = x.carrier(0, ValueType::Bool);
+        let on = x.high(g);
+        let one = x.real(1.0);
+        let r = x.param(0, ValueType::F64);
+        let g_on = x.bin(BinaryOp::Div, one, r, ValueType::F64);
+        let one = x.real(1.0);
+        let r = x.param(1, ValueType::F64);
+        let g_off = x.bin(BinaryOp::Div, one, r, ValueType::F64);
+        let conductance = x.if_(on, g_on, g_off, ValueType::F64);
+        let value = x.bin(BinaryOp::Mul, v, conductance, ValueType::F64);
+        let stmt = b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Flow,
+            addends: vec![Addend { operator: Operator::Direct, negated: false, value }],
+        });
+        let port = |name: &str, col: u32| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 1, col) };
+        let body = b.body(BodySpec {
+            params: vec![Buck::param("ron", F, 2, Some(20e-3), Some(ron)), Buck::param("roff", F, 3, Some(1e6), Some(roff))],
+            nodes: vec![port("p", 19), port("n", 34)],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+            analog: Some(vec![stmt]),
+            ..Buck::spec("Switch", F, 1)
+        });
+        b.carrier(body, Buck::carrier("g", ValueType::Bool, CarrierRole::In, None, F, 1, 52));
+        body
     }
 
     /// `dpwm.msl:14`: `fn rev3(k: u3) -> u3 { ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1) }`. A shift

@@ -1,4 +1,4 @@
-//! The seven index types of the [`Ir`](crate::Ir) arenas.
+//! The eight index types of the [`Ir`](crate::Ir) arenas.
 //!
 //! Each id is a plain `u32` newtype. They are written out one after another
 //! (no macro): ids are data, and the arenas they index never shrink.
@@ -32,6 +32,10 @@ pub struct InstanceId(pub u32);
 /// A node of the elaborated design.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct NodeId(pub u32);
+
+/// A discrete net of the elaborated design: the twin of a node for carriers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct NetId(pub u32);
 
 impl NatureId {
     pub fn index(self) -> usize {
@@ -70,6 +74,12 @@ impl InstanceId {
 }
 
 impl NodeId {
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl NetId {
     pub fn index(self) -> usize {
         self.0 as usize
     }
