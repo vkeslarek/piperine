@@ -1,6 +1,6 @@
 # Solver ABI Core verification
 
-**Verdict**: FAIL - F1-F13 closed and re-judged; three new findings (N1 medium, N2 medium, N3 low) stay open for the user
+**Verdict**: PASS - F1 to F13 verified in round 2; N1 to N3 (round 2) and the rest of F9 closed by 08c1c017, 80451fb1, 4176d608 without a third round (orchestrator; verifier probes are the regression tests)
 **Round**: 2
 **Proofs**: `proofs.md` at 1fedaa8d (51 pass); round 2 judged at a1512672 (docs-only on top). Round 1: 60a542da (41 pass)
 **Verifier**: independent sub-agent (author != verifier), rounds 1 and 2
