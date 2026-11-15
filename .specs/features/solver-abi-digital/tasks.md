@@ -181,11 +181,11 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `a_function_runs_after_every_writer_of_its_reads` passes on a diamond and a chain of ten built in a shuffled order (C11, first half)
-- [ ] Test `a_cycle_through_no_relax_net_is_refused_naming_its_functions` passes for two cross-coupled gates and for a self-loop (C10)
-- [ ] Test `a_cycle_through_relax_nets_is_one_relax_step` passes
-- [ ] Test `the_order_is_stable_across_runs` passes: the same input gives the same order (instance index, then function index, break ties)
-- [ ] Gate: full
+- [x] Test `a_function_runs_after_every_writer_of_its_reads` passes on a diamond and a chain of ten built in a shuffled order (C11, first half)
+- [x] Test `a_cycle_through_no_relax_net_is_refused_naming_its_functions` passes for two cross-coupled gates and for a self-loop (C10)
+- [x] Test `a_cycle_through_relax_nets_is_one_relax_step` passes
+- [x] Test `the_order_is_stable_across_runs` passes: the same input gives the same order (instance index, then function index, break ties)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

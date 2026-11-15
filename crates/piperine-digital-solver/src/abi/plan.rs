@@ -10,6 +10,7 @@ use piperine_abi::layout::layout_eq;
 use piperine_abi::raw::{Shape, cell, kind, pin_flag, role, statement_flag};
 use piperine_abi::validate::validate;
 
+use super::dag::Dag;
 use super::net::{NetId, NetKind, NetSpec};
 use super::tick::Resolution;
 use crate::error::DigitalError;
@@ -47,6 +48,8 @@ pub enum NetWriter {
 /// A discrete function and the nets it depends on and produces.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FnNode {
+    /// `<instance path>.<function name>`, for the errors that name it.
+    pub name: String,
     pub instance: u32,
     pub k: u32,
     pub reads: Vec<NetId>,
@@ -131,6 +134,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
             let discrete = f.writes.len() > 0 && f.writes.iter().all(|c| c.kind == cell::PIN);
             if discrete {
                 functions.push(FnNode {
+                    name: format!("{}.{}", input.path, f.name.as_str()),
                     instance,
                     k: k as u32,
                     reads: nets_of(input, f.reads.iter()),
@@ -289,6 +293,7 @@ pub struct DigitalPlan {
     pub instances: Vec<InstancePlan>,
     pub resolution: Resolution,
     analysis: Analysis,
+    dag: Dag,
 }
 
 impl DigitalPlan {
@@ -299,7 +304,13 @@ impl DigitalPlan {
                 instances.iter().map(|i| ShapeInput { path: &i.path, shape: i.handle.shape(), pins: &i.pins }).collect();
             analyze(&nets, &inputs, resolution)?
         };
-        Ok(DigitalPlan { nets, instances, resolution, analysis })
+        let dag = Dag::build(analysis.functions(), &nets)?;
+        Ok(DigitalPlan { nets, instances, resolution, analysis, dag })
+    }
+
+    /// The order the discrete functions run in.
+    pub fn dag(&self) -> &Dag {
+        &self.dag
     }
 
     /// What the bind rules derived.
