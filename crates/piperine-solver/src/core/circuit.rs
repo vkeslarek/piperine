@@ -47,6 +47,8 @@ pub struct CircuitInstance {
     pub digital_topology: Option<DigitalTopology>,
     pub digital_state: DigitalState,
     pub netlist: Netlist,
+    /// The bound device instances (the ABI contract); `None` for a circuit of `Element`s.
+    pub(crate) abi: Option<crate::core::bind::Bound>,
     is_set_up: bool,
 }
 
@@ -58,6 +60,10 @@ impl CircuitInstance {
     // the device list itself.
 
     pub fn netlist(&self) -> &Netlist { &self.netlist }
+
+    /// The bound device instances, when the circuit was built from devices.
+    pub fn bound(&self) -> Option<&crate::core::bind::Bound> { self.abi.as_ref() }
+    pub fn bound_mut(&mut self) -> Option<&mut crate::core::bind::Bound> { self.abi.as_mut() }
 
     /// Every solved signal in the circuit — analog nodes, analog branch
     /// currents, and digital nets — as one unified `Net` list. This is the
@@ -513,6 +519,7 @@ impl CircuitInstance {
             digital_topology: None,
             digital_state: DigitalState::new(0),
             netlist,
+            abi: None,
             is_set_up: false,
         }
     }

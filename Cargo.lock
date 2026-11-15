@@ -1519,6 +1519,7 @@ dependencies = [
  "ndarray",
  "num-complex",
  "num-traits",
+ "piperine-abi",
  "piperine-analog-solver",
  "piperine-digital-solver",
  "tempfile",

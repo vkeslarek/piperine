@@ -143,11 +143,11 @@ fn abi_crate_is_a_leaf() {
 }
 
 #[test]
-fn owner_depends_on_both_sub_solvers_only() {
+fn owner_depends_on_the_abi_and_both_sub_solvers_only() {
     let mut deps = workspace_dependencies(&manifest(OWNER));
     deps.sort();
     deps.dedup();
-    assert_eq!(deps, vec![ANALOG.to_string(), DIGITAL.to_string()]);
+    assert_eq!(deps, vec![ABI.to_string(), ANALOG.to_string(), DIGITAL.to_string()]);
 }
 
 #[test]

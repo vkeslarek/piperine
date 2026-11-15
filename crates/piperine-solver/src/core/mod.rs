@@ -4,6 +4,7 @@
 //! introspection metadata (`introspect.rs`), and the analysis result
 //! containers handed back to hosts (`result.rs`).
 
+pub mod bind;
 pub mod builder;
 pub mod circuit;
 pub mod element;

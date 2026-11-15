@@ -107,16 +107,16 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] The owner depends on `piperine-abi`, `piperine-analog-solver` and `piperine-digital-solver`; `owner_depends_on_both_sub_solvers_only` becomes `owner_depends_on_the_abi_and_both_sub_solvers_only` and passes
-- [ ] Test `pins_bind_by_role` passes: ports by position, a param by name with the given value and with the prototype default, a global by constant, a `NAMED` global by name, a private pin allocated
-- [ ] Test `ports_on_one_net_share_one_unknown` passes, and a private continuous pin is an unknown of its own, allocated in instance order then pin order
-- [ ] Test `a_pin_abstol_tightens_its_node` passes through `node_vntol_overrides`
-- [ ] Test `a_discrete_net_an_analog_function_reads_is_flagged` passes
-- [ ] Test `a_circuit_mixing_elements_and_devices_is_refused` passes
-- [ ] Test `a_shared_param_net_feeds_every_instance_bound_to_it` passes (P5)
-- [ ] Every existing test of the crate passes unchanged
-- [ ] This is the first commit that compiles the protocol, the engine and the assembly together: if a facade does not fit its trait, stop and report before writing an adapter with logic in it
-- [ ] Gate: full
+- [x] The owner depends on `piperine-abi`, `piperine-analog-solver` and `piperine-digital-solver`; `owner_depends_on_both_sub_solvers_only` becomes `owner_depends_on_the_abi_and_both_sub_solvers_only` and passes
+- [x] Test `pins_bind_by_role` passes: ports by position, a param by name with the given value and with the prototype default, a global by constant, a `NAMED` global by name, a private pin allocated
+- [x] Test `ports_on_one_net_share_one_unknown` passes, and a private continuous pin is an unknown of its own, allocated in instance order then pin order
+- [x] Test `a_pin_abstol_tightens_its_node` passes through `node_vntol_overrides`
+- [x] Test `a_discrete_net_an_analog_function_reads_is_flagged` passes
+- [x] Test `a_circuit_mixing_elements_and_devices_is_refused` passes
+- [x] Test `a_shared_param_net_feeds_every_instance_bound_to_it` passes (P5)
+- [x] Every existing test of the crate passes unchanged
+- [x] This is the first commit that compiles the protocol, the engine and the assembly together: if a facade does not fit its trait, stop and report before writing an adapter with logic in it
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

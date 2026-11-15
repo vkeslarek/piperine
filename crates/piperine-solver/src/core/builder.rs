@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use piperine_analog_solver::netlist::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
+use crate::core::bind::{bind, BindInput, DeviceSpec, ParamValue, Port};
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::{Element, ElementCapabilities};
 use piperine_digital_solver::events::{DigitalNet};
@@ -73,6 +74,11 @@ pub struct CircuitBuilder {
     /// name → reference cache (includes "gnd" → ground)
     nodes: HashMap<String, AnalogReference>,
     elements: Vec<Box<dyn Element>>,
+    /// Device instances (the ABI contract); a circuit holds these or `elements`, never both.
+    devices: Vec<DeviceSpec>,
+    shared_params: Vec<(String, ParamValue)>,
+    session_params: Vec<(String, ParamValue)>,
+    resolution: f64,
     digital_labels: Vec<Option<String>>,
     /// monotonically increasing counter for fresh Anonymous node IDs
     next_anon: usize,
@@ -91,6 +97,10 @@ impl CircuitBuilder {
             netlist: Netlist::new(),
             nodes: HashMap::new(),
             elements: Vec::new(),
+            devices: Vec::new(),
+            shared_params: Vec::new(),
+            session_params: Vec::new(),
+            resolution: piperine_digital_solver::abi::tick::Resolution::default().seconds_per_tick,
             digital_labels: Vec::new(),
             next_anon: 0,
         }
@@ -135,6 +145,46 @@ impl CircuitBuilder {
         self
     }
 
+    /// Adds an instance of `module` at `path`: its `PORT` pins bind by
+    /// position to `ports`, its `PARAM` pins by name to `values` (a pin
+    /// without one keeps the prototype's default), its `GLOBAL` pins to the
+    /// session and its `PRIVATE` pins to nets the solver allocates (abi.md
+    /// §3.1). Bind runs in [`build`](Self::build).
+    pub fn device(
+        &mut self,
+        module: &'static piperine_abi::raw::Module,
+        path: &str,
+        values: &[(&str, ParamValue)],
+        ports: &[Port],
+    ) -> &mut Self {
+        self.devices.push(DeviceSpec {
+            module,
+            path: path.to_string(),
+            values: values.iter().map(|(n, v)| (n.to_string(), v.clone())).collect(),
+            ports: ports.to_vec(),
+        });
+        self
+    }
+
+    /// A shared param net (a model card, abi.md P5): every instance whose
+    /// `PARAM` is given `ParamValue::Shared(name)` is bound to it.
+    pub fn param_net(&mut self, name: &str, seed: ParamValue) -> &mut Self {
+        self.shared_params.push((name.to_string(), seed));
+        self
+    }
+
+    /// The host's session parameter `name`, read by a `NAMED` global.
+    pub fn session_param(&mut self, name: &str, value: ParamValue) -> &mut Self {
+        self.session_params.push((name.to_string(), value));
+        self
+    }
+
+    /// The session's tick length (the `RESOLUTION` global), seconds.
+    pub fn resolution(&mut self, seconds_per_tick: f64) -> &mut Self {
+        self.resolution = seconds_per_tick;
+        self
+    }
+
     /// Freeze: run `allocate_unknowns` for every element (ABI-09), seed the
     /// nominal temperature on every element (ABI-19), assemble
     /// `CircuitInstance`, size + label digital state, rebuild topology, init
@@ -143,6 +193,9 @@ impl CircuitBuilder {
     /// Returns `Err` if any element allocated unknowns without declaring
     /// `HAS_INTERNAL_UNKNOWNS` (fail loud — programming error).
     pub fn build(mut self) -> Result<CircuitInstance> {
+        if !self.devices.is_empty() {
+            return self.build_devices();
+        }
         // Step 1: allocate_unknowns per element, check HAS_INTERNAL_UNKNOWNS flag.
         for element in &mut self.elements {
             let mut alloc = UnknownAllocator::new(&mut self.netlist);
@@ -195,6 +248,28 @@ impl CircuitBuilder {
         instance.rebuild_digital_topology();
         instance.init_digital()?;
 
+        Ok(instance)
+    }
+
+    /// Bind the device instances (abi.md §9) into a circuit.
+    fn build_devices(mut self) -> Result<CircuitInstance> {
+        if !self.elements.is_empty() {
+            return Err(Error::simple(
+                SolverDomain::Element,
+                "a circuit is built from elements or from devices, not both",
+            ));
+        }
+        let temperature = piperine_analog_solver::tolerances::Tolerances::default().temperature;
+        let bound = bind(BindInput {
+            specs: std::mem::take(&mut self.devices),
+            shared: std::mem::take(&mut self.shared_params),
+            session: std::mem::take(&mut self.session_params),
+            netlist: &mut self.netlist,
+            resolution: self.resolution,
+            temperature,
+        })?;
+        let mut instance = CircuitInstance::from_devices_and_netlist(self.title, Vec::new(), self.netlist);
+        instance.abi = Some(bound);
         Ok(instance)
     }
 }
