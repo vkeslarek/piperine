@@ -1,20 +1,20 @@
 # Digital and Mixed MSL Through the Front End Design
 
 **Spec**: `.specs/features/msl-digital/spec.md`
-**Status**: Approved (2026-11-15, under the standing delegation, with the spec)
+**Status**: Approved (2026-11-15, under the standing delegation, with the spec; amended the same day by the orchestrator's ruling on `rise()`: amendment A7)
 
 ---
 
 ## Architecture Overview
 
-The chain of M1 stays as it is: `Types::check` gives a side table over POM ids, `Elaborator::run` writes an `Ir` through `IrBuilder`, the POM is only read. This feature widens both stages and adds six forms to the three crates behind the IR.
+The chain of M1 stays as it is: `Types::check` gives a side table over POM ids, `Elaborator::run` writes an `Ir` through `IrBuilder`, the POM is only read. This feature widens both stages and adds seven forms to the three crates behind the IR.
 
 ```mermaid
 flowchart TD
     SRC[examples/buck + embedded std] --> POM[Design, read only]
     POM --> TY[types: values, carriers, events, reactions, results]
     TY --> EL[elab: values → structure → hoisting]
-    EL --> IR[piperine-ir: ir-rust phase B node set + six amendments]
+    EL --> IR[piperine-ir: ir-rust phase B node set + seven amendments]
     IR --> PL[piperine-plan: shapes, timers, records, branch flows]
     PL --> TR[piperine-transpile: design.rs]
     TR --> SO[solver, through piperine_abi_1]
@@ -25,7 +25,7 @@ flowchart TD
 
 Three ideas carry the design.
 
-1. **Lower in the front end what the IR already says.** Enums, `match`, `Option`, tuples, `if let`, `rise`, `fall`, anonymous definitions and result modules become IR nodes `ir-rust` already defines. Only what has no IR spelling is an amendment.
+1. **Lower in the front end what the IR already says.** Enums, `match`, `Option`, tuples, `if let`, anonymous definitions and result modules become IR nodes `ir-rust` already defines. Only what has no IR spelling is an amendment.
 2. **Unknown-ness is an analysis, not a type.** The checker types `count + 1` as `u9`. The elaborator knows `count` is a carrier read and gives the sum the IR type `Flagged(UInt(9))`.
 3. **A result module is state of its caller.** Appendix C.1.1 and §8.3.12: its result is inlined at each read and its instance is hoisted. The POM keeps the placement; the IR body of the caller gains the carriers.
 
@@ -45,6 +45,7 @@ Three ideas carry the design.
 | `emit!("s", f = e, …)` | `Stmt::Emit { stream: u32, fields: Vec<EmitField> }`, `BodyData::streams: Vec<Stream>` | **new A4** |
 | `i(a, b)` of a potential branch; `ddt` under a potential contribution | `Expr::Flow { branch: u32 }`; `Stmt::Contribute` accepts `Operator::Ddt` with `QuantityRole::Potential` | **new A5** |
 | `Child(...) { r: r_top }` | `Child::params: Vec<(u32, ChildValue)>`, `ChildValue::{Const(Constant), Expr(ExprId)}` | **new A6** |
+| `c.prev()`, and inside `rise()` and `fall()` | `Expr::Previous(u32)`: the carrier's value before its most recent change, of type `Flagged` | **new A7** |
 
 Each amendment follows the rule of `ir-rust` T24 to T27: model, builder method, `check()` rule, printer form written only when present, dependency set, and a refusal arm in `piperine-interp` and, until its own task lands, in `piperine-transpile`. Every earlier golden print stays byte-identical.
 
@@ -61,8 +62,8 @@ Each amendment follows the rule of `ir-rust` T24 to T27: model, builder method, 
 | an `f64` argument for `Option<f64>` (§3.2.3) | `(true, arg)` | |
 | `let (m, r) = (a, b);` | two `Let`s | |
 | `a && b` with a `Flagged` operand | `BitAnd(a, b)` | §3.3.12 gives the same table as `&` |
-| `c.rise()` | `Event { source: Changed(c), guard: High(c) }` | the ir-rust contract |
-| `c.fall()` | `Event { source: Changed(c), guard: IsKnown(c) & !KnownOr(c, true) }` | |
+| `c.rise()` | `Event { source: Changed(c), guard: !High(Previous(c)) & (!IsKnown(c) \| KnownOr(c, false)) }` | §22.1: the previous level is not `Some(true)` and the level is not `Some(false)`; every part is a flag-total read, so the guard is never unknown |
+| `c.fall()` | `Event { source: Changed(c), guard: !(IsKnown(Previous(c)) & !KnownOr(Previous(c), true)) & !High(c) }` | the mirror |
 | `Child(a, expr)` at an `in` port | carrier `Signal` named `child.port` in the parent, a `Drive` of it, the child's port bound to its net | §8.2.9 |
 | `log(...)`, `require(...)` | the function body inlined: one `Stmt::Emit` | IR functions are values |
 
@@ -118,6 +119,7 @@ No IR body, no `Child` and no instance is made for a hoisted module. A module th
 | A4 | per stream of a body: a `PRIVATE` `DISCRETE` pin flagged `RECORD`, named by the stream, its layout one field with a known byte per distinct non-text field of the stream's sites; one statement per emit site, in source order among the reaction's commits | `rt::Commits::record(statement, bytes)`: the whole layout, absent fields with known byte 0 |
 | A5 | the flow of a potential branch is the private continuous pin M1 already declares for it; `Expr::Flow` is a differentiable read of that pin; a `Ddt` addend of a potential contribution is a `DDT` term on the branch's equation row | `Dual` seeded on the flow pin; the affine rule unchanged |
 | A6 | none: the netlist reads `InstanceData::params`, which stays constant per instance | none |
+| A7 | `Source::CarrierPrevious(u32)`: the `PREVIOUS` part of the carrier's pin, among the reads of `event:*` functions and reactions (abi.md §4.1: any function or reaction may read it; §11.4 reads it for the flip-flop's edge); refused by `check()` in `analog` outside the flag reads, like any carrier read | decoded as `rt::Flagged<T>` from the `PREVIOUS` bytes |
 
 Text fields of a record never cross the ABI. `piperine_ir::Body::record_site(reaction, statement)` gives the stream name and the `(field, text)` pairs, which is how a host or a test decodes a record delivered by the solver's `Sink` (abi.md C5 gives instance, reaction and statement with every commit).
 
@@ -128,7 +130,7 @@ Text fields of a record never cross the ABI. `piperine_ir::Body::record_site(rea
 | `Types::ty` | as M1, over the wider `Ty` | everything |
 | `Types::continuity(ExprId)` | `Discrete` or `Continuous`: an expression is continuous when it reads a probe, `now()`, `analysis(Static)`, `gmin()`, `source_scale()` or a result that does (§8.2) | `E0336`, `E0316`, `E0442`; the guard split of the elaborator |
 | `Types::emits(DeclId)` | whether a function reaches `emit!`, and on which streams | `E0601`, `E0603`; the elaborator's inlining |
-| `Types::builtin(ExprId)` | the built-in a method call resolved to (`Known`, `KnownOr`, `IsKnown`, `High`, `Changed`, `Rise`, `Fall`), set only when the POM resolved the name to the stdlib's own declaration | lowering |
+| `Types::builtin(ExprId)` | the built-in a method call resolved to (`Known`, `KnownOr`, `IsKnown`, `High`, `Changed`, `Prev`, `Rise`, `Fall`), set only when the POM resolved the name to the stdlib's own declaration | lowering |
 | `Types::literal(ExprId)` | the integer type an integer literal was given | lowering, `E0909` |
 
 Literal typing is bidirectional and local, in the order the spec lists: an expected type from above wins; else, for a binary operator, the operand that is not a literal is checked first and its type is the expectation of the other; else, for `if` and `match`, the first arm that is not a literal; else `i32`.
@@ -226,7 +228,7 @@ Literal typing is bidirectional and local, in the order the spec lists: an expec
 
 ### IR amendments
 
-- **Purpose**: A1 to A6.
+- **Purpose**: A1 to A7.
 - **Location**: `crates/piperine-ir/src/{model,check,print,deps,build}.rs`
 - **Interfaces**: the variants of the table above; `Body::streams()`, `Body::record_site(reaction: u32, statement: u32) -> Option<RecordSite>`; `RecordSite { stream: &str, texts: &[(String, String)] }`.
 
@@ -254,7 +256,7 @@ pub enum EventSource { Changed(u32), Cross(ExprId), At(ExprId) }        // At is
 pub struct Stream { pub name: String, pub fields: Vec<StreamField> }     // per body
 pub struct StreamField { pub name: String, pub ty: ValueType }           // non-text fields, first-seen order
 pub enum EmitField { Value { field: u32, value: ExprId }, Text { name: String, text: String } }
-// Env gains Time and Static; Expr gains Flow { branch: u32 }; Stmt gains Emit { stream: u32, fields: Vec<EmitField> }
+// Env gains Time and Static; Expr gains Flow { branch: u32 } and Previous(u32); Stmt gains Emit { stream: u32, fields: Vec<EmitField> }
 ```
 
 ```rust
@@ -294,7 +296,8 @@ pub(super) struct Head { events: Vec<u32>, wrap: Option<ExprId> }        // wrap
 | The checker has no integer and no type variable | `crates/piperine-lang/src/types/ty.rs:5-6` | literal typing as in Rust needs inference | local bidirectional typing; what it cannot type is `P0002`, never a wrong type |
 | Negative tests of M1 assert `P0001` for forms this feature makes legal | `crates/piperine-lang/tests/{types_subset,elab_unlowered}.rs` | they would fail, or be weakened | each such row is replaced, in the task that legalizes its form, by a row of DIG-07 AC 1 that is still refused; the commit lists the rows. No assertion is loosened |
 | Splitting an `\|\|` head runs a body twice when two disjuncts fire together | `elab/events.rs` | a double record | refused when the body emits; commits are idempotent by §12.1.1 |
-| `rise` on a change to unknown differs from §22.1 | `std/values.msl:25` | a model relying on IEEE 1364 `x` edges misbehaves | `GAPS.md`; the buck never commits `Unknown` |
+| `rise` and `fall` are built-ins, not the stdlib bodies | `std/values.msl:25-27` | the built-in guard could drift from the stdlib text | A7 gives the guard the stdlib's own two conditions; DIG-14 AC 13 runs the five IEEE 1364 edges from source |
+| The T29 fixtures guard `rise` with `high()` alone | `crates/piperine-ir/tests/support/digital.rs` | every fixture with a `rise` differs from source in that guard | the difference is data of the slice test (DIG-14 AC 1 and 2); the fixtures are not edited |
 | `at` re-arming relies on `REPLACE` and a `+inf` delay | abi.md C1, C3 | a stale firing if the solver treats either differently | DIG-12 AC 2 is the detector; a failure is a solver report |
 | The operating point with digital feedback (`above` at time 0, `transition` in `Static`) has had no MSL user | `crates/piperine-solver/src/protocol/` | the closed loop may not start | DIG-14 AC 9 and DIG-15 AC 6 prove the pieces first; the loop itself is P2 |
 | The closed loop is long: 120 000 clock periods | `crates/piperine-parity/tests/buck_closed_loop.rs` | a slow test target | the 0.8 V start, the shortest the SPEC allows; its own target, run once by `check_proofs.py` |
@@ -310,7 +313,7 @@ pub(super) struct Head { events: Vec<u32>, wrap: Option<ExprId> }        // wrap
 | Where enums, `Option`, `match`, tuples go | lowered in the elaborator | no backend learns a form the IR can already spell |
 | Unknown-ness | an elaboration analysis giving `Flagged` | §3.3: a flag, not a type; keeps the checker's types the source's |
 | Result modules | hoisted into the caller's body | Appendix C.1.1; a result read by `analog` cannot cross an instance boundary of the ABI |
-| Built-ins among stdlib methods | seven names, only when resolved to the stdlib's own declaration | §3.3.7; their bodies need forms out of scope |
+| Built-ins among stdlib methods | eight names (`prev` among them), only when resolved to the stdlib's own declaration | §3.3.7; their bodies need forms out of scope |
 | Continuous guards | an `if` in the reaction | abi.md F2 |
 | Timers | an arming reaction with a `REPLACE` statement | abi.md R1: a timer is a delayed commit to an event pin |
 | Record text | in the IR site, not in the layout | the ABI has no string leaf |
@@ -332,10 +335,10 @@ MD-64 (written to `.specs/STATE.md` by T60): result modules are hoisted in the I
 | `check()` for the digital forms | T28 | every elaboration test (DIG-09 AC 14) |
 | The buck-slice fixtures and their golden prints | T29 | T37 |
 | The interpreter's refusal | T30 | T22 |
-| The digital plan, `rt` integers and flags | T31 to T36 | phase 8 |
+| The digital plan, `rt` integers and flags | T31 to T36 | phase 8 (T62 extends the event function of T32 with `PREVIOUS`) |
 | The digital printers and discrete nets in the netlist | T37 to T41 | phases 8 to 10 |
 | The phase 8 tests | T42 to T46 | phase 9, as the pattern for reading nets |
 
 ## Size
 
-60 tasks in 10 phases (tasks.md). Opus implements the tasks where a mistake gives a wrong run with no error: the `Known` analysis, function variants, `Option` lowering, heads and guards, hoisting, the timer plan and its arming code, the branch-flow plan, and the closed loop. Sonnet implements the rest. A different Opus verifies.
+63 tasks in 10 phases (tasks.md); T61 to T63 are amendment A7, added after the first 60 were numbered and placed in phases 4 and 8. Opus implements the tasks where a mistake gives a wrong run with no error: the `Known` analysis, function variants, `Option` lowering, heads and guards, hoisting, the timer plan and its arming code, the branch-flow plan, and the closed loop. Sonnet implements the rest. A different Opus verifies.

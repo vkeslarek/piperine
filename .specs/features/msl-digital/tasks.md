@@ -46,7 +46,7 @@ Executors (S10): Sonnet implements; Opus implements the delicate tasks directly,
 
 Rules every task follows:
 
-- **The `ir-rust` design is the contract.** This feature emits the IR node set of `ir-rust` T24 to T28 and adds only the six amendments of design.md. It does not reshape a node, a plan entry or a printer of `ir-rust`; a need to do so stops the task and is reported.
+- **The `ir-rust` design is the contract.** This feature emits the IR node set of `ir-rust` T24 to T28 and adds only the seven amendments of design.md. It does not reshape a node, a plan entry or a printer of `ir-rust`; a need to do so stops the task and is reported.
 - **The POM is read, never written.** `Design` is borrowed shared; a hoisted module keeps its placement in the POM. `crates/piperine-lang/src/{msl,pom}/` are not edited: if a task seems to need a change there, stop and report.
 - **`examples/buck/src` and `crates/piperine-lang/std` are the acceptance target and are not edited.** A form of theirs that does not check, elaborate or run is fixed in the compiler.
 - **Subset by table.** What stays outside is refused through the exhaustive classifiers with no wildcard arm. A negative test of M1 whose form this feature makes legal is replaced, in the task that legalizes it, by a test of a form of DIG-07 AC 1 still refused; the commit body lists each replaced row. No assertion is loosened and no test is deleted without its replacement.
@@ -72,7 +72,7 @@ Rules every task follows:
 | ---------- | ------------------ | -------------------- | ---------------- | ----------- |
 | The checker (`piperine-lang` `types/`) | unit | each AC of DIG-01 to DIG-07, one positive and one negative source per criterion, each code with its span | `crates/piperine-lang/tests/types_{integers,compound,carriers,events,results,buck}.rs` | `cargo test -p piperine-lang` |
 | The elaborator (`piperine-lang` `elab/`) | unit | each AC of DIG-08 to DIG-10, DIG-11 (1 to 3), DIG-13 (1 to 3), DIG-14 (1, 2), DIG-15 (1, 2) and every edge case; printed IR read against the `.msl` | `crates/piperine-lang/tests/elab_{values,digital,results,mixed,buck}.rs`, `tests/fixtures/elab/buck.txt` | `cargo test -p piperine-lang` |
-| The IR amendments | unit | each of A1 to A6: print, `check()` rule, dependency set; earlier goldens byte-identical | `crates/piperine-ir/tests/amendments.rs` | `cargo test -p piperine-ir --test amendments` |
+| The IR amendments | unit | each of A1 to A7: print, `check()` rule, dependency set; earlier goldens byte-identical | `crates/piperine-ir/tests/amendments.rs` | `cargo test -p piperine-ir --test amendments` |
 | The interpreter's refusal | unit | each amended form refused by name | `crates/piperine-interp/tests/frozen.rs` | `cargo test -p piperine-interp --test frozen` |
 | The plan amendments | unit | each amended shape entry by entry; `piperine_abi::validate` | `crates/piperine-plan/tests/amended_shape.rs` | `cargo test -p piperine-plan --test amended_shape` |
 | Generated code for the amended forms | integration | each AC of DIG-12 and the compiled halves of DIG-11 AC 4 and DIG-13 AC 4, on hand-built IR | `crates/piperine-transpile/tests/amended.rs` | `cargo test -p piperine-transpile --test amended` |
@@ -124,7 +124,7 @@ T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16
 Executor: Sonnet.
 
 ```
-T17 → T18 → T19 → T20 → T21 → T22
+T17 → T18 → T19 → T20 → T61 → T21 → T22
 ```
 
 ### Phase 5: Elaboration: values
@@ -153,10 +153,10 @@ T37 → T38
 
 ### Phase 8: Plan and generated code for the amended forms
 
-Executor: Opus for T41, T42, T45; Sonnet for the rest.
+Executor: Opus for T41, T42, T45; Sonnet for the rest. T62 and T63 close the phase.
 
 ```
-T39 → T40 → T41 → T42 → T43 → T44 → T45 → T46
+T39 → T40 → T41 → T42 → T43 → T44 → T45 → T46 → T62 → T63
 ```
 
 ### Phase 9: Behavior from source: the slice
@@ -393,11 +393,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] `Types::builtin` is set for the four reads; a project that redefines `known_or` gets `P0001` at its use
+- [ ] `Types::builtin` is set for the four reads and for `prev`; a project that redefines `known_or` gets `P0001` at its use
 - [ ] `crates/piperine-lang/src/pom/` is not edited: a `Deferred` or `Unresolved` member is typed here or reported
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_carriers`: `carriers_of_bit_are_typed_by_their_value`, `a_carried_type_without_repr_is_e0112`, `a_carrier_read_has_its_value_type`, `the_flag_reads_are_typed`, `an_initial_value_of_the_wrong_kind_is_e0210`, `a_catalogue_method_on_a_carrier_is_typed_on_its_value`, `a_single_variant_enum_cannot_be_carried`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_carriers`: `carriers_of_bit_are_typed_by_their_value`, `a_carried_type_without_repr_is_e0112`, `a_carrier_read_has_its_value_type`, `the_flag_reads_are_typed`, `an_initial_value_of_the_wrong_kind_is_e0210`, `a_catalogue_method_on_a_carrier_is_typed_on_its_value`, `a_single_variant_enum_cannot_be_carried`, `prev_is_typed_on_a_carrier`
 - [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 7 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [ ] Test count: the 8 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full
@@ -678,11 +678,35 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 ---
 
+### T61: IR: the previous value of a carrier
+
+**What**: `Expr::Previous(u32)` of type `Flagged`, with builder, printer, dependency sets and `check()` (the carrier exists; in `analog` only under a flag read, as a carrier read) (design A7).
+**Where**: `crates/piperine-ir/src/model.rs` (modify)
+**Depends on**: T20
+**Reuses**: `Expr::Carrier` and its `check()` rules
+**Requirement**: DIG-09
+**Needs from ir-rust**: ir-rust T26, ir-rust T28
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `piperine-interp` and `piperine-transpile` still build: the new variant gets a refusal arm
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_previous_value_read_prints_and_checks`
+- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): the previous value of a carrier`
+
+---
+
 ### T21: IR: a child param that reads the parent
 
 **What**: `ChildValue::{Const, Expr}` in `Child::params`, with builder, printer and `check()` (the expression reads only params of the parent body).
 **Where**: `crates/piperine-ir/src/model.rs` (modify)
-**Depends on**: T20
+**Depends on**: T61
 **Reuses**: `Child`, `Constant`
 **Requirement**: DIG-09
 **Needs from ir-rust**: ir-rust T29
@@ -705,7 +729,7 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 ### T22: The interpreter refuses the amended forms
 
-**What**: `Interpreter::new` returns `Rejected` naming each body that holds a time or static read, an `At` event, an emit site or a flow read.
+**What**: `Interpreter::new` returns `Rejected` naming each body that holds a time or static read, an `At` event, an emit site, a flow read or a previous-value read.
 **Where**: `crates/piperine-interp/src/lib.rs`
 **Depends on**: T21
 **Reuses**: the refusal of `ir-rust` T30
@@ -715,7 +739,7 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] No other line of `piperine-interp` changes beyond the refusal arms T17 to T20 added
+- [ ] No other line of `piperine-interp` changes beyond the refusal arms T17 to T20 and T61 added
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test frozen`: `a_body_with_an_amended_form_is_rejected_by_name`
 - [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 - [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
@@ -911,11 +935,12 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 **Depends on**: T29
 **Reuses**: T24; `Types::{continuity, builtin}`
 **Requirement**: DIG-09
-**Needs from ir-rust**: ir-rust T27
+**Needs from ir-rust**: ir-rust T27; and on amendment A7
 **Executor**: Opus
 
 **Done when**:
 
+- [ ] The first test reads the two guards of design "From a source form to IR nodes the contract already has" term by term against `std/values.msl` `rise` and `fall`; `c.prev()` in a guard and in a reaction body lowers to `Previous`
 - [ ] The third test has both rows: `on a.rise() || b.rise()` is one reaction on two events; `on cross(e) || (c.changed() && v(p) > 0.0)` is two reactions in source order
 - [ ] A flagged guard is kept as written: the generated code decides it
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `changed_rise_fall_and_cross_lower_to_events`, `a_guard_splits_into_its_discrete_and_continuous_parts`, `an_or_head_is_one_reaction_or_one_per_disjunct`, `a_head_the_ir_cannot_hold_is_p0001`
@@ -1094,6 +1119,7 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
+- [ ] The guard of each `rise` event is a listed difference: the fixture has `high()`, the source gives the stdlib guard (ruling 2). The test replaces exactly those guards and nothing else; the fixtures are not edited for it
 - [ ] A difference outside the listed items is not edited away: the task stops and reports which side misreads the `.msl`; a fixture of `piperine-ir` changes only with `cargo test -p piperine-transpile` still green, and the batch summary names it
 - [ ] The second test removes the listed items from the elaborated print and asserts equality with the fixture, and asserts each listed item is present
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_buck`: `six_slice_bodies_equal_their_hand_built_fixtures`, `dpwm_and_a2d_differ_only_as_listed`
@@ -1322,13 +1348,63 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 - [ ] `piperine_abi::verify::verify_partials` with `rel_tol` 1e-6 passes for every function of the hand-built inductor and VCVS bodies
 - [ ] No golden source of `ir-rust` changes
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test amended`: `the_inductor_functions_pass_verify_partials`
+- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(transpile): flow reads and ddt on an equation row`
+
+---
+
+### T62: Plan: the previous value of a carrier
+
+**What**: `Source::CarrierPrevious`: the `PREVIOUS` part of the carrier's pin among the reads of an event function and of a reaction (design A7).
+**Where**: `crates/piperine-plan/src/plan.rs` (modify)
+**Depends on**: T46
+**Reuses**: `Source::{Carrier, CarrierChanged}` of `ir-rust` T31, T32; abi.md §4.1, §11.4
+**Requirement**: DIG-09
+**Needs from ir-rust**: ir-rust T31, ir-rust T32
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] The event function of a `rise` reads `VALUE`, `PREVIOUS` and `CHANGED` of its carrier, as abi.md §11.4; the shape passes `piperine_abi::validate`
+- [ ] A carrier a previous value is read of is not `QUIET`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-plan --test amended_shape`: `a_previous_value_is_the_previous_part_of_the_pin`
+- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(plan): previous-value reads`
+
+---
+
+### T63: Generated code: the previous value
+
+**What**: The event and reaction printers decode `Expr::Previous` as a `Flagged` value from the `PREVIOUS` bytes.
+**Where**: `crates/piperine-transpile/src/print/digital.rs` (modify)
+**Depends on**: T62
+**Reuses**: T62; the carrier read of `ir-rust` T38, T39
+**Requirement**: DIG-09
+**Needs from ir-rust**: ir-rust T38, ir-rust T39
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] The test commits 3 then 5 to a `Bit<u8>`: a reaction on its change commits `prev` and reads unknown after the first commit (§5.3.8) and 3 after the second
+- [ ] No golden source of `ir-rust` changes
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test amended`: `a_previous_value_is_read_in_a_guard_and_in_a_reaction`
 - [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 - [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: build
 
-**Commit**: `feat(transpile): flow reads and ddt on an equation row`
+**Commit**: `feat(transpile): previous-value reads`
 
 ---
 
@@ -1436,25 +1512,26 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 ### T51: Time and timers from source
 
-**What**: The stdlib `every(t0, period)` placed in an `on` head, and a reaction that commits `now()` and `analysis(Static)`.
+**What**: The stdlib `every(t0, period)` placed in an `on` head, a reaction that commits `now()` and `analysis(Static)`, and `rise()`/`fall()` over edges to and from unknown.
 **Where**: `crates/piperine-parity/tests/buck_time.rs`
 **Depends on**: T50
 **Reuses**: T48; T42
-**Requirement**: DIG-12
+**Requirement**: DIG-12, DIG-14
 **Needs from ir-rust**: ir-rust T41 to ir-rust T46
 **Executor**: Sonnet
 
 **Done when**:
 
+- [ ] The third test commits false, `Unknown`, true, `Unknown`, false and true to one `Bit` and counts the runs of a reaction on `rise()` and of one on `fall()` against §22.1: rise on false to unknown, unknown to true and false to true; fall on true to unknown, unknown to false
 - [ ] `every(1u, 2u)` fires at 1, 3, 5, 7 and 9 µs in 10 µs and at no other time
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_time`: `every_from_the_stdlib_fires_once_per_period`, `a_reaction_reads_now_and_static_from_source`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_time`: `every_from_the_stdlib_fires_once_per_period`, `a_reaction_reads_now_and_static_from_source`, `rise_and_fall_fire_on_edges_to_and_from_unknown`
 - [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `test(parity): every(), now() and analysis(Static) run from source`
+**Commit**: `test(parity): every(), now(), analysis(Static) and unknown edges run from source`
 
 ---
 
@@ -1621,9 +1698,9 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] "Silent" lists: a change to unknown is no `rise` or `fall`; a derived child param is not re-derived on a host `set`
+- [ ] "Silent" lists: a derived child param is not re-derived on a host `set`
 - [ ] "Loud" lists: unknown control is a fault; every form of DIG-07 AC 1; enum variant names are not carried
-- [ ] `ROADMAP.md` "MSL spec gaps" drops G3 and "Queue after ir-rust" marks item 2 delivered
+- [ ] `ROADMAP.md` "MSL spec gaps" drops G3 and "Queue after ir-rust" marks item 2 delivered; item 5 is the orchestrator's to reword and is not touched
 - [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 
 **Tests**: none
@@ -1918,7 +1995,7 @@ Proof: run edig | test every_signal_carrier_is_a_design_net ... ok
 **C79** - A top with ports `en` and `pgood` has the nets `Top.en` and `Top.pgood`; a continuous port on the top is `P0001`. (DIG-09, AC 5; T28)
 Proof: run edig | test a_top_with_discrete_ports_gets_one_net_per_port ... ok
 
-**C80** - `changed`, `rise`, `fall` and `cross(e)` lower to `Changed`, `Changed` with `high`, `Changed` with known-and-false, and `Cross`. (DIG-09, AC 6; T30)
+**C80** - `changed`, `rise`, `fall`, `cross(e)` and `prev()` lower to `Changed`, `Changed` with the two-condition guards of §22.1, `Cross`, and `Previous`. (DIG-09, AC 6; T30)
 Proof: run edig | test changed_rise_fall_and_cross_lower_to_events ... ok
 
 **C81** - `on x.changed() && en.high() && analysis(Static)` keeps `en.high()` on the event and wraps the body in `if static`. (DIG-09, AC 7; T30)
@@ -2062,7 +2139,7 @@ Proof: run emix | test analog_reads_a_hoisted_result ... ok
 **C127** - Records exist at `t0` and at `t0 + tsw`. (DIG-13, AC 7; T53)
 Proof: run bpower | test a_gate_change_makes_two_time_points ... ok
 
-**C128** - `Osc`, `SetpointReg`, `RefRamp`, `Pid`, `GateDriver` and `Adc` from source print as their T29 fixtures. (DIG-14, AC 1; T37)
+**C128** - `Osc`, `SetpointReg`, `RefRamp`, `Pid`, `GateDriver` and `Adc` from source print as their T29 fixtures, the guard of each `rise` event apart. (DIG-14, AC 1; T37)
 Proof: run ebuck | test six_slice_bodies_equal_their_hand_built_fixtures ... ok
 
 **C129** - `Dpwm` and `A2D` from source print as their fixtures plus only the listed items, each present. (DIG-14, AC 2; T37)
@@ -2143,8 +2220,8 @@ Proof: run bloop | test the_output_settles_within_10_mv_of_0v8 ... ok
 **C154** - No `checks` record has `pass` false during the start. (DIG-16, AC 4; T57)
 Proof: run bloop | test no_shoot_through_during_the_start ... ok
 
-**C155** - `GAPS.md` lists the four deviations this feature leaves. (DIG-17, AC 1; T58)
-Proof: `grep -q 'change to unknown' GAPS.md && grep -q 'unknown control' GAPS.md && grep -q 're-derived' GAPS.md && grep -q 'variant names' GAPS.md`
+**C155** - `GAPS.md` lists the three deviations this feature leaves. (DIG-17, AC 1; T58)
+Proof: `grep -q 'unknown control' GAPS.md && grep -q 're-derived' GAPS.md && grep -q 'variant names' GAPS.md`
 
 **C156** - `GAPS.md` no longer lists G3 as silent. (DIG-17, AC 2; T58)
 Proof: `! grep -q 'stays `Unresolved` with no diagnostic' GAPS.md`
@@ -2152,28 +2229,43 @@ Proof: `! grep -q 'stays `Unresolved` with no diagnostic' GAPS.md`
 **C157** - The buck's README no longer says nothing executes MSL. (DIG-17, AC 2; T59)
 Proof: `! grep -q 'Nothing executes MSL yet' examples/buck/README.md`
 
-**C158** - A module with only a `digital` block has a body with no analog statements. (edge case 1; T31)
+**C158** - `c.prev()` on a `Bit<u9>` carrier has type `u9`; on a node it is `E0230`. (DIG-04, AC 17; T9)
+Proof: run tcar | test prev_is_typed_on_a_carrier ... ok
+
+**C159** - A previous-value read prints as `Flagged` and `check()` refuses one of a carrier the body lacks (the IR half of DIG-09 AC 6). (DIG-09, AC 6; T61)
+Proof: run iramend | test a_previous_value_read_prints_and_checks ... ok
+
+**C160** - A `rise` event function reads `VALUE`, `PREVIOUS` and `CHANGED` of its carrier (the shape half of DIG-09 AC 6). (DIG-09, AC 6; T62)
+Proof: run planamend | test a_previous_value_is_the_previous_part_of_the_pin ... ok
+
+**C161** - `prev` is unknown after a carrier's first commit and 3 after 3 then 5 (the compiled half of DIG-09 AC 6; §5.3.8). (DIG-09, AC 6; T63)
+Proof: run amended | test a_previous_value_is_read_in_a_guard_and_in_a_reaction ... ok
+
+**C162** - `rise()` runs on false to unknown, unknown to true and false to true, and on no other edge; `fall()` on true to unknown, unknown to false and true to false. (DIG-14, AC 13; T51)
+Proof: run btime | test rise_and_fall_fire_on_edges_to_and_from_unknown ... ok
+
+**C163** - A module with only a `digital` block has a body with no analog statements. (edge case 1; T31)
 Proof: run edig | test a_module_with_only_a_digital_block_has_no_analog_statements ... ok
 
-**C159** - `signal en: Bit;` with no drive is a carrier with no initial value. (edge case 2; T28)
+**C164** - `signal en: Bit;` with no drive is a carrier with no initial value. (edge case 2; T28)
 Proof: run edig | test a_carrier_with_no_value_and_no_drive_is_kept ... ok
 
-**C160** - `Bit<One>` with `enum One { A }` is `P0001`. (edge case 3; T9)
+**C165** - `Bit<One>` with `enum One { A }` is `P0001`. (edge case 3; T9)
 Proof: run tcar | test a_single_variant_enum_cannot_be_carried ... ok
 
-**C161** - `PowerSwitch` placed twice gives one body with one set of `gate.*` carriers. (edge case 4; T33)
+**C166** - `PowerSwitch` placed twice gives one body with one set of `gate.*` carriers. (edge case 4; T33)
 Proof: run eres | test a_result_module_is_hoisted_once_per_body ... ok
 
-**C162** - A param block on a result placement binds the hoisted items' params as constants. (edge case 5; T33)
+**C167** - A param block on a result placement binds the hoisted items' params as constants. (edge case 5; T33)
 Proof: run eres | test a_param_block_binds_the_hoisted_params ... ok
 
-**C163** - A body holding a time or static read, an `At` event, an emit site or a flow read is `Rejected` by the interpreter, naming the body. (edge case 6; T22)
+**C168** - A body holding a time or static read, an `At` event, an emit site, a flow read or a previous-value read is `Rejected` by the interpreter, naming the body. (edge case 6; T22)
 Proof: run frozen | test a_body_with_an_amended_form_is_rejected_by_name ... ok
 
-**C164** - Every M1 and T29 golden print of `piperine-ir` is byte-identical after the amendments. (DIG-07, AC 2; T21)
+**C169** - Every M1 and T29 golden print of `piperine-ir` is byte-identical after the amendments. (DIG-07, AC 2; T21)
 Proof: run iramend | test the_earlier_prints_are_unchanged ... ok
 
-**C165** - A rejected design comes back from `Project` with the stage that refused it (the loader DIG-15 AC 3 stands on). (DIG-15, AC 3; T2)
+**C170** - A rejected design comes back from `Project` with the stage that refused it (the loader DIG-15 AC 3 stands on). (DIG-15, AC 3; T2)
 Proof: run project | test a_diagnostic_is_returned_with_its_stage ... ok
 
 ---
@@ -2196,16 +2288,16 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 
 Phase 1:  T1 ------→ T2
 Phase 2:  T3 ------→ T4 ------→ T5 ------→ T6 ------→ T7 ------→ T8
 Phase 3:  T9 ------→ T10 ------→ T11 ------→ T12 ------→ T13 ------→ T14 ------→ T15 ------→ T16
-Phase 4:  T17 ------→ T18 ------→ T19 ------→ T20 ------→ T21 ------→ T22
+Phase 4:  T17 ------→ T18 ------→ T19 ------→ T20 ------→ T61 ------→ T21 ------→ T22
 Phase 5:  T23 ------→ T24 ------→ T25 ------→ T26 ------→ T27
 Phase 6:  T28 ------→ T29 ------→ T30 ------→ T31 ------→ T32 ------→ T33 ------→ T34 ------→ T35 ------→ T36
 Phase 7:  T37 ------→ T38
-Phase 8:  T39 ------→ T40 ------→ T41 ------→ T42 ------→ T43 ------→ T44 ------→ T45 ------→ T46
+Phase 8:  T39 ------→ T40 ------→ T41 ------→ T42 ------→ T43 ------→ T44 ------→ T45 ------→ T46 ------→ T62 ------→ T63
 Phase 9:  T47 ------→ T48 ------→ T49 ------→ T50 ------→ T51 ------→ T52 ------→ T53
 Phase 10:  T54 ------→ T55 ------→ T56 ------→ T57 ------→ T58 ------→ T59 ------→ T60
 ```
 
-Execution is strictly sequential. Batches for Execute, whole phases each: phases 1 and 2 (8 tasks), phase 3 (8), phases 4 and 5 (11), phase 6 (9), phases 7 and 8 (10), phase 9 (7), phase 10 (7).
+Execution is strictly sequential. T61 to T63 are amendment A7 (the previous value of a carrier), added by the orchestrator's ruling on `rise()` after the first 60 tasks were numbered: they keep their numbers and sit where the maps show. Batches for Execute, whole phases each: phases 1 and 2 (8 tasks), phase 3 (8), phase 4 (7), phase 5 (5), phase 6 (9), phases 7 and 8 (12), phase 9 (7), phase 10 (7).
 
 ---
 
@@ -2233,6 +2325,7 @@ Execution is strictly sequential. Batches for Execute, whole phases each: phases
 | T18: IR: the at event | 1 component | ✅ Granular |
 | T19: IR: emit sites and streams | 1 component | ✅ Granular |
 | T20: IR: the flow of a potential branch | 1 component | ✅ Granular |
+| T61: IR: the previous value of a carrier | 1 component | ✅ Granular |
 | T21: IR: a child param that reads the parent | 1 component | ✅ Granular |
 | T22: The interpreter refuses the amended forms | 1 component | ✅ Granular |
 | T23: Lowering integers, and folding them | 1 component | ✅ Granular |
@@ -2259,6 +2352,8 @@ Execution is strictly sequential. Batches for Execute, whole phases each: phases
 | T44: Generated code: emit | 1 component | ✅ Granular |
 | T45: Plan: the flow of a potential branch | 1 component | ✅ Granular |
 | T46: Generated code: the flow read | 1 component | ✅ Granular |
+| T62: Plan: the previous value of a carrier | 1 component | ✅ Granular |
+| T63: Generated code: the previous value | 1 component | ✅ Granular |
 | T47: Commit semantics from source | 1 test target | ✅ Granular |
 | T48: The oscillator and the DPWM from source | 1 test target | ✅ Granular |
 | T49: The ramp, the PID and the setpoint register from source | 1 test target | ✅ Granular |
@@ -2300,7 +2395,8 @@ Execution is strictly sequential. Batches for Execute, whole phases each: phases
 | T18 | T17 | T17 | ✅ Match |
 | T19 | T18 | T18 | ✅ Match |
 | T20 | T19 | T19 | ✅ Match |
-| T21 | T20 | T20 | ✅ Match |
+| T61 | T20 | T20 | ✅ Match |
+| T21 | T61 | T61 | ✅ Match |
 | T22 | T21 | T21 | ✅ Match |
 | T23 | None in its phase | None in its phase | ✅ Match |
 | T24 | T23 | T23 | ✅ Match |
@@ -2326,6 +2422,8 @@ Execution is strictly sequential. Batches for Execute, whole phases each: phases
 | T44 | T43 | T43 | ✅ Match |
 | T45 | T44 | T44 | ✅ Match |
 | T46 | T45 | T45 | ✅ Match |
+| T62 | T46 | T46 | ✅ Match |
+| T63 | T62 | T62 | ✅ Match |
 | T47 | None in its phase | None in its phase | ✅ Match |
 | T48 | T47 | T47 | ✅ Match |
 | T49 | T48 | T48 | ✅ Match |
@@ -2367,6 +2465,7 @@ Execution is strictly sequential. Batches for Execute, whole phases each: phases
 | T18: IR: the at event | The IR amendments | unit | unit | ✅ OK |
 | T19: IR: emit sites and streams | The IR amendments | unit | unit | ✅ OK |
 | T20: IR: the flow of a potential branch | The IR amendments | unit | unit | ✅ OK |
+| T61: IR: the previous value of a carrier | The IR amendments | unit | unit | ✅ OK |
 | T21: IR: a child param that reads the parent | The IR amendments | unit | unit | ✅ OK |
 | T22: The interpreter refuses the amended forms | The interpreter's refusal | unit | unit | ✅ OK |
 | T23: Lowering integers, and folding them | The elaborator (`piperine-lang` `elab/`) | unit | unit | ✅ OK |
@@ -2393,6 +2492,8 @@ Execution is strictly sequential. Batches for Execute, whole phases each: phases
 | T44: Generated code: emit | Generated code for the amended forms | integration | integration | ✅ OK |
 | T45: Plan: the flow of a potential branch | The plan amendments | unit | unit | ✅ OK |
 | T46: Generated code: the flow read | Generated code for the amended forms | integration | integration | ✅ OK |
+| T62: Plan: the previous value of a carrier | The plan amendments | unit | unit | ✅ OK |
+| T63: Generated code: the previous value | Generated code for the amended forms | integration | integration | ✅ OK |
 | T47: Commit semantics from source | The project loader and behavior from source | integration | integration | ✅ OK |
 | T48: The oscillator and the DPWM from source | The project loader and behavior from source | integration | integration | ✅ OK |
 | T49: The ramp, the PID and the setpoint register from source | The project loader and behavior from source | integration | integration | ✅ OK |

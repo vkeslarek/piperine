@@ -6,7 +6,7 @@
 
 M1 runs analog MSL only: a digital block, a commit, an integer or an enum is `P0001` at type check. `ir-rust` phase B gives the IR, the plan and the generated Rust their digital and mixed forms, but proves them on IR built by hand. Nothing turns digital or mixed MSL source into that IR, so `examples/buck`, the flagship model, parses and resolves and does not run. This feature is the front end for those forms: type check and elaboration of the digital and mixed constructs the buck uses, into the IR node set `ir-rust` defines, so that the buck runs from its `.msl` on the transpiled backend.
 
-The buck reaches further than the `ir-rust` slice. It uses enums and `match`, `Option`, the stdlib modules `transition`, `A2D`, `above`, `init` and `Never`, the stdlib functions `log` and `require`, timers, `now()`, `analysis(Static)`, and an inductor written with a flow probe. Each is in scope here, with the IR, plan and transpiler additions it needs stated as amendments to `ir-rust`.
+The buck reaches further than the `ir-rust` slice. It uses enums and `match`, `Option`, the stdlib modules `transition`, `A2D`, `above`, `init` and `Never`, the stdlib functions `log` and `require`, timers, `now()`, `analysis(Static)`, and an inductor written with a flow probe. Each is in scope here, with the IR, plan and transpiler additions it needs stated as amendments to `ir-rust`. `rise()` and `fall()` follow the stdlib text, which needs one more: the previous value of a carrier.
 
 ## Goals
 
@@ -22,7 +22,7 @@ The buck reaches further than the `ir-rust` slice. It uses enums and `match`, `O
 | ------- | ------ |
 | The merge of effects under unknown control (§3.3.3) | `ir-rust` RS-11 AC 5 makes an unknown condition a run-time fault; the merge is M2. The buck gives every decision a `known_or` |
 | Loops, `let mut`, assignment to locals, structs, arrays, indexing, closures other than the `limit` function, user traits and `impl`s, generic modules and functions, enums with a payload or an explicit discriminant | not used by the buck; each stays `P0001` by name (DIG-07) |
-| Resolved carriers (`resolve`, `Wire`, `Tri`, `others()`), bundles, `flip`, `prev()`, `settle`, element and field commits | not used by the buck; `P0001` |
+| Resolved carriers (`resolve`, `Wire`, `Tri`, `others()`), bundles, `flip`, `settle`, element and field commits | not used by the buck; `P0001` |
 | The stdlib beyond what the buck reaches: `D2A`, `Bidir`, `slew`, `idt`, `idtmod`, the `zi_*` and `laplace_*` filters, `inertial`, `absdelta`, `last_crossing`, the monitors other than `Never`, the nets of §22.3 | M2 remainder (ROADMAP queue item 5). Those that use only forms in scope may elaborate; nothing here asserts it |
 | `delay`, `noise`, `ddx`, `bound_step`, `freq()`, `simparam`, `analysis` of a kind other than `Static`, flow probes of a flow branch, selectors and switch branches, contributions under `if` | analog forms the buck does not use; `P0001` |
 | Generation `for`/`if`, templates, `extern` modules, `m`, `dtemp` | not used by the buck; `P0001` |
@@ -44,15 +44,17 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
 | Scope of "the buck runs from source" | the whole package, with every stdlib item it reaches elaborated from the embedded stdlib source | the user's sentence is the acceptance; the stdlib is ordinary source (Appendix C.1.1), so special-casing `transition` would be a second language | y (delegation) |
-| IR forms the buck needs and `ir-rust` lacks | six amendments, built here in `piperine-ir`, `piperine-plan` and `piperine-transpile`: `now()`, `analysis(Static)`, the `at` event, the `emit!` site, a flow probe with `ddt` under a potential contribution, a child param that reads the parent's params | the brief: state it as an amendment, do not redesign the IR. Each mirrors one source form, as the `ir-rust` design asks of M2 | y (delegation) |
+| IR forms the buck needs and `ir-rust` lacks | seven amendments, built here in `piperine-ir`, `piperine-plan` and `piperine-transpile`: `now()`, `analysis(Static)`, the `at` event, the `emit!` site, a flow probe with `ddt` under a potential contribution, a child param that reads the parent's params, the previous value of a carrier (`prev()`) | the brief: state it as an amendment, do not redesign the IR. Each mirrors one source form, as the `ir-rust` design asks of M2 | y (delegation) |
 | Unknown-ness in the type system | types are the source's own (`u9`, not "maybe-unknown `u9`"); the elaborator computes which expressions may be unknown and gives those the IR type `Flagged` | §3.3: the flag travels with every value and is not part of its type | y (delegation) |
 | Functions called with possibly unknown arguments | one IR function per function and flag pattern of its arguments; the all-known variant keeps the source name, the others are named `name~bits` | IR functions have fixed parameter types (S7 keeps functions as functions) | y (delegation) |
 | Enums | an enum of unit variants with `#[derive(Repr)]` is its tag: `UInt<ceil(log2 V)>`, discriminants from 0 in declaration order; `match` is an `if` chain | §2 rule 5; no IR node is needed | y (delegation) |
 | `Option` | never carried and never an IR type: the elaborator replaces an `Option<T>` value by a `bool` and a `T` | the buck uses `Option` only as a local and as `known()`; scalar replacement needs no IR node | y (delegation) |
 | `&&` and `\|\|` with a possibly unknown operand | lowered to `&` and `\|`, which §3.3.12 says give the same result; refused (`P0001`) when the right operand can panic or emit | the IR's short-circuit forms take known operands | y (delegation) |
 | Unknown control at run time | a fault, as `ir-rust` RS-11 AC 5; an unknown guard is the same fault | inherited | y |
-| `rise()`, `fall()`, `known()`, `known_or()`, `is_known()`, `high()`, `changed()` | typed and lowered as built-ins when the name resolves to the stdlib's own item; a project's replacement is `P0001` | §3.3.7 names four of them as functions every implementation treats specially; their stdlib bodies use `level`, traits and loops, which are out of scope | y (delegation) |
-| `rise()` and `fall()` on a change to unknown | `rise` is `changed` guarded by "known and true", `fall` by "known and false"; a change from false to unknown is not a rise | the `ir-rust` contract (its "rise(), fall() in the IR" row); the IR has no `prev()`. Recorded in `GAPS.md` as a deviation from §22.1 | y (delegation) |
+| `rise()`, `fall()`, `prev()`, `known()`, `known_or()`, `is_known()`, `high()`, `changed()` | typed and lowered as built-ins when the name resolves to the stdlib's own item; a project's replacement is `P0001` | §3.3.7 names four of them as functions every implementation treats specially; their stdlib bodies use `level`, traits and loops, which are out of scope | y (delegation) |
+| `rise()` and `fall()` on a change to or from unknown | the stdlib text (§22.1, IEEE 1364): `rise` is `changed` with the previous value not known-true and the new value not known-false; `fall` is the mirror. The IR gains a previous-value read of a carrier (amendment A7), lowered to the ABI's `PREVIOUS` cell | orchestrator ruling 2, 2026-11-15: "follow the stdlib text (§22.1) — the spec is normative and we do not ship a deviation we can avoid". The `ir-rust` T29 fixtures guard `rise` with `high()` alone, so their `rise` guards differ and are listed in the slice comparison (DIG-14 AC 1) | y (delegation) |
+| Size of the feature | the full scope: the whole buck runs from its `.msl` | orchestrator ruling 1, 2026-11-15: keep the full scope; the user asked for the buck running from source ("Achei que já tivesse no escopo completo") | y (delegation) |
+| `ROADMAP.md` queue item 5 (`transition` listed as later work) | reworded by the orchestrator, outside this feature; T58 updates `GAPS.md` and marks queue item 2 done | orchestrator ruling 3, 2026-11-15 | y (delegation) |
 | A module with a result | hoisted: its carriers, drives, events and reactions join the enclosing body under the placement's name; the result is inlined at each read; no IR body or instance is made for it | Appendix C.1.1 ("inlining at each read; their instances are hoisted to the module") and §8.3.12. Amends S6 and S7 for result modules only. The POM keeps the placement | y (delegation) |
 | A guard that reads a probe, `now()` or `analysis(Static)` | becomes an `if` around the reaction body; the discrete part of the guard stays on the event | abi.md F2 and R1: only the non-probing part of a guard is a discrete function | y (delegation) |
 | An `\|\|` head whose disjuncts carry such guards | one IR reaction per disjunct; refused (`P0001`) when the body holds `emit!` | reactions read one snapshot (§12.1.1), so two runs commit equal values; a record would be written twice | y (delegation) |
@@ -169,6 +171,7 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 14. IF an expression, or a carrier the parent may not hand over, is connected to an `out` port THEN the system SHALL reject the model with `E0314`.
 15. IF a carrier is connected to a port of another value type THEN the system SHALL reject the model with `E0251`.
 16. IF undelayed definitions form a loop THEN the system SHALL reject the model with `E0339`.
+17. The system SHALL type `c.prev()` on a discrete carrier as the carrier's value type, and SHALL reject it on a node with `E0230`.
 
 **Independent Test**: check `GateDriver` of the buck; then give `hs_gate` a second definition and read `E0335`.
 
@@ -237,7 +240,7 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 
 **Acceptance Criteria**:
 
-1. IF a reached construct is a loop, `let mut`, an assignment, a struct, an array or an index, a closure that is not a `limit` function, a user `trait` or `impl`, a generic module or function, a nature with `resolve`, a bundle, `prev()`, `others()`, `settle`, an element or field commit, `delay`, `noise`, `ddx`, `bound_step`, `freq()`, `simparam`, `analysis` of a kind other than `Static`, a generation `for` or `if`, a template or an `extern` module THEN the system SHALL reject the model with `P0001` naming the construct.
+1. IF a reached construct is a loop, `let mut`, an assignment, a struct, an array or an index, a closure that is not a `limit` function, a user `trait` or `impl`, a generic module or function, a nature with `resolve`, a bundle, `others()`, `settle`, an element or field commit, `delay`, `noise`, `ddx`, `bound_step`, `freq()`, `simparam`, `analysis` of a kind other than `Static`, a generation `for` or `if`, a template or an `extern` module THEN the system SHALL reject the model with `P0001` naming the construct.
 2. The system SHALL leave the printed IR of the seven M1 twins and their type-check results unchanged.
 3. The system SHALL type-check `Buck` of `examples/buck` with zero diagnostics.
 
@@ -286,7 +289,7 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 3. WHEN an expression is connected to an `in` port THEN the system SHALL add to the parent's body a signal carrier named `<instance>.<port>` and a drive of it, and SHALL bind the child's port to it.
 4. The system SHALL make one design net per signal carrier of each instance, named by its path, and SHALL bind every carrier port of an instance to a net of its parent.
 5. WHEN the top module has discrete ports THEN the system SHALL make one net per port, named `<Top>.<port>`, and SHALL reject a continuous port on the top with `P0001`.
-6. The system SHALL lower `c.changed()` to a `Changed` event, `c.rise()` to `Changed` guarded by `c.high()`, `c.fall()` to `Changed` guarded by `c.is_known() & !c.known_or(true)`, and `cross(e)` to a `Cross` event.
+6. The system SHALL lower `c.changed()` to a `Changed` event, `c.rise()` to `Changed` guarded by "the previous value is not known-true and the value is not known-false", `c.fall()` to `Changed` guarded by "the previous value is not known-false and the value is not known-true" (§22.1), `cross(e)` to a `Cross` event, and `c.prev()` to the IR's previous-value read.
 7. WHEN a guard reads a probe, `now()` or `analysis(Static)` THEN the system SHALL lower that part as an `if` around the reaction body and SHALL keep the rest of the guard on the event.
 8. WHEN a head is an `||` of events THEN the system SHALL lower one reaction listing each event, or one reaction per disjunct in source order when a disjunct's guard reads a probe, `now()` or `analysis(Static)`.
 9. IF a head needs one reaction per disjunct and its body holds `emit!`, or a reaction body reads an event as a `bool`, THEN the system SHALL reject the model with `P0001`.
@@ -394,8 +397,8 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 
 **Acceptance Criteria**:
 
-1. The system SHALL elaborate `Osc`, `SetpointReg`, `RefRamp`, `Pid`, `GateDriver` and `Adc` of the buck to bodies whose structural print equals the `ir-rust` T29 fixture of the same name.
-2. The system SHALL elaborate `Dpwm` and the stdlib `A2D` to bodies that hold every item of their T29 fixture with an equal print, plus only the items the test lists: the `Never` placement of `Dpwm` with its carrier and drive, and the `init` carrier, event and reactions of `above` in `A2D`.
+1. The system SHALL elaborate `Osc`, `SetpointReg`, `RefRamp`, `Pid`, `GateDriver` and `Adc` of the buck to bodies whose structural print equals the `ir-rust` T29 fixture of the same name, except the guard of each `rise` event, which is the stdlib's (DIG-09 AC 6) where the fixture has `high()`.
+2. The system SHALL elaborate `Dpwm` and the stdlib `A2D` to bodies that hold every item of their T29 fixture with an equal print, plus only the differences the test lists: the guard of each `rise` event, the `Never` placement of `Dpwm` with its carrier and drive, and the `init` carrier, event and reactions of `above` in `A2D`.
 3. WHEN the oscillator elaborated from source (`f` = 200 MHz) runs for 100 ns THEN the system SHALL change `clk` at `k × 2.5 ns` for `k` = 1 to 40 and at no other time.
 4. WHEN `Dpwm` from source runs with `run` true and duty word 1325 for 8 periods THEN the system SHALL hold `hs` true for 166 counts in the periods whose bit-reversed frame index is below 5 and 165 in the others, hold `ls` true from 4 counts after `hs` falls to count 396, and never hold both.
 5. WHEN `RefRamp` and `Pid` from source run a scripted sequence of 200 samples THEN the system SHALL commit, sample by sample and bit for bit, the `reference`, `duty`, `integ`, `deriv` and `e_prev` of the difference equations of buck SPEC §6.2 to §6.4 and §7.2.
@@ -406,6 +409,7 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 10. WHEN `SetpointReg` from source sees a rising `wr` THEN the system SHALL commit `min(data, 168)` when `data` is known and SHALL commit nothing when it is unknown.
 11. The system SHALL give, for MSL sources written from the examples of §12.1.1, §12.1.2, §12.1.4 and §12.1.18, the exchange, the later statement, the pulse and the silent unchanged commit those rules state.
 12. WHEN `GateDriver` from source sees `hs_cmd` rise with `ls_cmd` low THEN the system SHALL set `hs_gate` true `tpd` later, and WHEN both commands are high THEN the system SHALL hold both gates false.
+13. WHEN a `Bit` goes from false to unknown or from unknown to true THEN the system SHALL run a reaction on its `rise()`, and WHEN it goes from true to unknown, from unknown to false or from true to false THEN the system SHALL not.
 
 **Independent Test**: `cargo test -p piperine-lang --test elab_buck`.
 
@@ -462,7 +466,7 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 
 **Acceptance Criteria**:
 
-1. The system SHALL list in `GAPS.md` each deviation this feature leaves: a change to unknown is no `rise` or `fall`; unknown control is a fault; a derived child param is not re-derived on a host `set`; enum variant names are not carried.
+1. The system SHALL list in `GAPS.md` each deviation this feature leaves: unknown control is a fault; a derived child param is not re-derived on a host `set`; enum variant names are not carried.
 2. The system SHALL remove from `GAPS.md` and from `examples/buck/GAPS.md` the entry G3 as a silent gap, and from `examples/buck/README.md` the statement that nothing executes MSL.
 
 **Independent Test**: read `GAPS.md` §3 and §4.
@@ -476,7 +480,7 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 - IF a single-variant enum is carried THEN the system SHALL reject the model with `P0001`, its tag having zero levels.
 - WHEN a result module is placed in a module that is itself placed twice THEN the system SHALL hoist it once into that module's one body.
 - IF a placement of a result module gives a param block THEN the system SHALL bind those params as constants of the hoisted items.
-- IF an `Ir` holding a time read, a static read, an `At` event, an emit site or a flow read is given to the interpreter THEN the system SHALL return `Rejected` naming the body.
+- IF an `Ir` holding a time read, a static read, an `At` event, an emit site, a flow read or a previous-value read is given to the interpreter THEN the system SHALL return `Rejected` naming the body.
 
 ---
 
