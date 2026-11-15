@@ -130,12 +130,12 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Values: `DC_VOLTAGE` 1e-3 / 1e-6; `DC_CURRENT` 1e-3 / 1e-12; `AC_MAGNITUDE` 1e-3 / 1e-12; `AC_PHASE` 0 / 1e-4; `TRAN_VOLTAGE` 1e-3 / 1e-6; each with the rationale of the design's table
-- [ ] `holds` is tested at the bound, one ulp inside and one ulp outside for each contract
-- [ ] A rejection's panic message contains every field the criterion lists
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --lib`: `contract::tests::a_rejection_names_the_ngspice_version`, `contract::tests::the_five_contracts_carry_bounds_and_rationale`, `contract::tests::holds_is_abstol_plus_reltol_of_the_larger`, `contract::tests::a_rejection_names_point_values_bound_and_rationale`, `contract::tests::phase_is_gated_on_the_magnitude_floor`, `contract::tests::two_zeros_are_accepted`
-- [ ] Gate check passes: `cargo test -p piperine-parity`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Values: `DC_VOLTAGE` 1e-3 / 1e-6; `DC_CURRENT` 1e-3 / 1e-12; `AC_MAGNITUDE` 1e-3 / 1e-12; `AC_PHASE` 0 / 1e-4; `TRAN_VOLTAGE` 1e-3 / 1e-6; each with the rationale of the design's table
+- [x] `holds` is tested at the bound, one ulp inside and one ulp outside for each contract
+- [x] A rejection's panic message contains every field the criterion lists
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --lib`: `contract::tests::a_rejection_names_the_ngspice_version`, `contract::tests::the_five_contracts_carry_bounds_and_rationale`, `contract::tests::holds_is_abstol_plus_reltol_of_the_larger`, `contract::tests::a_rejection_names_point_values_bound_and_rationale`, `contract::tests::phase_is_gated_on_the_magnitude_floor`, `contract::tests::two_zeros_are_accepted`
+- [x] Gate check passes: `cargo test -p piperine-parity`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
