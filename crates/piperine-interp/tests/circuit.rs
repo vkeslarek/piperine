@@ -198,9 +198,15 @@ fn a_circuit_binds_instances_nodes_and_params() {
 
 #[test]
 fn an_unset_param_keeps_its_default() {
-    // The diode's `cj0` is bound at its default 0: the circuit passes no value for it, and its
-    // pin holds the default; `is`, bound off its default, holds the bound value.
+    // The diode's `is`, `n` and `cj0` are bound at their defaults (1e-14, 1, 0): the circuit
+    // passes no value for them, and their pins hold the defaults. The source's `dc` = 0.8 is off
+    // its default 0 and is passed; its `ac` = 0 is not.
     let (_, mut circuit) = bound::built(Circuits::diode());
+    // what `create` receives
+    let d1 = circuit.given("DiodeCircuit.d1").expect("the diode instance");
+    assert!(d1.is_empty(), "the diode is created with {d1:?}");
+    let v1 = circuit.given("DiodeCircuit.v1").expect("the source instance");
+    assert_eq!(v1, [("dc".to_string(), piperine_solver::prelude::ParamValue::Real(0.8))]);
     // the pins take their defaults and the bound values when the first analysis starts
     circuit.dc(piperine_solver::prelude::Context::default()).expect("dc").solve().expect("solve");
     let bound = circuit.bound().expect("bound");
