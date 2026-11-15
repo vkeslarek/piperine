@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/solver-restructure/design.md`
-**Status**: Draft
+**Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run solver**: `cargo test -p piperine-solver`
 **Run analog**: `cargo test -p piperine-analog-solver`
@@ -840,7 +840,7 @@ Proof: run hygiene | test the_detectors_recognise_what_they_forbid ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** T27 (user, 2026-11-15): mod.rs rule red on piperine-lang pom/{resolve,reflect,lower}/mod.rs - "Exempt now, refactor later (Recommended)": named exemptions + a follow-up item; root-target floor - "Yes, retarget it (Recommended)": the naming rule applies to crate test targets, the root-count floor is removed; the stale ignored-doc registry is fixed in T27; MD-60 wording is stale, the decision is MD-60; none
-**Dispatched:** B1 (T1-T7, Sonnet) at b4b1e768 - returned (T1-T7 218054f7..3767b691; baseline 354 green; 358 pass after ports; helpers via #[path] mod); B2 (T8-T12, Sonnet) at 03d18454 - returned (T8-T12 1cdd920f..c8929613; guards written post-state (no red run); predict_crossing moved into solver); B3 (T13-T18, Sonnet) at f91fb21d - returned (T13-T18 aa0660ff..5bc9006d; 298 pass; removed.txt 76 names; T13 'wholly about' picks by worker; timing-check tests removed in T15 (dep on ValidationFinding)); B4 (T19-T24, Sonnet) at 50cf98eb - returned (T19-T24 26155bc8..e53555ab; 249+24+27 green; orphan rule -> digital_failure helper; T21 subject uppercase (check_commit ERROR)); B5 (T25-T27, Sonnet) at 36e0fedb - returned (T25-T27 9e1ef3c3..07b644dc; MD-60; hygiene guard in piperine-lang with 3 mod.rs exemptions + ROADMAP follow-up); Verifier (Opus) at 5c6a971c - returned (FAIL: F1 Medium, F2-F6 Low, weak C23/C34/C38; no logic change found); Fix pass (Sonnet) at a9ff229d - returned (fix pass d230d0df..closing; F1-F6 + weak rows closed); Verifier round 2 at 031dfe3e
+**Dispatched:** B1 (T1-T7, Sonnet) at b4b1e768 - returned (T1-T7 218054f7..3767b691; baseline 354 green; 358 pass after ports; helpers via #[path] mod); B2 (T8-T12, Sonnet) at 03d18454 - returned (T8-T12 1cdd920f..c8929613; guards written post-state (no red run); predict_crossing moved into solver); B3 (T13-T18, Sonnet) at f91fb21d - returned (T13-T18 aa0660ff..5bc9006d; 298 pass; removed.txt 76 names; T13 'wholly about' picks by worker; timing-check tests removed in T15 (dep on ValidationFinding)); B4 (T19-T24, Sonnet) at 50cf98eb - returned (T19-T24 26155bc8..e53555ab; 249+24+27 green; orphan rule -> digital_failure helper; T21 subject uppercase (check_commit ERROR)); B5 (T25-T27, Sonnet) at 36e0fedb - returned (T25-T27 9e1ef3c3..07b644dc; MD-60; hygiene guard in piperine-lang with 3 mod.rs exemptions + ROADMAP follow-up); Verifier (Opus) at 5c6a971c - returned (FAIL: F1 Medium, F2-F6 Low, weak C23/C34/C38; no logic change found); Fix pass (Sonnet) at a9ff229d - returned (fix pass d230d0df..closing; F1-F6 + weak rows closed); Verifier round 2 at 031dfe3e - returned (PASS; N1, N2 closed 394e6485)
 **Walked:** not applicable: no screen
 
 ---
