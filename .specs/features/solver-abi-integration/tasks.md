@@ -781,7 +781,7 @@ Proof: `cargo test -p piperine-abi -p piperine-analog-solver -p piperine-digital
 
 ## Handoff
 
-**Settled mid-build:** none
+**Settled mid-build:** T5 divergence (orchestrator 2026-11-15): tolerances are NOT loosened; an Opus diagnosis finds the cause in the device transient path first (parity is the user priority); T5 resumes after; none
 **Dispatched:** B1 (Sonnet) at 43876aec - returned (T1-T4 84457807..6fec3889 + docs e4d45ebf; numbers unchanged (parity_baseline 161 steps); instance created twice (one per side)); B2 (Sonnet) at 1aa57598
 **Settled mid-build:** one device instance per placement, shared by both sides (an external device such as an emulator holds state; two copies would diverge) - fix in B2 (orchestrator)
 **Walked:** not applicable - no screen
