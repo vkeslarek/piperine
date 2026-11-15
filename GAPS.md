@@ -22,7 +22,7 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 | type check (`msl-typeck`) | the M1 subset; anything else is `P0001` |
 | elaboration → IR → interpreter → solver | analog only: R, C, V/I sources, diode with `limit`/`pnjlim`; OP, DC, AC, transient |
 | ngspice parity | 7 fixtures in `tests/ngspice/`, all green |
-| IR → Rust → `rustc` → ABI (`ir-rust`) | in progress on `feature/ir-rust` |
+| IR → Rust → `rustc` → ABI (`ir-rust`) | phase A merged: the M1 analog subset compiles to Rust, bit-equal to the interpreter, 7 twins green on both backends (`PIPERINE_BACKEND`); phase B (digital) in progress |
 | digital and mixed-signal execution | **none**: they parse and resolve, nothing runs them |
 | CLI / host API / LSP | **do not build** (§2) |
 
@@ -55,6 +55,8 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 ---
 
 ## 4. Loud — refused, though the spec allows it
+
+- **An MSL local named like an MSL function of the same body** (a param `vt` in a body that calls `vt()`) makes the generated Rust fail to compile (`ir-rust`). Generated names can no longer collide with MSL names (F2/F3), but MSL-vs-MSL shadowing across the value/function namespaces is not renamed yet. A `let`-bound closure named like a function could in principle be called instead of it.
 
 - **Everything outside the M1 subset** is `P0001` at type check or elaboration: digital
   definitions, reactions, commits, events, `match`, loops, `let mut`, structs, enums, `idt`,
