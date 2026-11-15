@@ -1,0 +1,1 @@
+module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}

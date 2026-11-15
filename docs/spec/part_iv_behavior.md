@@ -183,8 +183,8 @@ conjunction of the conditions of the `if` and `match` arms that enclose it.
 
   | | Equilibrium solve | Transient step | Jump solve (§15.2) | Small-signal sweep |
   | --- | --- | --- | --- | --- |
-  | the block | executed each iteration | executed each iteration | executed each iteration, twice solved (§15.2.4) | linearized, not executed |
-  | a contribution `x` | `x` with `ddt` terms 0 | `x` with `ddt` as the derivative | `x` with `ddt` as `(q − q⁻)/h`, `h → 0` | `Σ ∂x/∂probe · response`, plus `ac_stim` and `noise` terms |
+  | the block | executed each iteration | executed each iteration | executed each iteration | linearized, not executed |
+  | a contribution `x` | `x` with `ddt` terms 0 | `x` with `ddt` as the derivative | `x` with `ddt` as the derivative of the step that reads the jump | `Σ ∂x/∂probe · response`, plus `ac_stim` and `noise` terms |
   | a branch's kind | from the selectors, `analysis(Static)` true | from the selectors | from the selectors after the change | from the selectors under the sweep's flags (§11.1.4) |
 
 - **§11 rule 18** A change of kind happens only between solves. A discrete carrier or param that
@@ -221,7 +221,7 @@ analog for Switch {
 }
 
 /// Two nodes made one: with no selector the kind is fixed, and the nodes merge at elaboration.
-module Short<N: Nature>(a: N, b: N) {}
+pub module Short<N: Nature>(a: N, b: N) {}
 analog<N> for Short<N> { potential(a, b) +> 0.0; }
 
 /// An equation is a row: a nature whose "flow" is the residual gives it the right tolerance.
@@ -260,18 +260,18 @@ Coupling among any number of separate inductors goes through a port: each induct
 
 ### 11.1 One block, every analysis
 
-An **analysis** is one run the host asks of an elaborated design: `Dc`, `Tran`, `Ac`, `Noise`, or
+An **analysis** is one run the host asks of an elaborated design: `Dc`, `Transient`, `Ac`, `Noise`, or
 a host procedure over them (§16.3). One `analog` block serves every analysis. What each primitive is in each kind of solve is one table
 (§16.2). `analysis(a)` tells the block which analysis and which solve it is in.
 
 **Static semantics**
 
-- **§11.1.1** `Analysis` is a closed enum with five variants: `Dc`, `Tran`, `Ac`, `Noise`,
+- **§11.1.1** `Analysis` is a closed enum with five variants: `Dc`, `Transient`, `Ac`, `Noise`,
   `Static`. `fn analysis(a: Analysis) -> bool` is an environment function (§14.4).
 
   | `Analysis` | True during | Constant during an analysis |
   | --- | --- | --- |
-  | `Dc`, `Tran`, `Ac`, `Noise` | the whole of that analysis, its operating point included | yes |
+  | `Dc`, `Transient`, `Ac`, `Noise` | the whole of that analysis, its operating point included | yes |
   | `Static` | an equilibrium solve: a `Dc` point and every operating point, all its rounds. False in a transient step, a jump and a small-signal sweep | no: it is the one variant that names a solve, not an analysis |
 
 - **§11.1.2** Every other analysis a host offers is built by the host from these solves. The model
@@ -297,7 +297,7 @@ a host procedure over them (§16.3). One `analog` block serves every analysis. W
   | `delay(x, td)` | `x` | `exp(−jω·td)·x` |
 
 - **§11.1.6** A sampled system that has a small-signal response around an operating point states
-  it: under `!analysis(Tran)` it writes the same transfer with `delay`. `zi_nd` (§22.2) is written
+  it: under `!analysis(Transient)` it writes the same transfer with `delay`. `zi_nd` (§22.2) is written
   this way, which gives `H(exp(jωT))` in `Ac` and `Noise` and `H(1)` in `Dc` (VAMS 4.5.12).
 - **§11.1.7** Around a periodic trajectory a real-valued carrier carries the perturbation
   committed to it, and event times move (§23.3.4). Every sampled system then has a response with
@@ -421,8 +421,9 @@ later microstep.
   latest decision about each future time. Different statements never cancel each other: their
   commits meet only when they apply, under §12.1.2. `p <- true; p <- false after w;` is a pulse in
   either order. This behavior is the **transport delay**.
-- **§12.1.5** **Probes read the solution at the instant** the event fired: at `(t, n)`, the
-  solution after microstep `n − 1` (§15). A reaction that probes makes its instant a time point of
+- **§12.1.5** **Probes read the latest solution at the instant** the event fired: at `(t, n)`,
+  the solution of the previous time point before §15 step 3.4 solves `t`, the solution at `t`
+  after it (§15 step 3.3). A reaction that probes makes its instant a time point of
   the solver (§17.2).
 - **§12.1.6** **A reaction never suspends.** It runs to completion at its instant. A sequence over
   time is visible state (§12.2).
@@ -562,7 +563,7 @@ of `&&` whose left operand is an `Event`.
   event positions only, under §8.3.4. `settle` is a core `Event` value; `s.changed()` is a core
   method.
 - **§13 rule 11** The argument of `at` **MUST** be a discrete expression (§8.2): no probe, no `now()`,
-  no `freq()`, no `analysis(Static)`. The check is made per instance, after value inputs are
+  no `freq()`, no `gmin()`, no `source_scale()`, no `analysis(Static)`. The check is made per instance, after value inputs are
   substituted.
 - **§13 rule 12** The argument `e` of `cross` is any `f64` expression, continuous or not. It **MAY** be
   unknown (§13 rule 5).
@@ -603,7 +604,7 @@ of `&&` whose left operand is an `Event`.
   | The two solutions are | `cross` |
   | --- | --- |
   | two time points of a transient | located by the solver (§17.3); fires at the located instant, rounded up to a tick (§15) |
-  | two solves at one instant: the two sides of a jump (§15.2) | fires at the microstep that follows the jump solve |
+  | two time points a jump separates (§15.2) | not located: fires at the time point of the step that reads the change, at the microstep after that step's solve (§15 step 3.4), never before the change (§15.2.4) |
   | two rounds of an operating point (§16 step 4) | fires in the round that follows |
   | two points of a sweep (§16.1.2) | fires at the later point |
 
@@ -645,7 +646,7 @@ of `&&` whose left operand is an `Event`.
 | through the whole operating point, every round | the guard `analysis(Static)` | §11.1.1 |
 | a crossing that is right at time 0 | `above(e)` (§22.2) | `cross(e) \|\| (init() && e > 0.0)` |
 
-Any of them is restricted to an analysis with a guard: `init() && analysis(Tran)`.
+Any of them is restricted to an analysis with a guard: `init() && analysis(Transient)`.
 
 **Errors**
 
@@ -737,7 +738,7 @@ library (§22), written in the language over this section.
 | `ddx(e, probe)` | `fn` | partial derivative | `analog` | 14.2 |
 | `ac_stim(mag, phase: Option<f64>)` | `fn` | small-signal stimulus | `analog` | 14.3 |
 | `temperature()`, `simparam(name, default: Option<f64>)`, `analysis(a)` for an analysis kind | `fn` | environment, constant during an analysis | everywhere | 14.4 |
-| `now()`, `freq()`, `analysis(Static)` | `fn` | environment of the solve (§16.2) | everywhere but definitions (§8.2.5) | 14.4 |
+| `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` | `fn` | environment of the solve (§16.2) | everywhere but definitions (§8.2.5) | 14.4 |
 | `ddt(x, abstol: Option<f64>)` | module | time derivative; its argument is a state of the jump rule (§15.2) | where instances go (§8.3.4) and `analog` reads them | 14.5 |
 | `delay(x, td, max: Option<f64>)` | module | `x` as it was `td` ago | the same | 14.6 |
 | `limit(x, f, seed: Option<f64>)` | module | Newton step limiting (§18) | the same | 14.7 |
@@ -769,8 +770,8 @@ library (§22), written in the language over this section.
   primitive. §14.1–§14.10 cite its rows, restate one only to add detail, and add what a
   reaction reads. Where they differ, §16.2 governs.
 - **§14 rule 7** A continuous core result read in a reaction, a guard or an event argument has the
-  value it has in the solution that context reads (§15): the solution after microstep `n − 1`, or
-  the final solution in `on settle`.
+  value it has in the solution that context reads (§15 step 3.3): the solution of the previous
+  time point before step 3.4 solves `t`, the solution at `t` after it and in `on settle`.
 - **§14 rule 8** State of a core module advances only on accepted steps (§17.2.4) and is restored by
   a rejected one (§17.2.3). It is kept by an analysis run at a transient's last instant (§16.4).
 - **§14 rule 9** A core module's state advances whatever control flow surrounds its placement
@@ -792,7 +793,7 @@ library (§22), written in the language over this section.
 | `E0456` | `simparam(name)` with no default and no such session parameter | run, at the start of the analysis |
 | `E0457` | a core name redefined by a model (§14 rule 1) | elaboration |
 | §8.1 | an environment function in a const context (`E0323`) | elaboration |
-| §8.2 | `now()`, `freq()`, `analysis(Static)` or a probe in a definition (`E0336`) | elaboration |
+| §8.2 | `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` or a probe in a definition (`E0336`) | elaboration |
 | §8.3 | a core module placed in a `fn`, a closure or a reaction body (`E0350`) | elaboration |
 | §3.3 | an unknown value reaching `ddt`, `delay`, `limit` or `noise` (`E0150`) | elaboration |
 
@@ -862,9 +863,11 @@ with `mag` and `phase` evaluated at the operating point.
 | --- | --- | --- |
 | `temperature() -> f64` | the analysis temperature plus the instance's effective `dtemp` (§8.5.5), in kelvin | constant during an analysis |
 | `simparam(name: &str, default: Option<f64>) -> f64` | the session parameter `name`, else `default` | constant during an analysis |
-| `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Tran`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
+| `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Transient`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
 | `now() -> f64` | the time of the solve | environment of the solve |
 | `freq() -> f64` | the frequency of the sweep point | environment of the solve |
+| `gmin() -> f64` | the conductance of the shunt the solver adds on every node, in siemens | environment of the solve |
+| `source_scale() -> f64` | the factor, in `[0, 1]`, by which the solver scales independent sources | environment of the solve |
 | `analysis(Static) -> bool` | whether the solve is an equilibrium solve (§11.1.1) | environment of the solve |
 
 **Static semantics**
@@ -877,11 +880,18 @@ with `mag` and `phase` evaluated at the operating point.
   selector (§11 rule 3).
 - **§14.4.6** This specification names no session parameter of `simparam`. The names are the
   host's (G.66).
+- **§14.4.7** `gmin()` and `source_scale()` are the continuation variables (§16 step 3). They
+  change between solves, as `now()` and `freq()` do, so they are not constant during an
+  analysis and §14.4.1 does not apply to them. At rest `gmin()` is the session `gmin` and
+  `source_scale()` is 1.0: every solve reads these values except the solves of a continuation
+  method of an equilibrium, where `gmin()` is the shunt of the step and `source_scale()` the
+  scale of the step. The last solve of every sequence is at rest (§16 step 3).
 
 **Dynamic semantics.** Per solve: the environment rows of §16.2.
 
-- **§14.4.4** In a reaction, `now()` is the time `t` of its instant, `freq()` is 0, and
-  `analysis(Static)` follows §11.1.3.
+- **§14.4.4** In a reaction, `now()` is the time `t` of its instant, `freq()` is 0,
+  `gmin()` is the session `gmin` and `source_scale()` is 1.0 (their values at rest, §14.4.7),
+  and `analysis(Static)` follows §11.1.3.
 - **§14.4.5** In a periodic analysis the last column is taken at each point of the trajectory,
   with `now()` its time. In an analysis run at a transient's last instant, `now()` is that instant
   (§16.2, §16.4).
@@ -896,20 +906,21 @@ state of the jump rule (§15.2).
 - **§14.5.1** `x` is a value input: any known `f64` expression (§14 rule 5). The result is a
   continuous expression with a direct dependence on `x` (§8.3.6).
 - **§14.5.2** `abstol` is the absolute tolerance of the state `x` in the truncation-error test
-  (§17.2.1) and in the test of whether a jump moved it (§15.2.6). Left out, the simulator derives
+  (§17.2.1). Left out, the simulator derives
   it from the tolerances of the natures `x` reads.
 
 > **Resolution.** §14.5.2 assigns `abstol` its role. The source design gives the parameter and no
 > text for it.
 
 **Dynamic semantics.** Per solve: the `ddt` row of §16.2. In a transient step the derivative is
-the integration method's (§17.2); in a jump solve `x⁻` is the argument at the previous solve of
-the instant (§15.2).
+the integration method's (§17.2); in a jump solve, which is a transient step (§15.2), it is the
+same.
 
 - **§14.5.3** State: the accepted history of `x`. Across a jump `x` is continuous wherever the
-  equations allow (§15.2.1); the history is dropped only when the jump moved it (§15.2.6).
+  equations allow (§15.2.1). The history is kept across a jump; the previous derivative is
+  dropped only in the steps §15.2.6 restarts.
 - **§14.5.4** Read in a reaction or an event argument, the result is the derivative in the
-  solution read: 0 at an equilibrium solution, the finite right-hand value after a jump (§15.2.4).
+  solution read: 0 at an equilibrium solution, the derivative of the step that read the jump, after one (§15.2.4).
 - **§14.5.5** In `Noise`, `ddt(n)` of a noise result is `jω·n` (§11.1.9).
 
 ### 14.6 `delay`

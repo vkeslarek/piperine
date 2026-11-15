@@ -7,6 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
+#[path = "support/spec_tables.rs"]
+mod spec_tables;
+use spec_tables::{section, table_rows};
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -35,63 +39,9 @@ fn all_specs() -> Vec<(String, String)> {
         .collect()
 }
 
-fn heading_level(line: &str) -> usize {
-    let hashes = line.bytes().take_while(|b| *b == b'#').count();
-    if hashes > 0 && line[hashes..].starts_with(' ') { hashes } else { 0 }
-}
-
-/// The lines from the heading that starts with `heading` (for example
-/// `### B.3.6`) up to the next heading of the same or a higher level.
-/// Lines inside a code fence are never taken for headings.
-fn section(text: &str, heading: &str) -> String {
-    let mut out = String::new();
-    let mut level = 0;
-    let mut fenced = false;
-    for line in text.lines() {
-        if line.trim_start().starts_with("```") {
-            fenced = !fenced;
-        }
-        let l = if fenced { 0 } else { heading_level(line) };
-        if level == 0 {
-            if l > 0 && line.starts_with(heading) {
-                level = l;
-                out.push_str(line);
-                out.push('\n');
-            }
-            continue;
-        }
-        if l > 0 && l <= level {
-            break;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    assert!(level > 0, "no heading starts with `{heading}`");
-    out
-}
-
-/// The body rows of every table of `section`: cells trimmed, header and
-/// separator rows left out.
-fn table_rows(section: &str) -> Vec<Vec<String>> {
-    let mut rows = Vec::new();
-    let mut header_seen = false;
-    for line in section.lines() {
-        let t = line.trim();
-        if !t.starts_with('|') {
-            header_seen = false;
-            continue;
-        }
-        let cells: Vec<String> = t.trim_matches('|').split('|').map(|c| c.trim().to_string()).collect();
-        if cells.iter().all(|c| !c.is_empty() && c.bytes().all(|b| b == b'-' || b == b':')) {
-            continue;
-        }
-        if !header_seen {
-            header_seen = true;
-            continue;
-        }
-        rows.push(cells);
-    }
-    rows
+/// `text` with every run of whitespace (line wraps included) as one space.
+fn flat(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// `E` and four digits, as a code the specification mentions.
@@ -763,11 +713,9 @@ fn appendix_g_records_the_decisions() {
     for item in ["G.40", "G.41", "G.42", "G.43", "G.44"] {
         assert!(rows.iter().any(|r| r[0] == item), "{item} stays");
     }
-    // G.38 stays Open and names the standard-library sources as the open part.
+    // G.38 was Open here; the gallery gate closes it (see `g38_is_closed`) and it still names the standard-library sources.
     let g38 = one_line(&section(&g, "### G.38"));
-    assert!(g38.contains("**Status: Open.**"), "{g38}");
     assert!(g38.contains("standard library") && g38.contains("std/*.msl"), "G.38 names the standard-library sources: {g38}");
-    assert!(g.lines().any(|l| l.starts_with("| G.38 |") && l.trim_end().ends_with("| Open |")), "the overview lists G.38 as Open");
     assert!(g.lines().any(|l| l.starts_with("| G.40") && l.contains("D1")), "the overview names the decision rows");
 }
 
@@ -1105,8 +1053,7 @@ fn appendix_g_records_the_package_decisions() {
     assert_eq!(rows.iter().filter(|r| r[0].starts_with('P')).count(), 6);
     let closing = one_line(&closed);
     assert!(closing.contains("P1 to P6 number the decisions of the crate and package model"), "{closing}");
-    // G.38 is untouched: the library as a source stays open.
-    assert!(one_line(&section(&g, "### G.38")).contains("**Status: Open.**"));
+    // G.38's status is asserted by `g38_is_closed`.
 }
 
 #[test]
@@ -1135,4 +1082,390 @@ fn glossary_and_file_map_name_crates_and_packages() {
     let part_i = map.iter().find(|r| r[0].contains("part_i_values.md")).expect("Part I row");
     assert!(part_i[1].contains("crates") && part_i[1].contains("packages"), "{part_i:?}");
     assert!(part_i[2].contains("§1–3"), "{part_i:?}");
+}
+
+#[test]
+fn later_commit_is_not_a_time_point() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "### 17.2"));
+    assert!(s.contains("at that instant"), "{s}");
+    assert!(s.contains("by at least one tick"), "{s}");
+}
+
+#[test]
+fn time_point_runs_the_procedure() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "## 15."));
+    assert!(s.contains("and runs the time-point procedure"), "{s}");
+    assert!(s.contains("MAY accept solutions at other times"), "{s}");
+}
+
+#[test]
+fn extern_c_interface_is_the_device_abi() {
+    let structure = spec("part_iii_structure.md");
+    let s = flat(&section(&structure, "### 8.5 "));
+    assert!(s.contains("piperine_abi_1"), "{s}");
+    let g = spec("appendix_g_scope.md");
+    let rows = table_rows(&g);
+    let row = rows.iter().find(|r| r[0] == "G.65").expect("G.65 row");
+    assert!(!row.join(" ").contains("Open"), "{row:?}");
+}
+
+#[test]
+fn structure_changing_set_is_refused() {
+    let host = spec("part_viii_host.md");
+    let s = flat(&section(&host, "### 23.1"));
+    let start = s.find(" 7. A `set`").expect("rule 7");
+    let end = s[start..].find(" 8. ").expect("rule 8") + start;
+    let rule = &s[start..end];
+    assert!(rule.contains("E0803") && rule.contains("extern"), "{rule}");
+    let dc = rule.find("in a `Dc` sweep").expect("rule 7 names the `Dc` sweep");
+    assert!(rule[dc..].contains("re-elaborates the instance"), "{rule}");
+    let s85 = flat(&section(&spec("part_iii_structure.md"), "### 8.5 "));
+    let r10 = &s85[s85.find("**§8.5.10**").expect("§8.5.10")..s85.find("**§8.5.11**").expect("§8.5.11")];
+    assert!(r10.contains("E0803") && r10.contains("in a `Dc` sweep that point re-elaborates"), "{r10}");
+}
+
+
+#[test]
+fn zero_bytes_are_the_unknown_value() {
+    assert!(flat(&spec("part_i_values.md")).contains("all-zero bytes"));
+    let carriers = spec("part_ii_carriers.md");
+    let s = flat(&section(&carriers, "### 5.3 "));
+    assert!(s.contains("value bytes"), "{s}");
+}
+
+#[test]
+fn continuation_variables_are_core_functions() {
+    let behavior = spec("part_iv_behavior.md");
+    let s = section(&behavior, "### 14.4");
+    let rows = table_rows(&s);
+    for name in ["`gmin() -> f64`", "`source_scale() -> f64`"] {
+        let row = rows.iter().find(|r| r[0] == name).unwrap_or_else(|| panic!("no row {name}"));
+        assert_eq!(row[2], "environment of the solve", "{row:?}");
+    }
+    assert!(flat(&s).contains("names no session parameter of `simparam`"), "{s}");
+}
+
+#[test]
+fn records_travel_as_quiet_commits() {
+    let c = spec("appendix_c_implementation.md");
+    let s = flat(&section(&c, "## C.1 "));
+    assert!(s.contains("quiet"), "{s}");
+    assert!(s.contains("no microstep"), "{s}");
+}
+
+#[test]
+fn jump_has_no_solve_of_its_own() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "### 15.2"));
+    assert!(s.contains("no solve of its own"), "{s}");
+    assert!(!s.contains("h → 0"), "the backward-Euler limit is gone");
+    assert!(!s.contains("repeated once"), "the repeated solve is gone");
+    let r6 = &s[s.find(" 6. ").expect("rule 6")..s.find(" 7. ").expect("rule 7")];
+    assert!(r6.contains("backward Euler"), "{r6}");
+    assert!(r6.contains("drops the previous derivative"), "{r6}");
+    let landing = &s[s.find("**Before the solve of `t`.**").expect("before-the-solve case")
+        ..s.find("**After the solve of `t`.**").expect("after-the-solve case")];
+    assert!(landing.contains("is exempt from the truncation-error test"), "{landing}");
+}
+
+#[test]
+fn reference_rows_describe_the_kept_jump() {
+    let c = spec("appendix_c_implementation.md");
+    let jumps: Vec<&str> = c.lines().filter(|l| l.starts_with("| the jump")).collect();
+    assert_eq!(jumps.len(), 2, "C.1 and C.2 each have a jump row");
+    for row in jumps {
+        assert!(!row.contains("gap"), "{row}");
+    }
+    let restart = c.lines().find(|l| l.starts_with("| restart")).expect("restart row");
+    assert!(restart.contains("10⁻³ of the last step"), "{restart}");
+    assert!(restart.contains("after a host `set` only"), "{restart}");
+    let g6 = section(&spec("appendix_g_scope.md"), "### G.6 ");
+    for row in table_rows(&g6) {
+        assert!(!row[0].contains("jump"), "G.6 lists no jump gap: {row:?}");
+    }
+}
+
+#[test]
+fn residual_test_uses_the_present_mapping() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "### 17.1"));
+    let node = s.split(". ").find(|x| x.contains("node's row is tested")).expect("node sentence");
+    assert!(node.contains("potential"), "{node}");
+    let branch = s.split(". ").find(|x| x.contains("branch row is tested")).expect("branch sentence");
+    assert!(branch.contains("flow"), "{branch}");
+}
+
+#[test]
+fn jump_solve_is_a_transient_step() {
+    let exec = spec("part_v_execution.md");
+    let row = exec.lines().find(|l| l.starts_with("| **jump solve**")).expect("jump solve row");
+    assert!(row.contains("transient step"), "{row}");
+    let f5 = flat(&section(&spec("appendix_f_gallery_mixed.md"), "## F.5 "));
+    assert!(f5.contains("the right values are those of the first step that reads the jump"), "{f5}");
+}
+
+/// The text of one `- **§3 rule N.**` bullet of Part I, as one line.
+fn s3_rule(n: u32) -> String {
+    let p1 = spec("part_i_values.md");
+    let start = format!("- **§3 rule {n}.**");
+    let body = p1.split(&start).nth(1).unwrap_or_else(|| panic!("§3 rule {n}"));
+    one_line(body.split("\n- **§3 rule").next().unwrap().split("\n\n").next().unwrap())
+}
+
+#[test]
+fn s3_lists_the_intrinsic_abi() {
+    // STD-02 AC 1: two ABI strings, `"intrinsic"` only in the crate `std`.
+    let r = s3_rule(10);
+    assert!(r.contains("`\"C\"` and `\"intrinsic\"`"), "{r}");
+    assert!(r.contains("`\"intrinsic\"` is accepted only in the crate `std`"), "{r}");
+    assert!(!r.contains("The only ABI string"), "{r}");
+}
+
+#[test]
+fn s3_states_the_intrinsic_contract() {
+    // STD-02 AC 2: no body, no scalar restriction, no `#[derivative]`, the contract is Part VII's entry.
+    let p1 = spec("part_i_values.md");
+    let text = one_line(&p1);
+    let at = text.find("An `extern \"intrinsic\" fn`").expect("a sentence about `extern \"intrinsic\" fn`");
+    let s = &text[at..text[at..].find("\n").map_or(text.len(), |n| at + n).min(at + 600)];
+    for part in ["has no body", "not restricted to scalar types", "takes no `#[derivative]`", "its entry in Part VII"] {
+        assert!(s.contains(part), "missing `{part}` in: {s}");
+    }
+}
+
+#[test]
+fn e0125_covers_intrinsic_outside_std() {
+    // STD-02 AC 3: the E0125 row names the condition; the existing conditions stay.
+    let p1 = spec("part_i_values.md");
+    let row = one_line(p1.lines().find(|l| l.starts_with("| `E0125`")).expect("E0125 row"));
+    assert!(row.contains("the ABI `\"intrinsic\"` outside the crate `std`"), "{row}");
+    assert!(row.contains("an `extern` function with a body"), "{row}");
+}
+
+/// Part VII from the heading `## 22.` to the first `### Index`: the preamble of §22.
+fn s22_preamble() -> String {
+    let p7 = spec("part_vii_stdlib.md");
+    let start = p7.find("## 22. Standard library").expect("§22 heading");
+    let end = p7.find("### Index").expect("§22 Index");
+    p7[start..end].to_string()
+}
+
+#[test]
+fn s22_says_std_is_the_normative_source() {
+    // STD-01 AC 1.
+    let p = one_line(&s22_preamble());
+    assert!(p.contains("The **standard library** is the crate `std`"), "{p}");
+    assert!(p.contains("its source files are normative"), "{p}");
+    assert!(p.contains("each `rust` fence of this part is an excerpt of one of them"), "{p}");
+}
+
+#[test]
+fn s22_maps_sections_to_namespaces() {
+    // STD-01 AC 2: the table "Sources".
+    let pre = s22_preamble();
+    let at = pre.find("Sources").expect("a table named Sources");
+    let end = pre.find("Implemented by the engine").unwrap_or(pre.len());
+    assert!(at < end, "Sources comes before Implemented by the engine");
+    let rows = table_rows(&pre[at..end]);
+    let expect = [
+        ("§22.1", "std::values", "values.msl"),
+        ("§22.2", "std::analog", "analog.msl"),
+        ("§22.3", "std::nets", "nets.msl"),
+        ("§22.4", "std::convert", "convert.msl"),
+        ("§22.5", "std::monitor", "monitor.msl"),
+        ("§22.6", "std::io", "io.msl"),
+        ("§1", "std::constants", "constants.msl"),
+        ("§4", "std::carriers", "carriers.msl"),
+    ];
+    assert_eq!(rows.len(), expect.len(), "{rows:?}");
+    for (sec, ns, file) in expect {
+        let row = rows.iter().find(|r| r[0].starts_with(sec)).unwrap_or_else(|| panic!("no row for {sec}: {rows:?}"));
+        assert!(row[1].contains(ns) && row[2].contains(file), "{sec}: {row:?}");
+    }
+    assert!(rows.iter().find(|r| r[0].starts_with("§4")).unwrap()[0].contains("§11"), "{rows:?}");
+}
+
+#[test]
+fn s22_drops_the_implied_pub_resolution() {
+    // STD-01 AC 3.
+    let p = one_line(&s22_preamble());
+    assert!(!p.contains("as if written with `pub`"), "{p}");
+    assert!(!p.contains("Listings that omit `pub`"), "{p}");
+    // The permission to implement natively stays.
+    assert!(p.contains("**MAY** implement an item natively"), "{p}");
+}
+
+#[test]
+fn s22_lists_the_engine_items() {
+    // STD-02 AC 4: exactly five rows, each with an entry and a reason.
+    let pre = s22_preamble();
+    let at = pre.find("Implemented by the engine").expect("a table named Implemented by the engine");
+    let rows = table_rows(&pre[at..]);
+    let names: Vec<&str> = rows.iter().map(|r| r[0].trim_matches('`')).collect();
+    assert_eq!(names, ["matches_bits", "logic", "table_model", "parse_table", "parse_hex"], "{rows:?}");
+    for r in &rows {
+        assert_eq!(r.len(), 3, "Item | Entry | Reason: {r:?}");
+        assert!(r[1].starts_with('§') && !r[2].is_empty(), "{r:?}");
+    }
+}
+
+#[test]
+fn s22_rule_4_names_extern_intrinsic() {
+    // STD-02 AC 5.
+    let pre = s22_preamble();
+    let rule4 = one_line(pre.split("\n4. ").nth(1).expect("rule 4").split("\n5. ").next().unwrap());
+    assert!(rule4.contains("signature and a contract"), "{rule4}");
+    assert!(rule4.contains("declared `extern \"intrinsic\"`"), "{rule4}");
+}
+
+#[test]
+fn analysis_kinds_list_transient() {
+    // STD-01 AC 7: §11.1.1 and row 23 of Appendix B.1 list the five kinds.
+    let kinds = "`Dc`, `Transient`, `Ac`, `Noise`, `Static`";
+    let p4 = one_line(&spec("part_iv_behavior.md"));
+    let at = p4.find("- **§11.1.1**").expect("§11.1.1 bullet");
+    assert!(p4[at..at + 400].contains(kinds), "{}", &p4[at..at + 400]);
+    let b = spec("appendix_b_grammar.md");
+    let row = b.lines().find(|l| l.starts_with("| 23 |")).expect("row 23");
+    assert!(row.contains(kinds), "{row}");
+}
+
+#[test]
+fn no_analysis_tran_remains() {
+    // STD-01 AC 8.
+    for (name, text) in all_specs() {
+        assert!(!text.contains("analysis(Tran)"), "{name} still writes analysis(Tran)");
+    }
+}
+
+#[test]
+fn tran_in_fences_is_the_module() {
+    // STD-01 AC 9: in a `rust` or `rust,fragment` fence the token `Tran` is a declaration or
+    // a placement of the module, so `(` follows; the analysis kind is `Transient`.
+    for (name, text) in all_specs() {
+        let mut fenced = false;
+        for (n, line) in text.lines().enumerate() {
+            let t = line.trim_start();
+            if t.starts_with("```") {
+                fenced = !fenced && (t == "```rust" || t.starts_with("```rust,"));
+                continue;
+            }
+            if !fenced {
+                continue;
+            }
+            let b = line.as_bytes();
+            let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+            let mut i = 0;
+            while let Some(k) = line[i..].find("Tran") {
+                let s = i + k;
+                let e = s + 4;
+                let alone = (s == 0 || !word(b[s - 1])) && (e == b.len() || !word(b[e]));
+                assert!(!alone || b.get(e) == Some(&b'('), "{name}:{}: `Tran` not followed by `(`: {line}", n + 1);
+                i = e;
+            }
+        }
+    }
+}
+
+const STDLIB_DECISIONS: [(&str, &[&str]); 5] = [
+    ("S1", &["§3 rule 10", "§22 rule 4"]),
+    ("S2", &["§22"]),
+    ("S3", &["§11.1.1"]),
+    ("S4", &["§22"]),
+    ("S5", &["§1 rule 3"]),
+];
+
+#[test]
+fn appendix_g_records_the_stdlib_decisions() {
+    // STD-01 AC 10: S1 to S5 are closed rows of the decision table, each citing its sections.
+    let g = spec("appendix_g_scope.md");
+    let closed = section(&g, "### Closed in this specification");
+    let rows = table_rows(&closed);
+    for (id, cited) in STDLIB_DECISIONS {
+        let row = rows.iter().find(|r| r[0] == id).unwrap_or_else(|| panic!("no row for {id}"));
+        assert_eq!(row.len(), 4, "{id}: Item, Question, Decision, Where: {row:?}");
+        assert!(!row[1].is_empty() && !row[2].is_empty(), "{id}: {row:?}");
+        for c in cited {
+            assert!(row[3].contains(c), "{id} cites {c}: {}", row[3]);
+        }
+    }
+    assert_eq!(rows.iter().filter(|r| r[0].starts_with('S')).count(), 5);
+    let s = |id: &str| rows.iter().find(|r| r[0] == id).unwrap()[2].clone();
+    assert!(s("S1").contains("extern \"intrinsic\""), "{}", s("S1"));
+    assert!(s("S3").contains("`Transient`"), "{}", s("S3"));
+    assert!(s("S5").contains("1.0 / 0.0"), "{}", s("S5"));
+    let closing = one_line(&closed);
+    assert!(closing.contains("S1 to S5 number the decisions of the standard library"), "{closing}");
+    // G.38's status is asserted by `g38_is_closed`.
+}
+
+#[test]
+fn s1_constants_are_std_items() {
+    // STD-01 AC 6: the six constants are `pub const` items of `std::constants`.
+    let p1 = spec("part_i_values.md");
+    let rule3 = one_line(p1.split("- **§1 rule 3.**").nth(1).unwrap().split("- **§1 rule 4.**").next().unwrap());
+    assert!(rule3.contains("`pub const` items of `std::constants`"), "{rule3}");
+    let at = p1.find("**Prelude constants**").expect("table caption");
+    let block = one_line(&p1[at..p1[at..].find("\n- **§1 rule").map_or(p1.len(), |n| at + n)]);
+    assert!(block.contains("six constants are `pub const` items of `std::constants`"), "{block}");
+    assert!(block.contains("re-exported by the prelude"), "{block}");
+}
+
+#[test]
+fn g64_names_the_normal_generator() {
+    // STD-02 AC 9: the generator of `normal` is the one written in `std::analog`.
+    let g = one_line(&section(&spec("appendix_g_scope.md"), "### G.64"));
+    assert!(g.contains("the generator of `normal` is the one written in `std::analog`"), "{g}");
+    assert!(g.contains("SplitMix64"), "{g}");
+}
+
+#[test]
+fn e0707_is_replaced_by_e0317() {
+    // STD-02 AC 7: a complex root without its conjugate and a zero denominator are a false `where`.
+    let p7 = spec("part_vii_stdlib.md");
+    for (file, text) in all_specs() {
+        assert!(!text.contains("E0707"), "{file} still names E0707");
+    }
+    // The rule (one list item) that names each condition also gives `E0317`.
+    let rule_with = |heading: &str, needle: &str| -> String {
+        let rules: Vec<String> = section(&p7, heading).lines().filter(|l| l.starts_with(|c: char| c.is_ascii_digit())).map(one_line).collect();
+        rules.into_iter().find(|r| r.contains(needle)).unwrap_or_else(|| panic!("{heading} has a rule naming {needle}"))
+    };
+    for heading in ["#### 22.2.13", "#### 22.2.14"] {
+        let rule = rule_with(heading, "appear with its conjugate");
+        assert!(rule.contains("`E0317`"), "{heading}: the conjugate rule gives E0317: {rule}");
+    }
+    let zero = rule_with("#### 22.2.14", "`den[D - 1] != 0.0`");
+    assert!(zero.contains("`E0317`") && zero.contains("zero"), "the zero denominator gives E0317: {zero}");
+}
+
+#[test]
+fn laplace_states_the_proper_rule() {
+    // STD-02 AC 8: `laplace_nd` requires `D >= 1` and `N <= D`; breaking it is E0304.
+    let s = one_line(&section(&spec("part_vii_stdlib.md"), "#### 22.2.14"));
+    assert!(s.contains("`D >= 1`") && s.contains("`N <= D`") && s.contains("`E0304`"), "{s}");
+    // F3: the leading denominator coefficient must be non-zero (`den: [1.0, 0.0]` is `E0317`).
+    assert!(s.contains("`den[D - 1] != 0.0`") && s.contains("[1.0, 0.0]") && s.contains("`E0317`"), "{s}");
+}
+
+#[test]
+fn g38_is_closed() {
+    // STD-01 AC 4: G.38 is Closed and names the two excerpt guards and the gallery gate.
+    let g = spec("appendix_g_scope.md");
+    let g38 = one_line(&section(&g, "### G.38"));
+    assert!(g38.contains("**Status: Closed.**"), "{g38}");
+    for target in ["std_excerpts", "std_galleries"] {
+        assert!(g38.contains(target), "G.38 names {target}: {g38}");
+    }
+    assert!(g.lines().any(|l| l.starts_with("| G.38 |") && l.trim_end().ends_with("| Closed |")), "the overview lists G.38 as Closed");
+}
+
+#[test]
+fn appendix_c_says_parsed_and_resolved() {
+    // STD-01 AC 5: the library and the galleries are parsed and resolved; nothing is executed.
+    let c = one_line(&spec("appendix_c_implementation.md"));
+    assert!(!c.contains("No part of this specification has been compiled"), "the old claim is gone");
+    assert!(c.contains("parsed and resolved") && c.contains("nothing is executed"), "{c}");
 }

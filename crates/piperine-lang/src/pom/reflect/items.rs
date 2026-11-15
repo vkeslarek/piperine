@@ -85,6 +85,11 @@ impl<'d> Function<'d> {
         }
     }
 
+    /// Is this an `extern "intrinsic" fn`: an item the engine implements, declared only in the crate `std`?
+    pub fn is_intrinsic(self) -> bool {
+        self.abi() == Some("intrinsic")
+    }
+
     pub fn generics(self) -> Vec<GenericParam<'d>> {
         self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
     }

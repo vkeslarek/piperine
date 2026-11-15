@@ -56,7 +56,7 @@ The language adds **65** constructs. Everything else a model uses is the standar
 | 20 | SI suffixes | literal | `1k`, `2.2u`: an `f64` times a power of ten | A.2 |
 | 21 | `Unknown` | literal | every level unknown, of any `Repr` type | §3.3, A.3 |
 | 22 | `Event` | type | something that fires at instants | §13 |
-| 23 | `Analysis` | type | the closed enum `Dc`, `Tran`, `Ac`, `Noise`, `Static` | §11.1 |
+| 23 | `Analysis` | type | the closed enum `Dc`, `Transient`, `Ac`, `Noise`, `Static` | §11.1 |
 | 24 | `uN` / `iN` / `fN` | types | `UInt<N>`, `Int<N>`, `Float<N>` and their short names | §1 |
 | 25 | `Repr` | trait | lays a value type out on levels | §2 |
 | 26 | `Nature` | trait | the bound satisfied by every nature | §6 rule 4, §8.3 |
@@ -139,7 +139,7 @@ Positions, left to right: a body `let` or a value-input argument; a definition o
 | reading a discrete carrier | yes | yes | yes | yes | through `level` (§3.3.5) | yes, through a handle | no |
 | `Unknown` | yes | yes | yes | yes | no (§3.3.5) | yes | yes |
 | probes: `potential`, `flow`, aliases, `p.inflow()` | yes | no | yes | yes | yes | yes ¹ | no |
-| `now()`, `freq()`, `analysis(Static)` | yes | no | yes | yes | yes | yes ¹ | no |
+| `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` | yes | no | yes | yes | yes | yes ¹ | no |
 | `temperature()`, `simparam`, `analysis` of a kind | yes | yes | yes | yes | yes | yes | no |
 | `ddx`, `ac_stim` | yes ² | no | no | no | yes | yes ¹ | no |
 | placing `ddt`, `delay`, `limit`, `noise` | yes | no ³ | yes | no | yes | no | no |
@@ -154,7 +154,7 @@ Positions, left to right: a body `let` or a value-input argument; a definition o
 
 ¹ The `fn` is then callable only where the construct itself is allowed (§3).
 ² The `let` or value input is then readable only in `analog`.
-³ Only when the result reads nothing that §8.2.5 forbids: no probe, no `now()`, no `freq()`, no `analysis(Static)`.
+³ Only when the result reads nothing that §8.2.5 forbids: no probe, no `now()`, no `freq()`, no `gmin()`, no `source_scale()`, no `analysis(Static)`.
 ⁴ In a `fn` that returns `Event`; the `fn` is callable in event positions, and as a `bool` inside a reaction.
 
 > **Resolution.** Note ² reconciles §14, which allows `ddx` and `ac_stim` in `analog` only, with the design's placement table, which lists them with the probes. A `let` is evaluated where it is read (§8.2), so the restriction moves to the reader.

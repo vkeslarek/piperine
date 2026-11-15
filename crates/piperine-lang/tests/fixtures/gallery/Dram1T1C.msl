@@ -1,0 +1,6 @@
+module Dram1T1C(c: Cell) {
+    cs: f64 = 30f;
+    ron: f64 = 5k;
+    rleak: f64 = 1T;
+    pub signal sn: Electrical = 0.0;     // storage node
+}

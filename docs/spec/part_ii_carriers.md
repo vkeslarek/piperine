@@ -137,17 +137,17 @@ nature** declares `potential`.
 **Examples**
 
 ```rust
-nature Bit<T: Repr = bool> { value: T }                              // prelude; Bit is Bit<bool>
-nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib (§22.3): strengths, high impedance
-nature Electrical {
+pub nature Bit<T: Repr = bool> { value: T }                              // prelude; Bit is Bit<bool>
+pub nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib (§22.3): strengths, high impedance
+pub nature Electrical {
     potential: Voltage { access: v, units: "V", abstol: 1u },
     flow:      Current { access: i, units: "A", abstol: 1p },
 }
-nature Thermal {
+pub nature Thermal {
     potential: Temperature { access: temp, units: "K", abstol: 1m },
     flow:      Power       { access: pwr,  units: "W", abstol: 1n },
 }
-nature VSignal { potential: Voltage { access: v, units: "V", abstol: 1u } }   // signal-flow
+pub nature VSignal { potential: Voltage { access: v, units: "V", abstol: 1u } }   // signal-flow
 ```
 
 ## 5. Discrete carriers
@@ -326,6 +326,7 @@ Every discrete carrier, and every param, keeps one previous value.
   by a `set` made before the run, is not a change
   ([§13](part_iv_behavior.md#13-events) rule 16). Before the first `set` during a run,
   `p.prev()` equals `p`.
+- **§5.3.12** The value bytes of an unknown level are zero.
 
 > **Resolution.** Rules 4, 5 and 7 define "changed" at the level of flags, as the stdlib's
 > `rise` and `fall` assume ("a change never goes from unknown to unknown"). Whether one
