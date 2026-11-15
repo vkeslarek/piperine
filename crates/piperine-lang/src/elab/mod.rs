@@ -8,7 +8,9 @@
 //! Four passes, each writing through [`IrBuilder`](piperine_ir::IrBuilder): natures, functions,
 //! bodies (first-reach order), then the instance tree. Any diagnostic means no `Ir`.
 
+mod consts;
 mod elaborator;
 mod origin;
 
+pub use consts::{Bindings, ConstEval, ConstFault};
 pub use elaborator::Elaborator;

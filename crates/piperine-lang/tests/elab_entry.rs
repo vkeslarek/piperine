@@ -4,6 +4,7 @@
 //! its golden IR join in T9.
 
 #[path = "support/elab.rs"]
+#[allow(dead_code)]
 mod support;
 
 use piperine_lang::elab::Elaborator;

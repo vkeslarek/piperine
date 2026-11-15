@@ -145,12 +145,12 @@ T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `K_B`, `Q` and a `const` defined from them fold to the bit-exact `f64` Rust computes
-- [ ] `1.0 / 0.0` is `inf`, not an error
-- [ ] A read of a param with no binding is reported to the caller as not constant
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_const_read_is_folded_once`
-- [ ] Gate check passes: `cargo test -p piperine-lang`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `K_B`, `Q` and a `const` defined from them fold to the bit-exact `f64` Rust computes
+- [x] `1.0 / 0.0` is `inf`, not an error
+- [x] A read of a param with no binding is reported to the caller as not constant
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_params`: `a_const_read_is_folded_once`
+- [x] Gate check passes: `cargo test -p piperine-lang`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
