@@ -456,10 +456,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The first test lists the directory and compares names and bytes with the table
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test abi_source`: `the_embedded_sources_are_the_abi_crate`, `the_abi_builds_with_rustc_alone`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] The first test lists the directory and compares names and bytes with the table
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test abi_source`: `the_embedded_sources_are_the_abi_crate`, `the_abi_builds_with_rustc_alone`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

@@ -10,12 +10,14 @@ use piperine_plan::BodyPlan;
 
 use crate::print::LibraryPrinter;
 
+mod abi_source;
 mod error;
 pub mod print;
 pub mod rt;
 mod rustc;
 mod settings;
 
+pub use abi_source::AbiSource;
 pub use error::Error;
 pub use rustc::Rustc;
 pub use settings::Settings;
