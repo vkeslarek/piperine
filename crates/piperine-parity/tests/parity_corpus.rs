@@ -26,19 +26,35 @@ impl Guard {
     }
 
     /// Each line of `text` that compares an absolute difference (`.abs()`) with a numeric
-    /// literal, as `file:line: text`. A comparison is `<`, `<=`, `>` or `>=` followed by a number.
+    /// literal, as `file:line: text`. Every `.abs()` of a line is read, in both operand orders:
+    /// `x.abs() < 1e-3` (a comparison operator then a number after it) and `1e-3 > x.abs()` (a
+    /// number then a comparison operator before it).
     fn literal_comparisons(file: &str, text: &str) -> Vec<String> {
         let mut failures = Vec::new();
         for (index, line) in text.lines().enumerate() {
-            let Some(at) = line.find(".abs()") else { continue };
-            let rest = line[at + ".abs()".len()..].trim_start();
-            let after = rest.strip_prefix("<=").or_else(|| rest.strip_prefix(">=")).or_else(|| rest.strip_prefix('<')).or_else(|| rest.strip_prefix('>'));
-            let Some(after) = after else { continue };
-            if after.trim_start().starts_with(|c: char| c.is_ascii_digit()) {
+            let hit = line.match_indices(".abs()").any(|(at, call)| Self::literal_after(&line[at + call.len()..]) || Self::literal_before(&line[..at]));
+            if hit {
                 failures.push(format!("{file}:{}: {}", index + 1, line.trim()));
             }
         }
         failures
+    }
+
+    /// Whether `rest` starts with a comparison operator followed by a number.
+    fn literal_after(rest: &str) -> bool {
+        let rest = rest.trim_start();
+        let after = rest.strip_prefix("<=").or_else(|| rest.strip_prefix(">=")).or_else(|| rest.strip_prefix('<')).or_else(|| rest.strip_prefix('>'));
+        after.is_some_and(|after| after.trim_start().starts_with(|c: char| c.is_ascii_digit()))
+    }
+
+    /// Whether `head` (the text before a `.abs()`) has a number as the operand of the last
+    /// comparison operator in it: `1e-3 > (a - b)` ends so. An arrow (`->`, `=>`) is no comparison.
+    fn literal_before(head: &str) -> bool {
+        let bytes = head.as_bytes();
+        let Some(at) = (0..bytes.len()).rev().find(|&i| matches!(bytes[i], b'<' | b'>') && !(i > 0 && matches!(bytes[i - 1], b'-' | b'='))) else { return false };
+        let operand = head[..at].trim_end().trim_end_matches(['<', '>', '=']).trim_end();
+        let token_start = operand.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.')).map_or(0, |i| i + 1);
+        operand[token_start..].starts_with(|c: char| c.is_ascii_digit())
     }
 }
 
@@ -96,11 +112,24 @@ fn no_parity_target_compares_against_a_literal() {
 
 #[test]
 fn a_literal_tolerance_in_a_parity_target_is_reported() {
-    let planted = "fn x() {\n    assert!((a - b).abs() < 1e-3);\n    assert!((a - b).abs() <= 5.0);\n    assert!((a - b).abs() < tolerance);\n}\n";
+    let planted = concat!(
+        "fn x() {\n",
+        "    assert!((a - b).abs() < 1e-3);\n",
+        "    assert!((a - b).abs() <= 5.0);\n",
+        "    assert!((a - b).abs() < tolerance);\n",
+        "    assert!(1e-3 > (a - b).abs());\n",
+        "    assert!(0.5 >= (a - b).abs());\n",
+        "    assert!(c.abs() < d && (a - b).abs() < 1e-6);\n",
+        "    assert!(1e-3 > c.abs() || tolerance > d.abs());\n",
+        "    assert!(tolerance > (a - b).abs());\n",
+        "    let f = |x| -> f64 { x.abs() };\n",
+        "    assert!(a1 > (a - b).abs());\n",
+        "}\n"
+    );
     let failures = Guard::literal_comparisons("parity_planted.rs", planted);
-    assert_eq!(failures.len(), 2, "{failures:?}");
+    let lines: Vec<usize> = failures.iter().map(|f| f.split(':').nth(1).expect("a line number").parse().expect("a number")).collect();
+    assert_eq!(lines, vec![2, 3, 5, 6, 7, 8], "{failures:?}");
     assert!(failures[0].starts_with("parity_planted.rs:2:"), "{failures:?}");
-    assert!(failures[1].starts_with("parity_planted.rs:3:"), "{failures:?}");
 }
 
 #[test]
