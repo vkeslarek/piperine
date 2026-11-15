@@ -219,7 +219,9 @@ impl<T> List<T> {
         unsafe { Some(&*self.ptr.cast::<u8>().add(i * self.stride).cast::<T>()) }
     }
 
-    /// Every element in order, each read by `stride`.
+    /// Every element in order, each read by `stride`. A list that is not
+    /// readable yields nothing: check `is_readable` (or `validate` the shape)
+    /// before trusting an empty iteration of foreign memory.
     pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         (0..self.len).filter_map(move |i| self.get(i))
     }

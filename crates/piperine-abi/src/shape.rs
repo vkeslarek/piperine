@@ -198,6 +198,7 @@ impl ShapeBuf {
     }
 
     fn layout(&mut self, l: &Layout) -> Layout {
+        assert!(l.fields.is_readable(), "ShapeBuf: a layout whose field list is unreadable (stride {})", l.fields.stride());
         let fields: Vec<Field> = l
             .fields
             .iter()

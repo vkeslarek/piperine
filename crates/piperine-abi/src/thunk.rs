@@ -142,6 +142,13 @@ unsafe extern "C" fn create<D: Device>(module: *const Module, values: List<Value
         // SAFETY: abi.md §12 "The library and its prototypes live until the
         // process ends": `module` and its prototype are valid.
         let proto: &Shape = unsafe { &*(*module).prototype };
+        if !values.is_readable() {
+            return Err(Fault::new(0, format!(
+                "the value list is unreadable: stride {} for an element of {} bytes",
+                values.stride(),
+                size_of::<Value>()
+            )));
+        }
         let mut given = Vec::with_capacity(values.len());
         for v in values.iter() {
             let pin = proto.pins.get(v.pin as usize).filter(|p| p.role == role::PARAM);

@@ -600,6 +600,9 @@ Proof: run owner | test irreversible_reactions_are_bounded_by_the_current_instan
 **C49** - Traces and observations reach the sink in time order (SAC-30)
 Proof: run owner | test traces_reach_the_sink_in_time_order ... ok
 
+**C50** - An unreadable value list at create is a FAULT, not an instance on its defaults (SAC-31)
+Proof: run abi | test an_unreadable_value_list_is_a_fault ... ok
+
 ---
 
 ## Handoff

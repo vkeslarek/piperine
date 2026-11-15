@@ -192,6 +192,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-30** (12). The sink SHALL receive trace records and observations as one stream in time order: a trace (even of a rejected attempt) is delivered once an acceptance reaches its time, before that time's instant observations (F13).
 
+- **SAC-31** (13). IF the value list passed to `create` is not readable (stride below a `Value` or misaligned) THEN the thunk SHALL return `FAULT` with a note, never create the device on its defaults; `ShapeBuf` SHALL refuse a layout whose field list is unreadable (N3).
+
 ---
 
 ## Edge Cases
@@ -237,6 +239,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-28 | P1: Verification round 1, AC 10 | Execute | Done |
 | SAC-29 | P1: Verification round 1, AC 11 | Execute | Done |
 | SAC-30 | P1: Verification round 1, AC 12 | Execute | Done |
+| SAC-31 | P1: Verification round 1, AC 13 | Execute | Done |
 
 **Coverage:** 30 total (SAC-19 to SAC-30 from verification round 1), 30 mapped to tasks or checks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 
