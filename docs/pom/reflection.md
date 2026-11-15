@@ -457,6 +457,7 @@ assert!(!imports[0].glob);
 | --- | --- | --- |
 | `is_const(self)` | `bool` | Whether the function is `const`. |
 | `abi(self)` | `Option<&'d str>` | The ABI string of `extern "C" fn`, without quotes. |
+| `is_intrinsic(self)` | `bool` | Whether the ABI is `"intrinsic"`: an `extern "intrinsic" fn` the engine implements, declared only in the crate `std`. |
 | `generics(self)` | `Vec<GenericParam<'d>>` | The generic parameters of the function. |
 | `params(self)` | `Vec<FnParam<'d>>` | The parameters in source order; a method's `self` comes first. |
 | `ret(self)` | `Option<Type<'d>>` | The `-> ty` return type. |

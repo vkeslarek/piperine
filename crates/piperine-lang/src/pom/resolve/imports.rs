@@ -119,6 +119,30 @@ impl Ctx<'_> {
         None
     }
 
+    /// Is the trait `tr` in scope for code owned by `from` (Rust's "trait in scope"): some name
+    /// in scope at the call resolves to its declaration, whatever the name — an item of the
+    /// enclosing namespace, an import (by name, under an `as` alias, or through a glob) or a
+    /// prelude item. A model item that takes the trait's name hides the name, not the trait.
+    pub(super) fn trait_in_scope(&self, from: DeclId, tr: DeclId) -> bool {
+        let ns = if matches!(self.design.decl_data(from).kind, DeclKind::Namespace(_)) { Some(from) } else { self.parent_namespace(from) };
+        let (Some(ns), Some(name)) = (ns, self.design.decl_data(tr).name.as_ref()) else { return false };
+        let name = name.text.as_str();
+        if self.parent_namespace(tr) == Some(ns) {
+            return true;
+        }
+        if let Some(imports) = self.imports.by_namespace.get(&ns) {
+            let named = imports.named.iter().enumerate().any(|(index, entry)| self.import_target(entry, false, ns, &mut vec![Visit { namespace: ns, glob: false, index }]) == Some(tr));
+            let globbed = imports.globs.iter().enumerate().any(|(index, entry)| {
+                let mut visiting = vec![Visit { namespace: ns, glob: true, index }];
+                self.import_target(entry, true, ns, &mut visiting).is_some_and(|target| self.glob_member(target, name, Prefer::Types, ns, &mut visiting) == Some(tr))
+            });
+            if named || globbed {
+                return true;
+            }
+        }
+        self.prelude.is_some_and(|prelude| self.ns_item(prelude, name, Prefer::Types, None, &mut Vec::new()) == Some((tr, true)))
+    }
+
     /// The crate that holds the namespace `ns`.
     fn crate_of(&self, ns: DeclId) -> usize {
         self.design.file_data(self.design.decl_data(ns).file).krate.index()
@@ -357,7 +381,12 @@ impl Ctx<'_> {
                 Some((Resolution::Decl(found), visible))
             }
             DeclKind::Enum(_) => self.variant(owner, name).or_else(|| self.associated(owner, name)).map(|v| (Resolution::Decl(v), true)),
-            DeclKind::Struct(_) | DeclKind::Nature(_) | DeclKind::Trait(_) | DeclKind::Module(_) => {
+            // `Self::NAME` in a trait: its own items, then each supertrait in the order written.
+            DeclKind::Trait(t) => match self.associated(owner, name) {
+                Some(item) => Some((Resolution::Decl(item), true)),
+                None => self.through_bounds(&t.supertraits, name, self.parent_namespace(owner).unwrap_or(from), visiting),
+            },
+            DeclKind::Struct(_) | DeclKind::Nature(_) | DeclKind::Module(_) => {
                 self.associated(owner, name).map(|v| (Resolution::Decl(v), true))
             }
             DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => self.through_bounds(bounds, name, from, visiting),

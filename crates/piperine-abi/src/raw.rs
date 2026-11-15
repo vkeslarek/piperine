@@ -5,31 +5,36 @@
 //! bytes (`Pod`, `pod_ref`, `pod_mut`, `pod_bytes`) the lenses use.
 
 use core::ffi::c_void;
+use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 
 // ─── Strings, bytes, lists ──────────────────────────────────────────────────
 
-// The three views below and `Module` keep their pointer fields private: a
-// value built in safe code (`from_static`, `from_slice`, `empty`, a
-// `ShapeBuf`, `module::<D>`) points where it says, and one built from foreign
-// memory goes through an `unsafe` constructor or an `unsafe` dereference of
-// the producer's pointer: that is the trust boundary, so the safe accessors
-// that read through them are sound.
+// The three views below and `Module` keep their pointer fields private, and
+// each view carries the lifetime `'a` of what it points to (a zero-sized
+// `PhantomData`, so the C layout is unchanged): a view built in safe code
+// (`from_static`, `from_slice`, `empty`, a `ShapeBuf`, `module::<D>`) borrows
+// its memory for `'a` and cannot outlive it; one built from foreign memory
+// goes through an `unsafe` constructor whose caller promises `'a`, or an
+// `unsafe` dereference of the producer's pointer. That is the trust boundary,
+// so the safe accessors that read through them are sound.
 
 /// UTF-8 text owned by the producer.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Str {
+pub struct Str<'a> {
     pub(crate) ptr: *const u8,
     pub(crate) len: usize,
+    pub(crate) life: PhantomData<&'a [u8]>,
 }
 
 /// Raw bytes owned by the producer.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Bytes {
+pub struct Bytes<'a> {
     pub(crate) ptr: *const u8,
     pub(crate) len: usize,
+    pub(crate) life: PhantomData<&'a [u8]>,
 }
 
 /// A list whose elements lie `stride` bytes apart: the element size as the
@@ -37,41 +42,50 @@ pub struct Bytes {
 /// "Versioning").
 #[repr(C)]
 #[derive(Debug)]
-pub struct List<T> {
+pub struct List<'a, T> {
     pub(crate) ptr: *const T,
     pub(crate) len: usize,
     pub(crate) stride: usize,
+    pub(crate) life: PhantomData<&'a T>,
 }
 
-impl<T> Clone for List<T> {
+impl<T> Clone for List<'_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<T> Copy for List<T> {}
+impl<T> Copy for List<'_, T> {}
 
 // SAFETY: abi.md §3 "The complete, immutable description": the text a `Str`
 // points to is never written after it is produced.
-unsafe impl Send for Str {}
+unsafe impl Send for Str<'_> {}
 // SAFETY: as for `Send` above; shared reads of immutable bytes do not race.
-unsafe impl Sync for Str {}
+unsafe impl Sync for Str<'_> {}
 // SAFETY: abi.md §3: the bytes of a `Value` or `init` are immutable once produced.
-unsafe impl Send for Bytes {}
+unsafe impl Send for Bytes<'_> {}
 // SAFETY: as for `Send` above.
-unsafe impl Sync for Bytes {}
+unsafe impl Sync for Bytes<'_> {}
 // SAFETY: abi.md §3 "immutable description": a list's elements are never
 // written after it is produced, so sharing it is sharing `&T`.
-unsafe impl<T: Sync> Send for List<T> {}
+unsafe impl<T: Sync> Send for List<'_, T> {}
 // SAFETY: as for `Send` above.
-unsafe impl<T: Sync> Sync for List<T> {}
+unsafe impl<T: Sync> Sync for List<'_, T> {}
 
-impl Str {
+impl Str<'static> {
     /// The empty string, with a non-null pointer.
-    pub const EMPTY: Str = Str { ptr: core::ptr::NonNull::<u8>::dangling().as_ptr(), len: 0 };
+    pub const EMPTY: Str<'static> =
+        Str { ptr: core::ptr::NonNull::<u8>::dangling().as_ptr(), len: 0, life: PhantomData };
 
     /// A `Str` over a static string.
-    pub const fn from_static(s: &'static str) -> Str {
-        Str { ptr: s.as_ptr(), len: s.len() }
+    pub const fn from_static(s: &'static str) -> Str<'static> {
+        Str { ptr: s.as_ptr(), len: s.len(), life: PhantomData }
+    }
+}
+
+impl<'a> Str<'a> {
+    /// A `Str` borrowing `s` for `'a`.
+    pub const fn from_str(s: &'a str) -> Str<'a> {
+        Str { ptr: s.as_ptr(), len: s.len(), life: PhantomData }
     }
 
     /// A `Str` over foreign memory.
@@ -80,8 +94,8 @@ impl Str {
     ///
     /// `ptr` is non-null and points to `len` bytes of UTF-8 that stay valid
     /// and unchanged as long as the `Str` (or any copy) is read (abi.md §12).
-    pub const unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Str {
-        Str { ptr, len }
+    pub const unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Str<'a> {
+        Str { ptr, len, life: PhantomData }
     }
 
     /// The pointer.
@@ -100,7 +114,7 @@ impl Str {
     }
 
     /// The bytes of the string.
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &'a [u8] {
         if self.len == 0 {
             return &[];
         }
@@ -110,18 +124,26 @@ impl Str {
     }
 
     /// The text, or `"<invalid utf-8>"` when the producer broke abi.md §3 ("UTF-8").
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &'a str {
         core::str::from_utf8(self.as_bytes()).unwrap_or("<invalid utf-8>")
     }
 }
 
-impl Bytes {
+impl Bytes<'static> {
     /// No bytes, with a non-null pointer.
-    pub const EMPTY: Bytes = Bytes { ptr: core::ptr::NonNull::<u8>::dangling().as_ptr(), len: 0 };
+    pub const EMPTY: Bytes<'static> =
+        Bytes { ptr: core::ptr::NonNull::<u8>::dangling().as_ptr(), len: 0, life: PhantomData };
 
     /// A `Bytes` over a static slice.
-    pub const fn from_static(b: &'static [u8]) -> Bytes {
-        Bytes { ptr: b.as_ptr(), len: b.len() }
+    pub const fn from_static(b: &'static [u8]) -> Bytes<'static> {
+        Bytes { ptr: b.as_ptr(), len: b.len(), life: PhantomData }
+    }
+}
+
+impl<'a> Bytes<'a> {
+    /// A `Bytes` borrowing `b` for `'a`.
+    pub const fn from_slice(b: &'a [u8]) -> Bytes<'a> {
+        Bytes { ptr: b.as_ptr(), len: b.len(), life: PhantomData }
     }
 
     /// A `Bytes` over foreign memory.
@@ -130,8 +152,8 @@ impl Bytes {
     ///
     /// `ptr` is non-null and points to `len` bytes that stay valid and
     /// unchanged as long as the `Bytes` (or any copy) is read (abi.md §12).
-    pub const unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Bytes {
-        Bytes { ptr, len }
+    pub const unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Bytes<'a> {
+        Bytes { ptr, len, life: PhantomData }
     }
 
     /// The pointer.
@@ -150,7 +172,7 @@ impl Bytes {
     }
 
     /// The bytes.
-    pub fn as_slice(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &'a [u8] {
         if self.len == 0 {
             return &[];
         }
@@ -160,10 +182,10 @@ impl Bytes {
     }
 }
 
-impl<T> List<T> {
+impl<'a, T> List<'a, T> {
     /// The empty list: a non-null, aligned pointer and no element.
-    pub const fn empty() -> List<T> {
-        List { ptr: core::ptr::NonNull::<T>::dangling().as_ptr(), len: 0, stride: size_of::<T>() }
+    pub const fn empty() -> List<'a, T> {
+        List { ptr: core::ptr::NonNull::<T>::dangling().as_ptr(), len: 0, stride: size_of::<T>(), life: PhantomData }
     }
 
     /// A list over foreign memory, `stride` bytes apart.
@@ -174,8 +196,8 @@ impl<T> List<T> {
     /// lie at `ptr + i * stride`, valid and unchanged as long as the list (or
     /// any copy) is read (abi.md §3, §12). A stride below `size_of::<T>()` is
     /// allowed here and refused by `is_readable`.
-    pub const unsafe fn from_raw_parts(ptr: *const T, len: usize, stride: usize) -> List<T> {
-        List { ptr, len, stride }
+    pub const unsafe fn from_raw_parts(ptr: *const T, len: usize, stride: usize) -> List<'a, T> {
+        List { ptr, len, stride, life: PhantomData }
     }
 
     /// The pointer.
@@ -188,12 +210,32 @@ impl<T> List<T> {
         self.stride
     }
 
-    /// A list over a slice, with this compilation's stride.
-    pub const fn from_slice(items: &[T]) -> List<T> {
+    /// A list borrowing `items` for `'a`, with this compilation's stride. It
+    /// cannot outlive the slice:
+    ///
+    /// ```compile_fail
+    /// use piperine_abi::raw::List;
+    /// let list: List<u64> = {
+    ///     let v = vec![1u64; 4];
+    ///     List::from_slice(&v) // `v` does not live long enough
+    /// };
+    /// let _ = list.get(0);
+    /// ```
+    pub const fn from_slice(items: &'a [T]) -> List<'a, T> {
         if items.is_empty() {
             return List::empty();
         }
-        List { ptr: items.as_ptr(), len: items.len(), stride: size_of::<T>() }
+        List { ptr: items.as_ptr(), len: items.len(), stride: size_of::<T>(), life: PhantomData }
+    }
+
+    /// A list over storage the crate keeps alive by other means (a `ShapeBuf`
+    /// owns its boxes until its last `ShapeRef` is dropped); the `'static` is
+    /// that owner's promise, never handed out but as a borrow of it.
+    pub(crate) fn detached(items: &[T]) -> List<'static, T> {
+        if items.is_empty() {
+            return List::empty();
+        }
+        List { ptr: items.as_ptr(), len: items.len(), stride: size_of::<T>(), life: PhantomData }
     }
 
     /// Whether this consumer can read the elements: the stride holds at least
@@ -208,7 +250,7 @@ impl<T> List<T> {
 
     /// Element `i`, read at `ptr + i * stride`; `None` past the end or when the
     /// list is not readable (`is_readable`).
-    pub fn get(&self, i: usize) -> Option<&T> {
+    pub fn get(&self, i: usize) -> Option<&'a T> {
         if i >= self.len || !self.is_readable() {
             return None;
         }
@@ -219,9 +261,12 @@ impl<T> List<T> {
         unsafe { Some(&*self.ptr.cast::<u8>().add(i * self.stride).cast::<T>()) }
     }
 
-    /// Every element in order, each read by `stride`.
-    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
-        (0..self.len).filter_map(move |i| self.get(i))
+    /// Every element in order, each read by `stride`. A list that is not
+    /// readable yields nothing: check `is_readable` (or `validate` the shape)
+    /// before trusting an empty iteration of foreign memory.
+    pub fn iter(&self) -> impl Iterator<Item = &'a T> + use<'a, T> {
+        let list = *self;
+        (0..list.len).filter_map(move |i| list.get(i))
     }
 
     /// The number of elements.
@@ -243,13 +288,13 @@ impl<T> List<T> {
 pub struct Library {
     pub size: u32,
     pub minor: u32,
-    pub name: Str,
-    pub build: Str,
-    pub modules: List<Module>,
+    pub name: Str<'static>,
+    pub build: Str<'static>,
+    pub modules: List<'static, Module>,
 }
 
 /// `create` of abi.md §2.
-pub type CreateFn = unsafe extern "C" fn(*const Module, List<Value>, *mut Note) -> Created;
+pub type CreateFn = for<'a> unsafe extern "C" fn(*const Module, List<'a, Value<'a>>, *mut Note) -> Created;
 /// `destroy` of abi.md §2.
 pub type DestroyFn = unsafe extern "C" fn(*mut Instance);
 /// `eval` of abi.md §2.
@@ -264,9 +309,9 @@ pub type CommitFn =
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Module {
-    pub(crate) name: Str,
+    pub(crate) name: Str<'static>,
     /// The shape at default values: lists every `PARAM` pin, its layout, its default.
-    pub(crate) prototype: *const Shape,
+    pub(crate) prototype: *const Shape<'static>,
     /// The module's own data (an interpreter's IR, an OSDI descriptor).
     pub(crate) data: *const c_void,
     pub(crate) create: CreateFn,
@@ -284,8 +329,8 @@ impl Module {
     /// contracts of abi.md §2 for as long as the module is used (§12: "The
     /// library and its prototypes live until the process ends").
     pub const unsafe fn from_raw_parts(
-        name: Str,
-        prototype: *const Shape,
+        name: Str<'static>,
+        prototype: *const Shape<'static>,
         data: *const c_void,
         create: CreateFn,
         destroy: DestroyFn,
@@ -295,12 +340,12 @@ impl Module {
         Module { name, prototype, data, create, destroy, eval, react }
     }
 
-    pub fn name(&self) -> &Str {
+    pub fn name(&self) -> &Str<'static> {
         &self.name
     }
 
     /// The prototype shape.
-    pub fn prototype(&self) -> &Shape {
+    pub fn prototype(&self) -> &Shape<'static> {
         // SAFETY: abi.md §12 "The library and its prototypes live until the
         // process ends"; a `Module` is built only by `module::<D>` or the
         // `unsafe` `from_raw_parts`, both of which keep `prototype` valid.
@@ -308,7 +353,7 @@ impl Module {
     }
 
     /// The prototype pointer, as the C entry `create` receives it.
-    pub fn prototype_ptr(&self) -> *const Shape {
+    pub fn prototype_ptr(&self) -> *const Shape<'static> {
         self.prototype
     }
 
@@ -343,9 +388,9 @@ unsafe impl Sync for Module {}
 /// An initial value of a `PARAM` pin of the prototype, in its layout.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Value {
+pub struct Value<'a> {
     pub pin: u32,
-    pub bytes: Bytes,
+    pub bytes: Bytes<'a>,
 }
 
 /// The result of `create`.
@@ -354,7 +399,7 @@ pub struct Value {
 pub struct Created {
     pub status: u32,
     pub instance: *mut Instance,
-    pub shape: *const Shape,
+    pub shape: *const Shape<'static>,
 }
 
 /// An instance, opaque to the solver.
@@ -380,23 +425,23 @@ pub const NOTE_TEXT: usize = 248;
 /// The complete, immutable description of an instance.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Shape {
+pub struct Shape<'a> {
     pub size: u32,
-    pub pins: List<Pin>,
-    pub terms: List<Term>,
-    pub inputs: List<Input>,
-    pub watches: List<Watch>,
-    pub functions: List<Function>,
-    pub reactions: List<Reaction>,
+    pub pins: List<'a, Pin<'a>>,
+    pub terms: List<'a, Term<'a>>,
+    pub inputs: List<'a, Input<'a>>,
+    pub watches: List<'a, Watch<'a>>,
+    pub functions: List<'a, Function<'a>>,
+    pub reactions: List<'a, Reaction<'a>>,
 }
 
 /// A net seen from the instance (abi.md §3.1).
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Pin {
-    pub name: Str,
+pub struct Pin<'a> {
+    pub name: Str<'a>,
     /// `"file:line:col"` of the source item.
-    pub origin: Str,
+    pub origin: Str<'a>,
     /// `kind::CONTINUOUS | DISCRETE | EVENT`.
     pub kind: u32,
     /// `role::PORT | PARAM | GLOBAL | PRIVATE`.
@@ -406,10 +451,10 @@ pub struct Pin {
     /// `pin_flag::*` bits.
     pub flags: u32,
     /// `CONTINUOUS`: one `F64`. `EVENT`: empty.
-    pub layout: Layout,
-    pub unit: Str,
+    pub layout: Layout<'a>,
+    pub unit: Str<'a>,
     /// `HAS_INIT`: the first commit at (0,0), a `PARAM`'s default, or Newton's start.
-    pub init: Bytes,
+    pub init: Bytes<'a>,
     /// `HAS_CHECK`: a discrete `BOOL` pin that must be true for a host write to be accepted.
     pub check: u32,
     /// `CONTINUOUS`: tolerance of the unknown, of its row; 0 = session default.
@@ -419,17 +464,17 @@ pub struct Pin {
 /// The only description of bytes.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Layout {
+pub struct Layout<'a> {
     pub size: u32,
     pub align: u32,
-    pub fields: List<Field>,
+    pub fields: List<'a, Field<'a>>,
 }
 
 /// One scalar leaf, or an array of them, inside a layout.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Field {
-    pub name: Str,
+pub struct Field<'a> {
+    pub name: Str<'a>,
     /// A `leaf::*` constant, little-endian.
     pub leaf: u32,
     pub offset: u32,
@@ -444,9 +489,9 @@ pub struct Field {
 /// A real value added to a row through an operator.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Term {
-    pub name: Str,
-    pub origin: Str,
+pub struct Term<'a> {
+    pub name: Str<'a>,
+    pub origin: Str<'a>,
     /// `op::FLOW | DDT | DELAY`.
     pub op: u32,
     /// A continuous pin, or `GROUND`.
@@ -461,9 +506,9 @@ pub struct Term {
 /// A held input (abi.md §4.2).
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Input {
-    pub name: Str,
-    pub origin: Str,
+pub struct Input<'a> {
+    pub name: Str<'a>,
+    pub origin: Str<'a>,
     /// `input::LIMIT | NOISE | STIM`.
     pub kind: u32,
 }
@@ -471,13 +516,13 @@ pub struct Input {
 /// An analog output that enters no row (abi.md §4.3).
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Watch {
-    pub name: Str,
-    pub origin: Str,
+pub struct Watch<'a> {
+    pub name: Str<'a>,
+    pub origin: Str<'a>,
     /// `watch::VAR | CROSS | CAP | TRACE`.
     pub kind: u32,
     /// `VAR`, `TRACE` (`CROSS`, `CAP`: one `F64`).
-    pub layout: Layout,
+    pub layout: Layout<'a>,
     /// `CROSS`: the event pin it fires.
     pub event: u32,
     /// Tolerance pins, or `DEFAULT`.
@@ -510,28 +555,28 @@ pub struct Partial {
 /// Pure code with declared reads and writes.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Function {
-    pub name: Str,
-    pub origin: Str,
+pub struct Function<'a> {
+    pub name: Str<'a>,
+    pub origin: Str<'a>,
     /// `fn_flag::*` bits.
     pub flags: u32,
-    pub reads: List<Cell>,
-    pub writes: List<Cell>,
-    pub partials: List<Partial>,
+    pub reads: List<'a, Cell>,
+    pub writes: List<'a, Cell>,
+    pub partials: List<'a, Partial>,
 }
 
 /// Code run once at an instant when an event pin it listens to fires.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct Reaction {
-    pub name: Str,
-    pub origin: Str,
+pub struct Reaction<'a> {
+    pub name: Str<'a>,
+    pub origin: Str<'a>,
     /// `reaction_flag::*` bits.
     pub flags: u32,
     /// Event pins.
-    pub on: List<u32>,
-    pub reads: List<Cell>,
-    pub writes: List<Statement>,
+    pub on: List<'a, u32>,
+    pub reads: List<'a, Cell>,
+    pub writes: List<'a, Statement>,
 }
 
 /// One declared write of a reaction.

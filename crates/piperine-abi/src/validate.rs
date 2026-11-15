@@ -146,7 +146,7 @@ pub(crate) enum CellBytes<'s> {
     F64,
     Byte,
     I64,
-    Layout(&'s Layout),
+    Layout(&'s Layout<'s>),
 }
 
 impl CellBytes<'_> {
@@ -173,8 +173,8 @@ pub enum Access {
 /// The entry an error names.
 struct Entry<'s> {
     what: &'static str,
-    name: &'s Str,
-    origin: &'s Str,
+    name: &'s Str<'s>,
+    origin: &'s Str<'s>,
 }
 
 impl Entry<'_> {

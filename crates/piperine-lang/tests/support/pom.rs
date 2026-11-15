@@ -3,9 +3,10 @@
 
 use piperine_lang::pom::Design;
 
-/// A design of one in-memory root file named `top.msl`.
+/// A design of one in-memory root file named `top.msl`, over an empty standard library: the
+/// targets that use it test lowering, resolution and structure, not the library's content.
 pub fn build(src: &str) -> Design {
-    Design::builder().source("top.msl", src).build()
+    Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "").source("top.msl", src).build()
 }
 
 /// The code of every diagnostic of the design, in order.

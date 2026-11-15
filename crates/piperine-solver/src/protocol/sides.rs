@@ -89,7 +89,12 @@ pub enum Attempt {
     Converged,
     /// The step failed (Newton or truncation): propose again from the last acceptance.
     Rejected,
-    /// A located crossing or a shortened step: the step must land at this time instead.
+    /// A located crossing or a shortened step: the step must land at this time
+    /// instead. The protocol lands on the nearest tick, at least one tick short
+    /// of the target; when the time is at or past the target, or rounds to the
+    /// end of a one-tick step, it takes the step at its end and calls `accept`,
+    /// which then reports the crossing in `Accepted::fired`. Every retry counts
+    /// toward `ProtocolOptions::max_rejections`.
     LandedEarlier(f64),
 }
 

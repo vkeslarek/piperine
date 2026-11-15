@@ -899,7 +899,7 @@ mutable global state. `commit` is called only inside the `react` that received t
 **Undefined behavior closed.** No Rust `enum`, reference or trait object crosses. `Instance`
 is an opaque zero-sized struct. No unwinding. Typed access in the lens requires `Pod`. An
 absent `OPTIONAL` pin reads as zeros through a valid pointer and the lens returns `Option`.
-The shape is validated at bind before any constant is interpreted. In `piperine-abi`, `Str`, `Bytes`, `List` and `Module` keep their pointer fields private: safe code builds only valid ones, and a view of foreign memory is made through an `unsafe fn from_raw_parts` (or an `unsafe` dereference of the producer's pointer), which is the trust boundary. Debug sessions poison and
+The shape is validated at bind before any constant is interpreted. In `piperine-abi`, `Str`, `Bytes`, `List` and `Module` keep their pointer fields private: safe code builds only valid ones, and a view of foreign memory is made through an `unsafe fn from_raw_parts` (or an `unsafe` dereference of the producer's pointer), which is the trust boundary. Each view also carries the lifetime of the memory it borrows (`Str<'a>`, `Bytes<'a>`, `List<'a, T>`, and so `Shape<'a>`, `Pin<'a>`, … through a zero-sized marker, the C layout unchanged): `List::from_slice` borrows its slice, and a shape copied out of a `ShapeRef` cannot outlive it. Debug sessions poison and
 guard output buffers. A device leaves the floating-point environment and signals alone.
 
 **Versioning.** Major is the symbol name. A minor may add fields at the end of any struct

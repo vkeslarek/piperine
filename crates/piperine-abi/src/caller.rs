@@ -68,7 +68,7 @@ fn empty_note() -> Note {
 pub struct Handle {
     module: &'static Module,
     instance: *mut Instance,
-    shape: *const Shape,
+    shape: *const Shape<'static>,
 }
 
 // SAFETY: abi.md §12 "Calls on different instances may run on different
@@ -118,7 +118,7 @@ impl Handle {
     pub fn create(module: &'static Module, values: &[(u32, &[u8])]) -> Result<Handle, CallError> {
         let values: Vec<Value> = values
             .iter()
-            .map(|(pin, b)| Value { pin: *pin, bytes: raw::Bytes { ptr: b.as_ptr(), len: b.len() } })
+            .map(|(pin, b)| Value { pin: *pin, bytes: raw::Bytes::from_slice(b) })
             .collect();
         let mut note = empty_note();
         // SAFETY: abi.md §2 entry 2: `module` is a live module; `values` and
@@ -136,7 +136,7 @@ impl Handle {
     }
 
     /// The instance's shape.
-    pub fn shape(&self) -> &Shape {
+    pub fn shape(&self) -> &Shape<'_> {
         // SAFETY: abi.md §9 "Any other shape lives until the last instance
         // created with it is destroyed": the instance lives as long as `self`.
         unsafe { &*self.shape }

@@ -1,0 +1,1 @@
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; tc1: f64 = 0.0; tnom: f64 = 300.15 where tnom > 0.0; }

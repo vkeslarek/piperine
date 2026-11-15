@@ -4,15 +4,36 @@
 
 ## 22. Standard library
 
-The **standard library** is the set of items below, written in the language over the core primitives of §14.
+The **standard library** is the crate `std`, shipped with the implementation; its source files are normative, and each `rust` fence of this part is an excerpt of one of them.
 
-1. The prelude (§3.4) imports every item of this section. No `use` is needed.
-2. A standard-library item has no semantics beyond its definition here. Its behavior in each analysis follows from §16.2 applied to that definition.
+1. The prelude (§3.4.2) re-exports every `pub` item of the namespaces of `std`. No `use` is needed.
+2. A standard-library item has no semantics beyond its definition. Its behavior in each analysis follows from §16.2 applied to that definition.
 3. A project **MAY** replace any item of this section by declaring an item of the same name in scope. The replacement is an ordinary item, with no privilege of the item it replaces (§3.3.7). The core names of §14 are not replaceable (§14 rule 1).
-4. Where this part gives a definition, the definition is normative. Where it gives only a signature and a contract, the contract is normative.
+4. Where this part gives a definition, the definition is normative. Where it gives only a signature and a contract, the item is declared `extern "intrinsic"` (§3 rule 10) and the contract is normative.
 5. The per-analysis tables in this part are derived from the definitions. If a table and a definition disagree, the definition governs.
 
-> **Resolution.** Listings that omit `pub` (for example `Tribuf`, `D2A`) are prelude exports like the others. They are read as if written with `pub`.
+**Sources.**
+
+| Section | Namespace | File |
+| --- | --- | --- |
+| §1 | `std::constants` | `constants.msl` |
+| §4, §11 | `std::carriers` | `carriers.msl` |
+| §22.1 | `std::values` | `values.msl` |
+| §22.2 | `std::analog` | `analog.msl` |
+| §22.3 | `std::nets` | `nets.msl` |
+| §22.4 | `std::convert` | `convert.msl` |
+| §22.5 | `std::monitor` | `monitor.msl` |
+| §22.6 | `std::io` | `io.msl` |
+
+**Implemented by the engine.**
+
+| Item | Entry | Reason |
+| --- | --- | --- |
+| `matches_bits` | §22.1.4 | reads the characters of a `str` |
+| `logic` | §22.1.4 | reads the characters of a `str` |
+| `table_model` | §22.2.15 | reads the characters of a `str` |
+| `parse_table` | §22.6.4 | reads the characters of a `str` |
+| `parse_hex` | §22.6.4 | reads the characters of a `str` |
 
 > **Resolution.** An implementation **MAY** implement an item natively when the result is observably equal to the definition: same values, same events, same time points, same records.
 
@@ -84,7 +105,6 @@ Codes owned by this part. Conditions that are instances of another part's rule a
 | `E0704` | `table_model` table: abscissae not strictly increasing, or fewer points than the interpolation degree needs | elaboration |
 | `E0705` | `table_model` input outside the table under extrapolation `E`: a panic (§1 rule 11) with its own code | run |
 | `E0706` | `parse_table` or `parse_hex`: text not in the format of §22.6.4 | elaboration |
-| `E0707` | `laplace_*` or `zi_*`: denominator identically zero, or a complex root without its conjugate | elaboration |
 
 ---
 
@@ -150,9 +170,9 @@ byte = cast(sh);            // byte: Bit<u8>; sh[0] is the least significant lev
 #### 22.1.4 `same`, `matches_bits`, `logic`
 
 ```rust
-pub fn same<T: Repr>(a: T, b: T) -> bool;
-pub fn matches_bits<T: Repr>(s: T, pattern: &str) -> bool;
-pub fn logic<T: Repr>(pattern: &str) -> T;
+pub fn same<T: Repr>(a: T, b: T) -> bool { (0..T::WIDTH).all(|k| a.level(k) == b.level(k)) }
+pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: &str) -> bool;
+pub extern "intrinsic" fn logic<T: Repr>(pattern: &str) -> T;
 ```
 
 | Function | Result |
@@ -165,7 +185,7 @@ pub fn logic<T: Repr>(pattern: &str) -> T;
 2. `matches_bits` is a loop over `level`. `logic(p)` is the `merge` of the two values that read each `x` as 0 and as 1.
 3. A pattern has one character per level, each of `0`, `1`, `x`. Any other pattern is `E0702`.
 
-> **Resolution.** The signatures above are inferred from the uses in §5.1 and §22.1. The leftmost pattern character is the highest level (`WIDTH − 1`), as in a Verilog literal: `logic("10xx")` for a `u4` has levels 3 and 2 known.
+> **Resolution.** `same` is its definition. `matches_bits` and `logic` read the characters of a `str`, which no definition in the language can do: they are `extern "intrinsic"` and the contract of rules 2 and 3 is normative. The leftmost pattern character is the highest level (`WIDTH − 1`), as in a Verilog literal: `logic("10xx")` for a `u4` has levels 3 and 2 known.
 
 > **Resolution.** In `matches_bits`, `x` matches any level, known or unknown. `0` and `1` match only a known level of that value; an unknown level does not match them.
 
@@ -218,7 +238,7 @@ pub module init() -> Event {
 3. In a sweep `init()` fires at the first sweep point only (§16.1.2).
 4. In an analysis run at a transient's last instant `init()` does not fire (§16.4).
 5. Reactions on `init()` read the first equilibrium solution (§16 step 4).
-6. `init()` is restricted to an analysis by a guard: `init() && analysis(Tran)`.
+6. `init()` is restricted to an analysis by a guard: `init() && analysis(Transient)`.
 
 | At instants | Where time does not advance | Transient | Small-signal sweep |
 | --- | --- | --- | --- |
@@ -291,7 +311,7 @@ In an analysis run at a transient's last instant `now()` is that instant (§16.2
 A unitless nature for states of order one.
 
 ```rust
-nature State {
+pub nature State {
     potential: Value { access: pos,  abstol: 1u },
     flow:      Rate  { access: rate, abstol: 1n },
 }
@@ -316,7 +336,10 @@ pub fn vt() -> f64 { K_B * temperature() / Q }
 ```rust
 pub module white_noise(psd: f64, name: Option<&str>) -> f64 { noise(psd, name) }
 pub module flicker_noise(k: f64, exp: f64, name: Option<&str>) -> f64 { noise(k / freq().powf(exp), name) }
-pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64, f64); N]; }   // head and params only
+pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
+    table: [(f64, f64); N];
+    noise(table_model(freq(), &table, "1C"), name)
+}
 ```
 
 | Module | Power spectral density |
@@ -330,7 +353,7 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64
 3. `psd` is read only where the source is a source (§16.2). `flicker_noise` is never evaluated at `freq() == 0`.
 4. The implicit param `m` multiplies noise power (§8.5).
 
-> **Resolution.** `noise_table`'s signature is inferred; `table` is a param, since `&` is a function-parameter form (§1 rule 2). It is equivalent to `noise(table_model(freq(), &table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
+> **Resolution.** `table` is a param, since `&` is a function-parameter form (§1 rule 2). The definition is `noise(table_model(freq(), &table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
@@ -341,10 +364,46 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64
 ```rust
 pub module limexp(x: f64) -> f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
 
-pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64;
-pub fn fetlim(new: f64, old: f64, vth: f64) -> f64;
-pub fn limvds(new: f64, old: f64) -> f64;
-pub fn deltalim(new: f64, old: f64, delta: f64) -> f64;
+pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
+    if new > vcrit && (new - old).abs() > 2.0 * nvt {
+        if old > 0.0 {
+            let arg = (new - old) / nvt;
+            if arg > 0.0 { old + nvt * (2.0 + (arg - 2.0).ln()) } else { old - nvt * (2.0 + (2.0 - arg).ln()) }
+        } else { nvt * (new / nvt).ln() }
+    } else if new < 0.0 {
+        let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };
+        if new < arg { arg } else { new }
+    } else { new }
+}
+
+pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
+    let hi = (2.0 * (old - vth)).abs() + 2.0;
+    let lo = (old - vth).abs() + 1.0;
+    let vtox = vth + 3.5;
+    let delv = new - old;
+    if old >= vth {
+        if old >= vtox {
+            if delv <= 0.0 {
+                if new >= vtox { if -delv > lo { old - lo } else { new } }
+                else if new > vth + 2.0 { new } else { vth + 2.0 }
+            } else if delv >= hi { old + hi } else { new }
+        } else if delv <= 0.0 { if new > vth - 0.5 { new } else { vth - 0.5 } }
+        else if new < vth + 4.0 { new } else { vth + 4.0 }
+    } else if delv <= 0.0 { if -delv > hi { old - hi } else { new } }
+    else if new <= vth + 0.5 { if delv > lo { old + lo } else { new } }
+    else { vth + 0.5 }
+}
+
+pub fn limvds(new: f64, old: f64) -> f64 {
+    if old >= 3.5 {
+        if new > old { if new < 3.0 * old + 2.0 { new } else { 3.0 * old + 2.0 } }
+        else if new < 3.5 { if new > 2.0 { new } else { 2.0 } }
+        else { new }
+    } else if new > old { if new < 4.0 { new } else { 4.0 } }
+    else if new > -0.5 { new } else { -0.5 }
+}
+
+pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 { new.clamp(old - delta, old + delta) }
 ```
 
 | Function | Bounds |
@@ -360,7 +419,7 @@ pub fn deltalim(new: f64, old: f64, delta: f64) -> f64;
 4. `limexp` is one `limit` instance per use. It vetoes convergence while active (§17.1.3).
 5. For differentiation `limit` is transparent (§18 rule 3): the derivative of `limexp(x)` is `limexp(x)`.
 
-> **Resolution.** The signatures are inferred from §18 and §22.2. `deltalim(new, old, delta)` is `new.clamp(old − delta, old + delta)`. `pnjlim`, `fetlim` and `limvds` **SHOULD** follow the ngspice functions of the same names (Appendix C.2). Their exact step is not observable at convergence and is not normative.
+> **Resolution.** `deltalim(new, old, delta)` is `new.clamp(old − delta, old + delta)`. `pnjlim`, `fetlim` and `limvds` are the ngspice functions of the same names (Appendix C.2) written in MSL, branch by branch; `pnjlim` has the forward-bias step of `DEVpnjlim` (for `vold > 0`, with `arg = (vnew − vold)/vt`: `vold + vt·(2 + ln(arg − 2))` when `arg > 0`, else `vold − vt·(2 + ln(2 − arg))`; for `vold <= 0`, `vt·ln(vnew/vt)`) and its reverse-bias branch (a `vnew < 0` below `−vold − 1`, or below `2·vold − 1` when `vold <= 0`, is raised to that bound). Their exact step is not observable at convergence and is not normative.
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
@@ -475,7 +534,7 @@ Dynamic semantics:
 8. When `reset` falls, integration continues from the held value (§15.2.1).
 9. `idt` follows VAMS 4.5.4 with no rule of its own.
 
-```rust
+```rust,fragment
 analog for Pi { v(outp) +> k1 * v(inp) + k2 * idt(v(inp), 0.0); }
 ```
 
@@ -648,7 +707,7 @@ pub module zi_nd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     signal ys: [Bit<f64>; D];                // ys[k] = y[n−1−k]
     signal vout: Bit<f64>;                   // the current sample y[n]
     signal y: State;
-    let sampled = analysis(Tran) && !analysis(Static);
+    let sampled = analysis(Transient) && !analysis(Static);
     pos(y)
 }
 digital<N, D> for zi_nd<N, D> {
@@ -700,40 +759,134 @@ The behavior of `zi_nd` in a `Dc` analysis run at a transient's last instant is 
 
 #### 22.2.13 `zi_np`, `zi_zd`, `zi_zp`
 
-Discrete-time filters given by roots. Each converts its roots to coefficients at elaboration and places one `zi_nd`. The listing gives heads and params only; the result is that `zi_nd`.
+Discrete-time filters given by roots. Each converts its roots to coefficients at elaboration and places one `zi_nd`.
 
 ```rust
-pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { zeros: [(f64, f64); N]; poles: [(f64, f64); D]; }
-pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { zeros: [(f64, f64); N]; den: [f64; D]; }
-pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { num: [f64; N]; poles: [(f64, f64); D]; }
+/// True when each complex root has its conjugate as often as itself.
+const fn conjugate_closed<const N: usize>(roots: &[(f64, f64); N]) -> bool {
+    roots.iter().all(|r| r.1 == 0.0
+        || roots.iter().filter(|c| c.0 == r.0 && c.1 == -r.1).count()
+        == roots.iter().filter(|c| c.0 == r.0 && c.1 == r.1).count())
+}
+
+/// Coefficients, ascending in `q = z^−1`, of the product of `1 − ρ·q` over the roots.
+const fn poly_q<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
+    let mut c = [(0.0, 0.0); N + 1];
+    c[0] = (1.0, 0.0);
+    for n in 0..N {
+        let (a, b) = roots[n];
+        for k in (1..=n + 1).rev() {
+            let (pr, pi) = c[k - 1];
+            c[k] = (c[k].0 - (a * pr - b * pi), c[k].1 - (a * pi + b * pr));
+        }
+    }
+    let mut re = [0.0; N + 1];
+    for k in 0..=N { re[k] = c[k].0; }
+    re
+}
+
+/// The same product without its leading 1: the `den` of `zi_nd` (§22.2.12 rule 1).
+const fn den_q<const D: usize>(poles: &[(f64, f64); D]) -> [f64; D] {
+    let c = poly_q(poles);
+    let mut d = [0.0; D];
+    for k in 0..D { d[k] = c[k + 1]; }
+    d
+}
+
+pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    poles: [(f64, f64); D] where conjugate_closed(&poles);
+    zi_nd(x, period) { num: poly_q(&zeros), den: den_q(&poles) }
+}
+pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    den: [f64; D];
+    zi_nd(x, period) { num: poly_q(&zeros), den }
+}
+pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    num: [f64; N];
+    poles: [(f64, f64); D] where conjugate_closed(&poles);
+    zi_nd(x, period) { num, den: den_q(&poles) }
+}
 ```
 
-1. A root is a pair `(real, imaginary)`. A root `ρ` contributes the factor `1 − ρ·z^−1` (VAMS 4.5.12).
-2. A complex root **MUST** appear with its conjugate. Otherwise `E0707`.
+1. A root is a pair `(real, imaginary)`. A root `ρ` contributes the factor `1 − ρ·z^−1` (VAMS 4.5.12). The imaginary parts of the product cancel when the roots are conjugate-closed, so the coefficients are the real parts.
+2. A complex root **MUST** appear with its conjugate. Otherwise the `where` of the param is false: `E0317`.
 3. `num` and `den` follow the convention of `zi_nd` (§22.2.12 rule 1).
 4. Behavior in every analysis is that of the `zi_nd` placed.
 
-> **Resolution.** The signatures and param names are inferred by analogy with `zi_nd`. Roots are params, so the conversion to coefficients is an elaboration constant (§8.2).
+> **Resolution.** Roots are params, so the conversion to coefficients is an elaboration constant (§8.2).
 
 #### 22.2.14 `laplace_nd`, `laplace_np`, `laplace_zd`, `laplace_zp`
 
-Continuous-time filters `H(s)`, with one internal `State` node per pole. The listing gives heads and params only.
+Continuous-time filters `H(s)`, with one internal `State` node per pole.
 
 ```rust
-pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 { num: [f64; N]; den: [f64; D]; }
-pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 { zeros: [(f64, f64); N]; poles: [(f64, f64); D]; }
-pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 { zeros: [(f64, f64); N]; den: [f64; D]; }
-pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 { num: [f64; N]; poles: [(f64, f64); D]; }
+/// Coefficients, ascending in `s`, of the product of `1 − s/ρ`; a root at zero gives the factor `s`.
+const fn poly_s<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
+    let mut c = [(0.0, 0.0); N + 1];
+    c[0] = (1.0, 0.0);
+    for n in 0..N {
+        let (a, b) = roots[n];
+        let zero = a == 0.0 && b == 0.0;
+        let m = a * a + b * b;
+        let (ia, ib) = if zero { (0.0, 0.0) } else { (a / m, -b / m) };        // 1/ρ
+        for k in (1..=n + 1).rev() {
+            let (pr, pi) = c[k - 1];
+            c[k] = if zero { (pr, pi) } else { (c[k].0 - (ia * pr - ib * pi), c[k].1 - (ia * pi + ib * pr)) };
+        }
+        if zero { c[0] = (0.0, 0.0); }
+    }
+    let mut re = [0.0; N + 1];
+    for k in 0..=N { re[k] = c[k].0; }
+    re
+}
+
+pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 1 && N <= D {
+    num: [f64; N];
+    den: [f64; D] where den[D - 1] != 0.0;
+    signal w: [State; D - 1];                // w[k]: the k-th derivative of W, where den(s)·W = x
+    let top = if D > 1 { ddt(pos(w[D - 2])) } else { x / den[0] };
+    let y = (0..N).map(|k| num[k] * if k + 1 < D { pos(w[k]) } else { top }).sum();
+    y
+}
+analog<N, D> for laplace_nd<N, D> {
+    for k in 0..D - 1 {
+        if k + 2 < D { rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]); }
+    }
+    if D > 1 {
+        let mut acc = den[D - 1] * top - x;
+        for j in 0..D - 1 { acc += den[j] * pos(w[j]); }
+        rate(w[D - 2]) +> acc;               // the row of the last state: den(s)·W = x
+    }
+}
+
+pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 where N <= D {
+    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    poles: [(f64, f64); D] where conjugate_closed(&poles);
+    laplace_nd(x) { num: poly_s(&zeros), den: poly_s(&poles) }
+}
+pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 where N < D {
+    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    den: [f64; D];
+    laplace_nd(x) { num: poly_s(&zeros), den }
+}
+pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= D + 1 {
+    num: [f64; N];
+    poles: [(f64, f64); D] where conjugate_closed(&poles);
+    laplace_nd(x) { num, den: poly_s(&poles) }
+}
 ```
 
 1. In the `nd` form, `H(s) = Σ num[k]·s^k / Σ den[k]·s^k`, coefficients in ascending powers of `s`.
 2. A root `ρ` contributes the factor `1 − s/ρ`. A root at zero contributes the factor `s` (VAMS 4.5.11).
-3. A complex root **MUST** appear with its conjugate. A denominator that is identically zero is an error. Both are `E0707`.
-4. The filter is realized with `ddt` on internal `State` nodes. Its states obey the jump rule (§15.2.1).
-5. `x` is a value input: it **MAY** probe and is differentiated.
-6. Applied to a noise result, the filter is `H(jω)·n` (§11.1).
+3. A complex root **MUST** appear with its conjugate. The leading denominator coefficient of `laplace_nd` **MUST** be non-zero (`den[D - 1] != 0.0`): `den: [1.0, 0.0]` would give `H(s) = s`, improper, with fewer poles than the `D - 1` states of rule 5. A zero leading coefficient (so also a denominator that is identically zero) is an error. Each is a false `where` of the param: `E0317`.
+4. `laplace_nd` requires `D >= 1` and `N <= D`: a proper transfer function. A placement that breaks it is `E0304`.
+5. The filter is realized with `ddt` on internal `State` nodes, in the controllable canonical form. Its states obey the jump rule (§15.2.1). With `D == 1` there is no state and the result is `num[0] * x / den[0]`.
+6. `x` is a value input: it **MAY** probe and is differentiated.
+7. Applied to a noise result, the filter is `H(jω)·n` (§11.1).
 
-> **Resolution.** The signatures, param names and coefficient order are inferred from VAMS 4.5.11 and from `zi_nd`. The realization (which state-space form) is not normative; the transfer function and the number of states are.
+> **Resolution.** The transfer function and the number of states are normative; the controllable canonical form is the definition above.
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
@@ -744,7 +897,7 @@ pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 { num: [f64
 Interpolates a table of samples.
 
 ```rust
-pub fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &str) -> f64;
+pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &str) -> f64;
 ```
 
 1. `table` holds `(abscissa, value)` pairs with strictly increasing abscissae. Otherwise `E0704`.
@@ -767,9 +920,9 @@ pub fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &st
 7. A table is usually a `const` read from a file (§20, §22.6.4).
 8. The end conditions of the splines `2` and `3` are implementation-defined and **MUST** be documented (G.64).
 
-> **Resolution.** The signature covers one dimension, which is every use in this specification. The control-string table is that of VAMS 9.21 restricted to one dimension.
+> **Resolution.** `table_model` reads the characters of `control`, so it is `extern "intrinsic"` (§22) and rules 1 to 8 are its contract. It covers one dimension, which is every use in this specification. The control-string table is that of VAMS 9.21 restricted to one dimension.
 
-```rust
+```rust,fragment
 const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));
 analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cubic, error outside
 ```
@@ -777,21 +930,35 @@ analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cu
 #### 22.2.16 `db10`, `db20`
 
 ```rust
-pub fn db10(x: f64) -> f64;      // 10·log10(x): a power ratio
-pub fn db20(x: f64) -> f64;      // 20·log10(|x|): an amplitude ratio
+pub fn db10(x: f64) -> f64 { 10.0 * x.log10() }            // a power ratio
+pub fn db20(x: f64) -> f64 { 20.0 * x.abs().log10() }      // an amplitude ratio
 ```
 
 1. Both are pure functions over values, callable anywhere.
 2. `db10` of a non-positive number and `db20(0.0)` are not finite. In `analog` that fails the solve (§17.1).
 
-> **Resolution.** The definitions are inferred from the names and from `target("gain_db", db20(v(vo) / v(vi)) - 40.0)` (§19). `db20` takes the magnitude, so a sign inversion does not make a gain undefined.
+> **Resolution.** `db20` takes the magnitude, so a sign inversion does not make a gain undefined (`target("gain_db", db20(v(vo) / v(vi)) - 40.0)`, §19).
 
 #### 22.2.17 `normal`
 
 One step of a pseudo-random generator with a normal distribution.
 
 ```rust
-pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64);
+/// One step of SplitMix64: a uniform real in [0, 1) and the next state.
+fn uniform(rng: u64) -> (f64, u64) {
+    let s = rng + 0x9E3779B97F4A7C15;
+    let z = (s ^ (s >> 30)) * 0xBF58476D1CE4E5B9;
+    let z = (z ^ (z >> 27)) * 0x94D049BB133111EB;
+    let z = z ^ (z >> 31);
+    ((z >> 11) as f64 / 9007199254740992.0, s)
+}
+
+pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64) {
+    let (a, s1) = uniform(rng);
+    let (b, s2) = uniform(s1);
+    let z = (-2.0 * (1.0 - a).ln()).sqrt() * (2.0 * PI * b).cos();
+    (mean + sigma * z, s2)
+}
 ```
 
 1. `normal` is pure: the sample and the next state are functions of the arguments alone.
@@ -800,7 +967,7 @@ pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64);
 4. The state is kept by the caller, in a signal. A model's random sequence is therefore a function of its seed param.
 5. An unknown `rng` gives an unknown sample and an unknown next state (§3.3.2).
 
-> **Resolution.** The generator algorithm is implementation-defined and **MUST** be documented. Rules 1–5 are the contract. A sequence, and so a result that depends on one, is portable only between implementations that document the same generator (G.64).
+> **Resolution.** The generator is the one written above: SplitMix64 for two uniform draws and Box-Muller for the sample (`1.0 - a` is in `(0, 1]`, so the logarithm is finite). Integer arithmetic wraps (§1 rule 6).
 
 ```rust,fragment
 on clk.changed() {
@@ -851,7 +1018,7 @@ impl Logic {
     }
 }
 
-nature Wire { value: Logic, resolve: Logic::wired }
+pub nature Wire { value: Logic, resolve: Logic::wired }
 ```
 
 | Drives | `wired` |
@@ -875,7 +1042,7 @@ A typed bus with one driver at a time.
 pub fn tri<T: Repr>(d: &[Option<T>]) -> Option<T> {
     d.iter().fold(None, |a, x| match (a, *x) { (None, y) | (y, None) => y, _ => Some(Unknown) })
 }
-nature Tri<T: Repr> { value: Option<T>, resolve: tri }
+pub nature Tri<T: Repr> { value: Option<T>, resolve: tri }
 ```
 
 | Drives | `tri` |
@@ -893,7 +1060,7 @@ A real-valued net whose drivers add.
 
 ```rust
 pub fn sum(d: &[f64]) -> f64 { d.iter().sum() }
-nature SumNet { value: f64, resolve: sum }
+pub nature SumNet { value: f64, resolve: sum }
 ```
 
 1. The drives are added in the order of their instance paths (§4 rule 2). The result is a function of the source.
@@ -903,9 +1070,9 @@ nature SumNet { value: f64, resolve: sum }
 #### 22.3.5 `Tribuf`, `Pullup`, `Pulldown`
 
 ```rust
-module Tribuf(in d: Bit, in oe: Bit, y: Wire) { y = if oe { Logic::strong(d) } else { Logic::Z }; }
-module Pullup(w: Wire)   { w = Logic::pull(true); }
-module Pulldown(w: Wire) { w = Logic::pull(false); }
+pub module Tribuf(in d: Bit, in oe: Bit, y: Wire) { y = if oe { Logic::strong(d) } else { Logic::Z }; }
+pub module Pullup(w: Wire)   { w = Logic::pull(true); }
+pub module Pulldown(w: Wire) { w = Logic::pull(false); }
 ```
 
 | Module | Drive |
@@ -924,7 +1091,7 @@ module Pulldown(w: Wire) { w = Logic::pull(false); }
 A bus keeper (Verilog `trireg`): holds the last driven level, weakly.
 
 ```rust
-module Keeper(w: Wire) { signal last: Bit; w = Logic::weak(last); }
+pub module Keeper(w: Wire) { signal last: Bit; w = Logic::weak(last); }
 digital for Keeper { on w.changed() && w.s > Strength::Weak { last <- w.v; } }
 ```
 
@@ -937,7 +1104,7 @@ digital for Keeper { on w.changed() && w.s > Strength::Weak { last <- w.v; } }
 A bidirectional pass gate (Verilog `tranif1`).
 
 ```rust
-module Tran(a: Wire, b: Wire, in en: Bit) {
+pub module Tran(a: Wire, b: Wire, in en: Bit) {
     a = if en { b.others() } else { Logic::Z };
     b = if en { a.others() } else { Logic::Z };
 }
@@ -955,7 +1122,7 @@ module Tran(a: Wire, b: Wire, in en: Bit) {
 A CMOS transmission gate at switch level: `tranif1` and `tranif0` in parallel.
 
 ```rust
-module Tgate(a: Wire, y: Wire, in s: Bit, in sn: Bit) {
+pub module Tgate(a: Wire, y: Wire, in s: Bit, in sn: Bit) {
     let n = Tran(a, y, s);
     let p = Tran(a, y, !sn);
 }
@@ -984,7 +1151,7 @@ Discrete carriers and nodes never connect, and no converter is inserted implicit
 `Bit` to node: a level through a resistance, with finite edges.
 
 ```rust
-module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
+pub module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
     rout: f64 = 100.0; tr: f64 = 20p;
     let ramp = transition(match d.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
 }
@@ -1013,7 +1180,7 @@ analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }
 Node to `Bit`, with hysteresis; right from the operating point.
 
 ```rust
-module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
+pub module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
 digital for A2D {
     on above(v(a) - vth - hyst / 2.0) { d <- true; }
     on above(vth - hyst / 2.0 - v(a)) { d <- false; }
@@ -1034,7 +1201,7 @@ digital for A2D {
 A pad: one `Wire`, one node.
 
 ```rust
-module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
+pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
     rout: f64 = 100.0; tr: f64 = 20p; vth: f64 = 0.6; hyst: f64 = 50m;
     signal seen: Bit = false;                                  // the node, thresholded
     let driving = d.others().s.known_or(Strength::Strong) != Strength::HighZ;   // unknown strength: assume driven
@@ -1206,7 +1373,7 @@ This is the delay to use for logic that must follow a sweep (Appendix G.32).
 A tristate buffer with Verilog's inertial gate delay, slower to release than to drive.
 
 ```rust
-module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
+pub module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
     ton: f64 = 100p; toff: f64 = 300p;
     y = inertial(if oe { Logic::strong(d) } else { Logic::Z }, if oe { ton } else { toff });
 }
@@ -1276,8 +1443,8 @@ pub fn target(name: &str, margin: f64)    { emit!("checks", kind = "target", nam
 #### 22.6.4 `parse_table`, `parse_hex`
 
 ```rust
-pub const fn parse_table<Row, const N: usize>(text: &str) -> [Row; N];   // Row: f64 or a tuple of f64
-pub const fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: an integer type
+pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: &str) -> [Row; N];   // Row: f64 or a tuple of f64
+pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: an integer type
 ```
 
 1. Both are `const fn`s from text to an array. They run at elaboration; a run never reads a file (§20).
@@ -1293,7 +1460,7 @@ pub const fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: a
 
 > **Resolution.** In `parse_hex`, `_` inside a word, `//` and `/* */` comments and `@address` records are accepted as in `$readmemh`. A digit `x` or `z` makes its four levels unknown. An index the text does not write is a misfit under rule 5.
 
-```rust
+```rust,fragment
 const IV:  [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));   // whitespace columns
 const ROM: [u32; 1024]      = parse_hex(include_str!("boot.hex"));         // $readmemh format
 ```

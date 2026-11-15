@@ -101,7 +101,7 @@ impl Drop for Probe {
 }
 
 impl Device for Probe {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         static PROTO: OnceLock<ShapeRef> = OnceLock::new();
         PROTO.get_or_init(probe_shape).shape()
     }
@@ -218,7 +218,7 @@ fn destroy(m: &Module, inst: &Created) {
     unsafe { (m.destroy())(inst.instance) }
 }
 
-fn gain_value(bytes: &'static [u8; 8]) -> Value {
+fn gain_value(bytes: &'static [u8; 8]) -> Value<'static> {
     Value { pin: 0, bytes: Bytes::from_static(bytes) }
 }
 
@@ -374,4 +374,19 @@ fn library_fills_its_header() {
     assert_eq!(lib.minor, MINOR);
     assert_eq!((lib.name.as_str(), lib.build.as_str()), ("probes", "test"));
     assert_eq!(lib.modules.iter().map(|m| m.name().as_str()).collect::<Vec<_>>(), ["probe"]);
+}
+
+#[test]
+fn an_unreadable_value_list_is_a_fault() {
+    let m = module::<Probe>("probe");
+    let values = [gain_value(&GAIN_3)];
+    // An older host compiled `Value` smaller: its stride is below this one's.
+    // SAFETY: the pointer is live for the call; the list is refused, never read.
+    let short = unsafe { List::from_raw_parts(values.as_ptr(), 1, 8) };
+    let mut note = empty_note();
+    // SAFETY: `m` comes from `module::<Probe>`; `note` lives for the call.
+    let created = unsafe { (m.create())(&m, short, &mut note) };
+    assert_eq!(created.status, status::FAULT, "never created on its defaults with OK");
+    assert!(created.instance.is_null());
+    assert!(note_text(&note).contains("value list"), "{}", note_text(&note));
 }

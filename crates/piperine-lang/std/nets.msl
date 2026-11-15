@@ -1,0 +1,50 @@
+//! Resolved nets (§22.3): strengths, `Logic`, `Wire`, `tri`, `sum`, the drivers and pass gates.
+
+#[derive(Repr, Clone, Copy, PartialEq, PartialOrd)]
+pub enum Strength { HighZ, Weak, Pull, Strong, Supply }
+
+#[derive(Repr, Clone, Copy, PartialEq)]
+pub struct Logic { pub v: bool, pub s: Strength }
+
+impl Logic {
+    pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
+    pub fn strong(v: bool) -> Logic { Logic { v, s: Strength::Strong } }
+    pub fn pull(v: bool)   -> Logic { Logic { v, s: Strength::Pull } }
+    pub fn weak(v: bool)   -> Logic { Logic { v, s: Strength::Weak } }
+    pub fn supply(v: bool) -> Logic { Logic { v, s: Strength::Supply } }
+}
+
+impl Logic {
+    /// IEEE 1364 net resolution: the strongest drive wins; equal strengths that disagree are unknown.
+    pub fn wired(d: &[Logic]) -> Logic {
+        d.iter().fold(Logic::Z, |a, x|
+            if x.s > a.s { *x } else if x.s < a.s { a } else { Logic { v: merge(a.v, x.v), s: a.s } })
+    }
+}
+
+pub nature Wire { value: Logic, resolve: Logic::wired }
+
+pub fn tri<T: Repr>(d: &[Option<T>]) -> Option<T> {
+    d.iter().fold(None, |a, x| match (a, *x) { (None, y) | (y, None) => y, _ => Some(Unknown) })
+}
+pub nature Tri<T: Repr> { value: Option<T>, resolve: tri }
+
+pub fn sum(d: &[f64]) -> f64 { d.iter().sum() }
+pub nature SumNet { value: f64, resolve: sum }
+
+pub module Tribuf(in d: Bit, in oe: Bit, y: Wire) { y = if oe { Logic::strong(d) } else { Logic::Z }; }
+pub module Pullup(w: Wire)   { w = Logic::pull(true); }
+pub module Pulldown(w: Wire) { w = Logic::pull(false); }
+
+pub module Keeper(w: Wire) { signal last: Bit; w = Logic::weak(last); }
+digital for Keeper { on w.changed() && w.s > Strength::Weak { last <- w.v; } }
+
+pub module Tran(a: Wire, b: Wire, in en: Bit) {
+    a = if en { b.others() } else { Logic::Z };
+    b = if en { a.others() } else { Logic::Z };
+}
+
+pub module Tgate(a: Wire, y: Wire, in s: Bit, in sn: Bit) {
+    let n = Tran(a, y, s);
+    let p = Tran(a, y, !sn);
+}

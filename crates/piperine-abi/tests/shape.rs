@@ -49,7 +49,7 @@ fn resistor() -> ShapeRef {
 }
 
 /// Reads a shape through the raw pointer `ShapeBuf::as_raw` returns.
-fn through_raw(shape: &ShapeRef) -> &Shape {
+fn through_raw(shape: &ShapeRef) -> &Shape<'_> {
     // SAFETY: SAC-07 AC 7, the property under test: the pointer stays valid
     // while `shape` (a `ShapeRef`) lives, which outlives the returned borrow.
     unsafe { &*shape.as_raw() }

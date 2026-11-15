@@ -253,7 +253,7 @@ port (§8.1.12): the parent drives an unnamed carrier with it.
 
 A **discrete expression** reads only values, params, discrete carriers, the environment that is
 constant during an analysis (§14.4), and results that are themselves discrete expressions. A
-**continuous expression** is any other: it reads a probe, `now()`, `freq()`, `analysis(Static)`, or
+**continuous expression** is any other: it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)`, or
 a result that does.
 
 **Static semantics: names and `let`**
@@ -286,7 +286,7 @@ a result that does.
 **Static semantics: definitions**
 
 - **§8.2.5** A definition is recomputed only when a carrier or param it reads changes. Its
-  expression, and its delay, **MUST** be discrete expressions: no probe, no `now()`, no `freq()`, no
+  expression, and its delay, **MUST** be discrete expressions: no probe, no `now()`, no `freq()`, no `gmin()`, no `source_scale()`, no
   `analysis(Static)`, directly or through a `let`, a function or a result. It **MAY** read
   `temperature()`, `simparam` and `analysis` of an analysis kind. An analog value is sampled in a
   reaction (§12.1).
@@ -718,14 +718,19 @@ module** is implemented outside the language.
   Its body lists params only: no signal, `let`, definition, generation or result. It has no value
   inputs and no behavior blocks.
 - **§8.5.8** The ABI string is `"osdi"` or `"cosim"`. The set is closed. `"osdi"` is OSDI
-  version 0.4: that document is normative for the descriptor and the calls of the ABI.
+  version 0.4: that document is normative for the descriptor and the calls of the ABI. The C
+  interface of an extern module is the **device ABI**, whose exported symbol is
+  `piperine_abi_1`. `"cosim"` is a module whose reaction is irreversible (it is never rolled
+  back, §8.5 contract table). `"osdi"` names an adapter over the same ABI.
 - **§8.5.9** `#[link("file", model = "name")]` is required. It names the foreign artifact and, when
   the artifact holds several, the model in it. `model` is the only key. A relative path is relative
   to the source file.
 - **§8.5.10** Ports and params are checked against the foreign descriptor at elaboration: every
   listed param **MUST** exist there with a compatible type, and the ports **MUST** match its
   terminals in number and order. A descriptor param the body does not list keeps its foreign
-  default and is visible to the host only (§21).
+  default and is visible to the host only (§21). A host `set` that would change the structure
+  of an extern module is refused like a structural param (`E0803`, §23.1 rule 7); in a `Dc`
+  sweep that point re-elaborates the instance.
 - **§8.5.11** Port kinds follow the ABI:
 
   | ABI | Ports |
@@ -743,8 +748,8 @@ module** is implemented outside the language.
 
 | ABI | Contract |
 | --- | --- |
-| `"osdi"` | The model is an analog block the language did not write. It is loaded at every Newton iteration. Its limiting vetoes convergence (§18). Its state advances on accepted steps. Its params, operating-point variables, noise sources and internal nodes appear in the metadata (§21) under the descriptor's names. `m` and `dtemp` are passed as the descriptor's multiplicity and temperature. |
-| `"cosim"` | The foreign simulator is one module in the microstep loop (§15). At a microstep where an input changed, or at a time it asked for, it is given the inputs and returns commits and the next time it wants to run. The commits apply at the next microstep. The requested time is a scheduled time (§17.2). It never probes. It is never advanced into a step that can be rejected, so it needs no rollback. |
+| `"osdi"` | The model is an analog block the language did not write, reached through an adapter over the device ABI (§8.5.8). It is loaded at every Newton iteration. Its limiting vetoes convergence (§18). Its state advances on accepted steps. Its params, operating-point variables, noise sources and internal nodes appear in the metadata (§21) under the descriptor's names. `m` and `dtemp` are passed as the descriptor's multiplicity and temperature. |
+| `"cosim"` | The foreign simulator is one module in the microstep loop (§15). At a microstep where an input changed, or at a time it asked for, it is given the inputs and returns commits and the next time it wants to run. The commits apply at the next microstep. The requested time is a scheduled time (§17.2). It never probes. It is never advanced into a step that can be rejected, so it needs no rollback. It is reached through the device ABI (§8.5.8). |
 
 - **§8.5.13** An `"osdi"` instance follows the first table of §16.2 as an `analog` block does: it
   is evaluated in every kind of solve and linearized in a small-signal sweep.
@@ -756,7 +761,7 @@ module** is implemented outside the language.
   `Unknown`.
 
 > **Resolution.** §8.5.16 is stated here. The C interface of `"cosim"` (the step function, its
-> descriptor, how it returns the next time it wants to run) is not specified: G.65.
+> descriptor, how it returns the next time it wants to run) is the device ABI of §8.5.8 (G.65).
 
 **Errors**
 
@@ -813,7 +818,8 @@ A named expression and a value input are not quantities: they are expressions ov
 - **§9 rule 3** A change of a discrete carrier that `analog` reads is a jump (§15.2). The carrier is
   constant during every solve on both sides of it.
 - **§9 rule 4** A host **MAY** `set` a non-structural param during a run. The `set` is collected at a
-  scheduled instant (§15 step 2). When `analog` reads the param, that instant is a jump (§15.2).
+  scheduled instant and applies after the step to that instant is accepted (§15 step 5). When
+  `analog` reads the param, that instant is a jump (§15.2, "Host `set`").
   At it:
   1. every value computed from params is recomputed: bound params, constant `let`s, definitions
      that read the param, armed `at` times (§13 rule 4);
@@ -829,7 +835,7 @@ A named expression and a value input are not quantities: they are expressions ov
 | Code | Condition | Phase |
 | --- | --- | --- |
 | §5.2 | a definition or commit whose target is a param (`E0222`) | elaboration |
-| §23.1 | a host `set` of a structural param during a run (`E0803`) | host |
+| §23.1 | a host `set` of a structural param, or one that changes the structure of an extern module, during a run (`E0803`) | host |
 
 **Examples**
 
@@ -844,7 +850,7 @@ analog for DigiPot { i(p, n) +> v(p, n) / r.known_or(r0); }
 module VcResistor(p: Electrical, n: Electrical, ctl: Electrical) { r0: f64 = 1k; k: f64 = 0.1; }
 analog for VcResistor { i(p, n) +> v(p, n) / (r0 * (1.0 + k * v(ctl))); }
 
-// C. Updated after each time point: an explicit lag of one step. No time point of its own, no jump (§15).
+// C. Updated after each time point: an explicit lag of one step. No time point of its own, no restart (§15 S3).
 module LaggedResistor(p: Electrical, n: Electrical, ctl: Electrical) {
     r0: f64 = 1k; k: f64 = 0.1;
     signal r: Bit<f64> = r0;

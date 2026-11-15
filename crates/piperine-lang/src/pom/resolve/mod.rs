@@ -54,11 +54,9 @@ pub(super) struct Ctx<'a> {
     ambiguous: Cell<bool>,
 }
 
-/// Run every resolution stage over a freshly lowered design.
-pub(super) fn run(design: &mut Design) {
-    design.fill_parents();
-    let out = {
-        let mut ctx = Ctx {
+impl<'a> Ctx<'a> {
+    fn new(design: &'a Design) -> Self {
+        Ctx {
             design,
             scopes: scopes::Scopes::build(design),
             imports: imports::Imports::build(design),
@@ -68,7 +66,15 @@ pub(super) fn run(design: &mut Design) {
             impls: BTreeMap::new(),
             access: classify::access_table(design),
             ambiguous: Cell::new(false),
-        };
+        }
+    }
+}
+
+/// Run every resolution stage over a freshly lowered design.
+pub(super) fn run(design: &mut Design) {
+    design.fill_parents();
+    let out = {
+        let mut ctx = Ctx::new(design);
         let mut out = Output::default();
         out.diagnostics.extend(ctx.scopes.diagnostics(design));
         ctx.resolve_imports(&mut out);
@@ -115,7 +121,11 @@ pub(super) fn run(design: &mut Design) {
     for (file, diagnostic) in classified.diagnostics {
         design.push_diagnostic(file, diagnostic);
     }
-    let members = members::run(design);
+    // A fresh context over the resolved design: stage 7 asks it which traits are in scope.
+    let members = {
+        let ctx = Ctx::new(design);
+        members::run(design, &|from, tr| ctx.trait_in_scope(from, tr))
+    };
     for (expr, res) in members.res {
         design.set_member(expr, res);
     }
