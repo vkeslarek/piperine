@@ -9,6 +9,7 @@ use piperine_abi::thunk::module_with;
 
 mod device;
 mod dual;
+mod netlist;
 mod plan;
 mod walk;
 

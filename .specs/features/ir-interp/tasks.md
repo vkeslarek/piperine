@@ -386,14 +386,14 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] `the_divider_reads_seven_and_a_half_volts`: `Divider.mid` is 7.5 V within 1e-9 in `dc()`
-- [ ] `a_diode_converges_to_the_shockley_point`: 0.8 V, 1 Ω, the current equals the fixed point of the Shockley equation with `gmin` to 1e-9 relative
-- [ ] `an_rc_low_pass_is_at_minus_three_db_at_its_corner`: magnitude `1/√2` to 1e-9 at 100 kHz
-- [ ] `a_held_node_starts_the_transient`: `out` is 0 V at the first step and follows `1 − exp(−t/RC)` within 1e-3 at `t = RC`
-- [ ] If the spike shows bind rejects a function-less shape: stop and report; the design's fallback (`TransientSolver::apply_initial_conditions` from the IR's node inits) is taken only with the orchestrator's word
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `one_module_per_body_with_behaviour_or_a_held_node`, `a_circuit_binds_instances_nodes_and_params`, `an_unset_param_keeps_its_default`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `the_divider_reads_seven_and_a_half_volts`: `Divider.mid` is 7.5 V within 1e-9 in `dc()`
+- [x] `a_diode_converges_to_the_shockley_point`: 0.8 V, 1 Ω, the current equals the fixed point of the Shockley equation with `gmin` to 1e-9 relative
+- [x] `an_rc_low_pass_is_at_minus_three_db_at_its_corner`: magnitude `1/√2` to 1e-9 at 100 kHz
+- [x] `a_held_node_starts_the_transient`: `out` is 0 V at the first step and follows `1 − exp(−t/RC)` within 1e-3 at `t = RC`
+- [x] If the spike shows bind rejects a function-less shape: stop and report; the design's fallback (`TransientSolver::apply_initial_conditions` from the IR's node inits) is taken only with the orchestrator's word
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test circuit`: `one_module_per_body_with_behaviour_or_a_held_node`, `a_circuit_binds_instances_nodes_and_params`, `an_unset_param_keeps_its_default`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: integration
 **Gate**: full

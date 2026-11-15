@@ -97,6 +97,9 @@ impl Circuits {
         b.finish(top)
     }
 
+    /// The low-pass capacitor: with 1 k, its corner is 100 kHz.
+    pub const FARADS: f64 = 1.5915494309189535e-9;
+
     /// `Divider`: 10 V across 1 k and 3 k; `mid` reads 7.5 V.
     pub fn divider() -> Ir {
         let mut b = IrBuilder::new();
@@ -116,12 +119,12 @@ impl Circuits {
         Self::top(b, "DiodeCircuit", &[("vin", None), ("a", None)], places)
     }
 
-    /// `RcLowpass`: a source with `ac = 1`, 1 k, 1 nF to ground.
+    /// `RcLowpass`: a source with `ac = 1`, 1 k, 1.59 nF to ground.
     pub fn rc_lowpass() -> Ir {
         Self::rc("RcLowpass", None, vec![0.0, 1.0])
     }
 
-    /// `RcHeld`: a 1 V source, 1 k, 1 nF, with `out` held at 0 V.
+    /// `RcHeld`: a 1 V source, 1 k, 1.59 nF, with `out` held at 0 V.
     pub fn rc_held() -> Ir {
         Self::rc("RcHeld", Some(0.0), vec![1.0, 0.0])
     }
@@ -132,7 +135,7 @@ impl Circuits {
         let places = vec![
             Place { name: "v1", body: v, nodes: vec![Some(0), None], params: source },
             Place { name: "r1", body: r, nodes: vec![Some(0), Some(1)], params: vec![1000.0] },
-            Place { name: "c1", body: c, nodes: vec![Some(1), None], params: vec![1e-9] },
+            Place { name: "c1", body: c, nodes: vec![Some(1), None], params: vec![Self::FARADS] },
         ];
         Self::top(b, name, &[("vin", None), ("out", out_init)], places)
     }
