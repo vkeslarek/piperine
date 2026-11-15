@@ -228,12 +228,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Resistor pins `r, p, n` and term `FLOW{p,n}`; Capacitor term `DDT{p,n}`; Vsource pins `dc, ac, p, n, b0.flow` and terms `FLOW{p,n}`, `FLOW{b0.flow, GROUND}`; Diode pins `is, n, cj0, a, k, temperature`, one `LIMIT` input `vd`, terms `FLOW{a,k}` and `DDT{a,k}`
-- [ ] A node with `= value` has `HAS_INIT` and the value as `init`; continuous pins carry `abstol = [1e-6, 1e-12]` for `Electrical`
-- [ ] `Handle::create` with 4 bytes for an `f64` param faults naming the param
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `a_held_node_gives_has_init`, `pins_come_in_the_declared_order`, `a_flow_branch_declares_flow_and_ddt_terms`, `a_potential_branch_declares_its_pin_and_two_terms`, `sites_declare_limit_and_stim_inputs`, `a_value_of_the_wrong_layout_faults_naming_the_param`, `a_block_without_contributions_gives_no_term`, `a_held_node_without_analog_is_ports_only`
-- [ ] Gate check passes: `cargo test -p piperine-interp`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Resistor pins `r, p, n` and term `FLOW{p,n}`; Capacitor term `DDT{p,n}`; Vsource pins `dc, ac, p, n, b0.flow` and terms `FLOW{p,n}`, `FLOW{b0.flow, GROUND}`; Diode pins `is, n, cj0, a, k, temperature`, one `LIMIT` input `vd`, terms `FLOW{a,k}` and `DDT{a,k}`
+- [x] A node with `= value` has `HAS_INIT` and the value as `init`; continuous pins carry `abstol = [1e-6, 1e-12]` for `Electrical`
+- [x] `Handle::create` with 4 bytes for an `f64` param faults naming the param
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test shape`: `a_held_node_gives_has_init`, `pins_come_in_the_declared_order`, `a_flow_branch_declares_flow_and_ddt_terms`, `a_potential_branch_declares_its_pin_and_two_terms`, `sites_declare_limit_and_stim_inputs`, `a_value_of_the_wrong_layout_faults_naming_the_param`, `a_block_without_contributions_gives_no_term`, `a_held_node_without_analog_is_ports_only`
+- [x] Gate check passes: `cargo test -p piperine-interp`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: full
