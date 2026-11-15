@@ -6,7 +6,7 @@
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
 use super::sides::{AnalogSide, AnalysisKind, Boundary, DiscreteSide, InstantMode, Restart};
-use super::transient::Protocol;
+use super::transient::{Ended, Protocol};
 
 /// The `E0506` error: the rounds of an operating point exceeded `max`.
 fn too_many_rounds(max: u32, changing: &[Boundary]) -> Error {
@@ -23,13 +23,16 @@ fn too_many_rounds(max: u32, changing: &[Boundary]) -> Error {
 
 impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// Solves the operating point at the current time (abi.md §10, steps 1 to 4).
-    pub fn operating_point(&mut self) -> Result<()> {
+    /// A reaction that returns `FINISH` there ends the run: the result is
+    /// `Ended::Finish` and a later `transient` does nothing.
+    pub fn operating_point(&mut self) -> Result<Ended> {
         let at = self.tick(self.now);
         let analysis = AnalysisKind::OperatingPoint;
         let unknowns = self.analog.has_unknowns();
         self.discrete.start()?;
         self.collect(analysis);
         let mut rounds = 0u32;
+        let mut finish = false;
         let mut samples = Vec::new();
         let quiet = InstantMode { is_static: true, settle: false };
         loop {
@@ -44,8 +47,9 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 samples = accepted.samples;
             }
             let outcome = self.run_whole_instant(at, &samples, at, quiet)?;
+            finish |= outcome.finish;
             self.collect(analysis);
-            if !unknowns || outcome.boundary.is_empty() {
+            if !unknowns || outcome.boundary.is_empty() || finish {
                 break;
             }
             if rounds >= self.options.max_rounds {
@@ -58,8 +62,13 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             // A settle commit is read by the solve that arrives next (abi.md §10 step 4).
             self.analog.deliver(&settled.boundary, Restart::None);
         }
+        finish |= settled.finish;
         self.collect(analysis);
         self.delivery.flush();
-        Ok(())
+        if finish {
+            self.finished = Some(self.now);
+            return Ok(Ended::Finish(self.now));
+        }
+        Ok(Ended::StopTime)
     }
 }

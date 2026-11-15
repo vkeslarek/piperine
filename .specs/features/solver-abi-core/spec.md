@@ -182,6 +182,8 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 - **SAC-25** (7). Every step of a transient SHALL end on the tick grid (a proposal is floored to a tick, at least one past the last acceptance; a located crossing lands on its nearest tick inside the step), and the instant run at a step's end SHALL be that tick's own (F2).
 
+- **SAC-26** (8). WHEN a reaction returns `FINISH` at the operating point THEN `operating_point` SHALL return `Ended::Finish` and a later `transient` SHALL run nothing and return the same end (F3).
+
 ---
 
 ## Edge Cases
@@ -222,6 +224,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-23 | P1: Verification round 1, AC 5 | Execute | Done |
 | SAC-24 | P1: Verification round 1, AC 6 | Execute | Done |
 | SAC-25 | P1: Verification round 1, AC 7 | Execute | Done |
+| SAC-26 | P1: Verification round 1, AC 8 | Execute | Done |
 
 **Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 

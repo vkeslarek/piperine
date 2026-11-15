@@ -588,6 +588,9 @@ Proof: run owner | test a_landing_is_solved_on_the_left_value_then_its_instant_r
 **C45** - An off-grid proposal or crossing lands on the tick grid and runs that tick's instant (SAC-25)
 Proof: run owner | test an_off_grid_step_lands_on_the_tick_grid ... ok
 
+**C46** - A FINISH at the operating point ends the run (SAC-26)
+Proof: run owner | test finish_at_the_operating_point_ends_the_run ... ok
+
 ---
 
 ## Handoff

@@ -8,7 +8,7 @@
 #[path = "support/stub_sides.rs"]
 mod stub_sides;
 
-use piperine_solver::protocol::{Accepted, Boundary, InstantMode, Outcome, Protocol, ProtocolOptions, Restart};
+use piperine_solver::protocol::{Accepted, Boundary, Ended, InstantMode, Outcome, Protocol, ProtocolOptions, Restart};
 use stub_sides::{Call, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
 const QUIET: InstantMode = InstantMode { is_static: true, settle: false };
@@ -94,4 +94,23 @@ fn an_operating_point_without_unknowns_runs_the_instant_only() {
             Call::RunInstant { at: 0, samples: vec![], limit: 0, mode: SETTLE },
         ]
     );
+}
+
+#[test]
+fn finish_at_the_operating_point_ends_the_run() {
+    let log = new_log();
+    let mut d = ScriptedDiscrete::new(&log);
+    let a = ScriptedAnalog::new(&log);
+    d.instants.push_back(Outcome { finish: true, ..Outcome::default() });
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(0.5));
+    assert_eq!(p.operating_point().unwrap(), Ended::Finish(0.0));
+    assert_eq!(p.transient(2.0).unwrap(), Ended::Finish(0.0), "the run already ended");
+    let after = calls(&log, |c| matches!(c, Call::Advance(_) | Call::Propose(..) | Call::Attempt { .. }));
+    assert!(after.is_empty(), "nothing runs after a FINISH: {after:?}");
+
+    // Without a FINISH the operating point completes and the transient runs.
+    let log = new_log();
+    let mut p = Protocol::new(ScriptedDiscrete::new(&log), ScriptedAnalog::new(&log), ProtocolOptions::new(0.5));
+    assert_eq!(p.operating_point().unwrap(), Ended::StopTime);
+    assert_eq!(p.transient(1.0).unwrap(), Ended::StopTime);
 }

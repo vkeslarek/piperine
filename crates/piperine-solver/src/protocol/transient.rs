@@ -40,9 +40,10 @@ impl ProtocolOptions {
     }
 }
 
-/// How a transient ended.
+/// How an analysis ended.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Ended {
+    /// It ran to its end (the stop time; for an operating point, its settle).
     StopTime,
     /// A reaction returned `FINISH`; the analysis ended after the instant at this time.
     Finish(f64),
@@ -57,6 +58,8 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     pub(super) now: f64,
     pub(super) in_transient: bool,
     pub(super) delivery: Delivery,
+    /// The time a `FINISH` ended the run at, if one did.
+    pub(super) finished: Option<f64>,
     /// Host waiters by event net (abi.md R7).
     pub(super) waiters: Vec<(u32, Waiter)>,
 }
@@ -77,6 +80,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             now: 0.0,
             in_transient: false,
             delivery: Delivery::default(),
+            finished: None,
             waiters: Vec::new(),
         }
     }
@@ -137,6 +141,9 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// Runs a transient from the last accepted time (after `operating_point`)
     /// to `stop`.
     pub fn transient(&mut self, stop: f64) -> Result<Ended> {
+        if let Some(t) = self.finished {
+            return Ok(Ended::Finish(t));
+        }
         self.in_transient = true;
         let ended = self.transient_loop(stop);
         self.in_transient = false;
@@ -224,6 +231,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             self.delivery.flush();
             self.now = t_c;
             if final_mark || outcome.finish {
+                self.finished = Some(t_c);
                 return Ok(Ended::Finish(t_c));
             }
         }
