@@ -237,8 +237,9 @@ fn the_old_digital_engine_is_gone() {
 
 /// The tests `solver-abi-integration` removed, by name and the item each was
 /// about (`removed.txt`): every line is `name<TAB>item`, and no function of
-/// that name is left in a crate of the solver (the removal list is the audit
-/// trail of design "Test disposition").
+/// that name is left in a crate of the solver, and every test of the base is
+/// still defined or listed (the removal list is the audit trail of design
+/// "Test disposition").
 #[test]
 fn removed_tests_are_listed_with_their_item() {
     let list = repo_root().join(".specs/features/solver-abi-integration/removed.txt");
@@ -252,6 +253,7 @@ fn removed_tests_are_listed_with_their_item() {
         rust_files(&repo_root().join("crates").join(name), &mut files);
     }
     let mut left = Vec::new();
+    let mut sources = Vec::new();
     for file in files {
         let text = std::fs::read_to_string(&file).expect("read source");
         for name in &names {
@@ -259,8 +261,22 @@ fn removed_tests_are_listed_with_their_item() {
                 left.push(format!("{}: {name}", file.display()));
             }
         }
+        sources.push(text);
     }
     assert!(left.is_empty(), "removed tests still defined:\n{}", left.join("\n"));
+
+    // And every test of the base (43876aec, `base_tests.txt`) is still defined
+    // under its name or listed: a rename is a removal and is listed too.
+    let base = std::fs::read_to_string(repo_root().join(".specs/features/solver-abi-integration/base_tests.txt"))
+        .expect("read base_tests.txt");
+    let base: Vec<&str> = base.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    assert!(base.len() > 500, "base_tests.txt lists the base's tests ({})", base.len());
+    let unlisted: Vec<&str> = base
+        .into_iter()
+        .filter(|name| !names.iter().any(|n| n == name))
+        .filter(|name| !sources.iter().any(|text| defines_fn(text, name)))
+        .collect();
+    assert!(unlisted.is_empty(), "base tests gone without a removed.txt line: {unlisted:#?}");
 }
 
 /// The names of a removal list, and its lines that are not `name<TAB>item`

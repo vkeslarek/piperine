@@ -155,3 +155,6 @@ digital_state_carries_source_labels_or_anonymous_fallback	LogicValue, DigitalSta
 a2d_crossing_interpolates_within_the_published_error_bound	the DigitalDevice seq/comb contract, EventSink and the A2D interpolation wrapper (predict_crossing moved to piperine-analog-solver with its tests)
 non_crossing_samples_yield_no_interpolation	the DigitalDevice seq/comb contract, EventSink and the A2D interpolation wrapper (predict_crossing moved to piperine-analog-solver with its tests)
 external_model_emits_through_the_sink	the DigitalDevice seq/comb contract, EventSink and the A2D interpolation wrapper (predict_crossing moved to piperine-analog-solver with its tests)
+abi_compiles_an_element	the Element surface (renamed: abi_compiles_a_device proves the same DC solve on a Device)
+owner_depends_on_both_sub_solvers_only	the owner's dependency set before it gained piperine-abi (renamed: owner_depends_on_the_abi_and_both_sub_solvers_only)
+_context_default_compiles_for_later_tests	a compile stub for the recording Element double of checkpoint_restore (Context::default is exercised by every driver test)
