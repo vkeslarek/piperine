@@ -754,7 +754,7 @@ Proof: run solver | test divider_reads_the_analytic_ratio_on_devices ... ok
 Proof: run solver | test a_cap_watch_bounds_the_next_step ... ok
 
 **C23** - The numeric assertions of `parity_baseline` are byte-identical to the base commit and the suite passes (SAI-12, Port AC 1)
-Proof: `diff <(git show 98b30ad6:crates/piperine-solver/tests/parity_baseline.rs | grep -E 'abs\(\) <|res\.len\(\)') <(grep -E 'abs\(\) <|res\.len\(\)' crates/piperine-solver/tests/parity_baseline.rs) && cargo test -p piperine-solver`
+Proof: `a=$(mktemp); b=$(mktemp); git show 98b30ad6:crates/piperine-solver/tests/parity_baseline.rs | grep -E 'abs\(\) <|res\.len\(\)' > "$a"; grep -E 'abs\(\) <|res\.len\(\)' crates/piperine-solver/tests/parity_baseline.rs > "$b"; test -s "$a" && diff "$a" "$b" && cargo test -p piperine-solver`
 
 **C24** - Every removed test is listed in `removed.txt` with the item it was about, and none of them exists (SAI-12, Port AC 2)
 Proof: run solver | test removed_tests_are_listed_with_their_item ... ok
