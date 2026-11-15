@@ -179,3 +179,8 @@ User: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida o
 | MD-61: `piperine-abi` sits under all three solver crates | yes - it is the shared contract the ABI defines; amends MD-60's "no in-tree crate under a sub-solver" |
 | ~60 tests whose whole subject is deleted (strength table, LogicValue, seq/comb, EventQueue, capability flags, bypass) | removed by name into removed.txt under Q3 ("o que precisar apagar, pode apagar") |
 | Roles | amendments: Sonnet/Opus; core: Opus implements (protocol, the contract everything uses); digital: Sonnet/Opus; analog: Opus implements (numeric, small); integration: Sonnet/Opus (large) |
+
+## User answer (2026-11-15): order at a scheduled instant
+
+Question: at a scheduled digital instant t, do reactions read the analog value at t (ABI: solve, then react) or the previous time point (today's code: microsteps, then solve)?
+User's choice: "ABI order: solve, then react (Recommended)". solver-abi implements the ABI order (left value at t first, then the instant), keeping the kept discontinuity handling (landing exempt, restart, 1e-3); §15 is rewritten back to that order by the solver-abi feature that changes the code. spec-abi-amendments keeps describing today's code with the §15.2 note.
