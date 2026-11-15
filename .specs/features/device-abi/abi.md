@@ -209,7 +209,9 @@ Rules that hold for every pin, whatever its role:
 - **P3. Zero is "nothing".** Discrete storage starts all zero. A field with `HAS_KNOWN` whose
   known byte is 0 holds no value and its value bytes are zero; debug sessions check this
   canonical form on every write. `piperine-abi` ships the common layouts as constants
-  (`BIT`, `REAL`, `BYTE`), so an external author does not re-derive them.
+  (`BIT`, `REAL`, `BYTE`), so an external author does not re-derive them. Each has one field `v` with a known byte:
+  `BIT` is `{ v: BOOL @0, known @1 }` (size 2, align 1), `REAL` is `{ v: F64 @0, known @8 }`
+  (size 16, align 8), `BYTE` is `{ v: U8 @0, known @1 }` (size 2, align 1).
 - **P4. Layout equality.** Pins on one net have equal layouts (size, alignment, and per field
   leaf, offset, count, known). Names do not count.
 - **P5. Params.** `Module.prototype` lists the `PARAM` pins with layouts and defaults; that is

@@ -118,11 +118,11 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] `BIT` is `{ v: BOOL @0, known @1 }`, size 2, align 1, `LOW = [0,1]`, `HIGH = [1,1]` as abi.md §11 states; `REAL` and `BYTE` follow the design; their offsets are written into abi.md §3.1 P3 in this commit
-- [ ] Test `shipped_layouts_have_their_stated_fields` passes (C4)
-- [ ] Test `layout_equality_ignores_names` passes: equal but renamed fields are equal; a differing leaf, offset, count or known offset is unequal (C5)
-- [ ] Test `a_valueless_field_with_value_bytes_is_not_canonical` passes, with the all-zero buffer canonical (C6)
-- [ ] Gate: full
+- [x] `BIT` is `{ v: BOOL @0, known @1 }`, size 2, align 1, `LOW = [0,1]`, `HIGH = [1,1]` as abi.md §11 states; `REAL` and `BYTE` follow the design; their offsets are written into abi.md §3.1 P3 in this commit
+- [x] Test `shipped_layouts_have_their_stated_fields` passes (C4)
+- [x] Test `layout_equality_ignores_names` passes: equal but renamed fields are equal; a differing leaf, offset, count or known offset is unequal (C5)
+- [x] Test `a_valueless_field_with_value_bytes_is_not_canonical` passes, with the all-zero buffer canonical (C6)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
