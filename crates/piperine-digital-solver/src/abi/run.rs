@@ -13,7 +13,7 @@ use piperine_abi::raw::{Cell, Statement, cell, field_flag, reaction_flag, statem
 use super::dag::Step;
 use super::net::{NetId, NetKind};
 use super::observe::{Obs, Observation};
-use super::plan::{Binding, DigitalPlan};
+use super::plan::{Binding, DigitalPlan, InstancePlan};
 use super::queue::{Instant, Pending, Queue, Writer};
 use super::store::{Aligned, Store};
 use super::tick::{Due, Tick};
@@ -375,6 +375,36 @@ fn relax(
     Ok(())
 }
 
+/// A reaction that runs in the current microstep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Firing {
+    pub instance: usize,
+    pub reaction: usize,
+    /// One of the events it ran for is `SETTLE`.
+    pub on_settle: bool,
+}
+
+/// R1: the reactions with an event pin in `on` that fired in this microstep, in (instance, reaction) order.
+pub fn fired_reactions(instances: &[InstancePlan], settle: &[NetId], store: &Store) -> Vec<Firing> {
+    let mut out = Vec::new();
+    for (i, inst) in instances.iter().enumerate() {
+        for (r, reaction) in inst.handle.shape().reactions.iter().enumerate() {
+            let on: Vec<NetId> = reaction
+                .on
+                .iter()
+                .filter_map(|p| match inst.pins[*p as usize] {
+                    Binding::Net(id) if store.fired(id) => Some(id),
+                    _ => None,
+                })
+                .collect();
+            if !on.is_empty() {
+                out.push(Firing { instance: i, reaction: r, on_settle: on.iter().any(|n| settle.contains(n)) });
+            }
+        }
+    }
+    out
+}
+
 /// What the reactions of one microstep asked for beyond their commits.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Fired {
@@ -412,29 +442,18 @@ pub fn run_reactions(
         on_settle: bool,
     }
     let mut jobs: Vec<Job> = Vec::new();
-    for (i, inst) in instances.iter().enumerate() {
+    for f in fired_reactions(instances, settle, store) {
+        let inst = &instances[f.instance];
         let shape = inst.handle.shape();
-        for (r, reaction) in shape.reactions.iter().enumerate() {
-            let on: Vec<NetId> = reaction
-                .on
-                .iter()
-                .filter_map(|p| match inst.pins[*p as usize] {
-                    Binding::Net(id) if store.fired(id) => Some(id),
-                    _ => None,
-                })
-                .collect();
-            if on.is_empty() {
-                continue;
-            }
-            let lens = cell_lens(shape, &reaction.reads, Access::ReactionRead).expect("bind validated the shape");
-            let inputs = reaction
-                .reads
-                .iter()
-                .zip(&lens)
-                .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, samples))
-                .collect();
-            jobs.push(Job { instance: i, reaction: r, inputs, on_settle: on.iter().any(|n| settle.contains(n)) });
-        }
+        let reaction = shape.reactions.get(f.reaction).expect("listed from this shape");
+        let lens = cell_lens(shape, &reaction.reads, Access::ReactionRead).expect("bind validated the shape");
+        let inputs = reaction
+            .reads
+            .iter()
+            .zip(&lens)
+            .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, samples))
+            .collect();
+        jobs.push(Job { instance: f.instance, reaction: f.reaction, inputs, on_settle: f.on_settle });
     }
 
     for job in jobs {

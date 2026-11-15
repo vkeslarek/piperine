@@ -67,9 +67,17 @@ pub struct Analysis {
     settle_nets: Vec<NetId>,
     /// Per net: some pin on it has role `PARAM` or `GLOBAL`.
     param_nets: Vec<bool>,
+    /// `[instance][reaction]`: running it makes the instant a time point (abi.md §5 R4).
+    probes: Vec<Vec<bool>>,
 }
 
 impl Analysis {
+    /// Whether reaction `reaction` of `instance` reads a continuous pin, or has a statement without
+    /// `LATER` whose net reaches, through reads and writes, the analog side or such a reaction.
+    pub fn probes(&self, instance: u32, reaction: u32) -> bool {
+        self.probes[instance as usize][reaction as usize]
+    }
+
     /// Whether a `PARAM` or `GLOBAL` pin is bound to `net`.
     pub fn is_param_net(&self, net: NetId) -> bool {
         self.param_nets[net.0 as usize]
@@ -201,6 +209,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
             }
         }
     }
+    let probes = reachability(nets, inputs, &functions, &later);
     Ok(Analysis {
         writers,
         functions,
@@ -208,7 +217,67 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
         start_nets: globals(global::START),
         settle_nets: globals(global::SETTLE),
         param_nets,
+        probes,
     })
+}
+
+/// R4, static half: which reactions touch the analog side. A net reaches the analog side when the
+/// analog side reads it, when a function that reads it writes a net that does, or when a reaction
+/// that listens to or reads it touches the analog side; a reaction touches it when it reads a
+/// continuous pin or has a statement without `LATER` on a net that reaches it (a `LATER` commit is
+/// due at another instant, which is tested on its own). Least fixed point.
+fn reachability(
+    nets: &[NetSpec],
+    inputs: &[ShapeInput<'_>],
+    functions: &[FnNode],
+    later: &[Vec<Vec<bool>>],
+) -> Vec<Vec<bool>> {
+    let mut reach: Vec<bool> = nets.iter().map(|n| n.analog_reads).collect();
+    let mut probes: Vec<Vec<bool>> = inputs.iter().map(|i| vec![false; i.shape.reactions.len()]).collect();
+    let net_of = |input: &ShapeInput<'_>, pin: u32| match input.pins.get(pin as usize) {
+        Some(Binding::Net(id)) => Some(*id),
+        _ => None,
+    };
+    loop {
+        let mut changed = false;
+        for f in functions {
+            if f.writes.iter().any(|w| reach[w.0 as usize]) {
+                for r in &f.reads {
+                    if !reach[r.0 as usize] {
+                        reach[r.0 as usize] = true;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for (i, input) in inputs.iter().enumerate() {
+            for (r, reaction) in input.shape.reactions.iter().enumerate() {
+                let samples = reaction.reads.iter().any(|c| {
+                    c.kind == cell::PIN && input.shape.pins.get(c.index as usize).is_some_and(|p| p.kind == kind::CONTINUOUS)
+                });
+                let writes_reaching = reaction.writes.iter().enumerate().any(|(s, st)| {
+                    !later[i][r][s] && net_of(input, st.pin).is_some_and(|n| reach[n.0 as usize])
+                });
+                if !(samples || writes_reaching) {
+                    continue;
+                }
+                probes[i][r] = true;
+                let listened = reaction.on.iter().copied();
+                let read = reaction.reads.iter().filter(|c| c.kind == cell::PIN).map(|c| c.index);
+                for pin in listened.chain(read) {
+                    if let Some(n) = net_of(input, pin)
+                        && !reach[n.0 as usize]
+                    {
+                        reach[n.0 as usize] = true;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            return probes;
+        }
+    }
 }
 
 /// Every pin is bound as its kind allows, to a net that exists and has its kind.

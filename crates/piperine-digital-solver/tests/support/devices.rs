@@ -841,6 +841,106 @@ pub fn settler() -> Handle {
     make::<Settler>(&SETTLER, "settler")
 }
 
+// ─── Delayed ────────────────────────────────────────────────────────────────
+
+/// A statement that promises a delay of at least 1 ns (`LATER`) and commits after 2 ns.
+///
+/// pins: go=0 (PORT event); out=1 (PORT BIT)
+/// reaction 0: on [go] writes [S0 {out, LATER, min_after 1 ns}]; out <- HIGH after 2 ns
+pub struct Delayed;
+static DELAYED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static DELAYED: OnceLock<Module> = OnceLock::new();
+
+fn delayed_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let go = s.pin(PinSpec::event("go", role::PORT));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    s.reaction(ReactionSpec {
+        name: "later",
+        on: vec![go],
+        writes: vec![Statement { flags: statement_flag::LATER, min_after: 1e-9, ..statement(out, 2, 0) }],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Delayed {
+    fn prototype() -> &'static Shape {
+        shared(&DELAYED_SHAPE, delayed_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Delayed, Arc::clone(shared(&DELAYED_SHAPE, delayed_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("delayed", true);
+        cx.commit(0, &HIGH, 2e-9)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn delayed() -> Handle {
+    make::<Delayed>(&DELAYED, "delayed")
+}
+
+// ─── Clockwatch ─────────────────────────────────────────────────────────────
+
+static TICKS_FIELDS: [Field; 2] = [
+    Field { name: Str::from_static("tick"), leaf: leaf::I64, offset: 0, count: 1, flags: 0, known: 0 },
+    Field { name: Str::from_static("horizon"), leaf: leaf::I64, offset: 8, count: 1, flags: 0, known: 0 },
+];
+/// Two `I64`s with no known byte: the `TICK` and `HORIZON` a reaction read.
+pub static TICKS: Layout = Layout { size: 16, align: 8, fields: List::from_slice(&TICKS_FIELDS) };
+
+/// Writes down the `TICK` and `HORIZON` it was given when `go` fires.
+///
+/// pins: go=0 (PORT event); seen=1 (PORT TICKS)
+/// reaction 0: on [go] reads [TICK, HORIZON] writes [S0 {seen}]; seen <- (tick, horizon), no delay
+pub struct Clockwatch;
+static CLOCKWATCH_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static CLOCKWATCH: OnceLock<Module> = OnceLock::new();
+
+fn clockwatch_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let go = s.pin(PinSpec::event("go", role::PORT));
+    let seen = s.pin(PinSpec::discrete("seen", role::PORT, &TICKS));
+    let ambient = |index| Cell { kind: cell::AMBIENT, index, part: part::VALUE };
+    s.reaction(ReactionSpec {
+        name: "watch",
+        on: vec![go],
+        reads: vec![ambient(piperine_abi::raw::ambient::TICK), ambient(piperine_abi::raw::ambient::HORIZON)],
+        writes: vec![statement(seen, 16, 0)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Clockwatch {
+    fn prototype() -> &'static Shape {
+        shared(&CLOCKWATCH_SHAPE, clockwatch_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Clockwatch, Arc::clone(shared(&CLOCKWATCH_SHAPE, clockwatch_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("clockwatch", true);
+        let mut bytes = [0u8; 16];
+        bytes[..8].copy_from_slice(&cx.i64(0).to_le_bytes());
+        bytes[8..].copy_from_slice(&cx.i64(1).to_le_bytes());
+        cx.commit(0, &bytes, 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn clockwatch() -> Handle {
+    make::<Clockwatch>(&CLOCKWATCH, "clockwatch")
+}
+
 // ─── Binding by name ────────────────────────────────────────────────────────
 
 /// One device to place: its path, the live instance and `(pin name, net name)` wires.

@@ -320,15 +320,15 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `advance_stops_before_the_first_time_point_and_leaves_it_untouched` passes: after `Landing(s)` the store, queue and observations equal their state before instant `s` (C32)
-- [ ] Test `each_clause_of_the_time_point_test_stops_advance` passes with one case per clause: an analog-read net changes; a reaction with a sample read fires; a reaction with a non-`LATER` statement that reaches an analog-read net fires; an `IRREVERSIBLE` reaction fires (C34, first half)
-- [ ] Test `a_free_running_clock_does_not_stop_advance` runs 1000 edges of a `Timer` nobody on the analog side reads inside one `advance` (C34, second half)
-- [ ] Test `a_later_statement_does_not_make_its_instant_a_time_point` passes, and its due instant is tested on its own
-- [ ] Test `a_landing_found_at_a_later_microstep_restores_the_whole_instant` passes (abi.md §5 step 2: a firing at microstep `n > 0`)
-- [ ] Test `horizon_is_before_the_earliest_pending_commit_and_the_limit` and test `tick_is_the_instants_tick` pass (C35)
-- [ ] Test `a_commit_due_after_the_target_stays_pending` and test `times_that_round_to_one_tick_are_one_instant` pass (C36)
-- [ ] Test `advance_returns_final_at_a_finish` passes
-- [ ] Gate: full
+- [x] Test `advance_stops_before_the_first_time_point_and_leaves_it_untouched` passes: after `Landing(s)` the store, queue and observations equal their state before instant `s` (C32)
+- [x] Test `each_clause_of_the_time_point_test_stops_advance` passes with one case per clause: an analog-read net changes; a reaction with a sample read fires; a reaction with a non-`LATER` statement that reaches an analog-read net fires; an `IRREVERSIBLE` reaction fires (C34, first half)
+- [x] Test `a_free_running_clock_does_not_stop_advance` runs 1000 edges of a `Timer` nobody on the analog side reads inside one `advance` (C34, second half)
+- [x] Test `a_later_statement_does_not_make_its_instant_a_time_point` passes, and its due instant is tested on its own
+- [x] Test `a_landing_found_at_a_later_microstep_restores_the_whole_instant` passes (abi.md §5 step 2: a firing at microstep `n > 0`)
+- [x] Test `horizon_is_before_the_earliest_pending_commit_and_the_limit` and test `tick_is_the_instants_tick` pass (C35)
+- [x] Test `a_commit_due_after_the_target_stays_pending` and test `times_that_round_to_one_tick_are_one_instant` pass (C36)
+- [x] Test `advance_returns_final_at_a_finish` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

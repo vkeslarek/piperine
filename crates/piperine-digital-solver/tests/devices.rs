@@ -31,6 +31,8 @@ fn every_fixture_shape_is_valid() {
         ("rogue", rogue()),
         ("setter", setter()),
         ("settler", settler()),
+        ("delayed", delayed()),
+        ("clockwatch", clockwatch()),
     ];
     for (name, handle) in &all {
         validate(handle.shape()).unwrap_or_else(|e| panic!("{name}: {e}"));

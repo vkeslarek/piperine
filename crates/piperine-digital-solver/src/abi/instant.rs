@@ -9,9 +9,18 @@ use std::collections::BTreeSet;
 use super::engine::{Digital, Mode, Outcome};
 use super::net::{NetId, NetKind};
 use super::queue::Writer;
-use super::run::{Ambient, fire_net, run_functions, run_reactions, write_net};
+use super::run::{Ambient, fire_net, fired_reactions, run_functions, run_reactions, write_net};
+use piperine_abi::raw::reaction_flag;
 use super::tick::Tick;
 use crate::error::DigitalError;
+
+/// How a pass over an instant ended.
+pub(crate) enum Stepped {
+    Done(Outcome),
+    /// A look-ahead stopped: the instant is a landing; `time_point` is false when only an
+    /// `IRREVERSIBLE` reaction made it one.
+    Landing { time_point: bool },
+}
 
 impl Digital {
     /// `HORIZON`: the last tick before the earliest pending commit and before `limit`, never
@@ -30,6 +39,24 @@ impl Digital {
         limit: Tick,
         mode: Mode,
     ) -> Result<Outcome, DigitalError> {
+        match self.microsteps(at, samples, limit, mode, false)? {
+            Stepped::Done(outcome) => Ok(outcome),
+            Stepped::Landing { .. } => unreachable!("only a look-ahead stops at a landing"),
+        }
+    }
+
+    /// The loop of `run_instant`. In a look-ahead the time-point test (abi.md §5 R4) runs after
+    /// each microstep's functions and before its reactions: the instant stops, half done, when an
+    /// analog-read net changed, or a reaction about to run touches the analog side or is
+    /// `IRREVERSIBLE`; the caller restores its checkpoint.
+    pub(crate) fn microsteps(
+        &mut self,
+        at: Tick,
+        samples: &[f64],
+        limit: Tick,
+        mode: Mode,
+        lookahead: bool,
+    ) -> Result<Stepped, DigitalError> {
         let res = self.plan.resolution.seconds_per_tick;
         self.now = at;
         let mut out = Outcome::default();
@@ -61,6 +88,7 @@ impl Digital {
             ambient.is_static = mode.is_static;
             ambient.horizon = self.horizon(at, limit);
             run_functions(&self.plan, &mut self.store, &mut self.dirty, here, &ambient, &mut self.obs)?;
+            let mut analog_now = false;
             for (i, spec) in self.plan.nets.iter().enumerate() {
                 let id = NetId(i as u32);
                 if self.store.fired(id) {
@@ -68,6 +96,22 @@ impl Digital {
                 }
                 if spec.analog_reads && self.store.changed(id) {
                     boundary.insert(id);
+                    analog_now = true;
+                }
+            }
+            if lookahead {
+                let settle = self.plan.analysis().settle_nets();
+                let firing = fired_reactions(&self.plan.instances, settle, &self.store);
+                let probing = firing.iter().any(|f| self.plan.analysis().probes(f.instance as u32, f.reaction as u32));
+                let irreversible = firing.iter().any(|f| {
+                    let shape = self.plan.instances[f.instance].handle.shape();
+                    shape.reactions.get(f.reaction).is_some_and(|r| r.flags & reaction_flag::IRREVERSIBLE != 0)
+                });
+                if analog_now || probing {
+                    return Ok(Stepped::Landing { time_point: true });
+                }
+                if irreversible {
+                    return Ok(Stepped::Landing { time_point: false });
                 }
             }
             let ran = run_reactions(
@@ -139,6 +183,6 @@ impl Digital {
 
         out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
         out.fired = fired.into_iter().collect();
-        Ok(out)
+        Ok(Stepped::Done(out))
     }
 }
