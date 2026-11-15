@@ -1187,3 +1187,15 @@ fn zero_bytes_are_the_unknown_value() {
     let s = flat(&section(&carriers, "### 5.3 "));
     assert!(s.contains("value bytes"), "{s}");
 }
+
+#[test]
+fn continuation_variables_are_core_functions() {
+    let behavior = spec("part_iv_behavior.md");
+    let s = section(&behavior, "### 14.4");
+    let rows = table_rows(&s);
+    for name in ["`gmin() -> f64`", "`source_scale() -> f64`"] {
+        let row = rows.iter().find(|r| r[0] == name).unwrap_or_else(|| panic!("no row {name}"));
+        assert_eq!(row[2], "environment of the solve", "{row:?}");
+    }
+    assert!(flat(&s).contains("names no session parameter of `simparam`"), "{s}");
+}

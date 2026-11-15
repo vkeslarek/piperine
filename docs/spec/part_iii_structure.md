@@ -253,7 +253,7 @@ port (§8.1.12): the parent drives an unnamed carrier with it.
 
 A **discrete expression** reads only values, params, discrete carriers, the environment that is
 constant during an analysis (§14.4), and results that are themselves discrete expressions. A
-**continuous expression** is any other: it reads a probe, `now()`, `freq()`, `analysis(Static)`, or
+**continuous expression** is any other: it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)`, or
 a result that does.
 
 **Static semantics: names and `let`**
@@ -286,7 +286,7 @@ a result that does.
 **Static semantics: definitions**
 
 - **§8.2.5** A definition is recomputed only when a carrier or param it reads changes. Its
-  expression, and its delay, **MUST** be discrete expressions: no probe, no `now()`, no `freq()`, no
+  expression, and its delay, **MUST** be discrete expressions: no probe, no `now()`, no `freq()`, no `gmin()`, no `source_scale()`, no
   `analysis(Static)`, directly or through a `let`, a function or a result. It **MAY** read
   `temperature()`, `simparam` and `analysis` of an analysis kind. An analog value is sampled in a
   reaction (§12.1).

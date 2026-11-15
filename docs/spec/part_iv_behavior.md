@@ -562,7 +562,7 @@ of `&&` whose left operand is an `Event`.
   event positions only, under §8.3.4. `settle` is a core `Event` value; `s.changed()` is a core
   method.
 - **§13 rule 11** The argument of `at` **MUST** be a discrete expression (§8.2): no probe, no `now()`,
-  no `freq()`, no `analysis(Static)`. The check is made per instance, after value inputs are
+  no `freq()`, no `gmin()`, no `source_scale()`, no `analysis(Static)`. The check is made per instance, after value inputs are
   substituted.
 - **§13 rule 12** The argument `e` of `cross` is any `f64` expression, continuous or not. It **MAY** be
   unknown (§13 rule 5).
@@ -737,7 +737,7 @@ library (§22), written in the language over this section.
 | `ddx(e, probe)` | `fn` | partial derivative | `analog` | 14.2 |
 | `ac_stim(mag, phase: Option<f64>)` | `fn` | small-signal stimulus | `analog` | 14.3 |
 | `temperature()`, `simparam(name, default: Option<f64>)`, `analysis(a)` for an analysis kind | `fn` | environment, constant during an analysis | everywhere | 14.4 |
-| `now()`, `freq()`, `analysis(Static)` | `fn` | environment of the solve (§16.2) | everywhere but definitions (§8.2.5) | 14.4 |
+| `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` | `fn` | environment of the solve (§16.2) | everywhere but definitions (§8.2.5) | 14.4 |
 | `ddt(x, abstol: Option<f64>)` | module | time derivative; its argument is a state of the jump rule (§15.2) | where instances go (§8.3.4) and `analog` reads them | 14.5 |
 | `delay(x, td, max: Option<f64>)` | module | `x` as it was `td` ago | the same | 14.6 |
 | `limit(x, f, seed: Option<f64>)` | module | Newton step limiting (§18) | the same | 14.7 |
@@ -792,7 +792,7 @@ library (§22), written in the language over this section.
 | `E0456` | `simparam(name)` with no default and no such session parameter | run, at the start of the analysis |
 | `E0457` | a core name redefined by a model (§14 rule 1) | elaboration |
 | §8.1 | an environment function in a const context (`E0323`) | elaboration |
-| §8.2 | `now()`, `freq()`, `analysis(Static)` or a probe in a definition (`E0336`) | elaboration |
+| §8.2 | `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` or a probe in a definition (`E0336`) | elaboration |
 | §8.3 | a core module placed in a `fn`, a closure or a reaction body (`E0350`) | elaboration |
 | §3.3 | an unknown value reaching `ddt`, `delay`, `limit` or `noise` (`E0150`) | elaboration |
 
@@ -865,6 +865,8 @@ with `mag` and `phase` evaluated at the operating point.
 | `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Tran`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
 | `now() -> f64` | the time of the solve | environment of the solve |
 | `freq() -> f64` | the frequency of the sweep point | environment of the solve |
+| `gmin() -> f64` | the conductance of the shunt the solver adds on every node, in siemens | environment of the solve |
+| `source_scale() -> f64` | the factor, in `[0, 1]`, by which the solver scales independent sources | environment of the solve |
 | `analysis(Static) -> bool` | whether the solve is an equilibrium solve (§11.1.1) | environment of the solve |
 
 **Static semantics**
@@ -877,6 +879,12 @@ with `mag` and `phase` evaluated at the operating point.
   selector (§11 rule 3).
 - **§14.4.6** This specification names no session parameter of `simparam`. The names are the
   host's (G.66).
+- **§14.4.7** `gmin()` and `source_scale()` are the continuation variables (§16 step 3). They
+  change between solves, as `now()` and `freq()` do, so they are not constant during an
+  analysis and §14.4.1 does not apply to them. At rest `gmin()` is the session `gmin` and
+  `source_scale()` is 1.0: every solve reads these values except the solves of a continuation
+  method of an equilibrium, where `gmin()` is the shunt of the step and `source_scale()` the
+  scale of the step. The last solve of every sequence is at rest (§16 step 3).
 
 **Dynamic semantics.** Per solve: the environment rows of §16.2.
 

@@ -190,12 +190,12 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] §14.4 lists `gmin()` and `source_scale()` with their class (they change between solves, like `now()` and `freq()`, so they are not constant during an analysis: §14.4.1 is not contradicted), their value at rest (the session `gmin`; 1.0) and the solves in which they differ from it
-- [ ] §14.4.6 still names no `simparam` session parameter
-- [ ] Every other list of the core environment functions in `docs/spec/` (grep `now()` and `freq()`: Part VII, Appendix H, `index.md`) carries the two names, and the construct-count guard of `spec_text.rs` passes
-- [ ] If a guard of `piperine-lang` ties `crates/piperine-lang/src/pom/builtin.rs` to that list, the two rows are added there in this commit; otherwise `builtin.rs` is untouched
-- [ ] Test `continuation_variables_are_core_functions` asserts `gmin()` and `source_scale()` inside the `### 14.4` section
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] §14.4 lists `gmin()` and `source_scale()` with their class (they change between solves, like `now()` and `freq()`, so they are not constant during an analysis: §14.4.1 is not contradicted), their value at rest (the session `gmin`; 1.0) and the solves in which they differ from it
+- [x] §14.4.6 still names no `simparam` session parameter
+- [x] Every other list of the core environment functions in `docs/spec/` (grep `now()` and `freq()`: Part VII, Appendix H, `index.md`) carries the two names, and the construct-count guard of `spec_text.rs` passes
+- [x] If a guard of `piperine-lang` ties `crates/piperine-lang/src/pom/builtin.rs` to that list, the two rows are added there in this commit; otherwise `builtin.rs` is untouched
+- [x] Test `continuation_variables_are_core_functions` asserts `gmin()` and `source_scale()` inside the `### 14.4` section
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full

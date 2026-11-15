@@ -324,7 +324,7 @@ Each item is in force through the `Resolution` note cited, which refers back her
 | Item | Resolved in | In force | Against the design |
 | --- | --- | --- | --- |
 | G.49 | §4 rule 13 | compatible continuous natures also need equal flow names when both declare `flow` | §4 rule 5 tests potential names only; a `Servo` node (§11) no longer meets an `Electrical` one |
-| G.50 | §13 rule 11 | the argument of `at` is a discrete expression: no probe, `now()`, `freq()` or `analysis(Static)` | the design says only that `now()` is not an input |
+| G.50 | §13 rule 11 | the argument of `at` is a discrete expression: no probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)` | the design says only that `now()` is not an input |
 | G.51 | §8.2.21 | an undelayed definition forbids an initial value on the levels it defines | a new static error; no model of this specification is hit |
 | G.52 | §13 rule 16, §5.3.11 | `p.changed()` never fires at `(0, 0)`; a `set` made before the run binds the param | the design commits such a `set` at `(0, 0)` like an initial value |
 | G.53 | §8.4.4 | a placement through a template value takes no param block | removes `cell(c) { m: 2.0 }` |

@@ -212,7 +212,7 @@ of the functions it calls. A function may belong to several classes; the restric
 | Class | The body… | Callable in |
 | --- | --- | --- |
 | pure | uses values, reads discrete carriers and the environment that is constant during an analysis ([§14](part_iv_behavior.md#14-core-primitives)) | anywhere |
-| solve-reading | probes (`v(a)`, `i(a, b)`) or reads the environment of the solve (`now()`, `freq()`, `analysis(Static)`) | `analog`, event expressions, reaction bodies, body `let`s, value inputs of instances |
+| solve-reading | probes (`v(a)`, `i(a, b)`) or reads the environment of the solve (`now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)`) | `analog`, event expressions, reaction bodies, body `let`s, value inputs of instances |
 | event | returns `Event` ([§13](part_iv_behavior.md#13-events)) | event positions; as `bool` inside a reaction |
 | emitting | calls `emit!` ([§19](part_vi_io.md#19-streams-and-checks)) | reactions, `analog` |
 

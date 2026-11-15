@@ -416,6 +416,8 @@ not executed.
 | `bound_step(dt)` | nothing | caps the next step | nothing | nothing |
 | `now()` | 0 | `t` | `t` | 0 |
 | `freq()` | 0 | 0 | 0 | the frequency of the point |
+| `gmin()` | the session `gmin`; the shunt of the step in a gmin-stepping solve | the session `gmin` | the session `gmin` | the session `gmin` |
+| `source_scale()` | 1.0; the scale of the step in a source-stepping solve | 1.0 | 1.0 | 1.0 |
 | `analysis(Static)` | true | false | false | false |
 | `temperature()`, `simparam`, `analysis` of a kind | constant | constant | constant | constant |
 | a discrete carrier, a param | constant | constant | constant: its change is why the solve runs | constant: no response |
