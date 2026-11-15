@@ -162,6 +162,16 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 
 ---
 
+### P1: Verification round 1 fixes
+
+**User Story**: As the owner of the ABI, I want the findings of verification round 1 closed with requirements of their own, so that each fix has a criterion and a check.
+
+**Acceptance Criteria** (appended; approved ACs above are history):
+
+- **SAC-19** (1). IF a declared partial or its finite difference is not finite THEN `verify_partials` SHALL report it as a mismatch naming the partial (F7).
+
+---
+
 ## Edge Cases
 
 - WHEN a list is empty THEN its pointer SHALL be non-null and aligned, and reading it SHALL yield no element.
@@ -193,6 +203,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-16 | P1: Protocol, AC 9, 10, 11 (no analog, operating point, `E0506`) | Tasks | In Tasks |
 | SAC-17 | P1: Protocol, AC 12, 13 (the sink) | Tasks | In Tasks |
 | SAC-18 | P1: Protocol, AC 15 (host writes) | Tasks | In Tasks |
+| SAC-19 | P1: Verification round 1, AC 1 | Execute | Done |
 
 **Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 

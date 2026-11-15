@@ -570,6 +570,9 @@ Proof: run owner | test a_host_waiter_runs_once_and_its_writes_are_due_next_micr
 **C39** - A host write is committed only after the shadow accepts it (SAC-18, Protocol AC 15)
 Proof: run owner | test a_write_is_committed_only_after_the_shadow_accepts ... ok
 
+**C40** - A NaN declared partial or a NaN finite difference is a mismatch, not a pass (SAC-19)
+Proof: run abi | test a_non_finite_partial_is_a_mismatch ... ok
+
 ---
 
 ## Handoff
