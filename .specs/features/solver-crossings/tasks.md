@@ -101,8 +101,8 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] `two_commits_to_one_net_settle_to_one_write`, `a_commit_undone_in_its_microstep_is_no_change`, `a_settled_change_is_one_observation` pass
-- [ ] Gate check passes: `cargo test -p piperine-digital-solver`
+- [x] `two_commits_to_one_net_settle_to_one_write`, `a_commit_undone_in_its_microstep_is_no_change`, `a_settled_change_is_one_observation` pass
+- [x] Gate check passes: `cargo test -p piperine-digital-solver`
 
 **Tests**: unit
 **Gate**: full

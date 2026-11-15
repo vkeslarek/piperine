@@ -232,3 +232,95 @@ fn an_instant_reports_boundary_fired_and_final() {
     d.host_commit(net(&d, "s.delay"), 0, &2e-9f64.to_le_bytes(), Tick(3)).unwrap();
     assert!(instant(&mut d, Tick(3)).host_param_write);
 }
+
+/// The `Change` observations of net `name` at instant `(t, n)`.
+fn changes(seen: &[Observation], name: &str, t: Tick, n: u32) -> Vec<Vec<u8>> {
+    seen.iter()
+        .filter_map(|o| match o {
+            Observation::Change { net, at, bytes } if net == name && *at == (t, n) => Some(bytes.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn two_commits_to_one_net_settle_to_one_write() {
+    // DSV-01 AC 1 (§12.1.1, §12.1.2): the commits of a microstep apply together, the later one
+    // winning each byte it writes. `d` holds [0, 0]; HIGH ([1, 1]) then a one-byte 0 at offset 0
+    // settle to [0, 1], LOW: one write, one change
+    let mut d = engine(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    assert_eq!(d.read(net(&d, "d")), [0, 0]);
+    d.drain_observations();
+    let t = Tick(5 * NS);
+    d.host_commit(net(&d, "d"), 0, &HIGH, t).unwrap();
+    d.host_commit(net(&d, "d"), 0, &[0], t).unwrap();
+    instant(&mut d, t);
+    assert_eq!(d.read(net(&d, "d")), LOW, "the later commit wins its byte, the earlier keeps the other");
+    let seen = d.drain_observations();
+    assert_eq!(changes(&seen, "d", t, 0), vec![LOW.to_vec()], "one change, to the settled value: {seen:?}");
+}
+
+#[test]
+fn a_commit_undone_in_its_microstep_is_no_change() {
+    // DSV-01 AC 2 (§8.2.3, §12.1.18): clk holds HIGH; LOW then HIGH in one microstep settle to
+    // HIGH, the value it had: no change, CHANGED reads false, so the flip-flop's rising edge (it
+    // reads VALUE, PREVIOUS and CHANGED) does not fire and q keeps the d sampled before
+    reset_calls();
+    let mut d = engine(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    d.host_commit(net(&d, "d"), 0, &LOW, Tick(NS)).unwrap();
+    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(NS)).unwrap();
+    instant(&mut d, Tick(NS));
+    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2 * NS)).unwrap();
+    instant(&mut d, Tick(2 * NS));
+    assert_eq!(d.read(net(&d, "q")), LOW, "the edge at 2 ns sampled d = LOW");
+    let sampled = calls("dff").1;
+    assert_eq!(sampled, 1, "one rising edge so far");
+    d.host_commit(net(&d, "d"), 0, &HIGH, Tick(3 * NS)).unwrap();
+    instant(&mut d, Tick(3 * NS));
+    d.drain_observations();
+
+    let t = Tick(4 * NS);
+    d.host_commit(net(&d, "clk"), 0, &LOW, t).unwrap();
+    d.host_commit(net(&d, "clk"), 0, &HIGH, t).unwrap();
+    instant(&mut d, t);
+    let seen = d.drain_observations();
+    assert_eq!(d.read(net(&d, "clk")), HIGH);
+    assert!(changes(&seen, "clk", t, 0).is_empty(), "the settled clk is the one before: no change: {seen:?}");
+    assert!(
+        !seen.iter().any(|o| matches!(o, Observation::Fire { net, .. } if net == "ff.rise")),
+        "no edge fired: {seen:?}"
+    );
+    assert_eq!(calls("dff").1, sampled, "the flip-flop did not sample again");
+    assert_eq!(d.read(net(&d, "q")), LOW, "q did not take d = HIGH");
+}
+
+#[test]
+fn a_settled_change_is_one_observation() {
+    // DSV-01 AC 3: clk holds LOW; HIGH, LOW, HIGH in one microstep settle to HIGH: one change,
+    // to HIGH, with PREVIOUS = LOW (the value before the microstep), so the rising edge fires
+    // once and q samples d
+    reset_calls();
+    let mut d = engine(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    d.host_commit(net(&d, "d"), 0, &HIGH, Tick(NS)).unwrap();
+    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(NS)).unwrap();
+    instant(&mut d, Tick(NS));
+    d.drain_observations();
+
+    let t = Tick(2 * NS);
+    for bytes in [HIGH, LOW, HIGH] {
+        d.host_commit(net(&d, "clk"), 0, &bytes, t).unwrap();
+    }
+    instant(&mut d, t);
+    let seen = d.drain_observations();
+    assert_eq!(changes(&seen, "clk", t, 0), vec![HIGH.to_vec()], "one change, to HIGH: {seen:?}");
+    let rises = seen.iter().filter(|o| matches!(o, Observation::Fire { net, .. } if net == "ff.rise")).count();
+    assert_eq!(rises, 1, "PREVIOUS is LOW, VALUE HIGH: one rising edge");
+    assert_eq!(calls("dff").1, 1);
+    assert_eq!(d.read(net(&d, "q")), HIGH, "q sampled d");
+}

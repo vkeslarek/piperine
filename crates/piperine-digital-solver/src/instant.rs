@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::net::{NetId, NetKind};
-use crate::queue::Writer;
+use crate::queue::{Instant, Writer};
 use crate::run::{Ambient, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
 use piperine_abi::raw::reaction_flag;
 use crate::tick::Tick;
@@ -22,7 +22,52 @@ pub(crate) enum Stepped {
     Landing { time_point: bool },
 }
 
+/// One discrete net as the commits due at a microstep left it.
+struct Settled {
+    net: NetId,
+    /// The whole net: its value before the microstep, each commit's bytes laid over it in order.
+    bytes: Vec<u8>,
+    /// The writer of the last commit, whose bytes the net holds.
+    last: Writer,
+    /// A commit came from the host.
+    host: bool,
+    /// The settled bytes differ from the value before the microstep.
+    changed: bool,
+}
+
 impl Digital {
+    /// Applies the commits due at `here`, in C2 order. A commit to an event net fires it. The
+    /// commits to one discrete net settle over its value, the later one winning each byte, and
+    /// the net is written once (§12.1.1, §12.1.2): `CHANGED`, `PREVIOUS` and the one `Change`
+    /// observed compare the settled value with the value before the microstep (§8.2.3, §12.1.18).
+    /// Returns each written net, in the order of its first commit.
+    fn apply_due(&mut self, here: Instant) -> Vec<Settled> {
+        let mut settled: Vec<Settled> = Vec::new();
+        for p in self.queue.take_due(here) {
+            if self.plan.nets[p.net.0 as usize].kind == NetKind::Event {
+                fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, p.net, here);
+                continue;
+            }
+            let at = match settled.iter().position(|s| s.net == p.net) {
+                Some(i) => i,
+                None => {
+                    let bytes = self.store.value(p.net).to_vec();
+                    settled.push(Settled { net: p.net, bytes, last: p.writer, host: false, changed: false });
+                    settled.len() - 1
+                }
+            };
+            let s = &mut settled[at];
+            let offset = p.offset as usize;
+            s.bytes[offset..offset + p.bytes.len()].copy_from_slice(&p.bytes);
+            s.last = p.writer;
+            s.host |= p.writer == Writer::Host;
+        }
+        for s in &mut settled {
+            s.changed = write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, 0, &s.bytes, here);
+        }
+        settled
+    }
+
     /// Who made a commit, for an error: the instance's path, or the host.
     fn writer_name(&self, writer: Writer) -> String {
         match writer {
@@ -80,27 +125,9 @@ impl Digital {
             let here = (at, n);
             self.store.begin_microstep();
             self.call = 0;
-            let mut written: Vec<(NetId, String)> = Vec::new();
-            for p in self.queue.take_due(here) {
-                if self.plan.nets[p.net.0 as usize].kind == NetKind::Event {
-                    fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, p.net, here);
-                } else {
-                    let changed = write_net(
-                        &self.plan,
-                        &mut self.store,
-                        &mut self.dirty,
-                        &mut self.obs,
-                        p.net,
-                        p.offset,
-                        &p.bytes,
-                        here,
-                    );
-                    out.host_param_write |= changed && p.writer == Writer::Host && self.plan.analysis().is_param_net(p.net);
-                    written.push((p.net, self.writer_name(p.writer)));
-                }
-            }
-            for (net, who) in &written {
-                check_canonical(&self.plan, &self.store, *net, at, who)?;
+            for s in self.apply_due(here) {
+                out.host_param_write |= s.changed && s.host && self.plan.analysis().is_param_net(s.net);
+                check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
             }
             let mut ambient = Ambient::at(at, res);
             ambient.is_static = mode.is_static;
@@ -166,9 +193,8 @@ impl Digital {
                 .any(|p| !self.plan.nets[p.net.0 as usize].is_quiet());
             if !live {
                 // what is left for this instant applies as it exits
-                for p in self.queue.take_due(next) {
-                    write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, p.net, p.offset, &p.bytes, next);
-                    check_canonical(&self.plan, &self.store, p.net, at, &self.writer_name(p.writer))?;
+                for s in self.apply_due(next) {
+                    check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
                 }
                 self.obs.flush();
                 break;

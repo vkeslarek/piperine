@@ -98,7 +98,7 @@ Two solver defects make the boundary between analog and digital observable at th
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DSV-01 | P1: Settled value, AC 1 to 4 | Tasks | Pending |
+| DSV-01 | P1: Settled value, AC 1 to 4 | T1, T2 | Implementing |
 | SCX-01 | P2: Crossings, AC 1 to 5 (location) | Tasks | Pending |
 | SCX-02 | P2: Crossings, AC 6, 7 (across rounds and operating points) | Tasks | Pending |
 | SCX-03 | P2: Crossings, AC 8, 9 (`E0510`, `E0509`) | Tasks | Pending |
