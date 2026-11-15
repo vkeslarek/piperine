@@ -1,6 +1,6 @@
 # solver-abi-integration proofs
 
-**HEAD**: 6d73aa03
+**HEAD**: 65716919
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 34 pass, 0 fail
@@ -12,7 +12,7 @@
 | C3 | `run solver / test a_continuous_init_starts_newton_and_is_held_through_the_operating_point ... ok` | pass |
 | C4 | `run solver / test a_pin_abstol_tightens_its_node ... ok` | pass |
 | C5 | `run solver / test a_clock_nothing_analog_reads_adds_no_step ... ok` | pass |
-| C6 | `run solver / test a_boundary_change_is_read_by_the_arriving_step_and_restarts_the_next ... ok` | pass |
+| C6 | `run solver / test a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next ... ok` | pass |
 | C7 | `run solver / test a_rejected_step_leaves_no_trace ... ok` | pass |
 | C8 | `run solver / test an_irreversible_reaction_runs_once_at_an_accepted_time ... ok` | pass |
 | C9 | `run solver / test finish_ends_the_analysis_at_an_accepted_time ... ok` | pass |
@@ -27,13 +27,13 @@
 | C18 | `run solver / test a_scheduled_host_write_lands_and_restarts_small ... ok` | pass |
 | C19 | `run solver / test globals_hold_the_session_values ... ok` | pass |
 | C20 | `run solver / test sensitivity_uses_declared_partials_and_falls_back_to_a_finite_difference ... ok` | pass |
-| C21 | `run solver / test divider_reads_the_analytic_ratio_on_devices ... ok` | pass |
-| C22 | `run solver / test a_cap_watch_bounds_the_next_step ... ok` | pass |
+| C21 | `o=$(cargo test -p piperine-solver --test abi_dc --test abi_tran --test abi_ac --test abi_noise --test limiting` | pass |
+| C22 | `o=$(cargo test -p piperine-solver --test protocol_crossings 2>&1); for t in a_cap_watch_bounds_the_next_step a` | pass |
 | C23 | `a=$(mktemp); b=$(mktemp); git show 98b30ad6:crates/piperine-solver/tests/parity_baseline.rs / grep -E 'abs\(\)` | pass |
 | C24 | `run solver / test removed_tests_are_listed_with_their_item ... ok` | pass |
 | C25 | `run solver / test the_element_contract_is_gone ... ok` | pass |
 | C26 | `run solver / test the_old_digital_engine_is_gone ... ok` | pass |
-| C27 | `run solver / test every_device_function_passes_the_partials_verifier ... ok` | pass |
+| C27 | `o=$(cargo test -p piperine-solver 2>&1); for t in every_device_function_passes_the_partials_verifier every_hel` | pass |
 | C28 | `run guards / test analog_sources_name_no_digital_type ... ok` | pass |
 | C29 | `run guards / test digital_sources_name_no_analog_type ... ok` | pass |
 | C30 | `cargo test -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver` | pass |
@@ -69,15 +69,15 @@
 ```
 running 8 tests
 test abi_crate_is_a_leaf ... ok
-test each_sub_solver_holds_its_modules ... ok
-test the_manifest_scan_reads_table_form_dependencies ... ok
 test owner_depends_on_the_abi_and_both_sub_solvers_only ... ok
+test each_sub_solver_holds_its_modules ... ok
 test sub_solvers_depend_on_the_abi_crate_only ... ok
 test the_three_solver_crates_exist ... ok
-test analog_sources_name_no_digital_type ... ok
+test the_manifest_scan_reads_table_form_dependencies ... ok
 test digital_sources_name_no_analog_type ... ok
+test analog_sources_name_no_digital_type ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
      Running tests/crate_boundaries.rs (/var/tmp/piperine-target/debug/deps/crate_boundaries-59af74054bbd5ab6)
@@ -87,6 +87,18 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 a9a23f55b4cc4c32ba5038ab776722dcc9ef5958
+```
+
+`o=$(cargo test -p piperine-solver --test abi_dc --test abi_tran --test abi_ac --test abi_noise --test limiting` - exit 0
+
+```
+(no output)
+```
+
+`o=$(cargo test -p piperine-solver --test protocol_crossings 2>&1); for t in a_cap_watch_bounds_the_next_step a` - exit 0
+
+```
+(no output)
 ```
 
 `a=$(mktemp); b=$(mktemp); git show 98b30ad6:crates/piperine-solver/tests/parity_baseline.rs / grep -E 'abs\(\)` - exit 0
@@ -107,6 +119,12 @@ a9a23f55b4cc4c32ba5038ab776722dcc9ef5958
      Running tests/transient_reentry.rs (/var/tmp/piperine-target/debug/deps/transient_reentry-458cfbcdb3a61bde)
      Running tests/workspace_shape.rs (/var/tmp/piperine-target/debug/deps/workspace_shape-f7f528358e48ad39)
    Doc-tests piperine_solver
+```
+
+`o=$(cargo test -p piperine-solver 2>&1); for t in every_device_function_passes_the_partials_verifier every_hel` - exit 0
+
+```
+(no output)
 ```
 
 `cargo test -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver` - exit 0
