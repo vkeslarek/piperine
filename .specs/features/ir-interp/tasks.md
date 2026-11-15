@@ -331,14 +331,14 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Diode `limit:vd`: `PROPOSED = va − vk` with partials `1`, `-1`
-- [ ] Each of the four `(AGE, STATIC)` cases picks the `old` the criterion states; a site with no seed uses `x`
-- [ ] With `x` below `vcrit` on the first iteration, `LIMITED` is `vcrit`
-- [ ] In `terms`, the site's `x`, `f` and seed are not evaluated: a test body whose `x` would fault proves it
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test limit`: `a_limit_writes_proposed_and_limited`, `old_is_seed_or_last_by_age_and_static`, `the_seed_is_kept_when_the_limited_value_falls_below`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `the_terms_function_reads_the_limit_value_untouched`
-- [ ] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] Diode `limit:vd`: `PROPOSED = va − vk` with partials `1`, `-1`
+- [x] Each of the four `(AGE, STATIC)` cases picks the `old` the criterion states; a site with no seed uses `x`
+- [x] With `x` below `vcrit` on the first iteration, `LIMITED` is `vcrit`
+- [x] In `terms`, the site's `x`, `f` and seed are not evaluated: a test body whose `x` would fault proves it
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test limit`: `a_limit_writes_proposed_and_limited`, `old_is_seed_or_last_by_age_and_static`, `the_seed_is_kept_when_the_limited_value_falls_below`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-interp --test terms`: `the_terms_function_reads_the_limit_value_untouched`
+- [x] Gate check passes: `cargo test -p piperine-interp`; `cargo test -p piperine-abi`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

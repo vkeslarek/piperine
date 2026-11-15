@@ -7,9 +7,12 @@ use std::sync::Arc;
 use piperine_abi::caller::{CallError, Handle};
 use piperine_abi::raw::{Cell, Module, Partial, Shape};
 use piperine_interp::Interpreter;
-use piperine_ir::{BodyId, Ir, IrBuilder};
+use piperine_ir::{
+    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Ir, IrBuilder, Local, NodeRole, Operator, Origin,
+    QuantityRole, Site, Stmt, Terminal, ValueType,
+};
 
-use crate::devices::Devices;
+use crate::devices::{Devices, Ex};
 
 /// An `Interpreter` over a design that holds every M1 device body.
 pub struct Models {
@@ -42,6 +45,54 @@ impl Models {
 
     pub fn module(&self, name: &str) -> &'static Module {
         self.interp.module(self.body(name)).unwrap_or_else(|| panic!("body `{name}` has no module"))
+    }
+
+    /// `Hold(p, n)`: `i(p, n) +> limit(x, |new, old| old, seed)`, the closure returning `old`
+    /// so `LIMITED` shows which `old` was taken. `x` is `v(p, n)`; with `guarded` it is
+    /// `if c == c { v(p, n) } else { v(p, n) }` over a closure `c`, which passes `check()` and
+    /// faults when evaluated (two closures do not compare). Locals: new 0, old 1.
+    pub fn hold(seed: Option<f64>, guarded: bool) -> Models {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let mut e = Ex::new(&mut b, "hold.msl", 3, 9);
+        let v = e.probe(Terminal::Node(0), Terminal::Node(1));
+        let x = if guarded {
+            e.at(3, 14);
+            let old = e.local(1);
+            let c = e.closure(vec![0, 1], old);
+            let same = e.binary(BinaryOp::Eq, c, c);
+            let w = e.probe(Terminal::Node(0), Terminal::Node(1));
+            e.if_f64(same, v, w)
+        } else {
+            v
+        };
+        e.at(3, 30);
+        let old = e.local(1);
+        let f = e.closure(vec![0, 1], old);
+        let seed = seed.map(|s| e.real(s));
+        let limited = e.limit(0, x, f, seed);
+        let contribute = b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Flow,
+            addends: vec![Addend { operator: Operator::Direct, negated: false, value: limited }],
+        });
+        let at = |line: u32| Origin { file: "hold.msl".into(), line, col: 1 };
+        let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: at(1) };
+        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64 };
+        let body = b.body(BodySpec {
+            name: "Hold".into(),
+            origin: at(1),
+            params: vec![],
+            nodes: vec![port("p"), port("n")],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+            limits: vec![Site { name: "y".into(), origin: at(3) }],
+            stims: vec![],
+            locals: vec![local("new"), local("old")],
+            analog: Some(vec![contribute]),
+            children: vec![],
+        });
+        let top = Devices::alone(&mut b, body, "H", 1, vec![]);
+        Models::of(b.finish(top))
     }
 
     /// An instance of `name` at its defaults.

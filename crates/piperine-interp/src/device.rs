@@ -11,7 +11,7 @@ use piperine_ir::{Body, BodyId, BranchKind, Ir, ValueType};
 
 use crate::dual::Dual;
 use crate::plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
-use crate::walk::{Frame, Sums, Value, Walk};
+use crate::walk::{Frame, Held, Sums, Value, Walk};
 
 /// The factory of one body: the design, the body, its plan.
 #[derive(Debug)]
@@ -61,8 +61,13 @@ impl Interpreted {
             .map(|p| if p.ty == ValueType::Bool { Value::Unit } else { Value::Real(Dual::constant(f64::NAN)) })
             .collect();
         for (i, source) in f.reads.iter().enumerate() {
-            let v = if pins_at_zero && source.is_pin() { 0.0 } else { cx.f64(i) };
-            let read = || if i < f.slots { Dual::seeded(v, i, f.slots) } else { Dual::constant(v) };
+            if matches!(source, Source::LimitLast(_) | Source::LimitAge(_) | Source::Static) {
+                continue; // the site's own reads (`Held`), not values of the block
+            }
+            let read = || {
+                let v = if pins_at_zero && source.is_pin() { 0.0 } else { cx.f64(i) };
+                if i < f.slots { Dual::seeded(v, i, f.slots) } else { Dual::constant(v) }
+            };
             let cell = match *source {
                 Source::Node(n) => frame.nodes.get_mut(n as usize),
                 Source::BranchFlow(b) => frame.flows.get_mut(b as usize),
@@ -154,6 +159,38 @@ impl Interpreted {
         Ok(())
     }
 
+    /// The function of `limit` site `k`: `PROPOSED` with its partials and `LIMITED`. Nothing is
+    /// written when the walk faults.
+    fn limit(&self, f: &FunctionPlan, k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
+        let name = self.body().name();
+        let at = |s: Source| f.reads.iter().position(|r| *r == s);
+        let (Some(last), Some(age), Some(is_static)) = (at(Source::LimitLast(k)), at(Source::LimitAge(k)), at(Source::Static))
+        else {
+            return Err(Fault::new(Walk::UNEXECUTED, format!("{name}: limit {k} does not read LAST, AGE and STATIC")));
+        };
+        let held = Held { last: cx.f64(last), age: cx.u8(age), is_static: cx.bool(is_static) };
+        let (frame, params) = self.inputs(f, cx, false);
+        let mut walk = Walk::analog(self.body(), Mode::Limit(k), frame, params);
+        walk.hold(held);
+        walk.run()?;
+        let Some(result) = walk.limited().cloned() else {
+            return Err(Fault::new(Walk::UNEXECUTED, format!("{name}: limit {k} wrote nothing")));
+        };
+        for (j, w) in f.writes.iter().enumerate() {
+            match *w {
+                Target::Proposed(_) => cx.set(j, result.proposed.v),
+                Target::Limited(_) => cx.set(j, result.limited),
+                other => return Err(Fault::new(Walk::UNEXECUTED, format!("{name}: limit {k} writes {other:?}"))),
+            }
+        }
+        for (p, (_, slot)) in f.partials.iter().enumerate() {
+            if cx.wanted(p) {
+                cx.jac()[p] = result.proposed.tangent(*slot);
+            }
+        }
+        Ok(())
+    }
+
     /// One `Terms` walk: the value of each write of `f`, in order.
     fn walk_terms(&self, f: &FunctionPlan, cx: &Eval<'_>, pins_at_zero: bool) -> Result<Vec<Dual>, Fault> {
         let (frame, params) = self.inputs(f, cx, pins_at_zero);
@@ -194,7 +231,8 @@ impl Factory for BodyFactory {
         };
         match f.mode {
             Mode::Terms => instance.terms(f, cx),
-            Mode::Limit(_) | Mode::Stim(_) => {
+            Mode::Limit(site) => instance.limit(f, site, cx),
+            Mode::Stim(_) => {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} ({:?}) is not run by the interpreter yet", f.mode)))
             }
         }

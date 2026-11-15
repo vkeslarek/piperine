@@ -82,12 +82,32 @@ impl Sums {
     }
 }
 
+/// What a `limit` site's function reads besides its dependency set (abi.md §4.1, A2).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Held {
+    /// `LAST`: the value held.
+    pub last: f64,
+    /// `AGE`: 0 none held, 1 from the last accepted solution, 2 from the previous iteration.
+    pub age: u8,
+    /// The ambient `STATIC`: an equilibrium solve.
+    pub is_static: bool,
+}
+
+/// What the function of a `limit` site writes: `x` with its tangent, and `f(x, old)`.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Limited {
+    pub proposed: Dual,
+    pub limited: f64,
+}
+
 /// What an analog walk runs over.
 struct Analog<'a> {
     body: Body<'a>,
     mode: Mode,
     frame: Frame,
     sums: Sums,
+    held: Option<Held>,
+    limited: Option<Limited>,
 }
 
 /// One evaluation: the params of the body, and a stack of local frames (a call pushes one).
@@ -117,20 +137,78 @@ impl<'a> Walk<'a> {
             ir: body.ir(),
             params,
             frames: vec![vec![Value::Unit; locals]],
-            analog: Some(Analog { body, mode, frame, sums }),
+            analog: Some(Analog { body, mode, frame, sums, held: None, limited: None }),
         }
     }
 
-    /// Runs the `analog` block once, statement by statement.
+    /// The `LAST`, `AGE` and `STATIC` a `Limit` walk reads.
+    pub(crate) fn hold(&mut self, held: Held) {
+        if let Some(a) = self.analog.as_mut() {
+            a.held = Some(held);
+        }
+    }
+
+    /// The fault code that ends a site walk once its site has written: `run` turns it into
+    /// success and it never leaves the walk.
+    const DONE: u32 = u32::MAX;
+
+    /// Runs the `analog` block once, statement by statement. A site walk stops at its site
+    /// (sites sit unconditionally at the top of the block, `Ir::check`); one that ends without
+    /// reaching it faults.
     pub(crate) fn run(&mut self) -> Result<(), Fault> {
         let Some(analog) = &self.analog else {
             return Err(Fault::new(Self::UNEXECUTED, "a value walk has no `analog` block to run"));
         };
-        let body = analog.body;
+        let (body, mode) = (analog.body, analog.mode);
         for id in body.analog().unwrap_or(&[]) {
-            self.exec(*id)?;
+            match self.exec(*id) {
+                Ok(()) => {}
+                Err(f) if f.code == Self::DONE && self.analog.as_ref().is_some_and(|a| a.limited.is_some()) => return Ok(()),
+                Err(f) => return Err(f),
+            }
         }
-        Ok(())
+        match mode {
+            Mode::Terms => Ok(()),
+            Mode::Limit(_) | Mode::Stim(_) => {
+                Err(Fault::new(Self::UNEXECUTED, format!("{}: the walk of {mode:?} ended without reaching its site", body.name())))
+            }
+        }
+    }
+
+    /// What a `Limit` walk wrote at its site.
+    pub(crate) fn limited(&self) -> Option<&Limited> {
+        self.analog.as_ref().and_then(|a| a.limited.as_ref())
+    }
+
+    /// The site of a `Limit(k)` walk (§18 rules 1 and 2, abi.md A2): `x` over duals, `old` the
+    /// seed (or `x` with no seed) when `AGE` is 0 or `STATIC` and `AGE` is 1, else `LAST`;
+    /// `LIMITED = f(x, old)` over plain reals, raised to the seed when it starts from the seed
+    /// and falls below it. Ends the walk.
+    fn limit_site(&mut self, id: ExprId, x: ExprId, f: ExprId, seed: Option<ExprId>) -> Result<Value, Fault> {
+        let held = match self.analog.as_ref().and_then(|a| a.held) {
+            Some(h) => h,
+            None => return Err(self.fault(id, "a `limit` walk without its LAST, AGE and STATIC")),
+        };
+        let x = self.eval_real(x)?;
+        let Value::Closure(closure) = self.eval(f)? else {
+            return Err(self.fault(f, "the function of a `limit` is not a closure"));
+        };
+        let seed = match seed {
+            Some(s) => Some(self.eval_real(s)?.v),
+            None => None,
+        };
+        let from_seed = held.age == 0 || (held.is_static && held.age == 1);
+        let old = if from_seed { seed.unwrap_or(x.v) } else { held.last };
+        let mut limited = self.call_closure(closure, &[x.v, old])?;
+        if let (true, Some(s)) = (from_seed, seed) {
+            if limited < s {
+                limited = s;
+            }
+        }
+        if let Some(a) = self.analog.as_mut() {
+            a.limited = Some(Limited { proposed: x, limited });
+        }
+        Err(Fault::new(Self::DONE, "the site has written"))
     }
 
     /// The sums the walk built, and the frame it read.
@@ -250,6 +328,9 @@ impl<'a> Walk<'a> {
                 }))
             }
             Expr::Closure { .. } => Ok(Value::Closure(id)),
+            Expr::Limit { site, x, f, seed } if self.mode() == Some(Mode::Limit(*site)) => {
+                self.limit_site(id, *x, *f, *seed)
+            }
             other => Err(self.fault(id, &format!("the IR form `{}` is not executed by this walk", Self::form(other)))),
         }
     }
@@ -272,8 +353,9 @@ impl<'a> Walk<'a> {
             }))),
             // §18 rule 3, abi.md A2: the held value stands in for `x`; `x`, `f` and the seed are
             // the site function's, not evaluated here.
-            Expr::Limit { site, .. } if analog.mode == Mode::Terms => Some(Frame::read(f.limits.get(*site as usize))),
-            Expr::Stim { site, .. } if analog.mode == Mode::Terms => Some(Frame::read(f.stims.get(*site as usize))),
+            // Any other site's function reads the site's value too, never its arguments.
+            Expr::Limit { site, .. } if analog.mode != Mode::Limit(*site) => Some(Frame::read(f.limits.get(*site as usize))),
+            Expr::Stim { site, .. } if analog.mode != Mode::Stim(*site) => Some(Frame::read(f.stims.get(*site as usize))),
             _ => None,
         }
     }
@@ -338,6 +420,13 @@ impl<'a> Walk<'a> {
                         Some(slot) => Sums::add(slot, v),
                         None => return Err(self.fault(a.value, &format!("a contribution to branch {branch}, out of range"))),
                     }
+                }
+                Ok(())
+            }
+            // A site walk evaluates the addends only to reach a site inside them.
+            Stmt::Contribute { addends, .. } if self.analog.is_some() => {
+                for a in addends {
+                    self.eval_real(a.value)?;
                 }
                 Ok(())
             }

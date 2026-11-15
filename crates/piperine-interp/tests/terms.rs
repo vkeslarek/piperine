@@ -5,7 +5,8 @@
 //! the `TEMPERATURE` pin and `gmin()`, `source_scale()` from the ambients; a non-finite value is
 //! written as it is; two equal calls write equal bytes. An affine `FLOW` term (INT-12) is written
 //! as its constant plus the products of its pin partials folded from `0.0` in declared order, the
-//! sum the assembly subtracts, so the resistor matches `g*vp - g*vn` bit for bit.
+//! sum the assembly subtracts, so the resistor matches `g*vp - g*vn` bit for bit. A `limit` site
+//! reads its input's `VALUE` with derivative 1, its `x`, `f` and seed unevaluated (INT-10 AC 4).
 
 use piperine_ir::{
     Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, IrBuilder, NodeRole, Operator, Origin, QuantityRole, Stmt,
@@ -323,4 +324,35 @@ fn the_resistor_matches_the_hand_written_products_bit_for_bit() {
         assert_eq!(value.to_bits(), (g * vp - g * vn).to_bits(), "({vp}, {vn}, {r})");
         assert_eq!(out.jac, [g, -g]);
     }
+}
+
+#[test]
+fn the_terms_function_reads_the_limit_value_untouched() {
+    // Hold's `x` faults when evaluated (two closures compared); its terms function runs and
+    // writes the held VALUE with partial 1, so `x`, `f` and the seed were not evaluated.
+    let m = Models::hold(Some(0.25), true);
+    let h = m.instance("Hold");
+    let view = View { shape: m.module("Hold").prototype() };
+    assert_eq!(view.function_names(), ["limit:y", "terms"]);
+    let (reads, _, _) = view.function("terms");
+    assert_eq!(reads.len(), 1, "terms reads the limit's VALUE alone: {reads:?}");
+    for value in [0.42, -3.0, 0.0] {
+        let out = Models::eval(&h, 1, &[In::F64(value)], None).expect("terms does not evaluate x");
+        assert_eq!(out.values, [value]);
+        assert_eq!(out.jac, [1.0]);
+    }
+    // the site's own function does evaluate x, and faults naming the form and its origin
+    let err = Models::eval(&h, 0, &[In::F64(0.5), In::F64(0.0), In::F64(0.0), In::Byte(0), In::Byte(1)], None)
+        .expect_err("x faults when evaluated");
+    assert!(err.message.contains("hold.msl:3:14"), "{}", err.message);
+
+    // The diode's terms read the VALUE, never the pins: the flow follows VALUE alone.
+    let all = Models::all();
+    let d = all.instance("Diode");
+    let k = Lab::terms(&all, "Diode");
+    let (reads, _, partials) = View { shape: all.module("Diode").prototype() }.function("terms");
+    assert_eq!(reads[0].kind, piperine_abi::raw::cell::INPUT);
+    assert!(partials.iter().all(|p| p.read == 0), "every partial is against the VALUE");
+    let flow = |vd: f64| Models::eval(&d, k, &Lab::diode_reads(vd, 1e-14, 1.0, 0.0, 300.0, 0.0), None).expect("terms").values[0];
+    assert!(Lab::close(flow(0.55), 1e-14 * ((0.55 / (K_B * 300.0 / Q)).exp() - 1.0), 1e-12));
 }
