@@ -620,10 +620,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The `set` test reads the changed result of the next `Dc`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test session`: `no_analysis_runs_the_compiler`, `a_set_between_analyses_runs_no_compiler_and_applies`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] The `set` test reads the changed result of the next `Dc`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test session`: `no_analysis_runs_the_compiler`, `a_set_between_analyses_runs_no_compiler_and_applies`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
