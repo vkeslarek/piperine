@@ -167,7 +167,9 @@ Rows marked `y` are settled by a recorded decision, by code or by a run made whi
 2. WHEN the test `diode_series` runs THEN the system SHALL compare `v(a)` and `v(b)` of a `Dc` solve with ngspice's operating point under `DC_VOLTAGE`.
 3. WHEN the test `diode_iv` runs THEN the system SHALL set `v1.dc` to each of the 37 sweep values of the export, solve `Dc` at each, and compare the flow of `v1` with ngspice's `i(v1)` under `DC_CURRENT`.
 4. WHEN the test `ac_rc` runs THEN the system SHALL run an `Ac` sweep over the 41 frequencies of the export and compare the magnitude of `v(out)` under `AC_MAGNITUDE` and its phase under `AC_PHASE`.
-5. IF the solver's frequency or sweep grid differs from the export's by more than 1e-9 relative at any point THEN the system SHALL fail naming the point.
+5. IF a point of the solver's frequency or sweep grid does not round to the export's printed value - that is, lies more than half a unit in the last printed digit of the exported token away from it, the digit count read from the token - THEN the system SHALL fail naming the point.
+
+   *Amendment 2026-11-15 (orchestrator, under the user's standing delegation):* the original bound was a flat 1e-9 relative, but ngspice's `wrdata` prints 9 significant digits, so an exact grid misses it by up to 5e-9 (seen: export `1.25892541e3`, solver `1.2589254117941673e3`, 2.49e-9). The grid is now compared at the export's own print precision. This is a parse-precision rule on the abscissa, not a value tolerance: the contracts of PAR-05 are unchanged.
 6. WHEN the test `tran_rc` runs THEN the system SHALL run a transient to 10 µs, interpolate `v(out)` linearly at each of the 100 times of the export, and compare under `TRAN_VOLTAGE`.
 7. The system SHALL run the transient with a maximum step of one tenth of the export's time step, so that the interpolation error stays below a tenth of the contract's bound.
 

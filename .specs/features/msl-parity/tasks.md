@@ -430,7 +430,7 @@ Proof: run dc | test diode_iv ... ok
 **C26** - WHEN the test `ac_rc` runs THEN the system SHALL run an `Ac` sweep over the 41 frequencies of the export and compare the magnitude of `v(out)` under `AC_MAGNITUDE` and its phase under `AC_PHASE`. (PAR-06, AC 4; T8)
 Proof: run ac | test ac_rc ... ok
 
-**C27** - IF the solver's frequency or sweep grid differs from the export's by more than 1e-9 relative at any point THEN the system SHALL fail naming the point. (PAR-06, AC 5; T4)
+**C27** - IF a point of the solver's frequency or sweep grid does not round to the export's printed value - that is, lies more than half a unit in the last printed digit of the exported token away from it, the digit count read from the token - THEN the system SHALL fail naming the point. (PAR-06, AC 5, amended 2026-11-15; T4)
 Proof: run lib | test golden::tests::a_grid_mismatch_names_the_point ... ok
 
 **C28** - WHEN the test `tran_rc` runs THEN the system SHALL run a transient to 10 µs, interpolate `v(out)` linearly at each of the 100 times of the export, and compare under `TRAN_VOLTAGE`. (PAR-06, AC 6; T9)

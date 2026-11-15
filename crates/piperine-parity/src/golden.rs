@@ -100,20 +100,35 @@ impl Golden {
         }
     }
 
-    /// Fails naming the first point where the two grids differ by more than 1e-9 relative, or
-    /// naming both lengths when they differ.
-    pub fn same_grid(&self, export: &str, golden: &[f64], actual: &[f64]) {
+    /// Fails naming the first point where the solver's grid `actual` leaves the export's first
+    /// column, or naming both lengths when they differ. The export is compared at its own print
+    /// precision (PAR-06 AC 5, amended): a solver abscissa matches an exported one when it rounds
+    /// to the same printed decimal, i.e. lies within half a unit in the last printed digit of the
+    /// exported token. The digit count is read from each token, never assumed.
+    pub fn same_grid(&self, export: &str, actual: &[f64]) {
+        let golden = self.first_column_tokens(export);
         if golden.len() != actual.len() {
             panic!("{}: grid of {export} has {} points in the export and {} in the solver", self.fixture, golden.len(), actual.len());
         }
-        for (index, (wanted, got)) in golden.iter().zip(actual).enumerate() {
-            if (wanted - got).abs() > Self::GRID_RELATIVE * wanted.abs().max(got.abs()) {
-                panic!("{}: grid of {export} differs at point {index}: export {wanted:e}, solver {got:e}", self.fixture);
+        for (index, (token, got)) in golden.iter().zip(actual).enumerate() {
+            let printed = PrintedNumber::parse(token)
+                .unwrap_or_else(|| panic!("{}: grid of {export} point {index}: {token:?} is not a printed number", self.fixture));
+            if !printed.rounds_from(*got) {
+                panic!(
+                    "{}: grid of {export} differs at point {index}: export {token}, solver {got:e} (beyond half a unit in its last printed digit, {:e})",
+                    self.fixture,
+                    printed.half_unit
+                );
             }
         }
     }
 
-    const GRID_RELATIVE: f64 = 1e-9;
+    /// The first token of every non-blank row of an export, as ngspice printed it.
+    fn first_column_tokens(&self, export: &str) -> Vec<String> {
+        let path = self.export_file(export);
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: cannot read {}: {error}", self.fixture, path.display()));
+        text.lines().filter_map(|line| line.split_whitespace().next()).map(str::to_string).collect()
+    }
 
     fn rows(&self, export: &str, columns: usize) -> Vec<Vec<f64>> {
         let path = self.export_file(export);
@@ -135,6 +150,36 @@ impl Golden {
 
     pub(crate) fn captured(&self) -> String {
         format!("--- ngspice stdout ---\n{}\n--- ngspice stderr ---\n{}", self.stdout, self.stderr)
+    }
+}
+
+/// A decimal number as a text export printed it: its value and half a unit in its last printed
+/// digit, the resolution the print leaves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PrintedNumber {
+    pub value: f64,
+    pub half_unit: f64,
+}
+
+impl PrintedNumber {
+    /// Reads `token` (`1.25892541e+03`, `0.001`, `25`): the value, and from the count of digits
+    /// after the decimal point and the exponent, half a unit in the last printed digit.
+    pub fn parse(token: &str) -> Option<PrintedNumber> {
+        let value: f64 = token.parse().ok()?;
+        let (mantissa, exponent) = match token.find(['e', 'E']) {
+            Some(at) => (&token[..at], token[at + 1..].parse::<i32>().ok()?),
+            None => (token, 0),
+        };
+        let fraction_digits = match mantissa.split_once('.') {
+            Some((_, fraction)) => i32::try_from(fraction.len()).ok()?,
+            None => 0,
+        };
+        Some(PrintedNumber { value, half_unit: 0.5 * 10f64.powi(exponent - fraction_digits) })
+    }
+
+    /// Whether `x` rounds to this printed decimal: `|x - value| <= half_unit`.
+    pub fn rounds_from(&self, x: f64) -> bool {
+        (x - self.value).abs() <= self.half_unit
     }
 }
 
@@ -196,12 +241,29 @@ mod tests {
 
     #[test]
     fn a_grid_mismatch_names_the_point() {
-        let golden = golden_with(&[]);
-        golden.same_grid("g", &[1.0, 2.0], &[1.0 + 0.5e-9, 2.0]);
-        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("g", &[1.0, 2.0], &[1.0, 2.0 * (1.0 + 2e-9)])));
-        assert!(message.contains("point 1"), "{message}");
-        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("g", &[1.0, 2.0], &[1.0])));
+        let golden = golden_with(&[("g", "2.5e+01 0\n1.25892541e+03 0\n"), ("short", "1.0 0\n")]);
+        // Half a unit in the last printed digit off matches, on either side.
+        golden.same_grid("g", &[25.5, 1.2589254117941673e3]);
+        golden.same_grid("g", &[24.5, 1258.9254051]);
+        // One unit in the last printed digit off does not.
+        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("g", &[26.0, 1.2589254117941673e3])));
+        assert!(message.contains("point 0") && message.contains("2.5e+01"), "{message}");
+        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("g", &[25.0, 1258.92542])));
+        assert!(message.contains("point 1") && message.contains("1.25892541e+03"), "{message}");
+        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("short", &[1.0, 2.0])));
         assert!(message.contains('2') && message.contains('1'), "{message}");
+    }
+
+    #[test]
+    fn the_print_precision_is_read_from_the_token() {
+        let nine = PrintedNumber::parse("1.25892541e+03").expect("a number");
+        assert_eq!(nine.value, 1258.92541);
+        assert_eq!(nine.half_unit, 0.5 * 10f64.powi(-5));
+        assert_eq!(PrintedNumber::parse("2.5e+01").expect("a number").half_unit, 0.5);
+        assert_eq!(PrintedNumber::parse("0.001").expect("a number").half_unit, 0.5 * 10f64.powi(-3));
+        assert_eq!(PrintedNumber::parse("25").expect("a number").half_unit, 0.5);
+        assert_eq!(PrintedNumber::parse("1.0E-3").expect("a number").half_unit, 0.5 * 10f64.powi(-4));
+        assert!(PrintedNumber::parse("abc").is_none());
     }
 
     #[test]

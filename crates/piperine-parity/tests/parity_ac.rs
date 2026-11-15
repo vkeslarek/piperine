@@ -27,9 +27,8 @@ fn ac_rc() {
     let mut ac = bench.circuit().ac(Context::default()).expect("ac");
     let sweep = ac.solve_sweep(options).expect("the sweep solves");
     let Reference::Golden(golden) = &reference else { return };
-    let wanted_grid: Vec<f64> = rows.iter().map(|(f, _)| *f).collect();
     let actual_grid: Vec<f64> = sweep.iter().map(|step| step.frequency).collect();
-    golden.same_grid("ac_rc_ac", &wanted_grid, &actual_grid);
+    golden.same_grid("ac_rc_ac", &actual_grid);
     for ((frequency, wanted), step) in rows.iter().zip(sweep.iter()) {
         let actual = step.get_node(&out).unwrap_or_else(|| panic!("ac_rc: no v(out) at {frequency}"));
         let at = Point::new("ac_rc", "|v(out)|", Coordinate::Frequency(*frequency)).with_ngspice(golden.version());
