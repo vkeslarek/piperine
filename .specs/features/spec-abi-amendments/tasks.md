@@ -124,11 +124,11 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] §8.5.8 names the device ABI and its exported symbol `piperine_abi_1`; `"cosim"` is a module whose reaction is irreversible; `"osdi"` names an adapter over the same ABI
-- [ ] §8.5.11, §8.5.15 and §8.5.16 are unchanged (3b is not accepted): `"cosim"` ports stay discrete-only
-- [ ] The G.65 row of Appendix G no longer reads `Open`; its section says what closed it, in the status vocabulary the appendix already uses
-- [ ] Test `extern_c_interface_is_the_device_abi` asserts `piperine_abi_1` inside §8.5 and that the G.65 table row does not contain `Open`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] §8.5.8 names the device ABI and its exported symbol `piperine_abi_1`; `"cosim"` is a module whose reaction is irreversible; `"osdi"` names an adapter over the same ABI
+- [x] §8.5.11, §8.5.15 and §8.5.16 are unchanged (3b is not accepted): `"cosim"` ports stay discrete-only
+- [x] The G.65 row of Appendix G no longer reads `Open`; its section says what closed it, in the status vocabulary the appendix already uses
+- [x] Test `extern_c_interface_is_the_device_abi` asserts `piperine_abi_1` inside §8.5 and that the G.65 table row does not contain `Open`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full

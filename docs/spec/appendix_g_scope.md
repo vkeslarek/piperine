@@ -83,7 +83,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.45–G.48 | Flagged resolutions (one table) | Flagged |
 | G.49–G.63 | Resolutions that narrow or extend the design (one table) | Resolved provisionally |
 | G.64 | Implementation-defined numerics: `normal`, spline end conditions | Resolved provisionally |
-| G.65 | The `"cosim"` interface | Open |
+| G.65 | The `"cosim"` interface | Closed |
 | G.66 | Session parameter names of `simparam` | Open |
 
 ## Open items
@@ -347,9 +347,9 @@ For review: fix one generator and one pair of end conditions.
 
 ### G.65 The `"cosim"` interface
 
-**Status: Open.**
-§8.5 gives the contract of an `extern "cosim"` module and no C interface: the step function, its descriptor, and how it returns the next time it wants to run are unspecified.
-In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is not run; every `out` port commits `Unknown`). `"osdi"` is OSDI 0.4 (§8.5.8).
+**Status: Closed.**
+The C interface of an extern module, `"cosim"` included, is the device ABI, whose exported symbol is `piperine_abi_1` (§8.5.8). `"cosim"` ports stay discrete-only (§8.5.11); continuous ports on a `"cosim"` module are not accepted.
+In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is not run; every `out` port commits `Unknown`). `"osdi"` is OSDI 0.4 (§8.5.8), reached through an adapter over the same ABI.
 
 ### G.66 Session parameter names of `simparam`
 

@@ -718,7 +718,10 @@ module** is implemented outside the language.
   Its body lists params only: no signal, `let`, definition, generation or result. It has no value
   inputs and no behavior blocks.
 - **§8.5.8** The ABI string is `"osdi"` or `"cosim"`. The set is closed. `"osdi"` is OSDI
-  version 0.4: that document is normative for the descriptor and the calls of the ABI.
+  version 0.4: that document is normative for the descriptor and the calls of the ABI. The C
+  interface of an extern module is the **device ABI**, whose exported symbol is
+  `piperine_abi_1`. `"cosim"` is a module whose reaction is irreversible (it is never rolled
+  back, §8.5 contract table). `"osdi"` names an adapter over the same ABI.
 - **§8.5.9** `#[link("file", model = "name")]` is required. It names the foreign artifact and, when
   the artifact holds several, the model in it. `model` is the only key. A relative path is relative
   to the source file.
@@ -743,8 +746,8 @@ module** is implemented outside the language.
 
 | ABI | Contract |
 | --- | --- |
-| `"osdi"` | The model is an analog block the language did not write. It is loaded at every Newton iteration. Its limiting vetoes convergence (§18). Its state advances on accepted steps. Its params, operating-point variables, noise sources and internal nodes appear in the metadata (§21) under the descriptor's names. `m` and `dtemp` are passed as the descriptor's multiplicity and temperature. |
-| `"cosim"` | The foreign simulator is one module in the microstep loop (§15). At a microstep where an input changed, or at a time it asked for, it is given the inputs and returns commits and the next time it wants to run. The commits apply at the next microstep. The requested time is a scheduled time (§17.2). It never probes. It is never advanced into a step that can be rejected, so it needs no rollback. |
+| `"osdi"` | The model is an analog block the language did not write, reached through an adapter over the device ABI (§8.5.8). It is loaded at every Newton iteration. Its limiting vetoes convergence (§18). Its state advances on accepted steps. Its params, operating-point variables, noise sources and internal nodes appear in the metadata (§21) under the descriptor's names. `m` and `dtemp` are passed as the descriptor's multiplicity and temperature. |
+| `"cosim"` | The foreign simulator is one module in the microstep loop (§15). At a microstep where an input changed, or at a time it asked for, it is given the inputs and returns commits and the next time it wants to run. The commits apply at the next microstep. The requested time is a scheduled time (§17.2). It never probes. It is never advanced into a step that can be rejected, so it needs no rollback. It is reached through the device ABI (§8.5.8). |
 
 - **§8.5.13** An `"osdi"` instance follows the first table of §16.2 as an `analog` block does: it
   is evaluated in every kind of solve and linearized in a small-signal sweep.
@@ -756,7 +759,7 @@ module** is implemented outside the language.
   `Unknown`.
 
 > **Resolution.** §8.5.16 is stated here. The C interface of `"cosim"` (the step function, its
-> descriptor, how it returns the next time it wants to run) is not specified: G.65.
+> descriptor, how it returns the next time it wants to run) is the device ABI of §8.5.8 (G.65).
 
 **Errors**
 

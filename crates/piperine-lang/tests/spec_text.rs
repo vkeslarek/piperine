@@ -1157,3 +1157,14 @@ fn time_point_runs_the_procedure() {
     assert!(s.contains("and runs the time-point procedure"), "{s}");
     assert!(s.contains("MAY accept solutions at other times"), "{s}");
 }
+
+#[test]
+fn extern_c_interface_is_the_device_abi() {
+    let structure = spec("part_iii_structure.md");
+    let s = flat(&section(&structure, "### 8.5 "));
+    assert!(s.contains("piperine_abi_1"), "{s}");
+    let g = spec("appendix_g_scope.md");
+    let rows = table_rows(&g);
+    let row = rows.iter().find(|r| r[0] == "G.65").expect("G.65 row");
+    assert!(!row.join(" ").contains("Open"), "{row:?}");
+}
