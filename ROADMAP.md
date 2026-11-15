@@ -274,3 +274,9 @@ VS Code extension productization, marketplace packaging, release/versioning —
 `editors/vscode/`.
 
 - Refactor `crates/piperine-lang/src/pom/{resolve,reflect,lower}/mod.rs` into named modules after msl-stdlib merges (registered hygiene exemptions in `crates/piperine-lang/tests/suite_hygiene.rs`).
+
+## Solver ABI follow-ups (from solver-abi-integration verification round 2, 2026-11-15)
+
+- **Re-entry is approximate, not a replay (N1, Low).** Re-entering a transient at a captured clock-edge step lands on a different step grid and ends up to 7.3e-4 relative off the continuous run. Make re-entry restore the step controller state so it replays the continuous run bit for bit.
+- **Re-entry state on every step (N2, Low).** Every accepted step stores the full re-entry state and `mark()` copies all net bytes on each attempt; memory and time grow with step count. Add an opt-out (or capture only at host-requested points).
+- **Partials guard matches by label (N3, Low).** The C27 guard ties a device to its check by label string, not by the module verified; tie it to the module.
