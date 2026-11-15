@@ -121,14 +121,14 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] The test factory `Gain { k }` builds two modules with different `k` from one device type; each evaluates with its own `k`
-- [ ] A panic in the factory's `eval` is a `FAULT` with the message in the note; nothing unwinds
-- [ ] `unsafe` stays in `thunk.rs`, every block with its `// SAFETY:` line citing abi.md
-- [ ] `Device`, `module::<D>` and every existing test are untouched: `git diff` shows only additions in `device.rs`/`thunk.rs`, the new target and abi.md §7
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-abi --test factory`: `module_with_carries_the_factory`, `create_goes_through_the_factory_and_validates`, `eval_and_react_run_the_created_instance`
-- [ ] Exits 0: `cargo test -p piperine-abi && cargo test -p piperine-solver`
-- [ ] Gate check passes: `cargo test -p piperine-abi`; `cargo test -p piperine-solver`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] The test factory `Gain { k }` builds two modules with different `k` from one device type; each evaluates with its own `k`
+- [x] A panic in the factory's `eval` is a `FAULT` with the message in the note; nothing unwinds
+- [x] `unsafe` stays in `thunk.rs`, every block with its `// SAFETY:` line citing abi.md
+- [x] `Device`, `module::<D>` and every existing test are untouched: `git diff` shows only additions in `device.rs`/`thunk.rs`, the new target and abi.md §7
+- [x] Tests with exactly these names pass in `cargo test -p piperine-abi --test factory`: `module_with_carries_the_factory`, `create_goes_through_the_factory_and_validates`, `eval_and_react_run_the_created_instance`
+- [x] Exits 0: `cargo test -p piperine-abi && cargo test -p piperine-solver`
+- [x] Gate check passes: `cargo test -p piperine-abi`; `cargo test -p piperine-solver`; the `**Build**` commands; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: unit
 **Gate**: build

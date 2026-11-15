@@ -24,6 +24,23 @@ pub trait Device: Sized + Send + 'static {
     fn react(&self, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault>;
 }
 
+/// A device whose module carries data: `create` reads a value (the factory)
+/// instead of a type, so one Rust type serves many modules (an interpreter's
+/// bodies, one factory each). `thunk::module_with` turns a `&'static` factory
+/// into the C entry points; the factory is the module's `data`.
+pub trait Factory: Sized + Send + Sync + 'static {
+    /// What `create` makes; `destroy` drops it.
+    type Instance: Send + 'static;
+    /// The shape at default values (abi.md §2, `Module.prototype`).
+    fn prototype(&self) -> &Shape<'_>;
+    /// An instance and its shape for these param values.
+    fn create(&self, values: &Values<'_>) -> Result<(Self::Instance, ShapeRef), Fault>;
+    /// Runs function `k` of `instance`.
+    fn eval(instance: &Self::Instance, k: u32, cx: &mut Eval<'_>) -> Result<(), Fault>;
+    /// Runs reaction `k` of `instance`.
+    fn react(instance: &Self::Instance, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault>;
+}
+
 /// What a reaction asks of the analysis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Flow {
