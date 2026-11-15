@@ -1185,10 +1185,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] Every committed `duty`, `integ`, `deriv`, `e_prev` and `reference` is compared, bit for bit, at every sample
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test pid`: `the_ramp_and_the_pid_follow_their_difference_equations`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+- [x] Every committed `duty`, `integ`, `deriv`, `e_prev` and `reference` is compared, bit for bit, at every sample
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test pid`: `the_ramp_and_the_pid_follow_their_difference_equations`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

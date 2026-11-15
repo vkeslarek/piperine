@@ -124,6 +124,25 @@ impl Seen {
             .collect()
     }
 
+    /// Every change of the net, the operating point's initial value first: instant in ticks and
+    /// bytes. The value at an instant is the last entry at or before it.
+    pub fn series(&self, name: &str) -> Vec<(i64, Vec<u8>)> {
+        self.series_of(&format!("Top.{name}"))
+    }
+
+    /// The same for a private pin of an instance, by `<instance>.<pin>`.
+    pub fn series_of(&self, path: &str) -> Vec<(i64, Vec<u8>)> {
+        self.0
+            .borrow()
+            .iter()
+            .filter(|o| o.path == path)
+            .filter_map(|o| match &o.kind {
+                ObservationKind::Change { bytes } => Some(((o.time * 1e15).round() as i64, bytes.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The instants, in ticks, at which the instance at `path` made a commit during the
     /// transient.
     pub fn commits(&self, path: &str) -> Vec<i64> {
