@@ -191,3 +191,81 @@ fn a_point_where_the_limit_is_active_is_skipped() {
     // v = 0.55 against LAST = 0.5: inside the band, the partials are compared.
     assert_eq!(verify_partials(&h, 0, &point(&[0.6, 0.05, 0.5]), 1e-6), Ok(Verdict::Exact));
 }
+
+/// One port, f(x) with a declared df/dx: `NanJac` declares NaN; `WrongLog`
+/// is ln(x) with a partial 5× too large, whose finite difference is NaN
+/// below x = h.
+struct NanJac;
+struct WrongLog;
+
+fn one_port() -> &'static ShapeRef {
+    static SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+    SHAPE.get_or_init(|| {
+        let mut s = ShapeBuf::new();
+        let p = s.pin(PinSpec::continuous("p", role::PORT));
+        let t = s.term(TermSpec { name: "t", origin: "", op: op::FLOW, plus: p, minus: piperine_abi::raw::GROUND, abstol: DEFAULT, max: DEFAULT });
+        s.function(FunctionSpec {
+            name: "f",
+            reads: vec![pin(p)],
+            writes: vec![Cell { kind: cell::TERM, index: t, part: part::VALUE }],
+            partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    })
+}
+
+impl Device for NanJac {
+    fn prototype() -> &'static Shape {
+        one_port().shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((NanJac, Arc::clone(one_port())))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
+        let x = cx.f64(0);
+        cx.set(0, x * x);
+        cx.jac()[0] = f64::NAN;
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React<'_>) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+impl Device for WrongLog {
+    fn prototype() -> &'static Shape {
+        one_port().shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((WrongLog, Arc::clone(one_port())))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
+        let x = cx.f64(0);
+        cx.set(0, x.ln());
+        cx.jac()[0] = 5.0 / x;
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React<'_>) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+#[test]
+fn a_non_finite_partial_is_a_mismatch() {
+    let h = Handle::create(leaked::<NanJac>("nan"), &[]).unwrap();
+    let verdict = verify_partials(&h, 0, &point(&[2.0]), 1e-6).unwrap();
+    let Verdict::Mismatch(found) = verdict else { panic!("a NaN partial verified: {verdict:?}") };
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].partial, 0);
+    assert!(found[0].declared.is_nan());
+    assert!((found[0].finite - 4.0).abs() < 1e-6, "the finite difference is 2x = 4: {}", found[0].finite);
+
+    // x − h < 0: the finite difference is NaN, which is not a pass either.
+    let h = Handle::create(leaked::<WrongLog>("log"), &[]).unwrap();
+    let verdict = verify_partials(&h, 0, &point(&[1e-7]), 1e-6).unwrap();
+    let Verdict::Mismatch(found) = verdict else { panic!("a NaN finite difference verified: {verdict:?}") };
+    assert_eq!(found[0].partial, 0);
+    assert!(found[0].finite.is_nan());
+    assert!(matches!(verify_partials(&h, 0, &point(&[2.0]), 1e-6), Ok(Verdict::Mismatch(_))));
+}

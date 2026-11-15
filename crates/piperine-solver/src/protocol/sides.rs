@@ -43,11 +43,23 @@ pub struct InstantMode {
     pub settle: bool,
 }
 
+/// The latest ticks a reaction's `HORIZON` may reach at an instant (abi.md R5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Horizon {
+    /// The stop time: the bound when nothing queued reaches the reaction.
+    pub stop: Tick,
+    /// The bound for a reaction a `CROSS` watch can reach: the current instant
+    /// while the analog side has unknowns (a crossing may fire in the very next
+    /// step, which is not proposed yet), the stop time when it has none.
+    pub crossing: Tick,
+}
+
 /// What running (or resuming) an instant did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Outcome {
-    /// The values the analog side reads that the instant changed, beyond what
-    /// `preview_boundary` already returned for it.
+    /// The values the analog side reads that the instant changed, microstep 0
+    /// included: the solve at the instant read the value before it (the left
+    /// value), so every change reaches the analog side after that solve.
     pub boundary: Vec<Boundary>,
     /// One of those changes came from a host write to a `PARAM` or `GLOBAL` net.
     pub host_param_write: bool,
@@ -81,14 +93,18 @@ pub enum Attempt {
     LandedEarlier(f64),
 }
 
-/// How the integrator restarts at an acceptance.
+/// How the integrator restarts after a delivered change (the kept
+/// discontinuity handling, solver-completeness Q7).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Restart {
+    /// No integration follows (an operating-point round).
     #[default]
     None,
-    /// A value the analog side reads changed after the step arrived.
+    /// A value the analog side reads jumped at the accepted time: the next
+    /// step starts first-order from the jump, as at a breakpoint.
     Integrator,
-    /// That change came from a host write to a `PARAM` or `GLOBAL` net.
+    /// The jump came from a host write to a `PARAM` or `GLOBAL` net: restart,
+    /// and the next step is at most 1e-3 of the last one.
     IntegratorSmall,
 }
 
@@ -145,15 +161,14 @@ pub trait DiscreteSide {
     fn next_due(&self) -> Option<Tick>;
     /// Runs the due instants strictly before `to`, stopping before a landing (abi.md §5 step 2).
     fn advance(&mut self, to: Tick) -> Result<Advance>;
-    /// The boundary changes due at microstep 0 of `at`, computed on a copy.
-    /// Returns only slots whose bytes differ from the analog side's copy.
-    fn preview_boundary(&self, at: Tick) -> Result<Vec<Boundary>>;
     /// Commits a firing of event pin `net` due at microstep 0 of `at` (C6).
     fn fire(&mut self, net: u32, at: Tick) -> Result<()>;
     /// Runs (or, after a suspension, continues) the instant `at`. `samples` are
-    /// the accepted continuous values reactions read; `limit` is the latest tick
-    /// a `HORIZON` may reach (the stop time).
-    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Tick, mode: InstantMode) -> Result<Outcome>;
+    /// the accepted continuous values reactions read; `limit` bounds each
+    /// reaction's `HORIZON` (R5): `limit.crossing` for one a `CROSS` watch can
+    /// reach, `limit.stop` otherwise. An `IRREVERSIBLE` reaction never runs its
+    /// own clock past its bound.
+    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome>;
     fn mark(&self) -> Self::Mark;
     fn restore(&mut self, mark: &Self::Mark);
     /// Runs the parameter cone downstream of a host write on a shadow (P6).
@@ -161,6 +176,9 @@ pub trait DiscreteSide {
     /// Queues a host commit due at `at` (the next microstep when `at` is the
     /// current instant).
     fn host_commit(&mut self, net: u32, offset: u32, bytes: &[u8], at: Tick) -> Result<()>;
+    /// The name of the net behind boundary slot `slot`, as the user reads it
+    /// (the instance path and pin name), for error reports such as `E0506`.
+    fn net_name(&self, slot: u32) -> String;
     /// Registers a host waiter on event net `net`: an `IRREVERSIBLE` reaction (R7).
     fn wait(&mut self, net: u32);
     /// Moves the observations made since the last drain into `out`, in instant order.
@@ -169,18 +187,24 @@ pub trait DiscreteSide {
 
 /// The analog sub-solver as the owner drives it.
 pub trait AnalogSide {
-    /// A checkpoint of the solution, histories and step control.
+    /// A checkpoint of the solution and the histories. The step reduction a
+    /// rejected attempt made is not part of it: it survives `restore`, so the
+    /// next `propose` after a rejection is smaller (the protocol also caps
+    /// consecutive rejections, `ProtocolOptions::max_rejections`).
     type Mark;
     /// Whether any continuous unknown exists.
     fn has_unknowns(&self) -> bool;
     /// The next step's end (step control, `CAP` watches), at most `stop`.
     fn propose(&mut self, now: f64, stop: f64) -> f64;
-    /// Updates the analog copy of discrete values.
-    fn deliver(&mut self, boundary: &[Boundary]);
-    /// Solves a step to `to`; `exempt` skips the truncation test.
+    /// Updates the analog copy of discrete values after the accepted solution
+    /// at the instant that changed them; `restart` says how the next step starts.
+    fn deliver(&mut self, boundary: &[Boundary], restart: Restart);
+    /// Solves a step to `to` on the current copy of discrete values (the left
+    /// value at a scheduled instant); `exempt` skips the truncation test (a
+    /// step that lands on a scheduled instant, as at a breakpoint).
     fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt>;
-    /// Accepts the last converged attempt, restarting the integrator as asked.
-    fn accept(&mut self, restart: Restart) -> Result<Accepted>;
+    /// Accepts the last converged attempt.
+    fn accept(&mut self) -> Result<Accepted>;
     /// Solves the equilibrium (`STATIC = 1`) and evaluates watches there.
     fn equilibrium(&mut self) -> Result<Accepted>;
     fn mark(&self) -> Self::Mark;

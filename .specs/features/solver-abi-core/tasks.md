@@ -474,7 +474,7 @@ Proof: run abi | test a_valueless_field_with_value_bytes_is_not_canonical ... ok
 **C7** - A frozen shape reads back through its raw pointers (SAC-07, AC 7)
 Proof: run abi | test resistor_shape_reads_back_through_raw_pointers ... ok
 
-**C8** - Each of the fifteen shape-local rules (the spec's twelve and the three settled mid-build) refuses its planted defect, naming rule and entry (SAC-09, AC 1)
+**C8** - Each of the twenty shape-local rules (the spec's twelve, the three settled mid-build, `UnreadableList` and the four §3 rules of round 1) refuses its planted defect, naming rule and entry (SAC-09, AC 1)
 Proof: run abi | test every_shape_local_rule_is_enforced ... ok
 
 **C9** - The pointers of `module::<D>` call the device (SAC-04, AC 1)
@@ -531,8 +531,8 @@ Proof: run owner | test the_protocol_module_names_no_sub_solver_item ... ok
 **C26** - No landing before the proposed time means one attempt to it (SAC-14, Protocol AC 2)
 Proof: run owner | test no_landing_means_one_attempt_to_the_proposed_time ... ok
 
-**C27** - A landing's boundary preview is delivered before the attempt, which is exempt only when a value changed (SAC-14, Protocol AC 3)
-Proof: run owner | test a_landing_delivers_its_preview_before_the_attempt ... ok
+**C27** - Superseded by C44 (SAC-24): a landing is no longer previewed; it is solved on the left value, then its instant runs (SAC-14, Protocol AC 3, superseded)
+Proof: run owner | test a_landing_is_solved_on_the_left_value_then_its_instant_runs ... ok
 
 **C28** - A rejected or shortened attempt restores both sides and the sink mark and advances again (SAC-14, Protocol AC 4)
 Proof: run owner | test a_rejected_attempt_restores_both_sides_and_replays ... ok
@@ -540,7 +540,7 @@ Proof: run owner | test a_rejected_attempt_restores_both_sides_and_replays ... o
 **C29** - Acceptance fires the crossings at microstep 0, runs the instant with the samples and asks for a restart on a boundary change (SAC-14, Protocol AC 5)
 Proof: run owner | test acceptance_fires_crossings_runs_the_instant_and_asks_for_restart ... ok
 
-**C30** - A host write to a param or global net asks for the small restart (SAC-14, Protocol AC 6)
+**C30** - A host write to a param or global net asks for the small restart, through `Protocol::set` between runs (no zero-length step) and, in `a_waiter_param_write_asks_for_the_small_restart`, from a waiter inside an instant (SAC-14, Protocol AC 6; SAC-28)
 Proof: run owner | test a_host_param_write_asks_for_the_small_restart ... ok
 
 **C31** - An irreversible instant runs once after acceptance and settles only if it is a time point (SAC-15, Protocol AC 7)
@@ -555,7 +555,7 @@ Proof: run owner | test no_unknowns_means_no_attempt ... ok
 **C34** - The operating point follows start, equilibrium, instant, re-solve on a change, `SETTLE` once (SAC-16, Protocol AC 10)
 Proof: run owner | test the_operating_point_follows_the_call_sequence ... ok
 
-**C35** - More rounds than the bound fail with `E0506` naming the nets (SAC-16, Protocol AC 11)
+**C35** - More rounds than the bound fail with `E0506` naming the nets by name (`DiscreteSide::net_name`, round 1 F10) (SAC-16, Protocol AC 11)
 Proof: run owner | test rounds_beyond_the_bound_are_e0506_naming_the_nets ... ok
 
 **C36** - Observations reach the sink after acceptance, in instant order, with path, analysis kind and time (SAC-17, Protocol AC 12)
@@ -570,12 +570,42 @@ Proof: run owner | test a_host_waiter_runs_once_and_its_writes_are_due_next_micr
 **C39** - A host write is committed only after the shadow accepts it (SAC-18, Protocol AC 15)
 Proof: run owner | test a_write_is_committed_only_after_the_shadow_accepts ... ok
 
+**C40** - A NaN declared partial or a NaN finite difference is a mismatch, not a pass (SAC-19)
+Proof: run abi | test a_non_finite_partial_is_a_mismatch ... ok
+
+**C41** - A list whose stride is below its element is refused, never read past (SAC-20)
+Proof: run abi | test a_list_whose_stride_is_below_its_element_is_refused ... ok
+
+**C42** - The raw views have no public pointer field and one unsafe constructor each (SAC-21)
+Proof: run abi | test raw_views_have_no_public_pointer_field ... ok
+
+**C43** - No unsafe outside raw.rs, thunk.rs and caller.rs (SAC-22)
+Proof: run abi | test no_unsafe_outside_raw_thunk_and_caller ... ok
+
+**C44** - A landing is solved on the left value; its instant runs after the acceptance and its changes are delivered after that solve, with a restart (SAC-24)
+Proof: run owner | test a_landing_is_solved_on_the_left_value_then_its_instant_runs ... ok
+
+**C45** - An off-grid proposal or crossing lands on the tick grid and runs that tick's instant (SAC-25)
+Proof: run owner | test an_off_grid_step_lands_on_the_tick_grid ... ok
+
+**C46** - A FINISH at the operating point ends the run (SAC-26)
+Proof: run owner | test finish_at_the_operating_point_ends_the_run ... ok
+
+**C47** - Consecutive rejected attempts beyond the cap fail loud naming the instant (SAC-27)
+Proof: run owner | test consecutive_rejections_beyond_the_cap_fail_loud ... ok
+
+**C48** - Reactions a crossing can reach are bounded by the current instant while analog unknowns exist (SAC-29)
+Proof: run owner | test irreversible_reactions_are_bounded_by_the_current_instant ... ok
+
+**C49** - Traces and observations reach the sink in time order (SAC-30)
+Proof: run owner | test traces_reach_the_sink_in_time_order ... ok
+
 ---
 
 ## Handoff
 
-**Settled mid-build:** none
-**Dispatched:** B1 at dd805f01 - returned (T1-T4 890b120d..764ab2a1; constants chosen (groups from 1, GROUND=u32::MAX); layouts F64/NONE added; 3 unchecked shape rules); B2 (Opus) at 4b06df65 - returned (settled rules + T5-T10 565d2d87..59318266; Handle::eval/react take slices (soundness), Fault::reshape, verifier abs floor; abi.md §7/§11 corrected); B3 protocol (Opus) at 1931e3a4 - returned (settled e7e84b82 + T11-T16 a1cbc7a6..6fd8b972; protocol on stubs; seam adds wait/host_events/SetOutcome); Verifier (Opus) at 6d87e28c
+**Settled mid-build:** round-1 fix (orchestrator 2026-11-15): F1 implements the user decision "ABI order: solve, then react (Recommended)" (solver-completeness context.md) as a new requirement appended to spec.md with its check, AC 3 left as approved history; "limit = stop tick", "no rejection cap", "E0506 names slots" are fixed per F4/F6/F10; none
+**Dispatched:** B1 at dd805f01 - returned (T1-T4 890b120d..764ab2a1; constants chosen (groups from 1, GROUND=u32::MAX); layouts F64/NONE added; 3 unchecked shape rules); B2 (Opus) at 4b06df65 - returned (settled rules + T5-T10 565d2d87..59318266; Handle::eval/react take slices (soundness), Fault::reshape, verifier abs floor; abi.md §7/§11 corrected); B3 protocol (Opus) at 1931e3a4 - returned (settled e7e84b82 + T11-T16 a1cbc7a6..6fd8b972; protocol on stubs; seam adds wait/host_events/SetOutcome); Verifier (Opus) at 6d87e28c - returned (FAIL: F1,F2 high; F3-F8 medium; F9-F13 low); Fix pass (Opus) at 157c700d - returned (fix pass 67a89e9f..19073264; F1-F13 closed; seam changes: preview_boundary removed, run_instant(Horizon), net_name, AnalogSide deliver(restart); abi pointer fields private); Verifier round 2 at 9a96db0b
 **Settled mid-build:** the three shape rules T4 left unchecked (a statement writing a continuous pin; a CROSS watch whose event pin is not an event pin; a term whose abstol/max pin is not a discrete F64) become validate rules in B2 with tests; constants and F64/NONE layouts accepted, written into abi.md (orchestrator)
 **Settled mid-build:** Handle::eval/react take byte slices (a safe fn over caller raw pointers is unsound) - accepted, abi.md §7 states it; MD-61 accepted under the user's go-ahead (solver-completeness context.md, orchestrator decisions); verifier absolute round-off floor accepted (orchestrator)
 **Walked:** not applicable - no screen

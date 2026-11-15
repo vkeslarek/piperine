@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use piperine_analog_solver::error::Result;
 use piperine_solver::protocol::{
-    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, InstantMode, Observation, Outcome, Restart,
+    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Observation, Outcome, Restart,
     Shadow, Tick,
 };
 
@@ -20,9 +20,8 @@ use piperine_solver::protocol::{
 pub enum Call {
     Start,
     Advance(Tick),
-    Preview(Tick),
     Fire(u32, Tick),
-    RunInstant { at: Tick, samples: Vec<f64>, limit: Tick, mode: InstantMode },
+    RunInstant { at: Tick, samples: Vec<f64>, limit: Horizon, mode: InstantMode },
     DiscreteMark(u32),
     DiscreteRestore(u32),
     Shadow(u32, Vec<u8>),
@@ -30,15 +29,20 @@ pub enum Call {
     Wait(u32),
     Drain,
     Propose(f64, f64),
-    Deliver(Vec<Boundary>),
+    Deliver(Vec<Boundary>, Restart),
     Attempt { to: f64, exempt: bool },
-    Accept(Restart),
+    Accept,
     Equilibrium,
     AnalogMark(u32),
     AnalogRestore(u32),
     DrainTraces,
     /// Pushed by a test's host waiter.
     Waiter(u32),
+}
+
+/// The horizon bounds of a `run_instant` call.
+pub fn horizon(stop: Tick, crossing: Tick) -> Horizon {
+    Horizon { stop, crossing }
 }
 
 /// The log both stubs write.
@@ -57,7 +61,6 @@ pub fn calls(log: &Log, keep: impl Fn(&Call) -> bool) -> Vec<Call> {
 pub struct ScriptedDiscrete {
     pub log: Log,
     pub advances: VecDeque<Advance>,
-    pub previews: RefCell<VecDeque<Vec<Boundary>>>,
     pub instants: VecDeque<Outcome>,
     pub shadows: RefCell<VecDeque<Shadow>>,
     /// Observations made by each `advance`, in order.
@@ -65,6 +68,8 @@ pub struct ScriptedDiscrete {
     /// Observations made by each `run_instant`, in order.
     pub instant_observations: VecDeque<Vec<Observation>>,
     pub next: Option<Tick>,
+    /// The net names behind boundary slots; an unnamed slot reads `slot <n>`.
+    pub names: Vec<(u32, String)>,
     buffer: Vec<Observation>,
     marks: Cell<u32>,
 }
@@ -74,12 +79,12 @@ impl ScriptedDiscrete {
         ScriptedDiscrete {
             log: Rc::clone(log),
             advances: VecDeque::new(),
-            previews: RefCell::new(VecDeque::new()),
             instants: VecDeque::new(),
             shadows: RefCell::new(VecDeque::new()),
             advance_observations: VecDeque::new(),
             instant_observations: VecDeque::new(),
             next: None,
+            names: Vec::new(),
             buffer: Vec::new(),
             marks: Cell::new(0),
         }
@@ -105,15 +110,11 @@ impl DiscreteSide for ScriptedDiscrete {
         self.buffer.extend(self.advance_observations.pop_front().unwrap_or_default());
         Ok(self.advances.pop_front().unwrap_or(Advance::Reached))
     }
-    fn preview_boundary(&self, at: Tick) -> Result<Vec<Boundary>> {
-        self.record(Call::Preview(at));
-        Ok(self.previews.borrow_mut().pop_front().unwrap_or_default())
-    }
     fn fire(&mut self, net: u32, at: Tick) -> Result<()> {
         self.record(Call::Fire(net, at));
         Ok(())
     }
-    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Tick, mode: InstantMode) -> Result<Outcome> {
+    fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome> {
         self.record(Call::RunInstant { at, samples: samples.to_vec(), limit, mode });
         self.buffer.extend(self.instant_observations.pop_front().unwrap_or_default());
         Ok(self.instants.pop_front().unwrap_or_default())
@@ -135,6 +136,9 @@ impl DiscreteSide for ScriptedDiscrete {
     fn host_commit(&mut self, net: u32, offset: u32, bytes: &[u8], at: Tick) -> Result<()> {
         self.record(Call::HostCommit { net, offset, bytes: bytes.to_vec(), at });
         Ok(())
+    }
+    fn net_name(&self, slot: u32) -> String {
+        self.names.iter().find(|(s, _)| *s == slot).map(|(_, n)| n.clone()).unwrap_or_else(|| format!("slot {slot}"))
     }
     fn wait(&mut self, net: u32) {
         self.record(Call::Wait(net));
@@ -189,16 +193,16 @@ impl AnalogSide for ScriptedAnalog {
         self.record(Call::Propose(now, stop));
         self.proposals.pop_front().unwrap_or(stop)
     }
-    fn deliver(&mut self, boundary: &[Boundary]) {
-        self.record(Call::Deliver(boundary.to_vec()));
+    fn deliver(&mut self, boundary: &[Boundary], restart: Restart) {
+        self.record(Call::Deliver(boundary.to_vec(), restart));
     }
     fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
         self.record(Call::Attempt { to, exempt });
         self.buffer.extend(self.traces.pop_front().unwrap_or_default());
         Ok(self.attempts.pop_front().unwrap_or(Attempt::Converged))
     }
-    fn accept(&mut self, restart: Restart) -> Result<Accepted> {
-        self.record(Call::Accept(restart));
+    fn accept(&mut self) -> Result<Accepted> {
+        self.record(Call::Accept);
         Ok(self.accepts.pop_front().unwrap_or_default())
     }
     fn equilibrium(&mut self) -> Result<Accepted> {

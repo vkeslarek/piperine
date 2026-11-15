@@ -4,20 +4,24 @@
 //! C := checkpoint(discrete, analog, sink buffer)                 at accepted time t
 //! 1. t_c := analog.propose(t, stop)           (the stop time when there is no unknown)
 //! 2. discrete.advance(tick(t_c)): a Landing or Final shortens t_c to its tick
-//! 3. deliver the boundary preview of t_c; attempt to t_c, exempt when it changed a value
+//! 3. attempt to t_c on the value before the instant (the left value), exempt when
+//!    t_c is a scheduled instant
 //! 4. Rejected: restore C, propose again.  LandedEarlier(t'): restore C, t_c := t', go to 2
-//! 5. accept (with the restart the previous instant asked for); fire the crossings at
-//!    (t_c, 0); run the instant t_c with the samples, settling when it is a time point;
-//!    a later boundary change asks the next acceptance for a restart
+//! 5. accept; fire the crossings at (t_c, 0); run the instant t_c, whose reactions read the
+//!    solution at t_c, settling when it is a time point; deliver what it changed
+//!    (microstep 0 included) with the restart the next step starts from
 //! 6. t := t_c; a Final mark or a FINISH ends the analysis after this instant
 //! ```
+//!
+//! The order of steps 3 and 5 is the user's (solver-completeness context.md,
+//! 2026-11-15: "ABI order: solve, then react"); the jump handling is the kept one.
 //!
 //! What a restore replays is discrete work only; one analog solve per landing.
 
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
 use super::host::Waiter;
-use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, InstantMode, Restart, Tick};
+use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Restart, Tick};
 use super::sink::{Delivery, Sink};
 
 /// How the protocol maps time and bounds its loops.
@@ -27,18 +31,25 @@ pub struct ProtocolOptions {
     pub seconds_per_tick: f64,
     /// The bound on the equilibrium solves of an operating point (`E0506`).
     pub max_rounds: u32,
+    /// The bound on consecutive rejected attempts from one accepted time;
+    /// beyond it the transient fails naming that time.
+    pub max_rejections: u32,
 }
 
 impl ProtocolOptions {
-    /// Options with the default bound of 20 rounds.
+    /// The default bound on consecutive rejected attempts.
+    pub const MAX_REJECTIONS: u32 = 64;
+
+    /// Options with the default bounds: 20 rounds, 64 rejections.
     pub fn new(seconds_per_tick: f64) -> ProtocolOptions {
-        ProtocolOptions { seconds_per_tick, max_rounds: 20 }
+        ProtocolOptions { seconds_per_tick, max_rounds: 20, max_rejections: Self::MAX_REJECTIONS }
     }
 }
 
-/// How a transient ended.
+/// How an analysis ended.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Ended {
+    /// It ran to its end (the stop time; for an operating point, its settle).
     StopTime,
     /// A reaction returned `FINISH`; the analysis ended after the instant at this time.
     Finish(f64),
@@ -52,9 +63,13 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     /// The last accepted time.
     pub(super) now: f64,
     pub(super) in_transient: bool,
-    /// The restart the next acceptance passes to the analog side.
-    pub(super) restart: Restart,
     pub(super) delivery: Delivery,
+    /// The time a `FINISH` ended the run at, if one did.
+    pub(super) finished: Option<f64>,
+    /// The operating point has started the discrete side.
+    pub(super) started: bool,
+    /// The continuous values reactions read, at the last accepted solution.
+    pub(super) samples: Vec<f64>,
     /// Host waiters by event net (abi.md R7).
     pub(super) waiters: Vec<(u32, Waiter)>,
 }
@@ -74,8 +89,10 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             options,
             now: 0.0,
             in_transient: false,
-            restart: Restart::None,
             delivery: Delivery::default(),
+            finished: None,
+            started: false,
+            samples: Vec::new(),
             waiters: Vec::new(),
         }
     }
@@ -108,6 +125,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         (t / self.options.seconds_per_tick).round() as Tick
     }
 
+    /// The last tick not after `t` (a step never ends past what was proposed).
+    fn floor_tick(&self, t: f64) -> Tick {
+        (t / self.options.seconds_per_tick + 1e-9).floor() as Tick
+    }
+
     pub(super) fn time(&self, tick: Tick) -> f64 {
         tick as f64 * self.options.seconds_per_tick
     }
@@ -131,70 +153,92 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// Runs a transient from the last accepted time (after `operating_point`)
     /// to `stop`.
     pub fn transient(&mut self, stop: f64) -> Result<Ended> {
+        if let Some(t) = self.finished {
+            return Ok(Ended::Finish(t));
+        }
         self.in_transient = true;
         let ended = self.transient_loop(stop);
+        self.delivery.flush_all();
         self.in_transient = false;
         ended
     }
 
     fn transient_loop(&mut self, stop: f64) -> Result<Ended> {
+        // Every step ends on the tick grid, so the instant run at a step's end
+        // is that tick's own (an instant runs only at its own tick).
         let stop_tick = self.tick(stop);
+        let stop = self.time(stop_tick);
         let at = |t: f64, e: Error| Error::wrap(SolverDomain::Transient, format!("at t = {t:e} s"), e);
-        let mut forced: Option<f64> = None;
-        while self.now < stop {
+        let mut forced: Option<Tick> = None;
+        let mut rejections = 0u32;
+        while self.tick(self.now) < stop_tick {
             let c = self.checkpoint();
+            let now_tick = self.tick(self.now);
             let unknowns = self.analog.has_unknowns();
-            let mut t_c = match forced.take() {
+            let mut tick_c = match forced.take() {
                 Some(t) => t,
-                None if unknowns => self.analog.propose(self.now, stop).min(stop),
-                None => stop,
+                None if unknowns => {
+                    let proposed = self.analog.propose(self.now, stop);
+                    self.floor_tick(proposed).clamp(now_tick + 1, stop_tick)
+                }
+                None => stop_tick,
             };
-            if t_c <= self.now {
-                return Err(Error::simple(
-                    SolverDomain::Transient,
-                    format!("the proposed step to {t_c:e} s does not advance from {:e} s", self.now),
-                ));
-            }
             // Step 2: the discrete instants before t_c, stopping before a landing.
             let (mut settle, mut final_mark) = (true, false);
-            match self.discrete.advance(self.tick(t_c)).map_err(|e| at(t_c, e))? {
+            let advanced = self.discrete.advance(tick_c).map_err(|e| at(self.time(tick_c), e))?;
+            match advanced {
                 Advance::Reached => {}
                 Advance::Landing { tick, time_point } => {
-                    t_c = self.time(tick);
+                    tick_c = tick;
                     settle = time_point;
                 }
                 Advance::Final(tick) => {
-                    t_c = self.time(tick);
+                    tick_c = tick;
                     final_mark = true;
                 }
             }
+            if tick_c <= now_tick {
+                return Err(Error::simple(
+                    SolverDomain::Transient,
+                    format!("a landing at tick {tick_c} does not advance from tick {now_tick} ({:e} s)", self.now),
+                ));
+            }
+            let t_c = self.time(tick_c);
             self.collect(AnalysisKind::Transient);
-            let tick_c = self.tick(t_c);
 
             // Steps 3 and 4: one analog attempt to t_c.
             let samples = if unknowns {
-                let preview = self.discrete.preview_boundary(tick_c).map_err(|e| at(t_c, e))?;
-                let exempt = !preview.is_empty();
-                if exempt {
-                    self.analog.deliver(&preview);
-                }
+                let exempt = !matches!(advanced, Advance::Reached);
                 let attempt = self.analog.attempt(t_c, exempt).map_err(|e| at(t_c, e))?;
                 let analog = &mut self.analog;
-                self.delivery.deliver_now(AnalysisKind::Transient, |out| analog.drain_traces(out));
+                self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
                 match attempt {
                     Attempt::Converged => {}
                     Attempt::Rejected => {
                         self.restore(&c);
+                        rejections += 1;
+                        if rejections >= self.options.max_rejections {
+                            return Err(Error::simple(
+                                SolverDomain::Transient,
+                                format!(
+                                    "{rejections} consecutive rejected attempts from t = {:e} s (last toward {t_c:e} s): \
+                                     the step does not converge",
+                                    self.now
+                                ),
+                            ));
+                        }
                         continue;
                     }
                     Attempt::LandedEarlier(t) => {
                         self.restore(&c);
-                        forced = Some(t);
+                        // The nearest tick inside the step.
+                        forced = Some(self.tick(t).clamp(now_tick + 1, tick_c));
                         continue;
                     }
                 }
                 // Step 5: accept, fire the crossings at (t_c, 0).
-                let accepted = self.analog.accept(std::mem::take(&mut self.restart)).map_err(|e| at(t_c, e))?;
+                let accepted = self.analog.accept().map_err(|e| at(t_c, e))?;
+                rejections = 0;
                 for net in &accepted.fired {
                     self.discrete.fire(*net, tick_c).map_err(|e| at(t_c, e))?;
                 }
@@ -202,17 +246,21 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             } else {
                 Vec::new()
             };
+            self.samples.clone_from(&samples);
             let mode = InstantMode { is_static: false, settle };
-            let outcome = self.run_whole_instant(tick_c, &samples, stop_tick, mode).map_err(|e| at(t_c, e))?;
+            let crossing = if unknowns { tick_c } else { stop_tick };
+            let limit = Horizon { stop: stop_tick, crossing };
+            let outcome = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
             if unknowns && !outcome.boundary.is_empty() {
-                self.analog.deliver(&outcome.boundary);
-                self.restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
+                let restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
+                self.analog.deliver(&outcome.boundary, restart);
             }
             // Step 6.
             self.collect(AnalysisKind::Transient);
-            self.delivery.flush();
+            self.delivery.flush(t_c);
             self.now = t_c;
             if final_mark || outcome.finish {
+                self.finished = Some(t_c);
                 return Ok(Ended::Finish(t_c));
             }
         }

@@ -567,14 +567,19 @@ fn bad_limit_module() -> Module {
     extern "C" fn react(_: *mut Instance, _: u32, _: *const RawReact) -> u32 {
         status::FAULT
     }
-    Module {
-        name: Str::from_static("BadLimit"),
-        prototype: shared(&BAD_LIMIT, bad_limit_shape).as_raw(),
-        data: std::ptr::null(),
-        create,
-        destroy,
-        eval,
-        react,
+    // SAFETY: the prototype is a frozen static shape that lives for the
+    // process; `create` hands out that shape and a never-dereferenced
+    // instance, `destroy` frees nothing, and `eval`/`react` read nothing.
+    unsafe {
+        Module::from_raw_parts(
+            Str::from_static("BadLimit"),
+            shared(&BAD_LIMIT, bad_limit_shape).as_raw(),
+            std::ptr::null(),
+            create,
+            destroy,
+            eval,
+            react,
+        )
     }
 }
 
