@@ -30,7 +30,7 @@ pub enum Binding {
 #[derive(Clone, Copy, Debug)]
 pub struct ShapeInput<'a> {
     pub path: &'a str,
-    pub shape: &'a Shape,
+    pub shape: &'a Shape<'a>,
     pub pins: &'a [Binding],
 }
 
@@ -486,7 +486,7 @@ impl DigitalPlan {
     }
 
     /// The layout of the pins on `net` (P4 made them equal): the first pin's.
-    pub fn net_layout(&self, net: NetId) -> Option<&Layout> {
+    pub fn net_layout(&self, net: NetId) -> Option<&Layout<'_>> {
         self.instances.iter().find_map(|inst| {
             inst.pins.iter().enumerate().find_map(|(i, b)| match b {
                 Binding::Net(id) if *id == net => inst.handle.shape().pins.get(i).map(|p| &p.layout),
