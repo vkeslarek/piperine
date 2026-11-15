@@ -58,7 +58,7 @@ pub enum ParamValue {
 }
 
 /// One instance as the builder collects it.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct DeviceSpec {
     pub module: &'static Module,
     pub path: String,
@@ -117,6 +117,35 @@ pub struct Bound {
     /// The analysis-kind globals some pin reads (`DC`, `TRAN`, `AC`, `NOISE`):
     /// the constant, its net and the bytes that mean "this analysis runs".
     pub analyses: Vec<(u32, NetId, Vec<u8>)>,
+    /// The host's writes to param nets between analyses: committed at the
+    /// start of every analysis after the `init`s (abi.md §10 "the host's
+    /// initial writes").
+    pub host_writes: Vec<(NetId, Vec<u8>)>,
+}
+
+/// What bind ran on, kept so that an instance can be created and bound again
+/// (abi.md P5, P6: a `STRUCTURAL` write or a `RESHAPE` between analyses).
+#[derive(Clone, Debug)]
+pub(crate) struct Recipe {
+    pub specs: Vec<DeviceSpec>,
+    pub shared: Vec<(String, ParamValue)>,
+    pub session: Vec<(String, ParamValue)>,
+    pub resolution: f64,
+    pub temperature: f64,
+}
+
+impl Bound {
+    /// The param net of `(path, param)` and the bytes of `value` in its layout.
+    pub(crate) fn param_bytes(&self, path: &str, param: &str, value: &ParamValue) -> Result<(NetId, Vec<u8>)> {
+        let net = *self
+            .names
+            .params
+            .get(&(path.to_string(), param.to_string()))
+            .ok_or_else(|| bind_error(path, format!("no PARAM pin `{param}`")))?;
+        let layout = self.digital.plan().net_layout(net).ok_or_else(|| bind_error(path, format!("`{param}` has no layout")))?;
+        let bytes = encode(layout, value).map_err(|e| bind_error(path, format!("`{param}`: {e}")))?;
+        Ok((net, bytes))
+    }
 }
 
 impl Bound {
@@ -152,7 +181,7 @@ fn bind_error(path: &str, detail: impl std::fmt::Display) -> Error {
 }
 
 /// The bytes of `value` in `layout` (P3: a field with a known byte gets it set).
-fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result<Vec<u8>, String> {
+pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result<Vec<u8>, String> {
     if let ParamValue::Bytes(b) = value {
         return if b.len() == layout.size as usize {
             Ok(b.clone())
@@ -588,5 +617,5 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         }
     }
     let digital = Digital::new(digital_plan, DigitalLimits::default());
-    Ok(Bound { analog, digital, names, holds, vntol, analyses })
+    Ok(Bound { analog, digital, names, holds, vntol, analyses, host_writes: Vec::new() })
 }

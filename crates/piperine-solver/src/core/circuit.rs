@@ -49,6 +49,8 @@ pub struct CircuitInstance {
     pub netlist: Netlist,
     /// The bound device instances (the ABI contract); `None` for a circuit of `Element`s.
     pub(crate) abi: Option<crate::core::bind::Bound>,
+    /// What the device instances were bound from (a circuit of devices).
+    pub(crate) recipe: Option<crate::core::bind::Recipe>,
     is_set_up: bool,
 }
 
@@ -459,6 +461,90 @@ impl CircuitInstance {
         })
     }
 
+    /// Sets `param` of the device instance at `path` to `value` between
+    /// analyses (abi.md §10 "Host actions", P5, P6): the parameter cone runs on
+    /// a shadow first. A false `check` refuses the write and nothing changes; a
+    /// `RESHAPE`, or a `STRUCTURAL` param, re-creates and re-binds the instances
+    /// with the new value (every param keeps its value); otherwise the write is
+    /// one of the host's initial writes of every later analysis, and the
+    /// analog copy reads it at once.
+    pub fn set(
+        &mut self,
+        path: &str,
+        param: &str,
+        value: crate::core::bind::ParamValue,
+    ) -> crate::core::result::Result<()> {
+        use piperine_digital_solver::abi::engine::Shadow;
+        let bound = self.abi.as_mut().ok_or_else(|| {
+            Error::simple(SolverDomain::Element, "`set` addresses device instances; this circuit has none")
+        })?;
+        let (net, bytes) = bound.param_bytes(path, param, &value)?;
+        let shadow = bound
+            .digital
+            .shadow(net, 0, &bytes)
+            .map_err(|e| Error::simple(SolverDomain::Digital, e.to_string()))?;
+        let structural = bound.digital.plan().nets[net.0 as usize].structural;
+        match shadow {
+            Shadow::Refused { check } => {
+                return Err(Error::simple(
+                    SolverDomain::Element,
+                    format!("`{path}.{param}`: the write is refused, check {check} is false"),
+                ));
+            }
+            Shadow::Accept if !structural => {
+                bound.host_writes.retain(|(n, _)| *n != net);
+                if let Some(slot) = bound.names.slots.get(&net) {
+                    bound.analog.set_discrete(*slot, &bytes);
+                }
+                bound.host_writes.push((net, bytes));
+            }
+            Shadow::Accept | Shadow::Reshape { .. } => {}
+        }
+        let recipe = self.recipe.as_mut().expect("a circuit of devices keeps its recipe");
+        let spec = recipe.specs.iter_mut().find(|s| s.path == path).expect("the instance was bound");
+        spec.values.retain(|(n, _)| n != param);
+        spec.values.push((param.to_string(), value));
+        if structural || !matches!(shadow, Shadow::Accept) {
+            self.rebind()?;
+        }
+        Ok(())
+    }
+
+    /// Destroys every device instance and creates and binds them again from
+    /// the recipe, over the circuit's own nodes.
+    fn rebind(&mut self) -> crate::core::result::Result<()> {
+        use piperine_analog_solver::netlist::AnalogVariable;
+        let recipe = self.recipe.clone().expect("a circuit of devices keeps its recipe");
+        // The nodes keep their indices: the builder allocated them before bind.
+        let mut nodes: Vec<_> = self
+            .netlist
+            .all_references()
+            .into_iter()
+            .filter(|r| r.variable().is_node())
+            .cloned()
+            .collect();
+        nodes.sort_by_key(|r| r.idx());
+        let mut netlist = Netlist::new();
+        for node in &nodes {
+            let AnalogVariable::Node(id) = node.variable().as_ref() else { unreachable!("filtered to nodes") };
+            if netlist.connect_node(id.clone()).idx() != node.idx() {
+                return Err(Error::simple(SolverDomain::Element, "a node was allocated after bind; cannot bind again"));
+            }
+        }
+        self.abi = None;
+        let bound = crate::core::bind::bind(crate::core::bind::BindInput {
+            specs: recipe.specs,
+            shared: recipe.shared,
+            session: recipe.session,
+            netlist: &mut netlist,
+            resolution: recipe.resolution,
+            temperature: recipe.temperature,
+        })?;
+        self.netlist = netlist;
+        self.abi = Some(bound);
+        Ok(())
+    }
+
     /// Steer the Newton guess with every device's structured limiting
     /// feedback ([`AnalogDevice::limiting_report`](crate::core::element::AnalogDevice::limiting_report)):
     /// each report's `limited_value` overwrites its `net` before the
@@ -520,6 +606,7 @@ impl CircuitInstance {
             digital_state: DigitalState::new(0),
             netlist,
             abi: None,
+            recipe: None,
             is_set_up: false,
         }
     }

@@ -260,16 +260,24 @@ impl CircuitBuilder {
             ));
         }
         let temperature = piperine_analog_solver::tolerances::Tolerances::default().temperature;
-        let bound = bind(BindInput {
+        let recipe = crate::core::bind::Recipe {
             specs: std::mem::take(&mut self.devices),
             shared: std::mem::take(&mut self.shared_params),
             session: std::mem::take(&mut self.session_params),
-            netlist: &mut self.netlist,
             resolution: self.resolution,
             temperature,
+        };
+        let bound = bind(BindInput {
+            specs: recipe.specs.clone(),
+            shared: recipe.shared.clone(),
+            session: recipe.session.clone(),
+            netlist: &mut self.netlist,
+            resolution: recipe.resolution,
+            temperature: recipe.temperature,
         })?;
         let mut instance = CircuitInstance::from_devices_and_netlist(self.title, Vec::new(), self.netlist);
         instance.abi = Some(bound);
+        instance.recipe = Some(recipe);
         Ok(instance)
     }
 }

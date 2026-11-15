@@ -1726,13 +1726,33 @@ impl TransientSolver<'_> {
                 "a circuit of devices does not re-enter a transient yet (solver-abi-integration T18)",
             ));
         }
-        if !self.sets.entries.is_empty() {
-            return Err(Error::simple(
-                SolverDomain::Transient,
-                "a circuit of devices takes scheduled writes through the protocol (solver-abi-integration T14)",
-            ));
+        // Scheduled host writes: one at or before the start is a write before the
+        // run; a later one is a host commit the protocol lands on.
+        let mut later = Vec::new();
+        for set in std::mem::take(&mut self.sets.entries) {
+            let value = match set.value {
+                crate::core::introspect::Value::Real(v) => crate::core::bind::ParamValue::Real(v),
+                crate::core::introspect::Value::Integer(v) => crate::core::bind::ParamValue::Int(v),
+                crate::core::introspect::Value::Boolean(v) => crate::core::bind::ParamValue::Bool(v),
+                crate::core::introspect::Value::Text(_) => {
+                    return Err(Error::simple(
+                        SolverDomain::Transient,
+                        format!("`{}.{}`: a text value has no byte layout", set.label, set.param),
+                    ));
+                }
+            };
+            if set.t <= self.options.start_time {
+                self.system.circuit.set(&set.label, &set.param, value)?;
+            } else {
+                later.push((set.t, set.label, set.param, value));
+            }
         }
         let bound = self.system.circuit.abi.as_mut().expect("a circuit of devices");
+        let mut writes = Vec::with_capacity(later.len());
+        for (t, path, param, value) in &later {
+            let (net, bytes) = bound.param_bytes(path, param, value)?;
+            writes.push((*t, format!("{path}.{param}"), net.0, bytes));
+        }
         let spt = bound.digital.plan().resolution.seconds_per_tick;
         let digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
         let side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
@@ -1757,6 +1777,29 @@ impl TransientSolver<'_> {
         let ran = nets
             .and_then(|_| protocol.operating_point())
             .and_then(|_| protocol.analog_mut().begin())
+            .and_then(|_| {
+                for (t, what, net, bytes) in &writes {
+                    match protocol.set(*net, 0, bytes, Some(*t))? {
+                        crate::protocol::SetOutcome::Committed => {}
+                        crate::protocol::SetOutcome::Refused { reason } => {
+                            return Err(Error::simple(
+                                SolverDomain::Transient,
+                                format!("the write of `{what}` at {t:e} s is refused: {reason}"),
+                            ));
+                        }
+                        crate::protocol::SetOutcome::Reshape { instance } => {
+                            return Err(Error::simple(
+                                SolverDomain::Transient,
+                                format!(
+                                    "the write of `{what}` at {t:e} s is refused: instance {instance} would need \
+                                     another shape inside a transient"
+                                ),
+                            ));
+                        }
+                    }
+                }
+                Ok(())
+            })
             .and_then(|_| protocol.transient(stop));
         let (side, analog) = protocol.into_sides();
         let run = analog.run;

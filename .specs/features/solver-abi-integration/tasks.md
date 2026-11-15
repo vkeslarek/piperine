@@ -418,12 +418,12 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_false_check_refuses_a_set` passes and the next solve uses the old value
-- [ ] Test `reshape_is_refused_in_a_transient_and_rebinds_between_analyses` passes with a device whose internal node collapses below a threshold: every net keeps its value across the re-bind
-- [ ] Test `a_scheduled_host_write_lands_and_restarts_small` passes: the write's time is an accepted time and the next step is 10⁻³ of the last, floored at `dt_min`
-- [ ] Test `a_structural_set_during_a_run_is_refused` passes
-- [ ] The `Element` branch of `set_element_param` and `SetQueue` is unchanged; `live_params` passes unchanged
-- [ ] Gate: full
+- [x] Test `a_false_check_refuses_a_set` passes and the next solve uses the old value
+- [x] Test `reshape_is_refused_in_a_transient_and_rebinds_between_analyses` passes with a device whose internal node collapses below a threshold: every net keeps its value across the re-bind
+- [x] Test `a_scheduled_host_write_lands_and_restarts_small` passes: the write's time is an accepted time and the next step is 10⁻³ of the last, floored at `dt_min`
+- [x] Test `a_structural_set_during_a_run_is_refused` passes
+- [x] The `Element` branch of `set_element_param` and `SetQueue` is unchanged; `live_params` passes unchanged
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full
