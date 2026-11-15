@@ -434,7 +434,7 @@ Proof: run values | test a_closure_outside_an_argument_is_p0001 ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none yet
+**Dispatched:** 2026-11-15 batch 1 (T1-T5, Sonnet) in ../piperine-msl-typeck
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---
