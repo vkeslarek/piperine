@@ -83,7 +83,7 @@ fn resistor_shape() -> ShapeRef {
 }
 
 impl Device for Resistor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&RESISTOR, resistor_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -200,7 +200,7 @@ fn gd(cx: &Eval) -> f64 {
 }
 
 impl Device for Diode {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&DIODE, diode_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -261,7 +261,7 @@ fn capacitor_shape() -> ShapeRef {
 }
 
 impl Device for Capacitor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&CAPACITOR, capacitor_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -309,7 +309,7 @@ fn flip_flop_shape() -> ShapeRef {
 }
 
 impl Device for FlipFlop {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&FLIP_FLOP, flip_flop_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -372,7 +372,7 @@ fn comparator_shape() -> ShapeRef {
 }
 
 impl Device for Comparator {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&COMPARATOR, comparator_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -418,7 +418,7 @@ fn dac_shape() -> ShapeRef {
 }
 
 impl Device for Dac {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&DAC, dac_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -527,7 +527,7 @@ fn cubic_shape() -> ShapeRef {
 }
 
 impl Device for Cubic {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&CUBIC, cubic_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -658,7 +658,7 @@ fn source_shape() -> ShapeRef {
 }
 
 impl Device for CurrentSource {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&SOURCE, source_shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -702,7 +702,7 @@ fn counted_shape() -> ShapeRef {
 }
 
 impl Device for CountedResistor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&COUNTED, counted_shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -751,7 +751,7 @@ fn probe_shape() -> ShapeRef {
 }
 
 impl Device for Probe {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&PROBE, probe_shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -796,7 +796,7 @@ fn faulty_shape() -> ShapeRef {
 }
 
 impl Device for Faulty {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&FAULTY, faulty_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -848,7 +848,7 @@ fn plain_diode_shape() -> ShapeRef {
 }
 
 impl Device for PlainDiode {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&PLAIN_DIODE, plain_diode_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -895,7 +895,7 @@ fn vsource_shape() -> ShapeRef {
 }
 
 impl Device for VSource {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&VSOURCE, vsource_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -959,7 +959,7 @@ fn clamp_shape() -> ShapeRef {
 }
 
 impl Device for Clamp {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&CLAMP, clamp_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1013,7 +1013,7 @@ fn owner_shape() -> ShapeRef {
 }
 
 impl Device for Owner {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&OWNER, owner_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1058,7 +1058,7 @@ fn reader_shape() -> ShapeRef {
 }
 
 impl Device for Reader {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&READER, reader_shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1114,7 +1114,7 @@ fn tracker_shape() -> ShapeRef {
 }
 
 impl Device for Tracker {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&TRACKER, tracker_shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1165,7 +1165,7 @@ fn delay_line_shape() -> ShapeRef {
 }
 
 impl Device for DelayLine {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&DELAY_LINE, delay_line_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1214,7 +1214,7 @@ fn trio_shape() -> ShapeRef {
 }
 
 impl Device for Trio {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&TRIO, trio_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1269,7 +1269,7 @@ fn ac_vsource_shape() -> ShapeRef {
 }
 
 impl Device for AcVSource {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&AC_VSOURCE, ac_vsource_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1327,7 +1327,7 @@ fn noisy_shape() -> ShapeRef {
 }
 
 impl Device for NoisyResistor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&NOISY, noisy_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1395,7 +1395,7 @@ fn split_shape() -> ShapeRef {
 }
 
 impl Device for Split {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&SPLIT, split_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1453,7 +1453,7 @@ fn flicker_shape() -> ShapeRef {
 }
 
 impl Device for Flicker {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&FLICKER, flicker_shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1504,7 +1504,7 @@ fn capper_shape() -> ShapeRef {
 }
 
 impl Device for Capper {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&CAPPER, capper_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1553,7 +1553,7 @@ fn tracer_shape() -> ShapeRef {
 }
 
 impl Device for Tracer {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&TRACER, tracer_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -1597,7 +1597,7 @@ fn sample_hold_shape() -> ShapeRef {
 }
 
 impl Device for SampleHold {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&SAMPLE_HOLD, sample_hold_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {

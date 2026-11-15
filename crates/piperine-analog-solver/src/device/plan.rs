@@ -217,7 +217,7 @@ impl AnalogPlan {
     }
 
     /// The shape of instance `i`.
-    pub fn shape(&self, i: usize) -> &Shape {
+    pub fn shape(&self, i: usize) -> &Shape<'_> {
         self.instances[i].handle.shape()
     }
 
