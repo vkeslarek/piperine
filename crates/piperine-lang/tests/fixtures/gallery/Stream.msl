@@ -1,0 +1,4 @@
+struct Stream<T: Repr> { out valid: Bit, in ready: Bit, out data: Bit<T> }
+impl<T> Stream<T> {
+    pub fn beat(self, clk: Bit) -> Event { clk.rise() && self.valid && self.ready }
+}

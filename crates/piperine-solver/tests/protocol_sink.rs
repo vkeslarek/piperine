@@ -96,7 +96,7 @@ fn an_undone_instant_delivers_nothing() {
     d.advance_observations.extend([vec![obs("undone.rejected", 1.0)], vec![obs("undone.earlier", 1.5)], vec![obs("kept", 0.5)]]);
     d.advances.extend([Advance::Reached, Advance::Reached, Advance::Reached]);
     a.proposals.extend([2.0, 2.0, 2.0]);
-    a.attempts.extend([Attempt::Rejected, Attempt::LandedEarlier(1.0)]);
+    a.attempts.extend([Attempt::Rejected, Attempt::LandedEarlier(0.5)]);
     let (sink, seen) = collecting(&log);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_sink(sink);
     p.transient(1.0).unwrap();

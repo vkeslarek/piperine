@@ -1,0 +1,2 @@
+#[derive(Repr, Clone, Copy, PartialEq)]
+enum Tx { Idle, Start, Data { n: u3 }, Stop }      // 2-level tag + 3-level payload

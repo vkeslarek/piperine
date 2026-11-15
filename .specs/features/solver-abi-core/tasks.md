@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/solver-abi-core/design.md`
-**Status**: Draft
+**Status**: Done
 **Build**: `cargo build -p piperine-abi --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run abi**: `cargo test -p piperine-abi`
 **Run guards**: `cargo test -p piperine-solver --test crate_boundaries --test workspace_shape`
@@ -576,7 +576,7 @@ Proof: run abi | test a_non_finite_partial_is_a_mismatch ... ok
 **C41** - A list whose stride is below its element is refused, never read past (SAC-20)
 Proof: run abi | test a_list_whose_stride_is_below_its_element_is_refused ... ok
 
-**C42** - The raw views have no public pointer field and one unsafe constructor each (SAC-21)
+**C42** - The raw views have no public pointer field and one unsafe constructor each (and, round 2 N2, carry the lifetime of what they borrow: check C52) (SAC-21)
 Proof: run abi | test raw_views_have_no_public_pointer_field ... ok
 
 **C43** - No unsafe outside raw.rs, thunk.rs and caller.rs (SAC-22)
@@ -600,12 +600,21 @@ Proof: run owner | test irreversible_reactions_are_bounded_by_the_current_instan
 **C49** - Traces and observations reach the sink in time order (SAC-30)
 Proof: run owner | test traces_reach_the_sink_in_time_order ... ok
 
+**C50** - An unreadable value list at create is a FAULT, not an instance on its defaults (SAC-31)
+Proof: run abi | test an_unreadable_value_list_is_a_fault ... ok
+
+**C51** - A crossing within half a tick of the target, or at or past it, never loops (SAC-32)
+Proof: run owner | test a_crossing_within_half_a_tick_of_the_target_does_not_loop ... ok
+
+**C52** - A list from a dropped slice does not compile (SAC-33)
+Proof: run abi | from_slice (line - compile fail ... ok
+
 ---
 
 ## Handoff
 
-**Settled mid-build:** round-1 fix (orchestrator 2026-11-15): F1 implements the user decision "ABI order: solve, then react (Recommended)" (solver-completeness context.md) as a new requirement appended to spec.md with its check, AC 3 left as approved history; "limit = stop tick", "no rejection cap", "E0506 names slots" are fixed per F4/F6/F10; none
-**Dispatched:** B1 at dd805f01 - returned (T1-T4 890b120d..764ab2a1; constants chosen (groups from 1, GROUND=u32::MAX); layouts F64/NONE added; 3 unchecked shape rules); B2 (Opus) at 4b06df65 - returned (settled rules + T5-T10 565d2d87..59318266; Handle::eval/react take slices (soundness), Fault::reshape, verifier abs floor; abi.md §7/§11 corrected); B3 protocol (Opus) at 1931e3a4 - returned (settled e7e84b82 + T11-T16 a1cbc7a6..6fd8b972; protocol on stubs; seam adds wait/host_events/SetOutcome); Verifier (Opus) at 6d87e28c - returned (FAIL: F1,F2 high; F3-F8 medium; F9-F13 low); Fix pass (Opus) at 157c700d - returned (fix pass 67a89e9f..19073264; F1-F13 closed; seam changes: preview_boundary removed, run_instant(Horizon), net_name, AnalogSide deliver(restart); abi pointer fields private); Verifier round 2 at 9a96db0b
+**Settled mid-build:** round-2 N1-N3 (orchestrator 2026-11-15, same rule as earlier features: fix + merge without a third round; the verifier probes become the regression tests): N1 crossing retries count toward the rejection cap and a crossing at/after the step end is not retried; N2 raw views carry a lifetime (or become unsafe to construct/copy) so no safe code reaches freed memory; N3 a bad-stride param list is a FAULT at create, never silently empty; round-1 fix (orchestrator 2026-11-15): F1 implements the user decision "ABI order: solve, then react (Recommended)" (solver-completeness context.md) as a new requirement appended to spec.md with its check, AC 3 left as approved history; "limit = stop tick", "no rejection cap", "E0506 names slots" are fixed per F4/F6/F10; none
+**Dispatched:** B1 at dd805f01 - returned (T1-T4 890b120d..764ab2a1; constants chosen (groups from 1, GROUND=u32::MAX); layouts F64/NONE added; 3 unchecked shape rules); B2 (Opus) at 4b06df65 - returned (settled rules + T5-T10 565d2d87..59318266; Handle::eval/react take slices (soundness), Fault::reshape, verifier abs floor; abi.md §7/§11 corrected); B3 protocol (Opus) at 1931e3a4 - returned (settled e7e84b82 + T11-T16 a1cbc7a6..6fd8b972; protocol on stubs; seam adds wait/host_events/SetOutcome); Verifier (Opus) at 6d87e28c - returned (FAIL: F1,F2 high; F3-F8 medium; F9-F13 low); Fix pass (Opus) at 157c700d - returned (fix pass 67a89e9f..19073264; F1-F13 closed; seam changes: preview_boundary removed, run_instant(Horizon), net_name, AnalogSide deliver(restart); abi pointer fields private); Verifier round 2 at 9a96db0b - returned (round 2 FAIL: N1, N2 medium, N3 low); N1-N3 fix (Opus) at 3411a176 - returned (N1-N3, F9 closed 08c1c017..465cdcdf)
 **Settled mid-build:** the three shape rules T4 left unchecked (a statement writing a continuous pin; a CROSS watch whose event pin is not an event pin; a term whose abstol/max pin is not a discrete F64) become validate rules in B2 with tests; constants and F64/NONE layouts accepted, written into abi.md (orchestrator)
 **Settled mid-build:** Handle::eval/react take byte slices (a safe fn over caller raw pointers is unsound) - accepted, abi.md §7 states it; MD-61 accepted under the user's go-ahead (solver-completeness context.md, orchestrator decisions); verifier absolute round-off floor accepted (orchestrator)
 **Walked:** not applicable - no screen

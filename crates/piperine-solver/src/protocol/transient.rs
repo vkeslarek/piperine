@@ -212,29 +212,38 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 let attempt = self.analog.attempt(t_c, exempt).map_err(|e| at(t_c, e))?;
                 let analog = &mut self.analog;
                 self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
-                match attempt {
-                    Attempt::Converged => {}
-                    Attempt::Rejected => {
-                        self.restore(&c);
-                        rejections += 1;
-                        if rejections >= self.options.max_rejections {
-                            return Err(Error::simple(
-                                SolverDomain::Transient,
-                                format!(
-                                    "{rejections} consecutive rejected attempts from t = {:e} s (last toward {t_c:e} s): \
-                                     the step does not converge",
-                                    self.now
-                                ),
-                            ));
-                        }
-                        continue;
-                    }
+                // A retry: `Some(tick)` to attempt again (`None`: propose again).
+                let retry = match attempt {
+                    Attempt::Converged => None,
+                    Attempt::Rejected => Some(None),
                     Attempt::LandedEarlier(t) => {
-                        self.restore(&c);
-                        // The nearest tick inside the step.
-                        forced = Some(self.tick(t).clamp(now_tick + 1, tick_c));
-                        continue;
+                        let nearest = self.tick(t);
+                        if t >= t_c || (nearest >= tick_c && tick_c - 1 <= now_tick) {
+                            // The crossing lies at or past the step's end, or rounds to
+                            // the end of a one-tick step: the step is taken at its end and
+                            // the analog side reports the crossing in `Accepted::fired`.
+                            None
+                        } else {
+                            // The nearest tick inside the step, at least one tick shorter.
+                            Some(Some(nearest.clamp(now_tick + 1, tick_c - 1)))
+                        }
                     }
+                };
+                if let Some(target) = retry {
+                    self.restore(&c);
+                    rejections += 1;
+                    if rejections >= self.options.max_rejections {
+                        return Err(Error::simple(
+                            SolverDomain::Transient,
+                            format!(
+                                "{rejections} consecutive rejected attempts from t = {:e} s (last toward {t_c:e} s): \
+                                 the step does not converge",
+                                self.now
+                            ),
+                        ));
+                    }
+                    forced = target;
+                    continue;
                 }
                 // Step 5: accept, fire the crossings at (t_c, 0).
                 let accepted = self.analog.accept().map_err(|e| at(t_c, e))?;

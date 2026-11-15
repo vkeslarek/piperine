@@ -1,7 +1,7 @@
 # Batch worker brief — spec-abi-amendments
 
 You are a BATCH WORKER for feature `spec-abi-amendments` in the worktree
-/home/keslarek/Git/piperine-solver-completeness (branch `feature/solver-completeness`). Work only there.
+/home/keslarek/Git/piperine-spec-amend (branch `feature/spec-abi-amendments`). Work only there.
 
 1. Activate the skill `tlc-spec-driven` by name (Skill tool) and follow its Execute flow
    (references/implement.md) as a batch worker: no sub-agents, no Verifier, no push, no merge.

@@ -80,11 +80,11 @@ fn every_constant_has_its_pinned_value() {
 /// this version knows.
 #[repr(C)]
 struct WiderPin {
-    pin: Pin,
+    pin: Pin<'static>,
     appended: [u8; 16],
 }
 
-fn pin_named(name: &'static str) -> Pin {
+fn pin_named(name: &'static str) -> Pin<'static> {
     Pin {
         name: Str::from_static(name),
         origin: Str::from_static("t.msl:1:1"),

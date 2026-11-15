@@ -8,14 +8,12 @@
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{CallClass, Design, DesignBuilder, DesignDiagnostic, ExprId, ExprKind, PortKind, Reflect, Resolution, StructClass};
+use piperine_lang::pom::{CallClass, Design, DesignDiagnostic, ExprId, ExprKind, PortKind, Reflect, Resolution, StructClass};
 use support::build;
 
-const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
-
-/// A design of `src` with the fixture prelude beside it.
+/// A design of `src` over the embedded standard library.
 fn with_prelude(src: &str) -> Design {
-    std_lib(Design::builder(), PRELUDE).source("top.msl", src).build()
+    Design::builder().source("top.msl", src).build()
 }
 
 fn with_code<'a>(design: &'a Design, code: &str) -> Vec<&'a DesignDiagnostic> {
@@ -1108,8 +1106,3 @@ fn builtin_instance_names_its_primitive() {
     assert_eq!(user.builtin(), None);
 }
 
-/// `items` as the `pub` content of `std::prelude` (what `.prelude(name, items)` used to register).
-/// It is a second std file so the fixture's own `//!` comments stay legal.
-fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
-    builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
-}

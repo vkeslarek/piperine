@@ -1,0 +1,1552 @@
+<!-- ===================================================== 1 -->
+<section id="welcome" class="chapter">
+<p class="ch-num">Chapter 1</p>
+<h2>Welcome</h2>
+
+<p>MSL, the Piperine mixed-signal language, is a language for describing circuits that a simulator runs: analog, digital, and both at once. It looks and reads like Rust, and most of it <em>is</em> Rust. The spec puts it plainly: MSL is "similar to Rust and based on it, but it is not Rust".</p>
+
+<p>This book is for people who want to write models and read other people's models. It explains the language through examples and stands on its own.</p>
+
+<h3>A first look</h3>
+
+<p>Here is a resistor. The module head lists its ports, the body lists its parameters, and an <code>analog</code> block says what current flows:</p>
+
+<pre data-lang="msl">/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    /// Resistance, in ohms.
+    r: f64 where r > 0.0;
+    tc1: f64 = 0.0;
+    tnom: f64 = 300.15 where tnom > 0.0;
+}
+
+analog for Resistor {
+    i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature() - tnom)));
+}</pre>
+
+<p>And here is a digital inverter with a propagation delay. It has no behavior block at all: its one line is a <em>definition</em> that drives the output from the input, <code>tpd</code> seconds later.</p>
+
+<pre data-lang="msl">module Inv(in a: Bit, out y: Bit) {
+    tpd: f64 = 10p where tpd > 0.0;
+    y = !a after tpd;
+}</pre>
+
+<p>A few things are already visible. Ports have types that say what flows through them (<code>Electrical</code> for a node, <code>Bit</code> for a logic signal). Parameters are plain declarations with an optional default and an optional <code>where</code> check. Numbers can carry SI suffixes: <code>10p</code> is 10&nbsp;×&nbsp;10<sup>−12</sup> and is always an <code>f64</code>.</p>
+
+<h3>Three ways to write</h3>
+
+<p>A model changes the world in exactly three ways, and each has its own operator. Learn these three and you can read any MSL file.</p>
+
+<div class="arrows">
+  <div class="arrow-card">
+    <div class="glyph">=</div>
+    <div class="arrow-name">definition</div>
+    <p><code>y = a &amp; b;</code> drives a digital carrier from an expression, recomputed whenever its inputs change. Written in a module body.</p>
+  </div>
+  <div class="arrow-card ana">
+    <div class="glyph">+&gt;</div>
+    <div class="arrow-name">contribution</div>
+    <p><code>i(p, n) +> x;</code> adds <code>x</code> to the current (or voltage) of a branch, at every Newton iteration. Written in <code>analog</code>.</p>
+  </div>
+  <div class="arrow-card dig">
+    <div class="glyph">&lt;-</div>
+    <div class="arrow-name">commit</div>
+    <p><code>q <- d;</code> schedules a new value for a digital carrier at the next microstep. Written in a reaction, <code>on ev { … }</code>.</p>
+  </div>
+</div>
+
+<p>Everything else writes nothing. <code>let x = expr;</code> only gives an expression a name. Nets are never "joined" by a statement: you pass the same carrier to two ports. Parameters have no assignment at all: models read them, and the host sets them.</p>
+
+<h3>What you get</h3>
+
+<p>One language covers the transistor-level analog model, the RTL-style digital block and the glue between them. A design is fixed at elaboration and then simulated by Piperine's native solver: DC, transient, AC and noise all come from the same source text. Every outcome is a function of the source and of what the host does. There are no races.</p>
+
+<p>Testbenches, stimulus, sweeps and optimization do not live in MSL. They live in the <em>host</em>, a Rust or Python program that sets parameters, drives the top ports, runs analyses and reads the results.</p>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model. The compiler from MSL to the solver does not exist yet, so nothing is executed. This book describes the language as specified.</p>
+</div>
+</section>
+
+<!-- ===================================================== 2 -->
+<section id="from-rust" class="chapter">
+<p class="ch-num">Chapter 2</p>
+<h2>If you know Rust</h2>
+
+<p>"Everything this specification does not state is Rust, edition 2024, value semantics". Expressions, statements, patterns, <code>match</code>, enums, structs, traits, generics, closures, paths, <code>use</code> and <code>pub</code> all work the way you expect. The spec only lists the differences.</p>
+
+<h3>What is new: eleven concepts</h3>
+
+<p>MSL adds eleven concepts on top of Rust's values. Each one has a single rule:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Concept</th><th>In one sentence</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>value and <code>fn</code></td><td>Data with no time. A function keeps no state, writes no carrier and places no instance.</td></tr>
+<tr><td>2</td><td><code>nature</code></td><td>Says what a carrier holds and how several drivers of it combine.</td></tr>
+<tr><td>3</td><td>carrier</td><td>A signal or port that exists over time. You connect it by passing it to a port.</td></tr>
+<tr><td>4</td><td>drive</td><td>What one module writes to one carrier. The carrier's value combines all its drives.</td></tr>
+<tr><td>5</td><td>param</td><td>A value fixed during a solve. The model reads it; the host sets it.</td></tr>
+<tr><td>6</td><td><code>module</code></td><td>Ports, params and a netlist, fixed at elaboration. Calling a module places an instance.</td></tr>
+<tr><td>7</td><td><code>let</code></td><td>Names an expression. It is evaluated wherever the name is read.</td></tr>
+<tr><td>8</td><td><code>analog for M</code></td><td><code>probe +> x</code> adds to a branch's flow or potential at every Newton iteration.</td></tr>
+<tr><td>9</td><td><code>digital for M</code></td><td>A reaction <code>on ev { q <- x; }</code> runs once when <code>ev</code> fires; its commits apply at the next microstep.</td></tr>
+<tr><td>10</td><td>event</td><td>A value of type <code>Event</code> that fires at instants: <code>changed</code>, <code>at</code>, <code>cross</code>, <code>settle</code>, combined with <code>||</code> and <code>&&</code>.</td></tr>
+<tr><td>11</td><td>instant</td><td><code>(t, n)</code>: at one time, microsteps run until nothing is pending, with the analog side solved in between.</td></tr>
+</tbody></table></div>
+
+<p>The new keywords are few: <code>module</code>, <code>nature</code>, <code>signal</code>, <code>on</code>, <code>out</code>, <code>flip</code> and <code>after</code>. <code>in</code> and <code>extern</code> get a new use. <code>analog</code> and <code>digital</code> are keywords only in front of <code>for</code>.</p>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>The word "module" always means a <em>hardware</em> module in MSL. Rust's <code>mod</code> is called a <strong>namespace module</strong>.</p>
+</div>
+
+<h3>What is left out</h3>
+
+<p>A model is fixed at elaboration, so anything that allocates, mutates through references or runs concurrently is gone. These are the ones you will notice:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Rust has</th><th>MSL instead</th></tr></thead>
+<tbody>
+<tr><td><code>&mut</code>, <code>unsafe</code>, <code>async</code>, <code>dyn</code>, threads</td><td>Not in the language.</td></tr>
+<tr><td><code>String</code>, <code>Vec</code>, <code>Box</code>, any heap type</td><td>Arrays and carriers whose size is fixed at elaboration.</td></tr>
+<tr><td><code>char</code></td><td>Not a value type. Strings exist only as <code>&'static str</code> literals.</td></tr>
+<tr><td><code>macro_rules!</code>, <code>println!</code>, <code>format!</code></td><td>Only two built-in <code>!</code> forms: <code>emit!</code> for output and <code>include_str!</code> for data (E0901).</td></tr>
+<tr><td><code>static</code> items</td><td>A <code>const</code>. State lives in signals.</td></tr>
+<tr><td><code>type T = f64;</code>, associated types</td><td>Write the type out.</td></tr>
+<tr><td><code>where T: Trait</code>, <code>impl Trait</code></td><td>A bound in the generic list: <code>&lt;T: Tr&gt;</code>. (<code>where</code> on a module or fn is a boolean check on const generics.)</td></tr>
+<tr><td><code>&self</code>, <code>&mut self</code></td><td><code>self</code></td></tr>
+<tr><td><code>pub(crate)</code>, <code>pub(super)</code></td><td><code>pub</code> or nothing.</td></tr>
+<tr><td>default arguments, overloading</td><td>Trailing <code>Option&lt;T&gt;</code> parameters, which may be left out or named.</td></tr>
+<tr><td>leading <code>::</code> in paths, <code>extern crate</code></td><td>A dependency is named in <code>Piperine.toml</code> and used by its name.</td></tr>
+<tr><td>loop labels, <code>union</code>, raw pointers</td><td>Restructure; use a struct or enum; use a value or array.</td></tr>
+</tbody></table></div>
+
+<p>The standard library you inherit from Rust is a closed list: a method that the list does not name does not resolve, even if Rust has it.</p>
+</section>
+
+<!-- ===================================================== 3 -->
+<section id="values" class="chapter">
+<p class="ch-num">Chapter 3</p>
+<h2>Values and functions</h2>
+
+<p>A <strong>value</strong> is data with no time. Everything a model computes with is a value; what it <em>connects to</em> is a carrier (next chapter). This part of the language is Rust, so this chapter is short.</p>
+
+<h3>Types</h3>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>Types</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>boolean</td><td><code>bool</code></td><td></td></tr>
+<tr><td>integer</td><td><code>u1</code> … <code>u128</code>, <code>i1</code> … <code>i128</code></td><td>Any width, even <code>u3</code> or <code>UInt&lt;{A + 1}&gt;</code>. Arithmetic always wraps.</td></tr>
+<tr><td>float</td><td><code>f16</code>, <code>f32</code>, <code>f64</code>, <code>f128</code></td><td>IEEE 754. Analog code computes in <code>f64</code>.</td></tr>
+<tr><td>string</td><td><code>&'static str</code></td><td>Literals only. Never carried by a signal.</td></tr>
+<tr><td>composite</td><td>arrays, tuples, <code>struct</code>, <code>enum</code>, <code>Option&lt;T&gt;</code></td><td>As in Rust.</td></tr>
+</tbody></table></div>
+
+<p>Integer arithmetic wraps modulo 2<sup>N</sup> in every build: there is no overflow panic. <code>usize</code> is <code>u64</code> on every machine, so a result never depends on the computer running it. The prelude gives you the constants <code>Q</code>, <code>K_B</code>, <code>EPS0</code>, <code>PI</code>, <code>E</code> and <code>inf</code>.</p>
+
+<h3>Repr: values that can travel</h3>
+
+<p>Only a type that implements <code>Repr</code> can be carried by a signal. <code>Repr</code> lays a value out as a row of boolean <em>levels</em>. Primitives have it built in; your own types derive it:</p>
+
+<pre data-lang="msl">#[derive(Repr, Clone, Copy, PartialEq)]
+enum Phase { Liquid, Boiling, Vapor }</pre>
+
+<p>A derived struct puts its fields side by side, first field lowest. A derived enum lays out a tag, then the widest payload. One-hot or Gray encodings are a hand-written <code>impl Repr</code>.</p>
+
+<h3>Known and unknown</h3>
+
+<p>Every level of every value is either <strong>known</strong> or <strong>unknown</strong>. This is how MSL models the <code>x</code> of digital logic, and it applies everywhere, to locals and function arguments too. Unknown enters only through a carrier that has no initial value yet, the literal <code>Unknown</code>, or a failed <code>decode</code>. Logic operators work level by level, so <code>unknown & false</code> is <code>false</code> and <code>unknown | true</code> is <code>true</code>.</p>
+
+<p>The analog solver computes with real numbers only, so an <code>analog</code> block must say what an unknown means electrically. It reads a digital carrier through <code>known()</code>, <code>known_or(d)</code> or, for a <code>Bit</code>, <code>high()</code>:</p>
+
+<pre data-lang="msl">module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }
+digital for SampleHold { on clk.rise() { held <- v(vin); } }
+analog for SampleHold { v(vout) +> held.known_or(0.0); }</pre>
+
+<p>Writing <code>v(vout) +> held;</code> instead is error E0150, and the diagnostic names the carrier. "The model says what an unknown means electrically; the language does not guess".</p>
+
+<h3>Functions</h3>
+
+<p>A function is computation without time. It keeps no state, writes no carrier and places no instance.</p>
+
+<pre data-lang="msl">pub fn diode_current(vd: f64, is: f64, nvt: f64) -> f64 { is * ((vd / nvt).exp() - 1.0) }
+pub fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }
+#[derivative(erfcx_dx)] extern "C" fn erfcx(x: f64) -> f64;</pre>
+
+<p>You never declare where a function may be called. The compiler infers a <em>class</em> from the body: a <em>pure</em> function works anywhere; one that probes a voltage or reads <code>now()</code> works where the solver is running; one that returns <code>Event</code> works where events go. Inside <code>analog</code>, calls are differentiated automatically. An <code>extern "C"</code> function used there needs <code>#[derivative(...)]</code>, naming one derivative per <code>f64</code> argument.</p>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>Anything with state is a module, never a function. <code>fn f(x: f64) -> f64 { ddt(x) }</code> is an error; write <code>module f(x: f64) -> f64 { ddt(x) }</code>. Chapter 5 shows modules that return values.</p>
+</div>
+
+<h3>Optional parameters</h3>
+
+<p>There are no default arguments and no overloading. Trailing parameters of type <code>Option&lt;T&gt;</code> may be left out, or passed by name to skip earlier ones. Passing a plain <code>T</code> wraps it in <code>Some</code>, the one implicit conversion in the language:</p>
+
+<pre data-lang="msl">cross(e)                    // rising, simulator tolerances
+cross(e, 1p)                // with ttol
+cross(e, etol: 1u)          // skips ttol
+idt(x)                      // an integrator, no initial condition, no reset
+idt(x, 1.0, reset: rst)</pre>
+</section>
+
+<!-- ===================================================== 4 -->
+<section id="natures" class="chapter">
+<p class="ch-num">Chapter 4</p>
+<h2>Natures and carriers</h2>
+
+<p>A <strong>carrier</strong> is something that exists over time: a wire, a node, a register. Every carrier has a <strong>nature</strong>, which says what it holds and what happens when several modules drive it.</p>
+
+<h3>Natures</h3>
+
+<pre data-lang="msl">nature Bit<T: Repr = bool> { value: T }                              // prelude; Bit is Bit<bool>
+nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib: strengths, high impedance
+nature Electrical {
+    potential: Voltage { access: v, units: "V", abstol: 1u },
+    flow:      Current { access: i, units: "A", abstol: 1p },
+}
+nature Thermal {
+    potential: Temperature { access: temp, units: "K", abstol: 1m },
+    flow:      Power       { access: pwr,  units: "W", abstol: 1n },
+}
+nature VSignal { potential: Voltage { access: v, units: "V", abstol: 1u } }   // signal-flow</pre>
+
+<p>There are two families. A <strong>discrete</strong> nature declares <code>value</code> and is computed by the event engine. A <strong>continuous</strong> nature declares <code>potential</code> (and usually <code>flow</code>) and is computed by the analog solver.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>discrete</th><th>discrete with <code>resolve</code></th><th>continuous with <code>flow</code></th><th>continuous, no <code>flow</code></th></tr></thead>
+<tbody>
+<tr><td>example</td><td><code>Bit</code></td><td><code>Wire</code></td><td><code>Electrical</code></td><td><code>VSignal</code></td></tr>
+<tr><td>drivers</td><td>exactly one</td><td>any number, combined by <code>resolve</code></td><td>flows sum to zero (KCL)</td><td>exactly one</td></tr>
+<tr><td>written with</td><td><code>=</code>, <code><-</code></td><td><code>=</code>, <code><-</code></td><td><code>+></code></td><td><code>+></code></td></tr>
+<tr><td>port direction</td><td><code>in</code> / <code>out</code></td><td>none</td><td>none</td><td>none</td></tr>
+</tbody></table></div>
+
+<p>The <code>access</code> names become the probes: <code>v(a, b)</code> reads a voltage and <code>i(a, b)</code> a current on <code>Electrical</code>; <code>temp</code> and <code>pwr</code> do the same on <code>Thermal</code>. Units are labels for people and are never checked. <code>abstol</code> is the solver tolerance for that quantity. There is no inheritance between natures; a high-voltage variant of <code>Electrical</code> is a second nature.</p>
+
+<h3>Signals</h3>
+
+<p>Inside a module, <code>signal</code> declares a carrier. An initial value is optional:</p>
+
+<pre data-lang="msl">signal en:    Bit;                       // starts unknown
+signal count: Bit<u8> = 0;
+signal level: Bit<f64> = 0.0;            // real-number modeling: piecewise constant
+signal lines: [Bit; 8];                  // eight carriers, each with its own events
+signal bus:   Bit<u4> = logic("10xx");   // level by level; x is unknown
+signal sda:   Wire;                      // resolved: any number of drivers
+signal mid:   Electrical;                // internal node
+signal vout:  Electrical = 0.0;          // where Newton starts</pre>
+
+<p>An array of carriers costs what you write into it: storage for an element exists from its first commit, so <code>[Bit&lt;u8&gt;; 1 << 32]</code> is fine.</p>
+
+<h3>Ports</h3>
+
+<p>The port list decides what kind each port is, from its type:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Port</th><th>Written</th><th>Connected to</th></tr></thead>
+<tbody>
+<tr><td>one-driver discrete</td><td><code>in a: Bit&lt;T&gt;</code>, <code>out q: Bit&lt;T&gt; = init</code></td><td>a carrier; an <code>in</code> port also takes an expression</td></tr>
+<tr><td>other natures</td><td><code>p: Electrical</code>, <code>sda: Wire</code></td><td>a carrier (a net)</td></tr>
+<tr><td>bundle</td><td><code>tx: Stream&lt;T&gt;</code>, <code>rx: flip Stream&lt;T&gt;</code></td><td>a bundle carrier or literal</td></tr>
+<tr><td>value input</td><td><code>x: f64</code></td><td>any expression</td></tr>
+</tbody></table></div>
+
+<p><code>gnd</code> is the reference node of every continuous nature. It is not a global net: a module reaches any other node only through its ports.</p>
+
+<h3>Bundles</h3>
+
+<p>A <code>struct</code> whose fields are all carriers is a <strong>bundle</strong>. Directions are written from the producer's side, and <code>flip</code> gives the consumer's view. This register slice reads <code>rx</code> as a consumer and drives <code>tx</code> as a producer:</p>
+
+<pre data-lang="msl">module Slice<T: Repr>(in clk: Bit, rx: flip Stream<T>, tx: Stream<T>) {
+    signal full: Bit = false;
+    signal buf: Bit<T>;
+    tx.data = buf;
+    tx.valid = full;
+    rx.ready = !full || tx.ready;
+}
+digital<T> for Slice<T> {
+    on rx.beat(clk) { buf <- rx.data; full <- true; }
+    on clk.rise() && !(rx.valid && rx.ready) && tx.ready { full <- false; }
+}</pre>
+
+<h3>Analog and digital never touch directly</h3>
+
+<p>A <code>Bit</code> is never connected to an <code>Electrical</code> node, and no converter is ever inserted for you. Between modules you place one explicitly: <code>D2A</code>, <code>A2D</code> or <code>Bidir</code> from the standard library. <em>Inside</em> one module, behavior crosses freely: <code>analog</code> reads digital carriers, and reactions probe voltages. Chapter 8 is about this.</p>
+</section>
+
+<!-- ===================================================== 5 -->
+<section id="modules" class="chapter">
+<p class="ch-num">Chapter 5</p>
+<h2>Modules and hierarchy</h2>
+
+<p>A <strong>module</strong> is ports, params and a netlist of signals and instances, fixed at elaboration. Its behavior over time lives in separate <code>analog for</code> and <code>digital for</code> blocks, in the same file.</p>
+
+<h3>The body is a netlist</h3>
+
+<p>Body items can come in any order, and every name is visible in the whole body and in the module's blocks:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Item</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>param</td><td><code>c: f64 = 1p where c > 0.0;</code></td></tr>
+<tr><td>signal</td><td><code>signal mid: Electrical;</code></td></tr>
+<tr><td>instance</td><td><code>let r1 = Resistor(a, b) { r: 1k };</code></td></tr>
+<tr><td>named expression</td><td><code>let half = r / 2.0;</code></td></tr>
+<tr><td>definition</td><td><code>busy = st != Tx::Idle;</code></td></tr>
+<tr><td>generation</td><td><code>for k in 0..N { … }</code>, <code>if cond { … }</code></td></tr>
+</tbody></table></div>
+
+<p>A param without a default is required. One of type <code>Option&lt;T&gt;</code> may be left out. A <code>where</code> clause is a check over this param and earlier ones, for example <code>n: f64 = 1.0 where (0.1..=10.0).contains(&n);</code>. A param read by generation, an array length, a const generic argument or a template is <em>structural</em>: it is fixed at elaboration.</p>
+
+<h3>Instances</h3>
+
+<p>An instance is placed by calling the module with connections, positionally in port order, then an optional param block. Here is a switched-capacitor integrator that is all structure:</p>
+
+<pre data-lang="msl">module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 100.0; roff: f64 = 1G; }
+analog for RSwitch { i(a, b) +> v(a, b) / if ctl.high() { ron } else { roff }; }
+
+module OpAmpIdeal(inp: Electrical, inn: Electrical, vout: Electrical) { a0: f64 = 1e5; }
+analog for OpAmpIdeal { v(vout) +> a0 * v(inp, inn); }
+
+/// Non-overlapping two-phase clock: pure structure.
+module TwoPhase(in clk: Bit, out phi1: Bit = false, out phi2: Bit = false) {
+    gap: f64 = 50p;
+    phi1 = clk after if clk { gap } else { 0.0 };      // rises gap after clk, falls with it
+    phi2 = !clk after if clk { 0.0 } else { gap };     // the mirror
+}
+
+/// Stray-insensitive SC integrator: structure only.
+module ScIntegrator(vin: Electrical, vout: Electrical, in clk: Bit) {
+    cs: f64 = 1p; cf: f64 = 4p;
+    signal phi1: Bit;
+    signal phi2: Bit;
+    signal x: Electrical;
+    signal y: Electrical;
+    signal vg: Electrical;
+    let ck = TwoPhase(clk, phi1, phi2);
+    let s1 = RSwitch(vin, x, phi1);
+    let s2 = RSwitch(x, gnd, phi2);
+    let s3 = RSwitch(y, gnd, phi1);
+    let s4 = RSwitch(y, vg, phi2);
+    let csmp = Capacitor(x, y) { c: cs };
+    let cfb = Capacitor(vg, vout) { c: cf };
+    let amp = OpAmpIdeal(gnd, vg, vout);
+}</pre>
+
+<p>Notice <code>ron: f64 = 100.0</code>, not <code>100</code>. An integer literal never becomes an <code>f64</code>, while an SI literal like <code>1G</code> always is one.</p>
+
+<p>A parent can reach into a child only through what the child marks <code>pub</code>. The SAR ADC hangs its own capacitor on a public node of its DAC: <code>analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }</code>.</p>
+
+<h3>Modules that return a value</h3>
+
+<p>A module may take value inputs and end its body with a result, declared with <code>-> T</code>. Then you can call it inside an expression, and every call is an instance with its own state. This is how every operator with memory works: <code>ddt</code>, <code>idt</code>, <code>delay</code>, <code>cross</code>, <code>transition</code>. The standard integrator is written in MSL itself:</p>
+
+<pre data-lang="msl">pub module idt<S: Nature = State>(x: f64, ic: Option<f64>, reset: Option<bool>) -> f64 {
+    signal y: S;
+    potential(y)                             // the result
+}
+
+analog<S> for idt<S> {
+    let hold = reset.unwrap_or(false) || (ic.is_some() && analysis(Static));
+    if hold { potential(y) +> ic.unwrap_or(0.0); } else { flow(y) +> ddt(potential(y)) - x; }
+}</pre>
+
+<p>An instance may read its own result through a node, which is how you write a differential equation. This PI controller's integral reads itself:</p>
+
+<pre data-lang="msl">fn windup(u: f64, lo: f64, hi: f64) -> f64 { u.clamp(lo, hi) - u }
+
+/// PI with output limits and back-calculation anti-windup: the integral reads its own result.
+module PiAw(e: VSignal, y: VSignal) {
+    kp: f64 = 0.5; ki: f64 = 2k; kt: f64 = 10k;
+    lo: f64 = 0.0; hi: f64 = 1.0 where hi > lo;
+    let xi = idt(ki * v(e) + kt * windup(kp * v(e) + xi, lo, hi));
+}
+analog for PiAw { v(y) +> (kp * v(e) + xi).clamp(lo, hi); }</pre>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>Every placement is one instance. <code>let acc = idt(v(a));</code> names one integrator, and every read of <code>acc</code> is that same integrator. Two calls with equal arguments are two integrators.</p>
+</div>
+
+<h3>Templates: modules as values</h3>
+
+<p>A module with its params bound is a value, called a <strong>template</strong>: <code>Name { params }</code>. You can pass it as a param and place it later. That makes cells swappable:</p>
+
+<pre data-lang="msl">/// One-transistor one-capacitor DRAM cell; Cell is the bundle from chapter 4.
+module Dram1T1C(c: Cell) {
+    cs: f64 = 30f;
+    ron: f64 = 5k;
+    rleak: f64 = 1T;
+    pub signal sn: Electrical = 0.0;     // storage node
+}
+
+module MemoryBank<C: Fn(Cell), const ROWS: u32, const COLS: u32>(in wl: [Bit; ROWS], bl: [Electrical; COLS]) {
+    cell: C;
+    for r in 0..ROWS { for c in 0..COLS { pub let cells = cell(Cell { wl: wl[r], bl: bl[c] }); } }
+}</pre>
+
+<pre data-lang="msl">let bank = MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } };   // in a parent's body</pre>
+
+<p>The bound <code>C: Fn(Cell)</code> accepts any module whose ports are one <code>Cell</code>. A function can also return a template, which is how binning reads:</p>
+
+<pre data-lang="msl">/// Binning: the function picks the params, the caller places the result.
+pub fn nch(l: f64, w: f64) -> Bsim4 {
+    let vth0 = if l < 0.18u { 0.42 } else if l < 1u { 0.45 } else { 0.47 };
+    Bsim4 { l: l, w: w, vth0: vth0 }
+}</pre>
+
+<pre data-lang="msl">let m1 = nch(0.13u, 2u)(d, g, s, b);</pre>
+
+<h3>Generation, multiplicity and extern models</h3>
+
+<ul>
+<li><strong>Generation.</strong> <code>for</code> and <code>if</code> over params and constants unroll at elaboration, in the body and in <code>digital</code> blocks. Each unrolled placement is an instance of its own.</li>
+<li><strong><code>m</code> and <code>dtemp</code>.</strong> Every instance has these two implicit params. <code>m</code> makes it behave as <code>m</code> copies in parallel and multiplies down the hierarchy; <code>dtemp</code> offsets the temperature and adds up.</li>
+<li><strong>Extern modules.</strong> A model compiled to OSDI, or another simulator by cosimulation, is declared with its ports and params and placed like any module:</li>
+</ul>
+
+<pre data-lang="msl">#[link("bsim4.osdi", model = "bsim4")]
+extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) {
+    l: f64 = 1u;
+    w: f64 = 1u;
+    vth0: f64 = 0.4;
+}</pre>
+</section>
+
+<!-- ===================================================== 6 -->
+<section id="analog" class="chapter">
+<p class="ch-num">Chapter 6</p>
+<h2>Analog behavior</h2>
+
+<p>An <code>analog</code> block is straight-line code that runs at every Newton iteration and remembers nothing between iterations. The past comes from instances such as <code>ddt</code> and <code>idt</code>, and from digital carriers.</p>
+
+<h3>Contributions and probes</h3>
+
+<p>A <strong>branch</strong> is a pair of nodes. <code>i(a, b) +> x;</code> adds <code>x</code> to the branch's current. <code>v(a, b) +> x;</code> adds <code>x</code> to its voltage, which makes the branch a voltage source. Contributions add up, from anywhere in the module. Leave out the second node and it is <code>gnd</code>.</p>
+
+<pre data-lang="msl">analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+analog for Inductor  { v(p, n) +> ddt(l * i(p, n)); }
+
+module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}
+analog for Switch {
+    if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }
+}</pre>
+
+<p>The switch shows the one firm restriction. A branch may change between being a voltage branch and a current branch, but only on something that is constant during a solve: params, digital carriers, <code>now()</code>, <code>analysis(Static)</code>. A choice that depends on a probe is an error (E0414). An <code>if</code> on a probe can still choose between <em>expressions</em>.</p>
+
+<p>Everything is differentiated for you, through function calls, value inputs and results, so you never write a Jacobian.</p>
+
+<h3>A few more shapes</h3>
+
+<pre data-lang="msl">/// An equation is a row: a nature whose "flow" is the residual gives it the right tolerance.
+nature Servo {
+    potential: Voltage { access: v,   abstol: 1u },
+    flow:      Voltage { access: err, abstol: 1u },
+}
+
+/// Ideal op-amp (nullor): drives vout so that v(inp, inn) == 0.
+module Nullor(inp: Electrical, inn: Electrical, vout: Electrical) { signal x: Servo; }
+analog for Nullor {
+    err(x) +> v(inp, inn);  // the row of x carries the equation, tested against 1 µV
+    v(vout) +> v(x);        // v(x) is the free unknown
+}
+
+/// Two coupled inductors: coupling is inside one module, which writes only its own branches.
+module Coupled(p1: Electrical, n1: Electrical, p2: Electrical, n2: Electrical) {
+    l1: f64; l2: f64; k: f64 where k.abs() <= 1.0;
+    let mu = k * (l1 * l2).sqrt();
+}
+analog for Coupled {
+    v(p1, n1) +> ddt(l1 * i(p1, n1) + mu * i(p2, n2));
+    v(p2, n2) +> ddt(l2 * i(p2, n2) + mu * i(p1, n1));
+}</pre>
+
+<h3>The operators</h3>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Name</th><th>What it gives</th><th>Kind</th></tr></thead>
+<tbody>
+<tr><td><code>ddt(x)</code></td><td>time derivative</td><td>core module</td></tr>
+<tr><td><code>idt(x, ic, reset)</code>, <code>idtmod</code></td><td>integral, wrapped integral</td><td>stdlib module</td></tr>
+<tr><td><code>delay(x, td)</code></td><td><code>x</code> as it was <code>td</code> ago</td><td>core module</td></tr>
+<tr><td><code>transition</code>, <code>slew</code></td><td>finite edges, rate limiting</td><td>stdlib module</td></tr>
+<tr><td><code>laplace_nd</code> …, <code>zi_nd</code> …</td><td>s-domain and z-domain filters</td><td>stdlib module</td></tr>
+<tr><td><code>noise(psd, name)</code>, <code>white_noise</code>, <code>flicker_noise</code></td><td>noise sources</td><td>core / stdlib</td></tr>
+<tr><td><code>limit</code>, <code>pnjlim</code>, <code>fetlim</code></td><td>Newton step limiting</td><td>core / stdlib</td></tr>
+<tr><td><code>ddx(e, probe)</code>, <code>ac_stim(mag, phase)</code></td><td>partial derivative, small-signal stimulus</td><td>core <code>fn</code></td></tr>
+<tr><td><code>bound_step(dt)</code></td><td>caps the next time step</td><td>statement</td></tr>
+<tr><td><code>temperature()</code>, <code>now()</code>, <code>freq()</code>, <code>analysis(a)</code></td><td>the environment</td><td>core <code>fn</code></td></tr>
+</tbody></table></div>
+
+<h3>One block, every analysis</h3>
+
+<p>You do not write separate DC and AC models. One <code>analog</code> block serves <code>Dc</code>, <code>Transient</code>, <code>Ac</code> and <code>Noise</code>. <code>analysis(Static)</code> is true during an equilibrium solve, which lets a model hold a state at its initial condition there, as <code>idt</code> does above. For small-signal analyses the block is linearized around the operating point with <code>ddt(x)</code> read as <code>jω·x</code>:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Construct</th><th>At the operating point</th><th>In the AC sweep</th></tr></thead>
+<tbody>
+<tr><td><code>idt</code> with an <code>ic</code></td><td>held at <code>ic</code></td><td><code>1/jω</code></td></tr>
+<tr><td><code>delay(x, td)</code></td><td><code>x</code></td><td><code>exp(−jω·td)·x</code></td></tr>
+<tr><td>a digital carrier</td><td>its settled value</td><td>constant: no response</td></tr>
+</tbody></table></div>
+
+<p>A noise source is an instance of <code>noise</code>. Read one instance in two places and the two are fully correlated; two instances are independent:</p>
+
+<pre data-lang="msl">let n = noise(4.0 * K_B * temperature() / r, "thermal");
+i(a, mid) +> n;
+i(mid, b) +> -n;          // fully correlated</pre>
+
+<h3>Walkthrough: the switched-capacitor integrator</h3>
+
+<p>Go back to <code>ScIntegrator</code> in chapter 5. It has no <code>analog</code> block of its own: all branches belong to its children. Here is what the solver sees.</p>
+
+<ol class="steps">
+<li><strong>Operating point.</strong> Both clock phases start low, so all four switches are at <code>roff</code> and the capacitors carry no current. <code>y</code> and <code>vg</code> reach ground through <code>s3</code> and <code>s4</code>; <code>x</code> sits at <code>v(vin)/2</code> between <code>s1</code> and <code>s2</code>. No node floats. That is what a finite <code>roff</code> buys.</li>
+<li><strong>Sampling, <code>phi1</code> high.</strong> <code>x</code> follows <code>vin</code> and <code>y</code> is grounded, so <code>cs</code> charges to <code>v(vin)</code>, with a time constant of <code>ron · cs</code> = 0.1&nbsp;ns per switch.</li>
+<li><strong>Transfer, <code>phi2</code> high.</strong> <code>x</code> is grounded and <code>y</code> joins the virtual ground <code>vg</code>. The charge <code>cs · v(vin)</code> moves onto <code>cf</code>.</li>
+<li><strong>Per period.</strong> Charge is conserved at <code>vg</code>, so <code>vout[n] = vout[n−1] + (cs/cf) · vin[n]</code>: a non-inverting integrator with gain 0.25.</li>
+<li><strong>Time points.</strong> Each phase edge changes a switch conductance that <code>analog</code> reads, so the solver lands exactly on all four edges per period. Capacitor charges stay continuous; only the currents step.</li>
+<li><strong>DC and AC.</strong> DC solves the all-switches-off circuit above, not the sampled system. The AC sweep linearizes with both phases low. The sampled transfer function needs a periodic analysis.</li>
+</ol>
+</section>
+
+<!-- ===================================================== 7 -->
+<section id="digital" class="chapter">
+<p class="ch-num">Chapter 7</p>
+<h2>Digital behavior</h2>
+
+<p>A <code>digital</code> block holds <strong>reactions</strong>. A reaction <code>on ev { body }</code> runs its body once, to completion, when the event <code>ev</code> fires. Inside it, <code>q <- x;</code> is a <strong>commit</strong>: it writes this module's drive of <code>q</code>, and the write applies at the next microstep.</p>
+
+<pre data-lang="msl">module Counter(in clk: Bit, out count: Bit<u8> = 0, out full: Bit = false) {}
+digital for Counter {
+    on clk.rise() {
+        count <- count + 1;
+        full  <- count == 254;      // reads the old count
+    }
+}</pre>
+
+<h3>The rules of a microstep</h3>
+
+<ul>
+<li><strong>Reads see the past.</strong> Every read sees the values at the start of the microstep. All the commits of a microstep apply together. That is why <code>full</code> above reads the old <code>count</code>, and why statement order inside a reaction rarely matters.</li>
+<li><strong>The last write wins.</strong> When two commits hit the same level in the same microstep, source order decides. All writers of one drive are in one module, so you can see the order in one file.</li>
+<li><strong>Modules never race.</strong> A one-driver carrier has one writer, and a resolved one combines its drives in a fixed order.</li>
+<li><strong>Delays are transport.</strong> <code>q <- x after d;</code> applies <code>d</code> seconds later. A new commit from the same statement removes that statement's pending commits due at or after it. <code>p <- true; p <- false after w;</code> is a pulse in either order.</li>
+<li><strong>A reaction never waits.</strong> There is no <code>wait</code>, no blocking write and no <code>#0</code>. A sequence over time is visible state, such as a counter.</li>
+</ul>
+
+<h3>Definitions and commits</h3>
+
+<p>A module drives a carrier in one of two ways, never both: with one <code>=</code> definition in the body, or with commits from its reactions. Definitions describe combinational logic and delays; commits describe state. A set-reset latch needs no reaction at all:</p>
+
+<pre data-lang="msl">/// Cross-coupled NOR gates with gate delay: pure structure.
+module SrLatch(in s: Bit, in r: Bit, out q: Bit = false, out qn: Bit = true) {
+    tpd: f64 = 10p where tpd > 0.0;
+    q  = !(r | qn) after tpd;
+    qn = !(s | q)  after tpd;
+}</pre>
+
+<p>Without the <code>after</code>, the two definitions would form a loop through one-driver carriers, which is an elaboration error (E0339).</p>
+
+<h3>Events</h3>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Event</th><th>Fires when</th></tr></thead>
+<tbody>
+<tr><td><code>s.changed()</code></td><td><code>s</code> changed in this microstep</td></tr>
+<tr><td><code>clk.rise()</code>, <code>clk.fall()</code></td><td>an IEEE 1364 posedge / negedge (stdlib)</td></tr>
+<tr><td><code>at(t)</code></td><td>time reaches <code>t</code></td></tr>
+<tr><td><code>cross(e)</code></td><td><code>e</code> goes from <code>≤ 0</code> to <code>> 0</code>, located by the solver</td></tr>
+<tr><td><code>above(e)</code></td><td>like <code>cross</code>, and also at time 0 if <code>e</code> already starts above (stdlib)</td></tr>
+<tr><td><code>every(t0, period)</code>, <code>init()</code></td><td>periodic times; the start (stdlib)</td></tr>
+<tr><td><code>settle</code></td><td>once per time point, after the instant has gone quiet</td></tr>
+</tbody></table></div>
+
+<p>Events combine with <code>a || b</code> (either fires) and <code>ev && c</code>, where <code>c</code> is a <code>bool</code> guard. A plain <code>bool</code> alone is not an event (E0430). Inside a reaction, an event used as a <code>bool</code> tells you whether it fired in this microstep:</p>
+
+<pre data-lang="msl">/// Three-state phase detector: two events in one reaction, each tested as a bool.
+module Pfd3(in fref: Bit, in fvco: Bit, out up: Bit, out dn: Bit) {
+    signal state: Bit<i2> = 0;
+    up = state == 1;
+    dn = state == -1;
+}
+digital for Pfd3 {
+    on fref.rise() || fvco.rise() {
+        let mut s = state;
+        if fref.rise() && s < 1 { s += 1; }    // which one fired?
+        if fvco.rise() && s > -1 { s -= 1; }   // both at once: up first, then down
+        state <- s;
+    }
+}</pre>
+
+<h3>Many drivers: resolved nets</h3>
+
+<p>Open-drain lines, tristate buses and wired logic are not language features. They are a nature with a <code>resolve</code> function, from the standard library. Any module that sees a <code>Wire</code> may drive it, and nobody counts drivers:</p>
+
+<pre data-lang="msl">module IrqSource(in req: Bit, irq_n: Wire) { irq_n = if req { Logic::strong(false) } else { Logic::Z }; }
+
+module IrqController(in clk: Bit, irq_n: Wire, out pending: Bit = false) {}
+digital for IrqController { on clk.rise() { pending <- !irq_n.v; } }
+
+module Board(in clk: Bit, in req0: Bit, in req1: Bit, out pending: Bit) {
+    signal irq_n: Wire;
+    let pu = Pullup(irq_n);                  // wins only while every source is released
+    let s0 = IrqSource(req0, irq_n);
+    let s1 = IrqSource(req1, irq_n);
+    let ic = IrqController(clk, irq_n, pending);
+}</pre>
+
+<h3>Walkthrough: a flip-flop with async reset</h3>
+
+<pre data-lang="msl">module Dff<T: Repr>(in clk: Bit, in rst_n: Bit, in d: Bit<T>, out q: Bit<T>) { reset: T; }
+digital<T> for Dff<T> {
+    on clk.rise() || rst_n.fall() { if !rst_n { q <- reset; } else { q <- d; } }
+}</pre>
+
+<ol class="steps">
+<li><strong>Drives.</strong> <code>Dff</code> holds the one drive of <code>q</code>, by commits. <code>q</code> has no initial value, so it starts unknown.</li>
+<li><strong>Events.</strong> If the clock rises and reset falls together, the reaction still runs once.</li>
+<li><strong>Reset low from the start.</strong> The first value of <code>rst_n</code> is a change from unknown to low, so <code>fall()</code> fires at time 0 and <code>q</code> takes <code>reset</code> one microstep later.</li>
+<li><strong>A clock edge.</strong> The reaction reads <code>rst_n</code> and <code>d</code> as settled in that microstep; the commit applies in the next.</li>
+<li><strong>Unknown <code>rst_n</code>.</strong> Both arms run and their commits merge level by level, so <code>q</code> keeps the levels on which <code>reset</code> and <code>d</code> agree. If you want Verilog's behavior instead, write <code>if !rst_n.known_or(true)</code>.</li>
+</ol>
+
+<p>Pipelines fall out of "reads see the past". One reaction can describe all three stages of a multiply-accumulate pipeline, in any statement order:</p>
+
+<pre data-lang="msl">module MacPipe(in clk: Bit, in a: Bit<i16>, in b: Bit<i16>, in valid_in: Bit,
+               out acc: Bit<i40> = 0, out valid_out: Bit = false) {
+    signal a1: Bit<i16>;
+    signal b1: Bit<i16>;
+    signal v1: Bit = false;
+    signal p2: Bit<i32>;
+    signal v2: Bit = false;
+}
+
+digital for MacPipe {
+    on clk.rise() {
+        a1 <- a; b1 <- b; v1 <- valid_in;                    // stage 1
+        p2 <- (a1 as i32) * (b1 as i32); v2 <- v1;           // stage 2
+        if v2 { acc <- acc + p2 as i40; } valid_out <- v2;   // stage 3
+    }
+}</pre>
+</section>
+
+<!-- ===================================================== 8 -->
+<section id="mixed" class="chapter">
+<p class="ch-num">Chapter 8</p>
+<h2>Mixed-signal</h2>
+
+<p>Mixed-signal in MSL is not a separate sublanguage. One module can have an <code>analog</code> block and a <code>digital</code> block, and they share the module's names. Two rules connect the worlds:</p>
+
+<ul>
+<li><strong>Analog reads digital</strong> through <code>known_or</code>, <code>known</code> or <code>high()</code>. A digital carrier is a constant of each solve. When it changes, the analog side sees a <em>jump</em> and is solved again.</li>
+<li><strong>Digital reads analog</strong> by probing in a reaction, or by an event on an analog expression: <code>above(v(vin) - vth)</code>. A crossing is located in time by the solver.</li>
+</ul>
+
+<h3>The instant</h3>
+
+<p>Time in MSL is a pair <code>(t, n)</code>: a real time and a microstep. At one time, microsteps run until nothing is pending. The analog side is solved before the first microstep, and again after each one that changes something it reads.</p>
+
+<pre class="mermaid">
+flowchart LR
+  A["solve analog<br/>at time t"] --> B["microstep n<br/>definitions settle,<br/>reactions run"]
+  B --> C{"commits changed<br/>what analog reads?"}
+  C -- yes --> J["jump: solve<br/>analog again"]
+  J --> B
+  C -- "no, but commits pending" --> B
+  C -- "quiet" --> S["settle reactions,<br/>then next time point"]
+</pre>
+
+<p>A reaction that probes makes its instant a time point, so the solver lands on it exactly. A change to a digital carrier that <code>analog</code> does not read is not a jump: the analog solution is not recomputed for it.</p>
+
+<h3>A comparator</h3>
+
+<pre data-lang="msl">/// Comparator, right from the operating point: the event says which way it went.
+module Comparator(inp: Electrical, inn: Electrical, out q: Bit = false) {
+    ttol: f64 = 1p;
+    let up = above(v(inp, inn), ttol);
+    let dn = above(-v(inp, inn), ttol);
+}
+digital for Comparator { on up || dn { q <- up; } }</pre>
+
+<h3>Between modules: converters</h3>
+
+<p>Across a module boundary, a <code>Bit</code> and an <code>Electrical</code> never connect. Place a converter from the standard library. <code>A2D</code> is a threshold with hysteresis; <code>D2A</code> drives a level through a resistance with finite edges; <code>Bidir</code> is a pad on a <code>Wire</code>.</p>
+
+<pre data-lang="msl">module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
+digital for A2D {
+    on above(v(a) - vth - hyst / 2.0) { d <- true; }
+    on above(vth - hyst / 2.0 - v(a)) { d <- false; }
+}</pre>
+
+<h3>Walkthrough: a first-order delta-sigma modulator</h3>
+
+<p>An integrator in continuous time, a one-bit quantizer sampled by a reaction, and feedback through a digital carrier:</p>
+
+<pre data-lang="msl">module DeltaSigma1(vin: Electrical, in clk: Bit, out bit: Bit = false) {
+    r: f64 = 100k; c: f64 = 1p; vref: f64 = 1.0;
+    signal x: Electrical = 0.0;
+}
+
+analog for DeltaSigma1 {
+    let fb = if bit.high() { vref } else { -vref };
+    i(x) +> ddt(c * v(x)) - (v(vin) - fb) / r;
+}
+
+digital for DeltaSigma1 {
+    on clk.rise() { bit <- v(x) > 0.0; }
+}</pre>
+
+<ol class="steps">
+<li><strong>The equation.</strong> <code>x</code> has one branch, so KCL gives <code>c · dv(x)/dt = (v(vin) − fb) / r</code>.</li>
+<li><strong>Start.</strong> In an equilibrium solve <code>ddt</code> is zero, so <code>x</code> has no DC path. Its <code>= 0.0</code> holds it at 0&nbsp;V through the transient's operating point. On the first step the hold is released, with no jump.</li>
+<li><strong>A rising clock edge at <code>(t, 0)</code>.</strong> The reaction probes, so <code>t</code> is a time point. It reads <code>v(x)</code> and commits <code>bit</code>.</li>
+<li><strong>At <code>(t, 1)</code>.</strong> If <code>bit</code> changed, <code>analog</code> reads the change: a jump. The capacitor charge stays; the feedback current steps by <code>2 · vref / r</code>.</li>
+<li><strong>Falling edges</strong> fire no reaction, and <code>analog</code> never reads <code>clk</code>, so they cost the solver nothing.</li>
+<li><strong>DC, AC and noise.</strong> Outside a transient's operating point nothing is held, so a <code>Dc</code> solve is singular and names <code>x</code>. That is the truth about an integrator with no DC path. <code>Ac</code> and <code>Noise</code> fail the same way; the loop's response needs a periodic analysis.</li>
+</ol>
+
+<p>Bigger systems are just composition. The SAR ADC places a <code>SampleHold</code>, a resistive DAC, the <code>Comparator</code> above and a binary-search reaction:</p>
+
+<pre data-lang="msl">module SarAdc(vin: Electrical, in clk: Bit, in start: Bit, out code: Bit<u8>, out done: Bit) {
+    cpar: f64 = 50f;
+    signal vh: Electrical;
+    signal vdac: Electrical;
+    signal cmp: Bit;
+    let sh = SampleHold(vin, vh, start);      // 12.1
+    let dac = Dac8(code, vdac);
+    let comp = Comparator(vh, vdac, cmp);    // 13
+    let logic = SarLogic(clk, start, cmp, code, done);
+}
+analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's own branch on a public node</pre>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>The guidance in short: read a digital carrier in <code>analog</code> only when the analog behavior depends on it; prefer known times (<code>at</code>, <code>after</code>) to crossings; sample at a clock edge with a reaction, not with <code>cross</code> on the clock's analog image; give edges a duration with <code>transition</code> when edge rate matters.</p>
+</div>
+</section>
+
+<!-- ===================================================== 9 -->
+<section id="packages" class="chapter">
+<p class="ch-num">Chapter 9</p>
+<h2>Files, modules and packages</h2>
+
+<p>MSL organizes code the way Rust and Cargo do, without exceptions: files are namespaces, a tree of files is a crate, and a directory with a manifest is a package.</p>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>Crates and packages are implemented: the object model resolves names across crates, and <code>piperine-project</code> reads <code>Piperine.toml</code>, locates path and git dependencies and writes the lockfile.</p>
+</div>
+
+<h3>A project on disk</h3>
+
+<pre data-lang="text">adc/
+├── Piperine.toml          the manifest
+├── Piperine.lock          written for you: pinned git commits
+└── src/
+    ├── lib.msl            the crate root
+    ├── frontend.msl       mod frontend;
+    ├── logic/
+    │   ├── mod.msl        mod logic;
+    │   └── sar.msl        pub mod sar;  (in logic/mod.msl)
+    └── data/
+        └── diode_iv.tbl   read by include_str!</pre>
+
+<p>The crate root is always <code>src/lib.msl</code>, and sources end in <code>.msl</code>. <code>mod name;</code> loads <code>name.msl</code> or <code>name/mod.msl</code> below the declaring file, exactly like <code>name.rs</code> and <code>name/mod.rs</code>. Having neither, or both, is E0161.</p>
+
+<h3>Namespaces: <code>mod</code>, <code>use</code>, <code>pub</code></h3>
+
+<pre data-lang="msl">// src/lib.msl
+pub mod frontend;           // src/frontend.msl
+pub mod logic;              // src/logic/mod.msl
+
+use util::filters::Rc;      // `util` is a dependency named in Piperine.toml
+use crate::logic::sar::SarLogic;</pre>
+
+<p>Paths, <code>use</code>, <code>pub</code> and <code>pub use</code> follow Rust. <code>crate</code> is the root of your crate, <code>self</code> and <code>super</code> are relative. From another crate, an item is visible only when it and every namespace on the way to it are <code>pub</code>. One rule is MSL's own: a hardware module and all its behavior blocks must be in the same file.</p>
+
+<h3>The manifest</h3>
+
+<pre data-lang="toml">[package]
+name = "adc"
+version = "0.1.0"
+authors = ["Mixed-Signal Team"]
+description = "A SAR ADC and its building blocks"
+
+[dependencies]
+util = { path = "../util" }
+pdk  = { git = "https://example.com/acme/pdk.git", tag = "v1.4.0", version = "1.4" }</pre>
+
+<p>That is the whole format: <code>[package]</code> with <code>name</code> and <code>version</code> (required), <code>authors</code> and <code>description</code> (optional), and <code>[dependencies]</code>. Any other table or key is E0171.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Dependency key</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>path</code></td><td>A directory, relative to this manifest. Exactly one of <code>path</code> and <code>git</code>.</td></tr>
+<tr><td><code>git</code></td><td>A repository URL; the package is at its root.</td></tr>
+<tr><td><code>branch</code> / <code>tag</code> / <code>rev</code></td><td>At most one, with <code>git</code> only. None means the default branch.</td></tr>
+<tr><td><code>version</code></td><td>A check, Cargo's caret rule: <code>"1.4"</code> admits <code>>=1.4.0, <2.0.0</code>. It does not pick a version.</td></tr>
+<tr><td><code>package</code></td><td>The real package name when the key differs: a rename.</td></tr>
+</tbody></table></div>
+
+<p>A package name and a dependency name are identifiers: no hyphens, no keywords, never <code>std</code>. The key you write under <code>[dependencies]</code> is the name you use in paths, Rust 2018 style. There is no <code>extern crate</code> and no leading <code>::</code>.</p>
+
+<pre class="mermaid">
+flowchart LR
+  subgraph P["package adc (Piperine.toml)"]
+    L["src/lib.msl<br/>crate root"] --> F["frontend.msl"]
+    L --> G["logic/mod.msl"] --> S["logic/sar.msl"]
+  end
+  P -- "util = { path }" --> U["package util<br/>src/lib.msl"]
+  P -- "pdk = { git, tag }" --> K["package pdk<br/>src/lib.msl"]
+  P -. "always" .-> STD["std<br/>embedded"]
+  U -. "always" .-> STD
+  K -. "always" .-> STD
+</pre>
+
+<h3>The lockfile</h3>
+
+<p><code>Piperine.lock</code> sits beside the root manifest and records the commit each git dependency resolved to. While a dependency's URL and requested reference stay the same, that commit is used; an explicit update resolves again. A lockfile inside a dependency is ignored. Path dependencies are not recorded: their location pins them.</p>
+
+<pre data-lang="toml">version = 1
+
+[[package]]
+name = "pdk"
+version = "1.4.0"
+source = "git+https://example.com/acme/pdk.git?tag=v1.4.0"
+commit = "3f1c9a0e5b7d2c4e8a6f1b0d9c3e7a5f2b8d4c61"</pre>
+
+<h3>No search paths, no textual include, no macros</h3>
+
+<p>A crate reaches another crate only through a dependency named in its manifest. No implementation may find one through a search path, a registry or an environment variable. There is no <code>-I</code> and no package registry. There is no textual <code>include</code> of source either: code is shared through <code>mod</code> and <code>use</code>, and the only <code>!</code> forms are <code>emit!</code> and <code>include_str!</code>.</p>
+
+<p><code>include_str!</code> is for data. It is allowed only in a <code>const</code> initializer, its path is relative to the source file, and the file is read once, at elaboration. A run never opens a file:</p>
+
+<pre data-lang="msl">const IV:  [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));   // whitespace columns
+const ROM: [u32; 1024]      = parse_hex(include_str!("boot.hex"));         // $readmemh format
+
+module MeasuredDiode(a: Electrical, k: Electrical) {}
+analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cubic, error outside</pre>
+
+<h3>The standard library and the prelude</h3>
+
+<p><code>std</code> is a crate that ships inside Piperine. Every crate depends on it, no manifest names it, and no dependency may be called <code>std</code>. The <strong>prelude</strong>, the <code>pub</code> items of <code>std::prelude</code>, is implied in every file, which is why <code>Bit</code>, <code>Electrical</code>, <code>idt</code> and <code>above</code> need no <code>use</code>. A handful of <strong>core names</strong> need nothing at all: <code>gnd</code>, <code>Nature</code>, <code>m</code>, <code>dtemp</code>, <code>str</code> and the core primitives like <code>ddt</code> and <code>cross</code>. Chapter 10 tours both.</p>
+
+<h3>When names collide</h3>
+
+<p>The first segment of a path is looked up in this order, and the first hit wins:</p>
+
+<ol class="steps">
+<li>the enclosing blocks and declarations;</li>
+<li>the items and imports of the enclosing namespace;</li>
+<li>the dependency names of the crate;</li>
+<li>the prelude;</li>
+<li>the core names.</li>
+</ol>
+
+<p>So in an ordinary path, a local item beats a dependency of the same name, silently. In a <code>use</code>, the same clash is an error, never a silent choice:</p>
+
+<pre data-lang="msl">mod util;                  // a local namespace called util
+use util::cells::Cell;     // E0163: the local `util` or the dependency `util`?</pre>
+
+<p>Only a name that can head a path clashes: a namespace, a type, a nature or a module, as in Rust. A local <code>fn util</code> or <code>const util</code> lives in the value namespace, so <code>util::cells::Cell</code> still reaches the crate.</p>
+
+<p>Two ways out: rename the dependency in the manifest, or name the local one through <code>crate</code>.</p>
+
+<pre data-lang="toml">[dependencies]
+utilx = { path = "../util", package = "util" }    # now `utilx::cells::Cell`</pre>
+
+<pre data-lang="msl">use crate::util::cells::Cell;   // the local namespace, unambiguous</pre>
+</section>
+
+<!-- ===================================================== 10 -->
+<section id="core-std" class="chapter">
+<p class="ch-num">Chapter 10</p>
+<h2>Core and standard library</h2>
+
+<p>Every name you write in a model comes from one of three places: your own files, the <strong>core</strong>, or the <strong>standard library</strong>. The core is what only the simulator can provide: reading a voltage, taking a time derivative, locating a crossing. Everything else, <code>idt</code>, <code>transition</code>, <code>Wire</code>, <code>Setup</code>, is ordinary source code written in the language, shipped as the crate <code>std</code>, and you can open it and read it. This chapter is the tour that tells you which is which.</p>
+
+<h3>What is core</h3>
+
+<p>A core name needs no import and cannot be redefined: a namespace item with the same name is error E0457. The list is short on purpose.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Core name</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>gnd</code></td><td>The reference node, the same net everywhere.</td></tr>
+<tr><td><code>Nature</code></td><td>The bound that makes a declaration a nature.</td></tr>
+<tr><td><code>m</code>, <code>dtemp</code></td><td>The multiplicity and the temperature offset every instance carries. They are in scope only inside a module.</td></tr>
+<tr><td><code>str</code></td><td>The type of text. It is how a model reads a name or a file at elaboration.</td></tr>
+</tbody></table></div>
+
+<p>The core primitives come in kinds, and the kind says where each one may appear:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>Names</th><th>What they do</th></tr></thead>
+<tbody>
+<tr><td>Probes</td><td><code>potential</code>, <code>flow</code>, <code>inflow</code></td><td>Read the voltage or current of a branch. Your nature gives them their short names, <code>v</code> and <code>i</code>.</td></tr>
+<tr><td>Solver functions</td><td><code>ddx</code>, <code>ac_stim</code></td><td>A partial derivative, and the small-signal stimulus of an AC sweep.</td></tr>
+<tr><td>Environment</td><td><code>temperature</code>, <code>simparam</code>, <code>analysis</code>, <code>now</code>, <code>freq</code>, <code>gmin</code>, <code>source_scale</code></td><td>The temperature, a session parameter, which analysis is running, the time, the frequency of a small-signal sweep, and the solver's continuation variables: the node shunt and the source scale.</td></tr>
+<tr><td>Core modules</td><td><code>ddt</code>, <code>delay</code>, <code>limit</code>, <code>noise</code>, <code>cross</code>, <code>at</code></td><td>Time derivative, a delayed copy of a signal, Newton step limiting, a noise source, and the two ways to schedule an event: located by the solver (<code>cross</code>) or at a known time (<code>at</code>). You place them like any module.</td></tr>
+<tr><td>Events</td><td><code>settle</code>, <code>changed</code></td><td><code>settle</code> fires when a time point has nothing left to do; <code>s.changed()</code> fires when a carrier changes.</td></tr>
+<tr><td>Statements</td><td><code>bound_step</code></td><td>Caps the next time step.</td></tr>
+<tr><td>Carrier methods</td><td><code>prev</code>, <code>others</code>, <code>level</code></td><td>The previous value of a carrier, what the other drivers put on it, and the known flag of one level.</td></tr>
+</tbody></table></div>
+
+<p>Two more names end in <code>!</code> and are the only forms of their kind: <code>emit!</code> writes a record to a stream, and <code>include_str!</code> reads a text file once, at elaboration. There are no user macros.</p>
+
+<h3><code>std::prelude</code></h3>
+
+<p>The prelude is the namespace <code>std::prelude</code>. It re-exports every <code>pub</code> item of the other eight namespaces, and it is implied in every file of every crate, so you write <code>Electrical</code> and <code>transition</code> with no <code>use</code>. You can still write the long path, <code>std::analog::transition</code>, when you want to be explicit. A name you declare yourself, or a dependency name, hides a prelude item of the same name.</p>
+
+<pre data-lang="msl">module Tour(p: Electrical, in clk: Bit) {}
+analog for Tour { i(p) +> 0.0; }
+digital for Tour { on clk.rise() { emit!("seen", t = now()); } }</pre>
+
+<p>Each part below is one namespace. The names in a table are the exports; the example under it uses a few of them.</p>
+
+<h3><code>std::constants</code>: physical constants</h3>
+
+<p>Six <code>f64</code> constants, in SI units.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Q</code></td><td>The elementary charge.</td></tr>
+<tr><td><code>K_B</code></td><td>Boltzmann's constant.</td></tr>
+<tr><td><code>EPS0</code></td><td>The vacuum permittivity.</td></tr>
+<tr><td><code>PI</code></td><td>The circle constant.</td></tr>
+<tr><td><code>E</code></td><td>Euler's number.</td></tr>
+<tr><td><code>inf</code></td><td>Positive infinity.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">const VT_300K: f64 = K_B * 300.0 / Q;     // the thermal voltage at 300 K</pre>
+
+<h3><code>std::carriers</code>: natures and the short</h3>
+
+<p>The natures every analog and digital connection is typed with, and one module that joins two nodes.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Bit</code></td><td>The discrete carrier. <code>Bit</code> is a bit, <code>Bit&lt;u8&gt;</code> a byte, <code>Bit&lt;f64&gt;</code> a real-valued event stream; any of them may be unknown.</td></tr>
+<tr><td><code>Electrical</code></td><td>Voltage across, current through, with the accessors <code>v</code> and <code>i</code>.</td></tr>
+<tr><td><code>Thermal</code></td><td>Temperature and power, with <code>temp</code> and <code>pwr</code>.</td></tr>
+<tr><td><code>VSignal</code></td><td>A voltage-only nature, for signals that carry no current.</td></tr>
+<tr><td><code>Short</code></td><td>A module that makes its two nodes the same node.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module Rc(p: Electrical, n: Electrical) {
+    r: f64 = 1k;
+    c: f64 = 1p;
+    signal mid: Electrical;
+}
+analog for Rc {
+    i(p, mid) +> v(p, mid) / r;
+    i(mid, n) +> ddt(c * v(mid, n));
+}</pre>
+
+<h3><code>std::values</code>: unknown values, bit patterns and clocks</h3>
+
+<p>Tools for values that may be unknown, and three small time sources.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Known</code></td><td>The trait behind <code>known()</code>, <code>known_or(d)</code> and <code>is_known()</code>: use the value only when every level is known, or fall back to a default.</td></tr>
+<tr><td><code>merge</code></td><td>Keeps the levels two values agree on and makes the rest unknown.</td></tr>
+<tr><td><code>cast</code></td><td>Reads the same levels as another type of the same width.</td></tr>
+<tr><td><code>same</code></td><td>True when two values have identical levels, unknowns included.</td></tr>
+<tr><td><code>matches_bits</code></td><td>Compares a value to a pattern of <code>0</code>, <code>1</code> and <code>x</code>.</td></tr>
+<tr><td><code>logic</code></td><td>Builds a value from such a pattern.</td></tr>
+<tr><td><code>init</code></td><td>An event that fires once, at the start of the analysis.</td></tr>
+<tr><td><code>every</code></td><td>An event that fires at a start time and then every period.</td></tr>
+<tr><td><code>since</code></td><td>The time elapsed since a carrier last changed.</td></tr>
+</tbody></table></div>
+
+<p>The methods <code>rise()</code>, <code>fall()</code> and <code>high()</code> of <code>Bit</code> are defined here too, which is why <code>clk.rise()</code> works everywhere.</p>
+
+<pre data-lang="msl">module Latch(in clk: Bit, in d: Bit&lt;u8&gt;, out q: Bit&lt;u8&gt; = 0) {}
+digital for Latch { on clk.rise() { q &lt;- d.known_or(0); } }</pre>
+
+<h3><code>std::analog</code>: continuous-time building blocks</h3>
+
+<p>The functions and modules a behavioral analog model is made of. Most are modules written over the core primitives, so each has a body you can read.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>State</code></td><td>A unitless nature for internal states.</td></tr>
+<tr><td><code>vt</code></td><td>The thermal voltage at the current temperature.</td></tr>
+<tr><td><code>white_noise</code>, <code>flicker_noise</code>, <code>noise_table</code></td><td>Noise sources with a flat, a 1/f and a tabulated spectrum.</td></tr>
+<tr><td><code>limexp</code></td><td>An exponential that is safe for Newton: it grows linearly past a limit.</td></tr>
+<tr><td><code>pnjlim</code>, <code>fetlim</code>, <code>limvds</code>, <code>deltalim</code></td><td>The step limiters that keep a junction, a gate voltage and a drain voltage from jumping too far between iterations.</td></tr>
+<tr><td><code>above</code></td><td>A rising crossing that also fires at the start when the expression is already positive.</td></tr>
+<tr><td><code>absdelta</code></td><td>Fires each time an expression has moved by a given amount.</td></tr>
+<tr><td><code>last_crossing</code></td><td>The time of the last rising crossing.</td></tr>
+<tr><td><code>idt</code></td><td>The time integral.</td></tr>
+<tr><td><code>idtmod</code></td><td>The integral wrapped into a range, for phases.</td></tr>
+<tr><td><code>slew</code></td><td>Follows a signal with a bounded rate of change.</td></tr>
+<tr><td><code>transition</code></td><td>Turns a piecewise-constant input into a signal with a delay and finite rise and fall times.</td></tr>
+<tr><td><code>zi_nd</code>, <code>zi_np</code>, <code>zi_zd</code>, <code>zi_zp</code></td><td>Discrete-time filters, given as numerator and denominator, numerator and poles, zeros and denominator, or zeros and poles.</td></tr>
+<tr><td><code>laplace_nd</code>, <code>laplace_np</code>, <code>laplace_zd</code>, <code>laplace_zp</code></td><td>The same four forms for continuous-time filters H(s).</td></tr>
+<tr><td><code>table_model</code></td><td>Interpolates a table of samples.</td></tr>
+<tr><td><code>db10</code>, <code>db20</code></td><td>A power ratio and an amplitude ratio in decibels.</td></tr>
+<tr><td><code>normal</code></td><td>One step of a random generator with a normal distribution.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module DacRamp(in code: Bit&lt;u8&gt;, vout: Electrical) {
+    vref: f64 = 1.0; tedge: f64 = 100p;
+    let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);
+}
+analog for DacRamp { v(vout) +&gt; ramp; }</pre>
+
+<h3><code>std::nets</code>: nets with more than one driver</h3>
+
+<p>What a net does when several modules drive it, and the switch-level parts built on that.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Strength</code></td><td>How hard a driver drives: strong, weak, or not at all.</td></tr>
+<tr><td><code>Logic</code></td><td>A level with a strength, including the high-impedance value.</td></tr>
+<tr><td><code>Wire</code></td><td>The nature of a net with several drivers: the strongest wins, and equal strengths that disagree give unknown.</td></tr>
+<tr><td><code>tri</code>, <code>Tri</code></td><td>A typed bus where one driver at a time is allowed.</td></tr>
+<tr><td><code>sum</code>, <code>SumNet</code></td><td>A real-valued net whose drivers add.</td></tr>
+<tr><td><code>Tribuf</code></td><td>A tristate buffer.</td></tr>
+<tr><td><code>Pullup</code>, <code>Pulldown</code></td><td>A weak driver that holds a net high or low while nobody else drives it.</td></tr>
+<tr><td><code>Keeper</code></td><td>Holds the last driven level, weakly.</td></tr>
+<tr><td><code>Tran</code></td><td>A bidirectional pass gate.</td></tr>
+<tr><td><code>Tgate</code></td><td>A CMOS transmission gate: two <code>Tran</code> in parallel.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module IrqSource(in req: Bit, irq_n: Wire) { irq_n = if req { Logic::strong(false) } else { Logic::Z }; }
+
+module Board(in req0: Bit, in req1: Bit) {
+    signal irq_n: Wire;
+    let pu = Pullup(irq_n);
+    let s0 = IrqSource(req0, irq_n);
+    let s1 = IrqSource(req1, irq_n);
+}</pre>
+
+<h3><code>std::convert</code>: crossing between analog and digital</h3>
+
+<p>A <code>Bit</code> is never connected to an <code>Electrical</code> node for you; you place a converter.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>D2A</code></td><td>Drives a node from a <code>Bit</code>: a level through a resistance, with finite edges.</td></tr>
+<tr><td><code>A2D</code></td><td>Reads a node into a <code>Bit</code> with hysteresis, right from the operating point.</td></tr>
+<tr><td><code>Bidir</code></td><td>A pad: one <code>Wire</code> and one node, driving and reading both.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module Pad(in d: Bit, out q: Bit, node: Electrical, vdd: Electrical) {
+    let drv = D2A(d, node, vdd);
+    let rcv = A2D(node, q);
+}</pre>
+
+<h3><code>std::monitor</code>: temporal checks and delays</h3>
+
+<p>Monitors only report: each is a module that calls <code>require</code> when the property it watches fails. They never write what they watch.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>AckWithin</code></td><td>Every request is acknowledged within a number of clock cycles.</td></tr>
+<tr><td><code>Never</code></td><td>A condition never holds at a clock edge.</td></tr>
+<tr><td><code>Stable</code></td><td>A signal does not change while it is enabled.</td></tr>
+<tr><td><code>Setup</code></td><td>A data signal was stable for a given time before the clock edge.</td></tr>
+<tr><td><code>Hold</code></td><td>A data signal stays stable for a given time after the clock edge.</td></tr>
+<tr><td><code>MinPulse</code></td><td>A pulse is at least a given width.</td></tr>
+<tr><td><code>inertial</code></td><td>An inertial delay: a change passes only after the input has been stable for the delay, so short glitches vanish.</td></tr>
+<tr><td><code>TribufDelayed</code></td><td>A tristate buffer with an inertial gate delay, slower to release than to drive.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module Reg(in clk: Bit, in d: Bit, out q: Bit = false) {
+    let chk = Setup(clk, d) { ts: 100p };
+}
+digital for Reg { on clk.rise() { q &lt;- d; } }</pre>
+
+<h3><code>std::io</code>: records, checks and data files</h3>
+
+<p>Everything a model writes to a stream is a record; these are the functions that write the common ones, and the two readers for data files.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Severity</code></td><td>Info, warning or error.</td></tr>
+<tr><td><code>log</code></td><td>Writes a message with a severity.</td></tr>
+<tr><td><code>finish</code>, <code>fatal</code></td><td>End the analysis, and end it as failed with a message.</td></tr>
+<tr><td><code>require</code></td><td>A check that must pass. A failed one is recorded, not hidden.</td></tr>
+<tr><td><code>cover</code></td><td>Records that a situation was reached.</td></tr>
+<tr><td><code>target</code></td><td>Records how much margin a design has against a goal.</td></tr>
+<tr><td><code>parse_table</code>, <code>parse_hex</code></td><td>Read a table of numbers or a hex memory image from text, at elaboration.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module Probe(in clk: Bit, in ok: Bit) {}
+digital for Probe { on clk.rise() { require("ok_at_edge", ok); log(Severity::Info, "edge"); } }</pre>
+
+<h3>Implemented by the engine</h3>
+
+<p>Five library items have no body to read, because their job is to read the characters of a <code>str</code>, which the language itself cannot do. They are declared <code>extern "intrinsic"</code>: you see the signature and the contract, and the engine supplies the body. Only <code>std</code> may declare one; the same line in your crate is error E0125. Like every other library item they are <code>pub</code> and reach your code through <code>std::prelude</code>, by their single names.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Item</th><th>What the engine does for it</th></tr></thead>
+<tbody>
+<tr><td><code>matches_bits</code></td><td>Compares a value to a pattern text.</td></tr>
+<tr><td><code>logic</code></td><td>Builds a value from a pattern text.</td></tr>
+<tr><td><code>table_model</code></td><td>Reads the control text that picks the interpolation and the extrapolation.</td></tr>
+<tr><td><code>parse_table</code></td><td>Reads whitespace columns of numbers.</td></tr>
+<tr><td><code>parse_hex</code></td><td>Reads a hex memory image.</td></tr>
+</tbody></table></div>
+
+<p>An implementation may also run any other item natively, as long as the result is observably the same as the written definition. That is a speed-up, not a different meaning.</p>
+
+<h3>Replacing a library item</h3>
+
+<p>A library item has no privilege. Declare an item with the same name in your own namespace and yours is the one the names in that scope find; the library's stays untouched. Only the core names of this chapter are off limits.</p>
+
+<pre data-lang="msl">pub fn vt() -> f64 { 0.0259 }          // this crate's vt, fixed at room temperature</pre>
+</section>
+
+<!-- ===================================================== 11 -->
+<section id="errors" class="chapter">
+<p class="ch-num">Chapter 11</p>
+<h2>Reading errors</h2>
+
+<p>Every error condition has one code, <code>Eppnn</code>, where <code>pp</code> names the area of the language the rule belongs to. <code>E01xx</code> covers values, files and packages, <code>E04xx</code> behavior, <code>E09xx</code> the lexer, and so on.</p>
+
+<p>A diagnostic carries a code, a message, a primary label on the source span, optional secondary labels and an optional help line. Here is how one reads in a terminal:</p>
+
+<pre data-lang="diag">error[E0150]: `analog` reads the discrete carrier `held` without saying what unknown means
+  --> sample_hold.msl:3:37
+   |
+ 3 | analog for SampleHold { v(vout) +> held; }
+   |                                    ^^^^ `held` is a `Bit<f64>`
+   |
+   = help: read it through `known()`, `known_or(d)`, or `high()` for a `Bit`</pre>
+
+<pre data-lang="diag">error[E0163]: `util` names both a dependency and a local item
+  --> src/lib.msl:2:5
+   |
+ 1 | mod util;
+   | --------- the local namespace `util`
+ 2 | use util::cells::Cell;
+   |     ^^^^ ambiguous first segment
+   |
+   = help: rename the dependency with `package = "util"` under another key,
+           or write `crate::util` for the local one</pre>
+
+<p class="note">These two renderings are illustrative. The exact wording is the tool's, but the parts are fixed: code, message, labeled spans and help.</p>
+
+<h3>When errors happen</h3>
+
+<p>An error belongs to one of five phases: <strong>package</strong> (reading manifests and dependencies), <strong>parse</strong>, <strong>elaboration</strong> (names, types, params, the netlist), <strong>run</strong> (an analysis fails, naming the instance and the instant) and <strong>host</strong> (a host request is refused, and the analysis goes on). Most of what you meet while writing a model is elaboration.</p>
+
+<h3>The codes you will meet first</h3>
+
+<div class="table-wrap"><table class="codes">
+<thead><tr><th>Code</th><th>What happened</th><th>Usual fix</th></tr></thead>
+<tbody>
+<tr><td>E0900</td><td>A syntax error.</td><td>Read the token the message names.</td></tr>
+<tr><td>E0901</td><td>A macro other than <code>emit!</code> or <code>include_str!</code>.</td><td>A function, or a typed <code>emit!</code> record.</td></tr>
+<tr><td>E0161</td><td>A path, <code>use</code> or <code>mod</code> that does not resolve, or a private item.</td><td>Check spelling, <code>pub</code>, and the dependency name.</td></tr>
+<tr><td>E0162</td><td>A name declared twice in one namespace.</td><td>Rename one.</td></tr>
+<tr><td>E0163</td><td>A <code>use</code> whose first segment is both a dependency and a local item.</td><td><code>package = …</code> rename, or <code>crate::</code>.</td></tr>
+<tr><td>E0143</td><td>A default value in a <code>fn</code> signature, or an overload.</td><td>A trailing <code>Option&lt;T&gt;</code> parameter.</td></tr>
+<tr><td>E0150</td><td><code>analog</code> reads a digital carrier without <code>known_or</code> / <code>high()</code>.</td><td>Say what unknown means.</td></tr>
+<tr><td>E0220</td><td>A second drive of a one-driver carrier.</td><td>One writer, or a resolved nature like <code>Wire</code>.</td></tr>
+<tr><td>E0221</td><td>A definition and a commit to the same carrier in one module.</td><td>Pick <code>=</code> or <code><-</code>.</td></tr>
+<tr><td>E0222</td><td>Writing something this module may not drive, such as an <code>in</code> port.</td><td>Drive it from its owner.</td></tr>
+<tr><td>E0312</td><td>A port left unconnected, or too many connections.</td><td>Match the port list.</td></tr>
+<tr><td>E0319</td><td>A required param not bound.</td><td>Bind it in <code>{ … }</code> or give a default.</td></tr>
+<tr><td>E0336</td><td>A definition reads a probe or <code>now()</code>.</td><td>Use a reaction, or an <code>analog</code> block.</td></tr>
+<tr><td>E0339</td><td>A combinational loop through one-driver carriers.</td><td>Break it with <code>after</code>.</td></tr>
+<tr><td>E0350</td><td>An instance placed in a <code>fn</code>, closure or reaction body.</td><td>Name it with a body <code>let</code> and read the name.</td></tr>
+<tr><td>E0404</td><td>A statement in the wrong kind of block, like <code><-</code> in <code>analog</code>.</td><td>Move it.</td></tr>
+<tr><td>E0414</td><td>A branch switches kind on a probe.</td><td>Switch on a param or digital carrier.</td></tr>
+<tr><td>E0430</td><td>The head of <code>on</code> is not an <code>Event</code>.</td><td><code>s.changed()</code>, <code>clk.rise()</code>, or a guard <code>ev && c</code>.</td></tr>
+<tr><td>E0171</td><td>A manifest key the format does not allow.</td><td>See chapter 9.</td></tr>
+<tr><td>E0175</td><td>A package without <code>src/lib.msl</code>.</td><td>Create the crate root.</td></tr>
+</tbody></table></div>
+</section>
+
+<!-- ===================================================== 12 -->
+<section id="pom" class="chapter">
+<p class="ch-num">Chapter 12</p>
+<h2>The object model</h2>
+
+<p>The <strong>Piperine Object Model</strong>, the POM, is the in-memory model of a set of MSL sources. One call turns source text into an immutable <code>Design</code>, and every later stage starts from it: a type checker, an elaborator, the simulator front end, an editor. It is the Rust library <code>piperine_lang::pom</code>, and it reads the way Java reflection does. You ask a module for its ports, a signal for the module it is declared in, an instance for the module it places.</p>
+
+<h3>The promise: it mirrors your source</h3>
+
+<blockquote class="pull">The POM's navigability mirrors the source. What you read back from a <code>Design</code> is the structure the author wrote.</blockquote>
+
+<p>Modules, instances and hierarchy come back as you wrote them. A generation <code>for</code> stays one <code>for</code>, never unrolled; a <code>let</code> stays a <code>let</code>. Name resolution only <em>adds</em> links between nodes. Anything that needs another shape, such as flattening, is a separate artifact built from the design. You never have to reverse-engineer an elaborator to find your own module.</p>
+
+<pre data-lang="text">sources ──► parse ──► lower ──► resolve ──► index ──► Design
+(text)      syntax    arenas    names,       reverse   (immutable,
+            tree      of nodes  classes,     tables    Send + Sync,
+                                members                serializable)</pre>
+
+<h3>A short tour</h3>
+
+<p>Take <code>Front</code>, a comparator with hysteresis that drives a flip-flop:</p>
+
+<pre data-lang="msl">/// A comparator with hysteresis that drives a flip-flop.
+module Front(vin: Electrical, in clk: Bit, out q: Bit) {
+    vth: f64 = 0.6;
+    hyst: f64 = 50m;
+    signal above_th: Bit = false;        // state: a signal
+    signal d: Bit;
+    d = above_th;                        // structure: a combinational definition
+}
+
+digital for Front {
+    on above(v(vin) - vth - hyst / 2.0) { above_th <- true; }    // an analog event
+    on above(vth - hyst / 2.0 - v(vin)) { above_th <- false; }
+    on clk.rise() { q <- d; }                                    // a digital event
+}</pre>
+
+<p>With the design built, you ask it questions in Rust. These lines are from the POM's own tour:</p>
+
+<pre data-lang="rust">// The structure is what was written, by name.
+let front = design.module("Front").unwrap();
+let ports: Vec<_> = front.ports().iter().map(|p| p.name().unwrap()).collect();
+assert_eq!(ports, ["vin", "clk", "q"]);
+assert_eq!(front.params().len(), 2);
+assert_eq!(front.signals().len(), 2);
+
+// A signal knows where it is declared.
+let d = front.signal("d").unwrap();
+assert_eq!(d.declared_in().unwrap().name(), Some("Front"));
+assert_eq!(d.qualified_name(), "Front.d");
+
+// The `above(..)` calls are instances of a module, and the behavior block belongs to `Front`.
+assert_eq!(front.instances().len(), 2);
+let block = &front.digital_blocks()[0];
+let events: Vec<_> = block.reactions().iter().map(|r| r.event().text()).collect();
+assert_eq!(events[2], "clk.rise()");
+
+// Reverse queries: who writes `d`, and who writes `q`.
+assert_eq!(d.writers().len(), 1);                        // the definition `d = above_th;`
+assert_eq!(front.port("q").unwrap().writers().len(), 1); // the commit `q <- d;`</pre>
+
+<h3>What it is and is not</h3>
+
+<ul>
+<li><strong>Always builds.</strong> <code>build()</code> returns a <code>Design</code> however broken the input. Parse errors keep the recovered tree and go to <code>diagnostics()</code>, sorted by file, offset and code.</li>
+<li><strong>Lossless.</strong> Every file keeps its text and syntax tree, and the tree can be rebuilt from the POM alone, spans included.</li>
+<li><strong>A plain value.</strong> A <code>Design</code> is <code>Clone</code>, comparable with <code>==</code>, <code>Send + Sync</code> and serializable to JSON.</li>
+<li><strong>No type checking, evaluation, elaboration or simulation.</strong> Constants and <code>where</code> clauses stay expressions; generics are not instantiated. The POM says what was written and what each name refers to.</li>
+<li><strong>No mutation.</strong> Edit the source and build again.</li>
+</ul>
+
+<p>With packages, a design is built over a graph of crates, each kept as authored, and names resolve across crates by the rules of chapter 9.</p>
+
+</section>
+
+<!-- ===================================================== 13 -->
+<section id="abi" class="chapter">
+<p class="ch-num">Chapter 13</p>
+<h2>Device ABI</h2>
+
+<p>Everything the solver simulates is a <strong>device</strong>, and every device meets the solver through one binary interface, the <strong>device ABI</strong>. A resistor compiled from MSL, a BSIM model compiled to OSDI, an AVR microcontroller emulator, the IR interpreter running a model nobody compiled: the solver calls all of them the same way. You never write against it when you write MSL; the compiler does. This chapter is for when you want to know what your module becomes, or to plug in a device that was not written in MSL.</p>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>The design is settled by an adversarial review: a builder and a critic went four rounds, and its elegance score rose from 5.5 to 8.1 with no blocker left. It is <strong>not implemented yet</strong>. Nothing here has been compiled. Its home will be the crate <code>piperine-abi</code>, which has no dependencies and is the only crate a device links against.</p>
+</div>
+
+<h3>Why one ABI</h3>
+
+<p>A simulator usually grows one interface per kind of model: one for compiled analog models, one for digital primitives, one for co-simulation, each with its own hooks for setup, temperature, checkpoints and rollback. Piperine has one. The solver calls every device through the same pointers, whether the library came from <code>dlopen</code> (generated Rust, C, an OSDI adapter, an emulator) or lives in the same process (the IR interpreter, a test element, a host stimulus). A bug in coupling is fixed once, for all of them.</p>
+
+<h3>The idea, in five points</h3>
+
+<ol class="steps">
+<li><strong>A device is a shape plus two kinds of code.</strong> The <em>shape</em> is plain data describing the instance. The code is <em>functions</em>, which are pure (bytes in, bytes out, with partial derivatives), and <em>reactions</em>, which run at an instant and whose only effect is a commit.</li>
+<li><strong>The device has no memory.</strong> Everything that exists over time lives in the solver: unknowns, discrete values, pending commits, integrator and delay histories, limiter iterates. State a device needs is a private pin, just as state in MSL is a <code>signal</code>. So checkpoint, rollback and replay need no entry point.</li>
+<li><strong>A pin is the only shared thing.</strong> A pin is a net seen from an instance, and it obeys the net rules without exception. Ports, internal nodes, branch flows, signals, state, params, temperature, timers, crossings, <code>settle</code>, records: all pins.</li>
+<li><strong>Four analog cells.</strong> What is not a net is an input or an output of a call. A <em>term</em> is a value added to a row, through one of three operators: 1, d/dt or delay. A <em>held input</em> is a value the solver supplies and perturbs (a limiter iterate, a noise source, an AC stimulus). An <em>ambient input</em> is a coordinate of the call (the time, the frequency, the horizon). A <em>watch</em> is an analog output that enters no row (a crossing, a step cap, an operating-point variable).</li>
+<li><strong>One rule runs all code.</strong> A function runs when the solver needs one of its outputs and one of its inputs changed. A reaction runs when an event pin it listens to fires.</li>
+</ol>
+
+<p>The device says only <em>what</em> a value is. A capacitor says "this is a charge"; equilibrium, TR-BDF2, the truncation test, <code>jω·c</code> in an AC sweep and the history across an undone step are the solver's business.</p>
+
+<h3>Who owns what</h3>
+
+<p>One event owner dispatches to an analog and a digital sub-solver, and the boundary between them is events only. Devices sit below both.</p>
+
+<pre class="mermaid">
+flowchart TB
+  H["Host<br/>(a reaction)"]
+  O["Event owner<br/>discrete store, queue,<br/>records, checkpoints"]
+  A["Analog sub-solver<br/>unknowns, rows,<br/>histories, limit iterates"]
+  D["Digital sub-solver<br/>discrete nets, microsteps"]
+  H -- "commits" --> O
+  O -- "boundary events" --> A
+  A -- "a crossing fires an event pin" --> O
+  O -- "instants (t, n)" --> D
+  subgraph DEV["Devices: shape + code, no memory"]
+    AF["analog functions"]
+    DF["discrete functions"]
+    R["reactions"]
+  end
+  A -- "eval" --> AF
+  D -- "eval" --> DF
+  D -- "react" --> R
+  R -- "commit" --> O
+</pre>
+
+<p>The analog side keeps its own copy of the discrete pins its functions read, and that copy changes only through a boundary event. A located crossing is just a commit to the watch's event pin.</p>
+
+<h3>Six entry points</h3>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Entry</th><th>Side</th><th>Contract</th></tr></thead>
+<tbody>
+<tr><td><code>piperine_abi_1() -> *const Library</code></td><td>device</td><td>The one exported symbol; <code>1</code> is the ABI major.</td></tr>
+<tr><td><code>create(module, values, note) -> Created</code></td><td>device</td><td>An instance and its shape, for these param values.</td></tr>
+<tr><td><code>destroy(instance)</code></td><td>device</td><td>Frees the instance and releases its shape.</td></tr>
+<tr><td><code>eval(instance, k, frame) -> Status</code></td><td>device</td><td>Runs function <code>k</code>: reads its inputs, writes its outputs and the partials that were asked for.</td></tr>
+<tr><td><code>react(instance, k, frame) -> Status</code></td><td>device</td><td>Runs reaction <code>k</code>: reads its inputs, calls <code>commit</code>.</td></tr>
+<tr><td><code>commit(statement, offset, len, bytes, after) -> Status</code></td><td>solver</td><td>Queues one write of the calling reaction. Nothing else calls it, and it does nothing else.</td></tr>
+</tbody></table></div>
+
+<p>A call returns <code>OK</code>, <code>FAULT</code> (with a message), <code>RESHAPE</code> (these param values need a different shape) or <code>FINISH</code> (a reaction ends the analysis at its instant). Nothing may unwind across the boundary.</p>
+
+<h3>The Rust side</h3>
+
+<p>In Rust a device is a type that implements one trait. No macro is involved: a generic function produces the C thunks.</p>
+
+<pre data-lang="rust">pub trait Device: Sized + Send + 'static {
+    fn prototype() -> &'static Shape;
+    fn create(values: &Values<'_>) -> Result<(Self, Arc<Shape>), Fault>;
+    fn eval (&self, k: u32, cx: &mut Eval<'_>)  -> Result<(), Fault>;
+    fn react(&self, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault>;      // Flow::Continue | Flow::Finish
+}
+pub const fn module<D: Device>(name: &'static str) -> Module;       // generic extern "C" thunks; no macro</pre>
+
+<p><code>Eval</code> and <code>React</code> are borrow-checked views over the call's buffers: <code>cx.f64(i)</code> and <code>cx.bytes(i)</code> read input <code>i</code>, <code>cx.set(j, v)</code> writes output <code>j</code>, <code>cx.jac()</code> is the partials, <code>cx.commit(statement, bytes, after)</code> queues a write. A panic becomes a <code>FAULT</code> with its message.</p>
+
+<h3>Three devices</h3>
+
+<p>These are verbatim from the ABI document, with the partials written by hand so the contract shows. The comment above each one is its shape: <code>reads</code> and <code>writes</code> in order, partials as <code>(write ← read)</code>. Generated code computes the partials for you.</p>
+
+<p><strong>A resistor.</strong> In MSL it is one line of behavior:</p>
+
+<pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 = 1k; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }</pre>
+
+<p>As a device it is two port pins, one param pin, one term and one function:</p>
+
+<pre data-lang="rust">// pins:   p, n (PORT continuous);  r (PARAM F64, default 1e3)
+// terms:  T0 FLOW {p, n} "i"
+// fn 0 "i":  reads [p, n, r]   writes [T0]   partials (0←0) (0←1) (0←2)
+fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+    let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
+    cx.set(0, v / r);
+    cx.jac().copy_from_slice(&[1.0 / r, -1.0 / r, -v / (r * r)]);    // the last matters only when seeded
+    Ok(())
+}</pre>
+
+<p>Two resistors of 1&nbsp;kΩ and 2&nbsp;kΩ share this shape; the solver seeds each one's param net with its value.</p>
+
+<p><strong>A D flip-flop.</strong> The MSL:</p>
+
+<pre data-lang="msl">module Dff(in clk: Bit, in d: Bit, out q: Bit = false) {}
+digital for Dff { on clk.rise() { q <- d; } }</pre>
+
+<p>The edge <code>clk.rise()</code> becomes a discrete function that fires a private event pin; the <code>on</code> block becomes a reaction listening to it; <code>q &lt;- d</code> becomes one commit:</p>
+
+<pre data-lang="rust">// pins: clk, d (PORT BIT);  q (PORT BIT, init LOW);  rise (PRIVATE event)
+// fn 0 "rise":  reads [clk.VALUE, clk.PREVIOUS, clk.CHANGED]   writes [rise]
+// reaction 0:   on [rise]   reads [d]   writes [S0 {q}]
+fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+    cx.set(0, (cx.bytes(2) == [1] && cx.bytes(0) == HIGH && cx.bytes(1) == LOW) as u8);
+    Ok(())
+}
+fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+    cx.commit(0, cx.bytes(0), 0.0)?;                  // q <- d : applies at (t, n+1)
+    Ok(Flow::Continue)
+}</pre>
+
+<p><strong>An AVR emulator.</strong> Not written in MSL at all: a foreign device with its own clock, coupled through the same six entry points. Its whole CPU state is one private pin, so the solver can checkpoint and roll it back like any signal.</p>
+
+<pre data-lang="rust">// pins:  pad_in[8], pad_out[8] (PORT BIT)     adc0 (PORT continuous)     reset (PORT BIT)
+//        firmware (PARAM U8[256], STRUCTURAL)  f_cpu (PARAM F64)
+//        cpu (PRIVATE discrete, QUIET; layout: registers, SRAM, timers, its own tick — plain fields)
+//        adc_val (PRIVATE REAL)                log (PRIVATE discrete, RECORD)
+//        irq, wake, sample (PRIVATE event)
+//        resolution (GLOBAL RESOLUTION), start (GLOBAL START)
+// fn 0 "pad change": reads [pad_in[0..8].CHANGED, reset.CHANGED, adc_val.CHANGED]   writes [irq]
+// reaction 0 "run":    on [start, irq, wake]
+//                      reads  [cpu, pad_in[0..8], reset, adc_val, resolution, start.CHANGED, TICK, HORIZON]
+//                      writes [S0 {cpu}, S1..S8 {pad_out[i], LATER}, S9 {wake, LATER|REPLACE},
+//                              S10 {sample, LATER}, S11 {log}]
+// reaction 1 "sample": on [sample]   reads [adc0]   writes [S0 {adc_val}]
+fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
+    if k == 1 { cx.commit(0, &real(cx.f64(0)), 0.0)?; return Ok(Flow::Continue); }
+
+    let mut cpu: Cpu = *cx.get::<Cpu>(CPU).unwrap();           // a copy of the state pin; Cpu: Pod
+    let (now, horizon, res) = (cx.i64(TICK), cx.i64(HORIZON), cx.f64(RES));
+    if cx.bytes(START) == [1] { cpu = Cpu::reset(now); }
+    cpu.set_pads(cx.bits(PAD_IN), cx.bytes(RESET));            // pin-change interrupts are raised here
+    cpu.adc_result(cx.get::<Real>(ADC_VAL));
+
+    // run my own clock through the horizon, or to my first externally visible action
+    let stop = cpu.run(&self.flash, self.ticks_per_cycle, horizon);
+    let dt = (cpu.tick - now) as f64 * res;
+    match stop {
+        Stop::PadWrite { pad, level } => cx.commit(1 + pad, &level, dt)?,   // the edge keeps its exact time
+        Stop::AdcStart                => cx.commit(10, &[], dt)?,           // fire `sample` then
+        Stop::Break { pc }            => cx.commit(11, bytes_of(&Log { pc, known: 1 }), 0.0)?,   // a record
+        Stop::Horizon | Stop::Sleep   => {}
+    }
+    cx.commit(9, &[], cpu.next_wake(now, res))?;               // "advance me to": REPLACE re-arms
+    cx.commit(0, bytes_of(&cpu), 0.0)?;                        // the state, committed like any signal
+    Ok(Flow::Continue)
+}</pre>
+
+<ul>
+<li><strong>How far it may run.</strong> <code>HORIZON</code> is the last tick through which nothing it listens to or reads can change. It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.</li>
+<li><strong>"Wake me at."</strong> A commit with a delay to its private <code>wake</code> event pin; <code>REPLACE</code> re-arms it.</li>
+<li><strong>The ADC.</strong> A second reaction that reads a continuous pin, so only the samples cost an analog landing.</li>
+<li><strong>Rollback.</strong> None of its own: its state is a pin in the owner's checkpoint. An emulator that cannot expose its state marks <code>run</code> <code>IRREVERSIBLE</code> instead, and pays for it with an analog landing at every instant it fires (in a design with a crossing) and a session the host cannot rewind.</li>
+</ul>
+
+<h3>What your MSL becomes</h3>
+
+<p>Each MSL construct lands on one ABI piece:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>You write</th><th>The device gets</th></tr></thead>
+<tbody>
+<tr><td>a contribution <code>i(p, n) +> x</code></td><td>a <strong>term</strong> on <code>{p, n}</code>, operator 1 (<code>FLOW</code>)</td></tr>
+<tr><td><code>v(p, n) +> x</code></td><td>two <code>FLOW</code> terms and a private continuous pin for the branch current</td></tr>
+<tr><td><code>ddt(x)</code>, <code>delay(x, td)</code></td><td>the <strong>term's operator</strong>: <code>DDT</code>, <code>DELAY</code> (<code>idt</code> is stdlib over <code>DDT</code>)</td></tr>
+<tr><td><code>noise(psd, name)</code>, an AC stimulus, <code>limit</code></td><td>a held <strong>input</strong>: <code>NOISE</code>, <code>STIM</code>, <code>LIMIT</code></td></tr>
+<tr><td><code>now()</code>, <code>freq()</code></td><td>an ambient <strong>input</strong>: <code>TIME</code>, <code>FREQ</code></td></tr>
+<tr><td><code>cross(e)</code>, <code>above(e)</code></td><td>a <strong>watch</strong> (<code>CROSS</code>) that fires a private event pin</td></tr>
+<tr><td><code>bound_step(dt)</code></td><td>a <strong>watch</strong> (<code>CAP</code>)</td></tr>
+<tr><td><code>on clk.rise() { … }</code></td><td>a <strong>reaction</strong> on an event pin, fired by a discrete function for the edge</td></tr>
+<tr><td><code>q &lt;- d</code>, <code>after td</code></td><td>a <strong>commit</strong>, with its delay</td></tr>
+<tr><td>a param <code>r: f64</code>; its <code>where</code></td><td>a <code>PARAM</code> <strong>pin</strong>; a boolean pin that must hold for a write to be accepted</td></tr>
+<tr><td>a <code>signal</code>, an internal node</td><td>a private <strong>pin</strong> (discrete, continuous)</td></tr>
+<tr><td><code>temperature()</code>, <code>settle</code></td><td>a global <strong>pin</strong> the session binds</td></tr>
+<tr><td><code>emit!</code></td><td>a commit to a pin flagged <code>RECORD</code></td></tr>
+</tbody></table></div>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>Because a function is pure and a device holds no hidden state, a recorded call is a unit test: the same bytes through the compiled device and through the interpreter must give the same answer. In a debug session the solver also checks every Jacobian against finite differences.</p>
+</div>
+
+<h3>What it changes in the spec</h3>
+
+<p>The ABI brings a few small changes to the language rules. They are decided and will reach the rest of this book in a small follow-up.</p>
+
+<ul>
+<li><strong>Delayed commits do not make time points (<code>LATER</code>).</strong> A commit whose delay always moves time forward by at least one tick changes nothing at the instant that made it. Only its due time is tested, on its own. The one change you can observe: <code>on settle</code> sees fewer time points.</li>
+<li><strong>What a time point is.</strong> A time at which the analog solver produces an accepted solution <em>and</em> runs the time-point procedure. The simulator may accept solutions at other times; those are not time points, and <code>settle</code> does not fire there.</li>
+<li><strong>The C interface of an <code>extern</code> module is this ABI.</strong> <code>"osdi"</code> names the OSDI adapter; <code>"cosim"</code> is a module whose reaction is irreversible. A <code>"cosim"</code> module stays digital-only for now.</li>
+<li><strong>Two new core functions, <code>gmin()</code> and <code>source_scale()</code>,</strong> in the same family as <code>now()</code> and <code>freq()</code>. They let a model see the solver's continuation variables, as junction models in ngspice do.</li>
+<li><strong>Smaller ones.</strong> Two sentences on bytes (all-zero bytes are the all-unknown value; an unknown level's value bytes are zero), a <code>set</code> that would change an extern module's structure is refused like a structural param; records travel as quiet commits.</li>
+</ul>
+
+</section>
+
+<!-- ===================================================== 14 -->
+<section id="cheatsheet" class="chapter">
+<p class="ch-num">Chapter 14</p>
+<h2>Cheat sheet</h2>
+
+<p>One screen of syntax. Everything not here is Rust.</p>
+
+<div class="cheat">
+<div class="cheat-card"><h4>Nature</h4>
+<pre data-lang="msl">nature Bit<T: Repr = bool> { value: T }
+nature Wire { value: Logic, resolve: Logic::wired }
+nature Electrical {
+    potential: Voltage { access: v, units: "V", abstol: 1u },
+    flow:      Current { access: i, units: "A", abstol: 1p },
+}</pre></div>
+
+<div class="cheat-card"><h4>Module, params, signals</h4>
+<pre data-lang="msl">module M<const N: usize>(a: Electrical, in clk: Bit,
+        out q: Bit<u8> = 0, x: f64) where N >= 1 {
+    r: f64 = 1k where r > 0.0;     // param
+    rs: Option<f64>;               // may be left out
+    signal mid: Electrical;
+    signal s: [Bit; N];
+}</pre></div>
+
+<div class="cheat-card"><h4>Body items</h4>
+<pre data-lang="msl">let r1 = Resistor(a, mid) { r: 1k };   // instance
+let half = r / 2.0;                    // named expression
+y = a & b;                             // definition
+q = !(r | qn) after tpd;               // delayed definition
+for k in 0..N { pub let rk = Resistor(a, mid) { r: 1k }; }   // generation</pre></div>
+
+<div class="cheat-card"><h4>Analog</h4>
+<pre data-lang="msl">analog for M {
+    i(a, b) +> v(a, b) / r;            // flow
+    v(vout) +> gain * v(inp);           // potential
+    i(p, n) +> ddt(c * v(p, n));
+    bound_step(1n);
+}</pre></div>
+
+<div class="cheat-card"><h4>Digital</h4>
+<pre data-lang="msl">digital for M {
+    on clk.rise() { q <- d; }
+    on rst_n.fall() || clk.rise() { q <- false; }
+    on at(t0) && en { p <- true; p <- false after w; }
+    on settle { require("hi", v(p, n) <= hi); }
+}</pre></div>
+
+<div class="cheat-card"><h4>Crossing</h4>
+<pre data-lang="msl">module M(a: Electrical, o: Electrical, in ctl: Bit) {
+    let y = transition(level, 0.0, tr, tf);
+}
+analog for M {
+    v(o) +> held.known_or(0.0);        // analog reads digital
+    if ctl.high() { bound_step(1n); }
+}
+digital for M {
+    on above(v(a) - vth) { d <- true; }    // digital reads analog
+}</pre></div>
+
+<div class="cheat-card"><h4>Templates and extern</h4>
+<pre data-lang="msl">cell: C;                               // C: Fn(Cell)
+let c0 = cell(Cell { wl: w, bl: b });
+let m1 = nch(0.13u, 2u)(d, g, s, b);</pre>
+<pre data-lang="msl">#[link("bsim4.osdi", model = "bsim4")]
+extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; }</pre></div>
+
+<div class="cheat-card"><h4>Where names come from</h4>
+<p><strong>Core</strong>, no import: <code>gnd</code> <code>Nature</code> <code>m</code> <code>dtemp</code> <code>str</code>, the probes, <code>ddt</code> <code>delay</code> <code>limit</code> <code>noise</code> <code>cross</code> <code>at</code>, <code>bound_step</code>, <code>emit!</code> <code>include_str!</code>.</p>
+<p><strong>Library</strong>, implied by <code>std::prelude</code>: <code>std::constants</code> <code>std::carriers</code> <code>std::values</code> <code>std::analog</code> <code>std::nets</code> <code>std::convert</code> <code>std::monitor</code> <code>std::io</code>.</p>
+<p>Yours hides both, except a core name (E0457). Chapter 10.</p></div>
+
+<div class="cheat-card"><h4>Files and data</h4>
+<pre data-lang="msl">mod logic;                  // logic.msl or logic/mod.msl
+use util::filters::Rc;      // dependency name
+use crate::logic::Sar;
+const IV: [(f64, f64); 64] = parse_table(include_str!("iv.tbl"));
+emit!("log", msg = "overrange", vin = v(inp));</pre></div>
+</div>
+
+<div class="table-wrap"><table class="lits">
+<thead><tr><th colspan="10">SI suffixes (always <code>f64</code>, case-sensitive)</th></tr></thead>
+<tbody>
+<tr><td><code>T</code> 1e12</td><td><code>G</code> 1e9</td><td><code>M</code> 1e6</td><td><code>k</code> 1e3</td><td><code>m</code> 1e-3</td><td><code>u</code> 1e-6</td><td><code>n</code> 1e-9</td><td><code>p</code> 1e-12</td><td><code>f</code> 1e-15</td><td><code>a</code> 1e-18</td></tr>
+</tbody></table></div>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Write</th><th>Where</th><th>Applies</th></tr></thead>
+<tbody>
+<tr><td><code>y = expr [after d];</code></td><td>module body</td><td>when inputs change, before reactions run</td></tr>
+<tr><td><code>branch +> expr;</code></td><td><code>analog</code></td><td>in the current Newton iteration</td></tr>
+<tr><td><code>q <- expr [after d];</code></td><td>a reaction</td><td>at the next microstep, or <code>d</code> later</td></tr>
+<tr><td><code>let x = expr;</code></td><td>anywhere</td><td>writes nothing; names an expression</td></tr>
+</tbody></table></div>
+</section>

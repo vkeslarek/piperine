@@ -183,3 +183,5 @@ User: "Ok, deixo tu ir tocando, pode ir disparando implementações em seguida o
 ## User answer (2026-11-15): order at a scheduled instant
 
 User: "ABI order: solve, then react (Recommended)" - reactions at t read the analog solution at t (left value); the kept discontinuity handling stays.
+Question: at a scheduled digital instant t, do reactions read the analog value at t (ABI: solve, then react) or the previous time point (today's code: microsteps, then solve)?
+User's choice: "ABI order: solve, then react (Recommended)". solver-abi implements the ABI order (left value at t first, then the instant), keeping the kept discontinuity handling (landing exempt, restart, 1e-3); §15 is rewritten back to that order by the solver-abi feature that changes the code. spec-abi-amendments keeps describing today's code with the §15.2 note.

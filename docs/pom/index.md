@@ -68,20 +68,11 @@ digital for Front {
 ```
 
 The standard names the model uses (`Electrical`, `Bit`, `above`) come from `std::prelude`, the
-standard library crate every crate depends on. The tour supplies a small one, builds the design and asks it questions:
+standard library crate every crate depends on. The tour builds the design over the embedded one and asks it questions:
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};
 
-let std = r#"
-pub nature Electrical {
-    potential: Voltage { access: v, units: "V", abstol: 1u },
-    flow:      Current { access: i, units: "A", abstol: 1p },
-}
-pub nature Bit { value: bool }
-impl Bit { pub fn rise(self) -> Event { 0 } }
-pub module above(level: f64) -> Event {}
-"#;
 let src = r#"
 /// A comparator with hysteresis that drives a flip-flop.
 module Front(vin: Electrical, in clk: Bit, out q: Bit) {
@@ -98,7 +89,7 @@ digital for Front {
     on clk.rise() { q <- d; }
 }
 "#;
-let design = Design::builder().std_source("lib.msl", format!("pub mod prelude {{ {std} }}")).source("front.msl", src).build();
+let design = Design::builder().source("front.msl", src).build();
 assert!(design.diagnostics().is_empty());
 
 // The structure is what was written, by name.

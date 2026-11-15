@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: none - the feature edits prose; the decisions are in `spec.md` (Assumptions) and abi.md §15.
-**Status**: Draft
+**Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run spec**: `cargo test -p piperine-lang --test spec_text`
 **Run lang**: `cargo test -p piperine-lang`
@@ -81,10 +81,10 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] The bullet contains the phrases `at that instant` and `by at least one tick`, and says the due time of such a commit is a scheduled time tested on its own
-- [ ] A1 of the advance procedure and §15 "Event times that are not time points" do not contradict the bullet (read them; edit only if they do)
-- [ ] Test `later_commit_is_not_a_time_point` asserts both phrases inside the section `### 17.2`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] The bullet contains the phrases `at that instant` and `by at least one tick`, and says the due time of such a commit is a scheduled time tested on its own
+- [x] A1 of the advance procedure and §15 "Event times that are not time points" do not contradict the bullet (read them; edit only if they do)
+- [x] Test `later_commit_is_not_a_time_point` asserts both phrases inside the section `### 17.2`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
@@ -102,11 +102,11 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] The definition says a time point is a time at which the analog solver produces an accepted solution `and runs the time-point procedure`
-- [ ] It says a simulator `MAY accept solutions at other times`, that those are not time points and that `settle` does not fire there
-- [ ] §17.2 rule 4 still says instance state advances on every accepted step, and the glossary row of `index.md` for *time point* matches the new definition
-- [ ] Test `time_point_runs_the_procedure` asserts both quoted phrases inside `## 15.`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] The definition says a time point is a time at which the analog solver produces an accepted solution `and runs the time-point procedure`
+- [x] It says a simulator `MAY accept solutions at other times`, that those are not time points and that `settle` does not fire there
+- [x] §17.2 rule 4 still says instance state advances on every accepted step, and the glossary row of `index.md` for *time point* matches the new definition
+- [x] Test `time_point_runs_the_procedure` asserts both quoted phrases inside `## 15.`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
@@ -124,11 +124,11 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] §8.5.8 names the device ABI and its exported symbol `piperine_abi_1`; `"cosim"` is a module whose reaction is irreversible; `"osdi"` names an adapter over the same ABI
-- [ ] §8.5.11, §8.5.15 and §8.5.16 are unchanged (3b is not accepted): `"cosim"` ports stay discrete-only
-- [ ] The G.65 row of Appendix G no longer reads `Open`; its section says what closed it, in the status vocabulary the appendix already uses
-- [ ] Test `extern_c_interface_is_the_device_abi` asserts `piperine_abi_1` inside §8.5 and that the G.65 table row does not contain `Open`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] §8.5.8 names the device ABI and its exported symbol `piperine_abi_1`; `"cosim"` is a module whose reaction is irreversible; `"osdi"` names an adapter over the same ABI
+- [x] §8.5.11, §8.5.15 and §8.5.16 are unchanged (3b is not accepted): `"cosim"` ports stay discrete-only
+- [x] The G.65 row of Appendix G no longer reads `Open`; its section says what closed it, in the status vocabulary the appendix already uses
+- [x] Test `extern_c_interface_is_the_device_abi` asserts `piperine_abi_1` inside §8.5 and that the G.65 table row does not contain `Open`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
@@ -146,11 +146,11 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] §8.5.10 says a `set` that would change the structure of an extern module is refused like a structural param
-- [ ] §23.1 rule 7 and the `E0803` row say the same, and that in a `Dc` sweep that point re-elaborates the instance
-- [ ] `E0803` is still defined once (the existing code guard of `spec_text.rs` passes)
-- [ ] Test `structure_changing_set_is_refused` asserts `E0803` and `extern` inside §23.1 rule 7's section and `re-elaborates` in the same section
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] §8.5.10 says a `set` that would change the structure of an extern module is refused like a structural param
+- [x] §23.1 rule 7 and the `E0803` row say the same, and that in a `Dc` sweep that point re-elaborates the instance
+- [x] `E0803` is still defined once (the existing code guard of `spec_text.rs` passes)
+- [x] Test `structure_changing_set_is_refused` asserts `E0803` and `extern` inside §23.1 rule 7's section and `re-elaborates` in the same section
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
@@ -168,11 +168,11 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] Part I §2 says `all-zero bytes` are the all-unknown value of a `Repr` type
-- [ ] Part II §5.3 says the value bytes of an unknown level are zero
-- [ ] Neither page says where the known flags live ("one known byte per level" was rejected)
-- [ ] Test `zero_bytes_are_the_unknown_value` asserts `all-zero bytes` in `part_i_values.md` and `value bytes` in the §5.3 section of `part_ii_carriers.md`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] Part I §2 says `all-zero bytes` are the all-unknown value of a `Repr` type
+- [x] Part II §5.3 says the value bytes of an unknown level are zero
+- [x] Neither page says where the known flags live ("one known byte per level" was rejected)
+- [x] Test `zero_bytes_are_the_unknown_value` asserts `all-zero bytes` in `part_i_values.md` and `value bytes` in the §5.3 section of `part_ii_carriers.md`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
@@ -190,16 +190,18 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] §14.4 lists `gmin()` and `source_scale()` with their class (they change between solves, like `now()` and `freq()`, so they are not constant during an analysis: §14.4.1 is not contradicted), their value at rest (the session `gmin`; 1.0) and the solves in which they differ from it
-- [ ] §14.4.6 still names no `simparam` session parameter
-- [ ] Every other list of the core environment functions in `docs/spec/` (grep `now()` and `freq()`: Part VII, Appendix H, `index.md`) carries the two names, and the construct-count guard of `spec_text.rs` passes
-- [ ] If a guard of `piperine-lang` ties `crates/piperine-lang/src/pom/builtin.rs` to that list, the two rows are added there in this commit; otherwise `builtin.rs` is untouched
-- [ ] Test `continuation_variables_are_core_functions` asserts `gmin()` and `source_scale()` inside the `### 14.4` section
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] §14.4 lists `gmin()` and `source_scale()` with their class (they change between solves, like `now()` and `freq()`, so they are not constant during an analysis: §14.4.1 is not contradicted), their value at rest (the session `gmin`; 1.0) and the solves in which they differ from it
+- [x] §14.4.6 still names no `simparam` session parameter
+- [x] Every other list of the core environment functions in `docs/spec/` (grep `now()` and `freq()`: Part VII, Appendix H, `index.md`) carries the two names, and the construct-count guard of `spec_text.rs` passes
+- [x] If a guard of `piperine-lang` ties `crates/piperine-lang/src/pom/builtin.rs` to that list, the two rows are added there in this commit; otherwise `builtin.rs` is untouched
+- [x] Test `continuation_variables_are_core_functions` asserts `gmin()` and `source_scale()` inside the `### 14.4` section
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
 **Commit**: `docs(spec): gmin() and source_scale() are core environment functions (ABI amendment 8)`
+
+**Follow-up (B2, own commit, no new task id)**: `gmin` and `source_scale` added as built-in `Fn` rows (§14.4) in `crates/piperine-lang/src/pom/builtin.rs` and `docs/pom/resolution.md`; tests `continuation_variables_are_builtin_functions` and `continuation_variable_redefined_is_e0457` in `pom_resolve.rs` (red first, then green).
 
 ---
 
@@ -213,10 +215,10 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] A numbered note of C.1 says an `emit!` record travels as a commit to a quiet pin, is delivered stamped with the instant it was made, and adds no microstep
-- [ ] §19 rule 1 is unchanged
-- [ ] Test `records_travel_as_quiet_commits` asserts `quiet` and `no microstep` inside the `## C.1` section
-- [ ] Gate: build (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] A numbered note of C.1 says an `emit!` record travels as a commit to a quiet pin, is delivered stamped with the instant it was made, and adds no microstep
+- [x] §19 rule 1 is unchanged
+- [x] Test `records_travel_as_quiet_commits` asserts `quiet` and `no microstep` inside the `## C.1` section
+- [x] Gate: build (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: build
@@ -234,14 +236,14 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] §15.2 states, from `transient.rs`: the solver lands exactly on the time of the change (`predict_step`); what is due at microstep 0 is applied before the solve, so the step that arrives there reads it (`attempt_step`); a change made in a later microstep is read by the first step after it; the landing step is exempt from the truncation-error test (`assess_step`); the next step restarts the integrator, the trapezoidal stage dropping its previous derivative and running as backward Euler (`accept_step`, `TrBdf2::stage_coeffs`)
-- [ ] The backward-Euler limit `h → 0`, the repeated solve (old rule 4) and the impulsive flow are gone as normative text; the two `Resolution` notes that depended on them are removed or rewritten
-- [ ] States under `ddt` are said to be carried by the integrator's history across the jump to the accuracy of the step, not as an exact limit at one time
-- [ ] Every rule number of §15.2 that another page cites (grep `§15.2.` in `docs/spec/`) still exists or its citing sentence is updated in this commit
-- [ ] Step 3.4 of the time-point procedure no longer requires a jump solve inside the instant
-- [ ] `E0504` is defined once and names the failure of a transient step that reads a jump
-- [ ] Test `jump_has_no_solve_of_its_own` asserts, inside `### 15.2`: the phrase `no solve of its own` is present, and `h → 0` and `repeated once` are absent
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] §15.2 states, from `transient.rs`: the solver lands exactly on the time of the change (`predict_step`); what is due at microstep 0 is applied before the solve, so the step that arrives there reads it (`attempt_step`); a change made after the step's solve is read by the next, ordinary step and a host `set` applies after acceptance and is read by the next, restarting step (verification F2/F3); the landing step is exempt from the truncation-error test (`assess_step`); the next step restarts the integrator, the trapezoidal stage dropping its previous derivative and running as backward Euler (`accept_step`, `TrBdf2::stage_coeffs`)
+- [x] The backward-Euler limit `h → 0`, the repeated solve (old rule 4) and the impulsive flow are gone as normative text; the two `Resolution` notes that depended on them are removed or rewritten
+- [x] States under `ddt` are said to be carried by the integrator's history across the jump to the accuracy of the step, not as an exact limit at one time
+- [x] Every rule number of §15.2 that another page cites (grep `§15.2.` in `docs/spec/`) still exists or its citing sentence is updated in this commit
+- [x] Step 3.4 of the time-point procedure no longer requires a jump solve inside the instant
+- [x] `E0504` is defined once and names the failure of a transient step that reads a jump
+- [x] Test `jump_has_no_solve_of_its_own` asserts, inside `### 15.2`: the phrase `no solve of its own` is present, and `h → 0` and `repeated once` are absent
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
@@ -259,12 +261,12 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] C.1 and C.2 rows "the jump (§15.2)" describe the algorithm of T8 and carry no `gap (G.6)`
-- [ ] C.2 row "restart" says: the previous derivative is dropped for one trapezoidal stage after every jump; the step size restarts at 10⁻³ of the last step, floored at the minimum step, after a host `set` only; any other jump keeps the controller's proposal (`propose_dt`, `sets_just_applied`)
-- [ ] C.2.1 row "restart step after a jump" says the same condition
-- [ ] G.6 no longer lists "the jump as a zero-length backward-Euler solve"; the "Highest impact" line of Appendix G no longer names the jump solve
-- [ ] Test `reference_rows_describe_the_kept_jump` asserts: no line of `appendix_c_implementation.md` that starts with `| the jump` contains `gap`, and the `| restart` row contains `set`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] C.1 and C.2 rows "the jump (§15.2)" describe the algorithm of T8 and carry no `gap (G.6)`
+- [x] C.2 row "restart" says: the previous derivative is dropped for one trapezoidal stage after every jump; the step size restarts at 10⁻³ of the last step, floored at the minimum step, after a host `set` only; any other jump keeps the controller's proposal (`propose_dt`, `sets_just_applied`)
+- [x] C.2.1 row "restart step after a jump" says the same condition
+- [x] G.6 no longer lists "the jump as a zero-length backward-Euler solve"; the "Highest impact" line of Appendix G no longer names the jump solve
+- [x] Test `reference_rows_describe_the_kept_jump` asserts: no line of `appendix_c_implementation.md` that starts with `| the jump` contains `gap`, and the `| restart` row contains `set`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
@@ -282,12 +284,12 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] Rule 2 says: a node's row is tested against the potential `abstol` of that node (the smallest potential `abstol` of the natures meeting there, default 1 µV), a branch row against the flow `abstol` (default 1 pA), each plus `reltol · scale`
-- [ ] A sentence says this is the mapping the reference implementation's ngspice parity was validated with
-- [ ] Rule 1 (the update test) is compared with `Tolerances::has_converged` and corrected only where it states something the code does not do
-- [ ] C.2.1's tolerance row agrees with the rule
-- [ ] Test `residual_test_uses_the_present_mapping` asserts, inside `### 17.1`, that the sentence of rule 2 about a node's row contains `potential` and the one about a branch row contains `flow`
-- [ ] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] Rule 2 says: a node's row is tested against the potential `abstol` of that node (the smallest potential `abstol` of the natures meeting there, default 1 µV), a branch row against the flow `abstol` (default 1 pA), each plus `reltol · scale`
+- [x] A sentence says this is the mapping the reference implementation's ngspice parity was validated with
+- [x] Rule 1 (the update test) is compared with `Tolerances::has_converged` and corrected only where it states something the code does not do
+- [x] C.2.1's tolerance row agrees with the rule
+- [x] Test `residual_test_uses_the_present_mapping` asserts, inside `### 17.1`, that the sentence of rule 2 about a node's row contains `potential` and the one about a branch row contains `flow`
+- [x] Gate: full (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: full
@@ -305,12 +307,12 @@ T8 → T9 → T10 → T11
 
 **Done when**:
 
-- [ ] The "Solves" table defines the jump solve as the transient step that reads a jump (the step arriving at its time point, or the first one after it), so the "Jump solve" columns of Parts IV and VII need no edit
-- [ ] `index.md`: the rows for *jump, right value*, *impulsive flow* and *state (of the jump rule)* match the new §15.2 (a row whose term no longer exists is removed)
-- [ ] F.5 says its right values (0.25 V on both capacitors) are those of the first step that reads the jump, and drops the `h → 0` derivation as normative
-- [ ] No other sentence of `docs/spec/` says a jump is solved at the same `t` (grep `jump solve`, `right value`, `second pass`)
-- [ ] Test `jump_solve_is_a_transient_step` asserts the "Solves" table row that starts with `| **jump solve**` contains `transient step`
-- [ ] Gate: build (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
+- [x] The "Solves" table defines the jump solve as the transient step that reads a jump (the step arriving at its time point, or the first one after it), so the "Jump solve" columns of Parts IV and VII need no edit
+- [x] `index.md`: the rows for *jump, right value*, *impulsive flow* and *state (of the jump rule)* match the new §15.2 (a row whose term no longer exists is removed)
+- [x] F.5 says its right values (0.25 V on both capacitors) are those of the first step that reads the jump, and drops the `h → 0` derivation as normative
+- [x] No other sentence of `docs/spec/` says a jump is solved at the same `t` (grep `jump solve`, `right value`, `second pass`)
+- [x] Test `jump_solve_is_a_transient_step` asserts the "Solves" table row that starts with `| **jump solve**` contains `transient step`
+- [x] Gate: build (`cargo test -p piperine-lang` green; test count is the previous count plus 1)
 
 **Tests**: unit
 **Gate**: build
@@ -361,7 +363,8 @@ Proof: `cargo test -p piperine-lang`
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 at dd805f01 - returned (T1-T7 ae9ae5ae..90693bba; gap: gmin/source_scale not in POM builtin table); B2 (T8-T11, Sonnet) at 7ff301da - returned (T8-T11 4cf94794..1446533b + gmin/source_scale builtin 7572e5e3; gap: cross caused by a jump wording vs solver); Verifier (Opus) at b419ac9c - returned (FAIL F1-F7: spec text vs solver code); Fix pass (Opus: delicate spec semantics, small) at a5ea8aa3 - returned (fix pass 63d43683..f0cfb5a1, F1-F7 closed; AC text aligned by orchestrator); Verifier round 2 at 374a188e - returned (PASS; N1-N4 closed)
+**Settled mid-build:** gmin()/source_scale() become POM built-in rows (builtin.rs + docs/pom/resolution.md) in B2 so a model calling them resolves and redefining them is E0457 (orchestrator)
 **Walked:** not applicable - no screen
 
 ---

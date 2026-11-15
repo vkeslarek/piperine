@@ -45,7 +45,7 @@ fn shipped_layouts_have_their_stated_fields() {
     assert_eq!(leaf_size(12), None);
 }
 
-fn field(name: &'static str, leaf: u32, offset: u32, count: u32, known: Option<u32>) -> Field {
+fn field(name: &'static str, leaf: u32, offset: u32, count: u32, known: Option<u32>) -> Field<'static> {
     Field {
         name: Str::from_static(name),
         leaf,
@@ -56,7 +56,7 @@ fn field(name: &'static str, leaf: u32, offset: u32, count: u32, known: Option<u
     }
 }
 
-fn layout(size: u32, align: u32, fields: &[Field]) -> Layout {
+fn layout<'a>(size: u32, align: u32, fields: &'a [Field<'a>]) -> Layout<'a> {
     Layout { size, align, fields: List::from_slice(fields) }
 }
 

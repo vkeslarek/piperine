@@ -80,7 +80,7 @@ fn resistor_shape() -> ShapeRef {
 }
 
 impl Device for Resistor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&RESISTOR, resistor_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -197,7 +197,7 @@ fn gd(cx: &Eval) -> f64 {
 }
 
 impl Device for Diode {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&DIODE, diode_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -258,7 +258,7 @@ fn capacitor_shape() -> ShapeRef {
 }
 
 impl Device for Capacitor {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&CAPACITOR, capacitor_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -306,7 +306,7 @@ fn flip_flop_shape() -> ShapeRef {
 }
 
 impl Device for FlipFlop {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&FLIP_FLOP, flip_flop_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -369,7 +369,7 @@ fn comparator_shape() -> ShapeRef {
 }
 
 impl Device for Comparator {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&COMPARATOR, comparator_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
@@ -415,7 +415,7 @@ fn dac_shape() -> ShapeRef {
 }
 
 impl Device for Dac {
-    fn prototype() -> &'static Shape {
+    fn prototype() -> &'static Shape<'static> {
         shared(&DAC, dac_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {

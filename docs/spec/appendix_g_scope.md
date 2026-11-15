@@ -43,7 +43,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | source search paths (`-I`) | a dependency named in the manifest (§3.6 rule 12) |
 | a package registry | `path` and `git` dependencies (§3.6 rule 7) |
 
-**Highest impact:** G.6 (crossings landed on time, the jump solve), G.8 (import), G.21 (lossy lines), G.22 (load-dependent delay).
+**Highest impact:** G.6 (crossings landed on time), G.8 (import), G.21 (lossy lines), G.22 (load-dependent delay).
 
 ## Summary
 
@@ -77,14 +77,16 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.35 | Continuing after `finish` | Open |
 | G.36 | Flags of a periodic analysis | Open |
 | G.37 | Periodic small-signal: no traced example, no implementation | Open |
-| G.38 | Nothing has been compiled | Open |
+| G.38 | Nothing has been compiled | Closed |
 | G.39 | Size of the addition | Open |
 | G.40–G.44, D1–D17 | Closed in this specification (one table; D4 is G.38) | Closed |
 | G.45–G.48 | Flagged resolutions (one table) | Flagged |
 | G.49–G.63 | Resolutions that narrow or extend the design (one table) | Resolved provisionally |
-| G.64 | Implementation-defined numerics: `normal`, spline end conditions | Resolved provisionally |
-| G.65 | The `"cosim"` interface | Open |
+| G.64 | Implementation-defined numerics: spline end conditions; `normal` is fixed | Resolved provisionally |
+| G.65 | The `"cosim"` interface | Closed |
 | G.66 | Session parameter names of `simparam` | Open |
+| G.67 | Two blanket traits with one method name | Open |
+| G.68 | `Tran` passed to `analysis` names a module | Open |
 
 ## Open items
 
@@ -115,7 +117,6 @@ Alternatives under consideration: a named result port, or `-> name: T`.
 | Gap | Defined in |
 | --- | --- |
 | switch branches | §11 rule 2 |
-| the jump as a zero-length backward-Euler solve | §15.2 |
 | known flags | §3.3 |
 | resolved natures | §4, §5.2 |
 | user `limit` functions | §18 |
@@ -240,7 +241,7 @@ That analysis is defined and not yet implemented (Appendix C.2, G.37).
 Logic that must follow a sweep says so, in one of two ways:
 
 ```rust,fragment
-q = e after if analysis(Tran) { tpd } else { 0.0 };     // §8.2.5 allows it
+q = e after if analysis(Transient) { tpd } else { 0.0 };     // §8.2.5 allows it
 q = inertial(e, tpd);                                    // follows its input in an operating point (§22.5.8)
 ```
 
@@ -255,7 +256,7 @@ Reactions guarded by `analysis(Static)` therefore run. §16.4 does not say wheth
 | `zi_nd` (§22.2.12) | `on settle && analysis(Static)` runs and commits a steady-state history over the sampled one |
 | `idt` with `ic` (§22.2.8) | held at `ic` in those solves, not at its integrated value |
 | `transition`, `inertial` (§22.2.11, §22.5.8) | follow their input directly if it changes in that instant |
-| `CapIc` (§16) | unaffected in `Dc`: its guard also requires `analysis(Tran)` |
+| `CapIc` (§16) | unaffected in `Dc`: its guard also requires `analysis(Transient)` |
 
 What is to be decided: whether `Static` is true there, and if so whether seeding reactions may overwrite state the transient built.
 G.34 decides whether those commits survive.
@@ -285,7 +286,7 @@ A record with `finish = true` on `sim` ends the analysis at its instant, which i
 ### G.36 Flags of a periodic analysis
 
 **Status: Open.**
-The table of §11.1 says `Tran`, `Ac` and `Noise` are constant during an analysis. A periodic small-signal analysis is `Tran` for its trajectory and `Ac` or `Noise` for its linearization (§16.3).
+The table of §11.1 says `Transient`, `Ac` and `Noise` are constant during an analysis. A periodic small-signal analysis is `Transient` for its trajectory and `Ac` or `Noise` for its linearization (§16.3).
 The exception is stated only in the "the model sees" column of §16.3. The table of §11.1 is not amended.
 
 ### G.37 Periodic small-signal: no traced example, no implementation
@@ -296,10 +297,9 @@ A traced example is wanted so that the definition is exercised. `SampleHold` (§
 
 ### G.38 Nothing has been compiled
 
-**Status: Open.**
-No compiler for the language exists. Every standard-library and gallery module in this specification is hand-traced only.
-The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on `Wire`s, and the trace of §15.1.
-The open part is the standard library as a source: Part VII's modules and the galleries of Appendices D, E and F are text, not a compiled library. They are to become `std/*.msl` sources that compile with zero diagnostics, and Part VII's fences excerpts of them; until then a front end resolves their names only against a stand-in prelude.
+**Status: Closed.**
+The standard library is source: `crates/piperine-lang/std/*.msl` compile with zero diagnostics in the POM, and Part VII's fences are excerpts of them (§22). Two guards keep that true. `std_excerpts` ties each Part VII fence to its `std` file and each `std` item to a fence. `std_galleries` builds the 18 gallery fences of Appendices D, E and F against the embedded library and requires no diagnostic, a sound design and no unresolved member.
+What the gates prove is a front end: the library and the galleries are parsed and resolved, and nothing is type-checked, elaborated or executed. The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on `Wire`s, and the trace of §15.1.
 
 ### G.39 Size of the addition
 
@@ -324,7 +324,7 @@ Each item is in force through the `Resolution` note cited, which refers back her
 | Item | Resolved in | In force | Against the design |
 | --- | --- | --- | --- |
 | G.49 | §4 rule 13 | compatible continuous natures also need equal flow names when both declare `flow` | §4 rule 5 tests potential names only; a `Servo` node (§11) no longer meets an `Electrical` one |
-| G.50 | §13 rule 11 | the argument of `at` is a discrete expression: no probe, `now()`, `freq()` or `analysis(Static)` | the design says only that `now()` is not an input |
+| G.50 | §13 rule 11 | the argument of `at` is a discrete expression: no probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)` | the design says only that `now()` is not an input |
 | G.51 | §8.2.21 | an undelayed definition forbids an initial value on the levels it defines | a new static error; no model of this specification is hit |
 | G.52 | §13 rule 16, §5.3.11 | `p.changed()` never fires at `(0, 0)`; a `set` made before the run binds the param | the design commits such a `set` at `(0, 0)` like an initial value |
 | G.53 | §8.4.4 | a placement through a template value takes no param block | removes `cell(c) { m: 2.0 }` |
@@ -341,20 +341,32 @@ Each item is in force through the `Resolution` note cited, which refers back her
 
 ### G.64 Implementation-defined numerics
 
-**Status: Resolved provisionally.** In force: the generator of `normal` (§22.2.17) and the end conditions of the splines of `table_model` (§22.2.15) are implementation-defined and documented.
-Results that depend on either are portable only between implementations that document the same choice: `ClockGen` (Appendix D.2) is such a model. This is a second exception to §0.1.1, beside G.46.
-For review: fix one generator and one pair of end conditions.
+**Status: Resolved provisionally.** In force: the generator of `normal` is the one written in `std::analog` (§22.2.17): SplitMix64 for two uniform draws and Box-Muller for the sample. The end conditions of the splines of `table_model` (§22.2.15) are implementation-defined and documented.
+Results that depend on the end conditions are portable only between implementations that document the same choice. `ClockGen` (Appendix D.2) depends on the generator, which is now fixed. This is an exception to §0.1.1, beside G.46.
+For review: fix one pair of end conditions.
 
 ### G.65 The `"cosim"` interface
 
-**Status: Open.**
-§8.5 gives the contract of an `extern "cosim"` module and no C interface: the step function, its descriptor, and how it returns the next time it wants to run are unspecified.
-In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is not run; every `out` port commits `Unknown`). `"osdi"` is OSDI 0.4 (§8.5.8).
+**Status: Closed.**
+The C interface of an extern module, `"cosim"` included, is the device ABI, whose exported symbol is `piperine_abi_1` (§8.5.8). `"cosim"` ports stay discrete-only (§8.5.11); continuous ports on a `"cosim"` module are not accepted.
+In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is not run; every `out` port commits `Unknown`). `"osdi"` is OSDI 0.4 (§8.5.8), reached through an adapter over the same ABI.
 
 ### G.66 Session parameter names of `simparam`
 
 **Status: Open.**
 `simparam(name, default)` (§14.4) reads a session parameter. This specification names none, so no name is portable between hosts.
+
+### G.67 Two blanket traits with one method name
+
+**Status: Open.**
+A method call on a carrier links a trait method through a blanket `impl<T: Repr> Tr for T` of a trait in scope at the call (§22, STD-06). No section gives a code for two traits in scope that both have the method name.
+In force: the first in declaration order links, with no diagnostic. For review: report an ambiguity, as Rust does.
+
+### G.68 `Tran` passed to `analysis` names a module
+
+**Status: Open.**
+`Transient` is the analysis kind (§22.3.7); `Tran` is the module that places a transmission gate in `std::nets`. Name resolution links `Tran` written as the argument of `analysis` to that module without a diagnostic, because the POM has no type checking: an argument of `analysis` is not required to be an `Analysis` value.
+In force: the specification spells the kind `Transient` everywhere. A later type pass (msl-typeck) should reject a module as the argument of `analysis`.
 
 ## Closed items
 
@@ -362,7 +374,7 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 
 | Item | Question | Decision | Where |
 | --- | --- | --- | --- |
-| G.40 | What an analysis run at a transient's last instant keeps | everything: time, the event queue, discrete state, instance state, the analog history. A `Tran` there is the same transient continued; an analysis without time is one more instant. A periodic steady state is continued transients only. | §16.4, §16.3 |
+| G.40 | What an analysis run at a transient's last instant keeps | everything: time, the event queue, discrete state, instance state, the analog history. A `Transient` there is the same transient continued; an analysis without time is one more instant. A periodic steady state is continued transients only. | §16.4, §16.3 |
 | G.41 | Whether a sampled real value has a sensitivity | a commit of a real value carries the sensitivity of the expression committed, at the commit's instant. The same rule gives the periodic small-signal response. | §23.3.4, §11.1 |
 | G.42 | How the solve tables read in a periodic analysis | the small-signal column is taken at each point of the trajectory, with `now()` its time. `zi_nd` is in its `delay` form there, on purpose. | §16.2, §16.3 |
 | G.43 | A hold that agrees with a potential contribution on the same node | always an error: a hold is a potential source, and a loop of potential contributions is singular whether or not the values agree | §16 |
@@ -389,8 +401,13 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 | P4 | Which manifest keys exist | the manifest holds the tables and keys of one closed table; any other is `E0171`. | §3.6 rule 3 |
 | P5 | How a git dependency is pinned | one of `branch`, `tag` or `rev`, or the default branch; the lockfile records the commit and is honoured while the source is unchanged. | §3.6 rules 7, 13, 14 |
 | P6 | When the manifests are read | in a fifth phase, `package`, before parse and elaboration; a model that meets its conditions is rejected. | §0.3 |
+| S1 | How `std` declares an item the engine implements | `extern "intrinsic" fn`, a second ABI string accepted only in the crate `std`: no body, any types, no `#[derivative]`. | §3 rule 10, §22 rule 4 |
+| S2 | Which items of `std` are written in MSL | every item the language can express has a body; the five that read the characters of a `str` (`matches_bits`, `logic`, `table_model`, `parse_table`, `parse_hex`) stay `extern "intrinsic"`. | §22 |
+| S3 | The analysis kind and the pass switch share a name | the analysis kind is `Transient`; the module `Tran` of §22.3.7 keeps its name. | §11.1.1, §22.3.7 |
+| S4 | The namespaces of `std` | `std::constants`, `std::carriers`, `std::values`, `std::analog`, `std::nets`, `std::convert`, `std::monitor`, `std::io`, all re-exported by `std::prelude`. | §22 |
+| S5 | Where the prelude constants live | `Q`, `K_B`, `EPS0`, `PI`, `E` and `inf` are `pub const` items of `std::constants`; `inf` is `1.0 / 0.0`. | §1 rule 3 |
 
-G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)).
+G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)). S1 to S5 number the decisions of the standard library ([§22](part_vii_stdlib.md#22-standard-library)).
 
 ### Other closed items
 
