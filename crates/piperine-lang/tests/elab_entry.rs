@@ -167,9 +167,9 @@ fn every_diagnostic_has_code_span_and_path() {
     // diagnostic has a code, a span inside the source and, about an instance, its path.
     let leaf = "module Leaf() { r: f64 where r > 0.0; }\n";
     let cases: [(&str, String, Option<&str>); 6] = [
-        ("E0317", format!("{leaf}module Top() {{ let r1 = Leaf {{ r: -1.0 }}(); }}"), Some("Top.r1")),
-        ("E0319", "module Top() { r: f64; }".to_string(), Some("Top")),
-        ("E0341", "module Loop() { let again = Loop { }(); }\nmodule Top() { let l = Loop { }(); }".to_string(), Some("Loop")),
+        ("E0317", format!("{leaf}module Top() {{ let r1 = Leaf {{ r: -1.0 }}(); }}"), Some("Top.r1.r")),
+        ("E0319", "module Leaf() { r: f64; }\nmodule Top() { let l = Leaf { }(); }".to_string(), Some("Top.l")),
+        ("E0341", "module Loop() { let again = Loop { }(); }\nmodule Top() { let l = Loop { }(); }".to_string(), Some("Top.l.again")),
         ("P0001", "module M(p: Electrical, n: Electrical) { }\nanalog for M { if v(p) > 0.0 { i(p, n) +> 1.0; } }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }".to_string(), None),
         ("E0241", "module M(p: Electrical) { }\nanalog for M { i(p, p) +> 1.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s); }".to_string(), None),
         ("E0415", "module M(p: Electrical, n: Electrical) { }\nanalog for M { i(p, n) +> 1.0; v(p, n) +> 1.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }".to_string(), None),
