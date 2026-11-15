@@ -6,7 +6,7 @@
 //! side. Every shape lists its `PARAM` pins first (P5).
 
 use std::ptr::NonNull;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW};
@@ -440,7 +440,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 8] = [const { OnceLock::new() }; 8];
+    static M: [OnceLock<Module>; 12] = [const { OnceLock::new() }; 12];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -450,6 +450,10 @@ pub fn modules() -> Modules {
         dac: module_of::<Dac>(&M[5], "Dac"),
         cubic: module_of::<Cubic>(&M[6], "Cubic"),
         bad_limit: M[7].get_or_init(bad_limit_module),
+        source: module_of::<CurrentSource>(&M[8], "CurrentSource"),
+        counted: module_of::<CountedResistor>(&M[9], "CountedResistor"),
+        probe: module_of::<Probe>(&M[10], "Probe"),
+        faulty: module_of::<Faulty>(&M[11], "Faulty"),
     }
 }
 
@@ -464,6 +468,10 @@ pub struct Modules {
     pub dac: &'static Module,
     pub cubic: &'static Module,
     pub bad_limit: &'static Module,
+    pub source: &'static Module,
+    pub counted: &'static Module,
+    pub probe: &'static Module,
+    pub faulty: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)
@@ -553,5 +561,225 @@ fn bad_limit_module() -> Module {
         destroy,
         eval,
         react,
+    }
+}
+
+// ─── Recording fixtures ─────────────────────────────────────────────────────
+
+/// One call of a recording fixture: its tag, the bytes it read and which of
+/// its partials were seeded.
+#[derive(Clone, Debug)]
+pub struct Call {
+    pub tag: u64,
+    pub reads: Vec<Vec<u8>>,
+    pub seed: Vec<bool>,
+}
+
+static CALLS: Mutex<Vec<Call>> = Mutex::new(Vec::new());
+
+fn record(tag: u64, cx: &Eval, partials: usize) {
+    let call = Call {
+        tag,
+        reads: (0..cx.reads()).map(|i| cx.bytes(i).to_vec()).collect(),
+        seed: (0..partials).map(|p| cx.wanted(p)).collect(),
+    };
+    CALLS.lock().unwrap_or_else(|e| e.into_inner()).push(call);
+}
+
+/// Every recorded call of the fixture tagged `tag`, in order. Each test uses
+/// its own tags, so parallel tests do not see each other's calls.
+pub fn calls(tag: u64) -> Vec<Call> {
+    CALLS.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| c.tag == tag).cloned().collect()
+}
+
+/// The tag a recording fixture was created with (its `tag` param, pin 0).
+fn tag_of(values: &Values<'_>) -> u64 {
+    values.f64(0).map_or(0, |t| t as u64)
+}
+
+/// pins: tag=0, idc=1 (PARAM F64); p=2, n=3 (PORT continuous)
+/// terms: T0 FLOW {p, n} "i" = idc: a current source that reads only a param
+/// fn 0 "i": reads [idc] writes [T0] partials (0←0)=1        (records every call)
+pub struct CurrentSource {
+    tag: u64,
+}
+static SOURCE: OnceLock<ShapeRef> = OnceLock::new();
+
+fn source_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(param("tag"));
+    let idc = s.pin(param("idc"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(flow("i", op::FLOW, p, n));
+    s.function(FunctionSpec {
+        name: "i",
+        reads: vec![pin(idc)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for CurrentSource {
+    fn prototype() -> &'static Shape {
+        shared(&SOURCE, source_shape).shape()
+    }
+    fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((CurrentSource { tag: tag_of(values) }, Arc::clone(shared(&SOURCE, source_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        record(self.tag, cx, 1);
+        let idc = cx.f64(0);
+        cx.set(0, idc);
+        cx.jac()[0] = 1.0;
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// pins: tag=0, r=1 (PARAM F64); p=2, n=3 (PORT continuous)
+/// terms: T0 FLOW {p, n} "i"
+/// fn 0 "i": reads [p, n, r] writes [T0] partials (0←0) (0←1) (0←2)   (records every call)
+pub struct CountedResistor {
+    tag: u64,
+}
+static COUNTED: OnceLock<ShapeRef> = OnceLock::new();
+
+fn counted_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(param("tag"));
+    let r = s.pin(param("r"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(flow("i", op::FLOW, p, n));
+    s.function(FunctionSpec {
+        name: "i",
+        reads: vec![pin(p), pin(n), pin(r)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1), partial(0, 2)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for CountedResistor {
+    fn prototype() -> &'static Shape {
+        shared(&COUNTED, counted_shape).shape()
+    }
+    fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((CountedResistor { tag: tag_of(values) }, Arc::clone(shared(&COUNTED, counted_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        record(self.tag, cx, 3);
+        let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
+        cx.set(0, v / r);
+        cx.jac().copy_from_slice(&[1.0 / r, -1.0 / r, -v / (r * r)]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// pins: tag=0 (PARAM F64); p=1 (PORT continuous)
+/// terms: T0 FLOW {p, GROUND} "g" = v(p): a 1 S conductance
+/// fn 0 "g": reads [p, TIME, FREQ, STATIC, GMIN, SOURCE_SCALE] writes [T0] partials (0←0)=1   (records)
+pub struct Probe {
+    tag: u64,
+}
+static PROBE: OnceLock<ShapeRef> = OnceLock::new();
+
+fn probe_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(param("tag"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let t0 = s.term(flow("g", op::FLOW, p, GROUND));
+    s.function(FunctionSpec {
+        name: "g",
+        reads: vec![
+            pin(p),
+            ambient(ambient::TIME),
+            ambient(ambient::FREQ),
+            ambient(ambient::STATIC),
+            ambient(ambient::GMIN),
+            ambient(ambient::SOURCE_SCALE),
+        ],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Probe {
+    fn prototype() -> &'static Shape {
+        shared(&PROBE, probe_shape).shape()
+    }
+    fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Probe { tag: tag_of(values) }, Arc::clone(shared(&PROBE, probe_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        record(self.tag, cx, 1);
+        let v = cx.f64(0);
+        cx.set(0, v);
+        cx.jac()[0] = 1.0;
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// pins: mode=0 (PARAM F64); p=1, n=2 (PORT continuous)
+/// terms: T0 FLOW {p, n} "i" = v(p) − v(n), origin "fixture:faulty:T0"
+/// fn 0 "i": reads [p, n, mode] writes [T0] partials (0←0) (0←1) (0←2)
+/// mode 1: the value is NaN; 2: the seeded partial (0←0) is +inf; 3: the
+/// partial against the param (never seeded in a Newton solve) is +inf;
+/// 4: the call faults with code 7.
+pub struct Faulty;
+static FAULTY: OnceLock<ShapeRef> = OnceLock::new();
+
+fn faulty_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let mode = s.pin(param("mode"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(TermSpec { origin: "fixture:faulty:T0", ..flow("i", op::FLOW, p, n) });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: "fixture:faulty:fn0",
+        reads: vec![pin(p), pin(n), pin(mode)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1), partial(0, 2)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Faulty {
+    fn prototype() -> &'static Shape {
+        shared(&FAULTY, faulty_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Faulty, Arc::clone(shared(&FAULTY, faulty_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let mode = cx.f64(2);
+        if mode == 4.0 {
+            return Err(Fault::new(7, "mode four"));
+        }
+        let v = cx.f64(0) - cx.f64(1);
+        cx.set(0, if mode == 1.0 { f64::NAN } else { v });
+        let g = if mode == 2.0 { f64::INFINITY } else { 1.0 };
+        let dm = if mode == 3.0 { f64::INFINITY } else { 0.0 };
+        cx.jac().copy_from_slice(&[g, -1.0, dm]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
     }
 }

@@ -108,12 +108,12 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `a_clean_function_is_not_called` passes: a current source that reads only a param is called once across ten iterations; the resistor is called again when a pin moves (C11)
-- [ ] Test `setting_a_discrete_slot_makes_its_readers_dirty` passes (C21)
-- [ ] Test `a_non_finite_value_names_instance_cell_and_origin` passes for a value and for a seeded partial (C12)
-- [ ] Test `ambient_inputs_carry_the_solve_coordinates` passes for `TIME`, `FREQ`, `STATIC`, `GMIN`, `SOURCE_SCALE` (C20)
-- [ ] Partials against params are not seeded in a Newton solve (a counting device asserts the seed bytes)
-- [ ] Gate: full
+- [x] Test `a_clean_function_is_not_called` passes: a current source that reads only a param is called once across ten iterations; the resistor is called again when a pin moves (C11)
+- [x] Test `setting_a_discrete_slot_makes_its_readers_dirty` passes (C21)
+- [x] Test `a_non_finite_value_names_instance_cell_and_origin` passes for a value and for a seeded partial (C12)
+- [x] Test `ambient_inputs_carry_the_solve_coordinates` passes for `TIME`, `FREQ`, `STATIC`, `GMIN`, `SOURCE_SCALE` (C20)
+- [x] Partials against params are not seeded in a Newton solve (a counting device asserts the seed bytes)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

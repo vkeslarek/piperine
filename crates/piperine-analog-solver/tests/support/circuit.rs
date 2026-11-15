@@ -26,3 +26,20 @@ pub fn instance(path: &str, module: &'static Module, pins: Vec<AnalogBinding>) -
 pub fn at(r: &AnalogReference) -> AnalogBinding {
     AnalogBinding::Unknown(r.clone())
 }
+
+/// An instance whose `tag` param (pin 0) is `tag`, for the recording fixtures.
+pub fn tagged(path: &str, module: &'static Module, tag: u64, pins: Vec<AnalogBinding>) -> AnalogInstance {
+    let bytes = (tag as f64).to_le_bytes();
+    let handle = Handle::create(module, &[(0, &bytes)]).unwrap_or_else(|e| panic!("create {path}: {e}"));
+    AnalogInstance { path: path.into(), handle, pins }
+}
+
+/// The eight bytes of an `F64`.
+pub fn f64_bytes(v: f64) -> [u8; 8] {
+    v.to_le_bytes()
+}
+
+/// The `F64` of eight bytes.
+pub fn f64_of(b: &[u8]) -> f64 {
+    f64::from_le_bytes(b[..8].try_into().expect("8 bytes"))
+}

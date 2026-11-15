@@ -110,7 +110,7 @@ fn an_analog_bind_error_names_its_entry() {
 }
 
 /// The fixtures that must pass every rule (all but `bad_limit`).
-fn valid(m: &Modules) -> [(&'static str, &'static Module); 7] {
+fn valid(m: &Modules) -> [(&'static str, &'static Module); 11] {
     [
         ("resistor", m.resistor),
         ("diode", m.diode),
@@ -119,6 +119,10 @@ fn valid(m: &Modules) -> [(&'static str, &'static Module); 7] {
         ("comparator", m.comparator),
         ("dac", m.dac),
         ("cubic", m.cubic),
+        ("source", m.source),
+        ("counted", m.counted),
+        ("probe", m.probe),
+        ("faulty", m.faulty),
     ]
 }
 
@@ -153,6 +157,10 @@ fn every_fixture_function_passes_the_partials_verifier() {
         ("comparator", m.comparator, 0, vec![f(0.4), f(0.1)]),
         ("dac", m.dac, 0, vec![vec![128, 1], f(0.7), f(1e-3), f(2.5)]),
         ("cubic", m.cubic, 0, vec![f(0.7), f(0.2), f(2.0)]),
+        ("source", m.source, 0, vec![f(1e-3)]),
+        ("counted", m.counted, 0, vec![f(1.2), f(0.3), f(1e3)]),
+        ("probe", m.probe, 0, vec![f(0.3), f(1e-6), f(0.0), vec![1], f(1e-12), f(1.0)]),
+        ("faulty", m.faulty, 0, vec![f(0.9), f(0.2), f(0.0)]),
     ];
     for (name, module, k, input) in points {
         let h = Handle::create(module, &[]).expect("create");

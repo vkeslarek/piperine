@@ -9,7 +9,8 @@
 use std::collections::HashSet;
 
 use piperine_abi::caller::Handle;
-use piperine_abi::raw::{Cell, GROUND, Shape, cell, input, kind, part};
+use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::raw::{Cell, Function, GROUND, Shape, cell, input, kind, part};
 use piperine_abi::validate::validate;
 
 use super::device_error;
@@ -38,16 +39,50 @@ pub struct AnalogInstance {
     pub pins: Vec<AnalogBinding>,
 }
 
+/// Where the bytes of one read cell come from in a solve.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Source {
+    /// The unknown at this index of the iterate.
+    Unknown(usize),
+    /// Ground, or an unbound discrete pin: all zero (P3).
+    Zero,
+    /// A discrete slot's bytes.
+    Slot(usize),
+    /// A discrete slot's bytes before its most recent change.
+    Previous(usize),
+    /// A held input's `VALUE` (abi.md §4.2).
+    Held(usize),
+    /// A `LIMIT` input's `LAST`.
+    Last(usize),
+    /// A `LIMIT` input's `AGE`.
+    Age(usize),
+    /// An ambient input, by its constant.
+    Ambient(u32),
+}
+
 /// One analog function taken from a shape.
 #[derive(Debug)]
 pub(crate) struct FnPlan {
     /// Its index in the shape's `functions`.
     pub k: u32,
+    pub name: String,
+    pub origin: String,
+    /// The source and byte length of each read cell.
+    pub reads: Vec<(Source, usize)>,
+    /// The byte length of each written cell.
+    pub write_lens: Vec<usize>,
+    /// One byte per partial: 1 when a Newton solve seeds it (against a
+    /// continuous pin or a held input; never against a param).
+    pub seed: Vec<u8>,
+    /// Writes a term or a limit: needed by every Newton solve.
+    pub rows: bool,
 }
 
 /// One term: its rows and the columns its partials reach.
 #[derive(Debug)]
 pub(crate) struct TermPlan {
+    pub name: String,
+    pub origin: String,
     pub plus: Option<AnalogReference>,
     pub minus: Option<AnalogReference>,
     /// The function (index into `InstancePlan::functions`) and write slot of
@@ -62,7 +97,12 @@ pub(crate) struct TermPlan {
 /// One held input.
 #[derive(Debug)]
 pub(crate) struct InputPlan {
+    pub name: String,
+    pub origin: String,
     pub kind: u32,
+    /// The function and write slot of `PROPOSED` and of `LIMITED`.
+    pub proposed: Option<(usize, usize)>,
+    pub limited: Option<(usize, usize)>,
     /// `(partial, column)`: partials of `PROPOSED` (a `LIMIT`) against a
     /// continuous pin, in the function that writes it.
     pub p: Vec<(usize, AnalogReference)>,
@@ -83,6 +123,8 @@ pub(crate) struct InstancePlan {
 #[derive(Debug)]
 pub struct AnalogPlan {
     pub(crate) instances: Vec<InstancePlan>,
+    /// The byte size of each discrete slot.
+    pub(crate) slots: Vec<usize>,
     pattern: Vec<(AnalogReference, AnalogReference)>,
 }
 
@@ -96,8 +138,9 @@ impl AnalogPlan {
     /// shape breaks a rule of abi.md §9 or a binding does not fit its pin.
     pub fn bind(instances: Vec<AnalogInstance>, netlist: &Netlist) -> Result<AnalogPlan, Error> {
         let mut bound = Vec::with_capacity(instances.len());
+        let mut slots = Vec::new();
         for inst in instances {
-            bound.push(bind_instance(inst, netlist)?);
+            bound.push(bind_instance(inst, netlist, &mut slots)?);
         }
         let mut seen = HashSet::new();
         let mut pattern = Vec::new();
@@ -115,7 +158,8 @@ impl AnalogPlan {
                 }
             }
         }
-        Ok(AnalogPlan { instances: bound, pattern })
+        let slots = slots.into_iter().map(|s| s.unwrap_or(0)).collect();
+        Ok(AnalogPlan { instances: bound, slots, pattern })
     }
 
     /// The matrix positions the declared terms and partials can reach, each once.
@@ -161,7 +205,38 @@ fn column(pins: &[AnalogBinding], shape: &Shape, c: &Cell) -> Option<AnalogRefer
     }
 }
 
-fn bind_instance(inst: AnalogInstance, netlist: &Netlist) -> Result<InstancePlan, Error> {
+/// The source of read cell `c` of function `f`.
+fn source(path: &str, shape: &Shape, pins: &[AnalogBinding], f: &Function, c: &Cell) -> Result<Source, Error> {
+    Ok(match c.kind {
+        cell::PIN => {
+            let pin = shape.pins.get(c.index as usize).expect("validated");
+            let slot = match &pins[c.index as usize] {
+                AnalogBinding::Discrete(s) => *s as usize,
+                AnalogBinding::Unknown(r) if r.idx().is_some() => return Ok(Source::Unknown(r.idx().expect("checked"))),
+                AnalogBinding::Unknown(_) | AnalogBinding::Ground => return Ok(Source::Zero),
+                AnalogBinding::Absent if pin.kind == kind::CONTINUOUS => {
+                    return Err(entry_error(
+                        path,
+                        "function",
+                        f.name.as_str(),
+                        f.origin.as_str(),
+                        format!("reads continuous pin `{}`, which is bound to no unknown", pin.name.as_str()),
+                    ));
+                }
+                AnalogBinding::Absent => return Ok(Source::Zero),
+            };
+            if c.part == part::PREVIOUS { Source::Previous(slot) } else { Source::Slot(slot) }
+        }
+        cell::INPUT => match c.part {
+            part::LAST => Source::Last(c.index as usize),
+            part::AGE => Source::Age(c.index as usize),
+            _ => Source::Held(c.index as usize),
+        },
+        _ => Source::Ambient(c.index),
+    })
+}
+
+fn bind_instance(inst: AnalogInstance, netlist: &Netlist, slots: &mut Vec<Option<usize>>) -> Result<InstancePlan, Error> {
     let AnalogInstance { path, handle, pins } = inst;
     let shape = handle.shape();
     validate(shape).map_err(|e| device_error(format!("instance `{path}`: {e}")))?;
@@ -194,7 +269,15 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist) -> Result<InstancePlan
         };
         let plus = side("plus", t.plus)?;
         let minus = side("minus", t.minus)?;
-        terms.push(TermPlan { plus, minus, value: None, direct: Vec::new(), via: Vec::new() });
+        terms.push(TermPlan {
+            name: t.name.as_str().into(),
+            origin: t.origin.as_str().into(),
+            plus,
+            minus,
+            value: None,
+            direct: Vec::new(),
+            via: Vec::new(),
+        });
     }
     for (i, b) in pins.iter().enumerate() {
         let pin = shape.pins.get(i).expect("checked length");
@@ -212,7 +295,26 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist) -> Result<InstancePlan
                 pin.kind == kind::CONTINUOUS
             }
             AnalogBinding::Ground => pin.kind == kind::CONTINUOUS,
-            AnalogBinding::Discrete(_) => pin.kind == kind::DISCRETE,
+            AnalogBinding::Discrete(slot) if pin.kind == kind::DISCRETE => {
+                let (slot, size) = (*slot as usize, pin.layout.size as usize);
+                if slots.len() <= slot {
+                    slots.resize(slot + 1, None);
+                }
+                match slots[slot] {
+                    Some(other) if other != size => {
+                        return Err(entry_error(
+                            &path,
+                            "pin",
+                            pin.name.as_str(),
+                            pin.origin.as_str(),
+                            format!("{size} bytes on discrete slot {slot}, which another pin binds with {other} (P4)"),
+                        ));
+                    }
+                    _ => slots[slot] = Some(size),
+                }
+                true
+            }
+            AnalogBinding::Discrete(_) => false,
             AnalogBinding::Absent => true,
         };
         if !fits {
@@ -227,7 +329,18 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist) -> Result<InstancePlan
         }
     }
 
-    let mut inputs: Vec<InputPlan> = shape.inputs.iter().map(|x| InputPlan { kind: x.kind, p: Vec::new() }).collect();
+    let mut inputs: Vec<InputPlan> = shape
+        .inputs
+        .iter()
+        .map(|x| InputPlan {
+            name: x.name.as_str().into(),
+            origin: x.origin.as_str().into(),
+            kind: x.kind,
+            proposed: None,
+            limited: None,
+            p: Vec::new(),
+        })
+        .collect();
 
     let mut functions = Vec::new();
     for (k, f) in shape.functions.iter().enumerate() {
@@ -238,6 +351,11 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist) -> Result<InstancePlan
         let fi = functions.len();
         let reads: Vec<Cell> = f.reads.iter().copied().collect();
         for (w, c) in writes.iter().enumerate() {
+            match (c.kind, c.part) {
+                (cell::INPUT, part::PROPOSED) => inputs[c.index as usize].proposed = Some((fi, w)),
+                (cell::INPUT, part::LIMITED) => inputs[c.index as usize].limited = Some((fi, w)),
+                _ => {}
+            }
             if c.kind == cell::TERM && c.part == part::VALUE {
                 let t = &mut terms[c.index as usize];
                 if t.value.is_some() {
@@ -274,7 +392,33 @@ fn bind_instance(inst: AnalogInstance, netlist: &Netlist) -> Result<InstancePlan
                 _ => {}
             }
         }
-        functions.push(FnPlan { k: k as u32 });
+        let mut sources = Vec::with_capacity(reads.len());
+        for c in &reads {
+            sources.push(source(&path, shape, &pins, f, c)?);
+        }
+        let read_lens = cell_lens(shape, &f.reads, Access::FunctionRead).expect("validated");
+        let seed = f
+            .partials
+            .iter()
+            .map(|p| {
+                let r = reads[p.read as usize];
+                let continuous = shape.pins.get(r.index as usize).is_some_and(|x| x.kind == kind::CONTINUOUS);
+                let wanted = (r.kind == cell::PIN && continuous) || (r.kind == cell::INPUT && r.part == part::VALUE);
+                u8::from(wanted)
+            })
+            .collect();
+        let rows = writes.iter().any(|c| {
+            c.kind == cell::TERM || (c.kind == cell::INPUT && matches!(c.part, part::PROPOSED | part::LIMITED))
+        });
+        functions.push(FnPlan {
+            k: k as u32,
+            name: f.name.as_str().into(),
+            origin: f.origin.as_str().into(),
+            reads: sources.into_iter().zip(read_lens).collect(),
+            write_lens: cell_lens(shape, &f.writes, Access::FunctionWrite).expect("validated"),
+            seed,
+            rows,
+        });
     }
     if functions.is_empty() {
         terms.clear();
