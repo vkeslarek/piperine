@@ -186,10 +186,11 @@ fn workflows_name_no_retired_crate() {
     assert!(!ci.contains("requirements.txt"), "ci.yml installs Python requirements");
 }
 
-/// The eight crates the workspace keeps.
+/// The crates the workspace keeps.
 const KEPT_CRATES: &[&str] = &[
     "piperine-abi",
     "piperine-lang",
+    "piperine-ir",
     "piperine-project",
     "piperine-solver",
     "piperine-analog-solver",

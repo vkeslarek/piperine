@@ -3,8 +3,9 @@
 ## Project summary
 
 Piperine is a mixed-signal language and simulator. `piperine-lang` parses the Piperine
-mixed-signal language (MSL, specified in `docs/spec/`) and builds the POM `Design` from it;
-elaboration and code generation are not built yet. The native solver is three crates:
+mixed-signal language (MSL, specified in `docs/spec/`), builds the POM `Design` from it,
+type-checks the M1 subset (`types/`) and elaborates it into `piperine-ir`'s `Ir` (`elab/`);
+code generation from the IR is not built yet. The native solver is three crates:
 `piperine-solver` (the analysis engine and the owner protocol over the device ABI) and two sub-solvers,
 `piperine-analog-solver` and `piperine-digital-solver`, which the solver owner combines.
 Devices speak one ABI, the leaf crate `piperine-abi` (MD-61): the `#[repr(C)]` contract of
@@ -14,7 +15,7 @@ The analog and the digital side meet only through events at an instant, run by t
 protocol (`piperine-solver/src/protocol/`, MD-60, MD-62): no value or snapshot is shared, and
 the device ABI is the only device contract. Rust workspace, edition 2024.
 
-**Today only `piperine-lang`, `piperine-abi` and the three solver crates compile.** The root `piperine`
+**Today only `piperine-lang`, `piperine-ir`, `piperine-abi` and the three solver crates compile.** The root `piperine`
 shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` are kept in the tree but do not
 build yet: they depended on crates that were retired (codegen, ir, python, plugin,
 plugin-macros) and wait for the new device compiler. The root `Cargo.toml` lists the five
@@ -23,10 +24,14 @@ green crates as `default-members`.
 ## Pipeline (the spine)
 
 ```
-source ──parse_and_elaborate──► Design (POM)        crate: piperine-lang   (builds)
-                                    │
-                                    ▼
-                        device compiler (to come)    not in the tree yet
+source ──parse──► Design (POM)                     crate: piperine-lang   (builds)
+                    │  types::Types::check (M1 subset)
+                    │  elab::Elaborator::run
+                    ▼
+                  Ir (piperine-ir)                   crate: piperine-ir     (builds)
+                    │
+                    ▼
+                device compiler (to come)            not in the tree yet
                                     │
                                     ▼
           piperine-solver  ◄── owns ──►  piperine-analog-solver
@@ -70,7 +75,8 @@ compile). Never pass `--workspace`: the root shell and the other four crates do 
 
 | Crate | Role |
 |-------|------|
-| `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`). Spec: `docs/spec/`; POM guide: `docs/pom/`. |
+| `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`); the type checker of the M1 subset (`types/`: `Types::check`, one `P0001` per construct outside the subset) and the elaborator (`elab/`: `Elaborator::run`, `Design` + top module to an `Ir`, reading the POM and never writing it).  Spec: `docs/spec/`; POM guide: `docs/pom/`. |
+| `piperine-ir` | The IR: an elaborated design as an object model (`Ir`: arenas of bodies, functions, instances, nodes, natures behind typed `u32` ids), its builder (`IrBuilder`), `Ir::check()` and the printer (`print_structural`). A leaf crate: no in-tree dependency. Produced by `piperine-lang`'s `elab/`; the contract with the device compiler to come. |
 | `piperine-abi` | The device ABI (MD-61, `.specs/features/device-abi/abi.md`): the `#[repr(C)]` shape, frames and `u32` constants (`raw.rs`), the shipped layouts `BIT`/`REAL`/`BYTE`/`F64`/`NONE` (`layout.rs`), the owned shape builder `ShapeBuf`/`ShapeRef` (`shape.rs`), the `Device` trait and its `Eval`/`React` lenses (`device.rs`), the generic `extern "C"` thunks `module::<D>`/`library` (`thunk.rs`), the solver-side `caller::Handle`, shape-local `validate` and the finite-difference `verify_partials`. Depends on no crate; `unsafe` only in `raw.rs`, `thunk.rs`, `caller.rs`. |
 | `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the owner protocol (`protocol/`) and its adapters (`analyses/adapters.rs`), the bind of device instances (`core/bind.rs`, `core/builder.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-abi` (the device ABI), `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
 | `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors, the device `Assembly` (`device/`: terms, partials, histories, limit iterates, checkpoints) and the secant step of crossing location (`crossing.rs`). Depends only on `piperine-abi`; it names no digital type. |
