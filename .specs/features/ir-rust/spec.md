@@ -270,7 +270,7 @@ Phase A is complete and mergeable without phase B.
 
 **Acceptance Criteria**:
 
-1. The system SHALL evaluate `+`, `-`, `*` and unary `-` on `UInt<N>` and `Int<N>` modulo `2^N`, `Int<N>` in two's complement, for every `N` in 1..=64.
+1. The system SHALL evaluate `+`, `-`, `*`, `/`, `%` and unary `-` on `UInt<N>` and `Int<N>` modulo `2^N`, `Int<N>` in two's complement, for every `N` in 1..=64, a zero divisor being a panic (§1 rule 11).
 2. The system SHALL evaluate `as` between integer types by truncating to the target width and extending by the source's signedness.
 3. The system SHALL evaluate `as` from `f64` to an integer type by saturating to the target's range, with NaN giving 0.
 4. The system SHALL evaluate a shift by `N` or more as the mathematical result truncated to `N` bits.
@@ -343,7 +343,7 @@ Phase A is complete and mergeable without phase B.
 6. WHEN the `Dpwm` body runs with `run` true and duty word 1325 for 8 periods of 400 counts THEN the system SHALL hold `hs` true for 166 counts in the periods whose bit-reversed frame index is below 5 and 165 counts in the others, hold `ls` true from 4 counts after `hs` falls to count 396, and never hold both (buck SPEC §5).
 7. WHEN the `RefRamp` and `Pid` bodies run a scripted sequence of `reference` and `meas` codes THEN the system SHALL commit, sample by sample, the `duty`, `integ`, `deriv` and `e_prev` values of the difference equations of buck SPEC §6.2 to §6.4 and §7.2, bit for bit.
 8. WHEN the `Adc` body sees a rising `sample` with its input held at `V` THEN the system SHALL commit `code` = `floor(V / vref × 1024 + 0.5)` clamped to 0..=1023 after `tconv`, with `done` true from `tconv` to `tconv + tstrobe` (buck SPEC §4.1).
-9. WHEN the comparator body watches an RC charge THEN the system SHALL set its output true at the instant the input passes `vth + hyst / 2`, agreeing with the analytic time under the transient `ToleranceContract`, and false when it passes `vth − hyst / 2` falling.
+9. WHEN the comparator body watches an RC charge and then its discharge THEN the system SHALL set its output true at a time where the analytic input equals `vth + hyst / 2`, and false at a time where it equals `vth − hyst / 2`, each under the transient `ToleranceContract`.
 10. WHEN a carrier read by an `analog` block changes at time `t0` THEN the system SHALL make `t0` a time point and SHALL give the analog response from `t0`, agreeing with the analytic RC response under the transient `ToleranceContract`.
 11. WHEN one circuit of the buck slice runs twice THEN the system SHALL give the same sequence of pin changes, bit for bit and tick for tick.
 
