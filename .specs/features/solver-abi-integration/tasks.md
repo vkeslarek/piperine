@@ -253,11 +253,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Output density is `Σ |H·b|²·PSD` over the columns; contributions keep their names in `NoiseContribution`
-- [ ] Test `a_resistor_divider_has_its_thermal_noise_on_devices` matches the analytic `4kT·(R1∥R2)` within the tolerance the existing noise unit tests use
-- [ ] Test `a_shared_noise_input_cancels_across_the_pair` passes through the driver
-- [ ] The unit tests of `noise.rs` pass with their double ported, assertions unchanged
-- [ ] Gate: full
+- [x] Output density is `Σ |H·b|²·PSD` over the columns; contributions keep their names in `NoiseContribution`
+- [x] Test `a_resistor_divider_has_its_thermal_noise_on_devices` matches the analytic `4kT·(R1∥R2)` within the tolerance the existing noise unit tests use
+- [x] Test `a_shared_noise_input_cancels_across_the_pair` passes through the driver
+- [x] The unit tests of `noise.rs` pass with their double ported, assertions unchanged
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

@@ -639,3 +639,156 @@ impl Device for L {
 pub fn inductor() -> &'static Module {
     module_of::<L>(&L_MODULE, "L")
 }
+
+// ---------------------------------------------------------------------------
+// Noise: a resistor with thermal noise, and a correlated pair
+// ---------------------------------------------------------------------------
+
+/// Boltzmann's constant, J/K.
+pub const K_B: f64 = 1.380649e-23;
+
+fn noise_input(name: &'static str) -> piperine_abi::shape::InputSpec<'static> {
+    piperine_abi::shape::InputSpec { name, origin: ORIGIN, kind: piperine_abi::raw::input::NOISE }
+}
+
+/// `R` with its thermal noise: a current density `4kT/r` through the branch.
+/// pins: r=0 (PARAM F64, 1e3); p=1, n=2 (PORT); temp=3 (GLOBAL TEMPERATURE)
+/// inputs: I0 NOISE "thermal"; terms: T0 FLOW{p, n} "i"
+/// fn 0 "i": reads [p, n, r, I0.VALUE] writes [T0] partials (0<-p) (0<-n) (0<-r) (0<-I0) = 1
+/// fn 1 "thermal": reads [r, temp] writes [I0.PSD]
+pub struct Rn;
+static RN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static RN_MODULE: OnceLock<Module> = OnceLock::new();
+
+fn rn_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(real_param("r", &R_DEFAULT));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t = s.pin(PinSpec {
+        global: piperine_abi::raw::global::TEMPERATURE,
+        ..PinSpec::discrete("temp", role::GLOBAL, &F64)
+    });
+    let i0 = s.input(noise_input("thermal"));
+    let t0 = s.term(flow("i", op::FLOW, p, n));
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![pin(p), pin(n), pin(0), input_cell(i0, part::VALUE)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1), partial(0, 2), partial(0, 3)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "thermal",
+        origin: ORIGIN,
+        reads: vec![pin(0), pin(t)],
+        writes: vec![input_cell(i0, part::PSD)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Rn {
+    fn prototype() -> &'static Shape<'static> {
+        shape_of(&RN_SHAPE, rn_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Rn, Arc::clone(shape_of(&RN_SHAPE, rn_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            let (vp, vn, r, noise) = (cx.f64(0), cx.f64(1), cx.f64(2), cx.f64(3));
+            let g = 1.0 / r;
+            cx.set(0, g * vp - g * vn + noise);
+            cx.jac().copy_from_slice(&[g, -g, -(vp - vn) / (r * r), 1.0]);
+        } else {
+            cx.set(0, 4.0 * K_B * cx.f64(1) / cx.f64(0));
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn resistor_noisy() -> &'static Module {
+    module_of::<Rn>(&RN_MODULE, "Rn")
+}
+
+/// One noise source injected through two terms of one node with gains `1` and
+/// `k`: fully correlated (abi.md A2), so `k = -1` cancels it.
+/// pins: k=0 (PARAM F64, default -1); p=1 (PORT)
+/// inputs: I0 NOISE "n"; terms: T0 FLOW{p, GROUND}, T1 FLOW{p, GROUND}
+/// fn 0 "a": reads [I0.VALUE] writes [T0] partials (0<-0) = 1
+/// fn 1 "b": reads [I0.VALUE, k] writes [T1] partials (0<-0) = k
+/// fn 2 "psd": reads [] writes [I0.PSD] = 1e-18
+pub struct Pair;
+static PAIR_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static PAIR_MODULE: OnceLock<Module> = OnceLock::new();
+const PAIR_DEFAULT: [u8; 8] = (-1.0_f64).to_le_bytes();
+
+fn pair_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(real_param("k", &PAIR_DEFAULT));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let i0 = s.input(noise_input("n"));
+    let t0 = s.term(flow("a", op::FLOW, p, GROUND));
+    let t1 = s.term(flow("b", op::FLOW, p, GROUND));
+    s.function(FunctionSpec {
+        name: "a",
+        origin: ORIGIN,
+        reads: vec![input_cell(i0, part::VALUE)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "b",
+        origin: ORIGIN,
+        reads: vec![input_cell(i0, part::VALUE), pin(0)],
+        writes: vec![term(t1)],
+        partials: vec![partial(0, 0)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "psd",
+        origin: ORIGIN,
+        reads: vec![],
+        writes: vec![input_cell(i0, part::PSD)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Pair {
+    fn prototype() -> &'static Shape<'static> {
+        shape_of(&PAIR_SHAPE, pair_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Pair, Arc::clone(shape_of(&PAIR_SHAPE, pair_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        match k {
+            0 => {
+                let noise = cx.f64(0);
+                cx.set(0, noise);
+                cx.jac().copy_from_slice(&[1.0]);
+            }
+            1 => {
+                let (noise, gain) = (cx.f64(0), cx.f64(1));
+                cx.set(0, gain * noise);
+                cx.jac().copy_from_slice(&[gain]);
+            }
+            _ => cx.set(0, 1.0e-18_f64),
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn noise_pair() -> &'static Module {
+    module_of::<Pair>(&PAIR_MODULE, "Pair")
+}

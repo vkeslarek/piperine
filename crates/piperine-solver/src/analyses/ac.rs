@@ -122,17 +122,23 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
     }
 }
 
+/// The operating point as a vector by unknown index.
+pub(crate) fn operating_vector(circuit: &CircuitInstance, dc_point: &DcAnalysisResult) -> Vec<f64> {
+    let mut op = vec![0.0; circuit.netlist().max_index().map_or(0, |i| i + 1)];
+    for reference in circuit.netlist().all_references() {
+        if let (Some(i), Some(v)) = (reference.idx(), dc_point.values().get(reference.variable())) {
+            op[i] = *v;
+        }
+    }
+    op
+}
+
 impl AcSystem<'_> {
     /// The small-signal system of a circuit of devices at the operating point
     /// (abi.md §10 "Ac"): the matrix and the stimulus right side of the
     /// assembly. No reaction runs and no pin changes during a sweep.
     fn assemble_device(&mut self) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
-        let mut op = vec![0.0; self.circuit.netlist().max_index().map_or(0, |i| i + 1)];
-        for reference in self.circuit.netlist().all_references() {
-            if let (Some(i), Some(v)) = (reference.idx(), self.dc_point.values().get(reference.variable())) {
-                op[i] = *v;
-            }
-        }
+        let op = operating_vector(self.circuit, &self.dc_point);
         let amb = Ambient {
             time: 0.0,
             freq: self.frequency,

@@ -7,7 +7,9 @@
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
 
-use abi_devices::{capacitor, current_ac, diode, inductor, resistor, resistor_opt, vramp, vsine, vsrc};
+use abi_devices::{
+    capacitor, current_ac, diode, inductor, noise_pair, resistor, resistor_noisy, resistor_opt, vramp, vsine, vsrc,
+};
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::Module;
 use piperine_abi::validate::validate;
@@ -58,6 +60,10 @@ fn table() -> Vec<(&'static str, &'static Module, u32, Vec<Vec<Vec<u8>>>)> {
         ("Vramp", vramp(), 0, vec![reals(&[1.0, 0.0, 0.1, 1.0e-3]), reals(&[0.2, 0.2, 0.0, 0.0])]),
         // reads: p, n, f, l
         ("L", inductor(), 0, vec![reals(&[0.3, 0.1, 0.02, 1.0e-3]), reals(&[-1.0, 2.0, -0.5, 2.0e-6])]),
+        // reads: p, n, r, I0.VALUE
+        ("Rn", resistor_noisy(), 0, vec![reals(&[0.7, 0.2, 2.0e3, 0.0]), reals(&[-1.0, 3.0, 47.0, 1.0e-6])]),
+        // fn 1 "b" reads: I0.VALUE, k
+        ("Pair b", noise_pair(), 1, vec![reals(&[0.0, -1.0]), reals(&[2.0, 0.5])]),
         // fn 1 "load" reads: I0.VALUE
         ("Iac load", current_ac(), 1, vec![reals(&[0.0]), reals(&[2.5])]),
     ]

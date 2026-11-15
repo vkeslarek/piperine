@@ -8,6 +8,7 @@
 //! (p6-cleanup-architecture D2). The sweep, output/reference nodes and input
 //! source travel on [`NoiseAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
+use piperine_analog_solver::device::Ambient;
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
@@ -170,6 +171,14 @@ impl<'a> NoiseSolver<'a> {
             let adjoint_sol = self.solve_adjoint_system(stamps)?;
 
             let mut step_density = 0.0;
+            if self.circuit.abi.is_some() {
+                // Output density `Σ |H·b|²·PSD` over the assembly's noise columns.
+                let columns = self.device_columns(f, &adjoint_sol)?;
+                for (element, source, kind, val) in columns {
+                    step_density += val;
+                    Self::record(&mut psd_map, (element, source), kind, val, i, frequencies.len());
+                }
+            }
             for source in &mut self.circuit.devices {
                 let noises = source.noise_current_psd(&self.dc_point, &ac_ctx);
                 for (idx, n) in noises.into_iter().enumerate() {
@@ -190,15 +199,7 @@ impl<'a> NoiseSolver<'a> {
                         source.name().to_string(),
                         n.name.clone().unwrap_or_else(|| idx.to_string())
                     );
-                    let entry = psd_map.entry(key).or_insert_with(|| {
-                        let mut vec = Vec::with_capacity(frequencies.len());
-                        vec.resize(i, 0.0);
-                        (n.kind, vec)
-                    });
-                    while entry.1.len() < i {
-                        entry.1.push(0.0);
-                    }
-                    entry.1.push(val);
+                    Self::record(&mut psd_map, key, n.kind, val, i, frequencies.len());
                 }
             }
             out_noise_sq.push(step_density);
@@ -235,6 +236,59 @@ impl<'a> NoiseSolver<'a> {
             out_noise_sq,
             contributions,
         })
+    }
+
+    /// Appends `val` to the PSD series of `key` at frequency index `i`.
+    fn record(
+        psd_map: &mut HashMap<(String, String), (NoiseKind, Vec<f64>)>,
+        key: (String, String),
+        kind: NoiseKind,
+        val: f64,
+        i: usize,
+        count: usize,
+    ) {
+        let entry = psd_map.entry(key).or_insert_with(|| {
+            let mut vec = Vec::with_capacity(count);
+            vec.resize(i, 0.0);
+            (kind, vec)
+        });
+        while entry.1.len() < i {
+            entry.1.push(0.0);
+        }
+        entry.1.push(val);
+    }
+
+    /// The noise columns of a circuit of devices at `f_hz`, each with its
+    /// contribution `|H·b|²·PSD` to the output: `(instance, input, kind, value)`.
+    fn device_columns(
+        &mut self,
+        f_hz: f64,
+        adjoint: &Array1<Complex<f64>>,
+    ) -> crate::core::result::Result<Vec<(String, String, NoiseKind, f64)>> {
+        let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
+        let amb = Ambient {
+            time: 0.0,
+            freq: f_hz,
+            is_static: false,
+            gmin: self.context.tolerances.gmin,
+            source_scale: 1.0,
+        };
+        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let mut out = Vec::new();
+        for column in bound.analog.noise_sources(&op, amb)? {
+            let h_b = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, b)| {
+                sum + r.idx().map_or(Complex::new(0.0, 0.0), |i| adjoint[i]) * *b
+            });
+            let (element, source) = column.name.rsplit_once('.').unwrap_or(("", column.name.as_str()));
+            let kind = match source {
+                s if s.contains("thermal") => NoiseKind::Thermal,
+                s if s.contains("shot") => NoiseKind::Shot,
+                s if s.contains("flicker") => NoiseKind::Flicker,
+                _ => NoiseKind::Other,
+            };
+            out.push((element.to_string(), source.to_string(), kind, h_b.norm_sqr() * column.psd));
+        }
+        Ok(out)
     }
 
     /// Solves the adjoint system to find noise transfer functions.
@@ -294,6 +348,18 @@ impl<'a> NoiseSolver<'a> {
         f_hz: f64,
         context: &Context,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
+        if circuit.abi.is_some() {
+            let op = crate::analyses::ac::operating_vector(circuit, dc_point);
+            let amb = Ambient {
+                time: 0.0,
+                freq: f_hz,
+                is_static: false,
+                gmin: context.tolerances.gmin,
+                source_scale: 1.0,
+            };
+            let bound = circuit.abi.as_mut().expect("a circuit of devices");
+            return Ok(bound.analog.assemble_ac(&op, amb)?.0);
+        }
         let ac_ctx = AcAnalysisContext {
             frequency: f_hz,
         };
