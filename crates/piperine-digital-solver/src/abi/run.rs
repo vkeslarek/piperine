@@ -388,6 +388,10 @@ fn relax(
         store.restore_net(*net, &saved[i]);
         write_net(plan, store, dirty, obs, *net, 0, &after[i], at);
     }
+    // the group has just settled on what its closing writes show: they are no reason to run it again
+    for f in fns {
+        dirty.0[*f] = false;
+    }
     for net in fires {
         fire_net(plan, store, dirty, obs, net, at);
     }
