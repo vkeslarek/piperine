@@ -60,7 +60,8 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
   definitions, reactions, commits, events, `match`, loops, `let mut`, structs, enums, `idt`,
   `delay`, `noise`, `transition` and the rest of the stdlib's analog operators.
 - **The interpreter is frozen at the M1 analog subset** (user decision R1, 2026-11-15). Digital
-  and mixed forms will run on the transpiled path only.
+  and mixed forms will run on the transpiled path only; their type check and elaboration are
+  `msl-digital`, queued right after `ir-rust`.
 - **`ir-rust` will refuse** `Float<16>`, `Float<128>` and `UInt<N>`/`Int<N>` with N > 64, by name;
   stable Rust has no type for them.
 
