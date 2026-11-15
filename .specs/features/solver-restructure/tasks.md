@@ -795,7 +795,7 @@ Proof: `git diff --quiet e129b869 -- crates/piperine-solver/tests/abi_surface.rs
 Proof: `git diff --quiet e129b869 -- crates/piperine-solver/tests/parity_baseline.rs && cargo test -p piperine-solver --test parity_baseline`
 
 **C32** - Every baseline test not announced in `removed.txt` passes in one of the three solver crates (SR-05, AC 1)
-Proof: `now=$(mktemp); cargo test -p piperine-solver -p piperine-analog-solver -p piperine-digital-solver 2>&1 | grep -E '^test .* \.\.\. ok$' | sed -E 's/^test (.*::)?([A-Za-z0-9_]+) \.\.\. ok$/\2/' | sort -u > "$now"; test -s "$now" && ! comm -23 <(sort -u .specs/features/solver-restructure/baseline.txt) "$now" | grep -vxFf .specs/features/solver-restructure/removed.txt | grep .`
+Proof: `now=$(mktemp); cargo test -p piperine-solver -p piperine-analog-solver -p piperine-digital-solver 2>&1 | grep -E '^test .* \.\.\. ok$' | sed -E 's/^test (.*::)?([A-Za-z0-9_]+) \.\.\. ok$/\2/' | sort -u > "$now"; test -s "$now" && sort -u .specs/features/solver-restructure/baseline.txt > "$now.base" && ! comm -23 "$now.base" "$now" | grep -vxFf .specs/features/solver-restructure/removed.txt | grep .`
 
 **C33** - `piperine-lang` and the three solver crates build all targets with no warning (SR-05, AC 5)
 Proof: `! cargo build -p piperine-lang -p piperine-solver -p piperine-analog-solver -p piperine-digital-solver --all-targets 2>&1 | grep -E '^(warning|error)'`
@@ -819,7 +819,7 @@ Proof: `test "$(wc -l < .specs/features/solver-restructure/baseline.txt)" -ge 25
 Proof: `cargo test -p piperine-lang --test suite_hygiene`
 
 **C40** - The moved guard holds the 11 test functions it had at e129b869, by name (SR-07, AC 4)
-Proof: `test -z "$(comm -23 <(git show e129b869:tests/suite_hygiene.rs | grep -A1 '^#\[test\]' | grep -oE '^fn [a-z_0-9]+' | sort) <(grep -oE '^fn [a-z_0-9]+' crates/piperine-lang/tests/suite_hygiene.rs | sort))"`
+Proof: `a=$(mktemp); b=$(mktemp); git show e129b869:tests/suite_hygiene.rs | grep -A1 '^#\[test\]' | grep -oE '^fn [a-z_0-9]+' | sort > "$a"; grep -oE '^fn [a-z_0-9]+' crates/piperine-lang/tests/suite_hygiene.rs | sort > "$b"; test -s "$a" && test -z "$(comm -23 "$a" "$b")"`
 
 **C41** - The moved guard names no path under a removed crate (SR-07, AC 5)
 Proof: `! grep -nE 'crates/piperine-(codegen|ir|python|plugin|plugin-macros)/' crates/piperine-lang/tests/suite_hygiene.rs`
