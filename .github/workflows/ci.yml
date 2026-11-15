@@ -21,6 +21,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install ngspice (the parity tests compare against it)
+        run: sudo apt-get update && sudo apt-get install -y ngspice
+
       - name: Build Workspace
         run: cargo build
 

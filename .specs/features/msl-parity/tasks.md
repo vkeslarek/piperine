@@ -235,12 +235,12 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] `divider` compares `v(vin)` and `v(mid)`; `diode_series` `v(a)` and `v(b)`; `isrc_r` `v(a)` (ngspice: +1 V)
-- [ ] `.github/workflows/ci.yml` installs ngspice before the test step (Q2, decided)
-- [ ] A failure is reported, never tuned away
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_op`: `divider`, `diode_series`, `isrc_r`
-- [ ] Gate check passes: `cargo test -p piperine-parity`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] `divider` compares `v(vin)` and `v(mid)`; `diode_series` `v(a)` and `v(b)`; `isrc_r` `v(a)` (ngspice: +1 V)
+- [x] `.github/workflows/ci.yml` installs ngspice before the test step (Q2, decided)
+- [x] A failure is reported, never tuned away
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_op`: `divider`, `diode_series`, `isrc_r`
+- [x] Gate check passes: `cargo test -p piperine-parity`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: e2e
 **Gate**: full
