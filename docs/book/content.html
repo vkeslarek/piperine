@@ -64,7 +64,7 @@ analog for Resistor {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model. The solver and its device ABI are built (chapters 13 and 14). The compiler from MSL to the solver does not exist yet, so no MSL source is executed. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model. The solver and its device ABI are built (chapters 13 and 14), and analog MSL designs already run on it, compared with ngspice (chapter 15). Digital and mixed-signal designs do not run yet. This book describes the language as specified.</p>
 </div>
 </section>
 
@@ -1464,7 +1464,7 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Today a program drives it from Rust with devices written by hand. The compiler that turns your MSL into devices comes next, and then the solver runs your source directly.</p>
+  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Analog MSL designs already run on it through the compiler of chapter 15; digital and mixed-signal sources come next.</p>
 </div>
 
 <h3>Three parts, one boundary</h3>
@@ -1570,8 +1570,100 @@ flowchart TD
 </section>
 
 <!-- ===================================================== 15 -->
-<section id="cheatsheet" class="chapter">
+<section id="compiler" class="chapter">
 <p class="ch-num">Chapter 15</p>
+<h2>From source to solver</h2>
+
+<p>The compiler is what connects the two halves of this book: the language of chapters 1 to 12 and the solver of chapters 13 and 14. It reads your MSL, checks it, flattens the design into an intermediate form and hands the solver one device per instance. This chapter follows a source file down that path, so you know what each stage checks and where an error comes from.</p>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>Built for analog circuits. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end, under operating point, DC sweep, AC and transient, and every result is compared with ngspice. Digital and mixed-signal designs pass the front end but do not run yet. The next stage is a backend that prints the intermediate form as Rust and compiles it.</p>
+</div>
+
+<h3>The stages</h3>
+
+<pre class="mermaid">
+flowchart LR
+  S[".msl source"] --> P["Parse and resolve<br/>object model"]
+  P --> T["Type check"]
+  T --> E["Elaborate<br/>one body per variant"]
+  E --> I["Intermediate form"]
+  I --> R["Interpreter<br/>one device per instance"]
+  R --> V["Solver"]
+  I -. "next" .-> X["Rust backend"]
+  X -.-> V
+</pre>
+
+<ol>
+<li><strong>Parse and resolve.</strong> The source becomes the object model of chapter 12. Names are resolved; nothing is computed yet.</li>
+<li><strong>Type check.</strong> Every expression gets a type, every call gets the right number and kind of arguments, and every construct is checked against where it may appear: <code>ddt</code> and <code>limit</code> only inside <code>analog</code>, a <code>where</code> clause only on what it constrains.</li>
+<li><strong>Elaborate.</strong> Starting from the top module, parameters are folded to numbers, instances are walked, and each distinct combination of a module and its compile-time values becomes one <em>body</em>. Functions stay functions: nothing is inlined in full. The <code>where</code> checks on parameters run here, with the real values.</li>
+<li><strong>Intermediate form.</strong> The result is a flat table of instances, each pointing at a body, plus the bodies themselves. It is an object model, not a text format, but it prints in a stable form for reading and for tests. Each body knows which reads its contributions depend on, which fixes the shape of the Jacobian before any number is computed.</li>
+<li><strong>Run.</strong> Today a generic device walks a body at every Newton iteration. It computes values and their derivatives together, with dual numbers, so the Jacobian is exact to the last bit and no derivative is written by hand or derived symbolically.</li>
+</ol>
+
+<h3>A source that runs</h3>
+
+<p>This divider is a complete design. The top module has no ports; its signals are internal nodes and its instances are the devices.</p>
+
+<pre data-lang="msl">mod devices;
+use devices::*;
+
+module Divider() {
+    signal vin: Electrical;
+    signal mid: Electrical;
+    let v1 = Vsource { dc: 10.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, mid);
+    let r2 = Resistor { r: 3k }(mid, gnd);
+}</pre>
+
+<p>Its operating point puts <code>mid</code> at 7.5&nbsp;V, the same number ngspice prints for the same circuit. The diode it can be swapped for shows the analog features the path already carries: a limited junction voltage, the solver's <code>gmin</code>, and a charge term.</p>
+
+<pre data-lang="msl">analog for Diode {
+    let nvt   = n * vt();
+    let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
+    let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
+    let id    = is * ((vd / nvt).exp() - 1.0);
+    i(a, k) +> id + gmin() * vd + ddt(cj0 * vd);
+}</pre>
+
+<h3>Compared with ngspice</h3>
+
+<p>Every circuit the path runs has a twin written for ngspice, and a test runs both and compares every printed number. The tolerance is the same for all of them: 10<sup>−3</sup> relative, plus a floor of 1&nbsp;µV for voltages and 1&nbsp;pA for currents. The tolerance is never loosened to make a test pass.</p>
+
+<table>
+<tr><th>Circuit</th><th>Analysis</th><th>Worst difference</th></tr>
+<tr><td>Resistive divider, current source into a resistor</td><td>operating point</td><td>0</td></tr>
+<tr><td>Diode in series with a resistor</td><td>operating point</td><td>7.5 × 10<sup>−7</sup> relative</td></tr>
+<tr><td>Diode I–V curve</td><td>DC sweep</td><td>inside the floor</td></tr>
+<tr><td>Diode under reverse bias to −20 V</td><td>DC sweep</td><td>5.9 × 10<sup>−21</sup> A</td></tr>
+<tr><td>RC low-pass</td><td>AC</td><td>3 × 10<sup>−9</sup> in magnitude, 1.2 × 10<sup>−9</sup> rad in phase</td></tr>
+<tr><td>RC step response</td><td>transient</td><td>inside the tolerance</td></tr>
+</table>
+
+<p>The comparison catches mistakes. Twenty-two deliberate faults were planted in the models and the compiler, such as removing <code>gmin</code> from the diode, and every fault large enough to show above the tolerance turned a test red.</p>
+
+<h3>Compiler errors</h3>
+
+<p>Errors the language defines keep their codes from chapter 11. Four more belong to the compiler itself:</p>
+
+<table>
+<tr><th>Code</th><th>Meaning</th></tr>
+<tr><td><code>P0001</code></td><td>The construct is valid MSL but the compiler cannot run it yet. It names the construct; nothing is silently skipped.</td></tr>
+<tr><td><code>P0002</code></td><td>A value has the wrong type for where it is used, or a call has the wrong number of arguments.</td></tr>
+<tr><td><code>P0003</code></td><td>The top module you asked for does not exist.</td></tr>
+<tr><td><code>P0004</code></td><td>The compiler built an ill-formed intermediate form. This is a bug in Piperine, not in your source.</td></tr>
+</table>
+
+<h3>What comes next</h3>
+
+<p>The interpreter stays as the reference: it is slow but simple, and every faster backend is checked against it. The next backend prints each body as readable Rust, compiles it once per design and caches it, so nothing is compiled while a simulation runs. The generated source stays on disk, with each function naming the MSL item it came from, so you can read exactly what runs. Digital and mixed-signal designs arrive on that backend.</p>
+</section>
+
+<!-- ===================================================== 16 -->
+<section id="cheatsheet" class="chapter">
+<p class="ch-num">Chapter 16</p>
 <h2>Cheat sheet</h2>
 
 <p>One screen of syntax. Everything not here is Rust.</p>
