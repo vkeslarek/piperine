@@ -1,10 +1,10 @@
 # Solver ABI Digital Specification
 
-Second of three features that make the solver adopt the device ABI (`.specs/features/device-abi/abi.md`, the authority): `solver-abi-core`, `solver-abi-digital` (this one), `solver-abi-analog`.
+One of four features that make the solver adopt the device ABI (`.specs/features/device-abi/abi.md`, the authority): `solver-abi-core`, then `solver-abi-digital` (this one) and `solver-abi-analog` in parallel, then `solver-abi-integration`. This feature edits `crates/piperine-digital-solver` only, so it runs in its own worktree beside `solver-abi-analog`.
 
 ## Problem Statement
 
-The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a strength table, a two-phase `seq`/`comb` contract and a net snapshot the analog side reads. MSL and the device ABI have none of these. The ABI gives the discrete side byte pins, pure functions, reactions and commits, and the user asked for propagation "estilo Verilator, onde a propagação é executada em DAG, até convergir ou falhar". That engine does not exist. This feature builds it inside `piperine-digital-solver`, standalone and unit-tested, beside the old engine; `solver-abi-analog` then switches the owner to it and deletes the old one.
+The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a strength table, a two-phase `seq`/`comb` contract and a net snapshot the analog side reads. MSL and the device ABI have none of these. The ABI gives the discrete side byte pins, pure functions, reactions and commits, and the user asked for propagation "estilo Verilator, onde a propagação é executada em DAG, até convergir ou falhar". That engine does not exist. This feature builds it inside `piperine-digital-solver`, standalone and unit-tested, beside the old engine; `solver-abi-integration` then switches the owner to it and deletes the old one.
 
 ## Goals
 
@@ -12,14 +12,16 @@ The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a st
 - [ ] Propagation is a levelized DAG over functions, repeated to a fixed point, with a bounded failure that names the nets.
 - [ ] The engine can be checkpointed and restored with no device call, and advanced to the first instant that touches the analog side without running it.
 - [ ] The crate's old engine and its 27 unit tests are untouched and green.
+- [ ] No file outside `crates/piperine-digital-solver` changes, and the engine's facade fits the `DiscreteSide` trait of `solver-abi-core` through a thin adapter.
 
 ## Out of Scope
 
 | Feature | Reason |
 | ------- | ------ |
-| Deleting the strength table, `LogicValue`, the `seq`/`comb` contract and the shared snapshot | the owner still runs on them; `solver-abi-analog` deletes them in the commit that removes their last user |
-| The owner protocol with the analog sub-solver (landing, replay after a rejected step, the host sink) | `solver-abi-analog`; this feature provides `checkpoint`, `restore`, `advance` and `run_instant` |
-| Analog functions, terms, inputs, watches | `solver-abi-analog` |
+| Deleting the strength table, `LogicValue`, the `seq`/`comb` contract and the shared snapshot | the owner still runs on them; `solver-abi-integration` deletes them in the commit that removes their last user |
+| The owner protocol (landing, replay after a rejected step, the host sink) | `solver-abi-core` wrote it on stubs; this feature provides the real `checkpoint`, `restore`, `advance`, `preview_boundary` and `run_instant` |
+| Implementing `DiscreteSide` for `Digital`, and any edit to `piperine-solver` | `solver-abi-integration`: the trait lives in the owner, which this crate cannot depend on |
+| Analog functions, terms, inputs, watches | `solver-abi-analog` (parallel) |
 | `force` and `release` (abi.md P8), host drives of ports, `E0806` | `solver-host-seam` (SCH-01, SCH-02, SCH-04) |
 | The settle commit (a commit made on `SETTLE` is due at the next time point, §15 S1 to S6) | `solver-time-point` (SCT-05 AC 2, 3); here such a commit fails loud (SAD-12) |
 | Exact reachability for `HORIZON` (abi.md R5) | a conservative horizon is always sound (SAD-17); the tight one is an optimization |
@@ -41,7 +43,8 @@ The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a st
 | `HORIZON` | the tick before the earliest pending commit, capped by a limit the owner sets | a smaller horizon is always sound (R5: "may run its own clock through `HORIZON`") | y - agent's discretion |
 | Defaults | tick 1 fs; 1000 microsteps per instant; relaxation passes = `RELAX` nets in the cycle + 1 | `docs/spec/appendix_c_implementation.md` C.2.1; abi.md D1 | y - settled by the spec |
 | Error codes | `E0501` (an instant does not go quiet), `E0502` (tick range), `E0435` (NaN delay) | `docs/spec/part_v_execution.md` §15 "Errors"; umbrella SCI-02, SCE-02 | y - settled by the spec |
-| Who models, who verifies | Opus implements, Fable verifies | user, round 2 | y |
+| Who models, who verifies | Sonnet implements and Opus verifies by default; the orchestrator may have Opus implement (a different Opus verifies). This feature: 13 tasks, protocol-delicate (ordering, transport, look-ahead), not numerically delicate | user, 2026-11-15, through the coordinator | y |
+| Parallel work | the feature touches `crates/piperine-digital-solver` only; its boundary guard is a test of this crate, not an edit of the owner's guard target | user, 2026-11-15: digital and analog "runnable in parallel in separate worktrees (neither touches the other's crate)" | y |
 | Proof vehicle | unit tests on hand-written `Device`s (flip-flop, gates, counter with a timer, a resolver, an emulator stub) | user: unit tests only | y |
 
 **Open questions:** none - all resolved or logged above.
@@ -119,10 +122,10 @@ The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a st
 
 1. WHEN the engine is restored to a checkpoint THEN its store, queue and observation buffer SHALL equal, byte for byte, their state when the checkpoint was taken, and no device SHALL be called.
 2. WHEN the same plan, initial values and host commits are run twice THEN the sequence of observations SHALL be identical.
-3. WHEN the engine is asked to advance to a tick THEN it SHALL run the instants up to that tick in order and stop before the first instant that is a time point or that fires an `IRREVERSIBLE` reaction, leaving that instant untouched.
+3. WHEN the engine is asked to advance to a tick THEN it SHALL run the instants up to that tick in order and stop before the first instant that is a time point or that fires an `IRREVERSIBLE` reaction, leaving that instant untouched and reporting whether it is a time point.
 4. The engine SHALL treat an instant as a time point when, after its commits and functions apply, a net flagged as read by the analog side changed, or a reaction fires that reads a continuous pin, or a reaction fires that has a statement without `LATER` whose pin reaches one of those through reads and writes.
 5. WHEN an instant changes nothing that reaches the analog side THEN `advance` SHALL run it and SHALL NOT stop there.
-6. WHEN the owner runs an instant with a vector of samples THEN every reaction that reads a continuous pin SHALL read its sample, and the outcome SHALL list the analog-read nets that changed, the event nets that fired and whether the instant is final.
+6. WHEN the owner runs an instant with a vector of samples THEN every reaction that reads a continuous pin SHALL read its sample, and the outcome SHALL list the analog-read nets that changed with their bytes, whether a host write to a `PARAM` or `GLOBAL` net applied, and whether the instant is final.
 7. WHEN a reaction reads `TICK` THEN it SHALL read the instant's tick, and `HORIZON` SHALL be no later than the tick before the earliest pending commit and no later than the limit the owner set.
 8. IF a commit is due later than the tick the engine is advanced to THEN it SHALL stay pending.
 9. WHEN two commits are due at times that round to the same tick THEN they SHALL apply in one instant.
@@ -199,7 +202,9 @@ The digital sub-solver is a Verilog-shaped engine: four-state `LogicValue`, a st
 - `.specs/features/solver-completeness/spec.md`: "P1: The event boundary and the digital DAG" (AC 3, 5, 7 to 19); `context.md` rounds 1 and 2.
 - `docs/spec/part_v_execution.md` §15 (ticks, the instant, errors), §15.1 (the traced instant); `appendix_c_implementation.md` C.2.1 (defaults).
 - `.specs/STATE.md` MD-60, MD-61 (proposed).
-- `crates/piperine-digital-solver/src/` as it stands: what must stay green until `solver-abi-analog`.
+- `.specs/features/solver-abi-core/design.md`, component `protocol`: the `DiscreteSide` trait this engine's facade must fit.
+- The coordinator's message of 2026-11-15 (user): parallel worktrees, model roles.
+- `crates/piperine-digital-solver/src/` as it stands: what must stay green until `solver-abi-integration`.
 
 ---
 

@@ -12,15 +12,14 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Draft
 **Build**: `cargo build -p piperine-digital-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run digital**: `cargo test -p piperine-digital-solver`
-**Run guards**: `cargo test -p piperine-solver --test crate_boundaries`
 
-Executors: Opus sub-agents, one commit per task. Verifier: Fable. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push. Starts after `solver-abi-core` is done (the crate `piperine-abi` and MD-61 exist).
+Executors: Sonnet sub-agents by default, one commit per task; verifier: Opus. The orchestrator may have Opus implement instead (a different Opus then verifies): the feature is protocol-delicate (ordering, transport, look-ahead), not numerically delicate, 13 tasks. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push. Starts after `solver-abi-core` is done (the crate `piperine-abi`, MD-61 and the `DiscreteSide` trait exist). Runs in parallel with `solver-abi-analog`, in its own worktree branched from the last commit of `solver-abi-core`: **no file outside `crates/piperine-digital-solver` is edited**, so the two branches merge without conflict.
 
 Rules every task follows:
 
 - **abi.md is the contract.** Rule names (P, F, R, C, D) are its own; a test cites the rule it proves in a comment.
 - **The old engine is not touched.** No edit to `src/{drivers,events,interface,scheduler,state,topology}.rs`; `limits.rs` and `error.rs` only gain items. The 27 existing unit tests pass unchanged after every commit.
-- **No analog type, no `unsafe`.** The new modules name nothing of `piperine-analog-solver` or `piperine-solver`, and call devices only through `piperine_abi::caller::Handle`.
+- **No analog type, no `unsafe`, no owner.** The new modules name nothing of `piperine-analog-solver` or `piperine-solver`, and call devices only through `piperine_abi::caller::Handle`.
 - **No macro** for tables, devices or helpers: data and plain functions.
 - **New tests go in integration targets** under `crates/piperine-digital-solver/tests/`, so the library's own unit-test count stays 27 (check C45 reads that number).
 - Tests derive from the spec's criteria and abi.md's rules, never from the implementation. Test functions have exactly the names the checks cite. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
@@ -40,7 +39,7 @@ Rules every task follows:
 | Engine execution (`run`, `instant`, `advance`, `engine`, `observe`) | unit | each AC of SAD-06 to SAD-22 and each edge case of the spec, on hand-written `Device`s | `crates/piperine-digital-solver/tests/{functions,reactions,instant,checkpoint,advance,host}.rs` | `cargo test -p piperine-digital-solver` |
 | Fixture devices | unit | each device passes `piperine_abi::validate` | `crates/piperine-digital-solver/tests/support/devices.rs`, `crates/piperine-digital-solver/tests/devices.rs` | `cargo test -p piperine-digital-solver --test devices` |
 | The old engine | unit | its 27 tests, unchanged | `crates/piperine-digital-solver/src/*.rs` (`#[cfg(test)]`) | `cargo test -p piperine-digital-solver --lib` |
-| Structural guards | unit | the crate depends on `piperine-abi` only; the new modules name no analog type | `crates/piperine-solver/tests/crate_boundaries.rs` | `cargo test -p piperine-solver --test crate_boundaries` |
+| Boundary guard of the crate | unit | the manifest depends on `piperine-abi` only; the new modules name no analog or owner item and hold no `unsafe` | `crates/piperine-digital-solver/tests/boundary.rs` | `cargo test -p piperine-digital-solver --test boundary` |
 
 ## Gate Check Commands
 
@@ -49,8 +48,8 @@ Rules every task follows:
 | Gate Level | When to Use | Command |
 | ---------- | ----------- | ------- |
 | Quick | never alone | `cargo test -p piperine-digital-solver --test <the task's target>` |
-| Full | every task | `cargo test -p piperine-digital-solver` (27 old tests plus the new ones) and `cargo test -p piperine-solver --test crate_boundaries` |
-| Build | last task of each phase | Full, plus `cargo test -p piperine-solver` (the owner still runs on the old engine: nothing may move), plus the two `**Build**` commands, plus `cargo test -p piperine-lang --test suite_hygiene` |
+| Full | every task | `cargo test -p piperine-digital-solver` (27 old tests plus the new ones) |
+| Build | last task of each phase | Full, plus `cargo test -p piperine-solver` unedited (the owner still runs on the old engine: nothing may move), plus the two `**Build**` commands, plus `cargo test -p piperine-lang --test suite_hygiene` |
 
 ---
 
@@ -77,14 +76,14 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 ### T1: Ticks, typed errors and the dependency on `piperine-abi`
 
 **What**: Integer time (`Tick`, `Resolution`, `Due`) and the typed variants of `DigitalError`.
-**Where**: `crates/piperine-digital-solver/src/abi/tick.rs` (+ `Cargo.toml` dependency, `src/lib.rs` `pub mod abi`, `src/error.rs` new variants, target `tests/ticks.rs`)
+**Where**: `crates/piperine-digital-solver/src/abi/tick.rs` (+ `crates/piperine-digital-solver/Cargo.toml` dependency, `src/lib.rs` `pub mod abi`, `src/error.rs` new variants, target `tests/ticks.rs`)
 **Depends on**: None
 **Reuses**: design `tick`, "Error Handling Strategy"; `src/error.rs` (its two variants and `Display` stay)
 **Requirement**: SAD-01, SAD-02, SAD-03
 
 **Done when**:
 
-- [ ] `piperine-digital-solver` depends on `piperine-abi` and nothing else in the tree; `sub_solvers_depend_on_the_abi_crate_only` passes
+- [ ] `piperine-digital-solver` depends on `piperine-abi` and nothing else in the tree; `cargo test -p piperine-solver --test crate_boundaries` passes unedited (`sub_solvers_depend_on_the_abi_crate_only`)
 - [ ] Test `a_delay_is_due_at_the_nearest_tick` passes for delays below, at and above half a tick (C1)
 - [ ] Test `a_time_outside_the_tick_range_is_e0502` passes (C2)
 - [ ] Test `a_nan_delay_is_e0435` and test `an_infinite_delay_never_comes_due` pass (C3, C4)
@@ -359,25 +358,26 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 ---
 
-### T13: Boundary guard for the new engine
+### T13: Boundary guard and the facade's fit
 
-**What**: Extend the structural guard: the `abi` modules of the digital crate name no analog type and hold no `unsafe`; the old files are byte-identical to the feature's base.
-**Where**: `crates/piperine-solver/tests/crate_boundaries.rs`
+**What**: A guard target of this crate: dependency, no analog or owner item, no `unsafe`, the old files untouched; and a compile-time proof that `Digital` offers every operation of `DiscreteSide`.
+**Where**: `crates/piperine-digital-solver/tests/boundary.rs`
 **Depends on**: T12
-**Reuses**: the scan helpers of the target; `digital_sources_name_no_analog_type`
+**Reuses**: the scan style of `crates/piperine-solver/tests/crate_boundaries.rs` (plain `std::fs`); `.specs/features/solver-abi-core/design.md` component `protocol` for the trait's method list
 **Requirement**: SAD-01, SAD-21
 
 **Done when**:
 
-- [ ] `digital_sources_name_no_analog_type` covers `src/abi/` (C44)
-- [ ] Test `digital_abi_modules_hold_no_unsafe` passes
-- [ ] `git diff <base>..HEAD -- crates/piperine-digital-solver/src/{drivers,events,interface,scheduler,state,topology}.rs` is empty, where `<base>` is the commit before T1; the commit body states the base hash
+- [ ] Test `the_crate_depends_on_the_abi_crate_only` reads this crate's manifest
+- [ ] Test `abi_modules_name_no_analog_or_owner_item` scans `src/abi/` for `piperine_analog_solver`, `piperine_solver`, `Netlist`, `Stamp`, `AnalogReference` (C44); test `abi_modules_hold_no_unsafe` passes
+- [ ] Test `the_facade_offers_every_operation_of_the_discrete_side` calls each of `start`, `next_due`, `advance`, `preview_boundary`, `fire`, `run_instant`, `checkpoint`, `restore`, `shadow`, `host_commit`, `drain_observations` once on a small plan, with the argument and result shapes the trait of `solver-abi-core` uses after the obvious conversions (`Tick` and `i64`, `NetId` and `u32`)
+- [ ] `git diff <base>..HEAD --stat -- . ':!crates/piperine-digital-solver'` is empty, and so is the diff of `src/{drivers,events,interface,scheduler,state,topology}.rs`, where `<base>` is the commit before T1; the commit body states the base hash
 - [ ] `cargo test -p piperine-digital-solver --lib` reports the 27 old tests passing (C45), and `cargo test -p piperine-solver` is green
 - [ ] Gate: build
 
 **Tests**: unit
 **Gate**: build
-**Commit**: `test(solver): boundary guard over the ABI digital engine`
+**Commit**: `test(digital): boundary guard and facade fit of the ABI engine`
 
 ---
 
@@ -512,8 +512,8 @@ Proof: run digital | test reshape_on_the_shadow_names_the_instance_and_changes_n
 **C43** - The boundary preview of a landing applies microstep 0 on a copy, runs no reaction and changes nothing (SAD-22, AC 10)
 Proof: run digital | test preview_boundary_applies_microstep_zero_on_a_copy ... ok
 
-**C44** - The digital crate depends on `piperine-abi` only and its new modules name no analog type (SAD-01, AC 1)
-Proof: run guards | test digital_sources_name_no_analog_type ... ok
+**C44** - The digital crate depends on `piperine-abi` only and its new modules name no analog or owner item (SAD-01, AC 1)
+Proof: run digital | test abi_modules_name_no_analog_or_owner_item ... ok
 
 **C45** - The old engine's unit tests pass unchanged (SAD-21)
 Proof: `cargo test -p piperine-digital-solver --lib 2>&1 | grep -E '^test result: ok\. 27 passed'`
@@ -545,4 +545,4 @@ Each task is one module of the engine with its own test target. T1 also adds the
 
 ## Test Co-location Validation
 
-Every task adds its tests in the same commit, in the target the matrix names. T6 is test support with its own target (`devices.rs`). T13 is a guard: its test is the deliverable. No task says `Tests: none`.
+Every task adds its tests in the same commit, in the target the matrix names. T6 is test support with its own target (`devices.rs`). T13 is a guard inside this crate: its test is the deliverable. No task says `Tests: none`.
