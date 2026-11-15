@@ -1698,6 +1698,8 @@ pub(crate) struct DeviceRun {
     failed: Option<piperine_analog_solver::error::Error>,
     /// The session's tick length.
     spt: f64,
+    /// The smallest `CAP` of the last accepted solution: the next step's bound.
+    cap: f64,
 }
 
 /// A converged attempt and its truncation verdict, until `device_accept`.
@@ -1768,6 +1770,7 @@ impl TransientSolver<'_> {
             op: None,
             failed: None,
             spt,
+            cap: f64::INFINITY,
         };
         let stop = self.options.stop_time;
         let hooks = self.host.clone();
@@ -1896,10 +1899,11 @@ impl TransientSolver<'_> {
         Ok(())
     }
 
-    /// The end of the next step: the controller's proposal, at most the stop time.
+    /// The end of the next step: the controller's proposal, at most the stop
+    /// time and the smallest `CAP` of the last accepted solution.
     pub(crate) fn device_propose(&mut self, run: &mut DeviceRun) -> f64 {
         let st = &run.st;
-        run.proposed = (st.current_time + st.dt).min(self.options.stop_time);
+        run.proposed = (st.current_time + st.dt).min(self.options.stop_time).min(st.current_time + run.cap);
         run.proposed
     }
 
@@ -2018,14 +2022,18 @@ impl TransientSolver<'_> {
         self.system.uic_hold = false;
         st.dt_min_seen = st.dt_min_seen.min(dt_actual);
         st.dt_max_seen = st.dt_max_seen.max(dt_actual);
-        self.accept_assembly(t_next)?;
+        let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
+        let amb = Ambient { time: t_next, ..self.system.ambient() };
+        let (accepted, cap) = crate::analyses::adapters::accepted(self.device_bound(), &x, amb)?;
+        run.cap = cap;
+        let st = &mut run.st;
         self.record_step(&mut run.steps, t_next, snapshot);
         st.current_time = t_next;
         self.system.prev_h = dt_actual;
         st.dt = self.propose_dt(milne, dt_actual, dt_proposed, post_set_step, false);
         st.sets_just_applied = false;
         run.last_dt = dt_actual;
-        Ok(crate::protocol::Accepted::default())
+        Ok(accepted)
     }
 
     /// The analog copy takes the boundary; after a jump the next step starts
@@ -2079,6 +2087,11 @@ impl DeviceRun {
     /// The time of the last attempt.
     pub(crate) fn attempted(&self) -> f64 {
         self.attempted
+    }
+
+    /// The smallest `CAP` of an accepted solution bounds the next step.
+    pub(crate) fn set_cap(&mut self, cap: f64) {
+        self.cap = cap;
     }
 }
 

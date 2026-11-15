@@ -312,7 +312,8 @@ impl AnalogSide for TransientSide<'_, '_> {
 
     fn equilibrium(&mut self) -> Result<Accepted> {
         let (x, amb) = self.tran.device_op_round(&mut self.run)?;
-        let (acc, _cap) = accepted(self.tran.device_bound(), x.as_slice().expect("a contiguous solution"), amb)?;
+        let (acc, cap) = accepted(self.tran.device_bound(), x.as_slice().expect("a contiguous solution"), amb)?;
+        self.run.set_cap(cap);
         Ok(acc)
     }
 

@@ -442,11 +442,11 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_fired_crossing_is_a_commit_at_the_landing` passes: the comparator's `up` fires at microstep 0 of the first accepted time after the sign change, and `out` changes one microstep later
-- [ ] Test `a_reaction_reads_the_accepted_solution` passes with the `Sampler`
-- [ ] Test `a_cap_watch_bounds_the_next_step` passes: a sine with a 1 ns cap never takes a longer step
-- [ ] The crossing is not located inside the step: the test names `solver-crossings` in a comment and asserts the present behavior
-- [ ] Gate: build
+- [x] Test `a_fired_crossing_is_a_commit_at_the_landing` passes: the comparator's `up` fires at microstep 0 of the first accepted time after the sign change, and `out` changes one microstep later
+- [x] Test `a_reaction_reads_the_accepted_solution` passes with the `Sampler`
+- [x] Test `a_cap_watch_bounds_the_next_step` passes: a sine with a 1 ns cap never takes a longer step
+- [x] The crossing is not located inside the step: the test names `solver-crossings` in a comment and asserts the present behavior
+- [x] Gate: build
 
 **Tests**: unit
 **Gate**: build

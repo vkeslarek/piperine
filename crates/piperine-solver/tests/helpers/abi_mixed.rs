@@ -881,3 +881,50 @@ impl Device for FlakyG {
 pub fn flaky_g() -> &'static Module {
     module_of::<FlakyG>(&FLAKY, "FlakyG")
 }
+
+// ─── Capped ─────────────────────────────────────────────────────────────────
+
+const ONE_NS: [u8; 8] = 1e-9f64.to_le_bytes();
+
+/// Bounds every step by its `cap` param through a `CAP` watch.
+/// pins: cap=0 (PARAM F64, default 1 ns); p=1 (PORT continuous)
+/// watches: W0 CAP;  fn 0: reads [p, cap] writes [W0]; W0 <- cap
+pub struct Capped;
+static CAPPED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static CAPPED: OnceLock<Module> = OnceLock::new();
+
+fn capped_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let cap = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_NS, ..PinSpec::discrete("cap", role::PARAM, &F64) });
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let w0 = s.watch(watch_spec("cap", watch::CAP, DEFAULT));
+    s.function(FunctionSpec {
+        name: "cap",
+        origin: ORIGIN,
+        reads: vec![pin(p), pin(cap)],
+        writes: vec![watch_cell(w0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Capped {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&CAPPED_SHAPE, capped_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Capped, Arc::clone(shared(&CAPPED_SHAPE, capped_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let cap = cx.f64(1);
+        cx.set(0, cap);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn capped() -> &'static Module {
+    module_of::<Capped>(&CAPPED, "Capped")
+}
