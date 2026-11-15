@@ -7,8 +7,11 @@
 #[allow(dead_code)]
 mod devices;
 
-use devices::Devices;
-use piperine_ir::{Broken, BodySpec, Ir, IrBuilder, Origin};
+use devices::{Devices, Ex};
+use piperine_ir::{
+    Addend, BinaryOp, Broken, BodySpec, Branch, BranchKind, ExprId, FunctionId, FunctionSpec, Ir,
+    IrBuilder, Local, NodeRole, Operator, Origin, QuantityRole, Stmt, StmtId, Terminal, ValueType,
+};
 use serde_json::{Value, json};
 
 /// The IR every test starts from: the five devices, `Everything`, and the divider.
@@ -27,6 +30,89 @@ impl Corpus {
 
     fn value() -> Value {
         serde_json::to_value(Corpus::ir()).expect("serialize")
+    }
+}
+
+/// A two-port body `Shape(p, n)` alone as the design, contributing one direct addend to the
+/// flow of `(p, n)`; `value` returns the statements before the contribution and the addend.
+struct Shape;
+
+impl Shape {
+    const FILE: &'static str = "shape.msl";
+
+    fn origin() -> Origin {
+        Origin { file: Self::FILE.into(), line: 1, col: 1 }
+    }
+
+    fn ex(b: &mut IrBuilder) -> Ex<'_> {
+        Ex::new(b, Self::FILE, 2, 3)
+    }
+
+    fn ir(locals: usize, value: impl FnOnce(&mut IrBuilder) -> (Vec<StmtId>, ExprId)) -> Ir {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let (mut stmts, value) = value(&mut b);
+        stmts.push(b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Flow,
+            addends: vec![Addend { operator: Operator::Direct, negated: false, value }],
+        }));
+        let port = |name: &str| piperine_ir::BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: Self::origin() };
+        let body = b.body(BodySpec {
+            name: "Shape".into(),
+            origin: Self::origin(),
+            params: vec![],
+            nodes: vec![port("p"), port("n")],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+            limits: vec![],
+            stims: vec![],
+            locals: (0..locals).map(|i| Local { name: format!("x{i}"), ty: ValueType::F64 }).collect(),
+            analog: Some(stmts),
+            children: vec![],
+        });
+        let top = Devices::alone(&mut b, body, "Shape", 1, vec![]);
+        b.finish(top)
+    }
+
+    /// `v(p, n) + 1.0 + ... + 1.0`, `terms` constants, left-associated: nested `terms` deep.
+    fn deep_sum(terms: usize) -> Ir {
+        Shape::ir(0, |b| {
+            let mut e = Shape::ex(b);
+            let mut acc = e.probe(Terminal::Node(0), Terminal::Node(1));
+            for _ in 0..terms {
+                let one = e.real(1.0);
+                acc = e.binary(BinaryOp::Add, acc, one);
+            }
+            (vec![], acc)
+        })
+    }
+
+    /// `acc = acc + acc`, `doublings` times on one id: 2^doublings paths through 41 expressions.
+    fn shared_sum(doublings: usize) -> Ir {
+        Shape::ir(0, |b| {
+            let mut e = Shape::ex(b);
+            let mut acc = e.probe(Terminal::Node(0), Terminal::Node(1));
+            for _ in 0..doublings {
+                acc = e.binary(BinaryOp::Add, acc, acc);
+            }
+            (vec![], acc)
+        })
+    }
+
+    /// A one-parameter function `name` whose body calls `callee` with its parameter.
+    fn caller(b: &mut IrBuilder, name: &str, callee: FunctionId) -> FunctionId {
+        let mut e = Ex::new(b, Self::FILE, 9, 1);
+        let x = e.local(0);
+        let body = e.call(callee, vec![x]);
+        let x = Local { name: "x".into(), ty: ValueType::F64 };
+        b.function(FunctionSpec {
+            name: name.into(),
+            origin: Origin { file: Self::FILE.into(), line: 9, col: 1 },
+            params: vec![x.clone()],
+            ret: ValueType::F64,
+            locals: vec![x],
+            body,
+        })
     }
 }
 
@@ -106,6 +192,14 @@ fn a_built_ir_checks_clean() {
         let top = Devices::alone(&mut b, body, name, line, params);
         assert_eq!(b.finish(top).check(), Vec::<Broken>::new(), "{name}");
     }
+    // An expression nested deeper than any fixed bound is not a cycle.
+    for terms in [300, 10_000] {
+        assert_eq!(Shape::deep_sum(terms).check(), Vec::<Broken>::new(), "a sum of {terms} terms");
+    }
+    // An expression id shared by both operands, 40 times over, is checked once per id.
+    let started = std::time::Instant::now();
+    assert_eq!(Shape::shared_sum(40).check(), Vec::<Broken>::new());
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "took {:?}", started.elapsed());
 }
 
 #[test]
@@ -308,5 +402,62 @@ fn a_cyclic_expression_is_named_without_hanging() {
     v["exprs"][binary]["kind"]["Binary"]["lhs"] = json!(binary);
     v["exprs"][binary]["kind"]["Binary"]["rhs"] = json!(binary);
     let broken = Json::broken(v);
-    assert!(!Entries::with(&broken, "nest deeper").is_empty(), "{broken:?}");
+    let hits = Entries::with(&broken, "a cycle");
+    assert_eq!(hits.len(), 1, "{broken:?}");
+    assert!(hits[0].what.contains(&format!("expr {binary}")), "{hits:?}");
+}
+
+#[test]
+fn a_recursive_call_or_an_unbound_local_is_named() {
+    // `fn f(x) = f(x)`, called from the addend: `f` is function 0 and calls itself.
+    let ir = Shape::ir(0, |b| {
+        let f = Shape::caller(b, "f", FunctionId(0));
+        let mut e = Shape::ex(b);
+        let v = e.probe(Terminal::Node(0), Terminal::Node(1));
+        (vec![], e.call(f, vec![v]))
+    });
+    let broken = ir.check();
+    let hits = Entries::with(&broken, "calls itself");
+    assert_eq!(hits.len(), 1, "{broken:?}");
+    assert_eq!(hits[0].item, "function f");
+    assert_eq!(hits[0].origin, Origin { file: "shape.msl".into(), line: 9, col: 1 });
+
+    // `g` calls `h`, `h` calls `g`: both are named.
+    let ir = Shape::ir(0, |b| {
+        let g = Shape::caller(b, "g", FunctionId(1));
+        Shape::caller(b, "h", FunctionId(0));
+        let mut e = Shape::ex(b);
+        let v = e.probe(Terminal::Node(0), Terminal::Node(1));
+        (vec![], e.call(g, vec![v]))
+    });
+    let broken = ir.check();
+    let items: Vec<&str> = Entries::with(&broken, "calls itself").iter().map(|b| b.item.as_str()).collect();
+    assert_eq!(items, ["function g", "function h"], "{broken:?}");
+
+    // A statement reads local 0, whose `let` comes after it.
+    let ir = Shape::ir(1, |b| {
+        let mut e = Shape::ex(b);
+        let x = e.local(0);
+        e.at(5, 7);
+        let one = e.real(1.0);
+        let addend = e.real(0.0);
+        let read = b.stmt(Stmt::Expr(x));
+        let late = b.stmt(Stmt::Let { local: 0, init: one });
+        (vec![read, late], addend)
+    });
+    let broken = ir.check();
+    let hits = Entries::with(&broken, "read before its `let`");
+    assert_eq!(hits.len(), 1, "{broken:?}");
+    assert_eq!(hits[0].item, "body Shape");
+    assert_eq!(hits[0].origin, Origin { file: "shape.msl".into(), line: 2, col: 3 });
+
+    // A `let` that follows its read in the same block is still late; one before it is not.
+    let ir = Shape::ir(1, |b| {
+        let mut e = Shape::ex(b);
+        let one = e.real(1.0);
+        let x = e.local(0);
+        let early = b.stmt(Stmt::Let { local: 0, init: one });
+        (vec![early], x)
+    });
+    assert_eq!(ir.check(), Vec::<Broken>::new());
 }

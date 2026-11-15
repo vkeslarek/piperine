@@ -19,9 +19,9 @@
 //! - an `if` reads its condition and both arms; it joins the arms when the condition is
 //!   `Constant`, and is `Nonlinear` otherwise (IR-10).
 //!
-//! The walk assumes an IR that passes `Ir::check`; a form `check` does not exclude and the walk
-//! cannot give a meaning to (a local read before its `let`, a recursive call) panics with its
-//! origin, never answers a default.
+//! The walk assumes an IR that passes `Ir::check`, which names every form the walk cannot give
+//! a meaning to (a local read before its `let`, a recursive call, a cycle); on an IR that fails
+//! it the walk panics with the origin, never answers a default.
 
 use std::collections::BTreeSet;
 use std::sync::OnceLock;

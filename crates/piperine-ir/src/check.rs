@@ -1,11 +1,18 @@
 //! `Ir::check`: the invariants a correct builder sequence guarantees, verified over the arenas.
 //! Every id is in range, instances agree with their bodies, paths are unique, `limit` and
 //! `ac_stim` sites sit unconditionally at the top of the `analog` block and are used once, and
-//! every expression has the type its position requires. It lists what is broken and never panics.
+//! every expression has the type its position requires, every local is bound before it is read,
+//! no function reaches itself through calls, and no expression reaches itself. It lists what is
+//! broken and never panics.
+//!
+//! The code walk is iterative (an explicit stack, so nesting depth costs no native stack) and
+//! visits each expression once per placement context, so an id shared by many parents costs
+//! one visit, not one per path. An expression met again while it is still being walked is a
+//! cycle, whatever its depth.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use crate::ids::{ExprId, StmtId};
+use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
     BinaryOp, BranchKind, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp, ValueType,
 };
@@ -21,7 +28,7 @@ pub struct Broken {
 impl Ir {
     /// The broken invariants of this IR; empty when it is well formed.
     pub fn check(&self) -> Vec<Broken> {
-        let mut checker = Checker { ir: self, out: Vec::new() };
+        let mut checker = Checker { ir: self, out: Vec::new(), cycles: BTreeSet::new() };
         checker.ids();
         checker.instances();
         checker.paths();
@@ -29,9 +36,6 @@ impl Ir {
         checker.out
     }
 }
-
-/// How deep an expression may nest before the walk calls it a cycle.
-const MAX_DEPTH: usize = 256;
 
 /// What names and bounds the code being walked.
 struct Owner {
@@ -49,25 +53,49 @@ struct Owner {
     analog: bool,
 }
 
-/// The state of one walk.
+/// The state of one walk: one owner's code, every root of it sharing the memo.
 struct Walk {
     owner: Owner,
-    limit_uses: Vec<u32>,
-    stim_uses: Vec<u32>,
-    too_deep: bool,
+    /// The distinct expressions that use each `limit` / `ac_stim` site.
+    limit_users: Vec<BTreeSet<ExprId>>,
+    stim_users: Vec<BTreeSet<ExprId>>,
+    /// Locals bound so far, in evaluation order (a `let` after its init, closure parameters on
+    /// entry, function parameters from the start).
+    bound: Vec<bool>,
+    /// Expressions whose own checks ran.
+    seen: HashSet<ExprId>,
+    /// Expression and statement visits already made, per placement.
+    done: HashSet<(ExprId, Ctx)>,
+    stmts_done: HashSet<(StmtId, Ctx, bool)>,
+    /// Expressions being walked: meeting one again is a cycle.
+    on_stack: HashSet<ExprId>,
+    /// The functions this owner's code calls.
+    calls: BTreeSet<FunctionId>,
 }
 
 /// Where in the code an expression sits.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Ctx {
     conditional: bool,
     closure: bool,
-    depth: usize,
+}
+
+/// One step of the iterative walk.
+enum Task {
+    Expr(ExprId, Ctx),
+    /// The walk of an expression's operands is over: it leaves the stack.
+    Exit(ExprId),
+    /// A statement, and whether it sits at the top of an `analog` block.
+    Stmt(StmtId, Ctx, bool),
+    /// A `let` has evaluated its init: its local is bound.
+    Bind(u32),
 }
 
 struct Checker<'a> {
     ir: &'a Ir,
     out: Vec<Broken>,
+    /// Expressions already reported as reaching themselves.
+    cycles: BTreeSet<ExprId>,
 }
 
 impl<'a> Checker<'a> {
@@ -328,17 +356,19 @@ impl<'a> Checker<'a> {
             };
             for param in &body.params {
                 let Some(check) = param.check else { continue };
-                let mut w = Walk::new(owner(false, format!("body {} param {}", body.name, param.name)));
-                self.expr(&mut w, check, Ctx::top(), Some(&ValueType::Bool));
+                let mut w = Walk::new(owner(false, format!("body {} param {}", body.name, param.name)), 0);
+                self.expect(&w, check, &ValueType::Bool);
+                self.walk(&mut w, Task::Expr(check, Ctx::top()));
             }
             if let Some(analog) = &body.analog {
-                let mut w = Walk::new(owner(true, format!("body {}", body.name)));
+                let mut w = Walk::new(owner(true, format!("body {}", body.name)), 0);
                 for &stmt in analog {
-                    self.stmt(&mut w, stmt, Ctx::top(), true);
+                    self.walk(&mut w, Task::Stmt(stmt, Ctx::top(), true));
                 }
                 self.site_uses(&w);
             }
         }
+        let mut graph: Vec<BTreeSet<FunctionId>> = Vec::new();
         for function in &ir.functions {
             let owner = Owner {
                 item: format!("function {}", function.name),
@@ -352,41 +382,88 @@ impl<'a> Checker<'a> {
                 in_body: false,
                 analog: false,
             };
-            let mut w = Walk::new(owner);
-            self.expr(&mut w, function.body, Ctx::top(), Some(&function.ret));
+            let mut w = Walk::new(owner, function.params.len());
+            self.expect(&w, function.body, &function.ret);
+            self.walk(&mut w, Task::Expr(function.body, Ctx::top()));
+            graph.push(w.calls);
+        }
+        self.recursion(&graph);
+    }
+
+    /// Every function that reaches itself through calls.
+    fn recursion(&mut self, graph: &[BTreeSet<FunctionId>]) {
+        for (i, function) in self.ir.functions.iter().enumerate() {
+            let mut seen: BTreeSet<usize> = BTreeSet::new();
+            let mut stack: Vec<usize> = graph[i].iter().map(|f| f.index()).collect();
+            let mut recursive = false;
+            while let Some(f) = stack.pop() {
+                if f == i {
+                    recursive = true;
+                    break;
+                }
+                if f < graph.len() && seen.insert(f) {
+                    stack.extend(graph[f].iter().map(|g| g.index()));
+                }
+            }
+            if recursive {
+                self.report(format!("function {}", function.name), function.origin.clone(), format!("function {} calls itself, directly or through other functions", function.name));
+            }
         }
     }
 
     fn site_uses(&mut self, w: &Walk) {
-        for (kind, uses) in [("limit", &w.limit_uses), ("ac_stim", &w.stim_uses)] {
-            for (i, n) in uses.iter().enumerate() {
-                if *n > 1 {
-                    self.report(w.owner.item.clone(), w.owner.origin.clone(), format!("{kind} site {i} is used by {n} expressions, once is allowed"));
+        for (kind, users) in [("limit", &w.limit_users), ("ac_stim", &w.stim_users)] {
+            for (i, set) in users.iter().enumerate() {
+                if set.len() > 1 {
+                    self.report(w.owner.item.clone(), w.owner.origin.clone(), format!("{kind} site {i} is used by {} expressions, once is allowed", set.len()));
                 }
             }
         }
     }
 
-    fn stmt(&mut self, w: &mut Walk, id: StmtId, ctx: Ctx, top: bool) {
+    /// Runs the walk from `root` to its end.
+    fn walk(&mut self, w: &mut Walk, root: Task) {
+        let mut stack = vec![root];
+        let mut next = Vec::new();
+        while let Some(task) = stack.pop() {
+            match task {
+                Task::Exit(id) => {
+                    w.on_stack.remove(&id);
+                }
+                Task::Bind(local) => {
+                    if let Some(slot) = w.bound.get_mut(local as usize) {
+                        *slot = true;
+                    }
+                }
+                Task::Stmt(id, ctx, top) => self.stmt(w, id, ctx, top, &mut next),
+                Task::Expr(id, ctx) => self.expr(w, id, ctx, &mut next),
+            }
+            // `next` holds the follow-up tasks in evaluation order.
+            stack.extend(next.drain(..).rev());
+        }
+    }
+
+    fn stmt(&mut self, w: &mut Walk, id: StmtId, ctx: Ctx, top: bool, next: &mut Vec<Task>) {
         let Some(stmt) = self.ir.stmts.get(id.index()) else { return };
-        if w.too_deep {
+        if !w.stmts_done.insert((id, ctx, top)) {
             return;
         }
         let origin = self.stmt_origin(stmt);
         match stmt {
             Stmt::Let { local, init } => {
-                let expected = w.owner.locals.get(*local as usize).cloned();
-                if expected.is_none() {
-                    self.report(w.owner.item.clone(), origin, format!("let binds local {local}, out of range ({} locals)", w.owner.locals.len()));
+                match w.owner.locals.get(*local as usize).cloned() {
+                    Some(expected) => self.expect(w, *init, &expected),
+                    None => self.report(w.owner.item.clone(), origin, format!("let binds local {local}, out of range ({} locals)", w.owner.locals.len())),
                 }
-                self.expr(w, *init, ctx, expected.as_ref());
+                next.push(Task::Expr(*init, ctx));
+                next.push(Task::Bind(*local));
             }
-            Stmt::Expr(e) => self.expr(w, *e, ctx, None),
+            Stmt::Expr(e) => next.push(Task::Expr(*e, ctx)),
             Stmt::Contribute { branch, quantity, addends } => {
                 if !top || !w.owner.analog {
                     self.report(w.owner.item.clone(), origin.clone(), "contribution outside the top level of an analog block".to_string());
                 }
-                let kind = self.body_branch(w, *branch);
+                let kind = w.owner.branches.get(*branch as usize).copied();
                 match kind {
                     None if w.owner.analog => {
                         self.report(w.owner.item.clone(), origin.clone(), format!("contribution to branch {branch}, out of range"));
@@ -400,15 +477,11 @@ impl<'a> Checker<'a> {
                     None => {}
                 }
                 for a in addends {
-                    self.expr(w, a.value, ctx, Some(&ValueType::F64));
+                    self.expect(w, a.value, &ValueType::F64);
+                    next.push(Task::Expr(a.value, ctx));
                 }
             }
         }
-    }
-
-    /// The kind of branch `i` of the body being walked.
-    fn body_branch(&self, w: &Walk, i: u32) -> Option<BranchKind> {
-        w.owner.branches.get(i as usize).copied()
     }
 
     fn wrong(&mut self, w: &Walk, origin: Origin, what: String) {
@@ -418,6 +491,17 @@ impl<'a> Checker<'a> {
     /// The recorded type of `id`, when it exists.
     fn ty(&self, id: ExprId) -> Option<&'a ValueType> {
         self.ir.exprs.get(id.index()).map(|e| &e.ty)
+    }
+
+    /// `id`, placed where `want` is required (a `let`, an addend, a `where`, a function body),
+    /// must have that type.
+    fn expect(&mut self, w: &Walk, id: ExprId, want: &ValueType) {
+        if let Some(got) = self.ty(id) {
+            if got != want {
+                let origin = self.expr_origin(id);
+                self.wrong(w, origin, format!("expression must be {want}, found {got}"));
+            }
+        }
     }
 
     /// `id` must have type `want`; an entry at its origin otherwise.
@@ -430,34 +514,41 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn expr(&mut self, w: &mut Walk, id: ExprId, ctx: Ctx, expected: Option<&ValueType>) {
+    fn expr(&mut self, w: &mut Walk, id: ExprId, ctx: Ctx, next: &mut Vec<Task>) {
         let Some(data) = self.ir.exprs.get(id.index()) else { return };
-        if w.too_deep {
-            return;
-        }
         let origin = data.origin.clone();
-        if ctx.depth > MAX_DEPTH {
-            if !w.too_deep {
-                w.too_deep = true;
-                self.wrong(w, origin, format!("expressions nest deeper than {MAX_DEPTH}: a cycle"));
+        if w.on_stack.contains(&id) {
+            if self.cycles.insert(id) {
+                self.wrong(w, origin, format!("expr {} reaches itself through its operands: a cycle", id.0));
             }
             return;
         }
-        if let Some(want) = expected {
-            if &data.ty != want {
-                self.wrong(w, origin.clone(), format!("expression must be {want}, found {}", data.ty));
-            }
+        if !w.done.insert((id, ctx)) {
+            return;
         }
+        w.on_stack.insert(id);
+        // The checks of the expression itself run once; its placement (sites) once per context.
+        let first = w.seen.insert(id);
         let ty = &data.ty;
-        let below = Ctx { depth: ctx.depth + 1, ..ctx };
         match &data.kind {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit if !first => {}
             Expr::Real(_) => self.own(w, &origin, ty, &ValueType::F64),
             Expr::Bool(_) => self.own(w, &origin, ty, &ValueType::Bool),
             Expr::Unit => self.own(w, &origin, ty, &ValueType::Unit),
-            Expr::Local(i) => match w.owner.locals.get(*i as usize) {
-                Some(local) => self.own(w, &origin, ty, &local.clone()),
-                None => self.wrong(w, origin, format!("local {i} out of range ({} locals)", w.owner.locals.len())),
-            },
+            Expr::Local(i) => {
+                if first {
+                    match w.owner.locals.get(*i as usize) {
+                        Some(local) => {
+                            self.own(w, &origin, ty, &local.clone());
+                            if !w.bound.get(*i as usize).copied().unwrap_or(false) {
+                                self.wrong(w, origin.clone(), format!("local {i} read before its `let`"));
+                            }
+                        }
+                        None => self.wrong(w, origin, format!("local {i} out of range ({} locals)", w.owner.locals.len())),
+                    }
+                }
+            }
+            Expr::Param(_) if !first => {}
             Expr::Param(i) => {
                 if !w.owner.in_body {
                     self.wrong(w, origin, "param read outside a body".to_string());
@@ -469,145 +560,167 @@ impl<'a> Checker<'a> {
                 }
             }
             Expr::Unary { op, expr } => {
-                let operand = if *op == UnaryOp::Neg { ValueType::F64 } else { ValueType::Bool };
-                self.own(w, &origin, ty, &operand);
-                self.want(w, *expr, &operand, "operand of a unary operator");
-                self.expr(w, *expr, below, None);
+                if first {
+                    let operand = if *op == UnaryOp::Neg { ValueType::F64 } else { ValueType::Bool };
+                    self.own(w, &origin, ty, &operand);
+                    self.want(w, *expr, &operand, "operand of a unary operator");
+                }
+                next.push(Task::Expr(*expr, ctx));
             }
             Expr::Binary { op, lhs, rhs } => {
-                let (operands, result) = match op {
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => (Some(ValueType::F64), ValueType::F64),
-                    BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => (Some(ValueType::F64), ValueType::Bool),
-                    BinaryOp::And | BinaryOp::Or => (Some(ValueType::Bool), ValueType::Bool),
-                    BinaryOp::Eq | BinaryOp::Ne => (None, ValueType::Bool),
-                };
-                self.own(w, &origin, ty, &result);
-                match operands {
-                    Some(t) => {
-                        self.want(w, *lhs, &t, "operand of an operator");
-                        self.want(w, *rhs, &t, "operand of an operator");
-                    }
-                    None => {
-                        if let (Some(l), Some(r)) = (self.ty(*lhs), self.ty(*rhs)) {
-                            if l != r {
-                                self.wrong(w, origin.clone(), format!("compares {l} with {r}"));
+                if first {
+                    let (operands, result) = match op {
+                        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => (Some(ValueType::F64), ValueType::F64),
+                        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => (Some(ValueType::F64), ValueType::Bool),
+                        BinaryOp::And | BinaryOp::Or => (Some(ValueType::Bool), ValueType::Bool),
+                        BinaryOp::Eq | BinaryOp::Ne => (None, ValueType::Bool),
+                    };
+                    self.own(w, &origin, ty, &result);
+                    match operands {
+                        Some(t) => {
+                            self.want(w, *lhs, &t, "operand of an operator");
+                            self.want(w, *rhs, &t, "operand of an operator");
+                        }
+                        None => {
+                            if let (Some(l), Some(r)) = (self.ty(*lhs), self.ty(*rhs)) {
+                                if l != r {
+                                    self.wrong(w, origin.clone(), format!("compares {l} with {r}"));
+                                }
                             }
                         }
                     }
                 }
-                self.expr(w, *lhs, below, None);
+                next.push(Task::Expr(*lhs, ctx));
                 // `&&` and `||` evaluate their right side conditionally.
                 let short = matches!(op, BinaryOp::And | BinaryOp::Or);
-                self.expr(w, *rhs, Ctx { conditional: ctx.conditional || short, ..below }, None);
+                next.push(Task::Expr(*rhs, Ctx { conditional: ctx.conditional || short, ..ctx }));
             }
             Expr::If { cond, then, otherwise } => {
-                self.want(w, *cond, &ValueType::Bool, "condition of an `if`");
-                self.want(w, *then, ty, "arm of an `if`");
-                self.want(w, *otherwise, ty, "arm of an `if`");
-                self.expr(w, *cond, below, None);
-                let arm = Ctx { conditional: true, ..below };
-                self.expr(w, *then, arm, None);
-                self.expr(w, *otherwise, arm, None);
+                if first {
+                    self.want(w, *cond, &ValueType::Bool, "condition of an `if`");
+                    self.want(w, *then, ty, "arm of an `if`");
+                    self.want(w, *otherwise, ty, "arm of an `if`");
+                }
+                next.push(Task::Expr(*cond, ctx));
+                let arm = Ctx { conditional: true, ..ctx };
+                next.push(Task::Expr(*then, arm));
+                next.push(Task::Expr(*otherwise, arm));
             }
             Expr::Block { stmts, value } => {
-                match value {
-                    Some(v) => self.want(w, *v, ty, "value of a block"),
-                    None => self.own(w, &origin, ty, &ValueType::Unit),
+                if first {
+                    match value {
+                        Some(v) => self.want(w, *v, ty, "value of a block"),
+                        None => self.own(w, &origin, ty, &ValueType::Unit),
+                    }
                 }
                 for &s in stmts {
-                    self.stmt(w, s, below, false);
+                    next.push(Task::Stmt(s, ctx, false));
                 }
                 if let Some(v) = value {
-                    self.expr(w, *v, below, None);
+                    next.push(Task::Expr(*v, ctx));
                 }
             }
             Expr::Call { function, args } => {
                 if let Some(f) = self.ir.functions.get(function.index()) {
-                    self.own(w, &origin, ty, &f.ret);
-                    if args.len() != f.params.len() {
-                        self.wrong(w, origin.clone(), format!("calls {} with {} args, it takes {}", f.name, args.len(), f.params.len()));
-                    }
-                    for (a, p) in args.iter().zip(&f.params) {
-                        self.want(w, *a, &p.ty, "argument of a call");
+                    w.calls.insert(*function);
+                    if first {
+                        self.own(w, &origin, ty, &f.ret);
+                        if args.len() != f.params.len() {
+                            self.wrong(w, origin.clone(), format!("calls {} with {} args, it takes {}", f.name, args.len(), f.params.len()));
+                        }
+                        for (a, p) in args.iter().zip(&f.params) {
+                            self.want(w, *a, &p.ty, "argument of a call");
+                        }
                     }
                 }
-                for a in args {
-                    self.expr(w, *a, below, None);
-                }
+                next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
             Expr::Math { args, .. } => {
-                self.own(w, &origin, ty, &ValueType::F64);
-                if args.len() != 1 {
-                    self.wrong(w, origin.clone(), format!("a math function takes 1 argument, found {}", args.len()));
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if args.len() != 1 {
+                        self.wrong(w, origin.clone(), format!("a math function takes 1 argument, found {}", args.len()));
+                    }
+                    for a in args {
+                        self.want(w, *a, &ValueType::F64, "argument of a math function");
+                    }
                 }
-                for a in args {
-                    self.want(w, *a, &ValueType::F64, "argument of a math function");
-                    self.expr(w, *a, below, None);
-                }
+                next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
             Expr::Closure { params, body } => {
                 for p in params {
-                    if *p as usize >= w.owner.locals.len() {
-                        self.wrong(w, origin.clone(), format!("closure parameter local {p} out of range"));
+                    match w.bound.get_mut(*p as usize) {
+                        Some(slot) => *slot = true,
+                        None if first => self.wrong(w, origin.clone(), format!("closure parameter local {p} out of range")),
+                        None => {}
                     }
                 }
-                match ty {
-                    ValueType::Fn(ps, ret) => {
-                        if ps.len() != params.len() {
-                            self.wrong(w, origin.clone(), format!("closure takes {} parameters, its type {}", params.len(), ps.len()));
+                if first {
+                    match ty {
+                        ValueType::Fn(ps, ret) => {
+                            if ps.len() != params.len() {
+                                self.wrong(w, origin.clone(), format!("closure takes {} parameters, its type {}", params.len(), ps.len()));
+                            }
+                            self.want(w, *body, ret, "body of a closure");
                         }
-                        self.want(w, *body, ret, "body of a closure");
+                        other => self.wrong(w, origin.clone(), format!("a closure must have a function type, found {other}")),
                     }
-                    other => self.wrong(w, origin.clone(), format!("a closure must have a function type, found {other}")),
                 }
-                self.expr(w, *body, Ctx { closure: true, ..below }, None);
+                next.push(Task::Expr(*body, Ctx { closure: true, ..ctx }));
             }
             Expr::Probe { plus, minus } => {
-                self.own(w, &origin, ty, &ValueType::F64);
-                if !w.owner.in_body {
-                    self.wrong(w, origin.clone(), "probe outside a body".to_string());
-                }
-                for t in [plus, minus] {
-                    if let Terminal::Node(i) = t {
-                        if w.owner.in_body && *i as usize >= w.owner.nodes {
-                            self.wrong(w, origin.clone(), format!("probe terminal node {i} out of range ({} nodes)", w.owner.nodes));
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if !w.owner.in_body {
+                        self.wrong(w, origin.clone(), "probe outside a body".to_string());
+                    }
+                    for t in [plus, minus] {
+                        if let Terminal::Node(i) = t {
+                            if w.owner.in_body && *i as usize >= w.owner.nodes {
+                                self.wrong(w, origin.clone(), format!("probe terminal node {i} out of range ({} nodes)", w.owner.nodes));
+                            }
                         }
                     }
                 }
             }
-            Expr::Env(_) => self.own(w, &origin, ty, &ValueType::F64),
+            Expr::Env(_) => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                }
+            }
             Expr::Limit { site, x, f, seed } => {
-                self.own(w, &origin, ty, &ValueType::F64);
-                self.site(w, &origin, "limit", *site, ctx);
-                self.want(w, *x, &ValueType::F64, "input of a `limit`");
-                if let Some(got) = self.ty(*f) {
-                    if !matches!(got, ValueType::Fn(..)) {
-                        let o = self.expr_origin(*f);
-                        self.wrong(w, o, format!("the function of a `limit` must have a function type, found {got}"));
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    self.want(w, *x, &ValueType::F64, "input of a `limit`");
+                    if let Some(got) = self.ty(*f) {
+                        if !matches!(got, ValueType::Fn(..)) {
+                            let o = self.expr_origin(*f);
+                            self.wrong(w, o, format!("the function of a `limit` must have a function type, found {got}"));
+                        }
+                    }
+                    if let Some(s) = seed {
+                        self.want(w, *s, &ValueType::F64, "seed of a `limit`");
                     }
                 }
-                if let Some(s) = seed {
-                    self.want(w, *s, &ValueType::F64, "seed of a `limit`");
-                }
-                self.expr(w, *x, below, None);
-                self.expr(w, *f, below, None);
-                if let Some(s) = seed {
-                    self.expr(w, *s, below, None);
-                }
+                self.site(w, id, &origin, "limit", *site, ctx);
+                next.push(Task::Expr(*x, ctx));
+                next.push(Task::Expr(*f, ctx));
+                next.extend(seed.iter().map(|s| Task::Expr(*s, ctx)));
             }
             Expr::Stim { site, mag, phase } => {
-                self.own(w, &origin, ty, &ValueType::F64);
-                self.site(w, &origin, "ac_stim", *site, ctx);
-                self.want(w, *mag, &ValueType::F64, "magnitude of an `ac_stim`");
-                if let Some(p) = phase {
-                    self.want(w, *p, &ValueType::F64, "phase of an `ac_stim`");
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    self.want(w, *mag, &ValueType::F64, "magnitude of an `ac_stim`");
+                    if let Some(p) = phase {
+                        self.want(w, *p, &ValueType::F64, "phase of an `ac_stim`");
+                    }
                 }
-                self.expr(w, *mag, below, None);
-                if let Some(p) = phase {
-                    self.expr(w, *p, below, None);
-                }
+                self.site(w, id, &origin, "ac_stim", *site, ctx);
+                next.push(Task::Expr(*mag, ctx));
+                next.extend(phase.iter().map(|p| Task::Expr(*p, ctx)));
             }
         }
+        next.push(Task::Exit(id));
     }
 
     /// The recorded type `got` of an expression must be what its form produces.
@@ -617,8 +730,9 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A `limit` (`kind` "limit") or `ac_stim` site use: placement, range, count.
-    fn site(&mut self, w: &mut Walk, origin: &Origin, kind: &str, site: u32, ctx: Ctx) {
+    /// A `limit` (`kind` "limit") or `ac_stim` site used by expression `user`: placement in this
+    /// context, range, and the distinct expressions that use it.
+    fn site(&mut self, w: &mut Walk, user: ExprId, origin: &Origin, kind: &str, site: u32, ctx: Ctx) {
         let count = if kind == "limit" { w.owner.limits } else { w.owner.stims };
         if !w.owner.analog {
             self.wrong(w, origin.clone(), format!("{kind} outside the analog block of a body"));
@@ -631,22 +745,37 @@ impl<'a> Checker<'a> {
             self.wrong(w, origin.clone(), format!("{kind} site {site} out of range ({count} sites)"));
             return;
         }
-        let uses = if kind == "limit" { &mut w.limit_uses } else { &mut w.stim_uses };
-        if uses.len() < count {
-            uses.resize(count, 0);
+        let users = if kind == "limit" { &mut w.limit_users } else { &mut w.stim_users };
+        if users.len() < count {
+            users.resize(count, BTreeSet::new());
         }
-        uses[site as usize] += 1;
+        users[site as usize].insert(user);
     }
 }
 
 impl Walk {
-    fn new(owner: Owner) -> Self {
-        Walk { owner, limit_uses: Vec::new(), stim_uses: Vec::new(), too_deep: false }
+    /// A walk of `owner`'s code with its first `bound` locals (a function's parameters) bound.
+    fn new(owner: Owner, bound: usize) -> Self {
+        let mut slots = vec![false; owner.locals.len()];
+        for slot in slots.iter_mut().take(bound) {
+            *slot = true;
+        }
+        Walk {
+            owner,
+            limit_users: Vec::new(),
+            stim_users: Vec::new(),
+            bound: slots,
+            seen: HashSet::new(),
+            done: HashSet::new(),
+            stmts_done: HashSet::new(),
+            on_stack: HashSet::new(),
+            calls: BTreeSet::new(),
+        }
     }
 }
 
 impl Ctx {
     fn top() -> Self {
-        Ctx { conditional: false, closure: false, depth: 0 }
+        Ctx { conditional: false, closure: false }
     }
 }
