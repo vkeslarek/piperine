@@ -238,7 +238,7 @@ Shape-local rules (abi.md §9), one planted defect each: an unknown constant; an
 | SAC-29 | P1: Verification round 1, AC 11 | Execute | Done |
 | SAC-30 | P1: Verification round 1, AC 12 | Execute | Done |
 
-**Coverage:** 18 total, 18 mapped to tasks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
+**Coverage:** 30 total (SAC-19 to SAC-30 from verification round 1), 30 mapped to tasks or checks, 0 unmapped. Umbrella requirements whose owner half is met here: SCE-01, SCE-03, SCE-04, SCT-05 AC 1, SCT-07, SCT-09, SCH-05, SCH-07.
 
 ---
 
