@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/msl-ir/design.md`
-**Status**: Approved
+**Status**: Done - T1 to T8 delivered; Verifier rounds 1 and 2; **Verdict**: PASS after fixes (round-2 findings closed by 626bd373, 75f2885b, 7c63ce64, 336ff9e9, 94b14b89; see `verification.md`)
 **Build**: `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-ir || cargo build -p piperine-ir --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run model**: `cargo test -p piperine-ir --test model`
 **Run serde**: `cargo test -p piperine-ir --test serde`
@@ -686,7 +686,7 @@ Proof: run print | test display_stays_the_full_form ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** 2026-11-15 batches 1-2 done (b631738a); proofs 41/41; Verifier round 1 (Opus) in ../piperine-msl-ir
+**Dispatched:** 2026-11-15 batches 1-2 done (b631738a); proofs 41/41; Verifier round 1 (Opus) in ../piperine-msl-ir; round-1 fixes; Verifier round 2 (Opus); round-2 fix worker (Opus) closed the Major and three Minor findings - no third round, the orchestrator merges
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---
