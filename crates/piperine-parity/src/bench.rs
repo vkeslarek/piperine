@@ -7,6 +7,7 @@ use std::sync::Arc;
 use piperine_interp::Interpreter;
 use piperine_ir::{BranchKind, Ir};
 use piperine_lang::elab::Elaborator;
+use piperine_lang::types::Types;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_solver::prelude::{BranchIdentifier, CircuitInstance, NodeIdentifier, ParamValue};
 
@@ -39,13 +40,10 @@ impl Bench {
         let [top] = tops.as_slice() else {
             panic!("{fixture}: stage `parse`: expected one module without a port, found {tops:?}");
         };
-        let ir = match Elaborator::new(&design).run(top) {
-            Ok(ir) => ir,
-            Err(found) => {
-                let stage = if found.iter().any(|d| d.diagnostic.code == "P0004") { "elaborate" } else { "typeck" };
-                Self::fail(fixture, stage, &found)
-            }
-        };
+        if let Err(found) = Types::check(&design, top) {
+            Self::fail(fixture, "typeck", &found);
+        }
+        let ir = Elaborator::new(&design).run(top).unwrap_or_else(|found| Self::fail(fixture, "elaborate", &found));
         let interpreter = match Interpreter::new(Arc::new(ir.clone())) {
             Ok(interpreter) => interpreter,
             Err(rejected) => panic!("{fixture}: stage `interpret`: {} entries\n{:#?}", rejected.entries.len(), rejected.entries),

@@ -26,17 +26,48 @@ fn a_twin_loads_into_a_bound_circuit() {
     assert!((v - 7.5).abs() < 1e-9, "v(mid) = {v}");
 }
 
+/// A twin that fails in one stage: its text, the stage, the exact code, and the text the span covers.
+struct Plant {
+    stage: &'static str,
+    source: &'static str,
+    code: &'static str,
+    covered: &'static str,
+}
+
+impl Plant {
+    const ALL: [Plant; 3] = [
+        Plant { stage: "parse", source: "module Broken() {\n    signal a Electrical;\n}\n", code: "E0900", covered: "Electrical" },
+        Plant { stage: "typeck", source: "module Broken() {\n    signal a: Electrical;\n    x: f64 = true;\n}\n", code: "P0002", covered: "true" },
+        Plant {
+            stage: "elaborate",
+            source: "module Broken() {\n    signal a: Electrical;\n    let c = Cap { c: -1.0 }(a, gnd);\n}\nmodule Cap(p: Electrical, n: Electrical) { c: f64 where c >= 0.0; }\nanalog for Cap { i(p, n) +> ddt(c * v(p, n)); }\n",
+            code: "E0317",
+            covered: "-1.0",
+        },
+    ];
+
+    /// The message of loading this plant as the twin `broken`.
+    fn message(&self) -> String {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let file = directory.path().join("broken.msl");
+        std::fs::write(&file, self.source).expect("write the twin");
+        Panicked::message(move || {
+            Bench::load_file("broken", file);
+        })
+    }
+}
+
 #[test]
 fn a_failing_stage_is_named_with_its_diagnostics() {
-    let directory = tempfile::tempdir().expect("temp dir");
-    let file = directory.path().join("broken.msl");
-    std::fs::write(&file, "module Broken() {\n    signal a: Electrical;\n    x: f64 = true;\n}\n").expect("write the twin");
-    let message = Panicked::message(move || {
-        Bench::load_file("broken", file);
-    });
-    assert!(message.contains("typeck"), "the stage is named: {message}");
-    assert!(message.contains("P0002") || message.contains("E0"), "a diagnostic code is shown: {message}");
-    assert!(message.contains("broken"), "the fixture is named: {message}");
+    for plant in Plant::ALL {
+        let message = plant.message();
+        let start = plant.source.find(plant.covered).expect("the plant holds its covered text");
+        let end = start + plant.covered.len();
+        assert!(message.starts_with("broken: "), "the fixture is named first: {message}");
+        assert!(message.contains(&format!("stage `{}` failed with 1 diagnostic(s)", plant.stage)), "the stage is {}: {message}", plant.stage);
+        assert!(message.contains(&format!("\n{} (file ", plant.code)), "the exact code {} is shown: {message}", plant.code);
+        assert!(message.contains(&format!("Span {{ start: {start}, end: {end} }}")), "the span {start}..{end} of `{}` is shown: {message}", plant.covered);
+    }
 }
 
 #[test]
