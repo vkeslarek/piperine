@@ -46,6 +46,9 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 | Method catalogue | the rows of Appendix H.2 the models call: `exp`, `ln`, `sqrt`, `abs` on `f64` | Appendix H rule 1: the catalogue is closed; a table of rows, one line each to extend | y |
 | Code of a construct outside the subset (Q5) | `P0001`, a compiler-owned code outside the `Eppnn` space | the specification has no code for "not supported yet", and its numbers are never reused | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
 | Code of a plain type mismatch (Q5) | `P0002` until Part I owns one | no error table of `docs/spec/` has a row for a mismatched type; §0.4 leaves it to Rust | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
+| Code of an unknown top | `P0003`, compiler-owned like `P0001` and `P0002` | consistent with Q5: compiler-owned P-codes outside the `Eppnn` space; orchestrator decision 2026-11-15 | y |
+| Arguments of a function call | positional only; `name: value` on a call that is not a placement is `E0140` from the POM | the POM refuses it before the checker runs; orchestrator decision 2026-11-15 | y |
+| Wrong argument count of a function or method call | `P0002` | a plain type mismatch of the call against its signature (Q5); orchestrator decision 2026-11-15 | y |
 | An SI-suffixed literal and a float literal are `f64`; an unsuffixed integer literal is refused where an `f64` is required | as stated | Appendix A.2; §22 Resolution at `rout`: "`100`, an integer literal, which is a type error for an `f64` param" | y |
 
 **Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.
@@ -115,6 +118,10 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 5. IF the `= value` of a node is not an `f64` THEN the system SHALL reject the model with `E0210`.
 6. WHEN a module is placed THEN the system SHALL check that each node argument is a node of the nature of its port, that the argument count equals the port count (`E0312`), and that each entry of the param block names a param of the module once (`E0320`) with a value of the param's type.
 7. IF a node argument has a nature different from its port's THEN the system SHALL reject the model with `E0251`.
+8. IF the `where` after the port list of a module is not `bool` THEN the system SHALL reject the model with `E0304` (Part III §8 errors).
+9. IF the `where` of a `fn` reads a value parameter THEN the system SHALL reject the model with `P0001`; IF it is not `bool` THEN the system SHALL reject it with the plain mismatch `P0002`.
+
+> Amendment, verification round 1 (F1): the module and `fn` `where` were not read. Round 2 (F7, F8): Part III §8 errors give a module `where` its own code, `E0304`, not the param code `E0318`. Part I §3 rule 8 allows a `fn` `where` only over const generics and associated consts, which the M1 subset has none of, so a read of a value parameter there is outside the subset (`P0001`); §3 assigns the rule no code of its own (`E0127` is a `where` that is false at an instantiation), so a non-`bool` condition is the plain `P0002`.
 
 **Independent Test**: place `Resistor { r: true }(a, b)` and read a diagnostic at `true`; place `Resistor { r: 1k }(a)` and read `E0312`.
 
@@ -136,7 +143,13 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 4. IF the right side of `+>` is not `f64` THEN the system SHALL reject the model with `E0417`.
 5. The system SHALL type `ddt(x)` with `x: f64` as `f64`, `ac_stim(mag)` and `ac_stim(mag, phase)` over `f64` as `f64`, and `temperature()`, `gmin()` and `source_scale()` as `f64`.
 6. The system SHALL type `limit(x, f)` and `limit(x, f, seed)` as `f64` after checking `x: f64`, `seed: f64` and `f` as a function or closure of type `fn(f64, f64) -> f64`.
-7. IF a core primitive of the §14 table is written in a `fn` or a closure where the table does not allow it THEN the system SHALL reject the model with `E0450`.
+7. IF a core primitive of the §14 table is written in a `fn` or a closure where the table does not allow it THEN the system SHALL reject the model with `E0450`, except a core module (`ddt`, `limit`), whose placement there is `E0350` (§14 errors, §8.3.4).
+8. IF a core primitive or a probe is written in a context the §14 "Allowed in" column does not list (`ac_stim` outside an `analog` block; `ddt` and `limit` in a `fn`, a closure, a param default or a `where`; a probe in a `fn`, a closure, a param default or a `where`) THEN the system SHALL reject the model with `E0450`, except a core module (`ddt`, `limit`) in a `fn` or a closure (`E0350`) or in a const context (`E0352`, §8.3.4).
+9. IF an environment function of §14.4 (`temperature`, `gmin`, `source_scale`) is written in a const context (a param default, a `where` of a module, `fn` or param, or a `const` initializer) THEN the system SHALL reject the model with `E0323`.
+
+> Amendment, verification round 2 (F9): the spec's codes for a core module out of place are `E0350` (placed in a `fn`, a closure or a reaction body, Part IV §14 errors) and `E0352` (placed in a const context, Part III §8.3.4); `E0450` stays for `ac_stim` and for a probe, which are no modules.
+>
+> Amendment, verification round 1 (F2): this feature owns the "Allowed in" column in every position, not only inside a `fn` or a closure, and owns `E0323` (§8.1.21).
 
 **Independent Test**: check the `Diode` of the M1 models and read no diagnostic; replace its closure by `|new| new` and read one diagnostic at the closure.
 
@@ -155,6 +168,12 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 1. IF an expression, statement, pattern, type or item of the reachable set is outside TYP-02 to TYP-04 THEN the system SHALL reject the model with one diagnostic of the code `P0001` at that construct.
 2. The system SHALL name in every `P0001` diagnostic the construct as the specification names it (for example "`match` expression", "generic module", "integer type `u32`").
 3. WHEN an item holds a construct outside the subset and no top module reaches it THEN the system SHALL report nothing for it.
+4. IF a function is written as a value anywhere but as an argument whose parameter has a function type, or a call has a callee that is not a named function or a built-in (a call through a parameter or a local), THEN the system SHALL reject the model with one diagnostic of the code `P0001` at that construct.
+5. IF a construct is refused with `P0001` THEN the system SHALL still check every part of the reachable set that does not depend on it: the initializer of a `let` whose annotation is refused, the body of a generic function, and the missing result of a body whose last statement is not itself refused.
+
+> Amendment, verification round 2 (F10, F11): a function is a value only as the argument itself, never through an `if` or a block inside it; the missing result is left out only when the last statement is a refused `return`, never for another last statement that merely holds a refused construct.
+>
+> Amendment, verification round 1 (F3, F6): an indirect call has no callee to record, so the checker refuses the form and msl-elab's `Unlowered` table is unchanged. A generic `fn` is refused at its declaration (`P0001`, "generic function") and its body is checked with the parameters it could not type left silent.
 
 **Independent Test**: check a top that places a module holding a `match`; read `P0001` at the `match`. Check the M1 `DiodeIv`, which reaches `pnjlim` and `vt` and none of the generic modules of `std::analog`; read no diagnostic.
 
