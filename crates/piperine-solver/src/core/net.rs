@@ -11,8 +11,8 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::analog::{AnalogReference, AnalogVariable};
-use crate::digital::DigitalNet;
+use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, Netlist};
+use piperine_digital_solver::events::DigitalNet;
 
 /// What kind of solved signal a [`Net`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -151,6 +151,15 @@ impl From<&AnalogReference> for Net {
     }
 }
 
+impl Net {
+    /// Every analog variable of a netlist as a unified [`Net`] — the public naming
+    /// layer for result mapping, queries, and diagnostics. Digital nets convert
+    /// through `Net::from(DigitalNet)` at the scheduler boundary.
+    pub fn analog_nets(netlist: &Netlist) -> Vec<Net> {
+        netlist.all_references().into_iter().map(Into::into).collect()
+    }
+}
+
 impl From<DigitalNet> for Net {
     fn from(net: DigitalNet) -> Self {
         // The solver assigns digital nets dense ids only; a hierarchical source
@@ -163,7 +172,7 @@ impl From<DigitalNet> for Net {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
+    use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
     use std::sync::Arc;
 
     #[test]

@@ -1211,7 +1211,55 @@ A crate reaches another only through a dependency named in `Piperine.toml` (user
 
 ---
 
+### MD-60: the solver is three crates; events are the only boundary
+
+`solver-restructure` (2026-11-14; numbered 60 because MD-58/MD-59 are taken by `msl-packages`/`codegen-plan`). The solver
+is three crates: `piperine-solver` (the owner: analyses, the `Element` ABI,
+event dispatch), `piperine-analog-solver` and `piperine-digital-solver`. The
+owner depends on both sub-solvers; the sub-solvers depend on neither the owner
+nor each other, and no in-tree crate sits under any of them.
+
+1. **Events are the only boundary** between analog and digital; this is the
+   target of the follow-up feature `solver-event-boundary`. User: "A fronteira
+   é via eventos, sempre... Separar em uma fronteira BEM delimitada o que
+   ocorre no analog e o que ocorre no digital, praticamente como dois solvers
+   distintos que rodam no mesmo solver."
+2. **Three crates.** User: "o dono dos eventos, o digital-solver e o
+   analog-solver cada um com seu código exclusivo."
+3. **Opaque byte carriers** cross the boundary. User: "Prefiro bytes também.
+   Solver é o core do negócio e tem que ser mais simples, não ter a
+   complexidade da linguagem e sim a complexidade física."
+4. **The present discontinuity algorithm and tolerance mapping are kept.**
+   User: "eu manteria o algoritmo atual do solver que funcionou bem nos
+   testes, inclusive cross validation e convergence com descontinuidades" and
+   "a paridade com ngspice é um strenght bem alto". Spec amendments owed to
+   `solver-event-boundary`: Appendix C.2, section 17.1.2 and section 15.2 are
+   amended to describe the kept algorithm, not the reverse.
+5. **Five crates removed:** `piperine-ir`, `piperine-codegen`,
+   `piperine-python`, `piperine-plugin`, `piperine-plugin-macros`, with the
+   root VAMS end-to-end tests and `examples/*.vams`. User: "Vamos remover o IR,
+   cranelift e Python por agora" and "plugin pro enquanto vai embora".
+6. **Kept but not building:** `piperine-project`, `piperine-api`,
+   `piperine-cli`, `piperine-lang-server`. User: "lang-server é bom ficar...
+   cli também mas ambos vão ter sua própria feature."
+7. **Unit tests only for now.** User: "por enquanto vamos ter que nos
+   contentar com unitários pois integrado só vai existir depois que
+   conectarmos o solver ao lang." The hygiene guard moves into
+   `piperine-lang` tests ("Move guard, delete py").
+
+**Scope:** `crates/piperine-solver`, `piperine-analog-solver`,
+`piperine-digital-solver`, the workspace manifests and the instruction files.
+**Status:** Locked (2026-11-14).
+
+---
+
 ## Handoff Snapshot
+
+### Feature - `solver-restructure` (2026-11-14)
+
+Structure-only split of the solver into three crates (MD-60), five crates and
+the VAMS end-to-end surface removed, hygiene guard moved into `piperine-lang`.
+State: see `.specs/features/solver-restructure/tasks.md` `## Handoff`.
 
 ### Feature — `lrm-conformance-wave3` — CLOSED (2026-08-30)
 

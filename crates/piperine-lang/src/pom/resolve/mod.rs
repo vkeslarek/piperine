@@ -1,3 +1,4 @@
+// hygiene-exempt: oversized mod.rs predating the restructure; split into named modules after msl-stdlib merges (ROADMAP.md)
 //! Name resolution: the stages that run after lowering and write only into
 //! resolution slots and the diagnostics list. Each stage computes its answers
 //! from the immutable design into an [`Output`], then the answers are applied.

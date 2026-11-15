@@ -271,3 +271,5 @@ with non-Gaussian distributions. These are post-V1 once the basic loop ships.
 
 VS Code extension productization, marketplace packaging, release/versioning —
 `editors/vscode/`.
+
+- Refactor `crates/piperine-lang/src/pom/{resolve,reflect,lower}/mod.rs` into named modules after msl-stdlib merges (registered hygiene exemptions in `crates/piperine-lang/tests/suite_hygiene.rs`).

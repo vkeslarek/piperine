@@ -5,11 +5,12 @@
 
 use std::collections::HashMap;
 
-use crate::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
+use piperine_analog_solver::netlist::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::{Element, ElementCapabilities};
-use crate::digital::{DigitalNet, DigitalState};
-use crate::error::{Error, SolverDomain};
+use piperine_digital_solver::events::{DigitalNet};
+use piperine_digital_solver::state::DigitalState;
+use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::core::result::Result;
 
 // ── UnknownAllocator ─────────────────────────────────────────────────────────
@@ -166,7 +167,7 @@ impl CircuitBuilder {
         // never enter an analysis and gives elements a defined temperature
         // from construction. The default-tolerances temperature (300.15 K)
         // matches `Tolerances::default()`.
-        let default_temperature = crate::analyses::Tolerances::default().temperature;
+        let default_temperature = piperine_analog_solver::tolerances::Tolerances::default().temperature;
         for element in &mut self.elements {
             element.set_temperature(default_temperature);
         }
@@ -203,9 +204,10 @@ impl CircuitBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analog::AnalogReference;
-    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-    use crate::math::linear::Stamp;
+    use piperine_analog_solver::netlist::AnalogReference;
+    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
+    use piperine_digital_solver::interface::DigitalDevice;
+    use piperine_analog_solver::math::linear::Stamp;
     use crate::analyses::dc::DcAnalysisState;
     use crate::analyses::Context;
 

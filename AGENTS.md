@@ -5,69 +5,53 @@ diagram, crate table, known gaps) — read both before making changes.
 
 ## What Piperine is
 
-A Verilog-AMS (LRM 2.4, `.vams`/`.va`) compiler and simulator for analog and mixed-signal
-circuits — **not PHDL**, which was retired in full (MD-44/MD-45; zero `.phdl` sources
-remain in the tree). The `piperine-vams` frontend parses (Annex A grammar only, C7 — never
-a third-party Verilog-A compiler), `piperine-lang` elaborates to a POM `Design`, which
-codegen resolves into its own private form and compiles via Cranelift JIT (analog) + an
-event-driven interpreter (digital) into the solver's **`Element`** ABI. Verilog-A device
-models also load as compiled OSDI (v0.4) shared libraries through an external plugin, for
-models Piperine's own `.va`/`.vams` stdlib doesn't cover. Simulations are driven by
-**hosts**: Python (`import piperine`, the scripting host) or Rust (`piperine-api`, the
-library face — MD-20; the root `piperine` crate is a thin re-export shell over it).
+A mixed-signal language and simulator. `piperine-lang` parses and elaborates the source
+(Verilog-AMS LRM 2.4, `.vams`/`.va`, Annex A grammar only, C7 — never a third-party
+Verilog-A compiler) into a POM `Design`. The native solver is three crates:
+`piperine-solver` (analyses and the `Element` ABI) owning `piperine-analog-solver` and
+`piperine-digital-solver`, which meet through events as the target boundary (the digital snapshot stays shared until feature B). PHDL was retired in full
+(MD-44/MD-45).
+
+**Only `piperine-lang` and the three solver crates compile today.** The root `piperine`
+shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` stay in the tree but do not
+build until the new device compiler lands.
 
 ```
-.vams/.va ──► piperine-vams (parse/) ──► piperine-lang (elab/) ──► Design (POM)
-                                                                    │
-                                                                    ▼
-                             piperine-codegen (resolve/ → flatten/ → emit/ → kernel/ → device/)
-                                                                    │
-                                                                    ▼
-                                       piperine-solver (Element ABI, DC/AC/tran/noise/TF)
-                                                                    │
-                                                                    ▼
-                                       hosts: `piperine-api` (Rust) / `import piperine` (Python)
+source ──► piperine-lang ──► Design (POM) ──► device compiler (to come)
+                                                   │
+                       piperine-solver (owner) ◄───┘
+                       ├── piperine-analog-solver
+                       └── piperine-digital-solver
+                                   │
+                  hosts: piperine-api (Rust) / piperine-cli
 ```
 
-Dependency direction (MD-20): `api → {lang, codegen, solver}`; `python → api`;
-`root(shell) → api`; `cli → {python, api, project}`. And
-**`piperine-solver` never depends on `piperine-codegen`** — the codegen lowers *into* the
-solver's types. Breaking either arrow is a regression.
+Dependency direction: the owner `piperine-solver` depends on both sub-solvers; the
+sub-solvers depend on neither the owner nor each other; events are the target boundary.
+`piperine-solver` depends on no other in-tree crate. Breaking either arrow is a
+regression.
 
 ## Build and verify
 
 Always build and test before declaring work done:
 
 ```sh
-cargo build --workspace     # zero warnings is the bar
-cargo test  --workspace     # the whole suite; bare `cargo test` only runs the root package
+cargo build     # the default members: lang + the three solver crates; zero warnings is the bar
+cargo test      # their whole suite; never `--workspace` (four crates do not build yet)
 ```
 
 ## Workspace map
 
 ```
-src/lib.rs                root `piperine` shell (MD-20): `pub use piperine_api::*`
-│                         and nothing else; root tests/ = host + cross-crate suites
 crates/
-├── piperine-vams/          Verilog-AMS lexer/preprocessor/parser (LRM 2.4 Annex A only,
-│                           zero-dependency purity-gated crate, MD-43)
-├── piperine-lang/          Elaborator over piperine-vams's AST: elab/ pom/ eval/ (+ headers/)
-├── piperine-codegen/       POM → devices, one module per pipeline stage (MD-23):
-│                           resolve/ (private resolved form + diff) → flatten/ → emit/
-│                           (Cranelift) → kernel/ (AnalogKernel, DigitalKernel) →
-│                           device/ (AnalogInstance, CircuitCompiler → PiperineDevice)
-├── piperine-solver/        Element ABI (core/), analyses/ (DC/AC/tran/noise/TF, PSS, PZ,
-│                           SP, disto, sens, ConvergencePlan), math/ (MNA, integration),
-│                           digital/ (scheduler), Net naming, prelude
-├── piperine-api/           the library face (MD-20): session, results, waveform, fourier,
-│                           units, hooks, error, prelude
-├── piperine-python/        the `import piperine` binding layer over piperine-api
-├── piperine-plugin/        plugin SDK + host: native dlopen + embedded Python, TOFU +
-│                         permissions consent, @device, release-asset device binaries
-├── piperine-plugin-macros/ #[pip::device] / #[pip::script] / #[pip::hook(phase)]
-├── piperine-cli/           `piperine` CLI (check, fmt, run, test, new, add, remove, tree, plugin)
-├── piperine-project/       Piperine.toml + git dependency resolver + plugin lockfile
-└── piperine-lang-server/   LSP server (editors/vscode/ is the extension)
+├── piperine-lang/            parser + elaborator: grammar/ elab/ pom/ eval/ (+ headers/)
+├── piperine-solver/          owner: Element ABI (core/), analyses/, Net naming, prelude
+├── piperine-analog-solver/   analog sub-solver: math/, convergence, TrBdf2
+├── piperine-digital-solver/  digital sub-solver (event-driven scheduler)
+├── piperine-api/             the library face: session, results, waveform (does not build yet)
+├── piperine-cli/             `piperine` CLI (does not build yet)
+├── piperine-project/         Piperine.toml + dependency resolver (does not build yet)
+└── piperine-lang-server/     LSP server (does not build yet)
 ```
 
 ## Hard rules
@@ -78,7 +62,7 @@ crates/
 - **No `unwrap()`/`expect()`** on user-input paths (LSP protocol I/O included — every
   request id must receive a response).
 - **Frozen corpora:** `headers/`, `tests/fixtures*` — do not edit.
-- **Hand-written parsers** (`piperine-vams/src/parse/`) — change only with tests proving
+- **Hand-written parsers** (`piperine-lang/src/{grammar,lexer.rs,parser.rs}`) — change only with tests proving
   intent.
 
 ### Rust idiom rules (binding — recorded as MD-13)
@@ -113,22 +97,10 @@ violates any of them is not ready.
 
 ## Test placement
 
-A target lives in the crate it exercises (MD-28); root `tests/` is for the host surface
-and cross-crate proofs. Do not maintain a file list anywhere — enumerate with
-`ls crates/*/tests/*.rs tests/*.rs` and read each target's `//!` scope header.
-`tests/suite_hygiene.rs` enforces the mechanical half of the rule.
-
-| What | Where |
-|------|-------|
-| host API (session/results/waveform) | root `tests/session*.rs`, `tests/host_*.rs` |
-| example gallery (dual contract) | root `tests/run_examples.rs` (every `.vams` elaborates + every `.py` runs) |
-| ngspice cross-validation | root `tests/ngspice_{validation,ac,noise,tran,temp}.rs` — one target per domain over the `tests/ngspice/` fixture twins, sharing `tests/support/ngspice.rs` (harness, `WrData`, the per-domain `ToleranceContract`) |
-| ngspice parity coverage gate | root `tests/ngspice_parity_matrix.rs` (model × domain: `Covered` by a fixture or `NotApplicable` with a reason) |
-| syntax/elaboration gates | `piperine-lang/tests/{parse_elab,elab,bench_removed}.rs` |
-| POM → resolved + circuit | `piperine-codegen/tests/{resolve_lowering,codegen_api,circuit_from_design,silent_bugs}.rs` |
-| JIT kernels | `piperine-codegen/tests/{analog_kernel,digital_jit}.rs` |
-| solver analyses / mixed-signal | `piperine-solver/tests/{digital_topology,mixed_signal}.rs` |
-| plugin e2e | `piperine-plugin/tests/{e2e,native_smoke,inject,staging,hooks,scripts,release_fetch,macro_collisions,extern_stub,trust}.rs`, `piperine-plugin-macros/tests/`, root `tests/plugin_parity.rs` |
+A target lives in the crate it exercises (MD-28); the root `tests/` holds no Rust target.
+Do not maintain a file list anywhere — enumerate with `ls crates/*/tests/*.rs` and read
+each target's `//!` scope header. `crates/piperine-lang/tests/suite_hygiene.rs` enforces
+the mechanical half of the rule.
 
 ## Documentation
 

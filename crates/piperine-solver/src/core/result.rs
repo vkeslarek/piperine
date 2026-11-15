@@ -1,8 +1,7 @@
 //! Analysis result containers handed back to hosts (waveforms, operating points).
-use crate::error::Error;
-use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
+use piperine_analog_solver::netlist::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
-use crate::digital::LogicValue;
+use piperine_digital_solver::events::LogicValue;
 use ndarray::Array2;
 use num_complex::Complex;
 use std::collections::HashMap;
@@ -10,7 +9,7 @@ use std::slice::Iter;
 use std::sync::Arc;
 use crate::analyses::noise::NoiseKind;
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub use piperine_analog_solver::error::Result;
 
 /// Per-analysis convergence + performance diagnostics. Accumulated during
 /// the solve; returned on the result type. Always-on (counter increments
@@ -40,17 +39,6 @@ pub struct SolverStats {
     // one entry per device whose limiter clamped a value. Empty when no
     // device limited (the common case for linear / well-converged circuits).
     pub limiting: Vec<crate::core::element::LimitingReport>,
-    // DVC-15: validation findings recorded at the analysis's evaluation
-    // points — the collect posture accumulates the whole run; strict
-    // accumulates until the first Error aborts it. Empty when checks are
-    // off (the hook is never polled) or no element declared
-    // EMITS_VALIDATION.
-    pub validation: Vec<crate::core::validation::ValidationFinding>,
-    // DVC-18: the run's margin channel — every declared pointwise
-    // constraint margin's worst value with its argmin, collected from the
-    // elements at end of run. Empty when checks are off (nothing was
-    // evaluated) or no element declared EMITS_VALIDATION.
-    pub margins: Vec<crate::core::margin::ReportedMargin>,
 }
 
 #[derive(Debug)]
@@ -264,9 +252,7 @@ impl TransientStep {
 
 pub struct AcAnalysisResult {
     values: Vec<AcAnalysisStep>,
-    /// Per-analysis statistics: the validation findings recorded at the
-    /// sweep's frequency points (DVC-15) and the margin channel's
-    /// worst-with-argmin per declared margin (DVC-18, argmin = frequency).
+    /// Per-analysis statistics.
     pub stats: SolverStats,
 }
 
@@ -422,31 +408,6 @@ pub struct SpResult {
     /// necessarily the declared `num`).
     pub z0: Vec<f64>,
     pub n_ports: usize,
-}
-
-/// Distortion analysis (`.disto`) result — see
-/// [`DistoSolver`](crate::analyses::disto::DistoSolver). Fields are
-/// populated per mode: single-tone runs report `hd2`/`hd3`, two-tone runs
-/// `im2`/`im3`.
-#[derive(Debug, Clone, Default)]
-pub struct DistoResult {
-    /// `|X(2·F1)| / |X(F1)|` at the output (single-tone, DISTO-01).
-    pub hd2: Option<f64>,
-    /// `|X(3·F1)| / |X(F1)|` at the output (single-tone, DISTO-01).
-    pub hd3: Option<f64>,
-    /// Intermodulation ratio at `F1±F2` relative to the fundamental
-    /// (two-tone, DISTO-02).
-    pub im2: Option<f64>,
-    /// Intermodulation ratio at `2F1∓F2`/`2F2∓F1` relative to the
-    /// fundamental (two-tone, DISTO-02).
-    pub im3: Option<f64>,
-    /// Named capability diagnostics from the `.disto` pre-scan (ABI-24): a
-    /// purely linear circuit yields a zero HD2/HD3 result legitimately, but
-    /// the host must not be left with a silent zero — each entry names the
-    /// missing derivative order (`"Element: no device provides disto2
-    /// capability; HD2 results will be zero"`). Empty when at least one
-    /// device contributes each order.
-    pub warnings: Vec<String>,
 }
 
 impl std::fmt::Display for TransferType {

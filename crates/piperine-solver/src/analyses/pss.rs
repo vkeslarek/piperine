@@ -15,12 +15,12 @@ use std::sync::Arc;
 
 use crate::analyses::transient::{TransientAnalysisOptions, TransientSolver};
 use crate::core::circuit::CircuitInstance;
-use crate::error::{Error, SolverDomain};
+use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::core::result::TransientAnalysisResult;
 use crate::core::result::TransientStep;
-use crate::analyses::Policy;
+use piperine_analog_solver::tolerances::Policy;
 use crate::Context;
-use crate::analog::AnalogVariable;
+use piperine_analog_solver::netlist::AnalogVariable;
 
 // ── request/state ────────────────────────────────────────────────────────
 
@@ -122,7 +122,7 @@ impl<'a> PssSolver<'a> {
             .all_references()
             .into_iter()
             .filter_map(|r| {
-                use crate::math::linear::AsIndex;
+                use piperine_analog_solver::math::linear::AsIndex;
                 r.as_index().map(|i| (i, r.variable().clone()))
             })
             .collect();
@@ -144,7 +144,7 @@ impl<'a> PssSolver<'a> {
         for ((_, var), &v) in vars.iter().zip(x) {
             values.insert(var.clone(), v);
         }
-        let digital: Vec<crate::digital::LogicValue> =
+        let digital: Vec<piperine_digital_solver::events::LogicValue> =
             (0..usize::MAX).map_while(|i| digital_from.digital(i)).collect();
         TransientStep::new(time, values).with_digital(digital)
     }

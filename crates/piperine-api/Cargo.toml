@@ -8,6 +8,4 @@ thiserror.workspace = true
 num-complex.workspace = true
 ndarray.workspace = true
 piperine-lang = { path = "../piperine-lang" }
-piperine-codegen = { path = "../piperine-codegen" }
 piperine-solver = { path = "../piperine-solver" }
-piperine-ir = { path = "../piperine-ir" }

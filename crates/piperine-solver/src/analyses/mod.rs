@@ -11,11 +11,8 @@
 
 pub mod ac;
 pub mod adjoint;
-pub mod config;
 pub mod context;
-pub mod convergence;
 pub mod dc;
-pub mod disto;
 pub mod events;
 pub mod noise;
 pub mod pss;
@@ -24,10 +21,8 @@ pub mod sens;
 pub mod sensitivity;
 pub mod solver;
 pub mod sp;
-pub mod stamp_validation;
 pub mod tf;
 pub mod transient;
 
-pub use context::{AnalysisKind, CheckPosture, Context, CoverPosture, Policy, RequireScope, Tolerances};
+pub use context::{AnalysisKind, Context};
 pub use solver::Solver;
-pub use stamp_validation::non_finite_stamp_error;

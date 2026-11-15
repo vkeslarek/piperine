@@ -20,15 +20,15 @@ use ndarray::Array1;
 
 use crate::analyses::context::Context;
 use crate::analyses::dc::DcAnalysisState;
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCapabilities;
 use crate::core::introspect::{Invalidation, ParamError, Value};
 use crate::core::result::Result;
-use crate::digital::LogicValue;
-use crate::error::{Error, SolverDomain};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::linear::Stamp;
+use piperine_digital_solver::events::LogicValue;
+use piperine_analog_solver::error::{Error, SolverDomain};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::linear::Stamp;
 
 /// One parameter-derivative request: differentiate element `label`'s residual
 /// w.r.t. its parameter `param`, at the converged operating point.

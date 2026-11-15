@@ -19,94 +19,16 @@
 //!
 //! Comparison is on VALUES, never on "both ran without error".
 
-use std::path::PathBuf;
+// Each target includes the library by path: it uses a different subset of it.
+#[allow(dead_code)]
+#[path = "helpers/devices.rs"]
+mod devices;
 
-use piperine_codegen::CircuitCompiler;
-use piperine_lang::SourceMap;
-use piperine_solver::prelude::{AdjointOptions, Context, Net, SensAnalysisOptions};
+use devices::{divider_fixture, net_for, NodeMap};
+use piperine_solver::prelude::{AdjointOptions, CircuitInstance, Context, SensAnalysisOptions};
 
-const DIVIDER: &str = r#"
-    `include "disciplines.vams"
-
-    module R (inout electrical p, inout electrical n);
-        parameter real r = 1.0e3;
-        analog I(p, n) <+ V(p, n) / r;
-    endmodule
-
-    module C (inout electrical p, inout electrical n);
-        parameter real c = 1.0e-9;
-        analog begin
-        end
-    endmodule
-
-    module D (inout electrical p, inout electrical n);
-        parameter real is_sat = 1.0e-14;
-        analog I(p, n) <+ is_sat * (exp(V(p, n) / 0.02585) - 1.0);
-    endmodule
-
-    module Vsrc (inout electrical p, inout electrical n);
-        parameter real dc = 10.0;
-        analog V(p, n) <+ dc;
-    endmodule
-
-    module Top ();
-        electrical gnd, top, mid;
-        Vsrc v1 (.p(top), .n(gnd));
-        R r1 (.p(top), .n(mid));
-        R r2 (.p(mid), .n(gnd));
-    endmodule
-
-    // RC: a resistor feeding a capacitor to ground. The DC solution is
-    // V(mid) = V·r2/(r1+r2) (capacitor is an open at DC), and `c` is a
-    // differentiable restamp-class parameter whose DC gradient of V(mid)
-    // is zero — a clean "both engines agree on zero" check.
-    module RcTop ();
-        electrical gnd, top, mid;
-        Vsrc v1 (.p(top), .n(gnd));
-        R r1 (.p(top), .n(mid));
-        C c1 (.p(mid), .n(gnd));
-    endmodule
-
-    module DiodeTop ();
-        electrical gnd, top, mid;
-        Vsrc #(.dc(1.0)) v1 (.p(top), .n(gnd));
-        R r1 (.p(top), .n(mid));
-        D d1 (.p(mid), .n(gnd));
-    endmodule
-"#;
-
-fn headers_source_map() -> SourceMap {
-    let headers =
-        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone());
-    map.add_namespace("piperine", headers.clone());
-    map.add_namespace("spice", headers.join("spice"));
-    map
-}
-
-fn build(top: &str) -> (piperine_solver::prelude::CircuitInstance, piperine_codegen::device::CircuitBuildInfo) {
-    let design = piperine_lang::parse_and_elaborate(DIVIDER, &headers_source_map())
-        .expect("fixture elaborates");
-    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
-    let mut compiler = CircuitCompiler::new(&design, &bodies);
-    let (mut circuit, info) = compiler.build_circuit_mapped(top).expect("build");
-    circuit.init_digital().expect("digital");
-    circuit.rebuild_digital_topology();
-    (circuit, info)
-}
-
-fn net_for(
-    circuit: &piperine_solver::prelude::CircuitInstance,
-    info: &piperine_codegen::device::CircuitBuildInfo,
-    name: &str,
-) -> Net {
-    let node = info.nets.get(name).unwrap_or_else(|| panic!("net `{name}` not mapped")).clone();
-    let var = piperine_solver::abi::AnalogVariable::Node(node);
-    circuit
-        .nets()
-        .into_iter()
-        .find(|n| n.analog_variable().map(|v| **v == var).unwrap_or(false))
-        .unwrap_or_else(|| panic!("net `{name}` not solved"))
+fn build(top: &str) -> (CircuitInstance, NodeMap) {
+    divider_fixture(top)
 }
 
 /// Relative tolerance scaled to the value's magnitude — both engines agree

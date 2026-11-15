@@ -8,13 +8,13 @@
 //! (p6-cleanup-architecture D2). The sweep, output/reference nodes and input
 //! source travel on [`NoiseAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
+use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
-use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
-use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
+use piperine_analog_solver::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::NoiseAnalysisResult;
 
@@ -323,12 +323,12 @@ impl<'a> NoiseSolver<'a> {
         let out = net
             .reference_for(&AnalogVariable::Node(opt.output_node.clone()))
             .ok_or_else(|| {
-                crate::error::Error::simple(crate::error::SolverDomain::Noise, "Output node not found")
+                piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Noise, "Output node not found")
             })?;
         let ref_ = net
             .reference_for(&AnalogVariable::Node(opt.reference_node.clone()))
             .ok_or_else(|| {
-                crate::error::Error::simple(crate::error::SolverDomain::Noise, "Reference node not found")
+                piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Noise, "Reference node not found")
             })?;
         Ok((out.clone(), ref_.clone()))
     }
@@ -346,16 +346,17 @@ impl<'a> NoiseSolver<'a> {
     /// # Returns
     /// Integrated RMS noise voltage (V)
     fn integrate_noise(&self, freqs: &[f64], psd: &[f64]) -> f64 {
-        crate::math::integration::Integrator::trapezoid(freqs, psd).sqrt()
+        piperine_analog_solver::math::integration::Integrator::trapezoid(freqs, psd).sqrt()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-    use crate::analog::{AnalogReference, Netlist, NodeIdentifier};
-    use crate::math::linear::Stamp;
+    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
+    use piperine_digital_solver::interface::DigitalDevice;
+    use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
+    use piperine_analog_solver::math::linear::Stamp;
     use num_complex::Complex64;
     use crate::analyses::ac::{AcSweepAnalysisOptions, AcAnalysisContext};
     use crate::prelude::DcAnalysisResult;

@@ -2,7 +2,8 @@
 //! the run configuration (`Context`/`Policy`/transient options) and hands out
 //! the analyses, initializing the process globals once on `build` (MD-06).
 
-use crate::analyses::context::{Context, Policy};
+use crate::analyses::Context;
+use piperine_analog_solver::tolerances::Policy;
 use crate::analyses::{ac, dc, noise, tf, transient};
 
 // ── host entry ───────────────────────────────────────────────────────────
