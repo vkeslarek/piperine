@@ -260,11 +260,11 @@ T5 → T6 → T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] The sign is compared unchanged: ngspice gives about +1.01e-12 A at −1 V and −4.59e-2 A at +0.8 V
-- [ ] The row count is asserted (37) before the loop
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_dc`: `diode_iv`
-- [ ] Gate check passes: `cargo test -p piperine-parity`
-- [ ] Test count: the tests named above, and no existing test removed
+- [x] The sign is compared unchanged: ngspice gives about +1.01e-12 A at −1 V and −4.59e-2 A at +0.8 V
+- [x] The row count is asserted (37) before the loop
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test parity_dc`: `diode_iv`
+- [x] Gate check passes: `cargo test -p piperine-parity`
+- [x] Test count: the tests named above, and no existing test removed
 
 **Tests**: e2e
 **Gate**: full
