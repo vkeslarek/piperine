@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/ir-interp/design.md`
-**Status**: Approved
+**Status**: Done
 **Build**: `cargo build -p piperine-abi --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-interp || cargo build -p piperine-interp --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run factory**: `cargo test -p piperine-abi --test factory`
 **Run lib**: `cargo test -p piperine-interp --lib`
@@ -585,7 +585,7 @@ Proof: run terms | test an_affine_constant_leaves_at_most_one_ulp_on_the_right_s
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** 2026-11-15 batches 1-4 done (89ae0a27); Verifier round 1 (Opus) in ../piperine-ir-interp
+**Dispatched:** 2026-11-15 batches 1-4 done (89ae0a27); Verifier round 1 (Opus) in ../piperine-ir-interp; round 1 fixes (F1, F2, F4, F5); Verifier round 2 (460c6cba); round 2 fixes F3 b76f7a60, F6 ab2163db, F7 4d4d5e04, proofs 4c5fb5a5 (51 pass) - done, ready to merge
 **Walked:** not applicable - the feature puts no screen in front of a user; each story's Independent Test is a test named in `## Checks`
 
 ---

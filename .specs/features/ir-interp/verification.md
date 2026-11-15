@@ -1,7 +1,7 @@
 # IR interpreter verification
 
-**Verdict**: FAIL - round 2: F1, F2, F4, F5 hold closed; F3 stays open (the orchestrator's narrowed goal is in neither spec nor design and no test pins it); two new Minor findings (F6 a solver re-entry that silently stops short of its stop, F7 C46's test exercises no call)
-**Proofs**: `proofs.md` at b4b23fac (50 pass, 0 fail)
+**Verdict**: PASS - after the round 2 fixes: F3 (b76f7a60, C48), F6 (ab2163db, solver re-entry tick), F7 (4d4d5e04) closed; F1, F2, F4, F5 held closed in round 2. Round 2 verdict was FAIL (F3 open, F6, F7 new)
+**Proofs**: `proofs.md` at 722f8792 (51 pass, 0 fail), re-run at HEAD by check_proofs.py
 **Verifier**: independent sub-agent (author != verifier), rounds 1 and 2
 
 ## Checks
