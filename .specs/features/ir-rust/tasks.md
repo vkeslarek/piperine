@@ -1556,7 +1556,7 @@ Proof: run golden | test a_keyword_identifier_is_raw_and_the_abi_name_is_not ...
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** batch 1 (phases 1-2, T1-T10) - Opus worker, 2026-11-15
 **Walked:** none (no screen; each story's Independent Test is a check above)
 
 ---
