@@ -3,6 +3,8 @@
 //! It lives beside the old engine and shares nothing with it.
 
 pub mod dag;
+pub mod engine;
+pub mod instant;
 pub mod net;
 pub mod observe;
 pub mod plan;

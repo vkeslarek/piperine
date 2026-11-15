@@ -65,9 +65,16 @@ pub struct Analysis {
     later: Vec<Vec<Vec<bool>>>,
     start_nets: Vec<NetId>,
     settle_nets: Vec<NetId>,
+    /// Per net: some pin on it has role `PARAM` or `GLOBAL`.
+    param_nets: Vec<bool>,
 }
 
 impl Analysis {
+    /// Whether a `PARAM` or `GLOBAL` pin is bound to `net`.
+    pub fn is_param_net(&self, net: NetId) -> bool {
+        self.param_nets[net.0 as usize]
+    }
+
     /// The nets of the global event `START`.
     pub fn start_nets(&self) -> &[NetId] {
         &self.start_nets
@@ -184,7 +191,24 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
         }
         found
     };
-    Ok(Analysis { writers, functions, later, start_nets: globals(global::START), settle_nets: globals(global::SETTLE) })
+    let mut param_nets = vec![false; nets.len()];
+    for input in inputs {
+        for (i, pin) in input.shape.pins.iter().enumerate() {
+            if let Binding::Net(id) = input.pins[i]
+                && (pin.role == role::PARAM || pin.role == role::GLOBAL)
+            {
+                param_nets[id.0 as usize] = true;
+            }
+        }
+    }
+    Ok(Analysis {
+        writers,
+        functions,
+        later,
+        start_nets: globals(global::START),
+        settle_nets: globals(global::SETTLE),
+        param_nets,
+    })
 }
 
 /// Every pin is bound as its kind allows, to a net that exists and has its kind.

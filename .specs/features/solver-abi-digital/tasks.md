@@ -273,14 +273,14 @@ T7 → T8 → T9 → T10 → T11 → T12 → T13
 
 **Done when**:
 
-- [ ] Test `the_traced_instant_of_section_15_1` reproduces the table of `docs/spec/part_v_execution.md` §15.1 with `Timer`, `Dff` and a commit standing for the crossing: applied nets, fired events and commits per microstep (C23)
-- [ ] Test `an_instant_that_never_goes_quiet_is_e0501_naming_the_nets` passes with a reaction that toggles its own trigger (C24)
-- [ ] Test `a_quiet_commit_does_not_start_a_microstep` passes (C27)
-- [ ] Test `start_commits_inits_and_fires_start` passes (C28)
-- [ ] Test `a_settle_commit_with_no_delay_is_refused` passes (C29)
-- [ ] Test `an_instant_reports_boundary_fired_and_final` passes with `Sampler` reading its sample (C33)
-- [ ] Test `a_plan_with_no_code_applies_host_commits_only` passes
-- [ ] Gate: full
+- [x] Test `the_traced_instant_of_section_15_1` reproduces the table of `docs/spec/part_v_execution.md` §15.1 with `Timer`, `Dff` and a commit standing for the crossing: applied nets, fired events and commits per microstep (C23)
+- [x] Test `an_instant_that_never_goes_quiet_is_e0501_naming_the_nets` passes with a reaction that toggles its own trigger (C24)
+- [x] Test `a_quiet_commit_does_not_start_a_microstep` passes (C27)
+- [x] Test `start_commits_inits_and_fires_start` passes (C28)
+- [x] Test `a_settle_commit_with_no_delay_is_refused` passes (C29)
+- [x] Test `an_instant_reports_boundary_fired_and_final` passes with `Sampler` reading its sample (C33)
+- [x] Test `a_plan_with_no_code_applies_host_commits_only` passes
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

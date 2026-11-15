@@ -89,6 +89,11 @@ impl Queue {
         due
     }
 
+    /// The commits due at exactly `at`, in no particular order.
+    pub fn due_at(&self, at: Instant) -> impl Iterator<Item = &Pending> {
+        self.by_due.get(&at).into_iter().flatten()
+    }
+
     /// The number of pending commits.
     pub fn len(&self) -> usize {
         self.by_due.values().map(Vec::len).sum()

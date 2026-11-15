@@ -757,6 +757,90 @@ pub fn rogue() -> Handle {
     Handle::create(module, &[]).expect("a fixture device creates")
 }
 
+// ─── Setter ─────────────────────────────────────────────────────────────────
+
+/// A comparator's digital half: `out` goes high one microstep after `up` fires.
+///
+/// pins: up=0 (PORT event); out=1 (PORT BIT)   reaction 0: on [up] writes [S0 {out}]; out <- HIGH, no delay
+pub struct Setter;
+static SETTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTER: OnceLock<Module> = OnceLock::new();
+
+fn setter_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let up = s.pin(PinSpec::event("up", role::PORT));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    s.reaction(ReactionSpec { name: "set", on: vec![up], writes: vec![statement(out, 2, 0)], ..ReactionSpec::default() });
+    s.freeze()
+}
+
+impl Device for Setter {
+    fn prototype() -> &'static Shape {
+        shared(&SETTER_SHAPE, setter_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Setter, Arc::clone(shared(&SETTER_SHAPE, setter_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("setter", true);
+        cx.commit(0, &HIGH, 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn setter() -> Handle {
+    make::<Setter>(&SETTER, "setter")
+}
+
+// ─── Settler ────────────────────────────────────────────────────────────────
+
+/// A reaction on `SETTLE` that commits after `delay` seconds.
+///
+/// pins: delay=0 (PARAM F64, default 0); out=1 (PORT BIT); settle=2 (GLOBAL SETTLE event)
+/// reaction 0: on [settle] reads [delay] writes [S0 {out}]; out <- HIGH after delay
+pub struct Settler;
+static SETTLER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLER: OnceLock<Module> = OnceLock::new();
+
+fn settler_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let delay = s.pin(PinSpec::discrete("delay", role::PARAM, &F64));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    s.reaction(ReactionSpec {
+        name: "settle",
+        on: vec![settle],
+        reads: vec![pin(delay)],
+        writes: vec![statement(out, 2, 0)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Settler {
+    fn prototype() -> &'static Shape {
+        shared(&SETTLER_SHAPE, settler_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Settler, Arc::clone(shared(&SETTLER_SHAPE, settler_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("settler", true);
+        cx.commit(0, &HIGH, cx.f64(0))?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn settler() -> Handle {
+    make::<Settler>(&SETTLER, "settler")
+}
+
 // ─── Binding by name ────────────────────────────────────────────────────────
 
 /// One device to place: its path, the live instance and `(pin name, net name)` wires.

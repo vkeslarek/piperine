@@ -29,6 +29,8 @@ fn every_fixture_shape_is_valid() {
         ("stub", stub()),
         ("odd", odd()),
         ("rogue", rogue()),
+        ("setter", setter()),
+        ("settler", settler()),
     ];
     for (name, handle) in &all {
         validate(handle.shape()).unwrap_or_else(|e| panic!("{name}: {e}"));
