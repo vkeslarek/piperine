@@ -273,6 +273,14 @@ fn a_function_is_a_value_only_as_an_argument() {
     assert_eq!(codes_of(&d), ["P0001"]);
     assert_eq!(snippet(&src, &d[0]), "h");
 
+    // Not through an `if`: the function chosen there is no named function at the argument.
+    let (src, d) = diagnostics(items, "let r = apply(if true { h } else { h }, 2.0);");
+    assert_eq!(codes_of(&d), ["P0001", "P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "h");
+    let (src, d) = diagnostics("fn lim(n: f64, o: f64) -> f64 { n }", "let x = limit(1.0, if true { lim } else { lim });");
+    assert_eq!(codes_of(&d), ["P0001", "P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "lim");
+
     // A call whose callee is not a named function or built-in has no callee to record: refused.
     let (src, d) = diagnostics("fn run(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }", "let y = run(|a| a, 1.0);");
     assert_eq!(codes_of(&d), ["P0001"]);
@@ -297,4 +305,18 @@ fn an_unsupported_form_does_not_hide_an_independent_error() {
     assert_eq!(codes_of(&d), ["P0002", "P0002"]);
     assert_eq!(snippet(&src, &d[0]), "{ let y = a + true; }");
     assert_eq!(snippet(&src, &d[1]), "true");
+
+    // A last statement that is not itself refused leaves the missing result its own error,
+    // whatever it holds that is refused.
+    let (src, d) = diagnostics("fn f(a: f64) -> f64 { let y = 1; }", "let z = f(1.0);");
+    assert_eq!(codes_of(&d), ["P0002", "P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "{ let y = 1; }");
+    let (src, d) = diagnostics("fn f(a: f64) -> f64 { a % 2.0; }", "let z = f(1.0);");
+    assert_eq!(codes_of(&d), ["P0002", "P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "{ a % 2.0; }");
+    assert_eq!(snippet(&src, &d[1]), "a % 2.0");
+
+    // A refused `return` stands where the value would be: no missing result besides it.
+    let (_, d) = diagnostics("fn f(a: f64) -> f64 { return a; }", "let z = f(1.0);");
+    assert_eq!(codes_of(&d), ["P0001"]);
 }

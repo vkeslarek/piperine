@@ -647,7 +647,7 @@ Proof: run analog | test ddt_ac_stim_and_environment_are_f64 ... ok
 **C25** - The system SHALL type `limit(x, f)` and `limit(x, f, seed)` as `f64` after checking `x: f64`, `seed: f64` and `f` as a function or closure of type `fn(f64, f64) -> f64`. (TYP-04, AC 6; T7)
 Proof: run analog | test limit_checks_its_input_function_and_seed ... ok
 
-**C26** - IF a core primitive of the §14 table is written in a `fn` or a closure where the table does not allow it THEN the system SHALL reject the model with `E0450`. (TYP-04, AC 7; T7)
+**C26** - IF a core primitive of the §14 table is written in a `fn` or a closure where the table does not allow it THEN the system SHALL reject the model with `E0450`, except a core module (`ddt`, `limit`), `E0350`. (TYP-04, AC 7; T7, F9)
 Proof: run analog | test a_core_primitive_in_a_fn_is_e0450 ... ok
 
 **C27** - IF an expression, statement, pattern, type or item of the reachable set is outside TYP-02 to TYP-04 THEN the system SHALL reject the model with one diagnostic of the code `P0001` at that construct. (TYP-05, AC 1; T8)
@@ -748,19 +748,19 @@ Batches: B1 = Phase 1 (5 tasks, Sonnet); B2 = Phase 2 (4 tasks, Sonnet). The Ver
 | T8: The subset classifier | The subset classifier | unit | unit | ✅ OK |
 | T9: The M1 corpus checks clean | Entry point, the corpus | unit | unit | ✅ OK |
 
-**C38** - IF the `where` of a module or of a `fn` is not `bool` THEN the system SHALL reject the model with `E0318`. (TYP-03, AC 8; verification F1)
+**C38** - IF the `where` of a module is not `bool` THEN the system SHALL reject the model with `E0304`; IF the `where` of a `fn` reads a value parameter THEN `P0001`, and IF it is not `bool` THEN `P0002`. (TYP-03, AC 8 and 9; verification F1, F7, F8)
 Proof: run modules | test a_where_on_a_module_or_fn_is_bool ... ok
 
-**C39** - IF a core primitive or a probe is written where the §14 "Allowed in" column does not list it (a module body, a param default or a `where`, besides a `fn` or a closure) THEN the system SHALL reject the model with `E0450`. (TYP-04, AC 8; verification F2)
+**C39** - IF a core primitive or a probe is written where the §14 "Allowed in" column does not list it (a module body, a param default or a `where`, besides a `fn` or a closure) THEN the system SHALL reject the model with `E0450`, except `ddt` and `limit` in a `fn` or a closure (`E0350`) or in a const context (`E0352`). (TYP-04, AC 8; verification F2, F9)
 Proof: run modules | test a_core_primitive_is_checked_where_it_is_written ... ok
 
 **C40** - IF an environment function is written in a const context THEN the system SHALL reject the model with `E0323`. (TYP-04, AC 9; verification F2)
 Proof: run modules | test an_environment_function_in_a_const_context_is_e0323 ... ok
 
-**C41** - IF a function is written as a value outside an argument whose parameter has a function type, or a call goes through a parameter or a local THEN the system SHALL reject the model with `P0001`. (TYP-05, AC 4; verification F3)
+**C41** - IF a function is written as a value anywhere but as the argument itself where the parameter has a function type (not through an `if` or a block), or a call goes through a parameter or a local THEN the system SHALL reject the model with `P0001`. (TYP-05, AC 4; verification F3)
 Proof: run values | test a_function_is_a_value_only_as_an_argument ... ok
 
-**C42** - IF a construct is refused with `P0001` THEN the system SHALL still report the independent errors of the initializer, of a generic function's body, and of a missing result. (TYP-05, AC 5; verification F6)
+**C42** - IF a construct is refused with `P0001` THEN the system SHALL still report the independent errors of the initializer, of a generic function's body, and of a missing result unless the last statement is a refused `return`. (TYP-05, AC 5; verification F6, F11)
 Proof: run values | test an_unsupported_form_does_not_hide_an_independent_error ... ok
 
 **C43** - The system SHALL refuse `Bit`, `Repr` and the known-flag method with `P0001` against the real standard library. (TYP-05, AC 1; verification F5)

@@ -95,7 +95,7 @@ impl Checker<'_> {
             return None;
         }
         for (arg, ty) in args.iter().zip(params) {
-            self.check(arg.value, ty);
+            self.check_argument(arg.value, ty);
         }
         Some(())
     }

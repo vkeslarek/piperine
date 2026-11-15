@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BehaviorKind, BlockNode, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, Resolution, TypeId, TypeKind};
+use crate::pom::{BehaviorKind, BlockNode, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, Resolution, StmtKind, TypeId, TypeKind};
 
 use super::unsupported::Unsupported;
 use super::{Callee, Method, Ty, Types};
@@ -42,6 +42,11 @@ pub(super) struct Checker<'d> {
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
+    /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
+    pub(super) fn_where: bool,
+    /// The one expression that may be a function used as a value: an argument written
+    /// directly where the parameter has a function type.
+    pub(super) fn_value_at: Option<ExprId>,
     queued: BTreeSet<DeclId>,
     queue: VecDeque<DeclId>,
     diagnostics: Vec<DesignDiagnostic>,
@@ -60,6 +65,8 @@ impl<'d> Checker<'d> {
             reached: Vec::new(),
             context: Context::Module,
             poisoned: BTreeSet::new(),
+            fn_where: false,
+            fn_value_at: None,
             queued: BTreeSet::new(),
             queue: VecDeque::new(),
             diagnostics: Vec::new(),
@@ -265,6 +272,15 @@ impl<'d> Checker<'d> {
         let Some(parts) = self.signature_parts(decl) else { return };
         let data = self.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return };
+        // §3 rule 8: the `where` ranges over const generics and associated consts, which the
+        // subset has none of. Checked before the parameters are typed, a read of a value
+        // parameter in it is refused (`P0001`) and the specification gives a non-`bool`
+        // condition no code of its own, so that is the plain mismatch.
+        if let Some(cond) = f.where_ {
+            self.fn_where = true;
+            self.within(Context::Const, |this| this.check(cond, &Ty::Bool));
+            self.fn_where = false;
+        }
         for (param, ty) in parts.params {
             match ty {
                 Some(ty) => {
@@ -274,9 +290,6 @@ impl<'d> Checker<'d> {
                     self.poisoned.insert(param);
                 }
             }
-        }
-        if let Some(cond) = f.where_ {
-            self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0318"));
         }
         self.context = Context::Function;
         match (&f.body, parts.ret) {
@@ -291,25 +304,21 @@ impl<'d> Checker<'d> {
 
     /// The statements of a body against the declared result. A missing result is reported
     /// whatever else the body got wrong, since it is its own mistake; only when the last
-    /// statement is itself outside the subset (a `return` stands where the value would be) is
-    /// it a consequence of that refusal and left out.
+    /// statement is a `return`, refused as outside the subset and standing where the value
+    /// would be, is it a consequence of that refusal and left out.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
         if let Some(found) = self.statements(&body.stmts, Some(ret))
             && found != *ret
-            && !self.last_statement_refused(body, file)
+            && !self.ends_in_return(body)
         {
             self.mismatch(file, body.span, ret, &found);
         }
     }
 
-    /// Whether a `P0001` was raised inside the last statement of `body`.
-    fn last_statement_refused(&self, body: &BlockNode, file: FileId) -> bool {
+    /// Whether the last statement of `body` is a `return`.
+    fn ends_in_return(&self, body: &BlockNode) -> bool {
         let Some(last) = body.stmts.last() else { return false };
-        let span = self.design.stmt_node(*last).span;
-        self.diagnostics.iter().any(|d| {
-            let at = d.diagnostic.span();
-            d.file == file && d.diagnostic.code == "P0001" && at.start >= span.start && at.end <= span.end
-        })
+        matches!(&self.design.stmt_node(*last).kind, StmtKind::Expr { expr, .. } if matches!(self.design.expr_node(*expr).kind, ExprKind::Return(_)))
     }
 
     /// A module of the reachable set: its params, nodes and placements, then its analog blocks.
@@ -329,7 +338,8 @@ impl<'d> Checker<'d> {
             self.unsupported(data.file, span, "module result `-> T`");
         }
         if let Some(cond) = m.where_ {
-            self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0318"));
+            // Part III §8 errors: the `where` after the port list that is not a `bool` const expression.
+            self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0304"));
         }
         for child in data.children.iter().copied() {
             let item = self.design.decl_data(child).clone();

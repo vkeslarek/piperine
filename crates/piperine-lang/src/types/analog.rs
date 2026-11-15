@@ -87,8 +87,9 @@ impl Checker<'_> {
     }
 
     /// A call of a core primitive: arguments against its row of the table, `f64` as the result.
-    /// A primitive with no row is `P0001`; one the table does not allow in a `fn` or a closure
-    /// is `E0450`.
+    /// A primitive with no row is `P0001`; one the table does not allow where it is written is `E0450`, except the
+    /// core modules `ddt` and `limit`, whose misplacement is `E0350` (`fn`, closure) or `E0352`
+    /// (const context).
     pub(super) fn core_call(&mut self, expr: ExprId, id: BuiltinId, args: &[Arg]) -> Option<Ty> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
@@ -104,6 +105,16 @@ impl Checker<'_> {
                 self.coded(file, "E0323", node.span, message, "environment function in a const context");
             }
             (Allowed::Everywhere, _) | (Allowed::Instances, Context::Analog | Context::Module) | (Allowed::Analog, Context::Analog) => {}
+            // §14 errors (§8.3) and §8.3.4: `ddt` and `limit` are core modules, so a placement in
+            // a `fn` or a closure is `E0350` and one in a const context is `E0352`.
+            (Allowed::Instances, Context::Function) => {
+                let message = format!("`{name}` is a core module and cannot be placed in a `fn` or a closure");
+                self.coded(file, "E0350", node.span, message, "placement in a `fn` or a closure");
+            }
+            (Allowed::Instances, Context::Const) => {
+                let message = format!("`{name}` is a core module and cannot be placed in a const context");
+                self.coded(file, "E0352", node.span, message, "placement in a const context");
+            }
             (_, context) => {
                 let place = match context {
                     Context::Function => "a `fn` or a closure",
@@ -126,7 +137,7 @@ impl Checker<'_> {
             return None;
         }
         for (arg, param) in args.iter().zip(sig.required.iter().chain(sig.optional)) {
-            self.check(arg.value, &param.ty());
+            self.check_argument(arg.value, &param.ty());
         }
         Some(Ty::F64)
     }

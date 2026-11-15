@@ -160,16 +160,25 @@ fn a_node_of_another_nature_is_e0251() {
 
 #[test]
 fn a_where_on_a_module_or_fn_is_bool() {
+    // Part III §8 errors: the `where` after the port list that is not a `bool` const expression.
     let (src, d) = diagnostics("module Top() where 1.0 { }");
-    assert_eq!(codes_of(&d), ["E0318"]);
+    assert_eq!(codes_of(&d), ["E0304"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
 
-    let (src, d) = diagnostics("fn f(x: f64) -> f64 where x { x }\nmodule Top() { }\nanalog for Top { let y = f(1.0); }");
-    assert_eq!(codes_of(&d), ["E0318"]);
-    assert_eq!(snippet(&src, &d[0]), "x");
+    // Part I §3 rule 8: a `fn` `where` is a boolean const expression over const generics and
+    // associated consts only; M1 has neither, so a read of a value parameter is outside it.
+    for cond in ["x", "x > 0.0"] {
+        let (src, d) = diagnostics(&format!("fn f(x: f64) -> f64 where {cond} {{ x }}\nmodule Top() {{ }}\nanalog for Top {{ let y = f(1.0); }}"));
+        assert_eq!(codes_of(&d), ["P0001"], "{cond}");
+        assert_eq!(snippet(&src, &d[0]), "x", "{cond}");
+    }
+    // A `fn` `where` that is not `bool` is a plain mismatch (the specification gives it no code).
+    let (src, d) = diagnostics("fn f(x: f64) -> f64 where 1.0 { x }\nmodule Top() { }\nanalog for Top { let y = f(1.0); }");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "1.0");
 
-    // A `bool` condition on each checks.
-    let src = format!("{NATURES}fn f(x: f64) -> f64 where x > 0.0 {{ x }}\nmodule Top() where true {{ }}\nanalog for Top {{ let y = f(1.0); }}");
+    // A `bool` const condition on each checks.
+    let src = format!("{NATURES}fn f(x: f64) -> f64 where true {{ x }}\nmodule Top() where true {{ }}\nanalog for Top {{ let y = f(1.0); }}");
     let design = design_of(&src);
     Types::check(&design, "Top").expect("bool where clauses");
 }
@@ -177,16 +186,16 @@ fn a_where_on_a_module_or_fn_is_bool() {
 #[test]
 fn a_core_primitive_is_checked_where_it_is_written() {
     // §14 "Allowed in": `ac_stim` is `analog` only, so a module body is refused.
-    for (body, text) in [
-        ("module Top() { let x = ac_stim(1.0); }", "ac_stim(1.0)"),
-        // `ddt` and `limit` go where instances go: not in a param default or a `where`.
-        ("module Top() { a: f64 = ddt(1.0); }", "ddt(1.0)"),
-        ("fn l(n: f64, o: f64) -> f64 { n }\nmodule Top() { a: f64 = limit(1.0, l); }", "limit(1.0, l)"),
-        ("module Top() { a: f64 = 1.0 where ac_stim(1.0) > 0.0; }", "ac_stim(1.0)"),
-        ("module Top() where ddt(1.0) > 0.0 { }", "ddt(1.0)"),
+    // `ddt` and `limit` are core modules: a placement in a const context is `E0352` (§8.3.4).
+    for (body, text, code) in [
+        ("module Top() { let x = ac_stim(1.0); }", "ac_stim(1.0)", "E0450"),
+        ("module Top() { a: f64 = ddt(1.0); }", "ddt(1.0)", "E0352"),
+        ("fn l(n: f64, o: f64) -> f64 { n }\nmodule Top() { a: f64 = limit(1.0, l); }", "limit(1.0, l)", "E0352"),
+        ("module Top() { a: f64 = 1.0 where ac_stim(1.0) > 0.0; }", "ac_stim(1.0)", "E0450"),
+        ("module Top() where ddt(1.0) > 0.0 { }", "ddt(1.0)", "E0352"),
     ] {
         let (src, d) = diagnostics(body);
-        assert_eq!(codes_of(&d), ["E0450"], "{body}");
+        assert_eq!(codes_of(&d), [code], "{body}");
         assert_eq!(snippet(&src, &d[0]), text, "{body}");
     }
 

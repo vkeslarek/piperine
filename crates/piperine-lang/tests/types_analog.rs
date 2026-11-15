@@ -151,7 +151,8 @@ fn limit_checks_its_input_function_and_seed() {
 #[test]
 fn a_core_primitive_in_a_fn_is_e0450() {
     let (src, d) = diagnostics("fn f(x: f64) -> f64 { ddt(x) }", "let y = f(1.0);");
-    assert_eq!(codes_of(&d), ["E0450"]);
+    // `ddt` is a core module: a placement in a `fn` is `E0350` (§14 errors, §8.3.4).
+    assert_eq!(codes_of(&d), ["E0350"]);
     assert_eq!(snippet(&src, &d[0]), "ddt(x)");
 
     let (src, d) = diagnostics("fn f() -> f64 { ac_stim(1.0) }", "let y = f();");
@@ -160,7 +161,7 @@ fn a_core_primitive_in_a_fn_is_e0450() {
 
     // In a closure as well.
     let (src, d) = diagnostics("", "let y = limit(v(a), |new, old| ddt(new));");
-    assert_eq!(codes_of(&d), ["E0450"]);
+    assert_eq!(codes_of(&d), ["E0350"]);
     assert_eq!(snippet(&src, &d[0]), "ddt(new)");
 
     // The environment is allowed everywhere.

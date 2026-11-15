@@ -16,6 +16,13 @@ impl Checker<'_> {
         self.check_as(expr, expected, "P0002");
     }
 
+    /// `check` of an argument written directly: the one place a function may stand as a value,
+    /// for a parameter of function type. Through an `if` or a block it is no named function.
+    pub(super) fn check_argument(&mut self, expr: ExprId, expected: &Ty) {
+        self.fn_value_at = Some(expr);
+        self.check(expr, expected);
+    }
+
     /// `check`, where a mismatch of `expr` itself carries `code` (a rule of the specification
     /// with a code of its own, `E0318` for a `where`) instead of the plain `P0002`.
     pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
@@ -31,7 +38,7 @@ impl Checker<'_> {
                 }
                 ExprKind::Block(block) => self.statements(&block.stmts, Some(expected)),
                 ExprKind::Closure { .. } => self.closure(expr, expected),
-                ExprKind::Path(_) if matches!(expected, Ty::Fn(..)) && self.function_named(expr).is_some() => self.function_value(expr),
+                ExprKind::Path(_) if matches!(expected, Ty::Fn(..)) && self.fn_value_at == Some(expr) && self.function_named(expr).is_some() => self.function_value(expr),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
                     self.check(*cond, &Ty::Bool);
                     self.statements(&then.stmts, Some(expected));
@@ -96,7 +103,7 @@ impl Checker<'_> {
                 self.check(*operand, &Ty::Bool);
                 Some(Ty::Bool)
             }
-            ExprKind::Binary { op, lhs, rhs } => self.binary(*op, *lhs, *rhs),
+            ExprKind::Binary { op, lhs, rhs } => self.binary(expr, *op, *lhs, *rhs),
             ExprKind::Block(block) => self.statements(&block.stmts, None),
             ExprKind::If { cond, then, else_ } => self.conditional(*cond, then, *else_),
             ExprKind::Call { .. } => self.call(expr),
@@ -116,7 +123,7 @@ impl Checker<'_> {
         }
     }
 
-    fn binary(&mut self, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
+    fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
                 self.check(lhs, &Ty::F64);
@@ -149,7 +156,7 @@ impl Checker<'_> {
             }
             BinOp::Rem | BinOp::BitXor | BinOp::BitAnd | BinOp::BitOr | BinOp::Shl | BinOp::Shr => {
                 let file = self.file_of_expr(lhs);
-                let span = self.design.expr_node(lhs).span;
+                let span = self.design.expr_node(whole).span;
                 self.unsupported(file, span, Unsupported::binary(op));
                 None
             }
@@ -225,7 +232,8 @@ impl Checker<'_> {
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         let local = self.locals.get(&decl).cloned();
                         if local.is_none() && !self.poisoned.contains(&decl) {
-                            self.unsupported(file, node.span, "a name whose type is unknown");
+                            let what = if self.fn_where { "a value parameter in the `where` of a `fn`" } else { "a name whose type is unknown" };
+                            self.unsupported(file, node.span, what);
                         }
                         local
                     }
