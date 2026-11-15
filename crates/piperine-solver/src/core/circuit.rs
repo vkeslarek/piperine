@@ -5,8 +5,8 @@
 use crate::analyses::noise::NoiseAnalysisOptions;
 use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analyses::transient::TransientAnalysisOptions;
+use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::netlist::Netlist;
-use crate::core::net::analog_nets;
 use crate::core::element::{Element, ElementCapabilities, Introspect};
 use piperine_digital_solver::state::DigitalState;
 use piperine_digital_solver::topology::DigitalTopology;
@@ -70,7 +70,7 @@ impl CircuitInstance {
     pub fn nets(&self) -> Vec<crate::core::net::Net> {
         use crate::core::net::Net;
         use piperine_digital_solver::events::DigitalNet;
-        let mut nets = analog_nets(&self.netlist);
+        let mut nets = Net::analog_nets(&self.netlist);
         nets.extend(
             (0..self.digital_state.nets.len())
                 .map(|i| Net::digital(i, self.digital_state.label_or_default(DigitalNet(i)))),
@@ -299,7 +299,13 @@ impl CircuitInstance {
                 analog_slice,
             ),
         }
-        .map_err(crate::core::result::digital_failure)
+        .map_err(Self::digital_failure)
+    }
+
+    /// The owner's error for a digital scheduler failure: `DigitalError`'s
+    /// `Display` text, unchanged, under the digital domain.
+    fn digital_failure(e: piperine_digital_solver::error::DigitalError) -> Error {
+        Error::simple(SolverDomain::Digital, e.to_string())
     }
 
     /// Update all devices' cached analog voltages from a solution vector,

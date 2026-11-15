@@ -151,11 +151,13 @@ impl From<&AnalogReference> for Net {
     }
 }
 
-/// Every analog variable of a netlist as a unified [`Net`] — the public naming
-/// layer for result mapping, queries, and diagnostics. Digital nets convert
-/// through `Net::from(DigitalNet)` at the scheduler boundary.
-pub fn analog_nets(netlist: &Netlist) -> Vec<Net> {
-    netlist.all_references().into_iter().map(Into::into).collect()
+impl Net {
+    /// Every analog variable of a netlist as a unified [`Net`] — the public naming
+    /// layer for result mapping, queries, and diagnostics. Digital nets convert
+    /// through `Net::from(DigitalNet)` at the scheduler boundary.
+    pub fn analog_nets(netlist: &Netlist) -> Vec<Net> {
+        netlist.all_references().into_iter().map(Into::into).collect()
+    }
 }
 
 impl From<DigitalNet> for Net {
