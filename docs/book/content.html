@@ -1246,8 +1246,220 @@ assert_eq!(front.port("q").unwrap().writers().len(), 1); // the commit `q <- d;`
 </section>
 
 <!-- ===================================================== 13 -->
-<section id="cheatsheet" class="chapter">
+<section id="abi" class="chapter">
 <p class="ch-num">Chapter 13</p>
+<h2>Device ABI</h2>
+
+<p>Everything the solver simulates is a <strong>device</strong>, and every device meets the solver through one binary interface, the <strong>device ABI</strong>. A resistor compiled from MSL, a BSIM model compiled to OSDI, an AVR microcontroller emulator, the IR interpreter running a model nobody compiled: the solver calls all of them the same way. You never write against it when you write MSL; the compiler does. This chapter is for when you want to know what your module becomes, or to plug in a device that was not written in MSL.</p>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>The design is settled by an adversarial review: a builder and a critic went four rounds, and its elegance score rose from 5.5 to 8.1 with no blocker left. It is <strong>not implemented yet</strong>. Nothing here has been compiled. Its home will be the crate <code>piperine-abi</code>, which has no dependencies and is the only crate a device links against.</p>
+</div>
+
+<h3>Why one ABI</h3>
+
+<p>A simulator usually grows one interface per kind of model: one for compiled analog models, one for digital primitives, one for co-simulation, each with its own hooks for setup, temperature, checkpoints and rollback. Piperine has one. The solver calls every device through the same pointers, whether the library came from <code>dlopen</code> (generated Rust, C, an OSDI adapter, an emulator) or lives in the same process (the IR interpreter, a test element, a host stimulus). A bug in coupling is fixed once, for all of them.</p>
+
+<h3>The idea, in five points</h3>
+
+<ol class="steps">
+<li><strong>A device is a shape plus two kinds of code.</strong> The <em>shape</em> is plain data describing the instance. The code is <em>functions</em>, which are pure (bytes in, bytes out, with partial derivatives), and <em>reactions</em>, which run at an instant and whose only effect is a commit.</li>
+<li><strong>The device has no memory.</strong> Everything that exists over time lives in the solver: unknowns, discrete values, pending commits, integrator and delay histories, limiter iterates. State a device needs is a private pin, just as state in MSL is a <code>signal</code>. So checkpoint, rollback and replay need no entry point.</li>
+<li><strong>A pin is the only shared thing.</strong> A pin is a net seen from an instance, and it obeys the net rules without exception. Ports, internal nodes, branch flows, signals, state, params, temperature, timers, crossings, <code>settle</code>, records: all pins.</li>
+<li><strong>Four analog cells.</strong> What is not a net is an input or an output of a call. A <em>term</em> is a value added to a row, through one of three operators: 1, d/dt or delay. A <em>held input</em> is a value the solver supplies and perturbs (a limiter iterate, a noise source, an AC stimulus). An <em>ambient input</em> is a coordinate of the call (the time, the frequency, the horizon). A <em>watch</em> is an analog output that enters no row (a crossing, a step cap, an operating-point variable).</li>
+<li><strong>One rule runs all code.</strong> A function runs when the solver needs one of its outputs and one of its inputs changed. A reaction runs when an event pin it listens to fires.</li>
+</ol>
+
+<p>The device says only <em>what</em> a value is. A capacitor says "this is a charge"; equilibrium, TR-BDF2, the truncation test, <code>jω·c</code> in an AC sweep and the history across an undone step are the solver's business.</p>
+
+<h3>Who owns what</h3>
+
+<p>One event owner dispatches to an analog and a digital sub-solver, and the boundary between them is events only. Devices sit below both.</p>
+
+<pre class="mermaid">
+flowchart TB
+  H["Host<br/>(a reaction)"]
+  O["Event owner<br/>discrete store, queue,<br/>records, checkpoints"]
+  A["Analog sub-solver<br/>unknowns, rows,<br/>histories, limit iterates"]
+  D["Digital sub-solver<br/>discrete nets, microsteps"]
+  H -- "commits" --> O
+  O -- "boundary events" --> A
+  A -- "a crossing fires an event pin" --> O
+  O -- "instants (t, n)" --> D
+  subgraph DEV["Devices: shape + code, no memory"]
+    AF["analog functions"]
+    DF["discrete functions"]
+    R["reactions"]
+  end
+  A -- "eval" --> AF
+  D -- "eval" --> DF
+  D -- "react" --> R
+  R -- "commit" --> O
+</pre>
+
+<p>The analog side keeps its own copy of the discrete pins its functions read, and that copy changes only through a boundary event. A located crossing is just a commit to the watch's event pin.</p>
+
+<h3>Six entry points</h3>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Entry</th><th>Side</th><th>Contract</th></tr></thead>
+<tbody>
+<tr><td><code>piperine_abi_1() -> *const Library</code></td><td>device</td><td>The one exported symbol; <code>1</code> is the ABI major.</td></tr>
+<tr><td><code>create(module, values, note) -> Created</code></td><td>device</td><td>An instance and its shape, for these param values.</td></tr>
+<tr><td><code>destroy(instance)</code></td><td>device</td><td>Frees the instance and releases its shape.</td></tr>
+<tr><td><code>eval(instance, k, frame) -> Status</code></td><td>device</td><td>Runs function <code>k</code>: reads its inputs, writes its outputs and the partials that were asked for.</td></tr>
+<tr><td><code>react(instance, k, frame) -> Status</code></td><td>device</td><td>Runs reaction <code>k</code>: reads its inputs, calls <code>commit</code>.</td></tr>
+<tr><td><code>commit(statement, offset, len, bytes, after) -> Status</code></td><td>solver</td><td>Queues one write of the calling reaction. Nothing else calls it, and it does nothing else.</td></tr>
+</tbody></table></div>
+
+<p>A call returns <code>OK</code>, <code>FAULT</code> (with a message), <code>RESHAPE</code> (these param values need a different shape) or <code>FINISH</code> (a reaction ends the analysis at its instant). Nothing may unwind across the boundary.</p>
+
+<h3>The Rust side</h3>
+
+<p>In Rust a device is a type that implements one trait. No macro is involved: a generic function produces the C thunks.</p>
+
+<pre data-lang="rust">pub trait Device: Sized + Send + 'static {
+    fn prototype() -> &'static Shape;
+    fn create(values: &Values<'_>) -> Result<(Self, Arc<Shape>), Fault>;
+    fn eval (&self, k: u32, cx: &mut Eval<'_>)  -> Result<(), Fault>;
+    fn react(&self, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault>;      // Flow::Continue | Flow::Finish
+}
+pub const fn module<D: Device>(name: &'static str) -> Module;       // generic extern "C" thunks; no macro</pre>
+
+<p><code>Eval</code> and <code>React</code> are borrow-checked views over the call's buffers: <code>cx.f64(i)</code> and <code>cx.bytes(i)</code> read input <code>i</code>, <code>cx.set(j, v)</code> writes output <code>j</code>, <code>cx.jac()</code> is the partials, <code>cx.commit(statement, bytes, after)</code> queues a write. A panic becomes a <code>FAULT</code> with its message.</p>
+
+<h3>Three devices</h3>
+
+<p>These are verbatim from the ABI document, with the partials written by hand so the contract shows. The comment above each one is its shape: <code>reads</code> and <code>writes</code> in order, partials as <code>(write ← read)</code>. Generated code computes the partials for you.</p>
+
+<p><strong>A resistor.</strong> In MSL it is one line of behavior:</p>
+
+<pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 = 1k; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }</pre>
+
+<p>As a device it is two port pins, one param pin, one term and one function:</p>
+
+<pre data-lang="rust">// pins:   p, n (PORT continuous);  r (PARAM F64, default 1e3)
+// terms:  T0 FLOW {p, n} "i"
+// fn 0 "i":  reads [p, n, r]   writes [T0]   partials (0←0) (0←1) (0←2)
+fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+    let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
+    cx.set(0, v / r);
+    cx.jac().copy_from_slice(&[1.0 / r, -1.0 / r, -v / (r * r)]);    // the last matters only when seeded
+    Ok(())
+}</pre>
+
+<p>Two resistors of 1&nbsp;kΩ and 2&nbsp;kΩ share this shape; the solver seeds each one's param net with its value.</p>
+
+<p><strong>A D flip-flop.</strong> The MSL:</p>
+
+<pre data-lang="msl">module Dff(in clk: Bit, in d: Bit, out q: Bit = false) {}
+digital for Dff { on clk.rise() { q <- d; } }</pre>
+
+<p>The edge <code>clk.rise()</code> becomes a discrete function that fires a private event pin; the <code>on</code> block becomes a reaction listening to it; <code>q &lt;- d</code> becomes one commit:</p>
+
+<pre data-lang="rust">// pins: clk, d (PORT BIT);  q (PORT BIT, init LOW);  rise (PRIVATE event)
+// fn 0 "rise":  reads [clk.VALUE, clk.PREVIOUS, clk.CHANGED]   writes [rise]
+// reaction 0:   on [rise]   reads [d]   writes [S0 {q}]
+fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+    cx.set(0, (cx.bytes(2) == [1] && cx.bytes(0) == HIGH && cx.bytes(1) == LOW) as u8);
+    Ok(())
+}
+fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+    cx.commit(0, cx.bytes(0), 0.0)?;                  // q <- d : applies at (t, n+1)
+    Ok(Flow::Continue)
+}</pre>
+
+<p><strong>An AVR emulator.</strong> Not written in MSL at all: a foreign device with its own clock, coupled through the same six entry points. Its whole CPU state is one private pin, so the solver can checkpoint and roll it back like any signal.</p>
+
+<pre data-lang="rust">// pins:  pad_in[8], pad_out[8] (PORT BIT)     adc0 (PORT continuous)     reset (PORT BIT)
+//        firmware (PARAM U8[256], STRUCTURAL)  f_cpu (PARAM F64)
+//        cpu (PRIVATE discrete, QUIET; layout: registers, SRAM, timers, its own tick — plain fields)
+//        adc_val (PRIVATE REAL)                log (PRIVATE discrete, RECORD)
+//        irq, wake, sample (PRIVATE event)
+//        resolution (GLOBAL RESOLUTION), start (GLOBAL START)
+// fn 0 "pad change": reads [pad_in[0..8].CHANGED, reset.CHANGED, adc_val.CHANGED]   writes [irq]
+// reaction 0 "run":    on [start, irq, wake]
+//                      reads  [cpu, pad_in[0..8], reset, adc_val, resolution, start.CHANGED, TICK, HORIZON]
+//                      writes [S0 {cpu}, S1..S8 {pad_out[i], LATER}, S9 {wake, LATER|REPLACE},
+//                              S10 {sample, LATER}, S11 {log}]
+// reaction 1 "sample": on [sample]   reads [adc0]   writes [S0 {adc_val}]
+fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
+    if k == 1 { cx.commit(0, &real(cx.f64(0)), 0.0)?; return Ok(Flow::Continue); }
+
+    let mut cpu: Cpu = *cx.get::<Cpu>(CPU).unwrap();           // a copy of the state pin; Cpu: Pod
+    let (now, horizon, res) = (cx.i64(TICK), cx.i64(HORIZON), cx.f64(RES));
+    if cx.bytes(START) == [1] { cpu = Cpu::reset(now); }
+    cpu.set_pads(cx.bits(PAD_IN), cx.bytes(RESET));            // pin-change interrupts are raised here
+    cpu.adc_result(cx.get::<Real>(ADC_VAL));
+
+    // run my own clock through the horizon, or to my first externally visible action
+    let stop = cpu.run(&self.flash, self.ticks_per_cycle, horizon);
+    let dt = (cpu.tick - now) as f64 * res;
+    match stop {
+        Stop::PadWrite { pad, level } => cx.commit(1 + pad, &level, dt)?,   // the edge keeps its exact time
+        Stop::AdcStart                => cx.commit(10, &[], dt)?,           // fire `sample` then
+        Stop::Break { pc }            => cx.commit(11, bytes_of(&Log { pc, known: 1 }), 0.0)?,   // a record
+        Stop::Horizon | Stop::Sleep   => {}
+    }
+    cx.commit(9, &[], cpu.next_wake(now, res))?;               // "advance me to": REPLACE re-arms
+    cx.commit(0, bytes_of(&cpu), 0.0)?;                        // the state, committed like any signal
+    Ok(Flow::Continue)
+}</pre>
+
+<ul>
+<li><strong>How far it may run.</strong> <code>HORIZON</code> is the last tick through which nothing it listens to or reads can change. It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.</li>
+<li><strong>"Wake me at."</strong> A commit with a delay to its private <code>wake</code> event pin; <code>REPLACE</code> re-arms it.</li>
+<li><strong>The ADC.</strong> A second reaction that reads a continuous pin, so only the samples cost an analog landing.</li>
+<li><strong>Rollback.</strong> None of its own: its state is a pin in the owner's checkpoint. An emulator that cannot expose its state marks <code>run</code> <code>IRREVERSIBLE</code> instead, and pays for it with an analog landing at every instant it fires (in a design with a crossing) and a session the host cannot rewind.</li>
+</ul>
+
+<h3>What your MSL becomes</h3>
+
+<p>Each MSL construct lands on one ABI piece:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>You write</th><th>The device gets</th></tr></thead>
+<tbody>
+<tr><td>a contribution <code>i(p, n) +> x</code></td><td>a <strong>term</strong> on <code>{p, n}</code>, operator 1 (<code>FLOW</code>)</td></tr>
+<tr><td><code>v(p, n) +> x</code></td><td>two <code>FLOW</code> terms and a private continuous pin for the branch current</td></tr>
+<tr><td><code>ddt(x)</code>, <code>delay(x, td)</code></td><td>the <strong>term's operator</strong>: <code>DDT</code>, <code>DELAY</code> (<code>idt</code> is stdlib over <code>DDT</code>)</td></tr>
+<tr><td><code>noise(psd, name)</code>, an AC stimulus, <code>limit</code></td><td>a held <strong>input</strong>: <code>NOISE</code>, <code>STIM</code>, <code>LIMIT</code></td></tr>
+<tr><td><code>now()</code>, <code>freq()</code></td><td>an ambient <strong>input</strong>: <code>TIME</code>, <code>FREQ</code></td></tr>
+<tr><td><code>cross(e)</code>, <code>above(e)</code></td><td>a <strong>watch</strong> (<code>CROSS</code>) that fires a private event pin</td></tr>
+<tr><td><code>bound_step(dt)</code></td><td>a <strong>watch</strong> (<code>CAP</code>)</td></tr>
+<tr><td><code>on clk.rise() { … }</code></td><td>a <strong>reaction</strong> on an event pin, fired by a discrete function for the edge</td></tr>
+<tr><td><code>q &lt;- d</code>, <code>after td</code></td><td>a <strong>commit</strong>, with its delay</td></tr>
+<tr><td>a param <code>r: f64</code>; its <code>where</code></td><td>a <code>PARAM</code> <strong>pin</strong>; a boolean pin that must hold for a write to be accepted</td></tr>
+<tr><td>a <code>signal</code>, an internal node</td><td>a private <strong>pin</strong> (discrete, continuous)</td></tr>
+<tr><td><code>temperature()</code>, <code>settle</code></td><td>a global <strong>pin</strong> the session binds</td></tr>
+<tr><td><code>emit!</code></td><td>a commit to a pin flagged <code>RECORD</code></td></tr>
+</tbody></table></div>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>Because a function is pure and a device holds no hidden state, a recorded call is a unit test: the same bytes through the compiled device and through the interpreter must give the same answer. In a debug session the solver also checks every Jacobian against finite differences.</p>
+</div>
+
+<h3>What it changes in the spec</h3>
+
+<p>The ABI fits the language as specified except in a few sentences. These changes are decided; they will land in the specification in a small follow-up, so the rest of this book does not show them yet.</p>
+
+<ul>
+<li><strong>Delayed commits do not make time points (<code>LATER</code>, §17.2).</strong> A commit whose delay always moves time forward by at least one tick changes nothing at the instant that made it. Only its due time is tested, on its own. The one change you can observe: <code>on settle</code> sees fewer time points.</li>
+<li><strong>What a time point is.</strong> A time at which the analog solver produces an accepted solution <em>and</em> runs the time-point procedure. The simulator may accept solutions at other times; those are not time points, and <code>settle</code> does not fire there.</li>
+<li><strong>The C interface of an <code>extern</code> module is this ABI.</strong> <code>"osdi"</code> names the OSDI adapter; <code>"cosim"</code> is a module whose reaction is irreversible. A <code>"cosim"</code> module stays digital-only for now.</li>
+<li><strong>Two new core functions, <code>gmin()</code> and <code>source_scale()</code>,</strong> in the same family as <code>now()</code> and <code>freq()</code>. They let a model see the solver's continuation variables, as junction models in ngspice do.</li>
+<li><strong>Smaller ones.</strong> Two sentences on bytes (all-zero bytes are the all-unknown value; an unknown level's value bytes are zero), a <code>set</code> that would change an extern module's structure is refused like a structural param, and a note in Appendix C that records travel as quiet commits.</li>
+</ul>
+
+<p class="linkout">The full ABI, every struct, rule and call sequence, is in <code>.specs/features/device-abi/abi.md</code> of the codegen-plan repository.</p>
+</section>
+
+<!-- ===================================================== 14 -->
+<section id="cheatsheet" class="chapter">
+<p class="ch-num">Chapter 14</p>
 <h2>Cheat sheet</h2>
 
 <p>One screen of syntax. Everything not here is Rust.</p>
