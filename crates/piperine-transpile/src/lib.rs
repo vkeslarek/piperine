@@ -19,6 +19,7 @@ mod load;
 pub mod print;
 pub mod rt;
 mod rustc;
+mod shape_check;
 mod settings;
 
 pub use abi_source::AbiSource;

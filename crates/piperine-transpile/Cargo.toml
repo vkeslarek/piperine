@@ -8,6 +8,7 @@ description = "The compiled backend: a Piperine IR printed as Rust, built by rus
 piperine-ir = { path = "../piperine-ir" }
 piperine-abi = { path = "../piperine-abi" }
 piperine-plan = { path = "../piperine-plan" }
+piperine-solver = { path = "../piperine-solver" }
 sha2 = "0.10"
 libloading.workspace = true
 

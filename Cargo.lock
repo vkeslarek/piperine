@@ -1587,6 +1587,7 @@ dependencies = [
  "piperine-interp",
  "piperine-ir",
  "piperine-plan",
+ "piperine-solver",
  "sha2",
  "tempfile",
 ]

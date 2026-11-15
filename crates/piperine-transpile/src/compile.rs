@@ -62,7 +62,7 @@ impl Transpiler {
             }
         };
         report.rustc_invocations = rustc.invocations();
-        Ok(Compiled { ir: self.ir.clone(), entry, loaded, report })
+        Compiled::bind(self.ir.clone(), &self.plans, entry, loaded, report)
     }
 
     fn build_and_open(
