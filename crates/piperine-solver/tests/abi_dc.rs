@@ -1,15 +1,24 @@
 //! The DC driver on devices (SAI-11): the circuits of `helper_devices.rs`
 //! built from `Device`s read the same analytic values with the same
-//! tolerances, and the homotopy's source scale reaches a source through the
-//! `SOURCE_SCALE` ambient input.
+//! tolerances, and the homotopy's continuation values reach a device through
+//! the ambient inputs: the source scale through `SOURCE_SCALE`, the gmin step
+//! through `GMIN`.
 
 // The target uses the library selectively.
 #[allow(dead_code)]
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
 
+use std::result::Result;
+use std::sync::{Arc, OnceLock};
+
 use abi_devices::{add_diode, add_resistor, add_vsrc, node_id};
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, ambient, cell, op, part, role};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
+use piperine_abi::thunk::module;
 use piperine_analog_solver::convergence::HomotopyDriver;
+use piperine_solver::abi::Port;
 use piperine_solver::prelude::{AnalogReference, CircuitBuilder, CircuitInstance, Context};
 
 fn dc_node(circuit: &mut CircuitInstance, node: &AnalogReference) -> f64 {
@@ -75,4 +84,71 @@ fn source_stepping_scales_sources_through_the_ambient_input() {
     dc.set_src_scale(1.0);
     let whole = dc.newton().expect("a solve at rest");
     assert!((whole[at] - full).abs() < 1.0e-9, "v(mid) = {} at scale 1", whole[at]);
+}
+
+// ---------------------------------------------------------------------------
+// The gmin-stepping continuation reaches a device through the `GMIN` input.
+// ---------------------------------------------------------------------------
+
+/// Drives the ambient `GMIN` (in amperes per siemens) into its node.
+/// pins: a=0 (PORT); terms: T0 FLOW{a, GROUND} "i" = -GMIN
+/// fn 0: reads [GMIN] writes [T0] (no partial: the term reads no unknown)
+struct GminProbe;
+static GMIN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static GMIN_PROBE: OnceLock<Module> = OnceLock::new();
+
+fn gmin_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let t0 = s.term(TermSpec { name: "i", origin: "abi_dc.rs", op: op::FLOW, plus: a, minus: GROUND, abstol: DEFAULT, max: DEFAULT });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: "abi_dc.rs",
+        reads: vec![Cell { kind: cell::AMBIENT, index: ambient::GMIN, part: part::VALUE }],
+        writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for GminProbe {
+    fn prototype() -> &'static Shape<'static> {
+        GMIN_SHAPE.get_or_init(gmin_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((GminProbe, Arc::clone(GMIN_SHAPE.get_or_init(gmin_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let gmin = cx.f64(0);
+        cx.set(0, -gmin);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+#[test]
+fn gmin_stepping_reaches_a_device_through_the_ambient_input() {
+    // The probe drives GMIN amperes into a 1 Ω load; the driver's own shunt of
+    // the step (`g` on every node) parallels it: v = (gmin + g) / (1 + g).
+    let mut b = CircuitBuilder::new("gmin probe");
+    let gnd = b.ground();
+    let a = b.node("a");
+    b.device(GMIN_PROBE.get_or_init(|| module::<GminProbe>("GminProbe")), "probe", &[], &[Port::Node(a.clone())]);
+    add_resistor(&mut b, "r1", 1.0, &a, &gnd);
+    let mut circuit = b.build().expect("build");
+    let at = a.idx().expect("a is solved");
+    let gmin = Context::default().tolerances.gmin;
+
+    let mut dc = circuit.dc(Context::default()).expect("dc");
+    dc.set_gmin_extra(0.5);
+    let stepped = dc.newton().expect("a solve on a gmin step");
+    let expected = (gmin + 0.5) / 1.5;
+    assert!((stepped[at] - expected).abs() < 1.0e-12, "v(a) = {} on the 0.5 S step, expected {expected}", stepped[at]);
+
+    // At rest the input is the session's gmin again.
+    dc.set_gmin_extra(0.0);
+    let rest = dc.newton().expect("a solve at rest");
+    assert!((rest[at] - gmin).abs() < 1.0e-15, "v(a) = {} at rest, expected {gmin}", rest[at]);
 }

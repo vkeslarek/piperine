@@ -747,8 +747,8 @@ Proof: run solver | test globals_hold_the_session_values ... ok
 **C20** - Sensitivities use declared partials against the param's pin and fall back to a finite difference (SAI-10, Protocol AC 20)
 Proof: run solver | test sensitivity_uses_declared_partials_and_falls_back_to_a_finite_difference ... ok
 
-**C21** - The drivers take stamps, the veto and the continuation values from the assembly (SAI-11, Protocol AC 21)
-Proof: run solver | test divider_reads_the_analytic_ratio_on_devices ... ok
+**C21** - The drivers take stamps, the veto and the continuation values from the assembly (SAI-11, Protocol AC 21): the DC, transient, AC and noise drivers read the analytic values on devices, an active `LIMIT` vetoes convergence, and the gmin step and the source scale reach a device through `GMIN` and `SOURCE_SCALE`
+Proof: `o=$(cargo test -p piperine-solver --test abi_dc --test abi_tran --test abi_ac --test abi_noise --test limiting_report 2>&1); for t in divider_reads_the_analytic_ratio_on_devices rc_step_reads_one_minus_exp_on_devices an_rlc_peak_matches_the_baseline_on_devices a_resistor_divider_has_its_thermal_noise_on_devices active_limiter_vetoes_newton_convergence gmin_stepping_reaches_a_device_through_the_ambient_input source_stepping_scales_sources_through_the_ambient_input; do printf '%s\n' "$o" | grep -q "test $t ... ok" || { echo "no pass line for $t"; exit 1; }; done`
 
 **C22** - The smallest `CAP` bounds the next step and a fired `CROSS` is committed at the landing (SAI-11, Protocol AC 22)
 Proof: run solver | test a_cap_watch_bounds_the_next_step ... ok
