@@ -440,7 +440,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 21] = [const { OnceLock::new() }; 21];
+    static M: [OnceLock<Module>; 24] = [const { OnceLock::new() }; 24];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -463,6 +463,9 @@ pub fn modules() -> Modules {
         delay_line: module_of::<DelayLine>(&M[18], "DelayLine"),
         trio: module_of::<Trio>(&M[19], "Trio"),
         ac_vsource: module_of::<AcVSource>(&M[20], "AcVSource"),
+        noisy: module_of::<NoisyResistor>(&M[21], "NoisyResistor"),
+        split: module_of::<Split>(&M[22], "Split"),
+        flicker: module_of::<Flicker>(&M[23], "Flicker"),
     }
 }
 
@@ -490,6 +493,9 @@ pub struct Modules {
     pub delay_line: &'static Module,
     pub trio: &'static Module,
     pub ac_vsource: &'static Module,
+    pub noisy: &'static Module,
+    pub split: &'static Module,
+    pub flicker: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)
@@ -1271,6 +1277,189 @@ impl Device for AcVSource {
         } else {
             cx.set(0, cx.f64(0));
             cx.set(1, cx.f64(1));
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+// ─── Noise fixtures ─────────────────────────────────────────────────────────
+
+/// The temperature of the noise fixtures, kelvin.
+pub const T_NOISE: f64 = 300.15;
+
+/// pins: r=0 (PARAM F64); p=1, n=2 (PORT continuous)
+/// inputs: I0 NOISE "thermal"       terms: T0 FLOW {p, n} "i" = v/r + I0
+/// fn 0 "i":   reads [p, n, r, I0] writes [T0] partials (0←0)=1/r (0←1)=−1/r (0←2)=−v/r² (0←3)=1
+/// fn 1 "psd": reads [r] writes [I0.PSD] = 4·k·T/r
+pub struct NoisyResistor;
+static NOISY: OnceLock<ShapeRef> = OnceLock::new();
+
+fn noisy_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let r = s.pin(param("r"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let i0 = s.input(InputSpec { name: "thermal", origin: "fixture:noisy:I0", kind: input::NOISE });
+    let t0 = s.term(flow("i", op::FLOW, p, n));
+    s.function(FunctionSpec {
+        name: "i",
+        reads: vec![pin(p), pin(n), pin(r), inp(i0, part::VALUE)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1), partial(0, 2), partial(0, 3)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "psd",
+        reads: vec![pin(r)],
+        writes: vec![inp(i0, part::PSD)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for NoisyResistor {
+    fn prototype() -> &'static Shape {
+        shared(&NOISY, noisy_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((NoisyResistor, Arc::clone(shared(&NOISY, noisy_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
+            cx.set(0, v / r + cx.f64(3));
+            cx.jac().copy_from_slice(&[1.0 / r, -1.0 / r, -v / (r * r), 1.0]);
+        } else {
+            cx.set(0, 4.0 * K_B * T_NOISE / cx.f64(0));
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A resistor split into two parallel halves, each with a thermal source;
+/// with `shared` = 1 the second half reads the first half's input with
+/// partial −1 (one source on two paths), with `shared` = 0 its own input.
+/// pins: r=0, shared=1 (PARAM F64); p=2, n=3 (PORT continuous)
+/// inputs: I0 NOISE "a", I1 NOISE "b"
+/// terms: T0 FLOW {p, n} "ha" = v/(2r) + I0;  T1 FLOW {p, n} "hb" = v/(2r) − shared·I0 + (1 − shared)·I1
+/// fn 0 "i":   reads [p, n, r, shared, I0, I1] writes [T0, T1]
+///             partials (0←0) (0←1) (0←4)=1 (1←0) (1←1) (1←4)=−shared (1←5)=1−shared
+/// fn 1 "psd": reads [r] writes [I0.PSD, I1.PSD] = 4·k·T/(2r) each
+pub struct Split;
+static SPLIT: OnceLock<ShapeRef> = OnceLock::new();
+
+fn split_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let r = s.pin(param("r"));
+    let sh = s.pin(param("shared"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let i0 = s.input(InputSpec { name: "a", origin: "fixture:split:I0", kind: input::NOISE });
+    let i1 = s.input(InputSpec { name: "b", origin: "fixture:split:I1", kind: input::NOISE });
+    let t0 = s.term(flow("ha", op::FLOW, p, n));
+    let t1 = s.term(flow("hb", op::FLOW, p, n));
+    s.function(FunctionSpec {
+        name: "i",
+        reads: vec![pin(p), pin(n), pin(r), pin(sh), inp(i0, part::VALUE), inp(i1, part::VALUE)],
+        writes: vec![term(t0), term(t1)],
+        partials: vec![
+            partial(0, 0),
+            partial(0, 1),
+            partial(0, 4),
+            partial(1, 0),
+            partial(1, 1),
+            partial(1, 4),
+            partial(1, 5),
+        ],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "psd",
+        reads: vec![pin(r)],
+        writes: vec![inp(i0, part::PSD), inp(i1, part::PSD)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Split {
+    fn prototype() -> &'static Shape {
+        shared(&SPLIT, split_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Split, Arc::clone(shared(&SPLIT, split_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            let (v, r, sh) = (cx.f64(0) - cx.f64(1), cx.f64(2), cx.f64(3));
+            let g = 1.0 / (2.0 * r);
+            cx.set(0, g * v + cx.f64(4));
+            cx.set(1, g * v - sh * cx.f64(4) + (1.0 - sh) * cx.f64(5));
+            cx.jac().copy_from_slice(&[g, -g, 1.0, g, -g, -sh, 1.0 - sh]);
+        } else {
+            let psd = 4.0 * K_B * T_NOISE / (2.0 * cx.f64(0));
+            cx.set(0, psd);
+            cx.set(1, psd);
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A flicker source whose density reads `FREQ`.
+/// pins: tag=0 (PARAM F64); p=1 (PORT continuous)
+/// inputs: I0 NOISE "flicker"       terms: T0 FLOW {p, GROUND} "i" = G_LIMIT·v + I0
+/// fn 0 "i":   reads [p, I0] writes [T0] partials (0←0)=G_LIMIT (0←1)=1
+/// fn 1 "psd": reads [FREQ] writes [I0.PSD] = KF/freq        (records every call)
+pub struct Flicker {
+    tag: u64,
+}
+static FLICKER: OnceLock<ShapeRef> = OnceLock::new();
+
+fn flicker_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(param("tag"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let i0 = s.input(InputSpec { name: "flicker", origin: "fixture:flicker:I0", kind: input::NOISE });
+    let t0 = s.term(flow("i", op::FLOW, p, GROUND));
+    s.function(FunctionSpec {
+        name: "i",
+        reads: vec![pin(p), inp(i0, part::VALUE)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "psd",
+        reads: vec![ambient(ambient::FREQ)],
+        writes: vec![inp(i0, part::PSD)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Flicker {
+    fn prototype() -> &'static Shape {
+        shared(&FLICKER, flicker_shape).shape()
+    }
+    fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Flicker { tag: tag_of(values) }, Arc::clone(shared(&FLICKER, flicker_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            cx.set(0, G_LIMIT * cx.f64(0) + cx.f64(1));
+            cx.jac().copy_from_slice(&[G_LIMIT, 1.0]);
+        } else {
+            record(self.tag, cx, 0);
+            cx.set(0, KF / cx.f64(0));
         }
         Ok(())
     }

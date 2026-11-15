@@ -65,6 +65,45 @@ fn phasor(x: &InputPlan, st: &InstanceState) -> Complex64 {
     Complex64::new(strength(st, x.re), strength(st, x.im))
 }
 
+/// One noise source: a `NOISE` input injected through every term that reads
+/// it, so one input on two terms is one fully correlated source (A2).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoiseColumn {
+    /// `<instance path>.<input name>`.
+    pub name: String,
+    /// Its density `PSD` at this frequency.
+    pub psd: f64,
+    /// The injection `b`: per row, the sum over terms of `±w·g`.
+    pub rows: Vec<(AnalogReference, Complex64)>,
+}
+
+/// Appends one column per `NOISE` input of `inst`.
+pub(crate) fn noise_columns(inst: &InstancePlan, st: &InstanceState, omega: f64, out: &mut Vec<NoiseColumn>) {
+    for (i, x) in inst.inputs.iter().enumerate() {
+        if x.kind != input::NOISE {
+            continue;
+        }
+        let mut rows: Vec<(AnalogReference, Complex64)> = Vec::new();
+        let mut add = |r: &Option<AnalogReference>, v: Complex64| {
+            let Some(r) = r else { return };
+            match rows.iter_mut().find(|(q, _)| q.idx() == r.idx()) {
+                Some((_, s)) => *s += v,
+                None => rows.push((r.clone(), v)),
+            }
+        };
+        for t in &inst.terms {
+            let Some((fi, _)) = t.value else { continue };
+            let w = response(t, st, omega);
+            for (p, _) in t.via.iter().filter(|(_, j)| *j == i) {
+                let v = w * st.fns[fi].jac[*p];
+                add(&t.plus, v);
+                add(&t.minus, -v);
+            }
+        }
+        out.push(NoiseColumn { name: format!("{}.{}", inst.path, x.name), psd: strength(st, x.psd), rows });
+    }
+}
+
 /// The right side term `t` adds through its partials against `STIM` inputs.
 pub(crate) fn stimulus(t: &TermPlan, inst: &InstancePlan, st: &InstanceState, w: Complex64, out: &mut ComplexStamps) {
     let Some((fi, _)) = t.value else { return };

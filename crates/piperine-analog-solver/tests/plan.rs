@@ -133,7 +133,7 @@ fn an_analog_bind_error_names_its_entry() {
 }
 
 /// The fixtures that must pass every rule (all but `bad_limit`).
-fn valid(m: &Modules) -> [(&'static str, &'static Module); 20] {
+fn valid(m: &Modules) -> [(&'static str, &'static Module); 23] {
     [
         ("resistor", m.resistor),
         ("diode", m.diode),
@@ -155,6 +155,9 @@ fn valid(m: &Modules) -> [(&'static str, &'static Module); 20] {
         ("delay_line", m.delay_line),
         ("trio", m.trio),
         ("ac_vsource", m.ac_vsource),
+        ("noisy", m.noisy),
+        ("split", m.split),
+        ("flicker", m.flicker),
     ]
 }
 
@@ -205,6 +208,10 @@ fn every_fixture_function_passes_the_partials_verifier() {
         ("trio", m.trio, 0, vec![f(0.4), f(0.5), f(0.6), f(2.0), f(3.0), f(4.0), f(1e-9)]),
         ("ac_vsource v", m.ac_vsource, 0, vec![f(3.0), f(1.0), f(2e-3), f(5.0), f(0.0)]),
         ("ac_vsource ac", m.ac_vsource, 1, vec![f(1.0), f(0.0)]),
+        ("noisy", m.noisy, 0, vec![f(0.9), f(0.2), f(1e3), f(0.0)]),
+        ("split shared", m.split, 0, vec![f(0.9), f(0.2), f(1e3), f(1.0), f(0.0), f(0.0)]),
+        ("split apart", m.split, 0, vec![f(0.9), f(0.2), f(1e3), f(0.0), f(0.0), f(0.0)]),
+        ("flicker", m.flicker, 0, vec![f(0.4), f(0.0)]),
     ];
     for (name, module, k, input) in points {
         let h = Handle::create(module, &[]).expect("create");

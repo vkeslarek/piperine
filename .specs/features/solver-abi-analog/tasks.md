@@ -249,10 +249,10 @@ T7 → T8 → T9 → T10
 
 **Done when**:
 
-- [ ] Test `a_noise_input_is_one_column_with_its_psd` passes for a resistor's thermal source: rows `+1` at `plus`, `−1` at `minus`, density `4kT/R`
-- [ ] Test `one_noise_input_on_two_terms_is_correlated` passes: a resistor split in two that shares one input gives zero density across the pair, and two inputs give the sum (C15)
-- [ ] Test `a_psd_that_reads_freq_is_evaluated_per_frequency` passes and is not evaluated outside a noise sweep (A4)
-- [ ] Gate: full
+- [x] Test `a_noise_input_is_one_column_with_its_psd` passes for a resistor's thermal source: rows `+1` at `plus`, `−1` at `minus`, density `4kT/R`
+- [x] Test `one_noise_input_on_two_terms_is_correlated` passes: a resistor split in two that shares one input gives zero density across the pair, and two inputs give the sum (C15)
+- [x] Test `a_psd_that_reads_freq_is_evaluated_per_frequency` passes and is not evaluated outside a noise sweep (A4)
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

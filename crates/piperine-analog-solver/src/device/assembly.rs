@@ -13,7 +13,7 @@ use super::delay::{Delayed, stamp_delay};
 use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
-use super::small_signal::{ComplexStamps, response, stamp_matrix, stimulus};
+use super::small_signal::{ComplexStamps, NoiseColumn, noise_columns, response, stamp_matrix, stimulus};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
 use crate::error::Error;
 use crate::math::linear::Stamp;
@@ -156,7 +156,7 @@ impl Assembly {
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             for pass in [true, false] {
                 for (fi, f) in inst.functions.iter().enumerate() {
-                    let needed = f.rows || (need.stim && f.stim);
+                    let needed = f.rows || (need.stim && f.stim) || (need.noise && f.noise);
                     if needed && f.limits == pass {
                         let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
                         run(inst, f, &mut st.fns[fi], &ctx, &mut self.scratch)?;
@@ -278,6 +278,23 @@ impl Assembly {
         Ok((matrix, rhs))
     }
 
+    /// The noise sources at operating point `op` and sweep frequency
+    /// `amb.freq`: one column per `NOISE` input, through every term that
+    /// reads it, with its density `PSD` (abi.md §10 "Noise"). Densities are
+    /// evaluated here only (A4).
+    // SPEC_DEVIATION: design.md gives `noise_sources(op, freq)`; it takes the
+    // ambient, as `assemble_ac` does.
+    // Reason: `FREQ` and the continuation values are ambient inputs.
+    pub fn noise_sources(&mut self, op: &[f64], amb: Ambient) -> Result<Vec<NoiseColumn>, Error> {
+        self.evaluate_for(op, amb, Need::NOISE)?;
+        let omega = 2.0 * std::f64::consts::PI * amb.freq;
+        let mut out = Vec::new();
+        for (inst, st) in self.plan.instances.iter().zip(&self.state) {
+            noise_columns(inst, st, omega, &mut out);
+        }
+        Ok(out)
+    }
+
     /// Records, for every `DDT` term, its value at the converged solution `x`
     /// as the newest history row. Called once per converged solve, where the
     /// Newton state buffer gains its row (a stage, an operating point, an
@@ -329,13 +346,16 @@ fn max_of(t: &TermPlan, slots: &[Vec<u8>]) -> f64 {
 pub(crate) struct Need {
     /// `STIM` strengths (a small-signal sweep).
     pub stim: bool,
+    /// `NOISE` densities (a noise sweep).
+    pub noise: bool,
     /// A small-signal linearization: every limit holds `x̂ = x`.
     pub small_signal: bool,
 }
 
 impl Need {
-    pub const NEWTON: Need = Need { stim: false, small_signal: false };
-    pub const AC: Need = Need { stim: true, small_signal: true };
+    pub const NEWTON: Need = Need { stim: false, noise: false, small_signal: false };
+    pub const AC: Need = Need { stim: true, noise: false, small_signal: true };
+    pub const NOISE: Need = Need { stim: false, noise: true, small_signal: true };
 }
 
 /// Everything a read cell's bytes come from.
@@ -448,13 +468,12 @@ fn check_finite(inst: &InstancePlan, st: &InstanceState, need: Need) -> Result<(
                 return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
             }
         }
-        if need.stim {
-            for (what, at) in [("RE", x.re), ("IM", x.im)] {
-                let Some((fi, w)) = at else { continue };
-                let v = st.fns[fi].f64(w);
-                if !v.is_finite() {
-                    return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
-                }
+        // Strengths only where the sweep reads them (A4).
+        for (what, at, read) in [("RE", x.re, need.stim), ("IM", x.im, need.stim), ("PSD", x.psd, need.noise)] {
+            let Some((fi, w)) = at.filter(|_| read) else { continue };
+            let v = st.fns[fi].f64(w);
+            if !v.is_finite() {
+                return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
             }
         }
         if let Some((fi, _)) = x.proposed {
