@@ -1,6 +1,8 @@
 # MSL Type Checking (M1 subset) Specification
 
-**Status**: Draft. Not approved. Scoped to M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S5).
+**Approved**: 2026-11-15 - user: "Concordo e pode disparar"; M1 questions: all recommended options accepted
+
+**Status**: Approved. Scoped to M1 of the end-to-end slice (`.specs/features/codegen/context.md` S1, S5).
 
 ## Problem Statement
 
@@ -32,21 +34,21 @@ The POM resolves names and stops there. It gives no expression a type, and it le
 
 ## Assumptions & Open Questions
 
-Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. Rows marked `n` wait for the user in `.specs/features/e2e-m1/questions.md`.
+Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. No row is left open: the user answered `.specs/features/e2e-m1/questions.md` on 2026-11-15.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
 | Type checking is a feature of its own, scoped to M1 | this feature | context S5, user: "Concordo e pode disparar" | y |
-| The subset is what the M1 models need | the constructs listed in TYP-02 to TYP-05 | derived by writing the models first: `.specs/features/e2e-m1/models/*.msl` build on today's POM with zero diagnostics | y |
+| The subset is what the M1 models need | the constructs listed in TYP-02 to TYP-05 | derived by writing the models first: `tests/ngspice/*.msl` build on today's POM with zero diagnostics | y |
 | Checking is demand-driven from one top module | the modules it places, the functions they call, the constants they read, transitively | `std/analog.msl` alone holds generics, traits and arrays; an eager pass would refuse the library | y |
 | Types live in a side table keyed by POM ids | `Types`, borrowed with the `Design` | `pom/mod.rs` "The one rule"; C3 | y |
 | Crate | `piperine_lang::types`, beside `pom` | it reads only the POM; §0.3 places type checking in elaboration, which is this crate's (ELAB-Q7) | y |
 | Method catalogue | the rows of Appendix H.2 the models call: `exp`, `ln`, `sqrt`, `abs` on `f64` | Appendix H rule 1: the catalogue is closed; a table of rows, one line each to extend | y |
-| Code of a construct outside the subset (Q5) | `P0001`, a compiler-owned code outside the `Eppnn` space | the specification has no code for "not supported yet", and its numbers are never reused | n |
-| Code of a plain type mismatch (Q5) | `P0002` until Part I owns one | no error table of `docs/spec/` has a row for a mismatched type; §0.4 leaves it to Rust | n |
+| Code of a construct outside the subset (Q5) | `P0001`, a compiler-owned code outside the `Eppnn` space | the specification has no code for "not supported yet", and its numbers are never reused | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
+| Code of a plain type mismatch (Q5) | `P0002` until Part I owns one | no error table of `docs/spec/` has a row for a mismatched type; §0.4 leaves it to Rust | y - Q4 to Q8, user 2026-11-15: "Accept all (Recommended)" |
 | An SI-suffixed literal and a float literal are `f64`; an unsuffixed integer literal is refused where an `f64` is required | as stated | Appendix A.2; §22 Resolution at `rout`: "`100`, an integer literal, which is a type error for an `f64` param" | y |
 
-**Open questions:** Q5 of `.specs/features/e2e-m1/questions.md` (the two codes). Everything else is resolved above.
+**Open questions:** none - all resolved or logged above. The eight questions of `.specs/features/e2e-m1/questions.md` were answered by the user on 2026-11-15, every one with the recommended option.
 
 **Implicit-requirement dimensions.** Input validation and bounds: TYP-06 (a design with diagnostics, an unknown top). Failure states: TYP-05, TYP-06. Idempotency: TYP-01 AC 4. Auth and rate limits: N/A because it is an in-process function. Concurrency and ordering: TYP-06 AC 3 (diagnostics in source order). Data lifecycle: N/A because the table lives as long as its owner. Observability: TYP-05 AC 2 and TYP-06 (code and span on every diagnostic). External-dependency failure: N/A because nothing external is read. State-transition integrity: N/A because the table is built once and never changed.
 
@@ -204,7 +206,7 @@ Rows marked `y` are settled by a recorded decision, by `docs/spec/` or by code. 
 ## Sources
 
 - `.specs/features/codegen/context.md` S1, S5 - the slice and this feature's existence.
-- `.specs/features/e2e-m1/models/*.msl` - the models that fix the subset.
+- `tests/ngspice/*.msl` - the models that fix the subset.
 - `docs/spec/` §0.3, §1, §3.2, §4, §6, §8.1, §11, §14, Appendix A.2, Appendix H.2 - the rules checked.
 - `crates/piperine-lang/src/pom/` (`body.rs`, `resolution.rs`, `builtin.rs`) - what the input holds.
 
