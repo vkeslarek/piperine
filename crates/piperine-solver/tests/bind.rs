@@ -107,6 +107,11 @@ fn pins_bind_by_role() {
     assert_eq!(names.pins[0][3], names.pins[1][3], "ports of one name share a net");
     assert_ne!(names.pins[0][4], names.pins[1][4]);
 
+    // The circuit keeps the values each instance was created with, by name, and no others.
+    assert_eq!(circuit.given("x1"), Some(&[("r".to_string(), ParamValue::Real(2.0e3))][..]));
+    assert_eq!(circuit.given("x2"), Some(&[][..]));
+    assert_eq!(circuit.given("x3"), None);
+
     // A PARAM binds by name to a net seeded with the value given, else the prototype's default.
     let seed = |path: &str| real(&plan.nets[names.params[&(path.to_string(), "r".to_string())].0 as usize].init);
     assert_eq!(seed("x1"), 2.0e3);

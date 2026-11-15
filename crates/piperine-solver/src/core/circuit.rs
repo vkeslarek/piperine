@@ -54,6 +54,15 @@ impl CircuitInstance {
     pub fn bound(&self) -> Option<&crate::core::bind::Bound> { self.abi.as_ref() }
     pub fn bound_mut(&mut self) -> Option<&mut crate::core::bind::Bound> { self.abi.as_mut() }
 
+    /// The values the device instance at `path` is created with, by param
+    /// name: what `CircuitBuilder::device` was given (or a later structural
+    /// `set` wrote), which bind hands to the module's `create`. A param absent
+    /// here keeps its prototype's default. `None` when no instance has `path`.
+    pub fn given(&self, path: &str) -> Option<&[(String, crate::core::bind::ParamValue)]> {
+        let recipe = self.recipe.as_ref()?;
+        recipe.specs.iter().find(|s| s.path == path).map(|s| s.values.as_slice())
+    }
+
     /// Every solved signal in the circuit — analog nodes and analog branch
     /// currents — as one unified `Net` list. A design's discrete nets are the
     /// bound plan's (`bound().names.nets`).
