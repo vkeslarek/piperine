@@ -133,6 +133,25 @@ fn pins_bind_by_role() {
 }
 
 #[test]
+fn a_built_circuit_names_each_node_as_the_builder_did() {
+    let mut b = CircuitBuilder::new("names");
+    let gnd = b.ground();
+    let (top, mid) = (b.node("Top.top"), b.node("Top.mid"));
+    b.session_param("k", ParamValue::Real(7.0));
+    b.device(probe(), "x1", &[], &[Port::Node(top.clone()), Port::Node(mid.clone()), Port::Net("c".into()), Port::Net("o".into())]);
+    b.device(probe(), "x2", &[], &[Port::Node(mid.clone()), Port::Node(gnd), Port::Net("c".into()), Port::Net("o2".into())]);
+    let circuit = b.build().expect("bind");
+    assert_eq!(circuit.node("Top.top"), Some(&top));
+    assert_eq!(circuit.node("Top.mid"), Some(&mid));
+    assert_eq!(circuit.node("Top.out"), None);
+    let label = |r: &AnalogReference| {
+        circuit.nets().into_iter().find(|n| n.analog_variable() == Some(r.variable())).expect("a solved node").label().to_string()
+    };
+    assert_eq!(label(&top), "v(Top.top)");
+    assert_eq!(label(&mid), "v(Top.mid)");
+}
+
+#[test]
 fn a_named_global_nobody_set_fails_the_bind_naming_it() {
     let mut b = CircuitBuilder::new("named");
     let n1 = b.node("n1");

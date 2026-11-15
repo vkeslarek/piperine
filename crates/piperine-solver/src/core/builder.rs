@@ -147,7 +147,12 @@ impl CircuitBuilder {
             resolution: recipe.resolution,
             temperature: recipe.temperature,
         })?;
+        let ground = self.nodes.get("gnd").cloned();
+        let mut node_names: Vec<(String, AnalogReference)> =
+            self.nodes.drain().filter(|(_, r)| Some(r) != ground.as_ref()).collect();
+        node_names.sort_by(|a, b| a.0.cmp(&b.0));
         let mut instance = CircuitInstance::from_netlist(self.title, self.netlist);
+        instance.node_names = node_names;
         instance.abi = Some(bound);
         instance.recipe = Some(recipe);
         Ok(instance)

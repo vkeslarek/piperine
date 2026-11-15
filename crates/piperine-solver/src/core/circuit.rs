@@ -39,6 +39,8 @@ pub struct CircuitInstance {
     pub(crate) abi: Option<crate::core::bind::Bound>,
     /// What the device instances were bound from (a circuit of devices).
     pub(crate) recipe: Option<crate::core::bind::Recipe>,
+    /// The name each node was given to `CircuitBuilder::node` (ground excluded).
+    pub(crate) node_names: Vec<(String, piperine_analog_solver::netlist::AnalogReference)>,
     is_set_up: bool,
 }
 
@@ -64,10 +66,24 @@ impl CircuitInstance {
     }
 
     /// Every solved signal in the circuit — analog nodes and analog branch
-    /// currents — as one unified `Net` list. A design's discrete nets are the
-    /// bound plan's (`bound().names.nets`).
+    /// currents — as one unified `Net` list. A node given a name to
+    /// `CircuitBuilder::node` is labelled `v(<name>)`. A design's discrete nets
+    /// are the bound plan's (`bound().names.nets`).
     pub fn nets(&self) -> Vec<crate::core::net::Net> {
-        crate::core::net::Net::analog_nets(&self.netlist)
+        let mut nets = crate::core::net::Net::analog_nets(&self.netlist);
+        for net in &mut nets {
+            let named = self.node_names.iter().find(|(_, r)| net.analog_variable() == Some(r.variable()));
+            if let Some((name, _)) = named {
+                net.relabel(format!("v({name})"));
+            }
+        }
+        nets
+    }
+
+    /// The node given `name` to `CircuitBuilder::node`; `None` for a name the
+    /// builder was not given (ground's names included).
+    pub fn node(&self, name: &str) -> Option<&piperine_analog_solver::netlist::AnalogReference> {
+        self.node_names.iter().find(|(n, _)| n == name).map(|(_, r)| r)
     }
 
     // ── Analysis entry ───────────────────────────────────────────────────────
@@ -279,6 +295,6 @@ impl CircuitInstance {
     /// Build a `CircuitInstance` over a netlist; the builder binds the device
     /// instances into it.
     pub(crate) fn from_netlist(title: impl Into<String>, netlist: Netlist) -> Self {
-        Self { title: title.into(), netlist, abi: None, recipe: None, is_set_up: false }
+        Self { title: title.into(), netlist, abi: None, recipe: None, node_names: Vec::new(), is_set_up: false }
     }
 }
