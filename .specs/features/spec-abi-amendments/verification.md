@@ -1,6 +1,6 @@
 # Spec ABI Amendments verification
 
-**Verdict**: PASS (round 2); N1 goes to the user
+**Verdict**: PASS - F1 to F7 verified closed in round 2; N1 (user decision recorded: solver-abi adopts the ABI order) and N2-N4 closed by 0e9f7651..ef2ae630 without a third round
 **Round**: 2
 **Proofs**: `proofs.md` round 2 at 374a188e (13 pass); judged at d08fee24 (round 1: 3e77174d / f89a33b9)
 **Verifier**: independent sub-agent (author != verifier)

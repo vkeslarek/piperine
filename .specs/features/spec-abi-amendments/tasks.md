@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: none - the feature edits prose; the decisions are in `spec.md` (Assumptions) and abi.md §15.
-**Status**: Draft
+**Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run spec**: `cargo test -p piperine-lang --test spec_text`
 **Run lang**: `cargo test -p piperine-lang`
@@ -363,7 +363,7 @@ Proof: `cargo test -p piperine-lang`
 ## Handoff
 
 **Settled mid-build:** none
-**Dispatched:** B1 at dd805f01 - returned (T1-T7 ae9ae5ae..90693bba; gap: gmin/source_scale not in POM builtin table); B2 (T8-T11, Sonnet) at 7ff301da - returned (T8-T11 4cf94794..1446533b + gmin/source_scale builtin 7572e5e3; gap: cross caused by a jump wording vs solver); Verifier (Opus) at b419ac9c - returned (FAIL F1-F7: spec text vs solver code); Fix pass (Opus: delicate spec semantics, small) at a5ea8aa3 - returned (fix pass 63d43683..f0cfb5a1, F1-F7 closed; AC text aligned by orchestrator); Verifier round 2 at 374a188e
+**Dispatched:** B1 at dd805f01 - returned (T1-T7 ae9ae5ae..90693bba; gap: gmin/source_scale not in POM builtin table); B2 (T8-T11, Sonnet) at 7ff301da - returned (T8-T11 4cf94794..1446533b + gmin/source_scale builtin 7572e5e3; gap: cross caused by a jump wording vs solver); Verifier (Opus) at b419ac9c - returned (FAIL F1-F7: spec text vs solver code); Fix pass (Opus: delicate spec semantics, small) at a5ea8aa3 - returned (fix pass 63d43683..f0cfb5a1, F1-F7 closed; AC text aligned by orchestrator); Verifier round 2 at 374a188e - returned (PASS; N1-N4 closed)
 **Settled mid-build:** gmin()/source_scale() become POM built-in rows (builtin.rs + docs/pom/resolution.md) in B2 so a model calling them resolves and redefining them is E0457 (orchestrator)
 **Walked:** not applicable - no screen
 
