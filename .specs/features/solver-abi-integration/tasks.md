@@ -158,13 +158,13 @@ T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] `assemble` branches once on `circuit.abi`; the `Element` branch is byte-identical to before
-- [ ] `any_limiting_report` answers from `Assembly::limiting_active` on the device branch; `apply_limiting_reports` does nothing there; `end_iteration` is called once per Newton iteration
-- [ ] Homotopy sets `GMIN` and `SOURCE_SCALE`; both are at rest in the last solve; the homotopy checkpoint and restore go through `Assembly::snapshot`
-- [ ] Test `divider_reads_the_analytic_ratio_on_devices` and test `diode_satisfies_its_own_equation_on_devices` pass with the literals and tolerances of `helper_devices.rs`
-- [ ] Test `source_stepping_scales_sources_through_the_ambient_input` passes
-- [ ] `cargo test -p piperine-solver` is green: every existing test unchanged
-- [ ] Gate: full
+- [x] `assemble` branches once on `circuit.abi`; the `Element` branch is byte-identical to before
+- [x] `any_limiting_report` answers from `Assembly::limiting_active` on the device branch; `apply_limiting_reports` does nothing there; `end_iteration` is called once per Newton iteration
+- [x] Homotopy sets `GMIN` and `SOURCE_SCALE`; both are at rest in the last solve; the homotopy checkpoint and restore go through `Assembly::snapshot`
+- [x] Test `divider_reads_the_analytic_ratio_on_devices` and test `diode_satisfies_its_own_equation_on_devices` pass with the literals and tolerances of `helper_devices.rs`
+- [x] Test `source_stepping_scales_sources_through_the_ambient_input` passes
+- [x] `cargo test -p piperine-solver` is green: every existing test unchanged
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

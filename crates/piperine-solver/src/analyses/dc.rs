@@ -3,6 +3,7 @@
 //! source scale an element reads while stamping) and the Newton driver
 //! (`DcSystem`/`DcSolver`): gmin/source-stepping homotopy escalation, the
 //! device-bypass stamp cache, and the mixed-signal settle loop.
+use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
 use piperine_analog_solver::netlist::AnalogReference;
 use piperine_analog_solver::convergence::{ConvergencePlan, HomotopyDriver};
 use crate::analyses::Context;
@@ -108,6 +109,9 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         &mut self,
         state: &CircularArrayBuffer2<f64>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
+        if self.circuit.abi.is_some() {
+            return self.assemble_device(state);
+        }
         // Device bypass: if the solution barely moved since the last
         // evaluation, reuse cached stamps instead of re-evaluating every
         // device model. Gated on `bypass_allowed` — every element must have
@@ -203,7 +207,20 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     }
 
     fn any_limiting_report(&self) -> bool {
+        if let Some(bound) = &self.circuit.abi {
+            return !bound.analog.limiting_active().is_empty();
+        }
         self.circuit.devices.iter().any(|d| d.limiting_report().is_some())
+    }
+
+    /// Every Newton iteration but the first ends here: each limit's `LAST`
+    /// becomes the `x̂` of the iteration just assembled (abi.md A2).
+    fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<f64>, iteration_number: usize) {
+        if iteration_number > 0
+            && let Some(bound) = self.circuit.abi.as_mut()
+        {
+            bound.analog.end_iteration();
+        }
     }
 
     fn apply_limiting_reports(&self, guess: ndarray::ArrayViewMut1<f64>) {
@@ -219,10 +236,67 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         _state: &CircularArrayBuffer2<f64>,
         _: &ArrayView1<f64>,
     ) {
+        // The converged iteration ends like the others.
+        if let Some(bound) = self.circuit.abi.as_mut() {
+            bound.analog.end_iteration();
+        }
     }
 }
 
 impl DcSystem<'_> {
+    /// The stamps of an equilibrium solve of a circuit of devices (abi.md §10):
+    /// the assembly's `FLOW`/`DELAY` rows at the iterate, with the homotopy's
+    /// continuation values as the `GMIN` and `SOURCE_SCALE` ambient inputs,
+    /// then the solver's own shunts and the hold clamps. There is no stamp
+    /// cache: a function whose reads did not change is not called (F3).
+    fn assemble_device(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
+        let x: Vec<f64> = match state.latest() {
+            Some(row) => row.to_vec(),
+            None => vec![0.0; state.size()],
+        };
+        let amb = Ambient {
+            time: 0.0,
+            freq: 0.0,
+            is_static: true,
+            gmin: self.context.tolerances.gmin + self.gmin_extra,
+            source_scale: self.src_scale,
+        };
+        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let mut all_stamps = bound.analog.assemble_dc(&x, amb)?;
+        if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", &all_stamps) {
+            return Err(err);
+        }
+        self.push_solver_stamps(&mut all_stamps);
+        Ok(all_stamps)
+    }
+
+    /// What the solver adds to every circuit: the gmin-stepping shunt, the
+    /// user's `gshunt` and the hold clamps.
+    fn push_solver_stamps(&self, all_stamps: &mut Vec<Stamp<AnalogReference, f64>>) {
+        if self.gmin_extra > 0.0 {
+            let g = self.gmin_extra;
+            for r in self.circuit.netlist().all_references() {
+                if r.variable().is_node() && !r.variable().is_ground() {
+                    all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), g));
+                }
+            }
+        }
+        let gshunt = self.context.tolerances.gshunt;
+        if gshunt > 0.0 {
+            for r in self.circuit.netlist().all_references() {
+                if r.variable().is_node() && !r.variable().is_ground() {
+                    all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
+                }
+            }
+        }
+        for clamp in &self.uic_clamps {
+            clamp.stamp(all_stamps);
+        }
+    }
+
     /// Drop the bypass cache. Must be called whenever the stamps depend on
     /// anything besides the solution vector: a homotopy scale change
     /// (`gmin_extra` / `src_scale`) or a digital settle (the D2A bridge can
@@ -247,6 +321,9 @@ pub struct DcSolver<'a> {
     /// homotopy attempt, restored on strategy fallthrough so the limiter and
     /// other non-accept-gated state start clean on the next retry.
     device_checkpoint: Vec<Option<crate::core::element::ElementCheckpoint>>,
+    /// The same checkpoint for a circuit of devices: the assembly's term
+    /// histories and limit states.
+    assembly_checkpoint: Option<AssemblySnapshot>,
     /// The analysis kind this solve runs under. Defaults to `Dc`; an outer
     /// analysis driving a DC solve underneath itself (a transient's t = 0 OP,
     /// the bias point under an AC sweep) overrides it via
@@ -262,8 +339,11 @@ impl<'a> DcSolver<'a> {
     pub(crate) fn set_analysis_kind(&mut self, kind: crate::analyses::AnalysisKind) {
         self.analysis_kind = kind;
     }
-    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::core::result::Result<Self> {
+    pub fn new(circuit: &'a mut CircuitInstance, mut context: Context) -> crate::core::result::Result<Self> {
         Context::init_global();
+        if let Some(bound) = &circuit.abi {
+            bound.tighten(&mut context.tolerances);
+        }
         circuit.setup_all(&context)?;
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
@@ -297,6 +377,7 @@ impl<'a> DcSolver<'a> {
             policy: Policy::default(),
             newton_calls: 0,
             device_checkpoint: Vec::new(),
+            assembly_checkpoint: None,
             analysis_kind: crate::analyses::AnalysisKind::Dc,
         })
     }
@@ -464,6 +545,10 @@ impl HomotopyDriver for DcSolver<'_> {
     }
 
     fn checkpoint_devices(&mut self) {
+        if let Some(bound) = &self.system.circuit.abi {
+            self.assembly_checkpoint = Some(bound.analog.snapshot());
+            return;
+        }
         self.device_checkpoint = self
             .system
             .circuit
@@ -474,6 +559,12 @@ impl HomotopyDriver for DcSolver<'_> {
     }
 
     fn restore_devices(&mut self) {
+        if let Some(bound) = self.system.circuit.abi.as_mut() {
+            if let Some(snapshot) = &self.assembly_checkpoint {
+                bound.analog.restore(snapshot);
+            }
+            return;
+        }
         for (dev, ckpt) in self
             .system
             .circuit
