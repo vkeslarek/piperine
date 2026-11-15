@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 
 use piperine_abi::layout::{BIT, F64};
 
-use crate::digital::{CarrierLayout, Digital};
+use crate::digital::{CarrierLayout, Digital, ReactionPlan};
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_ir::{
@@ -55,6 +55,12 @@ pub enum Mode {
     Terms,
     /// The `where` of param `p`: its check pin.
     Check(u32),
+    /// Drive `k`: the value of its carrier, or of its undelayed pin when it has an `after`.
+    Drive(u32),
+    /// `Changed` event `k`: fires its event pin when the carrier changed and the guard holds.
+    Event(u32),
+    /// The `changed` event of drive `k`'s undelayed pin.
+    DelayedEvent(u32),
 }
 
 /// Where a read of a function comes from.
@@ -73,6 +79,10 @@ pub enum Source {
     Carrier(u32),
     /// The `CHANGED` byte of a carrier's pin.
     CarrierChanged(u32),
+    /// The `VALUE` of drive `k`'s undelayed pin.
+    Delayed(u32),
+    /// The `CHANGED` byte of drive `k`'s undelayed pin.
+    DelayedChanged(u32),
     Temperature,
     Gmin,
     SourceScale,
@@ -105,6 +115,12 @@ pub enum Target {
     Check(u32),
     /// The `VALUE` of a carrier's pin.
     Carrier(u32),
+    /// The event pin of event `k`.
+    EventPin(u32),
+    /// Drive `k`'s undelayed pin.
+    Delayed(u32),
+    /// The event pin of the `changed` event of drive `k`'s undelayed pin.
+    DelayedEventPin(u32),
 }
 
 /// What one function of the shape computes, entry by entry parallel to the shape.
@@ -125,10 +141,10 @@ pub struct FunctionPlan {
 
 /// A set of reads, kept in read order by `Source`'s order.
 #[derive(Clone, Debug, Default)]
-struct ReadSet(BTreeSet<Source>);
+pub(crate) struct ReadSet(pub(crate) BTreeSet<Source>);
 
 impl ReadSet {
-    fn of(deps: &Deps) -> ReadSet {
+    pub(crate) fn of(deps: &Deps) -> ReadSet {
         let mut set = ReadSet::default();
         set.add(deps);
         set
@@ -148,6 +164,13 @@ impl ReadSet {
 
     fn union(&mut self, other: &ReadSet) {
         self.0.extend(other.0.iter().copied());
+    }
+
+    /// The whole dependency set of `target`: its `Deps` and the carriers it reads.
+    pub(crate) fn target(body: Body<'_>, target: Query) -> ReadSet {
+        let mut set = ReadSet::of(&body.dependencies(target));
+        set.0.extend(body.carrier_reads(target).into_iter().map(Source::Carrier));
+        set
     }
 }
 
@@ -171,6 +194,20 @@ pub struct Pins {
     pub checks: Vec<Option<u32>>,
     /// The pin of carrier 0; carrier `i` is pin `carriers + i`, after every M1 pin.
     pub carriers: u32,
+    /// The event pin of each event of the body, after the carrier pins.
+    pub events: Vec<u32>,
+    /// The two pins of each drive with an `after`, after the event pins; `None` for a drive
+    /// without one.
+    pub delayed: Vec<Option<DelayedPins>>,
+}
+
+/// The pins of a drive with `after` (RS-12 AC 5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DelayedPins {
+    /// `drive:<carrier>.now`: the undelayed value, in the carrier's layout.
+    pub value: u32,
+    /// `drive:<carrier>.changed`: the event pin fired when `value` changes.
+    pub event: u32,
 }
 
 impl Pins {
@@ -182,6 +219,11 @@ impl Pins {
     /// The pin of carrier `i`.
     pub fn carrier(&self, i: u32) -> u32 {
         self.carriers + i
+    }
+
+    /// The pins of drive `k`; `None` for a drive without `after` or out of range.
+    pub fn delayed(&self, k: u32) -> Option<DelayedPins> {
+        self.delayed.get(k as usize).copied().flatten()
     }
 
     /// The pin a term end names: a node's pin, or `GROUND`.
@@ -199,6 +241,8 @@ pub struct BodyPlan {
     shape: ShapeRef,
     /// What each function of the shape computes, in the shape's order.
     functions: Vec<FunctionPlan>,
+    /// What each reaction of the shape does, in the shape's order.
+    reactions: Vec<ReactionPlan>,
 }
 
 impl BodyPlan {
@@ -293,7 +337,9 @@ impl BodyPlan {
             }));
         }
         let carriers = Digital::carrier_pins(&mut s, body);
-        let pins = Pins { nodes, branches, temperature, checks, carriers };
+        let events = Digital::event_pins(&mut s, body);
+        let delayed = Digital::delayed_pins(&mut s, body);
+        let pins = Pins { nodes, branches, temperature, checks, carriers, events, delayed };
 
         // Terms, branch by branch.
         let mut terms = Vec::new();
@@ -382,7 +428,10 @@ impl BodyPlan {
             functions.push(plan);
         }
 
-        BodyPlan { shape: s.freeze(), functions }
+        functions.extend(Digital::functions(&mut s, &pins, body));
+        let reactions = Digital::reactions(&mut s, &pins, body);
+
+        BodyPlan { shape: s.freeze(), functions, reactions }
     }
 
     /// What term `t` reads.
@@ -406,7 +455,7 @@ impl BodyPlan {
 
     /// A function reading `all`, writing `writes`; a write with a set gets one partial per
     /// differentiable read of that set.
-    fn function(mode: Mode, all: &ReadSet, writes: Vec<(Target, Option<&ReadSet>)>) -> FunctionPlan {
+    pub(crate) fn function(mode: Mode, all: &ReadSet, writes: Vec<(Target, Option<&ReadSet>)>) -> FunctionPlan {
         let reads: Vec<Source> = all.0.iter().copied().collect();
         let slots = reads.iter().take_while(|s| s.is_differentiable()).count();
         let mut partials = Vec::new();
@@ -423,29 +472,11 @@ impl BodyPlan {
     }
 
     /// Adds `plan` to the shape as function `name`.
-    fn declare(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, name: &str, origin: &str, plan: &FunctionPlan) {
+    pub(crate) fn declare(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, name: &str, origin: &str, plan: &FunctionPlan) {
         let limits = body.limits().len() as u32;
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
-        let reads = plan
-            .reads
-            .iter()
-            .map(|r| match *r {
-                Source::Node(i) => value(cell::PIN, pins.node(i)),
-                Source::BranchFlow(b) => value(cell::PIN, pins.branches[b as usize].unwrap_or(GROUND)),
-                Source::LimitValue(k) => value(cell::INPUT, k),
-                Source::StimValue(k) => value(cell::INPUT, limits + k),
-                Source::Param(i) => value(cell::PIN, i),
-                Source::Carrier(c) => value(cell::PIN, pins.carrier(c)),
-                Source::CarrierChanged(c) => at(cell::PIN, pins.carrier(c), part::CHANGED),
-                Source::Temperature => value(cell::PIN, pins.temperature.unwrap_or(GROUND)),
-                Source::Gmin => value(cell::AMBIENT, ambient::GMIN),
-                Source::SourceScale => value(cell::AMBIENT, ambient::SOURCE_SCALE),
-                Source::LimitLast(k) => at(cell::INPUT, k, part::LAST),
-                Source::LimitAge(k) => at(cell::INPUT, k, part::AGE),
-                Source::Static => value(cell::AMBIENT, ambient::STATIC),
-            })
-            .collect();
+        let reads = plan.reads.iter().map(|r| Self::read(pins, limits, *r)).collect();
         let writes = plan
             .writes
             .iter()
@@ -457,11 +488,38 @@ impl BodyPlan {
                 Target::StimIm(k) => at(cell::INPUT, limits + k, part::IM),
                 Target::Check(p) => value(cell::PIN, pins.checks.get(p as usize).copied().flatten().unwrap_or(GROUND)),
                 Target::Carrier(c) => value(cell::PIN, pins.carrier(c)),
+                Target::EventPin(k) => value(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND)),
+                Target::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
+                Target::DelayedEventPin(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.event)),
             })
             .collect();
         let partials =
             plan.partials.iter().map(|(w, slot)| Partial { write: *w as u32, to: 0, read: *slot as u32, at: 0 }).collect();
         s.function(FunctionSpec { name, origin, reads, writes, partials, ..FunctionSpec::default() });
+    }
+
+    /// The cell a read names; `limits` is the body's count of `limit` sites (the `STIM` inputs
+    /// follow them).
+    pub(crate) fn read(pins: &Pins, limits: u32, r: Source) -> Cell {
+        let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
+        let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
+        match r {
+            Source::Node(i) => value(cell::PIN, pins.node(i)),
+            Source::BranchFlow(b) => value(cell::PIN, pins.branches[b as usize].unwrap_or(GROUND)),
+            Source::LimitValue(k) => value(cell::INPUT, k),
+            Source::StimValue(k) => value(cell::INPUT, limits + k),
+            Source::Param(i) => value(cell::PIN, i),
+            Source::Carrier(c) => value(cell::PIN, pins.carrier(c)),
+            Source::CarrierChanged(c) => at(cell::PIN, pins.carrier(c), part::CHANGED),
+            Source::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
+            Source::DelayedChanged(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value), part::CHANGED),
+            Source::Temperature => value(cell::PIN, pins.temperature.unwrap_or(GROUND)),
+            Source::Gmin => value(cell::AMBIENT, ambient::GMIN),
+            Source::SourceScale => value(cell::AMBIENT, ambient::SOURCE_SCALE),
+            Source::LimitLast(k) => at(cell::INPUT, k, part::LAST),
+            Source::LimitAge(k) => at(cell::INPUT, k, part::AGE),
+            Source::Static => value(cell::AMBIENT, ambient::STATIC),
+        }
     }
 
     /// What each branch receives: contributions sit at the top level of the `analog` block.
@@ -508,5 +566,10 @@ impl BodyPlan {
     /// What each function of the shape computes, in the shape's order.
     pub fn functions(&self) -> &[FunctionPlan] {
         &self.functions
+    }
+
+    /// What each reaction of the shape does, in the shape's order.
+    pub fn reactions(&self) -> &[ReactionPlan] {
+        &self.reactions
     }
 }

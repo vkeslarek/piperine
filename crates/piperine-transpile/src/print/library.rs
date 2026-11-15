@@ -158,6 +158,10 @@ impl LibraryPrinter {
                     let param = body.params().get(p as usize).map_or_else(|| p.to_string(), |x| x.name.clone());
                     (analog.check(k)?, format!("{param}_check"))
                 }
+                // `discrete` refused every body that has a digital function before any printing.
+                Mode::Drive(_) | Mode::Event(_) | Mode::DelayedEvent(_) => {
+                    return Err(Error::Unsupported { form: format!("the digital function {:?}", f.mode), path: format!("body {name} function {k}"), origin: at.clone() });
+                }
             };
             if matches!(f.mode, Mode::Terms | Mode::Limit(_)) {
                 uses.insert("rt::Dual");

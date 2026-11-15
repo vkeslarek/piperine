@@ -80,6 +80,12 @@ impl<'a> AnalogPrinter<'a> {
                 let name = self.body.carriers().get(c as usize).map_or_else(|| format!("carrier{c}"), |x| x.name.clone());
                 Text::generated(&format!("{name}_changed"))
             }
+            Source::Delayed(k) | Source::DelayedChanged(k) => {
+                let carrier = self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);
+                let name = self.body.carriers().get(carrier as usize).map_or_else(|| format!("drive{k}"), |x| x.name.clone());
+                let part = if matches!(s, Source::Delayed(_)) { "now" } else { "now_changed" };
+                Text::generated(&format!("{name}_{part}"))
+            }
             Source::Temperature => ValuePrinter::env_name(Env::Temperature).to_string(),
             Source::Gmin => ValuePrinter::env_name(Env::Gmin).to_string(),
             Source::SourceScale => ValuePrinter::env_name(Env::SourceScale).to_string(),
@@ -116,6 +122,13 @@ impl<'a> AnalogPrinter<'a> {
                 format!("check:{}", self.body.params().get(p as usize).map_or_else(|| p.to_string(), |x| x.name.clone()))
             }
             Target::Carrier(c) => self.body.carriers().get(c as usize).map_or_else(|| c.to_string(), |x| x.name.clone()),
+            Target::EventPin(k) => format!("event:{k}"),
+            Target::Delayed(k) | Target::DelayedEventPin(k) => {
+                let carrier = self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);
+                let name = self.body.carriers().get(carrier as usize).map_or_else(|| k.to_string(), |x| x.name.clone());
+                let part = if matches!(t, Target::Delayed(_)) { "now" } else { "changed" };
+                format!("drive:{name}.{part}")
+            }
         }
     }
 
