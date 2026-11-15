@@ -158,6 +158,35 @@ enumeration is a `u32` with named constants, never a Rust `enum`.
                                   min_after: f64 }                                      // LATER: every delay is at least this
 ```
 
+**Constant values** (pinned by `piperine-abi`, `raw.rs`). Every enumeration group starts at 1
+and every flag group at bit 0, so 0 is never a valid constant and an all-zero entry fails
+validation:
+
+| Group | Values |
+| --- | --- |
+| `kind` | `CONTINUOUS` 1, `DISCRETE` 2, `EVENT` 3 |
+| `role` | `PORT` 1, `PARAM` 2, `GLOBAL` 3, `PRIVATE` 4 |
+| `global` | `TEMPERATURE` 1, `RESOLUTION` 2, `DC` 3, `TRAN` 4, `AC` 5, `NOISE` 6, `START` 7, `SETTLE` 8, `NAMED` 9 |
+| `Pin.flags` | `STRUCTURAL` 1, `OPTIONAL` 2, `HAS_INIT` 4, `HAS_CHECK` 8, `QUIET` 16, `RECORD` 32, `RELAX` 64 |
+| `leaf` | `BOOL` 1, `U8` 2, `U16` 3, `U32` 4, `U64` 5, `I8` 6, `I16` 7, `I32` 8, `I64` 9, `F32` 10, `F64` 11 |
+| `Field.flags` | `HAS_KNOWN` 1 |
+| `op` | `FLOW` 1, `DDT` 2, `DELAY` 3 |
+| `Input.kind` | `LIMIT` 1, `NOISE` 2, `STIM` 3 |
+| `Watch.kind` | `VAR` 1, `CROSS` 2, `CAP` 3, `TRACE` 4 |
+| `Cell.kind` | `PIN` 1, `TERM` 2, `INPUT` 3, `WATCH` 4, `AMBIENT` 5 |
+| `Cell.part` | `VALUE` 1, `PREVIOUS` 2, `CHANGED` 3, `TIME` 4, `LAST` 5, `AGE` 6, `PROPOSED` 7, `LIMITED` 8, `PSD` 9, `RE` 10, `IM` 11 |
+| ambient | `TIME` 1, `FREQ` 2, `STATIC` 3, `GMIN` 4, `SOURCE_SCALE` 5, `TICK` 6, `HORIZON` 7 |
+| `Function.flags` | `OWNS_CORRECTION` 1 |
+| `Reaction.flags` | `IRREVERSIBLE` 1 |
+| `Statement.flags` | `LATER` 1, `REPLACE` 2 |
+| status | `OK` 1, `FAULT` 2, `RESHAPE` 3, `FINISH` 4 |
+| indices | `GROUND` = `u32::MAX` (a term's `plus`/`minus`), `DEFAULT` = `u32::MAX − 1` (a tolerance or bound pin) |
+| version | `MAJOR` 1, `MINOR` 0, symbol `piperine_abi_1`; `Note.text` holds 248 bytes |
+
+`piperine-abi` also ships two layouts beside those of P3: `F64` (`{ v: F64 @0 }`, size 8,
+align 8, no known byte: the layout of every continuous pin) and `NONE` (size 0, align 1, no
+field: the layout of every event pin).
+
 The two frames. Every pointer is non-null and has the length the shape says.
 
 ```rust
@@ -546,7 +575,9 @@ dlopen ─► piperine_abi_1()        major = symbol; check Library.size / minor
   continuous; a function writing both sorts (F2); a discrete function reading an input or a
   continuous pin; `CHANGED` read by a function that writes a discrete pin; a function writing a limit and a term without `OWNS_CORRECTION`, or with it and a partial against that limit; a read
   of a `QUIET` pin by a function; two writers (P1); unequal layouts on a net (P4); a reaction
-  listening to a non-event pin; a cycle among discrete functions that passes through no
+  listening to a non-event pin; a statement on a continuous pin; a `CROSS` watch whose `event`
+  is not an event pin; a term whose `abstol` or `max` is neither `DEFAULT` nor a discrete pin
+  holding an `F64` at byte 0; a cycle among discrete functions that passes through no
   `RELAX` net.
 
 **D1. Cycles** (resolved nets). The elaborator lowers a resolved carrier to one-writer nets

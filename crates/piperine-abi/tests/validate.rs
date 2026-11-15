@@ -1,14 +1,14 @@
 //! Shape-local validation (feature `solver-abi-core`, SAC-09, abi.md §9):
-//! each of the twelve rules refuses one planted defect in the resistor
+//! each of the fifteen rules refuses one planted defect in the resistor
 //! (§11.1) or the D flip-flop (§11.4), naming the rule, the entry and its
 //! origin; a zeroed entry is an unknown constant; an index is checked before
 //! it is followed; the valid fixtures pass.
 
 use piperine_abi::layout::{BIT, F64, LOW};
 use piperine_abi::raw::{
-    Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role,
+    Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role, watch,
 };
-use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec};
+use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::validate::{Rule, validate};
 
 fn pin_cell(index: u32, part: u32) -> Cell {
@@ -21,6 +21,7 @@ struct Specs {
     pins: Vec<PinSpec<'static>>,
     terms: Vec<TermSpec<'static>>,
     inputs: Vec<InputSpec<'static>>,
+    watches: Vec<WatchSpec<'static>>,
     functions: Vec<FunctionSpec<'static>>,
     reactions: Vec<ReactionSpec<'static>>,
 }
@@ -36,6 +37,9 @@ impl Specs {
         }
         for i in self.inputs {
             s.input(i);
+        }
+        for w in self.watches {
+            s.watch(w);
         }
         for f in self.functions {
             s.function(f);
@@ -134,7 +138,7 @@ type Row = (Rule, fn() -> Specs, &'static str, &'static str);
 
 #[test]
 fn every_shape_local_rule_is_enforced() {
-    let table: [Row; 12] = [
+    let table: [Row; 15] = [
         (Rule::UnknownConstant, || { let mut s = resistor(); s.terms[0].op = 9; s }, "term i", "res.msl:3:5"),
         (Rule::IndexOutOfRange, || { let mut s = resistor(); s.functions[0].reads[1].index = 7; s }, "function i", "res.msl:3:9"),
         (Rule::KindRole, || {
@@ -156,6 +160,26 @@ fn every_shape_local_rule_is_enforced() {
         (Rule::QuietRead, || { let mut s = flip_flop(); s.pins[0].flags = pin_flag::QUIET; s }, "function rise", "dff.msl:2:5"),
         (Rule::ReactionOnNonEvent, || { let mut s = flip_flop(); s.reactions[0].on = vec![1]; s }, "reaction sample", "dff.msl:3:5"),
         (Rule::ParamAfterNonParam, || { let mut s = resistor(); s.pins.rotate_left(1); s.terms[0].plus = 0; s.terms[0].minus = 1; s }, "pin r", "res.msl:2:5"),
+        (Rule::StatementOnContinuous, || {
+            let mut s = flip_flop();
+            s.pins.push(PinSpec { origin: "dff.msl:4:5", ..PinSpec::continuous("a", role::PRIVATE) });
+            s.reactions[0].writes[0].pin = 4;
+            s
+        }, "reaction sample", "dff.msl:3:5"),
+        (Rule::CrossEventNotEvent, || {
+            let mut s = flip_flop();
+            s.watches.push(WatchSpec {
+                name: "up",
+                origin: "dff.msl:5:5",
+                kind: watch::CROSS,
+                layout: &F64,
+                event: 1,
+                ttol: DEFAULT,
+                etol: DEFAULT,
+            });
+            s
+        }, "watch up", "dff.msl:5:5"),
+        (Rule::TermBoundNotDiscreteF64, || { let mut s = resistor(); s.terms[0].abstol = 1; s }, "term i", "res.msl:3:5"),
     ];
     for rule in Rule::ALL {
         assert_eq!(table.iter().filter(|row| row.0 == rule).count(), 1, "one row for {rule:?}");
@@ -233,6 +257,23 @@ fn the_valid_fixtures_pass() {
     assert_eq!(validate(resistor().build().shape()), Ok(()));
     assert_eq!(validate(flip_flop().build().shape()), Ok(()));
     assert_eq!(validate(ShapeBuf::new().freeze().shape()), Ok(()), "an empty shape");
+    // The legal forms of the three bound rules: a CROSS watch firing an event
+    // pin, a term bound read from a discrete F64 pin, a statement on a discrete pin.
+    let mut ff = flip_flop();
+    ff.watches.push(WatchSpec {
+        name: "up",
+        origin: "dff.msl:5:5",
+        kind: watch::CROSS,
+        layout: &F64,
+        event: 3,
+        ttol: DEFAULT,
+        etol: DEFAULT,
+    });
+    assert_eq!(validate(ff.build().shape()), Ok(()));
+    let mut res = resistor();
+    res.terms[0].abstol = 0;
+    res.terms[0].max = 0;
+    assert_eq!(validate(res.build().shape()), Ok(()));
     // The flip-flop's pins are of every discrete kind the rules look at.
     let ff = flip_flop().build();
     let kinds: Vec<u32> = ff.shape().pins.iter().map(|p| p.kind).collect();

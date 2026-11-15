@@ -41,11 +41,19 @@ pub enum Rule {
     ReactionOnNonEvent,
     /// A `PARAM` pin after a pin that is not one (P5).
     ParamAfterNonParam,
+    /// A reaction's statement on a continuous pin: only discrete and event
+    /// pins are committed to (§6).
+    StatementOnContinuous,
+    /// A `CROSS` watch whose `event` is not an event pin (§3, §4.3).
+    CrossEventNotEvent,
+    /// A term's `abstol` or `max` that is neither `DEFAULT` nor a discrete pin
+    /// holding an `F64` at byte 0 (§3).
+    TermBoundNotDiscreteF64,
 }
 
 impl Rule {
     /// Every rule, in the order of the spec's list.
-    pub const ALL: [Rule; 12] = [
+    pub const ALL: [Rule; 15] = [
         Rule::UnknownConstant,
         Rule::IndexOutOfRange,
         Rule::KindRole,
@@ -58,6 +66,9 @@ impl Rule {
         Rule::QuietRead,
         Rule::ReactionOnNonEvent,
         Rule::ParamAfterNonParam,
+        Rule::StatementOnContinuous,
+        Rule::CrossEventNotEvent,
+        Rule::TermBoundNotDiscreteF64,
     ];
 
     fn sentence(self) -> &'static str {
@@ -76,6 +87,9 @@ impl Rule {
             Rule::QuietRead => "a function reading a QUIET pin",
             Rule::ReactionOnNonEvent => "a reaction listening to a non-event pin",
             Rule::ParamAfterNonParam => "a PARAM pin after a non-PARAM pin (P5)",
+            Rule::StatementOnContinuous => "a statement on a continuous pin",
+            Rule::CrossEventNotEvent => "a CROSS watch whose event pin is not an event pin",
+            Rule::TermBoundNotDiscreteF64 => "a term whose abstol or max pin is not a discrete F64",
         }
     }
 }
@@ -240,8 +254,17 @@ pub fn validate(shape: &Shape) -> Result<(), ShapeError> {
             }
         }
         for (what, index) in [("abstol", term.abstol), ("max", term.max)] {
-            if index != DEFAULT && shape.pins.get(index as usize).is_none() {
+            if index == DEFAULT {
+                continue;
+            }
+            let Some(pin) = shape.pins.get(index as usize) else {
                 return Err(e.fail(Rule::IndexOutOfRange, format!("{what} = {index}")));
+            };
+            if pin.kind != kind::DISCRETE || !CellBytes::Layout(&pin.layout).f64_at(0) {
+                return Err(e.fail(
+                    Rule::TermBoundNotDiscreteF64,
+                    format!("{what} is pin {}", pin.name.as_str()),
+                ));
             }
         }
     }
@@ -257,8 +280,13 @@ pub fn validate(shape: &Shape) -> Result<(), ShapeError> {
             return Err(e.fail(Rule::UnknownConstant, format!("kind {}", w.kind)));
         }
         check_layout(&e, &w.layout)?;
-        if w.kind == watch::CROSS && shape.pins.get(w.event as usize).is_none() {
-            return Err(e.fail(Rule::IndexOutOfRange, format!("event = {}", w.event)));
+        if w.kind == watch::CROSS {
+            let Some(pin) = shape.pins.get(w.event as usize) else {
+                return Err(e.fail(Rule::IndexOutOfRange, format!("event = {}", w.event)));
+            };
+            if pin.kind != kind::EVENT {
+                return Err(e.fail(Rule::CrossEventNotEvent, format!("event is pin {}", pin.name.as_str())));
+            }
         }
         for (what, index) in [("ttol", w.ttol), ("etol", w.etol)] {
             if w.kind == watch::CROSS && index != DEFAULT && shape.pins.get(index as usize).is_none() {
@@ -503,6 +531,12 @@ fn check_reaction(shape: &Shape, r: &Reaction) -> Result<(), ShapeError> {
         let Some(pin) = shape.pins.get(s.pin as usize) else {
             return Err(e.fail(Rule::IndexOutOfRange, format!("statement {i} pin {}", s.pin)));
         };
+        if pin.kind == kind::CONTINUOUS {
+            return Err(e.fail(
+                Rule::StatementOnContinuous,
+                format!("statement {i} writes pin {}", pin.name.as_str()),
+            ));
+        }
         if s.offset as u64 + s.len as u64 > pin.layout.size as u64 {
             return Err(e.fail(
                 Rule::IndexOutOfRange,
