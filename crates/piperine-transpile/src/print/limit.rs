@@ -108,7 +108,12 @@ impl<'a> AnalogPrinter<'a> {
 
         // limit_<site>
         let writes: Vec<String> = f.writes.iter().map(|w| self.write_name(*w)).collect();
-        t.line(&format!("// function {k} `limit:{name}`: reads {}; writes {}", names.join(", "), writes.join(", ")));
+        t.line(&format!(
+            "// function {k} `limit:{name}`: reads {}; writes {} @ {}",
+            names.join(", "),
+            writes.join(", "),
+            self.function_origin(k)
+        ));
         t.line(&format!("fn limit_{name}(cx: &mut Eval<'_>) -> Result<(), Fault> {{"));
         let mut body = Vec::new();
         for (i, s) in &reads {
@@ -254,7 +259,7 @@ fn limit_vd_block<R: Real>(a: R, k: R, is: R, n: R, temperature: R) -> (R, impl 
     (a - k, move |new, old| pnjlim(new, old, nvt, vcrit), vcrit)
 }
 
-// function 0 `limit:vd`: reads a, k, is, n, temperature, limit_vd_last, limit_vd_age, is_static; writes vd.PROPOSED, vd.LIMITED
+// function 0 `limit:vd`: reads a, k, is, n, temperature, limit_vd_last, limit_vd_age, is_static; writes vd.PROPOSED, vd.LIMITED @ devices.msl:39:17
 fn limit_vd(cx: &mut Eval<'_>) -> Result<(), Fault> {
     let a = cx.f64(0);
     let k = cx.f64(1);

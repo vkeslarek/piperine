@@ -97,7 +97,12 @@ impl<'a> AnalogPrinter<'a> {
 
         let names: Vec<String> = f.reads.iter().map(|s| self.read_name(*s)).collect();
         let writes: Vec<String> = f.writes.iter().map(|w| self.write_name(*w)).collect();
-        t.line(&format!("// function {k} `stim:{site_index}`: reads {}; writes {}", names.join(", "), writes.join(", ")));
+        t.line(&format!(
+            "// function {k} `stim:{site_index}`: reads {}; writes {} @ {}",
+            names.join(", "),
+            writes.join(", "),
+            self.function_origin(k)
+        ));
         t.line(&format!("fn stim_{name}(cx: &mut Eval<'_>) -> Result<(), Fault> {{"));
         let mut body = self.bind_reads(&reads);
         let call = format!("Self::stim_{name}_block::<f64>({})", self.block_args(&reads));
@@ -152,7 +157,12 @@ impl<'a> AnalogPrinter<'a> {
         t.line("");
         let names: Vec<String> = f.reads.iter().map(|s| self.read_name(*s)).collect();
         let writes: Vec<String> = f.writes.iter().map(|w| self.write_name(*w)).collect();
-        t.line(&format!("// function {k} `check:{name}`: reads {}; writes {}", names.join(", "), writes.join(", ")));
+        t.line(&format!(
+            "// function {k} `check:{name}`: reads {}; writes {} @ {}",
+            names.join(", "),
+            writes.join(", "),
+            self.function_origin(k)
+        ));
         t.line(&format!("fn check_{name}(cx: &mut Eval<'_>) -> Result<(), Fault> {{"));
         let mut body = self.bind_reads(&reads);
         body.push(format!("let ok = Self::check_{name}_block::<f64>({});", self.block_args(&reads)));
@@ -254,7 +264,7 @@ fn stim_ac_block<R: Real>(ac: R) -> R {
     ac
 }
 
-// function 0 `stim:0`: reads ac; writes ac.RE, ac.IM
+// function 0 `stim:0`: reads ac; writes ac.RE, ac.IM @ devices.msl:21:62
 fn stim_ac(cx: &mut Eval<'_>) -> Result<(), Fault> {
     let ac = cx.f64(0);
     let mag = Self::stim_ac_block::<f64>(ac);
@@ -279,7 +289,7 @@ fn check_r_block<R: Real>(r: R) -> bool {
     r.value() > 0.0
 }
 
-// function 1 `check:r`: reads r; writes check:r
+// function 1 `check:r`: reads r; writes check:r @ devices.msl:6:5
 fn check_r(cx: &mut Eval<'_>) -> Result<(), Fault> {
     let r = cx.f64(0);
     let ok = Self::check_r_block::<f64>(r);
@@ -292,6 +302,6 @@ fn check_r(cx: &mut Eval<'_>) -> Result<(), Fault> {
         let cj0 = printed(&ir, d, |m| m == Mode::Check(2));
         assert!(cj0.contains("fn check_cj0_block<R: Real>(cj0: R) -> bool {\n    cj0.value() >= 0.0\n}"), "{cj0}");
         assert!(cj0.starts_with("// Diode.cj0: its `where` @ devices.msl:34:5\n"), "{cj0}");
-        assert!(cj0.contains("// function 4 `check:cj0`: reads cj0; writes check:cj0"), "{cj0}");
+        assert!(cj0.contains("// function 4 `check:cj0`: reads cj0; writes check:cj0 @ devices.msl:34:5"), "{cj0}");
     }
 }

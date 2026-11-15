@@ -3,6 +3,7 @@
 //! origin) so the text reads the same on every build (RS-02).
 
 pub mod analog;
+pub mod library;
 pub mod limit;
 pub mod shape;
 pub mod site;
@@ -10,6 +11,7 @@ pub mod text;
 pub mod value;
 
 pub use analog::AnalogPrinter;
+pub use library::LibraryPrinter;
 pub use shape::ShapePrinter;
 pub use text::Text;
 pub use value::ValuePrinter;

@@ -8,6 +8,8 @@ use std::sync::Arc;
 use piperine_ir::{BodyId, Ir};
 use piperine_plan::BodyPlan;
 
+use crate::print::LibraryPrinter;
+
 mod error;
 pub mod print;
 pub mod rt;
@@ -54,5 +56,11 @@ impl Transpiler {
     /// The plan of `body`; `None` for a body with nothing to run, or an id out of range.
     pub fn plan(&self, body: BodyId) -> Option<&BodyPlan> {
         self.plans.get(body.index()).and_then(Option::as_ref)
+    }
+
+    /// The design as one Rust source text (`design.rs`); a form with no lowering is
+    /// `Error::Unsupported` and gives no text. The same `Ir` always gives the same bytes.
+    pub fn source(&self) -> Result<String, Error> {
+        LibraryPrinter::design(&self.ir, &self.plans)
     }
 }

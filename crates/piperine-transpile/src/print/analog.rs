@@ -75,6 +75,11 @@ impl<'a> AnalogPrinter<'a> {
         }
     }
 
+    /// `file:line:col` of function `k` of the shape.
+    pub(crate) fn function_origin(&self, k: usize) -> String {
+        self.plan.shape().shape().functions.get(k).map_or_else(String::new, |f| f.origin.as_str().to_string())
+    }
+
     /// The name of term `t` in the shape: `b0.flow`, `b0.eq`, `b0.charge`.
     pub fn term_name(t: Term) -> String {
         match t {
@@ -363,7 +368,12 @@ impl<'a> AnalogPrinter<'a> {
         let at_zero = f.affine.iter().any(|a| *a);
         let names: Vec<String> = f.reads.iter().map(|s| self.read_name(*s)).collect();
         let writes: Vec<String> = f.writes.iter().map(|w| self.write_name(*w)).collect();
-        t.line(&format!("// function {k} `terms`: reads {}; writes {}", names.join(", "), writes.join(", ")));
+        t.line(&format!(
+            "// function {k} `terms`: reads {}; writes {} @ {}",
+            names.join(", "),
+            writes.join(", "),
+            self.function_origin(k)
+        ));
         t.line("fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {");
         t.indented(|t| {
             for (i, s) in reads {
@@ -404,7 +414,11 @@ impl<'a> AnalogPrinter<'a> {
                         .map(|(_, slot)| format!(" + at_zero[{w}].d[{slot}] * {}", names[*slot]))
                         .collect();
                     t.line(&format!("// term {w} `{name}`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0"));
-                    t.line(&format!("cx.set({w}, at_zero[{w}].v + (0.0{}));", fold.concat()));
+                    if fold.is_empty() {
+                        t.line(&format!("cx.set({w}, at_zero[{w}].v + 0.0);"));
+                    } else {
+                        t.line(&format!("cx.set({w}, at_zero[{w}].v + (0.0{}));", fold.concat()));
+                    }
                 } else {
                     t.line(&format!("// term {w} `{name}`: its value at the iterate"));
                     t.line(&format!("cx.set({w}, at_iterate[{w}].v);"));
@@ -470,7 +484,7 @@ fn terms_block<R: Real>(p: R, n: R, r: R) -> [R; 1] {
     [b0_flow]
 }
 
-// function 0 `terms`: reads p, n, r; writes b0.flow
+// function 0 `terms`: reads p, n, r; writes b0.flow @ devices.msl:5:1
 fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
     let p = cx.f64(0);
     let n = cx.f64(1);
@@ -501,7 +515,7 @@ fn terms_block<R: Real>(p: R, n: R, c: R) -> [R; 1] {
     [b0_charge]
 }
 
-// function 0 `terms`: reads p, n, c; writes b0.charge
+// function 0 `terms`: reads p, n, c; writes b0.charge @ devices.msl:11:1
 fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
     let p = cx.f64(0);
     let n = cx.f64(1);
@@ -543,7 +557,7 @@ fn terms_block<R: Real>(limit_vd: R, is: R, n: R, cj0: R, temperature: R, gmin: 
     [b0_flow, b0_charge]
 }
 
-// function 1 `terms`: reads limit_vd, is, n, cj0, temperature, gmin; writes b0.flow, b0.charge
+// function 1 `terms`: reads limit_vd, is, n, cj0, temperature, gmin; writes b0.flow, b0.charge @ devices.msl:31:1
 fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
     let limit_vd = cx.f64(0);
     let is = cx.f64(1);
@@ -588,7 +602,7 @@ fn terms_block<R: Real>(p: R, n: R, b0_flow: R, stim_ac: R, dc: R, source_scale:
     [b0_flow, p - n - b0_potential]
 }
 
-// function 1 `terms`: reads p, n, b0_flow, stim_ac, dc, ac, source_scale; writes b0.flow, b0.eq
+// function 1 `terms`: reads p, n, b0_flow, stim_ac, dc, ac, source_scale; writes b0.flow, b0.eq @ devices.msl:17:1
 fn terms(cx: &mut Eval<'_>) -> Result<(), Fault> {
     let p = cx.f64(0);
     let n = cx.f64(1);
