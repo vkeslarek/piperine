@@ -1,10 +1,11 @@
-//! The C contract of abi.md §3, and nothing else: every struct `#[repr(C)]`
+//! The C contract of abi.md §3: every struct `#[repr(C)]`
 //! with its fields in the listed order, every enumeration a group of named
 //! `u32` constants. Values start at 1 (flags at bit 0), so an all-zero entry
-//! never carries a valid kind.
+//! never carries a valid kind. Beside it, the one typed view of a cell's
+//! bytes (`Pod`, `pod_ref`, `pod_mut`, `pod_bytes`) the lenses use.
 
 use core::ffi::c_void;
-use core::mem::size_of;
+use core::mem::{align_of, size_of};
 
 // ─── Strings, bytes, lists ──────────────────────────────────────────────────
 
@@ -591,3 +592,65 @@ pub mod status {
     pub const FINISH: u32 = 4;
 }
 
+
+// ─── Typed access ───────────────────────────────────────────────────────────
+
+/// A type every byte pattern of whose size is a valid value, with no padding:
+/// what typed access to a cell may return (abi.md §12 "Typed access in the
+/// lens requires `Pod`").
+///
+/// # Safety
+///
+/// The implementor has no padding, no invalid bit pattern and no pointer;
+/// it is `Copy` and its alignment divides its size.
+pub unsafe trait Pod: Copy + 'static {}
+
+// SAFETY: abi.md §12 "Typed access in the lens requires Pod": every bit
+// pattern of a numeric leaf is a value and none has padding.
+unsafe impl Pod for u8 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for u16 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for u32 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for u64 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for i8 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for i16 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for i32 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for i64 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for f32 {}
+// SAFETY: as for `u8`.
+unsafe impl Pod for f64 {}
+// SAFETY: an array of `Pod` has no padding between its elements.
+unsafe impl<T: Pod, const N: usize> Pod for [T; N] {}
+
+/// `bytes` as a `T`: `None` when they are too few or misaligned for `T`.
+pub fn pod_ref<T: Pod>(bytes: &[u8]) -> Option<&T> {
+    if bytes.len() < size_of::<T>() || bytes.as_ptr().align_offset(align_of::<T>()) != 0 {
+        return None;
+    }
+    // SAFETY: abi.md §12 "Typed access in the lens requires Pod": `T` is
+    // `Pod`, and the bytes are enough and aligned (checked above).
+    Some(unsafe { &*bytes.as_ptr().cast::<T>() })
+}
+
+/// `bytes` as a mutable `T`: `None` when they are too few or misaligned.
+pub fn pod_mut<T: Pod>(bytes: &mut [u8]) -> Option<&mut T> {
+    if bytes.len() < size_of::<T>() || bytes.as_ptr().align_offset(align_of::<T>()) != 0 {
+        return None;
+    }
+    // SAFETY: as for `pod_ref`; the borrow is unique because `bytes` is.
+    Some(unsafe { &mut *bytes.as_mut_ptr().cast::<T>() })
+}
+
+/// The bytes of a `Pod` value.
+pub fn pod_bytes<T: Pod>(value: &T) -> &[u8] {
+    // SAFETY: abi.md §12: a `Pod` has no padding, so all `size_of::<T>()`
+    // bytes behind `value` are initialized.
+    unsafe { core::slice::from_raw_parts((value as *const T).cast::<u8>(), size_of::<T>()) }
+}

@@ -186,12 +186,12 @@ T11 → T12 → T13 → T14 → T15 → T16
 
 **Done when**:
 
-- [ ] The trait has exactly `prototype`, `create`, `eval`, `react` with the signatures of the design
-- [ ] `Pod` is implemented by hand for the ten numeric leaves and `[T; N]`
-- [ ] The lenses compute each cell's byte length from the shape entry they borrow; `get::<T>` returns `None` when `T` does not fit
-- [ ] Unit tests in the module build a frame by hand over stack buffers and read `f64`, `u8`, `bytes`, `get`, write `set`, `out`, `jac`; `typed_access_that_does_not_fit_is_none` passes (C13)
-- [ ] No `unsafe` outside the three files the preamble names: lenses take already-checked slices from the thunk
-- [ ] Gate: full
+- [x] The trait has exactly `prototype`, `create`, `eval`, `react` with the signatures of the design
+- [x] `Pod` is implemented by hand for the ten numeric leaves and `[T; N]`
+- [x] The lenses compute each cell's byte length from the shape entry they borrow; `get::<T>` returns `None` when `T` does not fit
+- [x] Unit tests in the module build a frame by hand over stack buffers and read `f64`, `u8`, `bytes`, `get`, write `set`, `out`, `jac`; `typed_access_that_does_not_fit_is_none` passes (C13)
+- [x] No `unsafe` outside the three files the preamble names: lenses take already-checked slices from the thunk
+- [x] Gate: full
 
 **Tests**: unit
 **Gate**: full

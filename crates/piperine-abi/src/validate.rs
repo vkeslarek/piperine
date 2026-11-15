@@ -142,8 +142,8 @@ impl CellBytes<'_> {
 }
 
 /// How a cell is used.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Access {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
     FunctionRead,
     FunctionWrite,
     ReactionRead,
