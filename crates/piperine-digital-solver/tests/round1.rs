@@ -159,4 +159,27 @@ fn horizon_counts_the_commits_other_reactions_make_in_the_same_microstep() {
     // the two reactions are called in
     assert_eq!(horizon_with_a_rearming_timer(false), 20 * NS - 1);
     assert_eq!(horizon_with_a_rearming_timer(true), 20 * NS - 1);
+
+    // round-2 finding 7: an IRREVERSIBLE reaction runs last and once, so its commits cannot be seen by
+    // the others; when one fires with others in a microstep every reaction of it gets the current tick.
+    // Here it re-fires `a` 5 ticks on, while the clockwatch also listens to `a`.
+    for emulator_first in [true, false] {
+        let emu: Placed<'_> = ("emu", rearm(), vec![("a", "a")]);
+        let cw: Placed<'_> = ("cw", clockwatch(), vec![("go", "a")]);
+        let mut d = engine(if emulator_first { vec![emu, cw] } else { vec![cw, emu] });
+        d.start().unwrap();
+        instant(&mut d, Tick(0));
+        d.fire(net(&d, "a"), Tick(100)).unwrap();
+        instant(&mut d, Tick(100));
+        let seen = d.read(net(&d, "cw.seen")).to_vec();
+        assert_eq!(i64::from_le_bytes(seen[8..].try_into().unwrap()), 100, "emulator_first = {emulator_first}");
+        assert_eq!(d.next_due(), Some(Tick(105)), "the re-fire is pending");
+    }
+    // alone, an irreversible reaction keeps the horizon the queue and the limit give it
+    reset_calls();
+    let mut d = engine(vec![("emu", rearm(), vec![("a", "a")])]);
+    d.start().unwrap();
+    d.fire(net(&d, "a"), Tick(100)).unwrap();
+    instant(&mut d, Tick(100));
+    assert_eq!(calls("rearm").1, 1);
 }

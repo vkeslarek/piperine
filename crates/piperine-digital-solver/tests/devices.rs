@@ -30,6 +30,7 @@ fn every_fixture_shape_is_valid() {
         ("odd", odd()),
         ("rogue", rogue()),
         ("sloppy", sloppy()),
+        ("rearm", rearm()),
         ("setter", setter()),
         ("settler", settler()),
         ("delayed", delayed()),

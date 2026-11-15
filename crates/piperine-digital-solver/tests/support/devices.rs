@@ -992,6 +992,49 @@ pub fn sloppy() -> Handle {
     make::<Sloppy>(&SLOPPY, "sloppy")
 }
 
+// ─── Rearm ──────────────────────────────────────────────────────────────────
+
+/// An `IRREVERSIBLE` reaction that fires its own event again 5 fs later.
+///
+/// pins: a=0 (PORT event)   reaction 0 (IRREVERSIBLE): on [a] writes [S0 {a}]; fires `a` after 5 fs
+pub struct Rearm;
+static REARM_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static REARM: OnceLock<Module> = OnceLock::new();
+
+fn rearm_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let a = s.pin(PinSpec::event("a", role::PORT));
+    s.reaction(ReactionSpec {
+        name: "rearm",
+        flags: reaction_flag::IRREVERSIBLE,
+        on: vec![a],
+        writes: vec![statement(a, 0, 0)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Rearm {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&REARM_SHAPE, rearm_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Rearm, Arc::clone(shared(&REARM_SHAPE, rearm_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("rearm", true);
+        cx.commit(0, &[], 5e-15)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn rearm() -> Handle {
+    make::<Rearm>(&REARM, "rearm")
+}
+
 // ─── Binding by name ────────────────────────────────────────────────────────
 
 /// One device to place: its path, the live instance and `(pin name, net name)` wires.

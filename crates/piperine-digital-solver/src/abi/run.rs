@@ -644,7 +644,10 @@ pub fn run_reactions(
     let base = |j: &Job| if j.crossing { ambient.crossing_horizon } else { ambient.horizon };
     let reversible: Vec<usize> = (0..jobs.len()).filter(|j| !jobs[*j].irreversible).collect();
     let irreversible: Vec<usize> = (0..jobs.len()).filter(|j| jobs[*j].irreversible).collect();
-    let mut horizon: Vec<Tick> = jobs.iter().map(base).collect();
+    // an IRREVERSIBLE reaction runs last and once, so what it commits cannot bound the others: when one
+    // fires together with other reactions every reaction of the microstep gets the instant itself
+    let pinned = !irreversible.is_empty() && jobs.len() > 1;
+    let mut horizon: Vec<Tick> = jobs.iter().map(|j| if pinned { at.0 } else { base(j) }).collect();
     let mut ran: Vec<Option<Ran>> = (0..jobs.len()).map(|_| None).collect();
 
     for j in &reversible {
@@ -679,6 +682,7 @@ pub fn run_reactions(
     }
     for j in &irreversible {
         let cap = match irreversible.len() {
+            _ if pinned => at.0,
             1 => earliest_other(&ran, *j).map_or(base(&jobs[*j]), |e| base(&jobs[*j]).min(Tick(e.0.saturating_sub(1)).max(at.0))),
             _ => at.0,
         };
