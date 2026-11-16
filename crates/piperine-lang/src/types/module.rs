@@ -88,6 +88,10 @@ impl Checker<'_> {
     pub(super) fn module_let(&mut self, data: &LetData) {
         let pat = self.design.pat_node(data.pat).clone();
         let file = self.design.decl_data(pat.owner).file;
+        if matches!(pat.kind, PatKind::Tuple(_)) {
+            self.tuple_let(file, &pat, data.value);
+            return;
+        }
         let ty = self.infer(data.value);
         let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
             self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));

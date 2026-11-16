@@ -39,6 +39,8 @@ pub(super) struct Checker<'d> {
     pub(super) methods: BTreeMap<ExprId, Method>,
     pub(super) callees: BTreeMap<ExprId, Callee>,
     pub(super) reached: Vec<DeclId>,
+    /// Arguments read as `Some` of themselves (§3.2.3).
+    pub(super) somes: BTreeSet<ExprId>,
     pub(super) context: Context,
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
@@ -64,6 +66,7 @@ impl<'d> Checker<'d> {
             methods: BTreeMap::new(),
             callees: BTreeMap::new(),
             reached: Vec::new(),
+            somes: BTreeSet::new(),
             context: Context::Module,
             poisoned: BTreeSet::new(),
             fn_where: false,
@@ -86,7 +89,7 @@ impl<'d> Checker<'d> {
             diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
             return Err(diagnostics);
         }
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
@@ -172,6 +175,7 @@ impl<'d> Checker<'d> {
                     ("usize", _) => Some(Ty::UInt(64)),
                     ("isize", _) => Some(Ty::Int(64)),
                     (family @ ("UInt" | "Int" | "Float"), _) => self.sized_type(file, node.span, *path, family),
+                    ("Option", _) => self.option_type(file, node.span, *path),
                     _ => {
                         self.unsupported(file, node.span, &format!("type `{}`", id.name()));
                         None

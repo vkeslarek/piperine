@@ -58,7 +58,7 @@ impl ValueTypes {
                 let params: Option<Vec<ValueType>> = params.iter().map(ValueTypes::of).collect();
                 Some(ValueType::Fn(params?, Box::new(ValueTypes::of(ret)?)))
             }
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) => None,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_) | Ty::Tuple(_) => None,
         }
     }
 }
@@ -157,8 +157,8 @@ impl Elaboration<'_, '_> {
                     Method::Sqrt => MathFn::Sqrt,
                     Method::Abs => MathFn::Abs,
                     // Lowered to the IR's `Method` node from msl-digital T23 on.
-                    Method::Min | Method::Max | Method::Clamp | Method::Floor => {
-                        self.unsupported(file, node.span, "the method `min`, `max`, `clamp` or `floor`");
+                    Method::Min | Method::Max | Method::Clamp | Method::Floor | Method::IsSome | Method::IsNone | Method::UnwrapOr => {
+                        self.unsupported(file, node.span, "a method of an integer or an `Option`, or `floor`");
                         return None;
                     }
                 };

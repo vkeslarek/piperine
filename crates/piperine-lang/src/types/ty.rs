@@ -24,6 +24,11 @@ pub enum Ty {
     Int(u8),
     /// An enum of unit variants deriving `Repr`, by its declaration.
     Enum(DeclId),
+    /// `Option<T>`.
+    Option(Box<Ty>),
+    /// `(A, B, ..)`: the value of a tuple expression, which the subset allows only as the
+    /// initializer of a tuple `let`.
+    Tuple(Vec<Ty>),
 }
 
 impl Ty {
@@ -65,6 +70,11 @@ impl Ty {
                 Some(n) => format!("enum `{}`", n.text),
                 None => "enum".to_string(),
             },
+            Ty::Option(inner) => format!("Option<{}>", inner.name(design)),
+            Ty::Tuple(items) => {
+                let items: Vec<String> = items.iter().map(|t| t.name(design)).collect();
+                format!("({})", items.join(", "))
+            }
             Ty::Module(module) => match &design.decl_data(*module).name {
                 Some(n) => format!("module `{}`", n.text),
                 None => "module".to_string(),

@@ -24,19 +24,26 @@ const INTEGER_METHODS: &[(&str, Method, usize)] = &[("min", Method::Min, 1), ("m
 pub(super) struct Catalogue;
 
 impl Catalogue {
-    /// The row named `name` for a receiver of type `recv`, and how many arguments it takes.
-    pub(super) fn method(recv: &Ty, name: &str) -> Option<(Method, usize)> {
+    /// The row named `name` for a receiver of type `recv`: the row, its argument types and its
+    /// result.
+    pub(super) fn method(recv: &Ty, name: &str) -> Option<(Method, Vec<Ty>, Ty)> {
         let rows = match recv {
             Ty::F64 => F64_METHODS,
             Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
-            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) => return None,
+            Ty::Option(inner) => return Self::option(inner, name),
+            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) => return None,
         };
-        rows.iter().find(|(row, _, _)| *row == name).map(|(_, method, arity)| (*method, *arity))
+        rows.iter().find(|(row, _, _)| *row == name).map(|(_, method, arity)| (*method, vec![recv.clone(); *arity], recv.clone()))
     }
 
-    /// The type of the call: every row of the subset gives `Self`.
-    pub(super) fn result(_method: Method, recv: &Ty) -> Ty {
-        recv.clone()
+    /// The rows of `Option<T>` (Appendix H): `is_some`, `is_none`, `unwrap_or(T) -> T`.
+    fn option(inner: &Ty, name: &str) -> Option<(Method, Vec<Ty>, Ty)> {
+        match name {
+            "is_some" => Some((Method::IsSome, vec![], Ty::Bool)),
+            "is_none" => Some((Method::IsNone, vec![], Ty::Bool)),
+            "unwrap_or" => Some((Method::UnwrapOr, vec![inner.clone()], inner.clone())),
+            _ => None,
+        }
     }
 }
 

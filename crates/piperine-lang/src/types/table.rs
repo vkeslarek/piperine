@@ -1,6 +1,6 @@
 //! The result table of a check, and the entry point that makes it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, FileId, LitKind, Reflect};
@@ -24,6 +24,12 @@ pub enum Method {
     Clamp,
     /// `x.floor()` on `f64`.
     Floor,
+    /// `o.is_some()` on an `Option`.
+    IsSome,
+    /// `o.is_none()` on an `Option`.
+    IsNone,
+    /// `o.unwrap_or(d)` on an `Option`.
+    UnwrapOr,
 }
 
 /// What a call or a placement of the reachable set refers to.
@@ -45,11 +51,12 @@ pub struct Types<'d> {
     pub(super) methods: BTreeMap<ExprId, Method>,
     pub(super) callees: BTreeMap<ExprId, Callee>,
     pub(super) reached: Vec<DeclId>,
+    pub(super) somes: BTreeSet<ExprId>,
 }
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes
     }
 }
 
@@ -84,6 +91,12 @@ impl<'d> Types<'d> {
     pub fn literal(&self, expr: ExprId) -> Option<&Ty> {
         let is_integer_literal = matches!(&self.design.expr_node(expr).kind, ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")));
         self.ty(expr).filter(|ty| is_integer_literal && ty.is_integer())
+    }
+
+    /// Whether `expr`, an argument of type `T` for a parameter of type `Option<T>`, is read as
+    /// `Some` of it (§3.2.3).
+    pub fn implicit_some(&self, expr: ExprId) -> bool {
+        self.somes.contains(&expr)
     }
 
     /// The catalogue row a `Deferred` method call resolved to.

@@ -27,6 +27,9 @@ impl Checker<'_> {
             self.unsupported(file, node.span, "param block on a call");
             return None;
         }
+        if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(id)) if id.info().name == "Some") {
+            return self.some(expr, args, None);
+        }
         match class {
             CallClass::Function => {}
             CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),
@@ -111,17 +114,17 @@ impl Checker<'_> {
             return None;
         }
         let recv_ty = self.infer(*recv)?;
-        let Some((row, arity)) = Catalogue::method(&recv_ty, &method.text) else {
+        let Some((row, params, result)) = Catalogue::method(&recv_ty, &method.text) else {
             self.unsupported(file, method.span, &format!("method `{}` on `{}`", method.text, recv_ty.name(self.design)));
             for arg in args {
                 self.infer(arg.value);
             }
             return None;
         };
-        // Each argument has the receiver's type: a literal argument takes it (DIG-01 AC 2).
-        self.apply(expr, &vec![recv_ty.clone(); arity], args)?;
+        // An argument of the receiver's type takes it when it is a literal (DIG-01 AC 2).
+        self.apply(expr, &params, args)?;
         self.methods.insert(expr, row);
-        Some(Catalogue::result(row, &recv_ty))
+        Some(result)
     }
 
     /// A closure passed where `expected` is the declared type of the parameter. Anywhere else

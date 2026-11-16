@@ -21,6 +21,10 @@ impl Checker<'_> {
     /// `check` of an argument written directly: the one place a function may stand as a value,
     /// for a parameter of function type. Through an `if` or a block it is no named function.
     pub(super) fn check_argument(&mut self, expr: ExprId, expected: &Ty) {
+        if let Ty::Option(inner) = expected {
+            self.option_argument(expr, expected, inner);
+            return;
+        }
         self.fn_value_at = Some(expr);
         self.check(expr, expected);
     }
@@ -52,6 +56,12 @@ impl Checker<'_> {
                     self.mismatch_coded(file, node.span, code, "f64", "an integer literal");
                     Some(expected.clone())
                 }
+                // `None` and `Some(e)` where an `Option<T>` is expected.
+                ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
+                ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
+                    Ty::Option(inner) => self.some(expr, args, Some(inner)),
+                    _ => self.some(expr, args, None),
+                },
                 // An integer literal where an integer type is expected takes that type (§1 rule 7).
                 ExprKind::Lit(lit) if expected.is_integer() && matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")) => {
                     let LitKind::Int(text) = &lit.kind else { return };
@@ -317,7 +327,7 @@ impl Checker<'_> {
         // `if c { 0 } else { count + 1 }`: the first arm that is not a bare integer literal gives
         // the type the literal takes (local literal typing).
         if let Some(else_) = else_
-            && self.block_is_integer_literal(then)
+            && self.block_waits(then)
         {
             let else_ty = self.infer(else_);
             if let Some(t) = &else_ty {
@@ -421,13 +431,26 @@ impl Checker<'_> {
         }
     }
 
-    /// Whether the value of `block` is an integer literal with no suffix: the arm that waits for
-    /// another arm's type.
-    fn block_is_integer_literal(&self, block: &BlockNode) -> bool {
+    /// Whether the value of `block` takes its type from another arm: an integer literal with no
+    /// suffix, or `None`.
+    fn block_waits(&self, block: &BlockNode) -> bool {
         let Some(last) = block.stmts.last() else { return false };
         match &self.design.stmt_node(*last).kind {
-            StmtKind::Expr { expr, semi: false } => self.integer_literal_text(*expr).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()),
+            StmtKind::Expr { expr, semi: false } => self.integer_literal_waits(*expr) || self.is_none_literal(*expr),
             _ => false,
+        }
+    }
+
+    /// Whether `expr` is an integer literal with no suffix: its type comes from its position.
+    pub(super) fn integer_literal_waits(&self, expr: ExprId) -> bool {
+        self.integer_literal_text(expr).is_some_and(|t| lexer::int_suffix_text(&t).is_empty())
+    }
+
+    /// The resolution of the callee of the call `expr`.
+    fn callee_resolution_of_call(&self, expr: ExprId) -> Option<Resolution> {
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Call { callee, .. } => self.callee_resolution(*callee),
+            _ => None,
         }
     }
 
@@ -474,6 +497,11 @@ impl Checker<'_> {
                 }
             }
             Resolution::Builtin(id) if id.info().kind == BuiltinKind::Node => Some(Ty::AnyNode),
+            Resolution::Builtin(id) if id.info().name == "None" => {
+                let message = "`None` has no type here: write it where an `Option<T>` is expected";
+                self.report(file, Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
+                None
+            }
             Resolution::Builtin(id) => {
                 self.unsupported(file, node.span, &format!("built-in `{}`", id.name()));
                 None
@@ -530,6 +558,10 @@ impl Checker<'_> {
     /// the initializer.
     fn let_statement(&mut self, file: crate::pom::FileId, span: crate::msl::Span, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>) {
         let pat_node = self.design.pat_node(pat).clone();
+        if let (PatKind::Tuple(_), None, Some(init)) = (&pat_node.kind, ty, init) {
+            self.tuple_let(file, &pat_node, init);
+            return;
+        }
         let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
             self.unsupported(file, pat_node.span, Unsupported::pat(&pat_node.kind));
             return;

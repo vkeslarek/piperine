@@ -125,3 +125,93 @@ fn an_enum_outside_the_subset_is_p0001() {
         assert_eq!(snippet(&src, &d[0]), "E::B", "{src}");
     }
 }
+
+#[test]
+fn option_values_and_their_methods_are_typed() {
+    // DIG-03 AC 3: `Option<T>`, `Some(e)`, `None` and `is_some`, `is_none`, `unwrap_or`
+    // (Appendix H). `None` takes the type its position expects: an annotation, the other arm of
+    // an `if`, a parameter.
+    let items = buck_item("supervisor.msl", "pub enum Fault");
+    let body = "let a = Some(2.5); let b: Option<u8> = None; let c: Option<u8> = Some(7); \
+                let f = if true { Some(Fault::OverCurrent) } else if false { Some(Fault::OverVoltage) } else { None }; \
+                let g = if true { None } else { Some(1.0) }; \
+                let s = a.is_some(); let n = f.is_none(); let u = b.unwrap_or(3); let v = a.unwrap_or(0.0);";
+    let src = source(&items, body);
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let fault = decl(&design, "Fault", true);
+    let opt = |t: Ty| Ty::Option(Box::new(t));
+    let got: Vec<Ty> = ["a", "b", "c", "f", "g", "s", "n", "u", "v"].iter().map(|n| types.local(decl(&design, n, false)).cloned().expect("typed")).collect();
+    assert_eq!(got, [opt(Ty::F64), opt(Ty::UInt(8)), opt(Ty::UInt(8)), opt(Ty::Enum(fault)), opt(Ty::F64), Ty::Bool, Ty::Bool, Ty::UInt(8), Ty::F64]);
+    assert_eq!(opt(Ty::UInt(8)).name(&design), "Option<u8>");
+
+    // `None` with nothing to take a type from, and `unwrap_or` of another type, are mismatches.
+    let (src, d) = diagnostics("", "let x = None;");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "None");
+    let (src, d) = diagnostics("", "let o: Option<u8> = Some(1); let x = o.unwrap_or(1.0);");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "1.0");
+    // A method `Option` has no row for is named with the type.
+    let (_, d) = diagnostics("", "let o: Option<u8> = Some(1); let x = o.unwrap();");
+    assert_eq!(codes(&d), ["P0001"]);
+    assert!(d[0].diagnostic.message.contains("unwrap") && d[0].diagnostic.message.contains("Option<u8>"), "{}", d[0].diagnostic.message);
+}
+
+#[test]
+fn a_tuple_let_names_each_component() {
+    // DIG-03 AC 7: `let (a, b) = (x, y);` names each component, in a function, an `analog` block
+    // and a module body. `in_window` as the buck writes it.
+    let items = format!("{}\nfn swap(a: u8, b: u8) -> u8 {{ let (x, y) = (b, a); x - y }}", buck_item("supervisor.msl", "pub fn in_window"));
+    let body = "let w = in_window(130, 128); let s = swap(1, 2); let (p, q) = (1.5, true);";
+    let src = source(&items, body);
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let got: Vec<Ty> = ["w", "s", "p", "q", "m", "r", "x", "y"].iter().map(|n| types.local(decl(&design, n, false)).cloned().expect("typed")).collect();
+    assert_eq!(got, [Ty::Bool, Ty::UInt(8), Ty::F64, Ty::Bool, Ty::UInt(11), Ty::UInt(11), Ty::UInt(8), Ty::UInt(8)]);
+
+    let src = "module Top() { let (a, b) = (2.0, 3.0); }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    assert_eq!([types.local(decl(&design, "a", false)), types.local(decl(&design, "b", false))], [Some(&Ty::F64), Some(&Ty::F64)]);
+
+    // A tuple anywhere but the two sides of a `let` is outside the subset; a count that differs
+    // is a mismatch.
+    for (body, names) in [("let t = (1.0, 2.0);", "tuple expression"), ("let x = (1.0, 2.0); let (a, b) = x;", "tuple expression"), ("let t: (f64, f64) = 1.0;", "tuple type")] {
+        let (src, d) = diagnostics("", body);
+        assert_eq!(codes(&d)[0], "P0001", "{src}");
+        assert!(d[0].diagnostic.message.contains(names), "{src}: {}", d[0].diagnostic.message);
+    }
+    let (src, d) = diagnostics("", "let (a, b) = (1.0, 2.0, 3.0);");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "(1.0, 2.0, 3.0)");
+}
+
+#[test]
+fn a_value_for_an_option_parameter_is_some_of_it() {
+    // DIG-06 AC 8 (§3.2.3): an argument of type `T` for a parameter of type `Option<T>` is read
+    // as `Some` of it; an `Option<T>`, `Some(..)` and `None` are passed as they are.
+    let items = "fn pick(td: Option<f64>) -> f64 { td.unwrap_or(0.0) }\nfn count(n: Option<u8>) -> u8 { n.unwrap_or(1) }";
+    let body = "let x = 2.0; let o: Option<f64> = None; let a = pick(x); let b = pick(o); let c = pick(None); let d = pick(Some(1.0)); let e = count(5);";
+    let src = source(items, body);
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let calls: Vec<_> = (0..design.expr_count())
+        .map(|i| piperine_lang::pom::ExprId(i as u32))
+        .filter(|e| matches!(&design.expr_node(*e).kind, piperine_lang::pom::ExprKind::Call { .. }) && types.callee(*e).is_some())
+        .collect();
+    let argument = |call: piperine_lang::pom::ExprId| match &design.expr_node(call).kind {
+        piperine_lang::pom::ExprKind::Call { args, .. } => args[0].value,
+        _ => unreachable!("a call"),
+    };
+    let read_as_some: Vec<(String, bool)> = calls.iter().map(|c| (src[design.expr_node(argument(*c)).span.range()].to_string(), types.implicit_some(argument(*c)))).collect();
+    let expected: Vec<(String, bool)> = [("x", true), ("o", false), ("None", false), ("Some(1.0)", false), ("5", true)].iter().map(|(t, s)| (t.to_string(), *s)).collect();
+    assert_eq!(read_as_some, expected);
+    assert_eq!(types.ty(argument(calls[4])), Some(&Ty::UInt(8)), "the literal takes the payload's type");
+
+    // A value of another type is a mismatch naming the parameter's type.
+    let (src, d) = diagnostics(items, "let a = pick(true);");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "true");
+    assert!(d[0].diagnostic.message.contains("Option<f64>"), "{}", d[0].diagnostic.message);
+}
