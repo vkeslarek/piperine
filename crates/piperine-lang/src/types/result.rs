@@ -4,7 +4,7 @@
 //! reads itself is `E0332`, or `E0353` when the cycle passes through a result that depends
 //! directly on its input (§8.3.5).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::msl::Span;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, NatureKind, Resolution, StmtId};
@@ -80,16 +80,20 @@ impl Checker<'_> {
     /// through a value input, is `E0150` naming the carrier.
     pub(super) fn analog_reads(&mut self, stmts: &[StmtId]) {
         let mut frames = vec![Frame::default()];
+        // one carrier read is one `E0150`, however many reads of the block's `let`s reach it
+        let mut reported = BTreeSet::new();
         for stmt in stmts {
             for expr in crate::pom::stmt_children(self.design, *stmt) {
-                self.carrier_reads_in(expr, 0, &mut frames, None, &mut Vec::new());
+                self.carrier_reads_in(expr, 0, &mut frames, None, &mut Vec::new(), &mut reported);
             }
         }
     }
 
     /// The carriers `expr` reads bare, in the frame `frame`; `anchor` is where the chain of `let`s
     /// and results that led here was entered in the `analog` block, where the error is reported.
-    fn carrier_reads_in(&mut self, expr: ExprId, frame: usize, frames: &mut Vec<Frame>, anchor: Option<(Span, FileId)>, followed: &mut Vec<ExprId>) {
+    /// `reported` holds the carrier reads already reported: a read reached again (a `let` of the
+    /// block read after its own statement was checked) is not reported twice.
+    fn carrier_reads_in(&mut self, expr: ExprId, frame: usize, frames: &mut Vec<Frame>, anchor: Option<(Span, FileId)>, followed: &mut Vec<ExprId>, reported: &mut BTreeSet<ExprId>) {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let here = anchor.unwrap_or((node.span, file));
@@ -97,10 +101,10 @@ impl Checker<'_> {
             ExprKind::MethodCall { recv, args, res: Resolution::Decl(f), .. } if matches!(self.stdlib_builtin(*f), Some(Builtin::Known | Builtin::KnownOr | Builtin::IsKnown | Builtin::High)) => {
                 // The flag reads: the receiver is read through `level`; its arguments are read.
                 if !self.is_carrier_path(*recv) {
-                    self.carrier_reads_in(*recv, frame, frames, anchor, followed);
+                    self.carrier_reads_in(*recv, frame, frames, anchor, followed, reported);
                 }
                 for arg in args {
-                    self.carrier_reads_in(arg.value, frame, frames, anchor, followed);
+                    self.carrier_reads_in(arg.value, frame, frames, anchor, followed, reported);
                 }
             }
             // The edges and `changed` make an `Event`, which an `analog` block cannot hold (`E0441`).
@@ -109,16 +113,19 @@ impl Checker<'_> {
             ExprKind::Path(path) => {
                 let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return };
                 if self.is_discrete_carrier(decl) {
+                    if !reported.insert(expr) {
+                        return;
+                    }
                     let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                     let message = format!("an `analog` block reads the discrete carrier `{name}` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
                     self.coded(here.1, "E0150", here.0, message, "a discrete carrier read in `analog`");
                 } else if let Some((arg, parent)) = frames[frame].inputs.get(&decl).copied() {
-                    self.carrier_reads_in(arg, parent, frames, Some(here), followed);
+                    self.carrier_reads_in(arg, parent, frames, Some(here), followed, reported);
                 } else if let Some(init) = self.binding_init(decl)
                     && !followed.contains(&init)
                 {
                     followed.push(init);
-                    self.carrier_reads_in(init, frame, frames, Some(here), followed);
+                    self.carrier_reads_in(init, frame, frames, Some(here), followed, reported);
                     followed.pop();
                 }
             }
@@ -141,13 +148,13 @@ impl Checker<'_> {
                 let inner = frames.len() - 1;
                 if !followed.contains(&result) {
                     followed.push(result);
-                    self.carrier_reads_in(result, inner, frames, Some(here), followed);
+                    self.carrier_reads_in(result, inner, frames, Some(here), followed, reported);
                     followed.pop();
                 }
             }
             _ => {
                 for child in crate::pom::expr_children(&node.kind, self.design) {
-                    self.carrier_reads_in(child, frame, frames, anchor, followed);
+                    self.carrier_reads_in(child, frame, frames, anchor, followed, reported);
                 }
             }
         }
@@ -179,7 +186,7 @@ impl Checker<'_> {
             }
         }
         if read {
-            self.carrier_reads_in(arg, 0, &mut vec![Frame::default()], None, &mut Vec::new());
+            self.carrier_reads_in(arg, 0, &mut vec![Frame::default()], None, &mut Vec::new(), &mut BTreeSet::new());
         }
     }
 

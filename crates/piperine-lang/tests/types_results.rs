@@ -189,6 +189,10 @@ fn an_analog_read_of_a_carrier_outside_the_flag_reads_is_e0150() {
         ("let k = c * 2.0;", "v(p) +> k;", "k", "`c`"),
         ("let a = Amp(c, p);", "", "c", "`c`"),
         ("let g = twice(c);", "v(p) +> g;", "g", "`c`"),
+        // a `let` of the `analog` block: one read, one `E0150` at the read, not again where
+        // the `let` is read (verification F11)
+        ("", "let q = c; v(p) +> q;", "c", "`c`"),
+        ("", "let q = c + 1.0; v(p) +> q + q;", "c", "`c`"),
     ] {
         let src = format!("{items}module Top(in c: Bit<f64>, in en: Bit, p: Electrical) {{ {inside} }}\nanalog for Top {{ {analog} }}");
         let d = diagnostics(&src);

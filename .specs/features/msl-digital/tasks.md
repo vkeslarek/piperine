@@ -2038,7 +2038,7 @@ Proof: run tres | test a_placement_in_a_const_context_is_e0352 ... ok
 **C57** - `now()` is `f64` and `analysis(Static)` is `bool` in a body, `analog` and a reaction; each is `E0323` in a param default. (DIG-06, AC 5; T15)
 Proof: run tres | test now_and_analysis_static_are_typed ... ok
 
-**C58** - `analog` reading a carrier bare, through a `let` and through a value input is each `E0150` naming the carrier. (DIG-06, AC 6; T15)
+**C58** - `analog` reading a carrier bare, through a `let` and through a value input is each `E0150` naming the carrier, once per read (a `let` of the `analog` block read again gives no second one, verification F11). (DIG-06, AC 6; T15)
 Proof: run tres | test an_analog_read_of_a_carrier_outside_the_flag_reads_is_e0150 ... ok
 
 **C59** - `let a = a + 1.0;` is `E0332`; `let y = twice(y);` with `module twice(x: f64) -> f64 { 2.0 * x }` is `E0353`. (DIG-06, AC 7; T15)
