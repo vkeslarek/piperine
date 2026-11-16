@@ -362,6 +362,8 @@ Phase A is complete and mergeable without phase B.
 - IF a parent's `signal` carrier is the net its children's carrier ports meet on THEN the system SHALL refuse the circuit with an error naming the signal, the parent, the net and a child (verification F-B1; the binding itself is msl-digital's).
 - IF a net has an initial value of its own THEN the system SHALL refuse the circuit with an error naming the net and its origin (verification F-B2; passing it to the solver is msl-digital's).
 - IF a carrier's initial value is not a value of its type (another type, or an integer outside its `N`-bit range) THEN `check()` SHALL give one entry naming the carrier, its origin and the value (verification F-B5).
+- IF a reaction reads `temperature`, `gmin` or `source_scale` THEN the system SHALL give no source and an error naming the read, the reaction and its origin (verification F-B6: §12.1.12 allows the read, abi.md gives a reaction no such ambient; an ABI ruling is owed).
+- IF the function of a `limit` or `ac_stim` site reads a carrier THEN the system SHALL give no source and an error naming the site, the carrier and the site's origin (verification F-B6).
 
 ---
 

@@ -1575,6 +1575,12 @@ Proof: run nets | test a_net_with_its_own_init_is_refused ... ok
 **C108** - A carrier initial value that is not a value of its type (`bool` given 1, `u4` given 16 or -1, `i4` given -9, `f64` given `true`) is one `check()` entry each, naming the carrier, its origin and the value; the range edges give none. (edge case 8; T28; verification F-B5)
 Proof: run irdigital | test a_carrier_initial_value_outside_its_type_is_an_entry ... ok
 
+**C109** - A reaction reading `temperature`, `gmin` or `source_scale` gives no source and `Error::Unsupported` naming the read, the reaction and its origin. (edge case 9; T39; verification F-B6)
+Proof: run reject | test a_reaction_reading_the_environment_is_refused_by_name ... ok
+
+**C110** - A `limit` or `ac_stim` function reading a carrier gives no source and `Error::Unsupported` naming the site, the carrier and the site's origin. (edge case 10; T40; verification F-B6)
+Proof: run reject | test a_limit_or_stim_function_reading_a_carrier_is_refused_by_name ... ok
+
 ---
 
 ## Handoff

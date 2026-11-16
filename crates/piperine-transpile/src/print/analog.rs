@@ -15,7 +15,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Body, BranchKind, Env, Expr, ExprId, Ir, Operator, QuantityRole, Stmt, StmtId, Terminal, ValueType};
+use piperine_ir::{Body, BranchKind, Env, Expr, ExprId, Ir, Operator, Origin, QuantityRole, Stmt, StmtId, Terminal, ValueType};
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 
 use crate::Error;
@@ -530,6 +530,28 @@ impl<'a> AnalogPrinter<'a> {
         });
         t.line("}");
         Ok(())
+    }
+
+    /// Refuses the function of a `limit` or `ac_stim` site (`what`, named `name`, at `origin`)
+    /// that reads a carrier: no body of the buck slice has one and no lowering decodes a carrier
+    /// there (verification F-B6).
+    pub(crate) fn refuse_carrier_reads(&self, what: &str, name: &str, origin: &Origin, reads: &[Source]) -> Result<(), Error> {
+        let carrier = reads.iter().find_map(|s| match *s {
+            Source::Carrier(c) | Source::CarrierChanged(c) => Some(c),
+            Source::Delayed(k) | Source::DelayedChanged(k) => self.body.drives().get(k as usize).map(|d| d.carrier),
+            _ => None,
+        });
+        match carrier {
+            Some(c) => Err(Error::Unsupported {
+                form: format!(
+                    "a `{what}` function reading the carrier `{}`",
+                    self.body.carriers().get(c as usize).map_or_else(|| format!("carrier{c}"), |x| x.name.clone())
+                ),
+                path: format!("body {} {what} {name}", self.body.name()),
+                origin: origin.clone(),
+            }),
+            None => Ok(()),
+        }
     }
 
     pub(crate) fn unsupported(&self, form: &str) -> Error {

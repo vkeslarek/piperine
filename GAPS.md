@@ -66,6 +66,12 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
   `msl-digital`, queued right after `ir-rust`.
 - **`ir-rust` will refuse** `Float<16>`, `Float<128>` and `UInt<N>`/`Int<N>` with N > 64, by name;
   stable Rust has no type for them.
+- **A reaction reading `temperature`, `gmin` or `source_scale` is refused by name (`ir-rust`
+  F-B6).** Part IV §12.1.12 lets a reaction read the environment, but the ABI gives a reaction
+  only the time, `STATIC`, tick and horizon ambients (`piperine_abi::validate` refuses the rest
+  for reactions). Needs an ABI ruling: widen the reaction ambient set, or narrow §12.1.12.
+- **A `limit` or `ac_stim` function reading a carrier is refused by name (`ir-rust` F-B6).** No
+  lowering decodes a carrier in those functions yet; no body of the buck slice has one.
 
 ---
 

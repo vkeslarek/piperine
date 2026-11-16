@@ -66,6 +66,8 @@ impl<'a> AnalogPrinter<'a> {
             });
         }
         let name = self.body.limits().get(site_index as usize).map_or_else(|| format!("site{site_index}"), |s| s.name.clone());
+        let at_site = self.body.limits().get(site_index as usize).map_or_else(|| self.body.origin(), |s| &s.origin);
+        self.refuse_carrier_reads("limit", &name, at_site, &f.reads)?;
         let mode = Mode::Limit(site_index);
         let args: Vec<ExprId> = [site.x, site.f].into_iter().chain(site.seed).collect();
         let slice = self.slice_of(mode, &args, site.stmt);

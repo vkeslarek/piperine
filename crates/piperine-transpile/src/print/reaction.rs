@@ -51,6 +51,22 @@ impl<'a> DigitalPrinter<'a> {
                 let Some(reaction) = self.body.reactions().get(r as usize) else {
                     return Err(self.reaction_unsupported(&format!("reaction {r}")));
                 };
+                // §12.1.12 lets a reaction read the environment, but abi.md gives a reaction no
+                // ambient but time, `STATIC`, tick and horizon (`validate` refuses the rest): refused
+                // here by name until the ABI rules on it (verification F-B6)
+                let env = plan.reads.iter().find_map(|s| match s {
+                    Source::Temperature => Some("temperature"),
+                    Source::Gmin => Some("gmin"),
+                    Source::SourceScale => Some("source_scale"),
+                    _ => None,
+                });
+                if let Some(env) = env {
+                    return Err(Error::Unsupported {
+                        form: format!("a reaction reading `{env}` (the ABI gives a reaction no such ambient)"),
+                        path: format!("body {} reaction {r}", self.body.name()),
+                        origin: reaction.origin.clone(),
+                    });
+                }
                 let values = ValuePrinter::of_reaction(self.ir, self.body, r as usize).with_reads(self.reads());
                 let mut lines = Vec::with_capacity(reaction.stmts.len());
                 for s in &reaction.stmts {

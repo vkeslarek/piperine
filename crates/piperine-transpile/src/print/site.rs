@@ -71,6 +71,7 @@ impl<'a> AnalogPrinter<'a> {
         let site = self.body.stims().get(site_index as usize);
         let name = site.map_or_else(|| format!("site{site_index}"), |s| s.name.clone());
         let origin = site.map_or_else(|| self.body.origin(), |s| &s.origin);
+        self.refuse_carrier_reads("ac_stim", &name, origin, &f.reads)?;
         let exprs: Vec<ExprId> = [mag].into_iter().chain(phase).collect();
         let slice = self.slice_of(Mode::Stim(site_index), &exprs, stmt);
         let reads: Vec<(usize, Source)> =
