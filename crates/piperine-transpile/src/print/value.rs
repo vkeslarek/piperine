@@ -30,6 +30,8 @@ use piperine_ir::{
     UnaryOp, ValueType,
 };
 
+use piperine_plan::StatementPlan;
+
 use crate::Error;
 use crate::print::Text;
 
@@ -94,9 +96,9 @@ pub struct ValuePrinter<'a> {
     faults: bool,
     /// Whether a commit has a place to go: the code of a reaction.
     commits: bool,
-    /// The carrier of each commit printed so far, in printing order: the order of the
-    /// reaction's statements in the shape.
-    committed: RefCell<Vec<u32>>,
+    /// The carrier and `min_after` of each commit printed so far, in printing order: the order
+    /// of the reaction's statements in the shape.
+    committed: RefCell<Vec<StatementPlan>>,
     /// The names of the reads (params, nodes, carriers, the environment) printed so far: the
     /// variables the code uses, so a function binds no read it leaves alone.
     used: RefCell<BTreeSet<String>>,
@@ -199,8 +201,8 @@ impl<'a> ValuePrinter<'a> {
         ValuePrinter { analog: Some(reads), ..self }
     }
 
-    /// The carrier of each commit printed so far, in printing order.
-    pub fn committed(&self) -> Vec<u32> {
+    /// The carrier and `min_after` of each commit printed so far, in printing order.
+    pub fn committed(&self) -> Vec<StatementPlan> {
         self.committed.borrow().clone()
     }
 
@@ -971,13 +973,14 @@ impl<'a> ValuePrinter<'a> {
                 };
                 let want = ValueType::Flagged(Box::new(ty.clone()));
                 let value = self.expr_as(*value, &want)?;
+                let min_after = after.and_then(|a| StatementPlan::min_after(self.ir, a));
                 let after = match after {
                     Some(a) => self.expr_as(*a, &ValueType::Flagged(Box::new(ValueType::F64)))?,
                     None => "rt::Flagged::known(0.0)".to_string(),
                 };
                 let index = {
                     let mut done = self.committed.borrow_mut();
-                    done.push(*carrier);
+                    done.push(StatementPlan { carrier: *carrier, min_after });
                     done.len() - 1
                 };
                 Ok(format!("commits_.commit({index}, {value}, {after});"))

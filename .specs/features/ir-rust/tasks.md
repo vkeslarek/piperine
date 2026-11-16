@@ -1481,8 +1481,9 @@ Proof: run planshape | test a_drive_is_a_discrete_function ... ok
 **C77** - An event is a `PRIVATE` `EVENT` pin written by one function reading `VALUE`, `CHANGED` and the guard's pins. (RS-12, AC 3; T32)
 Proof: run planshape | test an_event_is_an_event_pin_and_its_function ... ok
 
-**C78** - A reaction lists its event pins, its reads and one statement per commit in source order. (RS-12, AC 4; T33)
+**C78** - A reaction lists its event pins, its reads and one statement per commit in source order. (RS-12, AC 4; T33; second proof: verification F-B3)
 Proof: run planshape | test a_reaction_lists_its_events_reads_and_statements ... ok
+Proof: run planshape | test an_if_lists_its_then_statement_before_its_else ... ok
 
 **C79** - `LATER` with `min_after` is set for a literal delay greater than 0 and for nothing else. (RS-12, AC 4; T33)
 Proof: run planshape | test only_a_literal_positive_delay_is_later ... ok

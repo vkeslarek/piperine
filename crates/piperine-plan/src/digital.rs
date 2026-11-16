@@ -81,6 +81,17 @@ pub struct StatementPlan {
     pub min_after: Option<f64>,
 }
 
+impl StatementPlan {
+    /// The `min_after` of a commit delayed by `after`: the delay itself when it is a real
+    /// literal greater than 0, else none (abi.md §6 C1).
+    pub fn min_after(ir: &Ir, after: ExprId) -> Option<f64> {
+        match ir.expr(after) {
+            Expr::Real(r) if r.get() > 0.0 => Some(r.get()),
+            _ => None,
+        }
+    }
+}
+
 /// The layout of a discrete value of a given IR type, and its bytes.
 pub struct CarrierLayout;
 
@@ -328,7 +339,7 @@ impl Digital {
                 reads: ReadSet::target(body, Query::Reaction(k as u32)).0.into_iter().collect(),
                 statements: commits
                     .into_iter()
-                    .map(|(carrier, after)| StatementPlan { carrier, min_after: after.and_then(|a| Self::min_after(ir, a)) })
+                    .map(|(carrier, after)| StatementPlan { carrier, min_after: after.and_then(|a| StatementPlan::min_after(ir, a)) })
                     .collect(),
             };
             Self::declare(s, pins, body, &format!("reaction:{k}"), &Self::at(&r.origin), &plan);
@@ -343,22 +354,13 @@ impl Digital {
                 mode: ReactionMode::Delayed(k),
                 on: vec![delayed.event],
                 reads: set.0.into_iter().collect(),
-                statements: vec![StatementPlan { carrier: d.carrier, min_after: d.after.and_then(|a| Self::min_after(ir, a)) }],
+                statements: vec![StatementPlan { carrier: d.carrier, min_after: d.after.and_then(|a| StatementPlan::min_after(ir, a)) }],
             };
             let name = format!("drive:{}", Self::carrier_name(body, d.carrier));
             Self::declare(s, pins, body, &name, &Self::at(&d.origin), &plan);
             reactions.push(plan);
         }
         reactions
-    }
-
-    /// The `min_after` of a commit delayed by `after`: the delay itself when it is a real
-    /// literal greater than 0, else none (abi.md §6 C1).
-    fn min_after(ir: &Ir, after: ExprId) -> Option<f64> {
-        match ir.expr(after) {
-            Expr::Real(r) if r.get() > 0.0 => Some(r.get()),
-            _ => None,
-        }
     }
 
     /// Adds `plan` to the shape as reaction `name`: each statement commits the whole of its

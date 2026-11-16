@@ -22,7 +22,7 @@
 //! pin holds to the carrier after the delay.
 
 use piperine_ir::ValueType;
-use piperine_plan::{ReactionMode, ReactionPlan, Source};
+use piperine_plan::{ReactionMode, ReactionPlan, Source, StatementPlan};
 
 use crate::Error;
 use crate::print::{DigitalPrinter, Text, ValuePrinter};
@@ -72,16 +72,25 @@ impl<'a> DigitalPrinter<'a> {
                 (values, vec![format!("commits_.commit(0, {now}, {delay});")], drive.origin.clone())
             }
         };
-        let committed = match plan.mode {
+        // the statement number each commit prints with is its place in the plan, so the plan and
+        // the printer must agree on the carrier and the `LATER` bound of every statement
+        let committed: Vec<StatementPlan> = match plan.mode {
             ReactionMode::Reaction(_) => values.committed(),
-            ReactionMode::Delayed(d) => vec![self.body.drives().get(d as usize).map_or(u32::MAX, |x| x.carrier)],
+            ReactionMode::Delayed(d) => {
+                let drive = self.body.drives().get(d as usize);
+                vec![StatementPlan {
+                    carrier: drive.map_or(u32::MAX, |x| x.carrier),
+                    min_after: drive.and_then(|x| x.after).and_then(|a| StatementPlan::min_after(self.ir, a)),
+                }]
+            }
         };
-        let wanted: Vec<u32> = plan.statements.iter().map(|s| s.carrier).collect();
-        if committed != wanted {
+        if committed != plan.statements {
             return Err(self.reaction_unsupported(&format!(
-                "reaction {k} whose commits {committed:?} are not the plan's statements {wanted:?} (a transpiler defect)"
+                "reaction {k} whose commits {committed:?} are not the plan's statements {:?} (a transpiler defect)",
+                plan.statements
             )));
         }
+        let committed: Vec<u32> = committed.iter().map(|s| s.carrier).collect();
         let forced: Vec<Source> = match plan.mode {
             ReactionMode::Delayed(d) => vec![Source::Delayed(d)],
             ReactionMode::Reaction(_) => Vec::new(),

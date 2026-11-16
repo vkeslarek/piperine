@@ -456,6 +456,48 @@ fn a_reaction_lists_its_events_reads_and_statements() {
 }
 
 #[test]
+fn an_if_lists_its_then_statement_before_its_else() {
+    // RS-12 AC 4 "one statement per commit in source order": `then` is written before `else`, so
+    // its commit is the earlier statement. The two arms commit to one carrier with different
+    // literal delays, so each statement's `LATER` bound tells the arms apart (verification F-B3):
+    //   on clk.changed() {
+    //       if c { b <- 2 after 1n; } else { b <- 3 after 2n; }
+    //   }
+    fn arms(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(Buck::spec("Arms", "a.msl", 1));
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "a.msl", 1, 20));
+        b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::In, Some(Constant::Bool(false)), "a.msl", 1, 30));
+        b.carrier(body, Buck::carrier("b", Ty::u(8), CarrierRole::Out, None, "a.msl", 1, 40));
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("a.msl", 2, 8) });
+        let mut x = Dx::new(b, "a.msl", 3, 9);
+        let c = x.carrier(1, ValueType::Bool);
+        let c = x.high(c);
+        let two = x.int(2, Ty::u(8));
+        let one_ns = x.real(1e-9);
+        let then = x.commit(2, two, Some(one_ns));
+        let three = x.int(3, Ty::u(8));
+        let two_ns = x.real(2e-9);
+        let otherwise = x.commit(2, three, Some(two_ns));
+        let otherwise = x.block(vec![otherwise], None, ValueType::Unit);
+        let branch = x.when(c, vec![then], Some(otherwise));
+        let branch = x.stmt(branch);
+        Buck::reaction(b, body, vec![changed], vec![branch], vec![], "a.msl", 2);
+        body
+    }
+    let (ir, body) = Alone::design(arms);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let later = piperine_abi::raw::statement_flag::LATER;
+    let b = Find::pin(shape, "b");
+    // `b`'s `Bit<u8>` pin is 2 bytes; statement 0 is the `then` commit (1 ns), statement 1 the
+    // `else` commit (2 ns)
+    let (_, _, statements) = Find::reaction(shape, "reaction:0");
+    assert_eq!(statements, [(b, 0, 2, later, 1e-9), (b, 0, 2, later, 2e-9)]);
+    let mins: Vec<(u32, Option<f64>)> = plan.reactions()[0].statements.iter().map(|st| (st.carrier, st.min_after)).collect();
+    assert_eq!(mins, [(2, Some(1e-9)), (2, Some(2e-9))]);
+}
+
+#[test]
 fn only_a_literal_positive_delay_is_later() {
     // abi.md §6 C1 and RS-12 AC 4: `LATER` with `min_after` only when the delay is a literal
     // constant greater than 0. A body committing `q` six ways, and a drive with a literal delay:
