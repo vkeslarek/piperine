@@ -2020,7 +2020,7 @@ Proof: run tev | test a_field_type_conflict_is_e0605 ... ok
 **C51** - `require(…)` reached from a definition, a module-body `let` and a `const` is each `E0601`. (DIG-05, AC 14; T14)
 Proof: run tev | test emit_where_it_is_not_allowed_is_e0601 ... ok
 
-**C52** - `require(…)` in an `analog` block is `E0603`. (DIG-05, AC 15; T14)
+**C52** - `require(…)` in an `analog` block is `E0603`; a trace or `log` there is no `E0603` (edge case 7 refuses it as `P0001`). (DIG-05, AC 15; T14)
 Proof: run tev | test a_check_reached_from_analog_is_e0603 ... ok
 
 **C53** - A module with value inputs and `-> f64` types; a result of another type is `E0301`. (DIG-06, AC 1; T15)
@@ -2409,6 +2409,9 @@ Proof: run brecords | test records_of_two_reactions_are_told_apart ... ok
 
 **C181** - A record carries the reaction and the statement that made it and decodes on its own (`Ir::record_at`): two reactions of one instance logging in one microstep at different statement indices (statements 0 and 1 of the first and 0 of the second, and the other way round) give each record its own severity and text (verification F1). (DIG-11, AC 1; F1)
 Proof: run brecords | test records_of_two_reactions_at_different_statements_keep_their_texts ... ok
+
+**C182** - An `emit!` on a non-reserved stream reached from `analog` (written there, through `log`, through a `fn`) is one `P0001` naming an `emit!` in an `analog` block, at the site; the same `log` in a reaction checks (verification F3). (edge case 7; F3)
+Proof: run tev | test an_emit_in_analog_is_p0001_by_name ... ok
 
 ---
 

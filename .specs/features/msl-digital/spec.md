@@ -481,6 +481,7 @@ Every gray area is settled under the user's standing delegation ("pode ir dispar
 - WHEN a result module is placed in a module that is itself placed twice THEN the system SHALL hoist it once into that module's one body.
 - IF a placement of a result module gives a param block THEN the system SHALL bind those params as constants of the hoisted items.
 - IF an `Ir` holding a time read, a static read, an `At` event, an emit site, a flow read or a previous-value read is given to the interpreter THEN the system SHALL return `Rejected` naming the body.
+- IF an `emit!` on a stream other than `sim` and `checks` (a `log` among them) is reached from `analog` THEN the system SHALL reject the model with `P0001` naming an `emit!` in an `analog` block, at type check: the M1 elaborator lowers no trace (added by verification F3).
 
 ---
 

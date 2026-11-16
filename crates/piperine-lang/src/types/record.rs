@@ -68,8 +68,12 @@ impl Checker<'_> {
                 self.coded(file, "E0601", span, message, "`emit!` out of place");
             }
         }
-        if self.context == Context::Analog && is_reserved(&name) {
-            self.analog_writes_reserved(file, span, &name);
+        if self.context == Context::Analog {
+            if is_reserved(&name) {
+                self.analog_writes_reserved(file, span, &name);
+            } else {
+                self.analog_trace(file, span);
+            }
         }
         let mut seen = BTreeSet::new();
         let mut typed = Vec::new();
@@ -109,6 +113,13 @@ impl Checker<'_> {
         self.coded(file, "E0603", span, message, "`analog` writes a reserved stream");
     }
 
+    /// An `emit!` on a stream other than `sim` and `checks` reached from `analog`: a trace
+    /// (§19), which the M1 elaborator does not lower (it has no `TRACE` pin), so it is refused
+    /// by name here rather than failing elaboration (msl-digital edge case 7).
+    fn analog_trace(&mut self, file: FileId, span: Span) {
+        self.unsupported(file, span, "an `emit!` in an `analog` block");
+    }
+
     /// A call of `function`, which may reach `emit!`: where it stands is where `emit!` may stand
     /// (`E0601`), and from `analog` it writes neither `sim` nor `checks` (`E0603`).
     pub(super) fn emitting_call(&mut self, expr: ExprId, function: DeclId) {
@@ -130,6 +141,8 @@ impl Checker<'_> {
             Context::Analog => {
                 if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
                     self.analog_writes_reserved(file, span, &stream.clone());
+                } else {
+                    self.analog_trace(file, span);
                 }
             }
             Context::Reaction | Context::Function => {}
