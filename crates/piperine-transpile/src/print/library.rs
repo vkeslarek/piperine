@@ -159,7 +159,7 @@ impl LibraryPrinter {
                     (analog.check(k)?, format!("{param}_check"))
                 }
                 Mode::Drive(_) => (digital.drive(k)?, digital.function_name(f)),
-                Mode::Event(_) | Mode::DelayedEvent(_) => (digital.event(k)?, digital.function_name(f)),
+                Mode::Event(_) | Mode::DelayedEvent(_) | Mode::Rearm { .. } => (digital.event(k)?, digital.function_name(f)),
                 Mode::Cross(_) => (digital.cross(k)?, digital.function_name(f)),
             };
             if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Cross(_)) {

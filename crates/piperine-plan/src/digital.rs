@@ -40,13 +40,27 @@
 //! An analog read of a carrier (RS-12 AC 7) is in the dependency set of the term that reads it:
 //! `terms` reads the carrier's `VALUE`, with no partial (it is no differentiable read).
 //!
+//! Timers (msl-digital A3; abi.md R1: "a timer is a delayed commit to an event pin"): an `at(t)`
+//! event `k` is fired by its own **arming reaction** `at:<k>`, which listens to the `GLOBAL`
+//! `START` pin (one per body, `start`) and to one private event pin `at:<k>.<carrier>` per
+//! carrier `t` reads, each fired by the discrete function of the same name when that carrier
+//! changed. The reaction reads what `t` reads and the ambient `TIME`, and has one `REPLACE`
+//! statement on the event pin (C3: a commit through it removes every pending one, so a re-armed
+//! timer drops its earlier firing). A guarded `at` fires a private event pin `at:<k>` instead,
+//! and its event function `event:<k>` reads that pin's `CHANGED` and the guard's pins, as a
+//! guarded `cross` does. These pins follow the delayed pins: the timer pins in event order, the
+//! `START` pin, then the re-arming pins in event and read order.
+//!
 //! Function order after the M1 functions: `cross:*` in event order, `drive:*` in drive order,
-//! then `event:*` in event order, then each `drive:<carrier>.changed`. Reactions: the body's in source order, then one
-//! per delayed drive in drive order.
+//! then `event:*` in event order, then each `drive:<carrier>.changed`, then each
+//! `at:<k>.<carrier>`. Reactions: the body's in source order, then one per delayed drive in
+//! drive order, then one arming reaction per `at` event in event order.
 
 use piperine_abi::layout::{BIT, BYTE, REAL, leaf_size};
 use piperine_abi::layout::F64;
-use piperine_abi::raw::{DEFAULT, Field, Layout, List, Statement, Str, field_flag, leaf, pin_flag, role, statement_flag, watch};
+use piperine_abi::raw::{
+    DEFAULT, Field, GROUND, Layout, List, Statement, Str, field_flag, global, leaf, pin_flag, role, statement_flag, watch,
+};
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
 use piperine_ir::{Body, CarrierRole, Constant, EmitField, EventSource, Expr, ExprId, Ir, Origin, Stmt, StmtId, Target as Query, ValueType};
 
@@ -59,6 +73,8 @@ pub enum ReactionMode {
     Reaction(u32),
     /// The commit of drive `k`'s undelayed value after its delay (RS-12 AC 5).
     Delayed(u32),
+    /// The arming of `at` event `k`: a commit to its pin due at its time (msl-digital A3).
+    Arm(u32),
 }
 
 /// What one reaction of the shape does, parallel to the shape's reaction.
@@ -73,15 +89,31 @@ pub struct ReactionPlan {
     pub statements: Vec<StatementPlan>,
 }
 
-/// One statement of a reaction: the carrier it commits to.
+/// One statement of a reaction: the pin it commits to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StatementPlan {
-    pub carrier: u32,
+    /// `Target::Carrier` for a commit; `Target::EventPin` or `Target::Timer` for the statement
+    /// of an arming reaction.
+    pub target: Target,
     /// `Some`: the statement is `LATER` with this `min_after`, in seconds.
     pub min_after: Option<f64>,
+    /// The statement is `REPLACE` (abi.md C3): a commit through it removes every pending one.
+    pub replace: bool,
 }
 
 impl StatementPlan {
+    /// The statement of a commit to `carrier` delayed by `after`.
+    pub fn commit(ir: &Ir, carrier: u32, after: Option<ExprId>) -> StatementPlan {
+        StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false }
+    }
+
+    /// The statement of the arming reaction of `at` event `k` of `body`: `REPLACE` on the pin the
+    /// timer fires.
+    pub fn arm(body: Body<'_>, k: u32) -> StatementPlan {
+        let guarded = body.events().get(k as usize).is_some_and(|e| e.guard.is_some());
+        StatementPlan { target: if guarded { Target::Timer(k) } else { Target::EventPin(k) }, min_after: None, replace: true }
+    }
+
     /// The `min_after` of a commit delayed by `after`: the delay itself when it is a real
     /// literal greater than 0, else none (abi.md §6 C1).
     pub fn min_after(ir: &Ir, after: ExprId) -> Option<f64> {
@@ -282,7 +314,48 @@ impl Digital {
             .collect()
     }
 
-    /// Declares the discrete functions of `body`: `drive:*`, `event:*`, `drive:*.changed`.
+    /// Adds the private event pin `at:<k>` the timer of each guarded `at` event fires; `None`
+    /// for every other event.
+    pub(crate) fn timer_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<u32>> {
+        body.events()
+            .iter()
+            .enumerate()
+            .map(|(k, e)| match (&e.source, e.guard) {
+                (EventSource::At(_), Some(_)) => {
+                    Some(s.pin(PinSpec { origin: &Self::at(&e.origin), ..PinSpec::event(&format!("at:{k}"), role::PRIVATE) }))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Adds the `GLOBAL` `START` pin when `body` has an `at` event.
+    pub(crate) fn start_pin(s: &mut ShapeBuf, body: Body<'_>) -> Option<u32> {
+        body.events().iter().any(|e| matches!(e.source, EventSource::At(_))).then(|| {
+            s.pin(PinSpec { origin: &Self::at(body.origin()), global: global::START, ..PinSpec::event("start", role::GLOBAL) })
+        })
+    }
+
+    /// Adds, per `at` event, one event pin `at:<k>.<carrier>` per carrier its time reads.
+    pub(crate) fn rearm_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Vec<(u32, u32)>> {
+        body.events()
+            .iter()
+            .enumerate()
+            .map(|(k, e)| {
+                let EventSource::At(_) = e.source else { return Vec::new() };
+                body.carrier_reads(Query::At(k as u32))
+                    .into_iter()
+                    .map(|c| {
+                        let name = format!("at:{k}.{}", Self::carrier_name(body, c));
+                        (c, s.pin(PinSpec { origin: &Self::at(&e.origin), ..PinSpec::event(&name, role::PRIVATE) }))
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Declares the discrete functions of `body`: `drive:*`, `event:*`, `drive:*.changed`,
+    /// `at:*.*`.
     pub(crate) fn functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>) -> Vec<FunctionPlan> {
         let mut functions = Vec::new();
         let mut add = |s: &mut ShapeBuf, name: String, origin: &Origin, plan: FunctionPlan| {
@@ -311,8 +384,11 @@ impl Digital {
                     set.0.insert(Source::Crossed(k));
                 }
                 EventSource::Cross(_) => continue,
-                // An `at` event is armed by a reaction of its own and written by no event
-                // function (msl-digital T41); the compiled backend refuses it until then.
+                // a guarded timer fires its own pin, which the event function gates
+                EventSource::At(_) if e.guard.is_some() => {
+                    set.0.insert(Source::Timer(k));
+                }
+                // an unguarded one is fired by its arming reaction's statement
                 EventSource::At(_) => continue,
             }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
@@ -325,6 +401,15 @@ impl Digital {
             let set = ReadSet([Source::Delayed(k), Source::DelayedChanged(k)].into_iter().collect());
             let name = format!("drive:{}.changed", Self::carrier_name(body, d.carrier));
             add(s, name, &d.origin, BodyPlan::function(Mode::DelayedEvent(k), &set, vec![(Target::DelayedEventPin(k), None)]));
+        }
+        for (k, e) in body.events().iter().enumerate() {
+            let event = k as u32;
+            for &(carrier, _) in pins.rearms.get(k).map_or(&[][..], Vec::as_slice) {
+                let set = ReadSet([Source::CarrierChanged(carrier)].into_iter().collect());
+                let name = format!("at:{k}.{}", Self::carrier_name(body, carrier));
+                let plan = BodyPlan::function(Mode::Rearm { event, carrier }, &set, vec![(Target::Rearm { event, carrier }, None)]);
+                add(s, name, &e.origin, plan);
+            }
         }
         functions
     }
@@ -340,10 +425,7 @@ impl Digital {
                 mode: ReactionMode::Reaction(k as u32),
                 on: r.on.iter().map(|e| pins.events.get(*e as usize).copied().unwrap_or(u32::MAX)).collect(),
                 reads: ReadSet::target(body, Query::Reaction(k as u32)).0.into_iter().collect(),
-                statements: commits
-                    .into_iter()
-                    .map(|(carrier, after)| StatementPlan { carrier, min_after: after.and_then(|a| StatementPlan::min_after(ir, a)) })
-                    .collect(),
+                statements: commits.into_iter().map(|(carrier, after)| StatementPlan::commit(ir, carrier, after)).collect(),
             };
             Self::declare(s, pins, body, &format!("reaction:{k}"), &Self::at(&r.origin), &plan);
             reactions.push(plan);
@@ -357,29 +439,55 @@ impl Digital {
                 mode: ReactionMode::Delayed(k),
                 on: vec![delayed.event],
                 reads: set.0.into_iter().collect(),
-                statements: vec![StatementPlan { carrier: d.carrier, min_after: d.after.and_then(|a| StatementPlan::min_after(ir, a)) }],
+                statements: vec![StatementPlan::commit(ir, d.carrier, d.after)],
             };
             let name = format!("drive:{}", Self::carrier_name(body, d.carrier));
             Self::declare(s, pins, body, &name, &Self::at(&d.origin), &plan);
+            reactions.push(plan);
+        }
+        for (k, e) in body.events().iter().enumerate() {
+            let EventSource::At(_) = e.source else { continue };
+            let event = k as u32;
+            let mut set = ReadSet::target(body, Query::At(event));
+            set.0.insert(Source::Time);
+            let mut on: Vec<u32> = pins.start.into_iter().collect();
+            on.extend(pins.rearms.get(k).map_or(&[][..], Vec::as_slice).iter().map(|(_, pin)| *pin));
+            let plan = ReactionPlan {
+                mode: ReactionMode::Arm(event),
+                on,
+                reads: set.0.into_iter().collect(),
+                statements: vec![StatementPlan::arm(body, event)],
+            };
+            Self::declare(s, pins, body, &format!("at:{k}"), &Self::at(&e.origin), &plan);
             reactions.push(plan);
         }
         reactions
     }
 
     /// Adds `plan` to the shape as reaction `name`: each statement commits the whole of its
-    /// carrier's pin.
+    /// carrier's pin, or fires an event pin (`len` 0, abi.md C4).
     fn declare(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, name: &str, origin: &str, plan: &ReactionPlan) {
         let limits = body.limits().len() as u32;
         let writes = plan
             .statements
             .iter()
             .map(|st| {
-                let len = body.carriers().get(st.carrier as usize).and_then(|c| CarrierLayout::of(&c.ty)).map_or(0, |l| l.size);
-                let (flags, min_after) = match st.min_after {
+                let (pin, len) = match st.target {
+                    Target::Carrier(c) => {
+                        (pins.carrier(c), body.carriers().get(c as usize).and_then(|x| CarrierLayout::of(&x.ty)).map_or(0, |l| l.size))
+                    }
+                    Target::EventPin(k) => (pins.events.get(k as usize).copied().unwrap_or(GROUND), 0),
+                    Target::Timer(k) => (pins.timer(k), 0),
+                    _ => (GROUND, 0),
+                };
+                let (mut flags, min_after) = match st.min_after {
                     Some(m) => (statement_flag::LATER, m),
                     None => (0, 0.0),
                 };
-                Statement { pin: pins.carrier(st.carrier), offset: 0, len, flags, min_after }
+                if st.replace {
+                    flags |= statement_flag::REPLACE;
+                }
+                Statement { pin, offset: 0, len, flags, min_after }
             })
             .collect();
         s.reaction(ReactionSpec {

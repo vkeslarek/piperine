@@ -52,6 +52,10 @@ impl<'a> DigitalPrinter<'a> {
             Mode::DelayedEvent(k) => format!("{}_drive_changed", carrier(k)),
             Mode::Event(k) => format!("event{k}"),
             Mode::Cross(k) => format!("cross{k}"),
+            Mode::Rearm { event, carrier } => {
+                let name = self.body.carriers().get(carrier as usize).map_or_else(|| format!("carrier{carrier}"), |x| Text::ident(&x.name));
+                format!("at{event}_{name}_changed")
+            }
             Mode::Limit(_) | Mode::Stim(_) | Mode::Terms | Mode::Check(_) => "terms".to_string(),
         }
     }
@@ -87,7 +91,9 @@ impl<'a> DigitalPrinter<'a> {
                 Some(carrier) => pin(&carrier.ty)?,
                 None => return Ok(None),
             },
-            Source::CarrierChanged(_) | Source::DelayedChanged(_) | Source::Crossed(_) => format!("let {name} = {cx}.bool({i});"),
+            Source::CarrierChanged(_) | Source::DelayedChanged(_) | Source::Crossed(_) | Source::Timer(_) => {
+                format!("let {name} = {cx}.bool({i});")
+            }
             Source::Node(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time => {
                 format!("let {name} = {cx}.f64({i});")
             }

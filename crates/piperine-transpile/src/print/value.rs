@@ -987,14 +987,14 @@ impl<'a> ValuePrinter<'a> {
                 };
                 let want = ValueType::Flagged(Box::new(ty.clone()));
                 let value = self.expr_as(*value, &want)?;
-                let min_after = after.and_then(|a| StatementPlan::min_after(self.ir, a));
+                let statement = StatementPlan::commit(self.ir, *carrier, *after);
                 let after = match after {
                     Some(a) => self.expr_as(*a, &ValueType::Flagged(Box::new(ValueType::F64)))?,
                     None => "rt::Flagged::known(0.0)".to_string(),
                 };
                 let index = {
                     let mut done = self.committed.borrow_mut();
-                    done.push(StatementPlan { carrier: *carrier, min_after });
+                    done.push(statement);
                     done.len() - 1
                 };
                 Ok(format!("commits_.commit({index}, {value}, {after});"))

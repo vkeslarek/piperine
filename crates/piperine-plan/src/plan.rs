@@ -65,6 +65,9 @@ pub enum Mode {
     Cross(u32),
     /// The `changed` event of drive `k`'s undelayed pin.
     DelayedEvent(u32),
+    /// The `changed` event of `carrier`, which the time of `at` event `event` reads: it fires
+    /// that timer's arming reaction (abi.md R1).
+    Rearm { event: u32, carrier: u32 },
 }
 
 /// Where a read of a function comes from.
@@ -89,6 +92,8 @@ pub enum Source {
     DelayedChanged(u32),
     /// The `CHANGED` byte of the pin the watch of guarded `cross` event `k` fires.
     Crossed(u32),
+    /// The `CHANGED` byte of the pin the timer of guarded `at` event `k` fires.
+    Timer(u32),
     Temperature,
     Gmin,
     SourceScale,
@@ -132,6 +137,10 @@ pub enum Target {
     DelayedEventPin(u32),
     /// The `CROSS` watch of event `k`.
     Watch(u32),
+    /// The pin the timer of guarded `at` event `k` fires (a statement of its arming reaction).
+    Timer(u32),
+    /// The event pin of the `changed` event of `carrier` that re-arms `at` event `event`.
+    Rearm { event: u32, carrier: u32 },
 }
 
 /// What one function of the shape computes, entry by entry parallel to the shape.
@@ -219,6 +228,16 @@ pub struct Pins {
     /// The two pins of each drive with an `after`, after the event pins; `None` for a drive
     /// without one.
     pub delayed: Vec<Option<DelayedPins>>,
+    /// Per event, the private event pin `at:<k>` its timer fires when it is a guarded `at`,
+    /// after the delayed pins; `None` for every other event (an unguarded timer fires the event
+    /// pin itself).
+    pub timers: Vec<Option<u32>>,
+    /// The `GLOBAL` `START` pin, after the timer pins, when the body has an `at` event: every
+    /// timer is armed at the first instant (abi.md R1).
+    pub start: Option<u32>,
+    /// Per event, `(carrier, pin)` for each carrier the time of an `at` event reads: the event
+    /// pin `at:<k>.<carrier>` its `changed` event fires, after the `START` pin.
+    pub rearms: Vec<Vec<(u32, u32)>>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -244,6 +263,17 @@ impl Pins {
     /// The pins of drive `k`; `None` for a drive without `after` or out of range.
     pub fn delayed(&self, k: u32) -> Option<DelayedPins> {
         self.delayed.get(k as usize).copied().flatten()
+    }
+
+    /// The pin the timer of guarded `at` event `k` fires; `GROUND` for any other event.
+    pub fn timer(&self, k: u32) -> u32 {
+        self.timers.get(k as usize).copied().flatten().unwrap_or(GROUND)
+    }
+
+    /// The event pin of the `changed` event of `carrier` that re-arms `at` event `event`;
+    /// `GROUND` when there is none.
+    pub fn rearm(&self, event: u32, carrier: u32) -> u32 {
+        self.rearms.get(event as usize).and_then(|r| r.iter().find(|(c, _)| *c == carrier)).map_or(GROUND, |(_, p)| *p)
     }
 
     /// The pin a term end names: a node's pin, or `GROUND`.
@@ -360,8 +390,11 @@ impl BodyPlan {
         let events = Digital::event_pins(&mut s, body);
         let crossed = Digital::crossed_pins(&mut s, body);
         let delayed = Digital::delayed_pins(&mut s, body);
+        let timers = Digital::timer_pins(&mut s, body);
+        let start = Digital::start_pin(&mut s, body);
+        let rearms = Digital::rearm_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed);
-        let pins = Pins { nodes, branches, temperature, checks, carriers, events, crossed, watches, delayed };
+        let pins = Pins { nodes, branches, temperature, checks, carriers, events, crossed, watches, delayed, timers, start, rearms };
 
         // Terms, branch by branch.
         let mut terms = Vec::new();
@@ -519,6 +552,8 @@ impl BodyPlan {
                 Target::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
                 Target::DelayedEventPin(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.event), part::CHANGED),
                 Target::Watch(k) => value(cell::WATCH, pins.watches.get(k as usize).copied().flatten().unwrap_or(GROUND)),
+                Target::Timer(k) => at(cell::PIN, pins.timer(k), part::CHANGED),
+                Target::Rearm { event, carrier } => at(cell::PIN, pins.rearm(event, carrier), part::CHANGED),
             })
             .collect();
         let partials =
@@ -542,6 +577,7 @@ impl BodyPlan {
             Source::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
             Source::DelayedChanged(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value), part::CHANGED),
             Source::Crossed(k) => at(cell::PIN, pins.crossed.get(k as usize).copied().flatten().unwrap_or(GROUND), part::CHANGED),
+            Source::Timer(k) => at(cell::PIN, pins.timer(k), part::CHANGED),
             Source::Temperature => value(cell::PIN, pins.temperature.unwrap_or(GROUND)),
             Source::Gmin => value(cell::AMBIENT, ambient::GMIN),
             Source::SourceScale => value(cell::AMBIENT, ambient::SOURCE_SCALE),

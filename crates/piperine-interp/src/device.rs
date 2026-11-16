@@ -89,6 +89,8 @@ impl Interpreted {
                 Source::Time => None,
                 // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
                 Source::Carrier(_) | Source::CarrierChanged(_) | Source::Delayed(_) | Source::DelayedChanged(_) | Source::Crossed(_) => None,
+                // a timer's pin: `Interpreter::new` refuses every body with an `at` (msl-digital T22).
+                Source::Timer(_) => None,
             };
             if let Some(cell) = cell {
                 *cell = Some(read());
@@ -274,7 +276,7 @@ impl Factory for BodyFactory {
             Mode::Stim(site) => instance.stim(f, site, cx),
             Mode::Check(param) => instance.check(f, param, cx),
             // `Interpreter::new` refuses every body with a carrier, so no digital function runs (R1).
-            Mode::Cross(_) | Mode::Drive(_) | Mode::Event(_) | Mode::DelayedEvent(_) => {
+            Mode::Cross(_) | Mode::Drive(_) | Mode::Event(_) | Mode::DelayedEvent(_) | Mode::Rearm { .. } => {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
             }
         }

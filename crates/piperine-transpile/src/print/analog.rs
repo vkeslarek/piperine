@@ -88,6 +88,7 @@ impl<'a> AnalogPrinter<'a> {
                 Text::generated(&format!("{name}_{part}"))
             }
             Source::Crossed(k) => Text::generated(&format!("cross{k}_changed")),
+            Source::Timer(k) => Text::generated(&format!("at{k}_changed")),
             Source::Temperature => ValuePrinter::env_name(Env::Temperature).to_string(),
             Source::Gmin => ValuePrinter::env_name(Env::Gmin).to_string(),
             Source::SourceScale => ValuePrinter::env_name(Env::SourceScale).to_string(),
@@ -133,6 +134,10 @@ impl<'a> AnalogPrinter<'a> {
                 format!("drive:{name}.{part}")
             }
             Target::Watch(k) => format!("cross:{k}"),
+            Target::Timer(k) => format!("at:{k}"),
+            Target::Rearm { event, carrier } => {
+                format!("at:{event}.{}", self.body.carriers().get(carrier as usize).map_or_else(|| carrier.to_string(), |x| x.name.clone()))
+            }
         }
     }
 

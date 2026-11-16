@@ -38,6 +38,7 @@ impl<'a> DigitalPrinter<'a> {
                 let name = self.body.carriers().get(c as usize).map_or_else(|| format!("drive{k}"), |x| Text::ident(&x.name));
                 format!("{name}_drive_after")
             }
+            ReactionMode::Arm(k) => format!("at{k}_arm"),
         }
     }
 
@@ -71,6 +72,7 @@ impl<'a> DigitalPrinter<'a> {
                 let now = self.names.read_name(Source::Delayed(d));
                 (values, vec![format!("commits_.commit(0, {now}, {delay});")], drive.origin.clone())
             }
+            ReactionMode::Arm(e) => return Err(self.reaction_unsupported(&format!("the arming reaction of at(t) event {e}"))),
         };
         // the statement number each commit prints with is its place in the plan, so the plan and
         // the printer must agree on the carrier and the `LATER` bound of every statement
@@ -78,11 +80,9 @@ impl<'a> DigitalPrinter<'a> {
             ReactionMode::Reaction(_) => values.committed(),
             ReactionMode::Delayed(d) => {
                 let drive = self.body.drives().get(d as usize);
-                vec![StatementPlan {
-                    carrier: drive.map_or(u32::MAX, |x| x.carrier),
-                    min_after: drive.and_then(|x| x.after).and_then(|a| StatementPlan::min_after(self.ir, a)),
-                }]
+                vec![StatementPlan::commit(self.ir, drive.map_or(u32::MAX, |x| x.carrier), drive.and_then(|x| x.after))]
             }
+            ReactionMode::Arm(e) => vec![StatementPlan::arm(self.body, e)],
         };
         if committed != plan.statements {
             return Err(self.reaction_unsupported(&format!(
@@ -90,10 +90,9 @@ impl<'a> DigitalPrinter<'a> {
                 plan.statements
             )));
         }
-        let committed: Vec<u32> = committed.iter().map(|s| s.carrier).collect();
         let forced: Vec<Source> = match plan.mode {
             ReactionMode::Delayed(d) => vec![Source::Delayed(d)],
-            ReactionMode::Reaction(_) => Vec::new(),
+            ReactionMode::Reaction(_) | ReactionMode::Arm(_) => Vec::new(),
         };
         let binds = self.binds(&values, "cx_", &plan.reads, &forced)?;
 
@@ -106,10 +105,7 @@ impl<'a> DigitalPrinter<'a> {
             .map(|p| shape.pins.get(*p as usize).map_or_else(|| format!("pin {p}"), |x| x.name.as_str().to_string()))
             .collect();
         let reads: Vec<String> = plan.reads.iter().map(|s| self.names.read_name(*s)).collect();
-        let writes: Vec<String> = committed
-            .iter()
-            .map(|c| self.body.carriers().get(*c as usize).map_or_else(|| format!("carrier {c}"), |x| x.name.clone()))
-            .collect();
+        let writes: Vec<String> = committed.iter().map(|s| self.names.write_name(s.target)).collect();
         let mut t = Text::new();
         t.line(&format!(
             "// reaction {k} `{name}`: on {}; reads {}; commits {} @ {}",

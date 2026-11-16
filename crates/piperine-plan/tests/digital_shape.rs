@@ -442,8 +442,8 @@ fn a_reaction_lists_its_events_reads_and_statements() {
     let lens: Vec<u32> = statements.iter().map(|st| st.2).collect();
     assert_eq!(lens, [4, 4, 4, 2, 2, 2, 2, 2, 2]);
     assert!(statements.iter().all(|st| st.1 == 0 && st.3 == 0));
-    let carriers: Vec<u32> = plan.reactions()[0].statements.iter().map(|st| st.carrier).collect();
-    assert_eq!(carriers, [9, 10, 12, 13, 14, 5, 6, 11, 8], "the plan's statements name the carriers, in the same order");
+    let carriers: Vec<Target> = plan.reactions()[0].statements.iter().map(|st| st.target).collect();
+    assert_eq!(carriers, [9, 10, 12, 13, 14, 5, 6, 11, 8].map(Target::Carrier), "the plan's statements name the carriers, in the same order");
 
     // RefRamp: three commits to `reference` in one `if`/`else if` chain are three statements.
     let (ir, body) = Alone::design(Buck::ref_ramp);
@@ -493,8 +493,8 @@ fn an_if_lists_its_then_statement_before_its_else() {
     // `else` commit (2 ns)
     let (_, _, statements) = Find::reaction(shape, "reaction:0");
     assert_eq!(statements, [(b, 0, 2, later, 1e-9), (b, 0, 2, later, 2e-9)]);
-    let mins: Vec<(u32, Option<f64>)> = plan.reactions()[0].statements.iter().map(|st| (st.carrier, st.min_after)).collect();
-    assert_eq!(mins, [(2, Some(1e-9)), (2, Some(2e-9))]);
+    let mins: Vec<(Target, Option<f64>)> = plan.reactions()[0].statements.iter().map(|st| (st.target, st.min_after)).collect();
+    assert_eq!(mins, [(Target::Carrier(2), Some(1e-9)), (Target::Carrier(2), Some(2e-9))]);
 }
 
 #[test]

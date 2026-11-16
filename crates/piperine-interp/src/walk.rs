@@ -181,7 +181,14 @@ impl<'a> Walk<'a> {
         }
         match mode {
             Mode::Terms => Ok(()),
-            Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_) | Mode::Cross(_) | Mode::Drive(_) | Mode::Event(_) | Mode::DelayedEvent(_) => {
+            Mode::Limit(_)
+            | Mode::Stim(_)
+            | Mode::Check(_)
+            | Mode::Cross(_)
+            | Mode::Drive(_)
+            | Mode::Event(_)
+            | Mode::DelayedEvent(_)
+            | Mode::Rearm { .. } => {
                 Err(Fault::new(Self::UNEXECUTED, format!("{}: the walk of {mode:?} ended without reaching its site", body.name())))
             }
         }
