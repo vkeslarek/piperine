@@ -51,6 +51,15 @@
 //! guarded `cross` does. These pins follow the delayed pins: the timer pins in event order, the
 //! `START` pin, then the re-arming pins in event and read order.
 //!
+//! Records (msl-digital A4; abi.md P7, C5): each stream of a body is one `PRIVATE` `DISCRETE`
+//! pin named by the stream and flagged `RECORD` (so `QUIET`: no reader, never a microstep). Its
+//! layout holds one field per value field of the stream, in the stream's order, each laid out
+//! as a carrier of its type (the value, then its known byte) at the next offset its alignment
+//! allows, the size rounded up to the largest alignment (`RecordLayout`): a site that leaves a
+//! field out writes it all zero, its known byte 0 (P3, C5). Each emit site is one statement of
+//! its reaction, in the order of the commits (`Body::reaction_statements`), committing the
+//! whole layout. The record pins follow the re-arming pins, in stream order.
+//!
 //! Function order after the M1 functions: `cross:*` in event order, `drive:*` in drive order,
 //! then `event:*` in event order, then each `drive:<carrier>.changed`, then each
 //! `at:<k>.<carrier>`. Reactions: the body's in source order, then one per delayed drive in
@@ -62,7 +71,7 @@ use piperine_abi::raw::{
     DEFAULT, Field, GROUND, Layout, List, Statement, Str, field_flag, global, leaf, pin_flag, role, statement_flag, watch,
 };
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
-use piperine_ir::{Body, CarrierRole, Constant, EmitField, EventSource, Expr, ExprId, Ir, Origin, Stmt, StmtId, Target as Query, ValueType};
+use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, Stream, Target as Query, ValueType};
 
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
 
@@ -105,6 +114,25 @@ impl StatementPlan {
     /// The statement of a commit to `carrier` delayed by `after`.
     pub fn commit(ir: &Ir, carrier: u32, after: Option<ExprId>) -> StatementPlan {
         StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false }
+    }
+
+    /// The statement of an emit site of stream `s`: the whole of its `RECORD` pin, due at the
+    /// next microstep.
+    pub fn record(s: u32) -> StatementPlan {
+        StatementPlan { target: Target::Record(s), min_after: None, replace: false }
+    }
+
+    /// The statements of reaction `k` of `body`, one per commit and per emit site, in ABI order.
+    pub fn of_reaction(body: Body<'_>, k: u32) -> Vec<StatementPlan> {
+        let ir = body.ir();
+        body.reaction_statements(k)
+            .into_iter()
+            .filter_map(|id| match ir.stmt(id) {
+                Stmt::Commit { carrier, after, .. } => Some(StatementPlan::commit(ir, *carrier, *after)),
+                Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
+                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Contribute { .. } => None,
+            })
+            .collect()
     }
 
     /// The statement of the arming reaction of `at` event `k` of `body`: `REPLACE` on the pin the
@@ -209,6 +237,46 @@ impl CarrierLayout {
         bytes[..value.len()].copy_from_slice(&value);
         bytes[field.known as usize] = 1;
         Some(bytes)
+    }
+}
+
+/// The layout of a stream's `RECORD` pin: each value field laid out as a carrier of its type
+/// (`CarrierLayout`), in the stream's order, at the next offset its alignment allows; the size
+/// rounded up to the largest alignment.
+#[derive(Clone, Debug)]
+pub struct RecordLayout {
+    pub size: u32,
+    pub align: u32,
+    /// Per value field of the stream: its offset and the carrier layout it is laid out as.
+    pub fields: Vec<(u32, &'static Layout<'static>)>,
+}
+
+impl RecordLayout {
+    /// The layout of `stream`'s pin; `None` when a field holds a type no carrier holds
+    /// (`check()` refuses it).
+    pub fn of(stream: &Stream) -> Option<RecordLayout> {
+        let (mut end, mut align) = (0u32, 1u32);
+        let mut fields = Vec::with_capacity(stream.fields.len());
+        for f in &stream.fields {
+            let layout = CarrierLayout::of(&f.ty)?;
+            let offset = end.next_multiple_of(layout.align);
+            fields.push((offset, layout));
+            end = offset + layout.size;
+            align = align.max(layout.align);
+        }
+        Some(RecordLayout { size: end.next_multiple_of(align), align, fields })
+    }
+
+    /// The ABI fields of the layout, named after `stream`'s fields.
+    fn abi_fields<'s>(&self, stream: &'s Stream) -> Vec<Field<'s>> {
+        self.fields
+            .iter()
+            .zip(&stream.fields)
+            .filter_map(|((offset, layout), f)| {
+                let v = layout.fields.get(0)?;
+                Some(Field { name: Str::from_str(&f.name), leaf: v.leaf, offset: *offset, count: 1, flags: field_flag::HAS_KNOWN, known: offset + v.known })
+            })
+            .collect()
     }
 }
 
@@ -354,6 +422,23 @@ impl Digital {
             .collect()
     }
 
+    /// Adds one `PRIVATE` `RECORD` pin per stream of `body`, named by the stream; returns their
+    /// indices. The body passes `check()`, so every field holds `bool`, `f64` or an integer.
+    pub(crate) fn record_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        let at = Self::at(body.origin());
+        body.streams()
+            .iter()
+            .map(|stream| {
+                let Some(record) = RecordLayout::of(stream) else {
+                    panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
+                };
+                let fields = record.abi_fields(stream);
+                let layout = Layout { size: record.size, align: record.align, fields: List::from_slice(&fields) };
+                s.pin(PinSpec { origin: &at, flags: pin_flag::RECORD, ..PinSpec::discrete(&stream.name, role::PRIVATE, &layout) })
+            })
+            .collect()
+    }
+
     /// Declares the discrete functions of `body`: `drive:*`, `event:*`, `drive:*.changed`,
     /// `at:*.*`.
     pub(crate) fn functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>) -> Vec<FunctionPlan> {
@@ -419,13 +504,11 @@ impl Digital {
         let ir = body.ir();
         let mut reactions = Vec::new();
         for (k, r) in body.reactions().iter().enumerate() {
-            let mut commits = Vec::new();
-            Commits::stmts(ir, &r.stmts, &mut commits);
             let plan = ReactionPlan {
                 mode: ReactionMode::Reaction(k as u32),
                 on: r.on.iter().map(|e| pins.events.get(*e as usize).copied().unwrap_or(u32::MAX)).collect(),
                 reads: ReadSet::target(body, Query::Reaction(k as u32)).0.into_iter().collect(),
-                statements: commits.into_iter().map(|(carrier, after)| StatementPlan::commit(ir, carrier, after)).collect(),
+                statements: StatementPlan::of_reaction(body, k as u32),
             };
             Self::declare(s, pins, body, &format!("reaction:{k}"), &Self::at(&r.origin), &plan);
             reactions.push(plan);
@@ -478,6 +561,9 @@ impl Digital {
                     }
                     Target::EventPin(k) => (pins.events.get(k as usize).copied().unwrap_or(GROUND), 0),
                     Target::Timer(k) => (pins.timer(k), 0),
+                    Target::Record(r) => {
+                        (pins.record(r), body.streams().get(r as usize).and_then(RecordLayout::of).map_or(0, |l| l.size))
+                    }
                     _ => (GROUND, 0),
                 };
                 let (mut flags, min_after) = match st.min_after {
@@ -498,81 +584,5 @@ impl Digital {
             writes,
             ..ReactionSpec::default()
         });
-    }
-}
-
-/// The commits of a reaction's statements, in source order: a depth-first walk, each
-/// expression's operands in order, a block's statements before its value, `then` before `else`.
-struct Commits;
-
-impl Commits {
-    /// Appends `(carrier, after)` for each commit among `stmts` and what they hold.
-    fn stmts(ir: &Ir, stmts: &[StmtId], out: &mut Vec<(u32, Option<ExprId>)>) {
-        for id in stmts {
-            match ir.stmt(*id) {
-                Stmt::Let { init, .. } => Self::expr(ir, *init, out),
-                Stmt::Expr(e) => Self::expr(ir, *e, out),
-                Stmt::Contribute { addends, .. } => addends.iter().for_each(|a| Self::expr(ir, a.value, out)),
-                Stmt::Commit { carrier, value, after } => {
-                    Self::expr(ir, *value, out);
-                    if let Some(a) = after {
-                        Self::expr(ir, *a, out);
-                    }
-                    out.push((*carrier, *after));
-                }
-                // An emit is a statement of its own in the ABI numbering, which this list does
-                // not carry yet (msl-digital T43); the compiled backend refuses a body with
-                // one, the interpreter rejects it.
-                Stmt::Emit { fields, .. } => {
-                    for f in fields {
-                        if let EmitField::Value { value, .. } = f {
-                            Self::expr(ir, *value, out);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn expr(ir: &Ir, id: ExprId, out: &mut Vec<(u32, Option<ExprId>)>) {
-        let mut each = |ids: &[ExprId]| ids.iter().for_each(|e| Self::expr(ir, *e, out));
-        match ir.expr(id) {
-            Expr::Real(_)
-            | Expr::Bool(_)
-            | Expr::Unit
-            | Expr::Local(_)
-            | Expr::Param(_)
-            | Expr::Probe { .. }
-            | Expr::Env(_)
-            | Expr::Int(_)
-            | Expr::Unknown
-            | Expr::Carrier(_)
-            | Expr::Flow { .. }
-            | Expr::Previous(_) => {}
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => each(&[*expr]),
-            Expr::Binary { lhs, rhs, .. } => each(&[*lhs, *rhs]),
-            Expr::KnownOr { value, default } => each(&[*value, *default]),
-            Expr::If { cond, then, otherwise } => each(&[*cond, *then, *otherwise]),
-            Expr::Call { args, .. } | Expr::Math { args, .. } => each(args),
-            Expr::Closure { body, .. } => each(&[*body]),
-            Expr::Limit { x, f, seed, .. } => {
-                each(&[*x, *f]);
-                each(seed.as_slice());
-            }
-            Expr::Stim { mag, phase, .. } => {
-                each(&[*mag]);
-                each(phase.as_slice());
-            }
-            Expr::Method { receiver, args, .. } => {
-                each(&[*receiver]);
-                each(args);
-            }
-            Expr::Block { stmts, value } => {
-                Self::stmts(ir, stmts, out);
-                if let Some(v) = value {
-                    Self::expr(ir, *v, out);
-                }
-            }
-        }
     }
 }

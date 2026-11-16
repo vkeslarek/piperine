@@ -141,6 +141,8 @@ pub enum Target {
     Timer(u32),
     /// The event pin of the `changed` event of `carrier` that re-arms `at` event `event`.
     Rearm { event: u32, carrier: u32 },
+    /// The `RECORD` pin of stream `s` (a statement of a reaction that emits).
+    Record(u32),
 }
 
 /// What one function of the shape computes, entry by entry parallel to the shape.
@@ -238,6 +240,8 @@ pub struct Pins {
     /// Per event, `(carrier, pin)` for each carrier the time of an `at` event reads: the event
     /// pin `at:<k>.<carrier>` its `changed` event fires, after the `START` pin.
     pub rearms: Vec<Vec<(u32, u32)>>,
+    /// The `RECORD` pin of each stream of the body, in stream order, after the re-arming pins.
+    pub records: Vec<u32>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -274,6 +278,11 @@ impl Pins {
     /// `GROUND` when there is none.
     pub fn rearm(&self, event: u32, carrier: u32) -> u32 {
         self.rearms.get(event as usize).and_then(|r| r.iter().find(|(c, _)| *c == carrier)).map_or(GROUND, |(_, p)| *p)
+    }
+
+    /// The `RECORD` pin of stream `s`; `GROUND` out of range.
+    pub fn record(&self, s: u32) -> u32 {
+        self.records.get(s as usize).copied().unwrap_or(GROUND)
     }
 
     /// The pin a term end names: a node's pin, or `GROUND`.
@@ -393,8 +402,9 @@ impl BodyPlan {
         let timers = Digital::timer_pins(&mut s, body);
         let start = Digital::start_pin(&mut s, body);
         let rearms = Digital::rearm_pins(&mut s, body);
+        let records = Digital::record_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed);
-        let pins = Pins { nodes, branches, temperature, checks, carriers, events, crossed, watches, delayed, timers, start, rearms };
+        let pins = Pins { nodes, branches, temperature, checks, carriers, events, crossed, watches, delayed, timers, start, rearms, records };
 
         // Terms, branch by branch.
         let mut terms = Vec::new();
@@ -554,6 +564,7 @@ impl BodyPlan {
                 Target::Watch(k) => value(cell::WATCH, pins.watches.get(k as usize).copied().flatten().unwrap_or(GROUND)),
                 Target::Timer(k) => at(cell::PIN, pins.timer(k), part::CHANGED),
                 Target::Rearm { event, carrier } => at(cell::PIN, pins.rearm(event, carrier), part::CHANGED),
+                Target::Record(stream) => value(cell::PIN, pins.record(stream)),
             })
             .collect();
         let partials =

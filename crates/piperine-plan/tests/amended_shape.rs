@@ -4,12 +4,12 @@
 //! by hand and reads its shape entry by entry; every expected entry is written from abi.md (the
 //! section cited at its assertion), and every shape passes `piperine_abi::validate`.
 
-use piperine_abi::raw::{Cell, Shape, ambient, cell, global, kind, part, role, statement_flag};
+use piperine_abi::raw::{Cell, Shape, ambient, cell, field_flag, global, kind, leaf, part, pin_flag, role, statement_flag};
 use piperine_ir::{
-    Addend, BodyId, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Env, Event, EventSource, Expr, InstanceSpec, Ir, IrBuilder,
-    NodeRole, Operator, Origin, QuantityRole, Stmt, Terminal, ValueType,
+    Addend, BodyId, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, EmitField, Env, Event, EventSource, Expr, InstanceSpec, Ir,
+    IrBuilder, NodeRole, Operator, Origin, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
 };
-use piperine_plan::{BodyPlan, Mode, Source};
+use piperine_plan::{BodyPlan, Mode, Source, Target};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -247,6 +247,82 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
     assert_eq!(Find::reaction(shape, "reaction:1"), (vec![event1], vec![], vec![(fired, 0, 2, 0, 0.0)]));
     let names: Vec<&str> = shape.reactions.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["reaction:0", "reaction:1", "at:0", "at:1"], "the arming reactions follow the body's");
+
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn a_stream_is_a_record_pin_with_one_field_per_value() {
+    // ```text
+    // module Probe(in go: Bit, out x: Bit) {}
+    // digital for Probe {
+    //     on go.changed() {
+    //         emit!("trace", code = 7u8, level = 1.5);
+    //         x <- true;
+    //         emit!("trace", ok = true, note = "hi");
+    //     }
+    // }
+    // ```
+    let (ir, body) = Alone::design(|b| {
+        let body = b.body(Buck::spec("Probe", F, 1));
+        b.carrier(body, Buck::carrier("go", ValueType::Bool, CarrierRole::In, None, F, 1, 14));
+        b.carrier(body, Buck::carrier("x", ValueType::Bool, CarrierRole::Out, None, F, 1, 26));
+        let fields = vec![
+            StreamField { name: "code".into(), ty: ValueType::UInt(8) },
+            StreamField { name: "level".into(), ty: ValueType::F64 },
+            StreamField { name: "ok".into(), ty: ValueType::Bool },
+        ];
+        let trace = b.stream(body, Stream { name: "trace".into(), fields });
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 3, 8) });
+        let mut x = Dx::new(b, F, 4, 9);
+        let (code, level) = (x.int(7, ValueType::UInt(8)), x.real(1.5));
+        let first = x.b.stmt(Stmt::Emit {
+            stream: trace,
+            fields: vec![EmitField::Value { field: 0, value: code }, EmitField::Value { field: 1, value: level }],
+        });
+        x.at(5, 9);
+        let yes = x.boolean(true);
+        let commit = x.commit(1, yes, None);
+        x.at(6, 9);
+        let ok = x.boolean(true);
+        let second = x.b.stmt(Stmt::Emit {
+            stream: trace,
+            fields: vec![EmitField::Value { field: 2, value: ok }, EmitField::Text { name: "note".into(), text: "hi".into() }],
+        });
+        Buck::reaction(b, body, vec![changed], vec![first, commit, second], vec![], F, 3);
+        body
+    });
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (trace, x, event) = (Find::pin(shape, "trace"), Find::pin(shape, "x"), Find::pin(shape, "event:0"));
+    let p = shape.pins.get(trace as usize).expect("the record pin");
+
+    // abi.md P7, C5: a stream is one PRIVATE discrete pin per instance, flagged RECORD, named by
+    // the stream
+    assert_eq!((p.kind, p.role, p.flags), (kind::DISCRETE, role::PRIVATE, pin_flag::RECORD));
+    // one field per value field, each with a known byte (P3), laid out as a carrier of its type:
+    // `code` a `BYTE` at 0 (known 1), `level` a `REAL` at the next multiple of 8 (value 8, known
+    // 16), `ok` a `BIT` at 24 (known 25); 26 bytes rounded up to the alignment 8. The text `note`
+    // is no field: text never crosses the ABI (design "Amendments behind the IR")
+    let fields: Vec<(String, u32, u32, u32, u32, u32)> =
+        p.layout.fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset, f.count, f.flags, f.known)).collect();
+    let known = field_flag::HAS_KNOWN;
+    assert_eq!(
+        fields,
+        [("code".into(), leaf::U8, 0, 1, known, 1), ("level".into(), leaf::F64, 8, 1, known, 16), ("ok".into(), leaf::BOOL, 24, 1, known, 25)]
+    );
+    assert_eq!((p.layout.size, p.layout.align), (32, 8));
+
+    // the two sites share the pin: each is a statement over its whole layout, in the order of
+    // the reaction's commits (C5: a record is a commit to a RECORD pin); a site writes the
+    // fields it leaves out with their known byte 0, which the layout makes room for
+    let (on, reads, statements) = Find::reaction(shape, "reaction:0");
+    assert_eq!((on, reads), (vec![event], vec![]));
+    assert_eq!(statements, [(trace, 0, 32, 0, 0.0), (x, 0, 2, 0, 0.0), (trace, 0, 32, 0, 0.0)]);
+    assert_eq!(plan.reactions()[0].statements.iter().map(|s| s.target).collect::<Vec<_>>(), [Target::Record(0), Target::Carrier(1), Target::Record(0)]);
+    // nothing reads the pin (P7: RECORD implies QUIET)
+    let read = |c: &Cell| c.kind == cell::PIN && c.index == trace;
+    assert!(shape.functions.iter().all(|f| !f.reads.iter().any(read)) && shape.reactions.iter().all(|r| !r.reads.iter().any(read)));
 
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }

@@ -8,6 +8,6 @@ mod digital;
 mod netlist;
 mod plan;
 
-pub use digital::{CarrierLayout, ReactionMode, ReactionPlan, StatementPlan};
+pub use digital::{CarrierLayout, ReactionMode, ReactionPlan, RecordLayout, StatementPlan};
 pub use netlist::{Modules, Netlist};
 pub use plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, Source, Target, Term};

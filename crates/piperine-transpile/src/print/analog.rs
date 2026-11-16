@@ -138,6 +138,7 @@ impl<'a> AnalogPrinter<'a> {
             Target::Rearm { event, carrier } => {
                 format!("at:{event}.{}", self.body.carriers().get(carrier as usize).map_or_else(|| carrier.to_string(), |x| x.name.clone()))
             }
+            Target::Record(r) => self.body.streams().get(r as usize).map_or_else(|| format!("stream {r}"), |x| x.name.clone()),
         }
     }
 
