@@ -113,6 +113,16 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, params, .. } = &node.kind else { return None };
+        // §8.3.4: a function, a closure and a reaction body place no instance.
+        if matches!(self.context, Context::Function | Context::Reaction) {
+            let place = if self.context == Context::Reaction { "a reaction body" } else { "a `fn` or a closure" };
+            let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            self.coded(file, "E0350", node.span, format!("`{name}` is placed in {place}: it places no instance (§8.3.4)"), "placement out of place");
+            for arg in args {
+                self.infer(arg.value);
+            }
+            return None;
+        }
         let callee_node = self.design.expr_node(*callee).clone();
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),

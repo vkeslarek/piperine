@@ -8,7 +8,7 @@
 
 use crate::pom::{Arg, BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
-use super::check::Checker;
+use super::check::{Checker, Context};
 use super::{Builtin, Ty};
 
 impl Checker<'_> {
@@ -23,7 +23,7 @@ impl Checker<'_> {
     pub(super) fn event_out_of_place(&mut self, expr: ExprId) {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        if self.in_guard {
+        if self.in_guard || (self.context == Context::Reaction && !self.committing) {
             self.unsupported(file, node.span, "an event read as a `bool`");
         } else {
             let message = "an `Event` value outside an event position, a guard or a reaction body: an event is never committed, carried or stored (§13 rule 8)".to_string();

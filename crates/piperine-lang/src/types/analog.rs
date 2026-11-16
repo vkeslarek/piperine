@@ -109,6 +109,11 @@ impl Checker<'_> {
                 self.coded(file, "E0323", node.span, message, "environment function in a const context");
             }
             (Allowed::Everywhere, _) | (Allowed::Instances, Context::Analog | Context::Module) | (Allowed::Analog, Context::Analog) => {}
+            // §8.3: a core module placed in a reaction body is `E0350` as well.
+            (Allowed::Instances, Context::Reaction) => {
+                let message = format!("`{name}` is a core module and cannot be placed in a reaction body");
+                self.coded(file, "E0350", node.span, message, "placement in a reaction body");
+            }
             // §14 errors (§8.3) and §8.3.4: `ddt` and `limit` are core modules, so a placement in
             // a `fn` or a closure is `E0350` and one in a const context is `E0352`.
             (Allowed::Instances, Context::Function) => {
@@ -122,6 +127,7 @@ impl Checker<'_> {
             (_, context) => {
                 let place = match context {
                     Context::Function => "a `fn` or a closure",
+                    Context::Reaction => "a reaction body",
                     Context::Const => "a param default, a `where` or a `const`",
                     Context::Module => "a module body",
                     Context::Analog => "an `analog` block",

@@ -19,6 +19,8 @@ pub(super) enum Context {
     Module,
     /// An `analog` block.
     Analog,
+    /// A reaction body (`on ev { .. }`).
+    Reaction,
     /// A `fn` or a closure.
     Function,
     /// A const context (§8.1.21): a param default, a `where`, a `const` initializer.
@@ -69,6 +71,9 @@ pub(super) struct Checker<'d> {
     pub(super) event_slot: Option<ExprId>,
     /// Set while the guard of an event, the right operand of `ev && guard`, is typed.
     pub(super) in_guard: bool,
+    /// Set while the value of a commit is typed: an `Event` there is committed (`E0441`), not
+    /// read as a `bool`.
+    pub(super) committing: bool,
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
@@ -102,6 +107,7 @@ impl<'d> Checker<'d> {
             context: Context::Module,
             event_slot: None,
             in_guard: false,
+            committing: false,
             poisoned: BTreeSet::new(),
             fn_where: false,
             fn_value_at: None,

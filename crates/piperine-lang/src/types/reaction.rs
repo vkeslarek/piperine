@@ -1,13 +1,15 @@
-//! Reactions (DIG-05, part IV §12.1): the head of an `on` is an `Event`, its body holds value
-//! statements and commits.
+//! Reactions (DIG-05, part IV §12.1): the head of an `on` is an `Event` (`E0430`), its body holds
+//! value statements and commits `place <- value [after d];`. A commit has the targets of a
+//! definition (`E0222`, `E0220`), the value type of its target (`E0432`) and an `f64` delay
+//! (`E0433`); a carrier is driven by definitions or by commits of a module, never both (`E0221`).
 
-use crate::pom::{FileId, ReactionData};
+use crate::pom::{ExprId, FileId, ReactionData};
 
-use super::check::Checker;
+use super::check::{Checker, Context};
 use super::Ty;
 
 impl Checker<'_> {
-    /// `on head { body }`: the head is an `Event` (`E0430`, §12.1.10).
+    /// `on head { body }`.
     pub(super) fn reaction(&mut self, reaction: &ReactionData, file: FileId) {
         let span = self.design.expr_node(reaction.event).span;
         match self.infer_event_position(reaction.event) {
@@ -17,8 +19,35 @@ impl Checker<'_> {
                 self.coded(file, "E0430", span, message, "not an `Event`");
             }
         }
-        if !reaction.body.stmts.is_empty() {
-            self.unsupported(file, reaction.body.span, "a reaction body");
+        let outer = std::mem::replace(&mut self.context, Context::Reaction);
+        self.statements(&reaction.body.stmts, Some(&Ty::Unit));
+        self.context = outer;
+    }
+
+    /// `place <- value [after delay];`
+    pub(super) fn commit(&mut self, file: FileId, span: crate::msl::Span, place: ExprId, value: ExprId, after: Option<ExprId>) {
+        if self.context != Context::Reaction {
+            self.unsupported(file, span, "commit `<-` outside a reaction body");
+            return;
         }
+        let place_span = self.design.expr_node(place).span;
+        let target = self.drive_target(place, "commit");
+        let outer = std::mem::replace(&mut self.committing, true);
+        match &target {
+            Some((_, held)) => self.check_as(value, held, "E0432"),
+            None => {
+                self.infer(value);
+            }
+        }
+        self.committing = outer;
+        if let Some(after) = after {
+            self.check_as(after, &Ty::F64, "E0433");
+        }
+        let Some((carrier, _)) = target else { return };
+        if self.book.defined.contains_key(&carrier) {
+            let name = self.design.decl_data(carrier).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            self.coded(file, "E0221", place_span, format!("`{name}` has a definition and a commit in one module: a carrier is driven by one or the other (§5.2, §8.2.20)"), "definition and commit");
+        }
+        self.book.committed.entry(carrier).or_insert(place_span);
     }
 }
