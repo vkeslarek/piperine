@@ -15,8 +15,10 @@ pub enum Observation {
     Fire { net: String, at: Instant },
     /// A reaction made a commit; `due` is `None` for one that never comes due.
     Commit { instance: String, reaction: u32, statement: u32, made: Instant, due: Option<Instant> },
-    /// A commit to a `RECORD` net, stamped with the instant it was made.
-    Record { stream: String, at: Instant, bytes: Vec<u8> },
+    /// A commit to a `RECORD` net, stamped with the instant it was made, with the reaction and
+    /// the statement that made it (abi.md C5): a record names its own site, whatever order the
+    /// records and commits of one microstep are delivered in.
+    Record { stream: String, reaction: u32, statement: u32, at: Instant, bytes: Vec<u8> },
     /// A relaxed field with a known byte still moved and was zeroed (abi.md §9 D1).
     Unsettled { net: String, at: Instant },
 }

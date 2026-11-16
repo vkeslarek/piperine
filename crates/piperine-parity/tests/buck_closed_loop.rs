@@ -69,8 +69,6 @@ impl Outcome {
 #[derive(Default)]
 struct Kept {
     nets: Vec<(String, Vec<(i64, Vec<u8>)>)>,
-    /// Commits of the monitor waiting for their record: the texts of their site.
-    waiting: Vec<Vec<(String, String)>>,
     checks: Vec<(i64, Vec<u8>, Vec<(String, String)>)>,
 }
 
@@ -92,15 +90,12 @@ impl Sink for Keep {
                     s.push((ticks(o.time), bytes.clone()));
                 }
             }
-            ObservationKind::Commit { reaction, statement, .. } if o.path == NEVER && o.analysis == AnalysisKind::Transient => {
-                let body = self.ir.instance_at(NEVER).expect("the monitor").body();
-                if let Some(site) = body.record_site(*reaction, *statement) {
-                    kept.waiting.push(site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());
-                }
-            }
-            ObservationKind::Record { bytes } if o.path == format!("{NEVER}.checks") && o.analysis == AnalysisKind::Transient => {
-                // inside one microstep the commits come before the records, in the same order
-                let texts = if kept.waiting.is_empty() { Vec::new() } else { kept.waiting.remove(0) };
+            ObservationKind::Record { site: Some((reaction, statement)), bytes }
+                if o.path == format!("{NEVER}.checks") && o.analysis == AnalysisKind::Transient =>
+            {
+                // the record names its own site (abi.md C5): decoded on its own, no pairing
+                let (_, site) = self.ir.record_at(&o.path, *reaction, *statement).expect("a record decodes to its emit");
+                let texts = site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
                 kept.checks.push((ticks(o.time), bytes.clone(), texts));
             }
             _ => {}

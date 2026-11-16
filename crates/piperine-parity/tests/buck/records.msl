@@ -49,3 +49,36 @@ module TwoBench() {
     let osc = Osc(clk) { f: 200M };
     let talk = TwoTalk(clk);
 }
+
+/// Two reactions on one edge with `log`s at different statement indices: the first logs at its
+/// statements 0 and 1, the second at its statement 0 (verification F1).
+module ThreeTalk(in clk: Bit) {}
+digital for ThreeTalk {
+    on clk.rise() {
+        log(Severity::Info, "a");
+        log(Severity::Warning, "b");
+    }
+    on clk.rise() { log(Severity::Error, "c"); }
+}
+
+module ThreeBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let talk = ThreeTalk(clk);
+}
+
+/// The variant the other way round: one `log` first, then a reaction with two.
+module AfterTalk(in clk: Bit) {}
+digital for AfterTalk {
+    on clk.rise() { log(Severity::Info, "p"); }
+    on clk.rise() {
+        log(Severity::Warning, "q");
+        log(Severity::Error, "r");
+    }
+}
+
+module AfterBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let talk = AfterTalk(clk);
+}

@@ -424,7 +424,7 @@ fn an_emit_commits_one_record_and_adds_no_microstep() {
         .into_iter()
         .filter(|o| o.analysis == AnalysisKind::Transient)
         .filter_map(|o| match o.kind {
-            ObservationKind::Record { bytes } if o.path == "Top.probe.trace" => Some(((o.time * 1e15).round() as i64, bytes)),
+            ObservationKind::Record { bytes, .. } if o.path == "Top.probe.trace" => Some(((o.time * 1e15).round() as i64, bytes)),
             _ => None,
         })
         .collect();

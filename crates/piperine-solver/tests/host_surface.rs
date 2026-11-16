@@ -75,7 +75,7 @@ fn sine_rc(b: &mut CircuitBuilder) -> AnalogReference {
 fn records(seen: &[Observation]) -> Vec<Vec<u8>> {
     seen.iter()
         .filter_map(|o| match &o.kind {
-            ObservationKind::Record { bytes } => Some(bytes.clone()),
+            ObservationKind::Record { bytes, .. } => Some(bytes.clone()),
             _ => None,
         })
         .collect()

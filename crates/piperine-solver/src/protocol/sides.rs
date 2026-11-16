@@ -150,8 +150,11 @@ pub enum ObservationKind {
     Commit { reaction: u32, statement: u32, made: Tick, due: Tick, bytes: Vec<u8> },
     /// A `CROSS` watch fired.
     Crossing,
-    /// A commit to a `RECORD` pin.
-    Record { bytes: Vec<u8> },
+    /// A commit to a `RECORD` pin. `site` is the reaction and the statement that made it
+    /// (abi.md C5), so a record is decoded on its own, never by pairing it with a `Commit`;
+    /// `None` for the record of a relaxed field that still moved (abi.md §9 D1), which no
+    /// statement made.
+    Record { site: Option<(u32, u32)>, bytes: Vec<u8> },
     /// A `TRACE` watch written in Newton iteration `iteration`.
     Trace { iteration: u32, bytes: Vec<u8> },
 }

@@ -115,7 +115,7 @@ fn every_change_commit_and_record_is_observed_in_order() {
     let seen = d.drain_observations();
     let records: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Record { .. })).collect();
     let want: Vec<Observation> = (1..=8u8)
-        .map(|i| Observation::Record { stream: "r.log".into(), at: (Tick(3), 0), bytes: vec![i, 1] })
+        .map(|i| Observation::Record { stream: "r.log".into(), reaction: 0, statement: 0, at: (Tick(3), 0), bytes: vec![i, 1] })
         .collect();
     assert_eq!(records, want.iter().collect::<Vec<_>>(), "eight records, none lost to transport");
     let commits = seen.iter().filter(|o| matches!(o, Observation::Commit { instance, statement: 0, .. } if instance == "r")).count();

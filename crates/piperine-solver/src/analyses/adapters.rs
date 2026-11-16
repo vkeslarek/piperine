@@ -220,9 +220,11 @@ impl DiscreteSide for DigitalSide {
                     let due = due.map_or(Tick::MAX, |d| d.0.0);
                     (instance, made.0, ObservationKind::Commit { reaction, statement, made: made.0.0, due, bytes: Vec::new() })
                 }
-                DigitalObservation::Record { stream, at, bytes } => (stream, at.0, ObservationKind::Record { bytes }),
+                DigitalObservation::Record { stream, reaction, statement, at, bytes } => {
+                    (stream, at.0, ObservationKind::Record { site: Some((reaction, statement)), bytes })
+                }
                 // abi.md §9 D1: a relaxed field that still moved is one record on the resolver's log.
-                DigitalObservation::Unsettled { net, at } => (net, at.0, ObservationKind::Record { bytes: Vec::new() }),
+                DigitalObservation::Unsettled { net, at } => (net, at.0, ObservationKind::Record { site: None, bytes: Vec::new() }),
             };
             let time = self.time(at);
             out.push(Observation { path, analysis: Default::default(), time, kind });

@@ -104,30 +104,30 @@ fn no_never_record_fails_while_not_enabled() {
     // and true while neither switches
     // `Never` has no result: it is a child instance of the DPWM, `no_shoot_through`
     let never_at = "Buck.ctl.pwm.no_shoot_through";
-    let never_body = built.ir.instance_at(never_at).expect("the monitor instance").body();
     let all = seen.all();
-    let transient = all.iter().filter(|o| o.analysis == AnalysisKind::Transient);
-    let sites: Vec<Vec<(String, String)>> = transient
-        .clone()
-        .filter(|o| o.path == never_at)
-        .filter_map(|o| match &o.kind {
-            ObservationKind::Commit { reaction, statement, .. } => never_body.record_site(*reaction, *statement),
-            _ => None,
-        })
-        .map(|site| site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
-        .collect();
-    let records: Vec<(i64, Vec<u8>)> = transient
+    // each record names its own site (abi.md C5), decoded with `Ir::record_at`
+    let decoded: Vec<(i64, Vec<u8>, Vec<(String, String)>)> = all
+        .iter()
+        .filter(|o| o.analysis == AnalysisKind::Transient)
         // its record pin: the instance path and the stream
         .filter(|o| o.path == format!("{never_at}.checks"))
         .filter_map(|o| match &o.kind {
-            ObservationKind::Record { bytes } => Some(((o.time * 1e15).round() as i64, bytes.clone())),
+            ObservationKind::Record { site, bytes } => {
+                let (reaction, statement) = site.expect("a record of an emit names its site");
+                let (instance, site) = built.ir.record_at(&o.path, reaction, statement).expect("a record decodes to its emit");
+                assert_eq!(instance.path(), never_at);
+                let texts = site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+                Some(((o.time * 1e15).round() as i64, bytes.clone(), texts))
+            }
             _ => None,
         })
         .collect();
+    let records: Vec<(i64, Vec<u8>)> = decoded.iter().map(|(t, b, _)| (*t, b.clone())).collect();
+    let sites: Vec<Vec<(String, String)>> = decoded.into_iter().map(|(_, _, s)| s).collect();
     // 20 us at 5 ns: rising edges 1 to 4000
     let edges: Vec<i64> = (1..=4000).map(rise).collect();
     assert_eq!(records.iter().map(|(t, _)| *t).collect::<Vec<_>>(), edges, "one record per rising edge");
-    assert_eq!(sites.len(), records.len(), "each record has its commit");
+    assert_eq!(sites.len(), records.len(), "each record decodes to its site");
     let never = vec![("kind".to_string(), "require".to_string()), ("name".to_string(), "never".to_string())];
     assert!(sites.iter().all(|t| *t == never), "every record is the `never` check");
     let failed: Vec<&(i64, Vec<u8>)> = records.iter().filter(|(_, b)| b[0] != 1 || b[1] != 1).collect();

@@ -73,6 +73,19 @@ impl Ir {
         self.instances().find(|i| i.path() == path)
     }
 
+    /// Decodes one record the solver delivered: `pin` is its path (`<instance path>.<stream>`,
+    /// abi.md C5) and `reaction`/`statement` the site the record carries. Gives the instance
+    /// that made it and the stream and text fields of its `emit!`; `None` when no instance has
+    /// that path, the statement is no emit, or the emit writes another stream. The one decoder a
+    /// host needs: it reads nothing but the record, so it holds whatever order the records of
+    /// one microstep arrive in.
+    pub fn record_at(&self, pin: &str, reaction: u32, statement: u32) -> Option<(Instance<'_>, RecordSite<'_>)> {
+        let (path, stream) = pin.rsplit_once('.')?;
+        let instance = self.instance_at(path)?;
+        let site = instance.body().record_site(reaction, statement)?;
+        (site.stream == stream).then_some((instance, site))
+    }
+
     /// The node with this path, or nothing.
     pub fn node_at(&self, path: &str) -> Option<Node<'_>> {
         self.nodes().find(|n| n.path() == path)

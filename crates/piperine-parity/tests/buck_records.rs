@@ -1,10 +1,11 @@
-//! Records from MSL source (feature `msl-digital`, T52 and T67; checks C104, C107, C180, DIG-11
+//! Records from MSL source (feature `msl-digital`, T52 and T67; checks C104, C107, C180, C181, DIG-11
 //! AC 1, 4 and 5): the stdlib `Never` on a clock with `bad` held false and then true, `log` from
 //! a reaction, and `log` from two reactions of one body (`tests/buck/records.msl`). A `Sink` of
 //! this file decodes each record the solver delivers: a commit to a `RECORD` pin arrives as a
-//! `Commit` observation (the instance, the reaction and the statement, abi.md C5) followed by a
-//! `Record` observation (the stream and the field bytes), and `Body::record_site` gives the
-//! stream and the text fields of that reaction's statement, which never cross the ABI. Expected instants and values are written from std/monitor.msl, std/io.msl and
+//! `Record` observation carrying its pin path, the reaction and the statement that made it
+//! (abi.md C5) and the field bytes, and `Ir::record_at` gives the instance and the stream and
+//! text fields of that site, which never cross the ABI. T67's fix round (F1): three `log`s over
+//! two reactions at different statement indices keep their own texts. Expected instants and values are written from std/monitor.msl, std/io.msl and
 //! `docs/spec/part_vi_io.md` §19, not read back.
 #![cfg(unix)]
 
@@ -40,22 +41,11 @@ struct Decoded {
     bytes: Vec<u8>,
 }
 
-/// The commit to a record pin that waits for its `Record` observation.
-struct Waiting {
-    /// The record pin's path: the instance path and the stream.
-    pin: String,
-    instance: String,
-    stream: String,
-    texts: Vec<(String, String)>,
-}
-
-/// A sink that decodes the records of the transient with `Body::record_site`. Inside one
-/// microstep the solver delivers every commit (by instance, then statement) and then every
-/// record (by pin, then in the order made), so the `k`-th record of a pin belongs to the `k`-th
-/// waiting commit whose site is on that pin.
+/// A sink that decodes the records of the transient with `Ir::record_at`: each `Record`
+/// observation carries the reaction and the statement that made it (abi.md C5), so it is decoded
+/// on its own, whatever order the records and commits of one microstep arrive in.
 struct Decoder {
     ir: Arc<Ir>,
-    pending: Vec<Waiting>,
     out: Rc<RefCell<Vec<Decoded>>>,
 }
 
@@ -64,31 +54,16 @@ impl Sink for Decoder {
         if o.analysis != AnalysisKind::Transient {
             return;
         }
-        match &o.kind {
-            ObservationKind::Commit { reaction, statement, .. } => {
-                let Some(instance) = self.ir.instance_at(&o.path) else { return };
-                if let Some(site) = instance.body().record_site(*reaction, *statement) {
-                    self.pending.push(Waiting {
-                        pin: format!("{}.{}", o.path, site.stream),
-                        instance: o.path.clone(),
-                        stream: site.stream.to_string(),
-                        texts: site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
-                    });
-                }
-            }
-            ObservationKind::Record { bytes } => {
-                let at = self.pending.iter().position(|w| w.pin == o.path).expect("a record follows the commit that made it");
-                let w = self.pending.remove(at);
-                self.out.borrow_mut().push(Decoded {
-                    instance: w.instance,
-                    made: (o.time * 1e15).round() as i64,
-                    stream: w.stream,
-                    texts: w.texts,
-                    bytes: bytes.clone(),
-                });
-            }
-            _ => {}
-        }
+        let ObservationKind::Record { site, bytes } = &o.kind else { return };
+        let (reaction, statement) = site.expect("a record of an emit names its site");
+        let (instance, site) = self.ir.record_at(&o.path, reaction, statement).expect("a record decodes to its emit");
+        self.out.borrow_mut().push(Decoded {
+            instance: instance.path().to_string(),
+            made: (o.time * 1e15).round() as i64,
+            stream: site.stream.to_string(),
+            texts: site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            bytes: bytes.clone(),
+        });
     }
 }
 
@@ -98,7 +73,7 @@ fn records(built: &Built, stop: f64) -> Vec<Decoded> {
     let out = Rc::new(RefCell::new(Vec::new()));
     let mut options = TransientAnalysisOptions::new(stop, 1e-9);
     options.dt_max = 1e-9;
-    let sink = Decoder { ir: built.ir.clone(), pending: Vec::new(), out: out.clone() };
+    let sink = Decoder { ir: built.ir.clone(), out: out.clone() };
     let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(Box::new(sink)).build();
     solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("{e}"));
     let all = out.borrow().clone();
@@ -161,5 +136,40 @@ fn records_of_two_reactions_are_told_apart() {
         assert_eq!(r.texts, vec![("msg".to_string(), text.to_string())], "record {k}");
         assert_eq!((r.bytes[0], r.bytes[1]), (severity, 1), "severity of record {k}: {:?}", r.bytes);
         assert_eq!(r.made, rise(k as i64 / 2 + 1));
+    }
+}
+
+/// `(severity, text)` of every record, in delivery order.
+fn logged(all: &[Decoded]) -> Vec<(i64, u8, String)> {
+    all.iter()
+        .map(|r| {
+            assert_eq!(r.stream, "log");
+            assert_eq!(r.bytes[1], 1, "severity is known: {r:?}");
+            let [(field, text)] = r.texts.as_slice() else { panic!("one text field: {r:?}") };
+            assert_eq!(field, "msg");
+            (r.made, r.bytes[0], text.clone())
+        })
+        .collect()
+}
+
+#[test]
+fn records_of_two_reactions_at_different_statements_keep_their_texts() {
+    // 12 ns: rising edges 1 and 2. Reactions of one instant run in source order (§12.1.2), and
+    // `Severity` is `Info` (0), `Warning` (1), `Error` (2) (part VI §19, std/io.msl).
+    // `ThreeTalk`'s first reaction logs `Info` `a` at its statement 0 and `Warning` `b` at its
+    // statement 1; its second logs `Error` `c` at its statement 0: each edge gives `a`, `b`, `c`.
+    // `AfterTalk` is the other way round: `Info` `p` at statement 0 of the first reaction, then
+    // `Warning` `q` and `Error` `r` at statements 0 and 1 of the second: each edge gives `p`,
+    // `q`, `r`. Each record keeps its own severity and its own text
+    for (bench, texts) in [("ThreeBench", ["a", "b", "c"]), ("AfterBench", ["p", "q", "r"])] {
+        let all = records(&build(&with_buck("records.msl"), bench), 12e-9);
+        assert!(all.iter().all(|r| r.instance == format!("{bench}.talk")), "{all:?}");
+        let mut want = Vec::new();
+        for edge in 1..=2 {
+            for (severity, text) in texts.iter().enumerate() {
+                want.push((rise(edge), severity as u8, text.to_string()));
+            }
+        }
+        assert_eq!(logged(&all), want, "{bench}");
     }
 }

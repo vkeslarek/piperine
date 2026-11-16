@@ -2407,6 +2407,9 @@ Proof: run bboundary | test the_comparator_trips_at_its_thresholds ... ok
 **C180** - A record is tied to its `emit!` site by the reaction and the statement of its commit: two reactions with a `log` at the same statement give their own texts (T67). (DIG-11, AC 1; T67)
 Proof: run brecords | test records_of_two_reactions_are_told_apart ... ok
 
+**C181** - A record carries the reaction and the statement that made it and decodes on its own (`Ir::record_at`): two reactions of one instance logging in one microstep at different statement indices (statements 0 and 1 of the first and 0 of the second, and the other way round) give each record its own severity and text (verification F1). (DIG-11, AC 1; F1)
+Proof: run brecords | test records_of_two_reactions_at_different_statements_keep_their_texts ... ok
+
 ---
 
 ## Handoff

@@ -238,33 +238,31 @@ fn the_supervisor_follows_its_state_table() {
     }
 
     // §8.5 and `std/io.msl`: the hiccup entry writes one `log` record of severity `Warning` (1);
-    // the reaction and the statement of its commit give the record's site
-    let body = built.ir.instance_at("SupervisorBench.sup").expect("the supervisor instance").body();
+    // the reaction and the statement the record carries give its site (`Ir::record_at`)
     let entries: Vec<i64> = (0..SAMPLES as usize)
         .filter(|&s| expected[s].mode == HICCUP && (s == 0 || expected[s - 1].mode != HICCUP))
         .map(|s| rise(s as i64 + 1))
         .collect();
     assert_eq!(entries.len(), 2, "the script enters `Hiccup` twice");
     let all = seen.all();
-    let records: Vec<(i64, Vec<u8>)> = all
+    let decoded: Vec<(i64, Vec<u8>, Vec<(String, String)>)> = all
         .iter()
         .filter(|o| o.analysis == AnalysisKind::Transient && o.path == "SupervisorBench.sup.log")
         .filter_map(|o| match &o.kind {
-            ObservationKind::Record { bytes } => Some(((o.time * 1e15).round() as i64, bytes.clone())),
+            ObservationKind::Record { site, bytes } => {
+                let (reaction, statement) = site.expect("a record of an emit names its site");
+                let (instance, site) = built.ir.record_at(&o.path, reaction, statement).expect("a record decodes to its emit");
+                assert_eq!(instance.path(), "SupervisorBench.sup");
+                let texts = site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+                Some(((o.time * 1e15).round() as i64, bytes.clone(), texts))
+            }
             _ => None,
         })
         .collect();
+    let records: Vec<(i64, Vec<u8>)> = decoded.iter().map(|(t, b, _)| (*t, b.clone())).collect();
     assert_eq!(records.iter().map(|(t, _)| *t).collect::<Vec<_>>(), entries, "one record per hiccup entry");
     assert!(records.iter().all(|(_, b)| b[0] == 1 && b[1] == 1), "severity Warning, known: {records:?}");
-    let texts: Vec<Vec<(String, String)>> = all
-        .iter()
-        .filter(|o| o.analysis == AnalysisKind::Transient && o.path == "SupervisorBench.sup")
-        .filter_map(|o| match &o.kind {
-            ObservationKind::Commit { reaction, statement, .. } => body.record_site(*reaction, *statement),
-            _ => None,
-        })
-        .map(|site| site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
-        .collect();
+    let texts: Vec<Vec<(String, String)>> = decoded.into_iter().map(|(_, _, t)| t).collect();
     let message = vec![("msg".to_string(), "buck: fault, entering hiccup".to_string())];
     assert_eq!(texts, vec![message.clone(), message], "the text of each record");
 }

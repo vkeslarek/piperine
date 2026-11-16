@@ -721,7 +721,7 @@ pub fn run_reactions(
             });
             let Some(net) = p.net else { continue };
             if let Some(stream) = p.record {
-                obs.push(Observation::Record { stream, at, bytes: p.bytes.clone() });
+                obs.push(Observation::Record { stream, reaction: job.reaction as u32, statement: p.statement, at, bytes: p.bytes.clone() });
             }
             *call += 1;
             let mut pending = Pending {
