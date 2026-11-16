@@ -143,12 +143,14 @@ fn m_dtemp_or_extern_at_a_placement_is_p0001() {
 }
 
 #[test]
-fn a_digital_block_is_p0001() {
+fn a_for_loop_in_a_digital_block_is_p0001() {
+    // A `digital` block is lowered from msl-digital T30 on; a form still refused inside one is the
+    // `for` loop of DIG-07 AC 1.
     let row = Row {
-        form: "digital block",
-        src: "module Top() { }\ndigital for Top { }",
-        names: "`digital` block",
-        at: "digital for Top { }",
+        form: "for loop in a digital block",
+        src: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { for k in 0..3 { } } }",
+        names: "`for` loop",
+        at: "for k in 0..3 { }",
     };
     row.check();
 }
@@ -191,7 +193,9 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
         // A definition is lowered from msl-digital T29 on: the form still refused in its place is
         // the element commit of DIG-07 AC 1.
         ("an element commit", "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", vec!["element or field commit"]),
-        ("a digital block", "module Top() { signal clk: Bit; }\ndigital for Top { on clk.rise() { } }", vec!["a `digital` block"]),
+        // A `digital` block is lowered from msl-digital T30 on: the form still refused in its place
+        // is `settle` of DIG-07 AC 1.
+        ("settle", "module Top() { }\ndigital for Top { on settle { } }", vec!["`settle`"]),
         ("a module with a result", "module twice(x: f64) -> f64 { 2.0 * x }\nmodule Top() { let a = twice(1.0); }", vec!["a module with a result", "a value input"]),
         ("a value input", "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }", vec!["a value input"]),
         ("a flow read of a potential branch", "module L(p: Electrical, n: Electrical) { }\nanalog for L { v(p, n) +> 2.0 * i(p, n); }\nmodule Top() { signal s: Electrical; let l = L(s, gnd); }", vec!["a flow probe read as a value"]),

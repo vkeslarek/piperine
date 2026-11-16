@@ -4,12 +4,13 @@
 //!
 //! Not listed here because the type checker refuses them first, with its own `P0001`:
 //! an `extern` module (`types/`'s subset table). The digital forms the checker accepts (a
-//! `digital` block, a module with a result) are refused here until the structure passes of
-//! msl-digital lower them; a carrier and a definition are lowered (`carriers.rs`, `drives.rs`).
+//! module with a result) is refused here until the structure passes of msl-digital lower it; a
+//! carrier, a definition and a `digital` block are lowered (`carriers.rs`, `drives.rs`,
+//! `events.rs`).
 
 use super::elaborator::Elaboration;
 use crate::msl::Span;
-use crate::pom::{BehaviorKind, DeclId, DeclKind, FileId};
+use crate::pom::{DeclId, DeclKind, FileId};
 
 /// One form M1 elaboration refuses.
 pub(super) enum Unlowered<'a> {
@@ -27,8 +28,6 @@ pub(super) enum Unlowered<'a> {
     DdtTolerance,
     /// A placement that sets a name that is no param of the placed module (`m`, `dtemp`).
     PlacementSets(&'a str),
-    /// A `digital` block.
-    DigitalBlock,
     /// A second `analog` block of one module.
     SecondAnalogBlock,
     /// A module with a result.
@@ -48,7 +47,6 @@ impl Unlowered<'_> {
             Unlowered::DdtOffTop => "a `ddt` that is not a whole addend of a flow contribution".to_string(),
             Unlowered::DdtTolerance => "a `ddt` with a tolerance".to_string(),
             Unlowered::PlacementSets(name) => format!("a placement that sets `{name}`"),
-            Unlowered::DigitalBlock => "a `digital` block".to_string(),
             Unlowered::SecondAnalogBlock => "a second `analog` block for one module".to_string(),
             Unlowered::ResultModule => "a module with a result".to_string(),
             Unlowered::ValueInput => "a value input".to_string(),
@@ -64,9 +62,9 @@ impl Elaboration<'_, '_> {
 }
 
 impl Elaboration<'_, '_> {
-    /// `P0001` for each digital form a reached module holds: elaboration has no lowering for a
-    /// `digital` block or a result yet, and a body built without them
-    /// would run as a different circuit. `true` when anything was refused.
+    /// `P0001` for each form a reached module holds that elaboration has no lowering for yet (a
+    /// module with a result, a value input): a body built without it would run as a different
+    /// circuit. `true` when anything was refused.
     pub(super) fn refuse_digital_forms(&mut self, modules: &[DeclId]) -> bool {
         let before = self.diagnostics.len();
         for module in modules {
@@ -82,12 +80,6 @@ impl Elaboration<'_, '_> {
                     && self.design.nature_of(p.ty).is_none()
                 {
                     self.refuse(item.file, item.span, Unlowered::ValueInput);
-                }
-            }
-            for behavior in m.behaviors.iter().copied() {
-                let b = self.design.decl_data(behavior).clone();
-                if matches!(&b.kind, DeclKind::Behavior(bd) if bd.kind == BehaviorKind::Digital) {
-                    self.refuse(b.file, b.span, Unlowered::DigitalBlock);
                 }
             }
         }

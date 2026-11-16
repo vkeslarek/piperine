@@ -31,6 +31,8 @@ pub(super) struct Variants {
     results: Vec<Option<ValueType>>,
     /// By id: the lowered function, added to the IR at the end.
     specs: Vec<Option<FunctionSpec>>,
+    /// By id: whether the variant's body reads a continuous value.
+    continuous: Vec<bool>,
     /// The variants whose bodies are being lowered.
     open: BTreeSet<FunctionId>,
 }
@@ -44,6 +46,11 @@ impl Variants {
         }
         let bits: String = pattern.iter().map(|f| if *f == Flag::Flagged { '1' } else { '0' }).collect();
         format!("{name}~{bits}")
+    }
+
+    /// Whether the variant `id` reads a continuous value; `false` while it is being lowered.
+    pub(super) fn continuous(&self, id: FunctionId) -> bool {
+        self.continuous.get(id.index()).copied().unwrap_or(false)
     }
 
     /// The lowered functions in id order; `None` for one that failed (its diagnostics are out).
@@ -71,11 +78,13 @@ impl Elaboration<'_, '_> {
         self.variants.ids.insert((function, pattern.clone()), id);
         self.variants.results.push(None);
         self.variants.specs.push(None);
+        self.variants.continuous.push(false);
         self.variants.open.insert(id);
         let spec = self.lower_function(function, &pattern);
         self.variants.open.remove(&id);
         let spec = spec?;
         let ret = spec.ret.clone();
+        self.variants.continuous[id.index()] = self.continuous(spec.body);
         self.variants.results[id.index()] = Some(ret.clone());
         self.variants.specs[id.index()] = Some(spec);
         Some((id, ret))

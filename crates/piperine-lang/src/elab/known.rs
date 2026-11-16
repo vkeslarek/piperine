@@ -103,8 +103,8 @@ impl Elaboration<'_, '_> {
     }
 
     /// `x.known_or(d)`, `x.is_known()`, `x.high()` (§3.3.4): known values whatever `x` holds.
-    /// `x.known()` is an `Option`, lowered as a pair (msl-digital T27); the carrier history and
-    /// the edges are lowered with carriers (phase 6).
+    /// `x.known()` is an `Option`, lowered as a pair (msl-digital T27); `c.prev()` is the
+    /// carrier's previous value; an edge is an event (`events.rs`), never a value.
     pub(super) fn lower_flag_read(&mut self, scope: &mut Scope, expr: ExprId, builtin: Builtin, recv: ExprId, args: &[ExprId], base: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
         match builtin {
@@ -135,8 +135,13 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, span, "`known()`, an `Option`,");
                 None
             }
-            Builtin::Changed | Builtin::Prev | Builtin::Rise | Builtin::Fall => {
-                self.unsupported(scope.file, span, "the history or an edge of a carrier");
+            Builtin::Prev => {
+                let carrier = self.carrier_of(scope, recv)?;
+                Some(self.previous(carrier, origin))
+            }
+            // The checker reports an event read as a `bool` first (part IV §13 rule 2).
+            Builtin::Changed | Builtin::Rise | Builtin::Fall => {
+                self.unsupported(scope.file, span, "an event read as a `bool`");
                 None
             }
         }

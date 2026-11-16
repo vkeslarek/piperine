@@ -17,6 +17,7 @@ mod consts;
 mod contribute;
 mod diagnose;
 mod drives;
+mod events;
 mod elaborator;
 mod analog;
 mod functions;
@@ -25,6 +26,7 @@ mod lower;
 mod nature;
 mod origin;
 mod place;
+mod reactions;
 mod unlowered;
 mod variants;
 

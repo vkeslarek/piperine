@@ -91,8 +91,8 @@ impl Elaboration<'_, '_> {
             let is = scope.locals.len() as u32;
             scope.locals.push(Local { name: format!("match${k}.is"), ty: is_ty.clone() });
             scope.locals.push(Local { name: format!("match${k}.val"), ty: val_ty.clone() });
-            let first = self.ir.stmt(Stmt::Let { local: is, init: pair.is });
-            let second = self.ir.stmt(Stmt::Let { local: is + 1, init: pair.val });
+            let first = self.stmt(Stmt::Let { local: is, init: pair.is });
+            let second = self.stmt(Stmt::Let { local: is + 1, init: pair.val });
             (Subject::Pair { is: (is, is_ty), val: (is + 1, val_ty) }, Some(vec![first, second]))
         } else if self.simple_read(scrutinee) {
             (Subject::Reread(scrutinee), None)
@@ -102,7 +102,7 @@ impl Elaboration<'_, '_> {
             let index = scope.locals.len() as u32;
             let name = format!("match${}", scope.locals.iter().filter(|l| l.name.starts_with("match$")).count());
             scope.locals.push(Local { name, ty: ty.clone() });
-            (Subject::Local(index, ty), Some(vec![self.ir.stmt(Stmt::Let { local: index, init: lowered })]))
+            (Subject::Local(index, ty), Some(vec![self.stmt(Stmt::Let { local: index, init: lowered })]))
         };
         scope.nesting += 1;
         let chain = self.arms_chain(scope, &subject, arms, &base, &origin);
@@ -196,7 +196,7 @@ impl Elaboration<'_, '_> {
         let read = self.read_local(val, origin.clone());
         let local = self.bind_local(scope, binding)?;
         scope.locals[local as usize].ty = self.type_of(read);
-        let stmt = self.ir.stmt(Stmt::Let { local, init: read });
+        let stmt = self.stmt(Stmt::Let { local, init: read });
         let body = self.lower_expr(scope, arm.body)?;
         let ty = self.type_of(body);
         Some(self.emit(Expr::Block { stmts: vec![stmt], value: Some(body) }, ty, origin))
@@ -500,8 +500,8 @@ impl Elaboration<'_, '_> {
         let is = scope.locals.len() as u32;
         scope.locals.push(Local { name: format!("{name}.is"), ty: self.type_of(pair.is) });
         scope.locals.push(Local { name: format!("{name}.val"), ty: self.type_of(pair.val) });
-        out.push(self.ir.stmt(Stmt::Let { local: is, init: pair.is }));
-        out.push(self.ir.stmt(Stmt::Let { local: is + 1, init: pair.val }));
+        out.push(self.stmt(Stmt::Let { local: is, init: pair.is }));
+        out.push(self.stmt(Stmt::Let { local: is + 1, init: pair.val }));
         scope.options.insert(binding, (is, is + 1));
         true
     }
@@ -525,7 +525,7 @@ impl Elaboration<'_, '_> {
                     match (local, init) {
                         (Some(local), Some(init)) => {
                             scope.locals[local as usize].ty = self.type_of(init);
-                            out.push(self.ir.stmt(Stmt::Let { local, init }));
+                            out.push(self.stmt(Stmt::Let { local, init }));
                         }
                         _ => ok = false,
                     }
@@ -586,7 +586,7 @@ impl Elaboration<'_, '_> {
         if let Some(binding) = binding {
             let local = self.bind_local(scope, binding)?;
             scope.locals[local as usize].ty = self.type_of(value);
-            lowered.push(self.ir.stmt(Stmt::Let { local, init: value }));
+            lowered.push(self.stmt(Stmt::Let { local, init: value }));
         }
         let (rest, result) = self.lower_statements(scope, stmts)?;
         lowered.extend(rest);

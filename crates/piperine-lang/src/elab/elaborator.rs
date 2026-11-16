@@ -52,6 +52,12 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) variants: Variants,
     /// The type of every IR expression added so far, by id.
     pub(super) expr_types: Vec<ValueType>,
+    /// Whether each IR expression added so far is continuous (part III §8.2), by id.
+    pub(super) expr_continuous: Vec<bool>,
+    /// Whether each IR statement added so far reads a continuous value, by id.
+    pub(super) stmt_continuous: Vec<bool>,
+    /// The origin of every IR expression added so far, by id.
+    pub(super) expr_origins: Vec<piperine_ir::Origin>,
     pub(super) plans: BTreeMap<DeclId, ModulePlan>,
     /// The carriers, drives, events and reactions of the body being lowered.
     pub(super) structure: Structure,
@@ -72,6 +78,9 @@ impl<'d, 't> Elaboration<'d, 't> {
             body_ids: BTreeMap::new(),
             variants: Variants::default(),
             expr_types: Vec::new(),
+            expr_continuous: Vec::new(),
+            stmt_continuous: Vec::new(),
+            expr_origins: Vec::new(),
             plans: BTreeMap::new(),
             structure: Structure::default(),
             frames: Vec::new(),

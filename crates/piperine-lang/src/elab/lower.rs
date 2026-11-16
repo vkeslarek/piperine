@@ -84,10 +84,21 @@ impl Elaboration<'_, '_> {
         ValueTypes { design: self.design }.of(ty)
     }
 
-    /// Add an expression to the IR, remembering its type (the builder does not hand it back).
+    /// Add an expression to the IR, remembering its type (the builder does not hand it back) and
+    /// whether it is continuous (`events.rs`).
     pub(super) fn emit(&mut self, kind: Expr, ty: ValueType, origin: Origin) -> LoweredExpr {
         self.expr_types.push(ty.clone());
+        let continuous = self.continuous_kind(&kind);
+        self.expr_continuous.push(continuous);
+        self.expr_origins.push(origin.clone());
         self.ir.expr(kind, ty, origin)
+    }
+
+    /// Add a statement to the IR, remembering whether it reads a continuous value.
+    pub(super) fn stmt(&mut self, stmt: Stmt) -> LoweredStmt {
+        let continuous = stmt.operands().iter().any(|e| self.continuous(*e));
+        self.stmt_continuous.push(continuous);
+        self.ir.stmt(stmt)
     }
 
     /// The type of an expression already added.
@@ -357,11 +368,12 @@ impl Elaboration<'_, '_> {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
                 StmtKind::Expr { expr, semi } => match self.lower_expr(scope, *expr) {
                     Some(lowered) if i + 1 == stmts.len() && !semi => value = Some(lowered),
-                    Some(lowered) => out.push(self.ir.stmt(Stmt::Expr(lowered))),
+                    Some(lowered) => out.push(self.stmt(Stmt::Expr(lowered))),
                     None => ok = false,
                 },
                 StmtKind::Empty => {}
                 StmtKind::Contribution { lhs, rhs } => ok &= self.lower_contribution(scope, &mut out, *lhs, *rhs, node.span),
+                StmtKind::Commit { place, value, after } => ok &= self.lower_commit(scope, &mut out, *place, *value, *after),
                 _ => {
                     self.unsupported(file, node.span, "this statement");
                     ok = false;
@@ -386,7 +398,7 @@ impl Elaboration<'_, '_> {
                     (Some(local), Some(init)) => {
                         // A local is what its initializer is: flagged when that may be unknown.
                         scope.locals[local as usize].ty = self.type_of(init);
-                        out.push(self.ir.stmt(Stmt::Let { local, init }));
+                        out.push(self.stmt(Stmt::Let { local, init }));
                         true
                     }
                     _ => false,

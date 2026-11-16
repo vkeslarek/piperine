@@ -271,3 +271,175 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     // anonymous definition in `Controller`.
     assert_eq!(body.carriers().iter().filter(|c| c.name.contains('.')).count(), 1);
 }
+
+/// A known or unknown `bool`: `None` is unknown (§3.3).
+type Level = Option<bool>;
+
+/// The value of a lowered event guard over the previous and the present value of the carrier
+/// `c` it reads: the flag-total reads of §3.3.4 as the spec defines them. Any other form is a
+/// failure of the test, never a guess.
+fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: Level, cur: Level) -> Level {
+    use piperine_ir::{BinaryOp, Expr, UnaryOp};
+    let value = |e| guard_value(ir, e, c, prev, cur);
+    match ir.expr(e) {
+        Expr::Bool(b) => Some(*b),
+        Expr::Carrier(k) if *k == c => cur,
+        Expr::Previous(k) if *k == c => prev,
+        Expr::IsKnown(x) => Some(value(*x).is_some()),
+        Expr::High(x) => Some(value(*x) == Some(true)),
+        Expr::KnownOr { value: x, default } => value(*x).or(value(*default)),
+        Expr::Unary { op: UnaryOp::Not, expr } => value(*expr).map(|b| !b),
+        Expr::Binary { op: BinaryOp::BitAnd, lhs, rhs } => match (value(*lhs), value(*rhs)) {
+            (Some(false), _) | (_, Some(false)) => Some(false),
+            (Some(true), Some(true)) => Some(true),
+            _ => None,
+        },
+        Expr::Binary { op: BinaryOp::BitOr, lhs, rhs } => match (value(*lhs), value(*rhs)) {
+            (Some(true), _) | (_, Some(true)) => Some(true),
+            (Some(false), Some(false)) => Some(false),
+            _ => None,
+        },
+        other => panic!("a form an edge guard does not hold: {other:?}"),
+    }
+}
+
+/// A module `M` with a node, two carriers in and one out, placed by `Top`, and `digital` as its
+/// `digital` block.
+fn edges(digital: &str) -> String {
+    format!("module M(a: Electrical, in c: Bit, in d: Bit<u8>, out q: Bit) {{ }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal n: Electrical; signal c: Bit; signal d: Bit<u8>; signal q: Bit; let m = M(n, c, d, q); }}")
+}
+
+#[test]
+fn changed_rise_fall_and_cross_lower_to_events() {
+    // DIG-09 AC 6, C80. The stdlib's own text (§22.1) is what `rise` and `fall` mean.
+    let values = std::fs::read_to_string(format!("{}/std/values.msl", env!("CARGO_MANIFEST_DIR"))).expect("std/values.msl");
+    assert!(values.contains("self.changed() && self.prev().level(0) != Some(true)  && self.level(0) != Some(false)"), "the stdlib `rise` is the oracle");
+    assert!(values.contains("self.changed() && self.prev().level(0) != Some(false) && self.level(0) != Some(true)"), "the stdlib `fall` is the oracle");
+    let src = edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev().known_or(0) == 3 { q <- d.prev().is_known(); }");
+    let ir = Elab::ir(&src, "Top");
+    let read = Read { ir: &ir };
+    let m = read.body("M");
+    let c = m.carriers().iter().position(|k| k.name == "c").expect("c") as u32;
+    let d = m.carriers().iter().position(|k| k.name == "d").expect("d") as u32;
+    use piperine_ir::{EventSource, Expr};
+    let events = m.events();
+    assert_eq!(events.len(), 5);
+    assert_eq!((&events[0].source, events[0].guard), (&EventSource::Changed(c), None), "`changed` is the change, unguarded");
+    assert_eq!(events[1].source, EventSource::Changed(c));
+    assert_eq!(events[2].source, EventSource::Changed(c));
+    // Term by term, the two conditions of each edge (design "From a source form to IR nodes").
+    let rise = events[1].guard.expect("a rise has a guard");
+    let fall = events[2].guard.expect("a fall has a guard");
+    assert_eq!(ir.expr_type(rise), &ValueType::Bool, "every part is a flag-total read: the guard is never unknown");
+    assert_eq!(ir.expr_type(fall), &ValueType::Bool);
+    let text = ir.print_structural();
+    assert!(text.contains("guard ((!c.prev().high()) & ((!c.is_known()) | c.known_or(false)))"), "{text}");
+    assert!(text.contains("guard ((!(c.prev().is_known() & (!c.prev().known_or(true)))) & (!c.high()))"), "{text}");
+    // IEEE 1364 posedge and negedge (§22.1): rise on 0→1, 0→x, x→1; fall on 1→0, 1→x, x→0; neither
+    // on any other change.
+    let (lo, hi, x) = (Some(false), Some(true), None);
+    for (prev, cur, rises, falls) in [(lo, hi, true, false), (lo, x, true, false), (x, hi, true, false), (hi, lo, false, true), (hi, x, false, true), (x, lo, false, true)] {
+        assert_eq!(guard_value(&ir, rise, c, prev, cur), Some(rises), "rise on {prev:?} -> {cur:?}");
+        assert_eq!(guard_value(&ir, fall, c, prev, cur), Some(falls), "fall on {prev:?} -> {cur:?}");
+    }
+    // `cross(e)` watches `e`.
+    let EventSource::Cross(watched) = events[3].source else { panic!("a cross: {:?}", events[3].source) };
+    assert!(matches!(ir.expr(watched), Expr::Binary { .. }) && text.contains("cross (probe(a, gnd) - 0.5)"), "{text}");
+    // `c.prev()` in a guard and in a reaction body is the previous-value read.
+    assert_eq!(events[4].source, EventSource::Changed(d));
+    assert!(text.contains("guard (d.prev().known_or(0u8) == 3u8)"), "{text}");
+    let reaction = &m.reactions()[4];
+    let piperine_ir::Stmt::Commit { value, .. } = ir.stmt(reaction.stmts[0]) else { panic!("a commit") };
+    let Expr::IsKnown(inner) = ir.expr(*value) else { panic!("`is_known` of the previous value") };
+    assert_eq!(ir.expr(*inner), &Expr::Previous(d));
+    assert_eq!(ir.expr_type(*inner), &ValueType::Flagged(Box::new(ValueType::UInt(8))), "a previous value may be unknown, as a read");
+}
+
+#[test]
+fn a_guard_splits_into_its_discrete_and_continuous_parts() {
+    // DIG-09 AC 7, C81: `on x.changed() && en.high() && analysis(Static)` keeps `en.high()` on
+    // the event and wraps the body in `if static` (abi.md F2: a probing guard is no discrete
+    // function).
+    let src = "module M(a: Electrical, in x: Bit, in en: Bit, out q: Bit) { }\n\
+               digital for M {\n\
+                 on x.changed() && en.high() && analysis(Static) { q <- true; }\n\
+                 on x.changed() && v(a) > 0.5 && en.high() { q <- false; }\n\
+                 on x.changed() && en { q <- true; }\n\
+               }\n\
+               module Top() { signal n: Electrical; signal x: Bit; signal en: Bit; signal q: Bit; let m = M(n, x, en, q); }";
+    let ir = Elab::ir(src, "Top");
+    let read = Read { ir: &ir };
+    let m = read.body("M");
+    let en = m.carriers().iter().position(|k| k.name == "en").expect("en") as u32;
+    use piperine_ir::{Env, Expr, Stmt};
+    let guard = m.events()[0].guard.expect("the discrete part stays on the event");
+    let Expr::High(read_en) = ir.expr(guard) else { panic!("`en.high()` alone: {:?}", ir.expr(guard)) };
+    assert_eq!(ir.expr(*read_en), &Expr::Carrier(en));
+    let wrapped = |r: usize| {
+        let reaction = &m.reactions()[r];
+        assert_eq!(reaction.stmts.len(), 1, "the body is one `if`");
+        let Stmt::Expr(whole) = ir.stmt(reaction.stmts[0]) else { panic!("an `if` statement") };
+        let Expr::If { cond, then, .. } = ir.expr(*whole) else { panic!("an `if`") };
+        let Expr::Block { stmts, .. } = ir.expr(*then) else { panic!("the body as a block") };
+        assert!(matches!(ir.stmt(stmts[0]), Stmt::Commit { .. }), "the body's commit, under the `if`");
+        *cond
+    };
+    assert_eq!(ir.expr(wrapped(0)), &Expr::Env(Env::Static), "`analysis(Static)` is the `if`");
+    // A probe is continuous wherever it stands among the conjuncts; the discrete ones stay on the
+    // event in their order.
+    let probe = wrapped(1);
+    assert!(matches!(ir.expr(probe), Expr::Binary { .. }) && ir.print_structural().contains("if (probe(a, gnd) > 0.5) {"));
+    let Expr::High(_) = ir.expr(m.events()[1].guard.expect("en.high()")) else { panic!("en.high() on the event") };
+    // A guard that may be unknown is kept as written: no `known_or` is added, the generated code
+    // decides it (ir-rust RS-11 AC 5).
+    let flagged = m.events()[2].guard.expect("a guard");
+    assert_eq!(ir.expr(flagged), &Expr::Carrier(en));
+    assert_eq!(ir.expr_type(flagged), &ValueType::Flagged(Box::new(ValueType::Bool)));
+    assert!(!matches!(ir.stmt(m.reactions()[2].stmts[0]), Stmt::Expr(_)), "no `if` without a continuous conjunct");
+}
+
+#[test]
+fn an_or_head_is_one_reaction_or_one_per_disjunct() {
+    // DIG-09 AC 8, C82.
+    let src = "module M(a: Electrical, in x: Bit, in y: Bit, out q: Bit) { }\n\
+               digital for M {\n\
+                 on x.rise() || y.rise() { q <- true; }\n\
+                 on cross(v(a)) || (x.changed() && v(a) > 0.0) { q <- false; }\n\
+               }\n\
+               module Top() { signal n: Electrical; signal x: Bit; signal y: Bit; signal q: Bit; let m = M(n, x, y, q); }";
+    let ir = Elab::ir(src, "Top");
+    let read = Read { ir: &ir };
+    let m = read.body("M");
+    let (x, y) = (m.carriers().iter().position(|k| k.name == "x").expect("x") as u32, m.carriers().iter().position(|k| k.name == "y").expect("y") as u32);
+    use piperine_ir::{EventSource, Stmt};
+    assert_eq!(m.reactions().len(), 3, "one reaction for the first head, two for the second");
+    // Discrete disjuncts: one reaction listing each event.
+    assert_eq!(m.reactions()[0].on, [0, 1]);
+    assert_eq!((&m.events()[0].source, &m.events()[1].source), (&EventSource::Changed(x), &EventSource::Changed(y)));
+    // A disjunct whose guard probes: one reaction per disjunct, in source order, each on its own
+    // event; the probing one under its `if`.
+    assert_eq!(m.reactions()[1].on, [2]);
+    assert_eq!(m.reactions()[2].on, [3]);
+    assert!(matches!(m.events()[2].source, EventSource::Cross(_)));
+    assert_eq!(m.events()[3].source, EventSource::Changed(x));
+    assert!(matches!(ir.stmt(m.reactions()[1].stmts[0]), Stmt::Commit { .. }), "the cross runs its body as written");
+    assert!(matches!(ir.stmt(m.reactions()[2].stmts[0]), Stmt::Expr(_)), "the change runs it under `if v(a) > 0.0`");
+}
+
+#[test]
+fn a_head_the_ir_cannot_hold_is_p0001() {
+    // DIG-09 AC 9, C83. Two reactions for one head would write a record twice when both fire.
+    let src = "module M(a: Electrical, in x: Bit, out q: Bit) { }\n\
+               digital for M { on cross(v(a)) || (x.changed() && v(a) > 0.0) { emit!(\"log\", n = 1.0); } }\n\
+               module Top() { signal n: Electrical; signal x: Bit; signal q: Bit; let m = M(n, x, q); }";
+    let err = Elab::run(src, "Top").expect_err("a split head over a body that emits");
+    assert_eq!(Elab::codes(&err), ["P0001"]);
+    assert!(err[0].diagnostic.message.contains("emits a record"), "{}", err[0].diagnostic.message);
+    let span = err[0].diagnostic.span();
+    assert_eq!(&src[span.start..span.end], "cross(v(a)) || (x.changed() && v(a) > 0.0)");
+    // An event read as a `bool` in a reaction body: the IR has no read of it (§13 rule 2).
+    let src = "module M(in x: Bit, out q: Bit) { }\ndigital for M { on x.changed() { if x.rise() { q <- true; } } }\nmodule Top() { signal x: Bit; signal q: Bit; let m = M(x, q); }";
+    let err = Elab::run(src, "Top").expect_err("an event read as a bool");
+    assert_eq!(Elab::codes(&err), ["P0001"]);
+    assert!(err[0].diagnostic.message.contains("an event read as a `bool`"), "{}", err[0].diagnostic.message);
+}

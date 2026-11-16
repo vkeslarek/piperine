@@ -69,6 +69,7 @@ impl Elaboration<'_, '_> {
         self.lower_definitions(&scope, module);
         let analog = self.lower_analog(&mut scope, module);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
+        self.lower_digital(&scope, module);
         let carriers = self.structure.carriers.clone();
         let expected = self.body_ids.get(&module).copied();
         let body = self.ir.body(BodySpec {

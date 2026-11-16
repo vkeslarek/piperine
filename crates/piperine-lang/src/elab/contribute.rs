@@ -68,7 +68,7 @@ impl Elaboration<'_, '_> {
             QuantityRole::Potential => leaves.push(Leaf { negated: false, expr: rhs, ddt: false }),
         }
         let Some(addends) = self.addends(scope, &leaves, reversed) else { return false };
-        out.push(self.ir.stmt(Stmt::Contribute { branch, quantity: role, addends }));
+        out.push(self.stmt(Stmt::Contribute { branch, quantity: role, addends }));
         true
     }
 
