@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, FileId, Reflect};
+use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, FileId, LitKind, Reflect};
 
 use super::check;
 use super::Ty;
@@ -69,6 +69,13 @@ impl<'d> Types<'d> {
     /// The type of an expression; `None` outside the reachable set.
     pub fn ty(&self, expr: ExprId) -> Option<&Ty> {
         self.exprs.get(expr.index())?.as_ref()
+    }
+
+    /// The integer type an integer literal of the reachable set was given: its suffix, the type
+    /// its position expects, else `i32` (§1 rule 7). `None` for any other expression.
+    pub fn literal(&self, expr: ExprId) -> Option<&Ty> {
+        let is_integer_literal = matches!(&self.design.expr_node(expr).kind, ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")));
+        self.ty(expr).filter(|ty| is_integer_literal && ty.is_integer())
     }
 
     /// The catalogue row a `Deferred` method call resolved to.

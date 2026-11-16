@@ -15,7 +15,7 @@ impl Catalogue {
     pub(super) fn method(recv: &Ty, name: &str) -> Option<Method> {
         let rows = match recv {
             Ty::F64 => F64_METHODS,
-            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) => return None,
+            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) => return None,
         };
         rows.iter().find(|(row, _)| *row == name).map(|(_, method)| *method)
     }

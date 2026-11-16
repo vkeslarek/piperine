@@ -2,7 +2,9 @@
 //! otherwise. A mismatch is one `P0002` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
-use crate::pom::{BinOp, BlockNode, BuiltinKind, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
+use crate::msl::lexer;
+use crate::msl::{Diagnostic, Span};
+use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
 use crate::stack;
 
 use super::check::Checker;
@@ -45,9 +47,27 @@ impl Checker<'_> {
                     self.check(*else_, expected);
                     Some(expected.clone())
                 }
-                // `100` where an `f64` is required: the one integer literal the subset names.
+                // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
                 ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")) && *expected == Ty::F64 => {
                     self.mismatch_coded(file, node.span, code, "f64", "an integer literal");
+                    Some(expected.clone())
+                }
+                // An integer literal where an integer type is expected takes that type (§1 rule 7).
+                ExprKind::Lit(lit) if expected.is_integer() && matches!(&lit.kind, LitKind::Int(text) if !text.ends_with("f64")) => {
+                    let LitKind::Int(text) = &lit.kind else { return };
+                    self.integer_literal(file, node.span, text, Some(expected), false)
+                }
+                // `-256` where an `i16` is expected: the minus takes the expected type, and a literal
+                // operand may reach the magnitude of the type's minimum.
+                ExprKind::Unary { op: UnOp::Neg, expr: operand } if expected.is_integer() => {
+                    match self.integer_literal_text(*operand) {
+                        Some(text) => {
+                            let span = self.design.expr_node(*operand).span;
+                            let found = self.integer_literal(file, span, &text, Some(expected), true);
+                            self.exprs[operand.index()] = found;
+                        }
+                        None => self.check(*operand, expected),
+                    }
                     Some(expected.clone())
                 }
                 _ => self.infer(expr),
@@ -167,6 +187,19 @@ impl Checker<'_> {
     /// without one, `()`.
     fn conditional(&mut self, cond: ExprId, then: &BlockNode, else_: Option<ExprId>) -> Option<Ty> {
         self.check(cond, &Ty::Bool);
+        // `if c { 0 } else { count + 1 }`: the first arm that is not a bare integer literal gives
+        // the type the literal takes (local literal typing).
+        if let Some(else_) = else_
+            && self.block_is_integer_literal(then)
+        {
+            let else_ty = self.infer(else_);
+            if let Some(t) = &else_ty {
+                self.statements(&then.stmts, Some(t));
+            } else {
+                self.statements(&then.stmts, None);
+            }
+            return else_ty;
+        }
         let then_ty = self.statements(&then.stmts, None);
         match (else_, then_ty) {
             (Some(else_), Some(t)) => {
@@ -197,10 +230,7 @@ impl Checker<'_> {
             },
             LitKind::Bool(_) => Some(Ty::Bool),
             LitKind::Int(text) if text.ends_with("f64") => Some(Ty::F64),
-            LitKind::Int(_) => {
-                self.unsupported(file, span, "integer literal");
-                None
-            }
+            LitKind::Int(text) => self.integer_literal(file, span, text, None, false),
             LitKind::Str { .. } => {
                 self.unsupported(file, span, "string literal");
                 None
@@ -209,6 +239,68 @@ impl Checker<'_> {
                 self.unsupported(file, span, "`Unknown` literal");
                 None
             }
+        }
+    }
+
+    /// The type of the integer literal `text`: its suffix, else `expected`, else `i32` (§1 rule
+    /// 7). A suffix of another type than `expected` is a mismatch; a value outside the type's
+    /// range is `E0909`; a suffix outside the subset (`u128`, `f32`) is `P0001` naming it. With
+    /// `negated` the literal is the operand of a unary `-`.
+    fn integer_literal(&mut self, file: FileId, span: Span, text: &str, expected: Option<&Ty>, negated: bool) -> Option<Ty> {
+        let suffix = lexer::int_suffix_text(text);
+        let ty = match suffix {
+            "" => expected.cloned().unwrap_or(Ty::Int(32)),
+            _ => {
+                let width = suffix[1..].parse::<u8>().unwrap_or(u8::MAX);
+                match (&suffix[..1], width) {
+                    ("u", 1..=64) => Ty::UInt(width),
+                    ("i", 1..=64) => Ty::Int(width),
+                    ("u" | "i", _) => {
+                        self.unsupported(file, span, &format!("integer type `{suffix}`"));
+                        return None;
+                    }
+                    _ => {
+                        self.unsupported(file, span, &format!("`{suffix}` literal"));
+                        return None;
+                    }
+                }
+            }
+        };
+        if let Some(expected) = expected
+            && *expected != ty
+        {
+            return Some(ty);
+        }
+        let value = lexer::int_value(text);
+        if let (Some(value), Some(max)) = (value, ty.literal_max(negated))
+            && value > max
+        {
+            let name = ty.name(self.design);
+            let message = format!("`{text}` is out of range: an integer literal beyond the range of `{name}`");
+            self.report(file, Diagnostic::new("E0909", message, span, "literal out of range").with_help("write a value the type holds, or a wider type"));
+        }
+        Some(ty)
+    }
+
+    /// The text of `expr` when it is an integer literal without an `f64` suffix, through parens.
+    fn integer_literal_text(&self, expr: ExprId) -> Option<String> {
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Paren(inner) => self.integer_literal_text(*inner),
+            ExprKind::Lit(lit) => match &lit.kind {
+                LitKind::Int(text) if !text.ends_with("f64") => Some(text.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Whether the value of `block` is an integer literal with no suffix: the arm that waits for
+    /// another arm's type.
+    fn block_is_integer_literal(&self, block: &BlockNode) -> bool {
+        let Some(last) = block.stmts.last() else { return false };
+        match &self.design.stmt_node(*last).kind {
+            StmtKind::Expr { expr, semi: false } => self.integer_literal_text(*expr).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()),
+            _ => false,
         }
     }
 

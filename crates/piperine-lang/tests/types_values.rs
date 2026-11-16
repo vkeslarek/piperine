@@ -290,7 +290,7 @@ fn a_function_is_a_value_only_as_an_argument() {
 #[test]
 fn an_unsupported_form_does_not_hide_an_independent_error() {
     // A refused annotation still has its initializer checked.
-    let (src, d) = diagnostics("", "let x: u32 = 1.0 + true;");
+    let (src, d) = diagnostics("", "let x: f32 = 1.0 + true;");
     assert_eq!(codes_of(&d), ["P0001", "P0002"]);
     assert_eq!(snippet(&src, &d[1]), "true");
 
@@ -308,9 +308,9 @@ fn an_unsupported_form_does_not_hide_an_independent_error() {
 
     // A last statement that is not itself refused leaves the missing result its own error,
     // whatever it holds that is refused.
-    let (src, d) = diagnostics("fn f(a: f64) -> f64 { let y = 1; }", "let z = f(1.0);");
+    let (src, d) = diagnostics("fn f(a: f64) -> f64 { let y = \"s\"; }", "let z = f(1.0);");
     assert_eq!(codes_of(&d), ["P0002", "P0001"]);
-    assert_eq!(snippet(&src, &d[0]), "{ let y = 1; }");
+    assert_eq!(snippet(&src, &d[0]), "{ let y = \"s\"; }");
     let (src, d) = diagnostics("fn f(a: f64) -> f64 { a % 2.0; }", "let z = f(1.0);");
     assert_eq!(codes_of(&d), ["P0002", "P0001"]);
     assert_eq!(snippet(&src, &d[0]), "{ a % 2.0; }");

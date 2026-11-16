@@ -21,11 +21,11 @@ struct Row {
 }
 
 const ROWS: &[Row] = &[
-    Row { construct: "integer literal", source: "module Top() { }\nanalog for Top { let x = 1; }", names: "integer literal" },
-    Row { construct: "u32", source: "module Top() { }\nanalog for Top { let x: u32 = 1.0; }", names: "integer type `u32`" },
-    Row { construct: "usize", source: "module Top() { }\nanalog for Top { let x: usize = 1.0; }", names: "integer type `usize`" },
-    Row { construct: "UInt<N>", source: "module Top() { }\nanalog for Top { let x: UInt<8> = 1.0; }", names: "`UInt`" },
-    Row { construct: "Int<N>", source: "module Top() { }\nanalog for Top { let x: Int<8> = 1.0; }", names: "`Int`" },
+    Row { construct: "index", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = x[0]; }", names: "index expression" },
+    Row { construct: "closure that is not a limit function", source: "module Top() { }\nanalog for Top { let f = |x: f64| x; }", names: "closure" },
+    Row { construct: "struct as a parameter type", source: "struct S { a: f64 }\nfn f(s: S) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(1.0); }", names: "`struct` item used as a type" },
+    Row { construct: "analysis of a kind other than Static", source: "module Top() { }\nanalog for Top { let x = analysis(Ac); }", names: "`analysis`" },
+    Row { construct: "settle", source: "module Top() { }\nanalog for Top { let x = settle; }", names: "`settle`" },
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
     Row { construct: "str", source: "fn f(s: &str) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(\"a\"); }", names: "reference type" },

@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BehaviorKind, BlockNode, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, Resolution, StmtKind, TypeId, TypeKind};
+use crate::msl::lexer;
+use crate::pom::{BehaviorKind, BlockNode, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind};
 
 use super::unsupported::Unsupported;
 use super::{Callee, Method, Ty, Types};
@@ -161,14 +162,16 @@ impl<'d> Checker<'d> {
         let node = self.design.type_node(ty).clone();
         let file = self.design.decl_data(node.owner).file;
         match &node.kind {
-            TypeKind::Path(_) => match self.design.type_resolution(ty) {
+            TypeKind::Path(path) => match self.design.type_resolution(ty) {
                 Resolution::Builtin(id) => match (id.info().name, id.width()) {
                     ("fN", Some(64)) => Some(Ty::F64),
                     ("bool", _) => Some(Ty::Bool),
-                    ("uN" | "iN" | "usize" | "isize", _) => {
-                        self.unsupported(file, node.span, &format!("integer type `{}`", id.name()));
-                        None
-                    }
+                    ("uN", Some(w)) => self.integer_type(file, node.span, Ty::UInt, u128::from(w), &id.name()),
+                    ("iN", Some(w)) => self.integer_type(file, node.span, Ty::Int, u128::from(w), &id.name()),
+                    // §1 Resolution: `usize` and `isize` are `UInt<64>` and `Int<64>` everywhere.
+                    ("usize", _) => Some(Ty::UInt(64)),
+                    ("isize", _) => Some(Ty::Int(64)),
+                    (family @ ("UInt" | "Int" | "Float"), _) => self.sized_type(file, node.span, *path, family),
                     _ => {
                         self.unsupported(file, node.span, &format!("type `{}`", id.name()));
                         None
@@ -197,6 +200,63 @@ impl<'d> Checker<'d> {
                     None => Some(Ty::Unit),
                 };
                 Some(Ty::Fn(params?, Box::new(ret?)))
+            }
+        }
+    }
+
+    /// `UInt<N>`, `Int<N>` or `Float<N>` written with its width argument. The width is an integer
+    /// literal; a width computed from a const expression is outside the subset (`P0001`).
+    fn sized_type(&mut self, file: FileId, span: Span, path: PathId, family: &str) -> Option<Ty> {
+        let args = self.design.path_node(path).segments.last().and_then(|s| s.args.clone());
+        let width = match &args {
+            Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
+                GenericArgNode::Const(expr) => match &self.design.expr_node(*expr).kind {
+                    ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Int(_)) => match &lit.kind {
+                        LitKind::Int(text) => lexer::int_value(text),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                GenericArgNode::Type(_) => None,
+            },
+            _ => None,
+        };
+        let Some(width) = width else {
+            self.unsupported(file, span, &format!("`{family}` with a width that is not an integer literal"));
+            return None;
+        };
+        let written = format!("{family}<{width}>");
+        match family {
+            "UInt" => self.integer_type(file, span, Ty::UInt, width, &written),
+            "Int" => self.integer_type(file, span, Ty::Int, width, &written),
+            _ => match width {
+                64 => Some(Ty::F64),
+                16 | 32 | 128 => {
+                    self.unsupported(file, span, &format!("type `{written}` (`{family}` of width {width}; the subset's one float is `f64`)"));
+                    None
+                }
+                _ => {
+                    let message = format!("`{written}`: a float width is one of 16, 32, 64 and 128");
+                    self.report(file, Diagnostic::new("E0103", message, span, "float width outside {16, 32, 64, 128}"));
+                    None
+                }
+            },
+        }
+    }
+
+    /// An integer type of width `width`, written `written`: 1..=64 is in the subset, a wider one
+    /// is `P0001` naming it, a width below 1 is `E0103` (§1 rule 5).
+    fn integer_type(&mut self, file: FileId, span: Span, make: fn(u8) -> Ty, width: u128, written: &str) -> Option<Ty> {
+        match width {
+            0 => {
+                let message = format!("`{written}`: an integer width is a const expression `>= 1`");
+                self.report(file, Diagnostic::new("E0103", message, span, "integer width below 1"));
+                None
+            }
+            1..=64 => Some(make(width as u8)),
+            _ => {
+                self.unsupported(file, span, &format!("integer type `{written}`"));
+                None
             }
         }
     }
