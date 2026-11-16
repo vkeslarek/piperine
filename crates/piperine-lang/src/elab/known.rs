@@ -23,8 +23,11 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::pom::{BinOp, ExprId, ExprKind, StmtKind};
-use crate::types::{Builtin, Callee};
+use piperine_ir::Constant;
+
+use super::consts::Bindings;
+use crate::pom::{BinOp, DeclKind, ExprId, ExprKind};
+use crate::types::{Builtin, Callee, Method, Ty};
 
 /// Whether a value may be unknown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -64,42 +67,54 @@ impl Elaboration<'_, '_> {
     }
 
     /// Why the right operand of an `&&` or `||` over a value that may be unknown cannot be
-    /// lowered as a bitwise operator: it holds an integer `/` or `%` (which may panic) or a call
-    /// of a function that emits a record. `None` when it can run unconditionally.
-    pub(super) fn partial(&self, expr: ExprId) -> Option<&'static str> {
+    /// lowered as a bitwise operator: it can panic or emit a record, and the bitwise form runs it
+    /// whatever the left operand gives. It can when it holds, written in it, in a `match` arm or
+    /// in the body of a function it calls (followed transitively): an integer `/` or `%`, a shift
+    /// by a signed amount that does not fold to one `>= 0`, an integer `clamp` whose bounds do
+    /// not fold to `lo <= hi` (`rt::int` panics on each), or a call of a function that emits.
+    /// `None` when it can run unconditionally.
+    pub(super) fn partial(&mut self, expr: ExprId) -> Option<&'static str> {
         let mut stack = vec![expr];
+        let mut entered = std::collections::BTreeSet::new();
         while let Some(e) = stack.pop() {
-            let node = self.design.expr_node(e);
-            match &node.kind {
-                ExprKind::Binary { op: BinOp::Div | BinOp::Rem, .. } if self.types.ty(e).is_some_and(|t| t.is_integer()) => return Some("an integer `/` or `%`"),
-                ExprKind::Call { .. } if matches!(self.types.callee(e), Some(Callee::Function(f)) if self.types.emits(f).is_some()) => return Some("a call of a function that emits a record"),
+            let kind = self.design.expr_node(e).kind.clone();
+            let integer = |x: ExprId| self.types.ty(x).is_some_and(|t| t.is_integer());
+            match &kind {
+                ExprKind::Binary { op: BinOp::Div | BinOp::Rem, .. } if integer(e) => return Some("an integer `/` or `%`"),
+                ExprKind::Binary { op: BinOp::Shl | BinOp::Shr, rhs, .. } if matches!(self.types.ty(*rhs), Some(Ty::Int(_))) => {
+                    if !matches!(self.consts.value(*rhs, &Bindings::new()), Ok(Constant::Int(n)) if n >= 0) {
+                        return Some("a shift by a signed amount");
+                    }
+                }
+                ExprKind::MethodCall { args, .. } if self.types.method(e) == Some(Method::Clamp) && integer(e) => {
+                    let bounds = match args.as_slice() {
+                        [lo, hi] => (self.consts.value(lo.value, &Bindings::new()), self.consts.value(hi.value, &Bindings::new())),
+                        _ => return Some("an integer `clamp`"),
+                    };
+                    if !matches!(bounds, (Ok(Constant::Int(lo)), Ok(Constant::Int(hi))) if lo <= hi) {
+                        return Some("an integer `clamp`");
+                    }
+                }
+                ExprKind::Call { .. } => {
+                    if let Some(Callee::Function(f)) = self.types.callee(e) {
+                        if self.types.emits(f).is_some() {
+                            return Some("a call of a function that emits a record");
+                        }
+                        // the callee's body runs too: walk it once
+                        if entered.insert(f)
+                            && let DeclKind::Fn(function) = &self.design.decl_data(f).kind
+                            && let Some(body) = &function.body
+                        {
+                            stack.extend(crate::pom::block_exprs(self.design, body));
+                        }
+                    }
+                }
                 _ => {}
             }
-            stack.extend(self.operands_of(&node.kind));
+            // every sub-expression, `match` scrutinees, guards and arms included
+            stack.extend(crate::pom::expr_children(&kind, self.design));
         }
         None
-    }
-
-    /// The direct sub-expressions of a POM expression, with those of its blocks' statements.
-    fn operands_of(&self, kind: &ExprKind) -> Vec<ExprId> {
-        let block = |stmts: &[crate::pom::StmtId]| -> Vec<ExprId> {
-            stmts
-                .iter()
-                .filter_map(|s| match &self.design.stmt_node(*s).kind {
-                    StmtKind::Let { init: Some(e), .. } | StmtKind::Expr { expr: e, .. } => Some(*e),
-                    _ => None,
-                })
-                .collect()
-        };
-        match kind {
-            ExprKind::Paren(e) | ExprKind::Unary { expr: e, .. } | ExprKind::Cast { expr: e, .. } => vec![*e],
-            ExprKind::Binary { lhs, rhs, .. } => vec![*lhs, *rhs],
-            ExprKind::Call { args, .. } => args.iter().map(|a| a.value).collect(),
-            ExprKind::MethodCall { recv, args, .. } => std::iter::once(*recv).chain(args.iter().map(|a| a.value)).collect(),
-            ExprKind::If { cond, then, else_ } => std::iter::once(*cond).chain(block(&then.stmts)).chain(*else_).collect(),
-            ExprKind::Block(b) => block(&b.stmts),
-            _ => Vec::new(),
-        }
     }
 
     /// `x.known_or(d)`, `x.is_known()`, `x.high()` (§3.3.4): known values whatever `x` holds.

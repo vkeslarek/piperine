@@ -2074,7 +2074,7 @@ Proof: run evalues | test a_carrier_read_is_flagged_and_the_flag_reads_are_not .
 **C69** - `hs && oc.known_or(true)` with `hs` a carrier is `BitAnd`; `a && b` over two params is `And`. (DIG-08, AC 6; T24)
 Proof: run evalues | test a_short_circuit_over_a_flagged_operand_becomes_bitwise ... ok
 
-**C70** - `c && (x / n > 1)` with `c` a carrier and integer `/` is `P0001`. (DIG-08, AC 7; T24)
+**C70** - `c && (x / n > 1)` with `c` a carrier and integer `/` is `P0001`; so is a right operand that can panic where it is not written: a division in a function it calls (transitively) or in a `match` arm, a shift by a signed amount not folding to `>= 0`, an integer `clamp` whose bounds do not fold in order (verification F2). (DIG-08, AC 7; T24)
 Proof: run evalues | test a_partial_right_operand_under_a_flagged_short_circuit_is_p0001 ... ok
 
 **C71** - `dithered_width(duty.known_or(0), frame + 1)` lowers `dithered_width~01` and `rev3~1`; an all-known call keeps the source name. (DIG-08, AC 8; T25)

@@ -90,8 +90,13 @@ impl Elaboration<'_, '_> {
         Some((id, ret))
     }
 
-    /// Add the lowered variants to the IR, in the order of their ids.
+    /// Add the lowered variants to the IR, in the order of their ids. After a diagnostic no IR
+    /// is built, and a variant that failed after reaching one that lowered leaves a gap in the
+    /// ids: nothing is added.
     pub(super) fn add_functions(&mut self) {
+        if !self.diagnostics.is_empty() {
+            return;
+        }
         for (k, spec) in self.variants.take().into_iter().enumerate() {
             let Some(spec) = spec else { continue };
             let id = self.ir.function(spec);

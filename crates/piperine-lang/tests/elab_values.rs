@@ -361,6 +361,38 @@ fn a_partial_right_operand_under_a_flagged_short_circuit_is_p0001() {
         assert_eq!(&src[span.start..span.end], at);
         assert!(err[0].diagnostic.message.contains("integer `/` or `%`"), "{}", err[0].diagnostic.message);
     }
+    // The operand can panic where it is not written: in a function it calls (transitively, two
+    // calls deep), in a `match` arm, by a shift whose signed amount may be negative, or by an
+    // integer `clamp` whose bounds may cross (`rt::int` panics on each). Each is refused at the
+    // operand, naming why (verification F2).
+    let helpers = "fn g(n: u8) -> bool { 10 / n > 1 }\n\
+                   fn h(n: u8) -> bool { g(n) }\n";
+    for (signature, body, at, why) in [
+        ("x: u8, n: u8", "c && g(n)", "g(n)", "integer `/` or `%`"),
+        ("x: u8, n: u8", "c || h(n)", "h(n)", "integer `/` or `%`"),
+        ("x: u8, n: u8", "c && match n { 0 => true, _ => 10 / n > 1 }", "match n { 0 => true, _ => 10 / n > 1 }", "integer `/` or `%`"),
+        ("x: u8, s: i8", "c && ((x >> s) > 0)", "((x >> s) > 0)", "a shift by a signed amount"),
+        ("x: u8, s: i8", "c || ((x << -1) > 0)", "((x << -1) > 0)", "a shift by a signed amount"),
+        ("x: u8, lo: u8", "c && (x.clamp(lo, 5) > 0)", "(x.clamp(lo, 5) > 0)", "an integer `clamp`"),
+        ("x: u8, lo: u8", "c && (x.clamp(5, 1) > 0)", "(x.clamp(5, 1) > 0)", "an integer `clamp`"),
+    ] {
+        let function = format!("{helpers}fn f({signature}) -> bool {{ let c: bool = Unknown; let r = {body}; r.known_or(false) }}");
+        let src = reaching(&function, &["f(1, 2)"]);
+        let err = Elab::run(&src, "Top").expect_err(at);
+        assert_eq!(Elab::codes(&err), ["P0001"], "{at}");
+        let span = err[0].diagnostic.span();
+        assert_eq!(&src[span.start..span.end], at);
+        assert!(err[0].diagnostic.message.contains(why), "{at}: {}", err[0].diagnostic.message);
+    }
+    // What cannot panic stays bitwise: a shift by an amount that folds to one `>= 0` (a literal
+    // is `i32`), an integer `clamp` with bounds that fold in order, a call of a function that
+    // neither divides nor emits, a `match` whose arms cannot panic.
+    for body in ["c && ((x >> 1) > 0)", "c && (x.clamp(1, 5) > 0)", "c && k(x)", "c && match x { 0 => true, _ => x > 1 }"] {
+        let function = format!("fn k(x: u8) -> bool {{ x > 2 }}\nfn f(x: u8) -> bool {{ let c: bool = Unknown; let r = {body}; r.known_or(false) }}");
+        let ir = Elab::ir(&reaching(&function, &["f(1)"]), "Top");
+        let text = Read { ir: &ir }.function_text("f");
+        assert!(text.contains("let r = (c & "), "{body}: {text}");
+    }
     // Over known operands the short circuit guards the division: accepted, still `&&`.
     let ir = Elab::ir(&reaching("fn f(c: bool, x: u8, n: u8) -> bool { c && (x / n > 1) }", &["f(true, 1, 2)"]), "Top");
     assert!(Read { ir: &ir }.function_text("f").contains("(c && ((x / n) > 1u8))"));
