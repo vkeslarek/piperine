@@ -3,38 +3,119 @@
 <p class="ch-num">Chapter 1</p>
 <h2>Welcome</h2>
 
-<p>MSL, the Piperine mixed-signal language, is a language for describing circuits that a simulator runs: analog, digital, and both at once. It looks and reads like Rust, and most of it <em>is</em> Rust. The spec puts it plainly: MSL is "similar to Rust and based on it, but it is not Rust".</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can read a small MSL file from top to bottom, you have written a complete RC filter with its source and its top level, and you know how to make a model tell you what it is doing.</p>
+</div>
 
-<p>This book is for people who want to write models and read other people's models. It explains the language through examples and stands on its own.</p>
+<p>MSL, the Piperine mixed-signal language, is a language for describing circuits that a simulator runs: analog, digital, and both at once. It looks and reads like Rust, and most of it <em>is</em> Rust. It is similar to Rust and based on it, but it is not Rust: a model describes hardware that exists all the time, not a program that runs once.</p>
 
-<h3>A first look</h3>
+<p>This book is for people who want to write models and read other people's models. It teaches the language through complete examples and stands on its own. Each chapter of the language part builds one or two small circuits, explains every new construct the first time it appears, lists the mistakes you are most likely to make with the error code you will see, and ends with something to try.</p>
 
-<p>Here is a resistor. The module head lists its ports, the body lists its parameters, and an <code>analog</code> block says what current flows:</p>
+<h3>A first look: one resistor</h3>
+
+<p>Here is a resistor. It is the smallest useful model, and it already shows the two halves every model has.</p>
 
 <pre data-lang="msl">/// Ideal resistor.
 module Resistor(p: Electrical, n: Electrical) {
     /// Resistance, in ohms.
     r: f64 where r > 0.0;
-    tc1: f64 = 0.0;
-    tnom: f64 = 300.15 where tnom > 0.0;
 }
 
 analog for Resistor {
-    i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature() - tnom)));
+    i(p, n) +> v(p, n) / r;
 }</pre>
 
-<p>And here is a digital inverter with a propagation delay. It has no behavior block at all: its one line is a <em>definition</em> that drives the output from the input, <code>tpd</code> seconds later.</p>
+<p>Read it line by line:</p>
 
-<pre data-lang="msl">module Inv(in a: Bit, out y: Bit) {
-    tpd: f64 = 10p where tpd > 0.0;
-    y = !a after tpd;
+<ol class="steps">
+<li><strong><code>module Resistor(p: Electrical, n: Electrical)</code></strong> declares a hardware module with two ports. The type of a port says what flows through it. <code>Electrical</code> is a circuit node: it has a voltage, and currents into it sum to zero.</li>
+<li><strong><code>r: f64 where r &gt; 0.0;</code></strong> is a <em>param</em>. It has a name and a type, and here no default, so whoever places a <code>Resistor</code> must give <code>r</code>. The <code>where</code> clause is a check: a zero or negative resistance is refused before anything is simulated.</li>
+<li><strong><code>analog for Resistor { … }</code></strong> is the behavior. The module says what the thing <em>is</em> (ports, params, structure); a separate block, in the same file, says what it <em>does</em> over time.</li>
+<li><strong><code>i(p, n) +&gt; v(p, n) / r;</code></strong> is Ohm's law. <code>v(p, n)</code> reads the voltage from <code>p</code> to <code>n</code>. <code>i(p, n) +&gt; x</code> <em>adds</em> <code>x</code> to the current that flows from <code>p</code> to <code>n</code>. The arrow <code>+&gt;</code> is called a <strong>contribution</strong>.</li>
+</ol>
+
+<p>The <code>///</code> lines are documentation, as in Rust. They stay attached to the module and the param, and tools show them.</p>
+
+<h3>A complete file: an RC filter you can run</h3>
+
+<p>A resistor alone does nothing. A design needs a source, a circuit and a <strong>top</strong>: a module that places the others and wires them together. This file has all three. It is a low-pass filter, 1&nbsp;kΩ and 1&nbsp;nF, driven by a 1&nbsp;V step at 1&nbsp;µs.</p>
+
+<pre data-lang="msl">/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// Ideal capacitor.
+module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+/// A voltage step on `p`, referred to ground: 0 V until `t0`, then `v1`.
+module Step(p: Electrical) {
+    v1: f64 = 1.0;
+    t0: f64 = 1u where t0 >= 0.0;
+    signal fired: Bit = false;
+}
+digital for Step { on at(t0) { fired <- true; } }
+analog for Step { v(p) +> if fired.high() { v1 } else { 0.0 }; }
+
+/// The top: source, R and C.
+module RcTop() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Step(vin) { v1: 1.0, t0: 1u };
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let c1 = Capacitor(vout, gnd) { c: 1n };
 }</pre>
 
-<p>A few things are already visible. Ports have types that say what flows through them (<code>Electrical</code> for a node, <code>Bit</code> for a logic signal). Parameters are plain declarations with an optional default and an optional <code>where</code> check. Numbers can carry SI suffixes: <code>10p</code> is 10&nbsp;×&nbsp;10<sup>−12</sup> and is always an <code>f64</code>.</p>
+<p>Four things are new.</p>
+
+<p><strong>The capacitor.</strong> <code>ddt(x)</code> is the time derivative of <code>x</code>. The capacitor's current is the derivative of its charge, <code>c * v(p, n)</code>. You write the physics; the simulator differentiates and integrates.</p>
+
+<p><strong>The step source.</strong> <code>Step</code> is a mixed-signal module, and a tiny one. It has a piece of digital state, <code>signal fired: Bit = false</code>: a one-bit register that starts low. Its <code>digital</code> block holds one <strong>reaction</strong>: <code>on at(t0) { fired &lt;- true; }</code> means "when time reaches <code>t0</code>, set <code>fired</code>". The arrow <code>&lt;-</code> is a <strong>commit</strong>. Its <code>analog</code> block reads that bit: <code>v(p) +&gt; …</code> with one node means "from <code>p</code> to ground", and a contribution to a voltage makes the branch a voltage source. <code>fired.high()</code> is true when the bit is known and high.</p>
+
+<p><strong>SI suffixes.</strong> <code>1u</code> is 10<sup>−6</sup>, <code>1k</code> is 10<sup>3</sup>, <code>1n</code> is 10<sup>−9</sup>. A number with an SI suffix is always an <code>f64</code>. A plain <code>1</code> is an integer and never turns into an <code>f64</code> by itself, which is why the defaults read <code>1.0</code>.</p>
+
+<p><strong>The top.</strong> <code>RcTop</code> has no ports and no behavior of its own: its body is a netlist. <code>signal vin: Electrical;</code> declares a node. <code>let r1 = Resistor(vin, vout) { r: 1k };</code> <em>places</em> a resistor: the call connects the ports in order, and the braces bind params by name. <code>gnd</code> is the reference node, available everywhere. <code>pub</code> on <code>vout</code> lets a parent module reach that node; you will use it later.</p>
+
+<h3>Seeing what your model does: <code>emit!</code></h3>
+
+<p>The filter's time constant is <code>r · c</code> = 1&nbsp;µs, so <code>vout</code> should reach 63.2&nbsp;% of the step one microsecond after it. Do not take that on faith: make the model say it. Add this block to the file.</p>
+
+<pre data-lang="msl">digital for RcTop {
+    on above(v(vout) - (1.0 - 1.0 / E)) {
+        emit!("tau", t = now(), vout = v(vout));
+    }
+}</pre>
+
+<p><code>emit!</code> is MSL's print. It is the one output statement of the language, and you will use it in every chapter of this book as your window into a model. Read the block from the outside in:</p>
+
+<ul>
+<li><strong><code>above(e)</code></strong> is an event that fires when the expression <code>e</code> goes from negative to positive. The solver finds the time of the crossing for you. <code>E</code> is the constant <em>e</em>, so the event fires when <code>vout</code> passes 1&nbsp;−&nbsp;1/<em>e</em>.</li>
+<li><strong><code>"tau"</code></strong> is the name of a <strong>stream</strong>: an ordered list of records. It must be a string literal.</li>
+<li><strong><code>t = now(), vout = v(vout)</code></strong> are <strong>fields</strong>: a name, <code>=</code>, any value. There is no format string. Each field keeps its type, and printing it nicely is the job of whoever reads the stream.</li>
+</ul>
+
+<p>Run a transient and the stream holds one record. Shown here the way a host might print it:</p>
+
+<pre data-lang="text">stream top.tau
+  analysis    instant        fields
+  Transient   (2.000 µs, 1)  t = 2.000e-6   vout = 0.6321</pre>
+
+<p>The record carries more than the two fields you wrote. It knows <em>where</em> it came from (the stream name is prefixed with the path of the instance, here the top), <em>which analysis</em> was running and <em>when</em>: the instant, a time and a small counter that chapter 8 explains. You get that for free on every record.</p>
+
+<p>Three rules make <code>emit!</code> a debugging tool you can trust:</p>
+
+<ol class="steps">
+<li><strong>It never changes the simulation.</strong> No construct of the language can read a stream. Adding or removing an <code>emit!</code> gives the same waveforms.</li>
+<li><strong>A reaction's record is real.</strong> A solver often tries a time step, rejects it and tries a shorter one. A record written by a reaction during a step that is later rejected does not exist: what you see in the stream happened.</li>
+<li><strong>It goes where behavior goes.</strong> <code>emit!</code> is allowed in a reaction and in an <code>analog</code> block, and in a function called from one of them. It is not allowed in a module body.</li>
+</ol>
+
+<p>Chapter 2 compares <code>emit!</code> with Rust's <code>println!</code>, and chapter 6 shows what it does inside <code>analog</code>, where the second rule is different on purpose.</p>
 
 <h3>Three ways to write</h3>
 
-<p>A model changes the world in exactly three ways, and each has its own operator. Learn these three and you can read any MSL file.</p>
+<p>You have now seen two of the three arrows. A model changes the world in exactly three ways, and each has its own operator. Learn these three and you can read any MSL file.</p>
 
 <div class="arrows">
   <div class="arrow-card">
@@ -54,17 +135,44 @@ analog for Resistor {
   </div>
 </div>
 
-<p>Everything else writes nothing. <code>let x = expr;</code> only gives an expression a name. Nets are never "joined" by a statement: you pass the same carrier to two ports. Parameters have no assignment at all: models read them, and the host sets them.</p>
+<p>The third one, the definition, is how you write logic with no state. Here is a digital inverter with a propagation delay. It has no behavior block at all: its one line drives the output from the input, <code>tpd</code> seconds later.</p>
+
+<pre data-lang="msl">module Inv(in a: Bit, out y: Bit) {
+    tpd: f64 = 10p where tpd > 0.0;
+    y = !a after tpd;
+}</pre>
+
+<p><code>Bit</code> is a logic signal. Digital ports have a direction, <code>in</code> or <code>out</code>; electrical ports have none, because current flows both ways.</p>
+
+<p>Everything else writes nothing. <code>let x = expr;</code> only gives an expression a name. Nets are never "joined" by a statement: you pass the same carrier to two ports, as <code>vout</code> is passed to <code>r1</code> and <code>c1</code> above. Parameters have no assignment at all: models read them, and the host sets them.</p>
 
 <h3>What you get</h3>
 
 <p>One language covers the transistor-level analog model, the RTL-style digital block and the glue between them. A design is fixed at elaboration and then simulated by Piperine's native solver: DC, transient, AC and noise all come from the same source text. Every outcome is a function of the source and of what the host does. There are no races.</p>
 
-<p>Testbenches, stimulus, sweeps and optimization do not live in MSL. They live in the <em>host</em>, a Rust or Python program that sets parameters, drives the top ports, runs analyses and reads the results.</p>
+<p>Testbenches, stimulus sequences, sweeps and optimization do not live in MSL. They live in the <em>host</em>, a Rust or Python program that picks the top module, sets parameters, drives the top's <code>in</code> ports, runs analyses and reads the results, streams included.</p>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model. The solver and its device ABI are built (chapters 13 and 14). Analog MSL designs run on it, through an interpreter or as compiled Rust, and are compared with ngspice; digital and mixed-signal models run as compiled Rust, and the compiler path that takes them from source is being built (chapter 15). This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every example of this book. The solver and its device ABI are built (chapters 13 and 14). Analog MSL designs run on it, through an interpreter or as compiled Rust, and are compared with ngspice. Digital and mixed-signal models run as compiled Rust today; the compiler path that takes them from source is being built (chapter 15). So a purely analog file runs from source now, and a file with a <code>digital</code> block, like <code>Step</code> above, is checked by the front end and will run from source when that path lands. This book describes the language as specified; the record listings are what the language defines, not captured output.</p>
+</div>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0319</td><td><code>let r1 = Resistor(vin, vout);</code></td><td><code>r</code> has no default, so it is required. Bind it: <code>Resistor(vin, vout) { r: 1k }</code>.</td></tr>
+  <tr><td>E0312</td><td><code>let c1 = Capacitor(vout) { c: 1n };</code></td><td>Every port must be connected. Ground is a node like any other: <code>Capacitor(vout, gnd)</code>.</td></tr>
+  <tr><td>E0317</td><td><code>Resistor(vin, vout) { r: 0.0 }</code></td><td>The param's <code>where r &gt; 0.0</code> is false. The check did its job; give a positive value.</td></tr>
+  <tr><td>E0901</td><td><code>println!("vout = {}", v(vout));</code></td><td>There is no <code>println!</code>. Write a record: <code>emit!("dbg", vout = v(vout));</code>.</td></tr>
+  <tr><td>E0404</td><td><code>fired &lt;- true;</code> in the module body</td><td>A commit belongs in a reaction. Move it into <code>digital for Step { on at(t0) { … } }</code>.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>Change the capacitor to 2.2&nbsp;nF. Before you run anything, say what <code>t</code> the <code>tau</code> record will show. (The step is at 1&nbsp;µs and the time constant is now 2.2&nbsp;µs, so the record reads 3.2&nbsp;µs.) Then add a second reaction that emits when <code>vout</code> passes 0.5&nbsp;V, on a stream of its own.</p>
 </div>
 </section>
 
@@ -73,34 +181,139 @@ analog for Resistor {
 <p class="ch-num">Chapter 2</p>
 <h2>If you know Rust</h2>
 
-<p>"Everything this specification does not state is Rust, edition 2024, value semantics". Expressions, statements, patterns, <code>match</code>, enums, structs, traits, generics, closures, paths, <code>use</code> and <code>pub</code> all work the way you expect. The spec only lists the differences.</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you know which of your Rust habits carry over unchanged, which eleven ideas are new, and you can use <code>emit!</code> the way you use <code>println!</code>, knowing exactly where the two differ.</p>
+</div>
 
-<h3>What is new: eleven concepts</h3>
+<p>The rule is short: everything this book does not describe is Rust, edition 2024, with value semantics. Expressions, statements, patterns, <code>match</code>, enums, structs, traits, generics, closures, paths, <code>use</code> and <code>pub</code> all work the way you expect. The language only lists its differences, and so does this chapter.</p>
 
-<p>MSL adds eleven concepts on top of Rust's values. Each one has a single rule:</p>
+<h3>What carries over</h3>
+
+<p>This is valid MSL and valid Rust at the same time. Nothing in it needs explaining:</p>
+
+<pre data-lang="msl">#[derive(Clone, Copy, PartialEq)]
+enum Range { Low, Mid, High }
+
+/// Which third of 0..=255 a code falls in.
+fn range_of(code: u8) -> Range {
+    match code {
+        0..=84 => Range::Low,
+        85..=169 => Range::Mid,
+        _ => Range::High,
+    }
+}
+
+fn mean(xs: &[f64]) -> f64 {
+    let total: f64 = xs.iter().sum();
+    total / xs.len() as f64
+}</pre>
+
+<p>Functions like these are the "computation" part of a model. What Rust does not have is the hardware around them: things that exist over time and react to each other. That is where the new words come in.</p>
+
+<h3>Your first module, read as a Rust programmer</h3>
+
+<p>Here is a complete file: a clock, a counter and a top that connects them. It is the "blinky" of this book.</p>
+
+<pre data-lang="msl">/// A free-running clock of frequency `f`.
+module Osc(out clk: Bit = false) {
+    f: f64 = 1M where f > 0.0;
+}
+digital for Osc {
+    on clk.changed() { clk <- !clk after 0.5 / f; }
+}
+
+/// Counts rising edges, wrapping at 256.
+module Counter(in clk: Bit, out count: Bit<u8> = 0) {}
+digital for Counter {
+    on clk.rise() {
+        count <- count + 1;
+        emit!("edge", t = now(), count = count);
+    }
+}
+
+module Blinky() {
+    signal clk: Bit;
+    pub signal count: Bit<u8>;
+    let osc = Osc(clk) { f: 1M };
+    let ctr = Counter(clk, count);
+}</pre>
+
+<p>Go through it with Rust eyes and note every place where it is <em>not</em> Rust:</p>
+
+<ol class="steps">
+<li><strong><code>module</code> is not <code>mod</code>.</strong> A <code>module</code> is a piece of hardware with ports. Rust's <code>mod</code> still exists and is called a <em>namespace module</em>.</li>
+<li><strong>A port list is not an argument list.</strong> <code>out clk: Bit = false</code> is a wire this module drives, with the value it starts at. <code>in clk: Bit</code> is a wire it only reads. A port exists for the whole simulation; it is not passed once.</li>
+<li><strong>A param looks like a struct field.</strong> <code>f: f64 = 1M where f &gt; 0.0;</code> has a default and a check. There is no assignment to it anywhere: the placement <code>Osc(clk) { f: 1M }</code> binds it, like a struct literal.</li>
+<li><strong><code>on event { … }</code> is not an <code>if</code>.</strong> It is a <strong>reaction</strong>: the body runs once each time the event fires, forever. <code>clk.changed()</code> fires whenever <code>clk</code> takes a new value; <code>clk.rise()</code> on a rising edge.</li>
+<li><strong><code>&lt;-</code> is not <code>=</code>.</strong> <code>count &lt;- count + 1;</code> does not change <code>count</code> now. It <em>schedules</em> the new value, and every read in the same reaction still sees the old one. With <code>after d</code> the new value arrives <code>d</code> seconds later: the oscillator toggles itself every half period, and each toggle is the change that fires the reaction again.</li>
+<li><strong>A <code>let</code> in a module body places hardware.</strong> <code>let ctr = Counter(clk, count);</code> is an instance named <code>ctr</code>, not a call that returns.</li>
+</ol>
+
+<p>The clock starts at <code>false</code>. That first value is itself a change (from "nothing yet" to low), so the oscillator's reaction fires at time zero and the clock rises for the first time half a period later, at 0.5&nbsp;µs.</p>
+
+<h3><code>emit!</code> is your <code>println!</code></h3>
+
+<p>The line <code>emit!("edge", t = now(), count = count);</code> writes one record each time the reaction runs. The first three records of a transient look like this (the layout is the host's choice):</p>
+
+<pre data-lang="text">stream top.ctr.edge
+  instant        fields
+  (0.5 µs, 0)    t = 5.0e-7   count = 0
+  (1.5 µs, 0)    t = 1.5e-6   count = 1
+  (2.5 µs, 0)    t = 2.5e-6   count = 2</pre>
+
+<p>Two things to notice. The stream is <code>top.ctr.edge</code>: the name you wrote, under the path of the instance that wrote it, so two counters never mix their records. And the first record says <code>count = 0</code> although the line above it committed <code>count + 1</code>: a commit takes effect after the reaction, so the record shows the count <em>before</em> the edge. If you want the new value in the record, emit the expression you committed: <code>count = count + 1</code>.</p>
+
+<p>Coming from Rust, this is how the two compare:</p>
 
 <div class="table-wrap"><table>
-<thead><tr><th>#</th><th>Concept</th><th>In one sentence</th></tr></thead>
+<thead><tr><th></th><th>Rust <code>println!</code></th><th>MSL <code>emit!</code></th></tr></thead>
 <tbody>
-<tr><td>1</td><td>value and <code>fn</code></td><td>Data with no time. A function keeps no state, writes no carrier and places no instance.</td></tr>
-<tr><td>2</td><td><code>nature</code></td><td>Says what a carrier holds and how several drivers of it combine.</td></tr>
-<tr><td>3</td><td>carrier</td><td>A signal or port that exists over time. You connect it by passing it to a port.</td></tr>
-<tr><td>4</td><td>drive</td><td>What one module writes to one carrier. The carrier's value combines all its drives.</td></tr>
-<tr><td>5</td><td>param</td><td>A value fixed during a solve. The model reads it; the host sets it.</td></tr>
-<tr><td>6</td><td><code>module</code></td><td>Ports, params and a netlist, fixed at elaboration. Calling a module places an instance.</td></tr>
-<tr><td>7</td><td><code>let</code></td><td>Names an expression. It is evaluated wherever the name is read.</td></tr>
-<tr><td>8</td><td><code>analog for M</code></td><td><code>probe +> x</code> adds to a branch's flow or potential at every Newton iteration.</td></tr>
-<tr><td>9</td><td><code>digital for M</code></td><td>A reaction <code>on ev { q <- x; }</code> runs once when <code>ev</code> fires; its commits apply at the next microstep.</td></tr>
-<tr><td>10</td><td>event</td><td>A value of type <code>Event</code> that fires at instants: <code>changed</code>, <code>at</code>, <code>cross</code>, <code>settle</code>, combined with <code>||</code> and <code>&&</code>.</td></tr>
-<tr><td>11</td><td>instant</td><td><code>(t, n)</code>: at one time, microsteps run until nothing is pending, with the analog side solved in between.</td></tr>
+<tr><td>What you write</td><td>a format string and arguments</td><td>a stream name (a string literal) and named fields: <code>name = value</code></td></tr>
+<tr><td>Formatting</td><td>in the string: <code>{:.3}</code></td><td>none. Fields keep their types; the reader formats</td></tr>
+<tr><td>Where it goes</td><td>standard output, one text line</td><td>a named stream per instance, read by the host</td></tr>
+<tr><td>What is attached</td><td>nothing</td><td>the instance path, the analysis and the instant, on every record</td></tr>
+<tr><td>When it runs</td><td>when control reaches it</td><td>when the code around it runs: once per firing in a reaction, at every evaluation in <code>analog</code></td></tr>
+<tr><td>A step the solver rejects</td><td>(no such thing)</td><td>a reaction's record from that step does not exist</td></tr>
+<tr><td>An unknown value</td><td>(no such thing)</td><td>the field is recorded as unknown, never as a guess</td></tr>
+<tr><td>Effect on the program</td><td>I/O, ordering, buffering</td><td>none: no expression can read a stream</td></tr>
+<tr><td>Where it is allowed</td><td>anywhere</td><td>in a reaction, in <code>analog</code>, and in a <code>fn</code> called from them</td></tr>
 </tbody></table></div>
 
-<p>The new keywords are few: <code>module</code>, <code>nature</code>, <code>signal</code>, <code>on</code>, <code>out</code>, <code>flip</code> and <code>after</code>. <code>in</code> and <code>extern</code> get a new use. <code>analog</code> and <code>digital</code> are keywords only in front of <code>for</code>.</p>
+<p>Because fields are typed and named, a record is data, not text. A host can plot <code>count</code> against <code>t</code>, compare two runs field by field, or assert on a value, without parsing anything. A message with values in it is simply a record with a text field:</p>
+
+<pre data-lang="msl">emit!("log", msg = "overrange", vin = v(inp));</pre>
+
+<p>The fields are your choice, with three limits: field names within one <code>emit!</code> are distinct, a field of one name has the same type everywhere a stream is written, and the name <code>maybe</code> is taken. The simulator sets <code>maybe = true</code> on a record that was reached under an unknown condition, for example inside an <code>if</code> whose test was unknown. Such a record says "this may have happened", and a host never counts it as a fact.</p>
+
+<p>Two stream names are reserved and global: <code>sim</code> and <code>checks</code>. You do not write to them directly. The standard library does it for you: <code>finish()</code> ends the analysis, and <code>require(name, pass)</code> records a check the host judges. Both are ordinary functions over <code>emit!</code>, and chapter 7 uses them. For a plain message there is <code>log(Severity::Info, "text")</code>, which writes to the instance's <code>log</code> stream.</p>
 
 <div class="callout good">
   <p class="callout-label">Good to know</p>
-  <p>The word "module" always means a <em>hardware</em> module in MSL. Rust's <code>mod</code> is called a <strong>namespace module</strong>.</p>
+  <p>Every <code>emit!</code> in a design is known before the run starts: its stream, its field names and their types. A host lists them and chooses which streams it wants, so you can leave your debug records in a model and decide per run what to look at.</p>
 </div>
+
+<h3>What is new: eleven concepts</h3>
+
+<p>MSL adds eleven concepts on top of Rust's values. Each one has a single rule. You have met most of them already; the chapter in the last column teaches each properly.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Concept</th><th>In one sentence</th><th>Chapter</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>value and <code>fn</code></td><td>Data with no time. A function keeps no state, writes no carrier and places no instance.</td><td>3</td></tr>
+<tr><td>2</td><td><code>nature</code></td><td>Says what a carrier holds and how several drivers of it combine.</td><td>4</td></tr>
+<tr><td>3</td><td>carrier</td><td>A signal or port that exists over time. You connect it by passing it to a port.</td><td>4</td></tr>
+<tr><td>4</td><td>drive</td><td>What one module writes to one carrier. The carrier's value combines all its drives.</td><td>4, 7</td></tr>
+<tr><td>5</td><td>param</td><td>A value fixed during a solve. The model reads it; the host sets it.</td><td>5</td></tr>
+<tr><td>6</td><td><code>module</code></td><td>Ports, params and a netlist, fixed at elaboration. Calling a module places an instance.</td><td>5</td></tr>
+<tr><td>7</td><td><code>let</code></td><td>Names an expression. It is evaluated wherever the name is read.</td><td>5</td></tr>
+<tr><td>8</td><td><code>analog for M</code></td><td><code>probe +> x</code> adds to a branch's flow or potential at every Newton iteration.</td><td>6</td></tr>
+<tr><td>9</td><td><code>digital for M</code></td><td>A reaction <code>on ev { q <- x; }</code> runs once when <code>ev</code> fires; its commits apply at the next microstep.</td><td>7</td></tr>
+<tr><td>10</td><td>event</td><td>A value of type <code>Event</code> that fires at instants: <code>changed</code>, <code>at</code>, <code>cross</code>, <code>settle</code>, combined with <code>||</code> and <code>&&</code>.</td><td>7</td></tr>
+<tr><td>11</td><td>instant</td><td><code>(t, n)</code>: at one time, microsteps run until nothing is pending, with the analog side solved in between.</td><td>8</td></tr>
+</tbody></table></div>
+
+<p>The new keywords are few: <code>module</code>, <code>nature</code>, <code>signal</code>, <code>on</code>, <code>out</code>, <code>flip</code> and <code>after</code>. <code>in</code> and <code>extern</code> get a new use. <code>analog</code> and <code>digital</code> are keywords only in front of <code>for</code>.</p>
 
 <h3>What is left out</h3>
 
@@ -124,6 +337,26 @@ analog for Resistor {
 </tbody></table></div>
 
 <p>The standard library you inherit from Rust is a closed list: a method that the list does not name does not resolve, even if Rust has it.</p>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0901</td><td><code>println!("count = {}", count);</code></td><td>Not a built-in form. <code>emit!("dbg", count = count);</code></td></tr>
+  <tr><td>E0602</td><td><code>emit!("edge {}", count);</code></td><td>There is no format string, and a field needs a name: <code>emit!("edge", count = count);</code></td></tr>
+  <tr><td>E0604</td><td><code>emit!("edge", t = now(), t = count);</code></td><td>A field name is used twice. Rename one.</td></tr>
+  <tr><td>E0601</td><td><code>emit!("hello");</code> in a module body</td><td>Output runs when behavior runs. Put it in a reaction: <code>on init() { emit!("hello"); }</code></td></tr>
+  <tr><td>E0101</td><td><code>fn bump(c: &amp;mut u8) { *c += 1; }</code></td><td>No mutable references. Return the new value: <code>fn bump(c: u8) -&gt; u8 { c + 1 }</code></td></tr>
+  <tr><td>E0143</td><td><code>fn gain(x: f64, k: f64 = 2.0) -&gt; f64</code></td><td>No default arguments. <code>k: Option&lt;f64&gt;</code>, then <code>k.unwrap_or(2.0)</code> (chapter 3).</td></tr>
+  <tr><td>E0161</td><td><code>let xs: Vec&lt;f64&gt; = Vec::new();</code></td><td>No heap types, so the path does not resolve. Use an array: <code>[f64; 8]</code>.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>In <code>Counter</code>, move the <code>emit!</code> line above the commit. What changes in the stream? (Nothing: both lines read the values from before the edge.) Then add a field <code>half = count &gt;= 128</code> and predict the time of the first record where it is true. (The 129th rising edge, at 128.5&nbsp;µs.)</p>
+</div>
 </section>
 
 <!-- ===================================================== 3 -->
@@ -131,7 +364,12 @@ analog for Resistor {
 <p class="ch-num">Chapter 3</p>
 <h2>Values and functions</h2>
 
-<p>A <strong>value</strong> is data with no time. Everything a model computes with is a value; what it <em>connects to</em> is a carrier (next chapter). This part of the language is Rust, so this chapter is short.</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can declare your own value types, write the helper functions a model computes with, and explain what an <em>unknown</em> value is, where it comes from and how to catch one with <code>emit!</code>.</p>
+</div>
+
+<p>A <strong>value</strong> is data with no time: a number, a flag, an enum, a struct. Everything a model computes with is a value; what it <em>connects to</em> is a carrier (next chapter). This part of the language is Rust, so the chapter moves fast and stops only where MSL differs.</p>
 
 <h3>Types</h3>
 
@@ -145,53 +383,204 @@ analog for Resistor {
 <tr><td>composite</td><td>arrays, tuples, <code>struct</code>, <code>enum</code>, <code>Option&lt;T&gt;</code></td><td>As in Rust.</td></tr>
 </tbody></table></div>
 
-<p>Integer arithmetic wraps modulo 2<sup>N</sup> in every build: there is no overflow panic. <code>usize</code> is <code>u64</code> on every machine, so a result never depends on the computer running it. The prelude gives you the constants <code>Q</code>, <code>K_B</code>, <code>EPS0</code>, <code>PI</code>, <code>E</code> and <code>inf</code>.</p>
+<p>Three differences from Rust matter in practice. Read them in this block of statements:</p>
 
-<h3>Repr: values that can travel</h3>
+<pre data-lang="msl">let a: u8 = 250;
+let b = a + 10;            // 4: integers wrap modulo 2^N, in every build, with no panic
+let duty: u3 = 5;          // any width: a 3-bit value, 0 to 7
+let r = 4.7k;              // an SI suffix makes an f64: 4700.0
+let n = 3;                 // a plain literal is an integer
+let x = r * n as f64;      // integers and reals never mix by themselves: convert with `as`</pre>
 
-<p>Only a type that implements <code>Repr</code> can be carried by a signal. <code>Repr</code> lays a value out as a row of boolean <em>levels</em>. Primitives have it built in; your own types derive it:</p>
+<p>First, integers come in <strong>any width</strong>, because hardware does: a 3-bit duty word is a <code>u3</code>, and a 10-bit ADC code a <code>u10</code>. Second, integer arithmetic <strong>wraps</strong> the way a register does, in every build; there is no overflow panic to hide a bug in release mode. Third, <code>usize</code> is <code>u64</code> on every machine, so a result never depends on the computer running it. The prelude gives you the constants <code>Q</code>, <code>K_B</code>, <code>EPS0</code>, <code>PI</code>, <code>E</code> and <code>inf</code>.</p>
+
+<h3>Functions</h3>
+
+<p>A function is computation without time. It keeps no state, writes no carrier and places no instance. You write it exactly as in Rust:</p>
+
+<pre data-lang="msl">/// The current of an ideal junction at a voltage `vd`.
+pub fn diode_current(vd: f64, is: f64, nvt: f64) -> f64 { is * ((vd / nvt).exp() - 1.0) }
+
+/// A request that is acknowledged in the same cycle.
+pub fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }</pre>
+
+<p>You never declare where a function may be called. The compiler infers a <em>class</em> from the body: a <em>pure</em> function, like <code>diode_current</code>, works anywhere; one that probes a voltage or reads <code>now()</code> works where the solver is running; one that returns <code>Event</code>, like <code>handshake</code>, works where events go; and one that calls <code>emit!</code> works where <code>emit!</code> does. Inside <code>analog</code>, calls are differentiated automatically, so <code>diode_current</code> needs no hand-written derivative.</p>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>Anything with state is a module, never a function. <code>fn f(x: f64) -> f64 { ddt(x) }</code> is an error, because <code>ddt</code> remembers the past; write <code>module f(x: f64) -> f64 { ddt(x) }</code>. Chapter 5 shows modules that return values.</p>
+</div>
+
+<h3>Optional parameters</h3>
+
+<p>There are no default arguments and no overloading. Instead, trailing parameters of type <code>Option&lt;T&gt;</code> may be left out, or passed by name to skip earlier ones. Passing a plain <code>T</code> wraps it in <code>Some</code>, the one implicit conversion in the language:</p>
+
+<pre data-lang="msl">/// Scales `x`; the gain is 2.0 unless given, and the result may be clamped.
+fn scale(x: f64, k: Option<f64>, limit: Option<f64>) -> f64 {
+    let y = x * k.unwrap_or(2.0);
+    match limit { Some(l) => y.clamp(-l, l), None => y }
+}</pre>
+
+<pre data-lang="msl">scale(v)                    // k and limit left out
+scale(v, 3.0)               // k = Some(3.0)
+scale(v, limit: 1.0)        // skips k by naming limit</pre>
+
+<p>The library uses this everywhere: <code>idt(x)</code> is an integrator, <code>idt(x, 1.0)</code> one with an initial condition, and <code>idt(x, 1.0, reset: rst)</code> one with a reset too.</p>
+
+<h3>Your own types, and <code>Repr</code></h3>
+
+<p>Enums and structs are Rust's. One thing is added: only a type that implements <code>Repr</code> can be <em>carried by a signal</em>. <code>Repr</code> lays a value out as a row of boolean <strong>levels</strong>, the bits a wire would carry. Primitives have it built in; your own types derive it:</p>
 
 <pre data-lang="msl">#[derive(Repr, Clone, Copy, PartialEq)]
-enum Phase { Liquid, Boiling, Vapor }</pre>
+enum Zone { Under, Ok, Over }</pre>
 
 <p>A derived struct puts its fields side by side, first field lowest. A derived enum lays out a tag, then the widest payload. One-hot or Gray encodings are a hand-written <code>impl Repr</code>.</p>
 
+<h3>A complete example: a window monitor</h3>
+
+<p>Put a type, a function and a module together. This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window. The source is a ramp of 1&nbsp;V/µs, so the node walks through all three zones.</p>
+
+<pre data-lang="msl">#[derive(Repr, Clone, Copy, PartialEq)]
+enum Zone { Under, Ok, Over }
+
+/// Where `x` lies against the window `lo ..= hi`.
+fn zone_of(x: f64, lo: f64, hi: f64) -> Zone {
+    if x < lo { Zone::Under } else if x > hi { Zone::Over } else { Zone::Ok }
+}
+
+/// Samples node `a` on every rising clock edge and reports its zone.
+module WindowMonitor(a: Electrical, in clk: Bit, out zone: Bit<Zone> = Zone::Ok) {
+    lo: f64 = 1.0;
+    hi: f64 = 2.0 where hi > lo;
+}
+digital for WindowMonitor {
+    on clk.rise() {
+        let z = zone_of(v(a), lo, hi);
+        zone <- z;
+        if z != zone { emit!("zone", t = now(), v = v(a), from = zone, to = z); }
+    }
+}
+
+/// A voltage that rises from 0 V at `slope` volts per second.
+module Ramp(p: Electrical) { slope: f64 = 1M; }
+analog for Ramp { v(p) +> slope * now(); }
+
+/// A free-running clock.
+module Osc(out clk: Bit = false) { f: f64 = 1M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module MonitorTop() {
+    signal x: Electrical;
+    signal clk: Bit;
+    pub signal zone: Bit<Zone>;
+    let src = Ramp(x);
+    let osc = Osc(clk);
+    let mon = WindowMonitor(x, clk, zone);
+}</pre>
+
+<p>What is new here:</p>
+
+<ul>
+<li><strong><code>out zone: Bit&lt;Zone&gt; = Zone::Ok</code>.</strong> A <code>Bit&lt;T&gt;</code> carries any <code>Repr</code> type, so the output of the monitor is the enum itself, not an encoding you have to remember.</li>
+<li><strong><code>let z = zone_of(v(a), lo, hi);</code></strong> A local <code>let</code> inside a reaction is an ordinary Rust local. The reaction probes <code>v(a)</code>, calls a pure function and gets a value.</li>
+<li><strong><code>if z != zone { emit!(…) }</code></strong> prints only when the zone changes. <code>zone</code> on the right still reads the old value (the commit one line up has not applied yet), which is exactly what makes <code>from = zone, to = z</code> correct.</li>
+<li><strong>A field can be an enum.</strong> Any value type is a field; the record keeps <code>Zone::Under</code> as that, not as a number.</li>
+</ul>
+
+<p>The clock rises at 0.5, 1.5 and 2.5&nbsp;µs, where the ramp is near 0.5, 1.5 and 2.5&nbsp;V:</p>
+
+<pre data-lang="text">stream top.mon.zone
+  instant        fields
+  (0.5 µs, 0)    t = 5.0e-7   v ≈ 0.5   from = Ok      to = Under
+  (1.5 µs, 0)    t = 1.5e-6   v ≈ 1.5   from = Under   to = Ok
+  (2.5 µs, 0)    t = 2.5e-6   v ≈ 2.5   from = Ok      to = Over</pre>
+
+<p>The values of <code>v</code> are "near" on purpose. A reaction that runs on a clock edge reads the analog solution the solver had just before the edge, as a real sampler does. Chapter 8 makes that precise.</p>
+
 <h3>Known and unknown</h3>
 
-<p>Every level of every value is either <strong>known</strong> or <strong>unknown</strong>. This is how MSL models the <code>x</code> of digital logic, and it applies everywhere, to locals and function arguments too. Unknown enters only through a carrier that has no initial value yet, the literal <code>Unknown</code>, or a failed <code>decode</code>. Logic operators work level by level, so <code>unknown & false</code> is <code>false</code> and <code>unknown | true</code> is <code>true</code>.</p>
+<p>Every level of every value is either <strong>known</strong> or <strong>unknown</strong>. This is how MSL models the <code>x</code> of digital logic, and it is not a special kind of wire: the flag travels with the value everywhere, into locals and function arguments too.</p>
 
-<p>The analog solver computes with real numbers only, so an <code>analog</code> block must say what an unknown means electrically. It reads a digital carrier through <code>known()</code>, <code>known_or(d)</code> or, for a <code>Bit</code>, <code>high()</code>:</p>
+<p>Unknown enters a design in only three ways: a carrier that has no value yet, the literal <code>Unknown</code>, or a failed <code>decode</code>. From there it spreads by two rules:</p>
+
+<ul>
+<li><strong>Logic works level by level.</strong> <code>unknown &amp; false</code> is <code>false</code> and <code>unknown | true</code> is <code>true</code>: a known input that decides the result still decides it.</li>
+<li><strong>Everything else is all-or-nothing.</strong> Arithmetic, comparisons and <code>as</code> give a wholly unknown result if any level of any operand is unknown. <code>a == b</code> is unknown when either side has an unknown level.</li>
+</ul>
+
+<p>An <code>if</code> on an unknown condition does not pick a branch. Both branches run, and their effects are <em>merged</em>: levels on which they agree stay known, the rest become unknown. This is stricter than Verilog, which silently takes the <code>else</code>. When you want that behavior, you say so: <code>if c.known_or(false) { … }</code>.</p>
+
+<p>You read the flag with three methods every <code>Repr</code> value has: <code>x.known()</code> gives an <code>Option</code> (<code>None</code> when any level is unknown), <code>x.known_or(d)</code> gives the value or a default, and <code>x.is_known()</code> a <code>bool</code>.</p>
+
+<h3>Catching an unknown with <code>emit!</code></h3>
+
+<p>The classic bug: an input nobody drives. This adder is placed in a top with two <code>in</code> ports, and the host drives <code>a</code> but forgets <code>b</code>. (<code>Osc</code> is the clock from the file above.)</p>
+
+<pre data-lang="msl">/// Registers a + b on every clock edge.
+module Adder(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>, out sum: Bit<u8> = 0) {}
+digital for Adder {
+    on clk.rise() { sum <- a + b; }
+
+    // The debug reaction: fires when `sum` changes and is no longer known.
+    on sum.changed() && !sum.is_known() {
+        emit!("lost", t = now(), a = a, b = b);
+    }
+}
+
+module AdderTop(in a: Bit<u8>, in b: Bit<u8>) {
+    signal clk: Bit;
+    pub signal sum: Bit<u8>;
+    let osc = Osc(clk);
+    let add = Adder(clk, a, b, sum);
+}</pre>
+
+<p>A top-level <code>in</code> port the host never drives stays unknown. On the first clock edge the adder computes <code>3 + unknown</code>, which is unknown, and commits it: <code>sum</code> goes from 0 to unknown. Going from known to unknown is a change, so the second reaction fires. Its guard, <code>!sum.is_known()</code>, is an ordinary <code>bool</code>. The record tells you which input to blame, because a field keeps its known flag:</p>
+
+<pre data-lang="text">stream top.add.lost
+  instant        fields
+  (0.5 µs, 1)    t = 5.0e-7   a = 3   b = unknown</pre>
+
+<p>The instant is <code>(0.5 µs, 1)</code>, not <code>(0.5 µs, 0)</code>: the clock edge is microstep 0, and the commit to <code>sum</code> applies one microstep later. Only one record is written, because unknown to unknown is not a change.</p>
+
+<p>A second flavor of the same tool: a record reached under an unknown condition is written with <code>maybe = true</code>. If the adder also had <code>if a &gt; b { emit!("bigger", a = a); }</code>, that record would appear here marked <code>maybe</code>: the model cannot tell whether <code>a &gt; b</code>, and it says so instead of guessing.</p>
+
+<h3>Analog code has no unknowns</h3>
+
+<p>The analog solver computes with real numbers only, so an <code>analog</code> block must say what an unknown means electrically. It reads a digital carrier through <code>known()</code>, <code>known_or(d)</code> or, for a <code>Bit</code>, <code>high()</code> (known and true):</p>
 
 <pre data-lang="msl">module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }
 digital for SampleHold { on clk.rise() { held <- v(vin); } }
 analog for SampleHold { v(vout) +> held.known_or(0.0); }</pre>
 
-<p>Writing <code>v(vout) +> held;</code> instead is error E0150, and the diagnostic names the carrier. "The model says what an unknown means electrically; the language does not guess".</p>
+<p>Writing <code>v(vout) +> held;</code> instead is error E0150, and the diagnostic names the carrier. The model says what an unknown means electrically; the language does not guess. This holds even for a carrier that, like <code>held</code>, can never be unknown: the rule is about what you wrote, not about what the compiler can prove.</p>
 
-<h3>Functions</h3>
+<h3>Foreign functions</h3>
 
-<p>A function is computation without time. It keeps no state, writes no carrier and places no instance.</p>
+<p>A function written in C is declared with <code>extern "C"</code> and no body. To use it inside <code>analog</code>, name its derivatives, one per <code>f64</code> argument, because the compiler cannot look inside:</p>
 
-<pre data-lang="msl">pub fn diode_current(vd: f64, is: f64, nvt: f64) -> f64 { is * ((vd / nvt).exp() - 1.0) }
-pub fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }
-#[derivative(erfcx_dx)] extern "C" fn erfcx(x: f64) -> f64;</pre>
+<pre data-lang="msl">#[derivative(erfcx_dx)] extern "C" fn erfcx(x: f64) -> f64;
+extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
 
-<p>You never declare where a function may be called. The compiler infers a <em>class</em> from the body: a <em>pure</em> function works anywhere; one that probes a voltage or reads <code>now()</code> works where the solver is running; one that returns <code>Event</code> works where events go. Inside <code>analog</code>, calls are differentiated automatically. An <code>extern "C"</code> function used there needs <code>#[derivative(...)]</code>, naming one derivative per <code>f64</code> argument.</p>
-
-<div class="callout good">
-  <p class="callout-label">Good to know</p>
-  <p>Anything with state is a module, never a function. <code>fn f(x: f64) -> f64 { ddt(x) }</code> is an error; write <code>module f(x: f64) -> f64 { ddt(x) }</code>. Chapter 5 shows modules that return values.</p>
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0150</td><td><code>v(vout) +&gt; held;</code></td><td><code>analog</code> reads a digital carrier raw. Say what unknown means: <code>held.known_or(0.0)</code>.</td></tr>
+  <tr><td>E0112</td><td><code>out zone: Bit&lt;Zone&gt;</code> with <code>Zone</code> not deriving <code>Repr</code></td><td>A carried type needs a layout. Add <code>#[derive(Repr)]</code> to the enum.</td></tr>
+  <tr><td>E0350</td><td><code>fn slope(x: f64) -&gt; f64 { ddt(x) }</code></td><td><code>ddt</code> is an instance with memory, and a <code>fn</code> has none. Make it a <code>module slope(x: f64) -&gt; f64</code>.</td></tr>
+  <tr><td>E0143</td><td><code>fn scale(x: f64, k: f64 = 2.0)</code></td><td>No default arguments. <code>k: Option&lt;f64&gt;</code> and <code>k.unwrap_or(2.0)</code>.</td></tr>
+  <tr><td>E0140</td><td><code>scale(v, gain: 3.0)</code></td><td>A named argument must name an optional parameter. It is called <code>k</code>.</td></tr>
+  <tr><td>E0142</td><td><code>scale(v, limit: 1.0, 3.0)</code></td><td>A positional argument cannot follow a named one. <code>scale(v, 3.0, limit: 1.0)</code>.</td></tr>
+  <tr><td>E0123</td><td><code>extern "C" fn erfcx(x: f64) -&gt; f64;</code> called in <code>analog</code></td><td>Add <code>#[derivative(erfcx_dx)]</code> so the solver has a Jacobian.</td></tr>
+  </tbody></table></div>
+  <p>One mistake has no special code because it is a plain type error: <code>r: f64 = 100</code>. An integer literal is never an <code>f64</code>; write <code>100.0</code>.</p>
 </div>
 
-<h3>Optional parameters</h3>
-
-<p>There are no default arguments and no overloading. Trailing parameters of type <code>Option&lt;T&gt;</code> may be left out, or passed by name to skip earlier ones. Passing a plain <code>T</code> wraps it in <code>Some</code>, the one implicit conversion in the language:</p>
-
-<pre data-lang="msl">cross(e)                    // rising, simulator tolerances
-cross(e, 1p)                // with ttol
-cross(e, etol: 1u)          // skips ttol
-idt(x)                      // an integrator, no initial condition, no reset
-idt(x, 1.0, reset: rst)</pre>
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>In <code>Adder</code>, replace <code>a + b</code> with <code>a &amp; b</code> and let the host drive <code>a = 0</code>, leaving <code>b</code> undriven. Does the <code>lost</code> record still appear? (No: <code>0 &amp; unknown</code> is 0 on every level, so <code>sum</code> stays known.) Then make the host drive <code>a = 3</code> and say which levels of <code>sum</code> are unknown. (The two lowest: the levels where <code>a</code> is 1.)</p>
+</div>
 </section>
 
 <!-- ===================================================== 4 -->
