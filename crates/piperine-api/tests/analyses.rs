@@ -91,3 +91,40 @@ fn the_divider_mid_is_7_5_on_both_backends() {
         assert!((mid - 7.5).abs() <= 1e-9, "{backend}: Divider.mid = {mid}");
     }
 }
+
+fn transient(stop: f64, print: &[&str]) -> Overrides {
+    Overrides { analysis: Some("transient".into()), stop: Some(stop), print: print.iter().map(|s| s.to_string()).collect(), ..Overrides::default() }
+}
+
+fn times(table: &Table) -> Vec<f64> {
+    table.rows.iter().map(|r| real(&r[0])).collect()
+}
+
+#[test]
+fn a_transient_has_one_row_per_accepted_step() {
+    // CLI-05 AC 2: tran_rc.msl to 10 us, two printed signals
+    let table = run(&twin("tran_rc.msl"), "interp", transient(10e-6, &["vin", "out"])).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.columns, ["time", "TranRc.vin", "TranRc.out"]);
+    assert!(table.rows.iter().all(|r| r.len() == 3), "one cell per column");
+    let t = times(&table);
+    assert!(t.len() > 2, "{} rows", t.len());
+    assert_eq!(t[0], 0.0, "the first row is the operating point at 0");
+    assert!(t.windows(2).all(|w| w[0] < w[1]), "times increase strictly");
+    assert_eq!(t[t.len() - 1], 10e-6, "the last accepted step is `stop`");
+    // the held node starts at 0 V (tran_rc.msl: `out = 0.0`)
+    assert_eq!(table.rows[0][2], Cell::Real(0.0));
+}
+
+#[test]
+fn the_rc_step_follows_one_minus_exp_on_both_backends() {
+    // CLI-05 AC 8: R = 1 kOhm, C = 1.5915494309189535 nF; at the first row at or after RC,
+    // `out` is within 1e-3 of 1 - exp(-t / RC)
+    let rc = 1000.0 * 1.5915494309189535e-9;
+    for backend in ["interp", "rust"] {
+        let table = run(&twin("tran_rc.msl"), backend, transient(10e-6, &["out"])).unwrap_or_else(|f| panic!("{backend}: {f}"));
+        let row = table.rows.iter().find(|r| real(&r[0]) >= rc).unwrap_or_else(|| panic!("{backend}: no row at or after RC"));
+        let (t, out) = (real(&row[0]), real(&row[1]));
+        let expected = 1.0 - (-t / rc).exp();
+        assert!((out - expected).abs() <= 1e-3, "{backend}: out({t}) = {out}, expected {expected}");
+    }
+}

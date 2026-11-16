@@ -6,7 +6,7 @@
 use piperine_abi::raw::leaf;
 use piperine_ir::ValueType;
 use piperine_plan::CarrierLayout;
-use piperine_solver::prelude::DcAnalysisResult;
+use piperine_solver::prelude::{DcAnalysisResult, TransientAnalysisResult};
 
 use crate::failure::Failure;
 use crate::probe::Probe;
@@ -91,5 +91,29 @@ impl Table {
             })
             .collect::<Result<Vec<_>, Failure>>()?;
         Ok(Table { columns: vec!["signal".into(), "value".into()], rows })
+    }
+
+    /// A transient: the column `time`, then one column per probe; one row per step the result
+    /// keeps, in time order.
+    pub fn transient(probes: &[Probe], result: &TransientAnalysisResult) -> Result<Table, Failure> {
+        let mut columns = vec!["time".to_string()];
+        columns.extend(probes.iter().map(Probe::label));
+        let rows = result
+            .iter()
+            .map(|step| {
+                let mut row = vec![Cell::Real(step.time())];
+                for probe in probes {
+                    let value = match probe {
+                        Probe::Node { id, .. } => step.get_node(id).map(Cell::Real),
+                        Probe::Flow { branch, .. } => step.get_branch(branch.clone()).map(Cell::Real),
+                        Probe::Net { path, ty } => step.digital_named(path).map(|bytes| Cell::decode(ty, bytes)).transpose()?,
+                    };
+                    let missing = || Failure::Backend(format!("the step at {} holds no value for `{}`", step.time(), probe.label()));
+                    row.push(value.ok_or_else(missing)?);
+                }
+                Ok(row)
+            })
+            .collect::<Result<Vec<_>, Failure>>()?;
+        Ok(Table { columns, rows })
     }
 }

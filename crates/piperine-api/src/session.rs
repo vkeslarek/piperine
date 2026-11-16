@@ -15,7 +15,7 @@ use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
-use piperine_solver::prelude::{CircuitInstance, Solver};
+use piperine_solver::prelude::{CircuitInstance, Solver, TransientAnalysisOptions};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
@@ -133,9 +133,9 @@ impl Session {
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
         let _ = sink;
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
-        let mut solver = Solver::new(circuit).build();
         match &self.spec.analysis {
             Analysis::Op => {
+                let mut solver = Solver::new(circuit).build();
                 let result = solver.dc().and_then(|mut dc| dc.solve()).map_err(|error| Failure::Solver { analysis: "op", error })?;
                 let bound = solver.circuit().bound();
                 // a discrete net by its path: its index in the digital plan is its id
@@ -145,6 +145,21 @@ impl Session {
                     Some(b.digital.read(NetId(at as u32)).to_vec())
                 };
                 Table::operating_point(&self.probes, &result, &net)
+            }
+            Analysis::Transient { stop, max_step, from, .. } => {
+                // design "How an analysis reaches the solver": `max_step` is the first step and
+                // the largest; without it the first step is `stop / 1000` and the largest the
+                // solver's default; `from` is the first time kept (contract D10)
+                let mut options = match max_step {
+                    Some(step) => TransientAnalysisOptions::new(*stop, *step).with_dt_max(*step),
+                    None => TransientAnalysisOptions::new(*stop, stop / 1000.0),
+                };
+                if let Some(from) = from {
+                    options = options.with_record_from(*from);
+                }
+                let mut solver = Solver::new(circuit).with_tran_opts(options).build();
+                let result = solver.tran().and_then(|mut tran| tran.solve()).map_err(|error| Failure::Solver { analysis: "transient", error })?;
+                Table::transient(&self.probes, &result)
             }
             other => Err(Failure::Backend(format!("the `{}` analysis is not supported by `Session::run` yet", other.name()))),
         }
