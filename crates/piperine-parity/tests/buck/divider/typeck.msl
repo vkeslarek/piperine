@@ -1,0 +1,7 @@
+//! A root crate the type checker refuses (`tests/project.rs`): a resistor given a `bool` value.
+use devices::Resistor;
+
+module Divider() {
+    signal a: Electrical;
+    let r = Resistor { r: true }(a, gnd);
+}

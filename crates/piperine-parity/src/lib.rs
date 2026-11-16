@@ -8,5 +8,6 @@ pub mod contract;
 pub mod golden;
 pub mod ngspice;
 pub mod operating_point;
+pub mod project;
 pub mod scratch;
 pub mod waveform;

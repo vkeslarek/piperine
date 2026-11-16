@@ -1,0 +1,12 @@
+//! The root crate of the two-crate project fixture (`tests/project.rs`): a 10 V source across a
+//! 1 k / 3 k divider, every device from the dependency crate `devices`.
+use devices::{Resistor, Vsource};
+
+module Divider() {
+    signal vin: Electrical;
+    signal mid: Electrical;
+    let v1 = Vsource { dc: 10.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, mid);
+    let r2 = Resistor { r: 3k }(mid, gnd);
+}
+

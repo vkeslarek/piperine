@@ -1,0 +1,8 @@
+//! A root crate the front end refuses before type check (`tests/project.rs`): it places a module
+//! the dependency crate does not have.
+use devices::Resistor;
+
+module Divider() {
+    signal a: Electrical;
+    let x = Missing { r: 1k }(a, gnd);
+}
