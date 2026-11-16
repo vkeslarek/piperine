@@ -882,3 +882,104 @@ fn the_earlier_prints_are_unchanged() {
         assert_eq!(ir.to_string(), read("tests/golden/buck/full", name), "{name}: full text");
     }
 }
+
+/// The power stage: the placements connect nodes and carriers, and the authored tree says which.
+///
+/// ```text
+/// module Stage(vin: Electrical, sw: Electrical, in hs_cmd: Bit, in ls_cmd: Bit) {      // 1
+///     signal hs_gate: Bit; signal ls_gate: Bit;                                         // 2
+///     GateDriver(hs_cmd, ls_cmd, hs_gate, ls_gate) as drv;                              // 3
+///     Switch(vin, sw, hs_gate) as hs;                                                   // 4
+///     Switch(sw, gnd, ls_gate) as ls;                                                   // 5
+///     GateDriver(hs_cmd, ls_cmd, _, _) as spare;                                        // 6
+///     Switch(vin, gnd, _) as bare;                                                      // 7
+/// }
+/// ```
+struct Stage;
+
+impl Stage {
+    const F: &'static str = "stage.msl";
+
+    /// `bindings` are the `(child, carriers)` the test records; `extra` is a fifth carrier.
+    fn ir(bindings: Vec<(u32, Vec<Option<u32>>)>, extra: Option<ValueType>) -> Ir {
+        let mut b = IrBuilder::new();
+        let driver = Buck::gate_driver(&mut b);
+        let switch = Buck::switch(&mut b);
+        let el = Buck::electrical(&mut b);
+        let child = |name: &str, body: BodyId, nodes: Vec<Terminal>, line: u32| Child { name: name.into(), body, nodes, params: vec![], origin: Design::origin(Stage::F, line, 5) };
+        let port = |name: &str, col| piperine_ir::BodyNode { name: name.into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Design::origin(Stage::F, 1, col) };
+        let body = b.body(BodySpec {
+            nodes: vec![port("vin", 14), port("sw", 32)],
+            children: vec![
+                child("drv", driver, vec![], 3),
+                child("hs", switch, vec![Terminal::Node(0), Terminal::Node(1)], 4),
+                child("ls", switch, vec![Terminal::Node(1), Terminal::Ground], 5),
+                child("spare", driver, vec![], 6),
+                child("bare", switch, vec![Terminal::Node(0), Terminal::Ground], 7),
+            ],
+            ..Buck::spec("Stage", Stage::F, 1)
+        });
+        let mut types = vec![ValueType::Bool; 4];
+        for (name, role, col) in [("hs_cmd", CarrierRole::In, 50), ("ls_cmd", CarrierRole::In, 66), ("hs_gate", CarrierRole::Signal, 15), ("ls_gate", CarrierRole::Signal, 35)] {
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, Stage::F, if role == CarrierRole::Signal { 2 } else { 1 }, col));
+        }
+        if let Some(ty) = extra {
+            b.carrier(body, Buck::carrier("count", ty.clone(), CarrierRole::Signal, None, Stage::F, 2, 55));
+            types.push(ty);
+        }
+        for (child, carriers) in bindings {
+            b.bind_child_carriers(body, child, carriers);
+        }
+        Design::place(b, body, 2, &types, vec![])
+    }
+}
+
+#[test]
+fn a_child_records_its_carrier_bindings() {
+    let all = vec![
+        (0, vec![Some(0), Some(1), Some(2), Some(3)]),
+        (1, vec![Some(2)]),
+        (2, vec![Some(3)]),
+        (3, vec![Some(0), Some(1), None, None]),
+    ];
+    let ir = Stage::ir(all, None);
+    assert_eq!(ir.check(), vec![]);
+
+    // The authored tree shows the carriers a placement connects after its nodes and params, by the
+    // parent's names (`_` for an open port); a placement with no record writes no line.
+    Printed::holds(
+        &ir,
+        &[
+            "  child drv: GateDriver  nodes ()  params ()  carriers (hs_cmd, ls_cmd, hs_gate, ls_gate)",
+            "  child hs: Switch  nodes (vin, sw)  params ()  carriers (hs_gate)",
+            "  child ls: Switch  nodes (sw, gnd)  params ()  carriers (ls_gate)",
+            "  child spare: GateDriver  nodes ()  params ()  carriers (hs_cmd, ls_cmd, _, _)",
+            "  child bare: Switch  nodes (vin, gnd)  params ()",
+        ],
+    );
+    let full = ir.to_string();
+    assert!(full.contains(" carriers (c0, c1, c2, c3)"), "the arena binding missing from:\n{full}");
+    assert!(full.contains(" carriers (c0, c1, -, -)"), "the open ports missing from the arena:\n{full}");
+
+    // The accessor gives one entry per carrier port in the child's order: the parent's carrier or
+    // open. A child with no record, or none at all, has none; the tree is `Child` plus this.
+    let stage = ir.top().body();
+    assert_eq!(stage.child_carriers(0), &[Some(0), Some(1), Some(2), Some(3)]);
+    assert_eq!(stage.child_carriers(3), &[Some(0), Some(1), None, None]);
+    assert_eq!(stage.child_carriers(4), &[]);
+    assert_eq!(stage.child_carriers(9), &[]);
+
+    // A record short of a port, a carrier out of range, a carrier of another type and a child out
+    // of range are one entry each.
+    let broken = Stage::ir(
+        vec![(3, vec![Some(0)]), (1, vec![Some(9)]), (2, vec![Some(4)]), (8, vec![Some(0)])],
+        Some(Ty::u(4)),
+    )
+    .check();
+    let has = |what: &str| broken.iter().filter(|e| e.what.contains(what)).count();
+    assert_eq!(has("child spare binds 1 carriers, body GateDriver has 4 carrier ports"), 1, "{broken:#?}");
+    assert_eq!(has("child hs: carrier 9 out of range (5 carriers)"), 1, "{broken:#?}");
+    assert_eq!(has("child ls binds carrier count: u4 to the port g: bool"), 1, "{broken:#?}");
+    assert_eq!(has("carrier bindings of child 8, out of range (5 children)"), 1, "{broken:#?}");
+    assert_eq!(broken.len(), 4, "{broken:#?}");
+}

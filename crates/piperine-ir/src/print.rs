@@ -312,10 +312,18 @@ impl<'a> Printer<'a> {
                     params.push(format!("{} = {}", pname(*i), self.child_value(scope, value)));
                 }
             }
+            // The carriers the placement connects, by the parent's names: `_` for an open port.
+            let bound = body.child_carriers.get(ci).map_or(&[][..], Vec::as_slice);
+            let carriers = if bound.is_empty() {
+                String::new()
+            } else {
+                let names: Vec<String> = bound.iter().map(|c| c.map_or("_".to_string(), |c| Printer::carrier(scope, c))).collect();
+                format!("  carriers ({})", names.join(", "))
+            };
             let at = self.at(&child.origin);
             self.line(
                 1,
-                &format!("child {}: {name}  nodes ({})  params ({}){at}", Printer::name(&child.name), nodes.join(", "), params.join(", ")),
+                &format!("child {}: {name}  nodes ({})  params ({}){carriers}{at}", Printer::name(&child.name), nodes.join(", "), params.join(", ")),
             );
         }
         for drive in &body.drives {
@@ -806,7 +814,14 @@ impl<'a> Printer<'a> {
                         })
                         .collect();
                     let values = if values.is_empty() { String::new() } else { format!(" values ({})", values.join(", ")) };
-                    format!("(body {} nodes ({}) params ({}){values})", c.body.0, nodes.join(", "), params.join(", "))
+                    let bound = body.child_carriers.get(ci).map_or(&[][..], Vec::as_slice);
+                    let carriers = if bound.is_empty() {
+                        String::new()
+                    } else {
+                        let ids: Vec<String> = bound.iter().map(|c| c.map_or("-".to_string(), |c| format!("c{c}"))).collect();
+                        format!(" carriers ({})", ids.join(", "))
+                    };
+                    format!("(body {} nodes ({}) params ({}){values}{carriers})", c.body.0, nodes.join(", "), params.join(", "))
                 })
                 .collect();
             let analog = body.analog.as_ref().map_or("-".to_string(), |stmts| {

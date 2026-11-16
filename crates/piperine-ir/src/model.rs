@@ -82,6 +82,11 @@ pub struct BodyData {
     /// hold: set by `IrBuilder::child_param`, empty for a child with none. See `ChildValue`.
     #[serde(default)]
     pub(crate) child_params: Vec<Vec<(u32, ChildValue)>>,
+    /// The carriers each child's carrier ports are bound to (by index into `children`): one entry
+    /// per carrier port of the child's body, in its order, the parent's carrier or none (open).
+    /// Set by `IrBuilder::bind_child_carriers`; empty for a child with none.
+    #[serde(default)]
+    pub(crate) child_carriers: Vec<Vec<Option<u32>>>,
     /// The memo of `Body::dependencies`: derived, so outside equality and serialization.
     #[serde(skip)]
     pub(crate) deps: DepsMemo,

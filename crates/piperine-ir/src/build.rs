@@ -112,6 +112,7 @@ impl IrBuilder {
             reactions: Vec::new(),
             streams: Vec::new(),
             child_params: Vec::new(),
+            child_carriers: Vec::new(),
             deps: DepsMemo::default(),
         });
         BodyId(self.bodies.len() as u32 - 1)
@@ -165,6 +166,18 @@ impl IrBuilder {
             lists.resize(child as usize + 1, Vec::new());
         }
         lists[child as usize].push((param, value));
+    }
+
+    /// Records what child `child` of `body` (an index into its children) binds at each carrier
+    /// port of its body, in the port order: the parent's carrier, or `None` for an open port. The
+    /// authored tree shows what a placement connects, carriers as well as nodes (`Child` itself
+    /// gains no field, contract D4). Replaces what was set before.
+    pub fn bind_child_carriers(&mut self, body: BodyId, child: u32, carriers: Vec<Option<u32>>) {
+        let lists = &mut self.body_data(body).child_carriers;
+        if lists.len() <= child as usize {
+            lists.resize(child as usize + 1, Vec::new());
+        }
+        lists[child as usize] = carriers;
     }
 
     /// Adds a record stream to `body`: returns its index, the identity `Stmt::Emit` names it by.

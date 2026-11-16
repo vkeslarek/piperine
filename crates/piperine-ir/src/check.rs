@@ -268,6 +268,7 @@ impl<'a> Checker<'a> {
         }
         for body in &ir.bodies {
             self.child_param_ids(body);
+            self.child_carrier_ids(body);
         }
         for function in &ir.functions {
             let item = format!("function {}", function.name);
@@ -374,6 +375,39 @@ impl<'a> Checker<'a> {
                     }
                     ChildValue::Const(_) => {}
                     ChildValue::Expr(e) => self.expr_id(&item, &child.origin, *e),
+                }
+            }
+        }
+    }
+
+    /// The carriers each placement binds: one entry per carrier port of the child's body, each a
+    /// carrier of the parent holding the port's value type, or open.
+    fn child_carrier_ids(&mut self, body: &BodyData) {
+        let ir = self.ir;
+        let item = format!("body {}", body.name);
+        for (ci, bound) in body.child_carriers.iter().enumerate() {
+            if bound.is_empty() {
+                continue;
+            }
+            let Some(child) = body.children.get(ci) else {
+                self.report(item.clone(), body.origin.clone(), format!("carrier bindings of child {ci}, out of range ({} children)", body.children.len()));
+                continue;
+            };
+            let Some(callee) = ir.bodies.get(child.body.index()) else { continue };
+            let ports: Vec<_> = callee.carriers.iter().filter(|c| c.role != CarrierRole::Signal).collect();
+            if bound.len() != ports.len() {
+                self.report(item.clone(), child.origin.clone(), format!("child {} binds {} carriers, body {} has {} carrier ports", child.name, bound.len(), callee.name, ports.len()));
+            }
+            for (port, binding) in ports.iter().zip(bound) {
+                let Some(c) = binding else { continue };
+                match body.carriers.get(*c as usize) {
+                    None => self.report(item.clone(), child.origin.clone(), format!("child {}: carrier {c} out of range ({} carriers)", child.name, body.carriers.len())),
+                    Some(parent) if parent.ty != port.ty => self.report(
+                        item.clone(),
+                        child.origin.clone(),
+                        format!("child {} binds carrier {}: {} to the port {}: {}", child.name, parent.name, parent.ty, port.name, port.ty),
+                    ),
+                    Some(_) => {}
                 }
             }
         }

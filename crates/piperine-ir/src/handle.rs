@@ -172,6 +172,13 @@ impl<'a> Body<'a> {
         self.data().child_params.get(child).map_or(&[], Vec::as_slice)
     }
 
+    /// What child `child` (an index into `children`) binds at each carrier port of its body, in
+    /// the port order (the `in` and `out` carriers, signals left out): the index of the parent's
+    /// carrier, or `None` for an open port. Empty for a child with none recorded, or out of range.
+    pub fn child_carriers(&self, child: usize) -> &'a [Option<u32>] {
+        self.data().child_carriers.get(child).map_or(&[], Vec::as_slice)
+    }
+
     /// The discrete carriers, ports first, then signals.
     pub fn carriers(&self) -> &'a [Carrier] {
         &self.data().carriers

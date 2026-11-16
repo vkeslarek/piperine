@@ -741,11 +741,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The authored tree shows what each placement connects, nodes and carriers, as the POM-navigability rule of `CLAUDE.md` asks; `Child` gains no field
-- [ ] Every M1 and T29 golden print stays byte-identical (no binding, no line)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_child_records_its_carrier_bindings`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The authored tree shows what each placement connects, nodes and carriers, as the POM-navigability rule of `CLAUDE.md` asks; `Child` gains no field
+- [x] Every M1 and T29 golden print stays byte-identical (no binding, no line)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_child_records_its_carrier_bindings`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full
