@@ -47,6 +47,7 @@ impl<'a> AnalogPrinter<'a> {
             stims: body.stims().iter().map(|s| Text::generated(&format!("{}_stim", s.name))).collect(),
             carriers: body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
             flows: (0..body.branches().len() as u32).map(|b| Self::flow_name(b)).collect(),
+            previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
         };
         let values = ValuePrinter::of_body(body.ir(), body).with_reads(reads);
         AnalogPrinter { ir: body.ir(), body, plan, values }
@@ -78,11 +79,8 @@ impl<'a> AnalogPrinter<'a> {
             Source::Carrier(c) => {
                 self.body.carriers().get(c as usize).map_or_else(|| Text::generated(&format!("carrier{c}")), |x| Text::ident(&x.name))
             }
-            Source::CarrierChanged(c) | Source::CarrierPrevious(c) => {
-                let name = self.body.carriers().get(c as usize).map_or_else(|| format!("carrier{c}"), |x| x.name.clone());
-                let part = if matches!(s, Source::CarrierChanged(_)) { "changed" } else { "previous" };
-                Text::generated(&format!("{name}_{part}"))
-            }
+            Source::CarrierChanged(c) => Self::carrier_part(self.body, c, "changed"),
+            Source::CarrierPrevious(c) => Self::carrier_part(self.body, c, "previous"),
             Source::Delayed(k) | Source::DelayedChanged(k) => {
                 let carrier = self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);
                 let name = self.body.carriers().get(carrier as usize).map_or_else(|| format!("drive{k}"), |x| x.name.clone());
@@ -99,6 +97,12 @@ impl<'a> AnalogPrinter<'a> {
             Source::Static => Text::generated("is_static"),
             Source::Time => Text::generated("time"),
         }
+    }
+
+    /// The variable of a part of carrier `c`'s pin: `clk_changed_`, `clk_previous_`.
+    pub(crate) fn carrier_part(body: Body<'_>, c: u32, part: &str) -> String {
+        let name = body.carriers().get(c as usize).map_or_else(|| format!("carrier{c}"), |x| x.name.clone());
+        Text::generated(&format!("{name}_{part}"))
     }
 
     /// The variable of branch `b`'s flow pin: `b0_flow_`.
@@ -247,8 +251,9 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Flow { branch } => {
                     sources.insert(Source::BranchFlow(*branch));
                 }
-                // Nor the previous value (T62).
-                Expr::Previous(_) => {}
+                Expr::Previous(c) => {
+                    sources.insert(Source::CarrierPrevious(*c));
+                }
             }
         }
     }
@@ -274,7 +279,7 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn is_plain(&self, s: Source) -> bool {
         match s {
             Source::Param(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
-            Source::Carrier(_) | Source::Static => true,
+            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static => true,
             _ => false,
         }
     }
@@ -287,7 +292,7 @@ impl<'a> AnalogPrinter<'a> {
                 Some(ty) if *ty != ValueType::F64 => self.values.type_of(ty),
                 _ => Ok("R".to_string()),
             },
-            Source::Carrier(c) => match self.body.carriers().get(c as usize) {
+            Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
                 Some(carrier) => Ok(format!("rt::Flagged<{}>", self.values.pin_type(&carrier.ty)?)),
                 None => Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
@@ -311,7 +316,7 @@ impl<'a> AnalogPrinter<'a> {
                 ),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
-            Source::Carrier(c) => match self.body.carriers().get(c as usize) {
+            Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
                 Some(carrier) => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i}));", self.values.pin_type(&carrier.ty)?),
                 None => return Err(self.unsupported(&format!("a read of carrier {c}"))),
             },

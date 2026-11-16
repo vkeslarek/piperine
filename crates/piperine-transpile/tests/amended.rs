@@ -529,3 +529,61 @@ fn the_inductor_functions_pass_verify_partials() {
     }
     assert_eq!(checked, 3, "one terms function per body");
 }
+
+/// `module Seq(out x: Bit<u8>, out p: Bit<u8> = 9, out g: Bit = false)`:
+///
+/// ```text
+/// on at(1n) { x <- 3; }
+/// on at(2n) { x <- 5; }
+/// on x.changed() { p <- x.prev(); }
+/// on x.changed() if x.prev().is_known() { g <- true; }
+/// ```
+fn sequence(b: &mut IrBuilder) -> BodyId {
+    let u8 = ValueType::UInt(8);
+    let body = b.body(Buck::spec("Seq", F, 1));
+    b.carrier(body, Buck::carrier("x", u8.clone(), CarrierRole::Out, None, F, 1, 12));
+    b.carrier(body, Buck::carrier("p", u8.clone(), CarrierRole::Out, Some(Constant::Int(9)), F, 1, 28));
+    b.carrier(body, Buck::carrier("g", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 48));
+    for (line, at, value) in [(2, 1e-9, 3), (3, 2e-9, 5)] {
+        let time = Dx::new(b, F, line, 11).real(at);
+        let event = b.event(body, Event { source: EventSource::At(time), guard: None, origin: Buck::origin(F, line, 8) });
+        let mut x = Dx::new(b, F, line, 20);
+        let v = x.int(value, u8.clone());
+        let commit = x.commit(0, v, None);
+        Buck::reaction(b, body, vec![event], vec![commit], vec![], F, line);
+    }
+    let previous = |b: &mut IrBuilder, line, col| {
+        let x = Dx::new(b, F, line, col);
+        let o = x.origin();
+        x.b.expr(Expr::Previous(0), digital::Ty::flagged(u8.clone()), o)
+    };
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 4, 8) });
+    let prev = previous(b, 4, 30);
+    let commit = Dx::new(b, F, 4, 25).commit(1, prev, None);
+    Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 4);
+    let prev = previous(b, 5, 26);
+    let known = Dx::new(b, F, 5, 26).is_known(prev);
+    let guarded = b.event(body, Event { source: EventSource::Changed(0), guard: Some(known), origin: Buck::origin(F, 5, 8) });
+    let mut x = Dx::new(b, F, 5, 50);
+    let yes = x.boolean(true);
+    let commit = x.commit(2, yes, None);
+    Buck::reaction(b, body, vec![guarded], vec![commit], vec![], F, 5);
+    body
+}
+
+#[test]
+fn a_previous_value_is_read_in_a_guard_and_in_a_reaction() {
+    let mut w = Wire::new();
+    let body = sequence(&mut w.b);
+    let u8 = ValueType::UInt(8);
+    w.place("seq", body, vec![], &[("x", u8.clone()), ("p", u8), ("g", BIT)]);
+    let seen = Built::new(w.finish()).run(4e-9, 1e-9);
+    // x takes 3 at 1 ns and 5 at 2 ns
+    assert_eq!(seen.transient("x"), [(NS, vec![3, 1]), (2 * NS, vec![5, 1])]);
+    // part II §5.3.8: the first commit is a change; `prev()` is the value before the most recent
+    // change, so unknown at the first (the carrier held no value before it):
+    // the reaction commits unknown to p at 1 ns (all-zero bytes, abi.md P3), and 3 at 2 ns
+    assert_eq!(seen.transient("p"), [(NS, vec![0, 0]), (2 * NS, vec![3, 1])]);
+    // the guard reads the same previous value: unknown at 1 ns (no firing), 3 at 2 ns
+    assert_eq!(seen.transient("g"), [(2 * NS, HIGH.to_vec())]);
+}

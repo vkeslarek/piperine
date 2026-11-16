@@ -121,6 +121,8 @@ pub struct Reads {
     pub carriers: Vec<String>,
     /// By body branch: the variable of a potential branch's flow pin (`i(a, b)`, msl-digital A5).
     pub flows: Vec<String>,
+    /// By body carrier: the variable its pin's `PREVIOUS` was decoded into (`c.prev()`, A7).
+    pub previous: Vec<String>,
 }
 
 impl<'a> ValuePrinter<'a> {
@@ -686,7 +688,10 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the flow of a potential branch")),
             },
-            Expr::Previous(_) => Err(self.unsupported(e, "the previous value of a carrier")),
+            Expr::Previous(c) => match self.analog.as_ref().and_then(|r| r.previous.get(*c as usize)) {
+                Some(name) => atom(self.read(name)),
+                None => Err(self.unsupported(e, "the previous value of a carrier")),
+            },
             Expr::Limit { site, .. } => match self.analog.as_ref().and_then(|r| r.limits.get(*site as usize)) {
                 Some(name) => atom(name.clone()),
                 None => Err(self.unsupported(e, "limit")),

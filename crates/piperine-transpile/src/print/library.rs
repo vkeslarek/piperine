@@ -20,7 +20,6 @@ use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, StmtId};
 use piperine_plan::{BodyPlan, Mode};
 
 use crate::Error;
-use crate::print::amended::Amended;
 use crate::print::{AnalogPrinter, DigitalPrinter, ShapePrinter, Text, ValuePrinter};
 
 /// Prints a design.
@@ -36,8 +35,6 @@ impl LibraryPrinter {
         let at = top.body().origin().clone();
         let running: Vec<(piperine_ir::Body<'_>, &BodyPlan)> =
             ir.bodies().filter_map(|b| plans.get(b.id().index()).and_then(Option::as_ref).map(|p| (b, p))).collect();
-
-        Amended::refuse(ir, &running)?;
 
         let mut uses: BTreeSet<&'static str> = BTreeSet::new();
         let mut shapes = ShapePrinter::new();
