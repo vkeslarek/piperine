@@ -46,7 +46,7 @@ impl Checker<'_> {
                 ExprKind::Closure { .. } => self.closure(expr, expected),
                 ExprKind::Path(_) if matches!(expected, Ty::Fn(..)) && self.fn_value_at == Some(expr) && self.function_named(expr).is_some() => self.function_value(expr),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
-                    self.check(*cond, &Ty::Bool);
+                    self.condition(*cond);
                     self.statements(&then.stmts, Some(expected));
                     self.check(*else_, expected);
                     Some(expected.clone())
@@ -56,6 +56,7 @@ impl Checker<'_> {
                     self.mismatch_coded(file, node.span, code, "f64", "an integer literal");
                     Some(expected.clone())
                 }
+                ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -177,6 +178,7 @@ impl Checker<'_> {
             ExprKind::Block(block) => self.statements(&block.stmts, None),
             ExprKind::If { cond, then, else_ } => self.conditional(*cond, then, *else_),
             ExprKind::Call { .. } => self.call(expr),
+            ExprKind::Match { .. } => self.match_expr(expr, None),
             ExprKind::MethodCall { .. } => self.method_call(expr),
             ExprKind::Closure { .. } => {
                 self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
@@ -323,7 +325,7 @@ impl Checker<'_> {
     /// `if cond { then } else { else_ }`: with an `else` the common type of the two blocks;
     /// without one, `()`.
     fn conditional(&mut self, cond: ExprId, then: &BlockNode, else_: Option<ExprId>) -> Option<Ty> {
-        self.check(cond, &Ty::Bool);
+        self.condition(cond);
         // `if c { 0 } else { count + 1 }`: the first arm that is not a bare integer literal gives
         // the type the literal takes (local literal typing).
         if let Some(else_) = else_

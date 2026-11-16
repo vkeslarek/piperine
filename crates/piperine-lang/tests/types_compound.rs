@@ -215,3 +215,102 @@ fn a_value_for_an_option_parameter_is_some_of_it() {
     assert_eq!(snippet(&src, &d[0]), "true");
     assert!(d[0].diagnostic.message.contains("Option<f64>"), "{}", d[0].diagnostic.message);
 }
+
+/// `Mode` and `Fault` of the buck, and the supervisor's `match` and the setpoint register's
+/// `if let` written as functions over values (`supervisor.msl`, `control.msl`).
+fn supervisor_items() -> String {
+    format!(
+        "{}\n{}\nconst SETPOINT_MAX: u8 = 168;\n\
+         fn next_mode(m: Mode, retry: u11, fault_now: Option<Fault>, at_target: bool) -> Mode {{\n\
+             match m {{\n\
+                 Mode::Off => Mode::SoftStart,\n\
+                 Mode::Hiccup => if retry == 0 {{ Mode::SoftStart }} else {{ Mode::Hiccup }},\n\
+                 Mode::SoftStart | Mode::Regulate => {{\n\
+                     if let Some(f) = fault_now {{ Mode::Hiccup }} else if m == Mode::SoftStart && at_target {{ Mode::Regulate }} else {{ m }}\n\
+                 }}\n\
+             }}\n\
+         }}\n\
+         fn setpoint_next(data: Option<u8>, code: u8) -> u8 {{ if let Some(d) = data {{ d.min(SETPOINT_MAX) }} else {{ code }} }}",
+        buck_item("supervisor.msl", "pub enum Mode"),
+        buck_item("supervisor.msl", "pub enum Fault"),
+    )
+}
+
+#[test]
+fn match_is_typed_over_enums_bools_integers_and_options() {
+    // DIG-03 AC 4: `match` over an enum, a `bool`, an integer and an `Option`, with path,
+    // literal, `Some(p)`, `None`, or- and wildcard patterns, its arms of one type.
+    let items = format!("{}\nconst TWO: u2 = 2;", supervisor_items());
+    let body = "let m = next_mode(Mode::Off, 0, None, false); let s = setpoint_next(Some(200), 100); \
+                let b = match true { true => 1.0, false => 2.0 }; \
+                let k: u2 = 1; let i = match k { 0 => 5, 1 | TWO => 6, _ => 7 }; \
+                let o: Option<Fault> = None; let fo = match o { Some(Fault::Clear) => 1, Some(_) => 2, None => 3 }; \
+                let g = match o { Some(x) => x, None => Fault::Clear }; \
+                let w: u9 = 4; let h = match w { 0 => 9, _ => w };";
+    let src = source(&items, body);
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let (mode, fault) = (decl(&design, "Mode", true), decl(&design, "Fault", true));
+    let got: Vec<Ty> = ["m", "s", "b", "i", "fo", "g", "h", "x"].iter().map(|n| types.local(decl(&design, n, false)).cloned().expect("typed")).collect();
+    assert_eq!(got, [Ty::Enum(mode), Ty::UInt(8), Ty::F64, Ty::Int(32), Ty::Int(32), Ty::Enum(fault), Ty::UInt(9), Ty::Enum(fault)]);
+
+    // DIG-01 AC 2, the `match` arm position: a bare literal arm takes the type of the first arm
+    // that is not one (`9` is a `u9`, written before `w`).
+    let lit = (0..design.expr_count())
+        .map(|i| piperine_lang::pom::ExprId(i as u32))
+        .find(|e| matches!(&design.expr_node(*e).kind, piperine_lang::pom::ExprKind::Lit(_)) && &src[design.expr_node(*e).span.range()] == "9")
+        .expect("the literal 9");
+    assert_eq!(types.literal(lit), Some(&Ty::UInt(9)));
+
+    // §1 rule 14: a name that resolves to a constant is a path pattern and binds nothing; a name
+    // that resolves to nothing would bind, which a `match` arm of the subset does not do.
+    let (src, d) = diagnostics("", "let k: u2 = 1; let i = match k { x => 1.0 };");
+    assert_eq!(codes(&d), ["P0001"], "{src}");
+    assert_eq!(snippet(&src, &d[0]), "x");
+
+    // Arms of different types, and a pattern of another type, are mismatches.
+    let (src, d) = diagnostics("", "let b = match true { true => 1.0, false => false };");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "false");
+    let (src, d) = diagnostics(&supervisor_items(), "let m = Mode::Off; let x = match m { Fault::Clear => 1.0, _ => 2.0 };");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "Fault::Clear");
+}
+
+#[test]
+fn a_match_that_is_not_exhaustive_is_p0002() {
+    // DIG-03 AC 5: a `match` that does not cover every value of its scrutinee is `P0002`.
+    for body in [
+        "let m = Mode::Off; let x = match m { Mode::Off => 1.0, Mode::SoftStart => 2.0, Mode::Regulate => 3.0 };",
+        "let x = match true { true => 1.0 };",
+        "let k: u9 = 1; let x = match k { 0 => 1.0, 1 => 2.0 };",
+        "let o: Option<u8> = None; let x = match o { Some(1) => 1.0, None => 2.0 };",
+        "let o: Option<u8> = None; let x = match o { Some(v) => 1.0 };",
+    ] {
+        let (src, d) = diagnostics(&supervisor_items(), body);
+        assert_eq!(codes(&d), ["P0002"], "{src}");
+        assert!(snippet(&src, &d[0]).starts_with("match "), "{src}: {}", snippet(&src, &d[0]));
+    }
+    // Every value, and only then, passes: all four variants; every value of a `u2` by literals.
+    let ok = source(&supervisor_items(), "let m = Mode::Off; let x = match m { Mode::Off => 1.0, Mode::SoftStart => 2.0, Mode::Regulate => 3.0, Mode::Hiccup => 4.0 }; \
+                                         let k: u2 = 1; let y = match k { 0 => 1.0, 1 => 2.0, 2 | 3 => 3.0 };");
+    checked(&design_of(&ok), &ok);
+}
+
+#[test]
+fn if_let_some_binds_the_payload() {
+    // DIG-03 AC 6: `if let Some(x) = e` binds `x` to the payload in the first block; the
+    // setpoint register's `if let` as `setpoint_next` writes it.
+    let src = source(&supervisor_items(), "let s = setpoint_next(None, 100); let o: Option<f64> = Some(1.5); let y = if let Some(v) = o { v * 2.0 } else { 0.0 };");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let got: Vec<Ty> = ["s", "y", "v", "d"].iter().map(|n| types.local(decl(&design, n, false)).cloned().expect("typed")).collect();
+    assert_eq!(got, [Ty::UInt(8), Ty::F64, Ty::F64, Ty::UInt(8)]);
+
+    // The value must be an `Option`; the pattern must be `Some(p)`.
+    let (src, d) = diagnostics("", "let x = 1.0; let y = if let Some(v) = x { v } else { 0.0 };");
+    assert_eq!(codes(&d)[0], "P0002", "{src}");
+    assert_eq!(snippet(&src, &d[0]), "x");
+    let (src, d) = diagnostics("", "let o: Option<f64> = None; let y = if let None = o { 1.0 } else { 0.0 };");
+    assert_eq!(codes(&d), ["P0001"], "{src}");
+}

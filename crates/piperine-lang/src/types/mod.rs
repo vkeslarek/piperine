@@ -12,6 +12,7 @@ mod call;
 mod catalogue;
 mod check;
 mod compound;
+mod control;
 mod expr;
 mod module;
 mod table;
