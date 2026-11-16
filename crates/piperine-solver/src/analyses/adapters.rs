@@ -216,9 +216,9 @@ impl DiscreteSide for DigitalSide {
                     let kind = if crossing { ObservationKind::Crossing } else { ObservationKind::Change { bytes: Vec::new() } };
                     (net, at.0, kind)
                 }
-                DigitalObservation::Commit { instance, statement, made, due, .. } => {
+                DigitalObservation::Commit { instance, reaction, statement, made, due } => {
                     let due = due.map_or(Tick::MAX, |d| d.0.0);
-                    (instance, made.0, ObservationKind::Commit { statement, made: made.0.0, due, bytes: Vec::new() })
+                    (instance, made.0, ObservationKind::Commit { reaction, statement, made: made.0.0, due, bytes: Vec::new() })
                 }
                 DigitalObservation::Record { stream, at, bytes } => (stream, at.0, ObservationKind::Record { bytes }),
                 // abi.md §9 D1: a relaxed field that still moved is one record on the resolver's log.

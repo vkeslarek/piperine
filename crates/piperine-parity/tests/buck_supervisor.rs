@@ -238,7 +238,7 @@ fn the_supervisor_follows_its_state_table() {
     }
 
     // §8.5 and `std/io.msl`: the hiccup entry writes one `log` record of severity `Warning` (1);
-    // the supervisor's body has one reaction, so its statement gives the record's site
+    // the reaction and the statement of its commit give the record's site
     let body = built.ir.instance_at("SupervisorBench.sup").expect("the supervisor instance").body();
     let entries: Vec<i64> = (0..SAMPLES as usize)
         .filter(|&s| expected[s].mode == HICCUP && (s == 0 || expected[s - 1].mode != HICCUP))
@@ -260,7 +260,7 @@ fn the_supervisor_follows_its_state_table() {
         .iter()
         .filter(|o| o.analysis == AnalysisKind::Transient && o.path == "SupervisorBench.sup")
         .filter_map(|o| match &o.kind {
-            ObservationKind::Commit { statement, .. } => body.record_site(0, *statement),
+            ObservationKind::Commit { reaction, statement, .. } => body.record_site(*reaction, *statement),
             _ => None,
         })
         .map(|site| site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())

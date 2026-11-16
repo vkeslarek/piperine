@@ -39,7 +39,7 @@ fn obs(path: &str, time: f64) -> Observation {
         path: path.into(),
         analysis: AnalysisKind::OperatingPoint,
         time,
-        kind: ObservationKind::Commit { statement: 0, made: 0, due: 0, bytes: vec![1, 1] },
+        kind: ObservationKind::Commit { reaction: 0, statement: 0, made: 0, due: 0, bytes: vec![1, 1] },
     }
 }
 

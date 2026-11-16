@@ -145,8 +145,9 @@ pub struct Observation {
 pub enum ObservationKind {
     /// A net changed to these bytes.
     Change { bytes: Vec<u8> },
-    /// A commit, with the instants it was made and is due.
-    Commit { statement: u32, made: Tick, due: Tick, bytes: Vec<u8> },
+    /// A commit, with the reaction and the statement that made it (abi.md C5) and the instants
+    /// it was made and is due.
+    Commit { reaction: u32, statement: u32, made: Tick, due: Tick, bytes: Vec<u8> },
     /// A `CROSS` watch fired.
     Crossing,
     /// A commit to a `RECORD` pin.

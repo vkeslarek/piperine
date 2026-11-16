@@ -35,3 +35,17 @@ module LogBench() {
     let osc = Osc(clk) { f: 200M };
     let talk = Talk(clk);
 }
+
+/// Two reactions on the same edge, each with one `log` at its statement 0: a record is tied to
+/// its site by the reaction and the statement of its commit.
+module TwoTalk(in clk: Bit) {}
+digital for TwoTalk {
+    on clk.rise() { log(Severity::Warning, "first"); }
+    on clk.rise() { log(Severity::Error, "second"); }
+}
+
+module TwoBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let talk = TwoTalk(clk);
+}

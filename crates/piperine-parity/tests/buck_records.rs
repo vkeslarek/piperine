@@ -1,10 +1,10 @@
-//! Records from MSL source (feature `msl-digital`, T52; checks C104, C107, DIG-11 AC 4 and 5):
-//! the stdlib `Never` on a clock with `bad` held false and then true, and `log` from a reaction
-//! (`tests/buck/records.msl`). A `Sink` of this file decodes each record the solver delivers: a
-//! commit to a `RECORD` pin arrives as a `Commit` observation (the instance and the statement)
-//! followed by a `Record` observation (the stream and the field bytes), and
-//! `Body::record_site` gives the stream and the text fields of the statement, which never cross
-//! the ABI. Expected instants and values are written from std/monitor.msl, std/io.msl and
+//! Records from MSL source (feature `msl-digital`, T52 and T67; checks C104, C107, C180, DIG-11
+//! AC 1, 4 and 5): the stdlib `Never` on a clock with `bad` held false and then true, `log` from
+//! a reaction, and `log` from two reactions of one body (`tests/buck/records.msl`). A `Sink` of
+//! this file decodes each record the solver delivers: a commit to a `RECORD` pin arrives as a
+//! `Commit` observation (the instance, the reaction and the statement, abi.md C5) followed by a
+//! `Record` observation (the stream and the field bytes), and `Body::record_site` gives the
+//! stream and the text fields of that reaction's statement, which never cross the ABI. Expected instants and values are written from std/monitor.msl, std/io.msl and
 //! `docs/spec/part_vi_io.md` §19, not read back.
 #![cfg(unix)]
 
@@ -65,10 +65,9 @@ impl Sink for Decoder {
             return;
         }
         match &o.kind {
-            ObservationKind::Commit { statement, .. } => {
+            ObservationKind::Commit { reaction, statement, .. } => {
                 let Some(instance) = self.ir.instance_at(&o.path) else { return };
-                // every body of this file has one reaction, so the statement alone is the site
-                if let Some(site) = instance.body().record_site(0, *statement) {
+                if let Some(site) = instance.body().record_site(*reaction, *statement) {
                     self.pending.push(Waiting {
                         pin: format!("{}.{}", o.path, site.stream),
                         instance: o.path.clone(),
@@ -141,6 +140,26 @@ fn log_carries_its_severity_and_its_text() {
         assert_eq!(r.texts, vec![("msg".to_string(), text.to_string())]);
         assert_eq!(r.bytes[0], severity, "severity of record {k}: {:?}", r.bytes);
         assert_eq!(r.bytes[1], 1, "severity is known: {:?}", r.bytes);
+        assert_eq!(r.made, rise(k as i64 / 2 + 1));
+    }
+}
+
+#[test]
+fn records_of_two_reactions_are_told_apart() {
+    // 12 ns: rising edges 1 and 2 at 2.5 and 7.5 ns. `TwoTalk` has two reactions on the same
+    // edge, each a `log` at its statement 0: `Warning` (1) with the text `first`, then `Error`
+    // (2) with `second` (part VI §19, std/io.msl). The site of a record is the reaction and the
+    // statement of its commit (abi.md C5): keyed on the statement alone, both would read
+    // `first`. Reactions of one instant run in source order (§12.1.2), so each edge gives the
+    // first reaction's record, then the second's.
+    let all = records(&build(&with_buck("records.msl"), "TwoBench"), 12e-9);
+    assert_eq!(all.len(), 4, "two reactions at two edges: {all:?}");
+    for (k, r) in all.iter().enumerate() {
+        let (severity, text) = if k % 2 == 0 { (1, "first") } else { (2, "second") };
+        assert_eq!(r.instance, "TwoBench.talk");
+        assert_eq!(r.stream, "log");
+        assert_eq!(r.texts, vec![("msg".to_string(), text.to_string())], "record {k}");
+        assert_eq!((r.bytes[0], r.bytes[1]), (severity, 1), "severity of record {k}: {:?}", r.bytes);
         assert_eq!(r.made, rise(k as i64 / 2 + 1));
     }
 }
