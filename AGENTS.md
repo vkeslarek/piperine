@@ -5,21 +5,23 @@ diagram, crate table, known gaps) — read both before making changes.
 
 ## What Piperine is
 
-A mixed-signal language and simulator. `piperine-lang` parses and elaborates the source
-(Verilog-AMS LRM 2.4, `.vams`/`.va`, Annex A grammar only, C7 — never a third-party
-Verilog-A compiler) into a POM `Design`, type-checks the M1 subset (`types/`) and
-elaborates it into `piperine-ir`'s `Ir` (`elab/`). The native solver is three crates:
+A mixed-signal language and simulator. `piperine-lang` parses the Piperine mixed-signal
+language (MSL, `docs/spec/` is its only grammar and semantics source) into a POM `Design`,
+type-checks the M1 analog subset and the digital and mixed forms of `msl-digital` (`types/`)
+and elaborates them into `piperine-ir`'s `Ir` (`elab/`, MD-64). `piperine-transpile` prints the
+IR as Rust and builds it into a device library with `rustc` (MD-63); `examples/buck` runs whole
+from its `.msl`. The native solver is three crates:
 `piperine-solver` (analyses and the owner protocol over the device ABI) owning `piperine-analog-solver` and
 `piperine-digital-solver`, which meet only through events at an instant, run by the owner protocol (MD-62). PHDL was retired in full
 (MD-44/MD-45).
 
-**Only `piperine-lang`, `piperine-ir`, `piperine-abi` and the three solver crates compile today.** The root `piperine`
-shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` stay in the tree but do not
-build until the new device compiler lands.
+**The root `Cargo.toml`'s `default-members` are the crates that compile.** The root `piperine`
+shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` stay
+in the tree but do not build: the CLI and the project are next, the language server is deferred.
 
 ```
-source ──► piperine-lang ──► Design (POM) ──► Ir (piperine-ir) ──► device compiler (to come)
-                                                                       │
+source ──► piperine-lang ──► Design (POM) ──► Ir (piperine-ir) ──► piperine-transpile (Rust, rustc)
+                                                  (piperine-plan)      │
                        piperine-solver (owner) ◄───────────────────────┘
                        ├── piperine-analog-solver
                        └── piperine-digital-solver
@@ -38,8 +40,8 @@ solver crate may depend on besides those arrows. Breaking either arrow is a regr
 Always build and test before declaring work done:
 
 ```sh
-cargo build     # the default members: lang + the three solver crates; zero warnings is the bar
-cargo test      # their whole suite; never `--workspace` (four crates do not build yet)
+cargo build     # the default members; zero warnings is the bar
+cargo test      # their whole suite, ngspice parity included; never `--workspace` (five do not build)
 ```
 
 ## Workspace map
@@ -58,19 +60,18 @@ crates/
 ├── piperine-lang-server/     LSP server (does not build yet)
 ├── piperine-plan/             the plan both backends share: BodyPlan (shape + function table), Netlist::circuit (MD-63)
 ├── piperine-transpile/       the compiled backend: IR printed as Rust, built by rustc, cached, loaded (MD-63)
-└── piperine-parity/          M1 parity harness: ngspice goldens vs the MSL twins (test-only)
+└── piperine-parity/          parity harness (ngspice vs the MSL twins) and MSL from source (`Project`, buck_*) (test-only)
 ```
 
 ## Hard rules
 
-- **Fail loud.** Unlowered constructs return `CodegenError::Unsupported`; unknown nets,
-  params, or instances are loud errors at the host boundary. Never emit a silent `0.0`
-  or a no-op.
+- **Fail loud.** A construct outside the supported subset is a diagnostic naming it (`P0001`
+  at type check or elaboration, `Unsupported` in the transpiler); unknown nets, params, or
+  instances are loud errors at the host boundary. Never emit a silent `0.0` or a no-op.
 - **No `unwrap()`/`expect()`** on user-input paths (LSP protocol I/O included — every
   request id must receive a response).
-- **Frozen corpora:** `headers/`, `tests/fixtures*` — do not edit.
-- **Hand-written parsers** (`piperine-lang/src/{grammar,lexer.rs,parser.rs}`) — change only with tests proving
-  intent.
+- **Frozen corpora:** `tests/fixtures*` — do not edit.
+- **The parser** (`piperine-lang/src/msl/`) — change only with tests proving intent.
 
 ### Rust idiom rules (binding — recorded as MD-13)
 
@@ -111,10 +112,9 @@ the mechanical half of the rule.
 
 ## Documentation
 
-- Verilog-AMS language reference: `VAMS-LRM-2-4.md` (the sole grammar/semantics source)
-- `docs/spec/` — the Piperine mixed-signal language (MSL) specification, the target
-  design for the next frontend (not a description of the current VAMS frontend);
-  design record in `.specs/features/msl-spec/`
+- `docs/spec/` — the Piperine mixed-signal language (MSL) specification, the sole grammar
+  and semantics source of the front end; design record in `.specs/features/msl-spec/`
+- What does not work yet, ranked: `GAPS.md`
 - Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

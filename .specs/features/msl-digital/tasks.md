@@ -1853,8 +1853,8 @@ T54 → T55 → T66 → T67 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries` and `cargo test -p piperine-lang --test suite_hygiene` are green
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries` and `cargo test -p piperine-lang --test suite_hygiene` are green
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 
 **Tests**: none
 **Gate**: build

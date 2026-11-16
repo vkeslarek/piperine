@@ -1342,6 +1342,30 @@ backends give the solver the same pins, read order, partial order and affine fla
 grandes passos" (`.specs/features/codegen/context.md`, R4) and the approved
 `.specs/features/ir-rust/design.md`.
 
+### MD-64: result modules are hoisted in the IR; unknown-ness is an elaboration analysis; a record's text stays in the IR
+
+`msl-digital` (2026-11-16). Digital and mixed MSL reach the IR node set of `ir-rust` from source,
+and three choices fix how.
+
+1. **A module with a result is hoisted.** Its signals, drives, events and reactions join the
+   body that places it, named under the placement (`gate.x`, `above$0.init$0.up`); its result is
+   inlined at each read with its value inputs substituted (part III §8.3.12, Appendix C.1.1). It
+   gets no IR body and no instance. The POM keeps the placement as written (the navigability
+   rule): hoisting exists only in the IR.
+2. **Unknown-ness is computed at elaboration, not typed.** The checker gives the source's own
+   types (`count + 1` is `u9`); the elaborator's `Known` analysis gives an expression that may be
+   unknown the IR type `Flagged` (§3.3: the flag travels with the value, it is not part of its
+   type). A function is lowered once per flag pattern of its arguments.
+3. **The text of a record stays in the IR.** A `&str` field of `emit!` is a literal kept in the
+   IR's emit site, never on the ABI, which has no string leaf; a host ties a delivered record to
+   its texts with `Body::record_site(reaction, statement)`, keyed by the commit observation's
+   reaction and statement (abi.md C5).
+
+**Scope:** `crates/piperine-lang` (`types/`, `elab/`), `crates/piperine-ir`, `crates/piperine-plan`,
+`crates/piperine-transpile`, `CLAUDE.md`, `AGENTS.md`.
+**Status:** Accepted (2026-11-16), under the user's standing delegation and the approved
+`.specs/features/msl-digital/design.md` ("Tech Decisions").
+
 ---
 
 ## Handoff Snapshot
