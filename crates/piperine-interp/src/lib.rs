@@ -20,7 +20,7 @@ pub use device::{BodyFactory, Interpreted};
 pub use dual::Dual;
 pub use piperine_plan::BodyPlan;
 pub use walk::{Value, Walk};
-use piperine_ir::{BodyId, Broken, Ir};
+use piperine_ir::{Body, BodyId, Broken, Env, EventSource, Ir, Stmt, Target};
 use piperine_plan::{Modules, Netlist};
 use piperine_solver::prelude::CircuitInstance;
 
@@ -50,18 +50,27 @@ impl Interpreter {
         if !entries.is_empty() {
             return Err(Rejected { entries });
         }
-        // R1: the interpreter is frozen at the M1 analog subset; a digital body is named, not run.
-        let digital: Vec<Broken> = ir
-            .bodies()
-            .filter(|b| !(b.carriers().is_empty() && b.drives().is_empty() && b.events().is_empty() && b.reactions().is_empty()))
-            .map(|b| Broken {
-                item: format!("body {}", b.name()),
-                origin: b.origin().clone(),
-                what: format!("body {} has carriers, drives or reactions: the interpreter runs the M1 analog subset only (use the compiled backend)", b.name()),
-            })
-            .collect();
-        if !digital.is_empty() {
-            return Err(Rejected { entries: digital });
+        // R1: the interpreter is frozen at the M1 analog subset; a digital body is named, not run,
+        // and so is a body that holds a form the msl-digital amendments added.
+        let mut refused: Vec<Broken> = Vec::new();
+        for b in ir.bodies() {
+            if !(b.carriers().is_empty() && b.drives().is_empty() && b.events().is_empty() && b.reactions().is_empty()) {
+                refused.push(Broken {
+                    item: format!("body {}", b.name()),
+                    origin: b.origin().clone(),
+                    what: format!("body {} has carriers, drives or reactions: the interpreter runs the M1 analog subset only (use the compiled backend)", b.name()),
+                });
+            }
+            for form in Self::amended_forms(b) {
+                refused.push(Broken {
+                    item: format!("body {}", b.name()),
+                    origin: b.origin().clone(),
+                    what: format!("body {} holds {form}: the interpreter runs the M1 analog subset only", b.name()),
+                });
+            }
+        }
+        if !refused.is_empty() {
+            return Err(Rejected { entries: refused });
         }
         let modules = ir
             .bodies()
@@ -78,6 +87,40 @@ impl Interpreter {
             })
             .collect();
         Ok(Interpreter { ir, modules })
+    }
+
+    /// The amended forms `body` holds, each once, in a fixed order: what its dependency sets read
+    /// (the clock, the analysis, a branch flow, a previous value, through the functions it calls)
+    /// and the `at` events and emit sites it declares.
+    fn amended_forms(body: Body<'_>) -> Vec<&'static str> {
+        let mut targets: Vec<Target> = Vec::new();
+        for i in 0..body.branches().len() as u32 {
+            targets.extend([Target::Flow(i), Target::Charge(i)]);
+        }
+        targets.extend((0..body.limits().len() as u32).map(Target::Limit));
+        targets.extend((0..body.stims().len() as u32).map(Target::Stim));
+        targets.extend((0..body.params().len() as u32).map(Target::Check));
+        for i in 0..body.drives().len() as u32 {
+            targets.extend([Target::Drive(i), Target::DriveAfter(i)]);
+        }
+        for i in 0..body.events().len() as u32 {
+            targets.extend([Target::Guard(i), Target::Cross(i), Target::At(i)]);
+        }
+        targets.extend((0..body.reactions().len() as u32).map(Target::Reaction));
+        let (mut time, mut stat, mut flow, mut previous) = (false, false, false, false);
+        for t in targets {
+            let deps = body.dependencies(t);
+            time |= deps.env.contains(&Env::Time);
+            stat |= deps.env.contains(&Env::Static);
+            flow |= !body.flow_reads(t).is_empty();
+            previous |= !body.previous_reads(t).is_empty();
+        }
+        let at = body.events().iter().any(|e| matches!(e.source, EventSource::At(_)));
+        let emit = (0..body.reactions().len() as u32).any(|k| body.reaction_statements(k).iter().any(|s| matches!(body.ir().stmt(*s), Stmt::Emit { .. })));
+        [(time, "now()"), (stat, "analysis(Static)"), (at, "at(t)"), (emit, "emit!"), (flow, "the flow of a potential branch"), (previous, "the previous value of a carrier")]
+            .into_iter()
+            .filter_map(|(held, form)| held.then_some(form))
+            .collect()
     }
 
     /// The module of `body`; `None` for a body with no `analog` block and no held node, or an id
