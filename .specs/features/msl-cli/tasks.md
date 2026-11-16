@@ -1,0 +1,1733 @@
+# MSL CLI Tasks
+
+## Execution Protocol (MANDATORY -- do not skip)
+
+Implement these tasks with the `tlc-spec-driven` skill: **activate it by name and follow its Execute flow and Critical Rules.** Do not search for skill files by filesystem path. The skill is the source of truth for the full flow (per-task cycle, sub-agent delegation, the walk, check_proofs, the Verifier and the screens sub-agent).
+
+**If the skill cannot be activated, STOP and tell the user - do not proceed without it.**
+
+---
+
+**Design**: `.specs/features/msl-cli/design.md`
+**Status**: Draft. Not approved: the spec's eight open questions are the user's. These tasks follow the recommended option of each and change with the answers.
+**Build**: `cargo build -p piperine-project -p piperine-lang -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-api/src/failure.rs || cargo build -p piperine-api -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-cli/src/cli.rs || cargo build -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+**Run manifest**: `cargo test -p piperine-project --test manifest`
+**Run rcpkg**: `cargo test -p piperine-project --test project`
+**Run spectext**: `cargo test -p piperine-lang --test spec_text`
+**Run shape**: `cargo test -p piperine-solver --test workspace_shape`
+**Run apilib**: `cargo test -p piperine-api --lib`
+**Run project**: `cargo test -p piperine-api --test project`
+**Run session**: `cargo test -p piperine-api --test session`
+**Run probes**: `cargo test -p piperine-api --test probes`
+**Run analyses**: `cargo test -p piperine-api --test analyses`
+**Run records**: `cargo test -p piperine-api --test records`
+**Run clilib**: `cargo test -p piperine-cli --lib`
+**Run usage**: `cargo test -p piperine-cli --test usage`
+**Run run**: `cargo test -p piperine-cli --test run`
+**Run buck**: `cargo test -p piperine-cli --test buck`
+**Run options**: `cargo test -p piperine-cli --test options`
+**Run twins**: `cargo test -p piperine-cli --test twins`
+**Run commands**: `cargo test -p piperine-cli --test commands`
+**Run clibook**: `cargo test -p piperine-cli --test book`
+**Run book**: `cargo test -p piperine-lang --test book`
+**Run docs**: `cargo test -p piperine-cli --test docs`
+
+Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number or a wrong page with no error: T1, T6, T14, T21, T25, T36. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
+
+**This feature starts after `msl-digital` is merged into its worktree.** T1 confirms the merged code against design.md before anything else. Phases 1 to 3 (T1 to T21) are the minimal slice and are mergeable alone; phases 4 and 5 widen it; phase 6 writes the Book from what the binary prints.
+
+Rules every task follows:
+
+- **The CLI is a shell.** Every rule that decides what a user sees (which signals, rows and records, pass or fail, every validation) is a `piperine-api` method with a Rust test. `piperine-cli` parses, calls, lays out text and returns an exit code.
+- **`piperine-abi`, the three solver crates, `piperine-ir`, `piperine-plan`, `piperine-transpile`, `piperine-interp` and `piperine-lang` are not edited**, except the two test targets of `piperine-lang` and the one of `piperine-solver` a task names. A defect or a missing accessor found there stops the task and is reported.
+- **`piperine-parity` is not edited.** Its `Bench`, `Project` and `Backend` stay; queue item 4 decides their place.
+- **`examples/buck/src`, `crates/piperine-lang/std` and `tests/ngspice/` are not edited.**
+- **Fail loud.** A request the code does not handle is a `Failure` with a code or a usage error; never a default value, a skipped record, a truncated table or a silent exit 0.
+- **Standard output is data and is deterministic**: no wall-clock time, no absolute path, no cache key. Progress and diagnostics go to standard error.
+- **Tests state what the spec says, not what the code does.** Expected values are computed in the test from the MSL source, `docs/spec/`, the spec of this feature or `examples/buck/SPEC.md`, each cited at its assertion. Test functions have exactly the names `## Checks` cites.
+- **End-to-end tests run the real binary** (`env!("CARGO_BIN_EXE_piperine")`) on a project on disk. Each sets `PIPERINE_CACHE_DIR` on the child process to a temporary directory shared by its target. No test sets a variable of its own process, writes the user's cache, or needs the network or ngspice.
+- **No tolerance is invented.** The three analog tolerances the checks name (1e-9 exact arithmetic, 1e-3 relative as the parity contract's, 1e-2 degree) are the spec's; a number you cannot explain: stop and report.
+- **The deletions of T4 and T5 are the only ones.** They remove code and tests of the deleted front end in one commit each, the commit body listing every target. No other test is removed, weakened or skipped.
+- **AGENTS.md idiom rules bind**: no loose function, no macro of your own, no derive from `clap`, modules named after what they do, no `unwrap()`/`expect()` on a path a user's input reaches. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
+- Zero warnings on every crate the `**Build**` line names. Cargo with `-p <crate>` or the default members: never `--workspace`, never `cargo clean`.
+- One atomic commit per task, message as given, with the `Co-Authored-By:` trailer the session gives. No push, no merge.
+- If `lessons.py` is run, `git status` afterwards and restore `.specs/lessons.json` and `.specs/LESSONS.md` if they changed.
+
+---
+
+## Test Coverage Matrix
+
+> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `CLAUDE.md` and `AGENTS.md` (zero warnings; fail loud; the Rust idiom rules of MD-13; test placement MD-28: a target lives in the crate it exercises, root `tests/` holds no Rust target; every target opens with a `//!` scope header), `crates/piperine-lang/tests/suite_hygiene.rs` (no `#[ignore]`, no switched-off test, no file-scope lint suppression), `crates/piperine-solver/tests/workspace_shape.rs` (default members, the crate table of the instruction files), `crates/piperine-lang/tests/book.rs` (the Book's blocks), `.github/workflows/ci.yml` (`cargo build`, `cargo test`, `RUSTFLAGS=-D warnings`, ngspice installed). Samples read for style: `crates/piperine-project/tests/manifest.rs`, `crates/piperine-parity/tests/{bench,parity_tran,backend}.rs`, `crates/piperine-transpile/tests/{compile,cache}.rs`.
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| The manifest parser (`piperine-project`) | unit | CLI-02 AC 4: accepted, located, a non-table refused; every existing manifest test still green | `crates/piperine-project/tests/manifest.rs` | `cargo test -p piperine-project` |
+| Pure rules of `piperine-api`: the run request, the backend order, the print grid, the verdict | unit | every branch; 1:1 to the ACs of CLI-03, CLI-04 AC 7, CLI-09 AC 3 to 5, CLI-11 AC 4 and 5, CLI-16 AC 2 and 3; every listed edge case | inline `#[cfg(test)]` in `crates/piperine-api/src/{request,backend,table,verdict}.rs` | `cargo test -p piperine-api --lib` |
+| `piperine-api` over real sources: project, session, probes, analyses, records | integration | each AC of CLI-02, CLI-04, CLI-05, CLI-06, CLI-09, CLI-10, CLI-12 AC 1 and 2 on MSL on disk; both backends wherever the AC names both; every failure with its code | `crates/piperine-api/tests/{project,session,probes,analyses,records}.rs` | `cargo test -p piperine-api` |
+| Text layout of `piperine-cli`: tables, numbers, record lines, JSON, diagnostics, the flag table | unit | exact strings; every value kind; CLI-03 AC 2 | inline `#[cfg(test)]` in `crates/piperine-cli/src/{cli.rs,render/*.rs}` | `cargo test -p piperine-cli --lib` |
+| The commands of `piperine-cli` | e2e | the real binary on a project on disk: the happy path of every command, every listed edge case, every failure with its exit code and its stream | `crates/piperine-cli/tests/{usage,run,buck,options,twins,commands}.rs`, fixtures in `crates/piperine-cli/tests/projects/` | `cargo test -p piperine-cli` |
+| Example projects (`examples/rc`, `examples/buck` bench and runs) | e2e | each runs through the binary with the values its source and the buck SPEC give | `crates/piperine-cli/tests/{run,buck}.rs`, `crates/piperine-project/tests/project.rs` | `cargo test -p piperine-cli --test run --test buck` |
+| The Book | integration | CLI-19: the chapter's place; every file block equal to the example's file; every output block equal to the binary's output; stand-alone | `crates/piperine-cli/tests/book.rs`, `crates/piperine-lang/tests/book.rs` | `cargo test -p piperine-cli --test book`; `cargo test -p piperine-lang --test book` |
+| Spec text, instruction files, gap lists, the decision log | integration | the sentence or row each AC of CLI-02 AC 4 and CLI-20 names | `crates/piperine-lang/tests/spec_text.rs`, `crates/piperine-cli/tests/docs.rs`, `crates/piperine-solver/tests/workspace_shape.rs` | `cargo test -p piperine-cli --test docs` |
+| `contract.md` | none | - (read by every later task; build gate only) | - | build gate only |
+
+## Gate Check Commands
+
+> Generated from codebase - confirm before Execute.
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | After tasks with unit tests only | `cargo test -p <the crate the task edits> --lib` (for `piperine-project`: `cargo test -p piperine-project --test manifest`; for T38: `cargo test -p piperine-cli --test docs`) |
+| Full | After tasks with integration or e2e tests | `cargo test -p piperine-project -p piperine-api -p piperine-cli` |
+| Build | After a phase, and after tasks that touch manifests, guards, the spec, the Book or the instruction files | every command of the `**Build**` line, then Full, then `cargo test -p piperine-lang --test book --test spec_text --test pom_docs` |
+
+---
+
+## Execution Plan
+
+Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in numeric order. An arrow is a dependency inside the phase; a dependency on an earlier phase is in the task's `Depends on` only.
+
+### Phase 1: Foundation: the contract and crates that build
+
+Executor: Sonnet; T1 and T6 are Opus's.
+
+```
+T1 → T2
+T2 → T3
+T1 → T4
+T4 → T5
+T2 → T6
+```
+
+### Phase 2: The session: from a project to results and records
+
+Executor: Sonnet; T14 is Opus's.
+
+```
+T7 → T8
+T8 → T9
+T9 → T10
+T10 → T11
+T11 → T12
+T12 → T13
+T13 → T14
+```
+
+### Phase 3: `piperine run`: the minimal slice
+
+Executor: Sonnet; T21 is Opus's. **The MVP ends here**: `piperine run` on a project prints the operating point or the transient and the `emit!` records.
+
+```
+T15 → T18
+T16 → T18
+T17 → T18
+T18 → T19
+T19 → T20
+T20 → T21
+```
+
+### Phase 4: Analyses and output formats
+
+Executor: Sonnet; T25 is Opus's.
+
+```
+T22 → T23
+T22 → T24
+T25 → T26
+T27 → T28
+T26 → T28
+T23 → T29
+```
+
+### Phase 5: `check`, `build`, `test`, `new`, `clean`
+
+Executor: Sonnet.
+
+```
+T30 → T31
+T32 → T33
+T31 → T33
+T33 → T34
+T34 → T35
+```
+
+### Phase 6: The Book and the records of the feature
+
+Executor: Sonnet; T36 is Opus's.
+
+```
+T36 → T37
+T39 → T40
+T38
+```
+
+---
+
+## Task Breakdown
+
+## Phase 1 tasks
+
+### T1: The contract with the merged msl-digital
+
+**What**: Read the merged `main` (after `msl-digital`) and write `contract.md`: for every name this design takes from that feature's design text, the actual type, method and file. It covers: the stream accessors of an IR body and how a record's site and text fields are found from an `Observation`; the layout of a `RECORD` pin; `ObservationKind::Record`'s fields; how a top with discrete ports is elaborated; the bench forms a reaction may use (a timer, a crossing, `now()`, a node probe, `emit!`, `require`); whether DIG-16 (the buck's closed loop) merged, with the name and the run time of its test; the parity `Project`. Each difference from design.md gets a line saying which task absorbs it. A record that cannot name its site, or a missing DIG-16, is reported to the orchestrator before T2 starts.
+**Where**: `.specs/features/msl-cli/contract.md`
+**Depends on**: None
+**Reuses**: `.specs/features/msl-digital/contract.md` as the model
+**Requirement**: CLI-06, CLI-08
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `contract.md` has one row per name of design.md "Code Reuse Analysis" that arrives with `msl-digital`, each with file and line
+- [ ] It states, with the test that shows it, how a `Record` observation is tied to its `emit!` site
+- [ ] It states whether `examples/buck` runs closed loop, and the wall-clock time of that test in a dev build
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] No test is removed or edited
+
+**Tests**: none
+**Gate**: build
+
+**Commit**: `docs(specs): msl-cli contract with the merged msl-digital`
+
+---
+
+### T2: A manifest may hold a run table
+
+**What**: `Manifest::run: Option<Span>`; the manifest parser accepts the top-level key `run` when its value is a table and reads nothing inside it; any other type is `E0171`.
+**Where**: `crates/piperine-project/src/manifest.rs`
+**Depends on**: T1
+**Reuses**: the hand-walked spanned TOML of the same file
+**Requirement**: CLI-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No existing test of `crates/piperine-project/tests/` is edited except to add cases
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-project --test manifest`: `a_run_table_is_accepted_and_located`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(project): a manifest may hold a run table`
+
+---
+
+### T3: The manifest rule of the spec admits the run table
+
+**What**: One sentence in rule 3 of the manifest section and one row in its key table: the `run` table is allowed, its content belongs to the host and is not defined by the language, and a dependency's is not read. The wording of `E0171` stays true.
+**Where**: `docs/spec/part_i_values.md`
+**Depends on**: T2
+**Reuses**: MD-57: a spec edit lands with its guard
+**Requirement**: CLI-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `cargo test -p piperine-lang --test spec_text --test pom_docs` pass
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test spec_text`: `the_manifest_rule_admits_the_run_table`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs(spec): the manifest may hold a run table the language does not define`
+
+---
+
+### T4: piperine-api starts over
+
+**What**: Delete every file under `crates/piperine-api/src` and `crates/piperine-api/tests`. Write the new crate: `lib.rs`, `prelude.rs`, `failure.rs` (`Failure`, design Components) and `backend.rs` (`Backend`, `Backend::choose`). The manifest depends on `piperine-lang`, `piperine-project`, `piperine-ir`, `piperine-interp`, `piperine-transpile`, `piperine-solver`, `toml`. The root package builds as the re-export it is. `default-members` and `DEFAULT_MEMBERS` gain `.`, `crates/piperine-api` and `crates/piperine-project`. The commit body lists every deleted test target.
+**Where**: `crates/piperine-api/`
+**Depends on**: T1
+**Reuses**: `piperine_parity::backend::Backend` for the two names
+**Requirement**: CLI-01, CLI-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `cargo build -p piperine-api -p piperine --all-targets` has zero warnings
+- [ ] `cargo test -p piperine-lang --test suite_hygiene` and `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries` pass
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-solver --test workspace_shape`: `the_root_package_is_a_re_export_and_nothing_else`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `backend::tests::the_flag_then_the_variable_then_the_key_then_rust`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the deletion this task states
+
+**Tests**: unit
+**Gate**: build
+
+**Commit**: `feat(api)!: piperine-api starts over on the device ABI`
+
+---
+
+### T5: piperine-cli starts over
+
+**What**: Delete every file under `crates/piperine-cli/src`, `tests`, `templates` and `build.rs`. Write `main.rs`, `lib.rs`, `exit.rs` (`Exit`) and `cli.rs` (`Cli::command` from a data table with `clap`'s builder, `Cli::parse`, `Invocation`, `Cli::execute`). The six commands parse; a command whose task has not landed prints `<command>: not built yet` on standard error and exits 1. `clap` without the `derive` feature. `default-members` and `DEFAULT_MEMBERS` gain `crates/piperine-cli`. The guard `host_crates_name_no_deleted_surface` is added to `workspace_shape`. The commit body lists every deleted test target.
+**Where**: `crates/piperine-cli/`
+**Depends on**: T4
+**Reuses**: nothing of the old `lib.rs`
+**Requirement**: CLI-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `cargo build` at the root builds the binary `target/debug/piperine` with zero warnings
+- [ ] `crates/piperine-cli/tests/usage.rs` runs the real binary (`env!("CARGO_BIN_EXE_piperine")`)
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-solver --test workspace_shape`: `default_members_are_the_green_crates`, `host_crates_name_no_deleted_surface`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test usage`: `the_binary_is_named_piperine`, `help_lists_exactly_the_six_commands`, `version_prints_the_workspace_version`, `an_unknown_command_or_flag_exits_2`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 6 test(s) named above, and no existing test removed or edited beyond the deletion this task states
+
+**Tests**: e2e
+**Gate**: build
+
+**Commit**: `feat(cli)!: piperine-cli starts over as a shell over piperine-api`
+
+---
+
+### T6: The RC example project
+
+**What**: `examples/rc`: `Piperine.toml` (package `rc`, runs `op` and `step`), `src/lib.msl` (`Resistor`, `Capacitor`, `Vsource`, as the M1 device library writes them), `benches/step.msl` (the top `Step`: source, R = 1 kΩ, C = 1.5915494309189535 nF, the output held at 0; a monitor whose reaction fires when the output crosses 0.5 V, calls `emit!("trip", ...)` with the time and the voltage, and one `require` that holds), `.gitignore` (`target/`). Written in the forms `contract.md` lists as accepted. `examples/Piperine.toml` and `examples/Piperine.lock` are deleted.
+**Where**: `examples/rc/`
+**Depends on**: T2
+**Reuses**: `tests/ngspice/devices.msl`, `tests/ngspice/tran_rc.msl`
+**Requirement**: CLI-19
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `cargo test -p piperine-solver --test workspace_shape` passes (`examples_hold_no_vams_or_python`)
+- [ ] The `step` run's `print`, `print_step` and `stop` give a table of at most 12 rows
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-project --test project`: `the_rc_example_resolves_with_no_diagnostic`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(examples): the RC low-pass project`
+
+---
+
+## Phase 2 tasks
+
+### T7: RunSpec: reading a run table
+
+**What**: `RunSpec`, `Analysis`, `Grid` and `RunSpec::read(manifest_text, file)`: every `[run.<name>]` into a `RunSpec`, each fault a `Failure::Request` with `P0010` at the span of the key, the value or the name. The rules of CLI-03 AC 1, 4 to 7 and CLI-09 AC 3 and 5.
+**Where**: `crates/piperine-api/src/request.rs`
+**Depends on**: T4
+**Reuses**: `piperine_lang::msl::{Diagnostic, Span}`; the manifest parser's spanned walk
+**Requirement**: CLI-03, CLI-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `request::tests::a_run_table_reads_its_eighteen_keys`, `request::tests::an_unknown_key_or_a_wrong_type_is_p0010_at_its_span`, `request::tests::analysis_is_one_of_four`, `request::tests::a_transient_needs_a_positive_stop`, `request::tests::a_key_outside_its_analysis_is_p0010`, `request::tests::a_run_name_is_an_identifier`, `request::tests::a_dc_sweep_needs_its_four_keys_and_a_step_toward_to`, `request::tests::an_ac_grid_is_exactly_one_of_two_and_its_range_is_ordered`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 8 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(api): RunSpec reads a run table`
+
+---
+
+### T8: Overrides: flags over keys
+
+**What**: `Overrides` (one field per key), `RunSpec::merged(&Overrides)` (flag over key, then the same validation as a table) and `RunSpec::from_flags(name, &Overrides)`.
+**Where**: `crates/piperine-api/src/request.rs`
+**Depends on**: T7
+**Reuses**: the validation of T7, called once more after the merge
+**Requirement**: CLI-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `request::tests::a_flag_overrides_a_key`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(api): flags override the keys of a run`
+
+---
+
+### T9: Project: discovery and the crate graph of a run
+
+**What**: `Project::{discover, at, file, name, dir, runs, request, design}` (design Components). `design` adds the bench crate `bench` as the root over the package and its direct dependencies, or roots at the package.
+**Where**: `crates/piperine-api/src/project.rs`
+**Depends on**: T8
+**Reuses**: `piperine_project::{resolve, find_project_root}`, `CrateGraph`, the parity `Project` as the pattern
+**Requirement**: CLI-02, CLI-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Fixtures are built in temporary directories by the test; none is written into the repository
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test project`: `discover_takes_the_nearest_manifest_upward`, `a_dependencys_run_table_is_ignored`, `a_bench_is_the_root_crate_over_the_package_and_its_dependencies`, `a_run_without_a_bench_roots_at_the_package`, `a_lone_file_with_no_manifest_is_a_crate_alone`, `a_file_under_a_package_is_its_bench`, `a_file_under_src_is_refused_with_p0010`, `a_missing_bench_file_is_p0010_at_the_value`, `the_only_run_is_run_without_a_name`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 9 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): Project finds a package and builds the graph of a run`
+
+---
+
+### T10: Session::open: source to a bound circuit
+
+**What**: `Session::open(&Project, &RunSpec, &Settings)`: the top (key, or the one module without ports, else `P0011`), `Types::check`, `Elaborator::run`, the backend (`Interpreter` or `Transpiler::compile`), the circuit. `Session::{top, backend, ir, built}`. Each refusing stage is a `Failure` naming it. The circuit field drops before the compiled library.
+**Where**: `crates/piperine-api/src/session.rs`
+**Depends on**: T9
+**Reuses**: the stage order of `Bench::load_file_on`; the counting compiler wrapper of `crates/piperine-transpile/tests/compile.rs`
+**Requirement**: CLI-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Every Rust-backend test passes its own cache directory through `Settings`; none writes the user's cache or sets a variable
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test session`: `the_top_key_names_the_module`, `the_one_portless_module_is_the_top`, `no_top_or_several_is_p0011_with_candidates`, `a_missing_rustc_names_rustc_and_the_interpreter`, `the_interpreter_refusal_names_the_body_and_the_rust_backend`, `a_run_compiles_once_and_never_during_an_analysis`, `a_top_with_discrete_in_ports_runs_with_them_unknown`, `a_top_with_a_continuous_port_is_the_front_ends_diagnostic`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 8 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): Session::open takes a run from source to a circuit`
+
+---
+
+### T11: Probe: what a column shows
+
+**What**: `Probe::{Node, Net, Flow}`, `Probe::resolve` (relative or full path, `i(<instance>)`, `E0801`), `Probe::defaults`, `Probe::label`. `Session::open` resolves the run's `print` list.
+**Where**: `crates/piperine-api/src/probe.rs`
+**Depends on**: T10
+**Reuses**: `Bench::{node, source}`, `Ir::{node_at, instance_at}`
+**Requirement**: CLI-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test probes`: `the_default_is_the_tops_own_signals_in_order`, `a_node_a_net_and_a_flow_resolve_relative_or_full`, `a_column_is_named_by_the_full_path`, `an_entry_that_names_nothing_is_e0801_before_any_analysis`, `a_signal_printed_twice_is_two_columns`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): Probe resolves a print entry to a node, a net or a flow`
+
+---
+
+### T12: Table and the operating point
+
+**What**: `Table`, `Cell`, `Table::operating_point`, and the `Op` arm of `Session::run`. Discrete nets are decoded by their carrier type from the result's bytes.
+**Where**: `crates/piperine-api/src/table.rs`
+**Depends on**: T11
+**Reuses**: `Solver::dc`, `DcAnalysisResult::{get_node, get_branch}`
+**Requirement**: CLI-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test analyses`: `an_operating_point_is_signal_and_value_in_print_order`, `the_divider_mid_is_7_5_on_both_backends`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): the operating point of a run as a table`
+
+---
+
+### T13: The transient of a run
+
+**What**: `Table::transient` and the `Transient` arm of `Session::run`, with the options of design "How an analysis reaches the solver".
+**Where**: `crates/piperine-api/src/table.rs`
+**Depends on**: T12
+**Reuses**: `Solver::{with_tran_opts, tran}`, `TransientStep::{time, get_node, digital_named}`
+**Requirement**: CLI-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test analyses`: `a_transient_has_one_row_per_accepted_step`, `the_rc_step_follows_one_minus_exp_on_both_backends`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): the transient of a run as a table`
+
+---
+
+### T14: Records: from the sink to typed records
+
+**What**: `Record`, `Field`, `Streams::{of, decode}`, `RecordSink`, and the adapter that implements `protocol::Sink` and hands each decoded record to the `RecordSink` of `Session::run` as it is delivered. Bytes are decoded by the stream's layout as `contract.md` states it; a text field comes from the IR site; a field with its known byte clear is `Field::Unknown`.
+**Where**: `crates/piperine-api/src/record.rs`
+**Depends on**: T13
+**Reuses**: `protocol::{Sink, Observation, ObservationKind}`, `Solver::with_sink`, the IR's stream accessors
+**Requirement**: CLI-06
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] Expected values are written from the MSL source of each fixture and `docs/spec/part_vi_io.md`, cited at the assertion
+- [ ] A bytes length that does not match the layout is a `Failure`, never a truncated record
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test records`: `an_emit_gives_one_record_with_time_instance_stream_and_fields`, `records_arrive_in_time_order`, `a_text_field_is_the_sources_literal`, `an_unknown_field_is_unknown`, `a_failed_require_is_one_checks_record_with_pass_false`, `a_design_without_emit_gives_no_record`, `a_reserved_stream_keeps_its_name_and_its_site`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 7 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): emit! records reach the host decoded`
+
+---
+
+## Phase 3 tasks
+
+### T15: Rendering a table and a number
+
+**What**: `Number::text(&Cell)` (the one place a number becomes text) and `TextTable::write(&Table, out)`.
+**Where**: `crates/piperine-cli/src/render/table.rs`
+**Depends on**: T12
+**Reuses**: none
+**Requirement**: CLI-05, CLI-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `Number` lives in `render/number.rs`, declared from `render/table.rs`'s module; the test module path is `render::number::tests`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::number::tests::numbers_have_one_text_each`, `render::table::tests::a_table_is_left_aligned_two_spaces_no_trailing_space`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(cli): a result table as aligned text`
+
+---
+
+### T16: Rendering a record line
+
+**What**: `RecordLine::write(&Record, out)`: `@<time> <instance> <stream> <field>=<value> ...`, a text in double quotes, an unknown as `x`.
+**Where**: `crates/piperine-cli/src/render/record.rs`
+**Depends on**: T14
+**Reuses**: `Number::text`
+**Requirement**: CLI-06
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::record::tests::a_record_is_one_line`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(cli): a record as one line`
+
+---
+
+### T17: Rendering a failure
+
+**What**: `Report::write(&Failure, err)`: every diagnostic through `miette`'s graphical handler with its code, file, line and excerpt, no color unless standard error is a terminal; then `error: <stage> failed with <n> diagnostic(s)`. Package errors and run-table errors render against `Piperine.toml`; backend and solver failures print their message.
+**Where**: `crates/piperine-cli/src/render/diagnostic.rs`
+**Depends on**: T4
+**Reuses**: `piperine_lang::msl::diag`'s renderer; `PackageError`'s `miette` impl
+**Requirement**: CLI-02, CLI-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::diagnostic::tests::a_diagnostic_has_code_file_line_and_excerpt`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(cli): failures rendered with code, file, line and excerpt`
+
+---
+
+### T18: piperine run: a named run
+
+**What**: `RunCommand::execute`: discover the project, take the named run, open the session (announcing a first compile on standard error), print the header, print each record as it arrives, then the empty line and the table; exit 0. `--backend` and `--project` are global flags.
+**Where**: `crates/piperine-cli/src/commands/run.rs`
+**Depends on**: T15, T16, T17
+**Reuses**: `Project::{discover, request}`, `Session::{open, run}`, the three renderers
+**Requirement**: CLI-06, CLI-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `crates/piperine-cli/tests/run.rs` runs the real binary in `examples/rc` with `PIPERINE_CACHE_DIR` set on the child to one temporary directory shared by the target
+- [ ] The expected header and the table's first column are written from `examples/rc`'s manifest, not copied from a run
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test run`: `records_come_before_the_table`, `run_prints_header_records_blank_line_and_table`, `a_completed_run_exits_0`, `stdout_is_the_same_from_two_caches_and_two_directories`, `a_first_compile_is_announced_on_stderr`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): piperine run prints records and the result of a named run`
+
+---
+
+### T19: piperine run: flags and a lone file
+
+**What**: One flag per run key in the command table (CLI-03 AC 2), parsed into `Overrides`; a positional ending in `.msl` is a lone file (`Project::file`, `RunSpec::from_flags`, the stem as the run name).
+**Where**: `crates/piperine-cli/src/cli.rs`
+**Depends on**: T18
+**Reuses**: `RunSpec::{merged, from_flags}`
+**Requirement**: CLI-02, CLI-03, CLI-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test run`: `the_project_flag_uses_that_directory_and_never_searches`, `a_lone_file_run_is_named_by_its_stem`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `cli::tests::every_run_key_has_its_flag`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): every run key is a flag, and a lone file runs with flags`
+
+---
+
+### T20: piperine run: failures and exit codes
+
+**What**: Every failure path of `run`: nothing on standard output before the analysis; records kept when the analysis fails; exit 1 for the design and the run, exit 2 for the command line (no run name with several runs, an unknown run, no `--analysis`, a flag twice, a bad `--backend`); a closed standard output ends the command with exit 1. Fixture projects under `crates/piperine-cli/tests/projects/`: `type_error`, `bad_run_table`, `missing_dependency`, `two_sources` (two voltage sources in parallel), `fails_after_emit`, `two_runs`.
+**Where**: `crates/piperine-cli/src/commands/run.rs`
+**Depends on**: T19
+**Reuses**: `Report::write`, `Exit`
+**Requirement**: CLI-02, CLI-03, CLI-04, CLI-05, CLI-07
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No test weakens an exit code to make a fixture pass; a fixture that cannot produce its failure is reported
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test run`: `no_manifest_is_e0170_and_exit_1`, `a_package_error_is_rendered_with_code_file_and_line`, `no_name_with_no_run_or_several_lists_them_and_exits_2`, `an_unknown_run_name_lists_the_runs_and_exits_2`, `a_lone_file_without_analysis_exits_2`, `a_single_valued_flag_given_twice_exits_2`, `a_type_error_is_rendered_with_its_stage_and_exits_1`, `a_bad_backend_exits_2_for_the_flag_and_1_otherwise`, `a_solver_failure_prints_no_table_and_exits_1`, `a_failure_before_the_analysis_prints_nothing_on_stdout`, `records_stay_when_the_analysis_fails`, `a_closed_stdout_ends_with_exit_1_and_no_panic`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 12 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): run fails loud, with one exit code per kind of failure`
+
+---
+
+### T21: The buck's bench and runs
+
+**What**: `examples/buck/benches/startup.msl` (the bench of `msl-digital` DIG-16, as `contract.md` locates it: setpoint code 0, `en` raised, Vin 12 V, a 6.6 Ω load) and, in `examples/buck/Piperine.toml`, the runs `idle` (`en` low, 20 µs) and `startup` (600 µs), each with `print`, `print_step` and `streams` chosen so the output is at most 16 lines. `examples/buck/src` is not edited. One shared fixture of the test target runs `startup` once; the commit body states its wall-clock time.
+**Where**: `examples/buck/benches/startup.msl`
+**Depends on**: T20
+**Reuses**: the bench sources of `crates/piperine-parity/tests/buck/`
+**Requirement**: CLI-08
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `cargo test -p piperine-lang --test buck_example` still passes
+- [ ] A number that differs from buck SPEC is reported, not adjusted
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test buck`: `the_buck_has_its_bench_and_two_runs`, `startup_ends_with_the_reference_at_128`, `startup_prints_no_failed_check`, `idle_keeps_the_mode_off`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(examples): the buck starts from the command line`
+
+---
+
+## Phase 4 tasks
+
+### T22: The DC sweep of a run
+
+**What**: `Table::sweep` and the `Dc` arm of `Session::run`: per point a `set` of the swept param and an operating point; the points of CLI-09 AC 1; `E0801` for a sweep path that names no param, at `Session::open`.
+**Where**: `crates/piperine-api/src/session.rs`
+**Depends on**: T13
+**Reuses**: the loop of `crates/piperine-parity/tests/parity_dc.rs`; `CircuitInstance::set`
+**Requirement**: CLI-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test analyses`: `a_dc_sweep_has_one_row_per_point`, `the_diode_sweep_has_37_rows`, `a_sweep_of_no_param_is_e0801`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): the DC sweep of a run`
+
+---
+
+### T23: The AC sweep of a run
+
+**What**: `Table::frequency` (magnitude, and phase in degrees) and the `Ac` arm of `Session::run`; `Analysis::Ac`'s point count for `PerDecade` and `Points`.
+**Where**: `crates/piperine-api/src/table.rs`
+**Depends on**: T22
+**Reuses**: `Solver::ac`, `AcSweepAnalysisOptions`, `AcAnalysisStep::get_node`
+**Requirement**: CLI-09
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test analyses`: `an_ac_sweep_has_mag_and_phase_in_degrees`, `points_sweeps_linearly`, `the_rc_corner_is_minus_3_db_and_minus_45_degrees`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `request::tests::per_decade_gives_round_n_log10_plus_one_points`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): the AC sweep of a run`
+
+---
+
+### T24: Params of a run
+
+**What**: `Session::open` sets each entry of `params` in order (the table's, then the flags') before any analysis: a path that names nothing is `E0801`, a refused write is `E0802` with the path and the value.
+**Where**: `crates/piperine-api/src/session.rs`
+**Depends on**: T22, T19
+**Reuses**: `CircuitInstance::set`, `ParamValue::Real`
+**Requirement**: CLI-10
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `crates/piperine-cli/tests/options.rs` is created here with the e2e case
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test analyses`: `params_are_set_in_order_table_then_flags`, `a_param_path_that_names_nothing_is_e0801`, `a_refused_value_is_e0802_and_nothing_runs`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test options`: `the_divider_with_r2_at_1k_gives_5`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(api): a run sets its params before the analysis`
+
+---
+
+### T25: The print grid
+
+**What**: `Table::on_grid(step, stop)`: one row per multiple of `step` not past `stop`; a real column interpolated linearly between the two accepted steps around the time; a `bool` or integer column held from the last step at or before it; an unknown stays unknown. `Session::run` applies it when the run has `print_step`.
+**Where**: `crates/piperine-api/src/table.rs`
+**Depends on**: T13
+**Reuses**: the rule of `piperine_parity::waveform::Waveform::at`
+**Requirement**: CLI-11
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] A time that falls exactly on an accepted step gives that step's value, not an interpolation
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `table::tests::a_print_grid_has_one_row_per_multiple`, `table::tests::continuous_is_interpolated_and_discrete_is_held`, `table::tests::a_grid_wider_than_the_run_is_the_row_at_zero`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(api): a transient table on a print grid`
+
+---
+
+### T26: CSV output
+
+**What**: `CsvTable::write(&Table, out)` and the `csv` key in `RunCommand`: the file replaces the table on standard output, which gets `wrote <file> (<n> rows)`; a relative path is resolved against the project directory (the working directory for a lone file); a write error is `Failure::Io`.
+**Where**: `crates/piperine-cli/src/render/csv.rs`
+**Depends on**: T25, T19
+**Reuses**: `Number::text`
+**Requirement**: CLI-11
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test options`: `csv_writes_the_table_and_prints_wrote`, `an_existing_csv_is_replaced`, `an_unwritable_csv_names_the_path_and_exits_1`, `a_relative_output_path_is_under_the_project`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): a result table as CSV`
+
+---
+
+### T27: The stream filter
+
+**What**: `Streams::keep(&[String])`: an entry keeps every stream of that name and the one stream of that full path; an entry that matches nothing is `E0801` at `Session::open`. `decode` returns nothing for a stream that is not kept.
+**Where**: `crates/piperine-api/src/record.rs`
+**Depends on**: T14
+**Reuses**: `Streams::of`
+**Requirement**: CLI-12
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test records`: `keep_matches_a_stream_name_or_its_full_path`, `a_filter_entry_that_matches_nothing_is_e0801`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test options`: `the_stream_flag_keeps_only_that_stream`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): a run keeps only the streams it names`
+
+---
+
+### T28: Records to a file
+
+**What**: `JsonRecord::write(&Record, out)`, written by hand (five value kinds, string escaping of `"`, `\` and control characters), and the `records` key in `RunCommand`: every kept record goes to the file, none to standard output.
+**Where**: `crates/piperine-cli/src/render/json.rs`
+**Depends on**: T27, T26
+**Reuses**: none
+**Requirement**: CLI-12
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] A real is written with Rust's shortest round-trip form, so reading the file gives the same `f64`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test options`: `records_go_to_the_file_as_json_lines_and_not_to_stdout`, `an_existing_records_file_is_replaced`, `csv_and_records_leave_the_header_and_the_wrote_line`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::json::tests::each_value_kind_has_its_json`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): records as JSON Lines`
+
+---
+
+### T29: The seven twins from the command line
+
+**What**: The e2e target that runs each MSL twin of `tests/ngspice/` through the binary with flags, on both backends, with the analysis and the grid its `.cir` names, and compares the two backends' standard output byte for byte after the header line. A difference is reported, not tolerated.
+**Where**: `crates/piperine-cli/tests/twins.rs`
+**Depends on**: T23, T19
+**Reuses**: the grids of `crates/piperine-parity/tests/parity_{op,dc,ac,tran}.rs`
+**Requirement**: CLI-13
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No file under `tests/ngspice/` is edited
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test twins`: `the_three_op_twins_run_on_both_backends`, `the_sweep_and_transient_twins_run_on_both_backends`, `the_two_backends_print_the_same_bytes`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `test(cli): the seven parity twins run from the command line on both backends`
+
+---
+
+## Phase 5 tasks
+
+### T30: piperine check
+
+**What**: `Project::check` (the package graph, every crate, every bench, and for every run the top, the type check and the elaboration; every failure collected, no backend) and `CheckCommand::execute` (the `ok` line or every diagnostic). A lone file is checked as its own crate.
+**Where**: `crates/piperine-cli/src/commands/check.rs`
+**Depends on**: T20
+**Reuses**: `Session::open`'s stages before the backend, factored so both call the same code
+**Requirement**: CLI-14
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `crates/piperine-cli/tests/commands.rs` is created here; its fixtures live under `crates/piperine-cli/tests/projects/`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test commands`: `check_runs_every_stage_and_no_backend`, `check_prints_ok_with_the_counts`, `check_renders_every_diagnostic_and_exits_1`, `check_without_a_run_says_type_checking_needs_one`, `check_takes_a_lone_file`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): piperine check`
+
+---
+
+### T31: piperine build
+
+**What**: `BuildCommand::execute`: open a session per run, print `built <name>: compiled | cached | interp, nothing to compile`, with `--verbose` the generated source's path on the next line; go on after a failing run; exit 1 if any failed.
+**Where**: `crates/piperine-cli/src/commands/build.rs`
+**Depends on**: T30
+**Reuses**: `Session::built`, `Compiled::{report, source_path}`
+**Requirement**: CLI-15
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test commands`: `build_prints_one_line_per_run`, `a_second_build_is_cached_and_compiles_nothing`, `verbose_prints_a_source_path_that_exists`, `build_goes_on_after_a_failing_run_and_exits_1`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): piperine build`
+
+---
+
+### T32: Verdict: pass or fail of a run
+
+**What**: `Verdict::judge(&[Record])`, `passed`, `checks`, `failed`: a `checks` record whose `pass` is false or unknown fails the run.
+**Where**: `crates/piperine-api/src/verdict.rs`
+**Depends on**: T14
+**Reuses**: `Record`, `Field`
+**Requirement**: CLI-16
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `verdict::tests::no_false_and_no_unknown_pass_is_a_pass`, `verdict::tests::an_unknown_pass_fails`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(api): the verdict of a run from its checks`
+
+---
+
+### T33: piperine test
+
+**What**: `TestCommand::execute`: every run in manifest order, or the named ones; `PASS`/`FAIL` lines, the failing records, no table and no other record; the count line; exit 1 when a run failed. Fixture projects `failing_require` and `one_pass_one_fail`.
+**Where**: `crates/piperine-cli/src/commands/test.rs`
+**Depends on**: T32, T31
+**Reuses**: `Verdict`, `RecordLine`
+**Requirement**: CLI-08, CLI-16
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test buck`: `piperine_test_passes_on_the_buck`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test commands`: `test_runs_every_run_or_the_named_ones`, `test_prints_pass_with_the_check_count`, `test_prints_fail_and_the_failing_records`, `test_prints_no_table_and_no_other_record`, `a_run_that_does_not_complete_is_a_fail`, `the_last_line_counts_and_the_exit_code_follows`, `a_project_without_a_run_passes_with_zero`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 8 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): piperine test judges every run by its checks`
+
+---
+
+### T34: piperine new
+
+**What**: `NewCommand::execute`: the four files of `examples/rc` embedded with `include_str!`, the package name replaced; refuses an existing directory and a name the manifest rule forbids (`piperine_lang::pom::is_crate_name`, not `std`), writing nothing.
+**Where**: `crates/piperine-cli/src/commands/new.rs`
+**Depends on**: T33
+**Reuses**: `examples/rc`, `is_crate_name`
+**Requirement**: CLI-17
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test commands`: `new_creates_the_four_files_and_says_created`, `new_writes_the_rc_example_under_the_new_name`, `new_refuses_an_existing_directory`, `new_refuses_a_name_the_manifest_rule_forbids`, `a_new_project_checks_runs_and_tests`, `new_without_a_name_exits_2`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 6 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): piperine new creates the RC project`
+
+---
+
+### T35: piperine clean
+
+**What**: `CleanCommand::execute`: removes `<project>/target`; with `--cache` the directory `Settings::from_environment` names; says what it removed; `nothing to remove` otherwise. The last "not built yet" arm is gone and `Cli` has no such text.
+**Where**: `crates/piperine-cli/src/commands/clean.rs`
+**Depends on**: T34
+**Reuses**: `piperine_transpile::Settings`
+**Requirement**: CLI-01, CLI-18
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `cli::tests::every_command_is_built`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test commands`: `clean_removes_the_target_directory`, `clean_cache_removes_the_compiled_cache`, `clean_with_nothing_to_remove_exits_0`, `clean_touches_nothing_else`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: build
+
+**Commit**: `feat(cli): piperine clean`
+
+---
+
+## Phase 6 tasks
+
+### T36: The Book: the command line
+
+**What**: A chapter `cli`, "The command line", after `compiler` and before `cheatsheet` (which becomes chapter 17): what a project is and its tree; the RC project file for file; `check`, `run op`, `run step` and `test` each with its real output; print debugging with `emit!` (the statement, the record line, `--stream`, `--records`); the run table key by key with its flag; a lone file with flags; backends and where the generated Rust is (`build --verbose`); the buck with its bench, its `startup` table and its real output; the commands, exit codes and the codes `P0010`, `P0011`. Written for a reader who has only the Book. `crates/piperine-cli/tests/book.rs` extracts the chapter's blocks with the string functions of the lang target and holds them to `examples/rc`, `examples/buck` and the binary. `crates/piperine-lang/tests/book.rs` gains the chapter in its list and order test. `docs/book/build.py` highlights the output blocks as plain text.
+**Where**: `docs/book/content.html`
+**Depends on**: T35, T21
+**Reuses**: the voice and the block conventions of chapters 14 and 15; `examples/rc`; the shared `startup` fixture of T21
+**Requirement**: CLI-19
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] Every output block was pasted from the binary and the guard, not the author, says it is equal
+- [ ] `python3 docs/book/build.py` exits 0 and `cargo test -p piperine-lang --test book` passes whole
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test book`: `the_cli_chapter_sits_between_compiler_and_cheatsheet`, `every_msl_block_parses`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test book`: `the_chapter_shows_the_rc_project_file_for_file`, `the_rc_output_blocks_are_what_the_binary_prints`, `the_buck_block_is_what_the_binary_prints`, `the_chapter_explains_emit_as_print`, `the_chapter_lists_commands_keys_flags_codes`, `the_chapter_stands_alone`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 8 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs(book): the command line, with projects that run`
+
+---
+
+### T37: The Book: chapter 15 and the cheat sheet
+
+**What**: Chapter `compiler`: the status callout and "What comes next" say the command line exists and point at the next chapter by name; the sentence "A host picks one" names `--backend`. The cheat sheet gains the six commands.
+**Where**: `docs/book/content.html`
+**Depends on**: T36
+**Reuses**: the two tests added to `crates/piperine-lang/tests/book.rs`
+**Requirement**: CLI-19
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test book`: `the_compiler_chapter_says_the_command_line_exists`, `the_cheat_sheet_lists_the_six_commands`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs(book): chapter 15 and the cheat sheet know the command line`
+
+---
+
+### T38: The buck's README
+
+**What**: "Status" and "Driving it from a host" of the buck's README: the converter runs from its source; `piperine run startup` and `piperine test` with what they show; the Python sketch stays as the sketch of a host that does not exist yet and says so. `crates/piperine-cli/tests/docs.rs` is created with this file's guard.
+**Where**: `examples/buck/README.md`
+**Depends on**: T33
+**Reuses**: none
+**Requirement**: CLI-20
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `the_buck_readme_says_how_to_run_it`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `docs(examples): the buck's README says how to run it`
+
+---
+
+### T39: CLAUDE.md and AGENTS.md
+
+**What**: Both instruction files: the four host crates build and are default members; the rows of `piperine-api`, `piperine-cli`, `piperine-project` and the root package say what this feature left; the build section drops "never pass `--workspace` because four crates do not build" for the true statement (only `piperine-lang-server` stays outside); the pipeline diagram ends in the hosts that exist.
+**Where**: `CLAUDE.md`
+**Depends on**: T35
+**Reuses**: `instructions_list_the_kept_crates` of `workspace_shape`
+**Requirement**: CLI-20
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `AGENTS.md` receives the same statements; `cargo test -p piperine-solver --test workspace_shape` passes
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `the_instruction_files_say_the_host_crates_build`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs: the instruction files describe the host crates as built`
+
+---
+
+### T40: GAPS, ROADMAP and the decision
+
+**What**: `GAPS.md`: §1 and §2 rewritten for a CLI and an API that build, and the gaps left (no host stimulus from the CLI, no Python host, the language server, `fmt`, no trace records from `analog`, the features of the old API that left). `ROADMAP.md`: item 3 of the queue marked done with the commit. `.specs/STATE.md`: the decision of design "Tech Decisions" under the next free `MD-NN`.
+**Where**: `GAPS.md`
+**Depends on**: T39
+**Reuses**: design "Tech Decisions", last paragraph
+**Requirement**: CLI-20
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `ROADMAP.md` and `.specs/STATE.md` are edited in the same commit; item 3b's instruction (present `GAPS.md` to the user before the spec-completeness pass) is left as it is
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `gaps_drops_what_closed_and_lists_what_is_left`, `the_roadmap_marks_the_cli_item_done`, `state_records_the_cli_decision`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs: GAPS, ROADMAP and the decision after msl-cli`
+
+---
+
+## Checks
+
+One claim per acceptance criterion of the spec, and per edge case (`edge <k>` is the k-th line of the spec's Edge Cases, filed under the requirement it belongs to). A criterion proven at two layers has two checks. Each proof names the line its test prints.
+
+**C1** - `default-members` lists `.`, `crates/piperine-api`, `crates/piperine-cli` and `crates/piperine-project`, and the `**Build**` line builds them with zero warnings. (CLI-01, AC 1; T5)
+Proof: run shape | test default_members_are_the_green_crates ... ok
+
+**C2** - The binary `piperine` is a target of `piperine-cli`. (CLI-01, AC 2; T5)
+Proof: run usage | test the_binary_is_named_piperine ... ok
+
+**C3** - The root `src/lib.rs` holds `pub use piperine_api::*;` and no other item. (CLI-01, AC 3; T4)
+Proof: run shape | test the_root_package_is_a_re_export_and_nothing_else ... ok
+
+**C4** - No source of `piperine-api` or `piperine-cli` names `parse_and_elaborate`, `Element`, `piperine_codegen`, `piperine_python`, `piperine_plugin` or `.vams`. (CLI-01, AC 4; T5)
+Proof: run shape | test host_crates_name_no_deleted_surface ... ok
+
+**C5** - `piperine --help` lists `check`, `build`, `run`, `test`, `new`, `clean` and no other command, exit 0. (CLI-01, AC 5; T5)
+Proof: run usage | test help_lists_exactly_the_six_commands ... ok
+
+**C6** - After the last command task no command answers "not built yet". (CLI-01, AC 5; T35)
+Proof: run clilib | test cli::tests::every_command_is_built ... ok
+
+**C7** - `piperine --version` prints `piperine 0.2.0` (the workspace version), exit 0. (CLI-01, AC 6; T5)
+Proof: run usage | test version_prints_the_workspace_version ... ok
+
+**C8** - An unknown command and an unknown flag each print a usage error on standard error and exit 2. (CLI-01, AC 7; T5)
+Proof: run usage | test an_unknown_command_or_flag_exits_2 ... ok
+
+**C9** - From `<pkg>/benches/deep/` the project found is `<pkg>`, and an inner package wins over an outer one. (CLI-02, AC 1; T9)
+Proof: run project | test discover_takes_the_nearest_manifest_upward ... ok
+
+**C10** - `--project <dir>` runs the package at `<dir>` from an unrelated working directory; a `<dir>` with no manifest is `E0170` even when its parent has one. (CLI-02, AC 2; T19)
+Proof: run run | test the_project_flag_uses_that_directory_and_never_searches ... ok
+
+**C11** - With no manifest upward, `piperine run x` prints `E0170` on standard error and exits 1. (CLI-02, AC 3; T20)
+Proof: run run | test no_manifest_is_e0170_and_exit_1 ... ok
+
+**C12** - A manifest with `[run.a]` parses; `Manifest::run` is the span of the key `run`; a `run` that is not a table is `E0171`. (CLI-02, AC 4; T2)
+Proof: run manifest | test a_run_table_is_accepted_and_located ... ok
+
+**C13** - The manifest section of `docs/spec/` says the `run` table is allowed and that the language does not define its content, and its key table has the row. (CLI-02, AC 4; T3)
+Proof: run spectext | test the_manifest_rule_admits_the_run_table ... ok
+
+**C14** - A dependency whose manifest holds a malformed `[run]` table loads, and its runs are not the project's. (CLI-02, AC 5; T9)
+Proof: run project | test a_dependencys_run_table_is_ignored ... ok
+
+**C15** - A dependency `path` with no manifest prints `E0172`, `Piperine.toml` and the offending line on standard error, exit 1. (CLI-02, AC 6; T20)
+Proof: run run | test a_package_error_is_rendered_with_code_file_and_line ... ok
+
+**C16** - For a run with a bench, the design's root crate is `bench`, and a path through the package's name and one through a direct dependency's name both resolve from it. (CLI-02, AC 7; T9)
+Proof: run project | test a_bench_is_the_root_crate_over_the_package_and_its_dependencies ... ok
+
+**C17** - For a run with no bench, the design's root crate is the package's crate. (CLI-02, AC 8; T9)
+Proof: run project | test a_run_without_a_bench_roots_at_the_package ... ok
+
+**C18** - `Project::file` on a file with no manifest upward gives a design of that file and `std` only. (CLI-02, AC 9; T9)
+Proof: run project | test a_lone_file_with_no_manifest_is_a_crate_alone ... ok
+
+**C19** - `Project::file` on `<pkg>/benches/x.msl` gives a design whose root depends on `<pkg>`. (CLI-02, AC 10; T9)
+Proof: run project | test a_file_under_a_package_is_its_bench ... ok
+
+**C20** - `Project::file` on `<pkg>/src/a.msl` is `P0010` whose message says the file is part of the crate. (CLI-02, AC 11; T9)
+Proof: run project | test a_file_under_src_is_refused_with_p0010 ... ok
+
+**C21** - A table with all eighteen keys of CLI-03 AC 1 reads into a `RunSpec` with each value where the key says. (CLI-03, AC 1; T7)
+Proof: run apilib | test request::tests::a_run_table_reads_its_eighteen_keys ... ok
+
+**C22** - Each of the eighteen keys has the flag CLI-03 AC 2 names, and the flags parse into `Overrides`. (CLI-03, AC 2; T19)
+Proof: run clilib | test cli::tests::every_run_key_has_its_flag ... ok
+
+**C23** - `stop = 1e-3` in the table and `--stop 2e-3` give a run with `stop` 2e-3; a key no flag names keeps the table's value. (CLI-03, AC 3; T8)
+Proof: run apilib | test request::tests::a_flag_overrides_a_key ... ok
+
+**C24** - `stopp = 1` and `stop = "x"` are each `P0010` whose span covers that key in the manifest text. (CLI-03, AC 4; T7)
+Proof: run apilib | test request::tests::an_unknown_key_or_a_wrong_type_is_p0010_at_its_span ... ok
+
+**C25** - A missing `analysis` and `analysis = "tran"` are each `P0010` naming `op`, `dc`, `ac`, `transient`. (CLI-03, AC 5; T7)
+Proof: run apilib | test request::tests::analysis_is_one_of_four ... ok
+
+**C26** - A transient with no `stop`, with `stop = 0`, with `max_step = -1` and with `print_step = 0` is each `P0010` naming the key. (CLI-03, AC 6; T7)
+Proof: run apilib | test request::tests::a_transient_needs_a_positive_stop ... ok
+
+**C27** - `stop` on an `op` run and `sweep` on a `transient` run are each `P0010` naming the key and the analysis. (CLI-03, AC 7; T7)
+Proof: run apilib | test request::tests::a_key_outside_its_analysis_is_p0010 ... ok
+
+**C28** - `bench = "benches/none.msl"` is `P0010` whose span is the string. (CLI-03, AC 8; T9)
+Proof: run project | test a_missing_bench_file_is_p0010_at_the_value ... ok
+
+**C29** - `Project::request(None, ..)` on a project with one run returns it. (CLI-03, AC 9; T9)
+Proof: run project | test the_only_run_is_run_without_a_name ... ok
+
+**C30** - `piperine run` on a project with two runs names both on standard error and exits 2; with none it says there is no run and exits 2. (CLI-03, AC 10; T20)
+Proof: run run | test no_name_with_no_run_or_several_lists_them_and_exits_2 ... ok
+
+**C31** - `piperine run nope` names the project's runs on standard error and exits 2. (CLI-03, AC 11; T20)
+Proof: run run | test an_unknown_run_name_lists_the_runs_and_exits_2 ... ok
+
+**C32** - `piperine run divider.msl` with no `--analysis` exits 2 naming `--analysis`. (CLI-03, AC 12; T20)
+Proof: run run | test a_lone_file_without_analysis_exits_2 ... ok
+
+**C33** - `[run."a b"]` is `P0010` at the name. (CLI-03, AC edge 1; T7)
+Proof: run apilib | test request::tests::a_run_name_is_an_identifier ... ok
+
+**C34** - `--stop 1 --stop 2` exits 2 naming `--stop`. (CLI-03, AC edge 2; T20)
+Proof: run run | test a_single_valued_flag_given_twice_exits_2 ... ok
+
+**C35** - With two modules without ports and `top = "B"`, the session's top is `B`. (CLI-04, AC 1; T10)
+Proof: run session | test the_top_key_names_the_module ... ok
+
+**C36** - With one module without ports and no `top`, it is the top. (CLI-04, AC 2; T10)
+Proof: run session | test the_one_portless_module_is_the_top ... ok
+
+**C37** - No module without ports is `P0011`; two with no `top` is `P0011` naming both. (CLI-04, AC 3; T10)
+Proof: run session | test no_top_or_several_is_p0011_with_candidates ... ok
+
+**C38** - A rendered diagnostic holds its code, the file name, the line number and the source line. (CLI-04, AC 4; T17)
+Proof: run clilib | test render::diagnostic::tests::a_diagnostic_has_code_file_line_and_excerpt ... ok
+
+**C39** - A project with a type error prints `P0002`, the file, the line, the excerpt and `typeck failed` on standard error, exit 1. (CLI-04, AC 4; T20)
+Proof: run run | test a_type_error_is_rendered_with_its_stage_and_exits_1 ... ok
+
+**C40** - With `Settings::rustc` naming a file that does not exist, `Session::open` on the Rust backend fails with a message holding `rustc` and `interp`. (CLI-04, AC 5; T10)
+Proof: run session | test a_missing_rustc_names_rustc_and_the_interpreter ... ok
+
+**C41** - A design with a carrier on the interpreter fails with a message holding the body's name and `--backend rust`. (CLI-04, AC 6; T10)
+Proof: run session | test the_interpreter_refusal_names_the_body_and_the_rust_backend ... ok
+
+**C42** - `Backend::choose` returns the flag, else the variable, else the key, else `Rust`, over all eight presence patterns. (CLI-04, AC 7; T4)
+Proof: run apilib | test backend::tests::the_flag_then_the_variable_then_the_key_then_rust ... ok
+
+**C43** - `--backend x` exits 2; `PIPERINE_BACKEND=x` (set on the child) and `backend = "x"` exit 1; each names `interp` and `rust`. (CLI-04, AC 8; T20)
+Proof: run run | test a_bad_backend_exits_2_for_the_flag_and_1_otherwise ... ok
+
+**C44** - Under a compiler wrapper that counts, one `Session::open` plus a transient invokes the design build once, and a second session on the same cache zero times. (CLI-04, AC 9; T10)
+Proof: run session | test a_run_compiles_once_and_never_during_an_analysis ... ok
+
+**C45** - A top with a discrete `in` port opens and its operating point gives that port as unknown. (CLI-04, AC edge 5; T10)
+Proof: run session | test a_top_with_discrete_in_ports_runs_with_them_unknown ... ok
+
+**C46** - A top with an `Electrical` port fails with the front end's diagnostic for it. (CLI-04, AC edge 6; T10)
+Proof: run session | test a_top_with_a_continuous_port_is_the_front_ends_diagnostic ... ok
+
+**C47** - An `op` table has the columns `signal`, `value` and its rows follow `print` order. (CLI-05, AC 1; T12)
+Proof: run analyses | test an_operating_point_is_signal_and_value_in_print_order ... ok
+
+**C48** - A transient table's first column is `time`, its times increase strictly from 0 to `stop`, and it has one column per printed signal. (CLI-05, AC 2; T13)
+Proof: run analyses | test a_transient_has_one_row_per_accepted_step ... ok
+
+**C49** - With no `print`, the probes are the top's signals and ports in declaration order and no signal of a child. (CLI-05, AC 3; T11)
+Proof: run probes | test the_default_is_the_tops_own_signals_in_order ... ok
+
+**C50** - `mid`, `Divider.mid`, a discrete net and `i(v1)` each resolve; the relative and the full spelling give the same probe. (CLI-05, AC 4; T11)
+Proof: run probes | test a_node_a_net_and_a_flow_resolve_relative_or_full ... ok
+
+**C51** - The labels are `Divider.mid` and `i(Divider.v1)`. (CLI-05, AC 5; T11)
+Proof: run probes | test a_column_is_named_by_the_full_path ... ok
+
+**C52** - `print = ["nope"]` fails `Session::open` with `E0801` naming `nope`. (CLI-05, AC 6; T11)
+Proof: run probes | test an_entry_that_names_nothing_is_e0801_before_any_analysis ... ok
+
+**C53** - 10 V over 1 kΩ and 3 kΩ: `Divider.mid` is 7.5 within 1e-9 on `interp` and on `rust`. (CLI-05, AC 7; T12)
+Proof: run analyses | test the_divider_mid_is_7_5_on_both_backends ... ok
+
+**C54** - RC = 1.5915494309189535e-6 s: at the first row at or after RC, `TranRc.out` is within 1e-3 of `1 - exp(-t/RC)`, on both backends. (CLI-05, AC 8; T13)
+Proof: run analyses | test the_rc_step_follows_one_minus_exp_on_both_backends ... ok
+
+**C55** - A circuit with two voltage sources in parallel at different values prints the solver's error on standard error, no table, exit 1. (CLI-05, AC 9; T20)
+Proof: run run | test a_solver_failure_prints_no_table_and_exits_1 ... ok
+
+**C56** - 7.5 is `7.500000e0`, 1.25e-6 is `1.250000e-6`, `true` is `true`, 42 is `42`, unknown is `x`. (CLI-05, AC 10; T15)
+Proof: run clilib | test render::number::tests::numbers_have_one_text_each ... ok
+
+**C57** - `print = ["mid", "mid"]` gives two columns in that order. (CLI-05, AC edge 3; T11)
+Proof: run probes | test a_signal_printed_twice_is_two_columns ... ok
+
+**C58** - A reaction with `emit!("s", a = 1.5, b = true)` fired by a timer at 1 µs gives one record: time 1e-6, the instance path of the site, stream `s`, fields `a` = 1.5 then `b` = true. (CLI-06, AC 1; T14)
+Proof: run records | test an_emit_gives_one_record_with_time_instance_stream_and_fields ... ok
+
+**C59** - That record renders as `@1.000000e-6 Top.m s a=1.500000e0 b=true`. (CLI-06, AC 2; T16)
+Proof: run clilib | test render::record::tests::a_record_is_one_line ... ok
+
+**C60** - Timers at 3 µs, 1 µs and 2 µs in source order give records at 1, 2 and 3 µs. (CLI-06, AC 3; T14)
+Proof: run records | test records_arrive_in_time_order ... ok
+
+**C61** - `emit!("log", msg = "overrange")` gives the field `msg` as the text `overrange`. (CLI-06, AC 4; T14)
+Proof: run records | test a_text_field_is_the_sources_literal ... ok
+
+**C62** - A field that reads an undriven discrete port is `Field::Unknown`. (CLI-06, AC 5; T14)
+Proof: run records | test an_unknown_field_is_unknown ... ok
+
+**C63** - `require("lim", false)` in a reaction gives one record of `checks` with `name` = `lim` and `pass` = false. (CLI-06, AC 6; T14)
+Proof: run records | test a_failed_require_is_one_checks_record_with_pass_false ... ok
+
+**C64** - In `examples/rc`, every line starting with `@` precedes the empty line and the table. (CLI-06, AC 7; T18)
+Proof: run run | test records_come_before_the_table ... ok
+
+**C65** - The divider's operating point delivers no record. (CLI-06, AC 8; T14)
+Proof: run records | test a_design_without_emit_gives_no_record ... ok
+
+**C66** - A `checks` record has stream `checks` and the instance path of the reaction that wrote it. (CLI-06, AC edge 7; T14)
+Proof: run records | test a_reserved_stream_keeps_its_name_and_its_site ... ok
+
+**C67** - `piperine run step` in `examples/rc` prints `run step: transient, top Step, backend rust`, then the `trip` record, an empty line and the table whose first column is `time`. (CLI-07, AC 1; T18)
+Proof: run run | test run_prints_header_records_blank_line_and_table ... ok
+
+**C68** - A 3-column table renders with each column padded to its widest cell, two spaces between, no trailing space, header first. (CLI-07, AC 2; T15)
+Proof: run clilib | test render::table::tests::a_table_is_left_aligned_two_spaces_no_trailing_space ... ok
+
+**C69** - `piperine run op` and `piperine run step` in `examples/rc` exit 0. (CLI-07, AC 3; T18)
+Proof: run run | test a_completed_run_exits_0 ... ok
+
+**C70** - A type error, a bad run table and an unknown `print` path each leave standard output empty and exit 1. (CLI-07, AC 4; T20)
+Proof: run run | test a_failure_before_the_analysis_prints_nothing_on_stdout ... ok
+
+**C71** - A bench that emits at 1 µs and whose analog term stops being finite at 2 µs prints the record, then the solver's error on standard error, no table, exit 1. (CLI-07, AC 5; T20)
+Proof: run run | test records_stay_when_the_analysis_fails ... ok
+
+**C72** - Two runs of `step` with different cache directories and different working directories print byte-equal standard output. (CLI-07, AC 6; T18)
+Proof: run run | test stdout_is_the_same_from_two_caches_and_two_directories ... ok
+
+**C73** - `piperine run tests/ngspice/divider.msl --analysis op` prints `run divider: op, top Divider, backend rust` and `Divider.mid  7.500000e0`. (CLI-07, AC 7; T19)
+Proof: run run | test a_lone_file_run_is_named_by_its_stem ... ok
+
+**C74** - With an empty cache, standard error holds one line with `compiling` and `step`; with the cache filled, none. (CLI-07, AC 8; T18)
+Proof: run run | test a_first_compile_is_announced_on_stderr ... ok
+
+**C75** - With standard output closed by the reader after the header, the process exits 1 and standard error holds no `panicked`. (CLI-07, AC edge 8; T20)
+Proof: run run | test a_closed_stdout_ends_with_exit_1_and_no_panic ... ok
+
+**C76** - `examples/buck` holds `benches/startup.msl` and its manifest the runs `idle` and `startup`. (CLI-08, AC 1; T21)
+Proof: run buck | test the_buck_has_its_bench_and_two_runs ... ok
+
+**C77** - `piperine run startup` exits 0 on the Rust backend and the last row gives 128 in the column of the controller's reference (buck SPEC: setpoint code 0 is 0.8 V, reference 128). (CLI-08, AC 2; T21)
+Proof: run buck | test startup_ends_with_the_reference_at_128 ... ok
+
+**C78** - That run's standard output holds no line with ` checks ` and `pass=false`. (CLI-08, AC 3; T21)
+Proof: run buck | test startup_prints_no_failed_check ... ok
+
+**C79** - `piperine run idle` exits 0 and every row gives 0 (`Off`) in the mode column. (CLI-08, AC 4; T21)
+Proof: run buck | test idle_keeps_the_mode_off ... ok
+
+**C80** - `piperine test` in `examples/buck` exits 0 with `2 runs, 2 passed, 0 failed`. (CLI-08, AC 5; T33)
+Proof: run buck | test piperine_test_passes_on_the_buck ... ok
+
+**C81** - A sweep of `v1.dc` from 0 to 1 by 0.25 has the first column `Divider.v1.dc` and the rows 0, 0.25, 0.5, 0.75, 1; `Divider.mid` is 0.75 of each. (CLI-09, AC 1; T22)
+Proof: run analyses | test a_dc_sweep_has_one_row_per_point ... ok
+
+**C82** - An `ac` table has `freq`, then `mag(AcRc.out)` and `phase(AcRc.out)`; at 1 kHz the phase is within 1e-2 of -0.5729 degrees (atan of 0.01). (CLI-09, AC 2; T23)
+Proof: run analyses | test an_ac_sweep_has_mag_and_phase_in_degrees ... ok
+
+**C83** - A `dc` run without `sweep`, without `step`, with `step = 0`, and with `from = 0, to = 1, step = -0.1` is each `P0010` naming the key. (CLI-09, AC 3; T7)
+Proof: run apilib | test request::tests::a_dc_sweep_needs_its_four_keys_and_a_step_toward_to ... ok
+
+**C84** - `from = 1e3, to = 1e7, per_decade = 10` is 41 points; `to = 2e3, per_decade = 10` is 4. (CLI-09, AC 4; T23)
+Proof: run apilib | test request::tests::per_decade_gives_round_n_log10_plus_one_points ... ok
+
+**C85** - Both grids, neither, `from = 0` and `to < from` are each `P0010` naming the keys. (CLI-09, AC 5; T7)
+Proof: run apilib | test request::tests::an_ac_grid_is_exactly_one_of_two_and_its_range_is_ordered ... ok
+
+**C86** - `from = 1e3, to = 5e3, points = 5` gives the frequencies 1e3, 2e3, 3e3, 4e3, 5e3. (CLI-09, AC 6; T23)
+Proof: run analyses | test points_sweeps_linearly ... ok
+
+**C87** - R = 1 kΩ, C = 1.5915494309189535 nF: at 1e5 Hz the magnitude is within 1e-3 of 0.7071067811865476 and the phase within 1e-2 of -45, on both backends. (CLI-09, AC 7; T23)
+Proof: run analyses | test the_rc_corner_is_minus_3_db_and_minus_45_degrees ... ok
+
+**C88** - `v1.dc` from -1 to 0.8 by 0.05 on `diode_iv` gives 37 rows, the last at 0.8. (CLI-09, AC 8; T22)
+Proof: run analyses | test the_diode_sweep_has_37_rows ... ok
+
+**C89** - `sweep = "v9.dc"` fails `Session::open` with `E0801` naming it. (CLI-09, AC 9; T22)
+Proof: run analyses | test a_sweep_of_no_param_is_e0801 ... ok
+
+**C90** - The table sets `r2.r` to 2000 and the flag to 1000: the operating point is the one of 1000. (CLI-10, AC 1; T24)
+Proof: run analyses | test params_are_set_in_order_table_then_flags ... ok
+
+**C91** - `r9.r = 1.0` fails with `E0801` naming `r9.r`. (CLI-10, AC 2; T24)
+Proof: run analyses | test a_param_path_that_names_nothing_is_e0801 ... ok
+
+**C92** - `r2.r = -1.0` (the resistor's `where r > 0.0`) fails with `E0802` naming `r2.r` and -1, and no record or table exists. (CLI-10, AC 3; T24)
+Proof: run analyses | test a_refused_value_is_e0802_and_nothing_runs ... ok
+
+**C93** - `piperine run tests/ngspice/divider.msl --analysis op --param r2.r=1000` prints `Divider.mid  5.000000e0`. (CLI-10, AC 4; T24)
+Proof: run options | test the_divider_with_r2_at_1k_gives_5 ... ok
+
+**C94** - `--csv out.csv` writes a header row and the rows with `,` between cells in the text table's number format, and standard output ends with `wrote out.csv (<n> rows)` with `n` the row count. (CLI-11, AC 1; T26)
+Proof: run options | test csv_writes_the_table_and_prints_wrote ... ok
+
+**C95** - A longer file already at the path is replaced, not appended to. (CLI-11, AC 2; T26)
+Proof: run options | test an_existing_csv_is_replaced ... ok
+
+**C96** - `--csv /nonexistent-dir/x.csv` prints the path on standard error and exits 1. (CLI-11, AC 3; T26)
+Proof: run options | test an_unwritable_csv_names_the_path_and_exits_1 ... ok
+
+**C97** - `stop = 10e-6`, `print_step = 1e-6` gives 11 rows at 0, 1e-6, ..., 10e-6. (CLI-11, AC 4; T25)
+Proof: run apilib | test table::tests::a_print_grid_has_one_row_per_multiple ... ok
+
+**C98** - Between steps (0, 0.0) and (2, 4.0) the row at 1 gives 2.0 for a real column and the value at 0 for a `bool` or integer column. (CLI-11, AC 5; T25)
+Proof: run apilib | test table::tests::continuous_is_interpolated_and_discrete_is_held ... ok
+
+**C99** - `csv = "out/step.csv"` run from `<project>/benches/` writes `<project>/out/step.csv`. (CLI-11, AC 6; T26)
+Proof: run options | test a_relative_output_path_is_under_the_project ... ok
+
+**C100** - `print_step` 1e-3 with `stop` 1e-6 gives the one row at time 0. (CLI-11, AC edge 4; T25)
+Proof: run apilib | test table::tests::a_grid_wider_than_the_run_is_the_row_at_zero ... ok
+
+**C101** - With streams `trip` in two instances and `checks`: `["trip"]` keeps both `trip` streams, `["Step.mon.trip"]` keeps one, and neither keeps `checks`. (CLI-12, AC 1; T27)
+Proof: run records | test keep_matches_a_stream_name_or_its_full_path ... ok
+
+**C102** - `streams = ["nope"]` fails `Session::open` with `E0801` naming `nope`. (CLI-12, AC 2; T27)
+Proof: run records | test a_filter_entry_that_matches_nothing_is_e0801 ... ok
+
+**C103** - `--records r.jsonl` writes one object per record with the keys `time`, `instance`, `stream`, `fields`, and standard output holds no line starting with `@`. (CLI-12, AC 3; T28)
+Proof: run options | test records_go_to_the_file_as_json_lines_and_not_to_stdout ... ok
+
+**C104** - A longer file already at the path is replaced. (CLI-12, AC 4; T28)
+Proof: run options | test an_existing_records_file_is_replaced ... ok
+
+**C105** - 1.5 is `1.5`, `true` is `true`, 42 is `42`, the text `a"b` is `"a\"b"`, unknown is `null`. (CLI-12, AC 5; T28)
+Proof: run clilib | test render::json::tests::each_value_kind_has_its_json ... ok
+
+**C106** - With both flags, standard output is the header line and the `wrote` line. (CLI-12, AC edge 9; T28)
+Proof: run options | test csv_and_records_leave_the_header_and_the_wrote_line ... ok
+
+**C107** - `piperine run step --stream trip` in `examples/rc` prints the `trip` record and no `checks` record. (CLI-12, AC 1; T27)
+Proof: run options | test the_stream_flag_keeps_only_that_stream ... ok
+
+**C108** - `divider`, `isrc_r` and `diode_series` run `op` with exit 0 under `--backend interp` and `--backend rust`. (CLI-13, AC 1; T29)
+Proof: run twins | test the_three_op_twins_run_on_both_backends ... ok
+
+**C109** - `diode_iv` and `diode_rev` (`dc`), `ac_rc` (`ac`) and `tran_rc` (`transient`) exit 0 on both backends, each with the grid its `.cir` twin names. (CLI-13, AC 2; T29)
+Proof: run twins | test the_sweep_and_transient_twins_run_on_both_backends ... ok
+
+**C110** - For each of the seven twins the standard output of the two backends is byte-equal after the header line. (CLI-13, AC 3; T29)
+Proof: run twins | test the_two_backends_print_the_same_bytes ... ok
+
+**C111** - `piperine check` in `examples/rc` exits 0 with an empty cache directory left empty and with `PIPERINE_RUSTC` naming a file that does not exist. (CLI-14, AC 1; T30)
+Proof: run commands | test check_runs_every_stage_and_no_backend ... ok
+
+**C112** - It prints `ok: rc (2 crates, 2 runs)`: the package and `std`, the runs `op` and `step`. (CLI-14, AC 2; T30)
+Proof: run commands | test check_prints_ok_with_the_counts ... ok
+
+**C113** - A project with a type error in the top of one run and an unresolved path in the bench of another prints both codes, no `ok` line, exit 1. (CLI-14, AC 3; T30)
+Proof: run commands | test check_renders_every_diagnostic_and_exits_1 ... ok
+
+**C114** - A package with no run prints `ok: <name> (2 crates, 0 runs; type checking needs a run)`. (CLI-14, AC 4; T30)
+Proof: run commands | test check_without_a_run_says_type_checking_needs_one ... ok
+
+**C115** - `piperine check tests/ngspice/divider.msl` exits 0; a copy with a type error exits 1 with `P0002`. (CLI-14, AC 5; T30)
+Proof: run commands | test check_takes_a_lone_file ... ok
+
+**C116** - `piperine build` in `examples/rc` with an empty cache prints `built op: compiled` and `built step: compiled`; a run with `backend = "interp"` prints `built <name>: interp, nothing to compile`. (CLI-15, AC 1; T31)
+Proof: run commands | test build_prints_one_line_per_run ... ok
+
+**C117** - The second `piperine build` prints `cached` for both runs, under a compiler wrapper that counts zero design builds. (CLI-15, AC 2; T31)
+Proof: run commands | test a_second_build_is_cached_and_compiles_nothing ... ok
+
+**C118** - `--verbose` prints after each line a path ending in `design.rs` that is a file. (CLI-15, AC 3; T31)
+Proof: run commands | test verbose_prints_a_source_path_that_exists ... ok
+
+**C119** - With the first of two runs failing type check, the second still prints its `built` line and the exit code is 1. (CLI-15, AC 4; T31)
+Proof: run commands | test build_goes_on_after_a_failing_run_and_exits_1 ... ok
+
+**C120** - `piperine test` prints one verdict line per run in manifest order; `piperine test step` prints one. (CLI-16, AC 1; T33)
+Proof: run commands | test test_runs_every_run_or_the_named_ones ... ok
+
+**C121** - In `examples/rc`, `step` prints `PASS step (1 checks)` and `op` prints `PASS op (0 checks)`. (CLI-16, AC 2; T33)
+Proof: run commands | test test_prints_pass_with_the_check_count ... ok
+
+**C122** - Three `checks` records with `pass` true and two records of other streams judge as passed with 3 checks. (CLI-16, AC 2; T32)
+Proof: run apilib | test verdict::tests::no_false_and_no_unknown_pass_is_a_pass ... ok
+
+**C123** - A bench with `require("lim", false)` prints `FAIL <name> (1 of 1 checks failed)` and the record's line. (CLI-16, AC 3; T33)
+Proof: run commands | test test_prints_fail_and_the_failing_records ... ok
+
+**C124** - A `checks` record whose `pass` is unknown is a failed check. (CLI-16, AC 3; T32)
+Proof: run apilib | test verdict::tests::an_unknown_pass_fails ... ok
+
+**C125** - Under `test`, standard output holds no `trip` record and no table header. (CLI-16, AC 4; T33)
+Proof: run commands | test test_prints_no_table_and_no_other_record ... ok
+
+**C126** - A run with a type error prints `FAIL <name> (did not run)` on standard output and the diagnostic on standard error. (CLI-16, AC 5; T33)
+Proof: run commands | test a_run_that_does_not_complete_is_a_fail ... ok
+
+**C127** - One passing and one failing run end with `2 runs, 1 passed, 1 failed` and exit 1; two passing end with `2 runs, 2 passed, 0 failed` and exit 0. (CLI-16, AC 6; T33)
+Proof: run commands | test the_last_line_counts_and_the_exit_code_follows ... ok
+
+**C128** - It prints `0 runs, 0 passed, 0 failed` and exits 0. (CLI-16, AC 7; T33)
+Proof: run commands | test a_project_without_a_run_passes_with_zero ... ok
+
+**C129** - `piperine new demo` creates `demo/Piperine.toml`, `demo/src/lib.msl`, `demo/benches/step.msl`, `demo/.gitignore` and prints `created demo`. (CLI-17, AC 1; T34)
+Proof: run commands | test new_creates_the_four_files_and_says_created ... ok
+
+**C130** - Each file equals its `examples/rc` counterpart with the package name `rc` replaced by `demo` where it is the package name. (CLI-17, AC 2; T34)
+Proof: run commands | test new_writes_the_rc_example_under_the_new_name ... ok
+
+**C131** - With `demo/` present, `new demo` exits 1 and the directory is unchanged. (CLI-17, AC 3; T34)
+Proof: run commands | test new_refuses_an_existing_directory ... ok
+
+**C132** - `new my-proj`, `new std` and `new module` each exit 1 stating the rule and create nothing. (CLI-17, AC 4; T34)
+Proof: run commands | test new_refuses_a_name_the_manifest_rule_forbids ... ok
+
+**C133** - In the created project `check`, `run step` and `test` each exit 0. (CLI-17, AC 5; T34)
+Proof: run commands | test a_new_project_checks_runs_and_tests ... ok
+
+**C134** - `piperine new` exits 2. (CLI-17, AC edge 10; T34)
+Proof: run commands | test new_without_a_name_exits_2 ... ok
+
+**C135** - After a build that left `<project>/target`, `clean` removes it and prints `removed target`. (CLI-18, AC 1; T35)
+Proof: run commands | test clean_removes_the_target_directory ... ok
+
+**C136** - `clean --cache` removes the directory `PIPERINE_CACHE_DIR` names (set on the child), and the next `build` prints `compiled`. (CLI-18, AC 2; T35)
+Proof: run commands | test clean_cache_removes_the_compiled_cache ... ok
+
+**C137** - It prints `nothing to remove` and exits 0. (CLI-18, AC 3; T35)
+Proof: run commands | test clean_with_nothing_to_remove_exits_0 ... ok
+
+**C138** - The project's other files and a sibling of the cache directory are byte-equal before and after. (CLI-18, AC 4; T35)
+Proof: run commands | test clean_touches_nothing_else ... ok
+
+**C139** - The chapter ids end with `compiler`, `cli`, `cheatsheet`; `cli` is titled `The command line`; the chapter numbers are 1 to 17. (CLI-19, AC 1; T36)
+Proof: run book | test the_cli_chapter_sits_between_compiler_and_cheatsheet ... ok
+
+**C140** - `examples/rc` resolves as a package and its crate has no diagnostic. (CLI-19, AC 2; T6)
+Proof: run rcpkg | test the_rc_example_resolves_with_no_diagnostic ... ok
+
+**C141** - The chapter holds a block equal to each of `examples/rc/Piperine.toml`, `src/lib.msl` and `benches/step.msl`, and a tree naming the three. (CLI-19, AC 2; T36)
+Proof: run clibook | test the_chapter_shows_the_rc_project_file_for_file ... ok
+
+**C142** - The four output blocks equal the standard output of `piperine check`, `run op`, `run step` and `test` run in `examples/rc`. (CLI-19, AC 3; T36)
+Proof: run clibook | test the_rc_output_blocks_are_what_the_binary_prints ... ok
+
+**C143** - The chapter holds the buck's bench and `startup` table equal to the files, and an output block equal to the standard output of `piperine run startup`. (CLI-19, AC 4; T36)
+Proof: run clibook | test the_buck_block_is_what_the_binary_prints ... ok
+
+**C144** - The chapter has a part whose heading names `emit!`, an `msl` block with an `emit!` statement, the record line it gives, and `--stream`. (CLI-19, AC 5; T36)
+Proof: run clibook | test the_chapter_explains_emit_as_print ... ok
+
+**C145** - The chapter names in code spans the six commands, each of the eighteen keys and its flag, the exit codes 0, 1, 2, `--backend`, `PIPERINE_BACKEND`, `P0010` and `P0011`. (CLI-19, AC 6; T36)
+Proof: run clibook | test the_chapter_lists_commands_keys_flags_codes ... ok
+
+**C146** - The chapter holds no `§`, none of `crates/`, `docs/`, `.specs/`, `tests/`, and no `href` that does not start with `#`. (CLI-19, AC 7; T36)
+Proof: run clibook | test the_chapter_stands_alone ... ok
+
+**C147** - Every `msl` block of the Book, the new chapter's included, parses. (CLI-19, AC 8; T36)
+Proof: run book | test every_msl_block_parses ... ok
+
+**C148** - The chapter `compiler` names `piperine run` and its part on what comes next does not mention the command line. (CLI-19, AC 9; T37)
+Proof: run book | test the_compiler_chapter_says_the_command_line_exists ... ok
+
+**C149** - The cheat sheet names `piperine check`, `build`, `run`, `test`, `new` and `clean`. (CLI-19, AC 10; T37)
+Proof: run book | test the_cheat_sheet_lists_the_six_commands ... ok
+
+**C150** - `CLAUDE.md` and `AGENTS.md` do not say the four host crates do not build, and each crate's row states `Project`/`Session` for `piperine-api` and the six commands for `piperine-cli`. (CLI-20, AC 1; T39)
+Proof: run docs | test the_instruction_files_say_the_host_crates_build ... ok
+
+**C151** - `GAPS.md` no longer says the CLI and the API do not build, and names: no host stimulus, no Python host, the language server, `fmt`, no trace records. (CLI-20, AC 2; T40)
+Proof: run docs | test gaps_drops_what_closed_and_lists_what_is_left ... ok
+
+**C152** - Item 3 of "Queue after ir-rust" in `ROADMAP.md` is marked done. (CLI-20, AC 3; T40)
+Proof: run docs | test the_roadmap_marks_the_cli_item_done ... ok
+
+**C153** - `.specs/STATE.md` holds a decision naming `piperine-api`, the `[run.<name>]` table and the bench crate. (CLI-20, AC 4; T40)
+Proof: run docs | test state_records_the_cli_decision ... ok
+
+**C154** - `examples/buck/README.md` names `piperine run startup` and no longer says nothing executes. (CLI-20, AC 5; T38)
+Proof: run docs | test the_buck_readme_says_how_to_run_it ... ok
+
+---
+
+## Handoff
+
+The feature's live state, written as it happens - a compaction gives no warning.
+
+**Settled mid-build:** none yet. The eight open questions of the spec are not answered.
+**Dispatched:** none.
+**Walked:** none.
+
+---
+
+## Phase Execution Map
+
+```
+Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
+```
+
+| Phase | Tasks | Count | Batch |
+| ----- | ----- | ----- | ----- |
+| 1: Foundation: the contract and crates that build | T1 to T6 | 6 | 1 |
+| 2: The session: from a project to results and records | T7 to T14 | 8 | 2 |
+| 3: `piperine run`: the minimal slice | T15 to T21 | 7 | 3 |
+| 4: Analyses and output formats | T22 to T29 | 8 | 4 |
+| 5: `check`, `build`, `test`, `new`, `clean` | T30 to T35 | 6 | 5 |
+| 6: The Book and the records of the feature | T36 to T40 | 5 | 5 |
+
+40 tasks, 154 checks. Five batches of whole phases: phases 5 and 6 share the last worker (11 tasks, of which T36 goes to Opus). Batches run in order; each worker executes its tasks one at a time and reports before the next starts.
+
+---
+
+## Task Granularity Check
+
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| T1: The contract with the merged msl-digital | one module or one function family in one file | ✅ Granular |
+| T2: A manifest may hold a run table | one module or one function family in one file | ✅ Granular |
+| T3: The manifest rule of the spec admits the run table | one module or one function family in one file | ✅ Granular |
+| T4: piperine-api starts over | one crate reset: the deletion and the two smallest modules, so the tree builds at this commit | ✅ Granular |
+| T5: piperine-cli starts over | one crate reset: the deletion and the command tree | ✅ Granular |
+| T6: The RC example project | one example project, four small files | ✅ Granular |
+| T7: RunSpec: reading a run table | one module or one function family in one file | ✅ Granular |
+| T8: Overrides: flags over keys | one module or one function family in one file | ✅ Granular |
+| T9: Project: discovery and the crate graph of a run | one module or one function family in one file | ✅ Granular |
+| T10: Session::open: source to a bound circuit | one module or one function family in one file | ✅ Granular |
+| T11: Probe: what a column shows | one module or one function family in one file | ✅ Granular |
+| T12: Table and the operating point | one module or one function family in one file | ✅ Granular |
+| T13: The transient of a run | one module or one function family in one file | ✅ Granular |
+| T14: Records: from the sink to typed records | one module or one function family in one file | ✅ Granular |
+| T15: Rendering a table and a number | one module or one function family in one file | ✅ Granular |
+| T16: Rendering a record line | one module or one function family in one file | ✅ Granular |
+| T17: Rendering a failure | one module or one function family in one file | ✅ Granular |
+| T18: piperine run: a named run | one module or one function family in one file | ✅ Granular |
+| T19: piperine run: flags and a lone file | one module or one function family in one file | ✅ Granular |
+| T20: piperine run: failures and exit codes | one command's failure paths, with their fixtures | ✅ Granular |
+| T21: The buck's bench and runs | one module or one function family in one file | ✅ Granular |
+| T22: The DC sweep of a run | one module or one function family in one file | ✅ Granular |
+| T23: The AC sweep of a run | one module or one function family in one file | ✅ Granular |
+| T24: Params of a run | one module or one function family in one file | ✅ Granular |
+| T25: The print grid | one module or one function family in one file | ✅ Granular |
+| T26: CSV output | one module or one function family in one file | ✅ Granular |
+| T27: The stream filter | one module or one function family in one file | ✅ Granular |
+| T28: Records to a file | one module or one function family in one file | ✅ Granular |
+| T29: The seven twins from the command line | one module or one function family in one file | ✅ Granular |
+| T30: piperine check | one module or one function family in one file | ✅ Granular |
+| T31: piperine build | one module or one function family in one file | ✅ Granular |
+| T32: Verdict: pass or fail of a run | one module or one function family in one file | ✅ Granular |
+| T33: piperine test | one module or one function family in one file | ✅ Granular |
+| T34: piperine new | one module or one function family in one file | ✅ Granular |
+| T35: piperine clean | one module or one function family in one file | ✅ Granular |
+| T36: The Book: the command line | one chapter and its guard | ✅ Granular |
+| T37: The Book: chapter 15 and the cheat sheet | one module or one function family in one file | ✅ Granular |
+| T38: The buck's README | one module or one function family in one file | ✅ Granular |
+| T39: CLAUDE.md and AGENTS.md | one module or one function family in one file | ✅ Granular |
+| T40: GAPS, ROADMAP and the decision | one module or one function family in one file | ✅ Granular |
+
+## Diagram-Definition Cross-Check
+
+| Task | Depends On (task body) | Diagram Shows (same phase) | Status |
+| ---- | ---------------------- | -------------------------- | ------ |
+| T1 | None | - | ✅ Match |
+| T2 | T1 | T1 | ✅ Match |
+| T3 | T2 | T2 | ✅ Match |
+| T4 | T1 | T1 | ✅ Match |
+| T5 | T4 | T4 | ✅ Match |
+| T6 | T2 | T2 | ✅ Match |
+| T7 | T4 | - | ✅ Match |
+| T8 | T7 | T7 | ✅ Match |
+| T9 | T8 | T8 | ✅ Match |
+| T10 | T9 | T9 | ✅ Match |
+| T11 | T10 | T10 | ✅ Match |
+| T12 | T11 | T11 | ✅ Match |
+| T13 | T12 | T12 | ✅ Match |
+| T14 | T13 | T13 | ✅ Match |
+| T15 | T12 | - | ✅ Match |
+| T16 | T14 | - | ✅ Match |
+| T17 | T4 | - | ✅ Match |
+| T18 | T15, T16, T17 | T15, T16, T17 | ✅ Match |
+| T19 | T18 | T18 | ✅ Match |
+| T20 | T19 | T19 | ✅ Match |
+| T21 | T20 | T20 | ✅ Match |
+| T22 | T13 | - | ✅ Match |
+| T23 | T22 | T22 | ✅ Match |
+| T24 | T22, T19 | T22 | ✅ Match |
+| T25 | T13 | - | ✅ Match |
+| T26 | T25, T19 | T25 | ✅ Match |
+| T27 | T14 | - | ✅ Match |
+| T28 | T27, T26 | T27, T26 | ✅ Match |
+| T29 | T23, T19 | T23 | ✅ Match |
+| T30 | T20 | - | ✅ Match |
+| T31 | T30 | T30 | ✅ Match |
+| T32 | T14 | - | ✅ Match |
+| T33 | T32, T31 | T32, T31 | ✅ Match |
+| T34 | T33 | T33 | ✅ Match |
+| T35 | T34 | T34 | ✅ Match |
+| T36 | T35, T21 | - | ✅ Match |
+| T37 | T36 | T36 | ✅ Match |
+| T38 | T33 | - | ✅ Match |
+| T39 | T35 | - | ✅ Match |
+| T40 | T39 | T39 | ✅ Match |
+
+No task depends on a task of a later phase.
+
+## Test Co-location Validation
+
+| Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
+| ---- | --------------------------- | --------------- | --------- | ------ |
+| T1: The contract with the merged msl-digital | `contract.md` | none | none | ✅ OK |
+| T2: A manifest may hold a run table | the manifest parser | unit | unit | ✅ OK |
+| T3: The manifest rule of the spec admits the run table | spec text | integration | integration | ✅ OK |
+| T4: piperine-api starts over | pure rules of `piperine-api` | unit | unit | ✅ OK |
+| T5: piperine-cli starts over | the commands | e2e | e2e | ✅ OK |
+| T6: The RC example project | example projects | e2e (the package resolves here; it runs through the binary from T18) | integration | ✅ OK |
+| T7: RunSpec: reading a run table | pure rules | unit | unit | ✅ OK |
+| T8: Overrides: flags over keys | pure rules | unit | unit | ✅ OK |
+| T9: Project: discovery and the crate graph of a run | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T10: Session::open: source to a bound circuit | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T11: Probe: what a column shows | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T12: Table and the operating point | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T13: The transient of a run | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T14: Records: from the sink to typed records | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T15: Rendering a table and a number | text layout | unit | unit | ✅ OK |
+| T16: Rendering a record line | text layout | unit | unit | ✅ OK |
+| T17: Rendering a failure | text layout | unit | unit | ✅ OK |
+| T18: piperine run: a named run | the commands | e2e | e2e | ✅ OK |
+| T19: piperine run: flags and a lone file | the commands | e2e | e2e | ✅ OK |
+| T20: piperine run: failures and exit codes | the commands | e2e | e2e | ✅ OK |
+| T21: The buck's bench and runs | example projects | e2e | e2e | ✅ OK |
+| T22: The DC sweep of a run | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T23: The AC sweep of a run | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T24: Params of a run | `piperine-api` over real sources, and a command flag | e2e (the higher of the two) | e2e | ✅ OK |
+| T25: The print grid | pure rules | unit | unit | ✅ OK |
+| T26: CSV output | text layout and a command key | e2e (the higher of the two) | e2e | ✅ OK |
+| T27: The stream filter | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T28: Records to a file | text layout and a command key | e2e (the higher of the two) | e2e | ✅ OK |
+| T29: The seven twins from the command line | the commands | e2e | e2e | ✅ OK |
+| T30: piperine check | the commands | e2e | e2e | ✅ OK |
+| T31: piperine build | the commands | e2e | e2e | ✅ OK |
+| T32: Verdict: pass or fail of a run | pure rules | unit | unit | ✅ OK |
+| T33: piperine test | the commands | e2e | e2e | ✅ OK |
+| T34: piperine new | the commands | e2e | e2e | ✅ OK |
+| T35: piperine clean | the commands | e2e | e2e | ✅ OK |
+| T36: The Book: the command line | the Book | integration | integration | ✅ OK |
+| T37: The Book: chapter 15 and the cheat sheet | the Book | integration | integration | ✅ OK |
+| T38: The buck's README | instruction files and gap lists | integration | integration | ✅ OK |
+| T39: CLAUDE.md and AGENTS.md | instruction files and gap lists | integration | integration | ✅ OK |
+| T40: GAPS, ROADMAP and the decision | instruction files and gap lists | integration | integration | ✅ OK |
+
+T6 says `integration`: its own test proves the package resolves, the only thing runnable before the session exists; the e2e proof of the same files is C-rows of T18 and T36. T1 is the one `none`, as the matrix says.
