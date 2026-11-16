@@ -161,8 +161,8 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] `accept_fails_with_e0510_on_an_invalid_tolerance` passes
-- [ ] Gate check passes: `cargo test -p piperine-analog-solver`
+- [x] `accept_fails_with_e0510_on_an_invalid_tolerance` passes
+- [x] Gate check passes: `cargo test -p piperine-analog-solver`
 
 **Tests**: unit
 **Gate**: full

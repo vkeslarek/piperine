@@ -149,6 +149,9 @@ pub(crate) struct WatchPlan {
     pub kind: u32,
     /// A `CROSS` watch's event pin.
     pub event: u32,
+    /// The discrete slots of a `CROSS` watch's `ttol` and `etol` pins; `None`: `DEFAULT`.
+    pub ttol: Option<usize>,
+    pub etol: Option<usize>,
     /// The function and write slot of its `VALUE`.
     pub value: Option<(usize, usize)>,
 }
@@ -395,12 +398,20 @@ fn bind_instance(
     let mut watches: Vec<WatchPlan> = shape
         .watches
         .iter()
-        .map(|w| WatchPlan {
-            name: w.name.as_str().into(),
-            origin: w.origin.as_str().into(),
-            kind: w.kind,
-            event: w.event,
-            value: None,
+        .map(|w| {
+            let slot = |p: u32| match pins.get(p as usize) {
+                Some(AnalogBinding::Discrete(s)) if p != DEFAULT && w.kind == watch::CROSS => Some(*s as usize),
+                _ => None,
+            };
+            WatchPlan {
+                name: w.name.as_str().into(),
+                origin: w.origin.as_str().into(),
+                kind: w.kind,
+                event: w.event,
+                ttol: slot(w.ttol),
+                etol: slot(w.etol),
+                value: None,
+            }
         })
         .collect();
     let mut inputs: Vec<InputPlan> = shape

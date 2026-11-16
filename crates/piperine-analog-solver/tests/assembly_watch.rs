@@ -21,6 +21,14 @@ use piperine_analog_solver::device::AnalogBinding::{Absent, Discrete, Ground};
 use piperine_analog_solver::device::{AnalogPlan, Assembly};
 use system::{at_rest, at_time, close};
 
+use std::sync::{Arc, OnceLock};
+
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::layout::F64;
+use piperine_abi::raw::{Cell, Module, Partial, Shape, cell, part, role, watch};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, WatchSpec};
+use piperine_abi::thunk::module;
+
 #[test]
 fn a_var_watch_is_readable_at_an_accepted_solution() {
     let m = modules();
@@ -159,4 +167,79 @@ fn accept_fails_with_e0509_on_an_invalid_cap() {
     asm.set_discrete(0, &f64_bytes(2e-6));
     asm.set_discrete(1, &f64_bytes(1e-12));
     assert_eq!(asm.accept(&[0.5], at_rest()).expect("a positive cap").cap, 1e-12);
+}
+
+/// A comparator whose crossing tolerances are its own params.
+/// pins: ttol=0, etol=1 (PARAM F64); inp=2, inn=3 (PORT continuous); up=4 (PRIVATE event)
+/// watches: W0 CROSS "rise" → up, ttol and etol from pins 0 and 1
+/// fn 0: reads [inp, inn] writes [W0] partials (0←0) (0←1)
+struct TolComparator;
+static TOL_COMPARATOR: OnceLock<ShapeRef> = OnceLock::new();
+static TOL_MODULE: OnceLock<Module> = OnceLock::new();
+
+fn tol_comparator_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let ttol = s.pin(PinSpec::discrete("ttol", role::PARAM, &F64));
+    let etol = s.pin(PinSpec::discrete("etol", role::PARAM, &F64));
+    let inp = s.pin(PinSpec::continuous("inp", role::PORT));
+    let inn = s.pin(PinSpec::continuous("inn", role::PORT));
+    let up = s.pin(PinSpec::event("up", role::PRIVATE));
+    let w0 = s.watch(WatchSpec { name: "rise", origin: "assembly_watch.rs", kind: watch::CROSS, layout: &F64, event: up, ttol, etol });
+    s.function(FunctionSpec {
+        name: "e",
+        reads: vec![Cell { kind: cell::PIN, index: inp, part: part::VALUE }, Cell { kind: cell::PIN, index: inn, part: part::VALUE }],
+        writes: vec![Cell { kind: cell::WATCH, index: w0, part: part::VALUE }],
+        partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for TolComparator {
+    fn prototype() -> &'static Shape<'static> {
+        TOL_COMPARATOR.get_or_init(tol_comparator_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((TolComparator, Arc::clone(TOL_COMPARATOR.get_or_init(tol_comparator_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let e = cx.f64(0) - cx.f64(1);
+        cx.set(0, e);
+        cx.jac().copy_from_slice(&[1.0, -1.0]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+fn tol_comparator() -> &'static Module {
+    TOL_MODULE.get_or_init(|| module::<TolComparator>("TolComparator"))
+}
+
+#[test]
+fn accept_fails_with_e0510_on_an_invalid_tolerance() {
+    // SCX-03 AC 8 (§17.3 resolution): a `ttol` or `etol` that is not finite and positive fails
+    // the accept with E0510, naming the instance, the watch and which tolerance
+    let (net, n) = netlist(2, &[]);
+    for (which, slot) in [("ttol", 0), ("etol", 1)] {
+        for bad in [0.0, -1e-12, f64::NAN, f64::INFINITY] {
+            let c = instance("top.cmp", tol_comparator(), vec![Discrete(0), Discrete(1), at(&n[0]), at(&n[1]), Absent]);
+            let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+            asm.set_discrete(0, &f64_bytes(1e-12));
+            asm.set_discrete(1, &f64_bytes(1e-6));
+            asm.set_discrete(slot, &f64_bytes(bad));
+            let err = asm.accept(&[0.2, 0.0], at_rest()).expect_err("an invalid tolerance").to_string();
+            assert!(
+                err.contains("E0510") && err.contains("top.cmp") && err.contains("`rise`") && err.contains(which),
+                "{which} = {bad}: {err}"
+            );
+        }
+    }
+    // positive and finite tolerances accept
+    let c = instance("top.cmp", tol_comparator(), vec![Discrete(0), Discrete(1), at(&n[0]), at(&n[1]), Absent]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    asm.set_discrete(0, &f64_bytes(1e-12));
+    asm.set_discrete(1, &f64_bytes(1e-6));
+    asm.accept(&[0.2, 0.0], at_rest()).expect("valid tolerances");
 }

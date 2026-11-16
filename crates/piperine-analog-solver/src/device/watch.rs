@@ -14,7 +14,7 @@ use crate::error::Error;
 
 use super::assembly::{FnState, InstanceState};
 use super::device_error;
-use super::plan::{FnPlan, InstancePlan};
+use super::plan::{FnPlan, InstancePlan, WatchPlan};
 
 /// What an accepted solution reports.
 #[derive(Clone, Debug, PartialEq)]
@@ -46,11 +46,33 @@ pub(crate) struct Watched {
     pub cross: Option<f64>,
 }
 
-/// Applies the accepted solution's watches of instance `index`.
+/// The `ttol` or `etol` of `CROSS` watch `w` (`which` names it) from its pin's slot: `None`
+/// for `DEFAULT`. A value that is not finite and positive is `E0510` (§17.3).
+pub(crate) fn tolerance(
+    inst: &InstancePlan,
+    w: &WatchPlan,
+    which: &str,
+    slot: Option<usize>,
+    slots: &[Vec<u8>],
+) -> Result<Option<f64>, Error> {
+    let Some(s) = slot else { return Ok(None) };
+    let v = f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0"));
+    if !(v.is_finite() && v > 0.0) {
+        return Err(device_error(format!(
+            "E0510: instance `{}`: crossing watch `{}` ({}) has {which} = {v}, not finite and positive (§17.3)",
+            inst.path, w.name, w.origin
+        )));
+    }
+    Ok(Some(v))
+}
+
+/// Applies the accepted solution's watches of instance `index`; `slots` are the assembly's
+/// discrete slots (a `CROSS` watch's tolerances).
 pub(crate) fn accept_watches(
     index: usize,
     inst: &InstancePlan,
     st: &mut InstanceState,
+    slots: &[Vec<u8>],
     acc: &mut Accepted,
 ) -> Result<(), Error> {
     for (wi, w) in inst.watches.iter().enumerate() {
@@ -81,6 +103,8 @@ pub(crate) fn accept_watches(
                 inst.path, w.name, w.origin
             )));
         }
+        tolerance(inst, w, "ttol", w.ttol, slots)?;
+        tolerance(inst, w, "etol", w.etol, slots)?;
         let before = st.watched[wi].cross.replace(v);
         if before.is_some_and(|b| b <= 0.0) && v > 0.0 {
             acc.fired.push((index, w.event));

@@ -215,7 +215,7 @@ impl Assembly {
         self.iteration = 0;
         let mut acc = Accepted { fired: Vec::new(), cap: f64::INFINITY };
         for (index, (inst, st)) in self.plan.instances.iter().zip(self.state.iter_mut()).enumerate() {
-            accept_watches(index, inst, st, &mut acc)?;
+            accept_watches(index, inst, st, &self.slots, &mut acc)?;
             advance(inst, st, 1);
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DELAY {
