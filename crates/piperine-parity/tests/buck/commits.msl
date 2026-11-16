@@ -1,0 +1,56 @@
+//! The four commit rules of `docs/spec/part_iv_behavior.md` §12.1, each module the example of its
+//! rule, driven by a 200 MHz oscillator (rising edges at 2.5 ns, 7.5 ns, 12.5 ns, ...).
+
+/// The clock: a free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// §12.1.1: every read sees the values at the start of the microstep, and the commits of the
+/// microstep apply together.
+pub module Swap(in clk: Bit, out a: Bit = true, out b: Bit = false) {}
+digital for Swap { on clk.rise() { a <- b; b <- a; } }
+
+/// §12.1.2: commits to one level that apply in the same microstep are ordered by the instant they
+/// were made, then by source order; the last one is the value.
+pub module Later(in clk: Bit, out x: Bit<u8> = 0) {}
+digital for Later { on clk.rise() { x <- 1; x <- 2; } }
+
+/// §12.1.4: `p <- true after t; p <- false after t + w;` is a pulse, in either statement order.
+pub module Pulse(in clk: Bit, out p: Bit = false, out q: Bit = false) {}
+digital for Pulse {
+    on clk.rise() {
+        p <- true after 1e-9;  p <- false after 3e-9;
+        q <- false after 3e-9; q <- true after 1e-9;
+    }
+}
+
+/// §12.1.18: a commit that leaves the value as it was fires no `changed()`.
+pub module Latch(in clk: Bit, out q: Bit = false) {}
+digital for Latch { on clk.rise() { q <- true; } }
+
+pub module Count(in q: Bit, out n: Bit<u8> = 0) {}
+digital for Count { on q.changed() { n <- n + 1; } }
+
+module SwapBench() {
+    signal clk: Bit; signal a: Bit; signal b: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let swap = Swap(clk, a, b);
+}
+module LaterBench() {
+    signal clk: Bit; signal x: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let later = Later(clk, x);
+}
+module PulseBench() {
+    signal clk: Bit; signal p: Bit; signal q: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let pulse = Pulse(clk, p, q);
+}
+module UnchangedBench() {
+    signal clk: Bit; signal q: Bit; signal n: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let latch = Latch(clk, q);
+    let count = Count(q, n);
+}

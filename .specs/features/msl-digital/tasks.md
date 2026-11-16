@@ -1479,11 +1479,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The MSL sources are in `crates/piperine-parity/tests/buck/commits.msl`, each module under the spec paragraph it transcribes
-- [ ] Expected instants and values are written from §12.1.1, .2, .4 and .18, each cited at its assertion
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_commits`: `two_commits_exchange_two_carriers`, `the_later_statement_wins`, `two_statements_make_a_pulse`, `an_unchanged_commit_fires_nothing`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The MSL sources are in `crates/piperine-parity/tests/buck/commits.msl`, each module under the spec paragraph it transcribes
+- [x] Expected instants and values are written from §12.1.1, .2, .4 and .18, each cited at its assertion
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_commits`: `two_commits_exchange_two_carriers`, `the_later_statement_wins`, `two_statements_make_a_pulse`, `an_unchanged_commit_fires_nothing`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: full
