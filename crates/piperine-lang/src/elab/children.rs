@@ -20,6 +20,9 @@ pub(super) struct ChildPlan {
     pub(super) name: String,
     pub(super) module: DeclId,
     pub(super) terminals: Vec<Terminal>,
+    /// What each carrier port of the child's body is bound to, in port order: a carrier of the
+    /// parent's body.
+    pub(super) carriers: Vec<Option<u32>>,
     /// The param values written, as (index in the child's params, value, the value's expression).
     pub(super) given: Vec<(u32, Constant, ExprId)>,
     /// The call expression of the placement.
@@ -47,14 +50,14 @@ impl Elaboration<'_, '_> {
                     0
                 }
             };
-            if let Some(child) = self.lower_child(scope, call, child_module, ordinal) {
+            if let Some(child) = self.lower_child(scope, call, child_module, ordinal, out.len() as u32) {
                 out.push(child);
             }
         }
         out
     }
 
-    fn lower_child(&mut self, scope: &Scope, call: ExprId, module: DeclId, ordinal: u32) -> Option<(Child, ChildPlan)> {
+    fn lower_child(&mut self, scope: &Scope, call: ExprId, module: DeclId, ordinal: u32, index: u32) -> Option<(Child, ChildPlan)> {
         let node = self.design.expr_node(call).clone();
         let file = self.design.decl_data(node.owner).file;
         let ExprKind::Call { callee, args, params, class } = &node.kind else { return None };
@@ -70,7 +73,16 @@ impl Elaboration<'_, '_> {
         let name = self.placement_name(call, &module_name, ordinal);
         let mut ok = true;
         let mut terminals = Vec::new();
-        for arg in args {
+        let mut carriers = Vec::new();
+        let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
+        for (port, arg) in ports.iter().zip(args) {
+            if self.types.carrier(*port).is_some() {
+                match self.lower_carrier_arg(scope, arg.value) {
+                    Some(carrier) => carriers.push(Some(carrier)),
+                    None => ok = false,
+                }
+                continue;
+            }
             match self.lower_terminal(scope, arg.value) {
                 Some(terminal) => terminals.push(terminal),
                 None => ok = false,
@@ -95,11 +107,28 @@ impl Elaboration<'_, '_> {
         // not connected to anything of the parent, so its slot is padded with `Ground`.
         // Reason: the authored tree is a view; the instance table (`InstanceSpec::nodes`) is the
         // one backends bind from and holds the child's own node there. No M1 device has a signal.
-        let own_signals = self.design.decl_data(module).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Signal(_))).count();
+        let own_signals = self.design.decl_data(module).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Signal(_)) && self.types.carrier(**c).is_none()).count();
         let mut slots = terminals.clone();
         slots.extend(std::iter::repeat_n(Terminal::Ground, own_signals));
         let child = Child { name: name.clone(), body, nodes: slots, params, origin };
-        Some((child, ChildPlan { name, module, terminals, given, call }))
+        // The authored child shows the carriers it connects (ir-rust "Left for msl-digital").
+        if !carriers.is_empty() {
+            self.structure.child_carriers.push((index, carriers.clone()));
+        }
+        Some((child, ChildPlan { name, module, terminals, carriers, given, call }))
+    }
+
+    /// The carrier of the parent an argument at a carrier port names. `None` after a diagnostic.
+    fn lower_carrier_arg(&mut self, scope: &Scope, arg: ExprId) -> Option<u32> {
+        let node = self.design.expr_node(arg).clone();
+        if let ExprKind::Path(path) = &node.kind
+            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
+            && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl))
+        {
+            return Some(*index);
+        }
+        self.unsupported(scope.file, node.span, "an expression at a carrier port");
+        None
     }
 
     /// The name of the `let` that binds the placement, else `<module>#<k>` (§21 rule 3).

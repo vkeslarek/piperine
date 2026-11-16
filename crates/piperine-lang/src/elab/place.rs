@@ -1,9 +1,12 @@
-//! Placement: the instance tree and the node table. An instance is one placement of a module,
-//! bound to the parent's nodes and to param values; the tree is walked in pre-order, children
-//! in source order. Every signal of every instance is one node of the design, named by path;
-//! a port is not a node, it is bound to the parent's node or to ground (§21 rules 1 and 3).
+//! Placement: the instance tree, the node table and the net table. An instance is one placement
+//! of a module, bound to the parent's nodes and nets and to param values; the tree is walked in
+//! pre-order, children in source order. Every signal of every instance is one node of the design,
+//! named by path; a port is not a node, it is bound to the parent's node or to ground (§21 rules 1
+//! and 3). The discrete twin: every signal carrier of every instance is one net, named by path,
+//! a carrier port is bound to the parent's net, and a discrete port of the top is a net of the
+//! top (DIG-09 AC 4 and 5).
 
-use piperine_ir::{Constant, InstanceId, InstanceSpec, NodeRef, NodeSpec, Origin, Terminal};
+use piperine_ir::{CarrierRole, Constant, InstanceId, InstanceSpec, NetId, NetSpec, NodeRef, NodeSpec, Origin, Terminal};
 
 use super::body::ModulePlan;
 use super::consts::Bindings;
@@ -21,6 +24,8 @@ struct Placing {
     parent: Option<InstanceId>,
     /// What each port of the module is bound to, in port order.
     ports: Vec<NodeRef>,
+    /// The net each carrier port of the module is bound to, in port order; empty for the top.
+    carrier_ports: Vec<Option<NetId>>,
     /// The values the placement writes: (index in the module's params, value, the expression).
     given: Vec<(u32, Constant, ExprId)>,
     /// Where diagnostics of the placement sit.
@@ -35,7 +40,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(top).clone();
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let span = data.name.as_ref().map_or(data.span, |n| n.span);
-        let placing = Placing { module: top, path: name.clone(), name, parent: None, ports: Vec::new(), given: Vec::new(), file: data.file, span, origin: self.locator.decl(top) };
+        let placing = Placing { module: top, path: name.clone(), name, parent: None, ports: Vec::new(), carrier_ports: Vec::new(), given: Vec::new(), file: data.file, span, origin: self.locator.decl(top) };
         self.place(placing, &mut Vec::new())
     }
 
@@ -61,17 +66,42 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+        let nets = self.nets(&placing, &plan.carriers, declared_by);
         let instance = self.ir.instance(InstanceSpec { path: placing.path.clone(), name: placing.name, body: plan.body, parent: placing.parent, nodes: nodes.clone(), params, origin: placing.origin });
+        if !nets.is_empty() {
+            self.ir.bind_nets(instance, nets.clone());
+        }
         stack.push(placing.module);
         for child in &plan.children {
-            self.place_child(child, instance, &placing.path, &nodes, stack);
+            self.place_child(child, instance, &placing.path, &nodes, &nets, stack);
         }
         stack.pop();
         Some(instance)
     }
 
-    /// One child of the instance `parent`: its ports bound to the parent's nodes.
-    fn place_child(&mut self, child: &super::children::ChildPlan, parent: InstanceId, parent_path: &str, parent_nodes: &[NodeRef], stack: &mut Vec<DeclId>) {
+    /// The net of each carrier of the instance being placed, in the body's carrier order: a carrier
+    /// port the parent binds takes the parent's net; any other carrier (a signal, a port of the
+    /// top) declares its own, named by its path, with the carrier's initial value as the net's
+    /// (§5.2.3: the declaring module gives it).
+    fn nets(&mut self, placing: &Placing, carriers: &[piperine_ir::Carrier], declared_by: InstanceId) -> Vec<NetId> {
+        let mut bound = placing.carrier_ports.iter().copied();
+        let mut nets = Vec::new();
+        for carrier in carriers {
+            let given = match carrier.role {
+                CarrierRole::In | CarrierRole::Out => bound.next().flatten(),
+                CarrierRole::Signal => None,
+            };
+            let net = match given {
+                Some(net) => net,
+                None => self.ir.net(NetSpec { path: format!("{}.{}", placing.path, carrier.name), ty: carrier.ty.clone(), declared_by, init: carrier.init, origin: carrier.origin.clone() }),
+            };
+            nets.push(net);
+        }
+        nets
+    }
+
+    /// One child of the instance `parent`: its ports bound to the parent's nodes and nets.
+    fn place_child(&mut self, child: &super::children::ChildPlan, parent: InstanceId, parent_path: &str, parent_nodes: &[NodeRef], parent_nets: &[NetId], stack: &mut Vec<DeclId>) {
         let node = self.design.expr_node(child.call).clone();
         let file = self.design.decl_data(node.owner).file;
         let ports = child
@@ -82,12 +112,14 @@ impl Elaboration<'_, '_> {
                 Terminal::Ground => NodeRef::Ground,
             })
             .collect();
+        let carrier_ports = child.carriers.iter().map(|c| c.and_then(|i| parent_nets.get(i as usize).copied())).collect();
         let placing = Placing {
             module: child.module,
             path: format!("{parent_path}.{}", child.name),
             name: child.name.clone(),
             parent: Some(parent),
             ports,
+            carrier_ports,
             given: child.given.clone(),
             file,
             span: node.span,

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use piperine_ir::{BodyId, Ir, IrBuilder, NatureId, ValueType};
 
 use super::body::ModulePlan;
+use super::carriers::{Frame, Structure};
 use super::consts::ConstEval;
 use super::origin::Locator;
 use super::variants::Variants;
@@ -24,11 +25,11 @@ impl<'d> Elaborator<'d> {
         Elaborator { design }
     }
 
-    /// Elaborate `top`, a module of the root crate without a port.
+    /// Elaborate `top`, a module of the root crate whose ports, if any, are discrete.
     ///
     /// The front-end and type-check diagnostics come back unchanged; an unknown top is one
-    /// diagnostic naming it, and so is a top with a port (a port of a top has nothing to connect
-    /// to, and caller-given values are M2).
+    /// diagnostic naming it, and so is a top with a continuous port (a node of a top has nothing
+    /// to connect to). A discrete port of the top is a net the host drives (§5.2.3).
     pub fn run(self, top: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
         let types = Types::check(self.design, top)?;
         let top_decl = types.reached()[0];
@@ -52,6 +53,10 @@ pub(super) struct Elaboration<'d, 't> {
     /// The type of every IR expression added so far, by id.
     pub(super) expr_types: Vec<ValueType>,
     pub(super) plans: BTreeMap<DeclId, ModulePlan>,
+    /// The carriers, drives, events and reactions of the body being lowered.
+    pub(super) structure: Structure,
+    /// The frames of the body being lowered: frame 0 is its own module.
+    pub(super) frames: Vec<Frame>,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -68,6 +73,8 @@ impl<'d, 't> Elaboration<'d, 't> {
             variants: Variants::default(),
             expr_types: Vec::new(),
             plans: BTreeMap::new(),
+            structure: Structure::default(),
+            frames: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -115,16 +122,18 @@ impl<'d, 't> Elaboration<'d, 't> {
             .collect())
     }
 
-    /// `P0001` and `true` when the top has a port.
+    /// `P0001` and `true` when the top has a continuous port: a node or a value input. A discrete
+    /// port is a net of the top (DIG-09 AC 5).
     fn top_has_a_port(&mut self, top: DeclId) -> bool {
         let data = self.design.decl_data(top);
-        let has_port = data.children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)));
-        if has_port {
+        let continuous = data.children.iter().find(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Port(_)) && self.types.carrier(**c).is_none());
+        if let Some(port) = continuous {
             let name = data.name.as_ref().map_or("", |n| n.text.as_str());
+            let port = self.design.decl_data(*port).name.as_ref().map_or("", |n| n.text.as_str());
             let (file, span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
-            self.report(file, Diagnostic::new("P0001", format!("top module `{name}` has a port, which is not supported yet"), span, "a top module has no port in M1"));
+            self.report(file, Diagnostic::new("P0001", format!("top module `{name}` has the continuous port `{port}`, which is not supported yet"), span, "a top module's ports are discrete carriers"));
         }
-        has_port
+        continuous.is_some()
     }
 
     pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {

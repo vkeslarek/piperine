@@ -918,13 +918,13 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] `top_has_a_port` of `elab/elaborator.rs` refuses only a continuous port; its M1 test is re-pointed to one
-- [ ] An initial value is folded with `ConstEval`; one that reads a param is `P0001`
-- [ ] Every placement's carrier arguments are written with `IrBuilder::bind_child_carriers` (T64), so the authored `Child` shows them
-- [ ] A net's `init` is the folded initial value of the carrier that declares it, `None` when it has none (`ir-rust` F-B2; T65 passes it to the solver)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `carriers_follow_ports_then_signals`, `every_signal_carrier_is_a_design_net`, `a_top_with_discrete_ports_gets_one_net_per_port`, `a_carrier_with_no_value_and_no_drive_is_kept`, `a_placement_records_its_carrier_bindings`, `a_net_takes_the_init_of_its_declaring_carrier`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 6 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] `top_has_a_port` of `elab/elaborator.rs` refuses only a continuous port; its M1 test is re-pointed to one
+- [x] An initial value is folded with `ConstEval`; one that reads a param is `P0001`
+- [x] Every placement's carrier arguments are written with `IrBuilder::bind_child_carriers` (T64), so the authored `Child` shows them
+- [x] A net's `init` is the folded initial value of the carrier that declares it, `None` when it has none (`ir-rust` F-B2; T65 passes it to the solver)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `carriers_follow_ports_then_signals`, `every_signal_carrier_is_a_design_net`, `a_top_with_discrete_ports_gets_one_net_per_port`, `a_carrier_with_no_value_and_no_drive_is_kept`, `a_placement_records_its_carrier_bindings`, `a_net_takes_the_init_of_its_declaring_carrier`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 6 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full

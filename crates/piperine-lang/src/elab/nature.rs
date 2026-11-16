@@ -13,6 +13,8 @@ impl Elaboration<'_, '_> {
         for module in modules {
             for child in self.design.decl_data(*module).children.clone() {
                 let ty = match &self.design.decl_data(child).kind {
+                    // A discrete carrier's nature (`Bit`) has no quantity: it is no IR nature.
+                    _ if self.types.carrier(child).is_some() => continue,
                     DeclKind::Port(p) => p.ty,
                     DeclKind::Signal(s) => s.ty,
                     _ => continue,

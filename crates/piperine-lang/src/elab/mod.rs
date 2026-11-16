@@ -10,6 +10,7 @@
 //! instance tree. Any diagnostic means no `Ir`.
 
 mod body;
+mod carriers;
 mod children;
 mod compound;
 mod consts;

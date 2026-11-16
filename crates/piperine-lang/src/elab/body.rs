@@ -2,8 +2,9 @@
 //! over the body's own params), its nodes (ports first, then signals, with nature and initial
 //! potential). A body is a function of its module alone: one variant per module in M1.
 
-use piperine_ir::{BodyNode, BodySpec, Child, Constant, NatureId, NodeRole, Origin, Param, Real};
+use piperine_ir::{BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Param, Real};
 
+use super::carriers::{Frame, Structure};
 use super::children::ChildPlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
@@ -30,13 +31,15 @@ pub(super) struct NodePlan {
     pub(super) origin: Origin,
 }
 
-/// What placement reads of a lowered module: its params and nodes in body order, and the
-/// placements it writes.
+/// What placement reads of a lowered module: its params, nodes and carriers in body order, and
+/// the placements it writes.
 #[derive(Clone)]
 pub(super) struct ModulePlan {
     pub(super) body: piperine_ir::BodyId,
     pub(super) params: Vec<ParamPlan>,
     pub(super) nodes: Vec<NodePlan>,
+    /// Every carrier of the body, in its order: each is bound to one net per instance.
+    pub(super) carriers: Vec<Carrier>,
     pub(super) children: Vec<ChildPlan>,
 }
 
@@ -60,8 +63,12 @@ impl Elaboration<'_, '_> {
         }
         let nodes = self.lower_nodes(&mut scope, module);
         let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = nodes.into_iter().unzip();
+        self.structure = Structure::default();
+        self.frames = vec![Frame::root()];
+        self.lower_carriers(0, module);
         let analog = self.lower_analog(&mut scope, module);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
+        let carriers = self.structure.carriers.clone();
         let expected = self.body_ids.get(&module).copied();
         let body = self.ir.body(BodySpec {
             name,
@@ -76,7 +83,8 @@ impl Elaboration<'_, '_> {
             children,
         });
         debug_assert_eq!(Some(body), expected, "bodies are built in first-reach order");
-        self.plans.insert(module, ModulePlan { body, params: param_plans, nodes: node_plans, children: child_plans });
+        self.finish_structure(body);
+        self.plans.insert(module, ModulePlan { body, params: param_plans, nodes: node_plans, carriers, children: child_plans });
     }
 
 
@@ -104,10 +112,12 @@ impl Elaboration<'_, '_> {
     }
 
     /// The nodes of a module: ports first, then signals, each with its nature and initial value.
+    /// A discrete carrier is not a node (`carriers.rs`).
     fn lower_nodes(&mut self, scope: &mut Scope, module: DeclId) -> Vec<(BodyNode, NodePlan)> {
         let children = self.design.decl_data(module).children.clone();
-        let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)));
-        let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)));
+        let node = |c: &DeclId| self.types.carrier(*c).is_none();
+        let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && node(c));
+        let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
         let mut out = Vec::new();
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
             if let Some(node) = self.lower_node(decl, role) {

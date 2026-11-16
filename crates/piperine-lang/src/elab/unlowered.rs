@@ -4,8 +4,8 @@
 //!
 //! Not listed here because the type checker refuses them first, with its own `P0001`:
 //! an `extern` module (`types/`'s subset table). The digital forms the checker accepts (a
-//! carrier, a definition, a `digital` block, a module with a result) are refused here until
-//! the structure passes of msl-digital lower them.
+//! definition, a `digital` block, a module with a result) are refused here until the structure
+//! passes of msl-digital lower them; a carrier is lowered (`carriers.rs`).
 
 use super::elaborator::Elaboration;
 use crate::msl::Span;
@@ -31,8 +31,6 @@ pub(super) enum Unlowered<'a> {
     DigitalBlock,
     /// A second `analog` block of one module.
     SecondAnalogBlock,
-    /// A discrete port or signal.
-    Carrier,
     /// A definition `place = expr;`.
     Definition,
     /// A module with a result.
@@ -54,7 +52,6 @@ impl Unlowered<'_> {
             Unlowered::PlacementSets(name) => format!("a placement that sets `{name}`"),
             Unlowered::DigitalBlock => "a `digital` block".to_string(),
             Unlowered::SecondAnalogBlock => "a second `analog` block for one module".to_string(),
-            Unlowered::Carrier => "a discrete carrier".to_string(),
             Unlowered::Definition => "a definition `=`".to_string(),
             Unlowered::ResultModule => "a module with a result".to_string(),
             Unlowered::ValueInput => "a value input".to_string(),
@@ -71,7 +68,7 @@ impl Elaboration<'_, '_> {
 
 impl Elaboration<'_, '_> {
     /// `P0001` for each digital form a reached module holds: elaboration has no lowering for a
-    /// carrier, a definition, a `digital` block or a result yet, and a body built without them
+    /// definition, a `digital` block or a result yet, and a body built without them
     /// would run as a different circuit. `true` when anything was refused.
     pub(super) fn refuse_digital_forms(&mut self, modules: &[DeclId]) -> bool {
         let before = self.diagnostics.len();
@@ -84,8 +81,7 @@ impl Elaboration<'_, '_> {
             for child in data.children.iter().copied() {
                 let item = self.design.decl_data(child).clone();
                 match &item.kind {
-                    DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(child).is_some() => self.refuse(item.file, item.span, Unlowered::Carrier),
-                    DeclKind::Port(p) if self.design.nature_of(p.ty).is_none() => self.refuse(item.file, item.span, Unlowered::ValueInput),
+                    DeclKind::Port(p) if self.types.carrier(child).is_none() && self.design.nature_of(p.ty).is_none() => self.refuse(item.file, item.span, Unlowered::ValueInput),
                     DeclKind::Definition(_) => self.refuse(item.file, item.span, Unlowered::Definition),
                     _ => {}
                 }

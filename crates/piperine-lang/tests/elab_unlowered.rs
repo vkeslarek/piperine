@@ -185,9 +185,11 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
     // (msl-digital T9 to T16); the structure passes that lower them come later. Until then every one
     // is refused by name, never dropped and never lowered as a different circuit.
     for (form, src, names) in [
-        ("a carrier", "module Top() { signal s: Bit; }", vec!["a discrete carrier"]),
-        ("a definition", "module Top() { signal s: Bit; s = true; }", vec!["a discrete carrier", "a definition `=`"]),
-        ("a digital block", "module Top() { signal clk: Bit; }\ndigital for Top { on clk.rise() { } }", vec!["a discrete carrier", "a `digital` block"]),
+        // A carrier is lowered from msl-digital T28 on: the form still refused in its place is the
+        // resolved carrier of DIG-07 AC 1.
+        ("a nature with resolve", "module Top(c: Wire) { }", vec!["resolved nature `Wire`"]),
+        ("a definition", "module Top() { signal s: Bit; s = true; }", vec!["a definition `=`"]),
+        ("a digital block", "module Top() { signal clk: Bit; }\ndigital for Top { on clk.rise() { } }", vec!["a `digital` block"]),
         ("a module with a result", "module twice(x: f64) -> f64 { 2.0 * x }\nmodule Top() { let a = twice(1.0); }", vec!["a module with a result", "a value input"]),
         ("a value input", "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }", vec!["a value input"]),
         ("a flow read of a potential branch", "module L(p: Electrical, n: Electrical) { }\nanalog for L { v(p, n) +> 2.0 * i(p, n); }\nmodule Top() { signal s: Electrical; let l = L(s, gnd); }", vec!["a flow probe read as a value"]),

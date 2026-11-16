@@ -42,11 +42,13 @@ pub(super) struct Scope {
     /// The `Option` locals: a `let` binding of type `Option<T>` to its flag local and its
     /// payload local.
     pub(super) options: BTreeMap<DeclId, (u32, u32)>,
+    /// The frame whose names the code reads (`Elaboration::frames`): 0, the body's own module.
+    pub(super) frame: usize,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new() }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0 }
     }
 }
 
@@ -476,6 +478,17 @@ impl Elaboration<'_, '_> {
                 Some(index) => Some(self.emit(Expr::Param(*index), ty, origin)),
                 None => {
                     self.unsupported(scope.file, node.span, "a param of another module");
+                    None
+                }
+            },
+            DeclKind::Port(_) | DeclKind::Signal(_) => match self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl)).copied() {
+                Some(index) => {
+                    // A read of a carrier may be unknown (§3.3): its type is flagged.
+                    let carried = self.structure.carriers[index as usize].ty.clone();
+                    Some(self.emit(Expr::Carrier(index), Flag::Flagged.wrap(carried), origin))
+                }
+                None => {
+                    self.unsupported(scope.file, node.span, "a node or a port read as a value");
                     None
                 }
             },
