@@ -2275,7 +2275,7 @@ Proof: run project | test a_diagnostic_is_returned_with_its_stage ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none - the feature waits for `ir-rust` to merge
+**Dispatched:** ir-rust merged to main 9aa03fe8 (2026-11-15). Batch 1 (phases 1-2, T1-T8) - Opus worker.
 **Walked:** none (no screen; each story's Independent Test is a check above)
 
 ---
