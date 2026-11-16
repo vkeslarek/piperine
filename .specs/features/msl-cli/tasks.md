@@ -1937,7 +1937,7 @@ Proof: run commands | test fmt_check_passes_on_the_rc_example_and_on_a_new_proje
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. The eight open questions of the spec are not answered.
+**Settled mid-build:** none yet. The eight open questions of the spec are not answered. Orchestrator, 2026-11-16: the Book gained chapter 16 "How Piperine is organized" (crates, as the user asked: "colocaria como os ultimos capitulos do book"); the cheat sheet is now 17. The CLI chapter goes right BEFORE the structure chapter (CLI 16, structure 17, cheat sheet 18) and T36 updates the structure chapter's crate rows if the CLI/api shape differs from what it says.
 **Dispatched:** none.
 **Walked:** none.
 
