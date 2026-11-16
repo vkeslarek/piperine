@@ -191,3 +191,83 @@ fn a_net_takes_the_init_of_its_declaring_carrier() {
     let read = Read { ir: &ir };
     assert_eq!(read.carriers("Leaf")[0].3, Some(Constant::Bool(true)), "the driver's carrier keeps its own initial value");
 }
+
+/// The structural print of `body` alone: its header and the lines under it.
+fn body_text(ir: &Ir, body: &str) -> String {
+    let text = ir.print_structural();
+    let head = format!("body {body}\n");
+    let start = text.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{text}"));
+    let rest = &text[start..];
+    let end = rest[1..].find("\nbody ").or_else(|| rest[1..].find("\nfn ")).or_else(|| rest[1..].find("\ninstance ")).map_or(rest.len(), |at| at + 2);
+    rest[..end].to_string()
+}
+
+#[test]
+fn a_definition_is_a_drive() {
+    // DIG-09 AC 2, C76: `GateDriver` (examples/buck/src/power.msl): `hs_gate = (hs_cmd & !ls_cmd)
+    // after tpd;` is one drive of `hs_gate` with its `after`, and so is `ls_gate`, in source order.
+    let ir = Elab::ir(&buck::item("power.msl", "pub module GateDriver("), "GateDriver");
+    let read = Read { ir: &ir };
+    let body = read.body("GateDriver");
+    let carrier = |name: &str| body.carriers().iter().position(|c| c.name == name).map(|i| i as u32);
+    assert_eq!(body.drives().len(), 2);
+    assert_eq!(Some(body.drives()[0].carrier), carrier("hs_gate"));
+    assert_eq!(Some(body.drives()[1].carrier), carrier("ls_gate"));
+    for drive in body.drives() {
+        let after = drive.after.expect("each definition has its `after`");
+        assert_eq!(ir.expr(after), &piperine_ir::Expr::Param(0), "`after tpd` reads the param `tpd`");
+    }
+    let text = body_text(&ir, "GateDriver");
+    assert!(text.contains("  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd\n  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd\n"), "{text}");
+    // An undelayed definition has no `after`: `RefRamp`'s `at_target = reference == target;`, a
+    // comparison of two carrier reads, which may be unknown (§3.3).
+    let ir = Elab::ir(&buck::item("control.msl", "pub module RefRamp("), "RefRamp");
+    let read = Read { ir: &ir };
+    let body = read.body("RefRamp");
+    assert_eq!(body.drives().len(), 1);
+    assert_eq!(body.drives()[0].after, None);
+    assert_eq!(ir.expr_type(body.drives()[0].value), &ValueType::Flagged(Box::new(ValueType::Bool)));
+    assert!(body_text(&ir, "RefRamp").contains("  drive at_target = (reference == target)\n"));
+}
+
+/// The buck's `Controller` (examples/buck/src/top.msl) as written, over the buck's own constants,
+/// enums and `target_codes`, its children declared with the buck's ports and no body.
+fn controller() -> String {
+    let children = [("control.msl", "SetpointReg"), ("control.msl", "RefRamp"), ("control.msl", "Pid"), ("supervisor.msl", "Supervisor"), ("dpwm.msl", "Dpwm")].map(|(file, name)| ports_of(file, name));
+    format!(
+        "{}\n{}\n{}\n{}\n{}\n{}",
+        buck::spec(),
+        buck::item("supervisor.msl", "pub enum Mode"),
+        buck::item("supervisor.msl", "pub enum Fault"),
+        buck::item("control.msl", "pub fn target_codes"),
+        children.join("\n"),
+        buck::item("top.msl", "pub module Controller("),
+    )
+}
+
+#[test]
+fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
+    // DIG-09 AC 3, C77: `RefRamp(done, run, target_codes(setpoint.known_or(0)), ..)` in
+    // `Controller` adds the signal carrier `ramp.target` to `Controller` with its drive, and binds
+    // the child's port `target` to it (§8.2.9).
+    let ir = Elab::ir(&controller(), "Controller");
+    let read = Read { ir: &ir };
+    let body = read.body("Controller");
+    let at = body.carriers().iter().position(|c| c.name == "ramp.target").expect("the carrier `ramp.target`");
+    let carrier = &body.carriers()[at];
+    assert_eq!((carrier.role, &carrier.ty, carrier.init), (CarrierRole::Signal, &ValueType::UInt(10), None), "a signal of `target`'s type, its value is the drive's");
+    let drives: Vec<_> = body.drives().iter().filter(|d| d.carrier == at as u32).collect();
+    assert_eq!(drives.len(), 1, "one drive of `ramp.target`");
+    assert_eq!(drives[0].after, None);
+    assert!(body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint.known_or(0u8))\n"), "{}", body_text(&ir, "Controller"));
+    let ramp = body.children().iter().position(|c| c.name == "ramp").expect("the child `ramp`");
+    let setpoint = body.carriers().iter().position(|c| c.name == "setpoint").map(|i| i as u32);
+    let (done, run, reference, at_target) = ["done", "run", "reference", "at_target"].map(|n| body.carriers().iter().position(|c| c.name == n).map(|i| i as u32)).into();
+    assert_eq!(body.child_carriers(ramp), [done, run, Some(at as u32), reference, at_target], "the port `target` is bound to `ramp.target`");
+    assert!(setpoint.is_some());
+    // The carrier is a net of the instance, like any signal.
+    assert!(ir.net_at("Controller.ramp.target").is_some());
+    // A carrier given as it is binds the port, with no carrier or drive of its own: only one
+    // anonymous definition in `Controller`.
+    assert_eq!(body.carriers().iter().filter(|c| c.name.contains('.')).count(), 1);
+}

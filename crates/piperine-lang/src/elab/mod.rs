@@ -16,6 +16,7 @@ mod compound;
 mod consts;
 mod contribute;
 mod diagnose;
+mod drives;
 mod elaborator;
 mod analog;
 mod functions;

@@ -66,6 +66,7 @@ impl Elaboration<'_, '_> {
         self.structure = Structure::default();
         self.frames = vec![Frame::root()];
         self.lower_carriers(0, module);
+        self.lower_definitions(&scope, module);
         let analog = self.lower_analog(&mut scope, module);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
         let carriers = self.structure.carriers.clone();

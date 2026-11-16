@@ -77,7 +77,7 @@ impl Elaboration<'_, '_> {
         let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         for (port, arg) in ports.iter().zip(args) {
             if self.types.carrier(*port).is_some() {
-                match self.lower_carrier_arg(scope, arg.value) {
+                match self.lower_carrier_arg(scope, &name, *port, arg.value) {
                     Some(carrier) => carriers.push(Some(carrier)),
                     None => ok = false,
                 }
@@ -118,8 +118,10 @@ impl Elaboration<'_, '_> {
         Some((child, ChildPlan { name, module, terminals, carriers, given, call }))
     }
 
-    /// The carrier of the parent an argument at a carrier port names. `None` after a diagnostic.
-    fn lower_carrier_arg(&mut self, scope: &Scope, arg: ExprId) -> Option<u32> {
+    /// The carrier of the parent an argument at the carrier port `port` of the placement
+    /// `instance` is bound to: the carrier it names, or for an expression at an `in` port the
+    /// carrier of its anonymous definition (§8.2.9). `None` after a diagnostic.
+    fn lower_carrier_arg(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<u32> {
         let node = self.design.expr_node(arg).clone();
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
@@ -127,8 +129,14 @@ impl Elaboration<'_, '_> {
         {
             return Some(*index);
         }
-        self.unsupported(scope.file, node.span, "an expression at a carrier port");
-        None
+        match &self.design.decl_data(port).kind {
+            DeclKind::Port(p) if p.dir == Some(crate::pom::Dir::In) => self.anonymous_definition(scope, instance, port, arg),
+            // The checker refuses an expression at an `out` port first (`E0314`).
+            _ => {
+                self.unsupported(scope.file, node.span, "an expression at an `out` carrier port");
+                None
+            }
+        }
     }
 
     /// The name of the `let` that binds the placement, else `<module>#<k>` (§21 rule 3).

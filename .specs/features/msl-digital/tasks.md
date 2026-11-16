@@ -945,10 +945,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] `GateDriver`'s two delayed drives and `Controller`'s `ramp.target` are the cases
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `a_definition_is_a_drive`, `an_expression_at_an_in_port_is_a_carrier_and_a_drive`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] `GateDriver`'s two delayed drives and `Controller`'s `ramp.target` are the cases
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `a_definition_is_a_drive`, `an_expression_at_an_in_port_is_a_carrier_and_a_drive`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full

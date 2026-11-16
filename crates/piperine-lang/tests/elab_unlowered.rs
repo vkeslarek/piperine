@@ -188,7 +188,9 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
         // A carrier is lowered from msl-digital T28 on: the form still refused in its place is the
         // resolved carrier of DIG-07 AC 1.
         ("a nature with resolve", "module Top(c: Wire) { }", vec!["resolved nature `Wire`"]),
-        ("a definition", "module Top() { signal s: Bit; s = true; }", vec!["a definition `=`"]),
+        // A definition is lowered from msl-digital T29 on: the form still refused in its place is
+        // the element commit of DIG-07 AC 1.
+        ("an element commit", "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", vec!["element or field commit"]),
         ("a digital block", "module Top() { signal clk: Bit; }\ndigital for Top { on clk.rise() { } }", vec!["a `digital` block"]),
         ("a module with a result", "module twice(x: f64) -> f64 { 2.0 * x }\nmodule Top() { let a = twice(1.0); }", vec!["a module with a result", "a value input"]),
         ("a value input", "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }", vec!["a value input"]),
