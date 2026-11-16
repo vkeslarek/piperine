@@ -1807,10 +1807,10 @@ T54 → T55 → T66 → T67 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] "Silent" lists: a derived child param is not re-derived on a host `set`
-- [ ] "Loud" lists: unknown control is a fault; every form of DIG-07 AC 1; enum variant names are not carried
-- [ ] `ROADMAP.md` "MSL spec gaps" drops G3 and "Queue after ir-rust" marks item 2 delivered; item 5 is the orchestrator's to reword and is not touched
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] "Silent" lists: a derived child param is not re-derived on a host `set`
+- [x] "Loud" lists: unknown control is a fault; every form of DIG-07 AC 1; enum variant names are not carried
+- [x] `ROADMAP.md` "MSL spec gaps" drops G3 and "Queue after ir-rust" marks item 2 delivered; item 5 is the orchestrator's to reword and is not touched
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 
 **Tests**: none
 **Gate**: build
