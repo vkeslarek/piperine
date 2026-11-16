@@ -88,7 +88,11 @@ impl<'a> DigitalPrinter<'a> {
                 None => return Ok(None),
             },
             Source::CarrierChanged(_) | Source::DelayedChanged(_) | Source::Crossed(_) => format!("let {name} = {cx}.bool({i});"),
-            Source::Node(_) | Source::Temperature | Source::Gmin | Source::SourceScale => format!("let {name} = {cx}.f64({i});"),
+            Source::Node(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time => {
+                format!("let {name} = {cx}.f64({i});")
+            }
+            // abi.md §4.2: `STATIC` is one `BOOL` byte
+            Source::Static => format!("let {name} = {cx}.bool({i});"),
             Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {
@@ -97,7 +101,7 @@ impl<'a> DigitalPrinter<'a> {
                 }
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
-            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) | Source::Static | Source::Time => {
+            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
                 return Ok(None);
             }
         }))

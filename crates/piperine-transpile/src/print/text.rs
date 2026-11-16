@@ -113,9 +113,7 @@ impl Text {
     /// a name that ends in `_`, one of the four keywords Rust refuses as raw identifiers, or a
     /// name the generated code refers to.
     pub fn ident(name: &str) -> String {
-        // `~` marks a variant the front end minted (`rev3~1`); Rust has no such character in a
-        // name, and an MSL name has none, so it prints as `_v` (`rev3_v1`, a snake-case name).
-        let name = name.replace('~', "_v");
+        let name = Self::spelled(name);
         let name = name.as_str();
         if name.ends_with('_') || UNRAWABLE.contains(&name) || RESERVED.contains(&name) {
             format!("{name}_")
@@ -129,8 +127,19 @@ impl Text {
     /// A name the printer makes from `word` (`cx`, `vd_limit`, `b0_flow`): `word_`, a name no
     /// MSL name prints as. `word` must not end in `_` and must not be a reserved name.
     pub fn generated(word: &str) -> String {
-        debug_assert!(!word.ends_with('_') && !RESERVED.contains(&word) && !UNRAWABLE.contains(&word), "{word}");
+        let word = Self::spelled(word);
+        debug_assert!(!word.ends_with('_') && !RESERVED.contains(&word.as_str()) && !UNRAWABLE.contains(&word.as_str()), "{word}");
         format!("{word}_")
+    }
+
+    /// A name the front end made, spelled with Rust's characters. Three characters mark such a
+    /// name and none is in an MSL name or in Rust's: `~` a function variant (`rev3~1`), `.` a
+    /// hoisted item under its frame (`gate.x`, `require.pass`), `$` a numbered placement or local
+    /// (`above$0`, `match$0`). They print as `_v`, `_d` and `_s`: `rev3_v1`, `gate_dx`,
+    /// `above_s0_dinit_s0_dup`, snake-case names (contract.md D9). Two names of one owner that
+    /// spell alike are refused where the owner is printed, never shadowed.
+    fn spelled(name: &str) -> String {
+        name.replace('~', "_v").replace('.', "_d").replace('$', "_s")
     }
 }
 

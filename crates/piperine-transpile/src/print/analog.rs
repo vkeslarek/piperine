@@ -240,15 +240,15 @@ impl<'a> AnalogPrinter<'a> {
         }
     }
 
-    /// The plan read of an environment read; `None` for the two the plan does not read yet
-    /// (`time()`, `static()`), which `Amended` refuses before any is printed.
+    /// The plan read of an environment read.
     fn env_source(env: Env) -> Option<Source> {
-        match env {
-            Env::Temperature => Some(Source::Temperature),
-            Env::Gmin => Some(Source::Gmin),
-            Env::SourceScale => Some(Source::SourceScale),
-            Env::Time | Env::Static => None,
-        }
+        Some(match env {
+            Env::Temperature => Source::Temperature,
+            Env::Gmin => Source::Gmin,
+            Env::SourceScale => Source::SourceScale,
+            Env::Time => Source::Time,
+            Env::Static => Source::Static,
+        })
     }
 
     /// The Rust type a read is bound to in generic code: a `bool` param stays `bool`.
@@ -257,17 +257,17 @@ impl<'a> AnalogPrinter<'a> {
     }
 
     /// Whether a generic block takes read `s` as it is rather than as a `Real` (so it is no
-    /// `Dual`): a bool or integer param, a carrier.
+    /// `Dual`): a bool or integer param, a carrier, `analysis(Static)`.
     pub(crate) fn is_plain(&self, s: Source) -> bool {
         match s {
             Source::Param(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
-            Source::Carrier(_) => true,
+            Source::Carrier(_) | Source::Static => true,
             _ => false,
         }
     }
 
-    /// The type of read `s` in a generic block: `R`, `bool`, an integer, or for a carrier the
-    /// `rt::Flagged<T>` its pin decodes to.
+    /// The type of read `s` in a generic block: `R`, `bool` (a `bool` param, `analysis(Static)`),
+    /// an integer, or for a carrier the `rt::Flagged<T>` its pin decodes to.
     pub(crate) fn block_type(&self, s: Source) -> Result<String, Error> {
         match s {
             Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
@@ -278,6 +278,7 @@ impl<'a> AnalogPrinter<'a> {
                 Some(carrier) => Ok(format!("rt::Flagged<{}>", self.values.pin_type(&carrier.ty)?)),
                 None => Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
+            Source::Static => Ok("bool".to_string()),
             _ => Ok("R".to_string()),
         }
     }
@@ -301,6 +302,8 @@ impl<'a> AnalogPrinter<'a> {
                 Some(carrier) => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i}));", self.values.pin_type(&carrier.ty)?),
                 None => return Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
+            // abi.md §4.2: `STATIC` is one `BOOL` byte, `TIME` an `F64`
+            Source::Static => format!("let {name} = {cx}.bool({i});"),
             _ => format!("let {name} = {cx}.f64({i});"),
         })
     }

@@ -140,6 +140,7 @@ impl LibraryPrinter {
     ) -> Result<String, Error> {
         let name = body.name();
         let at = body.origin();
+        Self::distinct_names(body)?;
         let analog = AnalogPrinter::new(*body, plan);
         let digital = DigitalPrinter::new(*body, plan);
         let mut functions = Vec::new();
@@ -292,6 +293,30 @@ impl LibraryPrinter {
                     form: format!("two functions that print as `{name}`"),
                     path: format!("body {} function {k}", body.name()),
                     origin: body.origin().clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// No two params, nodes or carriers of a body print as one Rust name: a hoisted name
+    /// (`gate.x` prints as `gate_dx`) and an MSL name may spell alike, and that is refused as two
+    /// function names that print alike are, not shadowed.
+    fn distinct_names(body: &piperine_ir::Body<'_>) -> Result<(), Error> {
+        let names = body
+            .params()
+            .iter()
+            .map(|p| (&p.name, &p.origin))
+            .chain(body.nodes().iter().map(|n| (&n.name, &n.origin)))
+            .chain(body.carriers().iter().map(|c| (&c.name, &c.origin)));
+        let mut seen = BTreeSet::new();
+        for (name, origin) in names {
+            let printed = Text::ident(name);
+            if !seen.insert(printed.clone()) {
+                return Err(Error::Unsupported {
+                    form: format!("two names that print as `{printed}`"),
+                    path: format!("body {} {name}", body.name()),
+                    origin: origin.clone(),
                 });
             }
         }

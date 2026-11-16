@@ -1,11 +1,11 @@
 //! Scope: the forms the IR amendments of msl-digital added, before the printer lowers them
-//! (T39 onward): a body that holds one is `Error::Unsupported` naming the form, the body and
+//! (T40 onward): a body that holds one is `Error::Unsupported` naming the form, the body and
 //! the origin, and no text is printed. Each lowering task deletes the case it lowers.
 
 use std::sync::Arc;
 
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Constant, EmitField, Env, Event, EventSource, Expr, FunctionSpec,
+    Addend, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Constant, EmitField, Event, EventSource, Expr,
     InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
 };
 use piperine_transpile::{Error, Transpiler};
@@ -42,11 +42,6 @@ impl Case {
         b.finish(top)
     }
 
-    /// `i(p, n) +> <value>;`
-    fn flow(value: piperine_ir::ExprId) -> Stmt {
-        Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] }
-    }
-
     /// What printing `ir` gives: the refusal.
     fn refused(ir: Ir) -> Error {
         assert_eq!(ir.check(), vec![]);
@@ -56,41 +51,6 @@ impl Case {
             Ok(text) => panic!("a form with no lowering printed:\n{text}"),
         }
     }
-}
-
-#[test]
-fn time_and_static_are_refused_by_name() {
-    // `i(p, n) +> v(p, n) * now();` at line 2, and `i(p, n) +> keep(analysis(Static));` through a
-    // function at line 4.
-    let ir = Case::design(BranchKind::Flow, |b| {
-        let mut x = Dx::new(b, F, 2, 20);
-        let v = x.probe(Terminal::Node(0), Terminal::Node(1));
-        let o = x.origin();
-        let now = x.b.expr(Expr::Env(Env::Time), ValueType::F64, o);
-        let value = x.bin(BinaryOp::Mul, v, now, ValueType::F64);
-        vec![Case::flow(value)]
-    });
-    assert_eq!(
-        Case::refused(ir),
-        Error::Unsupported { form: "now()".into(), path: "body Amended e1".into(), origin: Buck::origin(F, 2, 20) }
-    );
-
-    let ir = Case::design(BranchKind::Flow, |b| {
-        let mut x = Dx::new(b, F, 3, 5);
-        let o = x.origin();
-        let stat = x.b.expr(Expr::Env(Env::Static), ValueType::Bool, o);
-        let one = x.real(1.0);
-        let zero = x.real(0.0);
-        let level = x.if_(stat, one, zero, ValueType::F64);
-        let keep = b.function(FunctionSpec { name: "keep".into(), origin: Buck::origin(F, 3, 1), params: vec![], ret: ValueType::F64, locals: vec![], body: level });
-        let mut x = Dx::new(b, F, 4, 20);
-        let call = x.call(keep, vec![], ValueType::F64);
-        vec![Case::flow(call)]
-    });
-    assert_eq!(
-        Case::refused(ir),
-        Error::Unsupported { form: "analysis(Static)".into(), path: "body Amended e0".into(), origin: Buck::origin(F, 3, 5) }
-    );
 }
 
 #[test]

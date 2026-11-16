@@ -282,7 +282,8 @@ impl<'a> ValuePrinter<'a> {
         }
         let envs = Self::env_reads(ir, function);
         for env in &envs {
-            params.push(format!("{}: R", Self::env_name(*env)));
+            let ty = if *env == Env::Static { "bool" } else { "R" };
+            params.push(format!("{}: {ty}", Self::env_name(*env)));
         }
         let ret = printer.rust_type(f.ret(), &format!("{} return", printer.path))?;
         let faulting = Self::faults(ir, function);
@@ -298,11 +299,13 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// Whether `function` is generic over `Real`: a real is among its params, its return, its
-    /// locals, or it reads the environment.
+    /// locals, or it reads an environment real (every read but `analysis(Static)`, a `bool`).
     pub fn is_generic(ir: &Ir, function: FunctionId) -> bool {
         let f = ir.function(function);
         let real = |ty: &ValueType| *ty == ValueType::F64;
-        f.params().iter().chain(f.locals()).any(|l| real(&l.ty)) || real(f.ret()) || !Self::env_reads(ir, function).is_empty()
+        f.params().iter().chain(f.locals()).any(|l| real(&l.ty))
+            || real(f.ret())
+            || Self::env_reads(ir, function).iter().any(|e| *e != Env::Static)
     }
 
     /// Whether `function` holds an `if` on an unknown condition, directly or through a call.
@@ -410,14 +413,15 @@ impl<'a> ValuePrinter<'a> {
         found.into_iter().collect()
     }
 
-    /// The generated variable an environment read is: `temperature_`, `gmin_`, `source_scale_`, `time_`, `is_static`.
+    /// The generated variable an environment read is: `temperature_`, `gmin_`, `source_scale_`,
+    /// `time_`, `is_static_`.
     pub fn env_name(env: Env) -> &'static str {
         match env {
             Env::Temperature => "temperature_",
             Env::Gmin => "gmin_",
             Env::SourceScale => "source_scale_",
             Env::Time => "time_",
-            Env::Static => "is_static",
+            Env::Static => "is_static_",
         }
     }
 
@@ -469,14 +473,15 @@ impl<'a> ValuePrinter<'a> {
 
     /// Each local's MSL name as `Text::ident` prints it; the generated `<name>_<index>_` when
     /// another local of the same owner, or a name in `reserved` (a param, node or carrier the
-    /// code reads), has the same name.
+    /// code reads), prints the same.
     fn names(locals: &[Local], reserved: &[String]) -> Vec<String> {
         locals
             .iter()
             .enumerate()
             .map(|(i, l)| {
-                let shared = locals.iter().filter(|o| o.name == l.name).count() > 1;
-                let hides = reserved.contains(&Text::ident(&l.name));
+                let printed = Text::ident(&l.name);
+                let shared = locals.iter().filter(|o| Text::ident(&o.name) == printed).count() > 1;
+                let hides = reserved.contains(&printed);
                 if shared || hides { Text::generated(&format!("{}_{i}", l.name)) } else { Text::ident(&l.name) }
             })
             .collect()
