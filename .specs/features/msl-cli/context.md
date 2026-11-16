@@ -2,7 +2,7 @@
 
 **Gathered:** 2026-11-15
 **Spec:** `.specs/features/msl-cli/spec.md`
-**Status:** Waiting for the user's answers to the eight questions at the top of the spec. Design and tasks are written against the recommended options and change with the answers.
+**Status:** Ready for execution once `msl-digital` merges. The user answered the eight questions on 2026-11-15; the answers reached the planner through the orchestrator.
 
 ---
 
@@ -20,6 +20,19 @@ The command line and the project layer run a complete MSL project end to end: `P
 - "vamos planejar o cli para colocar no book também?" The feature includes a Book chapter.
 - "Colocar print (com o emit!) para debug, exemplos completos" `emit!` records are the debug print; the examples are complete.
 
+### The eight answers (user, 2026-11-15, relayed by the orchestrator)
+
+| # | Question | The user's words | Decided |
+| - | -------- | ---------------- | ------- |
+| 1 | commands | "Esses + fmt agora" | `check`, `build`, `run`, `test`, `new`, `clean` and `fmt`. `fmt` gets a formatter that keeps plain comments first, as its own phase in `piperine-lang`, with round-trip tests over the standard library, the galleries, the examples and the Book's blocks; `fmt --check` for CI |
+| 2 | analysis and stimulus | "Adoro a ideia de benches na propria linguagem ao invés de outra linguagem." | benches are MSL (a module without ports under `benches/`); `[run.<name>]` in `Piperine.toml`; flags override; a lone file runs with flags. The spec and the Book are amended where they say stimulus is host-only; sweeps, optimization and Monte Carlo stay in the host |
+| 3 | output | "Tabela + plots" | aligned text table, `--csv`, and plots. The form was left to the planner: `--plot FILE.svg`, hand-written SVG, tested structurally; no terminal plot |
+| 4 | records | "Ao vivo, todos os streams" | live, every stream, `--stream`, `--records FILE` as JSON Lines |
+| 5 | backend | "Rust por padrão" | Rust by default; `--backend`, `PIPERINE_BACKEND`, the run table |
+| 6 | `piperine-api` | "Agora, pequeno" | now and small: the old content deleted, `Project`, `RunSpec`, `Session`, `Table`, `Record` on the ABI; the CLI a shell; the root package builds |
+| 7 | language server | "LSP só de diagnósticos agora" | a diagnostics-only server now (parse, resolution, type-check errors), back in the default build; everything else of the old server deleted |
+| 8 | template | "Projeto RC passa-baixa" | the RC low-pass project for `new` and the Book's first example; the buck second |
+
 ### What earlier decisions already fix
 
 - Packages follow Cargo, no search path, `std` embedded, `piperine-project` is manifest, dependencies and lockfile (MD-58, MD-59; user: "-I é ruim demais, faremos modelo RUST 100%").
@@ -30,11 +43,11 @@ The command line and the project layer run a complete MSL project end to end: `P
 
 ### Agent's Discretion
 
-Everything technical: crate layout, the data model of a run, the record decoder, the text formats, the error codes of the tool, the argument parser, the test layout. Each choice is a row of the spec's Assumptions table, open to correction.
+Everything technical, and inside the answers: the form of a plot (Q3), how comments are kept (Q1), what the server analyses and what the editor extension keeps (Q7). Also: crate layout, the data model of a run, the record decoder, the text formats, the error codes of the tool, the argument parser, the test layout. Each choice is a row of the spec's Assumptions table, open to correction.
 
 ### Declined / Undiscussed Gray Areas → Assumptions
 
-None declined. Eight are not answered yet and are asked in the spec ("Open questions for the user"): the command set, how an analysis is requested and where stimulus lives, what `run` prints, how records are shown, the backend default, whether `piperine-api` is rebuilt now, Python and the language server, the template of `new`. Each has a recommended option; the spec's Assumptions table marks the rows that follow one with `n - Q<k>`.
+None declined; all eight questions are answered above.
 
 ---
 
@@ -48,11 +61,12 @@ None declined. Eight are not answered yet and are asked in the spec ("Open quest
 
 ## Deferred Ideas
 
-- `fmt`, once the printer keeps plain comments.
+- Formatting options and range formatting.
+- A terminal plot; PNG; interactive plots.
+- Hover, completion, go to definition, rename and the rest of a language server; an MSL grammar for the editor.
 - `add`, `remove`, `tree`; `--locked`, `--offline`, an explicit `update`.
 - Host stimulus from the command line (drives, waits, sequences) and a Python host.
 - Noise, transfer function, pole-zero, periodic steady state, S-parameters, sensitivities and Monte Carlo as run tables.
-- Plots and ngspice raw output.
+- ngspice raw output.
 - Trace records from `emit!` in `analog`.
-- The language server on the MSL front end.
 - `piperine-parity`'s `Bench` and `Project` standing on `piperine-api` (queue item 4, root e2e).

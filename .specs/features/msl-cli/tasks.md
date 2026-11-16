@@ -9,8 +9,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/msl-cli/design.md`
-**Status**: Draft. Not approved: the spec's eight open questions are the user's. These tasks follow the recommended option of each and change with the answers.
-**Build**: `cargo build -p piperine-project -p piperine-lang -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-api/src/failure.rs || cargo build -p piperine-api -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-cli/src/cli.rs || cargo build -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+**Status**: Approved
+**Approved**: 2026-11-15 - user: "Esses + fmt agora", "Adoro a ideia de benches na propria linguagem", "Tabela + plots", "Ao vivo, todos os streams", "Rust por padrão", "Agora, pequeno", "LSP só de diagnósticos agora", "Projeto RC passa-baixa" (the answers to Q1–Q8)
+**Build**: `cargo build -p piperine-project -p piperine-lang -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-api/src/failure.rs || cargo build -p piperine-api -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-cli/src/cli.rs || cargo build -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-lang-server/src/analysis.rs || cargo build -p piperine-lang-server --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 **Run manifest**: `cargo test -p piperine-project --test manifest`
 **Run rcpkg**: `cargo test -p piperine-project --test project`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
@@ -31,15 +32,20 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run book**: `cargo test -p piperine-lang --test book`
 **Run docs**: `cargo test -p piperine-cli --test docs`
+**Run format**: `cargo test -p piperine-lang --test msl_format`
+**Run print**: `cargo test -p piperine-lang --test msl_print`
+**Run lsp**: `cargo test -p piperine-lang-server --test protocol`
+**Run lsplib**: `cargo test -p piperine-lang-server --lib`
 
-Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number or a wrong page with no error: T1, T6, T14, T21, T25, T36. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
+Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number or a wrong page with no error, or deletes a user's comment: T1, T6, T14, T21, T25, T36, T41, T42, T44, T45, T46, T47. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 
-**This feature starts after `msl-digital` is merged into its worktree.** T1 confirms the merged code against design.md before anything else. Phases 1 to 3 (T1 to T21) are the minimal slice and are mergeable alone; phases 4 and 5 widen it; phase 6 writes the Book from what the binary prints.
+**This feature starts after `msl-digital` is merged into its worktree.** T1 confirms the merged code against design.md before anything else. Phases 1 to 3 are the minimal slice and are mergeable alone; phases 4 and 5 widen it; phase 6 (the formatter) and phase 7 (the language server) each stand on phase 5 and not on each other; phase 8 writes the Book from what the binary prints. The eight answers of the user are in `context.md`. On this tree `validate_tasks.py --execute` passes because the `**Build**` line guards the three crates that do not build yet; the first task still waits for the merge.
 
 Rules every task follows:
 
 - **The CLI is a shell.** Every rule that decides what a user sees (which signals, rows and records, pass or fail, every validation) is a `piperine-api` method with a Rust test. `piperine-cli` parses, calls, lays out text and returns an exit code.
-- **`piperine-abi`, the three solver crates, `piperine-ir`, `piperine-plan`, `piperine-transpile`, `piperine-interp` and `piperine-lang` are not edited**, except the two test targets of `piperine-lang` and the one of `piperine-solver` a task names. A defect or a missing accessor found there stops the task and is reported.
+- **`piperine-abi`, the three solver crates, `piperine-ir`, `piperine-plan`, `piperine-transpile` and `piperine-interp` are not edited**, except the one test target of `piperine-solver` a task names. `piperine-lang` is edited only in `src/msl/{lexer,comments,format,print}.rs` and `src/msl/mod.rs` (phase 6) and in the test targets a task names; its parser, POM, type checker and elaborator are not. A defect or a missing accessor found elsewhere stops the task and is reported.
+- **No comment is ever lost.** The formatter refuses to return a text whose comments differ from the source's; `fmt` never writes such a file. No corpus file is edited to make the formatter pass.
 - **`piperine-parity` is not edited.** Its `Bench`, `Project` and `Backend` stay; queue item 4 decides their place.
 - **`examples/buck/src`, `crates/piperine-lang/std` and `tests/ngspice/` are not edited.**
 - **Fail loud.** A request the code does not handle is a `Failure` with a code or a usage error; never a default value, a skipped record, a truncated table or a silent exit 0.
@@ -47,7 +53,7 @@ Rules every task follows:
 - **Tests state what the spec says, not what the code does.** Expected values are computed in the test from the MSL source, `docs/spec/`, the spec of this feature or `examples/buck/SPEC.md`, each cited at its assertion. Test functions have exactly the names `## Checks` cites.
 - **End-to-end tests run the real binary** (`env!("CARGO_BIN_EXE_piperine")`) on a project on disk. Each sets `PIPERINE_CACHE_DIR` on the child process to a temporary directory shared by its target. No test sets a variable of its own process, writes the user's cache, or needs the network or ngspice.
 - **No tolerance is invented.** The three analog tolerances the checks name (1e-9 exact arithmetic, 1e-3 relative as the parity contract's, 1e-2 degree) are the spec's; a number you cannot explain: stop and report.
-- **The deletions of T4 and T5 are the only ones.** They remove code and tests of the deleted front end in one commit each, the commit body listing every target. No other test is removed, weakened or skipped.
+- **The deletions of T4, T5 and T50 are the only ones.** They remove code and tests of the deleted front end in one commit each, the commit body listing every target. No other test is removed, weakened or skipped.
 - **AGENTS.md idiom rules bind**: no loose function, no macro of your own, no derive from `clap`, modules named after what they do, no `unwrap()`/`expect()` on a path a user's input reaches. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
 - Zero warnings on every crate the `**Build**` line names. Cargo with `-p <crate>` or the default members: never `--workspace`, never `cargo clean`.
 - One atomic commit per task, message as given, with the `Co-Authored-By:` trailer the session gives. No push, no merge.
@@ -62,13 +68,15 @@ Rules every task follows:
 | Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
 | ---------- | ------------------ | -------------------- | ---------------- | ----------- |
 | The manifest parser (`piperine-project`) | unit | CLI-02 AC 4: accepted, located, a non-table refused; every existing manifest test still green | `crates/piperine-project/tests/manifest.rs` | `cargo test -p piperine-project` |
-| Pure rules of `piperine-api`: the run request, the backend order, the print grid, the verdict | unit | every branch; 1:1 to the ACs of CLI-03, CLI-04 AC 7, CLI-09 AC 3 to 5, CLI-11 AC 4 and 5, CLI-16 AC 2 and 3; every listed edge case | inline `#[cfg(test)]` in `crates/piperine-api/src/{request,backend,table,verdict}.rs` | `cargo test -p piperine-api --lib` |
+| Pure rules of `piperine-api`: the run request, the backend order, the print grid, the plot's geometry, the verdict | unit | every branch; 1:1 to the ACs of CLI-03, CLI-04 AC 7, CLI-09 AC 3 to 5, CLI-11 AC 4 and 5, CLI-16 AC 2 and 3; every listed edge case | inline `#[cfg(test)]` in `crates/piperine-api/src/{request,backend,table,plot,verdict}.rs` | `cargo test -p piperine-api --lib` |
 | `piperine-api` over real sources: project, session, probes, analyses, records | integration | each AC of CLI-02, CLI-04, CLI-05, CLI-06, CLI-09, CLI-10, CLI-12 AC 1 and 2 on MSL on disk; both backends wherever the AC names both; every failure with its code | `crates/piperine-api/tests/{project,session,probes,analyses,records}.rs` | `cargo test -p piperine-api` |
 | Text layout of `piperine-cli`: tables, numbers, record lines, JSON, diagnostics, the flag table | unit | exact strings; every value kind; CLI-03 AC 2 | inline `#[cfg(test)]` in `crates/piperine-cli/src/{cli.rs,render/*.rs}` | `cargo test -p piperine-cli --lib` |
-| The commands of `piperine-cli` | e2e | the real binary on a project on disk: the happy path of every command, every listed edge case, every failure with its exit code and its stream | `crates/piperine-cli/tests/{usage,run,buck,options,twins,commands}.rs`, fixtures in `crates/piperine-cli/tests/projects/` | `cargo test -p piperine-cli` |
+| The commands of `piperine-cli` | e2e | the real binary on a project on disk: the happy path of every command, every listed edge case, every failure with its exit code and its stream | `crates/piperine-cli/tests/{usage,run,buck,options,twins,commands}.rs` (`fmt` and `--plot` included), fixtures in `crates/piperine-cli/tests/projects/` | `cargo test -p piperine-cli` |
 | Example projects (`examples/rc`, `examples/buck` bench and runs) | e2e | each runs through the binary with the values its source and the buck SPEC give | `crates/piperine-cli/tests/{run,buck}.rs`, `crates/piperine-project/tests/project.rs` | `cargo test -p piperine-cli --test run --test buck` |
 | The Book | integration | CLI-19: the chapter's place; every file block equal to the example's file; every output block equal to the binary's output; stand-alone | `crates/piperine-cli/tests/book.rs`, `crates/piperine-lang/tests/book.rs` | `cargo test -p piperine-cli --test book`; `cargo test -p piperine-lang --test book` |
 | Spec text, instruction files, gap lists, the decision log | integration | the sentence or row each AC of CLI-02 AC 4 and CLI-20 names | `crates/piperine-lang/tests/spec_text.rs`, `crates/piperine-cli/tests/docs.rs`, `crates/piperine-solver/tests/workspace_shape.rs` | `cargo test -p piperine-cli --test docs` |
+| The formatter (`piperine-lang` `msl::{comments,format}`, the printer refactor) | integration | each AC of CLI-23; expected texts written by hand from the rule; the whole corpus: comments, tree, stability; `msl_print` unedited and green | `crates/piperine-lang/tests/msl_format.rs`, `crates/piperine-lang/tests/msl_print.rs` | `cargo test -p piperine-lang --test msl_format --test msl_print` |
+| The language server | integration | each AC of CLI-25 through the protocol, in process; the range mapping as a unit test | `crates/piperine-lang-server/tests/protocol.rs`, inline tests in `src/publish.rs` | `cargo test -p piperine-lang-server` |
 | `contract.md` | none | - (read by every later task; build gate only) | - | build gate only |
 
 ## Gate Check Commands
@@ -78,22 +86,23 @@ Rules every task follows:
 | Gate Level | When to Use | Command |
 | ---------- | ----------- | ------- |
 | Quick | After tasks with unit tests only | `cargo test -p <the crate the task edits> --lib` (for `piperine-project`: `cargo test -p piperine-project --test manifest`; for T38: `cargo test -p piperine-cli --test docs`) |
-| Full | After tasks with integration or e2e tests | `cargo test -p piperine-project -p piperine-api -p piperine-cli` |
+| Full | After tasks with integration or e2e tests | `cargo test -p piperine-project -p piperine-api -p piperine-cli`, and for a task of phase 6 `cargo test -p piperine-lang`, of phase 7 `cargo test -p piperine-lang-server` |
 | Build | After a phase, and after tasks that touch manifests, guards, the spec, the Book or the instruction files | every command of the `**Build**` line, then Full, then `cargo test -p piperine-lang --test book --test spec_text --test pom_docs` |
 
 ---
 
 ## Execution Plan
 
-Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in numeric order. An arrow is a dependency inside the phase; a dependency on an earlier phase is in the task's `Depends on` only.
+Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in the order the phase table at the end lists them. An arrow is a dependency inside the phase; a dependency on an earlier phase is in the task's `Depends on` only.
 
-### Phase 1: Foundation: the contract and crates that build
+### Phase 1: Foundation: the contract, the spec and crates that build
 
-Executor: Sonnet; T1 and T6 are Opus's.
+Executor: Sonnet; T1, T6 and T41 are Opus's.
 
 ```
 T1 → T2
 T2 → T3
+T3 → T41
 T1 → T4
 T4 → T5
 T2 → T6
@@ -126,9 +135,9 @@ T19 → T20
 T20 → T21
 ```
 
-### Phase 4: Analyses and output formats
+### Phase 4: Analyses, output formats and plots
 
-Executor: Sonnet; T25 is Opus's.
+Executor: Sonnet; T25 and T42 are Opus's.
 
 ```
 T22 → T23
@@ -137,6 +146,10 @@ T25 → T26
 T27 → T28
 T26 → T28
 T23 → T29
+T23 → T42
+T25 → T42
+T42 → T43
+T26 → T43
 ```
 
 ### Phase 5: `check`, `build`, `test`, `new`, `clean`
@@ -151,7 +164,30 @@ T33 → T34
 T34 → T35
 ```
 
-### Phase 6: The Book and the records of the feature
+### Phase 6: The formatter and `piperine fmt`
+
+Executor: Opus for T44 to T47 (the lexer, the printer and the comment rules: a mistake deletes a user's comment); Sonnet for T48 and T49.
+
+```
+T44 → T45
+T45 → T46
+T46 → T47
+T47 → T48
+T48 → T49
+```
+
+### Phase 7: The language server: diagnostics
+
+Executor: Sonnet.
+
+```
+T50 → T52
+T52 → T53
+T51 → T53
+T53 → T54
+```
+
+### Phase 8: The Book and the records of the feature
 
 Executor: Sonnet; T36 is Opus's.
 
@@ -237,6 +273,30 @@ T38
 
 ---
 
+### T41: The spec says a bench is MSL
+
+**What**: Part VIII: the definition of **bench** (a module without ports, written in MSL, that places the design with its sources, stimulus and monitors; the host picks it as the top and asks the analysis), added to the part's terms; the testbench section's intro and table split what a bench writes (stimulus as reactions and timers, monitors, checks) from what stays the host's (`force` and `release`, constrained random stimulus, sweeps, Monte Carlo, regression, interactive sequences). The index's principle 3 and term table, the scope table of Appendix G (the row on the verification language) and the sentence on sequential stimulus in Part IV say the same. No rule number and no error code changes.
+**Where**: `docs/spec/part_viii_host.md`
+**Depends on**: T3
+**Reuses**: MD-57; the wording style of the part's own Resolution notes
+**Requirement**: CLI-21
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `docs/spec/index.md`, `docs/spec/appendix_g_scope.md` and `docs/spec/part_iv_behavior.md` receive their one sentence each in the same commit
+- [ ] `cargo test -p piperine-lang --test spec_text --test pom_docs --test std_excerpts` pass
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test spec_text`: `part_viii_defines_a_bench`, `the_index_says_benches_are_msl_and_sweeps_are_host`, `the_testbench_table_splits_stimulus_and_host_work`, `no_spec_text_says_stimulus_is_host_only`, `every_error_code_is_defined_exactly_once`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs(spec): a bench is MSL; sweeps, Monte Carlo and optimization stay in the host`
+
+---
+
 ### T4: piperine-api starts over
 
 **What**: Delete every file under `crates/piperine-api/src` and `crates/piperine-api/tests`. Write the new crate: `lib.rs`, `prelude.rs`, `failure.rs` (`Failure`, design Components) and `backend.rs` (`Backend`, `Backend::choose`). The manifest depends on `piperine-lang`, `piperine-project`, `piperine-ir`, `piperine-interp`, `piperine-transpile`, `piperine-solver`, `toml`. The root package builds as the re-export it is. `default-members` and `DEFAULT_MEMBERS` gain `.`, `crates/piperine-api` and `crates/piperine-project`. The commit body lists every deleted test target.
@@ -264,7 +324,7 @@ T38
 
 ### T5: piperine-cli starts over
 
-**What**: Delete every file under `crates/piperine-cli/src`, `tests`, `templates` and `build.rs`. Write `main.rs`, `lib.rs`, `exit.rs` (`Exit`) and `cli.rs` (`Cli::command` from a data table with `clap`'s builder, `Cli::parse`, `Invocation`, `Cli::execute`). The six commands parse; a command whose task has not landed prints `<command>: not built yet` on standard error and exits 1. `clap` without the `derive` feature. `default-members` and `DEFAULT_MEMBERS` gain `crates/piperine-cli`. The guard `host_crates_name_no_deleted_surface` is added to `workspace_shape`. The commit body lists every deleted test target.
+**What**: Delete every file under `crates/piperine-cli/src`, `tests`, `templates` and `build.rs`. Write `main.rs`, `lib.rs`, `exit.rs` (`Exit`) and `cli.rs` (`Cli::command` from a data table with `clap`'s builder, `Cli::parse`, `Invocation`, `Cli::execute`). The seven commands parse; a command whose task has not landed prints `<command>: not built yet` on standard error and exits 1. `clap` without the `derive` feature. `default-members` and `DEFAULT_MEMBERS` gain `crates/piperine-cli`. The guard `host_crates_name_no_deleted_surface` is added to `workspace_shape`. The commit body lists every deleted test target.
 **Where**: `crates/piperine-cli/`
 **Depends on**: T4
 **Reuses**: nothing of the old `lib.rs`
@@ -276,7 +336,7 @@ T38
 - [ ] `cargo build` at the root builds the binary `target/debug/piperine` with zero warnings
 - [ ] `crates/piperine-cli/tests/usage.rs` runs the real binary (`env!("CARGO_BIN_EXE_piperine")`)
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-solver --test workspace_shape`: `default_members_are_the_green_crates`, `host_crates_name_no_deleted_surface`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test usage`: `the_binary_is_named_piperine`, `help_lists_exactly_the_six_commands`, `version_prints_the_workspace_version`, `an_unknown_command_or_flag_exits_2`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test usage`: `the_binary_is_named_piperine`, `help_lists_exactly_the_seven_commands`, `version_prints_the_workspace_version`, `an_unknown_command_or_flag_exits_2`
 - [ ] Gate check passes: Build (see Gate Check Commands)
 - [ ] Test count: the 6 test(s) named above, and no existing test removed or edited beyond the deletion this task states
 
@@ -315,7 +375,7 @@ T38
 
 ### T7: RunSpec: reading a run table
 
-**What**: `RunSpec`, `Analysis`, `Grid` and `RunSpec::read(manifest_text, file)`: every `[run.<name>]` into a `RunSpec`, each fault a `Failure::Request` with `P0010` at the span of the key, the value or the name. The rules of CLI-03 AC 1, 4 to 7 and CLI-09 AC 3 and 5.
+**What**: `RunSpec` (the nineteen keys, `plot` among them), `Analysis`, `Grid` and `RunSpec::read(manifest_text, file)`: every `[run.<name>]` into a `RunSpec`, each fault a `Failure::Request` with `P0010` at the span of the key, the value or the name. The rules of CLI-03 AC 1, 4 to 7 and CLI-09 AC 3 and 5.
 **Where**: `crates/piperine-api/src/request.rs`
 **Depends on**: T4
 **Reuses**: `piperine_lang::msl::{Diagnostic, Span}`; the manifest parser's spanned walk
@@ -324,7 +384,7 @@ T38
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `request::tests::a_run_table_reads_its_eighteen_keys`, `request::tests::an_unknown_key_or_a_wrong_type_is_p0010_at_its_span`, `request::tests::analysis_is_one_of_four`, `request::tests::a_transient_needs_a_positive_stop`, `request::tests::a_key_outside_its_analysis_is_p0010`, `request::tests::a_run_name_is_an_identifier`, `request::tests::a_dc_sweep_needs_its_four_keys_and_a_step_toward_to`, `request::tests::an_ac_grid_is_exactly_one_of_two_and_its_range_is_ordered`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `request::tests::a_run_table_reads_its_nineteen_keys`, `request::tests::an_unknown_key_or_a_wrong_type_is_p0010_at_its_span`, `request::tests::analysis_is_one_of_four`, `request::tests::a_transient_needs_a_positive_stop`, `request::tests::a_key_outside_its_analysis_is_p0010`, `request::tests::a_run_name_is_an_identifier`, `request::tests::a_dc_sweep_needs_its_four_keys_and_a_step_toward_to`, `request::tests::an_ac_grid_is_exactly_one_of_two_and_its_range_is_ordered`
 - [ ] Gate check passes: Quick (see Gate Check Commands)
 - [ ] Test count: the 8 test(s) named above, and no existing test removed or edited
 
@@ -842,6 +902,53 @@ T38
 
 ---
 
+### T42: Plot: the geometry of a plot
+
+**What**: `Plot`, `Panel`, `Axis`, `Tick`, `Series`, `Lane`, `Plot::of(&Table, &Analysis)`, `Axis::place`, `Axis::ticks` (design Components, with its fixed numbers). `Session::run` keeps the table of accepted steps for the plot when the request has `plot`.
+**Where**: `crates/piperine-api/src/plot.rs`
+**Depends on**: T23, T25
+**Reuses**: `Table`, `Cell`
+**Requirement**: CLI-22
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] Every expected coordinate in a test is computed by hand in a comment beside it, from the area and the range
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `plot::tests::a_value_maps_linearly_onto_the_plot_area`, `plot::tests::ticks_are_1_2_5_times_a_power_of_ten`, `plot::tests::a_discrete_signal_gets_a_lane_and_no_series`, `plot::tests::an_ac_plot_has_a_db_panel_over_a_degree_panel_and_a_log_axis`, `plot::tests::an_operating_point_has_nothing_to_plot`, `plot::tests::an_unknown_value_breaks_the_run`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 6 test(s) named above, and no existing test removed or edited
+
+**Tests**: unit
+**Gate**: quick
+
+**Commit**: `feat(api): the geometry of a plot`
+
+---
+
+### T43: SVG output
+
+**What**: `SvgPlot::write(&Plot, out)` (design `render`) and the `plot` key in `RunCommand`: the file is written after the table and standard output gets `wrote <file>`; a relative path resolves as `csv` does; a write error is `Failure::Io`.
+**Where**: `crates/piperine-cli/src/render/svg.rs`
+**Depends on**: T42, T26
+**Reuses**: `Plot`; the path rule of T26
+**Requirement**: CLI-22
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests read the SVG as text with plain string functions: element counts, attributes, the first and last point of a path; no pixel is compared and no XML crate is added
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test options`: `plot_writes_an_svg_and_prints_wrote`, `a_plot_draws_every_accepted_step_whatever_the_print_step`, `an_unwritable_plot_names_the_path_and_exits_1`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::svg::tests::one_path_per_signal_with_its_name_and_a_legend`, `render::svg::tests::each_axis_has_ticks_labels_and_a_title`, `render::svg::tests::the_same_plot_is_the_same_bytes`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 6 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: full
+
+**Commit**: `feat(cli): a run's result as an SVG plot`
+
+---
+
 ## Phase 5 tasks
 
 ### T30: piperine check
@@ -958,19 +1065,18 @@ T38
 
 ### T35: piperine clean
 
-**What**: `CleanCommand::execute`: removes `<project>/target`; with `--cache` the directory `Settings::from_environment` names; says what it removed; `nothing to remove` otherwise. The last "not built yet" arm is gone and `Cli` has no such text.
+**What**: `CleanCommand::execute`: removes `<project>/target`; with `--cache` the directory `Settings::from_environment` names; says what it removed; `nothing to remove` otherwise. 
 **Where**: `crates/piperine-cli/src/commands/clean.rs`
 **Depends on**: T34
 **Reuses**: `piperine_transpile::Settings`
-**Requirement**: CLI-01, CLI-18
+**Requirement**: CLI-18
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `cli::tests::every_command_is_built`
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test commands`: `clean_removes_the_target_directory`, `clean_cache_removes_the_compiled_cache`, `clean_with_nothing_to_remove_exits_0`, `clean_touches_nothing_else`
 - [ ] Gate check passes: Build (see Gate Check Commands)
-- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: build
@@ -981,11 +1087,274 @@ T38
 
 ## Phase 6 tasks
 
+### T44: Comments: plain comments beside the tokens
+
+**What**: `Comments::of(src)`: every plain line and block comment with its span, its text and whether it starts its line. The lexer collects them where it drops them today; the token stream, doc comments and every lexer diagnostic are unchanged.
+**Where**: `crates/piperine-lang/src/msl/comments.rs`
+**Depends on**: None
+**Reuses**: the `LineComment` and `BlockComment` arms of `crates/piperine-lang/src/msl/lexer.rs`
+**Requirement**: CLI-23
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `cargo test -p piperine-lang --test msl_lexer --test msl_parser --test msl_corpus` pass, unedited
+- [ ] `crates/piperine-lang/tests/msl_format.rs` is created here
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test msl_format`: `plain_comments_are_listed_with_span_text_and_line_start`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(lang): plain comments are listed beside the tokens`
+
+---
+
+### T45: The printer's layout, reachable node by node
+
+**What**: Refactor `print.rs` so the layout of one item, one member, one statement, one arm and one list element can be asked for separately at a given indentation, by the formatter. `print(&File)` keeps its signature and gives byte-equal output for every tree.
+**Where**: `crates/piperine-lang/src/msl/print.rs`
+**Depends on**: T44
+**Reuses**: the printer as it is
+**Requirement**: CLI-23
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `cargo test -p piperine-lang --test msl_print --test msl_corpus --test pom_corpus --test book` pass with no test edited
+- [ ] No layout rule changes; the commit holds no change of expected text anywhere
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test msl_print`: `print_is_idempotent_over_corpus`, `roundtrip_ast_equal_over_corpus`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `refactor(lang): the printer lays out one node at a time`
+
+---
+
+### T46: Comments::attach: a comment's anchor
+
+**What**: `Comments::attach(&File, src) -> Attached`: `Before(node)`, `After(node)`, `Inside(block)` by span, for items, members, statements, match arms and one-per-line list elements; a comment no anchor reaches marks its enclosing statement or member `Verbatim`.
+**Where**: `crates/piperine-lang/src/msl/comments.rs`
+**Depends on**: T45
+**Reuses**: the tree's spans
+**Requirement**: CLI-23
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] Every comment of the source has exactly one anchor or lies in exactly one `Verbatim` node; a test asserts the count
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test msl_format`: `a_comment_is_anchored_before_after_or_inside`, `an_unreachable_comment_marks_its_statement_verbatim`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(lang): each comment is anchored to the node it belongs to`
+
+---
+
+### T47: Formatter: a formatted text that keeps its comments
+
+**What**: `Formatter::format(src)` and `Formatter::check(src)`: the printer's layout node by node, with the `Before`, `After` and `Inside` comments, one blank line where the source had one or more, the source slice re-indented for a `Verbatim` node, and the guard that lexes the output and refuses a text whose comments differ from the source's.
+**Where**: `crates/piperine-lang/src/msl/format.rs`
+**Depends on**: T46
+**Reuses**: T45's per-node layout, `Comments`
+**Requirement**: CLI-23
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] Each expected text in a test is written by hand from the rule it cites (CLI-23 AC 4 to 8), not pasted from the formatter
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test msl_format`: `every_plain_comment_comes_out_once_in_order_unchanged`, `the_guard_refuses_a_text_that_lost_a_comment`, `the_formatted_tree_equals_the_sources`, `formatting_twice_changes_nothing`, `a_comment_on_its_own_line_stays_before_its_node`, `a_trailing_comment_stays_on_its_line`, `a_comment_ending_a_block_stays_inside_it`, `a_statement_with_an_inner_comment_is_kept_as_written`, `blank_lines_collapse_to_one`, `a_source_that_does_not_parse_gives_diagnostics_and_no_text`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 10 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(lang): a formatter that keeps every comment`
+
+---
+
+### T48: The formatter over the corpus
+
+**What**: The corpus tests: every file of `crates/piperine-lang/std`, every gallery fixture, every file of `examples/buck` and `examples/rc`, every MSL twin of `tests/ngspice/` and every `msl` block of the Book (as a fragment, the way `msl_print` wraps one): comments kept, tree equal, stable under a second format. A file that fails is a formatter defect fixed in `format.rs` or `comments.rs`; no corpus file is edited.
+**Where**: `crates/piperine-lang/tests/msl_format.rs`
+**Depends on**: T47
+**Reuses**: `sources()` and `fragment_source` of `crates/piperine-lang/tests/msl_print.rs`; the block extraction of `tests/book.rs`
+**Requirement**: CLI-23
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] The commit body states the number of sources and of plain comments the corpus held, and how many nodes fell back to `Verbatim`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test msl_format`: `the_corpus_keeps_every_comment`, `the_corpus_keeps_every_tree`, `the_corpus_is_stable_under_a_second_format`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test(lang): the formatter keeps every comment and every tree of the corpus`
+
+---
+
+### T49: piperine fmt
+
+**What**: `FmtCommand::execute`: every `.msl` under `src/` and `benches/` of the project, or the files named; rewrite what differs and print `formatted <path>`; `--check` writes nothing, prints `would format <path>` and exits 1 on a difference; a file that does not parse is reported and skipped. `examples/rc` is committed formatted. The last "not built yet" arm of `Cli` is gone.
+**Where**: `crates/piperine-cli/src/commands/fmt.rs`
+**Depends on**: T48, T35
+**Reuses**: `Formatter::{format, check}`, `Report::write`
+**Requirement**: CLI-01, CLI-24
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] A file is written through a temporary file in the same directory and a rename, so an interrupted run leaves the original
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `cli::tests::every_command_is_built`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test commands`: `fmt_rewrites_what_differs_and_names_it`, `fmt_takes_files`, `fmt_check_writes_nothing_and_exits_1_on_a_difference`, `fmt_skips_a_file_that_does_not_parse_and_exits_1`, `fmt_on_formatted_files_is_silent`, `fmt_check_passes_on_the_rc_example_and_on_a_new_project`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 7 test(s) named above, and no existing test removed or edited
+
+**Tests**: e2e
+**Gate**: build
+
+**Commit**: `feat(cli): piperine fmt, with --check`
+
+---
+
+## Phase 7 tasks
+
+### T50: piperine-lang-server starts over
+
+**What**: Delete every file under `crates/piperine-lang-server/src` and `tests` except `src/text_pos.rs`. Write `main.rs`, `lib.rs` and `server.rs`: `Server::run(Connection)` with `initialize` (full-text sync only), the message loop, `shutdown`, `exit`, `MethodNotFound` for any other request, a logged skip for a malformed message. The manifest depends on `lsp-server`, `lsp-types`, `serde_json`, `piperine-api`. `default-members` and `DEFAULT_MEMBERS` gain the crate. The commit body lists every deleted handler and test target.
+**Where**: `crates/piperine-lang-server/`
+**Depends on**: T30
+**Reuses**: `lsp_server::Connection::memory` for the in-process tests; `text_pos.rs` kept with its tests
+**Requirement**: CLI-25
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `crates/piperine-lang-server/tests/protocol.rs` drives the server through `Connection::memory`, one thread for the server
+- [ ] `cargo build -p piperine-lang-server --all-targets` has zero warnings; `.github/workflows/release.yml` still builds the crate by name
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-solver --test workspace_shape`: `the_language_server_is_a_default_member_and_names_no_deleted_surface`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang-server --test protocol`: `initialize_offers_full_sync_and_nothing_else`, `an_unknown_request_is_method_not_found`, `shutdown_then_exit_ends_with_0`, `a_malformed_message_does_not_end_the_server`
+- [ ] Gate check passes: Build (see Gate Check Commands)
+- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited beyond the deletion this task states
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `feat(lsp)!: piperine-lang-server starts over, diagnostics only`
+
+---
+
+### T51: Project::check_with: check over open buffers
+
+**What**: `Overlay` and `Project::check_with(&Overlay)`; `Project::check` becomes `check_with` of an empty overlay. With a non-empty overlay every file of every crate of the graph is a virtual source, the overlay's text over the disk's.
+**Where**: `crates/piperine-api/src/project.rs`
+**Depends on**: T30
+**Reuses**: `DesignBuilder::{crates, source}`; the stages of `Project::check`
+**Requirement**: CLI-25
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `cargo test -p piperine-cli --test commands` still passes: `check` is unchanged for an empty overlay
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test project`: `check_with_reads_the_open_buffer_over_the_file`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(api): check a project over text that is not on disk`
+
+---
+
+### T52: Publishing diagnostics
+
+**What**: `Publisher::publish` and the mapping of a `Failure` to `(file, Vec<lsp_types::Diagnostic>)`: code, message, severity error, source `piperine`, a UTF-16 range from the span; one notification per file; an empty list for a file that had diagnostics and has none.
+**Where**: `crates/piperine-lang-server/src/publish.rs`
+**Depends on**: T50
+**Reuses**: `text_pos.rs`
+**Requirement**: CLI-25
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang-server --lib`: `publish::tests::a_diagnostic_has_code_message_severity_source_and_utf16_range`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang-server --test protocol`: `a_fixed_file_gets_an_empty_list`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(lsp): diagnostics published per file, and cleared`
+
+---
+
+### T53: Documents and the analysis of a change
+
+**What**: `Documents::{open, change, close, text, overlay}` and `Analysis::of(path, &Overlay)`: the project of the file (or the file alone), `Project::check_with`, the result published; run on `didOpen`, `didChange`, `didSave` and `didClose`, after draining the messages already queued. A manifest fault is published on the manifest. The commit body states the time of one analysis of `examples/buck` in a dev build.
+**Where**: `crates/piperine-lang-server/src/analysis.rs`
+**Depends on**: T52, T51
+**Reuses**: `Project::{discover, file, check_with}`
+**Requirement**: CLI-25
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Fixture projects are built in temporary directories by the tests
+- [ ] No `unwrap()` or `expect()` on a message, a URI or a path
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang-server --test protocol`: `open_change_and_save_publish_what_check_reports`, `an_unsaved_buffer_is_analysed_not_the_file`, `a_file_outside_a_package_is_analysed_alone`, `a_manifest_fault_is_published_on_the_manifest`, `a_document_that_does_not_parse_is_diagnosed_not_fatal`
+- [ ] Gate check passes: Full (see Gate Check Commands)
+- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(lsp): every open, change and save is analysed and published`
+
+---
+
+### T54: The VS Code extension knows .msl
+
+**What**: `package.json`: the language `msl` (alias `Piperine MSL`, extension `.msl`), the server started for it; the Verilog-AMS language, grammar and snippets entries removed and `syntaxes/vams.tmLanguage.json` and `snippets/vams.json` deleted. `language-configuration.json` keeps brackets and `//` comments.
+**Where**: `editors/vscode/package.json`
+**Depends on**: T53
+**Reuses**: `extension.js` as it starts the server today
+**Requirement**: CLI-25
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `.github/workflows/ide.yml` still passes its own steps; if it names a deleted file the step is updated in this commit
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `the_vscode_extension_registers_msl_and_nothing_vams`
+- [ ] Gate check passes: Quick (see Gate Check Commands)
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(editors): the VS Code extension registers .msl`
+
+---
+
+## Phase 8 tasks
+
 ### T36: The Book: the command line
 
-**What**: A chapter `cli`, "The command line", after `compiler` and before `cheatsheet` (which becomes chapter 17): what a project is and its tree; the RC project file for file; `check`, `run op`, `run step` and `test` each with its real output; print debugging with `emit!` (the statement, the record line, `--stream`, `--records`); the run table key by key with its flag; a lone file with flags; backends and where the generated Rust is (`build --verbose`); the buck with its bench, its `startup` table and its real output; the commands, exit codes and the codes `P0010`, `P0011`. Written for a reader who has only the Book. `crates/piperine-cli/tests/book.rs` extracts the chapter's blocks with the string functions of the lang target and holds them to `examples/rc`, `examples/buck` and the binary. `crates/piperine-lang/tests/book.rs` gains the chapter in its list and order test. `docs/book/build.py` highlights the output blocks as plain text.
+**What**: A chapter `cli`, "The command line", after `compiler` and before `cheatsheet` (which becomes chapter 17): what a project is and its tree; the RC project file for file; `check`, `run op`, `run step` and `test` each with its real output; print debugging with `emit!` (the statement, the record line, `--stream`, `--records`); the plot of the step response, the SVG embedded as the binary wrote it; `piperine fmt` and `--check`, and that comments stay; one paragraph on the editor showing the same errors; the run table key by key with its flag; a lone file with flags; backends and where the generated Rust is (`build --verbose`); the buck with its bench, its `startup` table and its real output; the commands, exit codes and the codes `P0010`, `P0011`. Written for a reader who has only the Book. `crates/piperine-cli/tests/book.rs` extracts the chapter's blocks with the string functions of the lang target and holds them to `examples/rc`, `examples/buck` and the binary. `crates/piperine-lang/tests/book.rs` gains the chapter in its list and order test. The chapter `welcome` is amended: a bench is MSL; sweeps, Monte Carlo and optimization are the host's. `docs/book/build.py` highlights the output blocks as plain text.
 **Where**: `docs/book/content.html`
-**Depends on**: T35, T21
+**Depends on**: T35, T21, T43, T49, T53
 **Reuses**: the voice and the block conventions of chapters 14 and 15; `examples/rc`; the shared `startup` fixture of T21
 **Requirement**: CLI-19
 **Executor**: Opus
@@ -994,10 +1363,10 @@ T38
 
 - [ ] Every output block was pasted from the binary and the guard, not the author, says it is equal
 - [ ] `python3 docs/book/build.py` exits 0 and `cargo test -p piperine-lang --test book` passes whole
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test book`: `the_cli_chapter_sits_between_compiler_and_cheatsheet`, `every_msl_block_parses`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test book`: `the_chapter_shows_the_rc_project_file_for_file`, `the_rc_output_blocks_are_what_the_binary_prints`, `the_buck_block_is_what_the_binary_prints`, `the_chapter_explains_emit_as_print`, `the_chapter_lists_commands_keys_flags_codes`, `the_chapter_stands_alone`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test book`: `the_cli_chapter_sits_between_compiler_and_cheatsheet`, `the_welcome_chapter_says_a_bench_is_msl`, `every_msl_block_parses`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test book`: `the_plot_in_the_chapter_is_the_file_the_binary_writes`, `the_chapter_shows_fmt_and_says_comments_stay`, `the_chapter_says_the_editor_shows_the_same_errors`, `the_chapter_shows_the_rc_project_file_for_file`, `the_rc_output_blocks_are_what_the_binary_prints`, `the_buck_block_is_what_the_binary_prints`, `the_chapter_explains_emit_as_print`, `the_chapter_lists_commands_keys_flags_codes`, `the_chapter_stands_alone`
 - [ ] Gate check passes: Build (see Gate Check Commands)
-- [ ] Test count: the 8 test(s) named above, and no existing test removed or edited
+- [ ] Test count: the 12 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build
@@ -1008,7 +1377,7 @@ T38
 
 ### T37: The Book: chapter 15 and the cheat sheet
 
-**What**: Chapter `compiler`: the status callout and "What comes next" say the command line exists and point at the next chapter by name; the sentence "A host picks one" names `--backend`. The cheat sheet gains the six commands.
+**What**: Chapter `compiler`: the status callout and "What comes next" say the command line exists and point at the next chapter by name; the sentence "A host picks one" names `--backend`. The cheat sheet gains the seven commands.
 **Where**: `docs/book/content.html`
 **Depends on**: T36
 **Reuses**: the two tests added to `crates/piperine-lang/tests/book.rs`
@@ -1017,7 +1386,7 @@ T38
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test book`: `the_compiler_chapter_says_the_command_line_exists`, `the_cheat_sheet_lists_the_six_commands`
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test book`: `the_compiler_chapter_says_the_command_line_exists`, `the_cheat_sheet_lists_the_seven_commands`
 - [ ] Gate check passes: Build (see Gate Check Commands)
 - [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
 
@@ -1052,9 +1421,9 @@ T38
 
 ### T39: CLAUDE.md and AGENTS.md
 
-**What**: Both instruction files: the four host crates build and are default members; the rows of `piperine-api`, `piperine-cli`, `piperine-project` and the root package say what this feature left; the build section drops "never pass `--workspace` because four crates do not build" for the true statement (only `piperine-lang-server` stays outside); the pipeline diagram ends in the hosts that exist.
+**What**: Both instruction files: every crate builds and is a default member; the rows of `piperine-api`, `piperine-cli`, `piperine-project`, `piperine-lang-server`, `piperine-lang` (`msl::format`) and the root package say what this feature left; the build section drops the sentence about crates that do not build; the pipeline diagram ends in the hosts that exist.
 **Where**: `CLAUDE.md`
-**Depends on**: T35
+**Depends on**: T54
 **Reuses**: `instructions_list_the_kept_crates` of `workspace_shape`
 **Requirement**: CLI-20
 **Executor**: Sonnet
@@ -1075,7 +1444,7 @@ T38
 
 ### T40: GAPS, ROADMAP and the decision
 
-**What**: `GAPS.md`: §1 and §2 rewritten for a CLI and an API that build, and the gaps left (no host stimulus from the CLI, no Python host, the language server, `fmt`, no trace records from `analog`, the features of the old API that left). `ROADMAP.md`: item 3 of the queue marked done with the commit. `.specs/STATE.md`: the decision of design "Tech Decisions" under the next free `MD-NN`.
+**What**: `GAPS.md`: §1 and §2 rewritten for a CLI and an API that build, and the gaps left (no host sequences from the CLI, no Python host, a language server with diagnostics only and the handlers that left, no trace records from `analog`, the features of the old API that left, the library and the examples not yet reformatted). `ROADMAP.md`: item 3 of the queue marked done with the commit. `.specs/STATE.md`: the decision of design "Tech Decisions" under the next free `MD-NN`.
 **Where**: `GAPS.md`
 **Depends on**: T39
 **Reuses**: design "Tech Decisions", last paragraph
@@ -1112,10 +1481,10 @@ Proof: run shape | test the_root_package_is_a_re_export_and_nothing_else ... ok
 **C4** - No source of `piperine-api` or `piperine-cli` names `parse_and_elaborate`, `Element`, `piperine_codegen`, `piperine_python`, `piperine_plugin` or `.vams`. (CLI-01, AC 4; T5)
 Proof: run shape | test host_crates_name_no_deleted_surface ... ok
 
-**C5** - `piperine --help` lists `check`, `build`, `run`, `test`, `new`, `clean` and no other command, exit 0. (CLI-01, AC 5; T5)
-Proof: run usage | test help_lists_exactly_the_six_commands ... ok
+**C5** - `piperine --help` lists `check`, `build`, `run`, `test`, `new`, `clean`, `fmt` and no other command, exit 0. (CLI-01, AC 5; T5)
+Proof: run usage | test help_lists_exactly_the_seven_commands ... ok
 
-**C6** - After the last command task no command answers "not built yet". (CLI-01, AC 5; T35)
+**C6** - After the last command task no command answers "not built yet". (CLI-01, AC 5; T49)
 Proof: run clilib | test cli::tests::every_command_is_built ... ok
 
 **C7** - `piperine --version` prints `piperine 0.2.0` (the workspace version), exit 0. (CLI-01, AC 6; T5)
@@ -1160,10 +1529,10 @@ Proof: run project | test a_file_under_a_package_is_its_bench ... ok
 **C20** - `Project::file` on `<pkg>/src/a.msl` is `P0010` whose message says the file is part of the crate. (CLI-02, AC 11; T9)
 Proof: run project | test a_file_under_src_is_refused_with_p0010 ... ok
 
-**C21** - A table with all eighteen keys of CLI-03 AC 1 reads into a `RunSpec` with each value where the key says. (CLI-03, AC 1; T7)
-Proof: run apilib | test request::tests::a_run_table_reads_its_eighteen_keys ... ok
+**C21** - A table with all nineteen keys of CLI-03 AC 1 reads into a `RunSpec` with each value where the key says. (CLI-03, AC 1; T7)
+Proof: run apilib | test request::tests::a_run_table_reads_its_nineteen_keys ... ok
 
-**C22** - Each of the eighteen keys has the flag CLI-03 AC 2 names, and the flags parse into `Overrides`. (CLI-03, AC 2; T19)
+**C22** - Each of the nineteen keys has the flag CLI-03 AC 2 names, and the flags parse into `Overrides`. (CLI-03, AC 2; T19)
 Proof: run clilib | test cli::tests::every_run_key_has_its_flag ... ok
 
 **C23** - `stop = 1e-3` in the table and `--stop 2e-3` give a run with `stop` 2e-3; a key no flag names keeps the table's value. (CLI-03, AC 3; T8)
@@ -1517,50 +1886,227 @@ Proof: run commands | test clean_touches_nothing_else ... ok
 **C139** - The chapter ids end with `compiler`, `cli`, `cheatsheet`; `cli` is titled `The command line`; the chapter numbers are 1 to 17. (CLI-19, AC 1; T36)
 Proof: run book | test the_cli_chapter_sits_between_compiler_and_cheatsheet ... ok
 
-**C140** - `examples/rc` resolves as a package and its crate has no diagnostic. (CLI-19, AC 2; T6)
+**C140** - The SVG the chapter embeds equals the file `piperine run step --plot` writes in `examples/rc`. (CLI-19, AC 11; T36)
+Proof: run clibook | test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
+
+**C141** - The chapter names `piperine fmt` and `piperine fmt --check` in code spans and says comments are kept. (CLI-19, AC 12; T36)
+Proof: run clibook | test the_chapter_shows_fmt_and_says_comments_stay ... ok
+
+**C142** - The chapter `welcome` says a bench is written in MSL and that sweeps, Monte Carlo and optimization live in the host, and holds no sentence saying testbenches or stimulus do not live in MSL. (CLI-19, AC 13; T36)
+Proof: run book | test the_welcome_chapter_says_a_bench_is_msl ... ok
+
+**C143** - The chapter names the language server and says it shows the errors of `piperine check`. (CLI-19, AC 14; T36)
+Proof: run clibook | test the_chapter_says_the_editor_shows_the_same_errors ... ok
+
+**C144** - `examples/rc` resolves as a package and its crate has no diagnostic. (CLI-19, AC 2; T6)
 Proof: run rcpkg | test the_rc_example_resolves_with_no_diagnostic ... ok
 
-**C141** - The chapter holds a block equal to each of `examples/rc/Piperine.toml`, `src/lib.msl` and `benches/step.msl`, and a tree naming the three. (CLI-19, AC 2; T36)
+**C145** - The chapter holds a block equal to each of `examples/rc/Piperine.toml`, `src/lib.msl` and `benches/step.msl`, and a tree naming the three. (CLI-19, AC 2; T36)
 Proof: run clibook | test the_chapter_shows_the_rc_project_file_for_file ... ok
 
-**C142** - The four output blocks equal the standard output of `piperine check`, `run op`, `run step` and `test` run in `examples/rc`. (CLI-19, AC 3; T36)
+**C146** - The four output blocks equal the standard output of `piperine check`, `run op`, `run step` and `test` run in `examples/rc`. (CLI-19, AC 3; T36)
 Proof: run clibook | test the_rc_output_blocks_are_what_the_binary_prints ... ok
 
-**C143** - The chapter holds the buck's bench and `startup` table equal to the files, and an output block equal to the standard output of `piperine run startup`. (CLI-19, AC 4; T36)
+**C147** - The chapter holds the buck's bench and `startup` table equal to the files, and an output block equal to the standard output of `piperine run startup`. (CLI-19, AC 4; T36)
 Proof: run clibook | test the_buck_block_is_what_the_binary_prints ... ok
 
-**C144** - The chapter has a part whose heading names `emit!`, an `msl` block with an `emit!` statement, the record line it gives, and `--stream`. (CLI-19, AC 5; T36)
+**C148** - The chapter has a part whose heading names `emit!`, an `msl` block with an `emit!` statement, the record line it gives, and `--stream`. (CLI-19, AC 5; T36)
 Proof: run clibook | test the_chapter_explains_emit_as_print ... ok
 
-**C145** - The chapter names in code spans the six commands, each of the eighteen keys and its flag, the exit codes 0, 1, 2, `--backend`, `PIPERINE_BACKEND`, `P0010` and `P0011`. (CLI-19, AC 6; T36)
+**C149** - The chapter names in code spans the seven commands, each of the nineteen keys and its flag, the exit codes 0, 1, 2, `--backend`, `PIPERINE_BACKEND`, `P0010` and `P0011`. (CLI-19, AC 6; T36)
 Proof: run clibook | test the_chapter_lists_commands_keys_flags_codes ... ok
 
-**C146** - The chapter holds no `§`, none of `crates/`, `docs/`, `.specs/`, `tests/`, and no `href` that does not start with `#`. (CLI-19, AC 7; T36)
+**C150** - The chapter holds no `§`, none of `crates/`, `docs/`, `.specs/`, `tests/`, and no `href` that does not start with `#`. (CLI-19, AC 7; T36)
 Proof: run clibook | test the_chapter_stands_alone ... ok
 
-**C147** - Every `msl` block of the Book, the new chapter's included, parses. (CLI-19, AC 8; T36)
+**C151** - Every `msl` block of the Book, the new chapter's included, parses. (CLI-19, AC 8; T36)
 Proof: run book | test every_msl_block_parses ... ok
 
-**C148** - The chapter `compiler` names `piperine run` and its part on what comes next does not mention the command line. (CLI-19, AC 9; T37)
+**C152** - The chapter `compiler` names `piperine run` and its part on what comes next does not mention the command line. (CLI-19, AC 9; T37)
 Proof: run book | test the_compiler_chapter_says_the_command_line_exists ... ok
 
-**C149** - The cheat sheet names `piperine check`, `build`, `run`, `test`, `new` and `clean`. (CLI-19, AC 10; T37)
-Proof: run book | test the_cheat_sheet_lists_the_six_commands ... ok
+**C153** - The cheat sheet names `piperine check`, `build`, `run`, `test`, `new`, `clean` and `fmt`. (CLI-19, AC 10; T37)
+Proof: run book | test the_cheat_sheet_lists_the_seven_commands ... ok
 
-**C150** - `CLAUDE.md` and `AGENTS.md` do not say the four host crates do not build, and each crate's row states `Project`/`Session` for `piperine-api` and the six commands for `piperine-cli`. (CLI-20, AC 1; T39)
+**C154** - `CLAUDE.md` and `AGENTS.md` do not say a host crate does not build; the rows state `Project`/`Session` for `piperine-api`, the seven commands for `piperine-cli`, diagnostics only for `piperine-lang-server`, and `msl::format` for `piperine-lang`. (CLI-20, AC 1; T39)
 Proof: run docs | test the_instruction_files_say_the_host_crates_build ... ok
 
-**C151** - `GAPS.md` no longer says the CLI and the API do not build, and names: no host stimulus, no Python host, the language server, `fmt`, no trace records. (CLI-20, AC 2; T40)
+**C155** - `GAPS.md` no longer says the CLI and the API do not build, and names: no host sequences from the command line, no Python host, a language server with diagnostics only, no trace records. (CLI-20, AC 2; T40)
 Proof: run docs | test gaps_drops_what_closed_and_lists_what_is_left ... ok
 
-**C152** - Item 3 of "Queue after ir-rust" in `ROADMAP.md` is marked done. (CLI-20, AC 3; T40)
+**C156** - Item 3 of "Queue after ir-rust" in `ROADMAP.md` is marked done. (CLI-20, AC 3; T40)
 Proof: run docs | test the_roadmap_marks_the_cli_item_done ... ok
 
-**C153** - `.specs/STATE.md` holds a decision naming `piperine-api`, the `[run.<name>]` table and the bench crate. (CLI-20, AC 4; T40)
+**C157** - `.specs/STATE.md` holds a decision naming `piperine-api`, the `[run.<name>]` table, the bench crate, `msl::format` and the diagnostics-only server. (CLI-20, AC 4; T40)
 Proof: run docs | test state_records_the_cli_decision ... ok
 
-**C154** - `examples/buck/README.md` names `piperine run startup` and no longer says nothing executes. (CLI-20, AC 5; T38)
+**C158** - `examples/buck/README.md` names `piperine run startup` and no longer says nothing executes. (CLI-20, AC 5; T38)
 Proof: run docs | test the_buck_readme_says_how_to_run_it ... ok
+
+**C159** - Part VIII defines **bench**: a module without ports, written in MSL, that places the design with its sources, stimulus and monitors, chosen as the top by the host; the term is in the part's list of terms and in the index's term table. (CLI-21, AC 1; T41)
+Proof: run spectext | test part_viii_defines_a_bench ... ok
+
+**C160** - Principle 3 of the index names benches as MSL and sweeps, Monte Carlo, optimization and regression as the host's. (CLI-21, AC 2; T41)
+Proof: run spectext | test the_index_says_benches_are_msl_and_sweeps_are_host ... ok
+
+**C161** - The model column of the testbench table holds stimulus written as reactions and timers; the host column keeps `force` and `release`, constrained random stimulus, sweeps and Monte Carlo. (CLI-21, AC 3; T41)
+Proof: run spectext | test the_testbench_table_splits_stimulus_and_host_work ... ok
+
+**C162** - No file of `docs/spec/` holds "the testbench lives in the host", "stimulus sequences, sweeps and optimization live in the host" or "belongs to the testbench, in the host". (CLI-21, AC 4; T41)
+Proof: run spectext | test no_spec_text_says_stimulus_is_host_only ... ok
+
+**C163** - Every error code of `docs/spec/` is still defined exactly once. (CLI-21, AC 5; T41)
+Proof: run spectext | test every_error_code_is_defined_exactly_once ... ok
+
+**C164** - `piperine run step --plot step.svg` in `examples/rc` writes a file that starts with `<svg` and standard output ends with `wrote step.svg` after the table. (CLI-22, AC 1; T43)
+Proof: run options | test plot_writes_an_svg_and_prints_wrote ... ok
+
+**C165** - A plot of two real series gives two `path` elements of class `series`, each with its `data-signal`, and a legend text for each. (CLI-22, AC 2; T43)
+Proof: run clilib | test render::svg::tests::one_path_per_signal_with_its_name_and_a_legend ... ok
+
+**C166** - With x from 0 to 10 over an area from 100 to 700 and y from 0 to 1 over 400 down to 40, the point (5, 0.5) is (400, 220) and the two corners are the area's. (CLI-22, AC 3; T42)
+Proof: run apilib | test plot::tests::a_value_maps_linearly_onto_the_plot_area ... ok
+
+**C167** - The SVG holds, per axis, one line and one text per tick and a title text: `time` and the y title for a transient. (CLI-22, AC 4; T43)
+Proof: run clilib | test render::svg::tests::each_axis_has_ticks_labels_and_a_title ... ok
+
+**C168** - A range 0 to 10e-6 gives ticks at multiples of 2e-6; 0 to 1 gives multiples of 0.2; every tick lies in the axis range and there are 4 to 10 of them. (CLI-22, AC 4; T42)
+Proof: run apilib | test plot::tests::ticks_are_1_2_5_times_a_power_of_ten ... ok
+
+**C169** - A table with one real and one `bool` column gives one series and one lane whose steps are the `bool` column's changes. (CLI-22, AC 5; T42)
+Proof: run apilib | test plot::tests::a_discrete_signal_gets_a_lane_and_no_series ... ok
+
+**C170** - An `ac` table gives two panels: the first plots `20*log10(mag)`, the second the phase; with `per_decade` the x axis is logarithmic and 1e5 lies midway between 1e3 and 1e7. (CLI-22, AC 6; T42)
+Proof: run apilib | test plot::tests::an_ac_plot_has_a_db_panel_over_a_degree_panel_and_a_log_axis ... ok
+
+**C171** - With `print_step` giving an 11-row table, the series' path has more than 11 points and as many as the run without `print_step`. (CLI-22, AC 7; T43)
+Proof: run options | test a_plot_draws_every_accepted_step_whatever_the_print_step ... ok
+
+**C172** - `Plot::of` on an `op` run is `P0010` whose message says an operating point has nothing to plot. (CLI-22, AC 8; T42)
+Proof: run apilib | test plot::tests::an_operating_point_has_nothing_to_plot ... ok
+
+**C173** - A column real, unknown, real, real gives a series of two runs of 1 and 2 points. (CLI-22, AC 9; T42)
+Proof: run apilib | test plot::tests::an_unknown_value_breaks_the_run ... ok
+
+**C174** - Writing one `Plot` twice gives equal bytes, and every coordinate has two decimals. (CLI-22, AC 10; T43)
+Proof: run clilib | test render::svg::tests::the_same_plot_is_the_same_bytes ... ok
+
+**C175** - `--plot /nonexistent-dir/x.svg` prints the path on standard error and exits 1. (CLI-22, AC 11; T43)
+Proof: run options | test an_unwritable_plot_names_the_path_and_exits_1 ... ok
+
+**C176** - `Comments::of` on a source with a `//` line, a trailing `//`, a `/* */` and a `///` doc lists the first three with span, text and whether each starts its line, and not the doc comment. (CLI-23, AC 1; T44)
+Proof: run format | test plain_comments_are_listed_with_span_text_and_line_start ... ok
+
+**C177** - A source with six comments in six positions formats to a text whose `Comments::of` gives the same six texts in the same order. (CLI-23, AC 1; T47)
+Proof: run format | test every_plain_comment_comes_out_once_in_order_unchanged ... ok
+
+**C178** - The formatter's guard, given an output with one comment fewer than the source, returns an internal-error diagnostic and no text. (CLI-23, AC 1; T47)
+Proof: run format | test the_guard_refuses_a_text_that_lost_a_comment ... ok
+
+**C179** - For each case of the target, parsing the formatted text gives a tree equal to the source's, spans aside. (CLI-23, AC 2; T47)
+Proof: run format | test the_formatted_tree_equals_the_sources ... ok
+
+**C180** - For each case of the target, `format(format(x)) == format(x)`. (CLI-23, AC 3; T47)
+Proof: run format | test formatting_twice_changes_nothing ... ok
+
+**C181** - `Comments::attach` anchors an own-line comment `Before` the next item, member, statement, arm or element, a same-line comment `After` the node it follows, and a comment ending a block `Inside` it. (CLI-23, AC 4; T46)
+Proof: run format | test a_comment_is_anchored_before_after_or_inside ... ok
+
+**C182** - A badly indented own-line comment before a member, a statement and a match arm is printed on its own line at that node's indentation, before the same node. (CLI-23, AC 4; T47)
+Proof: run format | test a_comment_on_its_own_line_stays_before_its_node ... ok
+
+**C183** - `let x = 1;   // why` formats to `let x = 1; // why`. (CLI-23, AC 5; T47)
+Proof: run format | test a_trailing_comment_stays_on_its_line ... ok
+
+**C184** - A comment as the last line of a block, and as the only content of one, is printed before that block's closing brace at the block's inner indentation. (CLI-23, AC 6; T47)
+Proof: run format | test a_comment_ending_a_block_stays_inside_it ... ok
+
+**C185** - `let y = a /* mid */ + b;` marks that statement `Verbatim`. (CLI-23, AC 7; T46)
+Proof: run format | test an_unreachable_comment_marks_its_statement_verbatim ... ok
+
+**C186** - That statement comes out with its own text, re-indented, and its neighbours are formatted. (CLI-23, AC 7; T47)
+Proof: run format | test a_statement_with_an_inner_comment_is_kept_as_written ... ok
+
+**C187** - Three blank lines between two statements become one; no blank line stays none. (CLI-23, AC 8; T47)
+Proof: run format | test blank_lines_collapse_to_one ... ok
+
+**C188** - `module M( {` gives the parser's diagnostics and no text. (CLI-23, AC 9; T47)
+Proof: run format | test a_source_that_does_not_parse_gives_diagnostics_and_no_text ... ok
+
+**C189** - Over the standard library, the gallery fixtures, `examples/buck`, `examples/rc`, the twins and the Book's `msl` blocks: the comment list of the formatted text equals the source's, file by file; the corpus holds at least 60 sources and at least 100 plain comments. (CLI-23, AC 10; T48)
+Proof: run format | test the_corpus_keeps_every_comment ... ok
+
+**C190** - Over the same corpus the formatted text parses to the source's tree. (CLI-23, AC 10; T48)
+Proof: run format | test the_corpus_keeps_every_tree ... ok
+
+**C191** - Over the same corpus a second format gives the first's text. (CLI-23, AC 10; T48)
+Proof: run format | test the_corpus_is_stable_under_a_second_format ... ok
+
+**C192** - `msl::print` still passes its idempotence test over its corpus, the target unedited. (CLI-23, AC 11; T45)
+Proof: run print | test print_is_idempotent_over_corpus ... ok
+
+**C193** - `msl::print` still round-trips every tree of its corpus, the target unedited. (CLI-23, AC 11; T45)
+Proof: run print | test roundtrip_ast_equal_over_corpus ... ok
+
+**C194** - In a copy of a project with one unformatted file under `src/` and one under `benches/`, `piperine fmt` rewrites both, prints `formatted src/lib.msl` and `formatted benches/step.msl`, and leaves the formatted third file's modification time alone. (CLI-24, AC 1; T49)
+Proof: run commands | test fmt_rewrites_what_differs_and_names_it ... ok
+
+**C195** - `piperine fmt benches/step.msl` formats that file and not `src/lib.msl`. (CLI-24, AC 2; T49)
+Proof: run commands | test fmt_takes_files ... ok
+
+**C196** - `--check` on that copy prints `would format` for the two files, changes no byte on disk and exits 1. (CLI-24, AC 3; T49)
+Proof: run commands | test fmt_check_writes_nothing_and_exits_1_on_a_difference ... ok
+
+**C197** - With one broken and one unformatted file, the broken one is byte-equal afterwards, its diagnostic is on standard error, the other is formatted, exit 1. (CLI-24, AC 4; T49)
+Proof: run commands | test fmt_skips_a_file_that_does_not_parse_and_exits_1 ... ok
+
+**C198** - A second `piperine fmt` prints nothing and exits 0. (CLI-24, AC 5; T49)
+Proof: run commands | test fmt_on_formatted_files_is_silent ... ok
+
+**C199** - `piperine fmt --check` exits 0 in `examples/rc` and in a project `piperine new` created. (CLI-24, AC 6; T49)
+Proof: run commands | test fmt_check_passes_on_the_rc_example_and_on_a_new_project ... ok
+
+**C200** - `default-members` lists `crates/piperine-lang-server`, and none of its sources names `parse_and_elaborate`, `SourceMap`, `.vams` or `piperine_plugin`. (CLI-25, AC 1; T50)
+Proof: run shape | test the_language_server_is_a_default_member_and_names_no_deleted_surface ... ok
+
+**C201** - The `initialize` result has `textDocumentSync` full and no hover, completion, definition, references, rename, symbol, formatting, semantic-token or code-action provider. (CLI-25, AC 2; T50)
+Proof: run lsp | test initialize_offers_full_sync_and_nothing_else ... ok
+
+**C202** - With a clean file on disk and an overlay text holding a type error, `check_with` reports `P0002` in that file; with an empty overlay it reports nothing; a second crate of the graph is still read from disk. (CLI-25, AC 3; T51)
+Proof: run project | test check_with_reads_the_open_buffer_over_the_file ... ok
+
+**C203** - Opening a file of a fixture project with a type error publishes `P0002` on that file's URI; a change that fixes it and a save each publish again. (CLI-25, AC 3; T53)
+Proof: run lsp | test open_change_and_save_publish_what_check_reports ... ok
+
+**C204** - A `didChange` that breaks a clean file publishes the error although the file on disk is unchanged. (CLI-25, AC 3; T53)
+Proof: run lsp | test an_unsaved_buffer_is_analysed_not_the_file ... ok
+
+**C205** - A diagnostic on the word after `café` in a line maps to a range counted in UTF-16 units, with its code, its message, severity error and source `piperine`. (CLI-25, AC 4; T52)
+Proof: run lsplib | test publish::tests::a_diagnostic_has_code_message_severity_source_and_utf16_range ... ok
+
+**C206** - After the fix, the file that had a diagnostic receives a `publishDiagnostics` with an empty list. (CLI-25, AC 5; T52)
+Proof: run lsp | test a_fixed_file_gets_an_empty_list ... ok
+
+**C207** - Opening a lone `.msl` with an unresolved path publishes `E0161` on it. (CLI-25, AC 6; T53)
+Proof: run lsp | test a_file_outside_a_package_is_analysed_alone ... ok
+
+**C208** - With an unknown key in `Piperine.toml`, opening a source publishes `E0171` on the manifest's URI at the key's line. (CLI-25, AC 7; T53)
+Proof: run lsp | test a_manifest_fault_is_published_on_the_manifest ... ok
+
+**C209** - A `textDocument/hover` request is answered with the error code `MethodNotFound` and its id. (CLI-25, AC 8; T50)
+Proof: run lsp | test an_unknown_request_is_method_not_found ... ok
+
+**C210** - `shutdown` is answered and `exit` makes `Server::run` return `Ok`. (CLI-25, AC 9; T50)
+Proof: run lsp | test shutdown_then_exit_ends_with_0 ... ok
+
+**C211** - A `didOpen` with no `textDocument` is skipped and a later request is still answered. (CLI-25, AC 10; T50)
+Proof: run lsp | test a_malformed_message_does_not_end_the_server ... ok
+
+**C212** - Opening `module M( {` publishes the parser's diagnostic and the server answers the next request. (CLI-25, AC 10; T53)
+Proof: run lsp | test a_document_that_does_not_parse_is_diagnosed_not_fatal ... ok
+
+**C213** - `editors/vscode/package.json` registers the language `msl` with the extension `.msl`; no file under `editors/vscode` is named `vams.*` and the manifest names neither `vams` nor `.va`. (CLI-25, AC 11; T54)
+Proof: run docs | test the_vscode_extension_registers_msl_and_nothing_vams ... ok
 
 ---
 
@@ -1582,14 +2128,16 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
 
 | Phase | Tasks | Count | Batch |
 | ----- | ----- | ----- | ----- |
-| 1: Foundation: the contract and crates that build | T1 to T6 | 6 | 1 |
-| 2: The session: from a project to results and records | T7 to T14 | 8 | 2 |
-| 3: `piperine run`: the minimal slice | T15 to T21 | 7 | 3 |
-| 4: Analyses and output formats | T22 to T29 | 8 | 4 |
-| 5: `check`, `build`, `test`, `new`, `clean` | T30 to T35 | 6 | 5 |
-| 6: The Book and the records of the feature | T36 to T40 | 5 | 5 |
+| 1: Foundation: the contract, the spec and crates that build | T1, T2, T3, T41, T4, T5, T6 | 7 | 1 |
+| 2: The session: from a project to results and records | T7, T8, T9, T10, T11, T12, T13, T14 | 8 | 2 |
+| 3: `piperine run`: the minimal slice | T15, T16, T17, T18, T19, T20, T21 | 7 | 3 |
+| 4: Analyses, output formats and plots | T22, T23, T24, T25, T26, T27, T28, T29, T42, T43 | 10 | 4 |
+| 5: `check`, `build`, `test`, `new`, `clean` | T30, T31, T32, T33, T34, T35 | 6 | 5 |
+| 6: The formatter and `piperine fmt` | T44, T45, T46, T47, T48, T49 | 6 | 6 |
+| 7: The language server: diagnostics | T50, T51, T52, T53, T54 | 5 | 7 |
+| 8: The Book and the records of the feature | T36, T37, T38, T39, T40 | 5 | 7 |
 
-40 tasks, 154 checks. Five batches of whole phases: phases 5 and 6 share the last worker (11 tasks, of which T36 goes to Opus). Batches run in order; each worker executes its tasks one at a time and reports before the next starts.
+54 tasks, 213 checks. Seven batches of whole phases: phases 7 and 8 share the last worker (10 tasks, of which T36 goes to Opus); phase 6 is one batch whose first four tasks are Opus's. Batches run in order; each worker executes its tasks one at a time and reports before the next starts.
 
 ---
 
@@ -1600,6 +2148,7 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
 | T1: The contract with the merged msl-digital | one module or one function family in one file | ✅ Granular |
 | T2: A manifest may hold a run table | one module or one function family in one file | ✅ Granular |
 | T3: The manifest rule of the spec admits the run table | one module or one function family in one file | ✅ Granular |
+| T41: The spec says a bench is MSL | one definition and its three echoes in the spec | ✅ Granular |
 | T4: piperine-api starts over | one crate reset: the deletion and the two smallest modules, so the tree builds at this commit | ✅ Granular |
 | T5: piperine-cli starts over | one crate reset: the deletion and the command tree | ✅ Granular |
 | T6: The RC example project | one example project, four small files | ✅ Granular |
@@ -1626,12 +2175,25 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
 | T27: The stream filter | one module or one function family in one file | ✅ Granular |
 | T28: Records to a file | one module or one function family in one file | ✅ Granular |
 | T29: The seven twins from the command line | one module or one function family in one file | ✅ Granular |
+| T42: Plot: the geometry of a plot | one module or one function family in one file | ✅ Granular |
+| T43: SVG output | one module or one function family in one file | ✅ Granular |
 | T30: piperine check | one module or one function family in one file | ✅ Granular |
 | T31: piperine build | one module or one function family in one file | ✅ Granular |
 | T32: Verdict: pass or fail of a run | one module or one function family in one file | ✅ Granular |
 | T33: piperine test | one module or one function family in one file | ✅ Granular |
 | T34: piperine new | one module or one function family in one file | ✅ Granular |
 | T35: piperine clean | one module or one function family in one file | ✅ Granular |
+| T44: Comments: plain comments beside the tokens | one module or one function family in one file | ✅ Granular |
+| T45: The printer's layout, reachable node by node | one module or one function family in one file | ✅ Granular |
+| T46: Comments::attach: a comment's anchor | one module or one function family in one file | ✅ Granular |
+| T47: Formatter: a formatted text that keeps its comments | one module or one function family in one file | ✅ Granular |
+| T48: The formatter over the corpus | one test target | ✅ Granular |
+| T49: piperine fmt | one module or one function family in one file | ✅ Granular |
+| T50: piperine-lang-server starts over | one crate reset: the deletion and the server loop | ✅ Granular |
+| T51: Project::check_with: check over open buffers | one module or one function family in one file | ✅ Granular |
+| T52: Publishing diagnostics | one module or one function family in one file | ✅ Granular |
+| T53: Documents and the analysis of a change | one module or one function family in one file | ✅ Granular |
+| T54: The VS Code extension knows .msl | one module or one function family in one file | ✅ Granular |
 | T36: The Book: the command line | one chapter and its guard | ✅ Granular |
 | T37: The Book: chapter 15 and the cheat sheet | one module or one function family in one file | ✅ Granular |
 | T38: The buck's README | one module or one function family in one file | ✅ Granular |
@@ -1645,6 +2207,7 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
 | T1 | None | - | ✅ Match |
 | T2 | T1 | T1 | ✅ Match |
 | T3 | T2 | T2 | ✅ Match |
+| T41 | T3 | T3 | ✅ Match |
 | T4 | T1 | T1 | ✅ Match |
 | T5 | T4 | T4 | ✅ Match |
 | T6 | T2 | T2 | ✅ Match |
@@ -1671,16 +2234,29 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
 | T27 | T14 | - | ✅ Match |
 | T28 | T27, T26 | T27, T26 | ✅ Match |
 | T29 | T23, T19 | T23 | ✅ Match |
+| T42 | T23, T25 | T23, T25 | ✅ Match |
+| T43 | T42, T26 | T42, T26 | ✅ Match |
 | T30 | T20 | - | ✅ Match |
 | T31 | T30 | T30 | ✅ Match |
 | T32 | T14 | - | ✅ Match |
 | T33 | T32, T31 | T32, T31 | ✅ Match |
 | T34 | T33 | T33 | ✅ Match |
 | T35 | T34 | T34 | ✅ Match |
-| T36 | T35, T21 | - | ✅ Match |
+| T44 | None | - | ✅ Match |
+| T45 | T44 | T44 | ✅ Match |
+| T46 | T45 | T45 | ✅ Match |
+| T47 | T46 | T46 | ✅ Match |
+| T48 | T47 | T47 | ✅ Match |
+| T49 | T48, T35 | T48 | ✅ Match |
+| T50 | T30 | - | ✅ Match |
+| T51 | T30 | - | ✅ Match |
+| T52 | T50 | T50 | ✅ Match |
+| T53 | T52, T51 | T52, T51 | ✅ Match |
+| T54 | T53 | T53 | ✅ Match |
+| T36 | T35, T21, T43, T49, T53 | - | ✅ Match |
 | T37 | T36 | T36 | ✅ Match |
 | T38 | T33 | - | ✅ Match |
-| T39 | T35 | - | ✅ Match |
+| T39 | T54 | - | ✅ Match |
 | T40 | T39 | T39 | ✅ Match |
 
 No task depends on a task of a later phase.
@@ -1692,6 +2268,7 @@ No task depends on a task of a later phase.
 | T1: The contract with the merged msl-digital | `contract.md` | none | none | ✅ OK |
 | T2: A manifest may hold a run table | the manifest parser | unit | unit | ✅ OK |
 | T3: The manifest rule of the spec admits the run table | spec text | integration | integration | ✅ OK |
+| T41: The spec says a bench is MSL | spec text | integration | integration | ✅ OK |
 | T4: piperine-api starts over | pure rules of `piperine-api` | unit | unit | ✅ OK |
 | T5: piperine-cli starts over | the commands | e2e | e2e | ✅ OK |
 | T6: The RC example project | example projects | e2e (the package resolves here; it runs through the binary from T18) | integration | ✅ OK |
@@ -1718,12 +2295,25 @@ No task depends on a task of a later phase.
 | T27: The stream filter | `piperine-api` over real sources | integration | integration | ✅ OK |
 | T28: Records to a file | text layout and a command key | e2e (the higher of the two) | e2e | ✅ OK |
 | T29: The seven twins from the command line | the commands | e2e | e2e | ✅ OK |
+| T42: Plot: the geometry of a plot | pure rules | unit | unit | ✅ OK |
+| T43: SVG output | text layout and a command key | e2e (the higher of the two) | e2e | ✅ OK |
 | T30: piperine check | the commands | e2e | e2e | ✅ OK |
 | T31: piperine build | the commands | e2e | e2e | ✅ OK |
 | T32: Verdict: pass or fail of a run | pure rules | unit | unit | ✅ OK |
 | T33: piperine test | the commands | e2e | e2e | ✅ OK |
 | T34: piperine new | the commands | e2e | e2e | ✅ OK |
 | T35: piperine clean | the commands | e2e | e2e | ✅ OK |
+| T44: Comments: plain comments beside the tokens | the formatter | integration | integration | ✅ OK |
+| T45: The printer's layout, reachable node by node | the formatter | integration | integration | ✅ OK |
+| T46: Comments::attach: a comment's anchor | the formatter | integration | integration | ✅ OK |
+| T47: Formatter: a formatted text that keeps its comments | the formatter | integration | integration | ✅ OK |
+| T48: The formatter over the corpus | the formatter | integration | integration | ✅ OK |
+| T49: piperine fmt | the commands | e2e | e2e | ✅ OK |
+| T50: piperine-lang-server starts over | the language server | integration | integration | ✅ OK |
+| T51: Project::check_with: check over open buffers | `piperine-api` over real sources | integration | integration | ✅ OK |
+| T52: Publishing diagnostics | the language server | integration | integration | ✅ OK |
+| T53: Documents and the analysis of a change | the language server | integration | integration | ✅ OK |
+| T54: The VS Code extension knows .msl | instruction files and gap lists | integration | integration | ✅ OK |
 | T36: The Book: the command line | the Book | integration | integration | ✅ OK |
 | T37: The Book: chapter 15 and the cheat sheet | the Book | integration | integration | ✅ OK |
 | T38: The buck's README | instruction files and gap lists | integration | integration | ✅ OK |

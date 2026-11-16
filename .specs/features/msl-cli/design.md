@@ -1,17 +1,20 @@
 # MSL CLI Design
 
 **Spec**: `.specs/features/msl-cli/spec.md`
-**Status**: Draft. Written against the recommended option of each open question of the spec (Q1 to Q8). An answer that differs changes the rows marked with its question.
+**Status**: Approved with the spec (the user's answers to Q1 to Q8, 2026-11-15). The form of a plot, the way comments are kept and the scope of the server's analysis are the planner's, inside those answers.
 
 ---
 
 ## Architecture Overview
 
-Three layers, each a crate, each with one job.
+Three layers run a project, each a crate with one job. Two more pieces stand on them: a formatter inside `piperine-lang`, and a language server that asks `piperine-api` the question `piperine check` asks.
 
 - **`piperine-project`** finds and reads packages. It already resolves `Piperine.toml`, path and git dependencies and the lockfile into a `PackageGraph`. It gains one thing: it accepts a `[run]` table and reports where it is, without reading it (MD-58 keeps the host's meaning out of this crate).
 - **`piperine-api`** is the host library (MD-20), rewritten from nothing on the device ABI. It turns a project and a run request into a result: `Project` (discovery, the crate graph of a run), `RunSpec` (the request, from the manifest and from flags), `Session` (source to a bound circuit on a backend, then analyses), `Table` (the result), `Record` (a decoded `emit!` record). It prints nothing and never exits.
 - **`piperine-cli`** is a shell: it parses the command line with `clap`'s builder interface, calls `piperine-api`, renders tables, records and diagnostics, and turns the outcome into an exit code. Every rule that decides what a user sees (which signals, which rows, which records, pass or fail) lives in `piperine-api`, where a Rust test reaches it; the CLI owns only the text layout, which its own unit tests pin.
+
+- **`piperine-lang`** gains `msl::format`: the formatter. The lexer hands plain comments over as a list beside the tokens; the tree, the parser, the POM and `msl::print` do not change.
+- **`piperine-lang-server`** is rewritten as a diagnostics-only server: it keeps the open documents, calls `Project::check` with them overlaid, and publishes what comes back.
 
 The root package `piperine` stays what MD-20 says: `pub use piperine_api::*`.
 
@@ -82,6 +85,12 @@ sequenceDiagram
 | `Bench::{node, source}` | `crates/piperine-parity/src/bench.rs` | the pattern for a node id and for a source's flow branch (`b<k>.flow` of the first potential branch) |
 | `Project` of the parity harness | `crates/piperine-parity/src/project.rs` (arrives with `msl-digital`) | the pattern for a bench crate over a dependency; not called, not moved |
 | The book tests | `crates/piperine-lang/tests/book.rs` | the chapter list and numbering tests are extended; block extraction is repeated in the CLI's book target with the same string functions |
+| The lexer's `LineComment` and `BlockComment` raw tokens | `crates/piperine-lang/src/msl/lexer.rs` | today they are recognised and dropped; they are collected with their spans instead |
+| The canonical printer's layout functions | `crates/piperine-lang/src/msl/print.rs` | the formatter prints each node through them, so the two layouts cannot differ; `print(&File)` keeps its signature and its output |
+| The round-trip corpus | `crates/piperine-lang/tests/msl_print.rs` (`sources()`), `tests/fixtures/gallery/`, `std/*.msl` | the formatter's corpus test walks the same sources, plus the examples, the twins and the Book's blocks |
+| `DesignBuilder::{crates, source}` | `crates/piperine-lang/src/pom/design.rs` | the overlay of open documents: when any virtual source is given every file is read from the virtual set, so the server passes the whole project, disk text for closed files |
+| `lsp-server`, `lsp-types`, `Connection::memory` | `crates/piperine-lang-server/Cargo.toml` (already dependencies) | the server loop and its in-process protocol tests |
+| The UTF-16 position mapping | `crates/piperine-lang-server/src/text_pos.rs` | the one file of the old server that is kept, with its tests |
 | The workspace guards | `crates/piperine-solver/tests/workspace_shape.rs`, `crates/piperine-lang/tests/suite_hygiene.rs` | `DEFAULT_MEMBERS` gains the four host crates; the crate table of `CLAUDE.md` is checked by the first |
 
 ### Integration Points
@@ -91,7 +100,9 @@ sequenceDiagram
 | `Piperine.toml` | `piperine-project` validates `[package]` and `[dependencies]` and accepts `[run]`; `piperine-api` parses the same text again with `toml`'s spanned parser to read `[run]`, so a `P0010` points at the key |
 | The language spec | one sentence of the manifest section (rule 3) and one row of its key table: the `run` table exists and the language does not define its content |
 | The Book | a new chapter in `docs/book/content.html`; its blocks are compared with `examples/rc`, `examples/buck` and the binary's output by a test target of `piperine-cli` |
-| The workspace | `default-members` gains `.`, `crates/piperine-api`, `crates/piperine-cli`, `crates/piperine-project`; `piperine-lang-server` stays a member outside the default set |
+| The workspace | `default-members` gains `.`, `crates/piperine-api`, `crates/piperine-cli`, `crates/piperine-project` and `crates/piperine-lang-server`: every member builds |
+| The language spec, host part | Part VIII, the index, Appendix G's scope table and the sentence on sequences in Part IV: a bench is MSL; `spec_text` guards the wording |
+| The VS Code extension | `editors/vscode/package.json` registers `msl` for `.msl`; the Verilog-AMS grammar and snippets are deleted |
 
 ---
 
@@ -193,6 +204,52 @@ sequenceDiagram
 - **Dependencies**: `piperine-ir`, `piperine-solver` (`protocol::Sink`, `Observation`).
 - **Reuses**: the layout rule of `msl-digital` design A4: one field with a known byte per distinct non-text field of the stream's sites, absent fields with known byte 0; a text field is read from the IR site, never from the bytes.
 
+### `Plot`
+
+- **Purpose**: the geometry of a plot, as numbers: what is drawn where, before any SVG text exists.
+- **Location**: `crates/piperine-api/src/plot.rs`
+- **Interfaces**:
+  - `Plot::of(table: &Table, analysis: &Analysis) -> Result<Plot, Failure>` - `P0010` for `Op`.
+  - `Plot { width, height, panels: Vec<Panel>, lanes: Vec<Lane> }`; `Panel { area: Rect, x: Axis, y: Axis, series: Vec<Series> }`; `Axis { title, min, max, log: bool, ticks: Vec<Tick> }`; `Series { label, runs: Vec<Vec<(f64, f64)>> }` (one run of points per stretch between unknown values, already in drawing coordinates); `Lane { label, area: Rect, steps: Vec<(f64, Cell)> }`.
+  - `Axis::place(&self, value: f64, from: f64, to: f64) -> f64` - the one mapping from a value to a coordinate, linear or logarithmic.
+  - `Axis::ticks(min, max) -> Vec<Tick>` - 1, 2 or 5 times a power of ten, between 4 and 10 of them; decades on a logarithmic axis.
+- **Dependencies**: none beyond `Table`.
+- **Reuses**: `Table` at full resolution: `Session::run` keeps the table of accepted steps for the plot when the request has `plot`, whatever `print_step` is.
+- **Fixed numbers**: 800 by 480 for one panel, 800 by 640 for the two of `ac`; a lane is 28 high; the axis range is the data's range widened to the enclosing ticks. Magnitude in dB is `20 log10`, a zero magnitude breaks the path.
+
+### `Formatter` and `Comments` (in `piperine-lang`)
+
+- **Purpose**: format a source text without losing a comment.
+- **Location**: `crates/piperine-lang/src/msl/format.rs` (the formatter), `crates/piperine-lang/src/msl/comments.rs` (the list and its anchors)
+- **Interfaces**:
+  - `Comments::of(src: &str) -> Comments` - every plain comment (`//` that is no doc comment, `/* */` that is no doc comment) with its span, its text and whether it starts its line; doc comments stay tokens, as today.
+  - `Comments::attach(&self, file: &ast::File, src: &str) -> Attached` - each comment anchored `Before(node)`, `After(node)` or `Inside(block)`, a node being an item, a member of a module, struct, enum, impl or trait, a statement, a match arm, or an element of a list printed one per line; a comment no anchor reaches marks its enclosing statement or member `Verbatim`.
+  - `Formatter::format(src: &str) -> Result<String, Vec<Diagnostic>>`.
+  - `Formatter::check(src: &str) -> Result<bool, Vec<Diagnostic>>` - whether the text is already formatted.
+- **Dependencies**: the lexer, the parser, `print.rs`.
+- **Reuses**: the printer's per-node layout. The formatter is a driver over it: before a node its `Before` comments, after it its `After` comment, before a closing brace the block's `Inside` comments, one blank line where the source had one or more, the source slice re-indented for a `Verbatim` node.
+- **The guard inside**: after printing, the formatter lexes its own output and compares the comment texts, in order, with the source's; a difference is an internal-error diagnostic and no text. A formatter bug therefore fails loud instead of deleting a comment.
+
+### The language server
+
+- **Purpose**: the errors of `piperine check`, in an editor.
+- **Location**: `crates/piperine-lang-server/src/{main.rs,lib.rs,server.rs,documents.rs,analysis.rs,publish.rs,text_pos.rs}`
+- **Interfaces**:
+  - `Server::run(connection: Connection) -> Result<(), ServerError>` - initialize (full-text sync, nothing else), the message loop, `shutdown`, `exit`; a request it does not implement is answered `MethodNotFound`; a malformed message is logged to the client and skipped.
+  - `Documents::{open, change, close, text, overlay}` - the open buffers by URI; `overlay` gives `piperine-api` the path-to-text map.
+  - `Analysis::of(path: &Path, overlay: &Overlay) -> Published` - the project of the file (or the file alone), `Project::check_with(overlay)`, every failure turned into `(file, Vec<lsp_types::Diagnostic>)`.
+  - `Publisher::publish(&mut self, published: Published, connection)` - one `publishDiagnostics` per file, and an empty one for a file that had some before and has none now.
+- **Dependencies**: `lsp-server`, `lsp-types`, `serde_json`, `piperine-api`.
+- **Reuses**: `text_pos.rs`. Everything else of the old crate (fourteen handlers, the symbol index, the project unit, the dispatcher) is deleted with its tests.
+- **Threading**: one thread. Before analysing, the loop drains the messages already queued, so a burst of changes is analysed once.
+
+### `Project::check_with` (in `piperine-api`)
+
+- **Purpose**: `check` over text that is not on disk yet.
+- **Location**: `crates/piperine-api/src/project.rs`
+- **Interfaces**: `Overlay` (a map from canonical path to text); `Project::check_with(&self, overlay: &Overlay) -> Result<Checked, Vec<Failure>>`; `Project::check` is `check_with` of an empty overlay. With a non-empty overlay every file of every crate of the graph is given to the builder as a virtual source, the overlay's text winning over the disk's.
+- **Reuses**: `DesignBuilder::{crates, source}`.
+
 ### `Verdict`
 
 - **Purpose**: pass or fail of one run under `test`.
@@ -217,27 +274,28 @@ sequenceDiagram
 - **Location**: `crates/piperine-cli/src/cli.rs`
 - **Interfaces**:
   - `Cli::command() -> clap::Command` - built from a data table of commands and of run flags (one row per key of CLI-03), no derive.
-  - `Cli::parse(args) -> Result<Invocation, clap::Error>`, `Invocation::{Check, Build, Run, Test, New, Clean}`.
+  - `Cli::parse(args) -> Result<Invocation, clap::Error>`, `Invocation::{Check, Build, Run, Test, New, Clean, Fmt}`.
   - `Cli::execute(invocation, out: &mut dyn Write, err: &mut dyn Write) -> Exit`.
 - **Dependencies**: `clap` (no `derive` feature), `piperine-api`.
 - **Reuses**: nothing of the old `lib.rs`.
 
-### The six commands
+### The seven commands
 
 - **Purpose**: one struct per command; each calls `piperine-api` and writes to the two streams it is given.
-- **Location**: `crates/piperine-cli/src/commands/{check,build,run,test,new,clean}.rs`
-- **Interfaces**: `CheckCommand::execute(&self, out, err) -> Exit`, and the same for `BuildCommand`, `RunCommand`, `TestCommand`, `NewCommand`, `CleanCommand`.
+- **Location**: `crates/piperine-cli/src/commands/{check,build,run,test,new,clean,fmt}.rs`
+- **Interfaces**: `CheckCommand::execute(&self, out, err) -> Exit`, and the same for `BuildCommand`, `RunCommand`, `TestCommand`, `NewCommand`, `CleanCommand`, `FmtCommand`.
 - **Dependencies**: `piperine-api`, `render`.
 - **Reuses**: `NewCommand` embeds the four files of `examples/rc` with `include_str!` and replaces the package name; nothing else is a template.
 
 ### `render`
 
 - **Purpose**: the text a user reads.
-- **Location**: `crates/piperine-cli/src/render/{table,record,diagnostic,csv,json}.rs`
+- **Location**: `crates/piperine-cli/src/render/{table,record,diagnostic,csv,json,svg}.rs`
 - **Interfaces**:
   - `TextTable::write(table: &Table, out) -> io::Result<()>` - CLI-07 AC 2.
   - `CsvTable::write(table: &Table, out)`.
   - `RecordLine::write(record: &Record, out)` - CLI-06 AC 2; `JsonRecord::write(record, out)` - CLI-12 AC 3 and 5, written by hand (five value kinds, one string escape), no JSON crate.
+  - `SvgPlot::write(plot: &Plot, out)` - the text of the SVG and nothing else: a `<rect>` per panel, `<line>` and `<text>` per tick, a `<text>` per axis title, one `<path class="series" data-signal="...">` per series with one `M`...`L` subpath per run of points, one `<path class="lane" data-signal="...">` per lane, a legend; a fixed palette by series index; coordinates printed with two decimals, so the same plot is the same bytes.
   - `Report::write(failure: &Failure, err)` - `miette`'s graphical handler, no color when standard error is not a terminal.
   - `Number::text(cell) -> String` - the one place a number becomes text.
 - **Dependencies**: `miette`.
@@ -280,6 +338,7 @@ streams    = ["trip", "checks"]   # optional: keep only these
 params     = { "r1.r" = 2000.0 }  # optional
 backend    = "rust"               # optional
 csv        = "out/step.csv"       # optional
+plot       = "out/step.svg"       # optional; not for op
 records    = "out/step.jsonl"     # optional
 ```
 
@@ -347,6 +406,10 @@ The numbers above illustrate the layout; the real ones are whatever the binary p
 | `rustc` missing, too old, or failing | `Failure::Backend` with the transpiler's message, unchanged | the message names `rustc` and the interpreter; exit 1 |
 | The interpreter refuses a digital form | `Failure::Backend` with the rejection and `--backend rust` | exit 1 |
 | A `print`, `streams`, `sweep` or `params` entry that names nothing | `Failure::Host`, `E0801`, before any analysis | exit 1 |
+| `plot` on an `op` run | `Failure::Request`, `P0010` | exit 1 |
+| `fmt` on a file that does not parse | the diagnostics; the file is not written; the other files go on | exit 1 |
+| The formatter would lose or reorder a comment | an internal-error diagnostic from the formatter's own guard; the file is not written | exit 1; a bug report, never a lost comment |
+| The server gets a malformed message or a path it cannot read | a `window/logMessage` to the client; the loop goes on | the editor keeps working |
 | A `set` the design refuses | `Failure::Host`, `E0802` with path and value | no analysis runs; exit 1 |
 | The solver fails | `Failure::Solver` with the analysis | records already printed stay; no table; exit 1 |
 | An output file cannot be written | `Failure::Io` naming the path | exit 1 |
@@ -366,7 +429,14 @@ No `unwrap()` and no `expect()` on a path a user's input reaches (AGENTS.md).
 | The buck's closed loop (DIG-16) is P2 in `msl-digital` and rests on solver paths no MSL design used before | `.specs/features/msl-digital/spec.md` | CLI-08 AC 2, 3 and 5 have nothing to run | T1 reports whether DIG-16 merged; if not, `idle` carries CLI-08 and the three criteria wait, by the orchestrator's ruling |
 | The closed-loop run is long in a dev build (600 µs at a 200 MHz clock) | `examples/buck` | a slow e2e test, and one Book block that takes minutes to refresh | one e2e test runs `startup`, once; its measured time is written in the task's commit; the Book guard reuses that one run's output through a shared fixture, not a second run |
 | `piperine-project` pulls `git2`, which builds `libgit2` | `crates/piperine-project/Cargo.toml:7` | the default build gets slower | accepted: the crate already builds in this workspace; no new dependency |
-| 19 000 lines and 36 test targets of `piperine-api` are deleted | `crates/piperine-api/` | features with no MSL counterpart leave the tree | the user's call (Q6); the history keeps them; `GAPS.md` lists what left |
+| 19 000 lines and 36 test targets of `piperine-api` are deleted | `crates/piperine-api/` | features with no MSL counterpart leave the tree | approved (Q6: "Agora, pequeno"); the history keeps them; `GAPS.md` lists what left |
+| The printer has no place for a comment inside an expression | `crates/piperine-lang/src/msl/print.rs:1` | a formatter built on it could drop one | the `Verbatim` rule (the statement is written as the source has it) and the formatter's own guard, which refuses to return a text whose comments differ |
+| The formatter needs the printer's layout per node, with hooks between nodes | `crates/piperine-lang/src/msl/print.rs` | a refactor of the printer could change `print`'s output | CLI-23 AC 11: the existing targets `msl_print` and `msl_corpus` are not edited and stay green; the refactor is a task of its own, before any comment logic |
+| Blank lines are kept (at most one), which the canonical printer never did | `crates/piperine-lang/src/msl/format.rs` | `format` and `print` differ on a source with blank lines | intended: `print` is the canonical text of a tree, `format` is what a person's file becomes. The Book block test and the POM use `print`, unchanged |
+| The overlay is all or nothing: with one virtual source, the builder reads every file from the virtual set | `crates/piperine-lang/src/pom/design.rs:475` | the server must hand over every file of every crate of the graph | `check_with` walks the graph's files from disk and replaces the open ones; a test changes one buffer of a two-crate project |
+| The server analyses the whole project on every change | `crates/piperine-lang-server/src/analysis.rs` | slow on the buck while typing | queued changes are drained before an analysis; the measured time on `examples/buck` is written in the task's commit. Incremental analysis is not built |
+| The old server's 6 500 lines and its test targets are deleted | `crates/piperine-lang-server/` | hover, completion, rename and the rest leave the editor | approved (Q7); `GAPS.md` lists them |
+| The SVG is compared structurally, never as pixels | `crates/piperine-cli/src/render/svg.rs` | a plot can be well-formed and ugly | the geometry is tested as numbers in `piperine-api`; the Book embeds the real file, so a person sees it at every Book review |
 | The old CLI and API tests are deleted, which the test-integrity rule forbids for tests of living code | `crates/piperine-cli/tests/`, `crates/piperine-api/tests/` | none of them compiles today | they are removed in the same commit as the code they test, and the commit body lists every target; no surviving assertion is edited |
 | `AGENTS.md` rule 5 forbids macros; `clap` is usually used through its derive | `crates/piperine-cli/Cargo.toml:12` | a derive would be the first proc-macro of the rewritten host | the builder interface, the commands and flags as a data table |
 | Each e2e test on the Rust backend runs `rustc` | `crates/piperine-cli/tests/` | minutes per target if every test compiles | one cache directory per test target, passed to the child as `PIPERINE_CACHE_DIR`; identical designs compile once |
@@ -385,9 +455,13 @@ No `unwrap()` and no `expect()` on a path a user's input reaches (AGENTS.md).
 | Flags and keys | the same names, flag over key | one data model; a lone file needs flags anyway |
 | A bench is a crate | `benches/<name>.msl`, root of its own crate over the package | Cargo's integration-test rule; the stimulus never ships to dependents; `msl-digital` already runs the buck this way |
 | The parity `Backend`, `Bench` and `Project` | left as they are | queue item 4 owns the harness; two small enums are cheaper than a dependency from the test harness on the host library decided in a hurry |
+| The plot | geometry in `piperine-api` (`Plot`), text in the CLI (`SvgPlot`), no plotting crate, no terminal plot | the mapping from a value to a point is a rule and is tested as numbers; a terminal plot would make standard output depend on a width |
+| How comments survive | a side list from the lexer, anchored to nodes by span; the tree does not carry them | the parser, the POM and every tree-equality test stay as they are |
+| `format` beside `print` | two entry points over one layout | `print` is the canonical text of a tree and many tests pin it; `format` adds what only a source has: comments and blank lines |
+| What the server analyses | `Project::check_with(overlay)`: the same code as `piperine check` | one definition of a project's errors |
 | JSON Lines by hand | no `serde_json` in the CLI | five value kinds; a dependency for one function is not worth it |
 | Text only, no color | plain text on standard output; `miette` without color unless standard error is a terminal | the Book compares bytes |
 | One compile per command | `Session::open` compiles; `run` of an analysis never does | C7, MD-18 |
 | Commands write to injected streams | `execute(out, err)` | unit tests capture text without a process; e2e tests still run the real binary |
 
-**Project-level decision (written to `.specs/STATE.md` by the task that closes the feature, as the next free `MD-NN` after `msl-digital`'s MD-64):** the command line is a shell over `piperine-api`; a run is a `[run.<name>]` table of `Piperine.toml` whose keys are also flags; a bench is a crate under `benches/`; `piperine-project` accepts the table and does not read it (amends MD-58's "and nothing else"); the old content of `piperine-api` is gone and each of its features returns on the device ABI under its own spec (amends MD-20's module list, keeps its topology).
+**Project-level decision (written to `.specs/STATE.md` by the task that closes the feature, as the next free `MD-NN` after `msl-digital`'s MD-64):** the command line is a shell over `piperine-api`; a run is a `[run.<name>]` table of `Piperine.toml` whose keys are also flags; a bench is a crate under `benches/`; `piperine-project` accepts the table and does not read it (amends MD-58's "and nothing else"); the old content of `piperine-api` is gone and each of its features returns on the device ABI under its own spec (amends MD-20's module list, keeps its topology); a bench is MSL and the spec says so; `msl::format` is the formatter and `msl::print` stays the canonical text of a tree; the language server publishes what `Project::check_with` returns and nothing else.
