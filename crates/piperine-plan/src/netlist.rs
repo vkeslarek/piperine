@@ -3,6 +3,7 @@
 
 use piperine_abi::raw::Module;
 use piperine_ir::{BodyId, CarrierRole, Constant, Ir, NodeRef};
+use piperine_solver::abi::{Error, SolverDomain};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result};
 
 /// Who supplies the module of a body: the interpreter, or a compiled library.
@@ -40,10 +41,14 @@ impl<'a> Netlist<'a> {
     /// ports and in the body's order, to the design net the instance gives it
     /// (`Port::Net` named by the net's path, so the net is read by that name); a carrier the
     /// instance gives no net is left open, its pin private to the instance. A carrier's initial
-    /// value is its pin's `HAS_INIT`, in the shape: it reaches the solver with the pin, and a
-    /// net's own `init` is not passed (the builder has no way to take it; the carriers bound to
-    /// the net carry it).
+    /// value is its pin's `HAS_INIT`, in the shape: it reaches the solver with the pin.
+    ///
+    /// Refused, naming the carrier and the net, until msl-digital binds them
+    /// (`ir-rust` verification F-B1): a parent's `signal` that its children's carrier ports meet
+    /// on, since the builder binds no `PRIVATE` pin to a named net and the parent's drives and
+    /// commits would never reach the children.
     pub fn circuit(&self, modules: &impl Modules) -> Result<CircuitInstance> {
+        self.refuse_unbound_forms()?;
         let ir = self.ir;
         let mut builder = CircuitBuilder::new(ir.top().path());
         let nodes: Vec<_> = ir.nodes().map(|n| builder.node(n.path())).collect();
@@ -89,5 +94,33 @@ impl<'a> Netlist<'a> {
             builder.device(module, instance.path(), &values, &ports);
         }
         builder.build()
+    }
+
+    /// The wiring this netlist cannot yet give the solver, as an error naming it (see `circuit`).
+    fn refuse_unbound_forms(&self) -> Result<()> {
+        for instance in self.ir.instances() {
+            let body = instance.body();
+            for (c, carrier) in body.carriers().iter().enumerate() {
+                if carrier.role != CarrierRole::Signal {
+                    continue;
+                }
+                let Some(net) = instance.net(c) else { continue };
+                if let Some(child) = net.instances().first() {
+                    return Err(Error::simple(
+                        SolverDomain::Digital,
+                        format!(
+                            "{}: the signal `{}` of `{}` is the net `{}` that the carrier ports of `{}` meet on; \
+                             a parent's signal bound to its children's ports is not supported yet (msl-digital)",
+                            carrier.origin,
+                            carrier.name,
+                            instance.path(),
+                            net.path(),
+                            child.path()
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 }
