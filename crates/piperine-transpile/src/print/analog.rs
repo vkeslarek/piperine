@@ -194,9 +194,7 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Param(p) => {
                     sources.insert(Source::Param(*p));
                 }
-                Expr::Env(env) => {
-                    sources.insert(Self::env_source(*env));
-                }
+                Expr::Env(env) => sources.extend(Self::env_source(*env)),
                 Expr::Probe { plus, minus } => {
                     for t in [plus, minus] {
                         if let Terminal::Node(i) = t {
@@ -219,7 +217,7 @@ impl<'a> AnalogPrinter<'a> {
                     }
                 }
                 Expr::Call { function, args } => {
-                    sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().map(Self::env_source));
+                    sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source));
                     stack.extend(args);
                 }
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
@@ -248,11 +246,14 @@ impl<'a> AnalogPrinter<'a> {
         }
     }
 
-    fn env_source(env: Env) -> Source {
+    /// The plan read of an environment read; `None` for the two the plan does not read yet
+    /// (`time()`, `static()`), which `Amended` refuses before any is printed.
+    fn env_source(env: Env) -> Option<Source> {
         match env {
-            Env::Temperature => Source::Temperature,
-            Env::Gmin => Source::Gmin,
-            Env::SourceScale => Source::SourceScale,
+            Env::Temperature => Some(Source::Temperature),
+            Env::Gmin => Some(Source::Gmin),
+            Env::SourceScale => Some(Source::SourceScale),
+            Env::Time | Env::Static => None,
         }
     }
 

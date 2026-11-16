@@ -2,6 +2,7 @@
 //! indentation, one statement per line, every item under a comment naming its IR path and
 //! origin) so the text reads the same on every build (RS-02).
 
+pub mod amended;
 pub mod analog;
 pub mod cross;
 pub mod digital;

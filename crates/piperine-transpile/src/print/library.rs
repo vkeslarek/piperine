@@ -20,6 +20,7 @@ use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, Stmt, StmtId};
 use piperine_plan::{BodyPlan, Mode};
 
 use crate::Error;
+use crate::print::amended::Amended;
 use crate::print::{AnalogPrinter, DigitalPrinter, ShapePrinter, Text, ValuePrinter};
 
 /// Prints a design.
@@ -35,6 +36,8 @@ impl LibraryPrinter {
         let at = top.body().origin().clone();
         let running: Vec<(piperine_ir::Body<'_>, &BodyPlan)> =
             ir.bodies().filter_map(|b| plans.get(b.id().index()).and_then(Option::as_ref).map(|p| (b, p))).collect();
+
+        Amended::refuse(ir, &running)?;
 
         let mut uses: BTreeSet<&'static str> = BTreeSet::new();
         let mut shapes = ShapePrinter::new();
@@ -299,11 +302,12 @@ impl LibraryPrinter {
         sites.get(k as usize).map_or_else(|| format!("site{k}"), |s| s.name.clone())
     }
 
-    /// The IR functions the running bodies call, directly or through other functions, in arena
-    /// order.
-    fn reached(ir: &Ir, running: &[(piperine_ir::Body<'_>, &BodyPlan)]) -> Vec<FunctionId> {
+    /// The expressions the running bodies evaluate themselves: their `analog` block, `where`
+    /// checks, drives, event guards and crossings, and reactions; the functions they call are
+    /// reached from these.
+    pub(crate) fn roots<'a>(ir: &Ir, bodies: impl IntoIterator<Item = piperine_ir::Body<'a>>) -> Vec<ExprId> {
         let mut exprs: Vec<ExprId> = Vec::new();
-        for (body, _) in running {
+        for body in bodies {
             exprs.extend(Self::statement_exprs(ir, body.analog().unwrap_or(&[])));
             exprs.extend(body.params().iter().filter_map(|p| p.check));
             for d in body.drives() {
@@ -319,6 +323,13 @@ impl LibraryPrinter {
                 exprs.extend(Self::statement_exprs(ir, &r.stmts));
             }
         }
+        exprs
+    }
+
+    /// The IR functions the running bodies call, directly or through other functions, in arena
+    /// order.
+    fn reached(ir: &Ir, running: &[(piperine_ir::Body<'_>, &BodyPlan)]) -> Vec<FunctionId> {
+        let mut exprs = Self::roots(ir, running.iter().map(|(b, _)| *b));
         let mut found = BTreeSet::new();
         while let Some(e) = exprs.pop() {
             match ir.expr(e) {

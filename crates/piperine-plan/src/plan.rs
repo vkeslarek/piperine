@@ -162,10 +162,14 @@ impl ReadSet {
         self.0.extend(deps.limits.iter().map(|i| Source::LimitValue(*i)));
         self.0.extend(deps.stims.iter().map(|i| Source::StimValue(*i)));
         self.0.extend(deps.params.iter().map(|i| Source::Param(*i)));
-        self.0.extend(deps.env.iter().map(|e| match e {
-            Env::Temperature => Source::Temperature,
-            Env::Gmin => Source::Gmin,
-            Env::SourceScale => Source::SourceScale,
+        self.0.extend(deps.env.iter().filter_map(|e| match e {
+            Env::Temperature => Some(Source::Temperature),
+            Env::Gmin => Some(Source::Gmin),
+            Env::SourceScale => Some(Source::SourceScale),
+            // `time()` and `static()` have no read in the plan yet (msl-digital T39); the
+            // compiled backend refuses a body that holds one (`Error::Unsupported`) and the
+            // interpreter rejects it, so no plan of one runs.
+            Env::Time | Env::Static => None,
         }));
     }
 

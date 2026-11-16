@@ -342,6 +342,11 @@ pub enum Env {
     Temperature,
     Gmin,
     SourceScale,
+    /// `now()`: the simulation time, an `f64`. Read by `analog` and by reactions, never by a
+    /// drive, an event guard or an `at` argument (abi.md §4.2).
+    Time,
+    /// `analysis(Static)`: whether the analysis has no time axis, a `bool`. Read where `Time` is.
+    Static,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

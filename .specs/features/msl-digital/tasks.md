@@ -596,10 +596,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] `piperine-interp` and `piperine-transpile` still build: each new variant gets a refusal arm (`UNEXECUTED`, `Unsupported`)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `time_and_static_reads_print_and_check`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] `piperine-interp` and `piperine-transpile` still build: each new variant gets a refusal arm (`UNEXECUTED`, `Unsupported`)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `time_and_static_reads_print_and_check`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full

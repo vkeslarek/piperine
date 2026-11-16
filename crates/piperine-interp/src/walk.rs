@@ -424,6 +424,9 @@ impl<'a> Walk<'a> {
                 piperine_ir::Env::Temperature => &f.temperature,
                 piperine_ir::Env::Gmin => &f.gmin,
                 piperine_ir::Env::SourceScale => &f.source_scale,
+                // Not a frame cell: `eval` faults on it (`UNEXECUTED`), and `Interpreter::new`
+                // rejects a body that holds one.
+                piperine_ir::Env::Time | piperine_ir::Env::Static => return None,
             })),
             // §18 rule 3, abi.md A2: the held value stands in for `x`; `x`, `f` and the seed are
             // the site function's, not evaluated here.

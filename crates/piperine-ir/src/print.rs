@@ -704,6 +704,7 @@ impl<'a> Printer<'a> {
         let ir = self.ir;
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
+            Expr::Env(Env::Static) => Some(ValueType::Bool),
             Expr::Real(_) | Expr::Math { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } => {
                 Some(ValueType::F64)
             }
@@ -971,6 +972,8 @@ impl<'a> Printer<'a> {
             Env::Temperature => "temperature",
             Env::Gmin => "gmin",
             Env::SourceScale => "source_scale",
+            Env::Time => "time",
+            Env::Static => "static",
         }
     }
 }

@@ -410,12 +410,14 @@ impl<'a> ValuePrinter<'a> {
         found.into_iter().collect()
     }
 
-    /// The generated variable an environment read is: `temperature_`, `gmin_`, `source_scale_`.
+    /// The generated variable an environment read is: `temperature_`, `gmin_`, `source_scale_`, `time_`, `is_static`.
     pub fn env_name(env: Env) -> &'static str {
         match env {
             Env::Temperature => "temperature_",
             Env::Gmin => "gmin_",
             Env::SourceScale => "source_scale_",
+            Env::Time => "time_",
+            Env::Static => "is_static",
         }
     }
 

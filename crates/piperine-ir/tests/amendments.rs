@@ -1,0 +1,189 @@
+//! Scope: the IR amendments of msl-digital (design A1 to A7, contract D3 to D7): the time and
+//! static reads, the `at` event, emit sites and streams, the flow of a potential branch, the
+//! previous value of a carrier, a child param that reads the parent, and the carrier bindings
+//! of a child. Each is an IR node that `Ir::check` types and the printer writes, with its
+//! dependency set; the earlier prints stay byte-identical. Expected texts are written from the
+//! MSL source each fixture transcribes.
+
+#[path = "support/digital.rs"]
+#[allow(dead_code)]
+mod digital;
+
+use digital::{Buck, Dx};
+use piperine_ir::{
+    BodyId, BodySpec, Branch, BranchKind, CarrierRole, Deps, Drive, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
+    IrBuilder, NodeRef, NodeSpec, Origin, Stmt, Target, Terminal, ValueType, NetSpec,
+};
+
+/// Designs for the tests: one body placed as the top of a design.
+struct Design;
+
+impl Design {
+    fn origin(file: &str, line: u32, col: u32) -> Origin {
+        Origin { file: file.to_string(), line, col }
+    }
+
+    /// `body` placed as the design, its nodes on nodes of their own and its carriers on nets of
+    /// their own.
+    fn place(mut b: IrBuilder, body: BodyId, nodes: usize, carriers: &[ValueType]) -> Ir {
+        let el = Buck::electrical(&mut b);
+        let at = b.next_instance_id();
+        let nodes = (0..nodes)
+            .map(|n| NodeRef::Node(b.node(NodeSpec { path: format!("Top.n{n}"), nature: el, declared_by: at, init: None, origin: Design::origin("top.msl", 1, 1) })))
+            .collect();
+        let nets = carriers
+            .iter()
+            .enumerate()
+            .map(|(c, ty)| b.net(NetSpec { path: format!("Top.c{c}"), ty: ty.clone(), declared_by: at, init: None, origin: Design::origin("top.msl", 1, 1) }))
+            .collect();
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes, params: vec![], origin: Design::origin("top.msl", 1, 1) });
+        b.bind_nets(top, nets);
+        b.finish(top)
+    }
+
+    /// The ports `p` and `n` of an `Electrical` body.
+    fn ports(b: &mut IrBuilder, file: &str) -> Vec<piperine_ir::BodyNode> {
+        let el = Buck::electrical(b);
+        ["p", "n"]
+            .iter()
+            .enumerate()
+            .map(|(i, name)| piperine_ir::BodyNode { name: (*name).into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Design::origin(file, 1, 10 + 8 * i as u32) })
+            .collect()
+    }
+}
+
+/// The reads the amendments add, written at the position of a `Dx`.
+struct Read;
+
+impl Read {
+    fn time(x: &mut Dx<'_>) -> ExprId {
+        let o = x.origin();
+        x.b.expr(Expr::Env(Env::Time), ValueType::F64, o)
+    }
+
+    fn is_static(x: &mut Dx<'_>) -> ExprId {
+        let o = x.origin();
+        x.b.expr(Expr::Env(Env::Static), ValueType::Bool, o)
+    }
+}
+
+/// The text a printed IR must hold, as one block of consecutive lines.
+struct Printed;
+
+impl Printed {
+    fn holds(ir: &Ir, lines: &[&str]) {
+        let text = ir.print_structural();
+        let block = lines.join("\n");
+        assert!(text.contains(&format!("{block}\n")), "missing:\n{block}\n--- in ---\n{text}");
+    }
+}
+
+#[test]
+fn time_and_static_reads_print_and_check() {
+    // power.msl, a body that reads the clock and the analysis:
+    //
+    //   module Clocked(p: Electrical, n: Electrical, out q: Bit = false) {                // 1
+    //       analog { i(p, n) +> v(p, n) * if analysis(Static) { 0.0 } else { now() }; }   // 2
+    //   }
+    //   digital for Clocked { on q.changed() { q <- if analysis(Static) { false } else { now() > 1u } } }
+    const F: &str = "clocked.msl";
+    let mut b = IrBuilder::new();
+    let mut x = Dx::new(&mut b, F, 2, 20);
+    let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+    let stat = Read::is_static(&mut x);
+    let zero = x.real(0.0);
+    let now = Read::time(&mut x);
+    let level = x.if_(stat, zero, now, ValueType::F64);
+    let value = x.bin(piperine_ir::BinaryOp::Mul, v, level, ValueType::F64);
+    let contribution = b.stmt(Stmt::Contribute {
+        branch: 0,
+        quantity: piperine_ir::QuantityRole::Flow,
+        addends: vec![piperine_ir::Addend { operator: piperine_ir::Operator::Direct, negated: false, value }],
+    });
+    let nodes = Design::ports(&mut b, F);
+    let body = b.body(BodySpec {
+        nodes,
+        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+        analog: Some(vec![contribution]),
+        ..Buck::spec("Clocked", F, 1)
+    });
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(piperine_ir::Constant::Bool(false)), F, 1, 40));
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 3, 8) });
+    let mut x = Dx::new(&mut b, F, 3, 30);
+    let stat = Read::is_static(&mut x);
+    let off = x.boolean(false);
+    let now = Read::time(&mut x);
+    let one = x.real(1.0);
+    let late = x.bin(piperine_ir::BinaryOp::Gt, now, one, ValueType::Bool);
+    let next = x.if_(stat, off, late, ValueType::Bool);
+    let commit = x.commit(0, next, None);
+    Buck::reaction(&mut b, body, vec![changed], vec![commit], vec![], F, 3);
+    let ir = Design::place(b, body, 2, &[ValueType::Bool]);
+
+    // Typed `f64` and `bool`, so the IR's own rules accept them.
+    assert_eq!(ir.check(), vec![]);
+
+    // Printed as `time()` and `static()`, like the other environment reads, and the structural
+    // form writes no type note: the form implies it.
+    Printed::holds(&ir, &["  analog", "    b0.flow +> direct (probe(p, n) * if static() { 0.0 } else { time() })"]);
+    Printed::holds(&ir, &["  reaction R0 on (E0)", "    q <- if static() { false } else { (time() > 1.0) }"]);
+    assert!(!ir.print_structural().contains(" : "), "a type note was written:\n{}", ir.print_structural());
+    let full = ir.to_string();
+    for line in ["env time", "env static"] {
+        assert!(full.contains(line), "{line} missing from:\n{full}");
+    }
+
+    // The dependency sets list both, in `Env` order, among the sources of the contribution and of
+    // the reaction.
+    let body = ir.top().body();
+    assert_eq!(body.dependencies(Target::Flow(0)), Deps { nodes: vec![0, 1], env: vec![Env::Time, Env::Static], ..Deps::default() });
+    assert_eq!(body.dependencies(Target::Reaction(0)), Deps { env: vec![Env::Time, Env::Static], ..Deps::default() });
+
+    // A drive, an event guard and, through a function, a drive read neither: an input is read by
+    // no discrete function (abi.md §4.2). One entry per read.
+    let mut b = IrBuilder::new();
+    let mut x = Dx::new(&mut b, F, 2, 5);
+    let now = Read::time(&mut x);
+    let one = x.real(1.0);
+    let late = x.bin(piperine_ir::BinaryOp::Gt, now, one, ValueType::Bool);
+    let reads_static = {
+        let stat = Read::is_static(x.at(1, 30));
+        b.function(FunctionSpec { name: "quiet".into(), origin: Design::origin(F, 1, 1), params: vec![], ret: ValueType::Bool, locals: vec![], body: stat })
+    };
+    let mut x = Dx::new(&mut b, F, 4, 9);
+    let via_call = x.call(reads_static, vec![], ValueType::Bool);
+    let mut x = Dx::new(&mut b, F, 3, 7);
+    let now = Read::time(&mut x);
+    let two = x.real(2.0);
+    let guard = x.bin(piperine_ir::BinaryOp::Lt, now, two, ValueType::Bool);
+    let body = b.body(Buck::spec("Bad", F, 1));
+    b.carrier(body, Buck::carrier("a", ValueType::Bool, CarrierRole::Out, None, F, 1, 20));
+    b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::Out, None, F, 1, 30));
+    b.drive(body, Drive { carrier: 0, value: late, after: None, origin: Design::origin(F, 2, 3) });
+    b.drive(body, Drive { carrier: 1, value: via_call, after: None, origin: Design::origin(F, 4, 3) });
+    b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Design::origin(F, 3, 3) });
+    let broken = Design::place(b, body, 0, &[ValueType::Bool, ValueType::Bool]).check();
+    let one = |item: &str, line: u32, what: &str| {
+        let hits: Vec<_> = broken.iter().filter(|e| e.item == item && e.what.contains(what)).collect();
+        assert_eq!(hits.len(), 1, "{item}: {what}: {broken:#?}");
+        assert_eq!(hits[0].origin.line, line, "{item}");
+    };
+    one("body Bad drive a", 2, "reads time()");
+    one("body Bad drive c", 1, "reads static()");
+    one("body Bad event 0", 3, "reads time()");
+    assert_eq!(broken.len(), 3, "{broken:#?}");
+
+    // A read typed against its form is one entry: `static()` is a `bool`, `time()` an `f64`.
+    let mut b = IrBuilder::new();
+    let o = Design::origin(F, 2, 5);
+    let wrong = b.expr(Expr::Env(Env::Static), ValueType::F64, o.clone());
+    let also = b.expr(Expr::Env(Env::Time), ValueType::Bool, o);
+    let first = b.stmt(Stmt::Expr(wrong));
+    let second = b.stmt(Stmt::Expr(also));
+    let body = b.body(BodySpec { analog: Some(vec![first, second]), ..Buck::spec("Typed", F, 1) });
+    let broken = Design::place(b, body, 0, &[]).check();
+    let has = |what: &str| broken.iter().filter(|e| e.what.contains(what)).count();
+    assert_eq!(has("expression is typed f64, its form gives bool"), 1, "{broken:#?}");
+    assert_eq!(has("expression is typed bool, its form gives f64"), 1, "{broken:#?}");
+    assert_eq!(broken.len(), 2, "{broken:#?}");
+}

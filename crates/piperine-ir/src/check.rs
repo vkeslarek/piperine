@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Constant, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Constant, Env, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
     ValueType,
 };
 use crate::typing::Typing;
@@ -565,6 +565,56 @@ impl<'a> Checker<'a> {
         (out_e, out_s)
     }
 
+    /// `reach`, followed into the body of every function an expression calls: what a value
+    /// computed from `exprs` evaluates.
+    fn reach_calls(&self, exprs: &[ExprId]) -> BTreeSet<ExprId> {
+        let ir = self.ir;
+        let mut out = BTreeSet::new();
+        let mut called = BTreeSet::new();
+        let mut roots = exprs.to_vec();
+        while !roots.is_empty() {
+            let (found, _) = self.reach(&[], &roots);
+            roots.clear();
+            for e in found {
+                if let Some(Expr::Call { function, .. }) = ir.exprs.get(e.index()).map(|d| &d.kind)
+                    && called.insert(*function)
+                    && let Some(f) = ir.functions.get(function.index())
+                {
+                    roots.push(f.body);
+                }
+                out.insert(e);
+            }
+        }
+        out
+    }
+
+    /// abi.md §4.2: no discrete function reads an input, so `time()` and `static()` are read by
+    /// `analog` and by reactions, never by a drive, an event guard or an `at` argument.
+    fn ambient_reads(&mut self, body: &BodyData) {
+        let item = format!("body {}", body.name);
+        let mut positions: Vec<(String, Origin, ExprId)> = Vec::new();
+        for drive in &body.drives {
+            let name = body.carriers.get(drive.carrier as usize).map_or("<bad carrier>", |c| c.name.as_str());
+            for e in [drive.value].into_iter().chain(drive.after) {
+                positions.push((format!("{item} drive {name}"), drive.origin.clone(), e));
+            }
+        }
+        for (k, event) in body.events.iter().enumerate() {
+            if let Some(e) = event.guard {
+                positions.push((format!("{item} event {k}"), event.origin.clone(), e));
+            }
+        }
+        for (position, origin, root) in positions {
+            for e in self.reach_calls(&[root]) {
+                if let Some(Expr::Env(env @ (Env::Time | Env::Static))) = self.ir.exprs.get(e.index()).map(|d| &d.kind) {
+                    let what = if *env == Env::Time { "time()" } else { "static()" };
+                    let at = self.ir.exprs.get(e.index()).map_or_else(|| origin.clone(), |d| d.origin.clone());
+                    self.report(position.clone(), at, format!("reads {what}: a drive, an event guard and an `at` argument read no input (abi.md §4.2)"));
+                }
+            }
+        }
+    }
+
     /// The commits among `stmts`, with the carrier each writes.
     fn commits(&self, stmts: &[StmtId]) -> Vec<(StmtId, u32)> {
         stmts
@@ -581,6 +631,7 @@ impl<'a> Checker<'a> {
         for body in &ir.bodies {
             self.writes(body);
             self.analog_reads(body);
+            self.ambient_reads(body);
             let item = format!("body {}", body.name);
             for (k, reaction) in body.reactions.iter().enumerate() {
                 for &e in &reaction.on {
@@ -1123,9 +1174,10 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            Expr::Env(_) => {
+            Expr::Env(env) => {
                 if first {
-                    self.own(w, &origin, ty, &ValueType::F64);
+                    let want = if *env == Env::Static { ValueType::Bool } else { ValueType::F64 };
+                    self.own(w, &origin, ty, &want);
                 }
             }
             Expr::Limit { site, x, f, seed } => {
