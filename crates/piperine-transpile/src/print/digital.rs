@@ -181,6 +181,8 @@ impl<'a> DigitalPrinter<'a> {
                         (self.names.read_name(Source::CarrierChanged(c)), format!("carrier {} changed", self.carrier_name(c)))
                     }
                     EventSource::Cross(_) => (self.names.read_name(Source::Crossed(e)), format!("its crossing fired (event {e})")),
+                    // The plan declares no event function for an `at`; `Amended` refuses it first.
+                    EventSource::At(_) => return Err(self.unsupported(&format!("at(t) as event {e}"))),
                 };
                 (source, event.guard, event.origin.clone(), what)
             }

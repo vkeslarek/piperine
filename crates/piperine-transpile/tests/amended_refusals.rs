@@ -5,8 +5,8 @@
 use std::sync::Arc;
 
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Env, Expr, FunctionSpec, InstanceSpec, Ir, IrBuilder, NodeRef, NodeRole,
-    NodeSpec, Operator, QuantityRole, Stmt, Terminal, ValueType,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Constant, Env, Event, EventSource, Expr, FunctionSpec,
+    InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, QuantityRole, Stmt, Terminal, ValueType,
 };
 use piperine_transpile::{Error, Transpiler};
 
@@ -90,5 +90,27 @@ fn time_and_static_are_refused_by_name() {
     assert_eq!(
         Case::refused(ir),
         Error::Unsupported { form: "analysis(Static)".into(), path: "body Amended e0".into(), origin: Buck::origin(F, 3, 5) }
+    );
+}
+
+#[test]
+fn an_at_event_is_refused_by_name() {
+    // `module Timer(out q: Bit = false) {}` and `digital for Timer { on at(1.0) { q <- true; } }`.
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Timer", F, 1));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 20));
+    let time = Dx::new(&mut b, F, 2, 16).real(1.0);
+    let at = b.event(body, Event { source: EventSource::At(time), guard: None, origin: Buck::origin(F, 2, 8) });
+    let mut x = Dx::new(&mut b, F, 2, 24);
+    let yes = x.boolean(true);
+    let commit = x.commit(0, yes, None);
+    Buck::reaction(&mut b, body, vec![at], vec![commit], vec![], F, 2);
+    let at = b.next_instance_id();
+    let net = b.net(NetSpec { path: "Top.q".into(), ty: ValueType::Bool, declared_by: at, init: None, origin: Buck::origin(F, 1, 20) });
+    let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![], origin: Buck::origin(F, 1, 1) });
+    b.bind_nets(top, vec![net]);
+    assert_eq!(
+        Case::refused(b.finish(top)),
+        Error::Unsupported { form: "at(t)".into(), path: "body Timer event 0".into(), origin: Buck::origin(F, 2, 8) }
     );
 }

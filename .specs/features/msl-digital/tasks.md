@@ -620,10 +620,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The dependency set of an `At` event lists the carriers and params its argument reads
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `an_at_event_prints_and_checks`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The dependency set of an `At` event lists the carriers and params its argument reads
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `an_at_event_prints_and_checks`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full

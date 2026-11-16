@@ -211,7 +211,7 @@ impl<'a> Checker<'a> {
                 }
             }
             for event in &body.events {
-                if let EventSource::Cross(e) = event.source {
+                if let EventSource::Cross(e) | EventSource::At(e) = event.source {
                     self.expr_id(&item, &event.origin, e);
                 }
                 if let Some(guard) = event.guard {
@@ -600,7 +600,11 @@ impl<'a> Checker<'a> {
             }
         }
         for (k, event) in body.events.iter().enumerate() {
-            if let Some(e) = event.guard {
+            let at = match event.source {
+                EventSource::At(e) => Some(e),
+                EventSource::Changed(_) | EventSource::Cross(_) => None,
+            };
+            for e in event.guard.into_iter().chain(at) {
                 positions.push((format!("{item} event {k}"), event.origin.clone(), e));
             }
         }
@@ -646,13 +650,24 @@ impl<'a> Checker<'a> {
                         self.report(format!("{item} event {k}"), event.origin.clone(), format!("a `cross` watches a real, found {ty}"));
                     }
                 }
+                if let EventSource::At(e) = event.source {
+                    if let Some(ty) = self.ty(e).filter(|t| *Typing::base(t) != ValueType::F64) {
+                        self.report(format!("{item} event {k}"), event.origin.clone(), format!("an `at` waits for a time, an `f64`, found {ty}"));
+                    }
+                    for read in self.reach_calls(&[e]) {
+                        if matches!(self.ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Probe { .. })) {
+                            let at = self.expr_origin(read);
+                            self.report(format!("{item} event {k}"), at, "an `at` argument reads a probe: a discrete function reads no input (abi.md §4.2)".to_string());
+                        }
+                    }
+                }
             }
             // A commit anywhere but in a reaction: the analog block, a `where`, a drive, an event.
             let mut roots: Vec<ExprId> = body.params.iter().filter_map(|p| p.check).collect();
             roots.extend(body.drives.iter().flat_map(|d| [d.value].into_iter().chain(d.after)));
             roots.extend(body.events.iter().flat_map(|e| {
                 let cross = match e.source {
-                    EventSource::Cross(x) => Some(x),
+                    EventSource::Cross(x) | EventSource::At(x) => Some(x),
                     EventSource::Changed(_) => None,
                 };
                 cross.into_iter().chain(e.guard)
@@ -770,7 +785,7 @@ impl<'a> Checker<'a> {
             }
             for (k, event) in body.events.iter().enumerate() {
                 let mut w = Walk::new(owner(false, format!("body {} event {k}", body.name)), 0);
-                if let EventSource::Cross(e) = event.source {
+                if let EventSource::Cross(e) | EventSource::At(e) = event.source {
                     self.walk(&mut w, Task::Expr(e, Ctx::top()));
                 }
                 if let Some(guard) = event.guard {

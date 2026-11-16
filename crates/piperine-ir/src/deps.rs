@@ -64,8 +64,10 @@ pub enum Target {
     DriveAfter(u32),
     /// The guard of an event (`Body::events`); empty when it has none.
     Guard(u32),
-    /// The crossed expression of a `Cross` event; empty for a `Changed` one.
+    /// The crossed expression of a `Cross` event; empty for a `Changed` or an `At` one.
     Cross(u32),
+    /// The time argument of an `At` event (`Body::events`); empty for any other event.
+    At(u32),
     /// Everything a reaction (`Body::reactions`) reads.
     Reaction(u32),
 }
@@ -99,6 +101,7 @@ impl<'a> Body<'a> {
             Target::DriveAfter(i) => (&deps.drive_afters, i, "drive"),
             Target::Guard(i) => (&deps.guards, i, "event"),
             Target::Cross(i) => (&deps.crosses, i, "event"),
+            Target::At(i) => (&deps.ats, i, "event"),
             Target::Reaction(i) => (&deps.reactions, i, "reaction"),
         };
         match list.get(i as usize) {
@@ -121,6 +124,7 @@ impl<'a> Body<'a> {
             Target::DriveAfter(i) => (&deps.drive_afters, i, "drive"),
             Target::Guard(i) => (&deps.guards, i, "event"),
             Target::Cross(i) => (&deps.crosses, i, "event"),
+            Target::At(i) => (&deps.ats, i, "event"),
             Target::Reaction(i) => (&deps.reactions, i, "reaction"),
         };
         match list.get(i as usize) {
@@ -178,6 +182,7 @@ pub(crate) struct BodyDeps {
     drive_afters: Vec<Sources>,
     guards: Vec<Sources>,
     crosses: Vec<Sources>,
+    ats: Vec<Sources>,
     reactions: Vec<Sources>,
 }
 
@@ -360,6 +365,7 @@ impl<'a> Walk<'a> {
         }
         let mut guards = Vec::with_capacity(data.events.len());
         let mut crosses = Vec::with_capacity(data.events.len());
+        let mut ats = Vec::with_capacity(data.events.len());
         for event in &data.events {
             let mut one = |root: Option<ExprId>| match root {
                 Some(e) => {
@@ -371,7 +377,11 @@ impl<'a> Walk<'a> {
             };
             crosses.push(one(match event.source {
                 EventSource::Cross(e) => Some(e),
-                EventSource::Changed(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) => None,
+            }));
+            ats.push(one(match event.source {
+                EventSource::At(e) => Some(e),
+                EventSource::Changed(_) | EventSource::Cross(_) => None,
             }));
             guards.push(one(event.guard));
         }
@@ -401,6 +411,7 @@ impl<'a> Walk<'a> {
             drive_afters,
             guards,
             crosses,
+            ats,
             reactions,
         }
     }

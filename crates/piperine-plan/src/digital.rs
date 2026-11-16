@@ -311,6 +311,9 @@ impl Digital {
                     set.0.insert(Source::Crossed(k));
                 }
                 EventSource::Cross(_) => continue,
+                // An `at` event is armed by a reaction of its own and written by no event
+                // function (msl-digital T41); the compiled backend refuses it until then.
+                EventSource::At(_) => continue,
             }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
         }

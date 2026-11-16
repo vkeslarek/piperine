@@ -171,6 +171,9 @@ pub enum EventSource {
     Changed(u32),
     /// `cross(e)`: the real `e` went from `<= 0` to `> 0`, located by the solver.
     Cross(ExprId),
+    /// `at(t)`: simulation time `t`, an `f64` that may be unknown and reads no probe. The event
+    /// fires once, when the clock reaches `t`; a later change of what `t` reads re-arms it.
+    At(ExprId),
 }
 
 /// `on <events> { … }`: statements run when any of the events fires. Its `let`s bind `locals`,

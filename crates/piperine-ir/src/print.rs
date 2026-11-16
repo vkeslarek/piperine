@@ -323,6 +323,10 @@ impl<'a> Printer<'a> {
                     text.push_str("cross ");
                     text.push_str(&self.render(scope, Piece::Expr(*e)));
                 }
+                EventSource::At(e) => {
+                    text.push_str("at ");
+                    text.push_str(&self.render(scope, Piece::Expr(*e)));
+                }
             }
             if let Some(guard) = event.guard {
                 text.push_str(" guard ");
@@ -775,6 +779,7 @@ impl<'a> Printer<'a> {
                     .map(|ev| match &ev.source {
                         EventSource::Changed(c) => format!("(changed c{c} {})", opt(ev.guard)),
                         EventSource::Cross(e) => format!("(cross e{} {})", e.0, opt(ev.guard)),
+                        EventSource::At(e) => format!("(at e{} {})", e.0, opt(ev.guard)),
                     })
                     .collect();
                 let reactions: Vec<String> = body
