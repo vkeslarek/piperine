@@ -25,21 +25,19 @@ where it matters.
 - **Instead:** `Bit<u8>` and an explicit `d.min(SETPOINT_MAX)` at the one place the register is
   written. Nothing checks the range at the other readers.
 
-## G3. Appendix H methods on a carrier receiver stay unresolved
+## G3. Appendix H methods on a carrier receiver stay unresolved (closed: now reported)
 
 - **Wanted:** `oc_count.saturating_add(1)` on a `Bit<u4>` carrier, inside a reaction. Spec Part I
   §1 rule 1 and Appendix H H.1 make `saturating_add` a method of every integer value, and a
   reaction reads a carrier as its value.
 - **Needed by:** SPEC §8.2, §8.4 and §8.6 (the consecutive-sample counters of the supervisor).
-- **What happens:** the POM resolver (`crates/piperine-lang/src/pom/resolve/members.rs`) links
-  a method on a carrier receiver to the carrier built-ins, the `impl`s of its nature and of a
-  declared value type, and blanket trait impls; an inherited primitive method of the value is
-  none of these, so the call is left `Unresolved`, **with no diagnostic**. It is a front-end
-  gap, not a language gap: a type checker would link it.
-- **Instead:** the counters are written as compare-and-increment
-  (`if c < N { c + 1 } else { N }`), which resolves and reads as clearly. The test target
-  `buck_example.rs` asserts that no member of the package stays unresolved, so a regression of
-  this kind is caught rather than hidden.
+- **What happened:** the POM resolver left such a call `Unresolved` with no diagnostic.
+- **Closed by `msl-digital` (2026-11-16) as a reported gap, not a silent one:** the type checker
+  types every method call through its catalogue, and a method with no row for its receiver's
+  type is refused, `P0001` naming the method and the type (`saturating_add` on `u4`). Nothing is
+  left unresolved without a diagnostic. `saturating_add` itself has no row yet.
+- **Instead:** the counters stay written as compare-and-increment
+  (`if c < N { c + 1 } else { N }`), which reads as clearly.
 
 ## G4. The meaning of a float-to-narrow-integer `as`
 

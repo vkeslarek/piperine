@@ -23,14 +23,23 @@ power-good are all MSL, in one package.
 
 ## Status
 
-Nothing executes MSL yet: there is no type checker, elaborator or compiler to the solver. What
-holds today is the front end's bar: the package lexes, parses and resolves through the POM
-against the embedded `std` with zero diagnostics, and its hierarchy reads back as written.
-`crates/piperine-lang/tests/buck_example.rs` is that gate:
+The whole package runs from its `.msl` (feature `msl-digital`): `Buck` type-checks, elaborates
+into the IR, compiles to Rust with no `rustc` warning and runs on the solver, on the transpiled
+backend. The tests drive it from Rust through `piperine-parity`'s `Project`, since no host API or
+CLI runs MSL yet:
 
 ```sh
-cargo test -p piperine-lang --test buck_example
+cargo test -p piperine-lang --test buck_example       # parses and resolves, zero diagnostics
+cargo test -p piperine-lang --test elab_buck          # elaborates; the IR is pinned
+cargo test -p piperine-parity --test buck_whole       # compiles; idles with `en` not driven
+cargo test -p piperine-parity --test buck_closed_loop # starts and regulates at 0.8 V (600 us)
 ```
+
+Each block also runs alone from source against the SPEC's own numbers: `buck_dpwm`,
+`buck_control`, `buck_boundary`, `buck_power`, `buck_supervisor`, `buck_records`, `buck_time` and
+`buck_commits` in `crates/piperine-parity/tests/`. The closed loop is proven at one operating
+point (setpoint 0.8 V, Vin 12 V, 6.6 Ω); the bench scenarios of `SPEC.md` §10 wait for the
+host surface (`ROADMAP.md`, queue item 4).
 
 ## Driving it from a host
 
