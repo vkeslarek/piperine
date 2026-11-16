@@ -716,11 +716,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The second test prints every M1 fixture and every `ir-rust` T29 fixture and compares with `crates/piperine-ir/tests/golden/`, byte for byte
-- [ ] `Child` gains no field: every literal `Child { .. }` of `piperine-ir`, `piperine-lang` and the frozen `piperine-interp` tests compiles unchanged
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_child_param_may_read_the_parents_params`, `the_earlier_prints_are_unchanged`
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The second test prints every M1 fixture and every `ir-rust` T29 fixture and compares with `crates/piperine-ir/tests/golden/`, byte for byte
+- [x] `Child` gains no field: every literal `Child { .. }` of `piperine-ir`, `piperine-lang` and the frozen `piperine-interp` tests compiles unchanged
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_child_param_may_read_the_parents_params`, `the_earlier_prints_are_unchanged`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: build

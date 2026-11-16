@@ -32,7 +32,7 @@ use std::fmt::{self, Display, Write};
 
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, Constant, EmitField, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
+    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
     Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Stream, Terminal,
     UnaryOp, ValueType,
 };
@@ -292,18 +292,26 @@ impl<'a> Printer<'a> {
             self.line(1, &format!("stim S{i} {:?}{at}", site.name));
         }
         self.locals(1, &body.locals);
-        for child in &body.children {
+        for (ci, child) in body.children.iter().enumerate() {
             let callee = self.ir.bodies.get(child.body.index());
             let name = callee.map_or("<bad body>".to_string(), |b| Printer::name(&b.name));
             let nodes: Vec<String> = child.nodes.iter().map(|t| Printer::terminal(scope, *t)).collect();
-            let params: Vec<String> = child
-                .params
-                .iter()
-                .map(|(i, v)| {
-                    let pname = callee.and_then(|b| b.params.get(*i as usize)).map_or("<bad param>".to_string(), |p| Printer::name(&p.name));
-                    format!("{pname} = {v}")
-                })
-                .collect();
+            let pname = |i: u32| callee.and_then(|b| b.params.get(i as usize)).map_or("<bad param>".to_string(), |p| Printer::name(&p.name));
+            // A value set beside the child (`ChildValue`) shows in place of the constant of the
+            // same param; one with no constant follows the constants.
+            let entries: &[(u32, ChildValue)] = body.child_params.get(ci).map_or(&[], Vec::as_slice);
+            let mut params: Vec<String> = Vec::new();
+            for (i, v) in &child.params {
+                match entries.iter().find(|(j, _)| j == i) {
+                    Some((_, value)) => params.push(format!("{} = {}", pname(*i), self.child_value(scope, value))),
+                    None => params.push(format!("{} = {v}", pname(*i))),
+                }
+            }
+            for (i, value) in entries {
+                if !child.params.iter().any(|(j, _)| j == i) {
+                    params.push(format!("{} = {}", pname(*i), self.child_value(scope, value)));
+                }
+            }
             let at = self.at(&child.origin);
             self.line(
                 1,
@@ -357,6 +365,14 @@ impl<'a> Printer<'a> {
                 let text = self.render(scope, Piece::Stmt(stmt));
                 self.line(2, &text);
             }
+        }
+    }
+
+    /// A param value of a placement: a constant as written, an expression in the parent's scope.
+    fn child_value(&mut self, scope: Scope<'_>, value: &ChildValue) -> String {
+        match value {
+            ChildValue::Const(c) => c.to_string(),
+            ChildValue::Expr(e) => self.render(scope, Piece::Expr(*e)),
         }
     }
 
@@ -775,10 +791,22 @@ impl<'a> Printer<'a> {
             let children: Vec<String> = body
                 .children
                 .iter()
-                .map(|c| {
+                .enumerate()
+                .map(|(ci, c)| {
                     let nodes: Vec<String> = c.nodes.iter().map(terminal).collect();
                     let params: Vec<String> = c.params.iter().map(|(p, _)| p.to_string()).collect();
-                    format!("(body {} nodes ({}) params ({}))", c.body.0, nodes.join(", "), params.join(", "))
+                    let values: Vec<String> = body
+                        .child_params
+                        .get(ci)
+                        .map_or(&[][..], Vec::as_slice)
+                        .iter()
+                        .map(|(p, v)| match v {
+                            ChildValue::Const(k) => format!("p{p}={k}"),
+                            ChildValue::Expr(e) => format!("p{p}=e{}", e.0),
+                        })
+                        .collect();
+                    let values = if values.is_empty() { String::new() } else { format!(" values ({})", values.join(", ")) };
+                    format!("(body {} nodes ({}) params ({}){values})", c.body.0, nodes.join(", "), params.join(", "))
                 })
                 .collect();
             let analog = body.analog.as_ref().map_or("-".to_string(), |stmts| {

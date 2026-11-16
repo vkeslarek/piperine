@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Constant, EmitField, Env, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
     ValueType,
 };
 use crate::typing::Typing;
@@ -266,6 +266,9 @@ impl<'a> Checker<'a> {
                 }
             }
         }
+        for body in &ir.bodies {
+            self.child_param_ids(body);
+        }
         for function in &ir.functions {
             let item = format!("function {}", function.name);
             self.expr_id(&item, &function.origin, function.body);
@@ -337,6 +340,41 @@ impl<'a> Checker<'a> {
             }
             if node.declared_by.index() >= ir.instances.len() {
                 self.report(item, node.origin.clone(), format!("declaring instance id {} out of range", node.declared_by.0));
+            }
+        }
+    }
+
+    /// The values set beside the children: each names a child and a param of its body, once, and
+    /// a constant is a value of the param's type.
+    fn child_param_ids(&mut self, body: &BodyData) {
+        let ir = self.ir;
+        let item = format!("body {}", body.name);
+        for (ci, list) in body.child_params.iter().enumerate() {
+            let Some(child) = body.children.get(ci) else {
+                if !list.is_empty() {
+                    self.report(item.clone(), body.origin.clone(), format!("param values of child {ci}, out of range ({} children)", body.children.len()));
+                }
+                continue;
+            };
+            let callee = ir.bodies.get(child.body.index());
+            let mut seen: BTreeSet<u32> = BTreeSet::new();
+            for (p, value) in list {
+                let Some(param) = callee.and_then(|b| b.params.get(*p as usize)) else {
+                    if callee.is_some() {
+                        self.report(item.clone(), child.origin.clone(), format!("child {}: param index {p} out of range", child.name));
+                    }
+                    continue;
+                };
+                if !seen.insert(*p) {
+                    self.report(item.clone(), child.origin.clone(), format!("child {}: param {} is set twice", child.name, param.name));
+                }
+                match value {
+                    ChildValue::Const(c) if !Self::holds(&param.ty, *c) => {
+                        self.report(item.clone(), child.origin.clone(), format!("child {}: the value {c} of param {} is not a value of its type {}", child.name, param.name, param.ty));
+                    }
+                    ChildValue::Const(_) => {}
+                    ChildValue::Expr(e) => self.expr_id(&item, &child.origin, *e),
+                }
             }
         }
     }
@@ -674,6 +712,27 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
+    /// A param value of a placement reads only params of the parent: no node, carrier, local,
+    /// environment, site, flow or previous value, directly or through a function it calls.
+    fn parent_reads(&mut self, item: &str, root: ExprId) {
+        let ir = self.ir;
+        let (direct, _) = self.reach(&[], &[root]);
+        let direct: BTreeSet<ExprId> = direct.into_iter().collect();
+        for e in self.reach_calls(&[root]) {
+            let Some(data) = ir.exprs.get(e.index()) else { continue };
+            let what = match &data.kind {
+                Expr::Probe { .. } => "a probe",
+                Expr::Env(_) => "an environment read",
+                Expr::Carrier(_) | Expr::Previous(_) => "a carrier",
+                Expr::Flow { .. } => "a branch flow",
+                Expr::Limit { .. } | Expr::Stim { .. } => "a `limit` or `ac_stim` site",
+                Expr::Local(_) | Expr::Block { .. } | Expr::Closure { .. } if direct.contains(&e) => "a local, a block or a closure",
+                _ => continue,
+            };
+            self.report(item.to_string(), data.origin.clone(), format!("the value of a child param reads {what}: only the parent's params may be read"));
+        }
+    }
+
     /// The emits among `stmts`.
     fn emits(&self, stmts: &[StmtId]) -> Vec<StmtId> {
         stmts.iter().copied().filter(|s| matches!(self.ir.stmts.get(s.index()), Some(Stmt::Emit { .. }))).collect()
@@ -825,6 +884,19 @@ impl<'a> Checker<'a> {
                 let mut w = Walk::new(owner(false, format!("body {} param {}", body.name, param.name)), 0);
                 self.expect(&w, check, &ValueType::Bool);
                 self.walk(&mut w, Task::Expr(check, Ctx::top()));
+            }
+            for (ci, list) in body.child_params.iter().enumerate() {
+                let Some(child) = body.children.get(ci) else { continue };
+                let callee = ir.bodies.get(child.body.index());
+                for (p, value) in list {
+                    let ChildValue::Expr(e) = value else { continue };
+                    let Some(param) = callee.and_then(|b| b.params.get(*p as usize)) else { continue };
+                    let item = format!("body {} child {} param {}", body.name, child.name, param.name);
+                    let mut w = Walk::new(owner(false, item.clone()), 0);
+                    self.expect(&w, *e, &param.ty);
+                    self.walk(&mut w, Task::Expr(*e, Ctx::top()));
+                    self.parent_reads(&item, *e);
+                }
             }
             if let Some(analog) = &body.analog {
                 let mut w = Walk::new(owner(true, format!("body {}", body.name)), 0);

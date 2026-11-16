@@ -78,6 +78,10 @@ pub struct BodyData {
     /// The record streams the body's `emit!` sites write, by index.
     #[serde(default)]
     pub(crate) streams: Vec<Stream>,
+    /// The param values of each child (by index into `children`) that `Child::params` does not
+    /// hold: set by `IrBuilder::child_param`, empty for a child with none. See `ChildValue`.
+    #[serde(default)]
+    pub(crate) child_params: Vec<Vec<(u32, ChildValue)>>,
     /// The memo of `Body::dependencies`: derived, so outside equality and serialization.
     #[serde(skip)]
     pub(crate) deps: DepsMemo,
@@ -237,6 +241,18 @@ pub struct Child {
     pub nodes: Vec<Terminal>,
     pub params: Vec<(u32, Constant)>,
     pub origin: Origin,
+}
+
+/// The value a placement gives one param of its child, as the authored tree shows it
+/// (`Child(...) { r: r_top }`). `Child::params` keeps the constant entries; an entry that reads
+/// the parent's params lives beside the child (`Body::child_params`), and the flat instance
+/// table holds the constant it elaborates to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ChildValue {
+    Const(Constant),
+    /// An expression over the parent body's params: literals, params, operators, casts, math
+    /// functions and calls. It reads no node, carrier, local or environment.
+    Expr(ExprId),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

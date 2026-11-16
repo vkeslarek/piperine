@@ -20,7 +20,7 @@ pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NetSpec, NodeSp
 pub use handle::{Body, Function, Instance, Nature, Net, Node, RecordSite};
 pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 pub use model::{
-    Addend, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, Constant, Drive, EmitField, Env, Event, EventSource, Expr,
+    Addend, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, ChildValue, Constant, Drive, EmitField, Env, Event, EventSource, Expr,
     ExprData, FunctionData, InstanceData, Ir, Local, MathFn, Method, NatureData, NetData, NodeData, NodeRef,
     NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
     ValueType,

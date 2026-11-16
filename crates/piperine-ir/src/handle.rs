@@ -3,7 +3,7 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, Constant, Drive, EmitField, Event, Expr, FunctionData, InstanceData, Ir, Local,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Drive, EmitField, Event, Expr, FunctionData, InstanceData, Ir, Local,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
 use crate::statements::Statements;
@@ -163,6 +163,13 @@ impl<'a> Body<'a> {
     /// The authored placements, in source order.
     pub fn children(&self) -> &'a [Child] {
         &self.data().children
+    }
+
+    /// The param values of child `child` (an index into `children`) that `Child::params` does
+    /// not hold, in the order they were set: the expressions over this body's params (and the
+    /// constants set beside them). Empty for a child with none, or out of range.
+    pub fn child_params(&self, child: usize) -> &'a [(u32, ChildValue)] {
+        self.data().child_params.get(child).map_or(&[], Vec::as_slice)
     }
 
     /// The discrete carriers, ports first, then signals.

@@ -5,7 +5,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, Child, Constant, Drive, Event, Expr, ExprData, FunctionData, InstanceData, Ir,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Drive, Event, Expr, ExprData, FunctionData, InstanceData, Ir,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
 
@@ -111,6 +111,7 @@ impl IrBuilder {
             events: Vec::new(),
             reactions: Vec::new(),
             streams: Vec::new(),
+            child_params: Vec::new(),
             deps: DepsMemo::default(),
         });
         BodyId(self.bodies.len() as u32 - 1)
@@ -153,6 +154,17 @@ impl IrBuilder {
         let reactions = &mut self.body_data(body).reactions;
         reactions.push(reaction);
         reactions.len() as u32 - 1
+    }
+
+    /// Sets the value `value` of param `param` of child `child` (an index into the body's
+    /// children), beside the child (contract D4: `Child` itself is built literally and gains no
+    /// field). A param set twice keeps both entries; `Ir::check` names that.
+    pub fn child_param(&mut self, body: BodyId, child: u32, param: u32, value: ChildValue) {
+        let lists = &mut self.body_data(body).child_params;
+        if lists.len() <= child as usize {
+            lists.resize(child as usize + 1, Vec::new());
+        }
+        lists[child as usize].push((param, value));
     }
 
     /// Adds a record stream to `body`: returns its index, the identity `Stmt::Emit` names it by.

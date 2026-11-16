@@ -9,9 +9,14 @@
 #[allow(dead_code)]
 mod digital;
 
+#[path = "support/devices.rs"]
+#[allow(dead_code)]
+mod devices;
+
+use devices::Devices;
 use digital::{Buck, Dx, Ty};
 use piperine_ir::{
-    BodyId, BodySpec, Branch, BranchKind, CarrierRole, Constant, Deps, Drive, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
+    BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, ChildValue, Constant, Deps, Drive, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
     IrBuilder, NetSpec, NodeRef, NodeSpec, Origin, Real, RecordSite, Stmt, Stream, StreamField, Target, Terminal, ValueType,
 };
 
@@ -687,4 +692,193 @@ fn a_previous_value_read_prints_and_checks() {
     one("previous value of carrier 9, out of range (1 carriers)", 4);
     one("expression is typed flagged<f64>, its form gives flagged<bool>", 5);
     assert_eq!(broken.len(), 3, "{broken:#?}");
+}
+
+/// A parent that hands its own param to a child, beside one that gives a constant.
+///
+/// ```text
+/// pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0 }          // devices.msl
+/// module Pair(p: Electrical, n: Electrical) {
+///     r_top: f64 = 2k where r_top > 0.0;                                               // 2
+///     Resistor(p, n) { r: r_top * 2.0 } as ra;                                          // 3
+///     Resistor(p, gnd) { r: 50.0 } as rb;                                               // 4
+/// }
+/// ```
+struct Pair;
+
+impl Pair {
+    const F: &'static str = "pair.msl";
+
+    /// The design, and the expression of `ra`'s `r` for the tests that read it.
+    fn ir(mutate: impl FnOnce(&mut IrBuilder, BodyId, ExprId) -> Vec<(u32, u32, ChildValue)>) -> Ir {
+        let mut b = IrBuilder::new();
+        let resistor = Devices::resistor(&mut b);
+        let el = Buck::electrical(&mut b);
+        let check = Buck::positive(&mut b, Pair::F, 2, 30, 0);
+        let mut x = Dx::new(&mut b, Pair::F, 3, 30);
+        let r_top = x.param(0, ValueType::F64);
+        let two = x.real(2.0);
+        let doubled = x.bin(piperine_ir::BinaryOp::Mul, r_top, two, ValueType::F64);
+        let child = |name: &str, nodes: Vec<Terminal>, params: Vec<(u32, Constant)>, line| Child {
+            name: name.into(),
+            body: resistor,
+            nodes,
+            params,
+            origin: Design::origin(Pair::F, line, 5),
+        };
+        let port = |name: &str, col| piperine_ir::BodyNode { name: name.into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Design::origin(Pair::F, 1, col) };
+        let body = b.body(BodySpec {
+            params: vec![Buck::param("r_top", Pair::F, 2, Some(2000.0), Some(check))],
+            nodes: vec![port("p", 10), port("n", 28)],
+            children: vec![
+                child("ra", vec![Terminal::Node(0), Terminal::Node(1)], vec![], 3),
+                child("rb", vec![Terminal::Node(0), Terminal::Ground], vec![(0, Constant::Real(Real::new(50.0)))], 4),
+            ],
+            ..Buck::spec("Pair", Pair::F, 1)
+        });
+        for (child, param, value) in mutate(&mut b, body, doubled) {
+            b.child_param(body, child, param, value);
+        }
+        let at = b.next_instance_id();
+        let nodes: Vec<NodeRef> =
+            ["p", "n"].iter().map(|n| NodeRef::Node(b.node(NodeSpec { path: format!("Pair.{n}"), nature: el, declared_by: at, init: None, origin: Design::origin(Pair::F, 1, 1) }))).collect();
+        let top = b.instance(InstanceSpec { path: "Pair".into(), name: "Pair".into(), body, parent: None, nodes: nodes.clone(), params: vec![Constant::Real(Real::new(2000.0))], origin: Design::origin(Pair::F, 1, 1) });
+        // The flat table holds the constant each value elaborates to.
+        for (name, ports, r) in [("ra", vec![nodes[0], nodes[1]], 4000.0), ("rb", vec![nodes[0], NodeRef::Ground], 50.0)] {
+            b.instance(InstanceSpec {
+                path: format!("Pair.{name}"),
+                name: name.into(),
+                body: resistor,
+                parent: Some(top),
+                nodes: ports,
+                params: vec![Constant::Real(Real::new(r))],
+                origin: Design::origin(Pair::F, 3, 5),
+            });
+        }
+        b.finish(top)
+    }
+}
+
+#[test]
+fn a_child_param_may_read_the_parents_params() {
+    // `ra`'s `r` is `r_top * 2.0`, an expression over the parent's param; `rb`'s is the constant.
+    let ir = Pair::ir(|_, _, doubled| vec![(0, 0, ChildValue::Expr(doubled))]);
+    assert_eq!(ir.check(), vec![]);
+    // The authored tree shows the expression where the placement wrote it, and the constant
+    // where it wrote one; the flat instances hold the constants.
+    Printed::holds(
+        &ir,
+        &[
+            "  child ra: Resistor  nodes (p, n)  params (r = (r_top * 2.0))",
+            "  child rb: Resistor  nodes (p, gnd)  params (r = 50.0)",
+        ],
+    );
+    Printed::holds(&ir, &["instance Pair.ra: Resistor  nodes (Pair.p, Pair.n)  params (r = 4000.0)"]);
+    let full = ir.to_string();
+    assert!(full.contains("params (r = (r_top * 2.0))"), "the expression missing from:\n{full}");
+    assert!(full.contains(" values (p0=e"), "the arena value missing from:\n{full}");
+    // The accessor gives the entries of each child, in order; a child with none has none.
+    let pair = ir.top().body();
+    assert!(matches!(pair.child_params(0), [(0, ChildValue::Expr(_))]));
+    assert_eq!(pair.child_params(1), &[]);
+    assert_eq!(pair.child_params(7), &[]);
+    // `Child::params` keeps its constants: the literal `Child` is unchanged.
+    assert_eq!(pair.children()[1].params, vec![(0, Constant::Real(Real::new(50.0)))]);
+    assert_eq!(pair.children()[0].params, vec![]);
+
+    // A constant set beside the child prints as the constant does.
+    let ir = Pair::ir(|_, _, _| vec![(0, 0, ChildValue::Const(Constant::Real(Real::new(75.0))))]);
+    assert_eq!(ir.check(), vec![]);
+    Printed::holds(&ir, &["  child ra: Resistor  nodes (p, n)  params (r = 75.0)"]);
+
+    // An expression that reads more than the parent's params is one entry each: a node, a carrier
+    // (through a function), the environment and a local; one of the wrong type, a param out of
+    // range, a param set again, a constant of the wrong type, a child out of range.
+    let broken = Pair::ir(|b, body, _| {
+        let mut x = Dx::new(b, Pair::F, 5, 20);
+        let probe = x.probe(Terminal::Node(0), Terminal::Node(1));
+        x.at(6, 20);
+        let o = x.origin();
+        let temperature = x.b.expr(Expr::Env(Env::Temperature), ValueType::F64, o);
+        x.at(7, 20);
+        let local = x.local(0, ValueType::F64);
+        x.at(8, 20);
+        let flag = x.boolean(true);
+        let _ = body;
+        vec![
+            (0, 0, ChildValue::Expr(probe)),
+            (1, 0, ChildValue::Expr(temperature)),
+            (1, 0, ChildValue::Expr(local)),
+            (0, 3, ChildValue::Const(Constant::Real(Real::new(1.0)))),
+            (0, 0, ChildValue::Expr(flag)),
+            (0, 0, ChildValue::Const(Constant::Bool(true))),
+            (4, 0, ChildValue::Const(Constant::Real(Real::new(1.0)))),
+        ]
+    })
+    .check();
+    let has = |what: &str| broken.iter().filter(|e| e.what.contains(what)).count();
+    assert_eq!(has("reads a probe: only the parent's params may be read"), 1, "{broken:#?}");
+    assert_eq!(has("reads an environment read: only the parent's params may be read"), 1, "{broken:#?}");
+    assert_eq!(has("reads a local, a block or a closure: only the parent's params may be read"), 1, "{broken:#?}");
+    assert_eq!(has("child ra: param index 3 out of range"), 1, "{broken:#?}");
+    assert_eq!(has("expression must be f64, found bool"), 1, "{broken:#?}");
+    assert_eq!(has("child rb: param r is set twice"), 1, "{broken:#?}");
+    assert_eq!(has("child ra: param r is set twice"), 2, "the second and the third value of `r`: {broken:#?}");
+    assert_eq!(has("local 0 out of range (0 locals)"), 1, "{broken:#?}");
+    assert_eq!(has("the value true of param r is not a value of its type f64"), 1, "{broken:#?}");
+    assert_eq!(has("param values of child 4, out of range (2 children)"), 1, "{broken:#?}");
+    assert_eq!(broken.len(), 11, "{broken:#?}");
+}
+
+#[test]
+fn the_earlier_prints_are_unchanged() {
+    // No value beside a child, no line: every M1 fixture and every buck-slice fixture prints, in
+    // both forms, the bytes of the golden text it was committed with.
+    let read = |dir: &str, name: &str| {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(dir).join(format!("{name}.txt"));
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+    };
+    let device = |make: fn(&mut IrBuilder) -> BodyId, name: &str, line: u32, params: Vec<f64>| {
+        let mut b = IrBuilder::new();
+        let body = make(&mut b);
+        let top = Devices::alone(&mut b, body, name, line, params);
+        b.finish(top)
+    };
+    let mut b = IrBuilder::new();
+    let top = Devices::divider(&mut b);
+    let m1 = [
+        ("resistor", device(Devices::resistor, "resistor", 5, vec![1000.0])),
+        ("capacitor", device(Devices::capacitor, "capacitor", 11, vec![1e-12])),
+        ("vsource", device(Devices::vsource, "vsource", 17, vec![10.0, 0.0])),
+        ("isource", device(Devices::isource, "isource", 24, vec![1e-3, 0.0])),
+        ("diode", device(Devices::diode, "diode", 31, vec![1e-14, 1.0, 0.0])),
+        ("divider", b.finish(top)),
+    ];
+    for (name, ir) in m1 {
+        assert_eq!(ir.check(), vec![], "{name}");
+        assert_eq!(ir.print_structural(), read("tests/golden", name), "{name}: structural form");
+        assert_eq!(ir.to_string(), read("tests/golden/full", name), "{name}: full text");
+    }
+    let bodies: [(&str, fn(&mut IrBuilder) -> BodyId); 10] = [
+        ("osc", Buck::osc),
+        ("dpwm", Buck::dpwm),
+        ("setpoint_reg", Buck::setpoint_reg),
+        ("ref_ramp", Buck::ref_ramp),
+        ("pid", Buck::pid),
+        ("gate_driver", Buck::gate_driver),
+        ("adc", Buck::adc),
+        ("comparator", Buck::comparator),
+        ("switch", Buck::switch),
+        ("dff", Buck::dff),
+    ];
+    for (name, make) in bodies {
+        let mut b = IrBuilder::new();
+        let _body = make(&mut b);
+        let top_body = b.body(Buck::spec("Top", "top.msl", 1));
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![], params: vec![], origin: Design::origin("top.msl", 1, 1) });
+        let ir = b.finish(top);
+        assert_eq!(ir.check(), vec![], "{name}");
+        assert_eq!(ir.print_structural(), read("tests/golden/buck", name), "{name}: structural form");
+        assert_eq!(ir.to_string(), read("tests/golden/buck/full", name), "{name}: full text");
+    }
 }
