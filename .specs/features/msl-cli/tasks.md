@@ -272,11 +272,11 @@ T38
 
 **Done when**:
 
-- [ ] `docs/spec/index.md`, `docs/spec/appendix_g_scope.md` and `docs/spec/part_iv_behavior.md` receive their one sentence each in the same commit
-- [ ] `cargo test -p piperine-lang --test spec_text --test pom_docs --test std_excerpts` pass
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test spec_text`: `part_viii_defines_a_bench`, `the_index_says_benches_are_msl_and_sweeps_are_host`, `the_testbench_table_splits_stimulus_and_host_work`, `no_spec_text_says_stimulus_is_host_only`, `every_error_code_is_defined_exactly_once`
-- [ ] Gate check passes: Build (see Gate Check Commands)
-- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+- [x] `docs/spec/index.md`, `docs/spec/appendix_g_scope.md` and `docs/spec/part_iv_behavior.md` receive their one sentence each in the same commit
+- [x] `cargo test -p piperine-lang --test spec_text --test pom_docs --test std_excerpts` pass
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test spec_text`: `part_viii_defines_a_bench`, `the_index_says_benches_are_msl_and_sweeps_are_host`, `the_testbench_table_splits_stimulus_and_host_work`, `no_spec_text_says_stimulus_is_host_only`, `every_error_code_is_defined_exactly_once`
+- [x] Gate check passes: Build (see Gate Check Commands)
+- [x] Test count: the 5 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build

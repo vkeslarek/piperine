@@ -1485,3 +1485,89 @@ fn the_manifest_rule_admits_the_run_table() {
     let e0171 = s.lines().find(|l| l.starts_with("| `E0171` |")).expect("E0171 row");
     assert!(e0171.contains("a value of the wrong type"), "{e0171}");
 }
+
+#[test]
+fn part_viii_defines_a_bench() {
+    // CLI-21 AC 1 (msl-cli T41): Part VIII defines a bench, a module without ports written in
+    // MSL that places the design with its sources, stimulus and monitors, chosen as the top by
+    // the host; the term is in the part's terms and in the index's term table
+    let part = spec("part_viii_host.md");
+    let terms = part.lines().find(|l| l.starts_with("**Terms defined here:**")).expect("the part's terms");
+    assert!(terms.split([',', ' ']).any(|t| t == "bench"), "{terms}");
+    let text = one_line(&section(&part, "## 23."));
+    let at = text.find("A **bench** is").unwrap_or_else(|| panic!("no defining sentence: {text}"));
+    let definition = text[at..].split_once(". ").map_or(&text[at..], |(s, _)| s);
+    for part in ["module without ports", "written in MSL", "sources", "stimulus", "monitors", "top"] {
+        assert!(definition.contains(part), "the definition names {part}: {definition}");
+    }
+    let index = spec("index.md");
+    let row = index.lines().find(|l| l.starts_with("| bench |")).expect("the index's term table has `bench`");
+    assert!(row.contains("part_viii_host.md"), "{row}");
+}
+
+/// Principle `n.` of the index's opening list, on one line.
+fn index_principle(n: u32) -> String {
+    let index = spec("index.md");
+    let start = format!("{n}. ");
+    let next = format!("{}. ", n + 1);
+    let mut out = String::new();
+    let mut inside = false;
+    for line in index.lines() {
+        if line.starts_with(&next) || (inside && line.trim().is_empty()) {
+            break;
+        }
+        if line.starts_with(&start) {
+            inside = true;
+        }
+        if inside {
+            out.push_str(line);
+            out.push(' ');
+        }
+    }
+    one_line(&out)
+}
+
+#[test]
+fn the_index_says_benches_are_msl_and_sweeps_are_host() {
+    // CLI-21 AC 2: principle 3 names benches as MSL, and sweeps, Monte Carlo, optimization and
+    // regression as the host's
+    let p3 = index_principle(3);
+    assert!(p3.contains("bench") && p3.contains("written in MSL"), "{p3}");
+    let host = p3.split("written in MSL").nth(1).unwrap_or_default();
+    for work in ["Sweeps", "Monte Carlo", "optimization", "regression", "live in the host"] {
+        assert!(host.contains(work), "principle 3 gives {work} to the host: {p3}");
+    }
+}
+
+#[test]
+fn the_testbench_table_splits_stimulus_and_host_work() {
+    // CLI-21 AC 3: the model column holds stimulus written as reactions and timers; the host
+    // column keeps `force` and `release`, constrained random stimulus, sweeps and Monte Carlo
+    let s = section(&spec("part_viii_host.md"), "### 23.1 ");
+    let rows: Vec<Vec<String>> = s
+        .lines()
+        .filter(|l| l.starts_with('|') && !l.starts_with("| ---"))
+        .skip(1)
+        .map(|l| l.trim_matches('|').split(" | ").map(|c| c.trim().to_string()).collect())
+        .collect();
+    assert!(!rows.is_empty(), "the testbench table: {s}");
+    let model = rows.iter().map(|r| r[0].as_str()).collect::<Vec<_>>().join(" / ");
+    let host = rows.iter().map(|r| r[1].as_str()).collect::<Vec<_>>().join(" / ");
+    assert!(model.contains("stimulus written as reactions and timers"), "model column: {model}");
+    for kept in ["`force` and `release`", "constrained random stimulus", "sweeps", "Monte Carlo"] {
+        assert!(host.contains(kept), "host column keeps {kept}: {host}");
+    }
+    assert!(!host.contains("stimulus sequences with waits"), "sequences written as reactions are the model's: {host}");
+}
+
+#[test]
+fn no_spec_text_says_stimulus_is_host_only() {
+    // CLI-21 AC 4: no file of docs/spec/ states that stimulus or a testbench lives only in the
+    // host
+    for (name, text) in all_specs() {
+        let text = flat(&text);
+        for claim in ["the testbench lives in the host", "stimulus sequences, sweeps and optimization live in the host", "belongs to the testbench, in the host"] {
+            assert!(!text.contains(claim), "{name} still says \"{claim}\"");
+        }
+    }
+}

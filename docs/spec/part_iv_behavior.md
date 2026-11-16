@@ -504,8 +504,9 @@ definition and therefore one statement (§8.2.4):
 ### 12.2 Sequences
 
 There is no `wait` and no `sleep` in a model. A sequence over time is written with its state in the
-open: a carrier that counts the steps and an `at` for the next one. Sequential stimulus with waits
-belongs to the testbench, in the host (§23). This section adds no rule.
+open: a carrier that counts the steps and an `at` for the next one. A bench writes its stimulus
+this way (§23.1); a sequence that waits on the running design from outside is the host's (§23).
+This section adds no rule.
 
 **Examples**
 

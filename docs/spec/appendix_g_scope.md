@@ -24,7 +24,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | Excluded | Use instead |
 | --- | --- |
 | formal-verification constructs | monitors (§22.5) and the host (§23) |
-| the SystemVerilog verification language | the testbench lives in the host (§23.1) |
+| the SystemVerilog verification language | a bench in MSL for stimulus and checks, the host for sweeps, Monte Carlo and regression (§23.1) |
 | blocking writes and `#0` | commits; every read sees the past (§12.1.1) |
 | indirect contributions | the row of an internal node (§11, `Nullor`) |
 | heap types | arrays and carriers fixed at elaboration (§1 rule 2) |

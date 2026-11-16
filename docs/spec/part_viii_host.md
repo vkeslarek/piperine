@@ -5,7 +5,7 @@ lives in the host. This part states what the language requires of a host and wha
 rely on. It does not specify a host API: the names in the Python sketches belong to the host
 library, not to the language.
 
-**Terms defined here:** host, session, testbench, host action, `set`, host drive, `force`,
+**Terms defined here:** host, session, bench, testbench, host action, `set`, host drive, `force`,
 `release`, objective, constraint, sensitivity, gradient, saltation correction, grazing
 crossing.
 
@@ -18,9 +18,11 @@ the host program, not written to a stream, and the analysis continues.
 
 The **host** is a program, in Rust or Python, that elaborates a design, sets its params,
 drives its top ports, runs analyses and reads everything. A **session** is the host's handle
-on one elaborated design, with its options. A **testbench** is host code that drives,
-sequences and judges a design. The host is outside the language: no model construct refers to
-it.
+on one elaborated design, with its options. A **bench** is a module without ports, written in
+MSL, that places the design with its sources, its stimulus and its monitors; the host picks it
+as the top and asks the analysis. A **testbench** is host code that drives, sequences and
+judges a design from outside it, doing what a bench cannot write. The host is outside the
+language: no model construct refers to it.
 
 Session options this specification refers to:
 
@@ -37,12 +39,16 @@ These are not model text (§8.1.3).
 
 ### 23.1 Testbenches
 
-| In the model | In the host |
+A bench writes in MSL what happens inside one run: its stimulus, as reactions and timers, and
+its monitors and checks. The host keeps what acts on the design from outside or spans many
+runs.
+
+| In the model (a bench) | In the host |
 | --- | --- |
-| checks at an instant: `require`, `cover`, `target` | stimulus sequences with waits, `fork`/`join` |
-| monitors for temporal properties (§22.5) | `force` and `release` on any carrier, recorded as debug actions |
-| timing checks on history | constrained random stimulus, scoreboards, coverage models |
-|  | regression, sweeps, Monte Carlo draws, time resolution, nodesets, which params are varied |
+| stimulus written as reactions and timers: `at`, `every`, a carrier that counts the steps of a sequence (§12.2) | `force` and `release` on any carrier, recorded as debug actions |
+| checks at an instant: `require`, `cover`, `target` | constrained random stimulus, scoreboards, coverage models |
+| monitors for temporal properties (§22.5) | interactive sequences that wait on the running design, `fork`/`join` |
+| timing checks on history | regression, sweeps, Monte Carlo draws, optimization, time resolution, nodesets, which params are varied |
 
 A **host action** is something the host does to a running or about-to-run design at a time it
 names: a `set`, a host drive, a `force`, a `release`, a read or a probe. A **`set`** assigns a

@@ -15,8 +15,9 @@ Rust. It describes digital, analog and mixed circuits for simulation and optimiz
    There are no races ([§12.1](part_iv_behavior.md#121-reactions)).
 2. A model reuses existing models through `extern` modules: Verilog-A compiled to OSDI, and
    other simulators by cosimulation ([§8.5](part_iii_structure.md#85-implicit-params-and-extern-modules)).
-3. Testbenches, stimulus sequences, sweeps and optimization live in the host, a program
-   outside the language ([§23](part_viii_host.md#23-testbenches-and-optimization)).
+3. A bench, the top module that places a design with its stimulus and its monitors, is
+   written in MSL. Sweeps, Monte Carlo, optimization and regression live in the host, a
+   program outside the language ([§23](part_viii_host.md#23-testbenches-and-optimization)).
 4. What is out of scope, and every open question, is listed in
    [Appendix G](appendix_g_scope.md). An open item has an id `G.n`.
 
@@ -246,6 +247,7 @@ Each term has one defining occurrence. The table points at it.
 | `analog` block | [§11](part_iv_behavior.md#11-analog) |
 | analysis, `Analysis` | [§11.1](part_iv_behavior.md#111-one-block-every-analysis) |
 | behavior block | [§10](part_iv_behavior.md#10-behavior-blocks) |
+| bench | [§23](part_viii_host.md#23-testbenches-and-optimization) |
 | branch | [§6](part_ii_carriers.md#6-continuous-carriers) |
 | branch kind, selector | [§11](part_iv_behavior.md#11-analog) |
 | bundle | [§7](part_ii_carriers.md#7-bundles) |
