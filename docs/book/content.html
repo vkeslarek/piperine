@@ -154,7 +154,7 @@ module RcTop() {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every example of this book. The solver and its device ABI are built (chapters 13 and 14). Analog MSL designs run on it, through an interpreter or as compiled Rust, and are compared with ngspice. Digital and mixed-signal models run as compiled Rust today; the compiler path that takes them from source is being built (chapter 15). So a purely analog file runs from source now, and a file with a <code>digital</code> block, like <code>Step</code> above, is checked by the front end and will run from source when that path lands. This book describes the language as specified; the record listings are what the language defines, not captured output.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 13 and 14). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run as compiled Rust today, built by hand in the compiler's intermediate form; the path that takes them, and the rest of the analog language, from source is being built (chapter 15). So a file with a <code>digital</code> block, like <code>Step</code> above, is parsed and resolved by the front end today and will run from source when that path lands. This book describes the language as specified; the record listings in it are what the language defines, not captured output.</p>
 </div>
 
 <div class="callout mistake">
@@ -588,9 +588,31 @@ extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
 <p class="ch-num">Chapter 4</p>
 <h2>Natures and carriers</h2>
 
-<p>A <strong>carrier</strong> is something that exists over time: a wire, a node, a register. Every carrier has a <strong>nature</strong>, which says what it holds and what happens when several modules drive it.</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can pick the right kind of wire for a job, declare signals and ports of every kind, and build a shared open-drain line that several modules drive, with a monitor that prints every change of it.</p>
+</div>
 
-<h3>Natures</h3>
+<p>A <strong>carrier</strong> is something that exists over time: a wire, a node, a register. You have used three already: the node <code>vout</code>, the clock <code>clk</code> and the register <code>count</code>. Every carrier has a <strong>nature</strong>, and the nature answers two questions: <em>what does it hold</em>, and <em>what happens when several modules drive it</em>.</p>
+
+<h3>Two questions, four answers</h3>
+
+<p>Think about real wires. A logic net driven by one gate holds one value and has one owner. An open-drain bus has many drivers and a rule for combining them. A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage. A block-diagram signal, such as the output of an ideal amplifier, is a voltage with one source and no current. MSL has exactly these four kinds:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>discrete</th><th>discrete with <code>resolve</code></th><th>continuous with <code>flow</code></th><th>continuous, no <code>flow</code></th></tr></thead>
+<tbody>
+<tr><td>example</td><td><code>Bit</code></td><td><code>Wire</code></td><td><code>Electrical</code></td><td><code>VSignal</code></td></tr>
+<tr><td>think of</td><td>a gate output, a register</td><td>an open-drain or tristate bus</td><td>a circuit node</td><td>a block-diagram arrow</td></tr>
+<tr><td>drivers</td><td>exactly one</td><td>any number, combined by <code>resolve</code></td><td>flows sum to zero (KCL)</td><td>exactly one</td></tr>
+<tr><td>written with</td><td><code>=</code>, <code><-</code></td><td><code>=</code>, <code><-</code></td><td><code>+></code></td><td><code>+></code></td></tr>
+<tr><td>port direction</td><td><code>in</code> / <code>out</code></td><td>none</td><td>none</td><td>none</td></tr>
+<tr><td>computed by</td><td>the event engine</td><td>the event engine</td><td>the analog solver</td><td>the analog solver</td></tr>
+</tbody></table></div>
+
+<h3>How a nature is declared</h3>
+
+<p>Natures are ordinary declarations. These are the ones the standard library gives you:</p>
 
 <pre data-lang="msl">nature Bit<T: Repr = bool> { value: T }                              // prelude; Bit is Bit<bool>
 nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib: strengths, high impedance
@@ -604,37 +626,30 @@ nature Thermal {
 }
 nature VSignal { potential: Voltage { access: v, units: "V", abstol: 1u } }   // signal-flow</pre>
 
-<p>There are two families. A <strong>discrete</strong> nature declares <code>value</code> and is computed by the event engine. A <strong>continuous</strong> nature declares <code>potential</code> (and usually <code>flow</code>) and is computed by the analog solver.</p>
+<p>The body tells you the family. A <strong>discrete</strong> nature declares <code>value</code>: the type it holds. Add <code>resolve</code>, a function from all the drives to one value, and it accepts many drivers. A <strong>continuous</strong> nature declares <code>potential</code>, and usually <code>flow</code>.</p>
 
-<div class="table-wrap"><table>
-<thead><tr><th></th><th>discrete</th><th>discrete with <code>resolve</code></th><th>continuous with <code>flow</code></th><th>continuous, no <code>flow</code></th></tr></thead>
-<tbody>
-<tr><td>example</td><td><code>Bit</code></td><td><code>Wire</code></td><td><code>Electrical</code></td><td><code>VSignal</code></td></tr>
-<tr><td>drivers</td><td>exactly one</td><td>any number, combined by <code>resolve</code></td><td>flows sum to zero (KCL)</td><td>exactly one</td></tr>
-<tr><td>written with</td><td><code>=</code>, <code><-</code></td><td><code>=</code>, <code><-</code></td><td><code>+></code></td><td><code>+></code></td></tr>
-<tr><td>port direction</td><td><code>in</code> / <code>out</code></td><td>none</td><td>none</td><td>none</td></tr>
-</tbody></table></div>
-
-<p>The <code>access</code> names become the probes: <code>v(a, b)</code> reads a voltage and <code>i(a, b)</code> a current on <code>Electrical</code>; <code>temp</code> and <code>pwr</code> do the same on <code>Thermal</code>. Units are labels for people and are never checked. <code>abstol</code> is the solver tolerance for that quantity. There is no inheritance between natures; a high-voltage variant of <code>Electrical</code> is a second nature.</p>
+<p>The <code>access</code> names become the <strong>probes</strong> you already used: <code>v(a, b)</code> reads a voltage and <code>i(a, b)</code> a current on <code>Electrical</code>; <code>temp</code> and <code>pwr</code> do the same on <code>Thermal</code>. <code>units</code> is a label for people and is never checked. <code>abstol</code> is the solver's tolerance for that quantity: a voltage is "converged" to about a microvolt, a current to a picoamp. There is no inheritance between natures; a high-voltage variant of <code>Electrical</code> is a second nature.</p>
 
 <h3>Signals</h3>
 
-<p>Inside a module, <code>signal</code> declares a carrier. An initial value is optional:</p>
+<p>Inside a module, <code>signal</code> declares a carrier. An initial value is optional, and what it means depends on the family:</p>
 
 <pre data-lang="msl">signal en:    Bit;                       // starts unknown
-signal count: Bit<u8> = 0;
-signal level: Bit<f64> = 0.0;            // real-number modeling: piecewise constant
+signal count: Bit<u8> = 0;               // starts at 0
+signal level: Bit<f64> = 0.0;            // a real number that changes in steps
 signal lines: [Bit; 8];                  // eight carriers, each with its own events
 signal bus:   Bit<u4> = logic("10xx");   // level by level; x is unknown
 signal sda:   Wire;                      // resolved: any number of drivers
-signal mid:   Electrical;                // internal node
-signal vout:  Electrical = 0.0;          // where Newton starts</pre>
+signal mid:   Electrical;                // an internal node
+signal vout:  Electrical = 0.0;          // where Newton starts; held there as a transient begins</pre>
 
-<p>An array of carriers costs what you write into it: storage for an element exists from its first commit, so <code>[Bit&lt;u8&gt;; 1 << 32]</code> is fine.</p>
+<p>A discrete signal with no initial value starts <em>unknown</em> and stays so until something commits to it. That is the honest model of a register at power-up, and chapter 3 showed how to catch it. On a node, <code>= 0.0</code> is where the solver begins its search for the operating point, and a transient analysis starts from that value.</p>
+
+<p>An array of carriers costs what you write into it: storage for an element exists from its first commit, so <code>[Bit&lt;u8&gt;; 1 << 32]</code> is fine as a memory.</p>
 
 <h3>Ports</h3>
 
-<p>The port list decides what kind each port is, from its type:</p>
+<p>A port is a carrier that comes from outside. The port list decides what kind each port is, from its type:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Port</th><th>Written</th><th>Connected to</th></tr></thead>
@@ -645,13 +660,90 @@ signal vout:  Electrical = 0.0;          // where Newton starts</pre>
 <tr><td>value input</td><td><code>x: f64</code></td><td>any expression</td></tr>
 </tbody></table></div>
 
-<p><code>gnd</code> is the reference node of every continuous nature. It is not a global net: a module reaches any other node only through its ports.</p>
+<p>Only a one-driver discrete port has a direction, because only there does "who drives it" have a single answer: the module with the <code>out</code> port. That module also gives the initial value. An <code>in</code> port is read-only for the module.</p>
+
+<p><code>gnd</code> is the reference node of every continuous nature. It is not a global net you can abuse: a module reaches any other node only through its ports.</p>
+
+<h3>A complete example: one line, many drivers</h3>
+
+<p>Two sensors share one active-low alarm line. Each may pull it low; a pull-up keeps it high when nobody does. With a <code>Bit</code> this cannot be built: a <code>Bit</code> has one driver, and the second one is an error. The line is a <code>Wire</code>.</p>
+
+<pre data-lang="msl">/// Pulls the line low while `req` is high, and lets go of it otherwise.
+module OpenDrain(in req: Bit, line: Wire) {
+    line = if req { Logic::strong(false) } else { Logic::Z };
+}
+
+/// Reports every change of a line.
+module LineWatch(line: Wire) {}
+digital for LineWatch {
+    on line.changed() {
+        emit!("line", t = now(), level = line.v, strength = line.s);
+    }
+}
+
+module AlarmTop(in door: Bit, in window: Bit) {
+    signal alarm_n: Wire;
+    let pu = Pullup(alarm_n);
+    let d0 = OpenDrain(door, alarm_n);
+    let d1 = OpenDrain(window, alarm_n);
+    let watch = LineWatch(alarm_n);
+}</pre>
+
+<p>Line by line:</p>
+
+<ul>
+<li><strong><code>line: Wire</code></strong> has no direction. Any module that sees a <code>Wire</code> may drive it, and nobody counts drivers.</li>
+<li><strong><code>line = if req { … } else { … };</code></strong> is a <em>definition</em>, the <code>=</code> arrow of chapter 1: it is recomputed whenever <code>req</code> changes. What it defines is this module's <strong>drive</strong> of the line, not the line itself.</li>
+<li><strong><code>Logic</code></strong> is the value a <code>Wire</code> holds: a level <code>v</code> and a strength <code>s</code>. <code>Logic::strong(false)</code> is a hard low; <code>Logic::Z</code> is "not driving". <code>Pullup</code>, from the library, drives a high of the weaker strength <code>Pull</code>: <code>Logic::pull(true)</code>.</li>
+<li><strong>The line's value</strong> is its nature's <code>resolve</code> applied to all the drives: the strongest wins, and equal strengths that disagree give unknown.</li>
+<li><strong><code>line.v</code> and <code>line.s</code></strong> read the two fields of the resolved value, like a struct.</li>
+</ul>
+
+<p>Let the host hold both inputs low, raise <code>door</code> at 1&nbsp;µs, raise <code>window</code> at 2&nbsp;µs, and drop both at 3&nbsp;µs. The monitor writes:</p>
+
+<pre data-lang="text">stream top.watch.line
+  instant      fields
+  (0, 0)       t = 0        level = true    strength = Pull
+  (1 µs, 0)    t = 1.0e-6   level = false   strength = Strong
+  (3 µs, 0)    t = 3.0e-6   level = true    strength = Pull</pre>
+
+<p>Three records, not four. At 2&nbsp;µs the second driver joins, but the resolved value is still a strong low, so the line did not change and <code>changed()</code> did not fire. That is the question a debug print should answer: not "what did I write" but "what does the wire hold".</p>
+
+<p>The first record is at time zero: the initial values of a design are themselves a change, from nothing to something, so reactions on <code>changed()</code> run once at the start.</p>
+
+<h3>Two continuous natures in one module</h3>
+
+<p>Continuous natures compose the same way. A resistor that heats itself has two electrical ports and one thermal port, and its behavior reads one world and writes the other:</p>
+
+<pre data-lang="msl">/// A resistor whose value follows the temperature rise on `t`.
+module HotResistor(p: Electrical, n: Electrical, t: Thermal) {
+    r0: f64 where r0 > 0.0;
+    /// Temperature coefficient, per kelvin.
+    tc: f64 = 4m;
+}
+analog for HotResistor {
+    let r = r0 * (1.0 + tc * temp(t));
+    i(p, n) +> v(p, n) / r;
+    pwr(t) +> -v(p, n) * v(p, n) / r;       // the dissipated power flows into `t`
+}
+
+/// A thermal resistance from `t` to ambient.
+module ThermalR(t: Thermal) { rth: f64 where rth > 0.0; }
+analog for ThermalR { pwr(t) +> temp(t) / rth; }</pre>
+
+<p><code>temp(t)</code> is the potential of the thermal node, <code>pwr(t)</code> its flow to the reference. A contribution <code>pwr(t) +&gt; x</code> takes <code>x</code> out of the node, so power <em>into</em> the node is negative. Connect <code>HotResistor</code> and <code>ThermalR</code> to the same thermal node and the solver finds the temperature at which the power in equals the power out.</p>
 
 <h3>Bundles</h3>
 
-<p>A <code>struct</code> whose fields are all carriers is a <strong>bundle</strong>. Directions are written from the producer's side, and <code>flip</code> gives the consumer's view. This register slice reads <code>rx</code> as a consumer and drives <code>tx</code> as a producer:</p>
+<p>A <code>struct</code> whose fields are all carriers is a <strong>bundle</strong>: a cable. Directions are written once, from the producer's side, and <code>flip</code> gives the consumer's view. Here is a valid/ready stream and a register slice that sits in the middle of one. It reads <code>rx</code> as a consumer and drives <code>tx</code> as a producer:</p>
 
-<pre data-lang="msl">module Slice<T: Repr>(in clk: Bit, rx: flip Stream<T>, tx: Stream<T>) {
+<pre data-lang="msl">struct Stream<T: Repr> { out valid: Bit, in ready: Bit, out data: Bit<T> }
+impl<T> Stream<T> {
+    /// A transfer happens on this clock edge.
+    pub fn beat(self, clk: Bit) -> Event { clk.rise() && self.valid && self.ready }
+}
+
+module Slice<T: Repr>(in clk: Bit, rx: flip Stream<T>, tx: Stream<T>) {
     signal full: Bit = false;
     signal buf: Bit<T>;
     tx.data = buf;
@@ -663,9 +755,31 @@ digital<T> for Slice<T> {
     on clk.rise() && !(rx.valid && rx.ready) && tx.ready { full <- false; }
 }</pre>
 
+<p>For <code>tx</code>, a plain <code>Stream</code>, the slice drives <code>valid</code> and <code>data</code> and reads <code>ready</code>. For <code>rx</code>, flipped, it is the other way around, which is why the body may define <code>rx.ready</code>. A bundle can carry methods too: <code>rx.beat(clk)</code> is an event you can react to.</p>
+
 <h3>Analog and digital never touch directly</h3>
 
-<p>A <code>Bit</code> is never connected to an <code>Electrical</code> node, and no converter is ever inserted for you. Between modules you place one explicitly: <code>D2A</code>, <code>A2D</code> or <code>Bidir</code> from the standard library. <em>Inside</em> one module, behavior crosses freely: <code>analog</code> reads digital carriers, and reactions probe voltages. Chapter 8 is about this.</p>
+<p>A <code>Bit</code> is never connected to an <code>Electrical</code> node, and no converter is ever inserted for you. Between modules you place one explicitly: <code>D2A</code>, <code>A2D</code> or <code>Bidir</code> from the standard library. <em>Inside</em> one module, behavior crosses freely: <code>analog</code> reads digital carriers, and reactions probe voltages, as <code>Step</code> and <code>WindowMonitor</code> already did. Chapter 8 is about this.</p>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0220</td><td>two instances with an <code>out</code> port on the same <code>Bit</code></td><td>A <code>Bit</code> has one driver. One writer, or make the net a <code>Wire</code>.</td></tr>
+  <tr><td>E0222</td><td><code>req &lt;- false;</code> where <code>req</code> is an <code>in</code> port</td><td>A module cannot drive its own input. Drive it from the module that owns it.</td></tr>
+  <tr><td>E0310</td><td><code>module M(clk: Bit)</code></td><td>A one-driver port needs a direction: <code>in clk: Bit</code>. (And an <code>Electrical</code> port takes none.)</td></tr>
+  <tr><td>E0250</td><td><code>Resistor(clk, gnd) { r: 1k }</code> with <code>clk: Bit</code></td><td>Discrete and continuous never connect. Place a <code>D2A</code> between them.</td></tr>
+  <tr><td>E0206</td><td><code>temp(p)</code> with <code>p: Electrical</code></td><td>A probe must be one the nature declares. On <code>Electrical</code> they are <code>v</code> and <code>i</code>.</td></tr>
+  <tr><td>E0240</td><td><code>v(p, t)</code> with <code>p: Electrical</code>, <code>t: Thermal</code></td><td>A branch joins two nodes of one nature.</td></tr>
+  <tr><td>E0210</td><td><code>signal y: Bit&lt;u8&gt; = count;</code></td><td>An initial value is a constant; it cannot read a carrier. For "follows <code>count</code>", write a definition: <code>y = count;</code></td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>Replace <code>Pullup(alarm_n)</code> with <code>Pulldown(alarm_n)</code> and predict the stream for the same stimulus. (One record at time zero, <code>level = false</code>, <code>strength = Pull</code>; then at 1&nbsp;µs the strength becomes <code>Strong</code> with the level still low, and at 3&nbsp;µs it returns to <code>Pull</code>. A change of strength is a change.) Then remove the pull entirely: what are <code>level</code> and <code>strength</code> while nobody drives? (Unknown, and <code>HighZ</code>.)</p>
+</div>
 </section>
 
 <!-- ===================================================== 5 -->
@@ -673,28 +787,163 @@ digital<T> for Slice<T> {
 <p class="ch-num">Chapter 5</p>
 <h2>Modules and hierarchy</h2>
 
-<p>A <strong>module</strong> is ports, params and a netlist of signals and instances, fixed at elaboration. Its behavior over time lives in separate <code>analog for</code> and <code>digital for</code> blocks, in the same file.</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can build a design out of smaller modules: place instances, bind params, generate a row of stages with a loop, look inside a child from its parent, and write a module that returns a value, such as a filter you can call inside an expression.</p>
+</div>
+
+<p>A <strong>module</strong> is ports, params and a netlist of signals and instances, all fixed at <em>elaboration</em>: the moment, before any simulation, when the design is unfolded into its final list of instances. Its behavior over time lives in separate <code>analog for</code> and <code>digital for</code> blocks, in the same file.</p>
 
 <h3>The body is a netlist</h3>
 
-<p>Body items can come in any order, and every name is visible in the whole body and in the module's blocks:</p>
+<p>A module body is not a sequence of statements. It is a list of things that exist. Items can come in any order, and every name is visible in the whole body and in the module's blocks:</p>
 
 <div class="table-wrap"><table>
-<thead><tr><th>Item</th><th>Example</th></tr></thead>
+<thead><tr><th>Item</th><th>Example</th><th>What it is</th></tr></thead>
 <tbody>
-<tr><td>param</td><td><code>c: f64 = 1p where c > 0.0;</code></td></tr>
-<tr><td>signal</td><td><code>signal mid: Electrical;</code></td></tr>
-<tr><td>instance</td><td><code>let r1 = Resistor(a, b) { r: 1k };</code></td></tr>
-<tr><td>named expression</td><td><code>let half = r / 2.0;</code></td></tr>
-<tr><td>definition</td><td><code>busy = st != Tx::Idle;</code></td></tr>
-<tr><td>generation</td><td><code>for k in 0..N { … }</code>, <code>if cond { … }</code></td></tr>
+<tr><td>param</td><td><code>c: f64 = 1p where c > 0.0;</code></td><td>a value the placer binds or the host sets</td></tr>
+<tr><td>signal</td><td><code>signal mid: Electrical;</code></td><td>a carrier owned by this module</td></tr>
+<tr><td>instance</td><td><code>let r1 = Resistor(a, b) { r: 1k };</code></td><td>a placed child module</td></tr>
+<tr><td>named expression</td><td><code>let half = r / 2.0;</code></td><td>a name for an expression, evaluated where it is read</td></tr>
+<tr><td>definition</td><td><code>busy = st != Tx::Idle;</code></td><td>a digital carrier driven from an expression</td></tr>
+<tr><td>generation</td><td><code>for k in 0..N { … }</code>, <code>if cond { … }</code></td><td>items repeated or chosen at elaboration</td></tr>
 </tbody></table></div>
 
-<p>A param without a default is required. One of type <code>Option&lt;T&gt;</code> may be left out. A <code>where</code> clause is a check over this param and earlier ones, for example <code>n: f64 = 1.0 where (0.1..=10.0).contains(&n);</code>. A param read by generation, an array length, a const generic argument or a template is <em>structural</em>: it is fixed at elaboration.</p>
+<p><strong>Params.</strong> A param without a default is required. One of type <code>Option&lt;T&gt;</code> may be left out. A <code>where</code> clause is a check over this param and earlier ones, for example <code>n: f64 = 1.0 where (0.1..=10.0).contains(&n);</code>. A param that decides the <em>shape</em> of the design (a loop bound of generation, an array length, a const generic argument) is <em>structural</em>: it is fixed at elaboration, and a host cannot change it during a run.</p>
 
-<h3>Instances</h3>
+<p><strong>A body <code>let</code> is not a variable.</strong> <code>let half = r / 2.0;</code> stores nothing. It is a name for the expression, and the expression is evaluated wherever the name is read. That is why there is no <code>let mut</code> in a body: there is nothing to mutate.</p>
 
-<p>An instance is placed by calling the module with connections, positionally in port order, then an optional param block. Here is a switched-capacitor integrator that is all structure:</p>
+<h3>A complete example: an RC ladder</h3>
+
+<p>Build a three-section RC ladder out of the <code>Resistor</code> and <code>Capacitor</code> of chapter 1. The file has three levels of hierarchy: a section, a ladder of <code>N</code> sections, and a top with a source.</p>
+
+<pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+/// A constant voltage on `p`, referred to ground.
+module Vdc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vdc { v(p) +> dc; }
+
+/// One section: a series R from `a` to `b`, and a C from `b` to ground.
+module RcSection(a: Electrical, b: Electrical) {
+    r: f64 = 1k where r > 0.0;
+    c: f64 = 1n where c > 0.0;
+    let r1 = Resistor(a, b) { r: r };
+    let c1 = Capacitor(b, gnd) { c: c };
+}
+
+/// `N` sections in a row, from `a` to `b`.
+module Ladder<const N: usize>(a: Electrical, b: Electrical) where N >= 1 {
+    r: f64 = 1k;
+    c: f64 = 1n;
+    /// tap[0] is the input, tap[N] the output.
+    pub signal tap: [Electrical; N + 1];
+    let head = Short(a, tap[0]);
+    let tail = Short(tap[N], b);
+    for k in 0..N {
+        pub let sec = RcSection(tap[k], tap[k + 1]) { r, c };
+    }
+}
+
+module LadderTop() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Vdc(vin) { dc: 1.0 };
+    pub let lad = Ladder::<3>(vin, vout) { r: 1k, c: 1n };
+}</pre>
+
+<p>Take the new constructs one at a time.</p>
+
+<ol class="steps">
+<li><strong>Placing an instance.</strong> <code>let r1 = Resistor(a, b) { r: r };</code> has three parts: a name (<code>r1</code>), the connections in port order (<code>a</code>, <code>b</code>), and a param block that binds by name. In <code>{ r: r }</code> the left <code>r</code> is the resistor's param and the right one is the section's. When both names are equal you may write just <code>{ r, c }</code>, as the ladder does.</li>
+<li><strong>A const generic.</strong> <code>Ladder&lt;const N: usize&gt;</code> takes the number of sections as a generic argument, and <code>where N &gt;= 1</code> refuses an empty ladder. The top picks it with <code>Ladder::&lt;3&gt;(…)</code>.</li>
+<li><strong>An array of nodes.</strong> <code>signal tap: [Electrical; N + 1];</code> declares four nodes here. <code>tap[k]</code> names one of them.</li>
+<li><strong>Generation.</strong> <code>for k in 0..N { … }</code> in a body is not a loop that runs during simulation. It is unrolled at elaboration: three sections are placed, each an instance of its own, named <code>sec[0]</code>, <code>sec[1]</code> and <code>sec[2]</code>.</li>
+<li><strong><code>Short</code>.</strong> A library module that makes two nodes one. It joins the ports to the two ends of the array.</li>
+<li><strong><code>pub</code>.</strong> A parent can reach into a child only through what the child marks <code>pub</code>. The ladder publishes its taps and its sections; it keeps <code>head</code> and <code>tail</code> to itself.</li>
+</ol>
+
+<p>Every instance and carrier of the elaborated design has a <strong>path</strong>: the names of the instances from the top down, joined by dots. The capacitor of the middle section is <code>top.lad.sec[1].c1</code>, and its param is <code>top.lad.sec[1].c1.c</code>. A host uses these paths to probe a node or set a param, and a record's stream name starts with the path of the instance that wrote it.</p>
+
+<h3>Looking inside from the parent</h3>
+
+<p>Because the taps are <code>pub</code>, the top can watch them. Swap the DC source for the <code>Step</code> of chapter 1 and add a block that reports when each tap passes half of the step:</p>
+
+<pre data-lang="msl">digital for LadderTop {
+    for k in 1..4 {
+        on above(v(lad.tap[k]) - 0.5) { emit!("half", stage = k, t = now()); }
+    }
+}</pre>
+
+<p>Generation works in a <code>digital</code> block too: this is three reactions, one per tap. <code>lad.tap[k]</code> goes through the instance <code>lad</code> to its public array. The loop index is an ordinary value, so it can be a field. The stream gets one record per stage, in order, because the edge reaches the taps one after another:</p>
+
+<pre data-lang="text">stream top.half
+  fields
+  stage = 1   t = …
+  stage = 2   t = …
+  stage = 3   t = …</pre>
+
+<p>The times are left for you; the exercise at the end of the chapter gives an estimate to check them against.</p>
+
+<h3>Modules that return a value</h3>
+
+<p>So far a module was something you wire up. A module may also take <em>value inputs</em> and end its body with a result, declared with <code>-&gt; T</code>. Then you call it inside an expression, and every call is an instance with its own state. This is the tool for "a function with memory".</p>
+
+<p>Here is a first-order low-pass you can apply to any expression:</p>
+
+<pre data-lang="msl">/// `x` smoothed with time constant `tau`. A module, because it remembers.
+module lowpass(x: f64, tau: f64) -> f64 {
+    let y = idt((x - y) / tau);
+    y
+}
+
+/// A buffer whose output follows its input through a 1 µs low-pass.
+module SlowBuffer(a: Electrical, b: Electrical) {}
+analog for SlowBuffer { v(b) +> lowpass(v(a), 1u); }</pre>
+
+<p>Three things happen in <code>lowpass</code>:</p>
+
+<ul>
+<li><strong><code>x: f64</code> and <code>tau: f64</code> are value inputs.</strong> They are ports whose type is a plain value. At each instance they stand for the expressions the caller wrote, here <code>v(a)</code> and <code>1u</code>.</li>
+<li><strong><code>idt(e)</code> is the time integral of <code>e</code>,</strong> itself a library module that returns a value.</li>
+<li><strong><code>y</code> reads itself.</strong> <code>let y = idt((x - y) / tau);</code> is the differential equation <code>dy/dt = (x − y) / tau</code>, written directly. An instance may read its own result when, as here, a state stands between the read and the write.</li>
+</ul>
+
+<p>The last line, <code>y</code> with no semicolon, is the result. Every operator with memory in the language is built this way: <code>ddt</code>, <code>idt</code>, <code>delay</code>, <code>cross</code>, <code>transition</code>. The standard integrator itself is written in MSL:</p>
+
+<pre data-lang="msl">pub module idt<S: Nature = State>(x: f64, ic: Option<f64>, reset: Option<bool>) -> f64 {
+    signal y: S;
+    potential(y)                             // the result
+}
+
+analog<S> for idt<S> {
+    let hold = reset.unwrap_or(false) || (ic.is_some() && analysis(Static));
+    if hold { potential(y) +> ic.unwrap_or(0.0); } else { flow(y) +> ddt(potential(y)) - x; }
+}</pre>
+
+<p>A bigger example of the same idea: a PI controller with output limits. Its integral reads its own result to stop winding up when the output saturates.</p>
+
+<pre data-lang="msl">fn windup(u: f64, lo: f64, hi: f64) -> f64 { u.clamp(lo, hi) - u }
+
+/// PI with output limits and back-calculation anti-windup: the integral reads its own result.
+module PiAw(e: VSignal, y: VSignal) {
+    kp: f64 = 0.5; ki: f64 = 2k; kt: f64 = 10k;
+    lo: f64 = 0.0; hi: f64 = 1.0 where hi > lo;
+    let xi = idt(ki * v(e) + kt * windup(kp * v(e) + xi, lo, hi));
+}
+analog for PiAw { v(y) +> (kp * v(e) + xi).clamp(lo, hi); }</pre>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>Every placement is one instance. <code>let acc = idt(v(a));</code> names one integrator, and every read of <code>acc</code> is that same integrator. Two calls with equal arguments are two integrators. When you need one state read in two places, name it with a <code>let</code>.</p>
+</div>
+
+<h3>Structure without behavior</h3>
+
+<p>Many useful modules have no behavior block at all. Here is a switched-capacitor integrator that is only a netlist of smaller parts. Chapter 6 walks through what the solver does with it.</p>
 
 <pre data-lang="msl">module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 100.0; roff: f64 = 1G; }
 analog for RSwitch { i(a, b) +> v(a, b) / if ctl.high() { ron } else { roff }; }
@@ -727,46 +976,18 @@ module ScIntegrator(vin: Electrical, vout: Electrical, in clk: Bit) {
     let amp = OpAmpIdeal(gnd, vg, vout);
 }</pre>
 
-<p>Notice <code>ron: f64 = 100.0</code>, not <code>100</code>. An integer literal never becomes an <code>f64</code>, while an SI literal like <code>1G</code> always is one.</p>
+<p>Notice <code>ron: f64 = 100.0</code>, not <code>100</code>: an integer literal never becomes an <code>f64</code>, while an SI literal like <code>1G</code> always is one.</p>
 
-<p>A parent can reach into a child only through what the child marks <code>pub</code>. The SAR ADC hangs its own capacitor on a public node of its DAC: <code>analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }</code>.</p>
-
-<h3>Modules that return a value</h3>
-
-<p>A module may take value inputs and end its body with a result, declared with <code>-> T</code>. Then you can call it inside an expression, and every call is an instance with its own state. This is how every operator with memory works: <code>ddt</code>, <code>idt</code>, <code>delay</code>, <code>cross</code>, <code>transition</code>. The standard integrator is written in MSL itself:</p>
-
-<pre data-lang="msl">pub module idt<S: Nature = State>(x: f64, ic: Option<f64>, reset: Option<bool>) -> f64 {
-    signal y: S;
-    potential(y)                             // the result
-}
-
-analog<S> for idt<S> {
-    let hold = reset.unwrap_or(false) || (ic.is_some() && analysis(Static));
-    if hold { potential(y) +> ic.unwrap_or(0.0); } else { flow(y) +> ddt(potential(y)) - x; }
-}</pre>
-
-<p>An instance may read its own result through a node, which is how you write a differential equation. This PI controller's integral reads itself:</p>
-
-<pre data-lang="msl">fn windup(u: f64, lo: f64, hi: f64) -> f64 { u.clamp(lo, hi) - u }
-
-/// PI with output limits and back-calculation anti-windup: the integral reads its own result.
-module PiAw(e: VSignal, y: VSignal) {
-    kp: f64 = 0.5; ki: f64 = 2k; kt: f64 = 10k;
-    lo: f64 = 0.0; hi: f64 = 1.0 where hi > lo;
-    let xi = idt(ki * v(e) + kt * windup(kp * v(e) + xi, lo, hi));
-}
-analog for PiAw { v(y) +> (kp * v(e) + xi).clamp(lo, hi); }</pre>
-
-<div class="callout good">
-  <p class="callout-label">Good to know</p>
-  <p>Every placement is one instance. <code>let acc = idt(v(a));</code> names one integrator, and every read of <code>acc</code> is that same integrator. Two calls with equal arguments are two integrators.</p>
-</div>
+<p>A parent may also add its own behavior on a child's public node. A SAR ADC hangs a parasitic capacitor on the output node of its DAC this way: <code>analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }</code>.</p>
 
 <h3>Templates: modules as values</h3>
 
-<p>A module with its params bound is a value, called a <strong>template</strong>: <code>Name { params }</code>. You can pass it as a param and place it later. That makes cells swappable:</p>
+<p>A module with its params bound is a value, called a <strong>template</strong>: <code>Name { params }</code>. You can pass it as a param and place it later. That makes cells swappable. A memory array does not need to know which cell it is made of:</p>
 
-<pre data-lang="msl">/// One-transistor one-capacitor DRAM cell; Cell is the bundle from chapter 4.
+<pre data-lang="msl">/// What a memory cell connects to: a word line and a bit line.
+struct Cell { in wl: Bit, bl: Electrical }
+
+/// One-transistor one-capacitor DRAM cell.
 module Dram1T1C(c: Cell) {
     cs: f64 = 30f;
     ron: f64 = 5k;
@@ -781,21 +1002,19 @@ module MemoryBank<C: Fn(Cell), const ROWS: u32, const COLS: u32>(in wl: [Bit; RO
 
 <pre data-lang="msl">let bank = MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } };   // in a parent's body</pre>
 
-<p>The bound <code>C: Fn(Cell)</code> accepts any module whose ports are one <code>Cell</code>. A function can also return a template, which is how binning reads:</p>
+<p>The param <code>cell: C</code> holds a template, and <code>cell(…)</code> places it. The bound <code>C: Fn(Cell)</code> accepts any module whose ports are one <code>Cell</code>. A function can also return a template, which is how device binning reads: the function picks the params, the caller places the result.</p>
 
-<pre data-lang="msl">/// Binning: the function picks the params, the caller places the result.
-pub fn nch(l: f64, w: f64) -> Bsim4 {
+<pre data-lang="msl">pub fn nch(l: f64, w: f64) -> Bsim4 {
     let vth0 = if l < 0.18u { 0.42 } else if l < 1u { 0.45 } else { 0.47 };
     Bsim4 { l: l, w: w, vth0: vth0 }
 }</pre>
 
 <pre data-lang="msl">let m1 = nch(0.13u, 2u)(d, g, s, b);</pre>
 
-<h3>Generation, multiplicity and extern models</h3>
+<h3>Multiplicity and extern models</h3>
 
 <ul>
-<li><strong>Generation.</strong> <code>for</code> and <code>if</code> over params and constants unroll at elaboration, in the body and in <code>digital</code> blocks. Each unrolled placement is an instance of its own.</li>
-<li><strong><code>m</code> and <code>dtemp</code>.</strong> Every instance has these two implicit params. <code>m</code> makes it behave as <code>m</code> copies in parallel and multiplies down the hierarchy; <code>dtemp</code> offsets the temperature and adds up.</li>
+<li><strong><code>m</code> and <code>dtemp</code>.</strong> Every instance has these two implicit params, and you bind them like any other: <code>Resistor(a, b) { r: 1k, m: 4.0 }</code> behaves as four resistors in parallel. <code>m</code> multiplies down the hierarchy; <code>dtemp</code> offsets the temperature and adds up.</li>
 <li><strong>Extern modules.</strong> A model compiled to OSDI, or another simulator by cosimulation, is declared with its ports and params and placed like any module:</li>
 </ul>
 
@@ -805,6 +1024,28 @@ extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Elect
     w: f64 = 1u;
     vth0: f64 = 0.4;
 }</pre>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0320</td><td><code>RcSection(a, b) { res: 1k }</code></td><td>The block names no param of the module. It is called <code>r</code>.</td></tr>
+  <tr><td>E0312</td><td><code>RcSection(a) { r: 1k }</code></td><td>A port is left unconnected. Connections are positional: give both.</td></tr>
+  <tr><td>E0343</td><td><code>v(lad.head.a)</code>, or a tap that is not <code>pub</code></td><td>A parent sees only what the child publishes. Mark the item <code>pub</code> in the child.</td></tr>
+  <tr><td>E0333</td><td><code>let x = r1 * 2.0;</code> where <code>r1</code> is a resistor instance</td><td>An instance without a result is not a value. Read a param or a node, not the instance.</td></tr>
+  <tr><td>E0331</td><td><code>let mut acc = 0.0;</code> in a module body</td><td>A body holds no variables. State is a <code>signal</code>; a name for an expression is a plain <code>let</code>.</td></tr>
+  <tr><td>E0340</td><td><code>for k in 0..count { … }</code> with <code>count</code> a signal</td><td>Generation runs at elaboration, so its range is a constant expression: a param or a const generic.</td></tr>
+  <tr><td>E0330</td><td>a param <code>c</code> and <code>let c = Capacitor(…)</code></td><td>One name, declared twice in one module. Rename the instance: <code>c1</code>.</td></tr>
+  <tr><td>E0401</td><td><code>analog for RcSection { … }</code> in another file</td><td>A module and all its behavior blocks live in the same file.</td></tr>
+  <tr><td>E0304</td><td><code>Ladder::&lt;0&gt;(vin, vout)</code></td><td>The module's <code>where N &gt;= 1</code> is false. Ask for at least one section.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>For the ladder with a 1&nbsp;V step, estimate when each tap passes 0.5&nbsp;V before you look at the <code>half</code> stream. A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times <code>r · c</code> for the three taps: about 2.1, 3.5 and 4.1&nbsp;µs after the step. How close is the rule? Then change the top to <code>Ladder::&lt;5&gt;</code>. What else must change? (The loop bound in the top's <code>digital</code> block: <code>1..6</code>.)</p>
+</div>
 </section>
 
 <!-- ===================================================== 6 -->
