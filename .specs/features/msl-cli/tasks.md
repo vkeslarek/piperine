@@ -372,9 +372,9 @@ T38
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `request::tests::a_run_table_reads_its_nineteen_keys`, `request::tests::an_unknown_key_or_a_wrong_type_is_p0010_at_its_span`, `request::tests::analysis_is_one_of_four`, `request::tests::a_transient_needs_a_positive_stop`, `request::tests::a_key_outside_its_analysis_is_p0010`, `request::tests::a_run_name_is_an_identifier`, `request::tests::a_dc_sweep_needs_its_four_keys_and_a_step_toward_to`, `request::tests::an_ac_grid_is_exactly_one_of_two_and_its_range_is_ordered`
-- [ ] Gate check passes: Quick (see Gate Check Commands)
-- [ ] Test count: the 8 test(s) named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-api --lib`: `request::tests::a_run_table_reads_its_nineteen_keys`, `request::tests::an_unknown_key_or_a_wrong_type_is_p0010_at_its_span`, `request::tests::analysis_is_one_of_four`, `request::tests::a_transient_needs_a_positive_stop`, `request::tests::a_key_outside_its_analysis_is_p0010`, `request::tests::a_run_name_is_an_identifier`, `request::tests::a_dc_sweep_needs_its_four_keys_and_a_step_toward_to`, `request::tests::an_ac_grid_is_exactly_one_of_two_and_its_range_is_ordered`
+- [x] Gate check passes: Quick (see Gate Check Commands)
+- [x] Test count: the 8 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick
