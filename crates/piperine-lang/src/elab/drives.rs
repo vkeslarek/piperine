@@ -50,7 +50,7 @@ impl Elaboration<'_, '_> {
 
     /// The value and the delay of a drive, each lowered in a scope of its own: a drive has no
     /// local (the IR's `Drive` holds expressions only), so a `let` inside one is `P0001`.
-    fn lower_drive_value(&mut self, scope: &Scope, value: ExprId, after: Option<ExprId>) -> Option<(LoweredExpr, Option<LoweredExpr>)> {
+    pub(super) fn lower_drive_value(&mut self, scope: &Scope, value: ExprId, after: Option<ExprId>) -> Option<(LoweredExpr, Option<LoweredExpr>)> {
         let mut sub = Self::sub_scope(scope);
         let lowered = self.lower_expr(&mut sub, value);
         let delay = match after {

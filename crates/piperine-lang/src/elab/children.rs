@@ -43,6 +43,10 @@ impl Elaboration<'_, '_> {
         let mut out = Vec::new();
         for call in calls {
             let Some(Callee::Module(child_module)) = self.types.callee(call) else { continue };
+            // A module with a result is hoisted into this body, not placed (`hoist.rs`).
+            if self.result_callee(call).is_some() {
+                continue;
+            }
             let ordinal = match ordinals.iter_mut().find(|(m, _)| *m == child_module) {
                 Some((_, k)) => {
                     *k += 1;

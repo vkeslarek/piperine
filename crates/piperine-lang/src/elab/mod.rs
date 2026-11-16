@@ -21,6 +21,7 @@ mod events;
 mod elaborator;
 mod analog;
 mod functions;
+mod hoist;
 mod known;
 mod lower;
 mod nature;

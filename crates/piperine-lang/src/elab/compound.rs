@@ -403,14 +403,26 @@ impl Elaboration<'_, '_> {
                     let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
                     Some(Pair { is, val, literal: Some(false) })
                 }
-                Resolution::Decl(decl) => match scope.options.get(&decl).copied() {
-                    Some((is, val)) => {
+                Resolution::Decl(decl) => match (scope.options.get(&decl).copied(), self.input_of(scope, decl)) {
+                    (Some((is, val)), _) => {
                         let (is_ty, val_ty) = (scope.locals[is as usize].ty.clone(), scope.locals[val as usize].ty.clone());
                         let is = self.emit(Expr::Local(is), is_ty, origin.clone());
                         let val = self.emit(Expr::Local(val), val_ty, origin);
                         Some(Pair { is, val, literal: None })
                     }
-                    None => unsupported(self),
+                    // An `Option` value input of a hoisted module: the caller's argument, in the
+                    // caller's frame (an `f64` given there is `Some` of it, §3.2.3).
+                    (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_option(scope, given)),
+                    // A trailing `Option` input left out reads as `None` (DIG-10 AC 3).
+                    (None, Some(None)) => {
+                        let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
+                        let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
+                        Some(Pair { is, val, literal: Some(false) })
+                    }
+                    (None, None) => match self.body_let_value(decl) {
+                        Some(value) => self.lower_option(scope, value),
+                        None => unsupported(self),
+                    },
                 },
                 _ => unsupported(self),
             },

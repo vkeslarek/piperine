@@ -92,7 +92,8 @@ impl<'d, 't> Elaboration<'d, 't> {
         if self.top_has_a_port(top) {
             return Err(self.diagnostics);
         }
-        let modules: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
+        // A module with a result gets no body: it is hoisted into each body that places it.
+        let modules: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(m) if m.ret.is_none())).collect();
         if self.refuse_digital_forms(&modules) {
             return Err(self.diagnostics);
         }

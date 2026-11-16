@@ -230,8 +230,30 @@ impl Elaboration<'_, '_> {
                     let time = self.event_argument(scope, args[0].value)?;
                     Some(vec![Disjunct { source: EventSource::At(time), discrete: Vec::new(), continuous: Vec::new(), origin }])
                 }
+                // A module with an `Event` result (`above`, `init`): its result, in its frame.
+                Some(Callee::Module(_)) if self.result_callee(expr).is_some() => {
+                    let frame = self.frame_of(scope, expr)?;
+                    let module = self.frames[frame].module;
+                    let DeclKind::Module(m) = &self.design.decl_data(module).kind else { return None };
+                    let result = m.result?;
+                    let outer = std::mem::replace(&mut scope.frame, frame);
+                    let lowered = self.disjuncts(scope, result);
+                    scope.frame = outer;
+                    lowered
+                }
                 _ => {
                     self.unsupported(scope.file, node.span, "this call as an event");
+                    None
+                }
+            },
+            // A module-body `let` of an event (`let tick = at(..); tick`): its value, in place.
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if self.body_let_value(decl).is_some() => {
+                    let value = self.body_let_value(decl)?;
+                    self.disjuncts(scope, value)
+                }
+                _ => {
+                    self.unsupported(scope.file, node.span, "this name as an event");
                     None
                 }
             },
@@ -282,14 +304,20 @@ impl Elaboration<'_, '_> {
     }
 
     /// A `ttol` or `etol` argument of `cross`: only `None` is accepted (the `Cross` event carries
-    /// no tolerance).
+    /// no tolerance), written as such or reached through a value input of a hoisted module
+    /// (`above`'s `cross(e, ttol, etol)`) left out or given `None`.
     fn no_tolerance(&mut self, scope: &mut Scope, arg: ExprId) -> Option<()> {
         let node = self.design.expr_node(arg).clone();
-        if let ExprKind::Path(path) = &node.kind
-            && let Some(Resolution::Builtin(id)) = self.design.path_node(*path).segments.last().map(|s| s.res)
-            && id.info().name == "None"
-        {
-            return Some(());
+        if let ExprKind::Path(path) = &node.kind {
+            match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(()),
+                Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
+                    Some(None) => return Some(()),
+                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.no_tolerance(scope, given)),
+                    None => {}
+                },
+                _ => {}
+            }
         }
         self.unsupported(scope.file, node.span, "a `ttol` or `etol` given to `cross`");
         None

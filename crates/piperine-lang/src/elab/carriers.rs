@@ -7,7 +7,7 @@
 //! once the body exists. Names are read against a [`Frame`]: the module whose declarations an
 //! expression names. Frame 0 is the body's own module.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use piperine_ir::{BodyId, Carrier, CarrierRole, ChildValue, Constant, Drive, Event, Reaction, Stream, ValueType};
 
@@ -31,17 +31,32 @@ pub(super) struct Structure {
 }
 
 /// The module whose names an expression of the body reads, and what those names are in the body.
+/// Frame 0 is the body's own module; every other is a placement of a module with a result,
+/// hoisted into the body (`hoist.rs`).
 pub(super) struct Frame {
-    /// What the frame's carriers are named with in the body: empty for the body's own module.
+    pub(super) module: DeclId,
+    /// The frame of the placement's caller; `None` for the body's own module.
+    pub(super) parent: Option<usize>,
+    /// What the frame's carriers are named with in the body: empty for the body's own module,
+    /// `gate.` for `let gate = transition(..)`.
     pub(super) prefix: String,
     /// The carrier of the body each discrete port or signal declaration of `module` is.
     pub(super) carriers: BTreeMap<DeclId, u32>,
+    /// A hoisted module's params, bound to constants by the placement or their defaults.
+    pub(super) params: BTreeMap<DeclId, Constant>,
+    /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
+    /// `None` for a trailing `Option` input left out.
+    pub(super) inputs: BTreeMap<DeclId, Option<ExprId>>,
+    /// The frames of the placements of modules with a result that `module` writes, by call.
+    pub(super) placements: BTreeMap<ExprId, usize>,
+    /// The placements whose hoisting failed, already reported.
+    pub(super) failed: BTreeSet<ExprId>,
 }
 
 impl Frame {
     /// The frame of the body's own module.
-    pub(super) fn root() -> Frame {
-        Frame { prefix: String::new(), carriers: BTreeMap::new() }
+    pub(super) fn root(module: DeclId) -> Frame {
+        Frame { module, parent: None, prefix: String::new(), carriers: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new() }
     }
 }
 
@@ -84,6 +99,9 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (role, init) = match &data.kind {
+            // A hoisted module's carriers are signals of the enclosing body: its `in` value input
+            // is driven by the caller's expression (`hoist.rs`).
+            DeclKind::Port(_) if frame != 0 => (CarrierRole::Signal, None),
             DeclKind::Port(p) => (if p.dir == Some(Dir::Out) { CarrierRole::Out } else { CarrierRole::In }, p.default),
             DeclKind::Signal(s) => (CarrierRole::Signal, s.init),
             _ => return None,

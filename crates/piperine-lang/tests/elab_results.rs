@@ -1,0 +1,258 @@
+//! Scope: modules with a result in `piperine_lang::elab` for msl-digital (DIG-10, DIG-11): a
+//! placement of one is hoisted into the body that places it (part III §8.3.12, Appendix C.1.1),
+//! its carriers, drives, events and reactions named under the placement, its result read in
+//! place with its value inputs substituted; `at`, `now()` and `analysis(Static)` as their IR
+//! nodes. The modules are the buck's (`examples/buck/src`) and the stdlib's `transition`,
+//! `above` and `init` as written.
+
+#[path = "support/elab.rs"]
+#[allow(dead_code)]
+mod support;
+
+#[path = "support/buck.rs"]
+#[allow(dead_code)]
+mod buck;
+
+use piperine_ir::{Body, CarrierRole, Env, EventSource, Expr, ExprId, Ir, Stmt, ValueType};
+use support::Elab;
+
+fn body<'a>(ir: &'a Ir, name: &str) -> Body<'a> {
+    ir.bodies().find(|b| b.name() == name).unwrap_or_else(|| panic!("no body `{name}` in:\n{}", ir.print_structural()))
+}
+
+fn carrier_names(body: &Body) -> Vec<String> {
+    body.carriers().iter().map(|c| c.name.clone()).collect()
+}
+
+fn index_of(body: &Body, name: &str) -> u32 {
+    body.carriers().iter().position(|c| c.name == name).unwrap_or_else(|| panic!("no carrier `{name}`")) as u32
+}
+
+/// Every expression reachable from `root` through operands and the statements of blocks.
+fn reach(ir: &Ir, root: ExprId) -> Vec<ExprId> {
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(e) = stack.pop() {
+        out.push(e);
+        match ir.expr(e) {
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
+            Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
+            Expr::KnownOr { value, default } => stack.extend([*value, *default]),
+            Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
+            Expr::Method { receiver, args, .. } => stack.extend(std::iter::once(*receiver).chain(args.iter().copied())),
+            Expr::Call { args, .. } | Expr::Math { args, .. } => stack.extend(args.iter().copied()),
+            Expr::Block { stmts, value } => {
+                for s in stmts {
+                    stack.extend(ir.stmt(*s).operands());
+                }
+                stack.extend(value.iter().copied());
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Every expression a reaction's statements reach.
+fn reaction_exprs(ir: &Ir, body: &Body, k: usize) -> Vec<ExprId> {
+    body.reactions()[k].stmts.iter().flat_map(|s| ir.stmt(*s).operands()).flat_map(|e| reach(ir, e)).collect()
+}
+
+/// Every expression the `analog` block reaches.
+fn analog_exprs(ir: &Ir, body: &Body) -> Vec<ExprId> {
+    body.analog().unwrap_or_default().iter().flat_map(|s| ir.stmt(*s).operands()).flat_map(|e| reach(ir, e)).collect()
+}
+
+/// `PowerSwitch` of examples/buck/src/power.msl, with its `analog` block and `body_diode`, placed
+/// by a `Top` once per name of `names`.
+fn power_switch(names: &[&str]) -> String {
+    let lets: Vec<String> = names.iter().map(|n| format!("let {n} = PowerSwitch(d, s, g);")).collect();
+    format!(
+        "{}\n{}\nmodule Top() {{ signal d: Electrical; signal s: Electrical; signal g: Bit; {} }}",
+        buck::item("power.msl", "fn body_diode"),
+        buck::module_with_analog("power.msl", "PowerSwitch"),
+        lets.join(" ")
+    )
+}
+
+/// The stdlib `A2D` (std/convert.msl), placed by a `Top`.
+const A2D: &str = "module Top() { signal a: Electrical; signal d: Bit; let x = A2D(a, d); }";
+
+#[test]
+fn a_placement_is_hoisted_under_its_name() {
+    // DIG-10 AC 1, C90: `let gate = transition(..)` in `PowerSwitch` puts `transition`'s `in x`
+    // and its five signals in `PowerSwitch`'s body as `gate.<item>`, ports first, as signals.
+    let ir = Elab::ir(&power_switch(&["p"]), "Top");
+    let ps = body(&ir, "PowerSwitch");
+    let hoisted: Vec<String> = carrier_names(&ps).into_iter().filter(|n| n.starts_with("gate.")).collect();
+    assert_eq!(hoisted, ["gate.x", "gate.xd", "gate.y0", "gate.y1", "gate.t0", "gate.dt"]);
+    assert!(ps.carriers().iter().filter(|c| c.name.starts_with("gate.")).all(|c| c.role == CarrierRole::Signal && c.ty == ValueType::F64));
+    let init = |n: &str| ps.carriers()[index_of(&ps, n) as usize].init;
+    assert_eq!((init("gate.t0"), init("gate.dt"), init("gate.y0")), (Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), None), "`t0` and `dt` start at 0.0 as `transition` writes");
+    // A placement with no `let` of its own is `<module>$<k>`, `k` counting its placements in
+    // source order; one inside a hoisted module nests under it: `A2D`'s two `above` heads and the
+    // `init` each places.
+    let ir = Elab::ir(A2D, "Top");
+    let a2d = body(&ir, "A2D");
+    assert_eq!(carrier_names(&a2d), ["d", "above$0.init$0.up", "above$1.init$0.up"]);
+    // A module that places itself through results is `E0341`, at the placement.
+    let src = "module r(x: f64) -> f64 { let z = q(x); x }\nmodule q(x: f64) -> f64 { let w = r(x); x }\nmodule M(a: Electrical) { let y = r(1.0); }\nanalog for M { i(a) +> y; }\nmodule Top() { signal n: Electrical; let m = M(n); }";
+    let err = Elab::run(src, "Top").expect_err("r places q places r");
+    assert_eq!(Elab::codes(&err), ["E0341"]);
+    let span = err[0].diagnostic.span();
+    assert_eq!(&src[span.start..span.end], "r(x)");
+}
+
+#[test]
+fn value_inputs_are_substituted_at_each_read() {
+    // DIG-10 AC 2, C91: a read of `gate` in `PowerSwitch`'s `analog` block is `transition`'s
+    // result with `x` the hoisted carrier `gate.x`; `tr` and `tf` are the caller's `tsw`, read in
+    // the caller's frame (§8.3.8): a read of `PowerSwitch`'s own param.
+    let ir = Elab::ir(&power_switch(&["p"]), "Top");
+    let ps = body(&ir, "PowerSwitch");
+    let x = index_of(&ps, "gate.x");
+    let analog = analog_exprs(&ir, &ps);
+    assert!(analog.iter().any(|e| matches!(ir.expr(*e), Expr::KnownOr { value, .. } if ir.expr(*value) == &Expr::Carrier(x))), "`x.known_or(0.0)` reads `gate.x`");
+    assert!(analog.iter().any(|e| ir.expr(*e) == &Expr::Env(Env::Time)) && analog.iter().any(|e| ir.expr(*e) == &Expr::Env(Env::Static)), "the result reads `now()` and `analysis(Static)`");
+    let tsw = ps.params().iter().position(|p| p.name == "tsw").expect("tsw") as u32;
+    // `dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 }`.
+    let dt = index_of(&ps, "gate.dt");
+    let commits_of_dt: Vec<ExprId> = ps.reactions().iter().enumerate().flat_map(|(k, _)| reaction_exprs(&ir, &ps, k)).filter(|e| matches!(ir.expr(*e), Expr::Block { .. })).flat_map(|b| {
+        let Expr::Block { stmts, .. } = ir.expr(b) else { return Vec::new() };
+        stmts.iter().filter_map(|s| match ir.stmt(*s) {
+            Stmt::Commit { carrier, value, .. } if *carrier == dt => Some(*value),
+            _ => None,
+        }).collect()
+    }).collect();
+    assert!(!commits_of_dt.is_empty(), "the edge reaction commits `dt`");
+    let params_read: Vec<u32> = commits_of_dt.iter().flat_map(|v| reach(&ir, *v)).filter_map(|e| if let Expr::Param(p) = ir.expr(e) { Some(*p) } else { None }).collect();
+    assert_eq!(params_read, [tsw, tsw], "`tr` and `tf` are the caller's `tsw`");
+    // A value input read in the callee's reaction: `above`'s `e > 0.0` in `A2D` is the caller's
+    // `v(a) - vth - hyst / 2.0`, its params `A2D`'s own.
+    let ir = Elab::ir(A2D, "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("if (((probe(a, gnd) - vth) - (hyst / 2.0)) > 0.0) { d <- true }"), "{text}");
+    assert!(text.contains("if (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0) { d <- false }"), "{text}");
+}
+
+#[test]
+fn an_omitted_option_input_reads_as_none() {
+    // DIG-10 AC 3, C92: `transition(x)` leaves `td`, `tr`, `tf` out: `td.unwrap_or(0.0)` is the
+    // literal `0.0`, the delay of `xd = x after td.unwrap_or(0.0)`.
+    let src = "module Top(in g: Bit) { let y = transition(if g.high() { 1.0 } else { 0.0 }); }";
+    let ir = Elab::ir(src, "Top");
+    let top = body(&ir, "Top");
+    let xd = index_of(&top, "y.xd");
+    let drive = top.drives().iter().find(|d| d.carrier == xd).expect("the drive of `y.xd`");
+    let after = drive.after.expect("`after td.unwrap_or(0.0)`");
+    assert_eq!(ir.expr(after), &Expr::Real(piperine_ir::Real::new(0.0)));
+    // Given, an `f64` for `Option<f64>` is `Some` of it (§3.2.3): the delay is the value given.
+    let src = "module Top(in g: Bit) { let y = transition(if g.high() { 1.0 } else { 0.0 }, 2n); }";
+    let ir = Elab::ir(src, "Top");
+    let top = body(&ir, "Top");
+    let xd = index_of(&top, "y.xd");
+    let after = top.drives().iter().find(|d| d.carrier == xd).and_then(|d| d.after).expect("the delay");
+    assert_eq!(ir.expr(after), &Expr::Real(piperine_ir::Real::new(2e-9)));
+}
+
+#[test]
+fn two_placements_are_two_sets_of_carriers() {
+    // DIG-10 AC 4, C93: `Load` (power.msl) places `transition` twice: `k_step.*` and `k_inject.*`.
+    let src = format!("{}\nmodule Top() {{ signal p: Electrical; signal step: Bit; signal inject: Bit; let l = Load(p, step, inject); }}", buck::module_with_analog("power.msl", "Load"));
+    let ir = Elab::ir(&src, "Top");
+    let load = body(&ir, "Load");
+    let names = carrier_names(&load);
+    for set in ["k_step", "k_inject"] {
+        let items: Vec<&str> = names.iter().filter_map(|n| n.strip_prefix(&format!("{set}."))).collect();
+        assert_eq!(items, ["x", "xd", "y0", "y1", "t0", "dt"], "{set}");
+    }
+    assert_eq!(load.reactions().len(), 6, "three reactions per placement");
+    assert_eq!(load.drives().len(), 4, "the drives of `x` and `xd` per placement");
+}
+
+#[test]
+fn a_result_module_gets_no_body_and_no_instance() {
+    // DIG-10 AC 5, C94.
+    let ir = Elab::ir(&power_switch(&["p"]), "Top");
+    assert!(ir.bodies().all(|b| b.name() != "transition"), "no body for `transition`");
+    assert_eq!(ir.instances().map(|i| i.path().to_string()).collect::<Vec<_>>(), ["Top", "Top.p"], "no instance for `gate`");
+    assert!(ps_children_are_empty(&ir));
+    let ir = Elab::ir(A2D, "Top");
+    assert!(ir.bodies().all(|b| b.name() != "above" && b.name() != "init"));
+    assert_eq!(ir.instances().count(), 2);
+}
+
+fn ps_children_are_empty(ir: &Ir) -> bool {
+    body(ir, "PowerSwitch").children().is_empty()
+}
+
+#[test]
+fn an_expression_at_a_discrete_input_drives_the_hoisted_carrier() {
+    // DIG-10 AC 6, C95: `transition(if g.high() { 1.0 } else { 0.0 }, ..)` is a drive of `gate.x`
+    // by that expression, undelayed.
+    let ir = Elab::ir(&power_switch(&["p"]), "Top");
+    let ps = body(&ir, "PowerSwitch");
+    let (x, g) = (index_of(&ps, "gate.x"), index_of(&ps, "g"));
+    let drives: Vec<_> = ps.drives().iter().filter(|d| d.carrier == x).collect();
+    assert_eq!(drives.len(), 1);
+    assert_eq!(drives[0].after, None);
+    let Expr::If { cond, then, otherwise } = ir.expr(drives[0].value) else { panic!("the `if`: {:?}", ir.expr(drives[0].value)) };
+    let Expr::High(read) = ir.expr(*cond) else { panic!("`g.high()`") };
+    assert_eq!(ir.expr(*read), &Expr::Carrier(g));
+    assert_eq!((ir.expr(*then), ir.expr(*otherwise)), (&Expr::Real(piperine_ir::Real::new(1.0)), &Expr::Real(piperine_ir::Real::new(0.0))));
+    // `xd = x after td.unwrap_or(0.0)` is the callee's own definition, with `td` the caller's `0.0`.
+    let xd = index_of(&ps, "gate.xd");
+    let drive = ps.drives().iter().find(|d| d.carrier == xd).expect("the drive of `gate.xd`");
+    assert_eq!(ir.expr(drive.value), &Expr::Carrier(x));
+}
+
+#[test]
+fn at_now_and_static_lower_to_their_nodes() {
+    // DIG-10 AC 7, C96: `on at(t0 + dt) && dt > 0.0` is an `At` event over `gate.t0 + gate.dt`;
+    // `now()` and `analysis(Static)` are the time and static reads, wherever they stand.
+    let ir = Elab::ir(&power_switch(&["p"]), "Top");
+    let ps = body(&ir, "PowerSwitch");
+    let (t0, dt) = (index_of(&ps, "gate.t0"), index_of(&ps, "gate.dt"));
+    let at: Vec<_> = ps.events().iter().filter_map(|e| if let EventSource::At(t) = &e.source { Some((*t, e.guard)) } else { None }).collect();
+    assert_eq!(at.len(), 1, "one timer");
+    let Expr::Binary { lhs, rhs, .. } = ir.expr(at[0].0) else { panic!("t0 + dt") };
+    assert_eq!((ir.expr(*lhs), ir.expr(*rhs)), (&Expr::Carrier(t0), &Expr::Carrier(dt)));
+    assert!(at[0].1.is_some(), "`dt > 0.0` guards it");
+    // The edge reaction commits `t0 <- now()`; the two others run under `if static()` and
+    // `if !static()` (their guards read the analysis).
+    let reads: Vec<&Expr> = (0..ps.reactions().len()).flat_map(|k| reaction_exprs(&ir, &ps, k)).map(|e| ir.expr(e)).collect();
+    assert!(reads.contains(&&Expr::Env(Env::Time)) && reads.contains(&&Expr::Env(Env::Static)));
+    let text = ir.print_structural();
+    assert!(text.contains("if static() { gate.y0 <- gate.x; gate.y1 <- gate.x }"), "{text}");
+    assert!(text.contains("if (!static()) {"), "{text}");
+    assert!(text.contains("gate.t0 <- time()"), "{text}");
+}
+
+#[test]
+fn a_result_module_is_hoisted_once_per_body() {
+    // Edge case 4, C166: `PowerSwitch` placed twice is one body with one set of `gate.*`; each
+    // instance binds its own nets.
+    let ir = Elab::ir(&power_switch(&["hs", "ls"]), "Top");
+    assert_eq!(ir.bodies().filter(|b| b.name() == "PowerSwitch").count(), 1);
+    let ps = body(&ir, "PowerSwitch");
+    assert_eq!(carrier_names(&ps).iter().filter(|n| n.starts_with("gate.")).count(), 6);
+    for inst in ["Top.hs", "Top.ls"] {
+        assert!(ir.net_at(&format!("{inst}.gate.x")).is_some(), "{inst}");
+    }
+}
+
+#[test]
+fn a_param_block_binds_the_hoisted_params() {
+    // Edge case 5, C167: a param block on a placement of a module with a result binds the
+    // hoisted items' params as constants; with none, the defaults.
+    let src = "module scaled(x: f64) -> f64 { k: f64 = 2.0 where k > 0.0; k * x }\n\
+               module M(a: Electrical) { let y = scaled(1.5) { k: 3.0 }; let z = scaled(1.5); }\nanalog for M { i(a) +> y * v(a) + z; }\n\
+               module Top() { signal n: Electrical; let m = M(n); }";
+    let ir = Elab::ir(src, "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("b0.flow +> direct (((3.0 * 1.5) * probe(a, gnd)) + (2.0 * 1.5))"), "{text}");
+    assert!(body(&ir, "M").params().is_empty(), "`k` is no param of the body that hoists it");
+    let bad = src.replace("{ k: 3.0 }", "{ k: -1.0 }");
+    let err = Elab::run(&bad, "Top").expect_err("`k > 0.0` is false");
+    assert_eq!(Elab::codes(&err), ["E0317"]);
+}

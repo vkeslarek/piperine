@@ -306,6 +306,8 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
+            // A module with a result is hoisted: its result is read where the placement stands.
+            (_, Some(Callee::Module(_))) if self.result_callee(expr).is_some() => self.lower_result(scope, expr),
             (_, Some(Callee::Module(_))) => {
                 self.unsupported(scope.file, span, "a placement used as a value");
                 None
@@ -486,20 +488,25 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
-            DeclKind::Param(_) => match scope.params.get(&decl) {
-                Some(index) => Some(self.emit(Expr::Param(*index), ty, origin)),
-                None => {
+            DeclKind::Param(_) => match (scope.params.get(&decl), self.frames.get(scope.frame).and_then(|f| f.params.get(&decl)).copied()) {
+                (Some(index), _) if scope.frame == 0 => Some(self.emit(Expr::Param(*index), ty, origin)),
+                // A param of a hoisted module is the constant its placement bound (`hoist.rs`).
+                (_, Some(value)) => Some(self.constant_expr(value, ty, origin)),
+                _ => {
                     self.unsupported(scope.file, node.span, "a param of another module");
                     None
                 }
             },
-            DeclKind::Port(_) | DeclKind::Signal(_) => match self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl)).copied() {
-                Some(index) => {
-                    // A read of a carrier may be unknown (§3.3): its type is flagged.
-                    let carried = self.structure.carriers[index as usize].ty.clone();
-                    Some(self.emit(Expr::Carrier(index), Flag::Flagged.wrap(carried), origin))
+            DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl)).copied(), self.input_of(scope, decl)) {
+                // A read of a carrier may be unknown (§3.3): its type is flagged.
+                (Some(index), _) => Some(self.carrier_read(index, origin)),
+                // A value input of a hoisted module: the caller's expression, in the caller's frame.
+                (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_expr(scope, given)),
+                (None, Some(None)) => {
+                    self.unsupported(scope.file, node.span, "a value input left out, read as a value");
+                    None
                 }
-                None => {
+                (None, None) => {
                     self.unsupported(scope.file, node.span, "a node or a port read as a value");
                     None
                 }
@@ -508,6 +515,11 @@ impl Elaboration<'_, '_> {
                 Some(index) => {
                     let ty = scope.locals[*index as usize].ty.clone();
                     Some(self.emit(Expr::Local(*index), ty, origin))
+                }
+                // A module-body `let`: inlined at each read (Appendix C.1.1, `hoist.rs`).
+                None if self.body_let_value(decl).is_some() => {
+                    let value = self.body_let_value(decl)?;
+                    self.lower_body_let(scope, value)
                 }
                 None => {
                     self.unsupported(scope.file, node.span, "a name with no value here");

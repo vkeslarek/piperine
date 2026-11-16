@@ -196,7 +196,9 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
         // A `digital` block is lowered from msl-digital T30 on: the form still refused in its place
         // is `settle` of DIG-07 AC 1.
         ("settle", "module Top() { }\ndigital for Top { on settle { } }", vec!["`settle`"]),
-        ("a module with a result", "module twice(x: f64) -> f64 { 2.0 * x }\nmodule Top() { let a = twice(1.0); }", vec!["a module with a result", "a value input"]),
+        // A module with a result is hoisted from msl-digital T33 on: the form still refused in its
+        // place is `others()` of DIG-07 AC 1.
+        ("others()", "module Top(in c: Bit) { let x = c.others(); }", vec!["method `others`"]),
         ("a value input", "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }", vec!["a value input"]),
         ("a flow read of a potential branch", "module L(p: Electrical, n: Electrical) { }\nanalog for L { v(p, n) +> 2.0 * i(p, n); }\nmodule Top() { signal s: Electrical; let l = L(s, gnd); }", vec!["a flow probe read as a value"]),
     ] {

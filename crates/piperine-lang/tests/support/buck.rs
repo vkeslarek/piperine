@@ -51,3 +51,16 @@ pub fn digital(file: &str, name: &str) -> String {
 pub fn module_with_digital(file: &str, name: &str) -> String {
     format!("{}\n{}", item(file, &format!("pub module {name}(")), digital(file, name))
 }
+
+/// The `analog for name { .. }` block of `file`.
+pub fn analog(file: &str, name: &str) -> String {
+    let text = read(file);
+    let head = format!("analog for {name} ");
+    let at = text.find(&head).unwrap_or_else(|| panic!("no `{head}` in {file}"));
+    text[at..through_closing_brace(&text, at)].to_string()
+}
+
+/// A module of `file` with its `analog` block: the module item, then the block.
+pub fn module_with_analog(file: &str, name: &str) -> String {
+    format!("{}\n{}", item(file, &format!("pub module {name}(")), analog(file, name))
+}
