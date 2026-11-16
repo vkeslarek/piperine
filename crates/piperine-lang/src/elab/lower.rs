@@ -44,11 +44,13 @@ pub(super) struct Scope {
     pub(super) options: BTreeMap<DeclId, (u32, u32)>,
     /// The frame whose names the code reads (`Elaboration::frames`): 0, the body's own module.
     pub(super) frame: usize,
+    /// The `&str` params of the functions inlined at a call (`records.rs`), bound to their text.
+    pub(super) texts: BTreeMap<DeclId, String>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0 }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new() }
     }
 }
 
@@ -368,6 +370,8 @@ impl Elaboration<'_, '_> {
             let file = self.design.decl_data(node.owner).file;
             match &node.kind {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
+                // `emit!` and a call of a function that emits are statements (`records.rs`).
+                StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_record_statement(scope, &mut out, *expr) => ok &= lowered,
                 StmtKind::Expr { expr, semi } => match self.lower_expr(scope, *expr) {
                     Some(lowered) if i + 1 == stmts.len() && !semi => value = Some(lowered),
                     Some(lowered) => out.push(self.stmt(Stmt::Expr(lowered))),

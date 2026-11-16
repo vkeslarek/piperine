@@ -542,29 +542,50 @@ fn an_option_is_a_flag_and_a_payload() {
     let text = ir.print_structural();
     assert!(!text.contains("Option") && !text.contains("option"), "{text}");
     assert!(text.contains("if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }"), "{text}");
+
+    // The reaction form of `Supervisor` (supervisor.msl, owed to T31; its `log` is inlined from
+    // T34 on): `fault_now` is a flag and a payload, `if let Some(f) = fault_now` reads the pair.
+    let spec = std::fs::read_to_string(format!("{}/../../examples/buck/src/spec.msl", env!("CARGO_MANIFEST_DIR"))).expect("spec.msl");
+    let src = format!(
+        "{spec}\n{}\n{}\n{}\n{}\n{}",
+        buck_item("supervisor.msl", "pub enum Mode"),
+        buck_item("supervisor.msl", "pub enum Fault"),
+        buck_item("supervisor.msl", "pub fn in_window"),
+        buck_item("supervisor.msl", "pub fn ovp_threshold"),
+        buck_module("supervisor.msl", "Supervisor")
+    );
+    let ir = Elab::ir(&src, "Supervisor");
+    let text = ir.print_structural();
+    assert!(!text.contains("Option") && !text.contains("option"), "{text}");
+    let locals = locals_in(&text);
+    assert!(locals.contains(&"fault_now.is: flagged<bool>".to_string()) && locals.contains(&"fault_now.val: flagged<u2>".to_string()), "{text}");
+    assert!(text.contains("if fault_now.is { let f = fault_now.val; mode <- 3u2; fault <- f;"), "{text}");
+}
+
+/// The item of `examples/buck/src/<file>` that starts with `head`, through its closing brace.
+fn buck_item(file: &str, head: &str) -> String {
+    let text = std::fs::read_to_string(format!("{}/../../examples/buck/src/{file}", env!("CARGO_MANIFEST_DIR"))).expect("a buck source");
+    let at = text.find(head).unwrap_or_else(|| panic!("no `{head}`"));
+    let start = text[..at].rfind("#[derive").filter(|d| !text[*d..at].contains('}') && !text[*d..at].contains(";\n")).unwrap_or(at);
+    let mut depth = 0usize;
+    for (i, c) in text[at..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return text[start..at + i + 1].to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("`{head}` does not close")
 }
 
 /// A module of `examples/buck/src/<file>` with its `digital` block, as written.
 fn buck_module(file: &str, name: &str) -> String {
-    let text = std::fs::read_to_string(format!("{}/../../examples/buck/src/{file}", env!("CARGO_MANIFEST_DIR"))).expect("a buck source");
-    let item = |head: &str| {
-        let at = text.find(head).unwrap_or_else(|| panic!("no `{head}`"));
-        let mut depth = 0usize;
-        for (i, c) in text[at..].char_indices() {
-            match c {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return text[at..at + i + 1].to_string();
-                    }
-                }
-                _ => {}
-            }
-        }
-        panic!("`{head}` does not close")
-    };
-    format!("{}\n{}", item(&format!("pub module {name}(")), item(&format!("digital for {name} ")))
+    format!("{}\n{}", buck_item(file, &format!("pub module {name}(")), buck_item(file, &format!("digital for {name} ")))
 }
 
 #[test]

@@ -256,3 +256,69 @@ fn a_param_block_binds_the_hoisted_params() {
     let err = Elab::run(&bad, "Top").expect_err("`k > 0.0` is false");
     assert_eq!(Elab::codes(&err), ["E0317"]);
 }
+
+#[test]
+fn emit_lowers_to_a_site_with_its_texts() {
+    // DIG-11 AC 1, C99: the stdlib's `Never` (std/monitor.msl), `on clk.rise() { require("never",
+    // !bad); }`, is one reaction with one site of the stream `checks`: the texts `kind = require`
+    // and `name = never` stay on the site, `pass` is the one value field.
+    let ir = Elab::ir("module Top(in clk: Bit, in bad: Bit) { let n = Never(clk, bad); }", "Top");
+    let never = body(&ir, "Never");
+    assert_eq!(never.reactions().len(), 1);
+    assert_eq!(never.streams().len(), 1);
+    assert_eq!(never.streams()[0].name, "checks");
+    assert_eq!(never.streams()[0].fields.iter().map(|f| (f.name.as_str(), f.ty.clone())).collect::<Vec<_>>(), [("pass", ValueType::Bool)]);
+    let statements = never.reaction_statements(0);
+    assert_eq!(statements.len(), 1, "one record per run, no commit");
+    let site = never.record_site(0, 0).expect("the site of statement 0");
+    assert_eq!(site.stream, "checks");
+    assert_eq!(site.texts, [("kind", "require"), ("name", "never")]);
+    // `emit!` written in a reaction: its fields in source order, texts and values interleaved.
+    let src = "module Top(in clk: Bit, in bad: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"checks\", kind = \"require\", name = \"never\", pass = !bad); } }";
+    let ir = Elab::ir(src, "Top");
+    let top = body(&ir, "Top");
+    let Stmt::Emit { stream, fields } = ir.stmt(top.reactions()[0].stmts[0]) else { panic!("an emit") };
+    assert_eq!(*stream, 0);
+    use piperine_ir::EmitField;
+    assert!(matches!(&fields[..], [EmitField::Text { name: k, text: kt }, EmitField::Text { name: n, text: nt }, EmitField::Value { field: 0, .. }] if (k.as_str(), kt.as_str(), n.as_str(), nt.as_str()) == ("kind", "require", "name", "never")), "{fields:?}");
+}
+
+#[test]
+fn a_function_that_emits_is_inlined() {
+    // DIG-11 AC 2, C102: a reaction calling `require` holds the `emit` itself; no IR function is
+    // made for `require` (an IR function is a pure value).
+    let src = "module Top(in clk: Bit, in bad: Bit) { }\ndigital for Top { on clk.rise() { require(\"never\", !bad); } }";
+    let ir = Elab::ir(src, "Top");
+    assert!(ir.functions().all(|f| f.name() != "require"), "no function `require`");
+    let top = body(&ir, "Top");
+    let emits: Vec<_> = top.reaction_statements(0).into_iter().filter(|s| matches!(ir.stmt(*s), Stmt::Emit { .. })).collect();
+    assert_eq!(emits.len(), 1);
+    assert_eq!(top.record_site(0, 0).map(|s| s.texts), Some(vec![("kind", "require"), ("name", "never")]));
+    // `log` from a reaction of the buck's `Supervisor` shape: the stream `log` with the value
+    // field `severity` (`Severity::Warning` is 1, §2 rule 5) and the text `msg`.
+    let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { log(Severity::Warning, \"x\"); } }";
+    let ir = Elab::ir(src, "Top");
+    assert!(ir.functions().all(|f| f.name() != "log"));
+    let top = body(&ir, "Top");
+    assert_eq!(top.streams()[0].name, "log");
+    assert_eq!(top.streams()[0].fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["severity"]);
+    assert_eq!(top.record_site(0, 0).map(|s| s.texts), Some(vec![("msg", "x")]));
+    // The argument is held by a local of the reaction, the emit reads it.
+    let stmts: Vec<&Stmt> = top.reactions()[0].stmts.iter().map(|s| ir.stmt(*s)).collect();
+    let [Stmt::Let { local, init }, Stmt::Emit { fields, .. }] = stmts[..] else { panic!("the argument, then the emit: {stmts:?}") };
+    assert_eq!(ir.expr(*init), &Expr::Int(1), "`Severity::Warning`");
+    let piperine_ir::EmitField::Value { value, .. } = &fields[0] else { panic!("severity first") };
+    assert_eq!(ir.expr(*value), &Expr::Local(*local));
+}
+
+#[test]
+fn a_text_field_that_is_not_a_literal_is_p0001() {
+    // DIG-11 AC 3, C103: `log(sev, msg)` with `msg` a function parameter that is no literal at
+    // the call: the text cannot stay on the site.
+    let src = "fn note(ok: bool) { log(Severity::Info, if ok { \"up\" } else { \"down\" }); }\nmodule Top(in clk: Bit, in c: Bit) { }\ndigital for Top { on clk.rise() { note(c.known_or(false)); } }";
+    let err = Elab::run(src, "Top").expect_err("a text that is no literal");
+    assert_eq!(Elab::codes(&err), ["P0001"]);
+    assert!(err[0].diagnostic.message.contains("not a literal"), "{}", err[0].diagnostic.message);
+    let span = err[0].diagnostic.span();
+    assert_eq!(&src[span.start..span.end], "if ok { \"up\" } else { \"down\" }");
+}
