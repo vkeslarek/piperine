@@ -3,7 +3,10 @@
 //! M1 entries of `plan.rs`, so an M1 body's pins, functions and their indices do not move.
 //!
 //! Carriers (RS-12 AC 1): one `DISCRETE` pin per carrier, in declaration order, after every M1
-//! pin; `PORT` for an `in` or `out` port, `PRIVATE` for a `signal`. Its layout is one field `v`
+//! pin; `PORT` for an `in` or `out` port and for a `signal` a child's carrier port is bound to
+//! (`Body::child_carriers`: part II §5, the parent's signal is the net its children meet on, so
+//! the netlist binds it to that net like a port; msl-digital T65), `PRIVATE` for any other
+//! `signal`. Its layout is one field `v`
 //! with a known byte (abi.md P3): `BIT` for `bool`, `REAL` for `f64`, and for `UInt<N>`/`Int<N>`
 //! the narrowest of `U8` to `U64` or `I8` to `I64` that holds `N` bits, the known byte right
 //! after the value and the size rounded up to the value's alignment, as `BIT`, `BYTE` and
@@ -300,15 +303,22 @@ impl Digital {
                 }),
                 None => Vec::new(),
             };
-            let pin_role = match c.role {
-                CarrierRole::In | CarrierRole::Out => role::PORT,
-                CarrierRole::Signal => role::PRIVATE,
-            };
+            let pin_role = if Self::is_port(body, i as u32) { role::PORT } else { role::PRIVATE };
             let flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
             let pin = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&c.name, pin_role, layout) });
             debug_assert_eq!(pin, first + i as u32);
         }
         first
+    }
+
+    /// Whether carrier `c` of `body` is a `PORT` pin: an `in` or `out` port, or a `signal` that a
+    /// child's carrier port is bound to.
+    pub(crate) fn is_port(body: Body<'_>, c: u32) -> bool {
+        match body.carriers().get(c as usize).map(|x| x.role) {
+            Some(CarrierRole::In | CarrierRole::Out) => true,
+            Some(CarrierRole::Signal) => (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))),
+            None => false,
+        }
     }
 
     /// `origin` as a shape writes it.

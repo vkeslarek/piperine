@@ -2,9 +2,11 @@
 //! the module of each body.
 
 use piperine_abi::raw::Module;
-use piperine_ir::{BodyId, CarrierRole, Constant, Ir, NodeRef};
+use piperine_ir::{BodyId, Constant, Ir, NodeRef};
 use piperine_solver::abi::{Error, SolverDomain};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result};
+
+use crate::BodyPlan;
 
 /// Who supplies the module of a body: the interpreter, or a compiled library.
 pub trait Modules {
@@ -37,17 +39,21 @@ impl<'a> Netlist<'a> {
     /// reference). Each param is passed by name, except one that holds its body's default: it
     /// is given no value and its pin keeps the default.
     ///
-    /// A carrier port (an `in` or `out` carrier, never a `signal`) is bound, after the node
-    /// ports and in the body's order, to the design net the instance gives it
-    /// (`Port::Net` named by the net's path, so the net is read by that name); a carrier the
-    /// instance gives no net is left open, its pin private to the instance. A carrier's initial
-    /// value is its pin's `HAS_INIT`, in the shape: it reaches the solver with the pin.
+    /// A carrier that is a `PORT` pin of its shape (an `in` or `out` carrier, or a `signal` a
+    /// child's carrier port is bound to: `BodyPlan::carrier_is_port`) is bound, after the node
+    /// ports and in the body's order, to the design net the instance gives it (`Port::Net`
+    /// named by the net's path, so the net is read by that name); a carrier the instance gives
+    /// no net is left open, its pin private to the instance. So a parent's `signal` and its
+    /// children's ports are one solver net, and the parent's drives and commits reach the
+    /// children (part II §5; `ir-rust` F-B1). A carrier's initial value is its pin's
+    /// `HAS_INIT`, in the shape: it reaches the solver with the pin, and a net's own `init` is
+    /// the initial value of the carrier that declares it (msl-digital T28), so it reaches the
+    /// solver the same way (F-B2).
     ///
-    /// Refused by name until msl-digital gives the builder a way to take them: a parent's
-    /// `signal` that its children's carrier ports meet on (`ir-rust` verification F-B1), since
-    /// the builder binds no `PRIVATE` pin to a named net and the parent's drives and commits
-    /// would never reach the children; a net with its own `init` (F-B2), since the builder has
-    /// no way to take a net's initial value and dropping it would start the net unknown.
+    /// Refused by name, as an IR the elaborator never gives: a net whose `init` no carrier of
+    /// its declaring instance bound to it holds (dropping it would start the net unknown), and
+    /// a `signal` other instances' carriers meet on that its body binds to no child (the
+    /// signal's pin is private, so they would never meet).
     pub fn circuit(&self, modules: &impl Modules) -> Result<CircuitInstance> {
         self.refuse_unbound_forms()?;
         let ir = self.ir;
@@ -68,8 +74,8 @@ impl<'a> Netlist<'a> {
                     NodeRef::Ground => Port::Node(ground.clone()),
                 })
                 .collect();
-            for (c, carrier) in body.carriers().iter().enumerate() {
-                if carrier.role == CarrierRole::Signal {
+            for c in 0..body.carriers().len() {
+                if !BodyPlan::carrier_is_port(body, c as u32) {
                     continue;
                 }
                 ports.push(match instance.net(c) {
@@ -97,37 +103,46 @@ impl<'a> Netlist<'a> {
         builder.build()
     }
 
-    /// The wiring this netlist cannot yet give the solver, as an error naming it (see `circuit`).
+    /// The wiring this netlist cannot give the solver, as an error naming it (see `circuit`).
     fn refuse_unbound_forms(&self) -> Result<()> {
-        if let Some(net) = self.ir.nets().find(|net| net.init().is_some()) {
-            return Err(Error::simple(
-                SolverDomain::Digital,
-                format!(
-                    "{}: the net `{}` has an initial value of its own; a net's `init` is not supported yet \
-                     (msl-digital), give it to the carriers bound to the net",
-                    net.origin(),
-                    net.path()
-                ),
-            ));
+        for net in self.ir.nets() {
+            let Some(init) = net.init() else { continue };
+            let declarer = net.declared_by();
+            let carried = declarer.body().carriers().iter().enumerate().any(|(c, carrier)| {
+                carrier.init == Some(init) && declarer.net(c).is_some_and(|n| n.path() == net.path())
+            });
+            if !carried {
+                return Err(Error::simple(
+                    SolverDomain::Digital,
+                    format!(
+                        "{}: the net `{}` has an initial value that no carrier of `{}` bound to it holds; \
+                         a net's `init` reaches the solver as the initial value of the carrier that declares it",
+                        net.origin(),
+                        net.path(),
+                        declarer.path()
+                    ),
+                ));
+            }
         }
         for instance in self.ir.instances() {
             let body = instance.body();
             for (c, carrier) in body.carriers().iter().enumerate() {
-                if carrier.role != CarrierRole::Signal {
+                if BodyPlan::carrier_is_port(body, c as u32) {
                     continue;
                 }
                 let Some(net) = instance.net(c) else { continue };
-                if let Some(child) = net.instances().first() {
+                if let Some(other) = net.instances().into_iter().find(|i| i.path() != instance.path()) {
                     return Err(Error::simple(
                         SolverDomain::Digital,
                         format!(
-                            "{}: the signal `{}` of `{}` is the net `{}` that the carrier ports of `{}` meet on; \
-                             a parent's signal bound to its children's ports is not supported yet (msl-digital)",
+                            "{}: the signal `{}` of `{}` is the net `{}` that `{}` meets it on, but body `{}` binds it \
+                             to no child (its placements record no carrier binding)",
                             carrier.origin,
                             carrier.name,
                             instance.path(),
                             net.path(),
-                            child.path()
+                            other.path(),
+                            body.name()
                         ),
                     ));
                 }

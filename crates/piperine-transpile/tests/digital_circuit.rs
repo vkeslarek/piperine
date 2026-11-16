@@ -2,17 +2,18 @@
 //! RS-01 AC 1; checks C98, C99): the oscillator drives the flip-flop through a design net and
 //! the flip-flop's output is read by its net name on the solver; the ten bodies of the slice
 //! compile together with the compiler's standard error empty. Expected values are written from
-//! the MSL the bodies transcribe (`dpwm.msl`, `lib.msl`), not from the printed source. The
-//! wiring the netlist cannot give the solver yet is refused by name (checks C106, C107;
-//! verification F-B1, F-B2).
+//! the MSL the bodies transcribe (`dpwm.msl`, `lib.msl`), not from the printed source. A parent's
+//! `signal` its children's carrier ports are bound to is the net they meet on, and a net starts
+//! at its own `init` (msl-digital T65, checks C175, C176; `ir-rust` F-B1, F-B2, whose refusals
+//! these runs replace).
 #![cfg(unix)]
 
 use std::sync::Arc;
 
-use piperine_abi::layout::HIGH;
-use piperine_abi::raw::Module;
+use piperine_abi::layout::{HIGH, LOW};
 use piperine_ir::{
-    BodyId, BodySpec, Carrier, CarrierRole, Constant, InstanceSpec, Ir, IrBuilder, NetSpec, Origin, ValueType,
+    BodyId, BodySpec, Carrier, CarrierRole, Child, Constant, Event, EventSource, InstanceSpec, Ir, IrBuilder, NetSpec, Origin, Reaction,
+    UnaryOp, ValueType,
 };
 use piperine_plan::{Modules, Netlist};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
@@ -46,22 +47,6 @@ fn settings(cache: &tempfile::TempDir) -> Settings {
 /// flip-flop samples a high level: `q` is true from then on. With `d_on_the_clock` false, `d`
 /// is on a net of its own that nothing writes: unknown, so `q` never becomes true.
 fn oscillator_into_flip_flop(d_on_the_clock: bool) -> Ir {
-    oscillator_into_flip_flop_with(d_on_the_clock, Wiring::Ports)
-}
-
-/// How the design of `oscillator_into_flip_flop_with` holds its clock net.
-#[derive(Clone, Copy, PartialEq)]
-enum Wiring {
-    /// `Top.clk` is a net of the top, met by the children's ports only.
-    Ports,
-    /// The top body declares `signal clk: Bit` and binds it to `Top.clk`, the net its children's
-    /// ports meet on.
-    ParentSignal,
-    /// `Top.clk` has its own initial value, `false`.
-    NetInit,
-}
-
-fn oscillator_into_flip_flop_with(d_on_the_clock: bool, wiring: Wiring) -> Ir {
     let mut b = IrBuilder::new();
     let osc = Buck::osc(&mut b);
     let dff = Buck::dff(&mut b);
@@ -99,20 +84,12 @@ fn oscillator_into_flip_flop_with(d_on_the_clock: bool, wiring: Wiring) -> Ir {
     };
     let osc_instance = place(&mut b, "osc", osc, vec![Constant::Real(piperine_ir::Real::new(200e6))]);
     let ff_instance = place(&mut b, "ff", dff, vec![]);
-    let net = |b: &mut IrBuilder, path: &str, init: Option<Constant>| {
-        b.net(NetSpec { path: path.into(), ty: ValueType::Bool, declared_by: top, init, origin: at() })
+    let net = |b: &mut IrBuilder, path: &str| {
+        b.net(NetSpec { path: path.into(), ty: ValueType::Bool, declared_by: top, init: None, origin: at() })
     };
-    let clk_init = (wiring == Wiring::NetInit).then_some(Constant::Bool(false));
-    let clk = net(&mut b, "Top.clk", clk_init);
-    if wiring == Wiring::ParentSignal {
-        b.carrier(
-            top_body,
-            Carrier { name: "clk".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: at() },
-        );
-        b.bind_nets(top, vec![clk]);
-    }
-    let q = net(&mut b, "Top.q", None);
-    let d = if d_on_the_clock { clk } else { net(&mut b, "Top.d", None) };
+    let clk = net(&mut b, "Top.clk");
+    let q = net(&mut b, "Top.q");
+    let d = if d_on_the_clock { clk } else { net(&mut b, "Top.d") };
     // Osc: clk; Dff: clk, d, q
     b.bind_nets(osc_instance, vec![clk]);
     b.bind_nets(ff_instance, vec![clk, d, q]);
@@ -201,44 +178,93 @@ fn every_buck_slice_body_compiles_with_no_warning() {
     assert_eq!(ir.bodies().filter(|b| Modules::module(&compiled, b.id()).is_some()).count(), 10);
 }
 
-/// A design whose bodies run nowhere: the netlist's refusals come before any module is asked for.
-struct NoModules;
-
-impl Modules for NoModules {
-    fn module(&self, _: BodyId) -> Option<&'static Module> {
-        None
-    }
+/// The flip-flop clocked by a `signal` of its parent:
+///
+/// ```text
+/// module Top() {
+///     signal clk: Bit = <init>;
+///     ff = Dff(clk: clk, d: clk, q: q);         // `bound`; else ff's clk and d are on a net of their own
+/// }
+/// digital for Top { on clk.changed() { clk <- !clk after 2.5n; } }
+/// ```
+///
+/// The top body records the placement and what its carrier ports are bound to
+/// (`Body::child_carriers`, as the elaborator does for every placement), and `Top.clk` is the
+/// net its signal declares, with the signal's initial value as its own (msl-digital T28).
+fn parent_clocked(bound: bool, init: Option<bool>) -> Ir {
+    let mut b = IrBuilder::new();
+    let dff = Buck::dff(&mut b);
+    let top_body = b.body(BodySpec {
+        children: vec![Child { name: "ff".into(), body: dff, nodes: vec![], params: vec![], origin: at() }],
+        ..Buck::spec("Top", "top.msl", 1)
+    });
+    let init = init.map(Constant::Bool);
+    b.carrier(top_body, Carrier { name: "clk".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init, origin: at() });
+    // the ports of `Dff` are clk, d, q: clk and d on the signal, q on a net of the top
+    let bindings = if bound { vec![Some(0), Some(0), None] } else { vec![None, None, None] };
+    b.bind_child_carriers(top_body, 0, bindings);
+    let changed = b.event(top_body, Event { source: EventSource::Changed(0), guard: None, origin: at() });
+    let mut x = digital::Dx::new(&mut b, "top.msl", 6, 40);
+    let clk = x.carrier(0, ValueType::Bool);
+    let toggled = x.un(UnaryOp::Not, clk, digital::Ty::flagged(ValueType::Bool));
+    let half = x.real(2.5e-9);
+    let commit = x.commit(0, toggled, Some(half));
+    b.reaction(top_body, Reaction { on: vec![changed], stmts: vec![commit], locals: vec![], origin: at() });
+    let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![], params: vec![], origin: at() });
+    let ff = b.instance(InstanceSpec { path: "Top.ff".into(), name: "ff".into(), body: dff, parent: Some(top), nodes: vec![], params: vec![], origin: at() });
+    let net = |b: &mut IrBuilder, path: &str, init: Option<Constant>| {
+        b.net(NetSpec { path: path.into(), ty: ValueType::Bool, declared_by: top, init, origin: at() })
+    };
+    let clk = net(&mut b, "Top.clk", init);
+    let q = net(&mut b, "Top.q", None);
+    let ff_clk = if bound { clk } else { net(&mut b, "Top.ff_clk", None) };
+    b.bind_nets(top, vec![clk]);
+    b.bind_nets(ff, vec![ff_clk, ff_clk, q]);
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "the fixture passes check()");
+    ir
 }
 
 #[test]
-fn a_parent_signal_its_children_meet_on_is_refused() {
+fn a_parent_signal_reaches_its_childrens_ports() {
     // part II §5: a parent's `signal` is the net its children's ports meet on, so the parent's
-    // drives and commits reach them; the builder cannot bind a private pin to a named net yet, so
-    // the netlist refuses the design by name instead of leaving the parent's pin disconnected
-    // (verification F-B1; the binding is msl-digital's)
-    let ir = oscillator_into_flip_flop_with(true, Wiring::ParentSignal);
-    let error = match Netlist::new(&ir).circuit(&NoModules) {
-        Ok(_) => panic!("a parent signal on its children's net gave a circuit"),
-        Err(e) => e.to_string(),
-    };
-    for named in ["signal `clk`", "`Top`", "net `Top.clk`", "`Top.osc`", "not supported yet"] {
-        assert!(error.contains(named), "the error names {named}: {error}");
-    }
-    // the same design with the net held by the children's ports alone is a circuit
-    assert!(Netlist::new(&oscillator_into_flip_flop(true)).circuit(&NoModules).is_ok());
+    // commits reach them. The parent toggles clk every 2.5 ns from false, so its first rise is
+    // at 2.5 ns, where the flip-flop samples d (clk itself, high): q is true from then on
+    assert_eq!(q_after(parent_clocked(true, Some(false))), HIGH, "q holds the level d had at the first rising edge");
+    // the binding is what carries it: with ff's clk and d on a net of their own, nothing writes
+    // them, the flip-flop sees no edge and q never leaves its initial value (`q: Bit = false`,
+    // abi.md §11.4: q is `init LOW`)
+    assert_eq!(q_after(parent_clocked(false, Some(false))), LOW, "q is never true with the signal bound to no child");
+    // the signal is a PORT pin of the top's shape, and the shape is valid (abi.md §3.1: a PORT is
+    // bound by the netlist)
+    let ir = parent_clocked(true, Some(false));
+    let plan = piperine_plan::BodyPlan::new(ir.top().body());
+    let shape = plan.shape().shape();
+    let clk = shape.pins.iter().find(|p| p.name.as_str() == "clk").expect("the signal's pin");
+    assert_eq!(clk.role, piperine_abi::raw::role::PORT);
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
 
 #[test]
-fn a_net_with_its_own_init_is_refused() {
-    // part II §5: a net's `init` is its value before any write; the builder has no way to take it
-    // yet, and dropping it would leave the net unknown where the source says `false`, so the
-    // netlist refuses the design naming the net (verification F-B2; passing it is msl-digital's)
-    let ir = oscillator_into_flip_flop_with(true, Wiring::NetInit);
-    let error = match Netlist::new(&ir).circuit(&NoModules) {
-        Ok(_) => panic!("a net with its own init gave a circuit"),
-        Err(e) => e.to_string(),
+fn a_net_starts_at_its_own_init() {
+    use piperine_digital_solver::engine::{Horizon, Mode};
+    use piperine_digital_solver::tick::Tick;
+    // part II §5: a net's `init` is its value before any write. At (0, 0) the parent's
+    // reaction has only scheduled its first toggle (2.5 ns later): the net holds its init
+    let clk_at_start = |init: Option<bool>| {
+        let ir = Arc::new(parent_clocked(true, init));
+        let cache = tempfile::tempdir().expect("a temp dir");
+        let compiled = Transpiler::new(ir.clone()).unwrap_or_else(|e| panic!("{e}")).compile(&settings(&cache)).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(compiled.report().warnings, "");
+        let mut circuit = Netlist::new(&ir).circuit(&compiled).unwrap_or_else(|e| panic!("{e}"));
+        let bound = circuit.bound_mut().expect("a bound circuit");
+        let net = *bound.names.nets.get("net:Top.clk").unwrap_or_else(|| panic!("no net `Top.clk`"));
+        bound.digital.start().unwrap_or_else(|e| panic!("{e:?}"));
+        bound.digital.run_instant(Tick(0), &[], Horizon::uniform(Tick(0)), Mode::default()).unwrap_or_else(|e| panic!("{e:?}"));
+        bound.digital.read(net).to_vec()
     };
-    for named in ["net `Top.clk`", "initial value", "top.msl:1:1", "not supported yet"] {
-        assert!(error.contains(named), "the error names {named}: {error}");
-    }
+    assert_eq!(clk_at_start(Some(false)), LOW, "the net's init, false");
+    assert_eq!(clk_at_start(Some(true)), HIGH, "the net's init, true");
+    // with no init the net holds no value at (0, 0): all zero, unknown (abi.md P3)
+    assert_eq!(clk_at_start(None), [0, 0]);
 }

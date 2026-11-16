@@ -648,6 +648,12 @@ impl BodyPlan {
             .collect()
     }
 
+    /// Whether carrier `c` of `body` is a `PORT` pin of its shape, bound by the netlist to the
+    /// instance's net: an `in` or `out` port, or a `signal` a child's carrier port is bound to.
+    pub fn carrier_is_port(body: Body<'_>, c: u32) -> bool {
+        Digital::is_port(body, c)
+    }
+
     /// The shape every instance of this body gets.
     pub fn shape(&self) -> &ShapeRef {
         &self.shape
