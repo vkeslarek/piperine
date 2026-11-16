@@ -1513,3 +1513,43 @@ fn a_model_constant_hides_the_prelude_constant() {
     assert_eq!(hits("Q"), 1, "the root's `Q` resolves to the root declaration, not the prelude's");
     assert_eq!(hits("PI"), 1, "the root's `PI` resolves to `m::PI`, not the prelude's");
 }
+
+#[test]
+fn a_body_let_gives_its_module_only_the_names_of_its_own_pattern() {
+    // msl-digital T66 (verification F8): a module-body `let` contributes to its module's members
+    // the names its own pattern binds (`p`, `q`, `a`, `b`), which later `let`s read. A name bound
+    // inside its value - a `match` arm's `Some(v)`, an `if let Some(w)` - belongs to that arm
+    // alone: read in the arm it resolves to the arm's binding, read in another `let` it is no
+    // member and is `E0161`.
+    let src = "module M() {\n\
+               o: Option<f64> = None;\n\
+               let (p, q) = (1.0, 2.0);\n\
+               let a = match o { Some(v) => v + 1.0, None => 0.5 };\n\
+               let b = if let Some(w) = o { w * 2.0 } else { 0.0 };\n\
+               let c = p + q + a + b;\n\
+               let d = v;\n\
+               let e = w;\n\
+               }\n";
+    let design = build(src);
+    let errors = with_code(&design, "E0161");
+    let names: Vec<&str> = errors.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(names, ["v", "w"], "{:?}", design.diagnostics());
+    let module = design.module("M").expect("M").decl();
+    let bindings: Vec<&str> = module.children().into_iter().flat_map(|l| l.children()).filter_map(|b| b.name()).collect();
+    for name in ["p", "q", "a", "b", "c", "d", "e"] {
+        assert!(bindings.contains(&name), "`{name}` is a binding of the body: {bindings:?}");
+        // `c` reads `p`, `q`, `a` and `b` as the module's own bindings
+        if ["p", "q", "a", "b"].contains(&name) {
+            let binding = module.children().into_iter().flat_map(|l| l.children()).find(|b| b.name() == Some(name)).expect(name).id();
+            assert_eq!(one(&design, name), [Resolution::Decl(binding)], "`{name}` in `c`");
+        }
+    }
+    // inside its arm, `v` and `w` resolve to the arm's own binding, not to a member
+    for name in ["v", "w"] {
+        let all = resolutions(&design, name);
+        assert_eq!(all.len(), 2, "`{name}` is read in its arm and in a later `let`");
+        let Resolution::Decl(binding) = all[0][0] else { panic!("`{name}` in its arm resolves: {:?}", all[0]) };
+        assert_eq!(design.decl(binding).name(), Some(name));
+        assert_eq!(all[1], [Resolution::Unresolved], "`{name}` in a later `let` is no member");
+    }
+}
