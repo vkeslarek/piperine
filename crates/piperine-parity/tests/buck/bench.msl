@@ -1,0 +1,25 @@
+//! The benches of phase 9: modules of the buck package placed under a top, with every input a
+//! signal of its own initial value, the clock the package's `Osc`.
+use buck::dpwm::{Dpwm, Osc};
+
+/// The oscillator alone (SPEC §2: 200 MHz).
+module OscBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+}
+
+/// The oscillator into the DPWM, `run` true, the duty word 1325 and both current limits known
+/// false.
+module DpwmBench() {
+    signal clk: Bit;
+    signal run: Bit = true;
+    signal duty: Bit<u12> = 1325;
+    signal oc: Bit = false;
+    signal sink_oc: Bit = false;
+    signal hs: Bit;
+    signal ls: Bit;
+    signal sample: Bit;
+    signal cut: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let dpwm = Dpwm(clk, run, duty, oc, sink_oc, hs, ls, sample, cut);
+}
