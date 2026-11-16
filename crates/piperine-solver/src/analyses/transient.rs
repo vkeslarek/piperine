@@ -1125,7 +1125,10 @@ impl TransientSolver<'_> {
             Some(x) => self.system.circuit.netlist().initial_values(&self.values_of(x)),
         };
         let x = {
-            let mut dc = DcSolver::new(self.system.circuit, Context::default())?;
+            // The session's context: its gmin, the one the transient's reactions read, and its
+            // tolerances.
+            let context = self.system.context.clone();
+            let mut dc = DcSolver::new(self.system.circuit, context)?;
             dc.system.uic_clamps = uic_clamps.clone();
             dc.apply_initial_conditions(guess);
             dc.equilibrium(true)?

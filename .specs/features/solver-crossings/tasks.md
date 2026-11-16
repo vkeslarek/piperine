@@ -343,6 +343,9 @@ Proof: run solver | test a_landing_costs_a_few_steps_not_a_regrowth ... ok
 **C28** - A `CROSS` design started at a 1 fs step grows back to the 1 µs grid within 60 extra steps; with the controller grown from the floored step it exhausts a 5000-step budget in under 2 s instead of hanging (SCX-01; verification finding)
 Proof: run solver | test steps_of_a_few_ticks_grow_back ... ok
 
+**C29** - An analog function and the reaction of a transient's operating point read one `GMIN`, the session's 3e-12 S: v(out) = gmin·1e12 = 3 V from t = 0 (1 V at t = 0 when the transient's operating point used the default context) (ENV-03, AC 3; verification finding)
+Proof: run solverenv | test analog_and_reactions_read_one_gmin_at_the_transient_start ... ok
+
 **C4** - On the solver, `x <- HIGH; x <- LOW;` on `x = LOW` fires `x.changed()` once in the run, at the initial value (DSV-01, AC 4)
 Proof: run solver | test x_changed_does_not_fire_when_the_settled_value_is_unchanged ... ok
 

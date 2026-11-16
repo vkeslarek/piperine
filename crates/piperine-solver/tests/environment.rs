@@ -21,8 +21,8 @@ use abi_devices::{add_resistor, add_vsrc};
 use abi_mixed::delay;
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::F64;
-use piperine_abi::raw::{Cell, Module, Shape, Statement, ambient, cell, global, part, role};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
+use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, Statement, ambient, cell, global, op, part, role};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, Context, Solver, TransientAnalysisOptions};
@@ -105,6 +105,7 @@ fn probe() -> &'static Module {
 #[test]
 fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("EnvProbe", probe());
+    partials::verify_every_function("GminLoad", gmin_load());
 }
 
 /// A divider (so the circuit has analog unknowns) and the probe, its `go` kicked at 100 ns; the
@@ -161,4 +162,77 @@ fn a_discrete_function_reads_gmin_and_source_scale() {
     assert_eq!([carrier(&solver, "fg"), carrier(&solver, "fs")], [GMIN, 1.0]);
     solver.tran().expect("tran").solve().expect("the transient");
     assert_eq!([carrier(&solver, "fg"), carrier(&solver, "fs")], [GMIN, 1.0]);
+}
+
+/// Draws `gmin · 1e9` amperes out of `p`, `gmin` its ambient `GMIN`: into 1 kΩ, v(p) = gmin · 1e12.
+/// pins: p=0 (PORT continuous);  terms: T0 FLOW{p, GROUND} "i";  fn 0: reads [p, GMIN] writes [T0]
+struct GminLoad;
+static LOAD_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static LOAD: OnceLock<Module> = OnceLock::new();
+
+fn load_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: GROUND, abstol: DEFAULT, max: DEFAULT });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![Cell { kind: cell::PIN, index: p, part: part::VALUE }, Cell { kind: cell::AMBIENT, index: ambient::GMIN, part: part::VALUE }],
+        writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for GminLoad {
+    fn prototype() -> &'static Shape<'static> {
+        LOAD_SHAPE.get_or_init(load_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((GminLoad, Arc::clone(LOAD_SHAPE.get_or_init(load_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let gmin = cx.f64(1);
+        cx.set(0, -gmin * 1.0e9);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+fn gmin_load() -> &'static Module {
+    LOAD.get_or_init(|| module::<GminLoad>("GminLoad"))
+}
+
+#[test]
+fn analog_and_reactions_read_one_gmin_at_the_transient_start() {
+    // ENV-03 AC 3 (verification finding): the transient's operating point solves with the
+    // session's context, so an analog function reads the session's GMIN there, as the reaction
+    // of that operating point does. gmin = 3e-12 S drawn as gmin·1e9 A into 1 kΩ: v(out) = 3 V at
+    // t = 0 and after (the default 1e-12 S would give 1 V at t = 0).
+    let mut b = CircuitBuilder::new("gmin");
+    let gnd = b.ground();
+    let out = b.node("out");
+    add_resistor(&mut b, "r1", 1.0e3, &out, &gnd);
+    b.device(gmin_load(), "g", &[], &[Port::Node(out.clone())]);
+    b.device(delay(), "kick", &[("at", ParamValue::Real(1.0e-7))], &[Port::Net("go".into())]);
+    let ports: Vec<Port> = ["fg", "fs", "rt", "rg", "rs", "go"].map(|n| Port::Net(n.into())).into();
+    b.device(probe(), "env", &[], &ports);
+    let mut context = Context::default();
+    context.tolerances.gmin = GMIN;
+    let mut solver = Solver::new(b.build().expect("build"))
+        .with_context(context)
+        .with_tran_opts(TransientAnalysisOptions::new(2.0e-7, 1.0e-8))
+        .build();
+    READ.with(|r| r.borrow_mut().clear());
+    let result = solver.tran().expect("tran").solve().expect("the transient");
+    let read_at_start = READ.with(|r| r.borrow()[0][1]);
+    assert_eq!(read_at_start, GMIN, "the reaction of the transient's operating point");
+    let id = abi_devices::node_id(&out);
+    for s in result.iter() {
+        let v = s.get_node(&id).expect("v(out)");
+        assert!((v - read_at_start * 1.0e12).abs() < 1.0e-9, "v(out) = {v} at t = {:e}: gmin as the analog side read it", s.time());
+    }
+    assert_eq!(result.iter().next().expect("t = 0").time(), 0.0);
 }
