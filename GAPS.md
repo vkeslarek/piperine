@@ -22,7 +22,7 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 | type check (`msl-typeck`) | the M1 subset; anything else is `P0001` |
 | elaboration → IR → interpreter → solver | analog only: R, C, V/I sources, diode with `limit`/`pnjlim`; OP, DC, AC, transient |
 | ngspice parity | 7 fixtures in `tests/ngspice/`, all green |
-| IR → Rust → `rustc` → ABI (`ir-rust`) | phase A merged: the M1 analog subset compiles to Rust, bit-equal to the interpreter, 7 twins green on both backends (`PIPERINE_BACKEND`); phase B (digital) in progress |
+| IR → Rust → `rustc` → ABI (`ir-rust`) | both phases merged: the M1 analog subset compiles to Rust, bit-equal to the interpreter, 7 twins green on both backends (`PIPERINE_BACKEND`); the digital/mixed buck slice runs from hand-built IR on the solver; the source path (MSL to IR) is `msl-digital` |
 | digital and mixed-signal execution | **none**: they parse and resolve, nothing runs them |
 | CLI / host API / LSP | **do not build** (§2) |
 
