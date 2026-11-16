@@ -1208,11 +1208,11 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] The comparator's trip times are judged by the analytic RC voltage at each time against the threshold under `TRAN_VOLTAGE`; no time tolerance is written
-- [ ] A solver defect on this path stops the task and is reported with a hand-written ABI device that reproduces it
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test boundary`: `the_adc_commits_the_rounded_code_after_tconv`, `the_comparator_trips_at_its_thresholds`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] The comparator's trip times are judged by the analytic RC voltage at each time against the threshold under `TRAN_VOLTAGE`; no time tolerance is written
+- [x] A solver defect on this path stops the task and is reported with a hand-written ABI device that reproduces it
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test boundary`: `the_adc_commits_the_rounded_code_after_tconv`, `the_comparator_trips_at_its_thresholds`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

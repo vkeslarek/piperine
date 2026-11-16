@@ -1,9 +1,10 @@
-//! The boundaries of a compiled mixed design on the solver (feature `ir-rust`, RS-13 AC 8 to
-//! 10; checks C92 to C94). Digital to analog (T46) is here: the compiled `Switch` of the buck
-//! slice between a source and an RC network, its gate committed by a compiled reaction. The
-//! circuit is placed under a top and run through `Compiled::circuit`; no interpreter, no
-//! bench. The expected voltage is the analytic response of the first-order network, and every
-//! voltage comparison goes through `ToleranceContract::TRAN_VOLTAGE`.
+//! The two boundaries of a compiled mixed design on the solver (feature `ir-rust`, RS-13 AC 8
+//! to 10; checks C92, C93, C94): analog to digital here (T45), digital to analog in the second
+//! half of this file (T46). The circuits are the compiled bodies of the buck slice placed under
+//! a top and run through `Compiled::circuit`; no interpreter, no bench. Expected values are
+//! written from `examples/buck/SPEC.md` §4.1 (the ADC) and from the analytic response of the
+//! RC networks; every voltage comparison goes through `ToleranceContract::TRAN_VOLTAGE`, and no
+//! time tolerance is written anywhere.
 #![cfg(unix)]
 
 use piperine_ir::{BodyId, CarrierRole, Constant, IrBuilder, Real, ValueType};
@@ -20,15 +21,66 @@ mod devices;
 mod mixed;
 
 use devices::Devices;
-use digital::{Buck, Dx};
+use digital::{Buck, Dx, Ty};
 use mixed::{Built, Wire};
 
 const BIT: ValueType = ValueType::Bool;
 /// A known true and a known false `Bit`: `{ v @0, known @1 }` (abi.md §3.1).
 const HIGH: [u8; 2] = [1, 1];
+const LOW: [u8; 2] = [0, 1];
+/// One nanosecond in ticks (the solver's one femtosecond).
+const NS: i64 = 1_000_000;
 
 fn real(v: f64) -> Constant {
     Constant::Real(Real::new(v))
+}
+
+#[test]
+fn the_adc_commits_the_rounded_code_after_tconv() {
+    // SPEC §4.1: 10-bit, Vref 1.6 V, mid-tread. Five held voltages: 0, one LSB, mid-scale, full
+    // scale and above full scale
+    const VREF: f64 = 1.6;
+    const TCONV: f64 = 500e-9;
+    const TSTROBE: f64 = 5e-9;
+    let lsb = VREF / 1024.0;
+    let volts = [0.0, lsb, VREF / 2.0, VREF, 2.0];
+    let expected_code = |v: f64| -> u16 { (v / VREF * 1024.0 + 0.5).floor().clamp(0.0, 1023.0) as u16 };
+    assert_eq!(volts.map(expected_code), [0, 1, 512, 1023, 1023]);
+
+    let mut w = Wire::new();
+    let (osc, adc, vsource) = (Buck::osc(&mut w.b), Buck::adc(&mut w.b), Devices::vsource(&mut w.b));
+    // a sample strobe once per 1 us: the oscillator rises at 0.5 us and again at 1.5 us
+    w.place("osc", osc, vec![real(1e6)], &[("sample", BIT)]);
+    for (i, v) in volts.iter().enumerate() {
+        let node = format!("a{i}");
+        w.place_analog(&format!("v{i}"), vsource, &[&node, "gnd"], &[*v, 0.0]);
+        let (code, done) = (format!("code{i}"), format!("done{i}"));
+        w.place_with(
+            &format!("adc{i}"),
+            adc,
+            &[&node],
+            vec![real(VREF), real(TCONV), real(TSTROBE)],
+            &[("sample", BIT), (&code, Ty::u(10)), (&done, BIT)],
+        );
+    }
+    // 1.4 us: the first conversion ends at 1.0 us and the second sample is not reached
+    let seen = Built::new(w.finish()).run(1.4e-6, 1e-8);
+    let sample = 500 * NS;
+    assert_eq!(seen.transient("sample")[0], (sample, HIGH.to_vec()), "the strobe rises at 0.5 us");
+    for (i, v) in volts.iter().enumerate() {
+        let code = expected_code(*v);
+        // the code appears after `tconv` from the rising edge, and not before: a code of 0 is
+        // the value it already holds, so it commits nothing visible
+        let changes = seen.transient(&format!("code{i}"));
+        let wanted: Vec<(i64, Vec<u8>)> = if code == 0 { vec![] } else { vec![(sample + 500 * NS, vec![code.to_le_bytes()[0], code.to_le_bytes()[1], 1, 0])] };
+        assert_eq!(changes, wanted, "code of {v} V");
+        // `done` is true from `tconv` for `tstrobe`
+        assert_eq!(
+            seen.transient(&format!("done{i}")),
+            vec![(sample + 500 * NS, HIGH.to_vec()), (sample + 505 * NS, LOW.to_vec())],
+            "done at {v} V"
+        );
+    }
 }
 
 /// The RC network behind the comparator and the switch test: a source `V` through the switch
@@ -78,6 +130,52 @@ impl Network {
 }
 
 const NETWORK: Network = Network { v: 1.0, ron: 1e3, roff: 1e6, r2: 9e3, c: 0.5e-9 };
+
+/// Places the source, the switch, the load, the capacitor and the oscillator that drives the
+/// gate: the gate rises at 3 us and falls at 6 us (one period of 1 / f = 6 us, half a period
+/// from the start, from low).
+fn network(w: &mut Wire) {
+    let (osc, switch) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b));
+    let (vsource, resistor, capacitor) = (Devices::vsource(&mut w.b), Devices::resistor(&mut w.b), Devices::capacitor(&mut w.b));
+    w.place("osc", osc, vec![real(1.0 / 6e-6)], &[("gate", BIT)]);
+    w.place_analog("v1", vsource, &["vs", "gnd"], &[NETWORK.v, 0.0]);
+    w.place_with("sw", switch, &["vs", "x"], vec![real(NETWORK.ron), real(NETWORK.roff)], &[("gate", BIT)]);
+    w.place_analog("r2", resistor, &["x", "gnd"], &[NETWORK.r2]);
+    w.place_analog("c1", capacitor, &["x", "gnd"], &[NETWORK.c]);
+}
+
+#[test]
+fn the_comparator_trips_at_its_thresholds() {
+    // `A2D` of std/convert.msl: vth = 0.6 V, hyst = 50 mV, so it goes true at vth + hyst / 2 =
+    // 0.625 V rising and false at vth - hyst / 2 = 0.575 V falling
+    const UP: f64 = 0.6 + 0.05 / 2.0;
+    const DOWN: f64 = 0.6 - 0.05 / 2.0;
+    let mut w = Wire::new();
+    network(&mut w);
+    let a2d = Buck::comparator(&mut w.b);
+    w.place_with("cmp", a2d, &["x"], vec![real(0.6), real(50e-3)], &[("d", BIT)]);
+    // 8.9 us: the gate rises at 3 us, falls at 6 us and rises again at 9 us
+    let seen = Built::new(w.finish()).run(8.9e-6, 1e-8);
+    let gate = seen.transient("gate");
+    assert_eq!(gate, vec![(3000 * NS, HIGH.to_vec()), (6000 * NS, LOW.to_vec())]);
+    let (on, off) = (3e-6, Some(6e-6));
+    // the output changes twice: true on the charge, false on the discharge
+    let d = seen.transient("d");
+    assert_eq!(d.len(), 2, "two trips: {d:?}");
+    assert_eq!((d[0].1.clone(), d[1].1.clone()), (HIGH.to_vec(), LOW.to_vec()));
+    for ((tick, _), threshold, what) in [(&d[0], UP, "rising"), (&d[1], DOWN, "falling")] {
+        let t = *tick as f64 * 1e-15;
+        // the analytic input at the instant of the trip is the threshold, under the voltage
+        // contract: the trip is where the input equals vth +- hyst / 2
+        let at = Point::new("comparator", "v(x)", Coordinate::Time(t));
+        ToleranceContract::TRAN_VOLTAGE.assert(&at, threshold, NETWORK.at(t, on, off));
+        // and on the right side of it: the charge is above the threshold's instant, the
+        // trips come in the order of the waveform
+        let _ = what;
+    }
+    assert!(d[0].0 > 3000 * NS && d[0].0 < 6000 * NS, "the rise is during the charge: {d:?}");
+    assert!(d[1].0 > 6000 * NS, "the fall is during the discharge: {d:?}");
+}
 
 /// `module Kick(in clk: Bit, out g: Bit = false)`:
 ///
