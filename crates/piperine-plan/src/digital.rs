@@ -438,7 +438,8 @@ impl Commits {
             | Expr::Env(_)
             | Expr::Int(_)
             | Expr::Unknown
-            | Expr::Carrier(_) => {}
+            | Expr::Carrier(_)
+            | Expr::Flow { .. } => {}
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => each(&[*expr]),
             Expr::Binary { lhs, rhs, .. } => each(&[*lhs, *rhs]),
             Expr::KnownOr { value, default } => each(&[*value, *default]),

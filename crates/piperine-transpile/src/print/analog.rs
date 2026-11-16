@@ -230,6 +230,9 @@ impl<'a> AnalogPrinter<'a> {
                     sources.insert(Source::Carrier(*c));
                 }
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => {}
+                // The plan does not read a branch's flow yet (msl-digital T45); `Amended` refuses
+                // the form before any is printed.
+                Expr::Flow { .. } => {}
             }
         }
     }

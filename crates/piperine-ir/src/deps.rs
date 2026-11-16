@@ -90,29 +90,22 @@ impl<'a> Body<'a> {
     /// What `target` reads, through locals and function calls. A target out of range of the
     /// body panics, as a handle given an id out of range does.
     pub fn dependencies(&self, target: Target) -> Deps {
-        let deps = self.deps();
-        let (list, i, what) = match target {
-            Target::Flow(i) => (&deps.flow, i, "branch"),
-            Target::Charge(i) => (&deps.charge, i, "branch"),
-            Target::Limit(i) => (&deps.limits, i, "limit site"),
-            Target::Stim(i) => (&deps.stims, i, "ac_stim site"),
-            Target::Check(i) => (&deps.checks, i, "param"),
-            Target::Drive(i) => (&deps.drives, i, "drive"),
-            Target::DriveAfter(i) => (&deps.drive_afters, i, "drive"),
-            Target::Guard(i) => (&deps.guards, i, "event"),
-            Target::Cross(i) => (&deps.crosses, i, "event"),
-            Target::At(i) => (&deps.ats, i, "event"),
-            Target::Reaction(i) => (&deps.reactions, i, "reaction"),
-        };
-        match list.get(i as usize) {
-            Some(sources) => sources.to_deps(),
-            None => panic!("body {}: {what} {i} out of range ({} in the body)", self.name(), list.len()),
-        }
+        self.sources_of(target).to_deps()
     }
 
     /// The carriers `target` reads, by index (`Body::carriers`), sorted, through locals and
     /// function calls: the discrete part of its dependency set.
     pub fn carrier_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).carriers.iter().copied().collect()
+    }
+
+    /// The branches whose flow `target` reads (`Expr::Flow`), by index (`Body::branches`),
+    /// sorted, through locals and function calls: the flow part of its dependency set.
+    pub fn flow_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).flows.iter().copied().collect()
+    }
+
+    fn sources_of(&self, target: Target) -> &'a Sources {
         let deps = self.deps();
         let (list, i, what) = match target {
             Target::Flow(i) => (&deps.flow, i, "branch"),
@@ -128,7 +121,7 @@ impl<'a> Body<'a> {
             Target::Reaction(i) => (&deps.reactions, i, "reaction"),
         };
         match list.get(i as usize) {
-            Some(sources) => sources.carriers.iter().copied().collect(),
+            Some(sources) => sources,
             None => panic!("body {}: {what} {i} out of range ({} in the body)", self.name(), list.len()),
         }
     }
@@ -194,6 +187,8 @@ struct Sources {
     limits: BTreeSet<u32>,
     stims: BTreeSet<u32>,
     carriers: BTreeSet<u32>,
+    /// The branches whose flow is read (`Expr::Flow`).
+    flows: BTreeSet<u32>,
 }
 
 impl Sources {
@@ -204,6 +199,7 @@ impl Sources {
         self.limits.extend(&other.limits);
         self.stims.extend(&other.stims);
         self.carriers.extend(&other.carriers);
+        self.flows.extend(&other.flows);
     }
 
     fn to_deps(&self) -> Deps {
@@ -595,6 +591,16 @@ impl<'a> Walk<'a> {
                 sources.carriers.insert(*i);
                 return self.done(id, Value::of(sources, Class::Constant));
             }
+            Expr::Flow { branch } => {
+                if !in_body {
+                    self.refuse(id, "flow read outside a body");
+                }
+                // The flow of a branch is one more unknown of the system, as a node potential
+                // is: it reaches a sum affinely.
+                let mut sources = Sources::default();
+                sources.flows.insert(*branch);
+                return self.done(id, Value::of(sources, Class::Affine));
+            }
             Expr::Probe { plus, minus } => {
                 if !in_body {
                     self.refuse(id, "probe outside a body");
@@ -727,7 +733,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

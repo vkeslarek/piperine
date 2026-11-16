@@ -670,6 +670,7 @@ impl<'a> Printer<'a> {
             Expr::IsKnown(value) => next.extend([Piece::Expr(*value), text(".is_known()".into())]),
             Expr::High(value) => next.extend([Piece::Expr(*value), text(".high()".into())]),
             Expr::Carrier(i) => next.push(text(Printer::carrier(scope, *i))),
+            Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
         }
         if note {
             next.push(text(format!(" : {})", data.ty)));
@@ -732,7 +733,7 @@ impl<'a> Printer<'a> {
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
             Expr::Env(Env::Static) => Some(ValueType::Bool),
-            Expr::Real(_) | Expr::Math { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } => {
+            Expr::Real(_) | Expr::Math { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } => {
                 Some(ValueType::F64)
             }
             Expr::Bool(_) => Some(ValueType::Bool),
@@ -905,6 +906,7 @@ impl<'a> Printer<'a> {
             Expr::IsKnown(value) => format!("is_known {}", e(value)),
             Expr::High(value) => format!("high {}", e(value)),
             Expr::Carrier(i) => format!("carrier {i}"),
+            Expr::Flow { branch } => format!("flow b{branch}"),
         }
     }
 

@@ -62,6 +62,7 @@ impl Amended {
         match expr {
             Expr::Env(Env::Time) => Some("now()"),
             Expr::Env(Env::Static) => Some("analysis(Static)"),
+            Expr::Flow { .. } => Some("the flow of a potential branch"),
             _ => None,
         }
     }

@@ -22,7 +22,7 @@ const F: &str = "amended.msl";
 struct Case;
 
 impl Case {
-    fn design(build: impl FnOnce(&mut IrBuilder) -> Vec<Stmt>) -> Ir {
+    fn design(kind: BranchKind, build: impl FnOnce(&mut IrBuilder) -> Vec<Stmt>) -> Ir {
         let mut b = IrBuilder::new();
         let el = Buck::electrical(&mut b);
         let stmts: Vec<Stmt> = build(&mut b);
@@ -30,7 +30,7 @@ impl Case {
         let port = |name: &str, col| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 1, col) };
         let body = b.body(BodySpec {
             nodes: vec![port("p", 10), port("n", 18)],
-            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind }],
             analog: Some(analog),
             ..Buck::spec("Amended", F, 1)
         });
@@ -62,7 +62,7 @@ impl Case {
 fn time_and_static_are_refused_by_name() {
     // `i(p, n) +> v(p, n) * now();` at line 2, and `i(p, n) +> keep(analysis(Static));` through a
     // function at line 4.
-    let ir = Case::design(|b| {
+    let ir = Case::design(BranchKind::Flow, |b| {
         let mut x = Dx::new(b, F, 2, 20);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let o = x.origin();
@@ -75,7 +75,7 @@ fn time_and_static_are_refused_by_name() {
         Error::Unsupported { form: "now()".into(), path: "body Amended e1".into(), origin: Buck::origin(F, 2, 20) }
     );
 
-    let ir = Case::design(|b| {
+    let ir = Case::design(BranchKind::Flow, |b| {
         let mut x = Dx::new(b, F, 3, 5);
         let o = x.origin();
         let stat = x.b.expr(Expr::Env(Env::Static), ValueType::Bool, o);
@@ -138,5 +138,24 @@ fn an_emit_site_is_refused_by_name() {
     assert_eq!(
         Case::refused(b.finish(top)),
         Error::Unsupported { form: "emit!".into(), path: "body Monitor reaction 0 s1".into(), origin: Buck::origin(F, 3, 40) }
+    );
+}
+
+#[test]
+fn the_flow_of_a_potential_branch_is_refused_by_name() {
+    // `v(p, n) +> ddt(i(p, n));` at line 2: a potential contribution reading its own flow.
+    let ir = Case::design(BranchKind::Potential, |b| {
+        let x = Dx::new(b, F, 2, 24);
+        let o = x.origin();
+        let flow = x.b.expr(Expr::Flow { branch: 0 }, ValueType::F64, o);
+        vec![Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Potential,
+            addends: vec![Addend { operator: Operator::Ddt, negated: false, value: flow }],
+        }]
+    });
+    assert_eq!(
+        Case::refused(ir),
+        Error::Unsupported { form: "the flow of a potential branch".into(), path: "body Amended e0".into(), origin: Buck::origin(F, 2, 24) }
     );
 }

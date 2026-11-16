@@ -60,6 +60,8 @@ struct Owner {
     params: Vec<ValueType>,
     nodes: usize,
     branches: Vec<BranchKind>,
+    /// The branches the body's `analog` block contributes a potential to.
+    driven: BTreeSet<u32>,
     limits: usize,
     stims: usize,
     /// The carried types of the body's carriers.
@@ -143,6 +145,18 @@ impl<'a> Checker<'a> {
             }
             _ => false,
         }
+    }
+
+    /// The branches `body`'s `analog` block contributes a potential to.
+    fn potentials(ir: &Ir, body: &BodyData) -> BTreeSet<u32> {
+        body.analog
+            .iter()
+            .flatten()
+            .filter_map(|s| match ir.stmts.get(s.index()) {
+                Some(Stmt::Contribute { branch, quantity: QuantityRole::Potential, .. }) => Some(*branch),
+                _ => None,
+            })
+            .collect()
     }
 
     fn expr_origin(&self, id: ExprId) -> Origin {
@@ -332,7 +346,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } => {}
             Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
             Expr::IsKnown(value) | Expr::High(value) => exprs.push(*value),
             Expr::Cast { expr, .. } => exprs.push(*expr),
@@ -576,7 +590,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) => {}
+                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } => {}
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
                 Expr::KnownOr { value, default } => stack_e.extend([*value, *default]),
@@ -795,6 +809,7 @@ impl<'a> Checker<'a> {
                 params: body.params.iter().map(|p| p.ty.clone()).collect(),
                 nodes: body.nodes.len(),
                 branches: body.branches.iter().map(|b| b.kind).collect(),
+                driven: Checker::potentials(ir, body),
                 limits: body.limits.len(),
                 stims: body.stims.len(),
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
@@ -856,6 +871,7 @@ impl<'a> Checker<'a> {
                 params: Vec::new(),
                 nodes: 0,
                 branches: Vec::new(),
+                driven: BTreeSet::new(),
                 limits: 0,
                 stims: 0,
                 carriers: Vec::new(),
@@ -1248,6 +1264,18 @@ impl<'a> Checker<'a> {
                                 self.wrong(w, origin.clone(), format!("probe terminal node {i} out of range ({} nodes)", w.owner.nodes));
                             }
                         }
+                    }
+                }
+            }
+            Expr::Flow { branch } => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if !w.owner.in_body {
+                        self.wrong(w, origin.clone(), "a flow read outside a body".to_string());
+                    } else if *branch as usize >= w.owner.branches.len() {
+                        self.wrong(w, origin.clone(), format!("flow of branch {branch}, out of range ({} branches)", w.owner.branches.len()));
+                    } else if !w.owner.driven.contains(branch) {
+                        self.wrong(w, origin.clone(), format!("flow of branch {branch}, which the body does not drive with a potential contribution"));
                     }
                 }
             }

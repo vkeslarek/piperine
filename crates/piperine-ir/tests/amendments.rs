@@ -461,3 +461,115 @@ fn a_record_site_gives_its_stream_and_texts() {
     let fields: Vec<(&str, &ValueType)> = watch.streams()[0].fields.iter().map(|f| (f.name.as_str(), &f.ty)).collect();
     assert_eq!(fields, vec![("pass", &ValueType::Bool), ("margin", &ValueType::F64)]);
 }
+
+/// The power stage's inductor: its flow is read by the potential it contributes.
+///
+/// ```text
+/// module Inductor(p: Electrical, n: Electrical) { l: f64 = 10u where l > 0.0; r: f64 = 0.01; }   // 1
+/// analog { v(p, n) +> ddt(l * i(p, n)), r * i(p, n); }                                           // 2
+/// ```
+struct Inductor;
+
+impl Inductor {
+    const F: &'static str = "inductor.msl";
+
+    fn ir() -> Ir {
+        let mut b = IrBuilder::new();
+        let check = Buck::positive(&mut b, Inductor::F, 1, 60, 0);
+        let mut x = Dx::new(&mut b, Inductor::F, 2, 20);
+        let l = x.param(0, ValueType::F64);
+        let i = Read::flow(&mut x, 0);
+        let flux = x.bin(piperine_ir::BinaryOp::Mul, l, i, ValueType::F64);
+        let r = x.param(1, ValueType::F64);
+        let i = Read::flow(&mut x, 0);
+        let drop = x.bin(piperine_ir::BinaryOp::Mul, r, i, ValueType::F64);
+        let contribution = b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: piperine_ir::QuantityRole::Potential,
+            addends: vec![
+                piperine_ir::Addend { operator: piperine_ir::Operator::Ddt, negated: false, value: flux },
+                piperine_ir::Addend { operator: piperine_ir::Operator::Direct, negated: false, value: drop },
+            ],
+        });
+        let nodes = Design::ports(&mut b, Inductor::F);
+        let body = b.body(BodySpec {
+            params: vec![Buck::param("l", Inductor::F, 1, Some(10e-6), Some(check)), Buck::param("r", Inductor::F, 1, Some(0.01), None)],
+            nodes,
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Potential }],
+            analog: Some(vec![contribution]),
+            ..Buck::spec("Inductor", Inductor::F, 1)
+        });
+        Design::place(b, body, 2, &[], vec![Constant::Real(Real::new(10e-6)), Constant::Real(Real::new(0.01))])
+    }
+}
+
+impl Read {
+    fn flow(x: &mut Dx<'_>, branch: u32) -> ExprId {
+        let o = x.origin();
+        x.b.expr(Expr::Flow { branch }, ValueType::F64, o)
+    }
+}
+
+#[test]
+fn a_flow_read_and_a_potential_ddt_print_and_check() {
+    let ir = Inductor::ir();
+    // A potential contribution with a `ddt` addend, reading its own branch's flow, is well formed
+    // (contract D5: nothing in `check()` refuses `ddt` under a potential).
+    assert_eq!(ir.check(), vec![]);
+
+    // Printed as `flow(b0)`, typed `f64` by its form (no type note in the structural form).
+    Printed::holds(&ir, &["  analog", "    b0.potential +> ddt (l * flow(b0)), direct (r * flow(b0))"]);
+    assert!(!ir.print_structural().contains(" : "), "a type note was written:\n{}", ir.print_structural());
+    let full = ir.to_string();
+    assert!(full.contains("flow b0"), "flow b0 missing from:\n{full}");
+
+    // The `ddt` part reads `l` and the flow of branch 0; the direct part reads `r` and the flow.
+    // Neither reads a node: the flow is an unknown of its own, and a sum of flows scaled by a
+    // param stays affine.
+    let body = ir.top().body();
+    assert_eq!(body.dependencies(Target::Charge(0)), Deps { params: vec![0], ..Deps::default() });
+    assert_eq!(body.flow_reads(Target::Charge(0)), vec![0]);
+    assert_eq!(body.dependencies(Target::Flow(0)), Deps { params: vec![1], ..Deps::default() });
+    assert_eq!(body.flow_reads(Target::Flow(0)), vec![0]);
+    assert!(body.is_affine(0));
+    assert_eq!(body.carrier_reads(Target::Flow(0)), Vec::<u32>::new());
+    assert_eq!(body.flow_reads(Target::Check(0)), Vec::<u32>::new());
+
+    // A flow read of a branch the body does not drive with a potential, of a branch out of range,
+    // and one in a function are one entry each.
+    const F: &str = "bad.msl";
+    let mut b = IrBuilder::new();
+    let mut x = Dx::new(&mut b, F, 3, 14);
+    let flow_branch = Read::flow(&mut x, 0);
+    x.at(4, 14);
+    let missing = Read::flow(&mut x, 5);
+    x.at(2, 20);
+    let sensed = x.probe(Terminal::Node(0), Terminal::Node(1));
+    x.at(7, 30);
+    let in_function = Read::flow(&mut x, 0);
+    let first = b.stmt(Stmt::Expr(flow_branch));
+    let second = b.stmt(Stmt::Expr(missing));
+    let drive = b.stmt(Stmt::Contribute {
+        branch: 0,
+        quantity: piperine_ir::QuantityRole::Flow,
+        addends: vec![piperine_ir::Addend { operator: piperine_ir::Operator::Direct, negated: false, value: sensed }],
+    });
+    b.function(FunctionSpec { name: "peek".into(), origin: Design::origin(F, 7, 1), params: vec![], ret: ValueType::F64, locals: vec![], body: in_function });
+    let nodes = Design::ports(&mut b, F);
+    let body = b.body(BodySpec {
+        nodes,
+        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+        analog: Some(vec![drive, first, second]),
+        ..Buck::spec("Bad", F, 1)
+    });
+    let broken = Design::place(b, body, 2, &[], vec![]).check();
+    let one = |what: &str, line: u32| {
+        let hits: Vec<_> = broken.iter().filter(|e| e.what.contains(what)).collect();
+        assert_eq!(hits.len(), 1, "{what}: {broken:#?}");
+        assert_eq!(hits[0].origin.line, line, "{what}");
+    };
+    one("flow of branch 0, which the body does not drive with a potential contribution", 3);
+    one("flow of branch 5, out of range (1 branches)", 4);
+    one("a flow read outside a body", 7);
+    assert_eq!(broken.len(), 3, "{broken:#?}");
+}

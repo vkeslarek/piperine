@@ -668,10 +668,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] A potential contribution with a `Ddt` addend passes `check()` (contract.md D5: the merged `check()` has no rule against it to replace); a flow read of a branch with no potential contribution is one entry
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_flow_read_and_a_potential_ddt_print_and_check`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] A potential contribution with a `Ddt` addend passes `check()` (contract.md D5: the merged `check()` has no rule against it to replace); a flow read of a branch with no potential contribution is one entry
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_flow_read_and_a_potential_ddt_print_and_check`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full

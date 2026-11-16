@@ -290,6 +290,9 @@ pub enum Expr {
     High(ExprId),
     /// A read of a carrier of the body, by index; its type is `Flagged`.
     Carrier(u32),
+    /// `i(a, b)` of a branch the body drives with a potential contribution: the branch's flow,
+    /// an `f64`, by branch index. The branch carries a potential contribution in the body.
+    Flow { branch: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

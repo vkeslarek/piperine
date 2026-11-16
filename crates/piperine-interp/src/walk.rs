@@ -285,6 +285,7 @@ impl<'a> Walk<'a> {
             Expr::IsKnown(_) => "IsKnown",
             Expr::High(_) => "High",
             Expr::Carrier(_) => "Carrier",
+            Expr::Flow { .. } => "Flow",
         }
     }
 

@@ -461,7 +461,8 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Env(_)
             | Expr::Int(_)
             | Expr::Unknown
-            | Expr::Carrier(_) => {}
+            | Expr::Carrier(_)
+            | Expr::Flow { .. } => {}
         }
     }
 
@@ -669,6 +670,7 @@ impl<'a> ValuePrinter<'a> {
                 Ok(Piece::new(format!("|{}| {}", names.join(", "), self.expr(*body)?), Prec::Low))
             }
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
+            Expr::Flow { .. } => Err(self.unsupported(e, "the flow of a potential branch")),
             Expr::Limit { site, .. } => match self.analog.as_ref().and_then(|r| r.limits.get(*site as usize)) {
                 Some(name) => atom(name.clone()),
                 None => Err(self.unsupported(e, "limit")),
