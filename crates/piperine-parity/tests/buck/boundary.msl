@@ -1,0 +1,70 @@
+//! The analog to digital boundary of the buck package from MSL source (T50): the ADC on held
+//! voltages and the stdlib comparator `A2D` on an RC network.
+use buck::power::Resistor;
+use buck::sense::Adc;
+use buck::dpwm::Osc;
+
+/// An ideal DC source from `p` to ground.
+module Vsrc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vsrc { v(p) +> dc; }
+
+/// A capacitor.
+module Cap(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Cap { i(p, n) +> ddt(c * v(p, n)); }
+
+/// The stdlib `D2A` without its `match d.known() { Some(true) => .. }`: the type checker does not
+/// support a nested pattern in a `match` arm yet (`P0001`), so the stdlib `D2A` cannot be placed.
+/// An unknown gate reads as low (`high()`).
+module Drive(in d: Bit, a: Electrical, vdd: Electrical) {
+    rout: f64 = 100.0;
+    tr: f64 = 20p;
+    let ramp = transition(if d.high() { 1.0 } else { 0.0 }, 0.0, tr, tr);
+}
+analog for Drive { i(a) +> (v(a) - ramp * v(vdd)) / rout; }
+
+/// Five held voltages (SPEC §4.1): 0, one LSB, mid-scale, full scale and above full scale, each
+/// into an ADC sampled once per microsecond (the oscillator rises at 0.5 us and 1.5 us).
+module AdcBench() {
+    signal sample: Bit;
+    signal a0: Electrical; signal a1: Electrical; signal a2: Electrical;
+    signal a3: Electrical; signal a4: Electrical;
+    signal code0: Bit<u10>; signal code1: Bit<u10>; signal code2: Bit<u10>;
+    signal code3: Bit<u10>; signal code4: Bit<u10>;
+    signal done0: Bit; signal done1: Bit; signal done2: Bit; signal done3: Bit; signal done4: Bit;
+    let osc = Osc(sample) { f: 1M };
+    let v0 = Vsrc(a0) { dc: 0.0 };
+    let v1 = Vsrc(a1) { dc: 0.0015625 };
+    let v2 = Vsrc(a2) { dc: 0.8 };
+    let v3 = Vsrc(a3) { dc: 1.6 };
+    let v4 = Vsrc(a4) { dc: 2.0 };
+    let adc0 = Adc(a0, sample, code0, done0) { vref: 1.6, tconv: 500n, tstrobe: 5n };
+    let adc1 = Adc(a1, sample, code1, done1) { vref: 1.6, tconv: 500n, tstrobe: 5n };
+    let adc2 = Adc(a2, sample, code2, done2) { vref: 1.6, tconv: 500n, tstrobe: 5n };
+    let adc3 = Adc(a3, sample, code3, done3) { vref: 1.6, tconv: 500n, tstrobe: 5n };
+    let adc4 = Adc(a4, sample, code4, done4) { vref: 1.6, tconv: 500n, tstrobe: 5n };
+}
+
+/// The RC network behind the comparator: `Drive` (the `D2A` of the stdlib) drives `x` from a 1 V rail through
+/// `rout` = 1 k while the gate is high (and to ground through it while low), with `r2` = 9 k and
+/// `c` = 0.5 nF from `x` to ground. The gate is a 1 / 6 us oscillator: it rises at 3 us and
+/// falls at 6 us. `A2D` (vth 0.6 V, hyst 50 mV) watches `x`.
+module ComparatorBench() {
+    signal gate: Bit;
+    signal vdd: Electrical;
+    signal x: Electrical;
+    signal d: Bit;
+    let osc = Osc(gate) { f: 166666.66666666666 };
+    let rail = Vsrc(vdd) { dc: 1.0 };
+    let drive = Drive(gate, x, vdd) { rout: 1k, tr: 20p };
+    let r2 = Resistor(x, gnd) { r: 9k };
+    let c1 = Cap(x, gnd) { c: 0.5n };
+    let cmp = A2D(x, d) { vth: 0.6, hyst: 50m };
+}
+
+/// The comparator with its input held above `vth + hyst / 2` at the operating point.
+module HeldHighBench() {
+    signal a: Electrical;
+    signal d: Bit;
+    let v = Vsrc(a) { dc: 1.0 };
+    let cmp = A2D(a, d) { vth: 0.6, hyst: 50m };
+}

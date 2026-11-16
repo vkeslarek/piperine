@@ -1554,11 +1554,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The comparator's trip times are judged by the analytic RC voltage at each time against the threshold under `TRAN_VOLTAGE`; no time tolerance is written
-- [ ] The third test reads `d` true at time 0 with no change of `d` after it
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_boundary`: `the_adc_commits_the_rounded_code_after_tconv`, `the_comparator_trips_at_its_thresholds`, `the_comparator_is_right_at_time_zero`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The comparator's trip times are judged by the analytic RC voltage at each time against the threshold under `TRAN_VOLTAGE`; no time tolerance is written
+- [x] The third test reads `d` true at time 0 with no change of `d` after it
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_boundary`: `the_adc_commits_the_rounded_code_after_tconv`, `the_comparator_trips_at_its_thresholds`, `the_comparator_is_right_at_time_zero`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: full
