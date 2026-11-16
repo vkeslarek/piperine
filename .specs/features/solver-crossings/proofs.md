@@ -1,15 +1,20 @@
 # solver-crossings proofs
 
-**HEAD**: 601264c4
+**HEAD**: 24e7c139
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 25 pass, 0 fail
+**Result**: 30 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
 | C1 | `run digital / test two_commits_to_one_net_settle_to_one_write ... ok` | pass |
 | C2 | `run digital / test a_commit_undone_in_its_microstep_is_no_change ... ok` | pass |
 | C3 | `run digital / test a_settled_change_is_one_observation ... ok` | pass |
+| C25 | `run digital / test previous_is_the_value_before_the_microstep ... ok` | pass |
+| C26 | `run solver / test a_curved_crossing_converges_from_both_sides ... ok` | pass |
+| C27 | `run solver / test a_landing_costs_a_few_steps_not_a_regrowth ... ok` | pass |
+| C28 | `run solver / test steps_of_a_few_ticks_grow_back ... ok` | pass |
+| C29 | `run solverenv / test analog_and_reactions_read_one_gmin_at_the_transient_start ... ok` | pass |
 | C4 | `run solver / test x_changed_does_not_fire_when_the_settled_value_is_unchanged ... ok` | pass |
 | C5 | `run solver / test a_ramp_lands_within_ttol_plus_one_tick ... ok` | pass |
 | C6 | `run solver / test a_sine_crossing_is_located ... ok` | pass |
@@ -38,18 +43,18 @@
 `Run digital` - exit 0
 
 ```
-test a_commit_undone_in_its_microstep_is_no_change ... ok
-test a_settled_change_is_one_observation ... ok
 test a_plan_with_no_code_applies_host_commits_only ... ok
-test start_commits_inits_and_fires_start ... ok
-test a_settle_commit_with_no_delay_is_refused ... ok
+test a_settled_change_is_one_observation ... ok
 test an_instant_reports_boundary_fired_and_final ... ok
+test a_settle_commit_with_no_delay_is_refused ... ok
 test two_commits_to_one_net_settle_to_one_write ... ok
+test previous_is_the_value_before_the_microstep ... ok
+test start_commits_inits_and_fires_start ... ok
 test a_quiet_commit_does_not_start_a_microstep ... ok
 test the_traced_instant_of_section_15_1 ... ok
 test an_instant_that_never_goes_quiet_is_e0501_naming_the_nets ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/instant.rs (/var/tmp/piperine-target/debug/deps/instant-1872408436915898)
@@ -58,9 +63,7 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run solver` - exit 0
 
 ```
-test a_ramp_lands_within_ttol_plus_one_tick ... ok
-
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s
 
 
 running 2 tests
@@ -69,47 +72,66 @@ test x_changed_does_not_fire_when_the_settled_value_is_unchanged ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+   Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-solver-crossings/crates/piperine-analog-solver)
+   Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-crossings/crates/piperine-solver)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.39s
      Running tests/crossing_rules.rs (/var/tmp/piperine-target/debug/deps/crossing_rules-b948d3f471201c5e)
      Running tests/protocol_crossings.rs (/var/tmp/piperine-target/debug/deps/protocol_crossings-a49070822fa2ef49)
      Running tests/settled_value.rs (/var/tmp/piperine-target/debug/deps/settled_value-d9094b11e06d8b5f)
+```
+
+`Run solverenv` - exit 0
+
+```
+running 4 tests
+test its_devices_pass_the_partials_verifier ... ok
+test analog_and_reactions_read_one_gmin_at_the_transient_start ... ok
+test a_discrete_function_reads_gmin_and_source_scale ... ok
+test a_reaction_reads_temperature_gmin_and_source_scale ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+   Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-crossings/crates/piperine-solver)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
+     Running tests/environment.rs (/var/tmp/piperine-target/debug/deps/environment-b554f2f596d4baed)
 ```
 
 `Run parity` - exit 0
 
 ```
 running 7 tests
-test its_devices_pass_the_partials_verifier ... ok
 test parity_digital_scheduler_snapshot ... ok
-test parity_divider_op_dc ... ok
+test its_devices_pass_the_partials_verifier ... ok
 test parity_diode_dc_point ... ok
+test parity_divider_op_dc ... ok
 test parity_mixed_signal_dc_settle ... ok
 test parity_rlc_ac_resonant_peak ... ok
 test parity_rc_transient ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+   Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-crossings/crates/piperine-solver)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
      Running tests/parity_baseline.rs (/var/tmp/piperine-target/debug/deps/parity_baseline-0b1b4c73656ab636)
 ```
 
 `Run analog` - exit 0
 
 ```
-test a_cross_watch_fires_on_a_rising_sign_change ... ok
-test an_instance_lists_its_terms_and_var_watches_and_reads_a_term ... ok
-test a_trace_record_survives_a_rejected_step ... ok
-test samples_are_the_continuous_pins_reactions_read ... ok
-test accept_reports_the_smallest_cap ... ok
-test rising_reports_a_sign_change_without_accepting ... ok
-test a_var_watch_is_readable_at_an_accepted_solution ... ok
-test accept_fails_with_e0509_on_an_invalid_cap ... ok
 test accept_fails_with_e0510_on_an_invalid_tolerance ... ok
+test a_trace_record_survives_a_rejected_step ... ok
+test a_cross_watch_fires_on_a_rising_sign_change ... ok
+test a_var_watch_is_readable_at_an_accepted_solution ... ok
+test an_instance_lists_its_terms_and_var_watches_and_reads_a_term ... ok
+test rising_reports_a_sign_change_without_accepting ... ok
+test accept_fails_with_e0509_on_an_invalid_cap ... ok
+test accept_reports_the_smallest_cap ... ok
+test samples_are_the_continuous_pins_reactions_read ... ok
 
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-solver-crossings/crates/piperine-analog-solver)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.91s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.72s
      Running tests/assembly_watch.rs (/var/tmp/piperine-target/debug/deps/assembly_watch-78f836e6cfd00fff)
 ```
 
@@ -117,49 +139,35 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 6 tests
-test a_zeroed_shape_entry_is_an_unknown_constant ... ok
 test a_shape_with_an_unreadable_list_is_refused ... ok
 test a_reaction_may_read_gmin_and_source_scale ... ok
 test the_valid_fixtures_pass ... ok
 test an_index_is_checked_before_it_is_followed ... ok
+test a_zeroed_shape_entry_is_an_unknown_constant ... ok
 test every_shape_local_rule_is_enforced ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/validate.rs (/var/tmp/piperine-target/debug/deps/validate-1d6a89bfc874e467)
 ```
 
 `Run env` - exit 0
 
 ```
-test a_moving_field_without_a_known_byte_fails ... ok
-test a_function_with_unchanged_inputs_is_not_called ... ok
-test a_relax_group_settles_within_its_bound ... ok
 test a_function_fault_carries_code_tick_and_instance ... ok
+test a_moving_field_without_a_known_byte_fails ... ok
+test a_function_runs_when_a_read_net_changed ... ok
+test an_absent_optional_pin_reads_zero_bytes ... ok
 test changed_is_zero_one_microstep_later ... ok
 test every_function_runs_once_at_the_first_instant ... ok
 test a_moving_known_field_is_zeroed_and_observed ... ok
+test a_relax_group_settles_within_its_bound ... ok
 test functions_run_after_every_writer_of_their_reads ... ok
-test an_absent_optional_pin_reads_zero_bytes ... ok
 test reactions_and_functions_read_the_continuation_values ... ok
 
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running tests/functions.rs (/var/tmp/piperine-target/debug/deps/functions-d37ec655bf42d964)
-```
-
-`Run solverenv` - exit 0
-
-```
-running 3 tests
-test its_devices_pass_the_partials_verifier ... ok
-test a_discrete_function_reads_gmin_and_source_scale ... ok
-test a_reaction_reads_temperature_gmin_and_source_scale ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
-
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
-     Running tests/environment.rs (/var/tmp/piperine-target/debug/deps/environment-b554f2f596d4baed)
 ```
