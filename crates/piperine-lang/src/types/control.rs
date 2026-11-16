@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 
 use crate::msl::lexer;
-use crate::pom::{Arm, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution};
+use crate::pom::{Arm, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution, UnOp};
 
 use super::check::Checker;
 use super::unsupported::Unsupported;
@@ -22,8 +22,9 @@ enum Covers {
     /// One variant of an enum.
     Variant(DeclId),
     Bool(bool),
-    /// One integer value; `None` when it is a constant the checker does not fold.
-    Int(Option<u128>),
+    /// One integer value, negative ones included (`-2`); `None` when it is a constant the
+    /// checker does not fold.
+    Int(Option<i128>),
     /// `None` of an `Option`.
     Nothing,
     /// `Some(p)`, with what `p` covers of the payload.
@@ -117,12 +118,18 @@ impl Checker<'_> {
                 let variants: BTreeSet<DeclId> = self.design.decl_data(*e).children.iter().copied().filter(|v| matches!(self.design.decl_data(*v).kind, DeclKind::Variant(_))).collect();
                 variants.iter().all(|v| covered.contains(&Covers::Variant(*v)))
             }
+            // every value of the type named by a literal: `0..2^n` unsigned, `-2^(n-1)..2^(n-1)`
+            // signed, the negative literals of a signed type among them
             Ty::UInt(n) | Ty::Int(n) => {
-                let values: BTreeSet<u128> = covered.iter().filter_map(|c| match c {
-                    Covers::Int(Some(v)) => Some(*v),
+                let (lo, hi) = match scrut {
+                    Ty::Int(_) => (-(1i128 << (n - 1)), 1i128 << (n - 1)),
+                    _ => (0, 1i128 << n),
+                };
+                let values: BTreeSet<i128> = covered.iter().filter_map(|c| match c {
+                    Covers::Int(Some(v)) if (lo..hi).contains(v) => Some(*v),
                     _ => None,
                 }).collect();
-                *n <= 16 && values.len() as u128 == 1u128 << n
+                *n <= 16 && values.len() as i128 == hi - lo
             }
             _ => false,
         }
@@ -232,10 +239,15 @@ impl Checker<'_> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(lit) => match &lit.kind {
                 LitKind::Bool(b) => Covers::Bool(*b),
-                LitKind::Int(text) => Covers::Int(lexer::int_value(text)),
+                LitKind::Int(text) => Covers::Int(lexer::int_value(text).and_then(|v| i128::try_from(v).ok())),
                 _ => Covers::Int(None),
             },
             ExprKind::Paren(inner) => self.literal_covers(*inner),
+            // `-2`: the pattern of a negative literal
+            ExprKind::Unary { op: UnOp::Neg, expr } => match self.literal_covers(*expr) {
+                Covers::Int(Some(v)) => Covers::Int(Some(-v)),
+                _ => Covers::Int(None),
+            },
             _ => Covers::Int(None),
         }
     }

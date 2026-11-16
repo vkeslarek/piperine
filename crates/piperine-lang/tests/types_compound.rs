@@ -286,14 +286,20 @@ fn a_match_that_is_not_exhaustive_is_p0002() {
         "let k: u9 = 1; let x = match k { 0 => 1.0, 1 => 2.0 };",
         "let o: Option<u8> = None; let x = match o { Some(1) => 1.0, None => 2.0 };",
         "let o: Option<u8> = None; let x = match o { Some(v) => 1.0 };",
+        // a signed type: `-2` left out of an `i2`
+        "let s: i2 = 0; let x = match s { -1 => 1.0, 0 => 2.0, 1 => 3.0 };",
     ] {
         let (src, d) = diagnostics(&supervisor_items(), body);
         assert_eq!(codes(&d), ["P0002"], "{src}");
         assert!(snippet(&src, &d[0]).starts_with("match "), "{src}: {}", snippet(&src, &d[0]));
     }
-    // Every value, and only then, passes: all four variants; every value of a `u2` by literals.
+    // Every value, and only then, passes: all four variants; every value of a `u2` by literals;
+    // every value of an `i2` and of an `i3` by literals, the negative ones among them
+    // (verification F6).
     let ok = source(&supervisor_items(), "let m = Mode::Off; let x = match m { Mode::Off => 1.0, Mode::SoftStart => 2.0, Mode::Regulate => 3.0, Mode::Hiccup => 4.0 }; \
-                                         let k: u2 = 1; let y = match k { 0 => 1.0, 1 => 2.0, 2 | 3 => 3.0 };");
+                                         let k: u2 = 1; let y = match k { 0 => 1.0, 1 => 2.0, 2 | 3 => 3.0 }; \
+                                         let s: i2 = 0; let z = match s { -2 => 1.0, -1 => 2.0, 0 | 1 => 3.0 }; \
+                                         let t: i3 = 0; let u = match t { -4 | -3 => 1.0, -2 => 2.0, -1 | 0 => 3.0, 1 | 2 | 3 => 4.0 };");
     checked(&design_of(&ok), &ok);
 }
 

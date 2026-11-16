@@ -1918,7 +1918,7 @@ Proof: run tcomp | test option_values_and_their_methods_are_typed ... ok
 **C17** - `match` types over an enum, a `bool`, an integer and an `Option` with the six pattern forms. (DIG-03, AC 4; T8)
 Proof: run tcomp | test match_is_typed_over_enums_bools_integers_and_options ... ok
 
-**C18** - A `match` on `Mode` without `Hiccup` and without `_` is `P0002`. (DIG-03, AC 5; T8)
+**C18** - A `match` on `Mode` without `Hiccup` and without `_` is `P0002`; a signed integer `match` is exhaustive when its literals, negative ones included, name every value, and `P0002` when one is left out (verification F6). (DIG-03, AC 5; T8)
 Proof: run tcomp | test a_match_that_is_not_exhaustive_is_p0002 ... ok
 
 **C19** - `if let Some(d) = data.known()` binds `d: u8` in the first block. (DIG-03, AC 6; T8)
