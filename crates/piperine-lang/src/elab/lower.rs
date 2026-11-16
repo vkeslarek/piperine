@@ -58,7 +58,7 @@ impl ValueTypes {
                 let params: Option<Vec<ValueType>> = params.iter().map(ValueTypes::of).collect();
                 Some(ValueType::Fn(params?, Box::new(ValueTypes::of(ret)?)))
             }
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_) | Ty::Tuple(_) => None,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => None,
         }
     }
 }

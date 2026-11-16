@@ -9,6 +9,7 @@
 
 mod analog;
 mod call;
+mod carrier;
 mod catalogue;
 mod check;
 mod compound;
@@ -19,5 +20,5 @@ mod table;
 mod ty;
 mod unsupported;
 
-pub use table::{Callee, Method, Types};
+pub use table::{Builtin, Callee, Method, Types};
 pub use ty::Ty;

@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
 use crate::msl::lexer;
-use crate::pom::{BehaviorKind, BlockNode, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind};
+use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, NatureKind, PathId, Reflect, Resolution, StmtKind, TypeId, TypeKind};
 
 use super::unsupported::Unsupported;
-use super::{Callee, Method, Ty, Types};
+use super::{Builtin, Callee, Method, Ty, Types};
 
 /// Where the expression being checked is written: the §14 table allows a core primitive by it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +21,15 @@ pub(super) enum Context {
     Function,
     /// A const context (§8.1.21): a param default, a `where`, a `const` initializer.
     Const,
+}
+
+/// The order a module body is checked in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ItemPhase {
+    /// Ports, params and signals.
+    Declarations,
+    /// Named expressions, which read the declarations.
+    Lets,
 }
 
 /// The parts of a function signature, each typed on its own.
@@ -41,6 +50,12 @@ pub(super) struct Checker<'d> {
     pub(super) reached: Vec<DeclId>,
     /// Arguments read as `Some` of themselves (§3.2.3).
     pub(super) somes: BTreeSet<ExprId>,
+    /// The `Ty::Carrier` of each discrete port and signal declaration read or declared so far.
+    pub(super) carriers: BTreeMap<DeclId, Ty>,
+    pub(super) builtins: BTreeMap<ExprId, Builtin>,
+    /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
+    /// defines: a receiver the POM could not type might mean any of them.
+    pub(super) project_methods: BTreeSet<String>,
     pub(super) context: Context,
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
@@ -67,6 +82,9 @@ impl<'d> Checker<'d> {
             callees: BTreeMap::new(),
             reached: Vec::new(),
             somes: BTreeSet::new(),
+            carriers: BTreeMap::new(),
+            builtins: BTreeMap::new(),
+            project_methods: Self::project_methods(design),
             context: Context::Module,
             poisoned: BTreeSet::new(),
             fn_where: false,
@@ -76,6 +94,15 @@ impl<'d> Checker<'d> {
             diagnostics: Vec::new(),
             reported: BTreeSet::new(),
         }
+    }
+
+    /// The names of the methods the project itself defines, in an `impl` or a `trait`.
+    fn project_methods(design: &'d Design) -> BTreeSet<String> {
+        (0..design.decl_count())
+            .map(|i| DeclId(i as u32))
+            .filter(|d| matches!(design.decl_data(*d).kind, DeclKind::Fn(_)) && design.decl_data(*d).parent.is_some_and(|p| matches!(design.decl_data(p).kind, DeclKind::Impl(_) | DeclKind::Trait(_))) && !Decl::new(design, *d).krate().is_std())
+            .filter_map(|d| design.decl_data(d).name.as_ref().map(|n| n.text.clone()))
+            .collect()
     }
 
     /// Check `top` and everything it reaches: the table, or the diagnostics in source order.
@@ -89,7 +116,7 @@ impl<'d> Checker<'d> {
             diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
             return Err(diagnostics);
         }
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
@@ -176,11 +203,13 @@ impl<'d> Checker<'d> {
                     ("isize", _) => Some(Ty::Int(64)),
                     (family @ ("UInt" | "Int" | "Float"), _) => self.sized_type(file, node.span, *path, family),
                     ("Option", _) => self.option_type(file, node.span, *path),
+                    ("Event", _) => Some(Ty::Event),
                     _ => {
                         self.unsupported(file, node.span, &format!("type `{}`", id.name()));
                         None
                     }
                 },
+                Resolution::Decl(d) if matches!(&self.design.decl_data(d).kind, DeclKind::Nature(n) if n.kind == NatureKind::Discrete) && self.is_std(d) && self.design.decl_data(d).name.as_ref().is_some_and(|n| n.text == "Bit") => self.bit_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
                 Resolution::Decl(d) => {
@@ -207,6 +236,11 @@ impl<'d> Checker<'d> {
                 Some(Ty::Fn(params?, Box::new(ret?)))
             }
         }
+    }
+
+    /// Whether `decl` is written in the standard library.
+    pub(super) fn is_std(&self, decl: DeclId) -> bool {
+        Decl::new(self.design, decl).krate().is_std()
     }
 
     /// `UInt<N>`, `Int<N>` or `Float<N>` written with its width argument. The width is an integer
@@ -406,17 +440,24 @@ impl<'d> Checker<'d> {
             // Part III §8 errors: the `where` after the port list that is not a `bool` const expression.
             self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0304"));
         }
-        for child in data.children.iter().copied() {
-            let item = self.design.decl_data(child).clone();
-            match &item.kind {
-                DeclKind::Port(p) => self.port(&p.clone(), item.file),
-                DeclKind::Param(p) => self.param(&p.clone()),
-                DeclKind::Signal(s) => self.signal(&s.clone()),
-                DeclKind::Let(l) => self.module_let(&l.clone()),
-                DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error => {}
-                DeclKind::Generation(_) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
-                DeclKind::Definition(_) => self.unsupported(item.file, item.span, "definition `=`"),
-                other => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
+        // Ports, params and signals first, then the `let`s in order, then definitions: every
+        // name of the body is visible in the whole body (§8.2), and a carrier's type is known
+        // before anything reads it.
+        for phase in [ItemPhase::Declarations, ItemPhase::Lets] {
+            for child in data.children.iter().copied() {
+                let item = self.design.decl_data(child).clone();
+                match (&item.kind, phase) {
+                    (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
+                    (DeclKind::Param(p), ItemPhase::Declarations) => self.param(&p.clone()),
+                    (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
+                    (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(&l.clone()),
+                    (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_), _) => {}
+                    (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
+                    (DeclKind::Generation(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
+                    (DeclKind::Definition(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "definition `=`"),
+                    (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
+                    (_, ItemPhase::Lets) => {}
+                }
             }
         }
         for behavior in m.behaviors.iter().copied() {

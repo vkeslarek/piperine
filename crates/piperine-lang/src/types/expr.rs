@@ -471,8 +471,8 @@ impl Checker<'_> {
                         self.lower_type(c.ty)
                     }
                     DeclKind::Param(p) => self.lower_type(p.ty),
-                    DeclKind::Port(p) => self.node_type(p.ty),
-                    DeclKind::Signal(s) => self.node_type(s.ty),
+                    DeclKind::Port(p) => self.read_type(decl, p.ty),
+                    DeclKind::Signal(s) => self.read_type(decl, s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         let local = self.locals.get(&decl).cloned();
                         if local.is_none() && !self.poisoned.contains(&decl) {

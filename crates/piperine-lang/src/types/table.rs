@@ -32,6 +32,29 @@ pub enum Method {
     UnwrapOr,
 }
 
+/// A method the checker treats as part of the language because it resolved to the stdlib's own
+/// item (part I §3.3.7): the four flag-total reads, the edges of `Bit` and the history of a
+/// carrier. A project's replacement is `P0001` at its use, never one of these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Builtin {
+    /// `x.known() -> Option<T>`.
+    Known,
+    /// `x.known_or(d) -> T`.
+    KnownOr,
+    /// `x.is_known() -> bool`.
+    IsKnown,
+    /// `c.high() -> bool` on a `Bit`.
+    High,
+    /// `c.changed() -> Event`.
+    Changed,
+    /// `c.prev() -> T`: the value before the most recent change.
+    Prev,
+    /// `c.rise() -> Event` on a `Bit`.
+    Rise,
+    /// `c.fall() -> Event` on a `Bit`.
+    Fall,
+}
+
 /// What a call or a placement of the reachable set refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Callee {
@@ -52,11 +75,13 @@ pub struct Types<'d> {
     pub(super) callees: BTreeMap<ExprId, Callee>,
     pub(super) reached: Vec<DeclId>,
     pub(super) somes: BTreeSet<ExprId>,
+    pub(super) carriers: BTreeMap<DeclId, Ty>,
+    pub(super) builtins: BTreeMap<ExprId, Builtin>,
 }
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins
     }
 }
 
@@ -102,6 +127,18 @@ impl<'d> Types<'d> {
     /// The catalogue row a `Deferred` method call resolved to.
     pub fn method(&self, expr: ExprId) -> Option<Method> {
         self.methods.get(&expr).copied()
+    }
+
+    /// The built-in a method call resolved to (`known_or`, `prev`, ..), set only when the name
+    /// resolved to the stdlib's own item.
+    pub fn builtin(&self, expr: ExprId) -> Option<Builtin> {
+        self.builtins.get(&expr).copied()
+    }
+
+    /// The type of a discrete port or signal declaration, `Ty::Carrier`; `None` for a node, a
+    /// param or a declaration outside the reachable set.
+    pub fn carrier(&self, decl: DeclId) -> Option<&Ty> {
+        self.carriers.get(&decl)
     }
 
     /// What a call or a placement refers to.

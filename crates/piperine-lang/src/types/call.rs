@@ -4,10 +4,11 @@
 
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, PatKind, Resolution};
 
+use super::carrier::flag_builtin;
 use super::catalogue::Catalogue;
 use super::check::{Checker, Context};
 use super::unsupported::Unsupported;
-use super::{Callee, Ty};
+use super::{Builtin, Callee, Ty};
 
 impl Checker<'_> {
     /// What a callee path names, if the callee is a plain path.
@@ -86,7 +87,7 @@ impl Checker<'_> {
 
     /// Check each argument against its parameter, in order. A function takes positional
     /// arguments only (the POM refuses `name: value` on a call that is not a placement).
-    fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
+    pub(super) fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         if args.len() != params.len() {
@@ -103,19 +104,63 @@ impl Checker<'_> {
         Some(())
     }
 
-    /// A method call the POM left `Deferred` for want of the receiver's type: resolved against the
-    /// Appendix H catalogue, the row recorded.
+    /// A method call: a built-in the stdlib's own item stands for (`known_or`, `prev`, ..), or
+    /// a `Deferred` or `Unresolved` one resolved against the Appendix H catalogue on the type of
+    /// its receiver, the row recorded (DIG-02). Every other method is `P0001` naming it.
     pub(super) fn method_call(&mut self, expr: ExprId) -> Option<Ty> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::MethodCall { recv, method, generics, args, res } = &node.kind else { return None };
-        if !matches!(res, Resolution::Deferred(DeferReason::ReceiverTypeUnknown)) || generics.is_some() {
-            self.unsupported(file, node.span, &format!("method `{}`", method.text));
+        let name = method.text.as_str();
+        if generics.is_some() {
+            self.unsupported(file, node.span, &format!("method `{name}`"));
+            return None;
+        }
+        // The built-in a stdlib item resolved to, or the built-in row of the language.
+        let builtin = match res {
+            Resolution::Decl(f) => match self.stdlib_builtin(*f) {
+                Some(builtin) => Some(builtin),
+                None => {
+                    let replaced = flag_builtin(name).is_some() || matches!(name, "rise" | "fall");
+                    let what = if replaced { format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)") } else { format!("method `{name}`") };
+                    self.unsupported(file, node.span, &what);
+                    return None;
+                }
+            },
+            Resolution::Builtin(id) => match id.info().name {
+                "prev" => Some(Builtin::Prev),
+                "changed" => Some(Builtin::Changed),
+                _ => {
+                    self.unsupported(file, node.span, &format!("method `{name}`"));
+                    return None;
+                }
+            },
+            Resolution::Deferred(DeferReason::ReceiverTypeUnknown) | Resolution::Unresolved => None,
+            Resolution::Deferred(_) => {
+                self.unsupported(file, node.span, &format!("method `{name}`"));
+                return None;
+            }
+        };
+        if builtin == Some(Builtin::Prev) {
+            return self.prev_read(expr, *recv, args);
+        }
+        // A receiver the POM could not type might be a value of a project's own `impl`: the
+        // checker knows only the stdlib's flag reads (§3.3.7).
+        if builtin.is_none() && flag_builtin(name).is_some() && self.project_methods.contains(name) {
+            self.unsupported(file, node.span, &format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)"));
+            self.infer(*recv);
             return None;
         }
         let recv_ty = self.infer(*recv)?;
-        let Some((row, params, result)) = Catalogue::method(&recv_ty, &method.text) else {
-            self.unsupported(file, method.span, &format!("method `{}` on `{}`", method.text, recv_ty.name(self.design)));
+        // The four flag-total reads apply to any value and to a carrier's value.
+        let builtin = builtin.or_else(|| flag_builtin(name));
+        if let Some(builtin) = builtin {
+            if let Some(result) = self.flag_read(expr, builtin, &recv_ty, args) {
+                return result;
+            }
+        }
+        let Some((row, params, result)) = Catalogue::method(&recv_ty, name) else {
+            self.unsupported(file, method.span, &format!("method `{name}` on `{}`", recv_ty.name(self.design)));
             for arg in args {
                 self.infer(arg.value);
             }

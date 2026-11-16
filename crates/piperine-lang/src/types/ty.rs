@@ -29,12 +29,25 @@ pub enum Ty {
     /// `(A, B, ..)`: the value of a tuple expression, which the subset allows only as the
     /// initializer of a tuple `let`.
     Tuple(Vec<Ty>),
+    /// A discrete carrier of the nature `Bit<value>` (a `signal` or a port). Reading one gives
+    /// its `value`; the carrier type itself is what a declaration has.
+    Carrier { nature: DeclId, value: Box<Ty> },
+    /// `Event` (part IV §13): something that fires at instants. It has no `Repr`: it is never
+    /// carried, committed or stored.
+    Event,
+    /// `&str`, the type of a string literal. It has no `Repr` and no `let`.
+    Str,
 }
 
 impl Ty {
     /// Whether this is `UInt<N>` or `Int<N>`.
     pub fn is_integer(&self) -> bool {
         matches!(self, Ty::UInt(_) | Ty::Int(_))
+    }
+
+    /// Whether the type implements `Repr` (part I §2): the types a carrier may hold.
+    pub fn has_repr(&self) -> bool {
+        matches!(self, Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_))
     }
 
     /// The largest magnitude an integer literal of this type may have; with `negated`, the
@@ -75,6 +88,12 @@ impl Ty {
                 let items: Vec<String> = items.iter().map(|t| t.name(design)).collect();
                 format!("({})", items.join(", "))
             }
+            Ty::Carrier { nature, value } => {
+                let nature = design.decl_data(*nature).name.as_ref().map_or("Bit", |n| n.text.as_str());
+                format!("{nature}<{}>", value.name(design))
+            }
+            Ty::Event => "Event".to_string(),
+            Ty::Str => "&str".to_string(),
             Ty::Module(module) => match &design.decl_data(*module).name {
                 Some(n) => format!("module `{}`", n.text),
                 None => "module".to_string(),

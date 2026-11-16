@@ -31,7 +31,7 @@ impl Catalogue {
             Ty::F64 => F64_METHODS,
             Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
             Ty::Option(inner) => return Self::option(inner, name),
-            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) => return None,
+            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => return None,
         };
         rows.iter().find(|(row, _, _)| *row == name).map(|(_, method, arity)| (*method, vec![recv.clone(); *arity], recv.clone()))
     }

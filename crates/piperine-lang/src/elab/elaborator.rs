@@ -76,6 +76,9 @@ impl<'d, 't> Elaboration<'d, 't> {
             return Err(self.diagnostics);
         }
         let modules: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
+        if self.refuse_digital_forms(&modules) {
+            return Err(self.diagnostics);
+        }
         self.body_ids = modules.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
         let functions: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Fn(_))).collect();
         self.function_ids = functions.iter().enumerate().map(|(k, f)| (*f, FunctionId(k as u32))).collect();

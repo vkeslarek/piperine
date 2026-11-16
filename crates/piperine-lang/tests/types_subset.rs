@@ -142,7 +142,7 @@ fn unreached_items_are_not_reported() {
 /// Constructs that only resolve against the real standard library: `Bit`, `Repr` and the known
 /// flag are refused by name as well.
 const STD_ROWS: &[Row] = &[
-    Row { construct: "Bit", source: "module Top(c: Bit) { }", names: "`Bit`" },
+    Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },
     Row { construct: "known flag", source: "module Top() { }\nanalog for Top { let x = 1.0.level(1.0); }", names: "method `level`" },
 ];

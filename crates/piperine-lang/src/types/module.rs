@@ -2,7 +2,7 @@
 //! one module in another (§8.1): node arguments by nature and count, param block by type.
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, NatureKind, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
 use super::unsupported::Unsupported;
@@ -14,45 +14,35 @@ impl Checker<'_> {
         self.report(file, Diagnostic::new(code, message, span, label));
     }
 
-    /// The type of a port or a signal: a node of a conservative nature, or `P0001` and `None`.
-    pub(super) fn node_type(&mut self, ty: TypeId) -> Option<Ty> {
-        let node = self.design.type_node(ty).clone();
-        let file = self.design.decl_data(node.owner).file;
-        match self.lower_type(ty)? {
-            Ty::Node(nature) => {
-                let DeclKind::Nature(data) = &self.design.decl_data(nature).kind else { return None };
-                let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                match data.kind {
-                    NatureKind::Conservative => Some(Ty::Node(nature)),
-                    NatureKind::Discrete => {
-                        self.unsupported(file, node.span, &format!("discrete nature `{name}`"));
-                        None
-                    }
-                    NatureKind::Resolved => {
-                        self.unsupported(file, node.span, &format!("resolved nature `{name}`"));
-                        None
-                    }
-                    NatureKind::SignalFlow => {
-                        self.unsupported(file, node.span, &format!("signal-flow nature `{name}`"));
-                        None
-                    }
-                    NatureKind::Invalid => None,
-                }
-            }
-            other => {
-                self.unsupported(file, node.span, &format!("value input port of type `{}`", other.name(self.design)));
-                None
-            }
+    /// `dir name: Nature;` — a node, or a carrier of `Bit<T>` that takes a direction (`E0310`).
+    /// A default is the first commit of an `out` carrier (`E0210`); on any other port it is
+    /// outside the subset.
+    pub(super) fn port(&mut self, decl: DeclId, port: &PortData, file: FileId) {
+        let ty = self.port_type(port.ty);
+        if let Some(carrier @ Ty::Carrier { .. }) = &ty {
+            self.carriers.insert(decl, carrier.clone());
         }
-    }
-
-    /// `dir name: Nature;` — a node. A default, or a value input, is outside the subset.
-    pub(super) fn port(&mut self, port: &PortData, file: FileId) {
-        self.node_type(port.ty);
-        if let Some(default) = port.default {
-            let span = self.design.expr_node(default).span;
-            self.unsupported(file, span, "port default value");
-            self.infer(default);
+        let span = self.design.type_node(port.ty).span;
+        match (&ty, port.dir) {
+            (Some(Ty::Carrier { .. }), None) => {
+                self.coded(file, "E0310", span, "a port of a discrete nature takes `in` or `out` (§8.1.5)".to_string(), "no direction");
+            }
+            (Some(Ty::Node(_)), Some(_)) => {
+                self.coded(file, "E0310", span, "a port of a continuous nature takes no direction (§8.1.5)".to_string(), "unexpected direction");
+            }
+            _ => {}
+        }
+        let Some(default) = port.default else { return };
+        match (&ty, port.dir) {
+            (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out)) => {
+                self.initial_reads(default);
+                self.within(Context::Const, |this| this.check_as(default, value, "E0210"));
+            }
+            _ => {
+                let span = self.design.expr_node(default).span;
+                self.unsupported(file, span, "port default value");
+                self.infer(default);
+            }
         }
     }
 
@@ -75,12 +65,21 @@ impl Checker<'_> {
         }
     }
 
-    /// `signal name: Nature = init;` — a node; an initial value is an `f64` (`E0210`).
-    pub(super) fn signal(&mut self, signal: &SignalData) {
-        let node = self.node_type(signal.ty);
-        if let (Some(_), Some(init)) = (node, signal.init) {
-            self.check_as(init, &Ty::F64, "E0210");
+    /// `signal name: Nature = init;` — a node whose initial value is an `f64`, or a carrier of
+    /// `Bit<T>` whose initial value is a `T`; either is `E0210` when the type differs or the
+    /// value reads a carrier or a probe (§5.1.5).
+    pub(super) fn signal(&mut self, decl: DeclId, signal: &SignalData) {
+        let ty = self.port_type(signal.ty);
+        if let Some(carrier @ Ty::Carrier { .. }) = &ty {
+            self.carriers.insert(decl, carrier.clone());
         }
+        let (Some(ty), Some(init)) = (ty, signal.init) else { return };
+        self.initial_reads(init);
+        let value = match &ty {
+            Ty::Carrier { value, .. } => (**value).clone(),
+            _ => Ty::F64,
+        };
+        self.within(Context::Const, |this| this.check_as(init, &value, "E0210"));
     }
 
     /// `let x = value;` in a module body: the binding takes the type of the value (a placement
@@ -180,7 +179,7 @@ impl Checker<'_> {
             if named || args.len() != ports.len() {
                 continue;
             }
-            let Some(expected) = self.node_type(*port) else { continue };
+            let Some(expected) = self.port_type(*port) else { continue };
             self.connect(arg.value, &expected, &found);
         }
     }
