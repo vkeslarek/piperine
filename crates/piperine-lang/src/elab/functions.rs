@@ -5,8 +5,8 @@
 use piperine_ir::{FunctionSpec, ValueType};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
-use crate::pom::{DeclId, DeclKind, FileId, TypeId, TypeKind};
+use super::lower::{Scope, ValueTypes};
+use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 
 impl Elaboration<'_, '_> {
     /// Lower `functions`, in first-reach order: the ids a call names were handed out by position.
@@ -41,27 +41,12 @@ impl Elaboration<'_, '_> {
         debug_assert_eq!(Some(id), self.function_ids.get(&function).copied(), "functions are built in first-reach order");
     }
 
-    /// The IR type a type written in a signature names.
+    /// The IR type a type written in a signature names: the checker's type of it, as an IR type.
     pub(super) fn lower_type(&mut self, file: FileId, ty: TypeId) -> Option<ValueType> {
-        let node = self.design.type_node(ty).clone();
-        let lowered = match &node.kind {
-            TypeKind::Tuple(items) if items.is_empty() => Some(ValueType::Unit),
-            TypeKind::FnPtr { params, ret } => {
-                let params: Option<Vec<ValueType>> = params.iter().map(|p| self.lower_type(file, *p)).collect();
-                let ret = match ret {
-                    Some(r) => self.lower_type(file, *r),
-                    None => Some(ValueType::Unit),
-                };
-                Some(ValueType::Fn(params?, Box::new(ret?)))
-            }
-            _ => match self.design.type_resolution(ty) {
-                crate::pom::Resolution::Builtin(id) if id.info().name == "fN" && id.width() == Some(64) => Some(ValueType::F64),
-                crate::pom::Resolution::Builtin(id) if id.info().name == "bool" => Some(ValueType::Bool),
-                _ => None,
-            },
-        };
+        let lowered = self.types.written(ty).and_then(ValueTypes::of);
         if lowered.is_none() {
-            self.unsupported(file, node.span, "a type other than `f64`, `bool`, `()` and a function type");
+            let span = self.design.type_node(ty).span;
+            self.unsupported(file, span, "a type that has no value in the IR");
         }
         lowered
     }

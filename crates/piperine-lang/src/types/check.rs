@@ -60,6 +60,8 @@ pub(super) struct Checker<'d> {
     /// The `Ty::Carrier` of each discrete port and signal declaration read or declared so far.
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
+    /// The type each type node of the reachable set writes.
+    pub(super) written: BTreeMap<TypeId, Ty>,
     /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
     /// defines: a receiver the POM could not type might mean any of them.
     pub(super) project_methods: BTreeSet<String>,
@@ -111,6 +113,7 @@ impl<'d> Checker<'d> {
             somes: BTreeSet::new(),
             carriers: BTreeMap::new(),
             builtins: BTreeMap::new(),
+            written: BTreeMap::new(),
             project_methods: Self::project_methods(design),
             continuity: Continuity::new(design),
             book: DriveBook::default(),
@@ -159,7 +162,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, continuous, emits })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, written: self.written, continuous, emits })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
@@ -233,6 +236,14 @@ impl<'d> Checker<'d> {
 
     /// The type a type node writes, or a `P0001` and `None` for one outside the subset.
     pub(super) fn lower_type(&mut self, ty: TypeId) -> Option<Ty> {
+        let lowered = self.lower_type_node(ty);
+        if let Some(t) = &lowered {
+            self.written.insert(ty, t.clone());
+        }
+        lowered
+    }
+
+    fn lower_type_node(&mut self, ty: TypeId) -> Option<Ty> {
         let node = self.design.type_node(ty).clone();
         let file = self.design.decl_data(node.owner).file;
         match &node.kind {

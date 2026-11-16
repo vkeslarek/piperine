@@ -7,7 +7,8 @@ use crate::msl::Diagnostic;
 impl Elaboration<'_, '_> {
     /// Report `fault`, found while folding `position` (`"a param default"`, `"a node's initial
     /// value"`): a read of a param is `P0001` (a value that depends on another param is M2),
-    /// anything that needs a run is `E0321`, a form the evaluator does not fold is `P0001`.
+    /// anything that needs a run is `E0321`, a form the evaluator does not fold is `P0001`, a panic
+    /// (an integer division by zero) is `E0104` (§1 rule 11).
     pub(super) fn const_fault(&mut self, fault: &ConstFault, position: &str) {
         let (file, span) = match fault {
             ConstFault::NoValue { decl } => {
@@ -29,6 +30,10 @@ impl Elaboration<'_, '_> {
             }
             ConstFault::Unsupported { what, .. } => self.unsupported(file, span, &format!("{what} in {position}")),
             ConstFault::NoValue { .. } => self.unsupported(file, span, &format!("a `const` without a value in {position}")),
+            ConstFault::Panic { what, .. } => {
+                let message = format!("{position} panics while it is evaluated at elaboration: {what}");
+                self.report(file, Diagnostic::new("E0104", message, span, "panics"));
+            }
         }
     }
 }

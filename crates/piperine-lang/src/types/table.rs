@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, FileId, LitKind, Reflect};
+use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, FileId, LitKind, Reflect, TypeId};
 
 use super::check;
 use super::Ty;
@@ -85,13 +85,14 @@ pub struct Types<'d> {
     pub(super) somes: BTreeSet<ExprId>,
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
+    pub(super) written: BTreeMap<TypeId, Ty>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
 }
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.continuous == other.continuous && self.emits == other.emits
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits
     }
 }
 
@@ -167,6 +168,11 @@ impl<'d> Types<'d> {
     /// What a call or a placement refers to.
     pub fn callee(&self, expr: ExprId) -> Option<Callee> {
         self.callees.get(&expr).copied()
+    }
+
+    /// The type a type node of the reachable set writes (a signature, an annotation, a cast).
+    pub fn written(&self, ty: TypeId) -> Option<&Ty> {
+        self.written.get(&ty)
     }
 
     /// The type of a `Binding` declaration.

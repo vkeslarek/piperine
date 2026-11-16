@@ -3,10 +3,12 @@
 //! One `Scope` per owner (a module body, later a function) names the params, nodes and locals
 //! an expression may read. A `const` read becomes its folded value; a param read stays a
 //! `Param` read, never a number (a host `set` must reach the solver without re-elaboration).
+//! An integer expression that reads only literals and constants is folded to one literal, by
+//! the rules the compiled code follows (`ConstEval`).
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BinaryOp, Branch, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Branch, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
@@ -47,18 +49,20 @@ impl Scope {
 pub(super) struct ValueTypes;
 
 impl ValueTypes {
-    /// `None` for a type no value has in the IR: a node, a module; and for an integer type or an
-    /// enum, which are lowered from msl-digital T23 and T26 on (until then elaboration refuses it by name).
+    /// `None` for a type no value has in the IR: a node, a module; and for an enum, which is
+    /// lowered from msl-digital T26 on (until then elaboration refuses it by name).
     pub(super) fn of(ty: &Ty) -> Option<ValueType> {
         match ty {
             Ty::F64 => Some(ValueType::F64),
             Ty::Bool => Some(ValueType::Bool),
             Ty::Unit => Some(ValueType::Unit),
+            Ty::UInt(n) => Some(ValueType::UInt(u32::from(*n))),
+            Ty::Int(n) => Some(ValueType::Int(u32::from(*n))),
             Ty::Fn(params, ret) => {
                 let params: Option<Vec<ValueType>> = params.iter().map(ValueTypes::of).collect();
                 Some(ValueType::Fn(params?, Box::new(ValueTypes::of(ret)?)))
             }
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => None,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Enum(_) | Ty::Option(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => None,
         }
     }
 }
@@ -91,6 +95,15 @@ impl Elaboration<'_, '_> {
             self.unsupported(file, node.span, "an expression the type checker gave no value type");
             return None;
         };
+        if ty.is_integer() && self.constant_form(expr) {
+            return match self.consts.value(expr, &Bindings::new()) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
+                Err(fault) => {
+                    self.const_fault(&fault, "a constant expression");
+                    None
+                }
+            };
+        }
         match &node.kind {
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
@@ -122,10 +135,7 @@ impl Elaboration<'_, '_> {
                 let rhs = self.lower_expr(scope, *rhs);
                 scope.nesting -= u32::from(short_circuit);
                 let (lhs, rhs) = (lhs?, rhs?);
-                let Some(op) = Self::binary_op(*op) else {
-                    self.unsupported(file, node.span, "this operator");
-                    return None;
-                };
+                let op = Self::binary_op(*op);
                 Some(self.emit(Expr::Binary { op, lhs, rhs }, ty, origin))
             }
             ExprKind::If { cond, then, else_ } => {
@@ -146,7 +156,7 @@ impl Elaboration<'_, '_> {
                 lowered
             }
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
-            ExprKind::MethodCall { recv, .. } => {
+            ExprKind::MethodCall { recv, args, .. } => {
                 let Some(method) = self.types.method(expr) else {
                     self.unsupported(file, node.span, "a method outside the catalogue");
                     return None;
@@ -156,14 +166,33 @@ impl Elaboration<'_, '_> {
                     Method::Ln => MathFn::Ln,
                     Method::Sqrt => MathFn::Sqrt,
                     Method::Abs => MathFn::Abs,
-                    // Lowered to the IR's `Method` node from msl-digital T23 on.
-                    Method::Min | Method::Max | Method::Clamp | Method::Floor | Method::IsSome | Method::IsNone | Method::UnwrapOr => {
-                        self.unsupported(file, node.span, "a method of an integer or an `Option`, or `floor`");
+                    Method::Min | Method::Max | Method::Clamp | Method::Floor => {
+                        let method = match method {
+                            Method::Min => IrMethod::Min,
+                            Method::Max => IrMethod::Max,
+                            Method::Clamp => IrMethod::Clamp,
+                            _ => IrMethod::Floor,
+                        };
+                        let receiver = self.lower_expr(scope, *recv);
+                        let mut lowered = Vec::new();
+                        for arg in args {
+                            lowered.push(self.lower_expr(scope, arg.value));
+                        }
+                        let (receiver, args) = (receiver?, lowered.into_iter().collect::<Option<Vec<_>>>()?);
+                        return Some(self.emit(Expr::Method { method, receiver, args }, ty, origin));
+                    }
+                    // Lowered as a flag and a payload from msl-digital T27 on.
+                    Method::IsSome | Method::IsNone | Method::UnwrapOr => {
+                        self.unsupported(file, node.span, "a method of an `Option`");
                         return None;
                     }
                 };
                 let recv = self.lower_expr(scope, *recv)?;
                 Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
+            }
+            ExprKind::Cast { expr: operand, .. } => {
+                let operand = self.lower_expr(scope, *operand)?;
+                Some(self.emit(Expr::Cast { expr: operand, to: ty.clone() }, ty, origin))
             }
             ExprKind::Closure { params, body, .. } => {
                 let mut locals = Vec::new();
@@ -299,8 +328,8 @@ impl Elaboration<'_, '_> {
         ok.then_some((out, value))
     }
 
-    fn binary_op(op: BinOp) -> Option<BinaryOp> {
-        Some(match op {
+    fn binary_op(op: BinOp) -> BinaryOp {
+        match op {
             BinOp::Add => BinaryOp::Add,
             BinOp::Sub => BinaryOp::Sub,
             BinOp::Mul => BinaryOp::Mul,
@@ -313,8 +342,29 @@ impl Elaboration<'_, '_> {
             BinOp::Ne => BinaryOp::Ne,
             BinOp::And => BinaryOp::And,
             BinOp::Or => BinaryOp::Or,
-            BinOp::Rem | BinOp::BitXor | BinOp::BitAnd | BinOp::BitOr | BinOp::Shl | BinOp::Shr => return None,
-        })
+            BinOp::Rem => BinaryOp::Rem,
+            BinOp::BitXor => BinaryOp::BitXor,
+            BinOp::BitAnd => BinaryOp::BitAnd,
+            BinOp::BitOr => BinaryOp::BitOr,
+            BinOp::Shl => BinaryOp::Shl,
+            BinOp::Shr => BinaryOp::Shr,
+        }
+    }
+
+    /// Whether `expr` reads only literals and constants through operators, casts and the
+    /// catalogue's methods: an expression `ConstEval` folds (DIG-08 AC 2). A call, a block or an
+    /// `if` is kept as written.
+    fn constant_form(&self, expr: ExprId) -> bool {
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Lit(lit) => matches!(lit.kind, crate::pom::LitKind::Int(_) | crate::pom::LitKind::Float { .. } | crate::pom::LitKind::Bool(_)),
+            ExprKind::Paren(inner) => self.constant_form(*inner),
+            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Const(_))),
+            ExprKind::Unary { op: UnOp::Neg | UnOp::Not, expr: operand } => self.constant_form(*operand),
+            ExprKind::Binary { lhs, rhs, .. } => self.constant_form(*lhs) && self.constant_form(*rhs),
+            ExprKind::Cast { expr: operand, .. } => self.constant_form(*operand),
+            ExprKind::MethodCall { recv, args, .. } => self.types.method(expr).is_some() && self.constant_form(*recv) && args.iter().all(|a| self.constant_form(a.value)),
+            _ => false,
+        }
     }
 
     /// A folded value as the IR expression of its type; an integer takes `ty`, its expression's
