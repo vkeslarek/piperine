@@ -2330,10 +2330,10 @@ Proof: run bloop | test the_output_settles_within_10_mv_of_0v8 ... ok
 Proof: run bloop | test no_shoot_through_during_the_start ... ok
 
 **C155** - `GAPS.md` lists the three deviations this feature leaves. (DIG-17, AC 1; T58)
-Proof: `grep -q 'unknown control' GAPS.md && grep -q 're-derived' GAPS.md && grep -q 'variant names' GAPS.md`
+Proof: `grep -q '^- \*\*An unknown control is a fault' GAPS.md && grep -q '^- \*\*A derived child param is not re-derived on a host .set.' GAPS.md && grep -q '^- \*\*Enum variant names are not carried' GAPS.md`
 
-**C156** - `GAPS.md` no longer lists G3 as silent. (DIG-17, AC 2; T58)
-Proof: `! grep -q 'stays `Unresolved` with no diagnostic' GAPS.md`
+**C156** - `GAPS.md` no longer lists G3 (no `G3`, `saturating_add` or `Unresolved` in it), and `examples/buck/GAPS.md` keeps G3 only as closed: its heading ends `(closed: now reported)` and its body says it is a reported gap, not a silent one. (DIG-17, AC 2; T58)
+Proof: `! grep -q -e 'G3' -e 'saturating_add' -e 'Unresolved' GAPS.md && grep -q '^## G3\. .*(closed: now reported)$' examples/buck/GAPS.md && grep -q 'reported gap, not a silent one' examples/buck/GAPS.md`
 
 **C157** - The buck's README no longer says nothing executes MSL. (DIG-17, AC 2; T59)
 Proof: `! grep -q 'Nothing executes MSL yet' examples/buck/README.md`
