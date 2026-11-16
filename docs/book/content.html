@@ -1305,29 +1305,54 @@ i(mid, b) +> -n;          // fully correlated</pre>
 <p class="ch-num">Chapter 7</p>
 <h2>Digital behavior</h2>
 
-<p>A <code>digital</code> block holds <strong>reactions</strong>. A reaction <code>on ev { body }</code> runs its body once, to completion, when the event <code>ev</code> fires. Inside it, <code>q <- x;</code> is a <strong>commit</strong>: it writes this module's drive of <code>q</code>, and the write applies at the next microstep.</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can write clocked logic and predict it edge by edge: a counter, a debounced button and a PWM generator, each with a debug stream that shows its state on every clock edge. You will also know the one rule that makes digital MSL free of races.</p>
+</div>
+
+<p>A <code>digital</code> block holds <strong>reactions</strong>. A reaction <code>on ev { body }</code> runs its body once, to completion, each time the event <code>ev</code> fires. Inside it, <code>q <- x;</code> is a <strong>commit</strong>: it writes this module's drive of <code>q</code>, and the write takes effect a moment later, never during the reaction.</p>
+
+<h3>The one rule: reads see the past</h3>
+
+<p>Start with a counter that also raises a flag when it is about to wrap. The first line of the reaction is a debug print of the state.</p>
 
 <pre data-lang="msl">module Counter(in clk: Bit, out count: Bit<u8> = 0, out full: Bit = false) {}
 digital for Counter {
     on clk.rise() {
+        emit!("state", t = now(), count = count, full = full);
         count <- count + 1;
-        full  <- count == 254;      // reads the old count
+        full  <- count == 254;
     }
 }</pre>
 
+<p>Why 254 and not 255? Because <strong>every read in a reaction sees the values from before the edge</strong>, exactly like the D inputs of real flip-flops. On the edge where <code>count</code> reads 254, the first commit schedules 255 and the second schedules <code>full = true</code>; both land together. So <code>full</code> is high exactly while <code>count</code> is 255. The stream shows it:</p>
+
+<pre data-lang="text">stream top.ctr.state               (a 1 MHz clock: edges at 0.5, 1.5, 2.5 µs, …)
+  instant         fields
+  (0.5 µs, 0)     count = 0     full = false
+  (1.5 µs, 0)     count = 1     full = false
+  …
+  (254.5 µs, 0)   count = 254   full = false     this edge commits 255 and full = true
+  (255.5 µs, 0)   count = 255   full = true      this edge commits 0 and full = false
+  (256.5 µs, 0)   count = 0     full = false</pre>
+
+<p>Each record is the state the reaction <em>found</em>. Put the <code>emit!</code> first, last or in the middle: it prints the same thing, because nothing changes while a reaction runs. This is the habit to build: one <code>emit!("state", …)</code> at the top of a clocked reaction gives you the whole history of the block, one row per edge.</p>
+
 <h3>The rules of a microstep</h3>
 
+<p>Time in digital MSL advances in <strong>microsteps</strong>: at one time <code>t</code>, the instants <code>(t, 0)</code>, <code>(t, 1)</code>, <code>(t, 2)</code>, … follow each other until nothing is left to do. A commit made at microstep <em>n</em> applies at microstep <em>n</em> + 1. The second number in every record's instant is this counter. Five rules govern it:</p>
+
 <ul>
-<li><strong>Reads see the past.</strong> Every read sees the values at the start of the microstep. All the commits of a microstep apply together. That is why <code>full</code> above reads the old <code>count</code>, and why statement order inside a reaction rarely matters.</li>
+<li><strong>Reads see the past.</strong> Every read sees the values at the start of the microstep. All the commits of a microstep apply together. That is why statement order inside a reaction rarely matters.</li>
 <li><strong>The last write wins.</strong> When two commits hit the same level in the same microstep, source order decides. All writers of one drive are in one module, so you can see the order in one file.</li>
-<li><strong>Modules never race.</strong> A one-driver carrier has one writer, and a resolved one combines its drives in a fixed order.</li>
-<li><strong>Delays are transport.</strong> <code>q <- x after d;</code> applies <code>d</code> seconds later. A new commit from the same statement removes that statement's pending commits due at or after it. <code>p <- true; p <- false after w;</code> is a pulse in either order.</li>
+<li><strong>Modules never race.</strong> A one-driver carrier has one writer, and a resolved one combines its drives in a fixed order. No result depends on which module the simulator happened to run first.</li>
+<li><strong>Delays are transport.</strong> <code>q <- x after d;</code> applies <code>d</code> seconds later. A new commit from the same statement removes that statement's pending commits due at or after it. <code>p <- true; p <- false after w;</code> is a pulse of width <code>w</code>, in either order.</li>
 <li><strong>A reaction never waits.</strong> There is no <code>wait</code>, no blocking write and no <code>#0</code>. A sequence over time is visible state, such as a counter.</li>
 </ul>
 
 <h3>Definitions and commits</h3>
 
-<p>A module drives a carrier in one of two ways, never both: with one <code>=</code> definition in the body, or with commits from its reactions. Definitions describe combinational logic and delays; commits describe state. A set-reset latch needs no reaction at all:</p>
+<p>A module drives a carrier in one of two ways, never both: with one <code>=</code> definition in the body, or with commits from its reactions. Use a definition for combinational logic and delays, and commits for state. A definition is recomputed in the same microstep its inputs change, so it never lags. A set-reset latch needs no reaction at all:</p>
 
 <pre data-lang="msl">/// Cross-coupled NOR gates with gate delay: pure structure.
 module SrLatch(in s: Bit, in r: Bit, out q: Bit = false, out qn: Bit = true) {
@@ -1336,9 +1361,11 @@ module SrLatch(in s: Bit, in r: Bit, out q: Bit = false, out qn: Bit = true) {
     qn = !(s | q)  after tpd;
 }</pre>
 
-<p>Without the <code>after</code>, the two definitions would form a loop through one-driver carriers, which is an elaboration error (E0339).</p>
+<p>Without the <code>after</code>, the two definitions would form a loop with no delay in it, which is an elaboration error (E0339).</p>
 
 <h3>Events</h3>
+
+<p>The head of a reaction is an <strong>event</strong>. These are the ones you will use:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Event</th><th>Fires when</th></tr></thead>
@@ -1352,7 +1379,7 @@ module SrLatch(in s: Bit, in r: Bit, out q: Bit = false, out qn: Bit = true) {
 <tr><td><code>settle</code></td><td>once per time point, after the instant has gone quiet</td></tr>
 </tbody></table></div>
 
-<p>Events combine with <code>a || b</code> (either fires) and <code>ev && c</code>, where <code>c</code> is a <code>bool</code> guard. A plain <code>bool</code> alone is not an event (E0430). Inside a reaction, an event used as a <code>bool</code> tells you whether it fired in this microstep:</p>
+<p>Events combine with <code>a || b</code> (either fires) and <code>ev && c</code>, where <code>c</code> is a <code>bool</code> guard: the reaction runs when <code>ev</code> fires <em>and</em> <code>c</code> is true at that moment. A plain <code>bool</code> alone is not an event (E0430): <code>on enable { … }</code> has no "when". Inside a reaction, an event used as a <code>bool</code> tells you whether it fired in this microstep:</p>
 
 <pre data-lang="msl">/// Three-state phase detector: two events in one reaction, each tested as a bool.
 module Pfd3(in fref: Bit, in fvco: Bit, out up: Bit, out dn: Bit) {
@@ -1369,9 +1396,136 @@ digital for Pfd3 {
     }
 }</pre>
 
+<p>Inside a reaction, <code>let mut</code> is back: a local is an ordinary Rust variable that lives for one run of the body. Only carriers follow the "reads see the past" rule.</p>
+
+<h3>A complete example: a debounced button</h3>
+
+<p>A mechanical button bounces for a few milliseconds. The classic fix samples it with a slow clock and accepts a new level only after it has been seen on several consecutive samples.</p>
+
+<pre data-lang="msl">/// A free-running clock.
+module Osc(out clk: Bit = false) { f: f64 = 1M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// `clean` follows `raw` once `raw` has differed from it on `n` consecutive clock edges.
+module Debounce(in clk: Bit, in raw: Bit, out clean: Bit = false) {
+    n: u8 = 4 where n >= 1;
+    /// Consecutive samples that differ from `clean`.
+    signal run: Bit<u8> = 0;
+}
+digital for Debounce {
+    on clk.rise() {
+        emit!("state", t = now(), raw = raw, run = run, clean = clean);
+        let level = raw.known_or(clean);        // an unknown input counts as "no change"
+        if level == clean {
+            run <- 0;
+        } else if run + 1 >= n {
+            clean <- level;
+            run <- 0;
+            emit!("flip", t = now(), to = level);
+        } else {
+            run <- run + 1;
+        }
+    }
+}
+
+module ButtonTop(in button: Bit) {
+    signal clk: Bit;
+    pub signal pressed: Bit;
+    let osc = Osc(clk) { f: 1k };
+    let db = Debounce(clk, button, pressed) { n: 4 };
+}</pre>
+
+<p>Read the reaction as a hardware designer would read RTL:</p>
+
+<ul>
+<li><strong><code>signal run: Bit&lt;u8&gt; = 0;</code></strong> is the state register: how many samples in a row disagreed with the output.</li>
+<li><strong><code>raw.known_or(clean)</code></strong> decides what an undriven button means. Here it means "same as now", so an unknown input can never flip the output.</li>
+<li><strong>The three arms</strong> are: agreement resets the run; the <code>n</code>-th disagreement flips the output; any other disagreement extends the run. Each arm commits <code>run</code> exactly once, so there is nothing for "last write wins" to decide.</li>
+<li><strong>Two streams.</strong> <code>state</code> is the row-per-edge debug stream. <code>flip</code> records only the interesting moments. Keeping them apart lets a host listen to <code>flip</code> alone.</li>
+</ul>
+
+<p>The top's <code>in button</code> port is driven by the host. Let it be low, bounce high at 2.0&nbsp;ms, low at 2.2&nbsp;ms, and high for good at 2.4&nbsp;ms. The clock is 1&nbsp;kHz, so it samples at 0.5, 1.5, 2.5&nbsp;ms and so on, and never sees the bounce:</p>
+
+<pre data-lang="text">stream top.db.state
+  instant        fields
+  (0.5 ms, 0)    raw = false   run = 0   clean = false
+  (1.5 ms, 0)    raw = false   run = 0   clean = false
+  (2.5 ms, 0)    raw = true    run = 0   clean = false
+  (3.5 ms, 0)    raw = true    run = 1   clean = false
+  (4.5 ms, 0)    raw = true    run = 2   clean = false
+  (5.5 ms, 0)    raw = true    run = 3   clean = false     the fourth sample: this edge flips
+  (6.5 ms, 0)    raw = true    run = 0   clean = true
+
+stream top.db.flip
+  (5.5 ms, 0)    t = 5.5e-3   to = true</pre>
+
+<p>The <code>run</code> column lags by one edge, as it must: each row is the state the reaction found. When you debug a state machine this way, read a row as "given this state and these inputs, the block decided…" and look for the decision in the next row.</p>
+
+<h3>A complete example: a PWM generator</h3>
+
+<p>A counter that wraps every <code>period</code> clocks, and an output that is high while the count is below a duty word. Two details make it a good PWM: the duty word is latched once per cycle, so a change never splits a pulse, and the output is a register, so it never glitches.</p>
+
+<pre data-lang="msl">/// Counter-based PWM: `period` clocks per cycle, high for `duty` of them.
+module Pwm(in clk: Bit, in duty: Bit<u8>, out pwm: Bit = false, out wrap: Bit) {
+    period: u8 = 100 where period >= 2;
+    signal count: Bit<u8> = 0;
+    /// The duty word in use for this cycle.
+    signal width: Bit<u8> = 0;
+    wrap = count == 0;                          // a definition: high during the first count
+}
+digital for Pwm {
+    on clk.rise() {
+        let last = count == period - 1;
+        let next = if last { 0 } else { count + 1 };
+        let w = if last { duty.known_or(0) } else { width };    // latch at the wrap
+        count <- next;
+        width <- w;
+        pwm <- next < w;
+        if last { emit!("cycle", t = now(), duty = w); }
+    }
+}
+
+module PwmTop(in duty: Bit<u8>) {
+    signal clk: Bit;
+    pub signal pwm: Bit;
+    signal wrap: Bit;
+    let osc = Osc(clk) { f: 1M };
+    let pulse = Pwm(clk, duty, pwm, wrap) { period: 100 };
+}</pre>
+
+<p>The pattern in this reaction is worth copying. First compute everything the next state needs into locals (<code>last</code>, <code>next</code>, <code>w</code>), from the current state. Then commit. Because the output is computed from <code>next</code> and <code>w</code>, not from <code>count</code> and <code>width</code>, <code>pwm</code> changes in the same microstep as the counter it belongs to.</p>
+
+<p><code>wrap</code> is a definition, so it has no initial value of its own: it is always <code>count == 0</code>. With a 1&nbsp;MHz clock the PWM runs at 10&nbsp;kHz, and the <code>cycle</code> stream has one record per period carrying the duty word that period will use. If the host changes <code>duty</code> from 25 to 60 in the middle of a cycle, the stream shows the change taking effect at the next wrap, never earlier.</p>
+
+<h3>From print to check</h3>
+
+<p>Once a debug print has shown you what "right" looks like, turn it into a check. The library's <code>require(name, pass)</code> is a function over <code>emit!</code> that writes a record to the reserved <code>checks</code> stream; the host reports each one as a pass or a failure, and an unknown <code>pass</code> is reported as unknown, never as a pass. <code>finish()</code> writes to the reserved <code>sim</code> stream and ends the analysis at that instant.</p>
+
+<pre data-lang="msl">/// Checks a PWM from outside: the duty in use never exceeds a limit, and stops after `cycles`.
+module PwmCheck(in clk: Bit, in wrap: Bit, in pwm: Bit) {
+    limit: u8 = 90;
+    cycles: u32 = 20;
+    signal high: Bit<u8> = 0;       // high clocks seen in this cycle
+    signal seen: Bit<u32> = 0;      // cycles completed
+}
+digital for PwmCheck {
+    on clk.rise() {
+        if wrap {
+            require("duty_limit", high <= limit);
+            high <- if pwm { 1 } else { 0 };
+            seen <- seen + 1;
+            if seen + 1 >= cycles { finish(); }
+        } else if pwm {
+            high <- high + 1;
+        }
+    }
+}</pre>
+
+<p>Place it beside the generator in <code>PwmTop</code> with <code>let chk = PwmCheck(clk, wrap, pwm);</code>. A check is an ordinary reaction: it runs when its event fires and reads what any reaction reads. The library also has ready-made monitors built this way, such as <code>Never(clk, bad)</code> and <code>Setup(clk, d) { ts: 100p }</code>; chapter 10 lists them.</p>
+
 <h3>Many drivers: resolved nets</h3>
 
-<p>Open-drain lines, tristate buses and wired logic are not language features. They are a nature with a <code>resolve</code> function, from the standard library. Any module that sees a <code>Wire</code> may drive it, and nobody counts drivers:</p>
+<p>Open-drain lines, tristate buses and wired logic are not language features. They are a nature with a <code>resolve</code> function (chapter 4). A clocked reader of such a line looks like any other reaction; it reads the resolved value:</p>
 
 <pre data-lang="msl">module IrqSource(in req: Bit, irq_n: Wire) { irq_n = if req { Logic::strong(false) } else { Logic::Z }; }
 
@@ -1401,7 +1555,7 @@ digital<T> for Dff<T> {
 <li><strong>Unknown <code>rst_n</code>.</strong> Both arms run and their commits merge level by level, so <code>q</code> keeps the levels on which <code>reset</code> and <code>d</code> agree. If you want Verilog's behavior instead, write <code>if !rst_n.known_or(true)</code>.</li>
 </ol>
 
-<p>Pipelines fall out of "reads see the past". One reaction can describe all three stages of a multiply-accumulate pipeline, in any statement order:</p>
+<p>Pipelines fall out of "reads see the past". One reaction can describe all three stages of a multiply-accumulate pipeline, in any statement order, because every right-hand side reads the registers as they were before the edge:</p>
 
 <pre data-lang="msl">module MacPipe(in clk: Bit, in a: Bit<i16>, in b: Bit<i16>, in valid_in: Bit,
                out acc: Bit<i40> = 0, out valid_out: Bit = false) {
@@ -1419,6 +1573,32 @@ digital for MacPipe {
         if v2 { acc <- acc + p2 as i40; } valid_out <- v2;   // stage 3
     }
 }</pre>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>Everything in this chapter is parsed and resolved by the front end. Digital models execute today as compiled Rust built from hand-written intermediate code; taking a <code>digital</code> block from source to that code is the compiler work in progress (chapter 15). The streams printed in this chapter are what the rules above define.</p>
+</div>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0430</td><td><code>on clk { … }</code></td><td>A <code>Bit</code> is a level, not an event. Say which change: <code>on clk.rise() { … }</code></td></tr>
+  <tr><td>E0221</td><td><code>wrap = count == 0;</code> and also <code>wrap &lt;- true;</code></td><td>One carrier, one way of driving it. Keep the definition or the commits.</td></tr>
+  <tr><td>E0338</td><td><code>out wrap: Bit = false</code> with <code>wrap = count == 0;</code></td><td>A carrier driven by an undelayed definition has no initial value: the definition is its value.</td></tr>
+  <tr><td>E0339</td><td><code>q = !(r | qn); qn = !(s | q);</code></td><td>A loop of definitions with no delay. Break it with <code>after</code>.</td></tr>
+  <tr><td>E0432</td><td><code>count &lt;- count + 1.0;</code></td><td>The committed type must be the carrier's. <code>count</code> is a <code>u8</code>: commit <code>count + 1</code>.</td></tr>
+  <tr><td>E0434</td><td><code>count &lt;- 0;</code> directly in <code>digital for M { … }</code></td><td>A <code>digital</code> block holds only reactions. For a start value use <code>= 0</code> on the signal, or <code>on init() { … }</code>.</td></tr>
+  <tr><td>E0350</td><td><code>on clk.rise() { let e = above(v(a)); … }</code></td><td>An instance cannot be placed inside a reaction. Name it in the body, <code>let e = above(v(a));</code>, and read <code>e</code>.</td></tr>
+  <tr><td>E0501</td><td><code>on clk.changed() { clk &lt;- !clk; }</code></td><td>A run error: with no delay the microsteps at one time never go quiet. Add <code>after 0.5 / f</code>.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>In the debouncer, the host makes <code>button</code> high at 2.0&nbsp;ms and low again at 4.0&nbsp;ms. Write down the <code>run</code> column of the <code>state</code> stream up to 6.5&nbsp;ms, and say whether a <code>flip</code> record appears. (<code>run</code> reads 0, 0, 0, 1, 2, 0, 0: the samples at 2.5 and 3.5&nbsp;ms extend the run, the low sample at 4.5&nbsp;ms resets it. No flip.) Then make <code>Pwm</code> emit the time of each falling edge of its output, using a second reaction on <code>pwm.fall()</code>.</p>
+</div>
 </section>
 
 <!-- ===================================================== 8 -->
