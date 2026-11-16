@@ -20,6 +20,7 @@ mod event;
 mod expr;
 mod module;
 mod reaction;
+mod record;
 mod table;
 mod ty;
 mod unsupported;

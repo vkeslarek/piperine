@@ -241,7 +241,7 @@ fn prev_is_typed_on_a_carrier() {
 
 /// The text of every expression of the reachable set that reads as `text`, in source order.
 fn exprs_reading(design: &Design, types: &Types, src: &str, text: &str) -> Vec<ExprId> {
-    (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| types.ty(*e).is_some() && src[design.expr_node(*e).span.range()] == *text).collect()
+    (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| types.ty(*e).is_some() && design.files()[design.decl_data(design.expr_node(*e).owner).file.0 as usize].name() == "top.msl" && src[design.expr_node(*e).span.range()] == *text).collect()
 }
 
 #[test]

@@ -97,6 +97,10 @@ impl Checker<'_> {
             return;
         };
         match ty {
+            Some(Ty::Str) => {
+                self.unsupported(file, pat.span, "a string literal bound by a `let`");
+                self.poisoned.insert(*binding);
+            }
             Some(ty) => {
                 self.locals.insert(*binding, ty);
             }

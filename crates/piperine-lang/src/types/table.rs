@@ -86,11 +86,12 @@ pub struct Types<'d> {
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
     pub(super) continuous: BTreeSet<ExprId>,
+    pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
 }
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.continuous == other.continuous
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.continuous == other.continuous && self.emits == other.emits
     }
 }
 
@@ -149,6 +150,12 @@ impl<'d> Types<'d> {
     pub fn continuity(&self, expr: ExprId) -> Option<Continuity> {
         self.ty(expr)?;
         Some(if self.continuous.contains(&expr) { Continuity::Continuous } else { Continuity::Discrete })
+    }
+
+    /// The streams a function of the reachable set writes, directly or through the functions it
+    /// calls; `None` for a function that reaches no `emit!` (part VI §19).
+    pub fn emits(&self, function: DeclId) -> Option<&BTreeSet<String>> {
+        self.emits.get(&function)
     }
 
     /// The type of a discrete port or signal declaration, `Ty::Carrier`; `None` for a node, a

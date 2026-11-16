@@ -204,6 +204,7 @@ impl Checker<'_> {
                 self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
                 None
             }
+            ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
             ExprKind::Struct { class: StructClass::Template(_), .. } => {
                 self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
                 None
@@ -386,10 +387,7 @@ impl Checker<'_> {
             LitKind::Bool(_) => Some(Ty::Bool),
             LitKind::Int(text) if text.ends_with("f64") => Some(Ty::F64),
             LitKind::Int(text) => self.integer_literal(file, span, text, None, false),
-            LitKind::Str { .. } => {
-                self.unsupported(file, span, "string literal");
-                None
-            }
+            LitKind::Str { .. } => Some(Ty::Str),
             LitKind::Unknown => {
                 self.unsupported(file, span, "`Unknown` literal");
                 None
@@ -610,6 +608,10 @@ impl Checker<'_> {
             }
         };
         match bound {
+            Some(Ty::Str) => {
+                self.unsupported(file, span, "a string literal bound by a `let`");
+                self.poisoned.insert(*binding);
+            }
             Some(t) => {
                 self.locals.insert(*binding, t);
             }

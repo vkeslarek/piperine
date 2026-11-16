@@ -9,6 +9,7 @@ use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Desi
 
 use super::continuity::Continuity;
 use super::definition::DriveBook;
+use super::record::Records;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty, Types};
 
@@ -65,6 +66,10 @@ pub(super) struct Checker<'d> {
     pub(super) continuity: Continuity,
     /// What the module being checked drives, by definition and by commit.
     pub(super) book: DriveBook,
+    /// The `emit!` sites seen so far.
+    pub(super) records: Records,
+    /// The declaration being checked: a module, a function or a constant.
+    pub(super) owner: Option<DeclId>,
     pub(super) context: Context,
     /// The one expression that may be an `Event`: an event position hands it down just before it
     /// types the expression, which judges an `Event` anywhere else.
@@ -104,6 +109,8 @@ impl<'d> Checker<'d> {
             project_methods: Self::project_methods(design),
             continuity: Continuity::new(design),
             book: DriveBook::default(),
+            records: Records::default(),
+            owner: None,
             context: Context::Module,
             event_slot: None,
             in_guard: false,
@@ -133,6 +140,7 @@ impl<'d> Checker<'d> {
         while let Some(decl) = self.queue.pop_front() {
             self.declaration(decl);
         }
+        self.record_conflicts();
         if !self.diagnostics.is_empty() {
             let mut diagnostics = self.diagnostics;
             diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
@@ -143,7 +151,8 @@ impl<'d> Checker<'d> {
             self.continuous(expr);
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, continuous })
+        let emits = self.records.emitting();
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, continuous, emits })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
@@ -163,6 +172,7 @@ impl<'d> Checker<'d> {
     }
 
     fn declaration(&mut self, decl: DeclId) {
+        self.owner = Some(decl);
         match &self.design.decl_data(decl).kind {
             DeclKind::Module(_) => self.module(decl),
             DeclKind::Fn(_) => self.function(decl),
@@ -250,6 +260,9 @@ impl<'d> Checker<'d> {
                 }
             },
             TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
+            // `&str` (also `&'static str`): the type of a string literal, which no `let`, no carrier
+            // and no param holds.
+            TypeKind::Ref { inner, .. } if matches!(self.design.type_resolution(*inner), Resolution::Builtin(id) if id.info().name == "str") => Some(Ty::Str),
             TypeKind::Tuple(_) | TypeKind::Array { .. } | TypeKind::Slice(_) | TypeKind::Ref { .. } | TypeKind::Flip(_) | TypeKind::Infer => {
                 self.unsupported(file, node.span, Unsupported::ty(&node.kind));
                 None

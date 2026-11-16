@@ -66,6 +66,7 @@ impl Checker<'_> {
     /// the declared result as the type.
     fn function_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
         self.reach(function);
+        self.emitting_call(expr, function);
         let (params, ret) = self.signature(function)?;
         self.callees.insert(expr, Callee::Function(function));
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));

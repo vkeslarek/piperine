@@ -65,11 +65,6 @@ impl Checker<'_> {
             self.no_repr(file, node.span, &format!("enum `{name}`"));
             return None;
         }
-        // `&str` is the type of a string literal and has no `Repr`; it is named here, not lowered.
-        if matches!(&node.kind, crate::pom::TypeKind::Ref { inner, .. } if matches!(self.design.type_resolution(*inner), Resolution::Builtin(id) if id.info().name == "str")) {
-            self.no_repr(file, node.span, "&str");
-            return None;
-        }
         let value = self.lower_type(ty)?;
         match &value {
             Ty::Event => {

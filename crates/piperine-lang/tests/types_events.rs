@@ -37,9 +37,14 @@ fn binding(design: &Design, name: &str) -> DeclId {
     design.decls().into_iter().find(|d| d.name() == Some(name) && matches!(d.kind(), DeclKind::Binding(_))).unwrap_or_else(|| panic!("no binding `{name}`")).id()
 }
 
+/// Whether `expr` is written in `top.msl`, the source under test, and not in the standard library.
+fn in_top(design: &Design, expr: ExprId) -> bool {
+    design.files()[design.decl_data(design.expr_node(expr).owner).file.0 as usize].name() == "top.msl"
+}
+
 /// The reached expressions that read as `text`, in source order.
 fn exprs_reading(design: &Design, types: &Types, src: &str, text: &str) -> Vec<ExprId> {
-    (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| types.ty(*e).is_some() && src[design.expr_node(*e).span.range()] == *text).collect()
+    (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| types.ty(*e).is_some() && in_top(design, *e) && src[design.expr_node(*e).span.range()] == *text).collect()
 }
 
 const HEAD: &str = "module Top(in clk: Bit, in en: Bit, in k: Bit<f64>, p: Electrical) { }\n";
@@ -324,4 +329,128 @@ fn a_placement_in_a_reaction_is_e0350() {
         assert_eq!(codes(&d), ["E0350"], "{src}");
         assert_eq!(snippet(src, &d[0]), "Child()", "{src}");
     }
+}
+
+// ---- emit! (T14) ----
+
+/// The function `name` of the standard library, by declaration.
+fn std_fn(design: &Design, name: &str) -> DeclId {
+    design.decls().into_iter().find(|d| d.name() == Some(name) && matches!(d.kind(), DeclKind::Fn(_)) && d.krate().is_std()).unwrap_or_else(|| panic!("no std fn `{name}`")).id()
+}
+
+#[test]
+fn emit_is_typed_in_a_reaction() {
+    // DIG-05 AC 11 (§19 rules 10 and 11): `emit!("conv", code = q, ok = true)` in a reaction has the
+    // fields of a value type; `log` and `require` of the stdlib type-check when a reaction calls
+    // them, the buck's `Supervisor` and the stdlib's `Never` among them; a string literal is `&str`.
+    let src = "module Top(in clk: Bit, in d: Bit<u10>) { }\ndigital for Top {\n    on clk.rise() {\n        let q = d.known_or(0);\n        emit!(\"conv\", code = q, ok = true);\n        log(Severity::Warning, \"top: fault\");\n        require(\"in_range\", q < 1000);\n    }\n}";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    assert_eq!(types.ty(exprs_reading(&design, &types, src, "emit!(\"conv\", code = q, ok = true)")[0]), Some(&Ty::Unit));
+    assert_eq!(types.ty(exprs_reading(&design, &types, src, "\"top: fault\"")[0]), Some(&Ty::Str));
+    let (log, require) = (std_fn(&design, "log"), std_fn(&design, "require"));
+    assert_eq!(types.emits(log).map(|s| s.iter().cloned().collect::<Vec<_>>()), Some(vec!["log".to_string()]));
+    assert_eq!(types.emits(require).map(|s| s.iter().cloned().collect::<Vec<_>>()), Some(vec!["checks".to_string()]));
+    assert!(types.reached().contains(&log) && types.reached().contains(&require));
+    // The stdlib's own monitor places and checks: `Never` is `on clk.rise() { require(..) }`.
+    let src = "module Top(in clk: Bit, in bad: Bit) { let n = Never(clk, bad); }";
+    checked_top(src, "Top");
+    // The supervisor of the buck calls `log` from a reaction.
+    let mut supervisor = String::new();
+    supervisor += &buck::spec();
+    supervisor += "\n";
+    supervisor += &buck::item("supervisor.msl", "pub enum Mode");
+    supervisor += "\n";
+    supervisor += &buck::item("supervisor.msl", "pub enum Fault");
+    supervisor += "\n";
+    supervisor += &buck::item("supervisor.msl", "pub fn in_window");
+    supervisor += "\n";
+    supervisor += &buck::item("supervisor.msl", "pub fn ovp_threshold");
+    supervisor += "\n";
+    supervisor += &buck::module_with_digital("supervisor.msl", "Supervisor");
+    checked_top(&supervisor, "Supervisor");
+    // A string is not a value a `let` or a carrier holds.
+    let d = diagnostics("module Top() { let s = \"a\"; }");
+    assert_eq!(codes(&d), ["P0001"]);
+    assert!(d[0].diagnostic.message.contains("string literal"), "{}", d[0].diagnostic.message);
+}
+
+#[test]
+fn a_repeated_or_reserved_field_is_e0604() {
+    // DIG-05 AC 12 (§19 rule 11): a field name is distinct within one `emit!`, and `maybe` is
+    // reserved. The error is at the field.
+    for (fields, at) in [("a = 1.0, a = 2.0", "a = 2.0"), ("a = 1.0, b = 2.0, a = true", "a = true"), ("maybe = true", "maybe = true"), ("x = 1.0, maybe = 2.0", "maybe = 2.0")] {
+        let src = format!("module Top(in clk: Bit) {{ }}\ndigital for Top {{ on clk.rise() {{ emit!(\"s\", {fields}); }} }}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0604"], "{fields}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{fields}");
+    }
+    // A field that is not a value.
+    let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"s\", e = clk.rise()); } }";
+    let d = diagnostics(src);
+    assert_eq!(codes(&d), ["E0606"], "an event is not a value: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_field_type_conflict_is_e0605() {
+    // DIG-05 AC 13 (§19 rules 12 and 15): `pass = 1.0` on `checks` is `E0605`; so is one field with
+    // two types on one stream of a module, also through a function the module calls. Two modules
+    // are two instances and write two streams.
+    for (src, at) in [
+        ("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"checks\", kind = \"require\", name = \"n\", pass = 1.0); } }", "pass = 1.0"),
+        ("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"sim\", finish = 1); } }", "finish = 1"),
+        ("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"checks\", margin = true); } }", "margin = true"),
+        ("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"conv\", x = 1.0); emit!(\"conv\", x = true); } }", "x = true"),
+        ("fn note(v: f64) { emit!(\"conv\", x = v); }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { note(1.0); emit!(\"conv\", x = true); } }", "x = true"),
+    ] {
+        let d = diagnostics(src);
+        assert_eq!(codes(&d), ["E0605"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(src, &d[0]), at, "{src}");
+    }
+    let src = "module A(in clk: Bit) { }\ndigital for A { on clk.rise() { emit!(\"conv\", x = 1.0); } }\nmodule Top(in clk: Bit) { let a = A(clk); }\ndigital for Top { on clk.rise() { emit!(\"conv\", x = true); } }";
+    checked_top(src, "Top");
+    // Another type on a stream that is not reserved, and the stdlib's own fields, are fine.
+    let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"checks\", kind = \"cover\", name = \"hit\", pass = true, margin = 0.5, extra = 3); emit!(\"sim\", finish = true, failed = false, msg = \"done\"); } }";
+    checked_top(src, "Top");
+}
+
+#[test]
+fn emit_where_it_is_not_allowed_is_e0601() {
+    // DIG-05 AC 14 (§19 rule 10): `emit!`, or a function that calls it, reached from a definition,
+    // a module-body `let` or a const context is `E0601`, at the emit or at the call.
+    let items = "fn check(ok: bool) -> bool { require(\"c\", ok); ok }\n";
+    for (src, at) in [
+        (format!("{items}module Top(in a: Bit, out q: Bit) {{ q = check(a); }}"), "check(a)"),
+        (format!("{items}module Top(in a: Bit) {{ let x = check(a); }}"), "check(a)"),
+        (format!("{items}const C: bool = check(true);\nmodule Top() {{ k: bool = C; }}"), "check(true)"),
+        (format!("module Top(in a: Bit) {{ let x = emit!(\"s\", f = 1.0); }}"), "emit!(\"s\", f = 1.0)"),
+        (format!("{items}module Top(in a: Bit, out q: Bit) {{ q = !require(\"c\", true); }}"), "require(\"c\", true)"),
+    ] {
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d)[0], "E0601", "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{src}");
+    }
+    // A function that reaches `emit!` is callable from another one, and from a reaction.
+    let src = "fn check(ok: bool) { require(\"c\", ok); }\nfn both(ok: bool) { check(ok); }\nmodule Top(in clk: Bit, in a: Bit) { }\ndigital for Top { on clk.rise() { both(a.known_or(false)); } }";
+    checked_top(src, "Top");
+}
+
+#[test]
+fn a_check_reached_from_analog_is_e0603() {
+    // DIG-05 AC 15 (§19 rules 4 and 14): a site reached from `analog` that writes `sim` or `checks` is
+    // `E0603`; the check follows calls (`require` in `analog`, or in a `fn` called from it). A trace
+    // on another stream is allowed in `analog`.
+    let items = "fn guard(ok: bool) { require(\"g\", ok); }\n";
+    for (src, at) in [
+        (format!("module Top(p: Electrical) {{ }}\nanalog for Top {{ require(\"n\", v(p) < 1.0); }}"), "require(\"n\", v(p) < 1.0)"),
+        (format!("{items}module Top(p: Electrical) {{ }}\nanalog for Top {{ guard(v(p) < 1.0); }}"), "guard(v(p) < 1.0)"),
+        (format!("module Top(p: Electrical) {{ }}\nanalog for Top {{ emit!(\"sim\", finish = true); }}"), "emit!(\"sim\", finish = true)"),
+        (format!("module Top(p: Electrical) {{ }}\nanalog for Top {{ emit!(\"checks\", pass = true); }}"), "emit!(\"checks\", pass = true)"),
+    ] {
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0603"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{src}");
+    }
+    let src = "module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); log(Severity::Info, \"stepped\"); }";
+    checked_top(src, "Top");
 }

@@ -166,6 +166,11 @@ impl Checker<'_> {
         for (i, item) in items.iter().enumerate() {
             let ty = self.infer(*item);
             match (bindings.get(i).copied(), &ty) {
+                (Some(Some(binding)), Some(Ty::Str)) => {
+                    let span = self.design.expr_node(*item).span;
+                    self.unsupported(file, span, "a string literal bound by a `let`");
+                    self.poisoned.insert(binding);
+                }
                 (Some(Some(binding)), Some(t)) => {
                     self.locals.insert(binding, t.clone());
                 }
