@@ -5,12 +5,12 @@
 
 <div class="callout goal">
   <p class="callout-label">Goal</p>
-  <p>By the end of this chapter you can read a small MSL file from top to bottom, you have written a complete RC filter with its source and its top level, and you know how to make a model tell you what it is doing.</p>
+  <p>By the end of this chapter you have created a project, run an RC filter from the command line, read its results, and made a model tell you what it is doing. You can read a small MSL file from top to bottom.</p>
 </div>
 
 <p>MSL, the Piperine mixed-signal language, is a language for describing circuits that a simulator runs: analog, digital, and both at once. It looks and reads like Rust, and most of it <em>is</em> Rust. It is similar to Rust and based on it, but it is not Rust: a model describes hardware that exists all the time, not a program that runs once.</p>
 
-<p>This book is for people who want to write models and read other people's models. It teaches the language through complete examples and stands on its own. Each chapter of the language part builds one or two small circuits, explains every new construct the first time it appears, lists the mistakes you are most likely to make with the error code you will see, and ends with something to try.</p>
+<p>This book is for people who want to write models and read other people's models. It teaches the language through complete examples and stands on its own. Each chapter of the language part builds one or two small circuits, explains every new construct the first time it appears, shows how to run the example with the <code>piperine</code> command, lists the mistakes you are most likely to make with the error code you will see, and ends with something to try.</p>
 
 <h3>A first look: one resistor</h3>
 
@@ -37,71 +37,157 @@ analog for Resistor {
 
 <p>The <code>///</code> lines are documentation, as in Rust. They stay attached to the module and the param, and tools show them.</p>
 
-<h3>A complete file: an RC filter you can run</h3>
+<h3>Run it: your first project</h3>
 
-<p>A resistor alone does nothing. A design needs a source, a circuit and a <strong>top</strong>: a module that places the others and wires them together. This file has all three. It is a low-pass filter, 1&nbsp;kΩ and 1&nbsp;nF, driven by a 1&nbsp;V step at 1&nbsp;µs.</p>
+<p>A resistor alone does nothing, and reading is no substitute for running. One command creates a project that runs: an RC low-pass filter, 1&nbsp;kΩ and 1&nbsp;nF, with a bench that measures its step response.</p>
 
-<pre data-lang="msl">/// Ideal resistor.
-module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+<pre data-lang="sh">piperine new rc
+cd rc</pre>
+
+<pre data-lang="text" data-cli-output="piperine new rc">created rc</pre>
+
+<pre data-lang="text">rc/
+├── Piperine.toml          the manifest: the package and its runs
+├── .gitignore
+├── src/
+│   └── lib.msl            the library: the parts
+└── benches/
+    └── step.msl           a bench: the circuit, its source and a monitor</pre>
+
+<p>The <strong>library</strong> holds the parts. The resistor you just read is the first of three:</p>
+
+<pre data-lang="msl">// src/lib.msl
+/// Ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
 analog for Resistor { i(p, n) +> v(p, n) / r; }
 
 /// Ideal capacitor.
-module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+pub module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
 analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
 
-/// A voltage step on `p`, referred to ground: 0 V until `t0`, then `v1`.
-module Step(p: Electrical) {
-    v1: f64 = 1.0;
-    t0: f64 = 1u where t0 >= 0.0;
-    signal fired: Bit = false;
-}
-digital for Step { on at(t0) { fired <- true; } }
-analog for Step { v(p) +> if fired.high() { v1 } else { 0.0 }; }
+/// A constant voltage from `p` to `n`.
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }</pre>
 
-/// The top: source, R and C.
-module RcTop() {
+<p>The <strong>bench</strong> is the circuit you actually simulate: a module with no ports that places the parts, wires them together and watches them. A bench is written in MSL, like everything else.</p>
+
+<pre data-lang="msl">// benches/step.msl
+use rc::{Capacitor, Resistor, Vsource};
+
+/// Writes a record when `a` rises through `level`.
+module Monitor(a: Electrical) { level: f64 = 0.5; }
+digital for Monitor {
+    on cross(v(a) - level) {
+        emit!("trip", v = v(a));
+        require("crossed_upward", v(a) >= level);
+    }
+}
+
+/// A 1 V source into R and C. `vout` starts at 0 V, so a transient is the step response.
+module Step() {
     signal vin: Electrical;
-    pub signal vout: Electrical;
-    let src = Step(vin) { v1: 1.0, t0: 1u };
+    signal vout: Electrical = 0.0;
+    let v1 = Vsource(vin, gnd) { dc: 1.0 };
     let r1 = Resistor(vin, vout) { r: 1k };
     let c1 = Capacitor(vout, gnd) { c: 1n };
+    let mon = Monitor(vout);
 }</pre>
 
-<p>Four things are new.</p>
+<p>The <strong>manifest</strong> names the package and describes its <strong>runs</strong>. A run is a bench plus an analysis:</p>
+
+<pre data-lang="toml">[package]
+name = "rc"
+version = "0.1.0"
+
+[run.op]
+bench = "benches/step.msl"
+analysis = "op"
+
+[run.step]
+bench = "benches/step.msl"
+analysis = "transient"
+stop = 5e-6
+print_step = 1e-6</pre>
+
+<p>Now run the first one. <code>op</code> is the operating point: the circuit at rest, with every capacitor open.</p>
+
+<pre data-lang="sh">piperine run op</pre>
+
+<pre data-lang="text" data-cli-output="piperine run op" data-cli-project="rc">run op: op, top Step, backend rust
+
+signal     value
+Step.vin   1.000000e0
+Step.vout  1.000000e0</pre>
+
+<p>The first line says what ran: the run's name, the analysis, the top module and the backend that executed it. Then comes the result: one row per signal of the bench. At rest no current flows, so the output sits at the source's 1&nbsp;V.</p>
+
+<p>The second run is a transient of 5&nbsp;µs, printed every microsecond:</p>
+
+<pre data-lang="sh">piperine run step</pre>
+
+<pre data-lang="text" data-cli-output="piperine run step" data-cli-project="rc">run step: transient, top Step, backend rust
+@6.931472e-7 Step.mon trip v=5.000000e-1
+@6.931472e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
+
+time         Step.vin    Step.vout
+0.000000e0   1.000000e0  0.000000e0
+1.000000e-6  1.000000e0  6.321206e-1
+2.000000e-6  1.000000e0  8.646647e-1
+3.000000e-6  1.000000e0  9.502129e-1
+4.000000e-6  1.000000e0  9.816844e-1
+5.000000e-6  1.000000e0  9.932621e-1</pre>
+
+<p>That is a capacitor charging through a resistor: 63&nbsp;% after one time constant <code>r · c</code> = 1&nbsp;µs, 86&nbsp;% after two. The two lines that start with <code>@</code> are the bench talking: its monitor saw the output pass 0.5&nbsp;V at 693&nbsp;ns, which is 1&nbsp;µs&nbsp;·&nbsp;ln&nbsp;2, exactly where the theory puts it. You will learn to write such lines in a moment.</p>
+
+<p>The first time a design runs, the command compiles it, and says so on a separate line that is not part of the result. Later runs of an unchanged design start at once. Chapter 16 is the full reference of the command; from here on, every chapter tells you how to run its example.</p>
+
+<h3>Reading the project</h3>
+
+<p>Go back over the three files. Six things are new.</p>
 
 <p><strong>The capacitor.</strong> <code>ddt(x)</code> is the time derivative of <code>x</code>. The capacitor's current is the derivative of its charge, <code>c * v(p, n)</code>. You write the physics; the simulator differentiates and integrates.</p>
 
-<p><strong>The step source.</strong> <code>Step</code> is a mixed-signal module, and a tiny one. It has a piece of digital state, <code>signal fired: Bit = false</code>: a one-bit register that starts low. Its <code>digital</code> block holds one <strong>reaction</strong>: <code>on at(t0) { fired &lt;- true; }</code> means "when time reaches <code>t0</code>, set <code>fired</code>". The arrow <code>&lt;-</code> is a <strong>commit</strong>. Its <code>analog</code> block reads that bit: <code>v(p) +&gt; …</code> with one node means "from <code>p</code> to ground", and a contribution to a voltage makes the branch a voltage source. <code>fired.high()</code> is true when the bit is known and high.</p>
+<p><strong>The source.</strong> <code>v(p, n) +&gt; dc;</code> contributes to a voltage instead of a current, which makes the branch a voltage source.</p>
 
-<p><strong>SI suffixes.</strong> <code>1u</code> is 10<sup>−6</sup>, <code>1k</code> is 10<sup>3</sup>, <code>1n</code> is 10<sup>−9</sup>. A number with an SI suffix is always an <code>f64</code>. A plain <code>1</code> is an integer and never turns into an <code>f64</code> by itself, which is why the defaults read <code>1.0</code>.</p>
+<p><strong>SI suffixes.</strong> <code>1k</code> is 10<sup>3</sup> and <code>1n</code> is 10<sup>−9</sup>. A number with an SI suffix is always an <code>f64</code>. A plain <code>1</code> is an integer and never turns into an <code>f64</code> by itself, which is why the defaults read <code>1.0</code>. (The manifest is TOML, not MSL, so there you write <code>5e-6</code>.)</p>
 
-<p><strong>The top.</strong> <code>RcTop</code> has no ports and no behavior of its own: its body is a netlist. <code>signal vin: Electrical;</code> declares a node. <code>let r1 = Resistor(vin, vout) { r: 1k };</code> <em>places</em> a resistor: the call connects the ports in order, and the braces bind params by name. <code>gnd</code> is the reference node, available everywhere. <code>pub</code> on <code>vout</code> lets a parent module reach that node; you will use it later.</p>
+<p><strong>The bench is a netlist.</strong> <code>Step</code> has no ports and no behavior of its own. <code>signal vin: Electrical;</code> declares a node. <code>let r1 = Resistor(vin, vout) { r: 1k };</code> <em>places</em> a resistor: the call connects the ports in order, and the braces bind params by name. <code>gnd</code> is the reference node, available everywhere. Every signal and instance gets a <strong>path</strong> from the top module down, which is what the output shows: <code>Step.vout</code>, <code>Step.mon</code>.</p>
+
+<p><strong>The initial value.</strong> <code>signal vout: Electrical = 0.0;</code> makes a transient start with the output at 0&nbsp;V, a discharged capacitor. An operating point holds nothing, which is why <code>op</code> printed 1&nbsp;V for the same node.</p>
+
+<p><strong>Two crates.</strong> The library under <code>src/</code> is the package's crate. A bench is a small crate of its own that depends on it, so it imports the parts by the package's name: <code>use rc::{…}</code>, and it sees only what the library marks <code>pub</code>. Stimulus and monitors stay out of the library that other people's designs will use.</p>
 
 <h3>Seeing what your model does: <code>emit!</code></h3>
 
-<p>The filter's time constant is <code>r · c</code> = 1&nbsp;µs, so <code>vout</code> should reach 63.2&nbsp;% of the step one microsecond after it. Do not take that on faith: make the model say it. Add this block to the file.</p>
+<p>The monitor is seven lines, and it is the most important idea of this chapter:</p>
 
-<pre data-lang="msl">digital for RcTop {
-    on above(v(vout) - (1.0 - 1.0 / E)) {
-        emit!("tau", t = now(), vout = v(vout));
+<pre data-lang="msl">module Monitor(a: Electrical) { level: f64 = 0.5; }
+digital for Monitor {
+    on cross(v(a) - level) {
+        emit!("trip", v = v(a));
+        require("crossed_upward", v(a) >= level);
     }
 }</pre>
 
 <p><code>emit!</code> is MSL's print. It is the one output statement of the language, and you will use it in every chapter of this book as your window into a model. Read the block from the outside in:</p>
 
 <ul>
-<li><strong><code>above(e)</code></strong> is an event that fires when the expression <code>e</code> goes from negative to positive. The solver finds the time of the crossing for you. <code>E</code> is the constant <em>e</em>, so the event fires when <code>vout</code> passes 1&nbsp;−&nbsp;1/<em>e</em>.</li>
-<li><strong><code>"tau"</code></strong> is the name of a <strong>stream</strong>: an ordered list of records. It must be a string literal.</li>
-<li><strong><code>t = now(), vout = v(vout)</code></strong> are <strong>fields</strong>: a name, <code>=</code>, any value. There is no format string. Each field keeps its type, and printing it nicely is the job of whoever reads the stream.</li>
+<li><strong><code>digital for Monitor { … }</code></strong> is the second kind of behavior block. It holds <strong>reactions</strong>: <code>on event { body }</code> runs the body each time the event fires.</li>
+<li><strong><code>cross(e)</code></strong> is an event that fires when the expression <code>e</code> goes from negative to positive. The solver finds the time of the crossing for you; it is not rounded to a time step.</li>
+<li><strong><code>"trip"</code></strong> is the name of a <strong>stream</strong>: an ordered list of records. It must be a string literal.</li>
+<li><strong><code>v = v(a)</code></strong> is a <strong>field</strong>: a name, <code>=</code>, any value. An <code>emit!</code> takes as many as you like. There is no format string. Each field keeps its type.</li>
+<li><strong><code>require(name, pass)</code></strong> is a check. It is a library function that itself calls <code>emit!</code>, on the stream <code>checks</code>, which is why it showed up as a second record.</li>
 </ul>
 
-<p>Run a transient and the stream holds one record. Shown here the way a host might print it:</p>
+<p>Each record is printed as one line, the moment it is written:</p>
 
-<pre data-lang="text">stream top.tau
-  analysis    instant        fields
-  Transient   (2.000 µs, 1)  t = 2.000e-6   vout = 0.6321</pre>
+<pre data-lang="text" data-cli-output="piperine run step --stream trip" data-cli-project="rc" data-cli-lines="2">@6.931472e-7 Step.mon trip v=5.000000e-1</pre>
 
-<p>The record carries more than the two fields you wrote. It knows <em>where</em> it came from (the stream name is prefixed with the path of the instance, here the top), <em>which analysis</em> was running and <em>when</em>: the instant, a time and a small counter that chapter 8 explains. You get that for free on every record.</p>
+<p>The line has four parts: <code>@</code> and the time, the path of the instance that wrote the record, the stream name, and the fields. You wrote only the last two; where and when come for free. Two monitors on two nodes never mix their records, because each has its own path.</p>
+
+<p>When a design prints more than you want to read, keep one stream:</p>
+
+<pre data-lang="sh">piperine run step --stream trip</pre>
 
 <p>Three rules make <code>emit!</code> a debugging tool you can trust:</p>
 
@@ -112,6 +198,52 @@ module RcTop() {
 </ol>
 
 <p>Chapter 2 compares <code>emit!</code> with Rust's <code>println!</code>, and chapter 6 shows what it does inside <code>analog</code>, where the second rule is different on purpose.</p>
+
+<h3>A second bench: a source that steps</h3>
+
+<p>The first bench got its step for free, from an initial value. A real stimulus changes during the run. Add a second bench to the project, with a source that switches on at 1&nbsp;µs:</p>
+
+<pre data-lang="msl">// benches/delayed.msl
+use rc::{Capacitor, Resistor};
+
+/// A voltage step on `p`, referred to ground: 0 V until `t0`, then `v1`.
+module StepSource(p: Electrical) {
+    v1: f64 = 1.0;
+    t0: f64 = 1u where t0 >= 0.0;
+    signal fired: Bit = false;
+}
+digital for StepSource { on at(t0) { fired <- true; } }
+analog for StepSource { v(p) +> if fired.high() { v1 } else { 0.0 }; }
+
+module Delayed() {
+    signal vin: Electrical;
+    signal vout: Electrical;
+    let src = StepSource(vin) { v1: 1.0, t0: 1u };
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let c1 = Capacitor(vout, gnd) { c: 1n };
+}
+digital for Delayed {
+    on above(v(vout) - (1.0 - 1.0 / E)) {
+        emit!("tau", t = now(), vout = v(vout));
+    }
+}</pre>
+
+<p><code>StepSource</code> is a mixed-signal module, and a tiny one. It has a piece of digital state, <code>signal fired: Bit = false</code>: a one-bit register that starts low. Its reaction, <code>on at(t0) { fired &lt;- true; }</code>, means "when time reaches <code>t0</code>, set <code>fired</code>". The arrow <code>&lt;-</code> is a <strong>commit</strong>. Its <code>analog</code> block reads that bit: <code>v(p) +&gt; …</code> with one node means "from <code>p</code> to ground", and <code>fired.high()</code> is true when the bit is known and high.</p>
+
+<p>The bench has a reaction of its own this time. <code>above</code> is <code>cross</code> that also fires at the start if the expression is already positive, and <code>E</code> is the constant <em>e</em>: the record is written when <code>vout</code> reaches 63.2&nbsp;% of the step. A bench outside the manifest runs by its file name, with flags in place of the run table's keys:</p>
+
+<pre data-lang="sh">piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6</pre>
+
+<pre data-lang="text" data-cli-output="piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6" data-cli-project="rc" data-cli-lines="1-2">run delayed: transient, top Delayed, backend rust
+@2.000000e-6 Delayed tau t=2.000000e-6 vout=6.321206e-1</pre>
+
+<p>One time constant after the step, to the digit. To keep the run, give it a table in <code>Piperine.toml</code>; every flag has a key of the same name:</p>
+
+<pre data-lang="toml">[run.delayed]
+bench = "benches/delayed.msl"
+analysis = "transient"
+stop = 5e-6
+print_step = 1e-6</pre>
 
 <h3>Three ways to write</h3>
 
@@ -150,11 +282,11 @@ module RcTop() {
 
 <p>One language covers the transistor-level analog model, the RTL-style digital block and the glue between them. A design is fixed at elaboration and then simulated by Piperine's native solver: DC, transient, AC and noise all come from the same source text. Every outcome is a function of the source and of what the host does. There are no races.</p>
 
-<p>Testbenches, stimulus sequences, sweeps and optimization do not live in MSL. They live in the <em>host</em>, a Rust or Python program that picks the top module, sets parameters, drives the top's <code>in</code> ports, runs analyses and reads the results, streams included.</p>
+<p>A bench, with its sources, its stimulus and its monitors, is written in MSL, as you just did. What stays outside the language is the <em>host</em>: the program that picks the top module, sets parameters, runs analyses and reads the results, streams included. The <code>piperine</code> command is one host. Sweeps over many runs, Monte Carlo and optimization live in a host too, as a Rust program built on the same library.</p>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 13 and 14). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run as compiled Rust today, built by hand in the compiler's intermediate form; the path that takes them, and the rest of the analog language, from source is being built (chapter 15). So a file with a <code>digital</code> block, like <code>Step</code> above, is parsed and resolved by the front end today and will run from source when that path lands. This book describes the language as specified; the record listings in it are what the language defines, not captured output.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 13 and 14). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run as compiled Rust today, built by hand in the compiler's intermediate form; the path that takes them, and the rest of the analog language, from source is being built (chapter 15). So a file with a <code>digital</code> block, like <code>Monitor</code> above, is parsed and resolved by the front end today and will run from source when that path lands. The <code>piperine</code> command line of this book is being built now, and the output shown under each command is what it is specified to print. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -166,13 +298,13 @@ module RcTop() {
   <tr><td>E0312</td><td><code>let c1 = Capacitor(vout) { c: 1n };</code></td><td>Every port must be connected. Ground is a node like any other: <code>Capacitor(vout, gnd)</code>.</td></tr>
   <tr><td>E0317</td><td><code>Resistor(vin, vout) { r: 0.0 }</code></td><td>The param's <code>where r &gt; 0.0</code> is false. The check did its job; give a positive value.</td></tr>
   <tr><td>E0901</td><td><code>println!("vout = {}", v(vout));</code></td><td>There is no <code>println!</code>. Write a record: <code>emit!("dbg", vout = v(vout));</code>.</td></tr>
-  <tr><td>E0404</td><td><code>fired &lt;- true;</code> in the module body</td><td>A commit belongs in a reaction. Move it into <code>digital for Step { on at(t0) { … } }</code>.</td></tr>
+  <tr><td>E0404</td><td><code>fired &lt;- true;</code> in the module body</td><td>A commit belongs in a reaction. Move it into <code>digital for StepSource { on at(t0) { … } }</code>.</td></tr>
   </tbody></table></div>
 </div>
 
 <div class="callout try">
   <p class="callout-label">Try it</p>
-  <p>Change the capacitor to 2.2&nbsp;nF. Before you run anything, say what <code>t</code> the <code>tau</code> record will show. (The step is at 1&nbsp;µs and the time constant is now 2.2&nbsp;µs, so the record reads 3.2&nbsp;µs.) Then add a second reaction that emits when <code>vout</code> passes 0.5&nbsp;V, on a stream of its own.</p>
+  <p>A param can be set for one run without touching the source: <code>piperine run step --param c1.c=2.2e-9</code>. Before you run it, say at what time the <code>trip</code> record will appear. (The time constant is now 2.2&nbsp;µs, so 2.2&nbsp;µs&nbsp;·&nbsp;ln&nbsp;2 = 1.525&nbsp;µs.) Then add a second <code>Monitor</code> to the bench with <code>level: 0.9</code> and find its record in the output.</p>
 </div>
 </section>
 
