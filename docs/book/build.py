@@ -93,7 +93,7 @@ def hl_diag(src):
         lines.append(e)
     return "\n".join(lines)
 
-LANG_LABEL = {"msl": "msl", "rust": "rust · host", "toml": "toml", "text": "", "diag": "terminal"}
+LANG_LABEL = {"msl": "msl", "rust": "rust · host", "toml": "toml", "text": "", "diag": "terminal", "sh": "shell"}
 
 store = []
 def keep(s):
@@ -101,7 +101,8 @@ def keep(s):
     return f"\x00{len(store)-1}\x00"
 
 def pre_block(m):
-    lang, raw = m.group(1), m.group(2)
+    # Extra attributes of the <pre> (data-cli-output: a listing the command line prints) are kept on the block.
+    lang, attrs, raw = m.group(1), m.group(2), m.group(3)
     raw = raw.strip("\n")
     if lang in ("msl", "rust"):
         body = hl_code(raw)
@@ -112,10 +113,12 @@ def pre_block(m):
     else:
         body = html.escape(raw, quote=False)
     label = LANG_LABEL.get(lang, lang)
+    if "data-cli-output" in attrs:
+        label = "output"
     lab = f'<span class="lang">{label}</span>' if label else ""
-    return keep(f'<div class="code {lang}">{lab}<pre><code>{body}</code></pre></div>')
+    return keep(f'<div class="code {lang}"{attrs}>{lab}<pre><code>{body}</code></pre></div>')
 
-content = re.sub(r'<pre data-lang="(\w+)">(.*?)</pre>', pre_block, content, flags=re.S)
+content = re.sub(r'<pre data-lang="(\w+)"([^>]*)>(.*?)</pre>', pre_block, content, flags=re.S)
 content = re.sub(r'<pre class="mermaid">(.*?)</pre>', lambda m: keep(f'<div class="diagram"><pre class="mermaid">{m.group(1)}</pre></div>'), content, flags=re.S)
 
 def code_inline(m):
