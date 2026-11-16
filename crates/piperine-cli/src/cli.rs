@@ -1,14 +1,23 @@
 //! `Cli`: the command tree, built from data with `clap`'s builder interface (no derive), its
 //! parse into one [`Invocation`], and its execution.
 
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use clap::builder::PathBufValueParser;
 use clap::{Arg, ArgAction, Command};
 
+use piperine_api::Overrides;
+
+use crate::commands::run::RunCommand;
 use crate::exit::Exit;
+
+/// Where a command writes its data. Shared, because the records of a run are written by the
+/// solver's sink while the command goes on to write the table.
+pub type Out = Rc<RefCell<dyn Write>>;
 
 /// One argument of a command: its id, whether it is a positional, a switch or a valued flag,
 /// and its help line.
@@ -23,6 +32,8 @@ enum ArgKind {
     Positional { required: bool, many: bool },
     /// `--<id>`, no value.
     Switch,
+    /// `--<id> <value>`, one text; `value` names the placeholder of the usage line.
+    Text { value: &'static str },
 }
 
 /// One command: its name, its help line and its arguments.
@@ -50,7 +61,10 @@ const COMMANDS: &[CommandRow] = &[
     CommandRow {
         name: "run",
         about: "Run one run of the project, or a lone .msl file",
-        args: &[ArgRow { id: "target", kind: ArgKind::Positional { required: false, many: false }, help: "a run name, or a .msl file" }],
+        args: &[
+            ArgRow { id: "target", kind: ArgKind::Positional { required: false, many: false }, help: "a run name, or a .msl file" },
+            ArgRow { id: "backend", kind: ArgKind::Text { value: "BACKEND" }, help: "the backend: rust or interp" },
+        ],
     },
     CommandRow {
         name: "test",
@@ -82,11 +96,11 @@ const PROJECT: &str = "project";
 
 /// What the command line asked for: one command and its arguments. `project` is the directory
 /// given with `--project`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Invocation {
     Check { project: Option<PathBuf>, target: Option<PathBuf> },
     Build { project: Option<PathBuf>, runs: Vec<String>, verbose: bool },
-    Run { project: Option<PathBuf>, target: Option<String> },
+    Run { project: Option<PathBuf>, target: Option<String>, overrides: Overrides },
     Test { project: Option<PathBuf>, runs: Vec<String> },
     New { name: String },
     Clean { project: Option<PathBuf>, cache: bool },
@@ -141,6 +155,7 @@ impl Cli {
                 if many { arg.action(ArgAction::Append).num_args(0..) } else { arg.action(ArgAction::Set) }
             }
             ArgKind::Switch => arg.long(row.id).action(ArgAction::SetTrue),
+            ArgKind::Text { value } => arg.long(row.id).value_name(value).action(ArgAction::Set),
         }
     }
 
@@ -163,7 +178,7 @@ impl Cli {
         Ok(match name {
             "check" => Invocation::Check { project: project(), target: text("target").map(PathBuf::from) },
             "build" => Invocation::Build { project: project(), runs: texts("runs"), verbose: flag("verbose") },
-            "run" => Invocation::Run { project: project(), target: text("target") },
+            "run" => Invocation::Run { project: project(), target: text("target"), overrides: Overrides { backend: text("backend"), ..Overrides::default() } },
             "test" => Invocation::Test { project: project(), runs: texts("runs") },
             "new" => Invocation::New { name: text("name").unwrap_or_default() },
             "clean" => Invocation::Clean { project: project(), cache: flag("cache") },
@@ -174,10 +189,15 @@ impl Cli {
 
     /// Runs `invocation`, writing data to `out` and diagnostics to `err`. A command whose task
     /// has not landed says so and fails.
-    pub fn execute(invocation: &Invocation, _out: &mut dyn Write, err: &mut dyn Write) -> Exit {
-        // a closed standard error leaves nothing to tell; the command fails either way
-        let _ = writeln!(err, "{}: not built yet", invocation.name());
-        Exit::Failed
+    pub fn execute(invocation: &Invocation, out: &Out, err: &mut dyn Write) -> Exit {
+        match invocation {
+            Invocation::Run { project, target, overrides } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone() }.execute(out, err),
+            other => {
+                // a closed standard error leaves nothing to tell; the command fails either way
+                let _ = writeln!(err, "{}: not built yet", other.name());
+                Exit::Failed
+            }
+        }
     }
 }
 

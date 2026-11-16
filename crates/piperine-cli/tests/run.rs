@@ -1,0 +1,164 @@
+//! `piperine run` (feature `msl-cli`, phase 3; CLI-06 and CLI-07): the real binary runs the
+//! named runs of `examples/rc` and its output is held to the spec's format, the order of the
+//! header, the records and the table, the exit code, the determinism of standard output and the
+//! announcement of a first compile on standard error.
+//!
+//! Every child process gets `PIPERINE_CACHE_DIR` set to a temporary directory shared by this
+//! target (a design compiles once), except where a test needs a cache of its own. No test sets
+//! a variable of its own process.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::sync::OnceLock;
+
+/// The binary cargo built for this target.
+fn binary() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_piperine"))
+}
+
+/// `examples/rc`, the project every test here runs.
+fn rc() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc")
+}
+
+/// One cache directory for every child of this target that does not ask for its own.
+fn shared_cache() -> &'static Path {
+    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
+    CACHE.get_or_init(|| tempfile::tempdir().expect("tmp")).path()
+}
+
+/// `piperine <args>` in `dir`, on the cache `cache`.
+fn piperine_in(dir: &Path, cache: &Path, args: &[&str]) -> Output {
+    Command::new(binary()).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", cache).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()))
+}
+
+fn piperine(args: &[&str]) -> Output {
+    piperine_in(&rc(), shared_cache(), args)
+}
+
+fn text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+/// The standard output of a run that must have completed.
+fn stdout_of(out: &Output) -> String {
+    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", text(&out.stderr));
+    text(&out.stdout)
+}
+
+/// The cells of a line, split at runs of spaces.
+fn cells(line: &str) -> Vec<&str> {
+    line.split_whitespace().collect()
+}
+
+/// The reals in `a` and `b` agree to the relative tolerance `rel` (the parity contract's 1e-3).
+fn close(a: f64, b: f64, rel: f64) -> bool {
+    (a - b).abs() <= rel * b.abs().max(f64::MIN_POSITIVE)
+}
+
+/// The value of `name=<value>` among the cells of a record line.
+fn field(line: &str, name: &str) -> String {
+    let prefix = format!("{name}=");
+    cells(line).into_iter().find_map(|c| c.strip_prefix(prefix.as_str()).map(str::to_string)).unwrap_or_else(|| panic!("no `{name}=` in `{line}`"))
+}
+
+#[test]
+fn run_prints_header_records_blank_line_and_table() {
+    // CLI-07 AC 1: the header `run <name>: <analysis>, top <Top>, backend <backend>`, the record
+    // lines, one empty line, the table. The name and analysis are `examples/rc/Piperine.toml`'s
+    // (`[run.step]`, `analysis = "transient"`); the top is the one module without ports of its
+    // bench, `Step`; the backend is `rust`, the default (CLI-04 AC 7).
+    let out = stdout_of(&piperine(&["run", "step"]));
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0], "run step: transient, top Step, backend rust", "{out}");
+    let blank = lines.iter().position(|l| l.is_empty()).unwrap_or_else(|| panic!("no empty line in\n{out}"));
+    assert!(lines[1..blank].iter().all(|l| l.starts_with('@')), "between the header and the empty line only records:\n{out}");
+    assert!(!lines[blank + 1..].is_empty(), "a table follows the empty line:\n{out}");
+    // the table's first column is `time` (CLI-05 AC 2), then the top's own signals in
+    // declaration order (CLI-05 AC 3): `vin`, `vout`, named by their full path (AC 5)
+    assert_eq!(cells(lines[blank + 1]), ["time", "Step.vin", "Step.vout"], "{out}");
+    // the time column starts at 0 and ends at the manifest's `stop = 5e-6`
+    let rows: Vec<Vec<&str>> = lines[blank + 2..].iter().map(|l| cells(l)).collect();
+    assert_eq!(rows[0][0], "0.000000e0", "{out}");
+    assert_eq!(rows[rows.len() - 1][0], "5.000000e-6", "{out}");
+    // the step response of the RC: tau = 1 kOhm * 1 nF = 1 us, so v(vout) = 1 - exp(-t/tau);
+    // vin holds 1 V (CLI-05 AC 8's 1e-3 contract, here as an absolute bound on a 1 V swing)
+    for row in &rows {
+        assert_eq!(row[1], "1.000000e0", "vin of {row:?}");
+        let (t, vout): (f64, f64) = (row[0].parse().expect("a time"), row[2].parse().expect("a value"));
+        assert!((vout - (1.0 - (-t / 1e-6).exp())).abs() <= 1e-3, "vout at {t}: {vout}");
+    }
+}
+
+#[test]
+fn records_come_before_the_table() {
+    // CLI-06 AC 7 and CLI-06 AC 1: every record line comes before the table; the RC's monitor
+    // (`examples/rc/benches/step.msl`) emits `trip` with `v = v(a)` when the output crosses its
+    // `level` 0.5, which a 1 kOhm / 1 nF step does at t = tau * ln 2
+    let out = stdout_of(&piperine(&["run", "step"]));
+    let lines: Vec<&str> = out.lines().collect();
+    let table = lines.iter().position(|l| l.starts_with("time")).unwrap_or_else(|| panic!("no table in\n{out}"));
+    let records: Vec<&str> = lines.iter().copied().filter(|l| l.starts_with('@')).collect();
+    assert!(!records.is_empty(), "the crossing emits records:\n{out}");
+    assert!(lines.iter().rposition(|l| l.starts_with('@')) < Some(table), "a record after the table:\n{out}");
+    let trips: Vec<&&str> = records.iter().filter(|l| cells(l)[2] == "trip").collect();
+    assert_eq!(trips.len(), 1, "one trip record:\n{out}");
+    let trip = cells(trips[0]);
+    let at: f64 = trip[0].trim_start_matches('@').parse().expect("a time");
+    assert!(close(at, 1e-6 * std::f64::consts::LN_2, 1e-3), "the crossing time {at}");
+    assert_eq!(trip[1], "Step.mon", "the instance path of the site");
+    let v: f64 = field(trips[0], "v").parse().expect("a value");
+    assert!((v - 0.5).abs() <= 1e-3, "v at the crossing: {v}");
+    // CLI-06 AC 6: the `require` of the monitor passes, one `checks` record with pass=true
+    let checks: Vec<&&str> = records.iter().filter(|l| cells(l)[2] == "checks").collect();
+    assert_eq!(checks.len(), 1, "{out}");
+    assert_eq!(field(checks[0], "pass"), "true");
+    assert_eq!(field(checks[0], "name"), "\"crossed_upward\"");
+    // each record is no later than the next (CLI-06 AC 3)
+    let times: Vec<f64> = records.iter().map(|l| cells(l)[0].trim_start_matches('@').parse().expect("a time")).collect();
+    assert!(times.windows(2).all(|w| w[0] <= w[1]), "{times:?}");
+}
+
+#[test]
+fn a_completed_run_exits_0() {
+    // CLI-07 AC 3
+    let out = piperine(&["run", "op"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    // the operating point of the same project: `signal` and `value`, one row per printed
+    // signal (CLI-05 AC 1); the source holds `vin` at 1 V
+    let lines: Vec<String> = text(&out.stdout).lines().map(str::to_string).collect();
+    assert_eq!(lines[0], "run op: op, top Step, backend rust");
+    assert_eq!(lines[1], "");
+    assert_eq!(cells(&lines[2]), ["signal", "value"]);
+    assert_eq!(cells(&lines[3]), ["Step.vin", "1.000000e0"]);
+}
+
+#[test]
+fn stdout_is_the_same_from_two_caches_and_two_directories() {
+    // CLI-07 AC 6: no wall-clock time, no absolute path and no cache key on standard output, so
+    // the bytes do not depend on the cache or the directory the command ran from
+    let (cache_a, cache_b) = (tempfile::tempdir().expect("tmp"), tempfile::tempdir().expect("tmp"));
+    let a = piperine_in(&rc(), cache_a.path(), &["run", "step"]);
+    let b = piperine_in(&rc().join("benches"), cache_b.path(), &["run", "step"]);
+    let (a, b) = (stdout_of(&a), stdout_of(&b));
+    assert_eq!(a, b);
+    for forbidden in [cache_a.path().to_string_lossy().into_owned(), cache_b.path().to_string_lossy().into_owned(), rc().to_string_lossy().into_owned(), "/tmp".to_string(), "/home".to_string()] {
+        assert!(!a.contains(&forbidden), "`{forbidden}` on standard output:\n{a}");
+    }
+}
+
+#[test]
+fn a_first_compile_is_announced_on_stderr() {
+    // CLI-07 AC 8: a design that is not cached prints one line on standard error saying that it
+    // compiles and which run; a cached one prints none
+    let cache = tempfile::tempdir().expect("tmp");
+    let first = piperine_in(&rc(), cache.path(), &["run", "op"]);
+    assert_eq!(first.status.code(), Some(0), "{}", text(&first.stderr));
+    let announced: Vec<String> = text(&first.stderr).lines().filter(|l| l.contains("compiled")).map(str::to_string).collect();
+    assert_eq!(announced.len(), 1, "one announcement:\n{}", text(&first.stderr));
+    assert!(announced[0].contains("`op`"), "it names the run: {}", announced[0]);
+    assert!(!text(&first.stdout).contains("compiled"), "standard output is data only");
+    let second = piperine_in(&rc(), cache.path(), &["run", "op"]);
+    assert_eq!(second.status.code(), Some(0), "{}", text(&second.stderr));
+    assert!(!text(&second.stderr).contains("compiled"), "a cached design is not announced:\n{}", text(&second.stderr));
+}

@@ -1377,6 +1377,8 @@ dependencies = [
  "clap",
  "piperine-api",
  "piperine-lang",
+ "piperine-transpile",
+ "tempfile",
 ]
 
 [[package]]

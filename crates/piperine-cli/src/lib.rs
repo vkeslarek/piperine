@@ -5,10 +5,12 @@
 //! exit code. Every rule that decides what a user sees lives in `piperine-api`.
 //!
 //! - [`cli`]: the command tree, its parse into one [`cli::Invocation`] and its execution.
+//! - [`commands`]: one struct per command.
 //! - [`exit`]: the three exit codes.
 //! - [`render`]: the text a user reads: tables, numbers, record lines and failures.
 
 pub mod cli;
+pub mod commands;
 pub mod exit;
 pub mod render;
 
