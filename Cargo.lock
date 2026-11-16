@@ -1532,9 +1532,11 @@ dependencies = [
 name = "piperine-parity"
 version = "0.2.0"
 dependencies = [
+ "piperine-abi",
  "piperine-interp",
  "piperine-ir",
  "piperine-lang",
+ "piperine-plan",
  "piperine-solver",
  "piperine-transpile",
  "tempfile",

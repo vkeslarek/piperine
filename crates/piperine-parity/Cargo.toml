@@ -11,3 +11,7 @@ piperine-ir = { path = "../piperine-ir" }
 piperine-transpile = { path = "../piperine-transpile" }
 piperine-solver = { path = "../piperine-solver" }
 tempfile.workspace = true
+
+[dev-dependencies]
+piperine-abi = { path = "../piperine-abi" }
+piperine-plan = { path = "../piperine-plan" }
