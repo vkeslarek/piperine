@@ -445,3 +445,87 @@ fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"), "{:?}", Elab::codes(&err));
     assert!(err.iter().any(|d| d.diagnostic.message.contains("an enum of one variant")), "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }
+
+#[test]
+fn an_option_is_a_flag_and_a_payload() {
+    // DIG-08 AC 10: an `Option<T>` is a `bool` and a `T` through `Some`, `None`, `known()`,
+    // `is_some`, `is_none`, `unwrap_or`, `if let` and `match`; no IR type is an `Option`.
+    // `setpoint` is the body of `SetpointReg`'s reaction (examples/buck/src/control.msl) and
+    // `supervise` holds `Supervisor`'s `fault_now` (examples/buck/src/supervisor.msl), their
+    // carriers here locals that may be unknown and their commits results.
+    let items = "#[derive(Repr, Clone, Copy, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
+                 const SETPOINT_MAX: u8 = 168;\nconst OC_PERIODS: u4 = 8;\nconst OV_SAMPLES: u2 = 2;\n\
+                 fn setpoint(code: u8) -> u8 { let data: u8 = Unknown; if let Some(d) = data.known() { d.min(SETPOINT_MAX) } else { code } }\n\
+                 fn supervise(oc_n: u4, ov_n: u2) -> u8 {\n\
+                   let fault_now = if oc_n >= OC_PERIODS { Some(Fault::OverCurrent) }\n\
+                                   else if ov_n >= OV_SAMPLES { Some(Fault::OverVoltage) }\n\
+                                   else { None };\n\
+                   let latched = if let Some(f) = fault_now { f } else { Fault::Clear };\n\
+                   let quiet = fault_now.is_none();\n\
+                   let tripped = fault_now.is_some();\n\
+                   let cause = fault_now.unwrap_or(Fault::Clear);\n\
+                   let code: u8 = match fault_now { Some(Fault::OverCurrent) => 1, Some(f) => if f == latched { 2 } else { 3 }, None => 0 };\n\
+                   if quiet && !tripped && cause == Fault::Clear { code } else { code + 1 }\n\
+                 }\n\
+                 fn literal() -> u8 { Some(3u8).unwrap_or(9) }\n\
+                 fn read(x: u8) -> u8 { let k = x.known(); k.unwrap_or(5) }";
+    let ir = Elab::ir(&reaching(items, &["setpoint(1)", "supervise(0, 0)", "literal()", "read(2)"]), "Top");
+    let text = ir.print_structural();
+    assert!(!text.contains("Option"), "no IR type is an `Option`:\n{text}");
+    let read = Read { ir: &ir };
+
+    // `if let Some(d) = data.known()`: the pair written where it is read, as the `ir-rust` T29
+    // fixture writes it (crates/piperine-ir/tests/golden/buck/setpoint_reg.txt).
+    let setpoint = read.function_text("setpoint");
+    assert!(setpoint.contains("if data.is_known() { let d = data.known_or(0u8); d.min(168u8) } else { code }"), "{setpoint}");
+    assert!(locals_in(&setpoint).contains(&"d: u8".to_string()), "`known()` gives a known payload:\n{setpoint}");
+
+    // A `let` of an `Option` binds its flag and its payload; `Some`/`None` give each.
+    let supervise = read.function_text("supervise");
+    let locals = locals_in(&supervise);
+    for local in ["fault_now.is: bool", "fault_now.val: u2", "f: u2", "latched: u2", "quiet: bool", "tripped: bool", "cause: u2", "match$0.is: bool", "match$0.val: u2"] {
+        assert!(locals.contains(&local.to_string()), "local {local} in:\n{supervise}");
+    }
+    for line in [
+        "let fault_now.is = if (oc_n >= 8u4) { true } else { if (ov_n >= 2u2) { true } else { false } }",
+        "let fault_now.val = if (oc_n >= 8u4) { 1u2 } else { if (ov_n >= 2u2) { 2u2 } else { 0u2 } }",
+        // `if let`: the flag decides, the binding reads the payload.
+        "let latched = if fault_now.is { let f = fault_now.val; f } else { 0u2 }",
+        "let quiet = (!fault_now.is)",
+        "let tripped = fault_now.is",
+        "let cause = if fault_now.is { fault_now.val } else { 0u2 }",
+        // `match`: `Some(v)` is the flag and the payload equal to `v`, `Some(f)` binds the payload,
+        // `None` the last arm.
+        "let match$0.is = fault_now.is",
+        "let match$0.val = fault_now.val",
+        "if (match$0.is && (match$0.val == 1u2)) { 1u8 } else { if match$0.is { let f = match$0.val; if (f == latched) { 2u8 } else { 3u8 } } else { 0u8 } }",
+    ] {
+        assert!(supervise.contains(line), "`{line}` in:\n{supervise}");
+    }
+
+    // `unwrap_or` of a literal `Some` is its payload; of a pair it is an `if` on the flag.
+    assert_eq!(ir.expr(read.body_of("literal")), &Expr::Int(3));
+    let known = read.function_text("read");
+    assert!(known.contains("let k.is = x.is_known()") && known.contains("let k.val = x.known_or(0u8)") && known.contains("if k.is { k.val } else { 5u8 }"), "{known}");
+}
+
+#[test]
+fn a_tuple_let_is_one_local_per_component() {
+    // DIG-08 AC 11: `let (m, r) = (x, y);` is two locals, each typed by its own component.
+    // `in_window` of the buck (examples/buck/src/supervisor.msl).
+    let items = "pub fn in_window(meas: u10, reference: u10) -> bool {\n\
+                   let (m, r) = (meas as u11, reference as u11);\n\
+                   let half = r >> 4;\n\
+                   m + half >= r && m <= r + half\n\
+                 }\n\
+                 fn mixed() -> u8 { let u: u8 = Unknown; let (a, b) = (u, 1u8); a.known_or(b) + b }";
+    let ir = Elab::ir(&reaching(items, &["in_window(1, 2)", "mixed()"]), "Top");
+    let read = Read { ir: &ir };
+    let window = read.function_text("in_window");
+    assert!(window.contains("let m = (meas as u11)\n  let r = (reference as u11)"), "{window}");
+    let locals = locals_in(&window);
+    assert!(locals.contains(&"m: u11".to_string()) && locals.contains(&"r: u11".to_string()), "{window}");
+    let mixed = read.function_text("mixed");
+    let locals = locals_in(&mixed);
+    assert!(locals.contains(&"a: flagged<u8>".to_string()) && locals.contains(&"b: u8".to_string()), "{mixed}");
+}

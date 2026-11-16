@@ -39,11 +39,14 @@ pub(super) struct Scope {
     pub(super) block_depth: u32,
     /// The name the `let` being lowered gives the `limit` call that is its whole initializer.
     pub(super) limit_name: Option<(ExprId, String)>,
+    /// The `Option` locals: a `let` binding of type `Option<T>` to its flag local and its
+    /// payload local.
+    pub(super) options: BTreeMap<DeclId, (u32, u32)>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new() }
     }
 }
 
@@ -172,6 +175,7 @@ impl Elaboration<'_, '_> {
                 };
                 Some(self.emit(Expr::Binary { op, lhs, rhs }, flag.wrap(ty), origin))
             }
+            ExprKind::If { cond, then, else_ } if matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, origin),
             ExprKind::If { cond, then, else_ } => {
                 let cond = self.lower_expr(scope, *cond);
                 scope.nesting += 1;
@@ -226,8 +230,8 @@ impl Elaboration<'_, '_> {
                     }
                     // Lowered as a flag and a payload from msl-digital T27 on.
                     Method::IsSome | Method::IsNone | Method::UnwrapOr => {
-                        self.unsupported(file, node.span, "a method of an `Option`");
-                        return None;
+                        let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                        return self.lower_option_method(scope, method, *recv, &args, ty, origin);
                     }
                 };
                 let recv = self.lower_expr(scope, *recv)?;
@@ -348,27 +352,7 @@ impl Elaboration<'_, '_> {
             let node = self.design.stmt_node(*stmt).clone();
             let file = self.design.decl_data(node.owner).file;
             match &node.kind {
-                StmtKind::Let { pat, init: Some(init), else_: None, .. } => match self.design.pat_node(*pat).kind.clone() {
-                    PatKind::Ident { binding, sub: None, .. } => {
-                        let local = self.bind_local(scope, binding);
-                        let name = self.design.decl_data(binding).name.as_ref().map(|n| n.text.clone());
-                        scope.limit_name = name.map(|n| (self.peel_parens(*init), n));
-                        let init = self.lower_expr(scope, *init);
-                        scope.limit_name = None;
-                        match (local, init) {
-                            (Some(local), Some(init)) => {
-                                // A local is what its initializer is: flagged when that may be unknown.
-                                scope.locals[local as usize].ty = self.type_of(init);
-                                out.push(self.ir.stmt(Stmt::Let { local, init }));
-                            }
-                            _ => ok = false,
-                        }
-                    }
-                    _ => {
-                        self.unsupported(file, node.span, "a `let` pattern that is not a name");
-                        ok = false;
-                    }
-                },
+                StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
                 StmtKind::Expr { expr, semi } => match self.lower_expr(scope, *expr) {
                     Some(lowered) if i + 1 == stmts.len() && !semi => value = Some(lowered),
                     Some(lowered) => out.push(self.ir.stmt(Stmt::Expr(lowered))),
@@ -383,6 +367,35 @@ impl Elaboration<'_, '_> {
             }
         }
         ok.then_some((out, value))
+    }
+
+    /// `let pat = init;`: a name, an `Option` (a flag local and a payload local) or a tuple
+    /// (one local per component). `false` after a diagnostic.
+    fn lower_let(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, pat: crate::pom::PatId, init: ExprId, file: FileId, span: Span) -> bool {
+        match self.design.pat_node(pat).kind.clone() {
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
+            PatKind::Ident { binding, sub: None, .. } => {
+                let local = self.bind_local(scope, binding);
+                let name = self.design.decl_data(binding).name.as_ref().map(|n| n.text.clone());
+                scope.limit_name = name.map(|n| (self.peel_parens(init), n));
+                let init = self.lower_expr(scope, init);
+                scope.limit_name = None;
+                match (local, init) {
+                    (Some(local), Some(init)) => {
+                        // A local is what its initializer is: flagged when that may be unknown.
+                        scope.locals[local as usize].ty = self.type_of(init);
+                        out.push(self.ir.stmt(Stmt::Let { local, init }));
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            PatKind::Tuple(pats) => self.lower_tuple_let(scope, out, &pats, init, file, span),
+            _ => {
+                self.unsupported(file, span, "a `let` pattern that is not a name");
+                false
+            }
+        }
     }
 
     fn binary_op(op: BinOp) -> BinaryOp {
