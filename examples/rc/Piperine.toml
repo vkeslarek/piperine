@@ -1,0 +1,13 @@
+[package]
+name = "rc"
+version = "0.1.0"
+
+[run.op]
+bench = "benches/step.msl"
+analysis = "op"
+
+[run.step]
+bench = "benches/step.msl"
+analysis = "transient"
+stop = 5e-6
+print_step = 1e-6

@@ -145,3 +145,18 @@ fn the_crate_reports_exactly_the_package_phase_codes() {
     assert!(documented.len() >= 7, "the scrape found only {documented:?}");
     assert_eq!(reported, documented);
 }
+
+#[test]
+fn the_rc_example_resolves_with_no_diagnostic() {
+    // CLI-19 AC 2 (msl-cli T6): `examples/rc` resolves as the package `rc` and its crate has no
+    // diagnostic; its library holds the three parts the bench places
+    let rc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc");
+    let design = load_project(&rc).unwrap_or_else(|e| panic!("examples/rc is no package: {e:?}"));
+    let codes: Vec<String> = design.diagnostics().iter().map(|d| format!("{}: {}", d.diagnostic.code, d.diagnostic.message)).collect();
+    assert!(codes.is_empty(), "{codes:?}");
+    assert_eq!(design.root_crate().name(), "rc");
+    for part in ["Resistor", "Capacitor", "Vsource"] {
+        assert!(design.module(part).is_some(), "the library holds `{part}`");
+    }
+    assert!(rc.join("benches/step.msl").is_file(), "the bench of the runs `op` and `step`");
+}

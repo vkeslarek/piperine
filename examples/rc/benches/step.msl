@@ -1,0 +1,20 @@
+use rc::{Capacitor, Resistor, Vsource};
+
+/// Writes a record when `a` rises through `level`.
+module Monitor(a: Electrical) { level: f64 = 0.5; }
+digital for Monitor {
+    on cross(v(a) - level) {
+        emit!("trip", v = v(a));
+        require("crossed_upward", v(a) >= level);
+    }
+}
+
+/// A 1 V source into R and C. `vout` starts at 0 V, so a transient is the step response.
+module Step() {
+    signal vin: Electrical;
+    signal vout: Electrical = 0.0;
+    let v1 = Vsource(vin, gnd) { dc: 1.0 };
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let c1 = Capacitor(vout, gnd) { c: 1n };
+    let mon = Monitor(vout);
+}
