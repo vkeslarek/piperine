@@ -290,7 +290,7 @@ VS Code extension productization, marketplace packaging, release/versioning —
 Found by the buck prototype (`examples/buck/GAPS.md`). Each has a provisional rule so work is not blocked; the spec sentence is still owed.
 
 - **G4 - float to `UInt<N>`/`Int<N>` with `as`.** Provisional (ir-rust): saturate to the N-bit range, NaN to 0. Spec Part I §1 rule 1 says "truncates or extends, as in Rust", which is ambiguous for non-Rust widths.
-- **G5 - shift by N or more.** Provisional (ir-rust): mathematical result truncated to N bits (0 for `<<` and unsigned `>>`, sign fill for signed `>>`). No spec rule.
+- **G5 - shift by N or more.** Provisional (ir-rust): mathematical result truncated to N bits (0 for `<<` and unsigned `>>`, sign fill for signed `>>`). No spec rule. A shift by a negative amount (an `Int<M>` amount below 0) has no rule either: the compiled code panics naming the shift, which the solver reports as a fault (ir-rust phase-B verification F-B9).
 - **G3 - Appendix H method on a carrier receiver left `Unresolved` with no diagnostic** (`oc_count.saturating_add(1)` on a `Bit<u4>`). Front-end bug in `pom/resolve/members.rs`; `msl-typeck` should link it or report it.
 - **G1 fixed-point type, G2 ranged integer.** Language proposals, not bugs; schedule on demand.
 

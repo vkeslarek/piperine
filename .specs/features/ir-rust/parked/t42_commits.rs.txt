@@ -7,7 +7,7 @@
 #![cfg(unix)]
 
 use piperine_abi::layout::{HIGH, LOW};
-use piperine_ir::{BinaryOp, BodyId, CarrierRole, Constant, IrBuilder, Real, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, BodyId, CarrierRole, Constant, IrBuilder, Real, ValueType};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -205,5 +205,4 @@ fn an_unchanged_commit_fires_nothing() {
     let moved = seen.transient("n");
     assert_eq!(moved.len(), 1, "the counter moved once: {moved:?}");
     assert_eq!(moved[0].0, 5 * NS / 2);
-    let _ = UnaryOp::Not;
 }

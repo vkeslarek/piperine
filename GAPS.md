@@ -77,7 +77,8 @@ Each has a provisional rule so work is not blocked; the spec sentence is still o
 - **G4 — `f64 as u10` outside the range.** Part I §1 rule 1 says "truncates or extends, as in
   Rust", which is ambiguous for widths Rust lacks. Provisional: saturate, NaN → 0.
 - **G5 — shift by N or more bits.** No rule. Provisional: the mathematical result truncated to
-  N bits (0 for `<<` and for unsigned `>>`, sign fill for signed `>>`).
+  N bits (0 for `<<` and for unsigned `>>`, sign fill for signed `>>`). A negative amount has no rule
+  either; compiled code panics naming the shift (a fault, `ir-rust` F-B9).
 - **G1 — no fixed-point type; G2 — no ranged integer.** Language proposals the buck wanted, not
   bugs.
 
