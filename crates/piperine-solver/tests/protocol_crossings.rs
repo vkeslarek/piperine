@@ -425,20 +425,29 @@ fn a_watch_without_an_etol_pin_takes_the_potential_abstol() {
 fn a_crossing_in_the_step_after_a_jump_is_not_located() {
     // SCX-01 AC 5 (§17.3 rule 8): the clock steps from 0 to 1 V at period/4 = 0.25 ms, a jump.
     // A comparator on it against 0.5 V sees the step that reads the jump go from −0.5 to 0.5:
-    // that crossing is not located, it fires at the step's end, past ttol plus one tick.
+    // that crossing is not located, so the step is not retaken: it fires at the end of the step
+    // the controller proposed, the same time and the same steps as a run with ttol = 1 s, where
+    // every crossing is accepted where it is first seen.
     let period = 1.0e-3;
-    let mut b = CircuitBuilder::new("edge");
-    let gnd = b.ground();
-    let clk = b.node("clk");
-    let r = b.node("r");
-    b.device(clock_src(), "ck", &[("period", ParamValue::Real(period))], &[Port::Node(clk.clone()), Port::Node(gnd.clone())]);
-    add_vsrc(&mut b, "vr", 0.5, &r, &gnd);
-    b.device(comparator(), "cmp", &[], &[Port::Node(clk), Port::Node(r), net("c")]);
-    let (result, seen) = run(b, 0.4e-3, 1.0e-5, |_| {}, Context::default());
-    let fired = crossings(&seen, "cmp.up");
+    let edge_run = |ttol: f64| {
+        let mut b = CircuitBuilder::new("edge");
+        let gnd = b.ground();
+        let clk = b.node("clk");
+        let r = b.node("r");
+        b.device(clock_src(), "ck", &[("period", ParamValue::Real(period))], &[Port::Node(clk.clone()), Port::Node(gnd.clone())]);
+        add_vsrc(&mut b, "vr", 0.5, &r, &gnd);
+        b.device(comparator(), "cmp", &[], &[Port::Node(clk), Port::Node(r), net("c")]);
+        let (result, seen) = run(b, 0.4e-3, 1.0e-5, |o| o.ttol = ttol, Context::default());
+        let times: Vec<f64> = result.iter().map(|s| s.time()).collect();
+        (crossings(&seen, "cmp.up"), times)
+    };
+    let (fired, times) = edge_run(TTOL);
+    let (unlocated, unlocated_times) = edge_run(1.0);
     assert_eq!(fired.len(), 1, "{fired:?}");
+    assert_eq!(fired, unlocated, "no retake: it fires where an unlocated crossing fires");
+    assert_eq!(times, unlocated_times, "the same accepted steps");
     let edge = period / 4.0;
-    let after: Vec<f64> = result.iter().map(|s| s.time()).filter(|t| *t > edge + 0.5 * TICK).collect();
+    let after: Vec<f64> = times.iter().copied().filter(|t| *t > edge + 0.5 * TICK).collect();
     assert_eq!(fired[0], after[0], "it fires at the end of the step that reads the jump");
-    assert!(fired[0] - edge > TTOL + TICK, "not located at the edge: {:e}", fired[0] - edge);
+    assert!(fired[0] - edge > 1.0e-6, "a controller step after the edge, not a landing next to it: {:e}", fired[0] - edge);
 }
