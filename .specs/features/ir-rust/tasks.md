@@ -1139,10 +1139,10 @@ T42 → T43 → T44 → T45 → T46
 
 **Done when**:
 
-- [ ] Expected instants and values are written from §12.1.1, .2, .4 and .18, each cited at its assertion
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test commits`: `two_commits_exchange_two_carriers`, `the_later_statement_wins`, `two_statements_make_a_pulse`, `an_unchanged_commit_fires_nothing`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited
+- [x] Expected instants and values are written from §12.1.1, .2, .4 and .18, each cited at its assertion
+- [x] Tests with exactly these names pass in `cargo test -p piperine-transpile --test commits`: `two_commits_exchange_two_carriers`, `the_later_statement_wins`, `two_statements_make_a_pulse`, `an_unchanged_commit_fires_nothing`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 4 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
