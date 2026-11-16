@@ -727,4 +727,29 @@ points = 5
         // `to` equal to `from` is ordered
         assert!(read("[run.a]\nanalysis = \"ac\"\nfrom = 1e3\nto = 1e3\npoints = 1\n").is_ok());
     }
+
+    #[test]
+    fn a_flag_overrides_a_key() {
+        // CLI-03 AC 3: the flag wins; a key no flag names keeps the table's value
+        let table = one("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nprint_step = 1e-4\nprint = [\"out\"]\nparams = { \"r1.r\" = 2000.0 }\n");
+        let flags = Overrides { stop: Some(2e-3), print: vec!["vin".into()], params: vec![("r1.r".into(), 1000.0)], ..Overrides::default() };
+        let merged = table.merged(&flags).unwrap_or_else(|f| panic!("{f}"));
+        assert_eq!(merged.analysis, Analysis::Transient { stop: 2e-3, max_step: None, print_step: Some(1e-4), from: None });
+        assert_eq!(merged.print, ["vin"], "a list flag replaces the key");
+        // CLI-10 AC 1: the table's params first, then the flags'
+        assert_eq!(merged.params, [("r1.r".to_string(), 2000.0), ("r1.r".to_string(), 1000.0)]);
+        assert_eq!(merged.name, "a");
+        // no flag: the table's request unchanged
+        assert_eq!(table.merged(&Overrides::default()).ok().as_ref(), Some(&table));
+        // the merged request is validated again: a flag that breaks a rule is a P0010 naming
+        // the key, with no span since no manifest wrote it
+        let bad = table.merged(&Overrides { stop: Some(0.0), ..Overrides::default() }).expect_err("stop 0");
+        assert!(matches!(&bad, Failure::Host { code: "P0010", message } if message.contains("`stop`")), "{bad:?}");
+        let other = table.merged(&Overrides { analysis: Some("op".into()), ..Overrides::default() }).expect_err("op reads no stop");
+        assert!(other.to_string().contains("`stop`") && other.to_string().contains("`op`"), "{other}");
+        // a request from flags alone, as a lone file's
+        let lone = RunSpec::from_flags("divider", &Overrides { analysis: Some("op".into()), ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
+        assert_eq!((lone.name.as_str(), &lone.analysis), ("divider", &Analysis::Op));
+        assert!(RunSpec::from_flags("divider", &Overrides::default()).is_err(), "no analysis");
+    }
 }
