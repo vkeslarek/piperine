@@ -286,7 +286,7 @@ print_step = 1e-6</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 13 and 14). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run as compiled Rust today, built by hand in the compiler's intermediate form; the path that takes them, and the rest of the analog language, from source is being built (chapter 15). So a file with a <code>digital</code> block, like <code>Monitor</code> above, is parsed and resolved by the front end today and will run from source when that path lands. The <code>piperine</code> command line of this book is being built now, and the output shown under each command is what it is specified to print. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 13 and 14). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 15). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. Parts of the analog language beyond that first set (noise, <code>idt</code>, <code>delay</code>) are still refused by name. The <code>piperine</code> command line of this book is being built now, and the output shown under each command is what it is specified to print. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -1824,7 +1824,7 @@ digital for MacPipe {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Everything in this chapter is parsed and resolved by the front end. Digital models execute today as compiled Rust built from hand-written intermediate code; taking a <code>digital</code> block from source to that code is the compiler work in progress (chapter 15). The streams printed in this chapter are what the rules above define.</p>
+  <p>Everything in this chapter runs from source. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 15); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above.</p>
 </div>
 
 <div class="callout mistake">
@@ -2146,7 +2146,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Mixed-signal designs execute today as compiled Rust built from hand-written intermediate code, on the same solver that runs analog MSL: the PWM, the PID and the comparators of a full-size digitally controlled buck converter run that way. Taking a mixed-signal source file to that code, so that such a converter runs from its source with its loop closed, is in progress (chapter 15). The front end parses and resolves every complete file of this chapter.</p>
+  <p>Mixed-signal designs run from source as compiled Rust, on the same solver that runs analog MSL. A full-size digitally controlled buck converter (12&nbsp;V in, 200&nbsp;MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its <code>.msl</code> and regulates at 0.8&nbsp;V within 3&nbsp;mV with its loop closed. The front end parses and resolves every complete file of this chapter.</p>
 </div>
 
 <div class="callout mistake">
@@ -3298,7 +3298,7 @@ flowchart TD
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built for analog circuits, with two backends. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end from source, under operating point, DC sweep, AC and transient, through the interpreter and as compiled Rust, and every result is compared with ngspice on both. The Rust backend also runs digital and mixed-signal models (the buck converter's PWM, PID and comparators), built by hand in the intermediate form; type checking and elaboration of digital and mixed MSL, which take them from source, are being built now.</p>
+  <p>Built for analog circuits, with two backends. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end from source, under operating point, DC sweep, AC and transient, through the interpreter and as compiled Rust, and every result is compared with ngspice on both. The Rust backend also runs digital and mixed-signal models from source: type checking and elaboration take definitions, carriers, events, reactions, commits, enums, <code>match</code> and unknown values into the intermediate form, and a full buck converter runs with its loop closed. The interpreter stays analog only.</p>
 </div>
 
 <h3>The stages</h3>
@@ -3402,7 +3402,7 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
 
 <h3>What comes next</h3>
 
-<p>Type checking and elaboration of the digital and mixed forms, so the buck converter in the examples runs from its source with its control loop closed. With it comes the command line of chapter 16, so that a whole MSL project runs with one command, and then a single home for end-to-end scenarios compared with ngspice.</p>
+<p>The command line of chapter 16, so that a whole MSL project runs with one command, then one integrated test for every example of this book, and a single home for end-to-end scenarios compared with ngspice.</p>
 </section>
 
 <!-- ===================================================== 16 -->
