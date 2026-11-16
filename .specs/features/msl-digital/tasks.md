@@ -692,10 +692,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] `piperine-interp` and `piperine-transpile` still build: the new variant gets a refusal arm
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_previous_value_read_prints_and_checks`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] `piperine-interp` and `piperine-transpile` still build: the new variant gets a refusal arm
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_previous_value_read_prints_and_checks`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full

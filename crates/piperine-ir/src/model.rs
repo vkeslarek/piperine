@@ -293,6 +293,9 @@ pub enum Expr {
     /// `i(a, b)` of a branch the body drives with a potential contribution: the branch's flow,
     /// an `f64`, by branch index. The branch carries a potential contribution in the body.
     Flow { branch: u32 },
+    /// `c.prev()`: carrier `c`'s value before its most recent change (§3.3). Its type is
+    /// `Flagged`, as a read of the carrier: unknown until the carrier has changed once.
+    Previous(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

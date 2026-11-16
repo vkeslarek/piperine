@@ -159,3 +159,28 @@ fn the_flow_of_a_potential_branch_is_refused_by_name() {
         Error::Unsupported { form: "the flow of a potential branch".into(), path: "body Amended e0".into(), origin: Buck::origin(F, 2, 24) }
     );
 }
+
+#[test]
+fn the_previous_value_of_a_carrier_is_refused_by_name() {
+    // `on q.changed() where q.prev().is_known() { q <- true; }`, the guard at line 2.
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Edge", F, 1));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 20));
+    let mut x = Dx::new(&mut b, F, 2, 24);
+    let o = x.origin();
+    let prev = x.b.expr(Expr::Previous(0), ValueType::Flagged(Box::new(ValueType::Bool)), o);
+    let known = x.is_known(prev);
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: Some(known), origin: Buck::origin(F, 2, 8) });
+    let mut x = Dx::new(&mut b, F, 2, 50);
+    let yes = x.boolean(true);
+    let commit = x.commit(0, yes, None);
+    Buck::reaction(&mut b, body, vec![changed], vec![commit], vec![], F, 2);
+    let at = b.next_instance_id();
+    let net = b.net(NetSpec { path: "Top.q".into(), ty: ValueType::Bool, declared_by: at, init: None, origin: Buck::origin(F, 1, 20) });
+    let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![], origin: Buck::origin(F, 1, 1) });
+    b.bind_nets(top, vec![net]);
+    assert_eq!(
+        Case::refused(b.finish(top)),
+        Error::Unsupported { form: "the previous value of a carrier".into(), path: "body Edge e0".into(), origin: Buck::origin(F, 2, 24) }
+    );
+}

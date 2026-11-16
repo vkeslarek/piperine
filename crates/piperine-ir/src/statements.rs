@@ -49,7 +49,7 @@ impl Statements {
                     let Some(data) = ir.exprs.get(id.index()) else { continue };
                     match &data.kind {
                         Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                        Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } => {}
+                        Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) => {}
                         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Step::Expr(*expr)),
                         Expr::Binary { lhs, rhs, .. } => next.extend([Step::Expr(*lhs), Step::Expr(*rhs)]),
                         Expr::KnownOr { value, default } => next.extend([Step::Expr(*value), Step::Expr(*default)]),

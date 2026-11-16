@@ -346,7 +346,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) => {}
             Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
             Expr::IsKnown(value) | Expr::High(value) => exprs.push(*value),
             Expr::Cast { expr, .. } => exprs.push(*expr),
@@ -590,7 +590,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } => {}
+                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) => {}
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
                 Expr::KnownOr { value, default } => stack_e.extend([*value, *default]),
@@ -781,18 +781,21 @@ impl<'a> Checker<'a> {
         let mut allowed: HashSet<ExprId> = HashSet::new();
         for e in &exprs {
             if let Expr::KnownOr { value: read, .. } | Expr::IsKnown(read) | Expr::High(read) = &ir.exprs[e.index()].kind {
-                if matches!(ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Carrier(_))) {
+                if matches!(ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Carrier(_) | Expr::Previous(_))) {
                     allowed.insert(*read);
                 }
             }
         }
         for e in exprs {
-            if let Expr::Carrier(c) = ir.exprs[e.index()].kind {
-                if !allowed.contains(&e) {
-                    let name = body.carriers.get(c as usize).map_or_else(|| format!("{c}"), |c| c.name.clone());
-                    let origin = self.expr_origin(e);
-                    self.report(format!("body {}", body.name), origin, format!("`analog` reads carrier {name} outside `known_or`, `is_known` and `high` (§3.3.5)"));
-                }
+            let (c, read) = match ir.exprs[e.index()].kind {
+                Expr::Carrier(c) => (c, "carrier"),
+                Expr::Previous(c) => (c, "the previous value of carrier"),
+                _ => continue,
+            };
+            if !allowed.contains(&e) {
+                let name = body.carriers.get(c as usize).map_or_else(|| format!("{c}"), |c| c.name.clone());
+                let origin = self.expr_origin(e);
+                self.report(format!("body {}", body.name), origin, format!("`analog` reads {read} {name} outside `known_or`, `is_known` and `high` (§3.3.5)"));
             }
         }
     }
@@ -1370,6 +1373,18 @@ impl<'a> Checker<'a> {
                         match w.owner.carriers.get(*i as usize) {
                             Some(c) => self.own(w, &origin, ty, &ValueType::Flagged(Box::new(c.clone()))),
                             None => self.wrong(w, origin, format!("carrier {i} out of range ({} carriers)", w.owner.carriers.len())),
+                        }
+                    }
+                }
+            }
+            Expr::Previous(i) => {
+                if first {
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a previous-value read outside a body".to_string());
+                    } else {
+                        match w.owner.carriers.get(*i as usize) {
+                            Some(c) => self.own(w, &origin, ty, &ValueType::Flagged(Box::new(c.clone()))),
+                            None => self.wrong(w, origin, format!("previous value of carrier {i}, out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
                 }

@@ -63,6 +63,7 @@ impl Amended {
             Expr::Env(Env::Time) => Some("now()"),
             Expr::Env(Env::Static) => Some("analysis(Static)"),
             Expr::Flow { .. } => Some("the flow of a potential branch"),
+            Expr::Previous(_) => Some("the previous value of a carrier"),
             _ => None,
         }
     }

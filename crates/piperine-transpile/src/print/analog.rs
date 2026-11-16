@@ -233,6 +233,8 @@ impl<'a> AnalogPrinter<'a> {
                 // The plan does not read a branch's flow yet (msl-digital T45); `Amended` refuses
                 // the form before any is printed.
                 Expr::Flow { .. } => {}
+                // Nor the previous value (T62).
+                Expr::Previous(_) => {}
             }
         }
     }

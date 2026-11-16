@@ -671,6 +671,7 @@ impl<'a> Printer<'a> {
             Expr::High(value) => next.extend([Piece::Expr(*value), text(".high()".into())]),
             Expr::Carrier(i) => next.push(text(Printer::carrier(scope, *i))),
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
+            Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
         }
         if note {
             next.push(text(format!(" : {})", data.ty)));
@@ -710,7 +711,7 @@ impl<'a> Printer<'a> {
                 Typing::method(*method, &ty(receiver)?, &args.iter().collect::<Vec<_>>())
             }
             Expr::Unknown => None,
-            Expr::Carrier(i) => scope.carriers.get(*i as usize).map(|c| ValueType::Flagged(Box::new(c.ty.clone()))),
+            Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| ValueType::Flagged(Box::new(c.ty.clone()))),
             Expr::KnownOr { value, default } => Typing::known_or(&ty(value)?, &ty(default)?),
             Expr::IsKnown(value) => Typing::flag_read(false, &ty(value)?),
             Expr::High(value) => Typing::flag_read(true, &ty(value)?),
@@ -752,7 +753,7 @@ impl<'a> Printer<'a> {
                 Some(ValueType::Fn(params?, Box::new(ty(body)?)))
             }
             Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
-            Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::Carrier(_) => None,
+            Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::Carrier(_) | Expr::Previous(_) => None,
         }
     }
 
@@ -907,6 +908,7 @@ impl<'a> Printer<'a> {
             Expr::High(value) => format!("high {}", e(value)),
             Expr::Carrier(i) => format!("carrier {i}"),
             Expr::Flow { branch } => format!("flow b{branch}"),
+            Expr::Previous(i) => format!("previous {i}"),
         }
     }
 

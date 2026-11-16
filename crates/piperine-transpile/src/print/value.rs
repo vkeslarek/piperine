@@ -462,7 +462,8 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Int(_)
             | Expr::Unknown
             | Expr::Carrier(_)
-            | Expr::Flow { .. } => {}
+            | Expr::Flow { .. }
+            | Expr::Previous(_) => {}
         }
     }
 
@@ -671,6 +672,7 @@ impl<'a> ValuePrinter<'a> {
             }
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
             Expr::Flow { .. } => Err(self.unsupported(e, "the flow of a potential branch")),
+            Expr::Previous(_) => Err(self.unsupported(e, "the previous value of a carrier")),
             Expr::Limit { site, .. } => match self.analog.as_ref().and_then(|r| r.limits.get(*site as usize)) {
                 Some(name) => atom(name.clone()),
                 None => Err(self.unsupported(e, "limit")),

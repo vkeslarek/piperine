@@ -286,6 +286,7 @@ impl<'a> Walk<'a> {
             Expr::High(_) => "High",
             Expr::Carrier(_) => "Carrier",
             Expr::Flow { .. } => "Flow",
+            Expr::Previous(_) => "Previous",
         }
     }
 

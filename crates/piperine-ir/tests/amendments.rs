@@ -9,7 +9,7 @@
 #[allow(dead_code)]
 mod digital;
 
-use digital::{Buck, Dx};
+use digital::{Buck, Dx, Ty};
 use piperine_ir::{
     BodyId, BodySpec, Branch, BranchKind, CarrierRole, Constant, Deps, Drive, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
     IrBuilder, NetSpec, NodeRef, NodeSpec, Origin, Real, RecordSite, Stmt, Stream, StreamField, Target, Terminal, ValueType,
@@ -571,5 +571,120 @@ fn a_flow_read_and_a_potential_ddt_print_and_check() {
     one("flow of branch 0, which the body does not drive with a potential contribution", 3);
     one("flow of branch 5, out of range (1 branches)", 4);
     one("a flow read outside a body", 7);
+    assert_eq!(broken.len(), 3, "{broken:#?}");
+}
+
+impl Read {
+    fn previous(x: &mut Dx<'_>, carrier: u32, ty: ValueType) -> ExprId {
+        let o = x.origin();
+        x.b.expr(Expr::Previous(carrier), Ty::flagged(ty), o)
+    }
+}
+
+#[test]
+fn a_previous_value_read_prints_and_checks() {
+    // IEEE 1364 posedge, as `std/values.msl` writes `rise`: a change from low or unknown to high
+    // or unknown, here as a guard of the event of a flip-flop's clock.
+    //
+    //   module Edge(in clk: Bit, out q: Bit = false) {}                                   // 1
+    //   digital for Edge {
+    //       on clk.changed() where !clk.prev().high() && clk.known_or(true) { q <- true; }  // 3
+    //       on clk.changed() where clk.prev().is_known() { q <- false; }                    // 4
+    //   }
+    const F: &str = "edge.msl";
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Edge", F, 1));
+    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, F, 1, 20));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 35));
+    let mut x = Dx::new(&mut b, F, 3, 30);
+    let prev = Read::previous(&mut x, 0, ValueType::Bool);
+    let was_high = x.high(prev);
+    let was_low = x.un(piperine_ir::UnaryOp::Not, was_high, ValueType::Bool);
+    let clk = x.carrier(0, ValueType::Bool);
+    let yes = x.boolean(true);
+    let not_low = x.known_or(clk, yes, ValueType::Bool);
+    let rising = x.bin(piperine_ir::BinaryOp::And, was_low, not_low, ValueType::Bool);
+    x.at(4, 30);
+    let prev = Read::previous(&mut x, 0, ValueType::Bool);
+    let was_known = x.is_known(prev);
+    let edge = b.event(body, Event { source: EventSource::Changed(0), guard: Some(rising), origin: Design::origin(F, 3, 8) });
+    let known = b.event(body, Event { source: EventSource::Changed(0), guard: Some(was_known), origin: Design::origin(F, 4, 8) });
+    let mut x = Dx::new(&mut b, F, 3, 70);
+    let yes = x.boolean(true);
+    let up = x.commit(1, yes, None);
+    x.at(4, 50);
+    let no = x.boolean(false);
+    let down = x.commit(1, no, None);
+    Buck::reaction(&mut b, body, vec![edge], vec![up], vec![], F, 3);
+    Buck::reaction(&mut b, body, vec![known], vec![down], vec![], F, 4);
+    let ir = Design::place(b, body, 0, &[ValueType::Bool, ValueType::Bool], vec![]);
+    assert_eq!(ir.check(), vec![]);
+
+    // Printed as the source writes it, typed `flagged<bool>` by its form: no type note.
+    Printed::holds(
+        &ir,
+        &[
+            "  event E0 changed clk guard ((!clk.prev().high()) && clk.known_or(true))",
+            "  event E1 changed clk guard clk.prev().is_known()",
+        ],
+    );
+    assert!(!ir.print_structural().contains(" : "), "a type note was written:\n{}", ir.print_structural());
+    assert!(ir.to_string().contains("previous 0"), "previous 0 missing from:\n{}", ir.to_string());
+
+    // The previous value is read apart from the value: the first guard reads both, the second only
+    // the previous one.
+    let edge = ir.top().body();
+    assert_eq!(edge.carrier_reads(Target::Guard(0)), vec![0]);
+    assert_eq!(edge.previous_reads(Target::Guard(0)), vec![0]);
+    assert_eq!(edge.carrier_reads(Target::Guard(1)), Vec::<u32>::new());
+    assert_eq!(edge.previous_reads(Target::Guard(1)), vec![0]);
+    assert_eq!(edge.previous_reads(Target::Reaction(0)), Vec::<u32>::new());
+    assert_eq!(edge.dependencies(Target::Guard(1)), Deps::default());
+
+    // `analog` reads a previous value only as the receiver of a flag read, as it reads a carrier
+    // (§3.3.5); a carrier out of range and a read typed against its form are entries too. One entry
+    // each: `if clk.prev().high() { 1.0 } else { 2.0 }` is accepted, the bare read is not.
+    const B: &str = "bad.msl";
+    let mut b = IrBuilder::new();
+    let nodes = Design::ports(&mut b, B);
+    let mut x = Dx::new(&mut b, B, 2, 20);
+    let prev = Read::previous(&mut x, 0, ValueType::Bool);
+    let was_high = x.high(prev);
+    let one = x.real(1.0);
+    let two = x.real(2.0);
+    let level = x.if_(was_high, one, two, ValueType::F64);
+    x.at(3, 14);
+    let bare = Read::previous(&mut x, 0, ValueType::Bool);
+    x.at(4, 14);
+    let missing = Read::previous(&mut x, 9, ValueType::Bool);
+    let missing = x.high(missing);
+    x.at(5, 14);
+    let wrong = Read::previous(&mut x, 0, ValueType::F64);
+    let drive = b.stmt(Stmt::Contribute {
+        branch: 0,
+        quantity: piperine_ir::QuantityRole::Flow,
+        addends: vec![piperine_ir::Addend { operator: piperine_ir::Operator::Direct, negated: false, value: level }],
+    });
+    let bare = b.stmt(Stmt::Expr(bare));
+    let missing = b.stmt(Stmt::Expr(missing));
+    let wrong = b.stmt(Stmt::Expr(wrong));
+    let body = b.body(BodySpec {
+        nodes,
+        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+        analog: Some(vec![drive, bare, missing]),
+        ..Buck::spec("Bad", B, 1)
+    });
+    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, B, 1, 20));
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(B, 6, 8) });
+    Buck::reaction(&mut b, body, vec![changed], vec![wrong], vec![], B, 6);
+    let broken = Design::place(b, body, 2, &[ValueType::Bool], vec![]).check();
+    let one = |what: &str, line: u32| {
+        let hits: Vec<_> = broken.iter().filter(|e| e.what.contains(what)).collect();
+        assert_eq!(hits.len(), 1, "{what}: {broken:#?}");
+        assert_eq!(hits[0].origin.line, line, "{what}");
+    };
+    one("`analog` reads the previous value of carrier clk outside `known_or`, `is_known` and `high` (§3.3.5)", 3);
+    one("previous value of carrier 9, out of range (1 carriers)", 4);
+    one("expression is typed flagged<f64>, its form gives flagged<bool>", 5);
     assert_eq!(broken.len(), 3, "{broken:#?}");
 }

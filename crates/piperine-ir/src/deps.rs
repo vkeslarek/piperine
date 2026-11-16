@@ -105,6 +105,13 @@ impl<'a> Body<'a> {
         self.sources_of(target).flows.iter().copied().collect()
     }
 
+    /// The carriers whose previous value (`Expr::Previous`) `target` reads, by index
+    /// (`Body::carriers`), sorted, through locals and function calls. A read of a previous value
+    /// is not in `carrier_reads`: it reads the carrier's `PREVIOUS` and not its value.
+    pub fn previous_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).previous.iter().copied().collect()
+    }
+
     fn sources_of(&self, target: Target) -> &'a Sources {
         let deps = self.deps();
         let (list, i, what) = match target {
@@ -189,6 +196,8 @@ struct Sources {
     carriers: BTreeSet<u32>,
     /// The branches whose flow is read (`Expr::Flow`).
     flows: BTreeSet<u32>,
+    /// The carriers whose previous value is read (`Expr::Previous`).
+    previous: BTreeSet<u32>,
 }
 
 impl Sources {
@@ -200,6 +209,7 @@ impl Sources {
         self.stims.extend(&other.stims);
         self.carriers.extend(&other.carriers);
         self.flows.extend(&other.flows);
+        self.previous.extend(&other.previous);
     }
 
     fn to_deps(&self) -> Deps {
@@ -591,6 +601,14 @@ impl<'a> Walk<'a> {
                 sources.carriers.insert(*i);
                 return self.done(id, Value::of(sources, Class::Constant));
             }
+            Expr::Previous(i) => {
+                if !in_body {
+                    self.refuse(id, "previous-value read outside a body");
+                }
+                let mut sources = Sources::default();
+                sources.previous.insert(*i);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
             Expr::Flow { branch } => {
                 if !in_body {
                     self.refuse(id, "flow read outside a body");
@@ -733,7 +751,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };
