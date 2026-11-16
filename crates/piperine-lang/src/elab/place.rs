@@ -34,6 +34,16 @@ struct Placing {
     origin: Origin,
 }
 
+/// The instance whose children are being placed: what they bind to.
+struct Parent<'a> {
+    instance: InstanceId,
+    path: &'a str,
+    nodes: &'a [NodeRef],
+    nets: &'a [NetId],
+    /// The values of its params, which its children's param values may read.
+    bindings: &'a Bindings,
+}
+
 impl Elaboration<'_, '_> {
     /// The top instance and, below it, the whole tree. `None` after a diagnostic.
     pub(super) fn place_top(&mut self, top: DeclId) -> Option<InstanceId> {
@@ -53,7 +63,7 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let plan = self.plans.get(&placing.module)?.clone();
-        let params = self.bind_params(&placing, &plan)?;
+        let (params, bindings) = self.bind_params(&placing, &plan)?;
         let declared_by = self.ir.next_instance_id();
         let mut ports = placing.ports.iter().copied();
         let mut nodes = Vec::new();
@@ -73,7 +83,8 @@ impl Elaboration<'_, '_> {
         }
         stack.push(placing.module);
         for child in &plan.children {
-            self.place_child(child, instance, &placing.path, &nodes, &nets, stack);
+            let parent = Parent { instance, path: &placing.path, nodes: &nodes, nets: &nets, bindings: &bindings };
+            self.place_child(child, &parent, stack);
         }
         stack.pop();
         Some(instance)
@@ -100,27 +111,43 @@ impl Elaboration<'_, '_> {
         nets
     }
 
-    /// One child of the instance `parent`: its ports bound to the parent's nodes and nets.
-    fn place_child(&mut self, child: &super::children::ChildPlan, parent: InstanceId, parent_path: &str, parent_nodes: &[NodeRef], parent_nets: &[NetId], stack: &mut Vec<DeclId>) {
+    /// One child of the instance `parent`: its ports bound to the parent's nodes and nets, each
+    /// param value that reads the parent's params evaluated over the parent's bound values
+    /// `bindings` (DIG-09 AC 11).
+    fn place_child(&mut self, child: &super::children::ChildPlan, parent: &Parent, stack: &mut Vec<DeclId>) {
         let node = self.design.expr_node(child.call).clone();
         let file = self.design.decl_data(node.owner).file;
         let ports = child
             .terminals
             .iter()
             .map(|t| match t {
-                Terminal::Node(i) => parent_nodes.get(*i as usize).copied().unwrap_or(NodeRef::Ground),
+                Terminal::Node(i) => parent.nodes.get(*i as usize).copied().unwrap_or(NodeRef::Ground),
                 Terminal::Ground => NodeRef::Ground,
             })
             .collect();
-        let carrier_ports = child.carriers.iter().map(|c| c.and_then(|i| parent_nets.get(i as usize).copied())).collect();
+        let carrier_ports = child.carriers.iter().map(|c| c.and_then(|i| parent.nets.get(i as usize).copied())).collect();
+        let mut given = Vec::new();
+        for (index, value, expr) in &child.given {
+            let value = match value {
+                Some(value) => *value,
+                None => match self.consts.value(*expr, parent.bindings) {
+                    Ok(value) => value,
+                    Err(fault) => {
+                        self.const_fault(&fault, "a param value");
+                        return;
+                    }
+                },
+            };
+            given.push((*index, value, *expr));
+        }
         let placing = Placing {
             module: child.module,
-            path: format!("{parent_path}.{}", child.name),
+            path: format!("{}.{}", parent.path, child.name),
             name: child.name.clone(),
-            parent: Some(parent),
+            parent: Some(parent.instance),
             ports,
             carrier_ports,
-            given: child.given.clone(),
+            given,
             file,
             span: node.span,
             origin: self.locator.origin(file, node.span),
@@ -128,9 +155,10 @@ impl Elaboration<'_, '_> {
         self.place(placing, stack);
     }
 
-    /// The value of each param of the instance: the one given, else the default. A required
-    /// param left out is `E0319`; a false `where` is `E0317`, naming the param's path.
-    fn bind_params(&mut self, placing: &Placing, plan: &ModulePlan) -> Option<Vec<Constant>> {
+    /// The value of each param of the instance, the one given, else the default, and the
+    /// bindings its children's param values read. A required param left out is `E0319`; a false
+    /// `where` is `E0317`, naming the param's path.
+    fn bind_params(&mut self, placing: &Placing, plan: &ModulePlan) -> Option<(Vec<Constant>, Bindings)> {
         let mut values = Vec::new();
         let mut bindings = Bindings::new();
         let mut ok = true;
@@ -187,6 +215,6 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
-        ok.then_some(values)
+        ok.then_some((values, bindings))
     }
 }

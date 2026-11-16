@@ -526,3 +526,52 @@ fn a_module_with_only_a_digital_block_has_no_analog_statements() {
     assert_eq!(osc.reactions().len(), 1);
     assert!(!body_text(&ir, "Osc").contains("analog"));
 }
+
+#[test]
+fn a_child_param_reads_the_parents_value() {
+    // DIG-09 AC 11, C85: `Divider` (examples/buck/src/sense.msl) places `Resistor { r: r_top }`;
+    // two `Divider`s with different values give their `Resistor` instances those values, the
+    // constant of each instance in the flat table.
+    let src = format!(
+        "{}\n{}\nmodule Top() {{ signal a: Electrical; signal b: Electrical; signal c: Electrical; let d1 = Divider(a, b) {{ r_top: 30k, r_bot: 10k }}; let d2 = Divider(a, c) {{ r_top: 90k, r_bot: 20k }}; }}",
+        buck::item("power.msl", "pub module Resistor("),
+        buck::item("sense.msl", "pub module Divider(")
+    );
+    let ir = Elab::ir(&src, "Top");
+    let r = |path: &str| ir.instance_at(path).unwrap_or_else(|| panic!("no `{path}`")).param(0).copied();
+    use piperine_ir::{ChildValue, Expr, Real};
+    assert_eq!(r("Top.d1.upper"), Some(Constant::Real(Real::new(30e3))));
+    assert_eq!(r("Top.d1.lower"), Some(Constant::Real(Real::new(10e3))));
+    assert_eq!(r("Top.d2.upper"), Some(Constant::Real(Real::new(90e3))));
+    assert_eq!(r("Top.d2.lower"), Some(Constant::Real(Real::new(20e3))));
+    // The authored child shows the expression (the IR half is C86): one body for `Divider`,
+    // whatever values its instances take.
+    let read = Read { ir: &ir };
+    let divider = read.body("Divider");
+    let [(param, ChildValue::Expr(value))] = divider.child_params(0) else { panic!("`r: r_top` as an expression: {:?}", divider.child_params(0)) };
+    assert_eq!((*param, ir.expr(*value)), (0, &Expr::Param(0)), "`r` reads `r_top`, the first param of `Divider`");
+    assert!(divider.children()[0].params.is_empty(), "no constant for a value that reads the parent");
+    // A false `where` of the child is `E0317` at the placement in the parent, naming the instance.
+    let src = format!(
+        "{}\nmodule Shifted(top: Electrical, mid: Electrical) {{ r_top: f64 where r_top > 0.0; let upper = Resistor(top, mid) {{ r: r_top - 1.0 }}; }}\nmodule Top() {{ signal a: Electrical; signal b: Electrical; let ok = Shifted(a, b) {{ r_top: 2.0 }}; let bad = Shifted(a, b) {{ r_top: 0.5 }}; }}",
+        buck::item("power.msl", "pub module Resistor(")
+    );
+    let err = Elab::run(&src, "Top").expect_err("`r = -0.5` breaks the `where` of `Resistor`");
+    assert_eq!(Elab::codes(&err), ["E0317"]);
+    let span = err[0].diagnostic.span();
+    assert_eq!(&src[span.start..span.end], "r_top - 1.0");
+    assert!(err[0].diagnostic.message.contains("Top.bad.upper"), "{}", err[0].diagnostic.message);
+    // The field-init shorthand of `Buck`'s `PowerStage { l, dcr, .. }` is `{ l: l, dcr: dcr }`.
+    let src = "module Ind(p: Electrical, n: Electrical) { l: f64 where l > 0.0; dcr: f64 = 0.0; }\n\
+               module Top() { l: f64 = 4.7u; dcr: f64 = 15m; signal a: Electrical; let ind = Ind(a, gnd) { l, dcr }; }";
+    let ir = Elab::ir(src, "Top");
+    let ind = ir.instance_at("Top.ind").expect("Top.ind");
+    assert_eq!(ind.params(), [Constant::Real(Real::new(4.7e-6)), Constant::Real(Real::new(15e-3))]);
+    let read = Read { ir: &ir };
+    let top = read.body("Top");
+    let given: Vec<(u32, &Expr)> = top.child_params(0).iter().map(|(p, v)| match v {
+        ChildValue::Expr(e) => (*p, ir.expr(*e)),
+        ChildValue::Const(c) => panic!("a constant {c}"),
+    }).collect();
+    assert_eq!(given, [(0, &Expr::Param(0)), (1, &Expr::Param(1))]);
+}

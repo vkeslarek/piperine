@@ -1,12 +1,14 @@
 //! The placements a module writes: each one a `Child` of its body, the tree the device author
-//! wrote. A child names its module's body, the terminals of the parent it connects, and the
-//! param values the placement gives (constants; a value that reads the parent's params is M2).
+//! wrote. A child names its module's body, the terminals and carriers of the parent it connects,
+//! and the param values the placement gives: a constant where the value folds alone, else the
+//! expression over the parent's params (`ChildValue::Expr`, beside the child, contract D4), which
+//! placement evaluates per instance into the flat table (DIG-09 AC 11).
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Child, Constant, Terminal};
+use piperine_ir::{Child, ChildValue, Constant, Terminal};
 
-use super::consts::Bindings;
+use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::unlowered::Unlowered;
@@ -23,8 +25,9 @@ pub(super) struct ChildPlan {
     /// What each carrier port of the child's body is bound to, in port order: a carrier of the
     /// parent's body.
     pub(super) carriers: Vec<Option<u32>>,
-    /// The param values written, as (index in the child's params, value, the value's expression).
-    pub(super) given: Vec<(u32, Constant, ExprId)>,
+    /// The param values written, as (index in the child's params, the value when it folds alone,
+    /// the value's expression): one that reads the parent's params is evaluated per instance.
+    pub(super) given: Vec<(u32, Option<Constant>, ExprId)>,
     /// The call expression of the placement.
     pub(super) call: ExprId,
 }
@@ -88,7 +91,7 @@ impl Elaboration<'_, '_> {
                 None => ok = false,
             }
         }
-        let given = self.lower_given(file, module, &fields);
+        let given = self.lower_given(scope, file, module, index, &fields);
         let given = match given {
             Some(given) => given,
             None => {
@@ -100,7 +103,7 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let body = self.body_ids.get(&module).copied()?;
-        let params = given.iter().map(|(index, value, _)| (*index, *value)).collect();
+        let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);
         // SPEC_DEVIATION: `Child::nodes` must bind one terminal per node of the child's body
         // (`Ir::check`), and `Terminal` has no "the child's own node". A signal of the child is
@@ -151,8 +154,10 @@ impl Elaboration<'_, '_> {
         format!("{module}#{ordinal}")
     }
 
-    /// The param values a placement writes, each folded; `None` after a diagnostic.
-    fn lower_given(&mut self, file: FileId, module: DeclId, fields: &[FieldInit]) -> Option<Vec<(u32, Constant, ExprId)>> {
+    /// The param values the placement `child` writes, each folded when it reads no param of the
+    /// parent; one that does is lowered over the parent's params and kept beside the child as a
+    /// `ChildValue::Expr`. `None` after a diagnostic.
+    fn lower_given(&mut self, scope: &Scope, file: FileId, module: DeclId, child: u32, fields: &[FieldInit]) -> Option<Vec<(u32, Option<Constant>, ExprId)>> {
         let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let mut seen = BTreeSet::new();
         let mut out = Vec::new();
@@ -173,7 +178,23 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             match self.consts.value(field.value, &Bindings::new()) {
-                Ok(value) => out.push((index as u32, value, field.value)),
+                Ok(value) => out.push((index as u32, Some(value), field.value)),
+                // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child
+                // shows the expression, the instance table the constant of each instance.
+                Err(ConstFault::UnboundParam { .. }) => {
+                    let mut sub = Self::sub_scope(scope);
+                    match self.lower_expr(&mut sub, field.value) {
+                        Some(value) if sub.locals.is_empty() => {
+                            self.structure.child_params.push((child, index as u32, ChildValue::Expr(value)));
+                            out.push((index as u32, None, field.value));
+                        }
+                        Some(_) => {
+                            self.unsupported(file, self.design.expr_node(field.value).span, "a `let` in a param value");
+                            ok = false;
+                        }
+                        None => ok = false,
+                    }
+                }
                 Err(fault) => {
                     self.const_fault(&fault, "a param value");
                     ok = false;
