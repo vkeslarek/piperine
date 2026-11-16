@@ -296,6 +296,18 @@ fn a_carrier_read_is_flagged_and_the_flag_reads_are_not() {
         assert!(locals.contains(&local.to_string()), "local {local} in:\n{body}");
     }
     assert!(body.contains("let t = time()") && body.contains("let st = static()"), "{body}");
+
+    // A carrier read (the row of C68 owed to the first phase 6 task that lowers one, T31): `count`
+    // of `Dpwm` is a `Bit<u9>`; its read and `count + 1` may be unknown, its flag reads may not.
+    let src = "module Top(in clk: Bit, in count: Bit<u9>, out q: Bit<u9>, out k: Bit<u9>, out ik: Bit) { }\n\
+               digital for Top { on clk.changed() { let r = count; let n = count + 1; q <- n; k <- count.known_or(0); ik <- count.is_known(); } }";
+    let ir = Elab::ir(src, "Top");
+    let text = ir.print_structural();
+    let locals = locals_in(&text);
+    assert!(locals.contains(&"r: flagged<u9>".to_string()) && locals.contains(&"n: flagged<u9>".to_string()), "{text}");
+    let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    let commits: Vec<ValueType> = body.reactions()[0].stmts.iter().filter_map(|s| if let piperine_ir::Stmt::Commit { value, .. } = ir.stmt(*s) { Some(ir.expr_type(*value).clone()) } else { None }).collect();
+    assert_eq!(commits, [ValueType::Flagged(Box::new(ValueType::UInt(9))), ValueType::UInt(9), ValueType::Bool], "`count + 1` flagged, `known_or` and `is_known` not");
 }
 
 #[test]
@@ -324,6 +336,14 @@ fn a_short_circuit_over_a_flagged_operand_becomes_bitwise() {
     }
     let ops: Vec<BinaryOp> = read.reach(read.body_of("trip")).into_iter().filter_map(|e| if let Expr::Binary { op, .. } = ir.expr(e) { Some(*op) } else { None }).collect();
     assert!(ops.contains(&BinaryOp::BitAnd) && ops.contains(&BinaryOp::BitOr) && ops.contains(&BinaryOp::And) && ops.contains(&BinaryOp::Or), "{ops:?}");
+
+    // `hs` as a carrier (C69, owed to T31): `Dpwm`'s `hs && oc.known_or(true)` over two `Bit`
+    // carriers is `&`; over two params it stays `&&`.
+    let src = "module Top(in clk: Bit, in hs: Bit, in oc: Bit, out t: Bit, out u: Bit) { a: bool = true; b: bool = false; }\n\
+               digital for Top { on clk.changed() { t <- hs && oc.known_or(true); u <- a && b; } }";
+    let ir = Elab::ir(src, "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("t <- (hs & oc.known_or(true))") && text.contains("u <- (a && b)"), "{text}");
 }
 
 #[test]
@@ -384,6 +404,13 @@ fn a_function_gets_one_variant_per_flag_pattern() {
     // One variant per pattern, however many calls reach it.
     let ir = Elab::ir(&reaching(functions, &["latch()", "latch()", "dithered_width(1, 2)", "dithered_width(3, 4)"]), "Top");
     assert_eq!(ir.functions().count(), 5);
+
+    // The reaction form (owed to T31): the same call in a `Dpwm`-shaped reaction over the carriers
+    // `duty: Bit<u12>` and `frame: Bit<u3>` reaches the same two variants and no other.
+    let src = format!("{}\nmodule Top(in clk: Bit, in duty: Bit<u12>, in frame: Bit<u3>, out w: Bit<u9>) {{ }}\ndigital for Top {{ on clk.changed() {{ w <- dithered_width(duty.known_or(0), frame + 1); }} }}", &functions[..functions.find("fn latch").expect("latch")]);
+    let ir = Elab::ir(&src, "Top");
+    let names: Vec<&str> = ir.functions().map(|f| f.name()).collect();
+    assert_eq!(names, ["dithered_width~01", "rev3~1"]);
 }
 
 #[test]
@@ -507,6 +534,37 @@ fn an_option_is_a_flag_and_a_payload() {
     assert_eq!(ir.expr(read.body_of("literal")), &Expr::Int(3));
     let known = read.function_text("read");
     assert!(known.contains("let k.is = x.is_known()") && known.contains("let k.val = x.known_or(0u8)") && known.contains("if k.is { k.val } else { 5u8 }"), "{known}");
+
+    // The reaction form of `SetpointReg` (examples/buck/src/control.msl, owed to T31): no IR type
+    // is an `Option`, and `if let Some(d) = data.known()` reads the pair where it stands.
+    let src = format!("const SETPOINT_RESET: u8 = 100;\nconst SETPOINT_MAX: u8 = 168;\n{}", buck_module("control.msl", "SetpointReg"));
+    let ir = Elab::ir(&src, "SetpointReg");
+    let text = ir.print_structural();
+    assert!(!text.contains("Option") && !text.contains("option"), "{text}");
+    assert!(text.contains("if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }"), "{text}");
+}
+
+/// A module of `examples/buck/src/<file>` with its `digital` block, as written.
+fn buck_module(file: &str, name: &str) -> String {
+    let text = std::fs::read_to_string(format!("{}/../../examples/buck/src/{file}", env!("CARGO_MANIFEST_DIR"))).expect("a buck source");
+    let item = |head: &str| {
+        let at = text.find(head).unwrap_or_else(|| panic!("no `{head}`"));
+        let mut depth = 0usize;
+        for (i, c) in text[at..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return text[at..at + i + 1].to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("`{head}` does not close")
+    };
+    format!("{}\n{}", item(&format!("pub module {name}(")), item(&format!("digital for {name} ")))
 }
 
 #[test]

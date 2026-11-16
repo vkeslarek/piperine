@@ -443,3 +443,86 @@ fn a_head_the_ir_cannot_hold_is_p0001() {
     assert_eq!(Elab::codes(&err), ["P0001"]);
     assert!(err[0].diagnostic.message.contains("an event read as a `bool`"), "{}", err[0].diagnostic.message);
 }
+
+/// The text of a golden print of `crates/piperine-ir/tests/golden/buck/` (`ir-rust` T29): the
+/// slice transcribed by hand from the buck's `.msl`.
+fn golden(name: &str) -> String {
+    let path = format!("{}/../piperine-ir/tests/golden/buck/{name}.txt", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// The lines of the reaction `R<k>` of a body print: its header, its locals and its statements.
+fn reaction_text(body: &str, k: usize) -> String {
+    let head = format!("  reaction R{k} on");
+    let start = body.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{body}"));
+    let rest = &body[start..];
+    let end = rest[1..].find("\n  reaction ").or_else(|| rest[1..].find("\nbody ")).map_or(rest.len(), |at| at + 2);
+    rest[..end].trim_end().to_string()
+}
+
+#[test]
+fn a_reaction_body_lowers_in_source_order() {
+    // DIG-09 AC 10, C84: `Adc`'s reaction (examples/buck/src/sense.msl) is one `let` holding a
+    // probe of `ain`, then three commits each with its `after`, in source order.
+    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", buck::module_with_digital("sense.msl", "Adc"));
+    let ir = Elab::ir(&src, "Top");
+    let read = Read { ir: &ir };
+    let adc = read.body("Adc");
+    use piperine_ir::{Expr, Stmt};
+    let reaction = &adc.reactions()[0];
+    let carrier = |name: &str| adc.carriers().iter().position(|c| c.name == name).expect(name) as u32;
+    let kinds: Vec<_> = reaction.stmts.iter().map(|s| ir.stmt(*s).clone()).collect();
+    let Stmt::Let { init, .. } = &kinds[0] else { panic!("first the `let q`: {kinds:?}") };
+    let probes = |e: piperine_ir::ExprId| {
+        let mut stack = vec![e];
+        let mut found = false;
+        while let Some(x) = stack.pop() {
+            match ir.expr(x) {
+                Expr::Probe { plus, .. } => found |= *plus == piperine_ir::Terminal::Node(0),
+                Expr::Cast { expr, .. } => stack.push(*expr),
+                Expr::Method { receiver, args, .. } => stack.extend(std::iter::once(*receiver).chain(args.iter().copied())),
+                Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
+                _ => {}
+            }
+        }
+        found
+    };
+    assert!(probes(*init), "the `let` probes `ain`");
+    let commits: Vec<(u32, bool)> = kinds[1..].iter().map(|s| match s {
+        Stmt::Commit { carrier, after, .. } => (*carrier, after.is_some()),
+        other => panic!("a commit: {other:?}"),
+    }).collect();
+    assert_eq!(commits, [(carrier("code"), true), (carrier("done"), true), (carrier("done"), true)], "code, then done twice, each `after`");
+    assert!(reaction_text(&body_text(&ir, "Adc"), 0).ends_with("    code <- q after tconv\n    done <- true after tconv\n    done <- false after (tconv + tstrobe)"));
+
+    // `Pid` (control.msl), statement by statement: the hand transcription of `ir-rust` T29 with
+    // its one listed difference, `DUTY_MAX as i32` folded to `2880i32` (DIG-08 AC 2).
+    let src = format!("{}\n{}", buck::spec(), buck::module_with_digital("control.msl", "Pid"));
+    let ir = Elab::ir(&src, "Pid");
+    let expected = reaction_text(&golden("pid"), 0).replace("(2880u12 as i32)", "2880i32");
+    assert_eq!(reaction_text(&body_text(&ir, "Pid"), 0), expected);
+
+    // `Dpwm`'s reaction (dpwm.msl), statement by statement against the same transcription; the
+    // `Never` monitor beside it is a placement, not part of the reaction (its `require` is
+    // inlined from T34 on), so it is left out here.
+    let text = buck::module_with_digital("dpwm.msl", "Dpwm");
+    let lines: Vec<&str> = text.lines().collect();
+    let at = lines.iter().position(|l| l.contains("let no_shoot_through")).expect("the `Never` placement of `Dpwm`");
+    // The placement and the doc comment above it.
+    let dpwm: String = lines.iter().enumerate().filter(|(k, _)| *k != at && !(*k + 1 == at && lines[*k].trim_start().starts_with("///"))).map(|(_, l)| *l).collect::<Vec<_>>().join("\n");
+    let src = format!("{}\n{}\n{}\n{dpwm}", buck::spec(), buck::item("dpwm.msl", "fn rev3"), buck::item("dpwm.msl", "fn dithered_width"));
+    let ir = Elab::ir(&src, "Dpwm");
+    assert_eq!(reaction_text(&body_text(&ir, "Dpwm"), 0), reaction_text(&golden("dpwm"), 0));
+}
+
+#[test]
+fn a_module_with_only_a_digital_block_has_no_analog_statements() {
+    // Edge case 1, C163: `Osc` (dpwm.msl) has a `digital` block and no `analog` block.
+    let ir = Elab::ir(&buck::module_with_digital("dpwm.msl", "Osc"), "Osc");
+    let read = Read { ir: &ir };
+    let osc = read.body("Osc");
+    assert!(osc.analog().is_none(), "no analog statements");
+    assert!(osc.branches().is_empty() && osc.nodes().is_empty());
+    assert_eq!(osc.reactions().len(), 1);
+    assert!(!body_text(&ir, "Osc").contains("analog"));
+}
