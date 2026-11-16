@@ -16,8 +16,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run analog**: `cargo test -p piperine-analog-solver --test assembly_watch`
 **Run solver**: `cargo test -p piperine-solver --test settled_value --test protocol_crossings --test crossing_rules`
 **Run parity**: `cargo test -p piperine-solver --test parity_baseline`
+**Run abi**: `cargo test -p piperine-abi --test validate`
+**Run env**: `cargo test -p piperine-digital-solver --test functions`
+**Run solverenv**: `cargo test -p piperine-solver --test environment`
 
-Implementer: Opus, inline (8 tasks, one batch); verifier: a different Opus, dispatched by the orchestrator. Worktree `/home/keslarek/Git/piperine-solver-crossings`, branch `feature/solver-crossings`; no push, no merge. Cargo runs with `CARGO_TARGET_DIR=/var/tmp/piperine-target`, plain `cargo test` at the root (default members), never `--workspace`.
+Implementer: Opus, inline (11 tasks; Phase 4 was added mid-build at the coordinator's request); verifier: a different Opus, dispatched by the orchestrator. Worktree `/home/keslarek/Git/piperine-solver-crossings`, branch `feature/solver-crossings`; no push, no merge. Cargo runs with `CARGO_TARGET_DIR=/var/tmp/piperine-target`, plain `cargo test` at the root (default members), never `--workspace`.
 
 Rules every task follows:
 
@@ -85,6 +88,12 @@ T3 → T4 → T5
 
 ```
 T6 → T7 → T8
+```
+
+### Phase 4: The environment in reactions (added mid-build)
+
+```
+T9 → T10 → T11
 ```
 
 ---
@@ -251,6 +260,66 @@ T6 → T7 → T8
 
 ---
 
+### T9: The validator accepts `GMIN` and `SOURCE_SCALE` in a reaction
+
+**What**: `cell_bytes` lets a reaction read `GMIN` and `SOURCE_SCALE`; abi.md §4.2 states the rule.
+**Where**: `crates/piperine-abi/src/validate.rs` (abi.md §4.2; tests in `tests/validate.rs`)
+**Depends on**: None
+**Reuses**: the ambient table of `cell_bytes`
+**Requirement**: ENV-01
+
+**Done when**:
+
+- [ ] `a_reaction_may_read_gmin_and_source_scale` passes
+- [ ] Gate check passes: `cargo test -p piperine-abi`
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(abi): a reaction may read gmin and source_scale`
+
+---
+
+### T10: The digital engine supplies the continuation values
+
+**What**: `Ambient` carries `gmin` and `source_scale`; `Digital::set_continuation` sets them; reactions and discrete functions read them.
+**Where**: `crates/piperine-digital-solver/src/run.rs` (with `engine.rs`, `instant.rs`; tests in `tests/functions.rs`)
+**Depends on**: T9
+**Reuses**: `cell_bytes`
+**Requirement**: ENV-02
+
+**Done when**:
+
+- [ ] `reactions_and_functions_read_the_continuation_values` passes
+- [ ] Gate check passes: `cargo test -p piperine-digital-solver`
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(digital): reactions and discrete functions read gmin and source_scale`
+
+---
+
+### T11: The solver wires temperature, gmin and source_scale to reactions
+
+**What**: the solver sets the engine's continuation values to the session `gmin` and 1.0 for each analysis; a reaction reads the host's temperature through its `GLOBAL TEMPERATURE` pin.
+**Where**: `crates/piperine-solver/src/analyses/adapters.rs` (tests in `tests/environment.rs`)
+**Depends on**: T10
+**Reuses**: `DigitalSide::new`
+**Requirement**: ENV-03
+
+**Done when**:
+
+- [ ] `a_reaction_reads_temperature_gmin_and_source_scale` and `a_discrete_function_reads_gmin_and_source_scale` pass
+- [ ] Gate check passes: the **Build** line, then `cargo test` at the root
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `feat(solver): wire temperature, gmin and source_scale to reactions`
+
+---
+
 ## Checks
 
 **C1** - Two commits to one net in one microstep write it once: `HIGH` then a one-byte `0` at offset 0 settle to `LOW` with one `Change` (DSV-01, AC 1)
@@ -310,11 +379,26 @@ Proof: run parity | test parity_rc_transient ... ok
 **C19** - `Assembly::rising` reports a `CROSS` watch that went from `≤ 0` to `> 0` with its two values, and a later `accept` still fires it: nothing was accepted (SCX-01, AC 1)
 Proof: run analog | test rising_reports_a_sign_change_without_accepting ... ok
 
+**C20** - A reaction that reads `GMIN` or `SOURCE_SCALE` validates; one that reads `FREQ` is still refused (ENV-01, AC 1)
+Proof: run abi | test a_reaction_may_read_gmin_and_source_scale ... ok
+
+**C21** - On the engine, a reaction and a discrete function read the values `set_continuation` gave (2e-12, 0.25), and 0 and 1 before (ENV-02, AC 2)
+Proof: run env | test reactions_and_functions_read_the_continuation_values ... ok
+
+**C22** - On the solver, a reaction commits `temperature()` = the host's 350 K, `gmin()` = the session's 3e-12 S and `source_scale()` = 1.0, in the operating point and the transient (ENV-03, AC 3 and 4)
+Proof: run solverenv | test a_reaction_reads_temperature_gmin_and_source_scale ... ok
+
+**C23** - On the solver, a discrete function reads `gmin()` = the session's and `source_scale()` = 1.0 (ENV-03, AC 3)
+Proof: run solverenv | test a_discrete_function_reads_gmin_and_source_scale ... ok
+
+**C24** - Parity is unchanged after the wiring: the RC baseline still takes 161 steps (ENV-03, AC 5)
+Proof: run parity | test parity_rc_transient ... ok
+
 ---
 
 ## Handoff
 
-**Settled mid-build:** none
+**Settled mid-build:** user, via the coordinator, 2026-11-15: "temperature e gmin precisa estar wired..." — Fix 3 (ENV-01 to ENV-03, Phase 4): the ABI accepts ambient reads of `temperature`, `gmin`, `source_scale` by reactions and discrete functions, and the solver supplies their current values.
 **Dispatched:** none (the orchestrator dispatches the Verifier, a different Opus)
 **Walked:** no screen
 
@@ -323,11 +407,12 @@ Proof: run analog | test rising_reports_a_sign_change_without_accepting ... ok
 ## Phase Execution Map
 
 ```
-Phase 1 → Phase 2 → Phase 3
+Phase 1 → Phase 2 → Phase 3 → Phase 4
 
 Phase 1:  T1 ------→ T2
 Phase 2:  T3 ------→ T4 ------→ T5
 Phase 3:  T6 ------→ T7 ------→ T8
+Phase 4:  T9 ------→ T10 -----→ T11
 ```
 
 Execution is strictly sequential, inline (8 tasks, one batch).

@@ -4,13 +4,14 @@
 
 ## Problem Statement
 
-Two solver defects make the boundary between analog and digital observable at the wrong value or the wrong time. (1) The digital engine applies the commits of one microstep to a net one at a time: `x <- 1; x <- 2;` from a net that held 2 produces two `Change` observations, and `x.changed()` fires although the settled value did not change (found by `ir-rust` T42; docs/spec Part III §8.2.3, Part IV §12.1.1, §12.1.2, §12.1.18). (2) A `CROSS` watch fires at the first accepted solution after its sign change instead of at the located crossing: an RC charge trips a 0.625 V comparator at 0.6352 V, and a 1 kHz sine against 0.5 V fires 0.97 µs late (found by `ir-rust` T45; Part V §17.3, abi.md §4.3 "located in the step"). Both are the scope of `solver-crossings` in `.specs/features/solver-completeness/spec.md` (SCX-01, SCX-02, SCX-03 AC 3 and 7), plus the digital fix.
+Two solver defects make the boundary between analog and digital observable at the wrong value or the wrong time. (1) The digital engine applies the commits of one microstep to a net one at a time: `x <- 1; x <- 2;` from a net that held 2 produces two `Change` observations, and `x.changed()` fires although the settled value did not change (found by `ir-rust` T42; docs/spec Part III §8.2.3, Part IV §12.1.1, §12.1.2, §12.1.18). (2) A `CROSS` watch fires at the first accepted solution after its sign change instead of at the located crossing: an RC charge trips a 0.625 V comparator at 0.6352 V, and a 1 kHz sine against 0.5 V fires 0.97 µs late (found by `ir-rust` T45; Part V §17.3, abi.md §4.3 "located in the step"). (3) A reaction may read the environment (Part IV §12.1.12, §14.4: `temperature()`, `gmin()`, `source_scale()`), but the ABI's validator refuses a reaction that declares the ambient inputs `GMIN` or `SOURCE_SCALE`, and the digital engine supplies neither to a reaction or a discrete function (user, via the coordinator: "temperature e gmin precisa estar wired..."). Both defects are the scope of `solver-crossings` in `.specs/features/solver-completeness/spec.md` (SCX-01, SCX-02, SCX-03 AC 3 and 7), plus the digital fix.
 
 ## Goals
 
 - [ ] Within one microstep, commits to one net settle to one value: one write, one `Change` observation, `CHANGED` against the value before the microstep.
 - [ ] A transient lands on a crossing: the landing tick exceeds the true crossing by at most `ttol` plus one tick, or `0 < e < etol` holds there, on a ramp, a sine and an RC charge.
 - [ ] `E0510` and `E0509` fail the analysis on an invalid tolerance or step cap.
+- [ ] A reaction and a discrete function read `temperature()` (the `GLOBAL TEMPERATURE` pin), `gmin()` and `source_scale()` (the ambient inputs) with the values the host set and the continuation values in force.
 - [ ] `parity_baseline` and every parity test pass unchanged.
 
 ## Out of Scope
@@ -37,6 +38,8 @@ Two solver defects make the boundary between analog and digital observable at th
 | A retake whose `e` is still `≤ 0` | it is accepted as an ordinary step and the next step brackets the crossing from there | §17.3 rule 3 fires only where `e > 0`; the accepted point narrows the bracket | y - delegated |
 | The step grid of a design with a `CROSS` watch | every transient step ends exactly on its tick; a design with no `CROSS` watch keeps `device_attempt`'s SPEC_DEVIATION (a step ends on the controller's own time, within a tick) | AC 2 asks for a tick; the deviation exists only for the parity oracles, none of which has a `CROSS` watch | y - delegated |
 | A "sweep point" at the solver level | a later operating point (`dc()` then `solve()`) of the same circuit, after a host write; the `CROSS` comparison carries from the last solution of one to the first of the next | the solver has no sweep driver (SCT-10); `piperine-api`'s `Sweep` runs one operating point per point on the held circuit | y - delegated |
+| The value of `GMIN` and `SOURCE_SCALE` a reaction or a discrete function reads | the session `gmin` (`Tolerances::gmin`) and 1.0: an instant always runs after the last solve of its sequence, where the continuation variables are at rest (abi.md §4.2 "at rest in the last solve of every sequence") | the user's request: "the continuation values in force at that instant, i.e. their final values outside a homotopy" | y - user (via the coordinator) |
+| How `temperature()` reaches a reaction | it stays the `GLOBAL TEMPERATURE` pin it already is (abi.md §4.2: "a value that must exist at instants ... is a `GLOBAL` pin"); the new rule is proven on it, not re-plumbed as an ambient | the ABI already gives temperature that form; an ambient `TEMPERATURE` would duplicate it | y - delegated |
 | The digital fix's writer name for a non-canonical net (P3) | the writer of the last commit to that net in the microstep | the last commit is the one whose bytes the net holds | y - delegated |
 | The `CAP` watch error | `E0509` for a value that is not finite or is `≤ 0`, replacing the generic A4 "not finite" message for `CAP` | §17.2 resolution: "A `dt` that is not finite and positive is error `E0509`" | y - settled by the spec |
 
@@ -86,6 +89,24 @@ Two solver defects make the boundary between analog and digital observable at th
 
 ---
 
+### P3: The environment in reactions and discrete functions
+
+**User Story**: As a codegen author, I want a reaction and a discrete function to read `temperature()`, `gmin()` and `source_scale()`, so that §12.1.12 lowers without a workaround.
+
+**Why P3**: the language allows it today (§12.1.12, §14.4) and nothing in the ABI carries it to a reaction.
+
+**Acceptance Criteria**:
+
+1. The ABI's shape validator SHALL accept a reaction that reads the ambient input `GMIN` or `SOURCE_SCALE`, and SHALL keep refusing `FREQ` in a reaction. (ENV-01)
+2. WHEN a reaction or a discrete function reads `GMIN` or `SOURCE_SCALE` THEN the digital engine SHALL supply the continuation values its owner set, `0` and `1` until one is set. (ENV-02)
+3. WHEN a reaction or a discrete function of a circuit runs on the solver THEN `GMIN` SHALL read the session's `gmin` and `SOURCE_SCALE` 1.0, in the operating point and in the transient. (ENV-03)
+4. WHEN a reaction reads the `GLOBAL TEMPERATURE` pin THEN it SHALL read the analysis temperature the host set, in kelvin. (ENV-03)
+5. The solver SHALL leave every result of a design whose reactions read no ambient input unchanged. (ENV-03)
+
+**Independent Test**: a pure-ABI device whose reaction commits `temperature()`, `gmin()` and `source_scale()` to three carriers reads back the host's temperature, the session's `gmin` and 1.0.
+
+---
+
 ## Edge Cases
 
 - WHEN the estimate rounds up to the attempt's own tick THEN the solver SHALL accept the attempt and fire there (it is already within one tick).
@@ -103,8 +124,11 @@ Two solver defects make the boundary between analog and digital observable at th
 | SCX-02 | P2: Crossings, AC 6, 7 (across rounds and operating points) | Tasks | Pending |
 | SCX-03 | P2: Crossings, AC 8, 9 (`E0510`, `E0509`) | Tasks | Pending |
 | SCX-04 | P2: Crossings, AC 10 (parity unchanged) | Tasks | Pending |
+| ENV-01 | P3: Environment, AC 1 (the validator) | Tasks | Pending |
+| ENV-02 | P3: Environment, AC 2 (the digital engine) | Tasks | Pending |
+| ENV-03 | P3: Environment, AC 3 to 5 (the solver) | Tasks | Pending |
 
-**Coverage:** 5 total, 5 mapped to tasks, 0 unmapped.
+**Coverage:** 8 total, 8 mapped to tasks, 0 unmapped.
 
 ---
 
@@ -114,6 +138,7 @@ Two solver defects make the boundary between analog and digital observable at th
 - `docs/spec/part_v_execution.md` §15 T4, §16.1 rule 2, §17.2 (A4, rule 5, `E0509`), §17.3 (rules 1 to 4 and 8, `E0510`); Appendix C.2 and C.2.1; Part VIII §23 session options.
 - `.specs/features/solver-completeness/spec.md`: P2 "Located crossings and `bound_step`", the `solver-crossings` row, SCX-01 to SCX-03.
 - `.specs/features/device-abi/abi.md` §3 (`Watch { event, ttol, etol }`), §4.3 (watch table), §11.5 (comparator).
+- `docs/spec/part_iv_behavior.md` §12.1.12, §14.4 (`temperature()`, `gmin()`, `source_scale()`); abi.md §4.2 (ambient inputs, `GLOBAL` pins).
 - Repros: `piperine-ir-rust/.specs/features/ir-rust/parked/{t42_repro_changed,t42_commits,t45_repro_cross,t45_boundary}.rs.txt`.
 
 ---
