@@ -46,11 +46,13 @@ pub(super) struct Scope {
     pub(super) frame: usize,
     /// The `&str` params of the functions inlined at a call (`records.rs`), bound to their text.
     pub(super) texts: BTreeMap<DeclId, String>,
+    /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
+    pub(super) no_locals: bool,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new() }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false }
     }
 }
 

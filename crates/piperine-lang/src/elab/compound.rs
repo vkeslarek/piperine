@@ -4,9 +4,10 @@
 //! - An enum of `V` unit variants is its tag (§2 rule 5): `UInt<ceil(log2 V)>`, variant `k` (in
 //!   declaration order, from 0) the literal `k`. No IR type names the enum.
 //! - A `match` is an `if` chain over its scrutinee, read once: bound to a local unless it already
-//!   is a local, a param or a literal. Each arm's pattern is a comparison with the scrutinee, an
-//!   or-pattern the disjunction of its alternatives (`|` when the scrutinee may be unknown, `||`
-//!   when it is known); the last arm of the exhaustive `match` is the final `else`, and so is an
+//!   is a local, a param or a literal. In code that has no local (a drive) the scrutinee is read
+//!   again at each test: an expression of the IR has no effect, so the value is the same. Each
+//!   arm's pattern is a comparison with the scrutinee, an or-pattern the disjunction of its
+//!   alternatives (`|` when the scrutinee may be unknown, `||` when it is known); the last arm of the exhaustive `match` is the final `else`, and so is an
 //!   arm that matches everything.
 //! - An `Option<T>` is never an IR type: its value is a pair, a `bool` flag `is` and a payload
 //!   `val` of `T` (`None` is `(false, zero)`, `Some(e)` is `(true, e)`, `x.known()` is
@@ -33,6 +34,8 @@ enum Subject {
     Local(u32, ValueType),
     /// An `Option`, bound to its flag local and its payload local.
     Pair { is: (u32, ValueType), val: (u32, ValueType) },
+    /// An `Option` in code with no local (a drive): its pair lowered again for each test.
+    RereadPair(ExprId),
 }
 
 /// An `Option` value as the IR holds it: its flag and its payload. `literal` is the flag when
@@ -84,7 +87,9 @@ impl Elaboration<'_, '_> {
         // Read once: a local, a param or a literal is read again where a test needs it; anything
         // else is bound to a local first.
         let option = matches!(self.types.ty(scrutinee), Some(Ty::Option(_)));
-        let (subject, binding) = if option {
+        let (subject, binding) = if option && scope.no_locals {
+            (Subject::RereadPair(scrutinee), None)
+        } else if option {
             let pair = self.lower_option(scope, scrutinee)?;
             let k = Self::match_locals(scope);
             let (is_ty, val_ty) = (self.type_of(pair.is), self.type_of(pair.val));
@@ -94,7 +99,7 @@ impl Elaboration<'_, '_> {
             let first = self.stmt(Stmt::Let { local: is, init: pair.is });
             let second = self.stmt(Stmt::Let { local: is + 1, init: pair.val });
             (Subject::Pair { is: (is, is_ty), val: (is + 1, val_ty) }, Some(vec![first, second]))
-        } else if self.simple_read(scrutinee) {
+        } else if scope.no_locals || self.simple_read(scrutinee) {
             (Subject::Reread(scrutinee), None)
         } else {
             let lowered = self.lower_expr(scope, scrutinee)?;
@@ -128,7 +133,7 @@ impl Elaboration<'_, '_> {
             Subject::Reread(expr) => self.lower_expr(scope, *expr),
             Subject::Local(index, ty) => Some(self.emit(Expr::Local(*index), ty.clone(), origin)),
             // An `Option` is read through its patterns (`option_test`), never as one value.
-            Subject::Pair { .. } => None,
+            Subject::Pair { .. } | Subject::RereadPair(_) => None,
         }
     }
 
@@ -137,12 +142,24 @@ impl Elaboration<'_, '_> {
         self.emit(Expr::Local(*index), ty.clone(), origin)
     }
 
+    /// A fresh read of the flag (`payload` false) or of the payload of an `Option` subject.
+    fn read_pair(&mut self, scope: &mut Scope, subject: &Subject, payload: bool, origin: Origin) -> Option<LoweredExpr> {
+        match subject {
+            Subject::Pair { is, val } => Some(self.read_local(if payload { val } else { is }, origin)),
+            Subject::RereadPair(expr) => {
+                let pair = self.lower_option(scope, *expr)?;
+                Some(if payload { pair.val } else { pair.is })
+            }
+            Subject::Reread(_) | Subject::Local(..) => None,
+        }
+    }
+
     /// The test of a pattern over an `Option` scrutinee: `None` is `!is`; `Some(p)` is `is`, and
     /// `is` and `val == v` when `p` names a value `v`.
-    fn option_test(&mut self, scope: &mut Scope, is: &(u32, ValueType), val: &(u32, ValueType), pat: PatId) -> Option<LoweredExpr> {
+    fn option_test(&mut self, scope: &mut Scope, subject: &Subject, pat: PatId) -> Option<LoweredExpr> {
         let node = self.design.pat_node(pat).clone();
         let origin = self.locator.origin(scope.file, node.span);
-        let flag_is = self.read_local(is, origin.clone());
+        let flag_is = self.read_pair(scope, subject, false, origin.clone())?;
         let res = match &node.kind {
             PatKind::Path(path) => self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res),
             PatKind::Ident { res, .. } => *res,
@@ -163,23 +180,47 @@ impl Elaboration<'_, '_> {
             PatKind::Lit(expr) => self.lower_expr(scope, *expr)?,
             PatKind::Path(path) => {
                 let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
-                self.path_value(scope, res, &val.1, inner_node.span, origin.clone())?
+                let base = self.payload_base(scope, subject, origin.clone())?;
+                self.path_value(scope, res, &base, inner_node.span, origin.clone())?
             }
-            PatKind::Ident { res: res @ Resolution::Decl(_), sub: None, .. } => self.path_value(scope, *res, &val.1, inner_node.span, origin.clone())?,
+            PatKind::Ident { res: res @ Resolution::Decl(_), sub: None, .. } => {
+                let base = self.payload_base(scope, subject, origin.clone())?;
+                self.path_value(scope, *res, &base, inner_node.span, origin.clone())?
+            }
             _ => {
                 self.unsupported(scope.file, inner_node.span, "this pattern inside `Some`");
                 return None;
             }
         };
-        let payload = self.read_local(val, origin.clone());
+        let payload = self.read_pair(scope, subject, true, origin.clone())?;
         let equal = self.equals(payload, value, origin.clone());
         let flag = self.flags(&[flag_is, equal]);
         let op = if flag == Flag::Flagged { BinaryOp::BitAnd } else { BinaryOp::And };
         Some(self.emit(Expr::Binary { op, lhs: flag_is, rhs: equal }, flag.wrap(ValueType::Bool), origin))
     }
 
+    /// The type of the payload of an `Option` subject, as `val` has it.
+    fn payload_base(&mut self, scope: &mut Scope, subject: &Subject, origin: Origin) -> Option<ValueType> {
+        match subject {
+            Subject::Pair { val, .. } => Some(val.1.clone()),
+            _ => {
+                let val = self.read_pair(scope, subject, true, origin)?;
+                Some(self.type_of(val))
+            }
+        }
+    }
+
     /// The body of a `match` arm; under `Some(x)` over an `Option`, `let x = val;` first.
     fn arm_body(&mut self, scope: &mut Scope, subject: &Subject, arm: &Arm) -> Option<LoweredExpr> {
+        if let Subject::RereadPair(_) = subject
+            && let PatKind::TupleStruct { pats, .. } = &self.design.pat_node(arm.pat).kind
+            && let [inner] = pats.as_slice()
+            && let PatKind::Ident { res: Resolution::Unresolved, sub: None, .. } = self.design.pat_node(*inner).kind
+        {
+            let span = self.design.pat_node(*inner).span;
+            self.unsupported(scope.file, span, "a binding inside `Some` in a definition");
+            return None;
+        }
         let Subject::Pair { val, .. } = subject else { return self.lower_expr(scope, arm.body) };
         let binding = match &self.design.pat_node(arm.pat).kind {
             PatKind::TupleStruct { pats, .. } => match pats.as_slice() {
@@ -255,8 +296,8 @@ impl Elaboration<'_, '_> {
         if self.matches_all(pat) {
             return None;
         }
-        if let Subject::Pair { is, val } = subject {
-            return self.option_test(scope, is, val, pat);
+        if let Subject::Pair { .. } | Subject::RereadPair(_) = subject {
+            return self.option_test(scope, subject, pat);
         }
         if let PatKind::Or(alternatives) = &node.kind {
             let mut tests = Vec::new();

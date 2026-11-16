@@ -207,6 +207,34 @@ fn an_expression_at_a_discrete_input_drives_the_hoisted_carrier() {
 }
 
 #[test]
+fn the_stdlib_d2a_reads_its_match_scrutinee_at_each_test() {
+    // msl-digital T66: the stdlib `D2A` gives `transition` the value `match d.known() {
+    // Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }` at its discrete input, which is a
+    // drive of `ramp.x` (DIG-10 AC 6). A drive has no local, so the `match` is an `if` chain that
+    // reads `d.known()` again at each test (an IR expression has no effect): `Some(true)` is
+    // "known and true", `Some(false)` "known and false", `None` the final `else`.
+    let ir = Elab::ir("module Top() { signal d: Bit = false; signal a: Electrical; signal vdd: Electrical; let x = D2A(d, a, vdd); }", "Top");
+    let d2a = body(&ir, "D2A");
+    let (x, d) = (index_of(&d2a, "ramp.x"), index_of(&d2a, "d"));
+    let drive = d2a.drives().iter().find(|v| v.carrier == x).expect("the drive of `ramp.x`");
+    let reached = reach(&ir, drive.value);
+    assert!(!reached.iter().any(|e| matches!(ir.expr(*e), Expr::Local(_) | Expr::Block { .. })), "no local in a drive");
+    assert_eq!(reached.iter().filter(|e| ir.expr(**e) == &Expr::Carrier(d)).count(), 4, "`d` read twice per tested arm");
+    let text = ir.print_structural();
+    assert!(
+        text.contains("drive ramp.x = if (d.is_known() && (d.known_or(false) == true)) { 1.0 } else { if (d.is_known() && (d.known_or(false) == false)) { 0.0 } else { 0.5 } }"),
+        "{text}"
+    );
+    // A binding inside `Some` would need a local: `P0001` by name.
+    let src = "module M(in d: Bit, a: Electrical) { let r = transition(match d.known() { Some(b) => if b { 1.0 } else { 0.0 }, None => 0.5 }, 0.0, 1n, 1n); }\n\
+               analog for M { i(a) +> v(a) * r; }\n\
+               module Top() { signal d: Bit = false; signal a: Electrical; let m = M(d, a); }";
+    let diagnostics = Elab::run(src, "Top").expect_err("a binding in a drive is refused");
+    assert_eq!(Elab::codes(&diagnostics), ["P0001"]);
+    assert!(diagnostics[0].diagnostic.message.contains("a binding inside `Some` in a definition"), "{:?}", diagnostics[0].diagnostic.message);
+}
+
+#[test]
 fn at_now_and_static_lower_to_their_nodes() {
     // DIG-10 AC 7, C96: `on at(t0 + dt) && dt > 0.0` is an `At` event over `gate.t0 + gate.dt`;
     // `now()` and `analysis(Static)` are the time and static reads, wherever they stand.

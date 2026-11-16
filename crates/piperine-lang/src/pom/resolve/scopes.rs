@@ -195,7 +195,8 @@ fn namespace_table(design: &Design, ns: DeclId) -> NsTable {
 }
 
 /// The ports, params, signals and `let` names under `parent`, entering
-/// generations (their loop bindings are not members).
+/// generations (their loop bindings are not members). A `let` contributes
+/// the names of its pattern, not those bound inside its value.
 fn collect_members(design: &Design, parent: DeclId, out: &mut Named) {
     for child in &design.decl_data(parent).children {
         let data = design.decl_data(*child);
@@ -205,10 +206,16 @@ fn collect_members(design: &Design, parent: DeclId, out: &mut Named) {
                     out.push((name.text.clone(), *child));
                 }
             }
-            DeclKind::Let(_) => {
+            DeclKind::Let(l) => {
+                // Only the names the `let`'s own pattern binds: a `match` arm or an `if let` in
+                // its value binds names of that arm alone, which are no members.
+                let pat = design.pat_node(l.pat).span;
                 for binding in &data.children {
                     let b = design.decl_data(*binding);
-                    if let (DeclKind::Binding(_), Some(name)) = (&b.kind, &b.name) {
+                    if let (DeclKind::Binding(_), Some(name)) = (&b.kind, &b.name)
+                        && b.span.start >= pat.start
+                        && b.span.end <= pat.end
+                    {
                         out.push((name.text.clone(), *binding));
                     }
                 }

@@ -1,6 +1,7 @@
-//! The analog to digital boundary from MSL source (feature `msl-digital`, T50; checks C133,
-//! C135, C136, DIG-14 AC 6, 8 and 9): the buck package's `Adc` on five held voltages and the
-//! stdlib `A2D` comparator on an RC network, elaborated from `tests/buck/boundary.msl`. Expected
+//! The analog to digital boundary from MSL source (feature `msl-digital`, T50 and T66; checks
+//! C133, C135, C136, C179, DIG-14 AC 6, 8 and 9): the buck package's `Adc` on five held voltages
+//! and the stdlib `A2D` comparator on an RC network driven by the stdlib `D2A`, elaborated from
+//! `tests/buck/boundary.msl`. Expected
 //! values are written from `examples/buck/SPEC.md` §4.1 (the ADC) and from the analytic response
 //! of the RC network; every voltage comparison goes through `ToleranceContract::TRAN_VOLTAGE`,
 //! and no time tolerance is written anywhere.
@@ -59,8 +60,9 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
     }
 }
 
-/// The RC network of `ComparatorBench`: the rail `V` through `rout` into `x`, `r2` and `c` from
-/// `x` to ground, the rail connected while the gate is high and grounded while low, the gate
+/// The RC network of `ComparatorBench`: the stdlib `D2A` puts the rail `V` through `rout` into
+/// `x`, `r2` and `c` from `x` to ground, the rail connected while the gate is high and grounded
+/// while low (the `D2A` ramp of 20 ps is far below the time constant), the gate
 /// rising at `on` and falling at `off`. With the drive voltage `u` (V or 0) the node follows
 /// `v_inf + (v0 - v_inf) * exp(-(t - t_edge) / tau)`, `v_inf = u * r2 / (rout + r2)`,
 /// `tau = c * rout * r2 / (rout + r2)`; the operating point (gate low, capacitor open) is 0 V.

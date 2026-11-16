@@ -26,8 +26,8 @@ enum Covers {
     Int(Option<u128>),
     /// `None` of an `Option`.
     Nothing,
-    /// `Some(p)`, whether `p` covers every payload.
-    Some(bool),
+    /// `Some(p)`, with what `p` covers of the payload.
+    Some(Vec<Covers>),
 }
 
 impl Checker<'_> {
@@ -104,7 +104,15 @@ impl Checker<'_> {
         }
         match scrut {
             Ty::Bool => covered.contains(&Covers::Bool(true)) && covered.contains(&Covers::Bool(false)),
-            Ty::Option(_) => covered.contains(&Covers::Nothing) && covered.contains(&Covers::Some(true)),
+            // `None`, and the payloads of every `Some(p)` together covering the payload's type:
+            // `Some(true)` and `Some(false)` cover a `bool` as `Some(_)` does
+            Ty::Option(inner) => {
+                let payloads: Vec<Covers> = covered.iter().filter_map(|c| match c {
+                    Covers::Some(p) => Some(p.clone()),
+                    _ => None,
+                }).flatten().collect();
+                covered.contains(&Covers::Nothing) && self.exhaustive(inner, &payloads)
+            }
             Ty::Enum(e) => {
                 let variants: BTreeSet<DeclId> = self.design.decl_data(*e).children.iter().copied().filter(|v| matches!(self.design.decl_data(*v).kind, DeclKind::Variant(_))).collect();
                 variants.iter().all(|v| covered.contains(&Covers::Variant(*v)))
@@ -155,8 +163,8 @@ impl Checker<'_> {
                     self.mismatch_text(file, node.span, "`Some` of one pattern", &format!("`Some` of {}", pats.len()));
                     return None;
                 };
-                let all = self.pattern(file, *p, inner, true)?.contains(&Covers::All);
-                Some(vec![Covers::Some(all)])
+                let payload = self.pattern(file, *p, inner, true)?;
+                Some(vec![Covers::Some(payload)])
             }
             PatKind::Or(alternatives) => {
                 let mut covers = Vec::new();
