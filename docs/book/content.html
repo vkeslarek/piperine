@@ -1912,14 +1912,86 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 <p class="ch-num">Chapter 9</p>
 <h2>Files, modules and packages</h2>
 
-<p>MSL organizes code the way Rust and Cargo do, without exceptions: files are namespaces, a tree of files is a crate, and a directory with a manifest is a package.</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can split a design over several files, share modules between them with <code>mod</code>, <code>use</code> and <code>pub</code>, write the manifest of a package, and depend on someone else's package.</p>
+</div>
+
+<p>Until now every example was one file. Real designs are not, and MSL organizes code the way Rust and Cargo do, without exceptions: files are namespaces, a tree of files is a crate, and a directory with a manifest is a package. If you know Cargo, you know this chapter; read the example and the differences.</p>
+
+<h3>A complete example: one design, three files</h3>
+
+<p>Take the RC low-pass of chapter 1 and give it a proper home. The parts go in one file, the filter built from them in another, and the crate root declares both and holds the top.</p>
+
+<pre data-lang="text">lowpass/
+├── Piperine.toml
+└── src/
+    ├── lib.msl            the crate root
+    ├── parts.msl          mod parts;
+    └── filter.msl         mod filter;</pre>
+
+<pre data-lang="msl">// src/parts.msl
+/// Ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// Ideal capacitor.
+pub module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+/// A constant voltage on `p`, referred to ground.
+pub module Vdc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vdc { v(p) +> dc; }</pre>
+
+<pre data-lang="msl">// src/filter.msl
+use crate::parts::{Capacitor, Resistor};
+
+/// First-order low-pass with corner frequency `fc`.
+pub module LowPass(a: Electrical, b: Electrical) {
+    fc: f64 = 1k where fc > 0.0;
+    r: f64 = 1k where r > 0.0;
+    let c = 1.0 / (2.0 * PI * r * fc);       // the capacitor that gives this corner
+    let r1 = Resistor(a, b) { r };
+    let c1 = Capacitor(b, gnd) { c };
+}</pre>
+
+<pre data-lang="msl">// src/lib.msl
+pub mod parts;              // loads src/parts.msl
+pub mod filter;             // loads src/filter.msl
+
+use crate::filter::LowPass;
+use crate::parts::Vdc;
+
+/// The top: a source and the filter.
+pub module Bench() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Vdc(vin) { dc: 1.0 };
+    pub let lp = LowPass(vin, vout) { fc: 10k };
+}</pre>
+
+<pre data-lang="toml">[package]
+name = "lowpass"
+version = "0.1.0"</pre>
+
+<p>What each new line does:</p>
+
+<ul>
+<li><strong><code>pub mod parts;</code></strong> in the crate root declares a namespace and loads it from <code>parts.msl</code>. A file that no <code>mod</code> names is not part of the crate.</li>
+<li><strong><code>pub module Resistor</code></strong> makes the module visible outside its file. Without <code>pub</code> it is private to <code>parts</code>.</li>
+<li><strong><code>use crate::parts::{Capacitor, Resistor};</code></strong> brings two names into scope. <code>crate</code> is the root of this crate.</li>
+<li><strong><code>analog for Resistor</code> stays next to <code>module Resistor</code>.</strong> This is the one rule MSL adds to Rust's: a hardware module and all its behavior blocks are in the same file, so you never hunt for the equations of a device.</li>
+<li><strong>The manifest</strong> needs only a name and a version. <code>std</code> is not listed: every crate has it.</li>
+</ul>
+
+<p>Splitting a design changes nothing about its instances: the capacitor is still <code>top.lp.c1</code>, and a stream written inside the filter is still named under <code>top.lp</code>. Paths of instances follow the hierarchy of the design, not the files it is written in.</p>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
   <p>Crates and packages are implemented: the object model resolves names across crates, and <code>piperine-project</code> reads <code>Piperine.toml</code>, locates path and git dependencies and writes the lockfile.</p>
 </div>
 
-<h3>A project on disk</h3>
+<h3>A bigger project on disk</h3>
 
 <pre data-lang="text">adc/
 ├── Piperine.toml          the manifest
@@ -1958,7 +2030,7 @@ description = "A SAR ADC and its building blocks"
 util = { path = "../util" }
 pdk  = { git = "https://example.com/acme/pdk.git", tag = "v1.4.0", version = "1.4" }</pre>
 
-<p>That is the whole format: <code>[package]</code> with <code>name</code> and <code>version</code> (required), <code>authors</code> and <code>description</code> (optional), and <code>[dependencies]</code>. Any other table or key is E0171.</p>
+<p>A manifest with dependencies looks like the one above. That is the whole format: <code>[package]</code> with <code>name</code> and <code>version</code> (required), <code>authors</code> and <code>description</code> (optional), and <code>[dependencies]</code>. Any other table or key is E0171.</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Dependency key</th><th>Meaning</th></tr></thead>
@@ -2038,12 +2110,40 @@ use util::cells::Cell;     // E0163: the local `util` or the dependency `util`?<
 utilx = { path = "../util", package = "util" }    # now `utilx::cells::Cell`</pre>
 
 <pre data-lang="msl">use crate::util::cells::Cell;   // the local namespace, unambiguous</pre>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0161</td><td><code>use crate::parts::Resistor;</code> with <code>module Resistor</code> not <code>pub</code></td><td>The path names a private item. Mark it <code>pub module Resistor</code>.</td></tr>
+  <tr><td>E0161</td><td><code>mod filters;</code> with the file named <code>filter.msl</code></td><td><code>mod name;</code> loads <code>name.msl</code> or <code>name/mod.msl</code>. Match the names.</td></tr>
+  <tr><td>E0401</td><td><code>analog for Resistor { … }</code> in <code>filter.msl</code></td><td>A behavior block lives in the file of its module. Move it to <code>parts.msl</code>.</td></tr>
+  <tr><td>E0162</td><td><code>use crate::parts::Resistor;</code> beside a local <code>module Resistor</code></td><td>One name, two declarations in one namespace. Rename one, or import with <code>as</code>.</td></tr>
+  <tr><td>E0163</td><td><code>mod util;</code> and a dependency <code>util</code>, then <code>use util::…</code></td><td>Ambiguous first segment. <code>crate::util</code>, or rename the dependency.</td></tr>
+  <tr><td>E0171</td><td><code>[dev-dependencies]</code> in <code>Piperine.toml</code></td><td>Not a table of the format. Only <code>[package]</code> and <code>[dependencies]</code> exist.</td></tr>
+  <tr><td>E0175</td><td>a package with <code>src/main.msl</code> only</td><td>The crate root is always <code>src/lib.msl</code>.</td></tr>
+  <tr><td>E0610</td><td><code>let t = include_str!("iv.tbl");</code> in a module</td><td><code>include_str!</code> is for <code>const</code> items: <code>const IV: … = parse_table(include_str!("iv.tbl"));</code></td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>Move <code>Vdc</code> out of <code>parts.msl</code> into a new file <code>src/sources.msl</code>. Which lines change? (Three: add <code>pub mod sources;</code> to the root, change the root's import to <code>use crate::sources::Vdc;</code>, and move the module with its <code>analog</code> block. Nothing in <code>filter.msl</code> changes.)</p>
+</div>
 </section>
 
 <!-- ===================================================== 10 -->
 <section id="core-std" class="chapter">
 <p class="ch-num">Chapter 10</p>
 <h2>Core and standard library</h2>
+
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you know where every name you did not declare comes from, you can find the library module for a job instead of writing it again, and you have a small debugging kit built from <code>emit!</code>, <code>log</code>, <code>require</code> and <code>fatal</code>.</p>
+</div>
+
+<p>This chapter is a tour, not a lesson: read the first two parts, then skim the tables and come back when you need a name. Each part has one small module that uses a few of its names, and every one of those modules is a complete file.</p>
 
 <p>Every name you write in a model comes from one of three places: your own files, the <strong>core</strong>, or the <strong>standard library</strong>. The core is what only the simulator can provide: reading a voltage, taking a time derivative, locating a crossing. Everything else, <code>idt</code>, <code>transition</code>, <code>Wire</code>, <code>Setup</code>, is ordinary source code written in the language, shipped as the crate <code>std</code>, and you can open it and read it. This chapter is the tour that tells you which is which.</p>
 
@@ -2260,6 +2360,39 @@ digital for Reg { on clk.rise() { q &lt;- d; } }</pre>
 <pre data-lang="msl">module Probe(in clk: Bit, in ok: Bit) {}
 digital for Probe { on clk.rise() { require("ok_at_edge", ok); log(Severity::Info, "edge"); } }</pre>
 
+<p>None of these is magic. Each is one line over <code>emit!</code>, which is why they follow its rules: allowed in reactions and in <code>analog</code>, stamped with the instance and the instant, and with no effect on the simulation except the one <code>finish</code> asks for.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Call</th><th>Is the same as</th><th>Stream</th></tr></thead>
+<tbody>
+<tr><td><code>log(sev, msg)</code></td><td><code>emit!("log", severity = sev, msg = msg)</code></td><td>the instance's <code>log</code></td></tr>
+<tr><td><code>finish()</code></td><td><code>emit!("sim", finish = true)</code></td><td><code>sim</code>, global, reactions only</td></tr>
+<tr><td><code>fatal(msg)</code></td><td><code>emit!("sim", finish = true, failed = true, msg = msg)</code></td><td><code>sim</code>, global, reactions only</td></tr>
+<tr><td><code>require(name, pass)</code></td><td><code>emit!("checks", kind = "require", name = name, pass = pass)</code></td><td><code>checks</code>, global, reactions only</td></tr>
+</tbody></table></div>
+
+<p>Together with your own streams they make a debugging kit. This watchdog uses three of them: a record with the numbers, a message, and an end to a run that is going nowhere.</p>
+
+<pre data-lang="msl">/// Ends the run when `busy` stays high for more than `limit` clock edges.
+module Watchdog(in clk: Bit, in busy: Bit) {
+    limit: u16 = 1000;
+    signal run: Bit<u16> = 0;
+}
+digital for Watchdog {
+    on clk.rise() {
+        if !busy.known_or(true) {
+            run <- 0;
+        } else if run >= limit {
+            emit!("stuck", t = now(), edges = run);
+            fatal("busy was never released");
+        } else {
+            run <- run + 1;
+        }
+    }
+}</pre>
+
+<p>An unknown <code>busy</code> is read as high, the pessimistic choice for a watchdog. The <code>stuck</code> record carries the time and the count; <code>fatal</code> ends the analysis at that instant and marks it failed. Had the condition itself been unknown, the <code>sim</code> record would carry <code>maybe = true</code> and the run would go on: an analysis is never ended on a guess.</p>
+
 <h3>Implemented by the engine</h3>
 
 <p>Five library items have no body to read, because their job is to read the characters of a <code>str</code>, which the language itself cannot do. They are declared <code>extern "intrinsic"</code>: you see the signature and the contract, and the engine supplies the body. Only <code>std</code> may declare one; the same line in your crate is error E0125. Like every other library item they are <code>pub</code> and reach your code through <code>std::prelude</code>, by their single names.</p>
@@ -2281,6 +2414,25 @@ digital for Probe { on clk.rise() { require("ok_at_edge", ok); log(Severity::Inf
 <p>A library item has no privilege. Declare an item with the same name in your own namespace and yours is the one the names in that scope find; the library's stays untouched. Only the core names of this chapter are off limits.</p>
 
 <pre data-lang="msl">pub fn vt() -> f64 { 0.0259 }          // this crate's vt, fixed at room temperature</pre>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0457</td><td><code>fn ddt(x: f64) -&gt; f64 { … }</code></td><td>A core name cannot be redefined. Pick another name; only library items can be replaced.</td></tr>
+  <tr><td>E0125</td><td><code>extern "intrinsic" fn my_parse(text: &amp;str) -&gt; f64;</code></td><td>Only <code>std</code> declares engine items. Write the function in MSL, or use <code>extern "C"</code>.</td></tr>
+  <tr><td>E0603</td><td><code>require(…)</code>, <code>finish()</code> or <code>fatal(…)</code> in <code>analog</code></td><td>The reserved streams take records from reactions only. Move the call into <code>on settle { … }</code> or another reaction.</td></tr>
+  <tr><td>E0605</td><td><code>emit!("checks", name = 3);</code></td><td>On a reserved stream the host's fields have fixed types: <code>name</code> is text. Use <code>require</code>, <code>cover</code> or <code>target</code>.</td></tr>
+  <tr><td>E0161</td><td><code>x.cbrt()</code>, or another Rust method the library does not list</td><td>The inherited library is a closed list. Write the expression another way: <code>x.powf(1.0 / 3.0)</code>.</td></tr>
+  <tr><td>E0702</td><td><code>logic("10z1")</code></td><td>A pattern holds only <code>0</code>, <code>1</code> and <code>x</code>, one character per level of the type.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>Without looking at the tables: which library module turns a stepped <code>Bit&lt;f64&gt;</code> level into a ramp, which one tells you how long ago a signal last changed, and which one checks that two commands are never high together? (<code>transition</code>, <code>since</code> and <code>Never</code>.) Then place a <code>Watchdog</code> in the <code>ButtonTop</code> of chapter 7 with <code>limit: 3</code>, its <code>busy</code> port on <code>button</code>, and say at which clock edge the run ends if the button is held down. (The fourth edge with the button down: the first three count, the fourth finds <code>run</code> at 3.)</p>
+</div>
 </section>
 
 <!-- ===================================================== 11 -->
