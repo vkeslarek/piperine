@@ -1579,11 +1579,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The third test commits false, `Unknown`, true, `Unknown`, false and true to one `Bit` and counts the runs of a reaction on `rise()` and of one on `fall()` against §22.1: rise on false to unknown, unknown to true and false to true; fall on true to unknown, unknown to false
-- [ ] `every(1u, 2u)` fires at 1, 3, 5, 7 and 9 µs in 10 µs and at no other time
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_time`: `every_from_the_stdlib_fires_once_per_period`, `a_reaction_reads_now_and_static_from_source`, `rise_and_fall_fire_on_edges_to_and_from_unknown`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The third test commits false, `Unknown`, true, `Unknown`, false and true to one `Bit` and counts the runs of a reaction on `rise()` and of one on `fall()` against §22.1: rise on false to unknown, unknown to true and false to true; fall on true to unknown, unknown to false
+- [x] `every(1u, 2u)` fires at 1, 3, 5, 7 and 9 µs in 10 µs and at no other time
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_time`: `every_from_the_stdlib_fires_once_per_period`, `a_reaction_reads_now_and_static_from_source`, `rise_and_fall_fire_on_edges_to_and_from_unknown`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: full
