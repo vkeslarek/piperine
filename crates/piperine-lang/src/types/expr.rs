@@ -35,6 +35,9 @@ impl Checker<'_> {
         stack::deep(|| {
             let node = self.design.expr_node(expr).clone();
             let file = self.file_of_expr(expr);
+            if *expected == Ty::Event {
+                self.event_slot = Some(expr);
+            }
             // Where the expected type flows into the parts of the expression: the value of a
             // block or of the arms of an `if` is where a mismatch is reported.
             let found = match &node.kind {
@@ -134,7 +137,11 @@ impl Checker<'_> {
     /// The type of `expr` from the expression alone; `None` after a diagnostic.
     pub(super) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
         stack::deep(|| {
+            let in_event_position = self.event_slot == Some(expr);
             let ty = self.infer_kind(expr);
+            if ty == Some(Ty::Event) && !in_event_position {
+                self.event_out_of_place(expr);
+            }
             self.exprs[expr.index()] = ty.clone();
             ty
         })
@@ -146,7 +153,12 @@ impl Checker<'_> {
         match &node.kind {
             ExprKind::Lit(lit) => self.literal(&lit.kind, file, node.span),
             ExprKind::Path(_) => self.path(expr),
-            ExprKind::Paren(inner) => self.infer(*inner),
+            ExprKind::Paren(inner) => {
+                if self.event_slot == Some(expr) {
+                    self.event_slot = Some(*inner);
+                }
+                self.infer(*inner)
+            }
             ExprKind::Unary { op: UnOp::Neg, expr: operand } => {
                 if let Some(text) = self.integer_literal_text(*operand) {
                     let span = self.design.expr_node(*operand).span;
@@ -164,15 +176,23 @@ impl Checker<'_> {
                     }
                 }
             }
-            ExprKind::Unary { op: UnOp::Not, expr: operand } => match self.infer(*operand) {
-                Some(t) if t.is_integer() => Some(t),
-                Some(Ty::Bool) | None => Some(Ty::Bool),
-                Some(other) => {
-                    let span = self.design.expr_node(*operand).span;
-                    self.mismatch(file, span, &Ty::Bool, &other);
-                    Some(Ty::Bool)
+            ExprKind::Unary { op: UnOp::Not, expr: operand } => {
+                // An `Event` operand is judged here, as `E0440`, not as an `Event` out of place.
+                self.event_slot = Some(*operand);
+                match self.infer(*operand) {
+                    Some(t) if t.is_integer() => Some(t),
+                    Some(Ty::Bool) | None => Some(Ty::Bool),
+                    Some(Ty::Event) => {
+                        self.negated_event(expr);
+                        None
+                    }
+                    Some(other) => {
+                        let span = self.design.expr_node(*operand).span;
+                        self.mismatch(file, span, &Ty::Bool, &other);
+                        Some(Ty::Bool)
+                    }
                 }
-            },
+            }
             ExprKind::Cast { expr: operand, ty } => self.cast(*operand, *ty),
             ExprKind::Binary { op, lhs, rhs } => self.binary(expr, *op, *lhs, *rhs),
             ExprKind::Block(block) => self.statements(&block.stmts, None),
@@ -207,11 +227,7 @@ impl Checker<'_> {
                 };
                 Some(if comparison { Ty::Bool } else { ty })
             }
-            BinOp::And | BinOp::Or => {
-                self.check(lhs, &Ty::Bool);
-                self.check(rhs, &Ty::Bool);
-                Some(Ty::Bool)
-            }
+            BinOp::And | BinOp::Or => self.logical(whole, op == BinOp::And, lhs, rhs),
             BinOp::Eq | BinOp::Ne => {
                 let (first, second) = self.literal_last(lhs, rhs);
                 match self.infer(first) {

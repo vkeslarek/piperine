@@ -144,6 +144,9 @@ impl Checker<'_> {
         if builtin == Some(Builtin::Prev) {
             return self.prev_read(expr, *recv, args);
         }
+        if let Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) = builtin {
+            return self.edge_read(expr, edge, *recv, args);
+        }
         // A receiver the POM could not type might be a value of a project's own `impl`: the
         // checker knows only the stdlib's flag reads (§3.3.7).
         if builtin.is_none() && flag_builtin(name).is_some() && self.project_methods.contains(name) {

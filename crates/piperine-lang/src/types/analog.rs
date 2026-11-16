@@ -99,6 +99,10 @@ impl Checker<'_> {
             return None;
         };
         let name = id.name();
+        if matches!(name.as_str(), "cross" | "at") && self.event_slot != Some(expr) {
+            self.core_event_out_of_place(expr, &name, args);
+            return None;
+        }
         match (sig.allowed, self.context) {
             (Allowed::Everywhere, Context::Const) => {
                 let message = format!("`{name}` is an environment function and is not allowed in a const context");
@@ -142,6 +146,7 @@ impl Checker<'_> {
         for (arg, param) in args.iter().zip(sig.required.iter().chain(sig.optional)) {
             self.check_argument(arg.value, &param.ty());
         }
+        self.event_arguments(&name, args);
         Some(sig.result.ty())
     }
 

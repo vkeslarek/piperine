@@ -64,6 +64,11 @@ pub(super) struct Checker<'d> {
     /// What the module being checked drives, by definition and by commit.
     pub(super) book: DriveBook,
     pub(super) context: Context,
+    /// The one expression that may be an `Event`: an event position hands it down just before it
+    /// types the expression, which judges an `Event` anywhere else.
+    pub(super) event_slot: Option<ExprId>,
+    /// Set while the guard of an event, the right operand of `ev && guard`, is typed.
+    pub(super) in_guard: bool,
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
@@ -95,6 +100,8 @@ impl<'d> Checker<'d> {
             continuity: Continuity::new(design),
             book: DriveBook::default(),
             context: Context::Module,
+            event_slot: None,
+            in_guard: false,
             poisoned: BTreeSet::new(),
             fn_where: false,
             fn_value_at: None,
@@ -485,7 +492,7 @@ impl<'d> Checker<'d> {
                     self.statements(&bd.body, None);
                     self.context = Context::Module;
                 }
-                BehaviorKind::Digital => self.unsupported(b.file, b.span, "`digital` block"),
+                BehaviorKind::Digital => self.digital_block(behavior),
             }
         }
         // A placement no statement above typed (one written where only the module lists it).

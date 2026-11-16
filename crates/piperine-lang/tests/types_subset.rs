@@ -49,8 +49,9 @@ const ROWS: &[Row] = &[
     Row { construct: "Unknown", source: "module Top() { }\nanalog for Top { let x = Unknown; }", names: "`Unknown`" },
     Row { construct: "discrete nature", source: "nature B { value: bool }\nmodule Top(a: B) { }", names: "discrete nature `B`" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
-    Row { construct: "digital block", source: "module Top() { }\ndigital for Top { }", names: "`digital` block" },
-    Row { construct: "reaction and event", source: "module Top() { }\ndigital for Top { on settle { } }", names: "`digital` block" },
+    Row { construct: "settle as a head", source: "module Top() { }\ndigital for Top { on settle { } }", names: "`settle`" },
+    Row { construct: "tolerance given to cross", source: "module Top(a: E) { }\ndigital for Top { on cross(v(a), 1n) { } }", names: "`ttol`" },
+    Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
     Row { construct: "emit!", source: "module Top() { }\nanalog for Top { emit!(\"o\", x = 1.0); }", names: "`emit!`" },
     Row { construct: "while", source: "module Top() { }\nanalog for Top { while true { } }", names: "`while` loop" },
     Row { construct: "loop", source: "module Top() { }\nanalog for Top { loop { } }", names: "`loop`" },
@@ -72,14 +73,11 @@ const ROWS: &[Row] = &[
     Row { construct: "ddx", source: "module Top(a: E) { }\nanalog for Top { let x = ddx(v(a), v(a)); }", names: "`ddx`" },
     Row { construct: "delay", source: "module Top(a: E) { }\nanalog for Top { let x = delay(v(a), 1.0); }", names: "`delay`" },
     Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
-    Row { construct: "cross", source: "module Top(a: E) { }\nanalog for Top { let x = cross(v(a)); }", names: "`cross`" },
-    Row { construct: "at", source: "module Top() { }\nanalog for Top { let x = at(1.0); }", names: "`at`" },
     Row { construct: "simparam", source: "module Top() { }\nanalog for Top { let x = simparam(1.0); }", names: "`simparam`" },
     Row { construct: "freq", source: "module Top() { }\nanalog for Top { let x = freq(); }", names: "`freq`" },
     Row { construct: "inflow", source: "module Top(a: E) { }\nanalog for Top { let x = a.inflow(); }", names: "inflow" },
     Row { construct: "flow probe read as a value", source: "module Top(a: E) { }\nanalog for Top { let x = i(a); }", names: "flow probe" },
     Row { construct: "trait", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top() { }\nanalog for Top { let y = 1.0.get(); }", names: "method `get`" },
-    Row { construct: "commit", source: "module Top() { signal s: E; }\ndigital for Top { on settle { s <- 1.0; } }", names: "`digital` block" },
 ];
 
 fn check(row: &Row) -> (String, Vec<DesignDiagnostic>) {

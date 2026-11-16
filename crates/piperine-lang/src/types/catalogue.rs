@@ -53,6 +53,8 @@ pub(super) enum CoreParam {
     F64,
     /// `fn(f64, f64) -> f64`: the input function of `limit`.
     Limiter,
+    /// `Option<f64>`: a tolerance of `cross`.
+    OptionF64,
 }
 
 impl CoreParam {
@@ -60,6 +62,7 @@ impl CoreParam {
         match self {
             CoreParam::F64 => Ty::F64,
             CoreParam::Limiter => Ty::Fn(vec![Ty::F64, Ty::F64], Box::new(Ty::F64)),
+            CoreParam::OptionF64 => Ty::Option(Box::new(Ty::F64)),
         }
     }
 }
@@ -69,6 +72,7 @@ impl CoreParam {
 pub(super) enum CoreResult {
     F64,
     Bool,
+    Event,
 }
 
 impl CoreResult {
@@ -76,6 +80,7 @@ impl CoreResult {
         match self {
             CoreResult::F64 => Ty::F64,
             CoreResult::Bool => Ty::Bool,
+            CoreResult::Event => Ty::Event,
         }
     }
 }
@@ -112,6 +117,10 @@ const CORE_ROWS: &[(&str, CoreSig)] = &[
     ("gmin", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("source_scale", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("now", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
+    // `cross` and `at` are core modules with an `Event` result, placed in event positions only
+    // (`core_call` judges the position, `Checker::event_arguments` the tolerances and the time).
+    ("cross", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::OptionF64, CoreParam::OptionF64], allowed: Allowed::Everywhere, result: CoreResult::Event }),
+    ("at", CoreSig { required: &[CoreParam::F64], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::Event }),
     // `analysis(Static)`: its one argument is a kind of analysis, checked by name in `core_call`.
     ("analysis", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::Bool }),
 ];

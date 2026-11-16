@@ -91,7 +91,7 @@ impl Checker<'_> {
             self.tuple_let(file, &pat, data.value);
             return;
         }
-        let ty = self.infer(data.value);
+        let ty = self.infer_event_position(data.value);
         let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
             self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
             return;
