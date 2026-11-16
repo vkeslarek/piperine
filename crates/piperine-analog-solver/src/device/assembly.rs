@@ -13,7 +13,7 @@ use super::delay::{Delayed, stamp_delay};
 use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
-use super::watch::{Accepted, TraceRecord, Watched, accept_watches, record_traces};
+use super::watch::{Accepted, TraceRecord, Watched, accept_watches, record_traces, tolerance};
 use super::small_signal::{ComplexStamps, NoiseColumn, noise_columns, response, stamp_matrix, stimulus};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
 use crate::error::Error;
@@ -80,6 +80,21 @@ pub(crate) struct InstanceState {
     pub delay: Vec<Delayed>,
     /// Per watch.
     pub watched: Vec<Watched>,
+}
+
+/// A `CROSS` watch that went from `≤ 0` at the last accepted solution to `> 0` at a solution
+/// not yet accepted (`Assembly::rising`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rising {
+    /// The instance, in bind order, and the watch, in its shape's order.
+    pub instance: usize,
+    pub watch: usize,
+    /// Its value at the last accepted solution, and at the solution.
+    pub before: f64,
+    pub now: f64,
+    /// Its `ttol` and `etol` pins' values; `None`: `DEFAULT`.
+    pub ttol: Option<f64>,
+    pub etol: Option<f64>,
 }
 
 /// What a rejected step must undo (abi.md §5 I8): every term history and
@@ -225,6 +240,38 @@ impl Assembly {
             }
         }
         Ok(acc)
+    }
+
+    /// Whether a `CROSS` watch is written by an analog function (a transient locates it).
+    pub fn has_crossings(&self) -> bool {
+        self.plan.instances.iter().any(|inst| inst.watches.iter().any(|w| w.kind == watch::CROSS && w.value.is_some()))
+    }
+
+    /// The `CROSS` watches that went from `≤ 0` at the last accepted solution to `> 0` at `x`,
+    /// evaluated as `accept` evaluates them, with nothing accepted: no watch, limit or history
+    /// moves (docs/spec §17.3: the locator reads a step before it is accepted). A tolerance pin
+    /// that is not finite and positive is `E0510`.
+    pub fn rising(&mut self, x: &[f64], amb: Ambient) -> Result<Vec<Rising>, Error> {
+        self.evaluate_for(x, amb, Need::ACCEPT)?;
+        let mut out = Vec::new();
+        for (index, (inst, st)) in self.plan.instances.iter().zip(&self.state).enumerate() {
+            for (wi, w) in inst.watches.iter().enumerate() {
+                let Some((fi, slot)) = w.value.filter(|_| w.kind == watch::CROSS) else { continue };
+                let now = st.fns[fi].f64(slot);
+                let Some(before) = st.watched[wi].cross else { continue };
+                if before <= 0.0 && now > 0.0 {
+                    out.push(Rising {
+                        instance: index,
+                        watch: wi,
+                        before,
+                        now,
+                        ttol: tolerance(inst, w, "ttol", w.ttol, &self.slots)?,
+                        etol: tolerance(inst, w, "etol", w.etol, &self.slots)?,
+                    });
+                }
+            }
+        }
+        Ok(out)
     }
 
     /// The bytes of `VAR` watch `name` of instance `path` at the last

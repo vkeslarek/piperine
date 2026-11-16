@@ -18,7 +18,7 @@ mod system;
 use circuit::{at, f64_bytes, f64_of, instance, netlist};
 use devices::{K_B, Q, modules};
 use piperine_analog_solver::device::AnalogBinding::{Absent, Discrete, Ground};
-use piperine_analog_solver::device::{AnalogPlan, Assembly};
+use piperine_analog_solver::device::{AnalogPlan, Assembly, Rising};
 use system::{at_rest, at_time, close};
 
 use std::sync::{Arc, OnceLock};
@@ -242,4 +242,39 @@ fn accept_fails_with_e0510_on_an_invalid_tolerance() {
     asm.set_discrete(0, &f64_bytes(1e-12));
     asm.set_discrete(1, &f64_bytes(1e-6));
     asm.accept(&[0.2, 0.0], at_rest()).expect("valid tolerances");
+}
+
+#[test]
+fn rising_reports_a_sign_change_without_accepting() {
+    // SCX-01 (§17.3): the locator reads a solution before it is accepted. W0 = inp − inn "up"
+    // goes from −0.1 to 0.2: rising, with both values and the DEFAULT tolerances; W1 = −W0 falls:
+    // not rising. Nothing is accepted: asked twice, it answers the same, and the accept at 0.2
+    // still fires `up`
+    let m = modules();
+    let (net, n) = netlist(2, &[]);
+    let c = instance("cmp", m.comparator, vec![at(&n[0]), at(&n[1]), Discrete(0), Absent, Absent]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    assert!(asm.has_crossings());
+    assert!(asm.rising(&[-0.1, 0.0], at_time(0.0)).expect("rising").is_empty(), "no accepted solution yet");
+    asm.accept(&[-0.1, 0.0], at_time(0.0)).expect("accept");
+    let up = Rising { instance: 0, watch: 0, before: -0.1, now: 0.2, ttol: None, etol: None };
+    assert_eq!(asm.rising(&[0.2, 0.0], at_time(1e-6)).expect("rising"), vec![up.clone()]);
+    assert_eq!(asm.rising(&[0.2, 0.0], at_time(1e-6)).expect("rising"), vec![up], "nothing moved");
+    assert!(asm.rising(&[-0.05, 0.0], at_time(1e-6)).expect("rising").is_empty(), "still ≤ 0");
+    assert_eq!(asm.accept(&[0.2, 0.0], at_time(1e-6)).expect("accept").fired, vec![(0, 3)], "the accept still fires up");
+
+    // a watch's own tolerances come with it
+    let c = instance("top.cmp", tol_comparator(), vec![Discrete(0), Discrete(1), at(&n[0]), at(&n[1]), Absent]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    asm.set_discrete(0, &f64_bytes(1e-12));
+    asm.set_discrete(1, &f64_bytes(1e-6));
+    asm.accept(&[0.0, 0.1], at_time(0.0)).expect("accept");
+    let got = asm.rising(&[0.3, 0.1], at_time(1e-6)).expect("rising");
+    assert_eq!(got.len(), 1);
+    assert_eq!((got[0].before, got[0].ttol, got[0].etol), (-0.1, Some(1e-12), Some(1e-6)));
+    close(got[0].now, 0.2, 1e-15, "e = inp − inn");
+
+    // a design with no CROSS watch has none
+    let r = instance("r1", m.resistor, vec![Discrete(0), at(&n[0]), Ground]);
+    assert!(!Assembly::new(AnalogPlan::bind(vec![r], &net).expect("bind")).has_crossings());
 }

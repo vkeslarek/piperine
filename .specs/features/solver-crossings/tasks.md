@@ -181,8 +181,8 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] `rising_reports_a_sign_change_without_accepting` passes
-- [ ] Gate check passes: the **Build** line, then `cargo test` at the root
+- [x] `rising_reports_a_sign_change_without_accepting` passes
+- [x] Gate check passes: the **Build** line, then `cargo test` at the root
 
 **Tests**: unit
 **Gate**: build
