@@ -291,6 +291,7 @@ Found by the buck prototype (`examples/buck/GAPS.md`). Each has a provisional ru
 
 - **G4 - float to `UInt<N>`/`Int<N>` with `as`.** Provisional (ir-rust): saturate to the N-bit range, NaN to 0. Spec Part I §1 rule 1 says "truncates or extends, as in Rust", which is ambiguous for non-Rust widths.
 - **G5 - shift by N or more.** Provisional (ir-rust): mathematical result truncated to N bits (0 for `<<` and unsigned `>>`, sign fill for signed `>>`). No spec rule. A shift by a negative amount (an `Int<M>` amount below 0) has no rule either: the compiled code panics naming the shift, which the solver reports as a fault (ir-rust phase-B verification F-B9).
+- **G6 - unknown integers are per value, not per bit.** Provisional (ir-rust F-B4, orchestrator ruling 2026-11-15, user may revisit): one known flag per value, the ABI's one known byte; §3.3.2's `&`/`|` shortcuts apply only when one operand is all-zeros/all-ones. Partial masks give unknown where §3.3.2 per-bit gives known bits (`(x & 1) & 2` with `x` unknown). Per-level flags would change the ABI.
 - **G3 - Appendix H method on a carrier receiver left `Unresolved` with no diagnostic** (`oc_count.saturating_add(1)` on a `Bit<u4>`). Front-end bug in `pom/resolve/members.rs`; `msl-typeck` should link it or report it.
 - **G1 fixed-point type, G2 ranged integer.** Language proposals, not bugs; schedule on demand.
 

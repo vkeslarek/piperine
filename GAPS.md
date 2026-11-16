@@ -79,6 +79,12 @@ Each has a provisional rule so work is not blocked; the spec sentence is still o
 - **G5 — shift by N or more bits.** No rule. Provisional: the mathematical result truncated to
   N bits (0 for `<<` and for unsigned `>>`, sign fill for signed `>>`). A negative amount has no rule
   either; compiled code panics naming the shift (a fault, `ir-rust` F-B9).
+- **G6 — unknown integers are per value, not per bit (`ir-rust` F-B4).** §3.3.2 gives `&`, `|`,
+  `^`, `!` per level, so a partial mask leaves known bits: `(x & 1) & 2` with `x` unknown is known
+  0. The ABI has one known byte per value, so the compiled code applies §3.3.2's shortcuts only
+  when one operand is all-zeros (`&`) or all-ones (`|`); otherwise the result is unknown, and a
+  later `known_or(d)` returns `d` where §3.3.2 gives the known bits. Per-bit flags would change the
+  ABI; ruling 2026-11-15, the user may revisit.
 - **G1 — no fixed-point type; G2 — no ranged integer.** Language proposals the buck wanted, not
   bugs.
 
