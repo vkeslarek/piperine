@@ -89,8 +89,9 @@ impl Interpreted {
                 Source::Time => None,
                 // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
                 Source::Carrier(_) | Source::CarrierChanged(_) | Source::Delayed(_) | Source::DelayedChanged(_) | Source::Crossed(_) => None,
-                // a timer's pin: `Interpreter::new` refuses every body with an `at` (msl-digital T22).
-                Source::Timer(_) => None,
+                // a timer's pin, a previous value: `Interpreter::new` refuses every body with an
+                // `at` or a carrier (msl-digital T22).
+                Source::Timer(_) | Source::CarrierPrevious(_) => None,
             };
             if let Some(cell) = cell {
                 *cell = Some(read());

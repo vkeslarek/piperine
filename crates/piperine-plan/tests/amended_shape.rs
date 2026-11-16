@@ -389,3 +389,73 @@ fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
     assert_eq!(terms_plan.affine, [true, true]);
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
+
+#[test]
+fn a_previous_value_is_the_previous_part_of_the_pin() {
+    // the flip-flop of abi.md §11.4 with `rise()` as the stdlib writes it (design A7, part IV
+    // §22.1): the previous level is not `Some(true)` and the level is not `Some(false)`
+    //
+    // ```text
+    // module Dff(in clk: Bit, in d: Bit, out q: Bit) {}
+    // digital for Dff {
+    //     on clk.changed() if !clk.prev().high() && (!clk.is_known() || clk.known_or(false)) { q <- d; }
+    //     on d.changed() { q <- d.prev(); }
+    // }
+    // ```
+    let (ir, body) = Alone::design(|b| {
+        let body = b.body(Buck::spec("Dff", F, 1));
+        for (name, role, col) in [("clk", CarrierRole::In, 12), ("d", CarrierRole::In, 25), ("q", CarrierRole::Out, 36)] {
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, F, 1, col));
+        }
+        let flagged = digital::Ty::flagged(ValueType::Bool);
+        let mut x = Dx::new(b, F, 3, 25);
+        let o = x.origin();
+        let prev = x.b.expr(Expr::Previous(0), flagged.clone(), o);
+        let was_high = x.high(prev);
+        let not_was_high = x.un(piperine_ir::UnaryOp::Not, was_high, ValueType::Bool);
+        let clk = x.carrier(0, ValueType::Bool);
+        let known = x.is_known(clk);
+        let unknown = x.un(piperine_ir::UnaryOp::Not, known, ValueType::Bool);
+        let clk = x.carrier(0, ValueType::Bool);
+        let low = x.boolean(false);
+        let level = x.known_or(clk, low, ValueType::Bool);
+        let not_low = x.bin(piperine_ir::BinaryOp::Or, unknown, level, ValueType::Bool);
+        let guard = x.bin(piperine_ir::BinaryOp::And, not_was_high, not_low, ValueType::Bool);
+        let rise = b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin(F, 3, 8) });
+        let mut x = Dx::new(b, F, 3, 90);
+        let d = x.carrier(1, ValueType::Bool);
+        let commit = x.commit(2, d, None);
+        Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 3);
+        let changed = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 4, 8) });
+        let mut x = Dx::new(b, F, 4, 30);
+        let o = x.origin();
+        let prev = x.b.expr(Expr::Previous(1), flagged, o);
+        let commit = x.commit(2, prev, None);
+        Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 4);
+        body
+    });
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (clk, d, q, event) = (Find::pin(shape, "clk"), Find::pin(shape, "d"), Find::pin(shape, "q"), Find::pin(shape, "event:0"));
+
+    // abi.md §11.4: fn "rise" reads [clk.VALUE, clk.PREVIOUS, clk.CHANGED] and writes [rise]
+    let (reads, writes, _) = Find::function(shape, "event:0");
+    assert_eq!(reads, [pin(clk, part::VALUE), pin(clk, part::PREVIOUS), pin(clk, part::CHANGED)]);
+    assert_eq!(writes, [pin(event, part::CHANGED)]);
+    assert_eq!(plan.functions().iter().find(|f| f.mode == Mode::Event(0)).map(|f| f.reads.clone()), Some(vec![
+        Source::Carrier(0),
+        Source::CarrierPrevious(0),
+        Source::CarrierChanged(0),
+    ]));
+    // abi.md §4.1: "PREVIOUS ... changes exactly when VALUE does, so any function or reaction may
+    // read it": the reaction reads d's PREVIOUS (not its VALUE) and commits q
+    let (_, reads, statements) = Find::reaction(shape, "reaction:1");
+    assert_eq!(reads, [pin(d, part::PREVIOUS)]);
+    assert_eq!(statements, [(q, 0, 2, 0, 0.0)]);
+    // P7: a QUIET pin keeps no PREVIOUS, so a carrier whose previous value is read is not QUIET
+    for p in [clk, d] {
+        assert_eq!(shape.pins.get(p as usize).map(|x| x.flags & pin_flag::QUIET), Some(0));
+    }
+
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}

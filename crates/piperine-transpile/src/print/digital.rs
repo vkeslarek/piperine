@@ -84,7 +84,8 @@ impl<'a> DigitalPrinter<'a> {
             Ok(format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i}));", values.pin_type(ty)?))
         };
         Ok(Some(match s {
-            Source::Carrier(c) => match self.body.carriers().get(c as usize) {
+            // a previous value is in the carrier's own layout (abi.md §4.1)
+            Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
                 Some(carrier) => pin(&carrier.ty)?,
                 None => return Ok(None),
             },

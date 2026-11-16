@@ -78,9 +78,10 @@ impl<'a> AnalogPrinter<'a> {
             Source::Carrier(c) => {
                 self.body.carriers().get(c as usize).map_or_else(|| Text::generated(&format!("carrier{c}")), |x| Text::ident(&x.name))
             }
-            Source::CarrierChanged(c) => {
+            Source::CarrierChanged(c) | Source::CarrierPrevious(c) => {
                 let name = self.body.carriers().get(c as usize).map_or_else(|| format!("carrier{c}"), |x| x.name.clone());
-                Text::generated(&format!("{name}_changed"))
+                let part = if matches!(s, Source::CarrierChanged(_)) { "changed" } else { "previous" };
+                Text::generated(&format!("{name}_{part}"))
             }
             Source::Delayed(k) | Source::DelayedChanged(k) => {
                 let carrier = self.body.drives().get(k as usize).map_or(u32::MAX, |d| d.carrier);

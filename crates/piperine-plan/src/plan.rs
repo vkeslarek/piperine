@@ -84,6 +84,10 @@ pub enum Source {
     Param(u32),
     /// The `VALUE` of a carrier's pin.
     Carrier(u32),
+    /// The `PREVIOUS` of a carrier's pin: its bytes before its most recent change (abi.md §4.1,
+    /// msl-digital A7). Between `Carrier` and `CarrierChanged`, so a function that reads all
+    /// three of one carrier reads `[VALUE, PREVIOUS, CHANGED]`, the order of abi.md §11.4.
+    CarrierPrevious(u32),
     /// The `CHANGED` byte of a carrier's pin.
     CarrierChanged(u32),
     /// The `VALUE` of drive `k`'s undelayed pin.
@@ -192,13 +196,14 @@ impl ReadSet {
         self.0.extend(other.0.iter().copied());
     }
 
-    /// The whole dependency set of `target`: its `Deps`, the carriers it reads and the flows of
+    /// The whole dependency set of `target`: its `Deps`, the carriers it reads, the flows of
     /// potential branches it reads (`i(a, b)`, msl-digital A5: the branch's private flow pin, a
-    /// differentiable read).
+    /// differentiable read) and the carriers whose previous value it reads (`c.prev()`, A7).
     pub(crate) fn target(body: Body<'_>, target: Query) -> ReadSet {
         let mut set = ReadSet::of(&body.dependencies(target));
         set.0.extend(body.carrier_reads(target).into_iter().map(Source::Carrier));
         set.0.extend(body.flow_reads(target).into_iter().map(Source::BranchFlow));
+        set.0.extend(body.previous_reads(target).into_iter().map(Source::CarrierPrevious));
         set
     }
 }
@@ -587,6 +592,7 @@ impl BodyPlan {
             Source::StimValue(k) => value(cell::INPUT, limits + k),
             Source::Param(i) => value(cell::PIN, i),
             Source::Carrier(c) => value(cell::PIN, pins.carrier(c)),
+            Source::CarrierPrevious(c) => at(cell::PIN, pins.carrier(c), part::PREVIOUS),
             Source::CarrierChanged(c) => at(cell::PIN, pins.carrier(c), part::CHANGED),
             Source::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
             Source::DelayedChanged(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value), part::CHANGED),
