@@ -462,9 +462,9 @@ T38
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-api --test probes`: `the_default_is_the_tops_own_signals_in_order`, `a_node_a_net_and_a_flow_resolve_relative_or_full`, `a_column_is_named_by_the_full_path`, `an_entry_that_names_nothing_is_e0801_before_any_analysis`, `a_signal_printed_twice_is_two_columns`
-- [ ] Gate check passes: Full (see Gate Check Commands)
-- [ ] Test count: the 5 test(s) named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-api --test probes`: `the_default_is_the_tops_own_signals_in_order`, `a_node_a_net_and_a_flow_resolve_relative_or_full`, `a_column_is_named_by_the_full_path`, `an_entry_that_names_nothing_is_e0801_before_any_analysis`, `a_signal_printed_twice_is_two_columns`
+- [x] Gate check passes: Full (see Gate Check Commands)
+- [x] Test count: the 5 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

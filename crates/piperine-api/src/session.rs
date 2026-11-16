@@ -2,7 +2,7 @@
 //! top is chosen (the `top` key, else the one module without ports of the root crate), the
 //! design is type-checked and elaborated, and the backend builds it once: the interpreter, or
 //! the transpiler, which may call `rustc`. Every failure before an analysis happens here, each
-//! naming its stage. No analysis ever compiles.
+//! naming its stage, and the run's `print` entries are resolved. No analysis ever compiles.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -17,6 +17,7 @@ use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
+use crate::probe::Probe;
 use crate::project::Project;
 use crate::request::RunSpec;
 
@@ -40,6 +41,7 @@ pub struct Session {
     top: String,
     backend: Backend,
     spec: RunSpec,
+    probes: Vec<Probe>,
 }
 
 impl Session {
@@ -60,6 +62,7 @@ impl Session {
             Ok(ir) => Arc::new(ir),
             Err(found) => return Err(Session::diagnosed("elaborate", design, found)),
         };
+        let probes = Session::probes_of(&ir, spec)?;
         let (circuit, compiled) = match backend {
             Backend::Interp => {
                 let interpreter = Interpreter::new(ir.clone()).map_err(|rejected| {
@@ -75,7 +78,7 @@ impl Session {
                 (circuit, Some(compiled))
             }
         };
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone() })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes })
     }
 
     /// The top module's name.
@@ -96,6 +99,12 @@ impl Session {
     /// The request this session runs.
     pub fn spec(&self) -> &RunSpec {
         &self.spec
+    }
+
+    /// The columns the result shows: the run's `print` entries resolved, in order, or the top's
+    /// own signals and ports when it has none.
+    pub fn probes(&self) -> &[Probe] {
+        &self.probes
     }
 
     /// How the design was built: compiled now, found in the cache, or interpreted.
@@ -132,6 +141,16 @@ impl Session {
                 message: format!("no top: the crate `{}` holds several modules without ports ({}); name one with `top`", root.name(), several.join(", ")),
             }),
         }
+    }
+
+    /// The run's `print` entries resolved against `ir` (`E0801` for one that names nothing),
+    /// or the top's defaults.
+    fn probes_of(ir: &Ir, spec: &RunSpec) -> Result<Vec<Probe>, Failure> {
+        let top = ir.top().path();
+        if spec.print.is_empty() {
+            return Ok(Probe::defaults(ir, top));
+        }
+        spec.print.iter().map(|entry| Probe::resolve(ir, top, entry)).collect()
     }
 
     fn diagnosed(stage: &'static str, design: Design, found: Vec<DesignDiagnostic>) -> Failure {
