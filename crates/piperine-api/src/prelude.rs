@@ -3,3 +3,4 @@
 pub use crate::backend::Backend;
 pub use crate::failure::Failure;
 pub use crate::request::{Analysis, Grid, Overrides, RunSpec};
+pub use crate::project::Project;

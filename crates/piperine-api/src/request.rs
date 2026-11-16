@@ -188,6 +188,17 @@ impl RunSpec {
         let keys = self.keys.clone().with(overrides);
         keys.spec(self.name.clone(), self.source.clone())
     }
+
+    /// Where the manifest wrote the `bench` value; `None` when a flag gave it or there is none.
+    pub(crate) fn bench_at(&self) -> Option<Span> {
+        self.keys.bench.as_ref().and_then(|b| b.at)
+    }
+
+    /// A `P0010` at `at` in the manifest this request was read from, or with no span when the
+    /// request has no manifest or `at` is `None`.
+    pub(crate) fn fault(&self, at: Option<Span>, message: String, label: &str) -> Failure {
+        Source::fault_in(self.source.as_ref(), at, message, label)
+    }
 }
 
 impl Source {

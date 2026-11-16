@@ -18,6 +18,9 @@ pub enum Failure {
     Diagnostics { stage: &'static str, design: Box<Design>, found: Vec<DesignDiagnostic> },
     /// A run request that is malformed (`P0010`), at a span of `text`, the content of `file`.
     Request { diagnostic: Diagnostic, file: PathBuf, text: String },
+    /// `run` named no run of the project (`asked`), or named none while the project has no run
+    /// or several: a usage error, with the project's run names.
+    NoRun { asked: Option<String>, runs: Vec<String> },
     /// A host error with a code and no span: `P0010` without a span, `P0011`, `E0801`, `E0802`.
     Host { code: &'static str, message: String },
     /// The backend refused or could not build the design; the message is the backend's.
@@ -34,7 +37,7 @@ impl Failure {
         match self {
             Failure::Package(_) => "package",
             Failure::Diagnostics { stage, .. } => stage,
-            Failure::Request { .. } => "request",
+            Failure::Request { .. } | Failure::NoRun { .. } => "request",
             Failure::Host { .. } => "host",
             Failure::Backend(_) => "backend",
             Failure::Solver { .. } => "solver",
@@ -52,6 +55,14 @@ impl std::fmt::Display for Failure {
             }
             Failure::Diagnostics { stage, found, .. } => write!(f, "{stage} failed with {} diagnostic(s)", found.len()),
             Failure::Request { diagnostic, file, .. } => write!(f, "{}: {} ({})", diagnostic.code, diagnostic.message, file.display()),
+            Failure::NoRun { asked, runs } => {
+                let listed = if runs.is_empty() { "the project has no run".to_string() } else { format!("the runs are: {}", runs.join(", ")) };
+                match asked {
+                    Some(name) => write!(f, "no run named `{name}`: {listed}"),
+                    None if runs.is_empty() => f.write_str("no run to choose: the project has no run"),
+                    None => write!(f, "several runs, name one: {listed}"),
+                }
+            }
             Failure::Host { code, message } => write!(f, "{code}: {message}"),
             Failure::Backend(message) => f.write_str(message),
             Failure::Solver { analysis, error } => write!(f, "the {analysis} analysis failed: {error}"),

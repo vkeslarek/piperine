@@ -11,3 +11,6 @@ piperine-interp = { path = "../piperine-interp" }
 piperine-transpile = { path = "../piperine-transpile" }
 piperine-solver = { path = "../piperine-solver" }
 toml = "1.1.2"
+
+[dev-dependencies]
+tempfile.workspace = true
