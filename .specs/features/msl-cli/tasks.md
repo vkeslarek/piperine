@@ -554,10 +554,10 @@ T38
 
 **Done when**:
 
-- [ ] `Number` lives in `render/number.rs`, declared from `render/table.rs`'s module; the test module path is `render::number::tests`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::number::tests::numbers_have_one_text_each`, `render::table::tests::a_table_is_left_aligned_two_spaces_no_trailing_space`
-- [ ] Gate check passes: Quick (see Gate Check Commands)
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] `Number` lives in `render/number.rs`, declared from `render/table.rs`'s module; the test module path is `render::number::tests`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::number::tests::numbers_have_one_text_each`, `render::table::tests::a_table_is_left_aligned_two_spaces_no_trailing_space`
+- [x] Gate check passes: Quick (see Gate Check Commands)
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick
