@@ -97,7 +97,7 @@ Two solver defects make the boundary between analog and digital observable at th
 
 **Acceptance Criteria**:
 
-1. The ABI's shape validator SHALL accept a reaction that reads the ambient input `GMIN` or `SOURCE_SCALE`, and SHALL keep refusing `FREQ` in a reaction. (ENV-01)
+1. The ABI's shape validator SHALL accept a reaction or a discrete function that reads the ambient input `GMIN` or `SOURCE_SCALE`, and SHALL keep refusing `FREQ` in a reaction and `TIME` in a discrete function. (ENV-01)
 2. WHEN a reaction or a discrete function reads `GMIN` or `SOURCE_SCALE` THEN the digital engine SHALL supply the continuation values its owner set, `0` and `1` until one is set. (ENV-02)
 3. WHEN a reaction or a discrete function of a circuit runs on the solver THEN `GMIN` SHALL read the session's `gmin` and `SOURCE_SCALE` 1.0, in the operating point and in the transient. (ENV-03)
 4. WHEN a reaction reads the `GLOBAL TEMPERATURE` pin THEN it SHALL read the analysis temperature the host set, in kelvin. (ENV-03)

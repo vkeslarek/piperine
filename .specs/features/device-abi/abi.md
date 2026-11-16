@@ -344,13 +344,19 @@ one by constant, and that declaration is how the solver knows who depends on it.
 | `TIME` | `F64` | the time of the solve or instant; 0 where time does not exist | analog functions, reactions |
 | `FREQ` | `F64` | the sweep point's frequency, else 0 | analog |
 | `STATIC` | `BOOL` | this is an equilibrium solve, or an instant of one | analog, reactions |
-| `GMIN`, `SOURCE_SCALE` | `F64` | continuation variables; at rest in the last solve of every sequence | analog |
+| `GMIN`, `SOURCE_SCALE` | `F64` | continuation variables; at rest in the last solve of every sequence | analog, reactions, discrete functions |
 | `TICK` | `I64` | the last tick not after the instant | reactions |
 | `HORIZON` | `I64` | the last tick through which nothing this reaction listens to or reads can change (R5) | reactions |
 
 One rule for both families: an input belongs to a call, so it is never an event and no
-discrete function reads one. A value that must exist at instants (temperature, the analysis
-kind, a session parameter) is a `GLOBAL` pin instead, and obeys P1–P4.
+discrete function reads one, with one exception. `GMIN` and `SOURCE_SCALE` are the environment
+`gmin()` and `source_scale()` of MSL §12.1.12 and §14.4: a reaction and a discrete function may
+read them, and read their values at rest (the session `gmin` and 1), since an instant always
+runs after the last solve of its sequence; the owner gives the digital side those values before
+each analysis starts (`solver-crossings`, ENV-01 to ENV-03). A value that must exist at instants
+(temperature, the analysis kind, a session parameter) is a `GLOBAL` pin instead, and obeys
+P1–P4: `temperature()` in a reaction or a discrete function is a read of the `GLOBAL
+TEMPERATURE` pin.
 
 ### 4.3 What the solver does with each cell
 

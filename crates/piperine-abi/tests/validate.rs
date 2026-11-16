@@ -335,3 +335,27 @@ fn a_shape_with_an_unreadable_list_is_refused() {
     let err = validate(&shape).expect_err("a cell list read below its element size");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnreadableList, "function i"));
 }
+
+#[test]
+fn a_reaction_may_read_gmin_and_source_scale() {
+    // ENV-01 (docs/spec Part IV §12.1.12, §14.4): a reaction and a discrete function read the
+    // environment `gmin()` and `source_scale()` as the ambient inputs GMIN and SOURCE_SCALE.
+    // FREQ stays refused in a reaction, TIME in a discrete function (it changes at every
+    // instant and no event follows it).
+    let ambient_cell = |index| Cell { kind: cell::AMBIENT, index, part: part::VALUE };
+    for index in [ambient::GMIN, ambient::SOURCE_SCALE] {
+        let mut s = flip_flop();
+        s.reactions[0].reads.push(ambient_cell(index));
+        validate(s.build().shape()).unwrap_or_else(|e| panic!("a reaction reading ambient {index}: {e}"));
+        let mut s = flip_flop();
+        s.functions[0].reads.push(ambient_cell(index));
+        validate(s.build().shape()).unwrap_or_else(|e| panic!("a discrete function reading ambient {index}: {e}"));
+    }
+    let mut s = flip_flop();
+    s.reactions[0].reads.push(ambient_cell(ambient::FREQ));
+    let e = validate(s.build().shape()).expect_err("FREQ in a reaction");
+    assert_eq!(e.rule, Rule::UnknownConstant, "{e}");
+    let mut s = flip_flop();
+    s.functions[0].reads.push(ambient_cell(ambient::TIME));
+    assert_eq!(validate(s.build().shape()).expect_err("TIME in a discrete function").rule, Rule::DiscreteReadsAnalog);
+}

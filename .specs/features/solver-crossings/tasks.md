@@ -262,7 +262,7 @@ T9 → T10 → T11
 
 ### T9: The validator accepts `GMIN` and `SOURCE_SCALE` in a reaction
 
-**What**: `cell_bytes` lets a reaction read `GMIN` and `SOURCE_SCALE`; abi.md §4.2 states the rule.
+**What**: the validator lets a reaction and a discrete function read `GMIN` and `SOURCE_SCALE`; abi.md §4.2 states the rule.
 **Where**: `crates/piperine-abi/src/validate.rs` (abi.md §4.2; tests in `tests/validate.rs`)
 **Depends on**: None
 **Reuses**: the ambient table of `cell_bytes`
@@ -270,8 +270,8 @@ T9 → T10 → T11
 
 **Done when**:
 
-- [ ] `a_reaction_may_read_gmin_and_source_scale` passes
-- [ ] Gate check passes: `cargo test -p piperine-abi`
+- [x] `a_reaction_may_read_gmin_and_source_scale` passes
+- [x] Gate check passes: `cargo test -p piperine-abi`
 
 **Tests**: unit
 **Gate**: full
@@ -379,7 +379,7 @@ Proof: run parity | test parity_rc_transient ... ok
 **C19** - `Assembly::rising` reports a `CROSS` watch that went from `≤ 0` to `> 0` with its two values, and a later `accept` still fires it: nothing was accepted (SCX-01, AC 1)
 Proof: run analog | test rising_reports_a_sign_change_without_accepting ... ok
 
-**C20** - A reaction that reads `GMIN` or `SOURCE_SCALE` validates; one that reads `FREQ` is still refused (ENV-01, AC 1)
+**C20** - A reaction or a discrete function that reads `GMIN` or `SOURCE_SCALE` validates; `FREQ` in a reaction and `TIME` in a discrete function are still refused (ENV-01, AC 1)
 Proof: run abi | test a_reaction_may_read_gmin_and_source_scale ... ok
 
 **C21** - On the engine, a reaction and a discrete function read the values `set_continuation` gave (2e-12, 0.25), and 0 and 1 before (ENV-02, AC 2)

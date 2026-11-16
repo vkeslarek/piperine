@@ -417,7 +417,12 @@ pub(crate) fn cell_bytes<'s>(
             if !known(c.index, AMBIENTS) {
                 return Err((Rule::UnknownConstant, format!("ambient {}", c.index)));
             }
-            let reaction_ok = matches!(c.index, ambient::TIME | ambient::STATIC | ambient::TICK | ambient::HORIZON);
+            // The environment of §12.1.12 and §14.4: a reaction may read the continuation
+            // values (`gmin()`, `source_scale()`), as an analog function does.
+            let reaction_ok = matches!(
+                c.index,
+                ambient::TIME | ambient::STATIC | ambient::TICK | ambient::HORIZON | ambient::GMIN | ambient::SOURCE_SCALE
+            );
             let function_ok = !matches!(c.index, ambient::TICK | ambient::HORIZON);
             let ok = match access {
                 Access::FunctionRead => function_ok,
@@ -495,7 +500,10 @@ fn check_function(shape: &Shape, f: &Function) -> Result<(), ShapeError> {
     let pin_of = |c: &Cell| shape.pins.get(c.index as usize).filter(|_| c.kind == cell::PIN);
     if writes_pin {
         for c in f.reads.iter() {
-            let analog = matches!(c.kind, cell::INPUT | cell::AMBIENT)
+            // `GMIN` and `SOURCE_SCALE` hold their values at rest through every instant (the
+            // last solve of a sequence), so a discrete function may read them (§12.1.12, §14.4).
+            let environment = c.kind == cell::AMBIENT && matches!(c.index, ambient::GMIN | ambient::SOURCE_SCALE);
+            let analog = (matches!(c.kind, cell::INPUT | cell::AMBIENT) && !environment)
                 || pin_of(c).is_some_and(|p| p.kind == kind::CONTINUOUS);
             if analog {
                 return Err(e.fail(
