@@ -22,6 +22,8 @@ pub enum Ty {
     UInt(u8),
     /// `Int<N>` (`iN`), `N` in 1..=64.
     Int(u8),
+    /// An enum of unit variants deriving `Repr`, by its declaration.
+    Enum(DeclId),
 }
 
 impl Ty {
@@ -59,6 +61,10 @@ impl Ty {
             }
             Ty::UInt(n) => format!("u{n}"),
             Ty::Int(n) => format!("i{n}"),
+            Ty::Enum(e) => match &design.decl_data(*e).name {
+                Some(n) => format!("enum `{}`", n.text),
+                None => "enum".to_string(),
+            },
             Ty::Module(module) => match &design.decl_data(*module).name {
                 Some(n) => format!("module `{}`", n.text),
                 None => "module".to_string(),

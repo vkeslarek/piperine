@@ -29,7 +29,7 @@ impl Catalogue {
         let rows = match recv {
             Ty::F64 => F64_METHODS,
             Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
-            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) => return None,
+            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) => return None,
         };
         rows.iter().find(|(row, _, _)| *row == name).map(|(_, method, arity)| (*method, *arity))
     }

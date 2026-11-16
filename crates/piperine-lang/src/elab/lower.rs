@@ -47,8 +47,8 @@ impl Scope {
 pub(super) struct ValueTypes;
 
 impl ValueTypes {
-    /// `None` for a type no value has in the IR: a node, a module; and for an integer type,
-    /// which is lowered from msl-digital T23 on (until then elaboration refuses it by name).
+    /// `None` for a type no value has in the IR: a node, a module; and for an integer type or an
+    /// enum, which are lowered from msl-digital T23 and T26 on (until then elaboration refuses it by name).
     pub(super) fn of(ty: &Ty) -> Option<ValueType> {
         match ty {
             Ty::F64 => Some(ValueType::F64),
@@ -58,7 +58,7 @@ impl ValueTypes {
                 let params: Option<Vec<ValueType>> = params.iter().map(ValueTypes::of).collect();
                 Some(ValueType::Fn(params?, Box::new(ValueTypes::of(ret)?)))
             }
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) => None,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) => None,
         }
     }
 }

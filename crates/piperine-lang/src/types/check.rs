@@ -178,6 +178,7 @@ impl<'d> Checker<'d> {
                     }
                 },
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
                 Resolution::Decl(d) => {
                     let what = Unsupported::item(&self.design.decl_data(d).kind);
                     self.unsupported(file, node.span, &format!("{what} used as a type"));

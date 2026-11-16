@@ -204,6 +204,15 @@ impl Checker<'_> {
                 let (first, second) = self.literal_last(lhs, rhs);
                 match self.infer(first) {
                     Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_))) => self.check(second, &t),
+                    // §2 rule 5: an enum compares when it derives `PartialEq`.
+                    Some(t @ Ty::Enum(e)) => {
+                        self.check(second, &t);
+                        if !self.derives(e, "PartialEq") {
+                            let span = self.design.expr_node(first).span;
+                            let found = t.name(self.design);
+                            self.mismatch_text(file, span, "a type that derives `PartialEq`", &found);
+                        }
+                    }
                     Some(_) => {
                         let span = self.design.expr_node(first).span;
                         self.unsupported(file, span, "comparison of values that are neither `f64`, `bool` nor an integer");
@@ -447,6 +456,13 @@ impl Checker<'_> {
                         }
                         local
                     }
+                    DeclKind::Variant(_) => match self.design.decl_data(decl).parent {
+                        Some(parent) if matches!(self.design.decl_data(parent).kind, DeclKind::Enum(_)) => self.enum_type(parent, file, node.span),
+                        _ => {
+                            self.unsupported(file, node.span, "`enum` variant used as a value");
+                            None
+                        }
+                    },
                     DeclKind::Fn(_) => {
                         self.unsupported(file, node.span, "function used as a value outside an argument whose parameter has a function type");
                         None
