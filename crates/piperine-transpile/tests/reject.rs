@@ -1,14 +1,13 @@
 //! `Transpiler::new` on an `Ir` that fails `check()` (feature `ir-rust`, RS-01 AC 5, check C5):
 //! no transpiler and so no source, and the error holds the check's entries, each naming an item
-//! and its origin. And the checked forms with no lowering yet, refused by name with their path
-//! and origin instead of failing later in the solver or the compiler (RS-01 AC 4; checks C109,
-//! C110; verification F-B6): a reaction reading the environment, a `limit` or `ac_stim`
-//! function reading a carrier.
+//! and its origin. And a checked form with no lowering yet, refused by name with its path and
+//! origin instead of failing later in the compiler (RS-01 AC 4; check C110; verification F-B6):
+//! a `limit` or `ac_stim` function reading a carrier.
 
 use std::sync::Arc;
 
 use piperine_ir::{
-    Addend, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Env, Event, EventSource, Expr, IrBuilder, Local,
+    Addend, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Expr, IrBuilder, Local,
     NodeRole, Operator, Origin, QuantityRole, Site, Stmt, Terminal, ValueType,
 };
 use piperine_transpile::{Error, Transpiler};
@@ -138,30 +137,4 @@ fn a_limit_or_stim_function_reading_a_carrier_is_refused_by_name() {
     assert_eq!(form, "a `ac_stim` function reading the carrier `en`");
     assert_eq!(path, "body Sampled ac_stim ac");
     assert_eq!((origin.file.as_str(), origin.line, origin.col), (F, 3, 13));
-}
-
-#[test]
-fn a_reaction_reading_the_environment_is_refused_by_name() {
-    // §12.1.12 lets a reaction read the environment, but abi.md gives a reaction no ambient but
-    // time, STATIC, tick and horizon, so `piperine_abi::validate` would refuse the shape at circuit
-    // build; the transpiler refuses it first, naming the read, the reaction and its origin
-    // (verification F-B6):
-    //   module Env(in clk: Bit, out q: Bit<f64>) {}          // env.msl:1
-    //   digital for Env { on clk.changed() { q <- <env>(); } } // env.msl:2, the commit at 3:9
-    for (env, name) in [(Env::Temperature, "temperature"), (Env::Gmin, "gmin"), (Env::SourceScale, "source_scale")] {
-        let (form, path, origin) = refusal(|b| {
-            const E: &str = "env.msl";
-            let body = b.body(Buck::spec("Env", E, 1));
-            b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, E, 1, 20));
-            b.carrier(body, Buck::carrier("q", ValueType::F64, CarrierRole::Out, None, E, 1, 35));
-            let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(E, 2, 23) });
-            let value = b.expr(Expr::Env(env), ValueType::F64, Buck::origin(E, 3, 14));
-            let commit = b.stmt(Stmt::Commit { carrier: 1, value, after: None });
-            Buck::reaction(b, body, vec![changed], vec![commit], vec![], E, 2);
-            body
-        });
-        assert_eq!(form, format!("a reaction reading `{name}` (the ABI gives a reaction no such ambient)"));
-        assert_eq!(path, "body Env reaction 0");
-        assert_eq!((origin.file.as_str(), origin.line), ("env.msl", 2), "{name}");
-    }
 }
