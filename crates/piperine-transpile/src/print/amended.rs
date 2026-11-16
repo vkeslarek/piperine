@@ -41,7 +41,6 @@ impl Amended {
     /// The source form of an amended expression.
     fn form(expr: &Expr) -> Option<&'static str> {
         match expr {
-            Expr::Flow { .. } => Some("the flow of a potential branch"),
             Expr::Previous(_) => Some("the previous value of a carrier"),
             _ => None,
         }

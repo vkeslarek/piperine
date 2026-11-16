@@ -445,3 +445,87 @@ fn an_emit_commits_one_record_and_adds_no_microstep() {
     assert_eq!(with.last().map(|(t, _)| *t), Some(5 * NS / 2), "the rise is run: {with:?}");
     assert_eq!(with, without);
 }
+
+/// `module <name>(p, n) { <param>: f64 = <default>; analog { v(p, n) +> <value>; } }`, the value
+/// built over the param, the probe `v(p, n)` and the flow `i(p, n)` by `value`.
+fn potential(b: &mut IrBuilder, name: &str, param: &str, default: f64, value: impl FnOnce(&mut Dx<'_>, ExprId, ExprId) -> Addend) -> BodyId {
+    let el = Buck::electrical(b);
+    let mut x = Dx::new(b, F, 3, 20);
+    let k = x.param(0, REAL);
+    let o = x.origin();
+    let flow = x.b.expr(Expr::Flow { branch: 0 }, REAL, o);
+    let addend = value(&mut x, k, flow);
+    let contribution = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Potential, addends: vec![addend] });
+    let port = |n: &str, col| BodyNode { name: n.into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 1, col) };
+    b.body(BodySpec {
+        params: vec![Buck::param(param, F, 2, Some(default), None)],
+        nodes: vec![port("p", 10), port("n", 18)],
+        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Potential }],
+        analog: Some(vec![contribution]),
+        ..Buck::spec(name, F, 1)
+    })
+}
+
+#[test]
+fn the_inductor_functions_pass_verify_partials() {
+    use piperine_abi::caller::Handle;
+    use piperine_abi::verify::{Verdict, verify_partials};
+    use piperine_plan::Modules;
+
+    let mut w = Wire::new();
+    // the power stage's inductor: `v(p, n) +> ddt(l * i(p, n))`
+    let inductor = potential(&mut w.b, "Inductor", "l", 10e-6, |x, l, flow| {
+        let charge = x.bin(piperine_ir::BinaryOp::Mul, l, flow, REAL);
+        Addend { operator: Operator::Ddt, negated: false, value: charge }
+    });
+    // a voltage-controlled voltage source: `v(p, n) +> g * v(p, gnd)`, no flow read
+    let vcvs = potential(&mut w.b, "Vcvs", "g", 2.0, |x, g, _| {
+        let v = x.probe(Terminal::Node(0), Terminal::Ground);
+        let value = x.bin(piperine_ir::BinaryOp::Mul, g, v, REAL);
+        Addend { operator: Operator::Direct, negated: false, value }
+    });
+    // the flow read in a direct addend: `v(p, n) +> r * i(p, n)`
+    let resistor = potential(&mut w.b, "FlowResistor", "r", 50.0, |x, r, flow| {
+        let value = x.bin(piperine_ir::BinaryOp::Mul, r, flow, REAL);
+        Addend { operator: Operator::Direct, negated: false, value }
+    });
+    for (name, body, nodes, value) in [("l", inductor, ["a", "b"], 10e-6), ("e", vcvs, ["c", "gnd"], 2.0), ("r", resistor, ["d", "gnd"], 50.0)] {
+        w.place_analog(name, body, &nodes, &[value]);
+    }
+    let built = Built::new(w.finish());
+    // every read of these functions is an `F64` cell (a node, the flow pin, the param): three
+    // points, each read its own value, the flow and the param on either side of 0
+    let points: [[f64; 4]; 3] = [[0.3, -0.1, 2e-3, 10e-6], [1.2, 0.4, -0.5, 3.0], [-2.0, 0.7, 1.5e-6, -0.25]];
+    let mut checked = 0;
+    for (name, body) in [("Inductor", inductor), ("Vcvs", vcvs), ("FlowResistor", resistor)] {
+        let module = Modules::module(&built.compiled, body).unwrap_or_else(|| panic!("{name} has a module"));
+        let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create {name}: {e}"));
+        for (k, f) in handle.shape().functions.iter().enumerate() {
+            for point in &points {
+                let input: Vec<Vec<u8>> = (0..f.reads.len()).map(|i| point[i % point.len()].to_le_bytes().to_vec()).collect();
+                // abi.md §8 (F5): every declared partial agrees with its finite difference
+                match verify_partials(&handle, k as u32, &input, 1e-6) {
+                    Ok(Verdict::Exact) => {}
+                    other => panic!("{name} {} at {point:?}: {other:?}", f.name.as_str()),
+                }
+            }
+            checked += 1;
+        }
+        // the flow read is a differentiable read: the terms function of a body that reads it
+        // declares a partial against the flow pin for every term that reads it
+        let terms = handle.shape().functions.iter().find(|f| f.name.as_str() == "terms").expect("a terms function");
+        let flow_pin = handle.shape().pins.iter().position(|p| p.name.as_str() == "b0.flow").expect("the flow pin") as u32;
+        let slot = terms.reads.iter().position(|c| c.index == flow_pin).expect("terms reads the flow pin") as u32;
+        let against: Vec<u32> = terms.partials.iter().filter(|p| p.read == slot).map(|p| p.write).collect();
+        let expected: &[u32] = match name {
+            // KCL (b0.flow) and the charge `l·f` (b0.charge)
+            "Inductor" => &[0, 2],
+            // KCL only
+            "Vcvs" => &[0],
+            // KCL and the row `v(p, n) - r·f`
+            _ => &[0, 1],
+        };
+        assert_eq!(against, expected, "{name}: the terms written against the flow pin");
+    }
+    assert_eq!(checked, 3, "one terms function per body");
+}

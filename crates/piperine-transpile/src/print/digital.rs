@@ -38,6 +38,7 @@ impl<'a> DigitalPrinter<'a> {
             limits: Vec::new(),
             stims: Vec::new(),
             carriers: self.body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
+            flows: Vec::new(),
         }
     }
 

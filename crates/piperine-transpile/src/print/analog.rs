@@ -46,6 +46,7 @@ impl<'a> AnalogPrinter<'a> {
             limits: body.limits().iter().map(|s| Text::generated(&format!("{}_limit", s.name))).collect(),
             stims: body.stims().iter().map(|s| Text::generated(&format!("{}_stim", s.name))).collect(),
             carriers: body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
+            flows: (0..body.branches().len() as u32).map(|b| Self::flow_name(b)).collect(),
         };
         let values = ValuePrinter::of_body(body.ir(), body).with_reads(reads);
         AnalogPrinter { ir: body.ir(), body, plan, values }
@@ -68,7 +69,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::Node(i) => {
                 self.body.nodes().get(i as usize).map_or_else(|| Text::generated(&format!("node{i}")), |n| Text::ident(&n.name))
             }
-            Source::BranchFlow(b) => Text::generated(&format!("b{b}_flow")),
+            Source::BranchFlow(b) => Self::flow_name(b),
             Source::LimitValue(k) => site(self.body.limits(), k, "limit"),
             Source::StimValue(k) => site(self.body.stims(), k, "stim"),
             Source::Param(p) => {
@@ -97,6 +98,11 @@ impl<'a> AnalogPrinter<'a> {
             Source::Static => Text::generated("is_static"),
             Source::Time => Text::generated("time"),
         }
+    }
+
+    /// The variable of branch `b`'s flow pin: `b0_flow_`.
+    fn flow_name(b: u32) -> String {
+        Text::generated(&format!("b{b}_flow"))
     }
 
     /// `file:line:col` of function `k` of the shape.
@@ -237,9 +243,9 @@ impl<'a> AnalogPrinter<'a> {
                     sources.insert(Source::Carrier(*c));
                 }
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => {}
-                // The plan does not read a branch's flow yet (msl-digital T45); `Amended` refuses
-                // the form before any is printed.
-                Expr::Flow { .. } => {}
+                Expr::Flow { branch } => {
+                    sources.insert(Source::BranchFlow(*branch));
+                }
                 // Nor the previous value (T62).
                 Expr::Previous(_) => {}
             }
