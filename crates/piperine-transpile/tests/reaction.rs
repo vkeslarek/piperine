@@ -376,9 +376,8 @@ fn reactions_and_drives_read_the_environment_as_analog_code_does() {
     // §12.1.12: a reaction may read the environment; a drive's value may too. Both are wired as
     // `analog` code reads them: `temperature` through the global temperature pin's `VALUE`,
     // `gmin` and `source_scale` through the `GMIN` and `SOURCE_SCALE` ambients (verification
-    // F-B6, user ruling 2026-11-15). Running such a reaction waits on solver-crossings, where the
-    // ABI comes to accept ambient reads in reactions (tasks Handoff "Left for after
-    // solver-crossings"):
+    // F-B6, user ruling 2026-11-15). Running such a reaction on the solver is
+    // `tests/environment.rs` (C111):
     //
     //   module Ambient(in clk: Bit, out t: Bit<f64>, out g: Bit<f64>, out s: Bit<f64>, out pos: Bit) {}
     //   digital for Ambient {

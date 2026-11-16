@@ -68,8 +68,6 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
   printer); the ABI's leaves end at 64 bits. **`Float<16>` and `Float<128>`** have no IR form (the
   IR's one real is `f64`), so their refusal by name belongs to `msl-digital`'s type check or
   lowering into IR, not to the transpiler (`ir-rust` F-B8); stable Rust has no type for them.
-- **env reads in reactions: wired in plan/transpile; ABI acceptance lands with solver-crossings**
-  (`ir-rust` F-B6).
 - **A `limit` or `ac_stim` function reading a carrier is refused by name (`ir-rust` F-B6).** No
   lowering decodes a carrier in those functions yet; no body of the buck slice has one.
 

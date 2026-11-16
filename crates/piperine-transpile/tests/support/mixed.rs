@@ -10,7 +10,7 @@ use std::sync::Arc;
 use piperine_ir::{
     BodyId, BodySpec, Constant, InstanceId, InstanceSpec, Ir, IrBuilder, NetId, NetSpec, NodeRef, NodeSpec, Origin, Real, ValueType,
 };
-use piperine_solver::prelude::{Solver, TransientAnalysisOptions, TransientAnalysisResult};
+use piperine_solver::prelude::{Context, Solver, TransientAnalysisOptions, TransientAnalysisResult};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
@@ -221,11 +221,17 @@ impl Built {
 
     /// The same, with the analog result of the transient.
     pub fn run_with(&self, stop: f64, step: f64) -> (Seen, TransientAnalysisResult) {
+        self.run_in(Context::default(), stop, step)
+    }
+
+    /// The same, in the session `context` (its temperature, its `gmin`, ...).
+    pub fn run_in(&self, context: Context, stop: f64, step: f64) -> (Seen, TransientAnalysisResult) {
         let circuit = self.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
         let seen = Seen::default();
         let mut options = TransientAnalysisOptions::new(stop, step);
         options.dt_max = step;
         let mut solver = Solver::new(circuit)
+            .with_context(context)
             .with_tran_opts(options)
             .with_sink(Box::new(Keep(seen.clone())))
             .build();

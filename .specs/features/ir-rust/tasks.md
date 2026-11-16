@@ -34,6 +34,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run frozen**: `cargo test -p piperine-interp --test frozen`
 **Run planshape**: `cargo test -p piperine-plan --test digital_shape`
 **Run reaction**: `cargo test -p piperine-transpile --test reaction`
+**Run environment**: `cargo test -p piperine-transpile --test environment`
 **Run nets**: `cargo test -p piperine-transpile --test digital_circuit`
 **Run commits**: `cargo test -p piperine-transpile --test commits`
 **Run dpwm**: `cargo test -p piperine-transpile --test dpwm`
@@ -1578,6 +1579,9 @@ Proof: run irdigital | test a_carrier_initial_value_outside_its_type_is_an_entry
 **C109** - A reaction and a drive reading `temperature`, `gmin` and `source_scale` compile, and the plan declares each read: the temperature pin's `VALUE`, the `GMIN` and `SOURCE_SCALE` ambients. (edge case 9; T39; verification F-B6, user ruling 2026-11-15)
 Proof: run reaction | test reactions_and_drives_read_the_environment_as_analog_code_does ... ok
 
+**C111** - A compiled reaction and three compiled drives that read `temperature()`, `gmin()` and `source_scale()` commit, on the solver, the host's temperature (350 K), the session's `gmin` (3e-12) and a source scale of 1.0. (edge case 9; F-B6 run end to end; ABI acceptance from solver-crossings)
+Proof: run environment | test a_compiled_reaction_and_drive_read_the_hosts_temperature_gmin_and_source_scale ... ok
+
 **C110** - A `limit` or `ac_stim` function reading a carrier gives no source and `Error::Unsupported` naming the site, the carrier and the site's origin. (edge case 10; T40; verification F-B6)
 Proof: run reject | test a_limit_or_stim_function_reading_a_carrier_is_refused_by_name ... ok
 
@@ -1591,9 +1595,9 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Dispatched:** batch 1 (phases 1-2, T1-T10) - Opus worker, 2026-11-15, done. Batch 2 (phase 3, T11-T17) - Sonnet worker, 2026-11-15, done. C32 ruling: the export attribute is allowed (see C32). Batch 2 done. Batch 3 (phase 4, T18-T23) - Sonnet worker, 2026-11-15, done. Phase A verifier (Opus, T1-T23, C1-C phase-A checks) - 2026-11-15. Phase A fixes F1-F9 closed; phase A merged to main e4f767dd. Batch 4 (phase 5, T24-T30) - Opus worker, 2026-11-15, done. Batch 4 done. Batch 5 (phase 6, T31-T36) - Opus worker, 2026-11-15, done. Batch 5 done. Batch 6 (phase 7, T37-T41) - Sonnet worker, 2026-11-15. Batch 6 done. Batch 7 (phase 8, T42-T46) - Sonnet worker, 2026-11-15: T43, T44, T46 done; T42 and T45 blocked on the solver (see Settled).
 **Walked:** none (no screen; each story's Independent Test is a check above)
 
-### Left for after solver-crossings
+### Closed after solver-crossings
 
-- **F-B6 - a reaction reading the environment, run end to end.** A reaction or drive reading `temperature`, `gmin` or `source_scale` is planned (the temperature pin, the `GMIN` and `SOURCE_SCALE` ambients) and compiled (C109), but `piperine_abi::validate` refuses `GMIN`/`SOURCE_SCALE` reads in a reaction at instance creation until the solver-crossings worktree widens the reaction ambient set and the solver supplies them (user ruling 2026-11-15, "temperature e gmin precisa estar wired"). Once that merges, add the run test: a compiled reaction commits the temperature, `gmin` and `source_scale` the solver holds.
+- **F-B6 - a reaction reading the environment, run end to end.** Closed by C111 (`tests/environment.rs`): the ABI accepts the `GMIN`/`SOURCE_SCALE` ambient reads of a reaction and a discrete function and the solver supplies them. T42 (C86-C89) and T45 (C92, C93) are restored from `parked/` and done.
 
 ### Left for msl-digital
 
