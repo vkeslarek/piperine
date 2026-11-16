@@ -790,9 +790,6 @@ impl<'a> ValuePrinter<'a> {
         let operands: Vec<ExprId> = [receiver].into_iter().chain(args.iter().copied()).collect();
         let flagged = operands.iter().any(|o| Self::is_flagged(self.ir.expr_type(*o)));
         if !flagged {
-            if *self.ir.expr_type(receiver) == ValueType::F64 && !self.plain {
-                return Err(self.unsupported(e, &format!("`{name}` of a real in analog code")));
-            }
             let mut printed = Vec::with_capacity(args.len());
             for a in args {
                 printed.push(self.expr(*a)?);

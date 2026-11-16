@@ -18,6 +18,15 @@ pub trait Real:
     fn sqrt(self) -> Self;
     /// The derivative is `sign(v)`; at exactly zero it is zero.
     fn abs(self) -> Self;
+    /// The smaller of the two; the tangent is that of the one chosen, `self` on a tie.
+    fn min(self, other: Self) -> Self;
+    /// The larger of the two; the tangent is that of the one chosen, `self` on a tie.
+    fn max(self, other: Self) -> Self;
+    /// `self` held in `lo..=hi`, as `self.max(lo).min(hi)`: the tangent is that of the bound
+    /// when the value is held at it, and of `self` inside.
+    fn clamp(self, lo: Self, hi: Self) -> Self;
+    /// The largest integer not above the value; its tangent is zero.
+    fn floor(self) -> Self;
 }
 
 impl Real for f64 {
@@ -43,6 +52,22 @@ impl Real for f64 {
 
     fn abs(self) -> f64 {
         f64::abs(self)
+    }
+
+    fn min(self, other: f64) -> f64 {
+        f64::min(self, other)
+    }
+
+    fn max(self, other: f64) -> f64 {
+        f64::max(self, other)
+    }
+
+    fn clamp(self, lo: f64, hi: f64) -> f64 {
+        f64::min(f64::max(self, lo), hi)
+    }
+
+    fn floor(self) -> f64 {
+        f64::floor(self)
     }
 }
 
@@ -112,6 +137,22 @@ impl<const N: usize> Real for Dual<N> {
             0.0
         };
         self.chain(self.v.abs(), sign)
+    }
+
+    fn min(self, other: Dual<N>) -> Dual<N> {
+        if self.v <= other.v { self } else { other }
+    }
+
+    fn max(self, other: Dual<N>) -> Dual<N> {
+        if self.v >= other.v { self } else { other }
+    }
+
+    fn clamp(self, lo: Dual<N>, hi: Dual<N>) -> Dual<N> {
+        Real::min(Real::max(self, lo), hi)
+    }
+
+    fn floor(self) -> Dual<N> {
+        Dual { v: self.v.floor(), d: [0.0; N] }
     }
 }
 
@@ -219,6 +260,33 @@ mod tests {
             assert_eq!((neg.v, neg.d), (x, [-1.0]));
         }
         assert_eq!(Dual::<1>::seeded(0.0, 0).abs().d, [0.0]);
+    }
+
+    #[test]
+    fn min_max_clamp_and_floor_carry_the_tangent_of_the_value_chosen() {
+        let (x, lo, hi) = (Dual::<3>::seeded(0.4, 0), Dual::<3>::seeded(0.0, 1), Dual::<3>::seeded(1.0, 2));
+        // inside the bounds the tangent is the value's
+        let inside = x.clamp(lo, hi);
+        assert_eq!((inside.v, inside.d), (0.4, [1.0, 0.0, 0.0]));
+        // below the low bound, the bound's; above the high bound, the bound's
+        let below = Dual::<3>::seeded(-2.0, 0).clamp(lo, hi);
+        assert_eq!((below.v, below.d), (0.0, [0.0, 1.0, 0.0]));
+        let above = Dual::<3>::seeded(5.0, 0).clamp(lo, hi);
+        assert_eq!((above.v, above.d), (1.0, [0.0, 0.0, 1.0]));
+        // a tie keeps `self`
+        let tie = Dual::<3>::seeded(1.0, 0).min(hi);
+        assert_eq!(tie.d, [1.0, 0.0, 0.0]);
+        assert_eq!(Dual::<3>::seeded(0.0, 0).max(lo).d, [1.0, 0.0, 0.0]);
+        // floor has no tangent
+        let f = Dual::<3>::seeded(2.7, 0).floor();
+        assert_eq!((f.v, f.d), (2.0, [0.0; 3]));
+        // the plain real is the standard library's
+        for v in points() {
+            assert_eq!(Real::clamp(v, -1.0, 2.0).to_bits(), v.max(-1.0).min(2.0).to_bits());
+            assert_eq!(Real::floor(v).to_bits(), v.floor().to_bits());
+            assert_eq!(Real::min(v, 1.0).to_bits(), v.min(1.0).to_bits());
+            assert_eq!(Real::max(v, 1.0).to_bits(), v.max(1.0).to_bits());
+        }
     }
 
     /// One expression written once over `Real`.
