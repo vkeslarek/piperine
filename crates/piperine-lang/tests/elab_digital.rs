@@ -575,3 +575,90 @@ fn a_child_param_reads_the_parents_value() {
     }).collect();
     assert_eq!(given, [(0, &Expr::Param(0)), (1, &Expr::Param(1))]);
 }
+
+/// `examples/buck` as a one-crate graph over the embedded standard library, as
+/// `tests/types_buck.rs` loads it.
+fn buck_design() -> piperine_lang::pom::Design {
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
+    let mut graph = piperine_lang::pom::CrateGraph::new();
+    graph.add_crate("buck", dir.join("src/lib.msl")).expect("a valid crate name");
+    piperine_lang::pom::Design::load_crates(graph)
+}
+
+/// The modules of `examples/buck/src` that may be a top (their ports are discrete), each one top
+/// at a time; every other buck module is reached below `Buck`.
+const BUCK_TOPS: &[&str] = &["Osc", "SetpointReg", "RefRamp", "Pid", "GateDriver", "Dpwm", "Supervisor", "Controller", "Buck"];
+
+/// The modules of `std/{convert,monitor}.msl` that elaborate, each placed by a `Top` of its own.
+/// (`D2A` matches with a binding, `AckWithin` has a `u32` param, `Bidir` a resolved carrier, the
+/// other monitors are generic: each still `P0001`.)
+const STD_TOPS: &[(&str, &str)] = &[
+    ("A2D", "module Top() { signal a: Electrical; signal d: Bit; let x = A2D(a, d); }"),
+    ("Never", "module Top() { signal c: Bit; signal b: Bit; let x = Never(c, b); }"),
+];
+
+/// Every design and top of the invariants: the buck's tops over one loaded package, then the
+/// stdlib's.
+fn invariant_cases() -> Vec<(String, piperine_lang::pom::Design, String)> {
+    let mut cases: Vec<(String, piperine_lang::pom::Design, String)> = BUCK_TOPS.iter().map(|t| (format!("buck {t}"), buck_design(), t.to_string())).collect();
+    cases.extend(STD_TOPS.iter().map(|(name, src)| (format!("std {name}"), Elab::design(src), "Top".to_string())));
+    cases
+}
+
+#[test]
+fn elaborating_twice_gives_the_same_print() {
+    // DIG-09 AC 12, C87: two elaborations of one design, and of the design loaded twice, print
+    // equal, origins included.
+    for (case, design, top) in invariant_cases() {
+        let run = |d: &piperine_lang::pom::Design| piperine_lang::elab::Elaborator::new(d).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", Elab::codes(&e)));
+        let (first, second) = (run(&design), run(&design));
+        assert_eq!(first.print_structural(), second.print_structural(), "{case}");
+        assert_eq!(first.to_string(), second.to_string(), "{case}");
+    }
+    let (a, b) = (buck_design(), buck_design());
+    let run = |d: &piperine_lang::pom::Design| piperine_lang::elab::Elaborator::new(d).run("Buck").unwrap_or_else(|e| panic!("{:?}", Elab::codes(&e)));
+    assert_eq!(run(&a).to_string(), run(&b).to_string(), "the buck loaded twice");
+}
+
+#[test]
+fn the_design_is_not_written() {
+    // DIG-09 AC 13, C88: `Design::dump()` is equal before and after elaboration, the POM's
+    // placements of hoisted modules (`let gate = transition(..)`) included.
+    for (case, design, top) in invariant_cases() {
+        let before = design.dump();
+        let diagnostics = design.diagnostics().to_vec();
+        piperine_lang::elab::Elaborator::new(&design).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", Elab::codes(&e)));
+        assert_eq!(design.dump(), before, "{case}");
+        assert_eq!(design.diagnostics(), diagnostics.as_slice(), "{case}");
+    }
+}
+
+#[test]
+fn every_ir_passes_check() {
+    // DIG-09 AC 14, C89: every `Ir` returned has an empty `check()`.
+    for (case, design, top) in invariant_cases() {
+        let ir = piperine_lang::elab::Elaborator::new(&design).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", Elab::codes(&e)));
+        assert!(ir.check().is_empty(), "{case}: {:?}", ir.check());
+    }
+}
+
+#[test]
+fn the_m1_goldens_are_unchanged() {
+    // DIG-07 AC 2, C62: the M1 twins of `tests/ngspice/` elaborate to the text pinned in
+    // `tests/fixtures/elab/*.txt`, which this feature never edits. `diode_rev` came after those
+    // fixtures were pinned and has none: it elaborates with an empty `check()`.
+    let twins = [("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
+    let fixtures = std::fs::read_dir(format!("{}/tests/fixtures/elab", env!("CARGO_MANIFEST_DIR"))).expect("the fixtures").filter_map(|e| e.ok()).filter(|e| e.path().extension().is_some_and(|x| x == "txt")).count();
+    assert_eq!(fixtures, twins.len(), "one fixture per pinned twin");
+    let twin = |file: &str| {
+        let path: std::path::PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "ngspice", &format!("{file}.msl")].iter().collect();
+        piperine_lang::pom::Design::builder().root_file(path).build()
+    };
+    for (file, top) in twins {
+        let ir = piperine_lang::elab::Elaborator::new(&twin(file)).run(top).unwrap_or_else(|e| panic!("{file}: {:?}", Elab::codes(&e)));
+        let golden = std::fs::read_to_string(format!("{}/tests/fixtures/elab/{file}.txt", env!("CARGO_MANIFEST_DIR"))).expect("the fixture");
+        assert_eq!(ir.print_structural(), golden, "{file}");
+    }
+    let ir = piperine_lang::elab::Elaborator::new(&twin("diode_rev")).run("DiodeRev").unwrap_or_else(|e| panic!("diode_rev: {:?}", Elab::codes(&e)));
+    assert!(ir.check().is_empty());
+}
