@@ -162,3 +162,36 @@ fn a_first_compile_is_announced_on_stderr() {
     assert_eq!(second.status.code(), Some(0), "{}", text(&second.stderr));
     assert!(!text(&second.stderr).contains("compiled"), "a cached design is not announced:\n{}", text(&second.stderr));
 }
+
+#[test]
+fn the_project_flag_uses_that_directory_and_never_searches() {
+    // CLI-02 AC 2: `--project <dir>` uses the package at `<dir>` and does not search upward.
+    // From an unrelated directory the run of `examples/rc` is found by `--project` alone...
+    let elsewhere = tempfile::tempdir().expect("tmp");
+    let project = rc();
+    let out = piperine_in(elsewhere.path(), shared_cache(), &["run", "op", "--project", &project.to_string_lossy()]);
+    assert_eq!(text(&out.stdout).lines().next(), Some("run op: op, top Step, backend rust"), "{}", text(&out.stderr));
+    // ...and a directory of the package that holds no manifest is E0170 although `examples/rc`
+    // is upward from it
+    let benches = project.join("benches");
+    let out = piperine_in(&project, shared_cache(), &["run", "op", "--project", &benches.to_string_lossy()]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("E0170"), "{}", text(&out.stderr));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn a_lone_file_run_is_named_by_its_stem() {
+    // CLI-07 AC 7 and CLI-02 AC 9: `piperine run <file>.msl` with no manifest upward is a crate
+    // alone and its header names the file's stem, here `divider`; the flags make the request.
+    // CLI-05 AC 7: the divider of `tests/ngspice/divider.msl` (10 V across 1k and 3k) gives
+    // 7.5 for `Divider.mid`, the spec's independent test (`Divider.mid  7.500000e0`)
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/divider.msl");
+    let nowhere = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(nowhere.path(), shared_cache(), &["run", &file.to_string_lossy(), "--analysis", "op"]);
+    let out = stdout_of(&out);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0], "run divider: op, top Divider, backend rust", "{out}");
+    let mid = lines.iter().find(|l| l.starts_with("Divider.mid")).unwrap_or_else(|| panic!("no Divider.mid row in\n{out}"));
+    assert_eq!(cells(mid), ["Divider.mid", "7.500000e0"], "{out}");
+}

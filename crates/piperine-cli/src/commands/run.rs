@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use piperine_api::{Backend, Built, Failure, Overrides, Project, Record, RecordSink, RunSpec, Session};
@@ -93,7 +93,8 @@ impl RunCommand {
 
     fn attempt(&self, out: &Out, err: &mut dyn Write) -> Result<(), Stop> {
         let project = self.discover()?;
-        let spec = project.request(self.target.as_deref(), &Overrides { backend: None, ..self.overrides.clone() })?;
+        let name = if self.lone().is_some() { None } else { self.target.as_deref() };
+        let spec = project.request(name, &Overrides { backend: None, ..self.overrides.clone() })?;
         let mut spec = spec;
         spec.backend = Some(self.backend(&spec)?.name().into());
         let settings = Settings::from_environment().map_err(|e| Failure::Backend(e.to_string()))?;
@@ -120,8 +121,13 @@ impl RunCommand {
         Ok(())
     }
 
-    /// The project: the package at `--project`, else the nearest one upward from here.
+    /// The project: a lone file when the target ends in `.msl` (its run is made from the flags,
+    /// named by the file's stem), else the package at `--project`, else the nearest one upward
+    /// from here.
     fn discover(&self) -> Result<Project, Failure> {
+        if let Some(file) = self.lone() {
+            return Project::file(file);
+        }
         match &self.project {
             Some(dir) => Project::at(dir),
             None => {
@@ -129,6 +135,11 @@ impl RunCommand {
                 Project::discover(&here)
             }
         }
+    }
+
+    /// The target, when it names a file.
+    fn lone(&self) -> Option<&Path> {
+        self.target.as_deref().map(Path::new).filter(|p| p.extension().is_some_and(|e| e == "msl"))
     }
 
     /// CLI-04 AC 7 and 8: the flag, then `PIPERINE_BACKEND`, then the run's `backend` key, then
