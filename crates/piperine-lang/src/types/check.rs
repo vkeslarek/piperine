@@ -68,6 +68,11 @@ pub(super) struct Checker<'d> {
     pub(super) book: DriveBook,
     /// The `emit!` sites seen so far.
     pub(super) records: Records,
+    /// The bindings of the module-body `let`s whose values are being typed.
+    pub(super) lets_open: BTreeSet<DeclId>,
+    /// The placements whose arguments are being typed, innermost last: the module, or `None` for
+    /// a core module.
+    pub(super) placing: Vec<Option<DeclId>>,
     /// The declaration being checked: a module, a function or a constant.
     pub(super) owner: Option<DeclId>,
     pub(super) context: Context,
@@ -110,6 +115,8 @@ impl<'d> Checker<'d> {
             continuity: Continuity::new(design),
             book: DriveBook::default(),
             records: Records::default(),
+            lets_open: BTreeSet::new(),
+            placing: Vec::new(),
             owner: None,
             context: Context::Module,
             event_slot: None,
@@ -472,10 +479,6 @@ impl<'d> Checker<'d> {
         if m.abi.is_some() {
             self.unsupported(data.file, data.span, "`extern` module");
         }
-        if let Some(ret) = m.ret {
-            let span = self.design.type_node(ret).span;
-            self.unsupported(data.file, span, "module result `-> T`");
-        }
         if let Some(cond) = m.where_ {
             // Part III §8 errors: the `where` after the port list that is not a `bool` const expression.
             self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0304"));
@@ -502,6 +505,7 @@ impl<'d> Checker<'d> {
             }
         }
         self.definition_loops();
+        self.module_result(decl, m);
         for behavior in m.behaviors.iter().copied() {
             let b = self.design.decl_data(behavior).clone();
             let DeclKind::Behavior(bd) = &b.kind else { continue };
@@ -510,6 +514,7 @@ impl<'d> Checker<'d> {
                     self.context = Context::Analog;
                     self.statements(&bd.body, None);
                     self.context = Context::Module;
+                    self.analog_reads(&bd.body);
                 }
                 BehaviorKind::Digital => self.digital_block(behavior),
             }
@@ -521,10 +526,5 @@ impl<'d> Checker<'d> {
             }
         }
         self.handed_drives();
-        if let (Some(result), None) = (m.result, m.ret) {
-            let file = self.file_of_expr(result);
-            let span = self.design.expr_node(result).span;
-            self.unsupported(file, span, "module result");
-        }
     }
 }

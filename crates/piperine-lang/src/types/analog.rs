@@ -149,9 +149,13 @@ impl Checker<'_> {
             self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
             return None;
         }
+        // The arguments of a core module are read through a result with a direct dependence
+        // (§8.3.6): a `let` that reads itself through one is a cycle with no unknown in it.
+        self.placing.push(None);
         for (arg, param) in args.iter().zip(sig.required.iter().chain(sig.optional)) {
             self.check_argument(arg.value, &param.ty());
         }
+        self.placing.pop();
         self.event_arguments(&name, args);
         Some(sig.result.ty())
     }

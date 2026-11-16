@@ -21,6 +21,7 @@ mod expr;
 mod module;
 mod reaction;
 mod record;
+mod result;
 mod table;
 mod ty;
 mod unsupported;

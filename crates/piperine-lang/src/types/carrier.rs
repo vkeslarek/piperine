@@ -118,6 +118,8 @@ impl Checker<'_> {
                 }
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
+            // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
+            value @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
                 self.unsupported(file, node.span, &format!("value input port of type `{}`", other.name(self.design)));
                 None

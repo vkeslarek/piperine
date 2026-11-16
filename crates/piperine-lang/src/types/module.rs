@@ -30,10 +30,18 @@ impl Checker<'_> {
             (Some(Ty::Node(_)), Some(_)) => {
                 self.coded(file, "E0310", span, "a port of a continuous nature takes no direction (§8.1.5)".to_string(), "unexpected direction");
             }
+            (Some(value), Some(_)) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
+                self.coded(file, "E0310", span, "a value input takes no direction (§8.1.5)".to_string(), "unexpected direction");
+            }
             _ => {}
         }
         let Some(default) = port.default else { return };
         match (&ty, port.dir) {
+            (Some(value), _) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
+                let span = self.design.expr_node(default).span;
+                self.coded(file, "E0311", span, "a value input takes no initial value (§8.1.7)".to_string(), "no initial value here");
+                self.infer(default);
+            }
             (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out)) => {
                 self.initial_reads(default);
                 self.within(Context::Const, |this| this.check_as(default, value, "E0210"));
@@ -91,11 +99,14 @@ impl Checker<'_> {
             self.tuple_let(file, &pat, data.value);
             return;
         }
-        let ty = self.infer_event_position(data.value);
         let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
             self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
+            self.infer_event_position(data.value);
             return;
         };
+        self.lets_open.insert(*binding);
+        let ty = self.infer_event_position(data.value);
+        self.lets_open.remove(binding);
         match ty {
             Some(Ty::Str) => {
                 self.unsupported(file, pat.span, "a string literal bound by a `let`");
@@ -117,11 +128,16 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, params, .. } = &node.kind else { return None };
-        // §8.3.4: a function, a closure and a reaction body place no instance.
-        if matches!(self.context, Context::Function | Context::Reaction) {
-            let place = if self.context == Context::Reaction { "a reaction body" } else { "a `fn` or a closure" };
+        // §8.3.4: a function, a closure and a reaction body place no instance, nor does a const
+        // context.
+        if matches!(self.context, Context::Function | Context::Reaction | Context::Const) {
             let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            self.coded(file, "E0350", node.span, format!("`{name}` is placed in {place}: it places no instance (§8.3.4)"), "placement out of place");
+            if self.context == Context::Const {
+                self.coded(file, "E0352", node.span, format!("`{name}` is placed in a const context: a result is not fixed during a solve (§8.3.4)"), "placement in a const context");
+            } else {
+                let place = if self.context == Context::Reaction { "a reaction body" } else { "a `fn` or a closure" };
+                self.coded(file, "E0350", node.span, format!("`{name}` is placed in {place}: it places no instance (§8.3.4)"), "placement out of place");
+            }
             for arg in args {
                 self.infer(arg.value);
             }
@@ -147,11 +163,12 @@ impl Checker<'_> {
         }
         self.reach(module);
         self.callees.insert(expr, Callee::Module(module));
-        let ty = Ty::Module(module);
-        self.exprs[callee.index()] = Some(ty.clone());
+        self.exprs[callee.index()] = Some(Ty::Module(module));
+        self.placing.push(Some(module));
         self.connections(expr, module, args, file);
+        self.placing.pop();
         self.param_block(&fields);
-        Some(ty)
+        self.placement_type(module)
     }
 
     /// Whether `expr` is a name whose value already raised a diagnostic.
@@ -171,10 +188,12 @@ impl Checker<'_> {
 
     /// The arguments of a placement against the ports of the module: a node by nature, a
     /// carrier or a discrete expression at an `in` port, a carrier the parent may hand over at
-    /// an `out` port. Their count is the port count (`E0312`).
+    /// an `out` port, an expression of its type for a value input (§3.2). Their count is the port
+    /// count (`E0312`), or for a module with value inputs or a result, from the required ones to
+    /// all of them, a trailing `Option` input being left out as `None` (`E0141`).
     fn connections(&mut self, expr: ExprId, module: DeclId, args: &[Arg], file: FileId) {
-        let ports: Vec<(TypeId, Option<crate::msl::ast::Dir>)> = self.design.decl_data(module).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
-            DeclKind::Port(p) => Some((p.ty, p.dir)),
+        let ports: Vec<(DeclId, TypeId, Option<crate::msl::ast::Dir>)> = self.design.decl_data(module).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
+            DeclKind::Port(p) => Some((*c, p.ty, p.dir)),
             _ => None,
         }).collect();
         let named = args.iter().any(|a| a.name.is_some());
@@ -183,23 +202,38 @@ impl Checker<'_> {
                 self.unsupported(file, arg.span, "named connection");
             }
         }
-        if args.len() != ports.len() {
+        let kinds: Vec<Option<Ty>> = ports.iter().map(|(_, ty, _)| self.port_type(*ty)).collect();
+        let call_rule = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
+        let optional = if call_rule { kinds.iter().rev().take_while(|k| matches!(k, Some(Ty::Option(_)))).count() } else { 0 };
+        let (min, max) = (ports.len() - optional, ports.len());
+        if args.len() < min || args.len() > max {
             let span = self.design.expr_node(expr).span;
             let name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-            let message = format!("`{name}` has {} port(s), found {} connection(s)", ports.len(), args.len());
-            self.coded(file, "E0312", span, message, "wrong number of connections");
+            if call_rule {
+                let message = if min == max { format!("`{name}` takes {max} argument(s), found {}", args.len()) } else { format!("`{name}` takes {min} to {max} arguments, found {}", args.len()) };
+                self.coded(file, "E0141", span, message, "wrong number of arguments");
+            } else {
+                let message = format!("`{name}` has {} port(s), found {} connection(s)", ports.len(), args.len());
+                self.coded(file, "E0312", span, message, "wrong number of connections");
+            }
         }
+        let counted = args.len() >= min && args.len() <= max;
         for (i, arg) in args.iter().enumerate() {
-            let port = ports.get(i).copied().filter(|_| !named && args.len() == ports.len());
-            let Some((port_ty, dir)) = port else {
+            let port = ports.get(i).copied().zip(kinds.get(i).cloned()).filter(|_| !named && counted);
+            let Some(((port_decl, _, dir), kind)) = port else {
                 self.infer(arg.value);
                 continue;
             };
-            match self.port_type(port_ty) {
+            match kind {
                 Some(Ty::Carrier { value, .. }) => self.connect_carrier(arg.value, dir, &value),
-                Some(expected) => {
+                Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
                     self.connect(arg.value, &expected, &found);
+                }
+                // A value input: any expression of its type, a probe included (§8.1.13).
+                Some(value) => {
+                    self.check_argument(arg.value, &value);
+                    self.analog_value_input(module, port_decl, arg.value);
                 }
                 None => {
                     self.infer(arg.value);
@@ -299,6 +333,7 @@ impl Checker<'_> {
     /// `{ name: value }` of a placement: each value against the declared type of its param.
     fn param_block(&mut self, fields: &[FieldInit]) {
         for field in fields {
+            self.no_placement_in(field.value);
             let param = match field.res {
                 Resolution::Decl(d) => match &self.design.decl_data(d).kind {
                     DeclKind::Param(p) => Some(p.ty),
@@ -311,6 +346,22 @@ impl Checker<'_> {
                 _ => {
                     self.infer(field.value);
                 }
+            }
+        }
+    }
+}
+
+impl Checker<'_> {
+    /// A bound param value places no instance (§8.3.4, `E0352`): a result is not fixed during a
+    /// solve.
+    fn no_placement_in(&mut self, value: ExprId) {
+        let mut all = Vec::new();
+        crate::pom::preorder(self.design, value, &mut all);
+        for expr in all {
+            let node = self.design.expr_node(expr).clone();
+            if matches!(node.kind, ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. }) {
+                let file = self.file_of_expr(expr);
+                self.coded(file, "E0352", node.span, "a bound param value places no instance: a result is not fixed during a solve (§8.3.4)".to_string(), "placement in a bound param value");
             }
         }
     }

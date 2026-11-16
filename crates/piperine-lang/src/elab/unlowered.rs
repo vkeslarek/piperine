@@ -37,6 +37,8 @@ pub(super) enum Unlowered<'a> {
     Definition,
     /// A module with a result.
     ResultModule,
+    /// A port of a value type, the expression the caller wrote.
+    ValueInput,
 }
 
 impl Unlowered<'_> {
@@ -55,6 +57,7 @@ impl Unlowered<'_> {
             Unlowered::Carrier => "a discrete carrier".to_string(),
             Unlowered::Definition => "a definition `=`".to_string(),
             Unlowered::ResultModule => "a module with a result".to_string(),
+            Unlowered::ValueInput => "a value input".to_string(),
         }
     }
 }
@@ -82,6 +85,7 @@ impl Elaboration<'_, '_> {
                 let item = self.design.decl_data(child).clone();
                 match &item.kind {
                     DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(child).is_some() => self.refuse(item.file, item.span, Unlowered::Carrier),
+                    DeclKind::Port(p) if self.design.nature_of(p.ty).is_none() => self.refuse(item.file, item.span, Unlowered::ValueInput),
                     DeclKind::Definition(_) => self.refuse(item.file, item.span, Unlowered::Definition),
                     _ => {}
                 }
