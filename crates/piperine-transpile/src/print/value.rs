@@ -26,11 +26,11 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use piperine_ir::{
-    BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Terminal,
-    UnaryOp, ValueType,
+    BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream,
+    Terminal, UnaryOp, ValueType,
 };
 
-use piperine_plan::StatementPlan;
+use piperine_plan::{RecordLayout, StatementPlan};
 
 use crate::Error;
 use crate::print::Text;
@@ -85,6 +85,8 @@ pub struct ValuePrinter<'a> {
     params: Vec<String>,
     /// The type each carrier of the owner's body holds, by index; empty for a function.
     carriers: Vec<ValueType>,
+    /// The record streams of the owner's body, by index; empty for a function.
+    streams: Vec<Stream>,
     /// The owner's origin: where an error with no expression of its own points.
     origin: Origin,
     /// How the analog read forms print; `None` outside an `analog` block.
@@ -131,6 +133,7 @@ impl<'a> ValuePrinter<'a> {
             local_types: f.locals().iter().map(|l| l.ty.clone()).collect(),
             params: Vec::new(),
             carriers: Vec::new(),
+            streams: Vec::new(),
             origin,
             analog: None,
             plain: false,
@@ -154,6 +157,7 @@ impl<'a> ValuePrinter<'a> {
             local_types: body.locals().iter().map(|l| l.ty.clone()).collect(),
             params,
             carriers: body.carriers().iter().map(|c| c.ty.clone()).collect(),
+            streams: body.streams().to_vec(),
             origin,
             analog: None,
             plain: false,
@@ -966,14 +970,7 @@ impl<'a> ValuePrinter<'a> {
                 path: format!("{} s{}", self.path, s.index()),
                 origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
             }),
-            Stmt::Emit { fields, .. } => Err(Error::Unsupported {
-                form: "emit!".into(),
-                path: format!("{} s{}", self.path, s.index()),
-                origin: fields.iter().find_map(|f| match f {
-                    EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
-                    EmitField::Text { .. } => None,
-                }).unwrap_or_else(|| self.origin.clone()),
-            }),
+            Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after } => {
                 if !self.commits {
                     return Err(Error::Unsupported {
@@ -1000,6 +997,57 @@ impl<'a> ValuePrinter<'a> {
                 Ok(format!("commits_.commit({index}, {value}, {after});"))
             }
         }
+    }
+
+    /// An emit site (msl-digital A4): the record's bytes in its stream's layout (`RecordLayout`),
+    /// all zero first so a field the site leaves out has its known byte 0 (abi.md C5), each value
+    /// field written where the layout puts it, and the record committed through the site's
+    /// statement. The text fields stay in the IR (`Body::record_site`): a comment names them.
+    fn emit(&self, s: StmtId, stream: u32, fields: &[EmitField]) -> Result<String, Error> {
+        let origin = fields
+            .iter()
+            .find_map(|f| match f {
+                EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
+                EmitField::Text { .. } => None,
+            })
+            .unwrap_or_else(|| self.origin.clone());
+        let unsupported = |form: &str| Error::Unsupported { form: form.to_string(), path: format!("{} s{}", self.path, s.index()), origin: origin.clone() };
+        if !self.commits {
+            return Err(unsupported("emit! outside a reaction"));
+        }
+        let Some(declared) = self.streams.get(stream as usize) else {
+            return Err(unsupported("emit! to a stream out of range"));
+        };
+        let Some(layout) = RecordLayout::of(declared) else {
+            return Err(unsupported(&format!("emit! to stream `{}`, whose fields no pin holds", declared.name)));
+        };
+        let mut writes = Vec::new();
+        let mut texts = Vec::new();
+        for f in fields {
+            match f {
+                EmitField::Value { field, value } => {
+                    let (Some((offset, _)), Some(declared)) = (layout.fields.get(*field as usize), declared.fields.get(*field as usize)) else {
+                        return Err(unsupported(&format!("emit! of field {field} of stream `{}`, out of range", declared.name)));
+                    };
+                    let value = self.typed(*value, &ValueType::Flagged(Box::new(declared.ty.clone())))?.at(Prec::Atom);
+                    writes.push(format!("{value}.write(&mut record_[{offset}..]); // {}", declared.name));
+                }
+                EmitField::Text { name, text } => texts.push(format!("{name} = {text:?}")),
+            }
+        }
+        let index = {
+            let mut done = self.committed.borrow_mut();
+            done.push(StatementPlan::record(stream));
+            done.len() - 1
+        };
+        let text = if texts.is_empty() { String::new() } else { format!("; its text {} stays in the IR", texts.join(", ")) };
+        let mut lines = vec![
+            format!("// emit! to stream `{}` @ {}:{}:{}{text}", declared.name, origin.file, origin.line, origin.col),
+            format!("let {}record_ = [0u8; {}];", if writes.is_empty() { "" } else { "mut " }, layout.size),
+        ];
+        lines.extend(writes);
+        lines.push(format!("commits_.record({index}, &record_);"));
+        Ok(lines.join("\n"))
     }
 
     /// Every line of `text` four spaces deeper; empty lines stay empty.

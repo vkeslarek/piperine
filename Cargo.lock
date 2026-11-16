@@ -1586,6 +1586,7 @@ version = "0.2.0"
 dependencies = [
  "libloading",
  "piperine-abi",
+ "piperine-digital-solver",
  "piperine-interp",
  "piperine-ir",
  "piperine-plan",

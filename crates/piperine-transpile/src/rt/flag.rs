@@ -435,6 +435,12 @@ impl Commits {
         self.pending.push((statement, value.encode(), after));
     }
 
+    /// A record through statement `statement`: `bytes`, the whole layout of its stream's
+    /// `RECORD` pin, due at the next microstep (abi.md C5: a record is a commit to that pin).
+    pub fn record(&mut self, statement: u32, bytes: &[u8]) {
+        self.pending.push((statement, bytes.to_vec(), 0.0));
+    }
+
     /// Arms a timer through statement `statement`, a `REPLACE` statement on an event pin (abi.md
     /// R1, C3), for the time `at` seen at the instant `now`: a later time is due `at - now`
     /// from now, the time of the instant itself at the next microstep (a delay of 0, C1), and an

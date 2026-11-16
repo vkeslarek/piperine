@@ -14,4 +14,5 @@ libloading.workspace = true
 
 [dev-dependencies]
 piperine-interp = { path = "../piperine-interp" }
+piperine-digital-solver = { path = "../piperine-digital-solver" }
 tempfile.workspace = true

@@ -8,8 +8,8 @@
 
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_ir::{
-    Addend, BodyId, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Constant, Drive, Env, Event, EventSource, Expr, ExprId,
-    IrBuilder, Local, NodeRole, Operator, QuantityRole, Real, Stmt, Terminal, ValueType,
+    Addend, BodyId, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Constant, Drive, EmitField, Env, Event, EventSource, Expr,
+    ExprId, IrBuilder, Local, NodeRole, Operator, QuantityRole, Real, Stmt, Stream, StreamField, Terminal, ValueType,
 };
 use piperine_solver::prelude::NodeIdentifier;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
@@ -356,4 +356,92 @@ fn a_past_or_unknown_time_does_not_fire() {
     assert_eq!(seen.transient("now_hit"), [(5 * NS, HIGH.to_vec())]);
     // the control: the same arming at 5 ns for 8 ns fires at 8 ns
     assert_eq!(seen.transient("later_hit"), [(8 * NS, HIGH.to_vec())]);
+}
+
+/// `module Probe(in clk: Bit, out n: Bit<u8> = 0)`, with a stream `trace { code: u8, level: f64 }`
+/// when `emits`:
+///
+/// ```text
+/// on clk.rise() { n <- n + 1; emit!("trace", code = 7u8, note = "edge"); }    // the emit when `emits`
+/// ```
+fn probe(b: &mut IrBuilder, emits: bool) -> BodyId {
+    let u8 = ValueType::UInt(8);
+    let body = b.body(Buck::spec("Probe", F, 1));
+    b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 14));
+    b.carrier(body, Buck::carrier("n", u8.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 26));
+    let rise = Buck::rise(b, body, 0, F, 2, 8);
+    let mut x = Dx::new(b, F, 2, 22);
+    let n = x.carrier(1, u8.clone());
+    let one = x.int(1, u8.clone());
+    let next = x.bin(piperine_ir::BinaryOp::Add, n, one, digital::Ty::flagged(u8.clone()));
+    let mut stmts = vec![x.commit(1, next, None)];
+    if emits {
+        let fields = vec![StreamField { name: "code".into(), ty: u8.clone() }, StreamField { name: "level".into(), ty: REAL }];
+        let trace = b.stream(body, Stream { name: "trace".into(), fields });
+        let mut x = Dx::new(b, F, 2, 40);
+        let code = x.int(7, u8);
+        let note = EmitField::Text { name: "note".into(), text: "edge".into() };
+        stmts.push(x.b.stmt(Stmt::Emit { stream: trace, fields: vec![EmitField::Value { field: 0, value: code }, note] }));
+    }
+    Buck::reaction(b, body, vec![rise], stmts, vec![], F, 2);
+    body
+}
+
+/// The probe under the 200 MHz clock, compiled.
+fn probed(emits: bool) -> Built {
+    let mut w = Wire::new();
+    clock(&mut w);
+    let body = probe(&mut w.b, emits);
+    w.place("probe", body, vec![], &[("clk", BIT), ("n", ValueType::UInt(8))]);
+    Built::new(w.finish())
+}
+
+/// The microsteps of each instant the digital side runs through `stop` ticks, from the start of
+/// an analysis, as `(tick, microsteps)`.
+fn microsteps(built: &Built, stop: i64) -> Vec<(i64, u32)> {
+    use piperine_digital_solver::engine::{Horizon, Mode};
+    use piperine_digital_solver::tick::Tick;
+    let mut circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+    let digital = &mut circuit.bound_mut().expect("a bound circuit").digital;
+    digital.start().unwrap_or_else(|e| panic!("{e:?}"));
+    let mut ran = Vec::new();
+    while let Some(at) = digital.next_due().filter(|t| t.0 <= stop) {
+        let out = digital.run_instant(at, &[], Horizon::uniform(Tick(stop)), Mode::default()).unwrap_or_else(|e| panic!("{e:?}"));
+        ran.push((at.0, out.microsteps));
+    }
+    ran
+}
+
+#[test]
+fn an_emit_commits_one_record_and_adds_no_microstep() {
+    let emitting = probed(true);
+    let seen = emitting.run(4e-9, 1e-9);
+    // abi.md C5: the sink delivers each commit to a RECORD pin as a record of the stream
+    // `<instance path>.<pin name>`, stamped with the instant it was made: the reaction runs once
+    // in the transient, at the clock's rise (2.5 ns)
+    let records: Vec<(i64, Vec<u8>)> = seen
+        .all()
+        .into_iter()
+        .filter(|o| o.analysis == AnalysisKind::Transient)
+        .filter_map(|o| match o.kind {
+            ObservationKind::Record { bytes } if o.path == "Top.probe.trace" => Some(((o.time * 1e15).round() as i64, bytes)),
+            _ => None,
+        })
+        .collect();
+    // the layout of `trace` (msl-digital A4): `code` a `BYTE` at 0, `level` a `REAL` at 8, 24
+    // bytes; the site writes `code = 7` (known), and `level`, which it leaves out, stays all
+    // zero, its known byte 0 (C5: "a field absent from a site is a field with its known byte 0")
+    let mut bytes = vec![0u8; 24];
+    bytes[..2].copy_from_slice(&[7, 1]);
+    assert_eq!(records, [(5 * NS / 2, bytes)]);
+    // the commit beside it applies as before: n counts the rise (the clock's initial `false` at the
+    // operating point is no rise), 0 to 1
+    assert_eq!(seen.transient("n"), [(5 * NS / 2, vec![1, 1])]);
+
+    // P7: a RECORD pin is QUIET, so its commit never keeps an instant's microstep loop alive:
+    // every instant through the rise runs as many microsteps as without the emit
+    let silent = probed(false);
+    let (with, without) = (microsteps(&emitting, 5 * NS / 2), microsteps(&silent, 5 * NS / 2));
+    assert_eq!(with.last().map(|(t, _)| *t), Some(5 * NS / 2), "the rise is run: {with:?}");
+    assert_eq!(with, without);
 }
