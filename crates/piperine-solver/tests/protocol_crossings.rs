@@ -529,3 +529,42 @@ fn a_curved_crossing_converges_from_both_sides() {
     let late = fired[0] - truth;
     assert!(e > 0.0 && (e < ETOL || late <= TTOL + TICK), "e = {e:e}, late {late:e}");
 }
+
+/// A 1 V, 10 kHz sine at `top` against 0.5 V: ten upward crossings in 1 ms.
+fn fast_sine() -> CircuitBuilder {
+    let mut b = CircuitBuilder::new("fast");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let out = b.node("out");
+    let r = b.node("r");
+    b.device(vsine(), "v1", &[("amp", ParamValue::Real(1.0)), ("freq", ParamValue::Real(1.0e4))], &[
+        Port::Node(top.clone()),
+        Port::Node(gnd.clone()),
+    ]);
+    add_resistor(&mut b, "r1", 1.0e3, &top, &out);
+    add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
+    add_vsrc(&mut b, "vr", 0.5, &r, &gnd);
+    b.device(comparator(), "cmp", &[], &[Port::Node(top), Port::Node(r), net("o")]);
+    b
+}
+
+#[test]
+fn a_landing_costs_a_few_steps_not_a_regrowth() {
+    // Verification finding: after a located landing the controller restarts from the step it
+    // had before the retake, not from the landing's short step (which regrew at ×1.5 a step,
+    // some 25 to 60 steps per crossing). The comparator locates 20 crossings here, ten up and ten
+    // down. Each may add the landing step and the retakes accepted just before the crossing (the
+    // estimate closes in on it): at most 4 accepted steps per landing over the same run with
+    // ttol = 1 s, where no crossing is retaken.
+    let (located, seen) = run(fast_sine(), 1.0e-3, 1.0e-6, |_| {}, Context::default());
+    let (unlocated, seen_unlocated) = run(fast_sine(), 1.0e-3, 1.0e-6, |o| o.ttol = 1.0, Context::default());
+    let landings = crossings(&seen, "cmp.up").len() + crossings(&seen, "cmp.down").len();
+    assert_eq!(landings, 20, "ten crossings each way");
+    assert_eq!(crossings(&seen_unlocated, "cmp.up").len() + crossings(&seen_unlocated, "cmp.down").len(), 20);
+    assert!(
+        located.len() <= unlocated.len() + 4 * landings,
+        "located {} steps against {} unlocated: more than 4 per landing",
+        located.len(),
+        unlocated.len()
+    );
+}

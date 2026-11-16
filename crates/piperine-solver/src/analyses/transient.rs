@@ -868,6 +868,9 @@ pub(crate) struct DeviceRun {
     locates: bool,
     /// The attempts of the current step that went past a crossing.
     located: Option<Located>,
+    /// The controller's step when the current step was first retaken toward a crossing: the
+    /// step after the landing starts from it, not from the landing's short step.
+    retaken: Option<f64>,
 }
 
 /// The attempts of one step that went past a crossing (§17.3): the accepted time the step
@@ -1021,6 +1024,7 @@ impl TransientSolver<'_> {
             net_names,
             locates,
             located: None,
+            retaken: None,
         };
         let (start, stop) = (self.options.start_time, self.options.stop_time);
         let hooks = self.host.clone();
@@ -1394,6 +1398,7 @@ impl TransientSolver<'_> {
             run.located = None;
             return Ok(None);
         }
+        run.retaken.get_or_insert(run.st.dt);
         let located = run.located.get_or_insert_with(|| Located { from: t0, past: Vec::new() });
         for r in &rising {
             let key = (r.instance, r.watch);
@@ -1461,6 +1466,11 @@ impl TransientSolver<'_> {
             dt_actual
         };
         st.dt = self.propose_dt(milne, grown_from, dt_proposed, post_set_step, false);
+        // A step retaken toward a crossing is short for the crossing's sake, not the error's:
+        // the next step starts from the controller's step before the retake.
+        if let Some(before) = run.retaken.take() {
+            st.dt = st.dt.max(before);
+        }
         st.sets_just_applied = false;
         run.last_dt = dt_actual;
         Ok(accepted)

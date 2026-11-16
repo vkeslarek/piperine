@@ -337,6 +337,9 @@ Proof: run digital | test previous_is_the_value_before_the_microstep ... ok
 **C26** - A concave crossing (`e = 1 − exp(−t/1 µs) − 0.999`, steps of 20 µs) is located within `etol` or `ttol` plus one tick; with the bracket secant alone (no `prev`) the step exceeds 64 consecutive retakes (SCX-01, AC 1; verification finding)
 Proof: run solver | test a_curved_crossing_converges_from_both_sides ... ok
 
+**C27** - After a located landing the next step starts from the controller's step before the retake: on a 10 kHz sine with 20 located crossings, at most 4 accepted steps per landing over the unlocated run (SCX-01; verification finding)
+Proof: run solver | test a_landing_costs_a_few_steps_not_a_regrowth ... ok
+
 **C4** - On the solver, `x <- HIGH; x <- LOW;` on `x = LOW` fires `x.changed()` once in the run, at the initial value (DSV-01, AC 4)
 Proof: run solver | test x_changed_does_not_fire_when_the_settled_value_is_unchanged ... ok
 
