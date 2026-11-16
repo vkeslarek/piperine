@@ -357,3 +357,22 @@ fn a_bad_dependency_name_or_requirement_is_e0171() {
     assert_eq!(errors.len(), 3, "{errors:?}");
     assert!(errors.windows(2).all(|w| w[0].diagnostic.span().start < w[1].diagnostic.span().start));
 }
+
+#[test]
+fn a_run_table_is_accepted_and_located() {
+    // CLI-02 AC 4: a manifest holding `[run.<name>]` tables is accepted, and `Manifest::run` is
+    // the span of the key `run`; the keys inside are the host's and are not read here, so even
+    // a key no run knows passes
+    let text = "[package]\nname = \"a\"\nversion = \"1.0.0\"\n\n[run.step]\nanalysis = \"transient\"\nstop = 5e-6\nstopp = 1\n\n[run.op]\nanalysis = \"op\"\n";
+    let manifest = Manifest::parse(text).unwrap_or_else(|e| panic!("{e:?}"));
+    let span = manifest.run.expect("the run table is located");
+    assert_eq!(&text[span.range()], "run");
+    assert_eq!(span.range().start, text.find("[run.step]").unwrap() + 1, "the key of the first `[run.<name>]` header");
+    // a manifest without the table has none
+    assert_eq!(Manifest::parse("[package]\nname = \"a\"\nversion = \"1.0.0\"\n").unwrap().run, None);
+    // `run` that is not a table is E0171 at its value
+    let text = "run = \"step\"\n[package]\nname = \"a\"\nversion = \"1.0.0\"\n";
+    let (error, at) = one_e0171(text);
+    assert_eq!(at, "\"step\"");
+    assert!(error.diagnostic.message.contains("`run`") && error.diagnostic.message.contains("a table"), "{}", error.diagnostic.message);
+}

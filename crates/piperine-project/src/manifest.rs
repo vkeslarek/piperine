@@ -118,6 +118,9 @@ pub struct Manifest {
     pub package: Package,
     /// In source order.
     pub dependencies: Vec<Dependency>,
+    /// The span of the key `run` when the manifest holds a `[run]` table. Its content belongs to
+    /// the host and is not read here.
+    pub run: Option<Span>,
 }
 
 impl Manifest {
@@ -157,11 +160,11 @@ impl Manifest {
             }
         };
         let mut walk = Walk { text, faults: Vec::new() };
-        let (package, dependencies) = walk.manifest(table.get_ref());
+        let (package, dependencies, run) = walk.manifest(table.get_ref());
         let mut faults = walk.faults;
         faults.sort_by_key(|d| d.span().start);
         match package {
-            Some(package) if faults.is_empty() => Ok(Manifest { package, dependencies }),
+            Some(package) if faults.is_empty() => Ok(Manifest { package, dependencies, run }),
             _ => Err(faults.into_iter().map(|diagnostic| PackageError { file: file.to_path_buf(), text: text.to_string(), diagnostic }).collect()),
         }
     }
@@ -193,7 +196,7 @@ fn entries<'a, 'i>(table: &'a DeTable<'i>) -> Vec<(&'a Key<'i>, &'a Value<'i>)> 
     all
 }
 
-const MANIFEST_KEYS: &[&str] = &["package", "dependencies"];
+const MANIFEST_KEYS: &[&str] = &["package", "dependencies", "run"];
 const PACKAGE_KEYS: &[&str] = &["name", "version", "authors", "description"];
 /// A `rev`: a full or abbreviated commit id.
 fn is_commit_id(text: &str) -> bool {
@@ -230,9 +233,10 @@ impl Walk<'_> {
         self.fault(value.span(), message, &format!("expected {wants}"), None);
     }
 
-    fn manifest(&mut self, table: &DeTable<'_>) -> (Option<Package>, Vec<Dependency>) {
+    fn manifest(&mut self, table: &DeTable<'_>) -> (Option<Package>, Vec<Dependency>, Option<Span>) {
         let mut package = None;
         let mut dependencies = Vec::new();
+        let mut run = None;
         let mut seen = false;
         for (key, value) in entries(table) {
             match key.get_ref().as_ref() {
@@ -247,13 +251,18 @@ impl Walk<'_> {
                     Some(t) => self.dependencies(t, &mut dependencies),
                     None => self.mistyped("dependencies", value, "a table"),
                 },
+                // The host's table: located, never read here.
+                "run" => match value.get_ref().as_table() {
+                    Some(_) => run = Some(Span::new(key.span().start, key.span().end)),
+                    None => self.mistyped("run", value, "a table"),
+                },
                 _ => self.unknown(key, None, MANIFEST_KEYS),
             }
         }
         if !seen {
             self.fault(0..0, "the manifest has no `package` table".to_string(), "a manifest starts with `[package]`", Some("add a `[package]` table with a `name` and a `version`".to_string()));
         }
-        (package, dependencies)
+        (package, dependencies, run)
     }
 
     fn dependencies(&mut self, table: &DeTable<'_>, out: &mut Vec<Dependency>) {

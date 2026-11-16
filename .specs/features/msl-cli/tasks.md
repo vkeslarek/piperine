@@ -226,10 +226,10 @@ T38
 
 **Done when**:
 
-- [ ] No existing test of `crates/piperine-project/tests/` is edited except to add cases
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-project --test manifest`: `a_run_table_is_accepted_and_located`
-- [ ] Gate check passes: Quick (see Gate Check Commands)
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+- [x] No existing test of `crates/piperine-project/tests/` is edited except to add cases
+- [x] Tests with exactly these names pass in `cargo test -p piperine-project --test manifest`: `a_run_table_is_accepted_and_located`
+- [x] Gate check passes: Quick (see Gate Check Commands)
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick
