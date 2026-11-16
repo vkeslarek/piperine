@@ -232,3 +232,134 @@ fn prev_is_typed_on_a_carrier() {
     assert_eq!(codes(&d), ["E0230"]);
     assert_eq!(snippet(src, &d[0]), "p.prev()");
 }
+
+// ---- definitions (T10) ----
+
+/// The text of every expression of the reachable set that reads as `text`, in source order.
+fn exprs_reading(design: &Design, types: &Types, src: &str, text: &str) -> Vec<ExprId> {
+    (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| types.ty(*e).is_some() && src[design.expr_node(*e).span.range()] == *text).collect()
+}
+
+#[test]
+fn a_definition_of_another_type_is_e0337() {
+    // DIG-04 AC 6 (§8.2.19): the expression of a definition has the value type of its target. The
+    // read of a carrier in a definition has its value type (DIG-04 AC 3).
+    let src = "module Top(in x: Bit<u8>, out y: Bit<u10>, out z: Bit<u8>, out b: Bit) { z = x; b = true; y = x; }";
+    let d = diagnostics(src);
+    assert_eq!(codes(&d), ["E0337"]);
+    assert_eq!(snippet(src, &d[0]), "x");
+    assert!(d[0].diagnostic.message.contains("u10") && d[0].diagnostic.message.contains("u8"), "{}", d[0].diagnostic.message);
+    let src = "module Top(out b: Bit<u9>) { b = true; }";
+    let d = diagnostics(src);
+    assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0337".to_string()], "true"));
+    // A literal takes the type of the carrier it defines; a read takes the carried type.
+    let src = "module Top(in x: Bit<u8>, out y: Bit<u10>, out w: Bit<f64>) { y = (x as u10) + 1; w = 2.5; }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    assert!(exprs_reading(&design, &types, src, "x").iter().all(|e| types.ty(*e) == Some(&Ty::UInt(8))));
+    assert_eq!(types.ty(exprs_reading(&design, &types, src, "1")[0]), Some(&Ty::UInt(10)));
+}
+
+#[test]
+fn a_continuous_definition_is_e0336() {
+    // DIG-04 AC 7 (§8.2.5): a definition, and its delay, reads no probe, `now()`, `freq()`,
+    // `gmin()`, `source_scale()` and `analysis(Static)`, directly or through a `let` or a function.
+    let items = "fn pass(x: f64) -> f64 { x }\nfn clock() -> f64 { now() }\n";
+    for (body, at) in [
+        ("s = v(p) > 0.5;", "v(p) > 0.5"),
+        ("b = analysis(Static);", "analysis(Static)"),
+        ("f = now();", "now()"),
+        ("f = gmin();", "gmin()"),
+        ("f = source_scale();", "source_scale()"),
+        ("let k = v(p); s = k > 0.5;", "k > 0.5"),
+        ("let k = v(p) + 1.0; let m = k * 2.0; f = m;", "m"),
+        ("f = pass(now());", "pass(now())"),
+        ("f = clock();", "clock()"),
+        ("s = x after now();", "now()"),
+        ("s = x after v(p);", "v(p)"),
+    ] {
+        let src = format!("{items}module Top(p: Electrical, in x: Bit, out s: Bit, out b: Bit, out f: Bit<f64>) {{ {body} }}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0336"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{body}");
+    }
+    // The environment that is constant during an analysis is discrete: `temperature()` may be read.
+    let src = "module Top(out f: Bit<f64>, in x: Bit<f64>) { f = temperature() + x; }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    assert!(exprs_reading(&design, &types, src, "temperature() + x").iter().all(|e| types.continuity(*e) == Some(piperine_lang::types::Continuity::Discrete)));
+    // `continuity` says which: the probe and what reads it are continuous, a literal is not.
+    let src = "module Top(p: Electrical) { let k = v(p) * 2.0; let n = 3.0; }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    let cont = |text: &str| exprs_reading(&design, &types, src, text).iter().map(|e| types.continuity(*e)).collect::<Vec<_>>();
+    assert_eq!(cont("v(p) * 2.0"), [Some(piperine_lang::types::Continuity::Continuous)]);
+    assert_eq!(cont("3.0"), [Some(piperine_lang::types::Continuity::Discrete)]);
+}
+
+#[test]
+fn a_target_the_module_may_not_drive_is_e0222() {
+    // DIG-04 AC 8 (§8.2.10): a definition of an `in` port, of a carrier of a child, of a node, of
+    // a param or of a `let` name is `E0222`, at the target.
+    let items = "module Child() { pub signal q: Bit; }\n";
+    for (header, body, at) in [
+        ("in a: Bit, out q: Bit", "a = q;", "a"),
+        ("in a: Bit, out q: Bit", "let c = Child(); c.q = true;", "c.q"),
+        ("in a: Bit, out q: Bit", "signal n: Electrical; n = 1.0;", "n"),
+        ("in a: Bit, out q: Bit", "k: f64 = 1.0; k = 2.0;", "k"),
+        ("in a: Bit, out q: Bit", "let m = a; m = q;", "m"),
+    ] {
+        let src = format!("{items}module Top({header}) {{ {body} }}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0222"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{body}");
+    }
+    // An `out` port and a signal of the module are its own to drive.
+    let src = "module Top(in a: Bit, out q: Bit) { signal s: Bit; s = a; q = s; }";
+    checked(&design_of(src), src);
+}
+
+#[test]
+fn two_definitions_of_one_carrier_are_e0335() {
+    // DIG-04 AC 9 (§8.2.20): two definitions that share a level. The second is the error.
+    let src = "module Top(in a: Bit, in b: Bit, out q: Bit) { q = a; q = b; }";
+    let d = diagnostics(src);
+    assert_eq!(codes(&d), ["E0335"]);
+    assert_eq!(snippet(src, &d[0]), "q");
+    assert_eq!(d[0].diagnostic.span().start, src.rfind("q = b").unwrap());
+    // Two carriers are two drives.
+    let src = "module Top(in a: Bit, out q: Bit, out r: Bit) { q = a; r = a; }";
+    checked(&design_of(src), src);
+}
+
+#[test]
+fn an_initial_value_under_an_undelayed_definition_is_e0338() {
+    // DIG-04 AC 13 (§8.2.21): `out y: Bit = false` with `y = a & b;`; a delayed definition may
+    // have an initial value (`out q: Bit = false` with `q = !(r | qn) after tpd;`).
+    let src = "module Top(in a: Bit, in b: Bit, out y: Bit = false) { y = a & b; }";
+    let d = diagnostics(src);
+    assert_eq!(codes(&d), ["E0338"]);
+    assert_eq!(snippet(src, &d[0]), "y");
+    let src = "module Top(in a: Bit, out y: Bit) { signal s: Bit = true; s = a; y = s; }";
+    let d = diagnostics(src);
+    assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0338".to_string()], "s"));
+    let src = "module Top(in a: Bit, in b: Bit, out q: Bit = false) { tpd: f64 = 1n; q = !(a | b) after tpd; }";
+    checked(&design_of(src), src);
+}
+
+#[test]
+fn a_loop_of_definitions_is_e0339() {
+    // DIG-04 AC 16 (§8.2.3): undelayed definitions that depend on each other, directly or through
+    // a `let`, are a loop through one-driver carriers: one `E0339` per loop. An `after`, or a chain
+    // with no cycle, is none.
+    for body in ["a = !b; b = !a;", "let n = !b; a = n; b = !a;", "a = !a;"] {
+        let src = format!("module Top() {{ signal a: Bit; signal b: Bit; {body} }}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0339"], "{body}");
+        assert_eq!(d[0].diagnostic.span().start, src.find("a =").unwrap(), "{body}: reported at the first definition of the loop");
+    }
+    let src = "module Top(in x: Bit) { signal a: Bit; signal b: Bit; a = !b after 1n; b = !a; }";
+    checked(&design_of(src), src);
+    let src = "module Top(in x: Bit) { signal a: Bit; signal b: Bit; a = !x; b = !a; }";
+    checked(&design_of(src), src);
+}

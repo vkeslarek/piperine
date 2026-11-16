@@ -55,6 +55,14 @@ pub enum Builtin {
     Fall,
 }
 
+/// Whether an expression reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or
+/// `analysis(Static)`, directly or through a `let`, a function argument or a result (part III §8.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Continuity {
+    Discrete,
+    Continuous,
+}
+
 /// What a call or a placement of the reachable set refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Callee {
@@ -77,11 +85,12 @@ pub struct Types<'d> {
     pub(super) somes: BTreeSet<ExprId>,
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
+    pub(super) continuous: BTreeSet<ExprId>,
 }
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.continuous == other.continuous
     }
 }
 
@@ -133,6 +142,13 @@ impl<'d> Types<'d> {
     /// resolved to the stdlib's own item.
     pub fn builtin(&self, expr: ExprId) -> Option<Builtin> {
         self.builtins.get(&expr).copied()
+    }
+
+    /// Whether an expression of the reachable set is discrete or continuous (part III §8.2);
+    /// `None` outside it.
+    pub fn continuity(&self, expr: ExprId) -> Option<Continuity> {
+        self.ty(expr)?;
+        Some(if self.continuous.contains(&expr) { Continuity::Continuous } else { Continuity::Discrete })
     }
 
     /// The type of a discrete port or signal declaration, `Ty::Carrier`; `None` for a node, a

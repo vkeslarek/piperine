@@ -13,12 +13,14 @@ mod carrier;
 mod catalogue;
 mod check;
 mod compound;
+mod continuity;
 mod control;
+mod definition;
 mod expr;
 mod module;
 mod table;
 mod ty;
 mod unsupported;
 
-pub use table::{Builtin, Callee, Method, Types};
+pub use table::{Builtin, Callee, Continuity, Method, Types};
 pub use ty::Ty;

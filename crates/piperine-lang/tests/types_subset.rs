@@ -51,7 +51,6 @@ const ROWS: &[Row] = &[
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
     Row { construct: "digital block", source: "module Top() { }\ndigital for Top { }", names: "`digital` block" },
     Row { construct: "reaction and event", source: "module Top() { }\ndigital for Top { on settle { } }", names: "`digital` block" },
-    Row { construct: "definition", source: "module Top() { signal s: E; s = 1.0; }", names: "definition" },
     Row { construct: "emit!", source: "module Top() { }\nanalog for Top { emit!(\"o\", x = 1.0); }", names: "`emit!`" },
     Row { construct: "while", source: "module Top() { }\nanalog for Top { while true { } }", names: "`while` loop" },
     Row { construct: "loop", source: "module Top() { }\nanalog for Top { loop { } }", names: "`loop`" },
@@ -76,7 +75,6 @@ const ROWS: &[Row] = &[
     Row { construct: "cross", source: "module Top(a: E) { }\nanalog for Top { let x = cross(v(a)); }", names: "`cross`" },
     Row { construct: "at", source: "module Top() { }\nanalog for Top { let x = at(1.0); }", names: "`at`" },
     Row { construct: "simparam", source: "module Top() { }\nanalog for Top { let x = simparam(1.0); }", names: "`simparam`" },
-    Row { construct: "now", source: "module Top() { }\nanalog for Top { let x = now(); }", names: "`now`" },
     Row { construct: "freq", source: "module Top() { }\nanalog for Top { let x = freq(); }", names: "`freq`" },
     Row { construct: "inflow", source: "module Top(a: E) { }\nanalog for Top { let x = a.inflow(); }", names: "inflow" },
     Row { construct: "flow probe read as a value", source: "module Top(a: E) { }\nanalog for Top { let x = i(a); }", names: "flow probe" },
@@ -142,6 +140,8 @@ fn unreached_items_are_not_reported() {
 /// Constructs that only resolve against the real standard library: `Bit`, `Repr` and the known
 /// flag are refused by name as well.
 const STD_ROWS: &[Row] = &[
+    Row { construct: "others on a carrier", source: "module Top(in c: Bit) { let x = c.others(); }", names: "method `others`" },
+    Row { construct: "element definition", source: "module Top(out q: Bit) { q[0] = true; }", names: "element or field definition" },
     Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },
     Row { construct: "known flag", source: "module Top() { }\nanalog for Top { let x = 1.0.level(1.0); }", names: "method `level`" },

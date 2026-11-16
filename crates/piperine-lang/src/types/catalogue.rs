@@ -64,6 +64,22 @@ impl CoreParam {
     }
 }
 
+/// The type a call of a core primitive has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CoreResult {
+    F64,
+    Bool,
+}
+
+impl CoreResult {
+    pub(super) fn ty(self) -> Ty {
+        match self {
+            CoreResult::F64 => Ty::F64,
+            CoreResult::Bool => Ty::Bool,
+        }
+    }
+}
+
 /// Where a core primitive may be written (§14 table, column "Allowed in").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Allowed {
@@ -82,18 +98,22 @@ pub(super) struct CoreSig {
     pub(super) required: &'static [CoreParam],
     pub(super) optional: &'static [CoreParam],
     pub(super) allowed: Allowed,
+    pub(super) result: CoreResult,
 }
 
 /// The §14 rows the subset types, by their spelling in `pom/builtin.rs`. A built-in with no row
 /// here (`delay`, `noise`, `ddx`, `cross`, `at`, `now`, `freq`, `analysis`, `simparam`, ...) is
 /// `P0001`, which is how it stays refused without a line of code each.
 const CORE_ROWS: &[(&str, CoreSig)] = &[
-    ("ddt", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Instances }),
-    ("limit", CoreSig { required: &[CoreParam::F64, CoreParam::Limiter], optional: &[CoreParam::F64], allowed: Allowed::Instances }),
-    ("ac_stim", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Analog }),
-    ("temperature", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere }),
-    ("gmin", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere }),
-    ("source_scale", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere }),
+    ("ddt", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Instances, result: CoreResult::F64 }),
+    ("limit", CoreSig { required: &[CoreParam::F64, CoreParam::Limiter], optional: &[CoreParam::F64], allowed: Allowed::Instances, result: CoreResult::F64 }),
+    ("ac_stim", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Analog, result: CoreResult::F64 }),
+    ("temperature", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
+    ("gmin", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
+    ("source_scale", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
+    ("now", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
+    // `analysis(Static)`: its one argument is a kind of analysis, checked by name in `core_call`.
+    ("analysis", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::Bool }),
 ];
 
 pub(super) struct Core;

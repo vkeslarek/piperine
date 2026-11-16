@@ -126,6 +126,9 @@ impl Checker<'_> {
             }
         }
         self.callees.insert(expr, Callee::Core(id));
+        if name == "analysis" {
+            return self.analysis_call(expr, args);
+        }
         if let Some(named) = args.iter().find(|a| a.name.is_some()) {
             self.unsupported(file, named.span, "named argument of a core primitive");
             return None;
@@ -139,6 +142,30 @@ impl Checker<'_> {
         for (arg, param) in args.iter().zip(sig.required.iter().chain(sig.optional)) {
             self.check_argument(arg.value, &param.ty());
         }
-        Some(Ty::F64)
+        Some(sig.result.ty())
+    }
+
+    /// `analysis(Static)` (§14.4): a `bool`, true in an equilibrium solve. The one kind of
+    /// analysis the subset has is `Static`; any other is `P0001` naming `analysis`.
+    fn analysis_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let [arg] = args else {
+            let message = format!("`analysis` takes 1 argument, found {}", args.len());
+            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
+            return None;
+        };
+        let kind = match &self.design.expr_node(arg.value).kind {
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Builtin(id)) => Some(id.name()),
+                _ => None,
+            },
+            _ => None,
+        };
+        if kind.as_deref() != Some("Static") {
+            self.unsupported(file, span, "`analysis` of a kind other than `Static`");
+            return None;
+        }
+        Some(Ty::Bool)
     }
 }

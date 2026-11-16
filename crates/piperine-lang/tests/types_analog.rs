@@ -119,7 +119,7 @@ fn ddt_ac_stim_and_environment_are_f64() {
     assert_eq!(codes_of(&d), ["P0002"]);
 
     // A core primitive with no row of the subset is refused by name, one `P0001` each.
-    for call in ["delay(1.0, 1.0)", "noise(1.0)", "ddx(1.0, v(a))", "cross(1.0)", "at(1.0)", "now()", "freq()", "analysis(Static)", "simparam(\"x\")"] {
+    for call in ["delay(1.0, 1.0)", "noise(1.0)", "ddx(1.0, v(a))", "cross(1.0)", "at(1.0)", "bound_step(1.0)", "freq()", "analysis(Ac)", "simparam(\"x\")"] {
         let (src, d) = diagnostics("", &format!("let x = {call};"));
         assert_eq!(codes_of(&d), ["P0001"], "{call}: {d:?}");
         let name = call.split('(').next().unwrap_or(call);

@@ -7,6 +7,8 @@ use crate::msl::{Diagnostic, Span};
 use crate::msl::lexer;
 use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, NatureKind, PathId, Reflect, Resolution, StmtKind, TypeId, TypeKind};
 
+use super::continuity::Continuity;
+use super::definition::DriveBook;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty, Types};
 
@@ -30,6 +32,8 @@ enum ItemPhase {
     Declarations,
     /// Named expressions, which read the declarations.
     Lets,
+    /// Definitions, which read both.
+    Definitions,
 }
 
 /// The parts of a function signature, each typed on its own.
@@ -56,6 +60,9 @@ pub(super) struct Checker<'d> {
     /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
     /// defines: a receiver the POM could not type might mean any of them.
     pub(super) project_methods: BTreeSet<String>,
+    pub(super) continuity: Continuity,
+    /// What the module being checked drives, by definition and by commit.
+    pub(super) book: DriveBook,
     pub(super) context: Context,
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
@@ -85,6 +92,8 @@ impl<'d> Checker<'d> {
             carriers: BTreeMap::new(),
             builtins: BTreeMap::new(),
             project_methods: Self::project_methods(design),
+            continuity: Continuity::new(design),
+            book: DriveBook::default(),
             context: Context::Module,
             poisoned: BTreeSet::new(),
             fn_where: false,
@@ -116,7 +125,12 @@ impl<'d> Checker<'d> {
             diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
             return Err(diagnostics);
         }
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins })
+        let typed: Vec<ExprId> = (0..self.exprs.len()).map(|i| ExprId(i as u32)).filter(|e| self.exprs[e.index()].is_some()).collect();
+        for expr in typed {
+            self.continuous(expr);
+        }
+        let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, continuous })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
@@ -443,7 +457,8 @@ impl<'d> Checker<'d> {
         // Ports, params and signals first, then the `let`s in order, then definitions: every
         // name of the body is visible in the whole body (§8.2), and a carrier's type is known
         // before anything reads it.
-        for phase in [ItemPhase::Declarations, ItemPhase::Lets] {
+        self.book = DriveBook::default();
+        for phase in [ItemPhase::Declarations, ItemPhase::Lets, ItemPhase::Definitions] {
             for child in data.children.iter().copied() {
                 let item = self.design.decl_data(child).clone();
                 match (&item.kind, phase) {
@@ -451,15 +466,16 @@ impl<'d> Checker<'d> {
                     (DeclKind::Param(p), ItemPhase::Declarations) => self.param(&p.clone()),
                     (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
                     (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(&l.clone()),
-                    (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_), _) => {}
+                    (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
+                    (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
                     (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
                     (DeclKind::Generation(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
-                    (DeclKind::Definition(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "definition `=`"),
                     (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
-                    (_, ItemPhase::Lets) => {}
+                    (_, _) => {}
                 }
             }
         }
+        self.definition_loops();
         for behavior in m.behaviors.iter().copied() {
             let b = self.design.decl_data(behavior).clone();
             let DeclKind::Behavior(bd) = &b.kind else { continue };
