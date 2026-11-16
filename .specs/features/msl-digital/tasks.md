@@ -2326,7 +2326,7 @@ Proof: run bloop | test power_good_is_high_and_no_fault_is_latched ... ok
 **C153** - The mean of `vout` over the last 20 periods is within 10 mV of 0.8 V. (DIG-16, AC 3; T57)
 Proof: run bloop | test the_output_settles_within_10_mv_of_0v8 ... ok
 
-**C154** - No `checks` record has `pass` false during the start. (DIG-16, AC 4; T57)
+**C154** - No `checks` record has `pass` false during the start; there is exactly one record at each of the 120 000 rising edges of 600 us at 200 MHz (verification F7). (DIG-16, AC 4; T57)
 Proof: run bloop | test no_shoot_through_during_the_start ... ok
 
 **C155** - `GAPS.md` lists the three deviations this feature leaves. (DIG-17, AC 1; T58)
