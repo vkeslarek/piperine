@@ -51,6 +51,21 @@ debug = "line-tables-only"
 [profile.dev.package.faer]
 opt-level = 3
 
+# The solver's hot path in a dev or test build: a mixed transient of the buck took 784 s
+# unoptimized. Rust has no fast-math, so an optimized float is the same float: results are
+# bit-identical, only faster. The generated design code is already built at -C opt-level=2.
+[profile.dev.package.piperine-solver]
+opt-level = 2
+
+[profile.dev.package.piperine-analog-solver]
+opt-level = 2
+
+[profile.dev.package.piperine-digital-solver]
+opt-level = 2
+
+[profile.dev.package.piperine-abi]
+opt-level = 2
+
 [profile.release]
 debug = true
 opt-level = 3
