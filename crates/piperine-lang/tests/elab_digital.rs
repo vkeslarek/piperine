@@ -644,10 +644,11 @@ fn every_ir_passes_check() {
 
 #[test]
 fn the_m1_goldens_are_unchanged() {
-    // DIG-07 AC 2, C62: the M1 twins of `tests/ngspice/` elaborate to the text pinned in
-    // `tests/fixtures/elab/*.txt`, which this feature never edits. `diode_rev` came after those
-    // fixtures were pinned and has none: it elaborates with an empty `check()`.
-    let twins = [("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
+    // DIG-07 AC 2, C62: the seven M1 twins of `tests/ngspice/` elaborate to the text pinned in
+    // `tests/fixtures/elab/*.txt`, which this feature never edits. `diode_rev` came after the
+    // other six were pinned: its fixture is its print at the feature's base (`9aa03fe8`, the
+    // `ir-rust` merge), added by the fix round (verification F10).
+    let twins = [("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR"), ("diode_rev", "DiodeRev")];
     let fixtures = std::fs::read_dir(format!("{}/tests/fixtures/elab", env!("CARGO_MANIFEST_DIR"))).expect("the fixtures").filter_map(|e| e.ok()).filter(|e| e.path().extension().is_some_and(|x| x == "txt") && e.path().file_stem().is_some_and(|s| s != "buck")).count();
     assert_eq!(fixtures, twins.len(), "one fixture per pinned twin (`buck.txt` is the pin of the whole buck, `elab_buck`)");
     let twin = |file: &str| {
@@ -658,7 +659,6 @@ fn the_m1_goldens_are_unchanged() {
         let ir = piperine_lang::elab::Elaborator::new(&twin(file)).run(top).unwrap_or_else(|e| panic!("{file}: {:?}", Elab::codes(&e)));
         let golden = std::fs::read_to_string(format!("{}/tests/fixtures/elab/{file}.txt", env!("CARGO_MANIFEST_DIR"))).expect("the fixture");
         assert_eq!(ir.print_structural(), golden, "{file}");
+        assert!(ir.check().is_empty(), "{file}");
     }
-    let ir = piperine_lang::elab::Elaborator::new(&twin("diode_rev")).run("DiodeRev").unwrap_or_else(|e| panic!("diode_rev: {:?}", Elab::codes(&e)));
-    assert!(ir.check().is_empty());
 }
