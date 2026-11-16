@@ -85,6 +85,8 @@ impl Interpreted {
                     None
                 }
                 Source::LimitLast(_) | Source::LimitAge(_) | Source::Static => None,
+                // `now()`: `Interpreter::new` refuses every body that reads it (msl-digital T22).
+                Source::Time => None,
                 // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
                 Source::Carrier(_) | Source::CarrierChanged(_) | Source::Delayed(_) | Source::DelayedChanged(_) | Source::Crossed(_) => None,
             };

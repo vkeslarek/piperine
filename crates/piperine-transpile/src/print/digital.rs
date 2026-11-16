@@ -97,7 +97,7 @@ impl<'a> DigitalPrinter<'a> {
                 }
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
-            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) | Source::Static => {
+            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) | Source::Static | Source::Time => {
                 return Ok(None);
             }
         }))

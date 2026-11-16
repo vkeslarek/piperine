@@ -14,7 +14,8 @@
 //! them. A function reads exactly
 //! the cells of its dependency set (`msl-ir` IR-09) in one order: continuous pins (nodes by
 //! index, then private flows), `LIMIT` values, `STIM` values (the differentiable reads, one
-//! tangent slot each, in that order), then params, the temperature pin and the ambients. A
+//! tangent slot each, in that order), then params, the temperature pin and the ambients
+//! (`STATIC`, then `TIME`, the readings of `analysis(Static)` and `now()`: never a partial). A
 //! `limit` function also reads its site's `LAST` and `AGE` and the ambient `STATIC`. Partials are
 //! declared write by write, each against the differentiable reads of its own set, in read
 //! order: the order the assembly folds `Σ g·x` in (INT-12).
@@ -93,7 +94,10 @@ pub enum Source {
     SourceScale,
     LimitLast(u32),
     LimitAge(u32),
+    /// The ambient `STATIC`: an equilibrium solve, or an instant of one (abi.md §4.2).
     Static,
+    /// The ambient `TIME`: the time of the solve or of the instant (abi.md §4.2).
+    Time,
 }
 
 impl Source {
@@ -166,10 +170,10 @@ impl ReadSet {
             Env::Temperature => Some(Source::Temperature),
             Env::Gmin => Some(Source::Gmin),
             Env::SourceScale => Some(Source::SourceScale),
-            // `time()` and `static()` have no read in the plan yet (msl-digital T39); the
-            // compiled backend refuses a body that holds one (`Error::Unsupported`) and the
-            // interpreter rejects it, so no plan of one runs.
-            Env::Time | Env::Static => None,
+            // ambient reads (abi.md §4.2): `check()` lets only `terms`, `cross:*` and reactions
+            // hold them, the readers abi.md gives `TIME` and `STATIC`
+            Env::Time => Some(Source::Time),
+            Env::Static => Some(Source::Static),
         }));
     }
 
@@ -404,7 +408,11 @@ impl BodyPlan {
             let k = k as u32;
             let set = ReadSet::target(body, Query::Limit(k));
             let mut plan = Self::function(Mode::Limit(k), &set, vec![(Target::Proposed(k), Some(&set)), (Target::Limited(k), None)]);
-            plan.reads.extend([Source::LimitLast(k), Source::LimitAge(k), Source::Static]);
+            plan.reads.extend([Source::LimitLast(k), Source::LimitAge(k)]);
+            // a site that reads `static()` itself already has the ambient among its reads
+            if !plan.reads.contains(&Source::Static) {
+                plan.reads.push(Source::Static);
+            }
             let name = format!("limit:{}", site.name);
             Self::declare(&mut s, &pins, &terms, body, &name, &origin(&site.origin), &plan);
             functions.push(plan);
@@ -540,6 +548,7 @@ impl BodyPlan {
             Source::LimitLast(k) => at(cell::INPUT, k, part::LAST),
             Source::LimitAge(k) => at(cell::INPUT, k, part::AGE),
             Source::Static => value(cell::AMBIENT, ambient::STATIC),
+            Source::Time => value(cell::AMBIENT, ambient::TIME),
         }
     }
 

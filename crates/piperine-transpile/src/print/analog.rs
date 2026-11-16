@@ -94,6 +94,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::LimitLast(k) => site(self.body.limits(), k, "last"),
             Source::LimitAge(k) => site(self.body.limits(), k, "age"),
             Source::Static => Text::generated("is_static"),
+            Source::Time => Text::generated("time"),
         }
     }
 
