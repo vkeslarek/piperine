@@ -3402,12 +3402,281 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
 
 <h3>What comes next</h3>
 
-<p>Type checking and elaboration of the digital and mixed forms, so the buck converter in the examples runs from its source with its control loop closed. Then the command line and projects, so a whole MSL project runs with one command, and a single home for end-to-end scenarios compared with ngspice.</p>
+<p>Type checking and elaboration of the digital and mixed forms, so the buck converter in the examples runs from its source with its control loop closed. With it comes the command line of chapter 16, so that a whole MSL project runs with one command, and then a single home for end-to-end scenarios compared with ngspice.</p>
 </section>
 
 <!-- ===================================================== 16 -->
-<section id="structure" class="chapter">
+<section id="cli" class="chapter">
 <p class="ch-num">Chapter 16</p>
+<h2>The command line</h2>
+
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you know every command of <code>piperine</code>, every key of a run table and the flag that overrides it, how results and <code>emit!</code> records are printed and saved, and what each exit code and each of the tool's own error codes means.</p>
+</div>
+
+<p>You have used <code>piperine run</code> since chapter 1. This chapter is the reference behind those boxes: one program, seven commands, and one idea, the <strong>run</strong>, which is a top module plus an analysis.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>piperine new &lt;name&gt;</code></td><td>Creates a project that runs: the RC low-pass of chapter 1.</td></tr>
+<tr><td><code>piperine check</code></td><td>Reads, resolves and type-checks the project without simulating.</td></tr>
+<tr><td><code>piperine run [name]</code></td><td>Runs one run of the project, or a lone file, and prints records and results.</td></tr>
+<tr><td><code>piperine test [name…]</code></td><td>Runs every run and judges its checks: one <code>PASS</code> or <code>FAIL</code> line each.</td></tr>
+<tr><td><code>piperine build</code></td><td>Compiles the top of every run ahead of time.</td></tr>
+<tr><td><code>piperine fmt</code></td><td>Formats the sources, keeping every comment.</td></tr>
+<tr><td><code>piperine clean</code></td><td>Removes what the tool wrote.</td></tr>
+</tbody></table></div>
+
+<p><code>piperine --help</code> lists them, and <code>piperine --version</code> prints the version.</p>
+
+<h3>A project, its benches and its runs</h3>
+
+<pre data-lang="text">rc/
+├── Piperine.toml          [package], [dependencies], and one [run.<name>] table per run
+├── src/
+│   └── lib.msl            the library crate
+├── benches/
+│   └── step.msl           a bench: a crate of its own
+└── target/                written by the tool; removed by `piperine clean`</pre>
+
+<p><strong>Finding the project.</strong> A command uses the nearest <code>Piperine.toml</code> found upward from the directory you are in, so it works anywhere inside a project. <code>--project &lt;dir&gt;</code> names the project directly and searches nowhere else. With no manifest, a command that needs a project fails with E0170.</p>
+
+<p><strong>A bench</strong> is a module without ports that places a design with its sources, its stimulus and its monitors. It is MSL, in a file under <code>benches/</code>. Each bench file is the root of a small crate named <code>bench</code>, which depends on your package under the package's name and on each of the package's direct dependencies under theirs. So a bench of the package <code>rc</code> begins with <code>use rc::…</code>, and sees what the library marks <code>pub</code>.</p>
+
+<p><strong>The top.</strong> A run simulates one top module. It is the module the run's <code>top</code> key names, or else the one module without ports of the run's root crate: the bench file when the run has a <code>bench</code>, the library when it has none. If there is no such module, or more than one, the run fails with P0011 and the candidates are listed. A top may have digital <code>in</code> ports; they are left undriven and read as unknown. A top with an analog port is refused.</p>
+
+<h3>The run table</h3>
+
+<p>A run is a table <code>[run.&lt;name&gt;]</code> in <code>Piperine.toml</code>. This one has every key; a real run uses a handful.</p>
+
+<pre data-lang="toml">[run.step]
+bench      = "benches/step.msl"   # the root crate is this file; without it, the library
+top        = "Step"               # needed only when the choice is not unique
+analysis   = "transient"          # op | dc | ac | transient
+stop       = 10e-6                # transient
+max_step   = 10e-9                # transient, optional
+print_step = 1e-6                 # transient, optional
+sweep      = "v1.dc"              # dc: the path of a param
+from       = -1.0                 # dc, ac
+to         = 0.8                  # dc, ac
+step       = 0.05                 # dc
+per_decade = 10                   # ac, or:
+points     = 41                   # ac, linear
+print      = ["vout", "i(v1)"]    # what the table shows
+streams    = ["trip", "checks"]   # keep only these record streams
+params     = { "r1.r" = 2000.0 }  # set before the analysis
+backend    = "rust"               # rust | interp
+csv        = "out/step.csv"       # the table, as a file
+plot       = "out/step.svg"       # the table, as a picture; not for op
+records    = "out/step.jsonl"     # the records, as a file</pre>
+
+<p>That listing shows the keys side by side; it is not a run you could execute, because each analysis reads only its own numbers and a key outside its analysis is an error. Numbers are TOML numbers: write <code>10e-6</code>, not <code>10u</code>.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Key</th><th>Flag</th><th>Read by</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>bench</code></td><td><code>--bench</code></td><td>all</td><td>The bench file, relative to the project.</td></tr>
+<tr><td><code>top</code></td><td><code>--top</code></td><td>all</td><td>The top module, by name.</td></tr>
+<tr><td><code>analysis</code></td><td><code>--analysis</code></td><td>all</td><td><code>op</code>, <code>dc</code>, <code>ac</code> or <code>transient</code>. Required.</td></tr>
+<tr><td><code>stop</code></td><td><code>--stop</code></td><td><code>transient</code></td><td>The end time, in seconds. Required, greater than 0.</td></tr>
+<tr><td><code>max_step</code></td><td><code>--max-step</code></td><td><code>transient</code></td><td>The largest time step the solver may take.</td></tr>
+<tr><td><code>print_step</code></td><td><code>--print-step</code></td><td><code>transient</code></td><td>One table row per multiple of it, instead of one per solver step.</td></tr>
+<tr><td><code>sweep</code></td><td><code>--sweep</code></td><td><code>dc</code></td><td>The param to step, by path.</td></tr>
+<tr><td><code>from</code>, <code>to</code></td><td><code>--from</code>, <code>--to</code></td><td><code>dc</code>, <code>ac</code></td><td>The ends of the sweep: param values, or frequencies in hertz.</td></tr>
+<tr><td><code>step</code></td><td><code>--step</code></td><td><code>dc</code></td><td>The increment: points are <code>from + k · step</code> while not past <code>to</code>.</td></tr>
+<tr><td><code>per_decade</code></td><td><code>--per-decade</code></td><td><code>ac</code></td><td>A logarithmic grid with this many points per decade.</td></tr>
+<tr><td><code>points</code></td><td><code>--points</code></td><td><code>ac</code></td><td>A linear grid with this many points in all. Exactly one of the two.</td></tr>
+<tr><td><code>print</code></td><td><code>--print</code>, repeatable</td><td>all</td><td>The signals of the table, in order.</td></tr>
+<tr><td><code>streams</code></td><td><code>--stream</code>, repeatable</td><td>all</td><td>The record streams to keep.</td></tr>
+<tr><td><code>params</code></td><td><code>--param path=value</code>, repeatable</td><td>all</td><td>Params to set before the analysis.</td></tr>
+<tr><td><code>backend</code></td><td><code>--backend</code></td><td>all</td><td><code>rust</code> or <code>interp</code>.</td></tr>
+<tr><td><code>csv</code></td><td><code>--csv</code></td><td>all</td><td>Write the table to this file.</td></tr>
+<tr><td><code>plot</code></td><td><code>--plot</code></td><td><code>dc</code>, <code>ac</code>, <code>transient</code></td><td>Write the result as an SVG picture.</td></tr>
+<tr><td><code>records</code></td><td><code>--records</code></td><td>all</td><td>Write the records to this file.</td></tr>
+</tbody></table></div>
+
+<h3>Three ways to ask for a run</h3>
+
+<pre data-lang="sh">piperine run step                          # the run named step, as the manifest describes it
+piperine run step --stop 20e-6 --stream trip    # the same run, two settings changed
+piperine run benches/delayed.msl --analysis transient --stop 5e-6    # a file, described by flags alone</pre>
+
+<ul>
+<li><strong>By name.</strong> With exactly one run in the manifest the name may be left out. With none or several, or a name that is no run, the command lists the run names and exits with status 2.</li>
+<li><strong>With flags.</strong> Every key is a flag, and a flag wins over the key of the same setting. Nothing is written back to the manifest.</li>
+<li><strong>A lone file.</strong> A file run by its path needs at least <code>--analysis</code>. Where the file is decides what it is: with no <code>Piperine.toml</code> above it, it is a crate by itself; inside a project but outside <code>src/</code>, it is a bench of that project; under <code>src/</code> it is refused, because it is already part of the library. The header shows the file's name without its extension as the run's name.</li>
+</ul>
+
+<h3>What a run prints</h3>
+
+<pre data-lang="sh">piperine run step</pre>
+
+<pre data-lang="text" data-cli-output="piperine run step" data-cli-project="rc">run step: transient, top Step, backend rust
+@6.931472e-7 Step.mon trip v=5.000000e-1
+@6.931472e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
+
+time         Step.vin    Step.vout
+0.000000e0   1.000000e0  0.000000e0
+1.000000e-6  1.000000e0  6.321206e-1
+2.000000e-6  1.000000e0  8.646647e-1
+3.000000e-6  1.000000e0  9.502129e-1
+4.000000e-6  1.000000e0  9.816844e-1
+5.000000e-6  1.000000e0  9.932621e-1</pre>
+
+<p>Always in this order: a <strong>header</strong> line, <code>run &lt;name&gt;: &lt;analysis&gt;, top &lt;Top&gt;, backend &lt;backend&gt;</code>; the <strong>record</strong> lines, each printed as its record is written; one empty line; the <strong>table</strong>. If anything fails before the analysis starts, nothing is printed here at all, only the error. If the analysis fails midway, the records already printed stay and no table follows.</p>
+
+<p>The shape of the table depends on the analysis:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Analysis</th><th>Rows</th><th>Columns</th></tr></thead>
+<tbody>
+<tr><td><code>op</code></td><td>one per printed signal</td><td><code>signal</code>, <code>value</code></td></tr>
+<tr><td><code>dc</code></td><td>one per point of the sweep; each point sets the param and solves an operating point</td><td>the swept param's full path, then one per signal</td></tr>
+<tr><td><code>ac</code></td><td>one per frequency</td><td><code>freq</code>, then <code>mag(&lt;path&gt;)</code> and <code>phase(&lt;path&gt;)</code> per signal, the phase in degrees</td></tr>
+<tr><td><code>transient</code></td><td>one per accepted solver step, or one per <code>print_step</code></td><td><code>time</code>, then one per signal</td></tr>
+</tbody></table></div>
+
+<p>With <code>print_step</code>, an analog value is interpolated linearly between the two solver steps around the row's time, and a digital value is the one it held at that time. Use it whenever a run takes many steps: the solver's own steps are still all computed, and all drawn by <code>--plot</code>.</p>
+
+<p><strong>What you can print.</strong> A node gives its voltage, a digital signal its value, and <code>i(&lt;instance&gt;)</code> the current through an instance such as a source. Each is named by its path, written in full or relative to the top: <code>vout</code> and <code>Step.vout</code> are the same signal. A column is always headed by the full path. With no <code>print</code>, the table shows the top module's own signals and ports, in the order they are declared.</p>
+
+<p><strong>How values are written.</strong> A real has six decimals and an exponent, <code>7.500000e0</code>; a <code>bool</code> is <code>true</code> or <code>false</code>; an integer is decimal; an unknown value is <code>x</code>; a text field is in double quotes. The same input gives the same characters every time: nothing on this output depends on the clock, on your directories or on what was cached.</p>
+
+<h3>Records: your <code>emit!</code>, live</h3>
+
+<p>Every <code>emit!</code> executed by a reaction prints one line:</p>
+
+<pre data-lang="text">@<time> <instance path> <stream> <field>=<value> <field>=<value> …</pre>
+
+<p>The fields come in the order you wrote them. Lines appear in the order the records are written, never one from a later time before one from an earlier time, and all of them before the table. The two reserved streams, <code>sim</code> and <code>checks</code>, print like any other; the instance shown is the one whose reaction made the call. A design with no <code>emit!</code> prints no record line.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>You want</th><th>Write</th></tr></thead>
+<tbody>
+<tr><td>one stream, wherever it is written</td><td><code>--stream trip</code></td></tr>
+<tr><td>one stream of one instance</td><td><code>--stream Step.mon.trip</code></td></tr>
+<tr><td>several</td><td><code>--stream trip --stream checks</code>, or the <code>streams</code> key</td></tr>
+<tr><td>everything in a file, nothing on the terminal</td><td><code>--records step.jsonl</code></td></tr>
+</tbody></table></div>
+
+<p>A records file is JSON Lines: one object per record, with the keys <code>time</code>, <code>instance</code>, <code>stream</code> and <code>fields</code>. A real or an integer is a JSON number, a <code>bool</code> a JSON boolean, a text a string, and an unknown value is <code>null</code>.</p>
+
+<pre data-lang="text">{"time":6.931472e-7,"instance":"Step.mon","stream":"trip","fields":{"v":0.5}}</pre>
+
+<p class="note">The line above shows the shape of one object; the exact spelling of its numbers is the tool's.</p>
+
+<h3>Tables and plots as files</h3>
+
+<ul>
+<li><strong><code>--csv file</code></strong> writes the table as CSV: a header row with the column names, cells separated by commas, numbers written as on the terminal. In place of the table the command prints <code>wrote &lt;file&gt; (&lt;n&gt; rows)</code>.</li>
+<li><strong><code>--plot file.svg</code></strong> writes one SVG picture and prints <code>wrote &lt;file&gt;</code> after the table. The horizontal axis is the time, the swept param or the frequency. Every printed real signal is a curve on one shared axis, with a legend; every digital signal is a step trace in a lane of its own below. An <code>ac</code> run gets two panels, magnitude in dB over phase in degrees, with a logarithmic frequency axis when the grid is <code>per_decade</code>. A curve breaks where a value is unknown. An operating point has nothing to plot.</li>
+<li><strong>Paths.</strong> A relative <code>csv</code> or <code>records</code> path is taken from the project directory, or from the directory you are in for a lone file. An existing file is replaced.</li>
+</ul>
+
+<pre data-lang="sh">piperine run step --plot step.svg</pre>
+
+<h3>Params for one run</h3>
+
+<p>A param of any instance can be set before the analysis, by its path:</p>
+
+<pre data-lang="sh">piperine run step --param r1.r=2200 --param c1.c=2.2e-9</pre>
+
+<p>The entries of the <code>params</code> key are applied first, then the flags, in the order given. A path that names nothing is E0801. A value the design refuses, such as one that fails the param's <code>where</code>, is E0802: no analysis runs. The same paths serve <code>--sweep</code> in a DC sweep.</p>
+
+<h3>Two backends</h3>
+
+<p>A run executes on one of two backends, and the header says which. <code>rust</code>, the default, turns the design into Rust and compiles it; it runs everything. <code>interp</code> interprets the design directly and starts at once, for analog designs; given a design it does not run, it says so and names <code>--backend rust</code>. For a design both run, the two are expected to print the same table.</p>
+
+<p>The choice is made by the first of these that is present: the flag <code>--backend</code>, the environment variable <code>PIPERINE_BACKEND</code>, the run's <code>backend</code> key; otherwise <code>rust</code>.</p>
+
+<p>The Rust backend needs a Rust compiler installed. The first run of a design compiles it and says so on the error output; the result is cached, and a run never compiles during an analysis.</p>
+
+<h3>The other commands</h3>
+
+<p><strong><code>piperine new &lt;name&gt;</code></strong> creates the directory <code>&lt;name&gt;</code> with <code>Piperine.toml</code>, <code>src/lib.msl</code>, <code>benches/step.msl</code> and <code>.gitignore</code>, and prints <code>created &lt;name&gt;</code>. The name must be a valid package name: an identifier, no hyphens. It never writes into a directory that exists. In the new project, <code>check</code>, <code>run step</code> and <code>test</code> all succeed.</p>
+
+<p><strong><code>piperine check</code></strong> resolves the dependencies, parses and resolves every crate, loads the bench of every run, and type-checks and elaborates the top of every run, without running a backend. It ends with <code>ok: &lt;package&gt; (&lt;c&gt; crates, &lt;r&gt; runs)</code>, or with every diagnostic of every run. A project with no run has no top to check types from, and the line says so: <code>0 runs; type checking needs a run</code>. <code>piperine check file.msl</code> checks a lone file.</p>
+
+<p><strong><code>piperine build</code></strong> compiles the top of every run on its backend, so that the first <code>run</code> starts at once. It prints one line per run:</p>
+
+<pre data-lang="text">built <name>: compiled
+built <name>: cached
+built <name>: interp, nothing to compile</pre>
+
+<p>With <code>--verbose</code> each compiled or cached line is followed by the path of the generated Rust source, which is yours to read: it is what actually runs.</p>
+
+<p><strong><code>piperine test</code></strong> executes every run of the project in the order of the manifest, or the runs you name, and judges them by their <code>checks</code> records. It prints no table and no other record.</p>
+
+<pre data-lang="sh">piperine test step</pre>
+
+<pre data-lang="text" data-cli-output="piperine test step" data-cli-project="rc">PASS step (1 checks)
+1 runs, 1 passed, 0 failed</pre>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Line</th><th>When</th></tr></thead>
+<tbody>
+<tr><td><code>PASS &lt;name&gt; (&lt;n&gt; checks)</code></td><td>The run completed and every check passed.</td></tr>
+<tr><td><code>FAIL &lt;name&gt; (&lt;k&gt; of &lt;n&gt; checks failed)</code></td><td>A check's <code>pass</code> was false or unknown. The line of each such record follows.</td></tr>
+<tr><td><code>FAIL &lt;name&gt; (did not run)</code></td><td>The run did not complete; the error is on the error output.</td></tr>
+<tr><td><code>&lt;r&gt; runs, &lt;p&gt; passed, &lt;f&gt; failed</code></td><td>Always the last line.</td></tr>
+</tbody></table></div>
+
+<p><strong><code>piperine fmt</code></strong> rewrites in place every <code>.msl</code> file under <code>src/</code> and <code>benches/</code> whose layout differs from the standard one, and prints <code>formatted &lt;path&gt;</code> for each; given file names, it formats those only. Every comment you wrote is kept, in its place. <code>piperine fmt --check</code> writes nothing, prints <code>would format &lt;path&gt;</code> for each file that differs and fails if there is one, which is the line for a CI job. A file that does not parse is reported and left untouched.</p>
+
+<p><strong><code>piperine clean</code></strong> removes the project's <code>target</code> directory and prints <code>removed target</code>, or <code>nothing to remove</code>. With <code>--cache</code> it also removes the cache of compiled designs, which is shared by all your projects. It removes nothing else.</p>
+
+<h3>Output, errors and exit codes</h3>
+
+<p>Results and records go to the standard output. Diagnostics, errors and progress go to the standard error. So a pipe or a redirection gets data only:</p>
+
+<pre data-lang="sh">piperine run step > step.txt</pre>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Exit code</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>Done.</td></tr>
+<tr><td>1</td><td>The design, the run or a test failed: a diagnostic, a solver error, a failed check, a file that could not be written.</td></tr>
+<tr><td>2</td><td>The command line is wrong: an unknown command or flag, a flag given twice, a run name that does not exist, no <code>--analysis</code> for a lone file.</td></tr>
+</tbody></table></div>
+
+<p>Errors in your sources are the codes of chapter 11, rendered the same way: code, message, file, line and the source excerpt, followed by the stage that failed. The tool adds two codes of its own for the run request, and uses two host codes when a path or a value is refused:</p>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>P0010</td><td><code>stopp = 1e-3</code> in a run table</td><td>An unknown key. The report points at it in <code>Piperine.toml</code>: <code>stop</code>.</td></tr>
+  <tr><td>P0010</td><td><code>stop = "5u"</code></td><td>A value of the wrong type. Numbers are TOML numbers: <code>stop = 5e-6</code>.</td></tr>
+  <tr><td>P0010</td><td><code>analysis = "tran"</code>, or no <code>analysis</code></td><td>One of <code>op</code>, <code>dc</code>, <code>ac</code>, <code>transient</code>.</td></tr>
+  <tr><td>P0010</td><td>a <code>transient</code> run with no <code>stop</code></td><td>Give the end time, greater than 0.</td></tr>
+  <tr><td>P0010</td><td><code>analysis = "op"</code> with <code>stop = 1e-3</code>, or with <code>plot</code></td><td>A key its analysis does not read. Remove it, or change the analysis.</td></tr>
+  <tr><td>P0010</td><td><code>per_decade</code> and <code>points</code> together, or neither</td><td>An AC grid is exactly one of the two.</td></tr>
+  <tr><td>P0010</td><td><code>bench = "benches/stepp.msl"</code></td><td>The file does not exist.</td></tr>
+  <tr><td>P0010</td><td><code>piperine run src/lib.msl --analysis op</code></td><td>A file under <code>src/</code> is part of the library. Run a bench, or a run of the project.</td></tr>
+  <tr><td>P0011</td><td>a bench file with two modules without ports, and no <code>top</code></td><td>No single top can be chosen. Name it: <code>top = "Step"</code> or <code>--top Step</code>.</td></tr>
+  <tr><td>E0801</td><td><code>--print vuot</code>, <code>--stream tripp</code>, <code>--param r9.r=1k</code></td><td>The path names nothing in the design. It is reported before any analysis runs.</td></tr>
+  <tr><td>E0802</td><td><code>--param r1.r=-5</code></td><td>The design refuses the value: the param's <code>where r &gt; 0.0</code> fails.</td></tr>
+  <tr><td>E0170</td><td><code>piperine run step</code> outside any project</td><td>No <code>Piperine.toml</code> was found upward. Change directory, or pass <code>--project</code>.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>The command line does four analyses and one top at a time, with the stimulus written in the bench. Sweeps over many runs, Monte Carlo, optimization and stimulus decided while a run is going are a host program's work, in Rust, on the same library the command is built on (chapter 17). The full-size buck converter that chapter 8 simplifies is a project like any other: a library, a bench, and a run named <code>startup</code>.</p>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>In the project of chapter 1, add a run <code>[run.bode]</code> that sweeps the filter from 1&nbsp;kHz to 10&nbsp;MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: <code>v(p, n) +> dc + ac_stim(1.0, 0.0);</code>, chapter 6. The table needs <code>analysis = "ac"</code>, <code>from = 1e3</code>, <code>to = 1e7</code>, <code>per_decade = 10</code>, <code>print = ["vout"]</code> and <code>plot = "bode.svg"</code>.) At which frequency should <code>mag(Step.vout)</code> read 0.707 and <code>phase(Step.vout)</code> read −45? (At 1 / (2π · r · c) = 159&nbsp;kHz.)</p>
+</div>
+</section>
+
+<!-- ===================================================== 17 -->
+<section id="structure" class="chapter">
+<p class="ch-num">Chapter 17</p>
 <h2>How Piperine is organized</h2>
 
 <p>Piperine is a set of Rust crates, each with one job. Your source goes down through them in a straight line, from text to numbers, and no crate knows about the ones above it: the solver never sees MSL, and the language never sees the solver. This chapter names the crates so that you know where a piece of behavior lives.</p>
@@ -3456,9 +3725,9 @@ flowchart TD
 </ul>
 </section>
 
-<!-- ===================================================== 17 -->
+<!-- ===================================================== 18 -->
 <section id="cheatsheet" class="chapter">
-<p class="ch-num">Chapter 17</p>
+<p class="ch-num">Chapter 18</p>
 <h2>Cheat sheet</h2>
 
 <p>One screen of syntax. Everything not here is Rust.</p>
@@ -3543,6 +3812,28 @@ use util::filters::Rc;      // dependency name
 use crate::logic::Sar;
 const IV: [(f64, f64); 64] = parse_table(include_str!("iv.tbl"));
 emit!("log", msg = "overrange", vin = v(inp));</pre></div>
+
+<div class="cheat-card"><h4>Command line</h4>
+<pre data-lang="sh">piperine new rc                 # a project that runs
+piperine check                  # parse, resolve, type-check
+piperine run step               # a run of Piperine.toml
+piperine run f.msl --analysis op    # a lone file
+piperine test                   # judge every run's checks
+piperine build                  # compile ahead
+piperine fmt [--check]          # format, comments kept
+piperine clean [--cache]</pre></div>
+
+<div class="cheat-card"><h4>A run, and its flags</h4>
+<pre data-lang="toml">[run.step]
+bench = "benches/step.msl"
+analysis = "transient"          # op | dc | ac | transient
+stop = 5e-6
+print_step = 1e-6
+print = ["vout"]</pre>
+<pre data-lang="sh">--stream trip   --records r.jsonl
+--csv t.csv     --plot p.svg
+--param r1.r=2200   --backend interp</pre>
+<pre data-lang="text">@<time> <instance> <stream> field=value …</pre></div>
 </div>
 
 <div class="table-wrap"><table class="lits">
