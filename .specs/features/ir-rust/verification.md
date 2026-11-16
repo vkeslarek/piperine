@@ -279,23 +279,31 @@ Survived: plan statement walk visiting `else` before `then` (F-B3). Equivalent: 
 | C78 | `digital_shape.rs` `a_reaction_lists_its_events_reads_and_statements` | no - a plan walk with `else` before `then` stays green (F-B3) |
 | C79 | `digital_shape.rs` `only_a_literal_positive_delay_is_later` | yes |
 | C80 | `digital_shape.rs` `a_delayed_drive_is_a_pin_an_event_and_a_reaction` | yes (shape); behavior was checked by the Verifier's own example below |
-| C81 | `digital_shape.rs` `a_cross_event_is_a_watch_with_partials` | yes (shape); the compiled watch's behavior is C93, blocked |
+| C81 | `digital_shape.rs` `a_cross_event_is_a_watch_with_partials` | yes (shape); the compiled watch's behavior is C93 |
 | C82 | `digital_shape.rs` `an_analog_read_of_a_carrier_is_a_read_of_terms` | yes |
 | C83 | `digital_shape.rs` `a_probing_reaction_reads_the_continuous_pin` | yes |
 | C84 | `digital_shape.rs` `every_buck_slice_shape_validates` | yes |
 | C85 | `dpwm.rs` `the_oscillator_toggles_every_half_period` | yes - the whole change list, 40 instants |
-| C86 | parked `two_commits_exchange_two_carriers` | blocked on solver-crossings; the parked test holds (both nets, both edges, the wrong reading named) |
-| C87 | parked `the_later_statement_wins` | blocked on solver-crossings; the parked test holds and is red today for the reported solver defect |
-| C88 | parked `two_statements_make_a_pulse` | blocked on solver-crossings; holds (both statement orders) |
-| C89 | parked `an_unchanged_commit_fires_nothing` | blocked on solver-crossings; holds, slightly loose: the counter's value after the move is not asserted, only one move at 2.5 ns |
+| C86 | `commits.rs` `two_commits_exchange_two_carriers` | yes - both nets at both rising edges (2.5 ns, 7.5 ns) with values; a `b <- a` reading the new `a` gives `b` no change and fails |
+| C87 | `commits.rs` `the_later_statement_wins` | yes - the whole series of `x` is one change to 2 at 2.5 ns: 1 never seen, no change at 7.5 ns |
+| C88 | `commits.rs` `two_statements_make_a_pulse` | yes - true at 3.5 ns, false at 5.5 ns, in both statement orders (`p` and `q`) |
+| C89 | `commits.rs` `an_unchanged_commit_fires_nothing` | yes - `q` changes once, four commits made, the counter moves once at 2.5 ns to 2 (firing on every commit would read 5) |
 | C90 | `dpwm.rs` `the_dpwm_dithers_keeps_dead_time_and_never_overlaps` | yes - widths, dead times and 396 from SPEC §5.2/§5.3; full `hs` and `ls` change lists |
 | C91 | `pid.rs` `the_ramp_and_the_pid_follow_their_difference_equations` | yes - an independent i32 model of SPEC §6.2-§6.4, §7.2; script reaches both rails, windup hold and resets |
-| C92 | parked `the_adc_commits_the_rounded_code_after_tconv` | blocked on solver-crossings (passes in place); holds |
-| C93 | parked `the_comparator_trips_at_its_thresholds` | blocked on solver-crossings; holds (trip judged by the analytic voltage, no time tolerance) |
+| C92 | `boundary.rs` `the_adc_commits_the_rounded_code_after_tconv` | yes - five voltages (0, one LSB, mid, full, above full), exact code bytes at 0.5 us + tconv and nothing before, `done` for exactly 5 ns |
+| C93 | `boundary.rs` `the_comparator_trips_at_its_thresholds` | yes - exactly two trips, high then low, the analytic input at each trip equal to 0.625 V / 0.575 V under TRAN_VOLTAGE (0.1 pct, the 50 mV gap is far outside), at the harness's 10 ns step cap |
 | C94 | `boundary.rs` `a_carrier_change_is_a_time_point_and_starts_the_response` | yes, under a 1 ns step cap (F-B7) |
 | C95 | `dpwm.rs` `two_runs_give_the_same_changes` | yes |
 | C98 | `digital_circuit.rs` `carrier_ports_bind_to_design_nets` | yes - with a negative control |
 | C99 | `digital_circuit.rs` `every_buck_slice_body_compiles_with_no_warning` | yes |
+| C104 | `differential.rs` `msl_names_that_equal_generated_names_give_the_interpreters_bytes` | yes - every listed collision (`cx`, `self`/`self_`, `limit_vd_last`, `temperature`/`gmin` params, `y_1`/`y_2`, module `rt`) printed distinct, imports checked, and 3 functions bit-equal to the interpreter incl. 18 limit cases |
+| C105 | `compiled.rs` `a_panic_in_compiled_code_is_a_fault_and_the_instance_survives` | yes - `FAULT` status with the message at 200, the next call returns 0.5/1000 exactly, a second panic faults again |
+| C106 | `digital_circuit.rs` `a_parent_signal_its_children_meet_on_is_refused` | yes - the error names signal, parent `Top`, net `Top.clk` and child `Top.osc`; negative control without the parent signal builds |
+| C107 | `digital_circuit.rs` `a_net_with_its_own_init_is_refused` | yes - names net `Top.clk` and origin `top.msl:1:1` |
+| C108 | `digital.rs` `a_carrier_initial_value_outside_its_type_is_an_entry` | yes - one entry each for the five wrong values with carrier, origin and value; the range edges 15 and -8 give none (total 5) |
+| C109 | `reaction.rs` `reactions_and_drives_read_the_environment_as_analog_code_does` | yes - reaction plan sources and shape cells hold the temperature pin `VALUE`, `GMIN`, `SOURCE_SCALE`; compiles with no warning. The drive here reads `gmin` only; drives of all three are run by C111 |
+| C111 | `environment.rs` `a_compiled_reaction_and_drive_read_the_hosts_temperature_gmin_and_source_scale` | yes - 350 K and gmin 3e-12 differ from the defaults (300.15 K, 1e-12); three reaction commits at 2.5 ns and three drives each asserted exactly. Mutation (reverted): the discrete `GMIN` ambient filled with 1e-12 turns it red (reaction nets read 1e-12). `source_scale` is 1.0 by the ABI, so only a wrong non-1 value is caught; a duplicated comment line, cosmetic |
+| C110 | `reject.rs` `a_limit_or_stim_function_reading_a_carrier_is_refused_by_name` | yes - no source; `Unsupported` with the exact form naming carrier `en`, the site path and origin 3:13, for `limit` and `ac_stim` |
 
 ## Own examples (throwaway, not committed)
 
