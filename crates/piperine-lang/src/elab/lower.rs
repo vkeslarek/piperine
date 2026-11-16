@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use piperine_ir::{BinaryOp, Branch, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
+use super::compound::EnumLayout;
 use super::consts::Bindings;
 use super::known::Flag;
 use super::elaborator::Elaboration;
@@ -47,28 +48,37 @@ impl Scope {
 }
 
 /// The IR type of a type of the subset.
-pub(super) struct ValueTypes;
+pub(super) struct ValueTypes<'d> {
+    pub(super) design: &'d crate::pom::Design,
+}
 
-impl ValueTypes {
-    /// `None` for a type no value has in the IR: a node, a module; and for an enum, which is
-    /// lowered from msl-digital T26 on (until then elaboration refuses it by name).
-    pub(super) fn of(ty: &Ty) -> Option<ValueType> {
+impl ValueTypes<'_> {
+    /// `None` for a type no value has in the IR: a node, a module, an `Option` (a pair of values,
+    /// msl-digital T27), an enum of one variant (its tag has no level).
+    pub(super) fn of(&self, ty: &Ty) -> Option<ValueType> {
         match ty {
             Ty::F64 => Some(ValueType::F64),
             Ty::Bool => Some(ValueType::Bool),
             Ty::Unit => Some(ValueType::Unit),
             Ty::UInt(n) => Some(ValueType::UInt(u32::from(*n))),
             Ty::Int(n) => Some(ValueType::Int(u32::from(*n))),
+            // §2 rule 5: an enum of unit variants is its tag.
+            Ty::Enum(decl) => EnumLayout::of(self.design, *decl).ty(),
             Ty::Fn(params, ret) => {
-                let params: Option<Vec<ValueType>> = params.iter().map(ValueTypes::of).collect();
-                Some(ValueType::Fn(params?, Box::new(ValueTypes::of(ret)?)))
+                let params: Option<Vec<ValueType>> = params.iter().map(|p| self.of(p)).collect();
+                Some(ValueType::Fn(params?, Box::new(self.of(ret)?)))
             }
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Enum(_) | Ty::Option(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => None,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => None,
         }
     }
 }
 
 impl Elaboration<'_, '_> {
+    /// The IR type of a type of the subset; `None` when no value has it in the IR.
+    pub(super) fn value_type(&self, ty: &Ty) -> Option<ValueType> {
+        ValueTypes { design: self.design }.of(ty)
+    }
+
     /// Add an expression to the IR, remembering its type (the builder does not hand it back).
     pub(super) fn emit(&mut self, kind: Expr, ty: ValueType, origin: Origin) -> LoweredExpr {
         self.expr_types.push(ty.clone());
@@ -91,9 +101,13 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.design.decl_data(node.owner).file;
         let origin = self.expr_origin(expr);
-        let ty = self.types.ty(expr).and_then(ValueTypes::of);
+        let ty = self.types.ty(expr).and_then(|t| self.value_type(t));
         let Some(ty) = ty else {
-            self.unsupported(file, node.span, "an expression the type checker gave no value type");
+            let what = match self.types.ty(expr) {
+                Some(Ty::Enum(_)) => "a value of an enum of one variant, whose tag has no level",
+                _ => "an expression the type checker gave no value type",
+            };
+            self.unsupported(file, node.span, what);
             return None;
         };
         if ty.is_integer() && self.constant_form(expr) {
@@ -228,6 +242,7 @@ impl Elaboration<'_, '_> {
                 let flagged = self.flag(operand).wrap(ty.clone());
                 Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))
             }
+            ExprKind::Match { scrutinee, arms } => self.lower_match(scope, *scrutinee, arms, ty, origin),
             ExprKind::Closure { params, body, .. } => {
                 let mut locals = Vec::new();
                 for param in params {
@@ -299,7 +314,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(binding);
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (file, span) = (data.file, data.span);
-        let Some(ty) = self.types.local(binding).and_then(ValueTypes::of) else {
+        let Some(ty) = self.types.local(binding).and_then(|t| self.value_type(t)) else {
             self.unsupported(file, span, "a name whose type is not a value type");
             return None;
         };
@@ -400,7 +415,7 @@ impl Elaboration<'_, '_> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(lit) => matches!(lit.kind, LitKind::Int(_) | LitKind::Float { .. } | LitKind::Bool(_)),
             ExprKind::Paren(inner) => self.constant_form(*inner),
-            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Const(_))),
+            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Const(_) | DeclKind::Variant(_))),
             ExprKind::Unary { op: UnOp::Neg | UnOp::Not, expr: operand } => self.constant_form(*operand),
             ExprKind::Binary { lhs, rhs, .. } => self.constant_form(*lhs) && self.constant_form(*rhs),
             ExprKind::Cast { expr: operand, .. } => self.constant_form(*operand),
@@ -433,6 +448,14 @@ impl Elaboration<'_, '_> {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a `const`");
+                    None
+                }
+            },
+            // A unit variant is its tag (§2 rule 5).
+            DeclKind::Variant(_) => match EnumLayout::variant_tag(self.design, decl) {
+                Some(tag) => Some(self.emit(Expr::Int(tag), ty, origin)),
+                None => {
+                    self.unsupported(scope.file, node.span, "a variant outside its enum");
                     None
                 }
             },

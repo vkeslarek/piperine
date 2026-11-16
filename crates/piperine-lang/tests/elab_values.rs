@@ -385,3 +385,63 @@ fn a_function_gets_one_variant_per_flag_pattern() {
     let ir = Elab::ir(&reaching(functions, &["latch()", "latch()", "dithered_width(1, 2)", "dithered_width(3, 4)"]), "Top");
     assert_eq!(ir.functions().count(), 5);
 }
+
+#[test]
+fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
+    // DIG-08 AC 9, §2 rule 5: an enum of `V` unit variants is `UInt<ceil(log2 V)>`, variant `k`
+    // the literal `k`; a `match` is an `if` chain that reads its scrutinee once. The enums are
+    // the buck's (examples/buck/src/supervisor.msl) and the stdlib's `Severity` (std/io.msl).
+    let items = "#[derive(Repr, Clone, Copy, PartialEq)]\npub enum Mode { Off, SoftStart, Regulate, Hiccup }\n\
+                 #[derive(Repr, Clone, Copy, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
+                 fn hiccup() -> Mode { Mode::Hiccup }\n\
+                 fn clear() -> Fault { Fault::Clear }\n\
+                 fn warning(s: Severity) -> bool { s == Severity::Warning }\n\
+                 fn next(m: Mode, ok: bool) -> Mode {\n\
+                   match m {\n\
+                     Mode::SoftStart | Mode::Regulate => Mode::Regulate,\n\
+                     Mode::Off => if ok { Mode::SoftStart } else { Mode::Off },\n\
+                     Mode::Hiccup => Mode::SoftStart,\n\
+                   }\n\
+                 }\n\
+                 fn severe(f: Fault) -> Severity { match f { Fault::Clear => Severity::Info, _ => Severity::Error } }\n\
+                 fn once(f: Fault) -> u8 { match severe(f) { Severity::Info => 0, Severity::Warning => 1, Severity::Error => 2 } }\n\
+                 fn unknown_mode() -> bool { let m: Mode = Unknown; let s = match m { Mode::SoftStart | Mode::Regulate => true, _ => false }; s.known_or(false) }";
+    let calls = ["hiccup()", "clear()", "warning(Severity::Warning)", "next(Mode::Off, true)", "once(Fault::Clear)", "unknown_mode()"];
+    let ir = Elab::ir(&reaching(items, &calls), "Top");
+    let read = Read { ir: &ir };
+    let function = |name: &str| ir.functions().find(|f| f.name() == name).unwrap_or_else(|| panic!("no {name}"));
+
+    // `Mode` (4 variants) is `UInt(2)` and `Hiccup` its 4th, 3; `Fault` and `Severity` (3 each)
+    // are `UInt(2)`.
+    assert_eq!(*function("hiccup").ret(), ValueType::UInt(2));
+    assert_eq!(ir.expr(read.body_of("hiccup")), &Expr::Int(3));
+    assert_eq!((*function("clear").ret()).clone(), ValueType::UInt(2));
+    assert_eq!(ir.expr(read.body_of("clear")), &Expr::Int(0));
+    assert_eq!(function("warning").params()[0].ty, ValueType::UInt(2));
+    assert!(read.function_text("warning").contains("(s == 1u2)"), "{}", read.function_text("warning"));
+    assert_eq!(function("next").params().iter().map(|p| p.ty.clone()).collect::<Vec<_>>(), [ValueType::UInt(2), ValueType::Bool]);
+
+    // The arms in order; an or-pattern over a known scrutinee is `||`; the last arm is the final
+    // `else`; a param is read where it is.
+    let next = read.function_text("next");
+    assert!(next.contains("if ((m == 1u2) || (m == 2u2)) { 2u2 } else { if (m == 0u2) { if ok { 1u2 } else { 0u2 } } else { 1u2 } }"), "{next}");
+    // `_` is the final `else`.
+    assert!(read.function_text("severe").contains("if (f == 0u2) { 0u2 } else { 2u2 }"), "{}", read.function_text("severe"));
+    // A scrutinee that is not a plain read is bound to a local once, and read through it.
+    let once = read.function_text("once");
+    assert_eq!(once.matches("severe(f)").count(), 1, "{once}");
+    assert!(once.contains("local match$0: u2") && once.contains("let match$0 = severe(f)"), "{once}");
+    assert!(once.contains("if (match$0 == 0u2) { 0u8 } else { if (match$0 == 1u2) { 1u8 } else { 2u8 } }"), "{once}");
+    // Over a scrutinee that may be unknown, the or-pattern is `|` and every test is flagged.
+    let unknown = read.function_text("unknown_mode");
+    assert!(unknown.contains("let s = if ((m == 1u2) | (m == 2u2)) { true } else { false }"), "{unknown}");
+    assert!(locals_in(&unknown).contains(&"s: flagged<bool>".to_string()), "{unknown}");
+    let ops: Vec<BinaryOp> = read.reach(read.body_of("unknown_mode")).into_iter().filter_map(|e| if let Expr::Binary { op, .. } = ir.expr(e) { Some(*op) } else { None }).collect();
+    assert!(ops.contains(&BinaryOp::BitOr) && !ops.contains(&BinaryOp::Or), "{ops:?}");
+
+    // An enum of one variant has a tag of no level: no IR type holds it (spec Edge Cases).
+    let src = reaching("#[derive(Repr, Clone, Copy, PartialEq)]\npub enum One { Only }\nfn only() -> One { One::Only }", &["only()"]);
+    let err = Elab::run(&src, "Top").expect_err("a tag of no level");
+    assert!(Elab::codes(&err).iter().all(|c| c == "P0001"), "{:?}", Elab::codes(&err));
+    assert!(err.iter().any(|d| d.diagnostic.message.contains("an enum of one variant")), "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+}

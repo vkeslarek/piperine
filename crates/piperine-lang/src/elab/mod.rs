@@ -11,6 +11,7 @@
 
 mod body;
 mod children;
+mod compound;
 mod consts;
 mod contribute;
 mod diagnose;

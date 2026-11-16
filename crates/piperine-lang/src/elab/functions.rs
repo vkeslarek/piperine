@@ -6,7 +6,7 @@ use piperine_ir::{FunctionSpec, ValueType};
 
 use super::elaborator::Elaboration;
 use super::known::Flag;
-use super::lower::{Scope, ValueTypes};
+use super::lower::Scope;
 use super::variants::Variants;
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 
@@ -50,10 +50,14 @@ impl Elaboration<'_, '_> {
 
     /// The IR type a type written in a signature names: the checker's type of it, as an IR type.
     pub(super) fn lower_type(&mut self, file: FileId, ty: TypeId) -> Option<ValueType> {
-        let lowered = self.types.written(ty).and_then(ValueTypes::of);
+        let lowered = self.types.written(ty).and_then(|t| self.value_type(t));
         if lowered.is_none() {
             let span = self.design.type_node(ty).span;
-            self.unsupported(file, span, "a type that has no value in the IR");
+            let what = match self.types.written(ty) {
+                Some(crate::types::Ty::Enum(_)) => "an enum of one variant, whose tag has no level,",
+                _ => "a type that has no value in the IR",
+            };
+            self.unsupported(file, span, what);
         }
         lowered
     }

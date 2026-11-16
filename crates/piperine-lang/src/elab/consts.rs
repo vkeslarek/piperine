@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 
 use piperine_ir::{Constant, Real};
 
+use super::compound::EnumLayout;
 use crate::msl::lexer;
 use crate::pom::{BinOp, BlockNode, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::{Callee, Method, Ty, Types};
@@ -186,6 +187,8 @@ impl<'d, 't> ConstEval<'d, 't> {
                 other => other,
             }),
             DeclKind::Param(_) => bindings.get(decl).ok_or(ConstFault::UnboundParam { expr, param: decl }),
+            // A unit variant is its tag (§2 rule 5).
+            DeclKind::Variant(_) => EnumLayout::variant_tag(self.design, decl).map(Constant::Int).ok_or(ConstFault::Unsupported { expr, what: "a variant outside its enum".to_string() }),
             DeclKind::FnParam(_) | DeclKind::Binding(_) => self.locals.get(&decl).copied().ok_or(ConstFault::Dynamic { expr, what: "a name with no value yet".to_string() }),
             DeclKind::Port(_) | DeclKind::Signal(_) => Err(ConstFault::Dynamic { expr, what: "a node".to_string() }),
             _ => Err(ConstFault::Unsupported { expr, what: "this name in a const expression".to_string() }),
