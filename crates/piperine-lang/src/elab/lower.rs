@@ -11,9 +11,10 @@ use std::collections::BTreeMap;
 use piperine_ir::{BinaryOp, Branch, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::consts::Bindings;
+use super::known::Flag;
 use super::elaborator::Elaboration;
 use crate::msl::Span;
-use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, PatKind, Resolution, StmtId, StmtKind, UnOp};
+use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::{Callee, Method, Ty};
 
 /// What names the code being lowered: the owner's params, nodes and locals.
@@ -105,6 +106,7 @@ impl Elaboration<'_, '_> {
             };
         }
         match &node.kind {
+            ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) => Some(self.emit(Expr::Unknown, Flag::Flagged.wrap(ty), origin)),
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
@@ -124,6 +126,7 @@ impl Elaboration<'_, '_> {
                     }
                 };
                 let operand = self.lower_expr(scope, *operand)?;
+                let ty = self.flag(operand).wrap(ty);
                 Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
             }
             ExprKind::Binary { op, lhs, rhs } => {
@@ -135,8 +138,25 @@ impl Elaboration<'_, '_> {
                 let rhs = self.lower_expr(scope, *rhs);
                 scope.nesting -= u32::from(short_circuit);
                 let (lhs, rhs) = (lhs?, rhs?);
-                let op = Self::binary_op(*op);
-                Some(self.emit(Expr::Binary { op, lhs, rhs }, ty, origin))
+                let flag = self.flags(&[lhs, rhs]);
+                let op = match (Self::binary_op(*op), flag) {
+                    // §3.3.12: over a value that may be unknown, `&&` and `||` give the table of
+                    // `&` and `|`; the IR's short-circuit forms take known operands only.
+                    (op @ (BinaryOp::And | BinaryOp::Or), Flag::Flagged) => {
+                        let right = match &node.kind {
+                            ExprKind::Binary { rhs, .. } => *rhs,
+                            _ => expr,
+                        };
+                        if let Some(why) = self.partial(right) {
+                            let span = self.design.expr_node(right).span;
+                            self.unsupported(file, span, &format!("{why} on the right of an `&&` or `||` whose operand may be unknown"));
+                            return None;
+                        }
+                        if op == BinaryOp::And { BinaryOp::BitAnd } else { BinaryOp::BitOr }
+                    }
+                    (op, _) => op,
+                };
+                Some(self.emit(Expr::Binary { op, lhs, rhs }, flag.wrap(ty), origin))
             }
             ExprKind::If { cond, then, else_ } => {
                 let cond = self.lower_expr(scope, *cond);
@@ -147,7 +167,10 @@ impl Elaboration<'_, '_> {
                     None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
                 };
                 scope.nesting -= 1;
-                Some(self.emit(Expr::If { cond: cond?, then: then?, otherwise: otherwise? }, ty, origin))
+                let (cond, then, otherwise) = (cond?, then?, otherwise?);
+                // A condition that may be unknown is kept: the generated code decides it.
+                let ty = self.flags(&[cond, then, otherwise]).wrap(ty);
+                Some(self.emit(Expr::If { cond, then, otherwise }, ty, origin))
             }
             ExprKind::Block(block) => {
                 scope.block_depth += 1;
@@ -156,6 +179,11 @@ impl Elaboration<'_, '_> {
                 lowered
             }
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
+            ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr).is_some() => {
+                let builtin = self.types.builtin(expr)?;
+                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                self.lower_flag_read(scope, expr, builtin, *recv, &args, ty, origin)
+            }
             ExprKind::MethodCall { recv, args, .. } => {
                 let Some(method) = self.types.method(expr) else {
                     self.unsupported(file, node.span, "a method outside the catalogue");
@@ -179,6 +207,7 @@ impl Elaboration<'_, '_> {
                             lowered.push(self.lower_expr(scope, arg.value));
                         }
                         let (receiver, args) = (receiver?, lowered.into_iter().collect::<Option<Vec<_>>>()?);
+                        let ty = self.flags(&args).or(self.flag(receiver)).wrap(ty);
                         return Some(self.emit(Expr::Method { method, receiver, args }, ty, origin));
                     }
                     // Lowered as a flag and a payload from msl-digital T27 on.
@@ -188,11 +217,16 @@ impl Elaboration<'_, '_> {
                     }
                 };
                 let recv = self.lower_expr(scope, *recv)?;
+                if self.flag(recv) == Flag::Flagged {
+                    self.unsupported(file, node.span, "a math function of a value that may be unknown");
+                    return None;
+                }
                 Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
             }
             ExprKind::Cast { expr: operand, .. } => {
                 let operand = self.lower_expr(scope, *operand)?;
-                Some(self.emit(Expr::Cast { expr: operand, to: ty.clone() }, ty, origin))
+                let flagged = self.flag(operand).wrap(ty.clone());
+                Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))
             }
             ExprKind::Closure { params, body, .. } => {
                 let mut locals = Vec::new();
@@ -232,6 +266,11 @@ impl Elaboration<'_, '_> {
                         Some(arg) => lowered.push(arg),
                         None => ok = false,
                     }
+                }
+                if ok && self.flags(&lowered) == Flag::Flagged {
+                    // One IR function per flag pattern of its arguments comes with msl-digital T25.
+                    self.unsupported(scope.file, span, "a call with an argument that may be unknown");
+                    return None;
                 }
                 ok.then(|| self.emit(Expr::Call { function: id, args: lowered }, ty, origin))
             }
@@ -303,7 +342,11 @@ impl Elaboration<'_, '_> {
                         let init = self.lower_expr(scope, *init);
                         scope.limit_name = None;
                         match (local, init) {
-                            (Some(local), Some(init)) => out.push(self.ir.stmt(Stmt::Let { local, init })),
+                            (Some(local), Some(init)) => {
+                                // A local is what its initializer is: flagged when that may be unknown.
+                                scope.locals[local as usize].ty = self.type_of(init);
+                                out.push(self.ir.stmt(Stmt::Let { local, init }));
+                            }
                             _ => ok = false,
                         }
                     }
@@ -356,7 +399,7 @@ impl Elaboration<'_, '_> {
     /// `if` is kept as written.
     fn constant_form(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
-            ExprKind::Lit(lit) => matches!(lit.kind, crate::pom::LitKind::Int(_) | crate::pom::LitKind::Float { .. } | crate::pom::LitKind::Bool(_)),
+            ExprKind::Lit(lit) => matches!(lit.kind, LitKind::Int(_) | LitKind::Float { .. } | LitKind::Bool(_)),
             ExprKind::Paren(inner) => self.constant_form(*inner),
             ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Const(_))),
             ExprKind::Unary { op: UnOp::Neg | UnOp::Not, expr: operand } => self.constant_form(*operand),
@@ -402,7 +445,10 @@ impl Elaboration<'_, '_> {
                 }
             },
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match scope.local_index.get(&decl) {
-                Some(index) => Some(self.emit(Expr::Local(*index), ty, origin)),
+                Some(index) => {
+                    let ty = scope.locals[*index as usize].ty.clone();
+                    Some(self.emit(Expr::Local(*index), ty, origin))
+                }
                 None => {
                     self.unsupported(scope.file, node.span, "a name with no value here");
                     None

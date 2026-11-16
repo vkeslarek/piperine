@@ -11,6 +11,7 @@
 use piperine_ir::{Addend, BinaryOp, Branch, BranchKind, Expr, ExprId as LoweredExpr, Operator, QuantityRole, Stmt, StmtId as LoweredStmt, Terminal, ValueType};
 
 use super::elaborator::Elaboration;
+use super::known::Flag;
 use super::lower::Scope;
 use super::unlowered::Unlowered;
 use crate::msl::{Diagnostic, Span};
@@ -191,7 +192,10 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(ddt).clone();
         let ExprKind::Call { args, .. } = &node.kind else { return None };
         match &args[..] {
-            [x] => self.lower_expr(scope, x.value),
+            [x] => {
+                let value = self.lower_expr(scope, x.value)?;
+                self.known_addend(scope, x.value, value)
+            }
             _ => {
                 self.refuse(scope.file, node.span, Unlowered::DdtTolerance);
                 None
@@ -205,9 +209,9 @@ impl Elaboration<'_, '_> {
     fn direct_run(&mut self, scope: &mut Scope, run: &[Leaf]) -> Option<LoweredExpr> {
         let first = run[0];
         let origin = self.expr_origin(first.expr);
-        let mut value = self.lower_expr(scope, first.expr);
+        let mut value = self.lower_expr(scope, first.expr).and_then(|v| self.known_addend(scope, first.expr, v));
         for leaf in &run[1..] {
-            let rhs = self.lower_expr(scope, leaf.expr);
+            let rhs = self.lower_expr(scope, leaf.expr).and_then(|v| self.known_addend(scope, leaf.expr, v));
             let op = if leaf.negated == first.negated { BinaryOp::Add } else { BinaryOp::Sub };
             value = match (value, rhs) {
                 (Some(lhs), Some(rhs)) => Some(self.emit(Expr::Binary { op, lhs, rhs }, ValueType::F64, origin.clone())),
@@ -215,5 +219,16 @@ impl Elaboration<'_, '_> {
             };
         }
         value
+    }
+
+    /// `value`, the lowering of the leaf `leaf`, when it is known: the solver computes with known
+    /// reals (§3.3.5), so a value that may be unknown is `P0001` at its leaf.
+    fn known_addend(&mut self, scope: &Scope, leaf: ExprId, value: LoweredExpr) -> Option<LoweredExpr> {
+        if self.flag(value) == Flag::Flagged {
+            let span = self.design.expr_node(leaf).span;
+            self.unsupported(scope.file, span, "a value that may be unknown in a contribution");
+            return None;
+        }
+        Some(value)
     }
 }

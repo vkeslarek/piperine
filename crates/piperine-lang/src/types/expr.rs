@@ -7,7 +7,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
 use crate::stack;
 
-use super::check::Checker;
+use super::check::{Checker, Context};
 use super::unsupported::Unsupported;
 use super::Ty;
 
@@ -60,6 +60,9 @@ impl Checker<'_> {
                     Some(expected.clone())
                 }
                 ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
+                // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
+                // computes with known reals (§3.3.5): there it is refused by name.
+                ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && expected.has_repr() && self.context != Context::Analog => Some(expected.clone()),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -388,8 +391,12 @@ impl Checker<'_> {
             LitKind::Int(text) if text.ends_with("f64") => Some(Ty::F64),
             LitKind::Int(text) => self.integer_literal(file, span, text, None, false),
             LitKind::Str { .. } => Some(Ty::Str),
+            LitKind::Unknown if self.context == Context::Analog => {
+                self.unsupported(file, span, "`Unknown` literal in an `analog` block");
+                None
+            }
             LitKind::Unknown => {
-                self.unsupported(file, span, "`Unknown` literal");
+                self.unsupported(file, span, "`Unknown` literal where no carried type is expected");
                 None
             }
         }

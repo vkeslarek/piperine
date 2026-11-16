@@ -5,6 +5,7 @@
 use piperine_ir::{FunctionSpec, ValueType};
 
 use super::elaborator::Elaboration;
+use super::known::Flag;
 use super::lower::{Scope, ValueTypes};
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 
@@ -37,6 +38,11 @@ impl Elaboration<'_, '_> {
         };
         let lowered = self.lower_block(&mut scope, data.file, &body.stmts, body.span);
         let (Some(ret), Some(lowered)) = (ret, lowered) else { return };
+        if self.flag(lowered) == Flag::Flagged {
+            // A result that may be unknown has its own variant from msl-digital T25 on.
+            self.unsupported(data.file, data.span, "a function whose result may be unknown");
+            return;
+        }
         let id = self.ir.function(FunctionSpec { name, origin: self.locator.decl(function), params, ret, locals: scope.locals, body: lowered });
         debug_assert_eq!(Some(id), self.function_ids.get(&function).copied(), "functions are built in first-reach order");
     }

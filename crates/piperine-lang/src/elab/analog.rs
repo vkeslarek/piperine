@@ -79,6 +79,9 @@ impl Elaboration<'_, '_> {
             "temperature" => Some(self.emit(Expr::Env(Env::Temperature), ty, origin)),
             "gmin" => Some(self.emit(Expr::Env(Env::Gmin), ty, origin)),
             "source_scale" => Some(self.emit(Expr::Env(Env::SourceScale), ty, origin)),
+            // The checker lets `analysis` take the kind `Static` only.
+            "now" => Some(self.emit(Expr::Env(Env::Time), ty, origin)),
+            "analysis" => Some(self.emit(Expr::Env(Env::Static), ty, origin)),
             "limit" if scope.nesting == 0 => {
                 let site = scope.limits.len() as u32;
                 let name = match scope.limit_name.take() {

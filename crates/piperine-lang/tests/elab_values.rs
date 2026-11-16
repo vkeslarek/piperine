@@ -226,3 +226,122 @@ fn a_constant_division_by_zero_is_e0104() {
     // A division whose divisor is not a constant is left to the run (§1 rule 11).
     Elab::ir(&reaching("fn f(d: u8) -> u8 { 7 / d }", &["f(0)"]), "Top");
 }
+
+/// The `local` lines of the structural print of an owner: `name: type` for each.
+fn locals_in(text: &str) -> Vec<String> {
+    text.lines().filter_map(|l| l.trim().strip_prefix("local ")).map(str::to_string).collect()
+}
+
+#[test]
+fn a_carrier_read_is_flagged_and_the_flag_reads_are_not() {
+    // DIG-08 AC 5, design "Unknown-ness: the `Known` analysis", row by row. `Unknown` (§3.3.1) is
+    // the source of an unknown value here; a carrier read is the other, lowered with carriers.
+    let items = "const K: u8 = 3;\n\
+                 fn rows(p: u8) -> bool {\n\
+                   let lit = 5u8;\n\
+                   let konst = K;\n\
+                   let param = p;\n\
+                   let u: u8 = Unknown;\n\
+                   let count = u + 1;\n\
+                   let cast = count as u16;\n\
+                   let m = count.min(p);\n\
+                   let c = if count > p { 1u8 } else { 2u8 };\n\
+                   let neg = !(count == p);\n\
+                   let k = count.known_or(0);\n\
+                   let ik = count.is_known();\n\
+                   let b: bool = Unknown;\n\
+                   let h = b.high();\n\
+                   let copy = c;\n\
+                   ik & h & (k > lit) & (konst == param)\n\
+                 }";
+    let src = format!("{items}\nmodule Top() {{ g: f64 = 1.0; signal s: Electrical; }}\nanalog for Top {{ let pr = v(s); let t = now(); let st = analysis(Static); let te = temperature(); let pa = g; let r = rows(3); }}");
+    let ir = Elab::ir(&src, "Top");
+    let read = Read { ir: &ir };
+    let rows = read.function_text("rows");
+    let locals = locals_in(&rows);
+    for (name, ty) in [
+        // literal, const, param: known.
+        ("lit", "u8"),
+        ("konst", "u8"),
+        ("param", "u8"),
+        // `Unknown`: may be unknown; so is every operator, cast, method and `if` over it.
+        ("u", "flagged<u8>"),
+        ("count", "flagged<u8>"),
+        ("cast", "flagged<u16>"),
+        ("m", "flagged<u8>"),
+        ("c", "flagged<u8>"),
+        ("neg", "flagged<bool>"),
+        // The flag reads are known.
+        ("k", "u8"),
+        ("ik", "bool"),
+        ("b", "flagged<bool>"),
+        ("h", "bool"),
+        // A local is what its initializer was.
+        ("copy", "flagged<u8>"),
+    ] {
+        assert!(locals.contains(&format!("{name}: {ty}")), "local {name}: {ty} in:\n{rows}");
+    }
+    // The flag reads lower to the IR's own nodes over the unknown value.
+    assert!(rows.contains("let k = count.known_or(0u8)") && rows.contains("let ik = count.is_known()") && rows.contains("let h = b.high()"), "{rows}");
+    // An `if` on a value that may be unknown is kept as written: no default, no `known_or` added.
+    assert!(rows.contains("let c = if (count > p) { 1u8 } else { 2u8 }"), "{rows}");
+    assert_eq!(rows.matches("known_or").count(), 1, "the elaborator adds no `known_or`:\n{rows}");
+    assert_eq!(*ir.functions().find(|f| f.name() == "rows").expect("rows").ret(), ValueType::Bool, "a result read through the flag reads is known");
+
+    // Probe, `now()`, `analysis(Static)`, the environment and a param: known.
+    let top = ir.print_structural();
+    let body = &top[top.find("body Top").expect("body Top")..];
+    let locals = locals_in(body);
+    for local in ["pr: f64", "t: f64", "st: bool", "te: f64", "pa: f64", "r: bool"] {
+        assert!(locals.contains(&local.to_string()), "local {local} in:\n{body}");
+    }
+    assert!(body.contains("let t = time()") && body.contains("let st = static()"), "{body}");
+}
+
+#[test]
+fn a_short_circuit_over_a_flagged_operand_becomes_bitwise() {
+    // DIG-08 AC 6, §3.3.12: `&&`/`||` with an operand that may be unknown is `&`/`|`; over
+    // known operands it stays the short-circuit form.
+    let items = "fn trip(a: bool, b: bool) -> bool {\n\
+                   let hs: bool = Unknown;\n\
+                   let oc: bool = Unknown;\n\
+                   let t = hs && oc.known_or(true);\n\
+                   let o = a || hs;\n\
+                   let plain = a && b;\n\
+                   let either = a || b;\n\
+                   t.known_or(false) && o.known_or(false) && plain && either\n\
+                 }";
+    let ir = Elab::ir(&reaching(items, &["trip(true, false)"]), "Top");
+    let read = Read { ir: &ir };
+    let trip = read.function_text("trip");
+    assert!(trip.contains("let t = (hs & oc.known_or(true))"), "{trip}");
+    assert!(trip.contains("let o = (a | hs)"), "{trip}");
+    assert!(trip.contains("let plain = (a && b)"), "{trip}");
+    assert!(trip.contains("let either = (a || b)"), "{trip}");
+    let locals = locals_in(&trip);
+    for local in ["t: flagged<bool>", "o: flagged<bool>", "plain: bool", "either: bool"] {
+        assert!(locals.contains(&local.to_string()), "local {local} in:\n{trip}");
+    }
+    let ops: Vec<BinaryOp> = read.reach(read.body_of("trip")).into_iter().filter_map(|e| if let Expr::Binary { op, .. } = ir.expr(e) { Some(*op) } else { None }).collect();
+    assert!(ops.contains(&BinaryOp::BitAnd) && ops.contains(&BinaryOp::BitOr) && ops.contains(&BinaryOp::And) && ops.contains(&BinaryOp::Or), "{ops:?}");
+}
+
+#[test]
+fn a_partial_right_operand_under_a_flagged_short_circuit_is_p0001() {
+    // DIG-08 AC 7: as `&`, the right operand runs whatever the left gives; one that can panic
+    // (an integer `/` or `%`) is refused, at the operand.
+    for (body, at) in [
+        ("let c: bool = Unknown; let r = c && (x / n > 1); r.known_or(false)", "(x / n > 1)"),
+        ("let c: bool = Unknown; let r = c || (x % n == 0); r.known_or(false)", "(x % n == 0)"),
+    ] {
+        let src = reaching(&format!("fn f(x: u8, n: u8) -> bool {{ {body} }}"), &["f(1, 2)"]);
+        let err = Elab::run(&src, "Top").expect_err(at);
+        assert_eq!(Elab::codes(&err), ["P0001"], "{at}");
+        let span = err[0].diagnostic.span();
+        assert_eq!(&src[span.start..span.end], at);
+        assert!(err[0].diagnostic.message.contains("integer `/` or `%`"), "{}", err[0].diagnostic.message);
+    }
+    // Over known operands the short circuit guards the division: accepted, still `&&`.
+    let ir = Elab::ir(&reaching("fn f(c: bool, x: u8, n: u8) -> bool { c && (x / n > 1) }", &["f(true, 1, 2)"]), "Top");
+    assert!(Read { ir: &ir }.function_text("f").contains("(c && ((x / n) > 1u8))"));
+}
