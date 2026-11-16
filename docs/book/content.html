@@ -64,7 +64,7 @@ analog for Resistor {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model. The solver and its device ABI are built (chapters 13 and 14), and analog MSL designs already run on it, compared with ngspice (chapter 15). Digital and mixed-signal designs do not run yet. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model. The solver and its device ABI are built (chapters 13 and 14). Analog MSL designs run on it, through an interpreter or as compiled Rust, and are compared with ngspice; digital and mixed-signal models run as compiled Rust, and the compiler path that takes them from source is being built (chapter 15). This book describes the language as specified.</p>
 </div>
 </section>
 
@@ -1464,7 +1464,7 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Analog MSL designs already run on it through the compiler of chapter 15; digital and mixed-signal sources come next.</p>
+  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Analog MSL designs run on it through the compiler of chapter 15, and crossings are located inside a step to the tolerances below.</p>
 </div>
 
 <h3>Three parts, one boundary</h3>
@@ -1515,7 +1515,8 @@ flowchart LR
 <li><strong>Look ahead.</strong> The digital solver runs ahead to that time. It stops at the first instant that touches the analog side, and the step is shortened to land exactly there.</li>
 <li><strong>Solve.</strong> The analog solver integrates to that time on the values the digital side had just <em>before</em> the instant.</li>
 <li><strong>Judge.</strong> If Newton failed or the error estimate is too big, everything returns to the checkpoint taken at the start, and the step is retried smaller.</li>
-<li><strong>Accept and react.</strong> The solution is accepted. Crossings found in it become events, and the digital instant runs, reading the accepted solution.</li>
+<li><strong>Locate.</strong> If a <code>cross</code> expression changed sign inside the step, the step is taken again, shorter, until it ends on the crossing: within <code>etol</code> of zero or within <code>ttol</code> (plus one tick) of the estimated time. The estimate is a secant through the attempts so far.</li>
+<li><strong>Accept and react.</strong> The solution is accepted. Crossings become events, and the digital instant runs, reading the accepted solution.</li>
 <li><strong>Deliver.</strong> What the instant changed reaches the analog side. If an analog function reads it, the next step restarts from first order, because a jump has no history to extrapolate from.</li>
 </ol>
 
@@ -1525,7 +1526,9 @@ flowchart TD
   L --> S["analog solves to t<br/>on the values before the instant"]
   S --> J{"converged and<br/>error small?"}
   J -- no --> R["back to checkpoint,<br/>smaller step"] --> P
-  J -- yes --> A["accept; crossings fire"]
+  J -- yes --> X{"a crossing<br/>inside the step?"}
+  X -- "yes, not located" --> C["retake, ending<br/>at the estimate"] --> S
+  X -- "no, or located" --> A["accept; crossings fire"]
   A --> I["digital instant at t"]
   I --> D["deliver changes;<br/>restart if needed"] --> P
 </pre>
@@ -1546,9 +1549,11 @@ flowchart TD
 <tr><td><code>abstol</code></td><td>1 pA</td><td>absolute tolerance for a branch flow</td></tr>
 <tr><td><code>gmin</code></td><td>1e-12 S</td><td>the smallest conductance a junction model adds</td></tr>
 <tr><td><code>trtol</code></td><td>7</td><td>how far the step error may exceed its target before the step is rejected</td></tr>
+<tr><td><code>ttol</code></td><td>1 ps</td><td>how close in time a located crossing must be; a <code>cross</code> can set its own</td></tr>
+<tr><td><code>etol</code></td><td><code>vntol</code></td><td>how close to zero the crossing expression must be; a <code>cross</code> can set its own</td></tr>
 </tbody></table></div>
 
-<p>These are ngspice's defaults with ngspice's meanings. Matching ngspice is a design goal: on the same circuit the two simulators are expected to agree to within these tolerances. The side-by-side runs against ngspice return once MSL compiles to devices.</p>
+<p>The first five are ngspice's defaults with ngspice's meanings. Matching ngspice is a design goal: on the same circuit the two simulators are expected to agree to within these tolerances, and the test suite runs MSL circuits side by side with ngspice to hold that (chapter 15). A crossing that falls in the step right after a jump is the one exception to locating: it fires at that step's end.</p>
 
 <h3>The digital side</h3>
 
@@ -1557,6 +1562,8 @@ flowchart TD
 <ul>
 <li><strong>Only what changed runs.</strong> A function whose inputs did not change is not called. A free-running clock costs only what it actually touches.</li>
 <li><strong>Combinational loops must say so.</strong> A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing. Any other loop is refused when the design is built, naming its functions.</li>
+<li><strong>Only the settled value is seen.</strong> Several commits to one net in the same microstep are applied in order and the net is written once. <code>changed()</code> and the previous value compare with the value before the microstep, so <code>x <- 1; x <- 0;</code> on a net that was 0 changes nothing.</li>
+<li><strong>Reactions see the environment.</strong> A reaction or a definition may read <code>temperature()</code>, <code>gmin()</code> and <code>source_scale()</code>; they get the values in force at that instant, the same ones the analog side uses.</li>
 <li><strong>An instant must go quiet.</strong> After 1000 microsteps the solver stops with <code>E0501</code> and names the nets that keep changing.</li>
 <li><strong>Running ahead is safe.</strong> The digital side runs ahead of the analog side on checkpoints. If an instant turns out to touch the analog side, it is undone and becomes the next landing.</li>
 </ul>
@@ -1578,7 +1585,7 @@ flowchart TD
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built for analog circuits. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end, under operating point, DC sweep, AC and transient, and every result is compared with ngspice. Digital and mixed-signal designs pass the front end but do not run yet. The next stage is a backend that prints the intermediate form as Rust and compiles it.</p>
+  <p>Built for analog circuits, with two backends. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end from source, under operating point, DC sweep, AC and transient, through the interpreter and as compiled Rust, and every result is compared with ngspice on both. The Rust backend also runs digital and mixed-signal models (the buck converter's PWM, PID and comparators), built by hand in the intermediate form; type checking and elaboration of digital and mixed MSL, which take them from source, are being built now.</p>
 </div>
 
 <h3>The stages</h3>
@@ -1589,10 +1596,10 @@ flowchart LR
   P --> T["Type check"]
   T --> E["Elaborate<br/>one body per variant"]
   E --> I["Intermediate form"]
-  I --> R["Interpreter<br/>one device per instance"]
+  I --> R["Interpreter<br/>reference backend"]
+  I --> X["Rust backend<br/>rustc, cached library"]
   R --> V["Solver"]
-  I -. "next" .-> X["Rust backend"]
-  X -.-> V
+  X --> V
 </pre>
 
 <ol>
@@ -1656,9 +1663,33 @@ module Divider() {
 <tr><td><code>P0004</code></td><td>The compiler built an ill-formed intermediate form. This is a bug in Piperine, not in your source.</td></tr>
 </table>
 
+<h3>Two backends</h3>
+
+<p>The intermediate form runs two ways, and they must agree bit for bit.</p>
+
+<ul>
+<li><strong>The interpreter</strong> walks a body at every call, computing values and derivatives together with dual numbers. It is simple, needs no compiler, and is the reference: every other backend is checked against it. It covers the analog forms only.</li>
+<li><strong>The Rust backend</strong> prints the whole design as one Rust source file, compiles it with the <code>rustc</code> it finds on the machine, and loads the library through the device ABI. It covers analog, digital and mixed forms. A design is compiled once and cached by a hash of everything that went into it, so a second run starts at once and nothing is compiled while a simulation runs. The cache entry is checked against its recorded hash before it is loaded.</li>
+</ul>
+
+<p>Both backends compute the same function, function by function, to the last bit; the ngspice comparisons run on both. A host picks one; the test suite picks with <code>PIPERINE_BACKEND</code> (<code>interp</code> or <code>rust</code>) and runs both when it is unset.</p>
+
+<h3>Reading what runs</h3>
+
+<p>The generated Rust stays on disk next to the library, formatted, and is meant to be read. Every item names the MSL it came from, your names stay as you wrote them, and names the compiler makes up end in <code>_</code>, so they never collide with yours. Here is the resistor's analog block:</p>
+
+<pre data-lang="rust">// Resistor.analog @ devices.msl:5:1
+fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
+    // contribution to i(p, n), branch b0 @ devices.msl:8:32
+    let b0_flow_ = (p - n) / r;
+    [b0_flow_]
+}</pre>
+
+<p>The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian. Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an <code>if</code> on a value that may be unknown stops with a fault naming that <code>if</code> in your source.</p>
+
 <h3>What comes next</h3>
 
-<p>The interpreter stays as the reference: it is slow but simple, and every faster backend is checked against it. The next backend prints each body as readable Rust, compiles it once per design and caches it, so nothing is compiled while a simulation runs. The generated source stays on disk, with each function naming the MSL item it came from, so you can read exactly what runs. Digital and mixed-signal designs arrive on that backend.</p>
+<p>Type checking and elaboration of the digital and mixed forms, so the buck converter in the examples runs from its source with its control loop closed. Then the command line and projects, so a whole MSL project runs with one command, and a single home for end-to-end scenarios compared with ngspice.</p>
 </section>
 
 <!-- ===================================================== 16 -->
