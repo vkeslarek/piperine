@@ -386,15 +386,26 @@ module Blinky() {
 
 <h3><code>emit!</code> is your <code>println!</code></h3>
 
-<p>The line <code>emit!("edge", t = now(), count = count);</code> writes one record each time the reaction runs. The first three records of a transient look like this (the layout is the host's choice):</p>
+<p>The line <code>emit!("edge", t = now(), count = count);</code> writes one record each time the reaction runs. The first three records of a transient look like this, laid out as a table for reading:</p>
 
-<pre data-lang="text">stream top.ctr.edge
+<pre data-lang="text">stream Blinky.ctr.edge
   instant        fields
   (0.5 µs, 0)    t = 5.0e-7   count = 0
   (1.5 µs, 0)    t = 1.5e-6   count = 1
   (2.5 µs, 0)    t = 2.5e-6   count = 2</pre>
 
-<p>Two things to notice. The stream is <code>top.ctr.edge</code>: the name you wrote, under the path of the instance that wrote it, so two counters never mix their records. And the first record says <code>count = 0</code> although the line above it committed <code>count + 1</code>: a commit takes effect after the reaction, so the record shows the count <em>before</em> the edge. If you want the new value in the record, emit the expression you committed: <code>count = count + 1</code>.</p>
+<p>Two things to notice. The stream is <code>Blinky.ctr.edge</code>: the name you wrote, under the path of the instance that wrote it, so two counters never mix their records. And the first record says <code>count = 0</code> although the line above it committed <code>count + 1</code>: a commit takes effect after the reaction, so the record shows the count <em>before</em> the edge. If you want the new value in the record, emit the expression you committed: <code>count = count + 1</code>.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the file as <code>blinky.msl</code>, anywhere. A file with no project around it runs by its name; the flags say which analysis. The top is the one module without ports.</p>
+<pre data-lang="sh">piperine run blinky.msl --analysis transient --stop 3e-6</pre>
+<pre data-lang="text" data-cli-output="piperine run blinky.msl --analysis transient --stop 3e-6" data-cli-lines="1-4">run blinky: transient, top Blinky, backend rust
+@5.000000e-7 Blinky.ctr edge t=5.000000e-7 count=0
+@1.500000e-6 Blinky.ctr edge t=1.500000e-6 count=1
+@2.500000e-6 Blinky.ctr edge t=2.500000e-6 count=2</pre>
+  <p>These are the three records of the table above, as the command prints them: one line each, live. After them comes a table with the columns <code>Blinky.clk</code> and <code>Blinky.count</code>, the signals of the top.</p>
+</div>
 
 <p>Coming from Rust, this is how the two compare:</p>
 
@@ -621,13 +632,20 @@ module MonitorTop() {
 
 <p>The clock rises at 0.5, 1.5 and 2.5&nbsp;µs, where the ramp is near 0.5, 1.5 and 2.5&nbsp;V:</p>
 
-<pre data-lang="text">stream top.mon.zone
+<pre data-lang="text">stream MonitorTop.mon.zone
   instant        fields
   (0.5 µs, 0)    t = 5.0e-7   v ≈ 0.5   from = Ok      to = Under
   (1.5 µs, 0)    t = 1.5e-6   v ≈ 1.5   from = Under   to = Ok
   (2.5 µs, 0)    t = 2.5e-6   v ≈ 2.5   from = Ok      to = Over</pre>
 
 <p>The values of <code>v</code> are "near" on purpose. A reaction that runs on a clock edge reads the analog solution the solver had just before the edge, as a real sampler does. Chapter 8 makes that precise.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the file as <code>monitor.msl</code> and keep only the stream you care about:</p>
+<pre data-lang="sh">piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone</pre>
+  <p>Look for three record lines from <code>MonitorTop.mon</code>, at 0.5, 1.5 and 2.5&nbsp;µs, and check the <code>from</code> and <code>to</code> fields against the table above.</p>
+</div>
 
 <h3>Known and unknown</h3>
 
@@ -646,7 +664,7 @@ module MonitorTop() {
 
 <h3>Catching an unknown with <code>emit!</code></h3>
 
-<p>The classic bug: an input nobody drives. This adder is placed in a top with two <code>in</code> ports, and the host drives <code>a</code> but forgets <code>b</code>. (<code>Osc</code> is the clock from the file above.)</p>
+<p>The classic bug: an input nobody drives. This adder is placed in a top that gives <code>a</code> the constant 3 and takes <code>b</code> from an <code>in</code> port of its own, which nothing drives. (<code>Osc</code> is the clock from the file above.)</p>
 
 <pre data-lang="msl">/// Registers a + b on every clock edge.
 module Adder(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>, out sum: Bit<u8> = 0) {}
@@ -659,20 +677,29 @@ digital for Adder {
     }
 }
 
-module AdderTop(in a: Bit<u8>, in b: Bit<u8>) {
+module AdderTop(in b: Bit<u8>) {
     signal clk: Bit;
     pub signal sum: Bit<u8>;
     let osc = Osc(clk);
-    let add = Adder(clk, a, b, sum);
+    let add = Adder(clk, 3, b, sum);
 }</pre>
 
-<p>A top-level <code>in</code> port the host never drives stays unknown. On the first clock edge the adder computes <code>3 + unknown</code>, which is unknown, and commits it: <code>sum</code> goes from 0 to unknown. Going from known to unknown is a change, so the second reaction fires. Its guard, <code>!sum.is_known()</code>, is an ordinary <code>bool</code>. The record tells you which input to blame, because a field keeps its known flag:</p>
+<p>An <code>in</code> port may be connected to an expression, here the literal <code>3</code>. A top-level <code>in</code> port that nothing drives stays unknown. On the first clock edge the adder computes <code>3 + unknown</code>, which is unknown, and commits it: <code>sum</code> goes from 0 to unknown. Going from known to unknown is a change, so the second reaction fires. Its guard, <code>!sum.is_known()</code>, is an ordinary <code>bool</code>. The record tells you which input to blame, because a field keeps its known flag:</p>
 
-<pre data-lang="text">stream top.add.lost
+<pre data-lang="text">stream AdderTop.add.lost
   instant        fields
   (0.5 µs, 1)    t = 5.0e-7   a = 3   b = unknown</pre>
 
 <p>The instant is <code>(0.5 µs, 1)</code>, not <code>(0.5 µs, 0)</code>: the clock edge is microstep 0, and the commit to <code>sum</code> applies one microstep later. Only one record is written, because unknown to unknown is not a change.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Add the two modules to <code>monitor.msl</code>. The file now has two candidates for the top, so name the one you want. Its <code>in</code> port is left undriven, which is the bug under study:</p>
+<pre data-lang="sh">piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost</pre>
+<pre data-lang="text" data-cli-output="piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost" data-cli-lines="1-2">run monitor: transient, top AdderTop, backend rust
+@5.000000e-7 AdderTop.add lost t=5.000000e-7 a=3 b=x</pre>
+  <p>An unknown value prints as <code>x</code>. One look at the line names the input nobody drives.</p>
+</div>
 
 <p>A second flavor of the same tool: a record reached under an unknown condition is written with <code>maybe = true</code>. If the adder also had <code>if a &gt; b { emit!("bigger", a = a); }</code>, that record would appear here marked <code>maybe</code>: the model cannot tell whether <code>a &gt; b</code>, and it says so instead of guessing.</p>
 
@@ -711,7 +738,7 @@ extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
 
 <div class="callout try">
   <p class="callout-label">Try it</p>
-  <p>In <code>Adder</code>, replace <code>a + b</code> with <code>a &amp; b</code> and let the host drive <code>a = 0</code>, leaving <code>b</code> undriven. Does the <code>lost</code> record still appear? (No: <code>0 &amp; unknown</code> is 0 on every level, so <code>sum</code> stays known.) Then make the host drive <code>a = 3</code> and say which levels of <code>sum</code> are unknown. (The two lowest: the levels where <code>a</code> is 1.)</p>
+  <p>In <code>Adder</code>, replace <code>a + b</code> with <code>a &amp; b</code> and change the constant <code>3</code> to <code>0</code>, leaving <code>b</code> undriven. Does the <code>lost</code> record still appear? (No: <code>0 &amp; unknown</code> is 0 on every level, so <code>sum</code> stays known.) Then put the <code>3</code> back and say which levels of <code>sum</code> are unknown. (The two lowest: the levels where <code>a</code> is 1.)</p>
 </div>
 </section>
 
@@ -813,12 +840,20 @@ digital for LineWatch {
     }
 }
 
-module AlarmTop(in door: Bit, in window: Bit) {
+/// The bench: the line, its drivers, and the two sensors as stimulus.
+module Alarm() {
+    signal door: Bit = false;
+    signal window: Bit = false;
     signal alarm_n: Wire;
     let pu = Pullup(alarm_n);
     let d0 = OpenDrain(door, alarm_n);
     let d1 = OpenDrain(window, alarm_n);
     let watch = LineWatch(alarm_n);
+}
+digital for Alarm {
+    on at(1u) { door <- true; }
+    on at(2u) { window <- true; }
+    on at(3u) { door <- false; window <- false; }
 }</pre>
 
 <p>Line by line:</p>
@@ -831,17 +866,24 @@ module AlarmTop(in door: Bit, in window: Bit) {
 <li><strong><code>line.v</code> and <code>line.s</code></strong> read the two fields of the resolved value, like a struct.</li>
 </ul>
 
-<p>Let the host hold both inputs low, raise <code>door</code> at 1&nbsp;µs, raise <code>window</code> at 2&nbsp;µs, and drop both at 3&nbsp;µs. The monitor writes:</p>
+<p>The last block is the stimulus, and it is ordinary MSL: the bench owns the two sensor signals, starts them low, and three timed reactions raise <code>door</code> at 1&nbsp;µs, raise <code>window</code> at 2&nbsp;µs, and drop both at 3&nbsp;µs. The monitor writes:</p>
 
-<pre data-lang="text">stream top.watch.line
+<pre data-lang="text">stream Alarm.watch.line
   instant      fields
   (0, 0)       t = 0        level = true    strength = Pull
-  (1 µs, 0)    t = 1.0e-6   level = false   strength = Strong
-  (3 µs, 0)    t = 3.0e-6   level = true    strength = Pull</pre>
+  (1 µs, 1)    t = 1.0e-6   level = false   strength = Strong
+  (3 µs, 1)    t = 3.0e-6   level = true    strength = Pull</pre>
 
 <p>Three records, not four. At 2&nbsp;µs the second driver joins, but the resolved value is still a strong low, so the line did not change and <code>changed()</code> did not fire. That is the question a debug print should answer: not "what did I write" but "what does the wire hold".</p>
 
 <p>The first record is at time zero: the initial values of a design are themselves a change, from nothing to something, so reactions on <code>changed()</code> run once at the start.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the file as <code>alarm.msl</code>. The bench <code>Alarm</code> is its one module without ports, so it is the top:</p>
+<pre data-lang="sh">piperine run alarm.msl --analysis transient --stop 4e-6 --stream line</pre>
+  <p>Count the record lines from <code>Alarm.watch</code>: three, at times 0, 1&nbsp;µs and 3&nbsp;µs, and none at 2&nbsp;µs.</p>
+</div>
 
 <h3>Two continuous natures in one module</h3>
 
@@ -998,7 +1040,7 @@ module LadderTop() {
 <li><strong><code>pub</code>.</strong> A parent can reach into a child only through what the child marks <code>pub</code>. The ladder publishes its taps and its sections; it keeps <code>head</code> and <code>tail</code> to itself.</li>
 </ol>
 
-<p>Every instance and carrier of the elaborated design has a <strong>path</strong>: the names of the instances from the top down, joined by dots. The capacitor of the middle section is <code>top.lad.sec[1].c1</code>, and its param is <code>top.lad.sec[1].c1.c</code>. A host uses these paths to probe a node or set a param, and a record's stream name starts with the path of the instance that wrote it.</p>
+<p>Every instance and carrier of the elaborated design has a <strong>path</strong>: the name of the top module, then the names of the instances from the top down, joined by dots. The capacitor of the middle section is <code>LadderTop.lad.sec[1].c1</code>, and its param is <code>LadderTop.lad.sec[1].c1.c</code>. A host uses these paths to probe a node or set a param, and a record's stream name starts with the path of the instance that wrote it.</p>
 
 <h3>Looking inside from the parent</h3>
 
@@ -1012,13 +1054,26 @@ module LadderTop() {
 
 <p>Generation works in a <code>digital</code> block too: this is three reactions, one per tap. <code>lad.tap[k]</code> goes through the instance <code>lad</code> to its public array. The loop index is an ordinary value, so it can be a field. The stream gets one record per stage, in order, because the edge reaches the taps one after another:</p>
 
-<pre data-lang="text">stream top.half
+<pre data-lang="text">stream LadderTop.half
   fields
   stage = 1   t = …
   stage = 2   t = …
   stage = 3   t = …</pre>
 
 <p>The times are left for you; the exercise at the end of the chapter gives an estimate to check them against.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the first listing as <code>ladder.msl</code>. An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point:</p>
+<pre data-lang="sh">piperine run ladder.msl --analysis op
+piperine run ladder.msl --analysis dc --sweep src.dc --from 0 --to 1 --step 0.5</pre>
+<pre data-lang="text" data-cli-output="piperine run ladder.msl --analysis op">run ladder: op, top LadderTop, backend rust
+
+signal          value
+LadderTop.vin   1.000000e0
+LadderTop.vout  1.000000e0</pre>
+  <p>At DC the capacitors are open, so the output equals the input at every point of the sweep. For the <code>half</code> stream, use the version with the step source and run <code>--analysis transient --stop 20e-6 --stream half</code>: three record lines, <code>stage=1</code> to <code>stage=3</code>, in time order.</p>
+</div>
 
 <h3>Modules that return a value</h3>
 
@@ -1274,13 +1329,20 @@ module Clipper() {
 
 <p>The <code>wave</code> stream is the table you would plot: one record per accepted time point, none for a step the solver tried and threw away. The <code>clip</code> stream answers a sharper question, "when does the clipping start, and how high is the input then?". The solver locates the crossing in time, so the answer does not depend on where the time points happened to fall:</p>
 
-<pre data-lang="text">stream top.clip
+<pre data-lang="text">stream Clipper.clip
   instant           fields
   (≈ 59 µs, 1)      t ≈ 5.9e-5    vin ≈ 0.72
   (≈ 1.059 ms, 1)   t ≈ 1.059e-3  vin ≈ 0.72
   …                 once per period</pre>
 
 <p>At 0.6&nbsp;V the diode carries about 0.12&nbsp;mA, which drops 0.12&nbsp;V over the resistor, so the input is at 0.72&nbsp;V: the record confirms the hand calculation.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the clipper with its <code>digital</code> block as <code>clipper.msl</code>. Two periods, the <code>clip</code> records on the terminal, the waveform as a picture:</p>
+<pre data-lang="sh">piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg</pre>
+  <p>Look for two <code>clip</code> lines, one per period, each with <code>vin</code> near 0.72. Then open <code>clipper.svg</code> in a browser: the sine and its clipped copy on one axis. To keep the <code>wave</code> records instead of printing them, send every record to a file with <code>--records wave.jsonl</code>, one JSON object per line.</p>
+</div>
 
 <h3>Looking inside Newton: <code>emit!</code> in <code>analog</code></h3>
 
@@ -1295,7 +1357,7 @@ module Clipper() {
 
 <p>This <code>emit!</code> runs when the code around it runs, and <code>analog</code> runs at <em>every evaluation</em>: every Newton iteration of every step, including iterations and whole steps that the solver later rejects. Each record also carries the iteration number. The stream is a <strong>trace</strong> of the path Newton took:</p>
 
-<pre data-lang="text">stream top.d1.newton               one record per evaluation
+<pre data-lang="text">stream Clipper.d1.newton               one record per evaluation
   time    iteration   fields
   t1      0           vd = …   id = …
   t1      1           vd = …   id = …
@@ -1305,7 +1367,7 @@ module Clipper() {
   t2'     0           vd = …   id = …     the shorter retry
   …</pre>
 
-<p>That is exactly what you need when a circuit does not converge: you see the voltage a device was asked to evaluate at each iteration, and whether it is settling, oscillating or running away. It is also why a trace is never used for a result. Keep the two kinds of output apart:</p>
+<p>The <code>piperine</code> command prints the records of reactions; a trace from <code>analog</code> is not among the lines it shows. Where a trace is available, it is exactly what you need when a circuit does not converge: you see the voltage a device was asked to evaluate at each iteration, and whether it is settling, oscillating or running away. It is also why a trace is never used for a result. Keep the two kinds of output apart:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>You want</th><th>Write</th><th>Records exist for</th></tr></thead>
@@ -1459,7 +1521,7 @@ digital for Counter {
 
 <p>Why 254 and not 255? Because <strong>every read in a reaction sees the values from before the edge</strong>, exactly like the D inputs of real flip-flops. On the edge where <code>count</code> reads 254, the first commit schedules 255 and the second schedules <code>full = true</code>; both land together. So <code>full</code> is high exactly while <code>count</code> is 255. The stream shows it:</p>
 
-<pre data-lang="text">stream top.ctr.state               (a 1 MHz clock: edges at 0.5, 1.5, 2.5 µs, …)
+<pre data-lang="text">stream Count.ctr.state               (a 1 MHz clock: edges at 0.5, 1.5, 2.5 µs, …)
   instant         fields
   (0.5 µs, 0)     count = 0     full = false
   (1.5 µs, 0)     count = 1     full = false
@@ -1469,6 +1531,20 @@ digital for Counter {
   (256.5 µs, 0)   count = 0     full = false</pre>
 
 <p>Each record is the state the reaction <em>found</em>. Put the <code>emit!</code> first, last or in the middle: it prints the same thing, because nothing changes while a reaction runs. This is the habit to build: one <code>emit!("state", …)</code> at the top of a clocked reaction gives you the whole history of the block, one row per edge.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>The counter needs a clock. Put it in a file <code>count.msl</code> with the <code>Osc</code> of chapter 2 and a three-line bench:</p>
+<pre data-lang="msl">module Count() {
+    signal clk: Bit;
+    signal count: Bit<u8>;
+    signal full: Bit;
+    let osc = Osc(clk) { f: 1M };
+    let ctr = Counter(clk, count, full);
+}</pre>
+<pre data-lang="sh">piperine run count.msl --analysis transient --stop 257e-6 --print full --print-step 1e-6 --records state.jsonl</pre>
+  <p>In the table, the column <code>Count.full</code> reads <code>true</code> in exactly one row, the one at 255&nbsp;µs. The 257 <code>state</code> records are in <code>state.jsonl</code>, one object per line, ready for a script.</p>
+</div>
 
 <h3>The rules of a microstep</h3>
 
@@ -1560,11 +1636,18 @@ digital for Debounce {
     }
 }
 
-module ButtonTop(in button: Bit) {
+/// The bench: a clock, the debouncer, and a button that bounces.
+module Press() {
     signal clk: Bit;
+    signal button: Bit = false;
     pub signal pressed: Bit;
     let osc = Osc(clk) { f: 1k };
     let db = Debounce(clk, button, pressed) { n: 4 };
+}
+digital for Press {
+    on at(2.0m) { button <- true; }
+    on at(2.2m) { button <- false; }
+    on at(2.4m) { button <- true; }
 }</pre>
 
 <p>Read the reaction as a hardware designer would read RTL:</p>
@@ -1576,9 +1659,9 @@ module ButtonTop(in button: Bit) {
 <li><strong>Two streams.</strong> <code>state</code> is the row-per-edge debug stream. <code>flip</code> records only the interesting moments. Keeping them apart lets a host listen to <code>flip</code> alone.</li>
 </ul>
 
-<p>The top's <code>in button</code> port is driven by the host. Let it be low, bounce high at 2.0&nbsp;ms, low at 2.2&nbsp;ms, and high for good at 2.4&nbsp;ms. The clock is 1&nbsp;kHz, so it samples at 0.5, 1.5, 2.5&nbsp;ms and so on, and never sees the bounce:</p>
+<p>The bench plays the finger. Its three timed reactions are the stimulus: the button starts low, bounces high at 2.0&nbsp;ms, low at 2.2&nbsp;ms, and high for good at 2.4&nbsp;ms. Three reactions may commit to the same signal because they are in the same module. The clock is 1&nbsp;kHz, so it samples at 0.5, 1.5, 2.5&nbsp;ms and so on, and never sees the bounce:</p>
 
-<pre data-lang="text">stream top.db.state
+<pre data-lang="text">stream Press.db.state
   instant        fields
   (0.5 ms, 0)    raw = false   run = 0   clean = false
   (1.5 ms, 0)    raw = false   run = 0   clean = false
@@ -1588,10 +1671,19 @@ module ButtonTop(in button: Bit) {
   (5.5 ms, 0)    raw = true    run = 3   clean = false     the fourth sample: this edge flips
   (6.5 ms, 0)    raw = true    run = 0   clean = true
 
-stream top.db.flip
+stream Press.db.flip
   (5.5 ms, 0)    t = 5.5e-3   to = true</pre>
 
 <p>The <code>run</code> column lags by one edge, as it must: each row is the state the reaction found. When you debug a state machine this way, read a row as "given this state and these inputs, the block decided…" and look for the decision in the next row.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the file as <code>debounce.msl</code> and ask for the interesting stream only:</p>
+<pre data-lang="sh">piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip</pre>
+<pre data-lang="text" data-cli-output="piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip" data-cli-lines="1-2">run debounce: transient, top Press, backend rust
+@5.500000e-3 Press.db flip t=5.500000e-3 to=true</pre>
+  <p>One line: the output flipped once, at the fourth clean sample. Run it again with <code>--stream state</code> to get the row-per-edge table above as seven record lines.</p>
+</div>
 
 <h3>A complete example: a PWM generator</h3>
 
@@ -1617,17 +1709,34 @@ digital for Pwm {
     }
 }
 
-module PwmTop(in duty: Bit<u8>) {
+/// The bench: 25 % duty, changed to 60 % in the middle of the third cycle.
+module PwmBench() {
     signal clk: Bit;
+    signal duty: Bit<u8> = 25;
     pub signal pwm: Bit;
     signal wrap: Bit;
     let osc = Osc(clk) { f: 1M };
     let pulse = Pwm(clk, duty, pwm, wrap) { period: 100 };
+}
+digital for PwmBench {
+    on at(250u) { duty <- 60; }
 }</pre>
 
 <p>The pattern in this reaction is worth copying. First compute everything the next state needs into locals (<code>last</code>, <code>next</code>, <code>w</code>), from the current state. Then commit. Because the output is computed from <code>next</code> and <code>w</code>, not from <code>count</code> and <code>width</code>, <code>pwm</code> changes in the same microstep as the counter it belongs to.</p>
 
-<p><code>wrap</code> is a definition, so it has no initial value of its own: it is always <code>count == 0</code>. With a 1&nbsp;MHz clock the PWM runs at 10&nbsp;kHz, and the <code>cycle</code> stream has one record per period carrying the duty word that period will use. If the host changes <code>duty</code> from 25 to 60 in the middle of a cycle, the stream shows the change taking effect at the next wrap, never earlier.</p>
+<p><code>wrap</code> is a definition, so it has no initial value of its own: it is always <code>count == 0</code>. With a 1&nbsp;MHz clock the PWM runs at 10&nbsp;kHz, and the <code>cycle</code> stream has one record per period carrying the duty word that period will use. The bench changes <code>duty</code> from 25 to 60 at 250&nbsp;µs, in the middle of a cycle, and the stream shows the change taking effect at the next wrap, never earlier.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the file, with <code>Osc</code>, as <code>pwm.msl</code>:</p>
+<pre data-lang="sh">piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle</pre>
+<pre data-lang="text" data-cli-output="piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle" data-cli-lines="1-5">run pwm: transient, top PwmBench, backend rust
+@9.950000e-5 PwmBench.pulse cycle t=9.950000e-5 duty=25
+@1.995000e-4 PwmBench.pulse cycle t=1.995000e-4 duty=25
+@2.995000e-4 PwmBench.pulse cycle t=2.995000e-4 duty=60
+@3.995000e-4 PwmBench.pulse cycle t=3.995000e-4 duty=60</pre>
+  <p>The change made at 250&nbsp;µs shows up in the record at 299.5&nbsp;µs, the next wrap. Add <code>--plot pwm.svg</code> to see the pulses widen: a digital signal is drawn as a step trace in a lane of its own.</p>
+</div>
 
 <h3>From print to check</h3>
 
@@ -1653,7 +1762,14 @@ digital for PwmCheck {
     }
 }</pre>
 
-<p>Place it beside the generator in <code>PwmTop</code> with <code>let chk = PwmCheck(clk, wrap, pwm);</code>. A check is an ordinary reaction: it runs when its event fires and reads what any reaction reads. The library also has ready-made monitors built this way, such as <code>Never(clk, bad)</code> and <code>Setup(clk, d) { ts: 100p }</code>; chapter 10 lists them.</p>
+<p>Place it beside the generator in <code>PwmBench</code> with <code>let chk = PwmCheck(clk, wrap, pwm);</code>. A check is an ordinary reaction: it runs when its event fires and reads what any reaction reads. The library also has ready-made monitors built this way, such as <code>Never(clk, bad)</code> and <code>Setup(clk, d) { ts: 100p }</code>; chapter 10 lists them.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>With the check placed in the bench, <code>piperine run pwm.msl --analysis transient --stop 3e-3</code> prints each <code>checks</code> record as it is written and stops by itself at the twentieth cycle. In a project, give the run a table in <code>Piperine.toml</code> and let one command judge it:</p>
+<pre data-lang="sh">piperine test</pre>
+  <p>It runs every run of the project and prints one <code>PASS</code> or <code>FAIL</code> line each, with the failing check records under a <code>FAIL</code>. A check whose <code>pass</code> is unknown counts as a failure.</p>
+</div>
 
 <h3>Many drivers: resolved nets</h3>
 
@@ -1729,7 +1845,7 @@ digital for MacPipe {
 
 <div class="callout try">
   <p class="callout-label">Try it</p>
-  <p>In the debouncer, the host makes <code>button</code> high at 2.0&nbsp;ms and low again at 4.0&nbsp;ms. Write down the <code>run</code> column of the <code>state</code> stream up to 6.5&nbsp;ms, and say whether a <code>flip</code> record appears. (<code>run</code> reads 0, 0, 0, 1, 2, 0, 0: the samples at 2.5 and 3.5&nbsp;ms extend the run, the low sample at 4.5&nbsp;ms resets it. No flip.) Then make <code>Pwm</code> emit the time of each falling edge of its output, using a second reaction on <code>pwm.fall()</code>.</p>
+  <p>Change the bench of the debouncer so that <code>button</code> goes high at 2.0&nbsp;ms and low again at 4.0&nbsp;ms. Write down the <code>run</code> column of the <code>state</code> stream up to 6.5&nbsp;ms, and say whether a <code>flip</code> record appears. (<code>run</code> reads 0, 0, 0, 1, 2, 0, 0: the samples at 2.5 and 3.5&nbsp;ms extend the run, the low sample at 4.5&nbsp;ms resets it. No flip.) Then make <code>Pwm</code> emit the time of each falling edge of its output, using a second reaction on <code>pwm.fall()</code>.</p>
 </div>
 </section>
 
@@ -1789,13 +1905,20 @@ module CycleCounter() {
 
 <p>The node <code>vin</code> goes to the converter's electrical port; the converter's <code>Bit</code> output goes to the counter. Nothing else connects the two worlds. With a threshold of 0&nbsp;V and 0.2&nbsp;V of hysteresis, the comparator goes high when the sine rises through +0.1&nbsp;V, which first happens 15.9&nbsp;µs into each period:</p>
 
-<pre data-lang="text">stream top.ctr.pulse
+<pre data-lang="text">stream CycleCounter.ctr.pulse
   instant            fields
   (15.9 µs, 2)       t ≈ 1.59e-5    n = 1
   (1.0159 ms, 2)     t ≈ 1.0159e-3  n = 2
   (2.0159 ms, 2)     t ≈ 2.0159e-3  n = 3</pre>
 
 <p>The times are not multiples of the solver's step: each one is the located crossing. And the microstep is 2, not 0. That number is the story of the instant, which is the next section.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the design as <code>cycles.msl</code>:</p>
+<pre data-lang="sh">piperine run cycles.msl --analysis transient --stop 3e-3 --stream pulse</pre>
+  <p>Three record lines from <code>CycleCounter.ctr</code>, with <code>n=1</code>, <code>n=2</code> and <code>n=3</code>, about 15.9&nbsp;µs into each millisecond. The last row of the table shows <code>CycleCounter.count</code> at 3.</p>
+</div>
 
 <h3>The instant</h3>
 
@@ -1941,7 +2064,7 @@ module Buck() {
 
 <p>Run a transient and the <code>loop</code> stream is the start-up of the converter, period by period:</p>
 
-<pre data-lang="text">stream top.ctl.loop
+<pre data-lang="text">stream Buck.ctl.loop
   instant         fields
   (0, 1)          t = 0        vout = 0.000   err = 3.300   duty = 0.0033
   (10 µs, 0)      t = 1.0e-5   vout ≈ 0.000   err ≈ 3.300   duty ≈ 0.0066
@@ -1958,6 +2081,15 @@ module Buck() {
         if now() > 10m { require("regulated", (v(vout) - 3.3).abs() < 50m); }
     }
 }</pre>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Save the converter, with the <code>digital for Buck</code> check, as <code>buck.msl</code>. First watch the loop start, one record per switching period:</p>
+<pre data-lang="sh">piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop</pre>
+  <p>Read the <code>duty</code> field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the <code>Buck.vout</code> column of the table rises to 3.3. Then draw it, and keep the records for a script:</p>
+<pre data-lang="sh">piperine run buck.msl --analysis transient --stop 12e-3 --print vout --plot startup.svg --records loop.jsonl</pre>
+  <p>The plot holds every accepted step, so the switching ripple is visible on <code>vout</code> even though the table is printed once per millisecond.</p>
+</div>
 
 <div class="callout good">
   <p class="callout-label">Good to know</p>
@@ -2104,7 +2236,10 @@ pub module Bench() {
 
 <pre data-lang="toml">[package]
 name = "lowpass"
-version = "0.1.0"</pre>
+version = "0.1.0"
+
+[run.op]
+analysis = "op"</pre>
 
 <p>What each new line does:</p>
 
@@ -2113,10 +2248,23 @@ version = "0.1.0"</pre>
 <li><strong><code>pub module Resistor</code></strong> makes the module visible outside its file. Without <code>pub</code> it is private to <code>parts</code>.</li>
 <li><strong><code>use crate::parts::{Capacitor, Resistor};</code></strong> brings two names into scope. <code>crate</code> is the root of this crate.</li>
 <li><strong><code>analog for Resistor</code> stays next to <code>module Resistor</code>.</strong> This is the one rule MSL adds to Rust's: a hardware module and all its behavior blocks are in the same file, so you never hunt for the equations of a device.</li>
-<li><strong>The manifest</strong> needs only a name and a version. <code>std</code> is not listed: every crate has it.</li>
+<li><strong>The manifest</strong> needs only a name and a version. <code>std</code> is not listed: every crate has it. The <code>[run.op]</code> table is for the command line: a run with no <code>bench</code> key takes its top from the library itself.</li>
 </ul>
 
-<p>Splitting a design changes nothing about its instances: the capacitor is still <code>top.lp.c1</code>, and a stream written inside the filter is still named under <code>top.lp</code>. Paths of instances follow the hierarchy of the design, not the files it is written in.</p>
+<p>Splitting a design changes nothing about its instances: the capacitor is still <code>Bench.lp.c1</code>, and a stream written inside the filter is still named under <code>Bench.lp</code>. Paths of instances follow the hierarchy of the design, not the files it is written in.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Commands work from any directory inside the project; the nearest <code>Piperine.toml</code> upward is the project. With one run in the manifest, the name may be left out:</p>
+<pre data-lang="sh">piperine check
+piperine run</pre>
+<pre data-lang="text" data-cli-output="piperine run" data-cli-project="lowpass">run op: op, top Bench, backend rust
+
+signal      value
+Bench.vin   1.000000e0
+Bench.vout  1.000000e0</pre>
+  <p><code>check</code> reads every file, resolves every name and type-checks the top of each run without simulating; it ends with one <code>ok</code> line, or with the diagnostics. Once the design has more than one test circuit, move <code>Bench</code> out of the library into <code>benches/</code>, as the project of chapter 1 does, and import the parts with <code>use lowpass::…</code>.</p>
+</div>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
@@ -2563,7 +2711,7 @@ digital for Watchdog {
 
 <div class="callout try">
   <p class="callout-label">Try it</p>
-  <p>Without looking at the tables: which library module turns a stepped <code>Bit&lt;f64&gt;</code> level into a ramp, which one tells you how long ago a signal last changed, and which one checks that two commands are never high together? (<code>transition</code>, <code>since</code> and <code>Never</code>.) Then place a <code>Watchdog</code> in the <code>ButtonTop</code> of chapter 7 with <code>limit: 3</code>, its <code>busy</code> port on <code>button</code>, and say at which clock edge the run ends if the button is held down. (The fourth edge with the button down: the first three count, the fourth finds <code>run</code> at 3.)</p>
+  <p>Without looking at the tables: which library module turns a stepped <code>Bit&lt;f64&gt;</code> level into a ramp, which one tells you how long ago a signal last changed, and which one checks that two commands are never high together? (<code>transition</code>, <code>since</code> and <code>Never</code>.) Then place a <code>Watchdog</code> in the <code>Press</code> bench of chapter 7 with <code>limit: 3</code>, its <code>busy</code> port on <code>button</code>, and say at which clock edge the run ends if the button is held down. (The fourth edge with the button down: the first three count, the fourth finds <code>run</code> at 3.)</p>
 </div>
 </section>
 
@@ -2627,6 +2775,13 @@ analog for SampleHold {
 </ol>
 
 <p>Diagnostics come sorted by file and position, so you fix a file from top to bottom. Each fix here is local: one line, at the place the label points to.</p>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+  <p>Put the faulty listing in a project and place it in a bench, a module without ports, because checking starts from a top and works its way down. Then check the project without running anything:</p>
+<pre data-lang="sh">piperine check</pre>
+  <p>The diagnostics come on the error output, each with its code, the file, the line and the source excerpt, as in the two renderings at the top of this chapter, and the command exits with status 1. Fix the three lines and the same command prints one <code>ok</code> line and exits with 0.</p>
+</div>
 
 <h3>When it compiles and is still wrong</h3>
 
