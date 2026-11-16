@@ -214,6 +214,7 @@ fn tol_comparator() -> &'static Module {
 #[test]
 fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("TolComparator", tol_comparator());
+    partials::verify_every_function("Saturating", saturating());
 }
 
 /// A transient of `b` to `stop` from the initial step `dt`, with `options` adjusted by `adjust`;
@@ -450,4 +451,81 @@ fn a_crossing_in_the_step_after_a_jump_is_not_located() {
     let after: Vec<f64> = times.iter().copied().filter(|t| *t > edge + 0.5 * TICK).collect();
     assert_eq!(fired[0], after[0], "it fires at the end of the step that reads the jump");
     assert!(fired[0] - edge > 1.0e-6, "a controller step after the edge, not a landing next to it: {:e}", fired[0] - edge);
+}
+
+/// A `CROSS` watch on a curved function of time: `e = 1 − exp(−t/tau) − vth`, concave, so the
+/// secant of a bracket always lands past the crossing.
+/// pins: tau=0, vth=1 (PARAM F64); up=2 (PRIVATE event)
+/// watches: W0 CROSS "rise" -> up;  fn 0: reads [TIME, tau, vth] writes [W0]
+struct Saturating;
+static SAT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SAT: OnceLock<Module> = OnceLock::new();
+const ONE_US: [u8; 8] = 1.0e-6f64.to_le_bytes();
+const VTH: [u8; 8] = 0.999f64.to_le_bytes();
+
+fn saturating_shape() -> ShapeRef {
+    use piperine_abi::raw::{DEFAULT, ambient};
+    let mut s = ShapeBuf::new();
+    let param = |name, init| PinSpec { flags: pin_flag::HAS_INIT, init, ..PinSpec::discrete(name, role::PARAM, &F64) };
+    let tau = s.pin(param("tau", &ONE_US));
+    let vth = s.pin(param("vth", &VTH));
+    let up = s.pin(PinSpec::event("up", role::PRIVATE));
+    let w0 = s.watch(WatchSpec { name: "rise", origin: ORIGIN, kind: watch::CROSS, layout: &F64, event: up, ttol: DEFAULT, etol: DEFAULT });
+    s.function(FunctionSpec {
+        name: "e",
+        origin: ORIGIN,
+        reads: vec![
+            Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE },
+            Cell { kind: cell::PIN, index: tau, part: part::VALUE },
+            Cell { kind: cell::PIN, index: vth, part: part::VALUE },
+        ],
+        writes: vec![Cell { kind: cell::WATCH, index: w0, part: part::VALUE }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for Saturating {
+    fn prototype() -> &'static Shape<'static> {
+        SAT_SHAPE.get_or_init(saturating_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Saturating, Arc::clone(SAT_SHAPE.get_or_init(saturating_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (t, tau, vth) = (cx.f64(0), cx.f64(1), cx.f64(2));
+        cx.set(0, 1.0 - (-t / tau).exp() - vth);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+fn saturating() -> &'static Module {
+    SAT.get_or_init(|| module::<Saturating>("Saturating"))
+}
+
+#[test]
+fn a_curved_crossing_converges_from_both_sides() {
+    // SCX-01 AC 1, the two-point secant (verification finding): e = 1 − exp(−t/1 µs) − 0.999
+    // crosses at 1 µs·ln(1000) = 6.9078 µs and is concave, so the secant of a bracket that starts
+    // at 0 always lands past the crossing and closes in from one side, a few parts in a thousand
+    // per retake: with steps of 20 µs it would need far more than the protocol's 64 consecutive
+    // retakes. The secant of the step's last two attempts past the crossing lands on either side
+    // and converges in a handful. The crossing is located, with e < etol (1 µV) or within ttol
+    // plus one tick.
+    let mut b = CircuitBuilder::new("curved");
+    let gnd = b.ground();
+    let top = b.node("top");
+    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 1.0e3, &top, &gnd);
+    b.device(saturating(), "sat", &[], &[]);
+    let (_, seen) = run(b, 40.0e-6, 20.0e-6, |o| o.dt_max = 20.0e-6, Context::default());
+    let fired = crossings(&seen, "sat.up");
+    assert_eq!(fired.len(), 1, "{fired:?}");
+    let truth = 1.0e-6 * 1000f64.ln();
+    let e = 1.0 - (-fired[0] / 1.0e-6).exp() - 0.999;
+    let late = fired[0] - truth;
+    assert!(e > 0.0 && (e < ETOL || late <= TTOL + TICK), "e = {e:e}, late {late:e}");
 }

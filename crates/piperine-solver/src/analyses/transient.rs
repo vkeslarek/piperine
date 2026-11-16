@@ -871,29 +871,33 @@ pub(crate) struct DeviceRun {
 }
 
 /// The attempts of one step that went past a crossing (§17.3): the accepted time the step
-/// starts from, and each rising watch's `(instance, watch)` with its last attempt
-/// `(time, value)` past the crossing. It survives the protocol's restore; a step from another
-/// accepted time drops it.
+/// starts from, and each rising watch's `(instance, watch)` with its last attempt past the
+/// crossing, `(time, value, attempts past it so far)`. It survives the protocol's restore; a
+/// step from another accepted time drops it.
 struct Located {
     from: f64,
-    past: Vec<((usize, usize), (f64, f64))>,
+    past: Vec<((usize, usize), (f64, f64, u32))>,
 }
 
 /// The crossing time of a watch between the last accepted solution `(t0, e0)`, `e0 ≤ 0`, and the
-/// attempt `(t1, e1)`, `e1 > 0`: the secant through the attempt and `prev`, this step's last
-/// attempt past the crossing, when it falls inside the bracket; else the bracket's own secant.
-/// The bracket's secant alone stalls on a curved `e` (each retake lands on the same side); the
-/// two-point secant converges from either side (Appendix C.2).
-fn crossing_estimate(t0: f64, e0: f64, t1: f64, e1: f64, prev: Option<(f64, f64)>) -> f64 {
-    if let Some((tp, ep)) = prev
-        && tp > t1
-        && ep > e1
-    {
-        let t = t1 - e1 * (tp - t1) / (ep - e1);
-        if t > t0 && t < t1 {
-            return t;
+/// attempt `(t1, e1)`, `e1 > 0`. `prev` is this step's last attempt past the crossing and how
+/// many there were. The secant through the attempt and `prev` when it falls inside the
+/// bracket; else the bracket's secant, with `e0` halved once per earlier attempt past the
+/// crossing (the Illinois rule). The bracket's plain secant stalls on a curved `e`: each retake
+/// lands past the crossing again and closes in from one side; the two-point secant and the
+/// halving pull the estimate across it (Appendix C.2).
+fn crossing_estimate(t0: f64, e0: f64, t1: f64, e1: f64, prev: Option<(f64, f64, u32)>) -> f64 {
+    let mut halvings = 0;
+    if let Some((tp, ep, n)) = prev {
+        if tp > t1 && ep > e1 {
+            let t = t1 - e1 * (tp - t1) / (ep - e1);
+            if t > t0 && t < t1 {
+                return t;
+            }
         }
+        halvings = n.min(1000);
     }
+    let e0 = e0 * 0.5f64.powi(halvings as i32);
     predict_crossing(CrossDir::Rising, t0, e0, t1, e1).map_or(t0, |p| p.t_cross)
 }
 
@@ -1394,8 +1398,8 @@ impl TransientSolver<'_> {
         for r in &rising {
             let key = (r.instance, r.watch);
             match located.past.iter_mut().find(|(k, _)| *k == key) {
-                Some((_, p)) => *p = (t1, r.now),
-                None => located.past.push((key, (t1, r.now))),
+                Some((_, p)) => *p = (t1, r.now, p.2 + 1),
+                None => located.past.push((key, (t1, r.now, 1))),
             }
         }
         Ok(Some(landing * run.spt))
