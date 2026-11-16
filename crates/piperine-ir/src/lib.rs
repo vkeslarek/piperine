@@ -11,17 +11,18 @@ mod ids;
 mod model;
 mod print;
 mod real;
+mod statements;
 mod typing;
 
 pub use check::Broken;
 pub use deps::{BranchIndex, Deps, ParamIndex, SiteIndex, Target};
 pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NetSpec, NodeSpec};
-pub use handle::{Body, Function, Instance, Nature, Net, Node};
+pub use handle::{Body, Function, Instance, Nature, Net, Node, RecordSite};
 pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 pub use model::{
-    Addend, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, Constant, Drive, Env, Event, EventSource, Expr,
+    Addend, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, Constant, Drive, EmitField, Env, Event, EventSource, Expr,
     ExprData, FunctionData, InstanceData, Ir, Local, MathFn, Method, NatureData, NetData, NodeData, NodeRef,
-    NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Reaction, Site, Stmt, Terminal, UnaryOp,
+    NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
     ValueType,
 };
 pub use real::Real;

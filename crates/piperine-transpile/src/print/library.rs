@@ -16,7 +16,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, Stmt, StmtId};
+use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, StmtId};
 use piperine_plan::{BodyPlan, Mode};
 
 use crate::Error;
@@ -347,16 +347,7 @@ impl LibraryPrinter {
 
     /// The expressions the statements `stmts` hold directly.
     fn statement_exprs(ir: &Ir, stmts: &[StmtId]) -> Vec<ExprId> {
-        let mut exprs = Vec::new();
-        for s in stmts {
-            match ir.stmt(*s) {
-                Stmt::Let { init, .. } => exprs.push(*init),
-                Stmt::Expr(e) => exprs.push(*e),
-                Stmt::Contribute { addends, .. } => exprs.extend(addends.iter().map(|a| a.value)),
-                Stmt::Commit { value, after, .. } => exprs.extend([*value].into_iter().chain(*after)),
-            }
-        }
-        exprs
+        stmts.iter().flat_map(|s| ir.stmt(*s).operands()).collect()
     }
 
     /// The `use` lines of `uses`, one per module path, names sorted.

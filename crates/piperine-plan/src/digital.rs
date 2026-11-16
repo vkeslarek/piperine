@@ -48,7 +48,7 @@ use piperine_abi::layout::{BIT, BYTE, REAL, leaf_size};
 use piperine_abi::layout::F64;
 use piperine_abi::raw::{DEFAULT, Field, Layout, List, Statement, Str, field_flag, leaf, pin_flag, role, statement_flag, watch};
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
-use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, StmtId, Target as Query, ValueType};
+use piperine_ir::{Body, CarrierRole, Constant, EmitField, EventSource, Expr, ExprId, Ir, Origin, Stmt, StmtId, Target as Query, ValueType};
 
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
 
@@ -411,6 +411,16 @@ impl Commits {
                         Self::expr(ir, *a, out);
                     }
                     out.push((*carrier, *after));
+                }
+                // An emit is a statement of its own in the ABI numbering, which this list does
+                // not carry yet (msl-digital T43); the compiled backend refuses a body with
+                // one, the interpreter rejects it.
+                Stmt::Emit { fields, .. } => {
+                    for f in fields {
+                        if let EmitField::Value { value, .. } = f {
+                            Self::expr(ir, *value, out);
+                        }
+                    }
                 }
             }
         }

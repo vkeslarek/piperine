@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Constant, Env, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Constant, EmitField, Env, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
     ValueType,
 };
 use crate::typing::Typing;
@@ -64,6 +64,8 @@ struct Owner {
     stims: usize,
     /// The carried types of the body's carriers.
     carriers: Vec<ValueType>,
+    /// The field types of each of the body's streams.
+    streams: Vec<Vec<ValueType>>,
     /// A body (probes and params are readable) rather than a function.
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
@@ -153,6 +155,10 @@ impl<'a> Checker<'a> {
             Stmt::Expr(e) => Some(*e),
             Stmt::Contribute { addends, .. } => addends.first().map(|a| a.value),
             Stmt::Commit { value, .. } => Some(*value),
+            Stmt::Emit { fields, .. } => fields.iter().find_map(|f| match f {
+                EmitField::Value { value, .. } => Some(*value),
+                EmitField::Text { .. } => None,
+            }),
         };
         first.map_or_else(Checker::unknown, |e| self.expr_origin(e))
     }
@@ -270,6 +276,13 @@ impl<'a> Checker<'a> {
                     self.expr_id(&item, &origin, *value);
                     if let Some(after) = after {
                         self.expr_id(&item, &origin, *after);
+                    }
+                }
+                Stmt::Emit { fields, .. } => {
+                    for f in fields {
+                        if let EmitField::Value { value, .. } = f {
+                            self.expr_id(&item, &origin, *value);
+                        }
                     }
                 }
             }
@@ -453,6 +466,19 @@ impl<'a> Checker<'a> {
                     found.push((format!("{item} reaction local {}", l.name), r.origin.clone(), l.ty.clone()));
                 }
             }
+            for stream in &body.streams {
+                let mut names: BTreeSet<&str> = BTreeSet::new();
+                for f in &stream.fields {
+                    let at = format!("{item} stream {}", stream.name);
+                    if !Typing::scalar(&f.ty) {
+                        self.report(at.clone(), body.origin.clone(), format!("a stream field holds `bool`, `f64` or an integer type, found {} for {}", f.ty, f.name));
+                    }
+                    if !names.insert(f.name.as_str()) {
+                        self.report(at.clone(), body.origin.clone(), format!("stream {} has two fields named {}", stream.name, f.name));
+                    }
+                    found.push((at, body.origin.clone(), f.ty.clone()));
+                }
+            }
             for c in &body.carriers {
                 if !Typing::scalar(&c.ty) {
                     self.report(format!("{item} carrier {}", c.name), c.origin.clone(), format!("a carrier holds `bool`, `f64` or an integer type, found {}", c.ty));
@@ -535,6 +561,10 @@ impl<'a> Checker<'a> {
                     Stmt::Expr(e) => stack_e.push(*e),
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
                     Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
+                    Stmt::Emit { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
+                        EmitField::Value { value, .. } => Some(*value),
+                        EmitField::Text { .. } => None,
+                    })),
                 }
                 continue;
             }
@@ -630,6 +660,11 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
+    /// The emits among `stmts`.
+    fn emits(&self, stmts: &[StmtId]) -> Vec<StmtId> {
+        stmts.iter().copied().filter(|s| matches!(self.ir.stmts.get(s.index()), Some(Stmt::Emit { .. }))).collect()
+    }
+
     fn discrete(&mut self) {
         let ir = self.ir;
         for body in &ir.bodies {
@@ -677,12 +712,20 @@ impl<'a> Checker<'a> {
                 let origin = self.stmt_origin(&ir.stmts[s.index()]);
                 self.report(item.clone(), origin, "a commit outside a reaction".to_string());
             }
+            for s in self.emits(&stmts) {
+                let origin = self.stmt_origin(&ir.stmts[s.index()]);
+                self.report(item.clone(), origin, "an emit outside a reaction".to_string());
+            }
         }
         for function in &ir.functions {
             let (_, stmts) = self.reach(&[], &[function.body]);
             for (s, _) in self.commits(&stmts) {
                 let origin = self.stmt_origin(&ir.stmts[s.index()]);
                 self.report(format!("function {}", function.name), origin, "a commit outside a reaction".to_string());
+            }
+            for s in self.emits(&stmts) {
+                let origin = self.stmt_origin(&ir.stmts[s.index()]);
+                self.report(format!("function {}", function.name), origin, "an emit outside a reaction".to_string());
             }
         }
     }
@@ -755,6 +798,7 @@ impl<'a> Checker<'a> {
                 limits: body.limits.len(),
                 stims: body.stims.len(),
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
+                streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
                 in_body: true,
                 analog,
             };
@@ -815,6 +859,7 @@ impl<'a> Checker<'a> {
                 limits: 0,
                 stims: 0,
                 carriers: Vec::new(),
+                streams: Vec::new(),
                 in_body: false,
                 analog: false,
             };
@@ -931,6 +976,23 @@ impl<'a> Checker<'a> {
                 if let Some(after) = after {
                     self.carried(w, *after, &ValueType::F64, "the delay of a commit");
                     next.push(Task::Expr(*after, ctx));
+                }
+            }
+            Stmt::Emit { stream, fields } => {
+                // An emit outside a reaction is named by `discrete`; its stream is a body's.
+                let types = if w.owner.in_body { w.owner.streams.get(*stream as usize).cloned() } else { None };
+                if w.owner.in_body && types.is_none() {
+                    self.report(w.owner.item.clone(), origin.clone(), format!("emit to stream {stream}, out of range ({} streams)", w.owner.streams.len()));
+                }
+                for f in fields {
+                    let EmitField::Value { field, value } = f else { continue };
+                    if let Some(types) = &types {
+                        match types.get(*field as usize) {
+                            Some(ty) => self.carried(w, *value, ty, "the value of an emit field"),
+                            None => self.report(w.owner.item.clone(), origin.clone(), format!("emit writes field {field} of stream {stream}, out of range ({} fields)", types.len())),
+                        }
+                    }
+                    next.push(Task::Expr(*value, ctx));
                 }
             }
         }

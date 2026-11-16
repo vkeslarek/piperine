@@ -32,8 +32,8 @@ use std::fmt::{self, Display, Write};
 
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, Constant, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
-    Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Terminal,
+    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, Constant, EmitField, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
+    Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Stream, Terminal,
     UnaryOp, ValueType,
 };
 use crate::real::Real;
@@ -94,6 +94,7 @@ struct Scope<'a> {
     params: &'a [Param],
     nodes: &'a [BodyNode],
     carriers: &'a [Carrier],
+    streams: &'a [Stream],
 }
 
 /// One step of the iterative tree walk.
@@ -240,7 +241,7 @@ impl<'a> Printer<'a> {
     fn body(&mut self, body: &BodyData) {
         let at = self.at(&body.origin);
         self.line(0, &format!("body {}{at}", Printer::name(&body.name)));
-        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers };
+        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers, streams: &body.streams };
         for param in &body.params {
             let mut text = format!("param {}: {}", Printer::name(&param.name), param.ty);
             if let Some(default) = &param.default {
@@ -271,6 +272,10 @@ impl<'a> Printer<'a> {
             let init = carrier.init.map_or(String::new(), |c| format!(" init {c}"));
             let at = self.at(&carrier.origin);
             self.line(1, &format!("carrier {}: {} {role}{init}{at}", Printer::name(&carrier.name), carrier.ty));
+        }
+        for stream in &body.streams {
+            let fields: Vec<String> = stream.fields.iter().map(|f| format!("{}: {}", Printer::name(&f.name), f.ty)).collect();
+            self.line(1, &format!("stream {} ({})", Printer::name(&stream.name), fields.join(", ")));
         }
         for (i, branch) in body.branches.iter().enumerate() {
             let kind = if branch.kind == BranchKind::Flow { "flow" } else { "potential" };
@@ -360,7 +365,7 @@ impl<'a> Printer<'a> {
         let at = self.at(&function.origin);
         self.line(0, &format!("fn {}({}) -> {}{at}", Printer::name(&function.name), params.join(", "), function.ret));
         self.locals(1, &function.locals);
-        let scope = Scope { locals: &function.locals, params: &[], nodes: &[], carriers: &[] };
+        let scope = Scope { locals: &function.locals, params: &[], nodes: &[], carriers: &[], streams: &[] };
         let body = function.body;
         // A block body prints one statement per line. In the full text its id is printed and on
         // the stack meanwhile. In the structural form each line is a statement of its own,
@@ -517,6 +522,24 @@ impl<'a> Printer<'a> {
                 if let Some(after) = after {
                     next.extend([Piece::Text(" after ".into()), Piece::Expr(*after)]);
                 }
+            }
+            Stmt::Emit { stream, fields } => {
+                let name = scope.streams.get(*stream as usize).map_or(format!("<bad stream {stream}>"), |s| Printer::name(&s.name));
+                next.push(Piece::Text(format!("emit {name}(")));
+                for (i, f) in fields.iter().enumerate() {
+                    if i > 0 {
+                        next.push(Piece::Text(", ".into()));
+                    }
+                    match f {
+                        EmitField::Value { field, value } => {
+                            let field = scope.streams.get(*stream as usize).and_then(|s| s.fields.get(*field as usize));
+                            next.push(Piece::Text(format!("{} = ", field.map_or("<bad field>".to_string(), |f| Printer::name(&f.name)))));
+                            next.push(Piece::Expr(*value));
+                        }
+                        EmitField::Text { name, text } => next.push(Piece::Text(format!("{} = {text:?}", Printer::name(name)))),
+                    }
+                }
+                next.push(Piece::Text(")".into()));
             }
         }
     }
@@ -904,6 +927,16 @@ impl<'a> Printer<'a> {
             }
             Stmt::Commit { carrier, value, after } => {
                 format!("commit c{carrier} e{} {}", value.0, after.map_or("-".to_string(), |a| format!("e{}", a.0)))
+            }
+            Stmt::Emit { stream, fields } => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|f| match f {
+                        EmitField::Value { field, value } => format!("f{field} e{}", value.0),
+                        EmitField::Text { name, text } => format!("{} {text:?}", Printer::name(name)),
+                    })
+                    .collect();
+                format!("emit s{stream} ({})", parts.join(", "))
             }
         }
     }

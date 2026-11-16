@@ -3,9 +3,10 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, Constant, Drive, Event, Expr, FunctionData, InstanceData, Ir, Local,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, ValueType,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, Constant, Drive, EmitField, Event, Expr, FunctionData, InstanceData, Ir, Local,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
+use crate::statements::Statements;
 
 impl Ir {
     /// The kind of an expression. An id out of range panics; `Ir::check` is the gate that makes
@@ -183,6 +184,47 @@ impl<'a> Body<'a> {
     pub fn reactions(&self) -> &'a [Reaction] {
         &self.data().reactions
     }
+
+    /// The record streams the body's `emit!` sites write, by index.
+    pub fn streams(&self) -> &'a [Stream] {
+        &self.data().streams
+    }
+
+    /// The commits and emits of reaction `reaction`, in source order, nested ones included: the
+    /// ABI's statement numbering counts them together, so statement `i` of the reaction is
+    /// entry `i` of this list. A reaction out of range has none.
+    pub fn reaction_statements(&self, reaction: u32) -> Vec<StmtId> {
+        match self.data().reactions.get(reaction as usize) {
+            Some(r) => Statements::of(self.ir, &r.stmts),
+            None => Vec::new(),
+        }
+    }
+
+    /// Where a record delivered by the solver came from: the stream and the text fields of the
+    /// emit that is statement `statement` of reaction `reaction`. `None` when that statement is a
+    /// commit, or there is none (a host decodes a record from the instance, the reaction and the
+    /// statement the solver's sink gives it).
+    pub fn record_site(&self, reaction: u32, statement: u32) -> Option<RecordSite<'a>> {
+        let id = *self.reaction_statements(reaction).get(statement as usize)?;
+        let Stmt::Emit { stream, fields } = self.ir.stmt(id) else { return None };
+        let texts = fields
+            .iter()
+            .filter_map(|f| match f {
+                EmitField::Text { name, text } => Some((name.as_str(), text.as_str())),
+                EmitField::Value { .. } => None,
+            })
+            .collect();
+        Some(RecordSite { stream: self.data().streams.get(*stream as usize)?.name.as_str(), texts })
+    }
+}
+
+/// The source of one record: the stream it belongs to and the text fields its site wrote, which
+/// never cross the ABI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordSite<'a> {
+    pub stream: &'a str,
+    /// `(field, text)` in source order.
+    pub texts: Vec<(&'a str, &'a str)>,
 }
 
 /// A nature.

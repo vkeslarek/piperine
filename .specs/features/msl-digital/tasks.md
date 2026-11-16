@@ -644,10 +644,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] A reaction's statement index counts commits and emits together, in source order: it is the ABI statement index
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `an_emit_site_prints_and_checks`, `a_record_site_gives_its_stream_and_texts`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] A reaction's statement index counts commits and emits together, in source order: it is the ABI statement index
+- [x] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `an_emit_site_prints_and_checks`, `a_record_site_gives_its_stream_and_texts`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full

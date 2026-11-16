@@ -232,6 +232,13 @@ impl Reach {
                     Reach::expr(ir, *a, out);
                 }
             }
+            Stmt::Emit { fields, .. } => {
+                for f in fields {
+                    if let piperine_ir::EmitField::Value { value, .. } = f {
+                        Reach::expr(ir, *value, out);
+                    }
+                }
+            }
         }
     }
 

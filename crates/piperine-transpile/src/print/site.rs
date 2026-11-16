@@ -6,7 +6,7 @@
 //! param's `where` over the params it reads, as a generic block run over `f64` returning `bool`,
 //! written as the known `BIT` `HIGH` or `LOW`.
 
-use piperine_ir::{Expr, ExprId, Stmt};
+use piperine_ir::{Expr, ExprId};
 use piperine_plan::{Mode, Source, Target};
 
 use crate::Error;
@@ -17,12 +17,7 @@ impl<'a> AnalogPrinter<'a> {
     fn stim_site(&self, k: u32) -> Option<(usize, ExprId, Option<ExprId>)> {
         let block = self.body.analog().unwrap_or(&[]);
         for (stmt, id) in block.iter().enumerate() {
-            let mut exprs = match self.ir.stmt(*id) {
-                Stmt::Let { init, .. } => vec![*init],
-                Stmt::Expr(e) => vec![*e],
-                Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
-                Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
-            };
+            let mut exprs = self.ir.stmt(*id).operands();
             while let Some(e) = exprs.pop() {
                 match self.ir.expr(e) {
                     Expr::Stim { site, mag, phase } if *site == k => return Some((stmt, *mag, *phase)),

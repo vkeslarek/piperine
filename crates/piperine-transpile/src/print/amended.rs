@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Body, Env, EventSource, Expr, ExprId, Ir};
+use piperine_ir::{Body, EmitField, Env, EventSource, Expr, ExprId, Ir, Stmt};
 use piperine_plan::BodyPlan;
 
 use crate::Error;
@@ -21,6 +21,20 @@ impl Amended {
             for (k, event) in body.events().iter().enumerate() {
                 if let EventSource::At(_) = event.source {
                     return Err(Error::Unsupported { form: "at(t)".into(), path: format!("body {} event {k}", body.name()), origin: event.origin.clone() });
+                }
+            }
+            for k in 0..body.reactions().len() as u32 {
+                for id in body.reaction_statements(k) {
+                    if let Stmt::Emit { fields, .. } = ir.stmt(id) {
+                        let origin = fields
+                            .iter()
+                            .find_map(|f| match f {
+                                EmitField::Value { value, .. } => Some(ir.expr_origin(*value).clone()),
+                                EmitField::Text { .. } => None,
+                            })
+                            .unwrap_or_else(|| body.reactions()[k as usize].origin.clone());
+                        return Err(Error::Unsupported { form: "emit!".into(), path: format!("body {} reaction {k} s{}", body.name(), id.index()), origin });
+                    }
                 }
             }
             let mut exprs = LibraryPrinter::roots(ir, [*body]);

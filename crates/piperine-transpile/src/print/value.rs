@@ -26,7 +26,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use piperine_ir::{
-    BinaryOp, Body, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Terminal,
+    BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Terminal,
     UnaryOp, ValueType,
 };
 
@@ -444,12 +444,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::If { cond, then, otherwise } => out.extend([*cond, *then, *otherwise]),
             Expr::Block { stmts, value } => {
                 for s in stmts {
-                    match ir.stmt(*s) {
-                        Stmt::Let { init, .. } => out.push(*init),
-                        Stmt::Expr(e) => out.push(*e),
-                        Stmt::Contribute { addends, .. } => out.extend(addends.iter().map(|a| a.value)),
-                        Stmt::Commit { value, after, .. } => out.extend([*value].into_iter().chain(*after)),
-                    }
+                    out.extend(ir.stmt(*s).operands());
                 }
                 out.extend(value);
             }
@@ -961,6 +956,14 @@ impl<'a> ValuePrinter<'a> {
                 form: "contribution".into(),
                 path: format!("{} s{}", self.path, s.index()),
                 origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
+            }),
+            Stmt::Emit { fields, .. } => Err(Error::Unsupported {
+                form: "emit!".into(),
+                path: format!("{} s{}", self.path, s.index()),
+                origin: fields.iter().find_map(|f| match f {
+                    EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
+                    EmitField::Text { .. } => None,
+                }).unwrap_or_else(|| self.origin.clone()),
             }),
             Stmt::Commit { carrier, value, after } => {
                 if !self.commits {

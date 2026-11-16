@@ -5,8 +5,8 @@
 use std::sync::Arc;
 
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Constant, Env, Event, EventSource, Expr, FunctionSpec,
-    InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, QuantityRole, Stmt, Terminal, ValueType,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Constant, EmitField, Env, Event, EventSource, Expr, FunctionSpec,
+    InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
 };
 use piperine_transpile::{Error, Transpiler};
 
@@ -112,5 +112,31 @@ fn an_at_event_is_refused_by_name() {
     assert_eq!(
         Case::refused(b.finish(top)),
         Error::Unsupported { form: "at(t)".into(), path: "body Timer event 0".into(), origin: Buck::origin(F, 2, 8) }
+    );
+}
+
+#[test]
+fn an_emit_site_is_refused_by_name() {
+    // `on q.changed() { emit!("sim", finish = true); }` at line 3, the second statement after a
+    // commit at line 2.
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Monitor", F, 1));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 20));
+    let sim = b.stream(body, Stream { name: "sim".into(), fields: vec![StreamField { name: "finish".into(), ty: ValueType::Bool }] });
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 2, 8) });
+    let mut x = Dx::new(&mut b, F, 2, 24);
+    let no = x.boolean(false);
+    let commit = x.commit(0, no, None);
+    x.at(3, 40);
+    let stop = x.boolean(true);
+    let emit = x.b.stmt(Stmt::Emit { stream: sim, fields: vec![EmitField::Value { field: 0, value: stop }] });
+    Buck::reaction(&mut b, body, vec![changed], vec![commit, emit], vec![], F, 2);
+    let at = b.next_instance_id();
+    let net = b.net(NetSpec { path: "Top.q".into(), ty: ValueType::Bool, declared_by: at, init: None, origin: Buck::origin(F, 1, 20) });
+    let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![], origin: Buck::origin(F, 1, 1) });
+    b.bind_nets(top, vec![net]);
+    assert_eq!(
+        Case::refused(b.finish(top)),
+        Error::Unsupported { form: "emit!".into(), path: "body Monitor reaction 0 s1".into(), origin: Buck::origin(F, 3, 40) }
     );
 }

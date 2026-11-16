@@ -11,8 +11,8 @@ mod digital;
 
 use digital::{Buck, Dx};
 use piperine_ir::{
-    BodyId, BodySpec, Branch, BranchKind, CarrierRole, Constant, Deps, Drive, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
-    IrBuilder, NodeRef, NodeSpec, Origin, Real, Stmt, Target, Terminal, ValueType, NetSpec,
+    BodyId, BodySpec, Branch, BranchKind, CarrierRole, Constant, Deps, Drive, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
+    IrBuilder, NetSpec, NodeRef, NodeSpec, Origin, Real, RecordSite, Stmt, Stream, StreamField, Target, Terminal, ValueType,
 };
 
 /// Designs for the tests: one body placed as the top of a design.
@@ -277,4 +277,187 @@ fn an_at_event_prints_and_checks() {
     one("body Bad event 2", 4, "reads time()");
     one("body Bad event 3", 1, "reads time()");
     assert_eq!(broken.len(), 4, "{broken:#?}");
+}
+
+/// `Watch`: the reaction of a monitor that commits, checks and stops, with the statements the ABI
+/// numbers 0 (the commit), 1 (the nested emit) and 2 (the last emit).
+///
+/// ```text
+/// module Watch(in v: Bit<f64>, in done: Bit, out seen: Bit = false) {}               // 1
+/// digital for Watch {
+///     on done.rise() {                                                               // 3
+///         seen <- true;                                                              // 4
+///         if v.is_known() {
+///             emit!("checks", kind = "min", name = "vout",
+///                   pass = v.known_or(0.0) > 1.0, margin = v.known_or(0.0) - 1.0);  // 6
+///         }
+///         emit!("sim", finish = true, msg = "done");                                 // 8
+///     }
+/// }
+/// ```
+struct Watch;
+
+impl Watch {
+    const F: &'static str = "watch.msl";
+
+    fn ir() -> Ir {
+        let mut b = IrBuilder::new();
+        let body = b.body(Buck::spec("Watch", Watch::F, 1));
+        b.carrier(body, Buck::carrier("v", ValueType::F64, CarrierRole::In, None, Watch::F, 1, 20));
+        b.carrier(body, Buck::carrier("done", ValueType::Bool, CarrierRole::In, None, Watch::F, 1, 36));
+        b.carrier(body, Buck::carrier("seen", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), Watch::F, 1, 52));
+        let checks = b.stream(
+            body,
+            Stream {
+                name: "checks".into(),
+                fields: vec![StreamField { name: "pass".into(), ty: ValueType::Bool }, StreamField { name: "margin".into(), ty: ValueType::F64 }],
+            },
+        );
+        let sim = b.stream(
+            body,
+            Stream {
+                name: "sim".into(),
+                fields: vec![StreamField { name: "finish".into(), ty: ValueType::Bool }, StreamField { name: "failed".into(), ty: ValueType::Bool }],
+            },
+        );
+        let rise = Buck::rise(&mut b, body, 1, Watch::F, 3, 8);
+        let mut x = Dx::new(&mut b, Watch::F, 4, 18);
+        let yes = x.boolean(true);
+        let seen = x.commit(2, yes, None);
+        x.at(5, 12);
+        let v = x.carrier(0, ValueType::F64);
+        let known = x.is_known(v);
+        x.at(6, 54);
+        let v = x.carrier(0, ValueType::F64);
+        let zero = x.real(0.0);
+        let level = x.known_or(v, zero, ValueType::F64);
+        let one = x.real(1.0);
+        let pass = x.bin(piperine_ir::BinaryOp::Gt, level, one, ValueType::Bool);
+        let v = x.carrier(0, ValueType::F64);
+        let zero = x.real(0.0);
+        let level = x.known_or(v, zero, ValueType::F64);
+        let one = x.real(1.0);
+        let margin = x.bin(piperine_ir::BinaryOp::Sub, level, one, ValueType::F64);
+        let check = x.b.stmt(Stmt::Emit {
+            stream: checks,
+            fields: vec![
+                EmitField::Text { name: "kind".into(), text: "min".into() },
+                EmitField::Text { name: "name".into(), text: "vout".into() },
+                EmitField::Value { field: 0, value: pass },
+                EmitField::Value { field: 1, value: margin },
+            ],
+        });
+        let guarded = x.when(known, vec![check], None);
+        let guarded = x.stmt(guarded);
+        x.at(8, 22);
+        let stop = x.boolean(true);
+        let last = x.b.stmt(Stmt::Emit {
+            stream: sim,
+            fields: vec![EmitField::Value { field: 0, value: stop }, EmitField::Text { name: "msg".into(), text: "done".into() }],
+        });
+        Buck::reaction(&mut b, body, vec![rise], vec![seen, guarded, last], vec![], Watch::F, 3);
+        Design::place(b, body, 0, &[ValueType::F64, ValueType::Bool, ValueType::Bool], vec![])
+    }
+}
+
+#[test]
+fn an_emit_site_prints_and_checks() {
+    let ir = Watch::ir();
+    assert_eq!(ir.check(), vec![]);
+
+    // The streams print after the carriers, with their value fields and types; a site prints its
+    // fields in source order, values and texts as written.
+    Printed::holds(&ir, &["  stream checks (pass: bool, margin: f64)", "  stream sim (finish: bool, failed: bool)"]);
+    Printed::holds(
+        &ir,
+        &[
+            "  reaction R0 on (E0)",
+            "    seen <- true",
+            "    if v.is_known() { emit checks(kind = \"min\", name = \"vout\", pass = (v.known_or(0.0) > 1.0), margin = (v.known_or(0.0) - 1.0)) } else { () }",
+            "    emit sim(finish = true, msg = \"done\")",
+        ],
+    );
+    let full = ir.to_string();
+    for line in ["emit s0 (kind \"min\", name \"vout\", f0 e", "emit s1 (f0 e", "stream checks (pass: bool, margin: f64)"] {
+        assert!(full.contains(line), "{line} missing from:\n{full}");
+    }
+
+    // What the reaction reads: the value through `is_known` and `known_or`, the emits' values
+    // included.
+    let watch = ir.top().body();
+    assert_eq!(watch.carrier_reads(Target::Reaction(0)), vec![0]);
+
+    // An emit counts with the commits, in source order, the nested one in its place: statement 0
+    // is the commit, 1 the check, 2 the stop (abi.md: one statement per write).
+    let numbered: Vec<&str> = watch
+        .reaction_statements(0)
+        .into_iter()
+        .map(|s| match ir.stmt(s) {
+            Stmt::Commit { .. } => "commit",
+            Stmt::Emit { stream, .. } => watch.streams()[*stream as usize].name.as_str(),
+            other => panic!("not a write: {other:?}"),
+        })
+        .collect();
+    assert_eq!(numbered, vec!["commit", "checks", "sim"]);
+
+    // One entry per defect: a field of a type that is not a value, two fields of one name, a value
+    // of another type than its field, a stream and a field out of range, an emit in `analog` and
+    // one in a function.
+    const F: &str = "bad.msl";
+    let mut b = IrBuilder::new();
+    let mut x = Dx::new(&mut b, F, 6, 30);
+    let wrong = x.real(1.0);
+    x.at(7, 30);
+    let yes = x.boolean(true);
+    x.at(8, 30);
+    let also = x.boolean(true);
+    x.at(9, 30);
+    let stray = x.boolean(true);
+    let in_reaction = b.stmt(Stmt::Emit { stream: 0, fields: vec![EmitField::Value { field: 1, value: wrong }] });
+    let no_stream = b.stmt(Stmt::Emit { stream: 9, fields: vec![EmitField::Value { field: 0, value: yes }] });
+    let no_field = b.stmt(Stmt::Emit { stream: 0, fields: vec![EmitField::Value { field: 7, value: also }] });
+    let in_analog = b.stmt(Stmt::Emit { stream: 0, fields: vec![EmitField::Value { field: 0, value: stray }] });
+    let mut x = Dx::new(&mut b, F, 11, 30);
+    let flag = x.boolean(true);
+    let in_function = b.stmt(Stmt::Emit { stream: 0, fields: vec![EmitField::Value { field: 0, value: flag }] });
+    let unit = Dx::new(&mut b, F, 11, 10).block(vec![in_function], None, ValueType::Unit);
+    b.function(FunctionSpec { name: "loud".into(), origin: Design::origin(F, 10, 1), params: vec![], ret: ValueType::Unit, locals: vec![], body: unit });
+    let body = b.body(BodySpec { analog: Some(vec![in_analog]), ..Buck::spec("Bad", F, 1) });
+    b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::Out, None, F, 1, 20));
+    b.stream(
+        body,
+        Stream {
+            name: "s".into(),
+            fields: vec![StreamField { name: "a".into(), ty: ValueType::Bool }, StreamField { name: "a".into(), ty: ValueType::Bool }],
+        },
+    );
+    b.stream(body, Stream { name: "t".into(), fields: vec![StreamField { name: "u".into(), ty: ValueType::Unit }] });
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) });
+    Buck::reaction(&mut b, body, vec![changed], vec![in_reaction, no_stream, no_field], vec![], F, 5);
+    let broken = Design::place(b, body, 0, &[ValueType::Bool], vec![]).check();
+    let has = |what: &str| broken.iter().filter(|e| e.what.contains(what)).count();
+    assert_eq!(has("a stream field holds `bool`, `f64` or an integer type, found () for u"), 1, "{broken:#?}");
+    assert_eq!(has("stream s has two fields named a"), 1, "{broken:#?}");
+    assert_eq!(has("the value of an emit field must be bool, found f64"), 1, "{broken:#?}");
+    assert_eq!(has("emit to stream 9, out of range (2 streams)"), 1, "{broken:#?}");
+    assert_eq!(has("emit writes field 7 of stream 0, out of range (2 fields)"), 1, "{broken:#?}");
+    let outside: Vec<&str> = broken.iter().filter(|e| e.what == "an emit outside a reaction").map(|e| e.item.as_str()).collect();
+    assert_eq!(outside, vec!["body Bad", "function loud"], "{broken:#?}");
+    assert_eq!(broken.len(), 7, "{broken:#?}");
+}
+
+#[test]
+fn a_record_site_gives_its_stream_and_texts() {
+    // A host decodes a record from the instance, the reaction and the statement the solver's sink
+    // gives it: statement 1 is the check, statement 2 the stop, statement 0 a commit.
+    let ir = Watch::ir();
+    let watch = ir.top().body();
+    assert_eq!(watch.record_site(0, 1), Some(RecordSite { stream: "checks", texts: vec![("kind", "min"), ("name", "vout")] }));
+    assert_eq!(watch.record_site(0, 2), Some(RecordSite { stream: "sim", texts: vec![("msg", "done")] }));
+    assert_eq!(watch.record_site(0, 0), None, "a commit is no record");
+    assert_eq!(watch.record_site(0, 3), None, "no fourth statement");
+    assert_eq!(watch.record_site(1, 0), None, "no second reaction");
+    // A stream is named for the body: its fields are the non-text ones, in first-seen order.
+    let fields: Vec<(&str, &ValueType)> = watch.streams()[0].fields.iter().map(|f| (f.name.as_str(), &f.ty)).collect();
+    assert_eq!(fields, vec![("pass", &ValueType::Bool), ("margin", &ValueType::F64)]);
 }

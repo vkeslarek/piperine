@@ -11,7 +11,7 @@
 //! value of `PROPOSED`. The values of `Dual` arithmetic are the `f64` operations themselves, so
 //! the two runs agree on every value they share.
 
-use piperine_ir::{Expr, ExprId, Stmt};
+use piperine_ir::{Expr, ExprId};
 use piperine_plan::{Mode, Source, Target};
 
 use crate::Error;
@@ -30,12 +30,7 @@ impl<'a> AnalogPrinter<'a> {
     fn limit_site(&self, k: u32) -> Option<Site> {
         let block = self.body.analog().unwrap_or(&[]);
         for (stmt, id) in block.iter().enumerate() {
-            let mut exprs = match self.ir.stmt(*id) {
-                Stmt::Let { init, .. } => vec![*init],
-                Stmt::Expr(e) => vec![*e],
-                Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
-                Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
-            };
+            let mut exprs = self.ir.stmt(*id).operands();
             while let Some(e) = exprs.pop() {
                 match self.ir.expr(e) {
                     Expr::Limit { site, x, f, seed } if *site == k => return Some(Site { stmt, x: *x, f: *f, seed: *seed }),

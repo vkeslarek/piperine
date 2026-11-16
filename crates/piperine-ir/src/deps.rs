@@ -36,7 +36,7 @@ use std::sync::OnceLock;
 
 use crate::handle::Body;
 use crate::ids::{ExprId, FunctionId, StmtId};
-use crate::model::{BinaryOp, BodyData, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp};
+use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp};
 
 /// The index of a branch in its body (`Body::branches`).
 pub type BranchIndex = u32;
@@ -520,6 +520,13 @@ impl<'a> Walk<'a> {
                 next.extend([Task::Expr(*value), Task::Discard]);
                 if let Some(after) = after {
                     next.extend([Task::Expr(*after), Task::Discard]);
+                }
+            }
+            Stmt::Emit { fields, .. } => {
+                for f in fields {
+                    if let EmitField::Value { value, .. } = f {
+                        next.extend([Task::Expr(*value), Task::Discard]);
+                    }
                 }
             }
         }

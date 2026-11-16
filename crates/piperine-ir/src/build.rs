@@ -6,7 +6,7 @@ use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
     BodyData, BodyNode, Branch, Carrier, Child, Constant, Drive, Event, Expr, ExprData, FunctionData, InstanceData, Ir,
-    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, ValueType,
+    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
 
 /// The parts of a body, in the order a handle lists them.
@@ -110,6 +110,7 @@ impl IrBuilder {
             drives: Vec::new(),
             events: Vec::new(),
             reactions: Vec::new(),
+            streams: Vec::new(),
             deps: DepsMemo::default(),
         });
         BodyId(self.bodies.len() as u32 - 1)
@@ -152,6 +153,13 @@ impl IrBuilder {
         let reactions = &mut self.body_data(body).reactions;
         reactions.push(reaction);
         reactions.len() as u32 - 1
+    }
+
+    /// Adds a record stream to `body`: returns its index, the identity `Stmt::Emit` names it by.
+    pub fn stream(&mut self, body: BodyId, stream: Stream) -> u32 {
+        let streams = &mut self.body_data(body).streams;
+        streams.push(stream);
+        streams.len() as u32 - 1
     }
 
     pub fn function(&mut self, spec: FunctionSpec) -> FunctionId {

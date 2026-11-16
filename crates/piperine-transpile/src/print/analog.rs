@@ -167,14 +167,7 @@ impl<'a> AnalogPrinter<'a> {
             if !keep {
                 continue;
             }
-            let mut exprs = Vec::new();
-            match stmt {
-                Stmt::Let { init, .. } => exprs.push(*init),
-                Stmt::Expr(e) => exprs.push(*e),
-                Stmt::Contribute { addends, .. } => exprs.extend(addends.iter().map(|a| a.value)),
-                Stmt::Commit { value, after, .. } => exprs.extend([*value].into_iter().chain(*after)),
-            }
-            for e in exprs {
+            for e in stmt.operands() {
                 self.reads(e, mode, &mut needed, &mut sources);
             }
             kept.push(*id);
@@ -227,12 +220,7 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
                 Expr::Block { stmts, value } => {
                     for s in stmts {
-                        match self.ir.stmt(*s) {
-                            Stmt::Let { init, .. } => stack.push(*init),
-                            Stmt::Expr(x) => stack.push(*x),
-                            Stmt::Contribute { addends, .. } => stack.extend(addends.iter().map(|a| a.value)),
-                            Stmt::Commit { value, after, .. } => stack.extend([*value].into_iter().chain(*after)),
-                        }
+                        stack.extend(self.ir.stmt(*s).operands());
                     }
                     stack.extend(value);
                 }

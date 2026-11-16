@@ -75,6 +75,9 @@ pub struct BodyData {
     /// The `on` blocks of the body's `digital` blocks, in source order.
     #[serde(default)]
     pub(crate) reactions: Vec<Reaction>,
+    /// The record streams the body's `emit!` sites write, by index.
+    #[serde(default)]
+    pub(crate) streams: Vec<Stream>,
     /// The memo of `Body::dependencies`: derived, so outside equality and serialization.
     #[serde(skip)]
     pub(crate) deps: DepsMemo,
@@ -187,6 +190,32 @@ pub struct Reaction {
     pub origin: Origin,
 }
 
+/// A record stream of a body (`emit!("sim", …)`): its name and the value fields its sites write.
+/// A site may leave a field out; the record then carries the field as unknown.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Stream {
+    pub name: String,
+    pub fields: Vec<StreamField>,
+}
+
+/// A value field of a stream, in the order a site first wrote it. Text never crosses the ABI and
+/// is not a field: it stays on its site (`EmitField::Text`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StreamField {
+    pub name: String,
+    /// `bool`, `f64` or an integer type.
+    pub ty: ValueType,
+}
+
+/// One `name = value` of an `emit!` site.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EmitField {
+    /// A value, written to field `field` of the stream (its index in `Stream::fields`).
+    Value { field: u32, value: ExprId },
+    /// A string literal: kept on the site, never sent.
+    Text { name: String, text: String },
+}
+
 /// A `limit` or `ac_stim` site; its index in the body's list is its identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Site {
@@ -270,6 +299,29 @@ pub enum Stmt {
     Contribute { branch: u32, quantity: QuantityRole, addends: Vec<Addend> },
     /// `carrier <- value;` or `carrier <- value after delay;`, in a reaction.
     Commit { carrier: u32, value: ExprId, after: Option<ExprId> },
+    /// `emit!("stream", f = value, …)`, in a reaction: one record of stream `stream` (its index
+    /// in the body's streams). Counted with the commits in the reaction's statement numbering.
+    Emit { stream: u32, fields: Vec<EmitField> },
+}
+
+impl Stmt {
+    /// The expressions the statement evaluates directly, in evaluation order: a commit's value
+    /// before its delay, an emit's values in field order.
+    pub fn operands(&self) -> Vec<ExprId> {
+        match self {
+            Stmt::Let { init, .. } => vec![*init],
+            Stmt::Expr(e) => vec![*e],
+            Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
+            Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
+            Stmt::Emit { fields, .. } => fields
+                .iter()
+                .filter_map(|f| match f {
+                    EmitField::Value { value, .. } => Some(*value),
+                    EmitField::Text { .. } => None,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
