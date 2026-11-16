@@ -114,6 +114,11 @@ are the parity risks.
   7.3e-4 relative off the continuous run.
 - **Re-entry state is stored on every accepted step (N2):** memory grows with step count.
 - **The partials guard matches devices by label (N3)**, not by module.
+- **First step after a digital-to-analog jump (`ir-rust` F-B7).** With a 10 ns step cap the
+  analog response to a carrier change is off by more than `TRAN_VOLTAGE` 5.55 ns after `t0` (the
+  first step after the jump is first order); `piperine-parity/tests/boundary.rs` runs at a 1 ns
+  cap, 20x tighter than `parity_tran`'s, to pass. The restart step after a boundary event needs
+  the solver's attention.
 
 ---
 

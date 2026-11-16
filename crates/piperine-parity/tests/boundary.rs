@@ -115,8 +115,11 @@ fn a_carrier_change_is_a_time_point_and_starts_the_response() {
     let built = Built::new(w.finish());
     let x = NodeIdentifier::Anonymous(built.ir.node_at("Top.x").expect("a node x").id().index());
     // 8.9 us: the oscillator rises again at 9 us. The step is capped at 1 ns (the first step from a
-    // jump is first order, and its error grows with the square of the step), as the parity
-    // harness caps its transients
+    // jump is first order, and its error grows with the square of the step). That cap is tighter
+    // than the harness's own policy: with the 10 ns cap that policy gives this run, the response
+    // is off by more than TRAN_VOLTAGE 5.55 ns after t0 (`ir-rust` verification F-B7, GAPS.md §6):
+    // the solver's restart after a digital-to-analog jump, reported to the solver, not a defect
+    // of the compiled switch, whose terms are proven bit-equal
     let (seen, result) = built.run_with(8.9e-6, 1e-9);
     // the gate is committed at t0 = 3.0037 us (half the period 6.0074 us), one change
     let t0_ticks = 3_003_700_000_i64;

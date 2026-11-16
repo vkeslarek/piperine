@@ -1530,7 +1530,7 @@ Proof: run boundary | test the_adc_commits_the_rounded_code_after_tconv ... ok
 **C93** - The comparator's output changes where the analytic input equals `vth ± hyst / 2` under `TRAN_VOLTAGE`. (RS-13, AC 9; T45)
 Proof: run boundary | test the_comparator_trips_at_its_thresholds ... ok
 
-**C94** - A carrier change at `t0` is a time point and the response from `t0` is the analytic one under `TRAN_VOLTAGE`. (RS-13, AC 10; T46)
+**C94** - A carrier change at `t0` is a time point and the response from `t0` is the analytic one under `TRAN_VOLTAGE`. (RS-13, AC 10; T46; under a 1 ns step cap: with 10 ns the first step after the jump fails `TRAN_VOLTAGE`, a solver restart issue recorded in GAPS.md §6, verification F-B7)
 Proof: run boundary | test a_carrier_change_is_a_time_point_and_starts_the_response ... ok
 
 **C95** - Two runs of the oscillator and DPWM circuit give the same pin changes, bit for bit and tick for tick. (RS-13, AC 11; T43)
