@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
@@ -24,10 +24,6 @@ fn twin(name: &str) -> PathBuf {
 }
 
 /// One cache directory for every Rust-backend session of this target.
-/// One build at a time into the shared cache: `Cache::at` probes the directory with a name
-/// that is the process's (`.probe-<pid>`), so two builds of one process at once collide on it.
-static BUILD: Mutex<()> = Mutex::new(());
-
 fn settings() -> Settings {
     static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
     let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
@@ -38,10 +34,7 @@ fn settings() -> Settings {
 fn run(path: &Path, backend: &str, overrides: Overrides) -> Result<Table, Failure> {
     let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &Overrides { backend: Some(backend.into()), ..overrides }).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = {
-        let _turn = BUILD.lock().unwrap_or_else(|e| e.into_inner());
-        Session::open(&project, &spec, &settings())?
-    };
+    let mut session = Session::open(&project, &spec, &settings())?;
     session.run(Rc::new(RefCell::new(Ignore)))
 }
 

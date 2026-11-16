@@ -130,7 +130,7 @@ pub struct Cache {
     rust: PathBuf,
 }
 
-/// Distinguishes the staging directories of one process.
+/// Distinguishes the staging directories and probes of one process.
 static STAGING: AtomicU64 = AtomicU64::new(0);
 
 impl Cache {
@@ -141,7 +141,7 @@ impl Cache {
         let fail = |e: std::io::Error| Error::Cache { dir: dir.to_path_buf(), cause: e.to_string() };
         Cache::create_private(&rust).map_err(fail)?;
         // Created is not writable: prove the entries can be staged.
-        let probe = rust.join(format!(".probe-{}", std::process::id()));
+        let probe = rust.join(format!(".probe-{}-{}", std::process::id(), STAGING.fetch_add(1, Ordering::SeqCst)));
         std::fs::create_dir(&probe).map_err(fail)?;
         std::fs::remove_dir(&probe).map_err(fail)?;
         Ok(Cache { rust })

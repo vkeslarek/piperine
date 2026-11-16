@@ -162,3 +162,27 @@ fn a_directory_is_created_private() {
         assert_eq!(mode, 0o700, "{}", d.display());
     }
 }
+
+/// Two threads of one process open the same cache directory at the same instant; both succeed
+/// and no probe is left behind (orchestrator extra: the probe name is unique per call).
+#[test]
+fn concurrent_opens_of_one_directory_both_succeed() {
+    let dir = tempfile::tempdir().expect("tmp");
+    for _ in 0..200 {
+        let barrier = Arc::new(Barrier::new(2));
+        let opens: Vec<_> = (0..2)
+            .map(|_| {
+                let (barrier, path) = (barrier.clone(), dir.path().to_path_buf());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    Cache::at(&path).map(|_| ())
+                })
+            })
+            .collect();
+        for open in opens {
+            open.join().expect("thread").expect("a concurrent open succeeds");
+        }
+    }
+    let left: Vec<_> = std::fs::read_dir(dir.path().join("rust")).expect("rust dir").map(|e| e.expect("entry").file_name()).collect();
+    assert!(left.is_empty(), "no probe stays behind: {left:?}");
+}

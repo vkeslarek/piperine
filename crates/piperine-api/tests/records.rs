@@ -9,7 +9,7 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use piperine_api::{Field, Failure, Overrides, Project, Record, RecordSink, Session, Streams};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind};
@@ -28,10 +28,6 @@ impl RecordSink for Kept {
 /// A source across a resistor: the analog part every fixture's top holds.
 const ANALOG: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n";
 
-/// One build at a time into the shared cache: `Cache::at` probes the directory with a name
-/// that is the process's (`.probe-<pid>`), so two builds of one process at once collide on it.
-static BUILD: Mutex<()> = Mutex::new(());
-
 fn settings() -> Settings {
     static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
     let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
@@ -48,10 +44,7 @@ fn records_of(path: &Path, top: &str, analysis: &str, stop: Option<f64>) -> Resu
     let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { analysis: Some(analysis.into()), stop, top: Some(top.into()), max_step: stop.map(|s| s / 100.0), ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = {
-        let _turn = BUILD.lock().unwrap_or_else(|e| e.into_inner());
-        Session::open(&project, &spec, &settings())?
-    };
+    let mut session = Session::open(&project, &spec, &settings())?;
     let kept = Rc::new(RefCell::new(Kept::default()));
     session.run(kept.clone())?;
     let records = kept.borrow().0.clone();
@@ -87,8 +80,7 @@ fn an_emit_gives_one_record_with_time_instance_stream_and_fields() {
     let overrides = Overrides { analysis: Some("op".into()), top: Some("Top".into()), ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let session = {
-        let _turn = BUILD.lock().unwrap_or_else(|e| e.into_inner());
-        Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
+                Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
     };
     let streams = Streams::of(Arc::new(session.ir().clone()));
     let mut bytes = vec![0u8; 24];
