@@ -1053,25 +1053,152 @@ extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Elect
 <p class="ch-num">Chapter 6</p>
 <h2>Analog behavior</h2>
 
-<p>An <code>analog</code> block is straight-line code that runs at every Newton iteration and remembers nothing between iterations. The past comes from instances such as <code>ddt</code> and <code>idt</code>, and from digital carriers.</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can write a nonlinear device, build a diode clipper around it with a sine source, print its waveform and its clipping instants, and use a trace inside <code>analog</code> to see what Newton's method is doing when a circuit will not converge.</p>
+</div>
+
+<p>An <code>analog</code> block is the equations of a module. To find the voltages of a circuit, the solver guesses them, evaluates every <code>analog</code> block, corrects the guess and repeats: that is Newton's method, and each round is an <em>iteration</em>. So keep one picture in mind for the whole chapter: <strong>an <code>analog</code> block is straight-line code that runs at every Newton iteration and remembers nothing between iterations.</strong> The past comes only from instances such as <code>ddt</code> and <code>idt</code>, and from digital carriers.</p>
 
 <h3>Contributions and probes</h3>
 
-<p>A <strong>branch</strong> is a pair of nodes. <code>i(a, b) +> x;</code> adds <code>x</code> to the branch's current. <code>v(a, b) +> x;</code> adds <code>x</code> to its voltage, which makes the branch a voltage source. Contributions add up, from anywhere in the module. Leave out the second node and it is <code>gnd</code>.</p>
+<p>A <strong>branch</strong> is a pair of nodes. A <strong>probe</strong> reads it: <code>v(a, b)</code> is the voltage from <code>a</code> to <code>b</code>, and <code>i(a, b)</code> the current this module puts through that branch. A <strong>contribution</strong> writes it, in one of two ways:</p>
 
-<pre data-lang="msl">analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
-analog for Inductor  { v(p, n) +> ddt(l * i(p, n)); }
+<ul>
+<li><code>i(a, b) +> x;</code> adds <code>x</code> to the branch's current. The branch behaves as a current source of value <code>x</code>, and <code>x</code> usually depends on <code>v(a, b)</code>: that is a resistor, a diode, a capacitor.</li>
+<li><code>v(a, b) +> x;</code> adds <code>x</code> to the branch's voltage. The branch becomes a voltage source, and the solver finds the current it needs.</li>
+</ul>
 
-module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}
+<p>Contributions <em>add up</em>, which is why the arrow has a plus in it: two lines that contribute to the same branch are two elements in parallel. Leave out the second node and it is <code>gnd</code>.</p>
+
+<pre data-lang="msl">module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }      // i = dq/dt
+
+module Inductor(p: Electrical, n: Electrical) { l: f64 where l > 0.0; }
+analog for Inductor  { v(p, n) +> ddt(l * i(p, n)); }      // v = dφ/dt</pre>
+
+<p>The two are mirror images. The capacitor contributes a current computed from its voltage. The inductor contributes a voltage computed from its own current: once a branch has a voltage contribution, <code>i(p, n)</code> reads the current the solver found for it.</p>
+
+<p>You never write a derivative of your equations. Everything is differentiated for you, through function calls, value inputs and results, so there is no Jacobian to get wrong.</p>
+
+<h3>A complete example: a diode clipper</h3>
+
+<p>A 2&nbsp;V sine drives a resistor into two diodes back to back. The output follows the input while it is small and is clipped near ±0.65&nbsp;V.</p>
+
+<pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A sine voltage source of amplitude `amp` and frequency `f`.
+module Vsin(p: Electrical, n: Electrical) {
+    amp: f64 = 1.0;
+    f: f64 = 1k where f > 0.0;
+}
+analog for Vsin {
+    v(p, n) +> amp * (2.0 * PI * f * now()).sin();
+    bound_step(0.02 / f);                    // never fewer than 50 points per period
+}
+
+/// Junction diode: i = is · (exp(v / (n · vt)) − 1).
+module Diode(a: Electrical, k: Electrical) {
+    is: f64 = 1e-14 where is > 0.0;
+    n: f64 = 1.0 where n > 0.0;
+}
+analog for Diode {
+    let nvt = n * vt();
+    i(a, k) +> is * (limexp(v(a, k) / nvt) - 1.0);
+}
+
+module Clipper() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Vsin(vin, gnd) { amp: 2.0, f: 1k };
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let d1 = Diode(vout, gnd);
+    let d2 = Diode(gnd, vout);
+}</pre>
+
+<p>The new pieces, in order:</p>
+
+<ol class="steps">
+<li><strong><code>now()</code></strong> is the simulation time, so the source is a plain function of time. In an operating-point solve <code>now()</code> is 0 and the source sits at 0&nbsp;V.</li>
+<li><strong><code>bound_step(dt);</code></strong> is a statement only <code>analog</code> has. It caps the next time step. The solver picks steps from the circuit's own dynamics, and a smooth source into a stiff clipper could be stepped over; this line guarantees the sine is sampled finely.</li>
+<li><strong><code>let nvt = n * vt();</code></strong> A <code>let</code> inside <code>analog</code> is a local of this iteration. <code>vt()</code> is the thermal voltage <em>kT/q</em> at the simulation temperature, about 25.9&nbsp;mV at the default 300.15&nbsp;K.</li>
+<li><strong><code>limexp(x)</code></strong> equals <code>x.exp()</code> once the solver has converged, but while it iterates it lets the argument move only a little per iteration. An exponential explodes when Newton overshoots; <code>limexp</code> is the standard cure and costs you nothing in accuracy.</li>
+<li><strong><code>Diode(vout, gnd)</code></strong> binds no params, so both diodes take the defaults.</li>
+</ol>
+
+<h3>Printing the waveform: <code>on settle</code></h3>
+
+<p>To see the clipper work you want <code>vin</code> and <code>vout</code> over time. The event for that is <code>settle</code>. It fires once per <strong>time point</strong>, the times at which the solver has an accepted solution, after everything else at that time has finished. A reaction on <code>settle</code> reads the solution of that time point:</p>
+
+<pre data-lang="msl">digital for Clipper {
+    on settle {
+        emit!("wave", t = now(), vin = v(vin), vout = v(vout));
+    }
+    on above(v(vout) - 0.6) {
+        emit!("clip", t = now(), vin = v(vin));
+    }
+}</pre>
+
+<p>The <code>wave</code> stream is the table you would plot: one record per accepted time point, none for a step the solver tried and threw away. The <code>clip</code> stream answers a sharper question, "when does the clipping start, and how high is the input then?". The solver locates the crossing in time, so the answer does not depend on where the time points happened to fall:</p>
+
+<pre data-lang="text">stream top.clip
+  instant           fields
+  (≈ 59 µs, 1)      t ≈ 5.9e-5    vin ≈ 0.72
+  (≈ 1.059 ms, 1)   t ≈ 1.059e-3  vin ≈ 0.72
+  …                 once per period</pre>
+
+<p>At 0.6&nbsp;V the diode carries about 0.12&nbsp;mA, which drops 0.12&nbsp;V over the resistor, so the input is at 0.72&nbsp;V: the record confirms the hand calculation.</p>
+
+<h3>Looking inside Newton: <code>emit!</code> in <code>analog</code></h3>
+
+<p><code>emit!</code> is also allowed directly in an <code>analog</code> block, and there it behaves differently, on purpose. Add one line to the diode:</p>
+
+<pre data-lang="msl">analog for Diode {
+    let nvt = n * vt();
+    let id = is * (limexp(v(a, k) / nvt) - 1.0);
+    i(a, k) +> id;
+    emit!("newton", vd = v(a, k), id = id);
+}</pre>
+
+<p>This <code>emit!</code> runs when the code around it runs, and <code>analog</code> runs at <em>every evaluation</em>: every Newton iteration of every step, including iterations and whole steps that the solver later rejects. Each record also carries the iteration number. The stream is a <strong>trace</strong> of the path Newton took:</p>
+
+<pre data-lang="text">stream top.d1.newton               one record per evaluation
+  time    iteration   fields
+  t1      0           vd = …   id = …
+  t1      1           vd = …   id = …
+  t1      2           vd = …   id = …     converged: the step to t1 is accepted
+  t2      0           vd = …   id = …
+  t2      1           vd = …   id = …     this step is rejected, and its records stay
+  t2'     0           vd = …   id = …     the shorter retry
+  …</pre>
+
+<p>That is exactly what you need when a circuit does not converge: you see the voltage a device was asked to evaluate at each iteration, and whether it is settling, oscillating or running away. It is also why a trace is never used for a result. Keep the two kinds of output apart:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>You want</th><th>Write</th><th>Records exist for</th></tr></thead>
+<tbody>
+<tr><td>a waveform</td><td><code>on settle { emit!(…) }</code></td><td>each accepted time point, once</td></tr>
+<tr><td>the moment something happens</td><td><code>on above(…) { emit!(…) }</code>, or any event</td><td>each firing, in accepted steps only</td></tr>
+<tr><td>to see why Newton struggles</td><td><code>emit!(…)</code> in <code>analog</code></td><td>every evaluation, rejected ones included</td></tr>
+</tbody></table></div>
+
+<p>Because a trace depends on the solver's path, the language keeps it away from anything that decides: <code>analog</code> cannot write to the reserved streams <code>sim</code> and <code>checks</code>, so <code>finish()</code> and <code>require(…)</code> are for reactions only. A trace is also skipped in an AC or noise sweep, where <code>analog</code> is linearized rather than executed.</p>
+
+<h3>Switching a branch</h3>
+
+<p>An <code>if</code> in <code>analog</code> can choose between contributions. This ideal switch is a short when closed and an open circuit when open:</p>
+
+<pre data-lang="msl">module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}
 analog for Switch {
     if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }
 }</pre>
 
-<p>The switch shows the one firm restriction. A branch may change between being a voltage branch and a current branch, but only on something that is constant during a solve: params, digital carriers, <code>now()</code>, <code>analysis(Static)</code>. A choice that depends on a probe is an error (E0414). An <code>if</code> on a probe can still choose between <em>expressions</em>.</p>
-
-<p>Everything is differentiated for you, through function calls, value inputs and results, so you never write a Jacobian.</p>
+<p>It shows the one firm restriction of the chapter. A branch may change between being a voltage branch and a current branch, but only on something that is constant during a solve: params, digital carriers, <code>now()</code>, <code>analysis(Static)</code>. A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them. An <code>if</code> on a probe can still choose between <em>expressions</em>: <code>i(a, b) +> v(a, b) * if v(a, b) > 0.0 { g1 } else { g2 };</code> is fine.</p>
 
 <h3>A few more shapes</h3>
+
+<p>Two patterns you will meet in other people's models. The first writes an <em>equation</em> rather than an element: a node of a helper nature holds a free unknown, and its flow is the residual the solver drives to zero. The second couples two branches inside one module.</p>
 
 <pre data-lang="msl">/// An equation is a row: a nature whose "flow" is the residual gives it the right tolerance.
 nature Servo {
@@ -1098,6 +1225,8 @@ analog for Coupled {
 
 <h3>The operators</h3>
 
+<p>These are the tools of the trade. Most are library modules that return a value (chapter 5), so each use is an instance with its own state.</p>
+
 <div class="table-wrap"><table>
 <thead><tr><th>Name</th><th>What it gives</th><th>Kind</th></tr></thead>
 <tbody>
@@ -1107,7 +1236,7 @@ analog for Coupled {
 <tr><td><code>transition</code>, <code>slew</code></td><td>finite edges, rate limiting</td><td>stdlib module</td></tr>
 <tr><td><code>laplace_nd</code> …, <code>zi_nd</code> …</td><td>s-domain and z-domain filters</td><td>stdlib module</td></tr>
 <tr><td><code>noise(psd, name)</code>, <code>white_noise</code>, <code>flicker_noise</code></td><td>noise sources</td><td>core / stdlib</td></tr>
-<tr><td><code>limit</code>, <code>pnjlim</code>, <code>fetlim</code></td><td>Newton step limiting</td><td>core / stdlib</td></tr>
+<tr><td><code>limit</code>, <code>limexp</code>, <code>pnjlim</code>, <code>fetlim</code></td><td>Newton step limiting</td><td>core / stdlib</td></tr>
 <tr><td><code>ddx(e, probe)</code>, <code>ac_stim(mag, phase)</code></td><td>partial derivative, small-signal stimulus</td><td>core <code>fn</code></td></tr>
 <tr><td><code>bound_step(dt)</code></td><td>caps the next time step</td><td>statement</td></tr>
 <tr><td><code>temperature()</code>, <code>now()</code>, <code>freq()</code>, <code>analysis(a)</code></td><td>the environment</td><td>core <code>fn</code></td></tr>
@@ -1115,15 +1244,19 @@ analog for Coupled {
 
 <h3>One block, every analysis</h3>
 
-<p>You do not write separate DC and AC models. One <code>analog</code> block serves <code>Dc</code>, <code>Transient</code>, <code>Ac</code> and <code>Noise</code>. <code>analysis(Static)</code> is true during an equilibrium solve, which lets a model hold a state at its initial condition there, as <code>idt</code> does above. For small-signal analyses the block is linearized around the operating point with <code>ddt(x)</code> read as <code>jω·x</code>:</p>
+<p>You do not write separate DC and AC models. One <code>analog</code> block serves <code>Dc</code>, <code>Transient</code>, <code>Ac</code> and <code>Noise</code>. In an equilibrium solve (a DC point, or the operating point every other analysis starts from) <code>ddt</code> is zero, so a capacitor is open and an inductor is a short, with nothing written by you. <code>analysis(Static)</code> is true during such a solve, which lets a model hold a state at its initial condition there, as <code>idt</code> does in chapter 5. For small-signal analyses the block is linearized around the operating point with <code>ddt(x)</code> read as <code>jω·x</code>:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Construct</th><th>At the operating point</th><th>In the AC sweep</th></tr></thead>
 <tbody>
+<tr><td><code>ddt(x)</code></td><td>0</td><td><code>jω·x</code></td></tr>
 <tr><td><code>idt</code> with an <code>ic</code></td><td>held at <code>ic</code></td><td><code>1/jω</code></td></tr>
 <tr><td><code>delay(x, td)</code></td><td><code>x</code></td><td><code>exp(−jω·td)·x</code></td></tr>
+<tr><td><code>now()</code></td><td>0</td><td>0</td></tr>
 <tr><td>a digital carrier</td><td>its settled value</td><td>constant: no response</td></tr>
 </tbody></table></div>
+
+<p>To drive an AC sweep, a source adds <code>ac_stim</code> to its contribution: <code>v(p, n) +> dc + ac_stim(1.0, 0.0);</code> is a DC source that becomes a 1&nbsp;V phasor in the sweep and stays at <code>dc</code> everywhere else.</p>
 
 <p>A noise source is an instance of <code>noise</code>. Read one instance in two places and the two are fully correlated; two instances are independent:</p>
 
@@ -1143,6 +1276,28 @@ i(mid, b) +> -n;          // fully correlated</pre>
 <li><strong>Time points.</strong> Each phase edge changes a switch conductance that <code>analog</code> reads, so the solver lands exactly on all four edges per period. Capacitor charges stay continuous; only the currents step.</li>
 <li><strong>DC and AC.</strong> DC solves the all-switches-off circuit above, not the sampled system. The AC sweep linearizes with both phases low. The sampled transfer function needs a periodic analysis.</li>
 </ol>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0410</td><td><code>vout +&gt; 1.0;</code></td><td>The left side must be a probe of a branch: <code>v(vout) +&gt; 1.0;</code></td></tr>
+  <tr><td>E0417</td><td><code>i(p, n) +&gt; 1;</code></td><td>A contribution is an <code>f64</code>. Write <code>1.0</code>, or an SI literal such as <code>1m</code>.</td></tr>
+  <tr><td>E0404</td><td><code>held &lt;- v(vin);</code> in <code>analog</code></td><td>A commit belongs in a reaction. <code>analog</code> writes only with <code>+&gt;</code>.</td></tr>
+  <tr><td>E0150</td><td><code>if ctl { … }</code> in <code>analog</code>, <code>ctl</code> a <code>Bit</code></td><td>Say what unknown means: <code>if ctl.high() { … }</code></td></tr>
+  <tr><td>E0414</td><td><code>if v(a, b) &gt; 0.0 { v(a, b) +&gt; 0.0; } else { i(a, b) +&gt; 0.0; }</code></td><td>A branch cannot change kind on a probe. Choose between expressions of one kind, or switch on a digital carrier set by a crossing.</td></tr>
+  <tr><td>E0241</td><td><code>i(a, a) +&gt; x;</code></td><td>A branch joins two different nodes.</td></tr>
+  <tr><td>E0603</td><td><code>require("ok", v(a) &lt; 1.0);</code> in <code>analog</code></td><td>Checks are decided by reactions, never by a Newton trace. Move it into <code>on settle { … }</code>.</td></tr>
+  <tr><td>E0503</td><td>a run error naming a node</td><td>The solve is singular: typically a node that only capacitors touch, in a DC solve. Give it a DC path (a large resistor) or an initial value.</td></tr>
+  <tr><td>E0507</td><td>a run error naming a contribution</td><td>A non-finite value: a division by a voltage that is zero, or a bare <code>exp</code> that overflowed. Guard the expression, or use <code>limexp</code>.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>Give <code>d2</code> a different diode: <code>Diode(gnd, vout) { n: 2.0 }</code>. Which half of the output wave is clipped higher now, and at roughly what voltage? (The negative half: an ideality factor of 2 doubles the voltage for the same current, to about 1.3&nbsp;V.) Add a second crossing reaction on <code>above(-v(vout) - 1.2)</code> to confirm it with a record.</p>
+</div>
 </section>
 
 <!-- ===================================================== 7 -->
