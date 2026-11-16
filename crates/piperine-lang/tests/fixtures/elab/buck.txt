@@ -1,0 +1,597 @@
+nature Electrical
+  potential Voltage v "V" abstol 1e-6
+  flow Current i "A" abstol 1e-12
+body A2D
+  param vth: f64 = 0.6
+  param hyst: f64 = 0.05
+  node a: Electrical port
+  carrier d: bool out init false
+  carrier above$0.init$0.up: bool signal init true
+  carrier above$1.init$0.up: bool signal init true
+  event E0 cross ((probe(a, gnd) - vth) - (hyst / 2.0))
+  event E1 changed above$0.init$0.up
+  event E2 cross ((vth - (hyst / 2.0)) - probe(a, gnd))
+  event E3 changed above$1.init$0.up
+  reaction R0 on (E0)
+    d <- true
+  reaction R1 on (E1)
+    if (((probe(a, gnd) - vth) - (hyst / 2.0)) > 0.0) { d <- true } else { () }
+  reaction R2 on (E2)
+    d <- false
+  reaction R3 on (E3)
+    if (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0) { d <- false } else { () }
+body Adc
+  param vref: f64 = 1.6 where (vref > 0.0)
+  param tconv: f64 = 5e-7 where (tconv > 0.0)
+  param tstrobe: f64 = 5e-9 where (tstrobe > 0.0)
+  node ain: Electrical port
+  carrier sample: bool in
+  carrier code: u10 out init 0
+  carrier done: bool out init false
+  event E0 changed sample guard ((!sample.prev().high()) & ((!sample.is_known()) | sample.known_or(false)))
+  reaction R0 on (E0)
+    local q: u10
+    let q = ((((probe(ain, gnd) / vref) * 1024.0) + 0.5).floor().clamp(0.0, 1023.0) as u10)
+    code <- q after tconv
+    done <- true after tconv
+    done <- false after (tconv + tstrobe)
+body Buck
+  param vin_nom: f64 = 12.0 where (vin_nom >= 0.0)
+  param rs_in: f64 = 0.02 where (rs_in > 0.0)
+  param l: f64 = 4.7e-6 where (l > 0.0)
+  param dcr: f64 = 0.015 where (dcr >= 0.0)
+  param cout: f64 = 0.00022 where (cout > 0.0)
+  param esr: f64 = 0.003 where (esr > 0.0)
+  param cin: f64 = 2.2e-5 where (cin > 0.0)
+  param ron: f64 = 0.02 where (ron > 0.0)
+  param t_driver: f64 = 1e-8 where (t_driver > 0.0)
+  param r_load: f64 = 6.6 where (r_load > 0.0)
+  param r_step: f64 = 0.825 where (r_step > 0.0)
+  param t_step: f64 = 4e-6 where (t_step > 0.0)
+  param i_inject: f64 = 5.0
+  param f_clk: f64 = 200000000.0 where (f_clk > 0.0)
+  node vin: Electrical signal
+  node vout: Electrical signal
+  node isense: Electrical signal
+  node isense_n: Electrical signal
+  carrier en: bool in
+  carrier sp_wr: bool in
+  carrier sp_data: u8 in
+  carrier load_step: bool in
+  carrier inject: bool in
+  carrier pgood: bool out
+  carrier fault: u2 out
+  carrier mode: u2 out
+  carrier clk: bool signal
+  carrier hs_cmd: bool signal
+  carrier ls_cmd: bool signal
+  carrier sample: bool signal
+  carrier code: u10 signal
+  carrier done: bool signal
+  carrier vin_ok: bool signal
+  carrier oc: bool signal
+  carrier sink_oc: bool signal
+  child osc: Osc  nodes ()  params (f = f_clk)  carriers (clk)
+  child supply: Supply  nodes (vin, gnd)  params (vin = vin_nom, rs = rs_in)
+  child power: PowerStage  nodes (vin, vout, isense, isense_n, gnd, gnd)  params (l = l, dcr = dcr, cout = cout, esr = esr, cin = cin, ron = ron, tpd = t_driver)  carriers (hs_cmd, ls_cmd)
+  child load: Load  nodes (vout)  params (r_base = r_load, r_step = r_step, tr = t_step, i_inject = i_inject)  carriers (load_step, inject)
+  child meas: Sensing  nodes (vin, vout, isense, isense_n, gnd, gnd)  params ()  carriers (sample, code, done, vin_ok, oc, sink_oc)
+  child ctl: Controller  nodes ()  params ()  carriers (clk, en, sp_wr, sp_data, code, done, vin_ok, oc, sink_oc, hs_cmd, ls_cmd, sample, pgood, fault, mode)
+body Capacitor
+  param c: f64 where (c > 0.0)
+  param esr: f64 = 0.001 where (esr > 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  node mid: Electrical signal
+  branch b0 (p, mid) flow
+  branch b1 (mid, n) flow
+  analog
+    b0.flow +> direct (probe(p, mid) / esr)
+    b1.flow +> ddt (c * probe(mid, n))
+body Controller
+  carrier clk: bool in
+  carrier en: bool in
+  carrier sp_wr: bool in
+  carrier sp_data: u8 in
+  carrier code: u10 in
+  carrier done: bool in
+  carrier vin_ok: bool in
+  carrier oc: bool in
+  carrier sink_oc: bool in
+  carrier hs_cmd: bool out
+  carrier ls_cmd: bool out
+  carrier sample: bool out
+  carrier pgood: bool out
+  carrier fault: u2 out
+  carrier mode: u2 out
+  carrier setpoint: u8 signal
+  carrier reference: u10 signal
+  carrier duty: u12 signal
+  carrier at_target: bool signal
+  carrier run: bool signal
+  carrier cut: bool signal
+  carrier ramp.target: u10 signal
+  child reg: SetpointReg  nodes ()  params ()  carriers (sp_wr, sp_data, setpoint)
+  child ramp: RefRamp  nodes ()  params ()  carriers (done, run, ramp.target, reference, at_target)
+  child pid: Pid  nodes ()  params ()  carriers (done, run, reference, code, duty)
+  child sup: Supervisor  nodes ()  params ()  carriers (done, en, vin_ok, cut, code, reference, at_target, run, pgood, mode, fault)
+  child pwm: Dpwm  nodes ()  params ()  carriers (clk, run, duty, oc, sink_oc, hs_cmd, ls_cmd, sample, cut)
+  drive ramp.target = target_codes(setpoint.known_or(0u8))
+body CurrentSense
+  param rshunt: f64 = 0.005 where (rshunt > 0.0)
+  param gain: f64 = 20.0
+  node a: Electrical port
+  node b: Electrical port
+  node pos: Electrical port
+  node neg: Electrical port
+  branch b0 (a, b) flow
+  branch b1 (pos, gnd) potential
+  branch b2 (neg, gnd) potential
+  analog
+    b0.flow +> direct (probe(a, b) / rshunt)
+    b1.potential +> direct (gain * probe(a, b))
+    b2.potential +> direct ((-gain) * probe(a, b))
+body Divider
+  param r_top: f64 where (r_top > 0.0)
+  param r_bot: f64 where (r_bot > 0.0)
+  node top: Electrical port
+  node mid: Electrical port
+  child upper: Resistor  nodes (top, mid)  params (r = r_top)
+  child lower: Resistor  nodes (mid, gnd)  params (r = r_bot)
+body Dpwm
+  carrier clk: bool in
+  carrier run: bool in
+  carrier duty: u12 in
+  carrier oc: bool in
+  carrier sink_oc: bool in
+  carrier hs: bool out init false
+  carrier ls: bool out init false
+  carrier sample: bool out
+  carrier cut: bool out init false
+  carrier count: u9 signal init 0
+  carrier width: u9 signal init 0
+  carrier frame: u3 signal init 0
+  carrier hs_off: u9 signal init 0
+  carrier hs_cut: bool signal init false
+  carrier ls_cut: bool signal init false
+  carrier no_shoot_through.bad: bool signal
+  child no_shoot_through: Never  nodes ()  params ()  carriers (clk, no_shoot_through.bad)
+  drive sample = (count == 0u9)
+  drive no_shoot_through.bad = (hs & ls)
+  event E0 changed clk guard ((!clk.prev().high()) & ((!clk.is_known()) | clk.known_or(false)))
+  reaction R0 on (E0)
+    local enabled: bool
+    local hs_next: flagged<bool>
+    local hs_trip: flagged<bool>
+    local ls_next: flagged<bool>
+    local ls_trip: flagged<bool>
+    local next: flagged<u9>
+    local off_at: flagged<u9>
+    local w: flagged<u9>
+    local wrap: flagged<bool>
+    let wrap = (count == 399u9)
+    let next = if wrap { 0u9 } else { (count + 1u9) }
+    let enabled = run.known_or(false)
+    let w = if wrap { "dithered_width~01"(duty.known_or(0u12), (frame + 1u3)) } else { width }
+    let hs_trip = ((!wrap) & (hs_cut | (hs & oc.known_or(true))))
+    let ls_trip = ((!wrap) & (ls_cut | (ls & sink_oc.known_or(true))))
+    let hs_next = ((enabled & (!hs_trip)) & (next < w))
+    let off_at = if wrap { w } else { if (hs & (!hs_next)) { next } else { hs_off } }
+    let ls_next = ((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))
+    count <- next
+    width <- w
+    hs_off <- off_at
+    hs_cut <- hs_trip
+    ls_cut <- ls_trip
+    hs <- hs_next
+    ls <- ls_next
+    if wrap { frame <- (frame + 1u3); cut <- hs_cut } else { () }
+body GateDriver
+  param tpd: f64 = 1e-8 where (tpd > 0.0)
+  carrier hs_cmd: bool in
+  carrier ls_cmd: bool in
+  carrier hs_gate: bool out
+  carrier ls_gate: bool out
+  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd
+  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd
+body Inductor
+  param l: f64 where (l > 0.0)
+  param dcr: f64 = 0.0 where (dcr >= 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) potential
+  analog
+    b0.potential +> ddt (l * flow(b0)), direct (dcr * flow(b0))
+body Load
+  param r_base: f64 = 6.6 where (r_base > 0.0)
+  param r_step: f64 = 0.825 where (r_step > 0.0)
+  param tr: f64 = 4e-6 where (tr > 0.0)
+  param i_inject: f64 = 5.0
+  node p: Electrical port
+  carrier step: bool in
+  carrier inject: bool in
+  carrier k_step.x: f64 signal
+  carrier k_step.xd: f64 signal
+  carrier k_step.y0: f64 signal
+  carrier k_step.y1: f64 signal
+  carrier k_step.t0: f64 signal init 0.0
+  carrier k_step.dt: f64 signal init 0.0
+  carrier k_inject.x: f64 signal
+  carrier k_inject.xd: f64 signal
+  carrier k_inject.y0: f64 signal
+  carrier k_inject.y1: f64 signal
+  carrier k_inject.t0: f64 signal init 0.0
+  carrier k_inject.dt: f64 signal init 0.0
+  branch b0 (p, gnd) flow
+  drive k_step.x = if step.high() { 1.0 } else { 0.0 }
+  drive k_step.xd = k_step.x after 0.0
+  drive k_inject.x = if inject.high() { 1.0 } else { 0.0 }
+  drive k_inject.xd = k_inject.x after 0.0
+  event E0 at (k_step.t0 + k_step.dt) guard (k_step.dt > 0.0)
+  event E1 changed k_step.x
+  event E2 changed k_step.xd
+  event E3 at (k_inject.t0 + k_inject.dt) guard (k_inject.dt > 0.0)
+  event E4 changed k_inject.x
+  event E5 changed k_inject.xd
+  analog
+    b0.flow +> direct ((probe(p, gnd) * ((1.0 / r_base) + (if static() { k_step.x.known_or(0.0) } else { if (k_step.dt.known_or(0.0) > 0.0) { (k_step.y0.known_or(0.0) + ((k_step.y1.known_or(0.0) - k_step.y0.known_or(0.0)) * ((time() - k_step.t0.known_or(0.0)) / k_step.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_step.y1.known_or(0.0) } } / r_step))) - (if static() { k_inject.x.known_or(0.0) } else { if (k_inject.dt.known_or(0.0) > 0.0) { (k_inject.y0.known_or(0.0) + ((k_inject.y1.known_or(0.0) - k_inject.y0.known_or(0.0)) * ((time() - k_inject.t0.known_or(0.0)) / k_inject.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_inject.y1.known_or(0.0) } } * i_inject))
+  reaction R0 on (E0)
+    k_step.dt <- 0.0
+  reaction R1 on (E1)
+    if static() { k_step.y0 <- k_step.x; k_step.y1 <- k_step.x } else { () }
+  reaction R2 on (E2)
+    local to: f64
+    if (!static()) { if k_step.xd.is_known() { let to = k_step.xd.known_or(0.0); k_step.y0 <- if static() { k_step.x.known_or(0.0) } else { if (k_step.dt.known_or(0.0) > 0.0) { (k_step.y0.known_or(0.0) + ((k_step.y1.known_or(0.0) - k_step.y0.known_or(0.0)) * ((time() - k_step.t0.known_or(0.0)) / k_step.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_step.y1.known_or(0.0) } }; k_step.y1 <- to; k_step.t0 <- time(); k_step.dt <- if (to > if static() { k_step.x.known_or(0.0) } else { if (k_step.dt.known_or(0.0) > 0.0) { (k_step.y0.known_or(0.0) + ((k_step.y1.known_or(0.0) - k_step.y0.known_or(0.0)) * ((time() - k_step.t0.known_or(0.0)) / k_step.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_step.y1.known_or(0.0) } }) { tr } else { if (to < if static() { k_step.x.known_or(0.0) } else { if (k_step.dt.known_or(0.0) > 0.0) { (k_step.y0.known_or(0.0) + ((k_step.y1.known_or(0.0) - k_step.y0.known_or(0.0)) * ((time() - k_step.t0.known_or(0.0)) / k_step.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_step.y1.known_or(0.0) } }) { tr } else { 0.0 } } } else { () } } else { () }
+  reaction R3 on (E3)
+    k_inject.dt <- 0.0
+  reaction R4 on (E4)
+    if static() { k_inject.y0 <- k_inject.x; k_inject.y1 <- k_inject.x } else { () }
+  reaction R5 on (E5)
+    local to: f64
+    if (!static()) { if k_inject.xd.is_known() { let to = k_inject.xd.known_or(0.0); k_inject.y0 <- if static() { k_inject.x.known_or(0.0) } else { if (k_inject.dt.known_or(0.0) > 0.0) { (k_inject.y0.known_or(0.0) + ((k_inject.y1.known_or(0.0) - k_inject.y0.known_or(0.0)) * ((time() - k_inject.t0.known_or(0.0)) / k_inject.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_inject.y1.known_or(0.0) } }; k_inject.y1 <- to; k_inject.t0 <- time(); k_inject.dt <- if (to > if static() { k_inject.x.known_or(0.0) } else { if (k_inject.dt.known_or(0.0) > 0.0) { (k_inject.y0.known_or(0.0) + ((k_inject.y1.known_or(0.0) - k_inject.y0.known_or(0.0)) * ((time() - k_inject.t0.known_or(0.0)) / k_inject.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_inject.y1.known_or(0.0) } }) { tr } else { if (to < if static() { k_inject.x.known_or(0.0) } else { if (k_inject.dt.known_or(0.0) > 0.0) { (k_inject.y0.known_or(0.0) + ((k_inject.y1.known_or(0.0) - k_inject.y0.known_or(0.0)) * ((time() - k_inject.t0.known_or(0.0)) / k_inject.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { k_inject.y1.known_or(0.0) } }) { tr } else { 0.0 } } } else { () } } else { () }
+body Never
+  carrier clk: bool in
+  carrier bad: bool in
+  stream checks (pass: bool)
+  event E0 changed clk guard ((!clk.prev().high()) & ((!clk.is_known()) | clk.known_or(false)))
+  reaction R0 on (E0)
+    local require.pass: flagged<bool>
+    let require.pass = (!bad)
+    emit checks(kind = "require", name = "never", pass = require.pass)
+body Osc
+  param f: f64 = 200000000.0 where (f > 0.0)
+  carrier clk: bool out init false
+  event E0 changed clk
+  reaction R0 on (E0)
+    clk <- (!clk) after (0.5 / f)
+body Pid
+  carrier tick: bool in
+  carrier run: bool in
+  carrier reference: u10 in
+  carrier meas: u10 in
+  carrier duty: u12 out init 0
+  carrier integ: i32 signal init 0
+  carrier deriv: i32 signal init 0
+  carrier e_prev: i16 signal init 0
+  event E0 changed tick guard ((!tick.prev().high()) & ((!tick.is_known()) | tick.known_or(false)))
+  reaction R0 on (E0)
+    local d: flagged<i32>
+    local e: i16
+    local p: i32
+    local u: flagged<i32>
+    local u_max: i32
+    local windup: flagged<bool>
+    if (!run.known_or(false)) { integ <- 0i32; deriv <- 0i32; e_prev <- 0i16; duty <- 0u12 } else { let e = ((reference.known_or(0u10) as i16) - (meas.known_or(1023u10) as i16)).clamp(-256i16, 255i16); let p = (64i32 * (e as i32)); let d = ((deriv >> 2i32) + (1024i32 * ((e - e_prev) as i32))); let u = (((p + integ) + d) >> 4i32); let u_max = 2880i32; let windup = (((u > u_max) & (e > 0i16)) | ((u < 0i32) & (e < 0i16))); if (!windup) { integ <- (integ + (8i32 * (e as i32))).clamp(0i32, (u_max << 4i32)) } else { () }; deriv <- d; e_prev <- e; duty <- (u.clamp(0i32, u_max) as u12) }
+body PowerStage
+  param l: f64 = 4.7e-6
+  param dcr: f64 = 0.015
+  param cout: f64 = 0.00022
+  param esr: f64 = 0.003
+  param cin: f64 = 2.2e-5
+  param esr_in: f64 = 0.005
+  param ron: f64 = 0.02
+  param tpd: f64 = 1e-8
+  node vin: Electrical port
+  node vout: Electrical port
+  node isense: Electrical port
+  node isense_n: Electrical port
+  node sw: Electrical signal
+  node lx: Electrical signal
+  carrier hs_cmd: bool in
+  carrier ls_cmd: bool in
+  carrier hs_gate: bool signal
+  carrier ls_gate: bool signal
+  child drv: GateDriver  nodes ()  params (tpd = tpd)  carriers (hs_cmd, ls_cmd, hs_gate, ls_gate)
+  child hs: PowerSwitch  nodes (vin, sw)  params (ron = ron)  carriers (hs_gate)
+  child ls: PowerSwitch  nodes (sw, gnd)  params (ron = ron)  carriers (ls_gate)
+  child ind: Inductor  nodes (sw, lx)  params (l = l, dcr = dcr)
+  child shunt: CurrentSense  nodes (lx, vout, isense, isense_n)  params ()
+  child c_out: Capacitor  nodes (vout, gnd, gnd)  params (c = cout, esr = esr)
+  child c_in: Capacitor  nodes (vin, gnd, gnd)  params (c = cin, esr = esr_in)
+body PowerSwitch
+  param ron: f64 = 0.02 where (ron > 0.0)
+  param roff: f64 = 1000000.0 where (roff > ron)
+  param tsw: f64 = 5e-9 where (tsw > 0.0)
+  param coss: f64 = 2e-10 where (coss >= 0.0)
+  param vf: f64 = 0.7
+  param rd: f64 = 0.02 where (rd > 0.0)
+  node d: Electrical port
+  node s: Electrical port
+  carrier g: bool in
+  carrier gate.x: f64 signal
+  carrier gate.xd: f64 signal
+  carrier gate.y0: f64 signal
+  carrier gate.y1: f64 signal
+  carrier gate.t0: f64 signal init 0.0
+  carrier gate.dt: f64 signal init 0.0
+  branch b0 (d, s) flow
+  local gch: f64
+  drive gate.x = if g.high() { 1.0 } else { 0.0 }
+  drive gate.xd = gate.x after 0.0
+  event E0 at (gate.t0 + gate.dt) guard (gate.dt > 0.0)
+  event E1 changed gate.x
+  event E2 changed gate.xd
+  analog
+    let gch = ((if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } } / ron) + ((1.0 - if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } }) / roff))
+    b0.flow +> direct ((gch * probe(d, s)) - body_diode(probe(s, d), vf, rd)), ddt (coss * probe(d, s))
+  reaction R0 on (E0)
+    gate.dt <- 0.0
+  reaction R1 on (E1)
+    if static() { gate.y0 <- gate.x; gate.y1 <- gate.x } else { () }
+  reaction R2 on (E2)
+    local to: f64
+    if (!static()) { if gate.xd.is_known() { let to = gate.xd.known_or(0.0); gate.y0 <- if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } }; gate.y1 <- to; gate.t0 <- time(); gate.dt <- if (to > if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } }) { tsw } else { if (to < if static() { gate.x.known_or(0.0) } else { if (gate.dt.known_or(0.0) > 0.0) { (gate.y0.known_or(0.0) + ((gate.y1.known_or(0.0) - gate.y0.known_or(0.0)) * ((time() - gate.t0.known_or(0.0)) / gate.dt.known_or(0.0)).clamp(0.0, 1.0))) } else { gate.y1.known_or(0.0) } }) { tsw } else { 0.0 } } } else { () } } else { () }
+body RefRamp
+  carrier tick: bool in
+  carrier run: bool in
+  carrier target: u10 in
+  carrier reference: u10 out init 0
+  carrier at_target: bool out
+  drive at_target = (reference == target)
+  event E0 changed tick guard ((!tick.prev().high()) & ((!tick.is_known()) | tick.known_or(false)))
+  reaction R0 on (E0)
+    if (!run.known_or(false)) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }
+body Resistor
+  param r: f64 where (r > 0.0)
+  node p: Electrical port
+  node n: Electrical port
+  branch b0 (p, n) flow
+  analog
+    b0.flow +> direct (probe(p, n) / r)
+body Sensing
+  node vin: Electrical port
+  node vout: Electrical port
+  node isense: Electrical port
+  node isense_n: Electrical port
+  node fb: Electrical signal
+  node vin_div: Electrical signal
+  carrier sample: bool in
+  carrier code: u10 out
+  carrier done: bool out
+  carrier vin_ok: bool out
+  carrier oc: bool out
+  carrier sink_oc: bool out
+  child fb_div: Divider  nodes (vout, fb)  params (r_top = 30000.0, r_bot = 10000.0)
+  child adc: Adc  nodes (fb)  params ()  carriers (sample, code, done)
+  child uv_div: Divider  nodes (vin, vin_div)  params (r_top = 90000.0, r_bot = 10000.0)
+  child uvlo: A2D  nodes (vin_div)  params (vth = 0.825, hyst = 0.05)  carriers (vin_ok)
+  child ocp: A2D  nodes (isense)  params (vth = 0.74, hyst = 0.02)  carriers (oc)
+  child scp: A2D  nodes (isense_n)  params (vth = 0.29, hyst = 0.02)  carriers (sink_oc)
+body SetpointReg
+  carrier wr: bool in
+  carrier data: u8 in
+  carrier code: u8 out init 100
+  event E0 changed wr guard ((!wr.prev().high()) & ((!wr.is_known()) | wr.known_or(false)))
+  reaction R0 on (E0)
+    local d: u8
+    if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }
+body Supervisor
+  carrier tick: bool in
+  carrier en: bool in
+  carrier vin_ok: bool in
+  carrier cut: bool in
+  carrier meas: u10 in
+  carrier reference: u10 in
+  carrier at_target: bool in
+  carrier run: bool out
+  carrier pgood: bool out init false
+  carrier mode: u2 out init 0
+  carrier fault: u2 out init 0
+  carrier oc_count: u4 signal init 0
+  carrier ov_count: u2 signal init 0
+  carrier retry: u11 signal init 0
+  carrier pg_in: u7 signal init 0
+  carrier pg_out: u3 signal init 0
+  stream log (severity: u2)
+  drive run = ((mode == 1u2) | (mode == 2u2))
+  event E0 changed tick guard ((!tick.prev().high()) & ((!tick.is_known()) | tick.known_or(false)))
+  reaction R0 on (E0)
+    local enabled: bool
+    local f: flagged<u2>
+    local fault_now.is: flagged<bool>
+    local fault_now.val: flagged<u2>
+    local in_n: flagged<u7>
+    local inside: bool
+    local log.severity: u2
+    local m: u10
+    local match$0: u2
+    local oc_n: flagged<u4>
+    local out_n: flagged<u3>
+    local ov_n: flagged<u2>
+    local r: u10
+    local regulating: flagged<bool>
+    let enabled = (en.known_or(false) && vin_ok.known_or(false))
+    let m = meas.known_or(1023u10)
+    let r = reference.known_or(0u10)
+    let oc_n = if (!cut.known_or(true)) { 0u4 } else { if (oc_count < 8u4) { (oc_count + 1u4) } else { 8u4 } }
+    let ov_n = if (m <= ovp_threshold(r)) { 0u2 } else { if (ov_count < 2u2) { (ov_count + 1u2) } else { 2u2 } }
+    let fault_now.is = if (oc_n >= 8u4) { true } else { if (ov_n >= 2u2) { true } else { false } }
+    let fault_now.val = if (oc_n >= 8u4) { 1u2 } else { if (ov_n >= 2u2) { 2u2 } else { 0u2 } }
+    oc_count <- oc_n
+    ov_count <- ov_n
+    if (!enabled) { mode <- 0u2 } else { let match$0 = mode.known_or(0u2); if (match$0 == 0u2) { mode <- 1u2 } else { if (match$0 == 3u2) { if (retry == 0u11) { mode <- 1u2 } else { retry <- (retry - 1u11) } } else { if fault_now.is { let f = fault_now.val; mode <- 3u2; fault <- f; retry <- 1000u11; let log.severity = 1u2; emit log(severity = log.severity, msg = "buck: fault, entering hiccup") } else { if ((mode == 1u2) & at_target.known_or(false)) { mode <- 2u2; fault <- 0u2 } else { () } } } } }
+    let regulating = (((mode == 2u2) & enabled) & (!fault_now.is))
+    let inside = in_window(m, r)
+    let in_n = if (!(regulating & inside)) { 0u7 } else { if (pg_in < 64u7) { (pg_in + 1u7) } else { 64u7 } }
+    let out_n = if (!(regulating & (!inside))) { 0u3 } else { if (pg_out < 4u3) { (pg_out + 1u3) } else { 4u3 } }
+    pg_in <- in_n
+    pg_out <- out_n
+    if (!regulating) { pgood <- false } else { if (in_n >= 64u7) { pgood <- true } else { if (out_n >= 4u3) { pgood <- false } else { () } } }
+body Supply
+  param vin: f64 = 12.0 where (vin >= 0.0)
+  param rs: f64 = 0.02 where (rs > 0.0)
+  node p: Electrical port
+  node src: Electrical signal
+  branch b0 (src, gnd) potential
+  branch b1 (src, p) flow
+  analog
+    b0.potential +> direct vin
+    b1.flow +> direct (probe(src, p) / rs)
+fn "dithered_width~01"(duty: u12, frame: flagged<u3>) -> flagged<u9>
+  local coarse: u9
+  local duty: u12
+  local fine: u3
+  local frame: flagged<u3>
+  let coarse = ((duty >> 3i32) as u9)
+  let fine = ((duty & 7u12) as u3)
+  if ("rev3~1"(frame) < fine) { (coarse + 1u9) } else { coarse }
+fn "rev3~1"(k: flagged<u3>) -> flagged<u3>
+  local k: flagged<u3>
+  ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))
+fn body_diode(vsd: f64, vf: f64, rd: f64) -> f64
+  local rd: f64
+  local vf: f64
+  local vs: f64
+  local vsd: f64
+  local x: f64
+  let vs = 0.025
+  let x = ((vsd - vf) / vs)
+  ((vs / rd) * if (x > 40.0) { x } else { ln((1.0 + exp(x))) })
+fn in_window(meas: u10, reference: u10) -> bool
+  local half: u11
+  local m: u11
+  local meas: u10
+  local r: u11
+  local reference: u10
+  let m = (meas as u11)
+  let r = (reference as u11)
+  let half = (r >> 4i32)
+  (((m + half) >= r) && (m <= (r + half)))
+fn ovp_threshold(reference: u10) -> u10
+  local reference: u10
+  ((reference + (reference >> 3i32)) + 16u10)
+fn target_codes(setpoint: u8) -> u10
+  local setpoint: u8
+  (128u10 + ((setpoint as u10) << 2i32))
+instance Buck: Buck  nodes (Buck.vin, Buck.vout, Buck.isense, Buck.isense_n)  params (vin_nom = 12.0, rs_in = 0.02, l = 4.7e-6, dcr = 0.015, cout = 0.00022, esr = 0.003, cin = 2.2e-5, ron = 0.02, t_driver = 1e-8, r_load = 6.6, r_step = 0.825, t_step = 4e-6, i_inject = 5.0, f_clk = 200000000.0)  nets (Buck.en, Buck.sp_wr, Buck.sp_data, Buck.load_step, Buck.inject, Buck.pgood, Buck.fault, Buck.mode, Buck.clk, Buck.hs_cmd, Buck.ls_cmd, Buck.sample, Buck.code, Buck.done, Buck.vin_ok, Buck.oc, Buck.sink_oc)  top
+instance Buck.osc: Osc  nodes ()  params (f = 200000000.0)  nets (Buck.clk)
+instance Buck.supply: Supply  nodes (Buck.vin, Buck.supply.src)  params (vin = 12.0, rs = 0.02)
+instance Buck.power: PowerStage  nodes (Buck.vin, Buck.vout, Buck.isense, Buck.isense_n, Buck.power.sw, Buck.power.lx)  params (l = 4.7e-6, dcr = 0.015, cout = 0.00022, esr = 0.003, cin = 2.2e-5, esr_in = 0.005, ron = 0.02, tpd = 1e-8)  nets (Buck.hs_cmd, Buck.ls_cmd, Buck.power.hs_gate, Buck.power.ls_gate)
+instance Buck.power.drv: GateDriver  nodes ()  params (tpd = 1e-8)  nets (Buck.hs_cmd, Buck.ls_cmd, Buck.power.hs_gate, Buck.power.ls_gate)
+instance Buck.power.hs: PowerSwitch  nodes (Buck.vin, Buck.power.sw)  params (ron = 0.02, roff = 1000000.0, tsw = 5e-9, coss = 2e-10, vf = 0.7, rd = 0.02)  nets (Buck.power.hs_gate, Buck.power.hs.gate.x, Buck.power.hs.gate.xd, Buck.power.hs.gate.y0, Buck.power.hs.gate.y1, Buck.power.hs.gate.t0, Buck.power.hs.gate.dt)
+instance Buck.power.ls: PowerSwitch  nodes (Buck.power.sw, gnd)  params (ron = 0.02, roff = 1000000.0, tsw = 5e-9, coss = 2e-10, vf = 0.7, rd = 0.02)  nets (Buck.power.ls_gate, Buck.power.ls.gate.x, Buck.power.ls.gate.xd, Buck.power.ls.gate.y0, Buck.power.ls.gate.y1, Buck.power.ls.gate.t0, Buck.power.ls.gate.dt)
+instance Buck.power.ind: Inductor  nodes (Buck.power.sw, Buck.power.lx)  params (l = 4.7e-6, dcr = 0.015)
+instance Buck.power.shunt: CurrentSense  nodes (Buck.power.lx, Buck.vout, Buck.isense, Buck.isense_n)  params (rshunt = 0.005, gain = 20.0)
+instance Buck.power.c_out: Capacitor  nodes (Buck.vout, gnd, Buck.power.c_out.mid)  params (c = 0.00022, esr = 0.003)
+instance Buck.power.c_in: Capacitor  nodes (Buck.vin, gnd, Buck.power.c_in.mid)  params (c = 2.2e-5, esr = 0.005)
+instance Buck.load: Load  nodes (Buck.vout)  params (r_base = 6.6, r_step = 0.825, tr = 4e-6, i_inject = 5.0)  nets (Buck.load_step, Buck.inject, Buck.load.k_step.x, Buck.load.k_step.xd, Buck.load.k_step.y0, Buck.load.k_step.y1, Buck.load.k_step.t0, Buck.load.k_step.dt, Buck.load.k_inject.x, Buck.load.k_inject.xd, Buck.load.k_inject.y0, Buck.load.k_inject.y1, Buck.load.k_inject.t0, Buck.load.k_inject.dt)
+instance Buck.meas: Sensing  nodes (Buck.vin, Buck.vout, Buck.isense, Buck.isense_n, Buck.meas.fb, Buck.meas.vin_div)  params ()  nets (Buck.sample, Buck.code, Buck.done, Buck.vin_ok, Buck.oc, Buck.sink_oc)
+instance Buck.meas.fb_div: Divider  nodes (Buck.vout, Buck.meas.fb)  params (r_top = 30000.0, r_bot = 10000.0)
+instance Buck.meas.fb_div.upper: Resistor  nodes (Buck.vout, Buck.meas.fb)  params (r = 30000.0)
+instance Buck.meas.fb_div.lower: Resistor  nodes (Buck.meas.fb, gnd)  params (r = 10000.0)
+instance Buck.meas.adc: Adc  nodes (Buck.meas.fb)  params (vref = 1.6, tconv = 5e-7, tstrobe = 5e-9)  nets (Buck.sample, Buck.code, Buck.done)
+instance Buck.meas.uv_div: Divider  nodes (Buck.vin, Buck.meas.vin_div)  params (r_top = 90000.0, r_bot = 10000.0)
+instance Buck.meas.uv_div.upper: Resistor  nodes (Buck.vin, Buck.meas.vin_div)  params (r = 90000.0)
+instance Buck.meas.uv_div.lower: Resistor  nodes (Buck.meas.vin_div, gnd)  params (r = 10000.0)
+instance Buck.meas.uvlo: A2D  nodes (Buck.meas.vin_div)  params (vth = 0.825, hyst = 0.05)  nets (Buck.vin_ok, Buck.meas.uvlo.above$0.init$0.up, Buck.meas.uvlo.above$1.init$0.up)
+instance Buck.meas.ocp: A2D  nodes (Buck.isense)  params (vth = 0.74, hyst = 0.02)  nets (Buck.oc, Buck.meas.ocp.above$0.init$0.up, Buck.meas.ocp.above$1.init$0.up)
+instance Buck.meas.scp: A2D  nodes (Buck.isense_n)  params (vth = 0.29, hyst = 0.02)  nets (Buck.sink_oc, Buck.meas.scp.above$0.init$0.up, Buck.meas.scp.above$1.init$0.up)
+instance Buck.ctl: Controller  nodes ()  params ()  nets (Buck.clk, Buck.en, Buck.sp_wr, Buck.sp_data, Buck.code, Buck.done, Buck.vin_ok, Buck.oc, Buck.sink_oc, Buck.hs_cmd, Buck.ls_cmd, Buck.sample, Buck.pgood, Buck.fault, Buck.mode, Buck.ctl.setpoint, Buck.ctl.reference, Buck.ctl.duty, Buck.ctl.at_target, Buck.ctl.run, Buck.ctl.cut, Buck.ctl.ramp.target)
+instance Buck.ctl.reg: SetpointReg  nodes ()  params ()  nets (Buck.sp_wr, Buck.sp_data, Buck.ctl.setpoint)
+instance Buck.ctl.ramp: RefRamp  nodes ()  params ()  nets (Buck.done, Buck.ctl.run, Buck.ctl.ramp.target, Buck.ctl.reference, Buck.ctl.at_target)
+instance Buck.ctl.pid: Pid  nodes ()  params ()  nets (Buck.done, Buck.ctl.run, Buck.ctl.reference, Buck.code, Buck.ctl.duty, Buck.ctl.pid.integ, Buck.ctl.pid.deriv, Buck.ctl.pid.e_prev)
+instance Buck.ctl.sup: Supervisor  nodes ()  params ()  nets (Buck.done, Buck.en, Buck.vin_ok, Buck.ctl.cut, Buck.code, Buck.ctl.reference, Buck.ctl.at_target, Buck.ctl.run, Buck.pgood, Buck.mode, Buck.fault, Buck.ctl.sup.oc_count, Buck.ctl.sup.ov_count, Buck.ctl.sup.retry, Buck.ctl.sup.pg_in, Buck.ctl.sup.pg_out)
+instance Buck.ctl.pwm: Dpwm  nodes ()  params ()  nets (Buck.clk, Buck.ctl.run, Buck.ctl.duty, Buck.oc, Buck.sink_oc, Buck.hs_cmd, Buck.ls_cmd, Buck.sample, Buck.ctl.cut, Buck.ctl.pwm.count, Buck.ctl.pwm.width, Buck.ctl.pwm.frame, Buck.ctl.pwm.hs_off, Buck.ctl.pwm.hs_cut, Buck.ctl.pwm.ls_cut, Buck.ctl.pwm.no_shoot_through.bad)
+instance Buck.ctl.pwm.no_shoot_through: Never  nodes ()  params ()  nets (Buck.clk, Buck.ctl.pwm.no_shoot_through.bad)
+node Buck.isense: Electrical  declared by Buck
+node Buck.isense_n: Electrical  declared by Buck
+node Buck.meas.fb: Electrical  declared by Buck.meas
+node Buck.meas.vin_div: Electrical  declared by Buck.meas
+node Buck.power.c_in.mid: Electrical  declared by Buck.power.c_in
+node Buck.power.c_out.mid: Electrical  declared by Buck.power.c_out
+node Buck.power.lx: Electrical  declared by Buck.power
+node Buck.power.sw: Electrical  declared by Buck.power
+node Buck.supply.src: Electrical  declared by Buck.supply
+node Buck.vin: Electrical  declared by Buck
+node Buck.vout: Electrical  declared by Buck
+net Buck.clk: bool  declared by Buck
+net Buck.code: u10  declared by Buck
+net Buck.ctl.at_target: bool  declared by Buck.ctl
+net Buck.ctl.cut: bool  declared by Buck.ctl
+net Buck.ctl.duty: u12  declared by Buck.ctl
+net Buck.ctl.pid.deriv: i32  declared by Buck.ctl.pid  init 0
+net Buck.ctl.pid.e_prev: i16  declared by Buck.ctl.pid  init 0
+net Buck.ctl.pid.integ: i32  declared by Buck.ctl.pid  init 0
+net Buck.ctl.pwm.count: u9  declared by Buck.ctl.pwm  init 0
+net Buck.ctl.pwm.frame: u3  declared by Buck.ctl.pwm  init 0
+net Buck.ctl.pwm.hs_cut: bool  declared by Buck.ctl.pwm  init false
+net Buck.ctl.pwm.hs_off: u9  declared by Buck.ctl.pwm  init 0
+net Buck.ctl.pwm.ls_cut: bool  declared by Buck.ctl.pwm  init false
+net Buck.ctl.pwm.no_shoot_through.bad: bool  declared by Buck.ctl.pwm
+net Buck.ctl.pwm.width: u9  declared by Buck.ctl.pwm  init 0
+net Buck.ctl.ramp.target: u10  declared by Buck.ctl
+net Buck.ctl.reference: u10  declared by Buck.ctl
+net Buck.ctl.run: bool  declared by Buck.ctl
+net Buck.ctl.setpoint: u8  declared by Buck.ctl
+net Buck.ctl.sup.oc_count: u4  declared by Buck.ctl.sup  init 0
+net Buck.ctl.sup.ov_count: u2  declared by Buck.ctl.sup  init 0
+net Buck.ctl.sup.pg_in: u7  declared by Buck.ctl.sup  init 0
+net Buck.ctl.sup.pg_out: u3  declared by Buck.ctl.sup  init 0
+net Buck.ctl.sup.retry: u11  declared by Buck.ctl.sup  init 0
+net Buck.done: bool  declared by Buck
+net Buck.en: bool  declared by Buck
+net Buck.fault: u2  declared by Buck
+net Buck.hs_cmd: bool  declared by Buck
+net Buck.inject: bool  declared by Buck
+net Buck.load.k_inject.dt: f64  declared by Buck.load  init 0.0
+net Buck.load.k_inject.t0: f64  declared by Buck.load  init 0.0
+net Buck.load.k_inject.x: f64  declared by Buck.load
+net Buck.load.k_inject.xd: f64  declared by Buck.load
+net Buck.load.k_inject.y0: f64  declared by Buck.load
+net Buck.load.k_inject.y1: f64  declared by Buck.load
+net Buck.load.k_step.dt: f64  declared by Buck.load  init 0.0
+net Buck.load.k_step.t0: f64  declared by Buck.load  init 0.0
+net Buck.load.k_step.x: f64  declared by Buck.load
+net Buck.load.k_step.xd: f64  declared by Buck.load
+net Buck.load.k_step.y0: f64  declared by Buck.load
+net Buck.load.k_step.y1: f64  declared by Buck.load
+net Buck.load_step: bool  declared by Buck
+net Buck.ls_cmd: bool  declared by Buck
+net Buck.meas.ocp.above$0.init$0.up: bool  declared by Buck.meas.ocp  init true
+net Buck.meas.ocp.above$1.init$0.up: bool  declared by Buck.meas.ocp  init true
+net Buck.meas.scp.above$0.init$0.up: bool  declared by Buck.meas.scp  init true
+net Buck.meas.scp.above$1.init$0.up: bool  declared by Buck.meas.scp  init true
+net Buck.meas.uvlo.above$0.init$0.up: bool  declared by Buck.meas.uvlo  init true
+net Buck.meas.uvlo.above$1.init$0.up: bool  declared by Buck.meas.uvlo  init true
+net Buck.mode: u2  declared by Buck
+net Buck.oc: bool  declared by Buck
+net Buck.pgood: bool  declared by Buck
+net Buck.power.hs.gate.dt: f64  declared by Buck.power.hs  init 0.0
+net Buck.power.hs.gate.t0: f64  declared by Buck.power.hs  init 0.0
+net Buck.power.hs.gate.x: f64  declared by Buck.power.hs
+net Buck.power.hs.gate.xd: f64  declared by Buck.power.hs
+net Buck.power.hs.gate.y0: f64  declared by Buck.power.hs
+net Buck.power.hs.gate.y1: f64  declared by Buck.power.hs
+net Buck.power.hs_gate: bool  declared by Buck.power
+net Buck.power.ls.gate.dt: f64  declared by Buck.power.ls  init 0.0
+net Buck.power.ls.gate.t0: f64  declared by Buck.power.ls  init 0.0
+net Buck.power.ls.gate.x: f64  declared by Buck.power.ls
+net Buck.power.ls.gate.xd: f64  declared by Buck.power.ls
+net Buck.power.ls.gate.y0: f64  declared by Buck.power.ls
+net Buck.power.ls.gate.y1: f64  declared by Buck.power.ls
+net Buck.power.ls_gate: bool  declared by Buck.power
+net Buck.sample: bool  declared by Buck
+net Buck.sink_oc: bool  declared by Buck
+net Buck.sp_data: u8  declared by Buck
+net Buck.sp_wr: bool  declared by Buck
+net Buck.vin_ok: bool  declared by Buck

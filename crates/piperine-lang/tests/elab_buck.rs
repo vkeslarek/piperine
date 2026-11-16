@@ -1,7 +1,8 @@
-//! Scope: the buck-converter example (`examples/buck`) elaborated from source (DIG-14).
+//! Scope: the buck-converter example (`examples/buck`) elaborated from source (DIG-14, DIG-15).
 //! Each module `ir-rust` T29 transcribed by hand prints as its fixture
 //! (`crates/piperine-ir/tests/golden/buck/*.txt`, never edited) except the differences named in
-//! this file, one constant each.
+//! this file, one constant each; `Buck` elaborates with no diagnostic, an empty `check()` and the
+//! structural print pinned in `tests/fixtures/elab/buck.txt`.
 
 #[path = "support/elab.rs"]
 #[allow(dead_code)]
@@ -144,4 +145,31 @@ fn dpwm_and_a2d_differ_only_as_listed() {
         survivors = survivors.iter().map(|l| if l.starts_with(from) { l.replacen(from, to, 1) } else { l.clone() }).collect();
     }
     assert_same("A2D", &item(&fixture("comparator"), "body A2D"), &survivors);
+}
+
+#[test]
+fn the_buck_elaborates_with_no_diagnostic_and_a_sound_ir() {
+    // DIG-15 AC 1, C143: 22 bodies, the 20 modules of the package and the stdlib's `A2D` and
+    // `Never`; `transition`, `above` and `init` are hoisted and have none.
+    let design = buck_design();
+    assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+    let ir = piperine_lang::elab::Elaborator::new(&design).run("Buck").unwrap_or_else(|e| panic!("{:?}", Elab::codes(&e)));
+    assert!(ir.check().is_empty(), "{:?}", ir.check());
+    let mut names: Vec<&str> = ir.bodies().map(|b| b.name()).collect();
+    names.sort_unstable();
+    assert_eq!(names.len(), 22, "{names:?}");
+    for hoisted in ["transition", "above", "init"] {
+        assert!(!names.contains(&hoisted), "{hoisted} is hoisted and has no body");
+    }
+    for stdlib in ["A2D", "Never"] {
+        assert!(names.contains(&stdlib), "{stdlib}");
+    }
+}
+
+#[test]
+fn the_buck_ir_is_pinned() {
+    // DIG-15 AC 2, C144.
+    let path = format!("{}/tests/fixtures/elab/buck.txt", env!("CARGO_MANIFEST_DIR"));
+    let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    assert_eq!(buck_ir().print_structural(), golden, "the elaborated Buck differs from tests/fixtures/elab/buck.txt");
 }

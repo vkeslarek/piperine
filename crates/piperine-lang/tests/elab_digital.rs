@@ -648,8 +648,8 @@ fn the_m1_goldens_are_unchanged() {
     // `tests/fixtures/elab/*.txt`, which this feature never edits. `diode_rev` came after those
     // fixtures were pinned and has none: it elaborates with an empty `check()`.
     let twins = [("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
-    let fixtures = std::fs::read_dir(format!("{}/tests/fixtures/elab", env!("CARGO_MANIFEST_DIR"))).expect("the fixtures").filter_map(|e| e.ok()).filter(|e| e.path().extension().is_some_and(|x| x == "txt")).count();
-    assert_eq!(fixtures, twins.len(), "one fixture per pinned twin");
+    let fixtures = std::fs::read_dir(format!("{}/tests/fixtures/elab", env!("CARGO_MANIFEST_DIR"))).expect("the fixtures").filter_map(|e| e.ok()).filter(|e| e.path().extension().is_some_and(|x| x == "txt") && e.path().file_stem().is_some_and(|s| s != "buck")).count();
+    assert_eq!(fixtures, twins.len(), "one fixture per pinned twin (`buck.txt` is the pin of the whole buck, `elab_buck`)");
     let twin = |file: &str| {
         let path: std::path::PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "ngspice", &format!("{file}.msl")].iter().collect();
         piperine_lang::pom::Design::builder().root_file(path).build()
