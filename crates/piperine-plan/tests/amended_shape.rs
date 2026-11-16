@@ -326,3 +326,66 @@ fn a_stream_is_a_record_pin_with_one_field_per_value() {
 
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
+
+/// `module <name>(p, n) { <param>: f64 = 1.0; analog { v(p, n) +> <operator>(<param> * i(p, n)); } }`:
+/// a potential branch whose one addend reads the branch's own flow.
+fn reads_its_flow(b: &mut IrBuilder, name: &str, param: &str, operator: Operator) -> BodyId {
+    let nodes = ports(b);
+    let mut x = Dx::new(b, F, 3, 30);
+    let k = x.param(0, ValueType::F64);
+    let o = x.origin();
+    let flow = x.b.expr(Expr::Flow { branch: 0 }, ValueType::F64, o);
+    let value = x.bin(piperine_ir::BinaryOp::Mul, k, flow, ValueType::F64);
+    let contribution = b.stmt(Stmt::Contribute {
+        branch: 0,
+        quantity: QuantityRole::Potential,
+        addends: vec![Addend { operator, negated: false, value }],
+    });
+    b.body(BodySpec {
+        params: vec![Buck::param(param, F, 2, Some(1.0), None)],
+        nodes,
+        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Potential }],
+        analog: Some(vec![contribution]),
+        ..Buck::spec(name, F, 1)
+    })
+}
+
+#[test]
+fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
+    // the inductor of the power stage: `v(p, n) +> ddt(l * i(p, n))`
+    let (ir, body) = Alone::design(|b| reads_its_flow(b, "Inductor", "l", Operator::Ddt));
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (l, p, n, f) = (Find::pin(shape, "l"), Find::pin(shape, "p"), Find::pin(shape, "n"), Find::pin(shape, "b0.flow"));
+    // abi.md A1: a potential branch is its private flow pin `f`, the term `FLOW {p, n}` that
+    // carries it into KCL, and its equation row `FLOW {f, GROUND}`; a `ddt` addend of a
+    // potential contribution is a `DDT {f, GROUND}` term on that same row (abi.md §11.6, the
+    // DAC's `eq` row, with the charge as its own term)
+    let terms: Vec<(String, u32, u32, u32)> = shape.terms.iter().map(|t| (t.name.as_str().to_string(), t.op, t.plus, t.minus)).collect();
+    let (flow, ddt, ground) = (piperine_abi::raw::op::FLOW, piperine_abi::raw::op::DDT, piperine_abi::raw::GROUND);
+    assert_eq!(terms, [("b0.flow".into(), flow, p, n), ("b0.eq".into(), flow, f, ground), ("b0.charge".into(), ddt, f, ground)]);
+    // `i(p, n)` is a read of the flow pin, differentiable like a node (a tangent slot of its
+    // own, after the nodes): `terms` reads p, n, f, then l
+    let (reads, _, partials) = Find::function(shape, "terms");
+    assert_eq!(reads, [pin(p, part::VALUE), pin(n, part::VALUE), pin(f, part::VALUE), pin(l, part::VALUE)]);
+    let terms_plan = plan.functions().iter().find(|x| x.mode == Mode::Terms).expect("terms");
+    assert_eq!(terms_plan.reads, [Source::Node(0), Source::Node(1), Source::BranchFlow(0), Source::Param(0)]);
+    assert_eq!(terms_plan.slots, 3);
+    // write 0 (KCL) against f; write 1 (the row, v(p, n) with no direct addend) against p and n;
+    // write 2 (the charge `l·f`) against f
+    assert_eq!(partials, [(0, 2), (1, 0), (1, 1), (2, 2)]);
+    // INT-12: the row and the KCL term are affine in the pins, a charge never is
+    assert_eq!(terms_plan.affine, [true, true, false]);
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+
+    // the same read in a direct addend (`v(p, n) +> r * i(p, n)`: a resistor written as a
+    // potential): the row `v(p, n) - r·f` reads f, and stays affine in the pins
+    let (ir, body) = Alone::design(|b| reads_its_flow(b, "FlowResistor", "r", Operator::Direct));
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (_, _, partials) = Find::function(shape, "terms");
+    assert_eq!(partials, [(0, 2), (1, 0), (1, 1), (1, 2)], "the row against p, n and f");
+    let terms_plan = plan.functions().iter().find(|x| x.mode == Mode::Terms).expect("terms");
+    assert_eq!(terms_plan.affine, [true, true]);
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}

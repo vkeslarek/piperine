@@ -192,10 +192,13 @@ impl ReadSet {
         self.0.extend(other.0.iter().copied());
     }
 
-    /// The whole dependency set of `target`: its `Deps` and the carriers it reads.
+    /// The whole dependency set of `target`: its `Deps`, the carriers it reads and the flows of
+    /// potential branches it reads (`i(a, b)`, msl-digital A5: the branch's private flow pin, a
+    /// differentiable read).
     pub(crate) fn target(body: Body<'_>, target: Query) -> ReadSet {
         let mut set = ReadSet::of(&body.dependencies(target));
         set.0.extend(body.carrier_reads(target).into_iter().map(Source::Carrier));
+        set.0.extend(body.flow_reads(target).into_iter().map(Source::BranchFlow));
         set
     }
 }
