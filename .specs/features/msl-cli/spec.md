@@ -2,13 +2,15 @@
 
 **Approved**: 2026-11-15 - user: "Esses + fmt agora", "Adoro a ideia de benches na propria linguagem", "Tabela + plots", "Ao vivo, todos os streams", "Rust por padrão", "Agora, pequeno", "LSP só de diagnósticos agora", "Projeto RC passa-baixa" (the answers to Q1–Q8)
 
+**Amended**: 2026-11-16 - user: "O lang-server é o menos importante, vai ficar para bem depois." The language server (CLI-25, the answer to Q7) leaves this feature; `piperine-lang-server` stays untouched and outside the default build.
+
 The approval and the eight answers reached the planner through the orchestrator on 2026-11-15; the answers are recorded one per row under "Assumptions & Open Questions" and in `context.md`.
 
 ## Problem Statement
 
 An MSL project can be run only from a Rust test. `piperine-cli` (43 errors), `piperine-api` (165) and the root package still target the deleted Verilog-AMS front end and the deleted `Element` solver interface; they sit outside the default build and rot. `piperine-project` builds but nothing on the run path uses it. After `ir-rust` and `msl-digital` the whole chain exists (source, type check, elaboration, IR, two backends, solver, records through the sink), and the user asked for the command line next: "Depois desses desenvolvimentos do ir -> transpilation -> abi eu preciso que tu coloque na fila acertar o CLI, project para poder rodar algo completo."
 
-This feature makes `piperine run` execute a complete MSL project, shows `emit!` records as its debug output ("Colocar print (com o emit!) para debug, exemplos completos"), and ends with a Book chapter about the command line ("vamos planejar o cli para colocar no book também?"). With the user's answers it also brings `fmt` on a printer that keeps comments, plots, and a language server that publishes diagnostics; and it says in the spec and in the Book that a bench is written in MSL ("Adoro a ideia de benches na propria linguagem ao invés de outra linguagem.").
+This feature makes `piperine run` execute a complete MSL project, shows `emit!` records as its debug output ("Colocar print (com o emit!) para debug, exemplos completos"), and ends with a Book chapter about the command line ("vamos planejar o cli para colocar no book também?"). With the user's answers it also brings `fmt` on a printer that keeps comments, and plots; and it says in the spec and in the Book that a bench is written in MSL ("Adoro a ideia de benches na propria linguagem ao invés de outra linguagem.").
 
 ## Goals
 
@@ -17,9 +19,8 @@ This feature makes `piperine run` execute a complete MSL project, shows `emit!` 
 - [ ] The seven ngspice twins of `tests/ngspice/` run from the command line on both backends, in all four analyses.
 - [ ] `piperine check`, `build`, `test`, `new`, `clean` and `fmt` work on an MSL project; `fmt` keeps every comment.
 - [ ] `--plot FILE.svg` writes the result of a sweep or a transient as an SVG.
-- [ ] `piperine-lang-server` builds again and publishes parse, resolution and type-check errors to an editor.
 - [ ] `docs/spec/` and the Book say that a bench (stimulus and monitors) is MSL, and that sweeps, Monte Carlo and optimization stay in the host.
-- [ ] `piperine-api`, `piperine-cli`, `piperine-project`, `piperine-lang-server` and the root package are in the default build with zero warnings; `cargo build` and `cargo test` at the root cover them.
+- [ ] `piperine-api`, `piperine-cli`, `piperine-project` and the root package are in the default build with zero warnings; `cargo build` and `cargo test` at the root cover them.
 - [ ] The Book has a chapter "The command line" before the cheat sheet, whose examples are real projects and whose output blocks are what the binary prints.
 
 ## Out of Scope
@@ -28,8 +29,7 @@ This feature makes `piperine run` execute a complete MSL project, shows `emit!` 
 | ------- | ------ |
 | `add`, `remove`, `tree`, `expand`, `plugin`, plugin scripts, the `-i` REPL | the old code is deleted with the VAMS front end; dependency editing and the plugin system are separate features |
 | A Python host, `*_tb.py` testbenches | there is no Python crate (Q7) |
-| Language-server features beyond diagnostics: hover, completion, go to definition, references, rename, symbols, semantic tokens, formatting, code actions | Q7: diagnostics only now. The old handlers are deleted with the front end they read; each returns on the POM under its own feature |
-| A TextMate grammar and snippets for MSL in the VS Code extension | the extension registers `.msl` and starts the server; highlighting is its own piece of work |
+| The language server, in any form, and the VS Code extension | deferred by the user, 2026-11-16: "O lang-server é o menos importante, vai ficar para bem depois." `piperine-lang-server` and `editors/` are not touched; the crate stays a workspace member outside `default-members` and still does not build |
 | Formatting options, a configuration file for `fmt`, formatting a range | one canonical layout, as the printer has today |
 | A terminal plot, PNG output, interactive plots, more than one chart layout | Q3: one SVG per run, written by hand with no plotting dependency. A terminal plot would put variable-width drawing on a standard output the Book compares byte for byte |
 | Reformatting `crates/piperine-lang/std`, the galleries or `examples/buck/src` | the formatter is proven on them; rewriting them is a separate, reviewable change |
@@ -60,9 +60,7 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 | Q4 Record display | every stream, live, one line each; `--stream`; `--records FILE` as JSON Lines | user decision (option a) | y - user: "Ao vivo, todos os streams" |
 | Q5 Default backend | `rust`; `--backend`, then `PIPERINE_BACKEND`, then the run's `backend` key | user decision (option a) | y - user: "Rust por padrão" |
 | Q6 `piperine-api` | rewritten small, now; the old content deleted | user decision (option a) | y - user: "Agora, pequeno" |
-| Q7 Language server | a diagnostics-only server now: parse, resolution and type-check errors published to the editor; back in the default build; every other handler of the old server deleted. Python stays later | user decision (option b) | y - user: "LSP só de diagnósticos agora" |
-| What the server analyses | what `piperine check` reports, with the open buffers in place of the files on disk; on open, change, save and close | one definition of "the errors of a project" for the terminal and the editor | y - planner, inside Q7 |
-| The VS Code extension | registers the language `msl` for `.msl` and starts the server; the Verilog-AMS grammar and snippets are deleted | they describe a language the tool no longer reads | y - planner, inside Q7 |
+| Q7 Language server | not in this feature. `piperine-lang-server` stays untouched and outside the default build; Python stays later too | user decision of 2026-11-16, which supersedes the answer of 2026-11-15 ("LSP só de diagnósticos agora") | y - user: "O lang-server é o menos importante, vai ficar para bem depois." |
 | Q8 Template of `new`, first Book example | the RC low-pass project `examples/rc`; the buck is the Book's second example | user decision (option a) | y - user: "Projeto RC passa-baixa" |
 | How `fmt` keeps comments | the lexer gives plain comments as a list beside the tokens; the tree, the parser and the POM do not change. The formatter anchors each comment to the item, member, statement or list element it stands before, after (same line) or inside (an empty or ending block), and prints it there. A statement holding a comment no anchor reaches is written as it is in the source, re-indented. One blank line between two statements or members is kept when the source has one or more. `fmt` refuses to write a file whose comments would not all come out, in order | the smallest change that cannot lose a comment; rustfmt's own rule for what it cannot place | y - planner, inside Q1 |
 | What `fmt` formats | every `.msl` under `src/` and `benches/` of the package, or the files named; in place | Cargo's rule | y - planner, inside Q1 |
@@ -89,14 +87,14 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 | `check` without a run | parse and resolve only, and it says that type checking was skipped | type checking starts from a top, and a library has none | y - planner |
 | `clean` | removes `<project>/target`; `--cache` also removes the compiled-design cache directory | the checkouts are per project, the cache is per user | y - planner |
 | Argument parser | `clap` with its builder interface, no derive | AGENTS.md rule 5: no macros | y - planner |
-| The old tests of `piperine-api` and `piperine-cli` | deleted with the code they test | they test an interface that no longer exists and do not compile; this is the deletion Q6 approved, not a weakened test. The old tests of `piperine-lang-server` go the same way under Q7 | y - user: "Agora, pequeno", "LSP só de diagnósticos agora" |
+| The old tests of `piperine-api` and `piperine-cli` | deleted with the code they test | they test an interface that no longer exists and do not compile; this is the deletion Q6 approved, not a weakened test. | y - user: "Agora, pequeno" |
 | `examples/Piperine.toml`, `examples/Piperine.lock` | deleted | a manifest in the old `[project]` format that names no package | y - planner |
 | The buck's `startup` run | the scenario of `msl-digital` DIG-16: setpoint code 0, `en` raised, Vin 12 V, a 6.6 Ω load, 600 µs; the reference ends at 128. `idle` is DIG-15's: the converter compiled, `en` low, mode `Off` (0) | the one closed-loop start that feature proves; this feature adds no new scenario. DIG-16 is P2 there: if `msl-digital` merges without it, T1 reports it and CLI-08 AC 2, 3 and 5 wait, carried meanwhile by `idle` | y - planner |
 | Order | starts after `msl-digital` merges; task T1 reads the merged code and records every name this design takes from its design text | the record decoder and the bench forms depend on it | y - planner |
 
 **Open questions:** none - all resolved or logged above.
 
-**Implicit-requirement dimensions.** Input validation and bounds: CLI-03, CLI-22 AC 8, CLI-23 AC 9, CLI-25 AC 10, CLI-09 AC 3 and 5, CLI-10 AC 2 and 3, CLI-17 AC 3 and 4. Failure and partial-failure states: CLI-04 AC 4 to 6, CLI-05 AC 6, CLI-07 AC 4 to 7, CLI-11 AC 3, CLI-16 AC 3 and 5. Idempotency and retry: CLI-23 AC 3 (formatting twice), CLI-22 AC 10, CLI-15 AC 2 (a second build compiles nothing), CLI-17 AC 3 (`new` never overwrites), CLI-18 AC 3. Auth boundaries and rate limits: N/A because everything is local and single-user. Concurrency and ordering: CLI-06 AC 3 (record order is the sink's); two `piperine` processes on one cache are safe by the transpiler's cache (its rename-into-place rule), not by this feature. Data lifecycle: CLI-18 (what `clean` removes); CLI-11 AC 2 and CLI-12 AC 4 (an output file is replaced, never appended). Observability: CLI-06, CLI-15 AC 3, and progress on standard error (CLI-07 AC 8). External-dependency failure: CLI-04 AC 5 (`rustc` missing), CLI-02 AC 6 (a git dependency that cannot be fetched keeps its package code). State-transition integrity: N/A because a run is one pass from source to result; a `set` is made only before the analysis (CLI-10).
+**Implicit-requirement dimensions.** Input validation and bounds: CLI-03, CLI-22 AC 8, CLI-23 AC 9, CLI-09 AC 3 and 5, CLI-10 AC 2 and 3, CLI-17 AC 3 and 4. Failure and partial-failure states: CLI-04 AC 4 to 6, CLI-05 AC 6, CLI-07 AC 4 to 7, CLI-11 AC 3, CLI-16 AC 3 and 5. Idempotency and retry: CLI-23 AC 3 (formatting twice), CLI-22 AC 10, CLI-15 AC 2 (a second build compiles nothing), CLI-17 AC 3 (`new` never overwrites), CLI-18 AC 3. Auth boundaries and rate limits: N/A because everything is local and single-user. Concurrency and ordering: CLI-06 AC 3 (record order is the sink's); two `piperine` processes on one cache are safe by the transpiler's cache (its rename-into-place rule), not by this feature. Data lifecycle: CLI-18 (what `clean` removes); CLI-11 AC 2 and CLI-12 AC 4 (an output file is replaced, never appended). Observability: CLI-06, CLI-15 AC 3, and progress on standard error (CLI-07 AC 8). External-dependency failure: CLI-04 AC 5 (`rustc` missing), CLI-02 AC 6 (a git dependency that cannot be fetched keeps its package code). State-transition integrity: N/A because a run is one pass from source to result; a `set` is made only before the analysis (CLI-10).
 
 ---
 
@@ -543,30 +541,6 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 
 ---
 
-### P2: Diagnostics in the editor
-
-**User Story**: As a designer, I want my errors underlined as I type so that I do not switch to a terminal to find a typo.
-
-**Why P2**: the user's answer: "LSP só de diagnósticos agora".
-
-**Acceptance Criteria**:
-
-1. The system SHALL build `piperine-lang-server` as a default member with zero warnings, holding no source that names the deleted front end.
-2. WHEN a client initializes the server THEN the system SHALL answer with full-text document sync and no other capability.
-3. WHEN a document is opened, changed or saved THEN the system SHALL publish, for every file of its project, the diagnostics `piperine check` would report for that project with the open documents' text in place of the files on disk.
-4. The system SHALL give each published diagnostic its code, its message, the severity error, the source `piperine`, and a range in UTF-16 code units that covers the diagnostic's span.
-5. WHEN a file that had diagnostics has none after an analysis THEN the system SHALL publish an empty list for it.
-6. WHEN a document belongs to no package THEN the system SHALL analyse it as a crate alone.
-7. WHEN the manifest has a fault THEN the system SHALL publish it on the manifest's file.
-8. WHEN a client sends a request the server does not implement THEN the system SHALL answer it with the error `MethodNotFound`.
-9. WHEN a client sends `shutdown` and then `exit` THEN the system SHALL answer the first and end with exit code 0.
-10. The system SHALL NOT end on a document that does not parse, a path that does not exist or a message that is malformed.
-11. The system SHALL register in the VS Code extension the language `msl` for the extension `.msl`, and hold no Verilog-AMS grammar or snippet.
-
-**Independent Test**: open `examples/rc` in VS Code with the extension, break a type in `src/lib.msl`, and see `P0002` underlined.
-
----
-
 ### P1: The Book chapter
 
 **User Story**: As a reader of the Book, I want a chapter on the command line with complete examples so that I can run a project by copying it.
@@ -588,7 +562,6 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 11. The system SHALL show in the chapter `cli` the plot of the RC step response, the SVG equal to the file `piperine run step --plot` writes in `examples/rc`.
 12. The system SHALL show in the chapter `cli` `piperine fmt` and `piperine fmt --check` and say that comments are kept.
 13. The system SHALL say in the Book's first chapter that a bench is written in MSL and that sweeps, Monte Carlo and optimization live in the host, and SHALL NOT say there that testbenches or stimulus do not live in MSL.
-14. The system SHALL say in the chapter `cli` that the language server shows the same errors in an editor.
 
 **Independent Test**: `python3 docs/book/build.py`, open `docs/book/index.html`, copy the RC project out of chapter 16 and run it.
 
@@ -602,8 +575,8 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 
 **Acceptance Criteria**:
 
-1. The system SHALL state in `CLAUDE.md` and `AGENTS.md` that `piperine-api`, `piperine-cli`, `piperine-project`, `piperine-lang-server` and the root package build, with the role of each as this feature leaves it.
-2. The system SHALL remove from `GAPS.md` the entries this feature closes and add each gap it leaves: no host sequences from the command line, no Python, a language server with diagnostics only, no trace records.
+1. The system SHALL state in `CLAUDE.md` and `AGENTS.md` that `piperine-api`, `piperine-cli`, `piperine-project` and the root package build, that `piperine-lang-server` stays outside the default build, with the role of each as this feature leaves it.
+2. The system SHALL remove from `GAPS.md` the entries this feature closes and add each gap it leaves: no host sequences from the command line, no Python, the language server (deferred), no trace records.
 3. The system SHALL mark queue item 3 of `ROADMAP.md` as done.
 4. The system SHALL record in `.specs/STATE.md` the decision that the command line is a shell over `piperine-api` and that a run is a `[run.<name>]` table.
 5. The system SHALL say in `examples/buck/README.md` how the buck is run from the command line.
@@ -655,9 +628,8 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 | CLI-22 | P2: Plots | Tasks | In Tasks |
 | CLI-23 | P2: A formatter that keeps comments | Tasks | In Tasks |
 | CLI-24 | P2: `piperine fmt` | Tasks | In Tasks |
-| CLI-25 | P2: Diagnostics in the editor | Tasks | In Tasks |
 
-**Coverage:** 25 total, 25 mapped to tasks, 0 unmapped. The IDs follow the order the stories were written in; in this file the stories of CLI-21 to CLI-25 stand before CLI-19.
+**Coverage:** 24 total, 24 mapped to tasks, 0 unmapped. The IDs follow the order the stories were written in; in this file the stories of CLI-21 to CLI-24 stand before CLI-19. CLI-25 (diagnostics in the editor) was removed on 2026-11-16 and its ID is not reused.
 
 ---
 
@@ -665,7 +637,8 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 
 - The user, 2026-11-15: "Depois desses desenvolvimentos do ir -> transpilation -> abi eu preciso que tu coloque na fila acertar o CLI, project para poder rodar algo completo." - the feature; `ROADMAP.md` "Queue after ir-rust" item 3.
 - The user, 2026-11-15: "vamos planejar o cli para colocar no book também?" - CLI-19.
-- The user, 2026-11-15, the eight answers relayed by the orchestrator: "Esses + fmt agora" (CLI-23, CLI-24), "Adoro a ideia de benches na propria linguagem ao invés de outra linguagem." (CLI-02, CLI-21), "Tabela + plots" (CLI-22), "Ao vivo, todos os streams" (CLI-06, CLI-12), "Rust por padrão" (CLI-04), "Agora, pequeno" (CLI-01), "LSP só de diagnósticos agora" (CLI-25), "Projeto RC passa-baixa" (CLI-17, CLI-19).
+- The user, 2026-11-15, the eight answers relayed by the orchestrator: "Esses + fmt agora" (CLI-23, CLI-24), "Adoro a ideia de benches na propria linguagem ao invés de outra linguagem." (CLI-02, CLI-21), "Tabela + plots" (CLI-22), "Ao vivo, todos os streams" (CLI-06, CLI-12), "Rust por padrão" (CLI-04), "Agora, pequeno" (CLI-01), "LSP só de diagnósticos agora" (superseded on 2026-11-16), "Projeto RC passa-baixa" (CLI-17, CLI-19).
+- The user, 2026-11-16: "O lang-server é o menos importante, vai ficar para bem depois." - the language server leaves the feature.
 - The user, 2026-11-15: "Colocar print (com o emit!) para debug, exemplos completos" - CLI-06, and the complete examples of CLI-19.
 - `GAPS.md` §2 - what does not build today.
 - `.specs/features/codegen/context.md` R1 to R4 - the interpreter is the reference for the M1 analog subset, the Rust backend runs everything, the generated Rust is the debug surface.
@@ -676,11 +649,18 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 
 ---
 
+## After this feature
+
+The user's next step, verbatim (2026-11-16): "Finalizando o cli + api na feature, pode fazer o wiring do root e criar os testes integrados. Eu recomendo que tudo que está no livro tenha ao menos 1 teste integrado".
+
+That is the next feature (the root e2e fixtures, queue item 4), not this one. What this feature already does toward it: every file block and every output block of the Book's chapter on the command line is held to the example projects and to the binary's output by a test (CLI-19 AC 2 to 4 and 11), and every `msl` block of the Book parses and survives the formatter (CLI-19 AC 8, CLI-23 AC 10). An integrated test for everything else the Book shows belongs to that next feature.
+
+---
+
 ## Success Criteria
 
 - [ ] In `examples/rc`: `piperine run step` prints a header, one `trip` record and a table, and exits 0, on both backends.
 - [ ] In `examples/buck`: `piperine run startup` ends with the reference at 128 and no failed check.
 - [ ] `cargo build` and `cargo test` at the root build and test the four host crates with zero warnings.
 - [ ] `piperine fmt` on a file with comments keeps every one; `piperine fmt --check` passes on `examples/rc`.
-- [ ] An editor shows the errors `piperine check` prints.
 - [ ] Every output block of the Book's chapter "The command line" is byte-equal to the binary's output, proven by a test.

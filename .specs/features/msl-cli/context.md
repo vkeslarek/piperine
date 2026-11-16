@@ -30,8 +30,13 @@ The command line and the project layer run a complete MSL project end to end: `P
 | 4 | records | "Ao vivo, todos os streams" | live, every stream, `--stream`, `--records FILE` as JSON Lines |
 | 5 | backend | "Rust por padrão" | Rust by default; `--backend`, `PIPERINE_BACKEND`, the run table |
 | 6 | `piperine-api` | "Agora, pequeno" | now and small: the old content deleted, `Project`, `RunSpec`, `Session`, `Table`, `Record` on the ABI; the CLI a shell; the root package builds |
-| 7 | language server | "LSP só de diagnósticos agora" | a diagnostics-only server now (parse, resolution, type-check errors), back in the default build; everything else of the old server deleted |
+| 7 | language server | "LSP só de diagnósticos agora" | **superseded on 2026-11-16**, see below |
 | 8 | template | "Projeto RC passa-baixa" | the RC low-pass project for `new` and the Book's first example; the buck second |
+
+### Amendment (user, 2026-11-16, relayed by the orchestrator)
+
+- "O lang-server é o menos importante, vai ficar para bem depois." The language server leaves this feature: CLI-25 and tasks T50 to T54 are removed, `piperine-lang-server` and `editors/` stay untouched, and the crate stays outside `default-members`. This supersedes the answer to Q7. `Project::check_with` (the overlay of open buffers) was needed only by the server and is dropped with it.
+- "Finalizando o cli + api na feature, pode fazer o wiring do root e criar os testes integrados. Eu recomendo que tudo que está no livro tenha ao menos 1 teste integrado". This is the next feature (root e2e), recorded in the spec under "After this feature". This feature already holds its own Book chapter's blocks by tests.
 
 ### What earlier decisions already fix
 
@@ -43,7 +48,7 @@ The command line and the project layer run a complete MSL project end to end: `P
 
 ### Agent's Discretion
 
-Everything technical, and inside the answers: the form of a plot (Q3), how comments are kept (Q1), what the server analyses and what the editor extension keeps (Q7). Also: crate layout, the data model of a run, the record decoder, the text formats, the error codes of the tool, the argument parser, the test layout. Each choice is a row of the spec's Assumptions table, open to correction.
+Everything technical, and inside the answers: the form of a plot (Q3), how comments are kept (Q1), Also: crate layout, the data model of a run, the record decoder, the text formats, the error codes of the tool, the argument parser, the test layout. Each choice is a row of the spec's Assumptions table, open to correction.
 
 ### Declined / Undiscussed Gray Areas → Assumptions
 
@@ -63,7 +68,8 @@ None declined; all eight questions are answered above.
 
 - Formatting options and range formatting.
 - A terminal plot; PNG; interactive plots.
-- Hover, completion, go to definition, rename and the rest of a language server; an MSL grammar for the editor.
+- The language server and the editor extension, whole (user: "vai ficar para bem depois").
+- An integrated test for everything the Book shows (the next feature).
 - `add`, `remove`, `tree`; `--locked`, `--offline`, an explicit `update`.
 - Host stimulus from the command line (drives, waits, sequences) and a Python host.
 - Noise, transfer function, pole-zero, periodic steady state, S-parameters, sensitivities and Monte Carlo as run tables.
