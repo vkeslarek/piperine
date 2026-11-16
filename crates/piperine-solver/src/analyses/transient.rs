@@ -7,6 +7,7 @@
 //! (p6-cleanup-architecture D2). The step tunables stay on
 //! [`TransientAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
+use piperine_analog_solver::crossing::{CrossDir, predict_crossing};
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot, Stage};
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
@@ -86,6 +87,11 @@ pub struct TransientAnalysisOptions {
     /// (`list_observables` membership for every request) runs once at
     /// solver setup (ABI-35).
     pub probe_selection: crate::core::introspect::ProbeSelection,
+
+    /// The default `ttol` of a crossing (docs/spec §17.3 rule 2, Appendix C.2.1): a `CROSS`
+    /// watch with no `ttol` pin is located until the landing exceeds the estimated crossing by
+    /// at most this, or its value is under its `etol`. Default 1 ps.
+    pub ttol: f64,
 }
 
 impl TransientAnalysisOptions {
@@ -107,6 +113,7 @@ impl TransientAnalysisOptions {
             start_time: 0.0,
             record_device_state: false,
             probe_selection: crate::core::introspect::ProbeSelection::new(),
+            ttol: 1e-12,
         }
     }
 
@@ -857,6 +864,37 @@ pub(crate) struct DeviceRun {
     cap: f64,
     /// The digital nets' names, by net id (each step's digital values).
     net_names: std::sync::Arc<[String]>,
+    /// The circuit has a `CROSS` watch: every step ends on its tick and a crossing is located.
+    locates: bool,
+    /// The attempts of the current step that went past a crossing.
+    located: Option<Located>,
+}
+
+/// The attempts of one step that went past a crossing (§17.3): the accepted time the step
+/// starts from, and each rising watch's `(instance, watch)` with its last attempt
+/// `(time, value)` past the crossing. It survives the protocol's restore; a step from another
+/// accepted time drops it.
+struct Located {
+    from: f64,
+    past: Vec<((usize, usize), (f64, f64))>,
+}
+
+/// The crossing time of a watch between the last accepted solution `(t0, e0)`, `e0 ≤ 0`, and the
+/// attempt `(t1, e1)`, `e1 > 0`: the secant through the attempt and `prev`, this step's last
+/// attempt past the crossing, when it falls inside the bracket; else the bracket's own secant.
+/// The bracket's secant alone stalls on a curved `e` (each retake lands on the same side); the
+/// two-point secant converges from either side (Appendix C.2).
+fn crossing_estimate(t0: f64, e0: f64, t1: f64, e1: f64, prev: Option<(f64, f64)>) -> f64 {
+    if let Some((tp, ep)) = prev
+        && tp > t1
+        && ep > e1
+    {
+        let t = t1 - e1 * (tp - t1) / (ep - e1);
+        if t > t0 && t < t1 {
+            return t;
+        }
+    }
+    predict_crossing(CrossDir::Rising, t0, e0, t1, e1).map_or(t0, |p| p.t_cross)
 }
 
 /// A converged attempt and its truncation verdict, until `device_accept`.
@@ -959,6 +997,7 @@ impl TransientSolver<'_> {
                 }
             }
         }
+        let locates = bound.analog.has_crossings();
         let run = DeviceRun {
             st: TimeLoop::new(self.options.start_time, self.options.dt),
             steps: Vec::new(),
@@ -973,6 +1012,8 @@ impl TransientSolver<'_> {
             spt,
             cap: f64::INFINITY,
             net_names,
+            locates,
+            located: None,
         };
         let (start, stop) = (self.options.start_time, self.options.stop_time);
         let hooks = self.host.clone();
@@ -1260,6 +1301,10 @@ impl TransientSolver<'_> {
             to
         } else if (stop - to).abs() < run.spt {
             stop
+        } else if run.locates {
+            // A design with a `CROSS` watch steps on the tick grid: a located crossing lands
+            // on a tick (§15 T4). No parity oracle has one, so the deviation below stays theirs.
+            to
         } else if (run.proposed - to).abs() < run.spt {
             run.proposed
         } else {
@@ -1287,6 +1332,12 @@ impl TransientSolver<'_> {
             let assessment = self.assess_step(&prediction, post_set_step, &run.node_indices);
             if assessment.accept || self.device_reject_lte(st, &prediction, assessment.milne) {
                 run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, post_set_step });
+                // §17.3 rule 8: a step that reads a jump does not locate its crossings.
+                if run.locates && !post_set_step
+                    && let Some(landing) = self.device_locate(run, t_next)?
+                {
+                    return Ok(Attempt::LandedEarlier(landing));
+                }
                 return Ok(Attempt::Converged);
             }
             return Ok(Attempt::Rejected);
@@ -1300,6 +1351,51 @@ impl TransientSolver<'_> {
             run.failed = Some(e);
         }
         Ok(Attempt::Rejected)
+    }
+
+    /// The locator of §17.3 at the converged attempt `t1`: each `CROSS` watch that went from
+    /// `≤ 0` at the last accepted solution to `> 0` here is within its tolerance when its value
+    /// is under its `etol` or `t1` exceeds its estimated crossing by at most its `ttol` (a
+    /// watch's own pins, else the session's `ttol` and potential `abstol`). When one is not, the
+    /// step is retaken at the earliest estimate rounded up to a tick (§15 T4): `Some(landing)`.
+    /// `None` accepts the attempt: every crossing is within tolerance, or the earliest estimate
+    /// rounds to the attempt's own tick.
+    fn device_locate(&mut self, run: &mut DeviceRun, t1: f64) -> crate::core::result::Result<Option<f64>> {
+        let t0 = run.st.current_time;
+        if run.located.as_ref().is_some_and(|l| l.from != t0) {
+            run.located = None;
+        }
+        let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
+        let amb = Ambient { time: t1, ..self.system.ambient() };
+        let (ttol, etol) = (self.options.ttol, self.system.context.tolerances.vntol);
+        let rising = self.device_bound().analog.rising(&x, amb)?;
+        let mut earliest = f64::INFINITY;
+        for r in &rising {
+            let prev = run.located.as_ref().and_then(|l| {
+                l.past.iter().find(|(k, _)| *k == (r.instance, r.watch)).map(|(_, p)| *p)
+            });
+            let estimate = crossing_estimate(t0, r.before, t1, r.now, prev);
+            let within = r.now < r.etol.unwrap_or(etol) || t1 - estimate <= r.ttol.unwrap_or(ttol);
+            if !within {
+                earliest = earliest.min(estimate);
+            }
+        }
+        // The landing tick: the estimate rounded up, after the accepted time's tick.
+        let first = (t0 / run.spt).round() + 1.0;
+        let landing = (earliest / run.spt).ceil().max(first);
+        if !landing.is_finite() || landing >= (t1 / run.spt).round() {
+            run.located = None;
+            return Ok(None);
+        }
+        let located = run.located.get_or_insert_with(|| Located { from: t0, past: Vec::new() });
+        for r in &rising {
+            let key = (r.instance, r.watch);
+            match located.past.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, p)) => *p = (t1, r.now),
+                None => located.past.push((key, (t1, r.now))),
+            }
+        }
+        Ok(Some(landing * run.spt))
     }
 
     /// `reject_lte_step` without the restores (the protocol restores its
@@ -1349,7 +1445,15 @@ impl TransientSolver<'_> {
         self.record_step(&mut run.steps, t_next, snapshot);
         st.current_time = t_next;
         self.system.prev_h = dt_actual;
-        st.dt = self.propose_dt(milne, dt_actual, dt_proposed, post_set_step, false);
+        // A design that locates crossings ends a step on the tick below the controller's
+        // proposal: the controller grows from its proposal, or a step of a few ticks would
+        // round down to the same tick forever.
+        let grown_from = if run.locates && (run.proposed - t_next).abs() < run.spt {
+            dt_actual + (run.proposed - t_next)
+        } else {
+            dt_actual
+        };
+        st.dt = self.propose_dt(milne, grown_from, dt_proposed, post_set_step, false);
         st.sets_just_applied = false;
         run.last_dt = dt_actual;
         Ok(accepted)
