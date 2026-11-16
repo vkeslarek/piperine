@@ -1,0 +1,70 @@
+//! The stimulus of the control tests (T49): `Script` drives `run`, `target` and `meas` of the
+//! loop from a sample counter, and `Writes` drives the setpoint register. Both are written with
+//! `if` chains over the counter, so the Rust reference computes the same inputs from the same
+//! index.
+use buck::control::{Pid, RefRamp, SetpointReg};
+use buck::dpwm::Osc;
+
+/// The inputs of the loop, a half period ahead of each rising edge: the `fall` with `n = s`
+/// writes the inputs of sample `s`, which the rising edge `s + 1` reads.
+///
+/// - `s < 8`: `run` low, the loop at rest; `8 <= s < 170`: `run` high (soft-start from sample
+///   8); `170 <= s < 180`: `run` dropped; `s >= 180`: raised again (a second soft-start).
+/// - `target` is 150 codes, 100 from sample 120 (the reference ramps back down after it).
+/// - `meas` is 0 up to sample 39, a step to 20, then to 1023 (full scale: the error clamps at
+///   -256 and the output saturates low), then back to 0 (the error jumps up by hundreds of codes:
+///   the derivative saturates the output high), then 100.
+module Script(in clk: Bit, out run: Bit = false, out target: Bit<u10> = 150, out meas: Bit<u10> = 0) {
+    signal n: Bit<u8> = 0;
+}
+digital for Script {
+    on clk.fall() {
+        let s = n.known_or(0);
+        n <- s + 1;
+        run <- if s < 8 { false } else if s < 170 { true } else if s < 180 { false } else { true };
+        target <- if s < 120 { 150 } else { 100 };
+        meas <- if s < 40 { 0 } else if s < 80 { 20 } else if s < 110 { 1023 } else if s < 140 { 0 } else { 100 };
+    }
+}
+
+/// The ramp and the PID under the script, both on the oscillator's rising edge.
+module ControlBench() {
+    signal clk: Bit;
+    signal run: Bit;
+    signal target: Bit<u10>;
+    signal meas: Bit<u10>;
+    signal reference: Bit<u10>;
+    signal at_target: Bit;
+    signal duty: Bit<u12>;
+    let osc = Osc(clk) { f: 200M };
+    let script = Script(clk, run, target, meas);
+    let ramp = RefRamp(clk, run, target, reference, at_target);
+    let pid = Pid(clk, run, reference, meas, duty);
+}
+
+/// Four writes of the setpoint register on a rising `wr`: data 7, 100, 200 and unknown, each
+/// presented one clock before `wr` rises and dropped one clock after.
+module Writes(in clk: Bit, out wr: Bit = false, out data: Bit<u8> = 0) {
+    signal n: Bit<u8> = 0;
+}
+digital for Writes {
+    on clk.rise() {
+        let s = n.known_or(0);
+        n <- s + 1;
+        if s == 0 { data <- 7; }
+        if s == 3 { data <- 100; }
+        if s == 6 { data <- 200; }
+        if s == 9 { data <- Unknown; }
+        wr <- s == 1 || s == 4 || s == 7 || s == 10;
+    }
+}
+
+module SetpointBench() {
+    signal clk: Bit;
+    signal wr: Bit;
+    signal data: Bit<u8>;
+    signal code: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let writes = Writes(clk, wr, data);
+    let reg = SetpointReg(wr, data, code);
+}

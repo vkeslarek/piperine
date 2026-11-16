@@ -42,3 +42,24 @@ pub fn transient(seen: &Seen, path: &str) -> Vec<(i64, Vec<u8>)> {
 /// A known true and a known false `Bit`: `{ v @0, known @1 }` (abi.md §3.1).
 pub const HIGH: [u8; 2] = [1, 1];
 pub const LOW: [u8; 2] = [0, 1];
+
+/// Every change of the net at `path`, the operating point's initial value first: instant in ticks
+/// and bytes. The value at an instant is the last entry at or before it.
+pub fn series(seen: &Seen, path: &str) -> Vec<(i64, Vec<u8>)> {
+    seen.series_of(path)
+}
+
+/// The value of a series after the instant `at`: the last change at or before it.
+pub fn value_at(series: &[(i64, Vec<u8>)], at: i64) -> &[u8] {
+    &series.iter().rev().find(|(t, _)| *t <= at).expect("an initial value").1
+}
+
+/// A little-endian integer of `bytes` bytes, sign-extended when `signed`; its known byte must be
+/// set (a net the loop wrote is never unknown where this is called).
+pub fn decode(raw: &[u8], bytes: usize, signed: bool) -> i32 {
+    assert_eq!(raw[bytes], 1, "the value is known: {raw:?}");
+    let mut buf = [0u8; 4];
+    buf[..bytes].copy_from_slice(&raw[..bytes]);
+    let v = u32::from_le_bytes(buf);
+    if signed && bytes < 4 && v & (1 << (bytes * 8 - 1)) != 0 { (v | (u32::MAX << (bytes * 8))) as i32 } else { v as i32 }
+}

@@ -1529,11 +1529,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The stimulus module and the Rust reference compute the same `meas` and `run` from the sample index; the test asserts that first
-- [ ] Every committed `reference`, `duty`, `integ`, `deriv` and `e_prev` is compared, bit for bit, at every sample
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_control`: `the_ramp_and_the_pid_follow_their_difference_equations`, `the_setpoint_register_takes_known_data_and_saturates`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The stimulus module and the Rust reference compute the same `meas` and `run` from the sample index; the test asserts that first
+- [x] Every committed `reference`, `duty`, `integ`, `deriv` and `e_prev` is compared, bit for bit, at every sample
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_control`: `the_ramp_and_the_pid_follow_their_difference_equations`, `the_setpoint_register_takes_known_data_and_saturates`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: full
