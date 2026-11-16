@@ -1,7 +1,7 @@
 //! A contribution `lhs +> rhs` lowered to `Contribute`: its branch (one per unordered terminal
 //! pair, oriented by its first contribution) and the right side split into addends (abi.md A1).
 //!
-//! The split flattens the top-level chain of `+`, `-` and unary `-` of a flow contribution into
+//! The split flattens the top-level chain of `+`, `-` and unary `-` of a contribution into
 //! signed leaves, parentheses transparent. Only a chain that holds a `ddt` leaf is flattened: a
 //! sub-sum with no `ddt` in it is one leaf, kept as written, so no floating-point sum is
 //! re-associated. Each `ddt(x)` leaf is its own addend (value `x`); each maximal run of other leaves
@@ -60,13 +60,10 @@ impl Elaboration<'_, '_> {
                 (scope.branches.len() as u32 - 1, false)
             }
         };
+        // A potential contribution is split like a flow one: its `ddt` leaves are `Ddt` addends
+        // (amendment A5; abi.md A1 hoists them onto the branch's equation row).
         let mut leaves = Vec::new();
-        match role {
-            QuantityRole::Flow => self.flatten(rhs, false, &mut leaves),
-            // `ddt` in a potential contribution needs the hoisting of abi.md A1 (M2): the whole
-            // right side is one leaf, and value lowering refuses a `ddt` in it.
-            QuantityRole::Potential => leaves.push(Leaf { negated: false, expr: rhs, ddt: false }),
-        }
+        self.flatten(rhs, false, &mut leaves);
         let Some(addends) = self.addends(scope, &leaves, reversed) else { return false };
         out.push(self.stmt(Stmt::Contribute { branch, quantity: role, addends }));
         true

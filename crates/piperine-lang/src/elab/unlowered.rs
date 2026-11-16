@@ -21,7 +21,7 @@ pub(super) enum Unlowered<'a> {
     ConditionalLimit,
     /// An `ac_stim` under an `if`, in a function or in a closure.
     ConditionalStim,
-    /// A `ddt` that is not a whole top-level addend of a flow contribution.
+    /// A `ddt` that is not a whole top-level addend of a contribution.
     DdtOffTop,
     /// A `ddt` with a tolerance argument.
     DdtTolerance,
@@ -41,7 +41,7 @@ impl Unlowered<'_> {
             Unlowered::NestedContribution => "a contribution in a nested block".to_string(),
             Unlowered::ConditionalLimit => "a `limit` under an `if` or in a closure".to_string(),
             Unlowered::ConditionalStim => "an `ac_stim` under an `if` or in a closure".to_string(),
-            Unlowered::DdtOffTop => "a `ddt` that is not a whole addend of a flow contribution".to_string(),
+            Unlowered::DdtOffTop => "a `ddt` that is not a whole addend of a flow contribution or of a potential contribution".to_string(),
             Unlowered::DdtTolerance => "a `ddt` with a tolerance".to_string(),
             Unlowered::PlacementSets(name) => format!("a placement that sets `{name}`"),
             Unlowered::SecondAnalogBlock => "a second `analog` block for one module".to_string(),

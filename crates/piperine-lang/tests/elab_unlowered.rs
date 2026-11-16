@@ -96,7 +96,10 @@ fn a_site_or_contribution_under_if_is_p0001() {
 fn ddt_off_the_top_of_a_flow_contribution_is_p0001() {
     for row in [
         Row { form: "ddt in a product", src: &DdtSource::of("i(p, n) +> 2.0 * ddt(v(p, n));"), names: "a `ddt` that is not a whole addend of a flow contribution", at: "ddt(v(p, n))" },
-        Row { form: "ddt in a potential contribution", src: &DdtSource::of("v(p, n) +> ddt(v(p));"), names: "a `ddt` that is not a whole addend of a flow contribution", at: "ddt(v(p))" },
+        // A `ddt` addend of a potential contribution is lowered from msl-digital T35 on (amendment
+        // A5): that case is a positive one of `elab_mixed::a_potential_contribution_keeps_its_ddt`;
+        // a `ddt` inside a potential contribution's product is still refused.
+        Row { form: "ddt in a product of a potential contribution", src: &DdtSource::of("v(p, n) +> 2.0 * ddt(v(p));"), names: "a `ddt` that is not a whole addend of a flow contribution", at: "ddt(v(p))" },
         Row { form: "ddt bound to a name", src: &DdtSource::of("let q = ddt(v(p)); i(p, n) +> q;"), names: "a `ddt` that is not a whole addend of a flow contribution", at: "ddt(v(p))" },
         Row { form: "ddt with a tolerance", src: &DdtSource::of("i(p, n) +> ddt(v(p), 1e-6);"), names: "a `ddt` with a tolerance", at: "ddt(v(p), 1e-6)" },
     ] {
@@ -200,7 +203,9 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
         // place is `others()` of DIG-07 AC 1.
         ("others()", "module Top(in c: Bit) { let x = c.others(); }", vec!["method `others`"]),
         ("a value input", "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }", vec!["a value input"]),
-        ("a flow read of a potential branch", "module L(p: Electrical, n: Electrical) { }\nanalog for L { v(p, n) +> 2.0 * i(p, n); }\nmodule Top() { signal s: Electrical; let l = L(s, gnd); }", vec!["a flow probe read as a value"]),
+        // The flow read of a potential branch is lowered from msl-digital T35 on: the form still
+        // refused in its place is the template of DIG-07 AC 1.
+        ("a template", "module Top(a: Electrical) { let t = Resistor { r: 1.0 }; }\nmodule Resistor(p: Electrical, n: Electrical) { r: f64; }", vec!["module template"]),
     ] {
         let err = Elab::run(src, "Top").expect_err(form);
         assert!(Elab::codes(&err).iter().all(|c| c == "P0001"), "{form}: {:?}", err.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());

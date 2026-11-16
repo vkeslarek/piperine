@@ -1,12 +1,12 @@
 //! The `analog` block of a body: its statements lowered in source order. Probes, environment
 //! reads and sites are lowered here; the contribution to a branch is `contribute.rs`.
 
-use piperine_ir::{Env, Expr, ExprId as LoweredExpr, Origin, Site, StmtId as LoweredStmt, Terminal, ValueType};
+use piperine_ir::{Branch, BranchKind, Env, Expr, ExprId as LoweredExpr, Origin, Site, StmtId as LoweredStmt, Terminal, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::unlowered::Unlowered;
-use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution};
+use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
 
 impl Elaboration<'_, '_> {
     /// The statements of the `analog` block bound to `module`, in source order; `None` when it
@@ -42,8 +42,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_probe(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Call { callee, args, .. } = &node.kind else { return None };
-        // The type checker lets a module read the flow of a branch it drives with a potential;
-        // reading it needs the IR's flow read (msl-digital T20 and T35), so until then it is refused.
+        // The type checker lets a module read the flow of a branch it drives with a potential.
         let flow = match &self.design.expr_node(*callee).kind {
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(q)) => matches!(&self.design.decl_data(q).kind, DeclKind::Quantity(data) if data.role == crate::pom::QuantityRole::Flow),
@@ -52,10 +51,6 @@ impl Elaboration<'_, '_> {
             },
             _ => false,
         };
-        if flow {
-            self.unsupported(scope.file, node.span, "a flow probe read as a value");
-            return None;
-        }
         let mut terminals = Vec::new();
         for arg in args {
             terminals.push(self.lower_terminal(scope, arg.value)?);
@@ -68,7 +63,71 @@ impl Elaboration<'_, '_> {
                 return None;
             }
         };
+        if flow {
+            return self.lower_flow_read(scope, expr, plus, minus, origin);
+        }
         Some(self.emit(Expr::Probe { plus, minus }, ty, origin))
+    }
+
+    /// `i(a, b)` read as a value: the flow of the branch `(a, b)` the module gives a potential
+    /// contribution (amendment A5), negated when the read names the branch the other way round.
+    /// A branch with no potential contribution is `P0001` (a flow branch has no flow read yet).
+    fn lower_flow_read(&mut self, scope: &mut Scope, expr: ExprId, plus: Terminal, minus: Terminal, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.design.expr_node(expr).span;
+        let Some((branch, reversed)) = self.potential_branch(scope, plus, minus) else {
+            self.unsupported(scope.file, span, "a flow probe of a branch without a potential contribution");
+            return None;
+        };
+        let flow = self.emit(Expr::Flow { branch }, ValueType::F64, origin.clone());
+        if !reversed {
+            return Some(flow);
+        }
+        Some(self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Neg, expr: flow }, ValueType::F64, origin))
+    }
+
+    /// The potential branch between `plus` and `minus`, and whether it is named the other way
+    /// round. A branch is numbered at its first contribution; a flow read written before that
+    /// contribution numbers it from the contribution the module's `analog` block writes.
+    fn potential_branch(&mut self, scope: &mut Scope, plus: Terminal, minus: Terminal) -> Option<(u32, bool)> {
+        let same = |b: &Branch| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus);
+        if let Some(at) = scope.branches.iter().position(same) {
+            let branch = &scope.branches[at];
+            return (branch.kind == BranchKind::Potential).then_some((at as u32, branch.plus != plus));
+        }
+        let module = self.frames.get(scope.frame)?.module;
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return None };
+        for block in data.behaviors.clone() {
+            let DeclKind::Behavior(behavior) = &self.design.decl_data(block).kind.clone() else { continue };
+            if behavior.kind != BehaviorKind::Analog {
+                continue;
+            }
+            for stmt in &behavior.body {
+                let StmtKind::Contribution { lhs, .. } = self.design.stmt_node(*stmt).kind.clone() else { continue };
+                let ExprKind::Call { callee, args, .. } = self.design.expr_node(lhs).kind.clone() else { continue };
+                let potential = match &self.design.expr_node(callee).kind {
+                    ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                        Some(Resolution::Decl(q)) => matches!(&self.design.decl_data(q).kind, DeclKind::Quantity(data) if data.role == crate::pom::QuantityRole::Potential),
+                        Some(Resolution::Builtin(id)) => id.info().name == "potential",
+                        _ => false,
+                    },
+                    _ => false,
+                };
+                if !potential {
+                    continue;
+                }
+                let ends: Option<Vec<Terminal>> = args.iter().map(|a| self.lower_terminal(scope, a.value)).collect();
+                let (p, m) = match ends.as_deref() {
+                    Some([p]) => (*p, Terminal::Ground),
+                    Some([p, m]) => (*p, *m),
+                    _ => continue,
+                };
+                if (p, m) == (plus, minus) || (p, m) == (minus, plus) {
+                    scope.branches.push(Branch { plus: p, minus: m, kind: BranchKind::Potential });
+                    return Some((scope.branches.len() as u32 - 1, p != plus));
+                }
+            }
+        }
+        None
     }
 
     /// A call of a core primitive of the subset: an environment read, a `limit` or an `ac_stim`

@@ -313,7 +313,9 @@ fn a_ddt_off_the_top_of_a_flow_contribution_is_refused() {
     // Each form is refused at its `ddt` (T8 words the message): never lowered as if direct.
     for (body, ddt) in [
         ("i(p, n) +> 2.0 * ddt(v(p, n));", "ddt(v(p, n))"),
-        ("v(p, n) +> ddt(v(p));", "ddt(v(p))"),
+        // `v(p, n) +> ddt(v(p))` is lowered from msl-digital T35 on (amendment A5, a positive case of
+        // `elab_mixed`); a `ddt` under a product of a potential contribution is still refused.
+        ("v(p, n) +> 3.0 * ddt(v(p));", "ddt(v(p))"),
         ("let q = ddt(v(p)); i(p, n) +> q;", "ddt(v(p))"),
         ("i(p, n) +> ddt(v(p), 1e-6);", "ddt(v(p), 1e-6)"),
     ] {
