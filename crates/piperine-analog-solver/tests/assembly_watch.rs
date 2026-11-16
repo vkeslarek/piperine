@@ -138,3 +138,25 @@ fn samples_are_the_continuous_pins_reactions_read() {
     let asm = Assembly::new(AnalogPlan::bind(vec![s1, r, s2, s3], &net).expect("bind"));
     assert_eq!(asm.samples(&[0.1, 0.2, 0.3]), vec![0.3, 0.0, 0.2]);
 }
+
+#[test]
+fn accept_fails_with_e0509_on_an_invalid_cap() {
+    // SCX-03 AC 9 (§17.2 rule 5 and its resolution): a step cap that is not finite and positive
+    // fails the accept with E0509, naming the instance and the watch. W1 "b" = c2.
+    let m = modules();
+    let (net, n) = netlist(1, &[]);
+    for bad in [0.0, -1e-9, f64::NAN, f64::INFINITY] {
+        let c = instance("top.cap", m.capper, vec![Discrete(0), Discrete(1), at(&n[0])]);
+        let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+        asm.set_discrete(0, &f64_bytes(2e-6));
+        asm.set_discrete(1, &f64_bytes(bad));
+        let err = asm.accept(&[0.5], at_rest()).expect_err("an invalid cap").to_string();
+        assert!(err.contains("E0509") && err.contains("top.cap") && err.contains("`b`"), "cap {bad}: {err}");
+    }
+    // the smallest positive cap still bounds the step
+    let c = instance("top.cap", m.capper, vec![Discrete(0), Discrete(1), at(&n[0])]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    asm.set_discrete(0, &f64_bytes(2e-6));
+    asm.set_discrete(1, &f64_bytes(1e-12));
+    assert_eq!(asm.accept(&[0.5], at_rest()).expect("a positive cap").cap, 1e-12);
+}

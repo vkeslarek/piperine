@@ -64,19 +64,26 @@ pub(crate) fn accept_watches(
             continue;
         }
         let v = fs.f64(slot);
+        if w.kind == watch::CAP {
+            // docs/spec §17.2 rule 5 and its resolution: a cap that is not finite and positive.
+            if !(v.is_finite() && v > 0.0) {
+                return Err(device_error(format!(
+                    "E0509: instance `{}`: step cap watch `{}` ({}) is {v}, not finite and positive (§17.2)",
+                    inst.path, w.name, w.origin
+                )));
+            }
+            acc.cap = acc.cap.min(v);
+            continue;
+        }
         if !v.is_finite() {
             return Err(device_error(format!(
                 "instance `{}`: watch `{}` ({}) is not finite: {v} (abi.md A4)",
                 inst.path, w.name, w.origin
             )));
         }
-        if w.kind == watch::CAP {
-            acc.cap = acc.cap.min(v);
-        } else {
-            let before = st.watched[wi].cross.replace(v);
-            if before.is_some_and(|b| b <= 0.0) && v > 0.0 {
-                acc.fired.push((index, w.event));
-            }
+        let before = st.watched[wi].cross.replace(v);
+        if before.is_some_and(|b| b <= 0.0) && v > 0.0 {
+            acc.fired.push((index, w.event));
         }
     }
     Ok(())
