@@ -1568,6 +1568,9 @@ Proof: run compiled | test a_panic_in_compiled_code_is_a_fault_and_the_instance_
 **C106** - A parent's `signal` that its children's carrier ports meet on is refused by `Netlist::circuit`, the error naming the signal, the parent, the net and a child. (edge case 6; T41; verification F-B1)
 Proof: run nets | test a_parent_signal_its_children_meet_on_is_refused ... ok
 
+**C107** - A net with its own `init` is refused by `Netlist::circuit`, the error naming the net and its origin. (edge case 7; T41; verification F-B2)
+Proof: run nets | test a_net_with_its_own_init_is_refused ... ok
+
 ---
 
 ## Handoff
@@ -1583,6 +1586,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 Refused by name today (phase-B verification), real support owed by msl-digital, which first produces IR holding these forms:
 
 - **F-B1 - a parent's `signal` on its children's net.** `Netlist::circuit` refuses a `signal` carrier whose net is met by a child's carrier port (C106). msl-digital binds the parent's private pin to the named net (the builder has no way to today), so the parent's drives and commits reach its children.
+- **F-B2 - a net's own `init`.** `Netlist::circuit` refuses a net with an initial value of its own (C107). msl-digital gives `CircuitBuilder` a way to take it (or folds it into the carriers bound to the net) and lifts the refusal.
 - **`Child` records no carrier binding.** The authored tree holds node bindings only; the instance's `nets` carry the carrier wiring (T26). msl-digital adds the carrier bindings to `Child` so the POM-mirroring tree shows them.
 
 ---

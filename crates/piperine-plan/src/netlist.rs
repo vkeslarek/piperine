@@ -43,10 +43,11 @@ impl<'a> Netlist<'a> {
     /// instance gives no net is left open, its pin private to the instance. A carrier's initial
     /// value is its pin's `HAS_INIT`, in the shape: it reaches the solver with the pin.
     ///
-    /// Refused, naming the carrier and the net, until msl-digital binds them
-    /// (`ir-rust` verification F-B1): a parent's `signal` that its children's carrier ports meet
-    /// on, since the builder binds no `PRIVATE` pin to a named net and the parent's drives and
-    /// commits would never reach the children.
+    /// Refused by name until msl-digital gives the builder a way to take them: a parent's
+    /// `signal` that its children's carrier ports meet on (`ir-rust` verification F-B1), since
+    /// the builder binds no `PRIVATE` pin to a named net and the parent's drives and commits
+    /// would never reach the children; a net with its own `init` (F-B2), since the builder has
+    /// no way to take a net's initial value and dropping it would start the net unknown.
     pub fn circuit(&self, modules: &impl Modules) -> Result<CircuitInstance> {
         self.refuse_unbound_forms()?;
         let ir = self.ir;
@@ -98,6 +99,17 @@ impl<'a> Netlist<'a> {
 
     /// The wiring this netlist cannot yet give the solver, as an error naming it (see `circuit`).
     fn refuse_unbound_forms(&self) -> Result<()> {
+        if let Some(net) = self.ir.nets().find(|net| net.init().is_some()) {
+            return Err(Error::simple(
+                SolverDomain::Digital,
+                format!(
+                    "{}: the net `{}` has an initial value of its own; a net's `init` is not supported yet \
+                     (msl-digital), give it to the carriers bound to the net",
+                    net.origin(),
+                    net.path()
+                ),
+            ));
+        }
         for instance in self.ir.instances() {
             let body = instance.body();
             for (c, carrier) in body.carriers().iter().enumerate() {

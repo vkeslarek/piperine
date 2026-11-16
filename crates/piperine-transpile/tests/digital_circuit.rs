@@ -227,3 +227,18 @@ fn a_parent_signal_its_children_meet_on_is_refused() {
     // the same design with the net held by the children's ports alone is a circuit
     assert!(Netlist::new(&oscillator_into_flip_flop(true)).circuit(&NoModules).is_ok());
 }
+
+#[test]
+fn a_net_with_its_own_init_is_refused() {
+    // part II §5: a net's `init` is its value before any write; the builder has no way to take it
+    // yet, and dropping it would leave the net unknown where the source says `false`, so the
+    // netlist refuses the design naming the net (verification F-B2; passing it is msl-digital's)
+    let ir = oscillator_into_flip_flop_with(true, Wiring::NetInit);
+    let error = match Netlist::new(&ir).circuit(&NoModules) {
+        Ok(_) => panic!("a net with its own init gave a circuit"),
+        Err(e) => e.to_string(),
+    };
+    for named in ["net `Top.clk`", "initial value", "top.msl:1:1", "not supported yet"] {
+        assert!(error.contains(named), "the error names {named}: {error}");
+    }
+}
