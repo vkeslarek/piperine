@@ -1,6 +1,7 @@
-//! The gate driver and the power switch of the buck package from MSL source (T53).
+//! The gate driver, the power switch, the inductor and the current sense of the buck package
+//! from MSL source (T53, T54).
 use buck::dpwm::Osc;
-use buck::power::{GateDriver, PowerSwitch, Resistor};
+use buck::power::{CurrentSense, GateDriver, Inductor, PowerSwitch, Resistor};
 
 /// An ideal DC source from `p` to ground.
 module Vsrc(p: Electrical) { dc: f64 = 1.0; }
@@ -55,4 +56,35 @@ module SwitchBench() {
     let v1 = Vsrc(vs) { dc: 1.0 };
     let sw = PowerSwitch(vs, x, gate) { ron: 1k, roff: 1M, tsw: 5n, coss: 0.0 };
     let r2 = Resistor(x, gnd) { r: 9k };
+}
+
+/// A source from `p` to ground that steps from 0 V to `dc` when its gate goes high: an unknown
+/// gate reads as low (`high()`).
+module StepSource(p: Electrical, in g: Bit) { dc: f64 = 1.0; }
+analog for StepSource { v(p) +> if g.high() { dc } else { 0.0 }; }
+
+/// 1 V stepped at t0 = 1 us (the clock's first rising edge, at half its 500 kHz period) into
+/// 1 ohm in series with the inductor `l` = 1.5 uH, `dcr` = 0.5 ohm: tau = l / (R + dcr) = 1 us.
+module RlBench() {
+    signal clk: Bit;
+    signal g: Bit;
+    signal a: Electrical;
+    signal b: Electrical;
+    let osc = Osc(clk) { f: 500k };
+    let kick = Kick(clk, g);
+    let src = StepSource(a, g) { dc: 1.0 };
+    let r = Resistor(a, b) { r: 1.0 };
+    let ind = Inductor(b, gnd) { l: 1.5u, dcr: 0.5 };
+}
+
+/// 1 V through the sense shunt (5 mohm) into 1 ohm: the amplifier outputs `pos` and `neg` are
+/// open.
+module SenseBench() {
+    signal a: Electrical;
+    signal b: Electrical;
+    signal pos: Electrical;
+    signal neg: Electrical;
+    let src = Vsrc(a) { dc: 1.0 };
+    let sense = CurrentSense(a, b, pos, neg);
+    let load = Resistor(b, gnd) { r: 1.0 };
 }

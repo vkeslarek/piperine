@@ -1,14 +1,15 @@
-//! The gate driver and the power switch of the buck package run from MSL source (feature
-//! `msl-digital`, T53; checks C125, C127, C142, DIG-13 AC 6 and 7, DIG-14 AC 12): `GateDriver`
-//! under scripted commands, and `PowerSwitch` between a source and a resistor with its gate
-//! committed high at `t0`, from `tests/buck/power.msl`. The switch's `transition` is the stdlib
-//! module, hoisted by the elaborator. Voltages are compared with the divider of the analytic
-//! channel conductance through `ToleranceContract::TRAN_VOLTAGE`; no time tolerance is written.
+//! The power stage of the buck package runs from MSL source (feature `msl-digital`, T53 and T54;
+//! checks C122, C124, C125, C127, C142, DIG-13 AC 4 to 7, DIG-14 AC 12): `GateDriver` under
+//! scripted commands; `PowerSwitch` between a source and a resistor with its gate committed high
+//! at `t0`; `Inductor` behind a stepped source and a resistor; `CurrentSense` at an operating
+//! point; all from `tests/buck/power.msl`. The switch's `transition` is the stdlib module, hoisted
+//! by the elaborator. Voltages are compared with their analytic values through
+//! `ToleranceContract::{TRAN_VOLTAGE, DC_VOLTAGE}`; no time tolerance is written.
 #![cfg(unix)]
 
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
-use piperine_solver::prelude::NodeIdentifier;
+use piperine_solver::prelude::{Context, NodeIdentifier};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -154,4 +155,57 @@ fn a_gate_change_makes_two_time_points() {
     for (what, want) in [("t0", t0), ("t0 + tsw", t0 + TSW)] {
         assert!(r.result.iter().any(|s| (s.time() - want).abs() < 1e-15), "a record at {what} = {want:e} s");
     }
+}
+
+/// The anonymous node `path` of a compiled bench.
+fn node(built: &mixed::Built, path: &str) -> NodeIdentifier {
+    NodeIdentifier::Anonymous(built.ir.node_at(path).unwrap_or_else(|| panic!("a node {path}")).id().index())
+}
+
+#[test]
+fn the_inductor_follows_the_rl_response() {
+    // `RlBench`: 1 V stepped at t0 = 1 us into R = 1 ohm in series with `Inductor { l: 1.5u, dcr:
+    // 0.5 }` (DIG-13 AC 4): i(t) = V / (R + dcr) * (1 - exp(-(t - t0) (R + dcr) / l)), read as the
+    // voltage across the 1 ohm resistor, so v(a, b) = R * i(t)
+    let (v, r, l, dcr) = (1.0, 1.0, 1.5e-6, 0.5);
+    let t0: f64 = 1e-6;
+    let built = build(&project(), "RlBench");
+    let (a, b) = (node(&built, "RlBench.a"), node(&built, "RlBench.b"));
+    // a 1 ns step cap, as for the switch: the first step after the source's jump is first order
+    let (seen, result) = built.run_with(6e-6, 1e-9);
+    // the source's gate is committed high once, at t0 (the clock's first rising edge)
+    assert_eq!(transient(&seen, "RlBench.g"), vec![((t0 * 1e15).round() as i64, HIGH.to_vec())]);
+    let mut after = 0;
+    for step in result.iter() {
+        let t = step.time();
+        let va = step.get_node(&a).expect("v(a)");
+        let vb = step.get_node(&b).expect("v(b)");
+        let golden = if t <= t0 { 0.0 } else { r * v / (r + dcr) * (1.0 - (-(t - t0) * (r + dcr) / l).exp()) };
+        if t > t0 {
+            after += 1;
+        }
+        let at = Point::new("rl", "R * i(r)", Coordinate::Time(t));
+        ToleranceContract::TRAN_VOLTAGE.assert(&at, golden, va - vb);
+    }
+    assert!(after >= 1000, "the response is sampled at every accepted time after t0: {after}");
+}
+
+#[test]
+fn the_current_sense_scales_the_shunt_voltage() {
+    // `SenseBench`: 1 V through the 5 mohm shunt into 1 ohm (DIG-13 AC 5): at the operating point
+    // v(pos) = gain * v(a, b) and v(neg) = -gain * v(a, b), gain 20 (SPEC §2: 0.1 V/A)
+    let built = build(&project(), "SenseBench");
+    let ids: Vec<NodeIdentifier> = ["a", "b", "pos", "neg"].iter().map(|n| node(&built, &format!("SenseBench.{n}"))).collect();
+    let mut circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+    let op = circuit.dc(Context::default()).expect("dc").solve().unwrap_or_else(|e| panic!("the operating point: {e}"));
+    let read = |k: usize| op.get_node(&ids[k]).expect("a node voltage");
+    let (gain, rshunt, rload) = (20.0, 5e-3, 1.0);
+    // the shunt and the load divide 1 V: v(a, b) = 1 V * rshunt / (rshunt + rload)
+    let shunt = 1.0 * rshunt / (rshunt + rload);
+    let at = |q: &'static str| Point::new("current_sense", q, Coordinate::OperatingPoint);
+    ToleranceContract::DC_VOLTAGE.assert(&at("v(a, b)"), shunt, read(0) - read(1));
+    ToleranceContract::DC_VOLTAGE.assert(&at("v(pos)"), gain * shunt, read(2));
+    ToleranceContract::DC_VOLTAGE.assert(&at("v(neg)"), -gain * shunt, read(3));
+    // the sense is the shunt voltage, not the node voltage: v(pos) = gain * (v(a) - v(b))
+    ToleranceContract::DC_VOLTAGE.assert(&at("v(pos) from the nodes"), gain * (read(0) - read(1)), read(2));
 }
