@@ -121,8 +121,8 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] `x_changed_does_not_fire_when_the_settled_value_is_unchanged` passes
-- [ ] Gate check passes: the **Build** line, then `cargo test` at the root
+- [x] `x_changed_does_not_fire_when_the_settled_value_is_unchanged` passes
+- [x] Gate check passes: the **Build** line, then `cargo test` at the root
 
 **Tests**: integration
 **Gate**: build
