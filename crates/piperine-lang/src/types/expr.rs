@@ -64,10 +64,31 @@ impl Checker<'_> {
                         Some(text) => {
                             let span = self.design.expr_node(*operand).span;
                             let found = self.integer_literal(file, span, &text, Some(expected), true);
-                            self.exprs[operand.index()] = found;
+                            if let Some(found) = &found
+                                && found != expected
+                            {
+                                self.mismatch(file, span, expected, found);
+                            }
+                            self.exprs[operand.index()] = Some(expected.clone());
                         }
                         None => self.check(*operand, expected),
                     }
+                    Some(expected.clone())
+                }
+                // An operator whose result has its operands' type passes the expected integer type
+                // down to both; a shift passes it to its left operand only.
+                ExprKind::Binary { op: BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor, lhs, rhs } if expected.is_integer() => {
+                    self.check(*lhs, expected);
+                    self.check(*rhs, expected);
+                    Some(expected.clone())
+                }
+                ExprKind::Binary { op: BinOp::Shl | BinOp::Shr, lhs, rhs } if expected.is_integer() => {
+                    self.check(*lhs, expected);
+                    self.shift_amount(*rhs);
+                    Some(expected.clone())
+                }
+                ExprKind::Unary { op: UnOp::Not, expr: operand } if expected.is_integer() => {
+                    self.check(*operand, expected);
                     Some(expected.clone())
                 }
                 _ => self.infer(expr),
@@ -116,13 +137,32 @@ impl Checker<'_> {
             ExprKind::Path(_) => self.path(expr),
             ExprKind::Paren(inner) => self.infer(*inner),
             ExprKind::Unary { op: UnOp::Neg, expr: operand } => {
-                self.check(*operand, &Ty::F64);
-                Some(Ty::F64)
+                if let Some(text) = self.integer_literal_text(*operand) {
+                    let span = self.design.expr_node(*operand).span;
+                    let ty = self.integer_literal(file, span, &text, None, true);
+                    self.exprs[operand.index()] = ty.clone();
+                    return ty;
+                }
+                match self.infer(*operand) {
+                    Some(t) if t.is_integer() => Some(t),
+                    Some(Ty::F64) | None => Some(Ty::F64),
+                    Some(other) => {
+                        let span = self.design.expr_node(*operand).span;
+                        self.mismatch(file, span, &Ty::F64, &other);
+                        Some(Ty::F64)
+                    }
+                }
             }
-            ExprKind::Unary { op: UnOp::Not, expr: operand } => {
-                self.check(*operand, &Ty::Bool);
-                Some(Ty::Bool)
-            }
+            ExprKind::Unary { op: UnOp::Not, expr: operand } => match self.infer(*operand) {
+                Some(t) if t.is_integer() => Some(t),
+                Some(Ty::Bool) | None => Some(Ty::Bool),
+                Some(other) => {
+                    let span = self.design.expr_node(*operand).span;
+                    self.mismatch(file, span, &Ty::Bool, &other);
+                    Some(Ty::Bool)
+                }
+            },
+            ExprKind::Cast { expr: operand, ty } => self.cast(*operand, *ty),
             ExprKind::Binary { op, lhs, rhs } => self.binary(expr, *op, *lhs, *rhs),
             ExprKind::Block(block) => self.statements(&block.stmts, None),
             ExprKind::If { cond, then, else_ } => self.conditional(*cond, then, *else_),
@@ -144,16 +184,16 @@ impl Checker<'_> {
     }
 
     fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
+        let file = self.file_of_expr(lhs);
+        let span = self.design.expr_node(whole).span;
         match op {
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                self.check(lhs, &Ty::F64);
-                self.check(rhs, &Ty::F64);
-                Some(Ty::F64)
-            }
-            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                self.check(lhs, &Ty::F64);
-                self.check(rhs, &Ty::F64);
-                Some(Ty::Bool)
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                let comparison = matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge);
+                let ty = match self.operands(lhs, rhs, |t| t.is_integer()) {
+                    Some(t) => t,
+                    None => Ty::F64,
+                };
+                Some(if comparison { Ty::Bool } else { ty })
             }
             BinOp::And | BinOp::Or => {
                 self.check(lhs, &Ty::Bool);
@@ -161,26 +201,104 @@ impl Checker<'_> {
                 Some(Ty::Bool)
             }
             BinOp::Eq | BinOp::Ne => {
-                match self.infer(lhs) {
-                    Some(t @ (Ty::F64 | Ty::Bool)) => self.check(rhs, &t),
+                let (first, second) = self.literal_last(lhs, rhs);
+                match self.infer(first) {
+                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_))) => self.check(second, &t),
                     Some(_) => {
-                        let file = self.file_of_expr(lhs);
-                        let span = self.design.expr_node(lhs).span;
-                        self.unsupported(file, span, "comparison of values that are neither `f64` nor `bool`");
+                        let span = self.design.expr_node(first).span;
+                        self.unsupported(file, span, "comparison of values that are neither `f64`, `bool` nor an integer");
                     }
                     None => {
-                        self.infer(rhs);
+                        self.infer(second);
                     }
                 }
                 Some(Ty::Bool)
             }
-            BinOp::Rem | BinOp::BitXor | BinOp::BitAnd | BinOp::BitOr | BinOp::Shl | BinOp::Shr => {
-                let file = self.file_of_expr(lhs);
-                let span = self.design.expr_node(whole).span;
-                self.unsupported(file, span, Unsupported::binary(op));
+            BinOp::Rem | BinOp::BitXor | BinOp::BitAnd | BinOp::BitOr => {
+                let bitwise = op != BinOp::Rem;
+                match self.operands(lhs, rhs, |t| t.is_integer() || (bitwise && *t == Ty::Bool)) {
+                    Some(t) => Some(t),
+                    None => {
+                        self.unsupported(file, span, Unsupported::binary(op));
+                        None
+                    }
+                }
+            }
+            BinOp::Shl | BinOp::Shr => match self.infer(lhs) {
+                Some(t) if t.is_integer() => {
+                    self.shift_amount(rhs);
+                    Some(t)
+                }
+                _ => {
+                    self.unsupported(file, span, Unsupported::binary(op));
+                    None
+                }
+            },
+        }
+    }
+
+    /// The two operands of an operator that takes one type: the operand that is not a bare
+    /// integer literal is typed first and the other is checked against it (local literal
+    /// typing). `Some` of that type when `accepts` it; otherwise both operands are held to `f64`,
+    /// as the M1 operators always were, and `None` comes back.
+    fn operands(&mut self, lhs: ExprId, rhs: ExprId, accepts: impl Fn(&Ty) -> bool) -> Option<Ty> {
+        let (first, second) = self.literal_last(lhs, rhs);
+        match self.infer(first) {
+            Some(t) if accepts(&t) => {
+                self.check(second, &t);
+                Some(t)
+            }
+            found => {
+                if let Some(found) = found
+                    && found != Ty::F64
+                {
+                    let file = self.file_of_expr(first);
+                    let span = self.design.expr_node(first).span;
+                    self.mismatch(file, span, &Ty::F64, &found);
+                }
+                self.check(second, &Ty::F64);
                 None
             }
         }
+    }
+
+    /// `(lhs, rhs)`, or `(rhs, lhs)` when only `lhs` is a bare integer literal: the order in which
+    /// two operands of one type are typed.
+    fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
+        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty());
+        if bare(self, lhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
+    }
+
+    /// The right operand of `<<` or `>>`: any integer type (DIG-01 AC 6); a bare literal there
+    /// expects nothing and is `i32`.
+    fn shift_amount(&mut self, rhs: ExprId) {
+        match self.infer(rhs) {
+            Some(t) if t.is_integer() => {}
+            Some(other) => {
+                let file = self.file_of_expr(rhs);
+                let span = self.design.expr_node(rhs).span;
+                self.mismatch_text(file, span, "an integer type", &other.name(self.design));
+            }
+            None => {}
+        }
+    }
+
+    /// `expr as T`: between any two of the integer types and `f64`, and from `bool` to an integer
+    /// type (§1 rule 1); anything else is a plain mismatch.
+    fn cast(&mut self, operand: ExprId, ty: crate::pom::TypeId) -> Option<Ty> {
+        let target = self.lower_type(ty);
+        let source = self.infer(operand);
+        let target = target?;
+        let numeric = |t: &Ty| t.is_integer() || *t == Ty::F64;
+        if let Some(source) = source
+            && !(numeric(&target) && (numeric(&source) || (source == Ty::Bool && target.is_integer())))
+        {
+            let file = self.file_of_expr(operand);
+            let span = self.design.expr_node(operand).span;
+            let found = source.name(self.design);
+            self.mismatch_text(file, span, &format!("a value `as` converts to `{}`", target.name(self.design)), &found);
+        }
+        Some(target)
     }
 
     /// `if cond { then } else { else_ }`: with an `else` the common type of the two blocks;

@@ -163,3 +163,139 @@ fn a_width_below_one_is_e0103() {
         assert_eq!(snippet(&src, &d[0]), written, "{src}");
     }
 }
+
+/// The text of `fn name` in `file` of `examples/buck/src`, from `fn` to its closing brace.
+fn buck_fn(file: &str, name: &str) -> String {
+    let path = format!("{}/../../examples/buck/src/{file}", env!("CARGO_MANIFEST_DIR"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let start = text.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name} in {file}"));
+    let mut depth = 0usize;
+    for (i, c) in text[start..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return text[start..start + i + 1].to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("fn {name} in {file} does not close")
+}
+
+/// The constants of `examples/buck/src/spec.msl`, as items.
+fn buck_spec() -> String {
+    std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/buck/src/spec.msl")).expect("examples/buck/src/spec.msl")
+}
+
+#[test]
+fn integer_operators_take_one_type() {
+    // DIG-01 AC 4: `+ - * / %`, unary `-`, `& | ^ !` and the comparisons on operands of one
+    // integer type; arithmetic and bit operators give that type, comparisons `bool`.
+    for op in ["+", "-", "*", "/", "%", "&", "|", "^"] {
+        let items = format!("fn f(a: u9, b: u9) -> u9 {{ a {op} b }}\nfn g(a: i32, b: i32) -> i32 {{ a {op} b }}");
+        let src = source(&items, "let x = f(1, 2); let y = g(3, 4);");
+        let design = design_of(&src);
+        let types = checked(&design, &src);
+        assert_eq!(types.local(binding(&design, "x")), Some(&Ty::UInt(9)), "{op}");
+    }
+    for op in ["<", "<=", ">", ">=", "==", "!="] {
+        let src = source("", &format!("let a: u10 = 5; let b: u10 = 6; let c = a {op} b;"));
+        let design = design_of(&src);
+        let types = checked(&design, &src);
+        assert_eq!(types.local(binding(&design, "c")), Some(&Ty::Bool), "{op}");
+    }
+    let src = source("", "let a: i8 = 5; let n = -a; let m = !a; let k: u4 = 3; let l = !k;");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let got: Vec<Ty> = ["n", "m", "l"].iter().map(|n| types.local(binding(&design, n)).cloned().expect("typed")).collect();
+    assert_eq!(got, [Ty::Int(8), Ty::Int(8), Ty::UInt(4)]);
+
+    // DIG-01 AC 2, the binary-operand position: a literal takes the other operand's type, on
+    // either side; an expected type reaches both operands of `+`.
+    let src = source("", "let count: u9 = 7; let a = count + 11; let b = 13 + count; let c = count == 17; let d: u12 = 19 + 23;");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let at = |text: &str| types.literal(literal(&design, &src, text)).cloned();
+    assert_eq!([at("11"), at("13"), at("17"), at("19"), at("23")], [Some(Ty::UInt(9)), Some(Ty::UInt(9)), Some(Ty::UInt(9)), Some(Ty::UInt(12)), Some(Ty::UInt(12))]);
+    assert_eq!(types.local(binding(&design, "b")), Some(&Ty::UInt(9)));
+
+    // The integer functions of the buck, read from `examples/buck/src`, check as written and
+    // give their declared results.
+    let items = format!(
+        "{}\n{}\n{}\n{}\n{}",
+        buck_spec(),
+        buck_fn("dpwm.msl", "rev3"),
+        buck_fn("dpwm.msl", "dithered_width"),
+        buck_fn("control.msl", "target_codes"),
+        buck_fn("supervisor.msl", "ovp_threshold"),
+    );
+    let src = source(&items, "let a = rev3(1); let b = dithered_width(1325, 3); let c = target_codes(5); let d = ovp_threshold(200);");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let got: Vec<Ty> = ["a", "b", "c", "d"].iter().map(|n| types.local(binding(&design, n)).cloned().expect("typed")).collect();
+    assert_eq!(got, [Ty::UInt(3), Ty::UInt(9), Ty::UInt(10), Ty::UInt(10)]);
+}
+
+#[test]
+fn mixed_integer_operands_are_p0002() {
+    // DIG-01 AC 5: two operands of different types are a plain mismatch, naming both.
+    for (body, at) in [
+        ("let a: u9 = 1; let b: u12 = 2; let c = a + b;", "b"),
+        ("let a: u9 = 1; let b: u12 = 2; let c = a < b;", "b"),
+        ("let a: u9 = 1; let b: i9 = 2; let c = a & b;", "b"),
+        ("let a: u9 = 1; let b = 2.0; let c = a == b;", "b"),
+        ("let a: u9 = 1; let c = a * 2.0;", "2.0"),
+    ] {
+        let (src, d) = diagnostics("", body);
+        assert_eq!(codes(&d), ["P0002"], "{src}");
+        assert_eq!(snippet(&src, &d[0]), at, "{src}");
+    }
+    let (_, d) = diagnostics("", "let a: u9 = 1; let b: u12 = 2; let c = a + b;");
+    let message = &d[0].diagnostic.message;
+    assert!(message.contains("`u9`") && message.contains("`u12`"), "{message}");
+}
+
+#[test]
+fn a_shift_takes_any_integer_amount() {
+    // DIG-01 AC 6: the left operand is an integer, the amount any integer type, the result the
+    // left type; a bare literal amount expects nothing and is `i32`.
+    let src = source("", "let x: u10 = 3; let s: i32 = 2; let k: u3 = 1; let a = x << s; let b = x >> k; let c = x << 5; let d = (x >> 7) & 9;");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let got: Vec<Ty> = ["a", "b", "c", "d"].iter().map(|n| types.local(binding(&design, n)).cloned().expect("typed")).collect();
+    assert_eq!(got, [Ty::UInt(10), Ty::UInt(10), Ty::UInt(10), Ty::UInt(10)]);
+    assert_eq!(types.literal(literal(&design, &src, "5")), Some(&Ty::Int(32)));
+    assert_eq!(types.literal(literal(&design, &src, "9")), Some(&Ty::UInt(10)), "the other operand of `&`");
+
+    let (src, d) = diagnostics("", "let x: u10 = 3; let a = x << true;");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "true");
+    let (_, d) = diagnostics("", "let x = 1.0; let a = x << 2;");
+    assert_eq!(codes(&d), ["P0001"]);
+    assert!(d[0].diagnostic.message.contains("`<<`"), "{}", d[0].diagnostic.message);
+}
+
+#[test]
+fn as_goes_between_integers_and_f64() {
+    // DIG-01 AC 7: `as` between any two of the integer types and `f64`.
+    let types_ = ["u1", "u8", "u64", "i16", "i64", "f64"];
+    for from in types_ {
+        for to in types_ {
+            let src = source(&format!("fn f(x: {from}) -> {to} {{ x as {to} }}"), "let y = 0;");
+            let design = design_of(&src);
+            checked(&design, &src);
+        }
+    }
+    let src = source("", "let duty: u12 = 1325; let w = (duty >> 3) as u9; let v = w as f64; let b = true as u1;");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let got: Vec<Ty> = ["w", "v", "b"].iter().map(|n| types.local(binding(&design, n)).cloned().expect("typed")).collect();
+    assert_eq!(got, [Ty::UInt(9), Ty::F64, Ty::UInt(1)]);
+
+    let (src, d) = diagnostics("", "let x = 1.0; let b = x as bool;");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "x");
+}
