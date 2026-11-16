@@ -1604,10 +1604,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] One record per rising edge, each on `checks` with texts `kind = require`, `name = never` and `pass` known
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_records`: `never_reports_each_rising_edge`, `log_carries_its_severity_and_its_text`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] One record per rising edge, each on `checks` with texts `kind = require`, `name = never` and `pass` known
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_records`: `never_reports_each_rising_edge`, `log_carries_its_severity_and_its_text`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: full
