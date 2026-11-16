@@ -6,5 +6,5 @@ pub use crate::request::{Analysis, Grid, Overrides, RunSpec};
 pub use crate::project::Project;
 pub use crate::session::{Built, Session};
 pub use crate::probe::Probe;
-pub use crate::record::{Field, Record, RecordSink};
+pub use crate::record::{Field, Record, RecordSink, Streams};
 pub use crate::table::{Cell, Table};

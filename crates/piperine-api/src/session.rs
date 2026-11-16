@@ -21,7 +21,7 @@ use piperine_transpile::{Compiled, Settings, Transpiler};
 use crate::backend::Backend;
 use crate::failure::Failure;
 use crate::probe::Probe;
-use crate::record::RecordSink;
+use crate::record::{Delivery, RecordSink, Streams};
 use crate::table::Table;
 use crate::project::Project;
 use crate::request::{Analysis, RunSpec};
@@ -131,11 +131,23 @@ impl Session {
     /// run reach `sink` as the solver delivers them. A session runs once: the analysis takes its
     /// circuit.
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
-        let _ = sink;
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
+        let failure = Rc::new(RefCell::new(None));
+        let delivery = Box::new(Delivery { streams: Streams::of(self.ir.clone()), sink, failure: failure.clone() });
+        let table = self.analysis(circuit, delivery);
+        // a record that could not be decoded is a defect the run reports first: the records
+        // before it were delivered, none after it was guessed
+        match failure.borrow_mut().take() {
+            Some(broken) => Err(broken),
+            None => table,
+        }
+    }
+
+    /// The request's analysis on `circuit`, every observation of the solver to `delivery`.
+    fn analysis(&self, circuit: CircuitInstance, delivery: Box<Delivery>) -> Result<Table, Failure> {
         match &self.spec.analysis {
             Analysis::Op => {
-                let mut solver = Solver::new(circuit).build();
+                let mut solver = Solver::new(circuit).with_sink(delivery).build();
                 let result = solver.dc().and_then(|mut dc| dc.solve()).map_err(|error| Failure::Solver { analysis: "op", error })?;
                 let bound = solver.circuit().bound();
                 // a discrete net by its path: its index in the digital plan is its id
@@ -157,7 +169,7 @@ impl Session {
                 if let Some(from) = from {
                     options = options.with_record_from(*from);
                 }
-                let mut solver = Solver::new(circuit).with_tran_opts(options).build();
+                let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(delivery).build();
                 let result = solver.tran().and_then(|mut tran| tran.solve()).map_err(|error| Failure::Solver { analysis: "transient", error })?;
                 Table::transient(&self.probes, &result)
             }
