@@ -568,3 +568,19 @@ fn a_landing_costs_a_few_steps_not_a_regrowth() {
         unlocated.len()
     );
 }
+
+#[test]
+fn steps_of_a_few_ticks_grow_back() {
+    // Verification finding: a design with a CROSS watch ends each step on the tick below the
+    // controller's proposal, and the controller grows from that proposal. Started at 1 fs, a
+    // step grows ×1.5 a step at most (Appendix C.2: growth in [0.2, 1.5]), so it reaches the
+    // 1 µs of a run started there within log1.5(1e9) ≈ 52 steps. Grown from the floored step
+    // instead, 1.5 fs floors to 1 fs forever and the run crawls into its step budget: the budget
+    // here (a few thousand attempts) makes that fail fast, not hang.
+    let (b, _) = sine_against(0.5);
+    let (reference, _) = run(b, 2.0e-4, 1.0e-6, |o| o.max_steps = 5_000, Context::default());
+    let (b, _) = sine_against(0.5);
+    let (tiny, seen) = run(b, 2.0e-4, 1.0e-15, |o| o.max_steps = 5_000, Context::default());
+    assert_eq!(crossings(&seen, "cmp.up").len(), 1);
+    assert!(tiny.len() <= reference.len() + 60, "{} steps from 1 fs against {} from 1 µs", tiny.len(), reference.len());
+}
