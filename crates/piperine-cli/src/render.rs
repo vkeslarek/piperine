@@ -3,6 +3,8 @@
 //!
 //! - [`number`]: the one place a cell becomes text.
 //! - [`table`]: a result table as aligned text.
+//! - [`record`]: an `emit!` record as one line.
 
 pub mod number;
+pub mod record;
 pub mod table;
