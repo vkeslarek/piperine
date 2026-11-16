@@ -3119,8 +3119,59 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
 </section>
 
 <!-- ===================================================== 16 -->
-<section id="cheatsheet" class="chapter">
+<section id="structure" class="chapter">
 <p class="ch-num">Chapter 16</p>
+<h2>How Piperine is organized</h2>
+
+<p>Piperine is a set of Rust crates, each with one job. Your source goes down through them in a straight line, from text to numbers, and no crate knows about the ones above it: the solver never sees MSL, and the language never sees the solver. This chapter names the crates so that you know where a piece of behavior lives.</p>
+
+<pre class="mermaid">
+flowchart TD
+  CLI["piperine-cli<br/>the piperine command"] --> API["piperine-api<br/>projects, runs, results"]
+  API --> LANG["piperine-lang<br/>parse, object model, types, elaboration"]
+  API --> PROJ["piperine-project<br/>manifest, dependencies, lockfile"]
+  LANG --> IR["piperine-ir<br/>the elaborated design"]
+  IR --> PLAN["piperine-plan<br/>one plan per body"]
+  PLAN --> INTERP["piperine-interp<br/>reference interpreter"]
+  PLAN --> RUST["piperine-transpile<br/>generated Rust"]
+  INTERP --> ABI["piperine-abi<br/>the device interface"]
+  RUST --> ABI
+  ABI --> SOLVER["piperine-solver<br/>time, events, analyses"]
+  SOLVER --> ANALOG["piperine-analog-solver<br/>Newton, TR-BDF2"]
+  SOLVER --> DIGITAL["piperine-digital-solver<br/>nets, microsteps"]
+</pre>
+
+<h3>The crates</h3>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Crate</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>piperine-cli</code></td><td>The <code>piperine</code> command. It reads your project, runs what you ask and prints the results. It holds no logic of its own; everything it does goes through <code>piperine-api</code>.</td></tr>
+<tr><td><code>piperine-api</code></td><td>The library a Rust program uses to drive Piperine: open a project, run an analysis, read tables of values and the records your models emit. The command line is built on it.</td></tr>
+<tr><td><code>piperine-project</code></td><td>Reads <code>Piperine.toml</code>, finds the crates your project depends on and pins them in the lockfile.</td></tr>
+<tr><td><code>piperine-lang</code></td><td>The language. It parses your files, builds the object model of chapter 12 with every name resolved, checks types and places, and elaborates the design: parameters folded, instances walked, one body per variant.</td></tr>
+<tr><td><code>piperine-ir</code></td><td>The elaborated design as an object model of its own: the bodies, the flat table of instances, the nets. It knows neither the language nor the solver, and prints in a stable form for reading.</td></tr>
+<tr><td><code>piperine-plan</code></td><td>Turns each body into the shape the solver expects: its pins, terms, functions and the order of their reads. Both backends use the same plan, so they cannot disagree on it.</td></tr>
+<tr><td><code>piperine-interp</code></td><td>The reference backend. It walks a body at every call and computes values with their derivatives. It needs no compiler, and every other backend is checked against it.</td></tr>
+<tr><td><code>piperine-transpile</code></td><td>The compiled backend. It prints the design as Rust, compiles it once with <code>rustc</code>, keeps the result in a cache and loads it. The generated source stays on disk for you to read.</td></tr>
+<tr><td><code>piperine-abi</code></td><td>The device interface of chapter 13: what a device is, how the solver calls it and what it may read and write. It depends on nothing else, so any device, compiled from MSL or not, plugs in the same way.</td></tr>
+<tr><td><code>piperine-solver</code></td><td>Owns time and events, runs the analyses of chapter 14 and alternates between the two sides below.</td></tr>
+<tr><td><code>piperine-analog-solver</code></td><td>The continuous side: Newton iterations, linear algebra, TR-BDF2 integration and the location of crossings. It knows nothing digital.</td></tr>
+<tr><td><code>piperine-digital-solver</code></td><td>The discrete side: nets, the commit queue, instants and microsteps. It knows nothing analog.</td></tr>
+</tbody></table></div>
+
+<h3>Three rules that hold it together</h3>
+
+<ul>
+<li><strong>Each layer hands the next a finished model.</strong> The object model, the elaborated design, the plan and the device are each built once and not changed by the layer that reads them.</li>
+<li><strong>The device interface is the only door into the solver.</strong> Generated Rust, the interpreter and any device you bring yourself meet the solver through the same calls.</li>
+<li><strong>The two sides of the solver never call each other.</strong> Everything that crosses between analog and digital is an event the owner of time carries.</li>
+</ul>
+</section>
+
+<!-- ===================================================== 17 -->
+<section id="cheatsheet" class="chapter">
+<p class="ch-num">Chapter 17</p>
 <h2>Cheat sheet</h2>
 
 <p>One screen of syntax. Everything not here is Rust.</p>
