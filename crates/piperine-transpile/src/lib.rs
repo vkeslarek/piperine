@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use piperine_ir::{BodyId, Ir};
+use piperine_ir::{Body, BodyId, Ir};
 use piperine_plan::BodyPlan;
 
 use crate::print::LibraryPrinter;
@@ -56,7 +56,7 @@ pub struct Transpiler {
 impl Transpiler {
     /// Accepts an `Ir` whose `check()` is empty, by the interpreter's rule; otherwise returns
     /// `Error::Rejected` with the entries. A body runs when it has an `analog` block, a node
-    /// with an initial potential or a carrier.
+    /// with an initial potential or a digital form.
     pub fn new(ir: Arc<Ir>) -> Result<Transpiler, Error> {
         let entries = ir.check();
         if !entries.is_empty() {
@@ -65,7 +65,7 @@ impl Transpiler {
         let plans = ir
             .bodies()
             .map(|body| {
-                let runs = body.analog().is_some() || body.nodes().iter().any(|n| n.init.is_some()) || !body.carriers().is_empty();
+                let runs = body.analog().is_some() || body.nodes().iter().any(|n| n.init.is_some()) || Transpiler::has_digital_form(body);
                 runs.then(|| BodyPlan::new(body))
             })
             .collect();
@@ -82,10 +82,20 @@ impl Transpiler {
         self.plans.get(body.index()).and_then(Option::as_ref)
     }
 
-    /// Whether the design holds a digital form (a carrier), so its runtime is the three files
+    /// Whether `body` holds a digital form: a carrier, a drive, an event, a reaction or a record
+    /// stream. A body with reactions and no carrier (a monitor that only emits) is one.
+    fn has_digital_form(body: Body<'_>) -> bool {
+        !(body.carriers().is_empty()
+            && body.drives().is_empty()
+            && body.events().is_empty()
+            && body.reactions().is_empty()
+            && body.streams().is_empty())
+    }
+
+    /// Whether the design holds a digital form in any body, so its runtime is the three files
     /// of `rt` and not `real.rs` alone.
     pub fn digital(&self) -> bool {
-        self.ir.bodies().any(|b| !b.carriers().is_empty())
+        self.ir.bodies().any(Transpiler::has_digital_form)
     }
 
     /// The design as one Rust source text (`design.rs`); a form with no lowering is
