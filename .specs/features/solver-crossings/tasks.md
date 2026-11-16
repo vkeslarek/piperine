@@ -231,8 +231,8 @@ T9 → T10 → T11
 
 **Done when**:
 
-- [ ] `a_crossing_between_operating_point_rounds_fires_in_the_later_round`, `a_crossing_between_two_operating_points_fires_at_the_later`, `an_invalid_ttol_or_etol_fails_the_analysis_with_e0510`, `an_invalid_step_cap_fails_the_analysis_with_e0509` pass
-- [ ] Gate check passes: `cargo test -p piperine-solver`
+- [x] `a_crossing_between_operating_point_rounds_fires_in_the_later_round`, `a_crossing_between_two_operating_points_fires_at_the_later`, `an_invalid_ttol_or_etol_fails_the_analysis_with_e0510`, `an_invalid_step_cap_fails_the_analysis_with_e0509` pass
+- [x] Gate check passes: `cargo test -p piperine-solver`
 
 **Tests**: integration
 **Gate**: full
