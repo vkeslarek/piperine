@@ -1,0 +1,36 @@
+//! The closed-loop start of the buck converter (T57): the whole `Buck` of the package under a
+//! bench that writes the setpoint code 0 (0.8 V) and then raises `en`, with Vin 12 V and the
+//! 6.6 ohm load of `Buck`'s defaults (SPEC §2, §10).
+use buck::dpwm::Osc;
+use buck::top::Buck;
+use buck::{Fault, Mode};
+
+/// The host's two writes, on a 1 MHz clock (rising at 0.5 us, 1.5 us, ...): `sp_wr` rises at the
+/// first edge with `sp_data` 0 already presented (SPEC §7.1: the register takes it on the
+/// rising `wr`), and `en` rises at the second.
+module Host(in clk: Bit, out sp_wr: Bit = false, out en: Bit = false) {
+    signal n: Bit<u8> = 0;
+}
+digital for Host {
+    on clk.rise() {
+        let s = n.known_or(0);
+        if s < 2 { n <- s + 1; }
+        if s == 0 { sp_wr <- true; }
+        if s == 1 { en <- true; }
+    }
+}
+
+module LoopBench() {
+    signal clk: Bit;
+    signal en: Bit;
+    signal sp_wr: Bit;
+    signal sp_data: Bit<u8> = 0;
+    signal load_step: Bit = false;
+    signal inject: Bit = false;
+    signal pgood: Bit;
+    signal fault: Bit<Fault>;
+    signal mode: Bit<Mode>;
+    let osc = Osc(clk) { f: 1M };
+    let host = Host(clk, sp_wr, en);
+    pub let buck = Buck(en, sp_wr, sp_data, load_step, inject, pgood, fault, mode);
+}
