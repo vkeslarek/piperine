@@ -980,7 +980,10 @@ impl TransientSolver<'_> {
             ));
         }
         let spt = bound.digital.plan().resolution.seconds_per_tick;
-        let digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        let mut digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        // Reactions and discrete functions read the continuation values at rest: every
+        // instant runs after the last solve of its sequence (abi.md §4.2).
+        digital.set_continuation(self.system.context.tolerances.gmin, 1.0);
         let net_names: std::sync::Arc<[String]> = digital.plan().nets.iter().map(|n| n.name.clone()).collect();
         let mut side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
         let settled = crate::analyses::adapters::Settled::default();

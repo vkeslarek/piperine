@@ -1,0 +1,164 @@
+//! The environment in reactions and discrete functions on the solver (feature
+//! `solver-crossings`, ENV-03; docs/spec Part IV §12.1.12, §14.4; abi.md §4.2): a reaction reads
+//! `temperature()` through its `GLOBAL TEMPERATURE` pin and `gmin()`, `source_scale()` as the
+//! ambient inputs `GMIN` and `SOURCE_SCALE`, which hold the session's `gmin` and 1.0 at every
+//! instant, in the operating point and in the transient; a discrete function reads the same.
+
+#[allow(dead_code)]
+#[path = "helpers/abi_devices.rs"]
+mod abi_devices;
+#[allow(dead_code)]
+#[path = "helpers/abi_mixed.rs"]
+mod abi_mixed;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
+
+use std::cell::RefCell;
+use std::sync::{Arc, OnceLock};
+
+use abi_devices::{add_resistor, add_vsrc};
+use abi_mixed::delay;
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::layout::F64;
+use piperine_abi::raw::{Cell, Module, Shape, Statement, ambient, cell, global, part, role};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::{ParamValue, Port};
+use piperine_solver::prelude::{CircuitBuilder, Context, Solver, TransientAnalysisOptions};
+
+const ORIGIN: &str = "environment.rs";
+/// The host's temperature and the session's `gmin` of every test here.
+const KELVIN: f64 = 350.0;
+const GMIN: f64 = 3.0e-12;
+
+thread_local! {
+    /// `(temperature, gmin, source_scale)` as each reaction call read them.
+    static READ: RefCell<Vec<[f64; 3]>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Reads the environment.
+/// pins: t=0 (GLOBAL TEMPERATURE F64); fg=1, fs=2, rt=3, rg=4, rs=5 (PORT F64);
+///       start=6 (GLOBAL START); go=7 (PORT event)
+/// fn 0 "env": reads [GMIN, SOURCE_SCALE] writes [fg, fs]
+/// reaction 0 "env": on [start, go] reads [t, GMIN, SOURCE_SCALE] writes [S0 {rt}, S1 {rg}, S2 {rs}]
+struct EnvProbe;
+static PROBE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static PROBE: OnceLock<Module> = OnceLock::new();
+
+fn probe_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let t = s.pin(PinSpec { global: global::TEMPERATURE, ..PinSpec::discrete("t", role::GLOBAL, &F64) });
+    let [fg, fs, rt, rg, rs] = ["fg", "fs", "rt", "rg", "rs"].map(|n| s.pin(PinSpec::discrete(n, role::PORT, &F64)));
+    let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
+    let go = s.pin(PinSpec::event("go", role::PORT));
+    let amb = |index| Cell { kind: cell::AMBIENT, index, part: part::VALUE };
+    let pin = |index| Cell { kind: cell::PIN, index, part: part::VALUE };
+    s.function(FunctionSpec {
+        name: "env",
+        origin: ORIGIN,
+        reads: vec![amb(ambient::GMIN), amb(ambient::SOURCE_SCALE)],
+        writes: vec![pin(fg), pin(fs)],
+        ..FunctionSpec::default()
+    });
+    let st = |pin| Statement { pin, offset: 0, len: 8, flags: 0, min_after: 0.0 };
+    s.reaction(ReactionSpec {
+        name: "env",
+        origin: ORIGIN,
+        on: vec![start, go],
+        reads: vec![pin(t), amb(ambient::GMIN), amb(ambient::SOURCE_SCALE)],
+        writes: vec![st(rt), st(rg), st(rs)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for EnvProbe {
+    fn prototype() -> &'static Shape<'static> {
+        PROBE_SHAPE.get_or_init(probe_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((EnvProbe, Arc::clone(PROBE_SHAPE.get_or_init(probe_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (g, s) = (cx.f64(0), cx.f64(1));
+        cx.set(0, g);
+        cx.set(1, s);
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        let read = [cx.f64(0), cx.f64(1), cx.f64(2)];
+        READ.with(|r| r.borrow_mut().push(read));
+        for (k, v) in read.into_iter().enumerate() {
+            cx.commit(k as u32, &v.to_le_bytes(), 0.0)?;
+        }
+        Ok(Flow::Continue)
+    }
+}
+
+fn probe() -> &'static Module {
+    PROBE.get_or_init(|| module::<EnvProbe>("EnvProbe"))
+}
+
+/// Every function of this target's own devices passes the partials verifier (the guard of
+/// `abi_devices.rs` holds each device to it).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("EnvProbe", probe());
+}
+
+/// A divider (so the circuit has analog unknowns) and the probe, its `go` kicked at 100 ns; the
+/// session at `KELVIN` with `gmin = GMIN`.
+fn solver() -> Solver {
+    let mut b = CircuitBuilder::new("environment");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
+    add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
+    b.device(delay(), "kick", &[("at", ParamValue::Real(1.0e-7))], &[Port::Net("go".into())]);
+    let ports: Vec<Port> = ["fg", "fs", "rt", "rg", "rs", "go"].map(|n| Port::Net(n.into())).into();
+    b.device(probe(), "env", &[], &ports);
+    let mut context = Context::default();
+    context.tolerances.temperature = KELVIN;
+    context.tolerances.gmin = GMIN;
+    Solver::new(b.build().expect("build"))
+        .with_context(context)
+        .with_tran_opts(TransientAnalysisOptions::new(2.0e-7, 1.0e-8))
+        .build()
+}
+
+/// The `F64` net `name` holds.
+fn carrier(solver: &Solver, name: &str) -> f64 {
+    let bound = solver.circuit().bound().unwrap();
+    let net = bound.names.nets[&format!("net:{name}")];
+    f64::from_le_bytes(bound.digital.read(net).try_into().expect("an F64"))
+}
+
+#[test]
+fn a_reaction_reads_temperature_gmin_and_source_scale() {
+    // ENV-03 AC 3 and 4: in the operating point (START) and in the transient (go at 100 ns) the
+    // reaction reads the host's 350 K, the session's 3e-12 S and 1.0, and commits them
+    let mut solver = solver();
+    solver.dc().expect("dc").solve().expect("the operating point");
+    assert_eq!(READ.with(|r| r.borrow().clone()), vec![[KELVIN, GMIN, 1.0]], "START in the operating point");
+    assert_eq!([carrier(&solver, "rt"), carrier(&solver, "rg"), carrier(&solver, "rs")], [KELVIN, GMIN, 1.0]);
+    READ.with(|r| r.borrow_mut().clear());
+    solver.tran().expect("tran").solve().expect("the transient");
+    assert_eq!(
+        READ.with(|r| r.borrow().clone()),
+        vec![[KELVIN, GMIN, 1.0], [KELVIN, GMIN, 1.0]],
+        "START at the transient's operating point, then go at 100 ns"
+    );
+}
+
+#[test]
+fn a_discrete_function_reads_gmin_and_source_scale() {
+    // ENV-03 AC 3: the discrete function writes GMIN and SOURCE_SCALE to fg and fs
+    let mut solver = solver();
+    solver.dc().expect("dc").solve().expect("the operating point");
+    assert_eq!([carrier(&solver, "fg"), carrier(&solver, "fs")], [GMIN, 1.0]);
+    solver.tran().expect("tran").solve().expect("the transient");
+    assert_eq!([carrier(&solver, "fg"), carrier(&solver, "fs")], [GMIN, 1.0]);
+}

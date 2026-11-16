@@ -229,7 +229,10 @@ impl<'a> DcSolver<'a> {
         self.newton_calls = 0;
         let bound = self.system.circuit.abi.as_mut().expect("a circuit of devices");
         let spt = bound.digital.plan().resolution.seconds_per_tick;
-        let digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        let mut digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        // Reactions and discrete functions read the continuation values at rest: every
+        // instant runs after the last solve of its sequence (abi.md §4.2).
+        digital.set_continuation(self.system.context.tolerances.gmin, 1.0);
         let side = DigitalSide::new(digital, bound, piperine_abi::raw::global::DC);
         let hooks = self.host.clone();
         let nets = hooks.nets(bound);

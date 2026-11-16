@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: inline, section "Design" below
-**Status**: Approved
+**Status**: Done
 **Approved**: 2026-11-15 - user: "Pode ir rodando os grandes passos" (standing delegation)
 **Build**: `cargo build --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run digital**: `cargo test -p piperine-digital-solver --test instant`
@@ -310,8 +310,8 @@ T9 → T10 → T11
 
 **Done when**:
 
-- [ ] `a_reaction_reads_temperature_gmin_and_source_scale` and `a_discrete_function_reads_gmin_and_source_scale` pass
-- [ ] Gate check passes: the **Build** line, then `cargo test` at the root
+- [x] `a_reaction_reads_temperature_gmin_and_source_scale` and `a_discrete_function_reads_gmin_and_source_scale` pass
+- [x] Gate check passes: the **Build** line, then `cargo test` at the root
 
 **Tests**: integration
 **Gate**: build
