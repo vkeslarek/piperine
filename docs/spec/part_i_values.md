@@ -703,6 +703,8 @@ A **package** is a directory with a manifest. It holds one crate.
   `mod name;` loads `name.msl` or `name/mod.msl` below the declaring file, as Rust places
   `name.rs` and `name/mod.rs`; neither or both is `E0161`.
 - **§3.6.3** The manifest holds the tables and keys of the table below and no other (`E0171`).
+  The `[run]` table is allowed: its content belongs to the host and is not defined by the
+  language, and the `[run]` table of a dependency's manifest is not read.
 - **§3.6.4** A package name and a dependency name are identifiers (A.1) that are no keyword of
   the language and not `std`. The package name is the crate's name. A single root file that is no package names its crate
   by its file stem, each character that is no letter, digit or `_` replaced by `_` and a `_`
@@ -747,6 +749,12 @@ Manifest keys:
 | `[dependencies]` entry | `branch`, `tag`, `rev` | string | no, at most one, with `git` only |
 | `[dependencies]` entry | `version` | string | no |
 | `[dependencies]` entry | `package` | string | no |
+
+Tables the language allows and does not define (rule 3):
+
+| Table | Content | Read in a dependency |
+| --- | --- | --- |
+| `[run]` | a table, defined by the host | no; not read in a dependency |
 
 Requirement table (Cargo's caret rule):
 

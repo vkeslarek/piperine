@@ -1469,3 +1469,19 @@ fn appendix_c_says_parsed_and_resolved() {
     assert!(!c.contains("No part of this specification has been compiled"), "the old claim is gone");
     assert!(c.contains("parsed and resolved") && c.contains("nothing is executed"), "{c}");
 }
+
+#[test]
+fn the_manifest_rule_admits_the_run_table() {
+    // CLI-02 AC 4 (msl-cli T3): rule 3 of the manifest section allows a `[run]` table whose
+    // content the language does not define and whose copy in a dependency is not read, and the
+    // key table has its row; E0171 still covers a value of the wrong type
+    let s = section(&spec("part_i_values.md"), "### 3.6 ");
+    let rule3 = one_line(s.split("- **§3.6.3**").nth(1).expect("rule 3.6.3").split("- **§3.6.4**").next().unwrap());
+    assert!(rule3.contains("`[run]` table is allowed"), "{rule3}");
+    assert!(rule3.contains("belongs to the host") && rule3.contains("not defined by the language"), "{rule3}");
+    assert!(rule3.contains("dependency's manifest is not read"), "{rule3}");
+    let row = s.lines().find(|l| l.starts_with("| `[run]` |")).expect("the key table has a `[run]` row");
+    assert!(row.contains("table") && row.contains("not read in a dependency"), "{row}");
+    let e0171 = s.lines().find(|l| l.starts_with("| `E0171` |")).expect("E0171 row");
+    assert!(e0171.contains("a value of the wrong type"), "{e0171}");
+}
