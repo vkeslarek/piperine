@@ -273,12 +273,12 @@ fn an_invalid_step_cap_fails_the_analysis_with_e0509() {
     // SCX-03 AC 9 (§17.2 rule 5 and its resolution): a step cap not finite and positive
     for bad in [0.0, -1.0e-9, f64::NAN, f64::INFINITY] {
         let err = failing(|b, top| {
-            b.device(capped(), "cap", &[("cap", ParamValue::Real(bad))], &[Port::Node(top)]);
+            b.device(capped(), "cc", &[("cap", ParamValue::Real(bad))], &[Port::Node(top)]);
         });
-        assert!(err.contains("E0509") && err.contains("`cap`"), "cap {bad}: {err:?}");
+        assert!(err.contains("E0509") && err.contains("`cc`") && err.contains("watch `cap`"), "cap {bad}: {err:?}");
     }
     let ok = failing(|b, top| {
-        b.device(capped(), "cap", &[("cap", ParamValue::Real(1.0e-6))], &[Port::Node(top)]);
+        b.device(capped(), "cc", &[("cap", ParamValue::Real(1.0e-6))], &[Port::Node(top)]);
     });
     assert_eq!(ok, "", "1 µs is valid");
 }
