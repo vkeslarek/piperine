@@ -1,0 +1,58 @@
+//! The gate driver and the power switch of the buck package from MSL source (T53).
+use buck::dpwm::Osc;
+use buck::power::{GateDriver, PowerSwitch, Resistor};
+
+/// An ideal DC source from `p` to ground.
+module Vsrc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vsrc { v(p) +> dc; }
+
+/// Scripted gate commands, one step per rising edge of the 200 MHz clock (edges at 2.5 ns, 7.5 ns,
+/// ... so edge `s + 1` is step `s`):
+///
+/// | step | command                         |
+/// | ---- | ------------------------------- |
+/// | 0    | `hs_cmd` high                   |
+/// | 3    | `hs_cmd` low                    |
+/// | 5    | `ls_cmd` high                   |
+/// | 7    | `hs_cmd` high (both are high)   |
+/// | 10   | `ls_cmd` low                    |
+module Script(in clk: Bit, out hs_cmd: Bit = false, out ls_cmd: Bit = false) {
+    signal n: Bit<u8> = 0;
+}
+digital for Script {
+    on clk.rise() {
+        let s = n.known_or(0);
+        n <- s + 1;
+        if s == 0 { hs_cmd <- true; }
+        if s == 3 { hs_cmd <- false; }
+        if s == 5 { ls_cmd <- true; }
+        if s == 7 { hs_cmd <- true; }
+        if s == 10 { ls_cmd <- false; }
+    }
+}
+
+module DriverBench() {
+    signal clk: Bit; signal hs_cmd: Bit; signal ls_cmd: Bit;
+    signal hs_gate: Bit; signal ls_gate: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let script = Script(clk, hs_cmd, ls_cmd);
+    let drv = GateDriver(hs_cmd, ls_cmd, hs_gate, ls_gate) { tpd: 10n };
+}
+
+/// Commits the gate high at its clock's first rising edge, which is the instant `t0`.
+module Kick(in clk: Bit, out g: Bit = false) {}
+digital for Kick { on clk.rise() { g <- true; } }
+
+/// 1 V through the switch (`ron` 1 k, `roff` 1 M) into 9 k; no output capacitance, so the node
+/// follows the channel conductance at once. The clock rises first at half its period, 3.0037 us.
+module SwitchBench() {
+    signal clk: Bit;
+    signal gate: Bit;
+    signal vs: Electrical;
+    signal x: Electrical;
+    let osc = Osc(clk) { f: 166461.36431734194 };
+    let kick = Kick(clk, gate);
+    let v1 = Vsrc(vs) { dc: 1.0 };
+    let sw = PowerSwitch(vs, x, gate) { ron: 1k, roff: 1M, tsw: 5n, coss: 0.0 };
+    let r2 = Resistor(x, gnd) { r: 9k };
+}

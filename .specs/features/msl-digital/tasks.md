@@ -1628,11 +1628,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The node voltage is compared with the divider of the analytic conductance at every accepted time from `t0 − tsw` to `t0 + 2 · tsw` under `TRAN_VOLTAGE`
-- [ ] Records exist at `t0` and at `t0 + tsw`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_power`: `the_gate_driver_delays_and_interlocks`, `the_power_switch_ramps_its_conductance_in_tsw`, `a_gate_change_makes_two_time_points`
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The node voltage is compared with the divider of the analytic conductance at every accepted time from `t0 − tsw` to `t0 + 2 · tsw` under `TRAN_VOLTAGE`
+- [x] Records exist at `t0` and at `t0 + tsw`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test buck_power`: `the_gate_driver_delays_and_interlocks`, `the_power_switch_ramps_its_conductance_in_tsw`, `a_gate_change_makes_two_time_points`
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: build
