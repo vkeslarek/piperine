@@ -599,9 +599,9 @@ T38
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::diagnostic::tests::a_diagnostic_has_code_file_line_and_excerpt`
-- [ ] Gate check passes: Quick (see Gate Check Commands)
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-cli --lib`: `render::diagnostic::tests::a_diagnostic_has_code_file_line_and_excerpt`
+- [x] Gate check passes: Quick (see Gate Check Commands)
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick

@@ -4,7 +4,9 @@
 //! - [`number`]: the one place a cell becomes text.
 //! - [`table`]: a result table as aligned text.
 //! - [`record`]: an `emit!` record as one line.
+//! - [`diagnostic`]: a failure with its code, file, line and excerpt.
 
+pub mod diagnostic;
 pub mod number;
 pub mod record;
 pub mod table;
