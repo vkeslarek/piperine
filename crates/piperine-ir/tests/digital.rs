@@ -895,6 +895,44 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
 }
 
 #[test]
+fn a_carrier_initial_value_outside_its_type_is_an_entry() {
+    // part II §5: a carrier's `= init` is a value of its carried type, and §1 rule 6 gives
+    // `UInt<4>` the values 0..=15 and `Int<4>` -8..=7. Each wrong initial value is one entry naming
+    // the carrier, its origin and the value, never a panic later (verification F-B5):
+    //
+    //   module Inits(out a: Bit = 1, out b: Bit<u4> = 16, out c: Bit<i4> = -9, out d: Bit<f64> = true,
+    //                out e: Bit<u4> = 15, out f: Bit<i4> = -8, out g: Bit<u4> = -1)
+    const F: &str = "inits.msl";
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Inits", F, 1));
+    for (name, ty, init, col) in [
+        ("a", ValueType::Bool, Constant::Int(1), 18),
+        ("b", Ty::u(4), Constant::Int(16), 32),
+        ("c", Ty::i(4), Constant::Int(-9), 51),
+        ("d", ValueType::F64, Constant::Bool(true), 70),
+        ("e", Ty::u(4), Constant::Int(15), 92),
+        ("f", Ty::i(4), Constant::Int(-8), 111),
+        ("g", Ty::u(4), Constant::Int(-1), 130),
+    ] {
+        b.carrier(body, Buck::carrier(name, ty, CarrierRole::Out, Some(init), F, 1, col));
+    }
+    let broken = Design::finish(b).check();
+    let one = |carrier: &str, col: u32, what: &str| {
+        let hits: Vec<_> = broken.iter().filter(|e| e.item == format!("body Inits carrier {carrier}")).collect();
+        assert_eq!(hits.len(), 1, "{carrier}: {broken:#?}");
+        assert_eq!((hits[0].origin.file.as_str(), hits[0].origin.line, hits[0].origin.col), (F, 1, col), "{carrier}");
+        assert!(hits[0].what.contains(what), "{carrier}: {}", hits[0].what);
+    };
+    one("a", 18, "the initial value 1 of carrier a is not a value of its type bool");
+    one("b", 32, "the initial value 16 of carrier b is not a value of its type u4");
+    one("c", 51, "the initial value -9 of carrier c is not a value of its type i4");
+    one("d", 70, "the initial value true of carrier d is not a value of its type f64");
+    one("g", 130, "the initial value -1 of carrier g is not a value of its type u4");
+    // `e = 15` and `f = -8` are the edges of their ranges: no entry
+    assert_eq!(broken.len(), 5, "{broken:#?}");
+}
+
+#[test]
 fn the_m1_prints_are_unchanged() {
     // RS-09 AC 5: every M1 fixture prints, in both forms, the bytes of its golden text.
     let device = |make: fn(&mut IrBuilder) -> BodyId, name: &str, line: u32, params: Vec<f64>| {

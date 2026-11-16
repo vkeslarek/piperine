@@ -196,7 +196,7 @@ impl Digital {
             };
             let init = match c.init {
                 Some(value) => CarrierLayout::bytes(&c.ty, value).unwrap_or_else(|| {
-                    panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}", body.name(), c.name, c.ty)
+                    panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
                 }),
                 None => Vec::new(),
             };

@@ -1572,6 +1572,9 @@ Proof: run nets | test a_parent_signal_its_children_meet_on_is_refused ... ok
 **C107** - A net with its own `init` is refused by `Netlist::circuit`, the error naming the net and its origin. (edge case 7; T41; verification F-B2)
 Proof: run nets | test a_net_with_its_own_init_is_refused ... ok
 
+**C108** - A carrier initial value that is not a value of its type (`bool` given 1, `u4` given 16 or -1, `i4` given -9, `f64` given `true`) is one `check()` entry each, naming the carrier, its origin and the value; the range edges give none. (edge case 8; T28; verification F-B5)
+Proof: run irdigital | test a_carrier_initial_value_outside_its_type_is_an_entry ... ok
+
 ---
 
 ## Handoff

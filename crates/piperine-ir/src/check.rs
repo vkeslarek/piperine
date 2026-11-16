@@ -2,7 +2,8 @@
 //! The digital forms add their own: a body writes only the carriers it may (never an `in`
 //! port), a carrier has a drive or commits, never both, `analog` reads a carrier only through
 //! `known_or`, `is_known` and `high` (§3.3.5), a reaction waits on events of its body, a commit
-//! sits in a reaction, and a `cross` watches a real.
+//! sits in a reaction, a `cross` watches a real, and a carrier's initial value is a value of its
+//! type (an integer within its `N`-bit range).
 //! Every id is in range, instances agree with their bodies, paths are unique, `limit` and
 //! `ac_stim` sites sit unconditionally at the top of the `analog` block and are used once, and
 //! every expression has the type its position requires, every local is bound before it is read,
@@ -24,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Constant, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
     ValueType,
 };
 use crate::typing::Typing;
@@ -128,6 +129,18 @@ impl<'a> Checker<'a> {
 
     fn unknown() -> Origin {
         Origin { file: "<ir>".to_string(), line: 0, col: 0 }
+    }
+
+    /// Whether `value` is a value of the scalar type `ty`: a `bool` for `bool`, a real for `f64`,
+    /// an integer within the `N`-bit range for `UInt<N>`/`Int<N>`.
+    fn holds(ty: &ValueType, value: Constant) -> bool {
+        match (ty, value) {
+            (ValueType::Bool, Constant::Bool(_)) | (ValueType::F64, Constant::Real(_)) => true,
+            (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
+                ty.integer_range().is_some_and(|(lo, hi)| (lo..=hi).contains(&v))
+            }
+            _ => false,
+        }
     }
 
     fn expr_origin(&self, id: ExprId) -> Origin {
@@ -443,6 +456,14 @@ impl<'a> Checker<'a> {
             for c in &body.carriers {
                 if !Typing::scalar(&c.ty) {
                     self.report(format!("{item} carrier {}", c.name), c.origin.clone(), format!("a carrier holds `bool`, `f64` or an integer type, found {}", c.ty));
+                } else if let Some(init) = c.init
+                    && !Self::holds(&c.ty, init)
+                {
+                    self.report(
+                        format!("{item} carrier {}", c.name),
+                        c.origin.clone(),
+                        format!("the initial value {init} of carrier {} is not a value of its type {}", c.name, c.ty),
+                    );
                 }
                 found.push((format!("{item} carrier {}", c.name), c.origin.clone(), c.ty.clone()));
             }

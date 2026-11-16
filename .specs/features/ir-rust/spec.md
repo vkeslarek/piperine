@@ -361,6 +361,7 @@ Phase A is complete and mergeable without phase B.
 - WHEN an MSL identifier equals a name the generated code uses (a variable the printer makes, an import, one of the four keywords Rust refuses raw: `crate`, `self`, `Self`, `super`) or ends in `_` THEN the system SHALL print every identifier so that the source compiles and SHALL give the interpreter's values bit for bit (verification F2, F3: names the printer makes end in one `_`; such an MSL name takes one more `_`).
 - IF a parent's `signal` carrier is the net its children's carrier ports meet on THEN the system SHALL refuse the circuit with an error naming the signal, the parent, the net and a child (verification F-B1; the binding itself is msl-digital's).
 - IF a net has an initial value of its own THEN the system SHALL refuse the circuit with an error naming the net and its origin (verification F-B2; passing it to the solver is msl-digital's).
+- IF a carrier's initial value is not a value of its type (another type, or an integer outside its `N`-bit range) THEN `check()` SHALL give one entry naming the carrier, its origin and the value (verification F-B5).
 
 ---
 
