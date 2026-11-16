@@ -64,8 +64,10 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 - **The interpreter is frozen at the M1 analog subset** (user decision R1, 2026-11-15). Digital
   and mixed forms will run on the transpiled path only; their type check and elaboration are
   `msl-digital`, queued right after `ir-rust`.
-- **`ir-rust` will refuse** `Float<16>`, `Float<128>` and `UInt<N>`/`Int<N>` with N > 64, by name;
-  stable Rust has no type for them.
+- **`ir-rust` refuses** `UInt<N>`/`Int<N>` with N outside 1..=64 by name (`check()` and the
+  printer); the ABI's leaves end at 64 bits. **`Float<16>` and `Float<128>`** have no IR form (the
+  IR's one real is `f64`), so their refusal by name belongs to `msl-digital`'s type check or
+  lowering into IR, not to the transpiler (`ir-rust` F-B8); stable Rust has no type for them.
 - **A reaction reading `temperature`, `gmin` or `source_scale` is refused by name (`ir-rust`
   F-B6).** Part IV §12.1.12 lets a reaction read the environment, but the ABI gives a reaction
   only the time, `STATIC`, tick and horizon ambients (`piperine_abi::validate` refuses the rest

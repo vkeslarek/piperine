@@ -1448,7 +1448,7 @@ Proof: run lib | test rt::int::tests::a_float_cast_saturates_and_nan_is_zero ...
 **C66** - A shift by `N` or more is the mathematical result truncated to `N` bits. (RS-10, AC 4; T35)
 Proof: run lib | test rt::int::tests::a_shift_by_the_width_or_more_is_the_truncated_result ... ok
 
-**C67** - `UInt<65>`, `Float<16>` and `Float<128>` give no source and an error naming the type and its path. (RS-10, AC 5; T37)
+**C67** - `UInt<65>`, `Float<16>` and `Float<128>` give no source and an error naming the type and its path. (RS-10, AC 5; T37) Proven for `UInt<65>`, `Int<65>` and `UInt<0>` only: the IR has no `Float<16>` or `Float<128>` (its one real is `f64`), so no `Ir` holds one and the transpiler cannot be the place that refuses it; that half belongs to msl-digital's lowering of MSL into IR, with its own check there (GAPS.md §4; verification F-B8).
 Proof: run lib | test print::value::tests::a_type_rust_lacks_is_refused_by_name ... ok
 
 **C68** - Arithmetic, a comparison or a cast with an unknown operand is unknown. (RS-11, AC 1; T36)
@@ -1598,6 +1598,7 @@ Refused by name today (phase-B verification), real support owed by msl-digital, 
 - **F-B1 - a parent's `signal` on its children's net.** `Netlist::circuit` refuses a `signal` carrier whose net is met by a child's carrier port (C106). msl-digital binds the parent's private pin to the named net (the builder has no way to today), so the parent's drives and commits reach its children.
 - **F-B2 - a net's own `init`.** `Netlist::circuit` refuses a net with an initial value of its own (C107). msl-digital gives `CircuitBuilder` a way to take it (or folds it into the carriers bound to the net) and lifts the refusal.
 - **`Child` records no carrier binding.** The authored tree holds node bindings only; the instance's `nets` carry the carrier wiring (T26). msl-digital adds the carrier bindings to `Child` so the POM-mirroring tree shows them.
+- **F-B8 - `Float<16>`/`Float<128>` refused by name.** RS-10 AC 5's float half has no IR form; msl-digital's type check or lowering refuses those types by name and path, with its own check (C67 holds the integer half only).
 
 ---
 
