@@ -75,7 +75,7 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 | Analyses | `op`, `dc`, `ac`, `transient` | what the parity suite proves on both backends | y - planner |
 | DC sweep | `sweep` is a param path; points are `from + k*step` while not past `to`; each point is a `set` followed by an operating point | how `parity_dc` runs it today | y - planner |
 | AC grid | `per_decade` (logarithmic, ngspice `dec`) or `points` (linear, total), exactly one | ngspice's two common grids | y - planner |
-| Transient rows | one row per accepted step; with `print_step`, one row per multiple of it up to `stop`, continuous values interpolated linearly and discrete values held | ngspice's print grid; a 400 000-step run must be printable | y - planner |
+| Transient rows | one row per accepted step; with `print_step`, one row per multiple of it up to `stop`, continuous values interpolated linearly and discrete values held; with `from` (optional, ngspice's `tstart`), only the steps at or after it are kept and printed, so a long mixed run holds a bounded result (T1, contract D10) | ngspice's print grid; a 400 000-step run must be printable | y - planner |
 | What can be printed | a node (its potential), a discrete net (its value), `i(<instance>)` (the flow of the instance's first potential branch); paths are relative to the top or written in full | the three things `piperine-parity` reads today | y - planner |
 | Default `print` | the top module's own signals and ports, in declaration order | small, predictable, never empty for a bench | y - planner |
 | Number format | reals as `{:.6e}` (`7.500000e0`); `bool` as `true`/`false`; integers in decimal; an unknown value as `x`; a text field in double quotes | fixed width, exact, stable across platforms | y - planner |
@@ -324,7 +324,7 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 1. WHEN `csv` or `--csv <file>` is given THEN the system SHALL write the table to that file as CSV, one header row with the column names, cells separated by `,`, the numbers in the same format as the text table, and print `wrote <file> (<n> rows)` in place of the table.
 2. WHEN the CSV file exists THEN the system SHALL replace it.
 3. IF the CSV file cannot be written THEN the system SHALL print the error naming the path and exit 1.
-4. WHEN a `transient` run gives `print_step = h` THEN the system SHALL give one row per `k*h` for every `k` from 0 while `k*h` is not past `stop`.
+4. WHEN a `transient` run gives `print_step = h` THEN the system SHALL give one row per `k*h` for every `k` from 0 while `k*h` is not past `stop`; WHEN the run also gives `from` THEN the rows SHALL start at the first `k*h` not before `from` (T1, contract D10).
 5. WHILE a print grid is in force the system SHALL give a continuous signal its value interpolated linearly between the two accepted steps around the row's time, and a discrete signal the value of the last accepted step at or before it.
 6. The system SHALL resolve a relative `csv` or `records` path against the project directory, and against the working directory for a lone file.
 

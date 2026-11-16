@@ -77,7 +77,7 @@ sequenceDiagram
 | `Types::check`, `Elaborator::run` | `crates/piperine-lang/src/{types,elab}/` | called by `Session::open`, in the order `Bench::load_file_on` uses |
 | `Diagnostic`, the `miette` impl and the graphical renderer | `crates/piperine-lang/src/msl/diag.rs` | the CLI renders every `DesignDiagnostic` and `PackageError` through it |
 | `Interpreter::new`, `Interpreter::circuit` | `crates/piperine-interp/src/lib.rs` | the `interp` backend |
-| `Transpiler::{new, compile}`, `Compiled::{circuit, report, source_path}`, `Settings` | `crates/piperine-transpile/src/` | the `rust` backend; `Report::hit` gives `compiled` or `cached`; `Settings::from_environment` gives the cache directory `clean --cache` removes |
+| `Transpiler::{new, compile}`, `Compiled::{circuit, report, source_path}`, `Settings` | `crates/piperine-transpile/src/` | the `rust` backend; `Report::cache_hit` gives `compiled` or `cached` (contract D5); `Settings::from_environment` gives the cache directory `clean --cache` removes |
 | `Solver::{with_sink, with_tran_opts, dc, ac, tran}`, `CircuitInstance::set`, the result types | `crates/piperine-solver/src/{analyses/solver.rs,core/}` via `prelude` | every analysis; the DC sweep is the `set` and solve loop of `parity_dc` |
 | `protocol::Sink`, `Observation`, `ObservationKind::Record` | `crates/piperine-solver/src/protocol/` | the record path |
 | `Ir::{node_at, instance_at}`, the body's streams and record sites | `crates/piperine-ir/` (the stream accessors arrive with `msl-digital`) | probe resolution and record decoding |
@@ -192,11 +192,11 @@ sequenceDiagram
 - **Location**: `crates/piperine-api/src/record.rs`
 - **Interfaces**:
   - `Record { time: f64, instance: String, stream: String, fields: Vec<(String, Field)> }`, `Field::{Real, Bool, Int, Text, Unknown}`.
-  - `Streams::of(ir: &Ir) -> Streams` - every stream of every instance with its layout and its sites.
-  - `Streams::decode(&self, observation: &Observation) -> Option<Record>` - `None` for an observation that is not a record.
+  - `Streams::of(ir: &Ir) -> Streams` - the `RecordLayout` of every stream of every instance, by pin path (`<instance path>.<stream>`).
+  - `Streams::decode(&self, observation: &Observation) -> Option<Record>` - `None` for an observation that is not a record. A record names its site (`ObservationKind::Record { site: Some((reaction, statement)), bytes }`); the instance, the stream and the text fields come from `Ir::record_at(path, reaction, statement)`, the value fields from the bytes through `piperine_plan::RecordLayout::of`. A record is never paired with a commit by order. A record with no site (a relaxed field that moved, abi.md §9 D1) has its value fields and no text field (contract D1, D2).
   - `Streams::keep(&mut self, entries: &[String]) -> Result<(), Failure>` - the filter of CLI-12; `E0801` for an entry that matches nothing.
   - `trait RecordSink { fn record(&mut self, record: &Record); }`.
-- **Dependencies**: `piperine-ir`, `piperine-solver` (`protocol::Sink`, `Observation`).
+- **Dependencies**: `piperine-ir`, `piperine-plan` (`RecordLayout`, contract D3), `piperine-solver` (`protocol::Sink`, `Observation`).
 - **Reuses**: the layout rule of `msl-digital` design A4: one field with a known byte per distinct non-text field of the stream's sites, absent fields with known byte 0; a text field is read from the IR site, never from the bytes.
 
 ### `Plot`
@@ -303,7 +303,7 @@ stop       = 10e-6                # transient
 max_step   = 10e-9                # transient, optional
 print_step = 1e-6                 # transient, optional
 sweep      = "v1.dc"              # dc: a param path
-from       = -1.0                 # dc, ac
+from       = -1.0                 # dc, ac; transient: the first time kept (ngspice tstart)
 to         = 0.8                  # dc, ac
 step       = 0.05                 # dc
 per_decade = 10                   # ac, or:
@@ -317,7 +317,7 @@ plot       = "out/step.svg"       # optional; not for op
 records    = "out/step.jsonl"     # optional
 ```
 
-Which keys an analysis reads: `op` none of the numbers; `dc` `sweep`, `from`, `to`, `step`; `ac` `from`, `to` and one of `per_decade`, `points`; `transient` `stop`, `max_step`, `print_step`. A key outside its analysis is `P0010` (CLI-03 AC 7).
+Which keys an analysis reads: `op` none of the numbers; `dc` `sweep`, `from`, `to`, `step`; `ac` `from`, `to` and one of `per_decade`, `points`; `transient` `stop`, `max_step`, `print_step` and `from` (optional, `0 <= from < stop`: the first time the result keeps, ngspice's `tstart`; contract D10). A key outside its analysis is `P0010` (CLI-03 AC 7).
 
 ### In Rust
 
@@ -339,7 +339,7 @@ pub enum Analysis {
     Op,
     Dc { sweep: String, from: f64, to: f64, step: f64 },
     Ac { from: f64, to: f64, grid: Grid },
-    Transient { stop: f64, max_step: Option<f64>, print_step: Option<f64> },
+    Transient { stop: f64, max_step: Option<f64>, print_step: Option<f64>, from: Option<f64> },
 }
 
 pub enum Grid { PerDecade(u32), Points(u32) }
@@ -352,7 +352,7 @@ pub enum Grid { PerDecade(u32), Points(u32) }
 | `Op` | `Solver::dc()?.solve()` |
 | `Dc` | per point: `CircuitInstance::set(path, param, Real(value))`, then `dc()?.solve()` |
 | `Ac` | `ac()?.solve_sweep(AcSweepAnalysisOptions { start_frequency: from, stop_frequency: to, steps, logarithmic })`; `steps` is `round(n * log10(to / from)) + 1` for `PerDecade(n)` and `n` for `Points(n)` |
-| `Transient` | `TransientAnalysisOptions::new(stop, dt)` with `dt = max_step` and `dt_max = max_step` when given (as `parity_tran` does), else `dt = stop / 1000` and the solver's default `dt_max` |
+| `Transient` | `TransientAnalysisOptions::new(stop, dt)` with `dt = max_step` and `dt_max = max_step` when given (as `parity_tran` does), else `dt = stop / 1000` and the solver's default `dt_max`; `record_from = from` when given, so a long mixed run keeps only the steps from `from` on (GAPS §6, contract D10) |
 
 ### The output of `run`
 
