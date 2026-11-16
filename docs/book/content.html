@@ -1606,30 +1606,110 @@ digital for MacPipe {
 <p class="ch-num">Chapter 8</p>
 <h2>Mixed-signal</h2>
 
-<p>Mixed-signal in MSL is not a separate sublanguage. One module can have an <code>analog</code> block and a <code>digital</code> block, and they share the module's names. Two rules connect the worlds:</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can connect the two worlds in both directions: a comparator with hysteresis that feeds a counter, and a small closed loop, a buck converter whose digital controller samples an analog output and steers a power stage. You will be able to say, for any record in your debug streams, which analog solution it saw.</p>
+</div>
+
+<p>Mixed-signal in MSL is not a separate sublanguage. One module can have an <code>analog</code> block and a <code>digital</code> block, and they share the module's names. You have done it since chapter 1: <code>Step</code> had both. Two rules connect the worlds:</p>
 
 <ul>
 <li><strong>Analog reads digital</strong> through <code>known_or</code>, <code>known</code> or <code>high()</code>. A digital carrier is a constant of each solve. When it changes, the analog side sees a <em>jump</em> and is solved again.</li>
 <li><strong>Digital reads analog</strong> by probing in a reaction, or by an event on an analog expression: <code>above(v(vin) - vth)</code>. A crossing is located in time by the solver.</li>
 </ul>
 
+<h3>A complete example: counting the cycles of a sine</h3>
+
+<p>Turn a sine wave into pulses and count them. The analog-to-digital step is a comparator with <em>hysteresis</em>: it switches high above one threshold and low below a lower one, so a noisy input that lingers near the threshold cannot make it chatter. The library has it as <code>A2D</code>, and its whole source is four lines:</p>
+
+<pre data-lang="msl">module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
+digital for A2D {
+    on above(v(a) - vth - hyst / 2.0) { d <- true; }
+    on above(vth - hyst / 2.0 - v(a)) { d <- false; }
+}</pre>
+
+<p>Two reactions, each on a crossing: the first fires when <code>v(a)</code> rises through <code>vth + hyst/2</code>, the second when it falls through <code>vth − hyst/2</code>. Here is the complete design around it:</p>
+
+<pre data-lang="msl">/// A sine voltage source.
+module Vsin(p: Electrical, n: Electrical) { amp: f64 = 1.0; f: f64 = 1k where f > 0.0; }
+analog for Vsin {
+    v(p, n) +> amp * (2.0 * PI * f * now()).sin();
+    bound_step(0.02 / f);
+}
+
+/// Counts rising edges of `pulse`.
+module EdgeCounter(in pulse: Bit, out count: Bit<u16> = 0) {}
+digital for EdgeCounter {
+    on pulse.rise() {
+        count <- count + 1;
+        emit!("pulse", t = now(), n = count + 1);
+    }
+}
+
+module CycleCounter() {
+    signal vin: Electrical;
+    signal hit: Bit;
+    pub signal count: Bit<u16>;
+    let src = Vsin(vin, gnd) { amp: 1.0, f: 1k };
+    let cmp = A2D(vin, hit) { vth: 0.0, hyst: 0.2 };
+    let ctr = EdgeCounter(hit, count);
+}</pre>
+
+<p>The node <code>vin</code> goes to the converter's electrical port; the converter's <code>Bit</code> output goes to the counter. Nothing else connects the two worlds. With a threshold of 0&nbsp;V and 0.2&nbsp;V of hysteresis, the comparator goes high when the sine rises through +0.1&nbsp;V, which first happens 15.9&nbsp;µs into each period:</p>
+
+<pre data-lang="text">stream top.ctr.pulse
+  instant            fields
+  (15.9 µs, 2)       t ≈ 1.59e-5    n = 1
+  (1.0159 ms, 2)     t ≈ 1.0159e-3  n = 2
+  (2.0159 ms, 2)     t ≈ 2.0159e-3  n = 3</pre>
+
+<p>The times are not multiples of the solver's step: each one is the located crossing. And the microstep is 2, not 0. That number is the story of the instant, which is the next section.</p>
+
 <h3>The instant</h3>
 
-<p>Time in MSL is a pair <code>(t, n)</code>: a real time and a microstep. At one time, microsteps run until nothing is pending. The analog side is solved before the first microstep, and again after each one that changes something it reads.</p>
+<p>Time in MSL is a pair <code>(t, n)</code>: a real time and a microstep. At one time, microsteps run until nothing is pending. For a time the solver lands on, the analog side is solved once, the first time the digital side goes quiet; a change made after that is seen by the next step.</p>
 
 <pre class="mermaid">
 flowchart LR
-  A["solve analog<br/>at time t"] --> B["microstep n<br/>definitions settle,<br/>reactions run"]
-  B --> C{"commits changed<br/>what analog reads?"}
-  C -- yes --> J["jump: solve<br/>analog again"]
-  J --> B
-  C -- "no, but commits pending" --> B
-  C -- "quiet" --> S["settle reactions,<br/>then next time point"]
+  A["land on time t<br/>collect what is due"] --> B["microstep n<br/>commits apply,<br/>definitions settle,<br/>reactions run"]
+  B --> C{"anything pending<br/>at n + 1?"}
+  C -- "yes" --> B
+  C -- "no, first time" --> J["solve analog at t,<br/>fire located crossings"]
+  J --> C
+  C -- "no, already solved" --> S["settle reactions,<br/>then next time point"]
 </pre>
 
-<p>A reaction that probes makes its instant a time point, so the solver lands on it exactly. A change to a digital carrier that <code>analog</code> does not read is not a jump: the analog solution is not recomputed for it.</p>
+<p>Follow the first pulse of the cycle counter through that loop:</p>
 
-<h3>A comparator</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Instant</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td>15.9 µs</td><td>The solver, stepping along the sine, finds that <code>v(a) − 0.1</code> changes sign and lands on the crossing.</td></tr>
+<tr><td><code>(15.9 µs, 0)</code></td><td>Nothing digital is due. The analog side is solved at this time. The crossing fires for the next microstep.</td></tr>
+<tr><td><code>(15.9 µs, 1)</code></td><td><code>A2D</code>'s first reaction runs and commits <code>d <- true</code>.</td></tr>
+<tr><td><code>(15.9 µs, 2)</code></td><td>The commit applies: <code>hit</code> rises. <code>EdgeCounter</code>'s reaction runs, emits the record and commits <code>count</code>.</td></tr>
+<tr><td><code>(15.9 µs, 3)</code></td><td><code>count</code> becomes 1. Nobody reacts to it, nothing is pending: the loop ends.</td></tr>
+</tbody></table></div>
+
+<p>All four microsteps happen at the same time <code>t</code>. The record's <code>(15.9 µs, 2)</code> tells you it was written two hops after the crossing: one for the comparator, one for the counter.</p>
+
+<h3>Which analog value does a reaction read?</h3>
+
+<p>This is the question behind every mixed-signal debug print, and the answer has two cases.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>The reaction runs because of…</th><th>A probe in it reads…</th><th>Think of it as…</th></tr></thead>
+<tbody>
+<tr><td>a digital event at a scheduled time: a clock edge, <code>at</code>, a delayed commit</td><td>the last accepted solution, from just before this time</td><td>a sampler: it captures the value the edge found</td></tr>
+<tr><td>a located crossing, or anything that follows it in later microsteps</td><td>the solution at this time</td><td>a comparator: the expression has just crossed</td></tr>
+<tr><td><code>settle</code></td><td>the solution at this time, with the final digital state</td><td>an oscilloscope: one sample per time point</td></tr>
+</tbody></table></div>
+
+<p>The first row is why a flip-flop that samples a comparator output on the same instant gets the old value, as hardware does. A reaction that probes also makes its time a <strong>time point</strong>: the solver lands on it exactly instead of stepping across it. The opposite also holds: a change to a digital carrier that <code>analog</code> does not read is not a jump, and the analog solution is not recomputed for it. Falling clock edges that nothing listens to cost the solver nothing.</p>
+
+<h3>A comparator without hysteresis</h3>
+
+<p>When you want the plain comparator, name the two crossings in the body and react to either:</p>
 
 <pre data-lang="msl">/// Comparator, right from the operating point: the event says which way it went.
 module Comparator(inp: Electrical, inn: Electrical, out q: Bit = false) {
@@ -1639,19 +1719,122 @@ module Comparator(inp: Electrical, inn: Electrical, out q: Bit = false) {
 }
 digital for Comparator { on up || dn { q <- up; } }</pre>
 
+<p><code>let up = above(…);</code> places one crossing detector and names it. In the head, <code>up || dn</code> fires on either; in the body, <code>up</code> read as a <code>bool</code> says whether it was the rising one. <code>ttol</code> is how precisely the solver must locate the crossing in time.</p>
+
 <h3>Between modules: converters</h3>
 
-<p>Across a module boundary, a <code>Bit</code> and an <code>Electrical</code> never connect. Place a converter from the standard library. <code>A2D</code> is a threshold with hysteresis; <code>D2A</code> drives a level through a resistance with finite edges; <code>Bidir</code> is a pad on a <code>Wire</code>.</p>
+<p>Across a module boundary, a <code>Bit</code> and an <code>Electrical</code> never connect. You place a converter from the standard library, and so the electrical details of every crossing are a visible, named instance with params: <code>A2D</code> is the threshold with hysteresis above; <code>D2A</code> drives a level through an output resistance with finite edges; <code>Bidir</code> is a pad on a <code>Wire</code>.</p>
 
-<pre data-lang="msl">module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
-digital for A2D {
-    on above(v(a) - vth - hyst / 2.0) { d <- true; }
-    on above(vth - hyst / 2.0 - v(a)) { d <- false; }
+<pre data-lang="msl">module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
+    rout: f64 = 100.0; tr: f64 = 20p;
+    let ramp = transition(match d.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
+}
+analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }</pre>
+
+<p>Look at how it treats an unknown input: <code>d.known()</code> gives three cases, and the model drives half the supply for "don't know". That is the choice E0150 forces every analog reader to make. <code>transition</code> turns the stepped level into a ramp of duration <code>tr</code>, so the output has a real edge.</p>
+
+<h3>A complete example: a buck converter's control loop</h3>
+
+<p>Now close a loop through both worlds. A buck converter steps 12&nbsp;V down to 3.3&nbsp;V by switching: a high-side switch connects an inductor to the input for a fraction <em>d</em> of each period, and the output settles near <em>d</em>&nbsp;·&nbsp;12&nbsp;V. A digital controller measures the output once per period and adjusts <em>d</em>. This is a simplified version of a real digital controller: one integrator instead of a full compensator, and a pulse timed directly instead of a counter-based PWM.</p>
+
+<pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+module Inductor(p: Electrical, n: Electrical) { l: f64 where l > 0.0; }
+analog for Inductor { v(p, n) +> ddt(l * i(p, n)); }
+
+module Vdc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vdc { v(p) +> dc; }
+
+/// A switch: `ron` while `ctl` is high, `roff` otherwise.
+module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 50m; roff: f64 = 1M; }
+analog for RSwitch { i(a, b) +> v(a, b) / if ctl.high() { ron } else { roff }; }
+
+/// Half bridge and LC filter. `hs` high connects the switch node to `vin`, low to ground.
+module PowerStage(vin: Electrical, vout: Electrical, in hs: Bit) {
+    l: f64 = 22u;
+    c: f64 = 100u;
+    pub signal sw: Electrical;
+    let high = RSwitch(vin, sw, hs);
+    let low = RSwitch(sw, gnd, !hs);
+    let ind = Inductor(sw, vout) { l };
+    let cap = Capacitor(vout, gnd) { c };
+}
+
+/// The controller. Once per switching period it samples `vout`, integrates the error
+/// into the duty cycle and starts a high-side pulse of that width.
+module BuckControl(vout: Electrical, out hs: Bit = false) {
+    vref: f64 = 3.3;
+    fsw: f64 = 100k where fsw > 0.0;
+    /// Integral gain: change of duty per volt of error, per period.
+    ki: f64 = 1m where ki > 0.0;
+    signal duty: Bit<f64> = 0.0;
+    let tick = every(0.0, 1.0 / fsw);
+}
+digital for BuckControl {
+    on tick {
+        let err = vref - v(vout);
+        let d = (duty + ki * err).clamp(0.0, 0.9);
+        duty <- d;
+        hs <- true;
+        hs <- false after d / fsw;
+        emit!("loop", t = now(), vout = v(vout), err = err, duty = d);
+    }
+}
+
+module Buck() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    signal hs: Bit;
+    let supply = Vdc(vin) { dc: 12.0 };
+    pub let power = PowerStage(vin, vout, hs);
+    let load = Resistor(vout, gnd) { r: 3.3 };
+    let ctl = BuckControl(vout, hs);
 }</pre>
+
+<p>The power stage is a netlist you can already read, with one new trick: <code>RSwitch(sw, gnd, !hs)</code> passes an <em>expression</em> to an <code>in</code> port. The low-side switch is driven by the complement of the high-side command, with no extra signal.</p>
+
+<p>The controller is where the two worlds meet. Line by line:</p>
+
+<ol class="steps">
+<li><strong><code>let tick = every(0.0, 1.0 / fsw);</code></strong> places a periodic event: time 0, then every 10&nbsp;µs. It is an instance, so it is named in the body and read in the reaction's head.</li>
+<li><strong><code>let err = vref - v(vout);</code></strong> is the analog-to-digital crossing: a probe inside a reaction. The tick is a scheduled time, so by the table above the probe reads the output as it was just before the tick. That is a sample-and-hold, written in one expression.</li>
+<li><strong><code>let d = (duty + ki * err).clamp(0.0, 0.9);</code></strong> is the integrator: the old duty plus a small step in the direction of the error, limited to a safe range. <code>duty</code> is a <code>Bit&lt;f64&gt;</code>: a real number that changes only at events.</li>
+<li><strong><code>hs <- true; hs <- false after d / fsw;</code></strong> is the pulse. Two commits from two statements: one raises the command at the next microstep, the other lowers it <code>d</code> periods later. This is the digital-to-analog crossing: <code>RSwitch</code> reads <code>hs</code> in its <code>analog</code> block, so each edge is a jump and the solver lands on it.</li>
+<li><strong><code>emit!("loop", …)</code></strong> is the window into the loop: one record per period with the sample, the error and the duty just decided. <code>duty = d</code> prints the new value; <code>duty = duty</code> would print the old one.</li>
+</ol>
+
+<p>Run a transient and the <code>loop</code> stream is the start-up of the converter, period by period:</p>
+
+<pre data-lang="text">stream top.ctl.loop
+  instant         fields
+  (0, 1)          t = 0        vout = 0.000   err = 3.300   duty = 0.0033
+  (10 µs, 0)      t = 1.0e-5   vout ≈ 0.000   err ≈ 3.300   duty ≈ 0.0066
+  (20 µs, 0)      t = 2.0e-5   vout ≈ 0.000   err ≈ 3.300   duty ≈ 0.0099
+  …                            the duty climbs, the output follows
+  (≈ 8 ms, 0)                  vout ≈ 3.300   err ≈ 0.000   duty ≈ 0.28</pre>
+
+<p>You can check the ends of it by hand. At the start the output is zero, so each period adds <code>ki · 3.3</code> = 0.0033 to the duty. At the end the error is zero and the duty sits where 12&nbsp;V times the duty, less the small drop in the switch, equals 3.3&nbsp;V: about 0.28. What happens in between, how fast the loop settles and whether it rings, is what the stream is for. Plot <code>vout</code> against <code>t</code> from the records and you have the loop's step response without touching a waveform viewer.</p>
+
+<p>With the print in place, the acceptance test is one more reaction in the top. It checks, at every time point after start-up, that the output stays within 50&nbsp;mV of the target:</p>
+
+<pre data-lang="msl">digital for Buck {
+    on settle {
+        if now() > 10m { require("regulated", (v(vout) - 3.3).abs() < 50m); }
+    }
+}</pre>
+
+<div class="callout good">
+  <p class="callout-label">Good to know</p>
+  <p>A full-size version of this loop adds what a product needs: a counter-based PWM with dead time, an ADC with a conversion delay, a PID in fixed point, soft start, current limits and a fault state machine. Every piece is a module of the kinds you have now seen, and its debug streams are written the same way.</p>
+</div>
 
 <h3>Walkthrough: a first-order delta-sigma modulator</h3>
 
-<p>An integrator in continuous time, a one-bit quantizer sampled by a reaction, and feedback through a digital carrier:</p>
+<p>One module, both blocks: an integrator in continuous time, a one-bit quantizer sampled by a reaction, and feedback through a digital carrier.</p>
 
 <pre data-lang="msl">module DeltaSigma1(vin: Electrical, in clk: Bit, out bit: Bit = false) {
     r: f64 = 100k; c: f64 = 1p; vref: f64 = 1.0;
@@ -1670,29 +1853,57 @@ digital for DeltaSigma1 {
 <ol class="steps">
 <li><strong>The equation.</strong> <code>x</code> has one branch, so KCL gives <code>c · dv(x)/dt = (v(vin) − fb) / r</code>.</li>
 <li><strong>Start.</strong> In an equilibrium solve <code>ddt</code> is zero, so <code>x</code> has no DC path. Its <code>= 0.0</code> holds it at 0&nbsp;V through the transient's operating point. On the first step the hold is released, with no jump.</li>
-<li><strong>A rising clock edge at <code>(t, 0)</code>.</strong> The reaction probes, so <code>t</code> is a time point. It reads <code>v(x)</code> and commits <code>bit</code>.</li>
+<li><strong>A rising clock edge at <code>(t, 0)</code>.</strong> The reaction probes, so <code>t</code> is a time point. It reads <code>v(x)</code> as it was just before the edge and commits <code>bit</code>.</li>
 <li><strong>At <code>(t, 1)</code>.</strong> If <code>bit</code> changed, <code>analog</code> reads the change: a jump. The capacitor charge stays; the feedback current steps by <code>2 · vref / r</code>.</li>
 <li><strong>Falling edges</strong> fire no reaction, and <code>analog</code> never reads <code>clk</code>, so they cost the solver nothing.</li>
 <li><strong>DC, AC and noise.</strong> Outside a transient's operating point nothing is held, so a <code>Dc</code> solve is singular and names <code>x</code>. That is the truth about an integrator with no DC path. <code>Ac</code> and <code>Noise</code> fail the same way; the loop's response needs a periodic analysis.</li>
 </ol>
 
-<p>Bigger systems are just composition. The SAR ADC places a <code>SampleHold</code>, a resistive DAC, the <code>Comparator</code> above and a binary-search reaction:</p>
+<p>To watch the modulator, add <code>emit!("q", t = now(), x = v(x), bit = v(x) > 0.0);</code> to the reaction: one record per clock with the integrator's value and the decision taken from it.</p>
+
+<p>Bigger systems are just composition. A SAR ADC places a sample-and-hold, a DAC, the <code>Comparator</code> above and a binary-search state machine, and adds one branch of its own on a public node of its DAC:</p>
 
 <pre data-lang="msl">module SarAdc(vin: Electrical, in clk: Bit, in start: Bit, out code: Bit<u8>, out done: Bit) {
     cpar: f64 = 50f;
     signal vh: Electrical;
     signal vdac: Electrical;
     signal cmp: Bit;
-    let sh = SampleHold(vin, vh, start);      // 12.1
+    let sh = SampleHold(vin, vh, start);
     let dac = Dac8(code, vdac);
-    let comp = Comparator(vh, vdac, cmp);    // 13
+    let comp = Comparator(vh, vdac, cmp);
     let logic = SarLogic(clk, start, cmp, code, done);
 }
 analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's own branch on a public node</pre>
 
 <div class="callout good">
   <p class="callout-label">Good to know</p>
-  <p>The guidance in short: read a digital carrier in <code>analog</code> only when the analog behavior depends on it; prefer known times (<code>at</code>, <code>after</code>) to crossings; sample at a clock edge with a reaction, not with <code>cross</code> on the clock's analog image; give edges a duration with <code>transition</code> when edge rate matters.</p>
+  <p>The guidance in short: read a digital carrier in <code>analog</code> only when the analog behavior depends on it; prefer known times (<code>at</code>, <code>after</code>, <code>every</code>) to crossings; sample at a clock edge with a reaction, not with <code>cross</code> on the clock's analog image; give edges a duration with <code>transition</code> when edge rate matters.</p>
+</div>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>Mixed-signal designs execute today as compiled Rust built from hand-written intermediate code, on the same solver that runs analog MSL: the PWM, the PID and the comparators of a full-size digitally controlled buck converter run that way. Taking a mixed-signal source file to that code, so that such a converter runs from its source with its loop closed, is in progress (chapter 15). The front end parses and resolves every complete file of this chapter.</p>
+</div>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0250</td><td><code>EdgeCounter(vin, count)</code> with <code>vin: Electrical</code></td><td>A node cannot go to a <code>Bit</code> port. Put an <code>A2D</code> in between.</td></tr>
+  <tr><td>E0430</td><td><code>on v(vin) > 0.1 { … }</code></td><td>A comparison is a <code>bool</code>, true for a whole stretch of time. The event is the crossing: <code>on above(v(vin) - 0.1) { … }</code></td></tr>
+  <tr><td>E0336</td><td><code>hit = v(vin) > 0.1;</code> in a module body</td><td>A definition is digital and cannot read a probe. Use a reaction on a crossing, as <code>A2D</code> does.</td></tr>
+  <tr><td>E0316</td><td><code>EdgeCounter(v(vin) > 0.1, count)</code></td><td>The same mistake through a port: an <code>in</code> port takes a digital expression only.</td></tr>
+  <tr><td>E0150</td><td><code>i(a, b) +&gt; v(a, b) / if ctl { ron } else { roff };</code></td><td><code>analog</code> must say what an unknown <code>ctl</code> means: <code>ctl.high()</code>.</td></tr>
+  <tr><td>E0442</td><td><code>on at(v(vin)) { … }</code></td><td><code>at</code> takes a time computed from digital values, not a probe. For "when the voltage reaches…" use <code>above</code>.</td></tr>
+  <tr><td>E0350</td><td><code>on every(0.0, 10u) { … }</code> written inside another reaction, or <code>every</code> called in a <code>fn</code></td><td>Events with state are instances. Name them in the module body: <code>let tick = every(0.0, 10u);</code></td></tr>
+  <tr><td>E0504</td><td>a run error at a digital edge</td><td>The step after a jump did not converge: usually an ideal step into a stiff circuit. Give the edge a duration with <code>transition</code>.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>In the cycle counter, set <code>hyst: 0.0</code> and add a small 50&nbsp;kHz ripple to the source (a second <code>Vsin</code> in series). Predict what the <code>pulse</code> stream does near each zero crossing, then restore the hysteresis and choose the smallest value that gives one pulse per cycle. In the buck, raise <code>ki</code> to <code>20m</code> and look at the <code>loop</code> stream: does <code>duty</code> still settle, or does it swing around 0.28? (It swings: the loop now reacts faster than the LC filter can follow.)</p>
 </div>
 </section>
 
