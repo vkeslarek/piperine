@@ -1,5 +1,6 @@
 //! Compiled reactions and drives, called through the ABI (feature `ir-rust`, RS-11 AC 3, 5, 6,
-//! RS-06 AC 6; checks C40, C71, C73, C74): each test compiles small hand-built bodies, the one
+//! RS-06 AC 6; checks C40, C71, C73, C74; and C109, the environment read by a reaction and a
+//! drive, planned and compiled): each test compiles small hand-built bodies, the one
 //! design shared by the five, and calls a reaction (or a drive) through `caller::Handle`,
 //! recording each commit the reaction makes as the solver would receive it. Expected commits are
 //! written from the source forms the bodies transcribe and from abi.md §5 and §6, never from
@@ -10,8 +11,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use piperine_abi::caller::{CallError, Commit, Handle};
 use piperine_abi::raw::{Cell, List, Module, Statement, cell, status, statement_flag};
-use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Ir, IrBuilder, Origin, ValueType};
-use piperine_plan::Modules;
+use piperine_abi::raw::{ambient, part};
+use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, Ir, IrBuilder, Origin, ValueType};
+use piperine_plan::{Mode, Modules, Source};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 #[allow(dead_code)]
@@ -367,4 +369,74 @@ fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
     assert_eq!(error.status, status::FAULT);
     assert!(error.message.contains("division by zero"), "the fault carries the panic message: {}", error.message);
     assert_eq!(call(8, 2).expect("the instance survives"), known(&[4]));
+}
+
+#[test]
+fn reactions_and_drives_read_the_environment_as_analog_code_does() {
+    // §12.1.12: a reaction may read the environment; a drive's value may too. Both are wired as
+    // `analog` code reads them: `temperature` through the global temperature pin's `VALUE`,
+    // `gmin` and `source_scale` through the `GMIN` and `SOURCE_SCALE` ambients (verification
+    // F-B6, user ruling 2026-11-15). Running such a reaction waits on solver-crossings, where the
+    // ABI comes to accept ambient reads in reactions (tasks Handoff "Left for after
+    // solver-crossings"):
+    //
+    //   module Ambient(in clk: Bit, out t: Bit<f64>, out g: Bit<f64>, out s: Bit<f64>, out pos: Bit) {}
+    //   digital for Ambient {
+    //       pos = gmin() > 0.0;                                                         // amb.msl:3
+    //       on clk.changed() { t <- temperature(); g <- gmin(); s <- source_scale(); }  // amb.msl:4
+    //   }
+    const A: &str = "amb.msl";
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Ambient", A, 1));
+    for (name, ty, role, col) in [
+        ("clk", ValueType::Bool, CarrierRole::In, 20),
+        ("t", ValueType::F64, CarrierRole::Out, 33),
+        ("g", ValueType::F64, CarrierRole::Out, 50),
+        ("s", ValueType::F64, CarrierRole::Out, 67),
+        ("pos", ValueType::Bool, CarrierRole::Out, 84),
+    ] {
+        b.carrier(body, Buck::carrier(name, ty, role, None, A, 1, col));
+    }
+    let gmin = b.expr(Expr::Env(Env::Gmin), ValueType::F64, Buck::origin(A, 3, 11));
+    let zero = b.expr(Expr::Real(piperine_ir::Real::new(0.0)), ValueType::F64, Buck::origin(A, 3, 20));
+    let positive = b.expr(Expr::Binary { op: BinaryOp::Gt, lhs: gmin, rhs: zero }, ValueType::Bool, Buck::origin(A, 3, 11));
+    b.drive(body, Drive { carrier: 4, value: positive, after: None, origin: Buck::origin(A, 3, 5) });
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(A, 4, 8) });
+    let mut commits = Vec::new();
+    for (carrier, env, col) in [(1, Env::Temperature, 29), (2, Env::Gmin, 50), (3, Env::SourceScale, 64)] {
+        let value = b.expr(Expr::Env(env), ValueType::F64, Buck::origin(A, 4, col));
+        commits.push(b.stmt(piperine_ir::Stmt::Commit { carrier, value, after: None }));
+    }
+    Buck::reaction(&mut b, body, vec![changed], commits, vec![], A, 4);
+    let ir = Arc::new(Alone::finish(b));
+
+    let transpiler = Transpiler::new(ir.clone()).unwrap_or_else(|e| panic!("{e}"));
+    let plan = transpiler.plan(body).expect("the body runs");
+    let shape = plan.shape().shape();
+    let temperature = items(&shape.pins).iter().position(|p| p.name.as_str() == "temperature").expect("a temperature pin") as u32;
+    let value = |kind: u32, index: u32| Cell { kind, index, part: part::VALUE };
+    let (temperature_read, gmin_read, scale_read) =
+        (value(cell::PIN, temperature), value(cell::AMBIENT, ambient::GMIN), value(cell::AMBIENT, ambient::SOURCE_SCALE));
+
+    // the reaction reads the three, as the plan's sources and as the cells of its shape
+    let reaction = &plan.reactions()[0];
+    for source in [Source::Temperature, Source::Gmin, Source::SourceScale] {
+        assert!(reaction.reads.contains(&source), "the reaction reads {source:?}: {:?}", reaction.reads);
+    }
+    let reads = items(&items(&shape.reactions)[0].reads);
+    for read in [temperature_read, gmin_read, scale_read] {
+        assert!(reads.contains(&read), "the reaction's shape reads {read:?}: {reads:?}");
+    }
+    // the drive of `pos` reads `GMIN`
+    let k = plan.functions().iter().position(|f| f.mode == Mode::Drive(0)).expect("the drive's function");
+    assert!(plan.functions()[k].reads.contains(&Source::Gmin), "{:?}", plan.functions()[k].reads);
+    assert!(items(&items(&shape.functions)[k].reads).contains(&gmin_read));
+
+    // the body compiles with no warning, and its library's shape is the plan's (`compile` checks it)
+    let cache = tempfile::tempdir().expect("a temp dir");
+    let compiled = transpiler
+        .compile(&Settings { rustc: None, cache: cache.path().to_path_buf() })
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(compiled.report().warnings, "", "the generated source compiles with no warning");
+    assert!(Modules::module(&compiled, body).is_some(), "the body has a module");
 }
