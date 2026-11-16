@@ -8,7 +8,9 @@
 //! - [`backend`]: which backend runs a design, and the order of the places that may name it.
 //! - [`probe`]: what a table column shows.
 //! - [`project`]: the package a command works on, its runs and the crate graph of a run.
-//! - [`session`]: a run request from source to a circuit bound on a backend.
+//! - [`session`]: a run request from source to a circuit bound on a backend, and its run.
+//! - [`table`]: the result of an analysis as columns of typed cells.
+//! - [`record`]: an `emit!` record and where a session hands it.
 //! - [`request`]: a run request, read from a run table or from flags, validated.
 
 pub mod backend;
@@ -16,12 +18,16 @@ pub mod failure;
 pub mod prelude;
 pub mod probe;
 pub mod project;
+pub mod record;
 pub mod request;
 pub mod session;
+pub mod table;
 
 pub use backend::Backend;
 pub use failure::Failure;
 pub use probe::Probe;
 pub use project::Project;
+pub use record::{Field, Record, RecordSink};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
 pub use session::{Built, Session};
+pub use table::{Cell, Table};

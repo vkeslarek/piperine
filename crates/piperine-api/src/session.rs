@@ -4,22 +4,27 @@
 //! the transpiler, which may call `rustc`. Every failure before an analysis happens here, each
 //! naming its stage, and the run's `print` entries are resolved. No analysis ever compiles.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
+use piperine_digital_solver::net::NetId;
 use piperine_interp::Interpreter;
 use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
-use piperine_solver::prelude::CircuitInstance;
+use piperine_solver::prelude::{CircuitInstance, Solver};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
 use crate::probe::Probe;
+use crate::record::RecordSink;
+use crate::table::Table;
 use crate::project::Project;
-use crate::request::RunSpec;
+use crate::request::{Analysis, RunSpec};
 
 /// How the design of a session was built.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,6 +125,29 @@ impl Session {
     /// session's run has taken it.
     pub fn circuit(&mut self) -> Option<&mut CircuitInstance> {
         self.circuit.as_mut()
+    }
+
+    /// The request's analysis on the bound circuit, its result as a table; the records of the
+    /// run reach `sink` as the solver delivers them. A session runs once: the analysis takes its
+    /// circuit.
+    pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
+        let _ = sink;
+        let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
+        let mut solver = Solver::new(circuit).build();
+        match &self.spec.analysis {
+            Analysis::Op => {
+                let result = solver.dc().and_then(|mut dc| dc.solve()).map_err(|error| Failure::Solver { analysis: "op", error })?;
+                let bound = solver.circuit().bound();
+                // a discrete net by its path: its index in the digital plan is its id
+                let net = |path: &str| {
+                    let b = bound?;
+                    let at = b.digital.plan().nets.iter().position(|n| n.name == path)?;
+                    Some(b.digital.read(NetId(at as u32)).to_vec())
+                };
+                Table::operating_point(&self.probes, &result, &net)
+            }
+            other => Err(Failure::Backend(format!("the `{}` analysis is not supported by `Session::run` yet", other.name()))),
+        }
     }
 
     /// The `top` key, else the one module without ports of the root crate (`P0011` when there

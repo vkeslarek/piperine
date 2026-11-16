@@ -7,9 +7,12 @@ edition.workspace = true
 piperine-lang = { path = "../piperine-lang" }
 piperine-project = { path = "../piperine-project" }
 piperine-ir = { path = "../piperine-ir" }
+piperine-abi = { path = "../piperine-abi" }
+piperine-plan = { path = "../piperine-plan" }
 piperine-interp = { path = "../piperine-interp" }
 piperine-transpile = { path = "../piperine-transpile" }
 piperine-solver = { path = "../piperine-solver" }
+piperine-digital-solver = { path = "../piperine-digital-solver" }
 toml = "1.1.2"
 
 [dev-dependencies]
