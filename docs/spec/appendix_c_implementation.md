@@ -78,7 +78,7 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | time points (§17.2) | a reachability set computed once at elaboration marks the reactions that can touch the analog side; only their scheduled times are breakpoints | |
 | restart (§15.2) | the previous derivative is dropped for one trapezoidal stage (`prev_h = 0` in `accept_step`; `TrBdf2::stage_coeffs`: backward Euler over the `γh` sub-step) in the step after one that landed on a digital event or a breakpoint, after an applied host `set`, and after a device announces a discontinuity at the accepted point (`discontinuity()`); a change made by `settle_digital` restarts nothing; the step size restarts at 10⁻³ of the last step, floored at the minimum step, after a host `set` only; every other case keeps the controller's proposal (`propose_dt`, `sets_just_applied`) | |
 | rollback (§17.2) | one event queue (scheduled commits restored, `at` times and breakpoints re-polled, step bounds and crossings discarded and re-emitted), with the digital state, device state and analog history checkpointed per step | |
-| crossings (§17.3) | secant prediction from the bracketing pair, bisection when it stalls, retake to the predicted time | gap (G.6): today Piperine fires at the first accepted point after the sign change |
+| crossings (§17.3) | after a converged step that reads no jump, each `cross` that went from `≤ 0` to `> 0` is within tolerance when `e < etol` or the step's end exceeds its estimated crossing by at most `ttol`; the estimate is the secant of the step's last two attempts past the crossing when it falls inside the bracket, else the secant of the bracketing pair; otherwise the step is retaken to the earliest estimate rounded up to a tick, and a retake that lands before the crossing is accepted as an ordinary step. A design with a `cross` steps on the tick grid | |
 | limiting (§18) | ngspice `pnjlim`, `fetlim`, `limvds`; an instance is active while `abs(x̂ − x) > 1e-6 + 1e-4 · abs(x)`; when a limited branch potential becomes node potentials, the minus node moves and the plus node stays, unless the minus node is `gnd` | |
 | analyses the host builds (§16.3, §16.4) | continuation keeps the checkpoint of the last accepted step; periodic steady state by shooting over continued transients | the periodic small-signal and noise linearization is not implemented (G.6, G.37) |
 | temperature | `temperature` and `tnom` 300.15 K | |
@@ -96,6 +96,8 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | `gmin` | 1e-12 S | §16 step 3 |
 | hold conductance | 10¹² S | §16 |
 | `trtol` | 7 | §17.2.1 |
+| default `ttol` of `cross` | 1 ps | §17.3 rule 2 |
+| default `etol` of `cross` | the potential `abstol`, 1 µV | §17.3 rule 2 |
 | step controller | `kp` 0.7, `ki` 0.4, growth in \[0.2, 1.5\], rejection ÷ 8 | §17.2 |
 | restart step after a host `set` (any other jump keeps the controller's proposal) | 10⁻³ of the last step, floored at the minimum step | §15.2.6 |
 | limiting activity | `abs(x̂ − x) > 1e-6 + 1e-4 · abs(x)` | §18 rule 5 |

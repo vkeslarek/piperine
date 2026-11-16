@@ -120,10 +120,10 @@ Two solver defects make the boundary between analog and digital observable at th
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
 | DSV-01 | P1: Settled value, AC 1 to 4 | T1, T2 | Implementing |
-| SCX-01 | P2: Crossings, AC 1 to 5 (location) | Tasks | Pending |
-| SCX-02 | P2: Crossings, AC 6, 7 (across rounds and operating points) | Tasks | Pending |
-| SCX-03 | P2: Crossings, AC 8, 9 (`E0510`, `E0509`) | Tasks | Pending |
-| SCX-04 | P2: Crossings, AC 10 (parity unchanged) | Tasks | Pending |
+| SCX-01 | P2: Crossings, AC 1 to 5 (location) | T5, T6 | Implementing |
+| SCX-02 | P2: Crossings, AC 6, 7 (across rounds and operating points) | T7 | Implementing |
+| SCX-03 | P2: Crossings, AC 8, 9 (`E0510`, `E0509`) | T3, T4, T7 | Implementing |
+| SCX-04 | P2: Crossings, AC 10 (parity unchanged) | T6 | Implementing |
 | ENV-01 | P3: Environment, AC 1 (the validator) | Tasks | Pending |
 | ENV-02 | P3: Environment, AC 2 (the digital engine) | Tasks | Pending |
 | ENV-03 | P3: Environment, AC 3 to 5 (the solver) | Tasks | Pending |

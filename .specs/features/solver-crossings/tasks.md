@@ -251,7 +251,7 @@ T9 → T10 → T11
 
 **Done when**:
 
-- [ ] Gate check passes: the **Build** line, then `cargo test` at the root
+- [x] Gate check passes: the **Build** line, then `cargo test` at the root
 
 **Tests**: none
 **Gate**: build

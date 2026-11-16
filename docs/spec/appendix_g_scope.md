@@ -43,7 +43,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | source search paths (`-I`) | a dependency named in the manifest (§3.6 rule 12) |
 | a package registry | `path` and `git` dependencies (§3.6 rule 7) |
 
-**Highest impact:** G.6 (crossings landed on time), G.8 (import), G.21 (lossy lines), G.22 (load-dependent delay).
+**Highest impact:** G.6 (the implementation gaps), G.8 (import), G.21 (lossy lines), G.22 (load-dependent delay).
 
 ## Summary
 
@@ -123,9 +123,7 @@ Alternatives under consideration: a named result port, or `-> name: T`.
 | integer time | §15 |
 | value inputs and results | §8.3 |
 | the periodic small-signal linearization | §16.3 |
-| landing on predicted crossings | §17.3 |
 
-Today Piperine fires a crossing at the first accepted point after the sign change. §15 requires the tick the crossing is rounded up to.
 Appendix C marks each affected row.
 
 ### G.8 Import

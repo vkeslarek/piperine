@@ -691,8 +691,7 @@ time points, and whose time the solver finds.
 | --- | --- | --- |
 | `E0510` | `cross` evaluated with a `ttol` or `etol` that is not finite and positive. | run |
 
-The reference implementation does not yet land on the predicted crossing (Appendix C.2,
-G.6).
+The reference implementation lands on the located crossing (Appendix C.2).
 
 ---
 

@@ -266,9 +266,9 @@ No jump solve is planned anywhere: Q7 stands, and `spec-abi-amendments` writes t
 | SCT-11 | P2: Time point, AC 8 (what waits for time is dropped) | solver-time-point | Pending |
 | SCT-12 | P2: Time point, AC 9, 10 (continuation) | solver-time-point | Pending |
 | SCT-13 | P2: Time point, AC 11 (analysis and solve kind) | solver-abi-integration | Implementing |
-| SCX-01 | P2: Crossings, AC 1, 2, 4 (location) | solver-crossings | Pending |
-| SCX-02 | P2: Crossings, AC 5 (across rounds and sweep points) | solver-crossings | Pending |
-| SCX-03 | P2: Crossings, AC 3, 6, 7 (`E0510`, step cap, `E0509`) | AC 6: solver-abi-analog, -integration; AC 3, 7: solver-crossings | Pending |
+| SCX-01 | P2: Crossings, AC 1, 2, 4 (location) | solver-crossings (T5, T6) | Implementing |
+| SCX-02 | P2: Crossings, AC 5 (across rounds and sweep points) | solver-crossings (T7; the sweep driver is SCT-10) | Implementing |
+| SCX-03 | P2: Crossings, AC 3, 6, 7 (`E0510`, step cap, `E0509`) | AC 6: solver-abi-analog, -integration; AC 3, 7: solver-crossings (T3, T4, T7) | Implementing |
 | SCH-01 | P2: Host seam, AC 1, 2 (drives and scheduled actions) | solver-host-seam | Pending |
 | SCH-02 | P2: Host seam, AC 3 (force, release) | solver-host-seam | Pending |
 | SCH-03 | P2: Host seam, AC 5 (scheduled probe) | solver-host-seam | Pending |
