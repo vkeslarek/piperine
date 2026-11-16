@@ -228,3 +228,132 @@ fn hoisted_names_print_as_rust_identifiers() {
         })
     );
 }
+
+/// `module Timer(out count: Bit<u8> = 0)` with two timed signals and, when `rearm`, a second
+/// timer that moves the first:
+///
+/// ```text
+/// signal t0: Bit<f64> = 10n;  signal dt: Bit<f64> = 5n;
+/// on at(t0 + dt) { count <- count + 1; }
+/// on at(12n) { dt <- 20n; }                 // `rearm` only
+/// ```
+fn timer(b: &mut IrBuilder, rearm: bool) -> BodyId {
+    let u8 = ValueType::UInt(8);
+    let body = b.body(Buck::spec("Timer", F, 1));
+    b.carrier(body, Buck::carrier("t0", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(10e-9))), F, 2, 5));
+    b.carrier(body, Buck::carrier("dt", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(5e-9))), F, 2, 30));
+    b.carrier(body, Buck::carrier("count", u8.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 14));
+    let mut x = Dx::new(b, F, 3, 11);
+    let (t0, dt) = (x.carrier(0, REAL), x.carrier(1, REAL));
+    let at = x.bin(piperine_ir::BinaryOp::Add, t0, dt, digital::Ty::flagged(REAL));
+    let at = b.event(body, Event { source: EventSource::At(at), guard: None, origin: Buck::origin(F, 3, 8) });
+    let mut x = Dx::new(b, F, 3, 30);
+    let count = x.carrier(2, u8.clone());
+    let one = x.int(1, u8.clone());
+    let next = x.bin(piperine_ir::BinaryOp::Add, count, one, digital::Ty::flagged(u8));
+    let commit = x.commit(2, next, None);
+    Buck::reaction(b, body, vec![at], vec![commit], vec![], F, 3);
+    if rearm {
+        let twelve = Dx::new(b, F, 4, 11).real(12e-9);
+        let at = b.event(body, Event { source: EventSource::At(twelve), guard: None, origin: Buck::origin(F, 4, 8) });
+        let mut x = Dx::new(b, F, 4, 25);
+        let twenty = x.real(20e-9);
+        let commit = x.commit(1, twenty, None);
+        Buck::reaction(b, body, vec![at], vec![commit], vec![], F, 4);
+    }
+    body
+}
+
+/// The transient changes of `count` from a 40 ns run of the timer.
+fn counted(rearm: bool) -> Vec<(i64, Vec<u8>)> {
+    let mut w = Wire::new();
+    let body = timer(&mut w.b, rearm);
+    w.place("timer", body, vec![], &[("timer.t0", REAL), ("timer.dt", REAL), ("count", ValueType::UInt(8))]);
+    Built::new(w.finish()).run(40e-9, 1e-9).transient("count")
+}
+
+#[test]
+fn at_fires_once_at_its_time() {
+    // part IV §13 `at(t)`: the event fires once, at `t`. Armed at the start with t0 = 10 ns and
+    // dt = 5 ns, it fires at 15 ns and the counter, which adds one per firing, reads 1 from then
+    // on (`Bit<u8>`: the value, then its known byte)
+    assert_eq!(counted(false), [(15 * NS, vec![1, 1])]);
+}
+
+#[test]
+fn a_rearmed_at_drops_the_earlier_firing() {
+    // part IV §13: `at(t)` re-arms when `t` changes; abi.md C3: the arming statement is `REPLACE`,
+    // so the firing armed for 15 ns is removed when `dt <- 20n` at 12 ns re-arms the timer for
+    // t0 + dt = 30 ns: no firing at 15 ns, one at 30 ns
+    assert_eq!(counted(true), [(30 * NS, vec![1, 1])]);
+}
+
+/// What a timed signal `t` of `Late` holds when the clock first rises.
+#[derive(Clone, Copy)]
+enum Time {
+    /// Nothing ever writes it.
+    Unknown,
+    /// `t <- <seconds>;`
+    Fixed(f64),
+    /// `t <- now();`
+    Now,
+}
+
+/// `module <name>(in clk: Bit, out hit: Bit)`:
+///
+/// ```text
+/// signal t: Bit<f64>;
+/// on clk.rise() { t <- <time>; }            // not for `Time::Unknown`
+/// on at(t) { hit <- true; }
+/// ```
+fn late(b: &mut IrBuilder, name: &str, time: Time) -> BodyId {
+    let body = b.body(Buck::spec(name, F, 1));
+    b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
+    b.carrier(body, Buck::carrier("t", REAL, CarrierRole::Signal, None, F, 2, 5));
+    b.carrier(body, Buck::carrier("hit", BIT, CarrierRole::Out, None, F, 1, 35));
+    let value = match time {
+        Time::Unknown => None,
+        Time::Fixed(v) => Some(Dx::new(b, F, 3, 25).real(v)),
+        Time::Now => Some(env(&mut Dx::new(b, F, 3, 25), Env::Time)),
+    };
+    if let Some(value) = value {
+        let rise = Buck::rise(b, body, 0, F, 3, 8);
+        let commit = Dx::new(b, F, 3, 20).commit(1, value, None);
+        Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 3);
+    }
+    let t = Dx::new(b, F, 4, 11).carrier(1, REAL);
+    let at = b.event(body, Event { source: EventSource::At(t), guard: None, origin: Buck::origin(F, 4, 8) });
+    let mut x = Dx::new(b, F, 4, 20);
+    let yes = x.boolean(true);
+    let commit = x.commit(2, yes, None);
+    Buck::reaction(b, body, vec![at], vec![commit], vec![], F, 4);
+    body
+}
+
+#[test]
+fn a_past_or_unknown_time_does_not_fire() {
+    // a 100 MHz clock: its first rise is at 5 ns, the next at 15 ns, after the run
+    let mut w = Wire::new();
+    let osc = Buck::osc(&mut w.b);
+    w.place("osc", osc, vec![Constant::Real(Real::new(100e6))], &[("clk", BIT)]);
+    for (name, module, time) in [
+        ("past", "Past", Time::Fixed(0.0)),
+        ("unknown", "Unknown", Time::Unknown),
+        ("now", "Now", Time::Now),
+        ("later", "Later", Time::Fixed(8e-9)),
+    ] {
+        let body = late(&mut w.b, module, time);
+        let hit = format!("{name}_hit");
+        w.place(name, body, vec![], &[("clk", BIT), (&format!("{name}.t"), REAL), (&hit, BIT)]);
+    }
+    let seen = Built::new(w.finish()).run(12e-9, 1e-9);
+    // part IV §13: a time before the instant that arms it (0 armed at 5 ns) never fires, and an
+    // unknown time never fires
+    assert_eq!(seen.transient("past_hit"), []);
+    assert_eq!(seen.transient("unknown_hit"), []);
+    // a time equal to the instant fires at its next microstep (abi.md C1: a delay of 0), so
+    // within the same instant, 5 ns
+    assert_eq!(seen.transient("now_hit"), [(5 * NS, HIGH.to_vec())]);
+    // the control: the same arming at 5 ns for 8 ns fires at 8 ns
+    assert_eq!(seen.transient("later_hit"), [(8 * NS, HIGH.to_vec())]);
+}

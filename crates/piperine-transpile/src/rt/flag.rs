@@ -435,6 +435,21 @@ impl Commits {
         self.pending.push((statement, value.encode(), after));
     }
 
+    /// Arms a timer through statement `statement`, a `REPLACE` statement on an event pin (abi.md
+    /// R1, C3), for the time `at` seen at the instant `now`: a later time is due `at - now`
+    /// from now, the time of the instant itself at the next microstep (a delay of 0, C1), and an
+    /// unknown or past time never (`+inf`, C1). Since the statement is `REPLACE`, each arming
+    /// removes the firing an earlier one left pending, so a timer never fires for a time it no
+    /// longer holds.
+    pub fn arm(&mut self, statement: u32, at: Flagged<f64>, now: f64) {
+        let after = match at.is_known() {
+            true if at.value > now => at.value - now,
+            true if at.value == now => 0.0,
+            _ => f64::INFINITY,
+        };
+        self.pending.push((statement, Vec::new(), after));
+    }
+
     /// Hands every commit to `cx`, in order; the first refusal is the fault.
     pub fn flush(self, cx: &mut React<'_>) -> Result<(), Fault> {
         for (statement, bytes, after) in &self.pending {
@@ -645,5 +660,21 @@ mod tests {
             drop(commits);
         });
         assert_eq!(made, [], "a dropped `Commits`, as after a fault, commits nothing");
+    }
+
+    #[test]
+    fn a_timer_is_armed_for_a_later_time_only() {
+        // msl-digital A3 on abi.md C1, C4: an arming fires its event pin (no bytes) `t - now`
+        // later, at the next microstep for `t == now`, and never (`+inf`) for a past or unknown
+        // time
+        let made = react_with(|cx| {
+            let mut commits = Commits::new();
+            commits.arm(0, k(15e-9), 5e-9);
+            commits.arm(1, k(5e-9), 5e-9);
+            commits.arm(2, k(0.0), 5e-9);
+            commits.arm(3, u::<f64>(), 5e-9);
+            commits.flush(cx).expect("every arming accepted");
+        });
+        assert_eq!(made, [(0, vec![], 15e-9 - 5e-9), (1, vec![], 0.0), (2, vec![], f64::INFINITY), (3, vec![], f64::INFINITY)]);
     }
 }

@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Body, EmitField, EventSource, Expr, ExprId, Ir, Stmt};
+use piperine_ir::{Body, EmitField, Expr, ExprId, Ir, Stmt};
 use piperine_plan::BodyPlan;
 
 use crate::Error;
@@ -18,11 +18,6 @@ impl Amended {
     /// through the functions it calls.
     pub(crate) fn refuse(ir: &Ir, running: &[(Body<'_>, &BodyPlan)]) -> Result<(), Error> {
         for (body, _) in running {
-            for (k, event) in body.events().iter().enumerate() {
-                if let EventSource::At(_) = event.source {
-                    return Err(Error::Unsupported { form: "at(t)".into(), path: format!("body {} event {k}", body.name()), origin: event.origin.clone() });
-                }
-            }
             for k in 0..body.reactions().len() as u32 {
                 for id in body.reaction_statements(k) {
                     if let Stmt::Emit { fields, .. } = ir.stmt(id) {

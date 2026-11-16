@@ -191,8 +191,8 @@ impl<'a> DigitalPrinter<'a> {
                         (self.names.read_name(Source::CarrierChanged(c)), format!("carrier {} changed", self.carrier_name(c)))
                     }
                     EventSource::Cross(_) => (self.names.read_name(Source::Crossed(e)), format!("its crossing fired (event {e})")),
-                    // The plan declares no event function for an `at`; `Amended` refuses it first.
-                    EventSource::At(_) => return Err(self.unsupported(&format!("at(t) as event {e}"))),
+                    // only a guarded timer has an event function: it gates the timer's own pin
+                    EventSource::At(_) => (self.names.read_name(Source::Timer(e)), format!("its timer fired (event {e})")),
                 };
                 (source, event.guard, event.origin.clone(), what)
             }
@@ -202,6 +202,13 @@ impl<'a> DigitalPrinter<'a> {
                 };
                 let what = format!("the undelayed value of {} changed", self.carrier_name(drive.carrier));
                 (self.names.read_name(Source::DelayedChanged(d)), None, drive.origin.clone(), what)
+            }
+            Mode::Rearm { event, carrier } => {
+                let Some(at) = self.body.events().get(event as usize) else {
+                    return Err(self.unsupported(&format!("event {event}")));
+                };
+                let what = format!("carrier {} changed, which the time of event {event} reads", self.carrier_name(carrier));
+                (self.names.read_name(Source::CarrierChanged(carrier)), None, at.origin.clone(), what)
             }
             _ => return Err(self.unsupported(&format!("function {k} as an event"))),
         };

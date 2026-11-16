@@ -340,8 +340,9 @@ impl LibraryPrinter {
             }
             for e in body.events() {
                 exprs.extend(e.guard);
-                if let EventSource::Cross(x) = e.source {
-                    exprs.push(x);
+                match e.source {
+                    EventSource::Cross(x) | EventSource::At(x) => exprs.push(x),
+                    EventSource::Changed(_) => {}
                 }
             }
             for r in body.reactions() {

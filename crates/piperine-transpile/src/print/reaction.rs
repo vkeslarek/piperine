@@ -20,8 +20,12 @@
 //!
 //! The reaction of a drive with an `after` (RS-12 AC 5) commits the undelayed value its `.now`
 //! pin holds to the carrier after the delay.
+//!
+//! The arming reaction of an `at(t)` event (msl-digital A3) evaluates `t` and hands it to
+//! `Commits::arm` with the instant's `TIME`: one `REPLACE` firing of the timer's pin, `t - now`
+//! later, at the next microstep when `t` is now, never when `t` is unknown or past.
 
-use piperine_ir::ValueType;
+use piperine_ir::{EventSource, ValueType};
 use piperine_plan::{ReactionMode, ReactionPlan, Source, StatementPlan};
 
 use crate::Error;
@@ -72,7 +76,19 @@ impl<'a> DigitalPrinter<'a> {
                 let now = self.names.read_name(Source::Delayed(d));
                 (values, vec![format!("commits_.commit(0, {now}, {delay});")], drive.origin.clone())
             }
-            ReactionMode::Arm(e) => return Err(self.reaction_unsupported(&format!("the arming reaction of at(t) event {e}"))),
+            ReactionMode::Arm(e) => {
+                let Some(event) = self.body.events().get(e as usize) else {
+                    return Err(self.reaction_unsupported(&format!("event {e}")));
+                };
+                let EventSource::At(time) = event.source else {
+                    return Err(self.reaction_unsupported(&format!("event {e} as a timer")));
+                };
+                let values = ValuePrinter::of_digital(self.ir, self.body).with_reads(self.reads());
+                let at = values.expr_as(time, &ValueType::Flagged(Box::new(ValueType::F64)))?;
+                // the time is compared with the instant's own `TIME` (abi.md §4.2)
+                let now = self.names.read_name(Source::Time);
+                (values, vec![format!("commits_.arm(0, {at}, {now});")], event.origin.clone())
+            }
         };
         // the statement number each commit prints with is its place in the plan, so the plan and
         // the printer must agree on the carrier and the `LATER` bound of every statement
@@ -92,7 +108,8 @@ impl<'a> DigitalPrinter<'a> {
         }
         let forced: Vec<Source> = match plan.mode {
             ReactionMode::Delayed(d) => vec![Source::Delayed(d)],
-            ReactionMode::Reaction(_) | ReactionMode::Arm(_) => Vec::new(),
+            ReactionMode::Arm(_) => vec![Source::Time],
+            ReactionMode::Reaction(_) => Vec::new(),
         };
         let binds = self.binds(&values, "cx_", &plan.reads, &forced)?;
 
