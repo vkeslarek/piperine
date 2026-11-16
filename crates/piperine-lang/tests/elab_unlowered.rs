@@ -178,3 +178,24 @@ fn a_contribution_in_the_analog_blocks_own_list_still_lowers() {
     let src = "module M(p: Electrical, n: Electrical) { }\nanalog for M { i(p, n) +> 1.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }";
     Elab::run(src, "Top").expect("a top-level contribution lowers");
 }
+
+#[test]
+fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
+    // The type checker accepts the digital forms and the flow read of a potential branch
+    // (msl-digital T9 to T16); the structure passes that lower them come later. Until then every one
+    // is refused by name, never dropped and never lowered as a different circuit.
+    for (form, src, names) in [
+        ("a carrier", "module Top() { signal s: Bit; }", vec!["a discrete carrier"]),
+        ("a definition", "module Top() { signal s: Bit; s = true; }", vec!["a discrete carrier", "a definition `=`"]),
+        ("a digital block", "module Top() { signal clk: Bit; }\ndigital for Top { on clk.rise() { } }", vec!["a discrete carrier", "a `digital` block"]),
+        ("a module with a result", "module twice(x: f64) -> f64 { 2.0 * x }\nmodule Top() { let a = twice(1.0); }", vec!["a module with a result", "a value input"]),
+        ("a value input", "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }", vec!["a value input"]),
+        ("a flow read of a potential branch", "module L(p: Electrical, n: Electrical) { }\nanalog for L { v(p, n) +> 2.0 * i(p, n); }\nmodule Top() { signal s: Electrical; let l = L(s, gnd); }", vec!["a flow probe read as a value"]),
+    ] {
+        let err = Elab::run(src, "Top").expect_err(form);
+        assert!(Elab::codes(&err).iter().all(|c| c == "P0001"), "{form}: {:?}", err.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+        for name in names {
+            assert!(err.iter().any(|d| d.diagnostic.message.contains(name)), "{form}: no diagnostic names `{name}`: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        }
+    }
+}

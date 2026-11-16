@@ -79,11 +79,57 @@ impl Checker<'_> {
         }
         match (role, target) {
             (QuantityRole::Potential, _) | (QuantityRole::Flow, true) => Some(Ty::F64),
+            // The flow of a branch the module drives with a potential (`v(p, n) +> ddt(l * i(p, n))`,
+            // the inductor) is a value; the flow of a flow branch is outside the subset.
+            (QuantityRole::Flow, false) if self.contributes_potential_to(args) => Some(Ty::F64),
             (QuantityRole::Flow, false) => {
                 self.unsupported(file, node.span, "flow probe read as a value");
                 None
             }
         }
+    }
+
+    /// Whether an `analog` block of the module being checked contributes a potential to the branch
+    /// `args` name (the same nodes, in the same order).
+    fn contributes_potential_to(&self, args: &[Arg]) -> bool {
+        let Some(owner) = self.owner else { return false };
+        let DeclKind::Module(m) = &self.design.decl_data(owner).kind else { return false };
+        let nodes = |args: &[Arg]| -> Vec<Resolution> {
+            args.iter()
+                .map(|a| match &self.design.expr_node(a.value).kind {
+                    ExprKind::Path(path) => self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res),
+                    _ => Resolution::Unresolved,
+                })
+                .collect()
+        };
+        let wanted = nodes(args);
+        if wanted.contains(&Resolution::Unresolved) {
+            return false;
+        }
+        m.behaviors.iter().any(|b| {
+            let DeclKind::Behavior(block) = &self.design.decl_data(*b).kind else { return false };
+            block.kind == crate::pom::BehaviorKind::Analog
+                && block.body.iter().any(|stmt| match &self.design.stmt_node(*stmt).kind {
+                    crate::pom::StmtKind::Contribution { lhs, .. } => match &self.design.expr_node(*lhs).kind {
+                        ExprKind::Call { callee, args: lhs_args, class: crate::pom::CallClass::Probe, .. } => {
+                            let role = match &self.design.expr_node(*callee).kind {
+                                ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                                    Some(Resolution::Decl(q)) => match &self.design.decl_data(q).kind {
+                                        DeclKind::Quantity(data) => Some(data.role),
+                                        _ => None,
+                                    },
+                                    Some(Resolution::Builtin(id)) if id.info().name == "potential" => Some(QuantityRole::Potential),
+                                    _ => None,
+                                },
+                                _ => None,
+                            };
+                            role == Some(QuantityRole::Potential) && nodes(lhs_args) == wanted
+                        }
+                        _ => false,
+                    },
+                    _ => false,
+                })
+        })
     }
 
     /// A call of a core primitive: arguments against its row of the table, `f64` as the result.

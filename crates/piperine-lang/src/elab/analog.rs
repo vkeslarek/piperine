@@ -41,7 +41,21 @@ impl Elaboration<'_, '_> {
     /// node is a probe against ground).
     pub(super) fn lower_probe(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let node = self.design.expr_node(expr).clone();
-        let ExprKind::Call { args, .. } = &node.kind else { return None };
+        let ExprKind::Call { callee, args, .. } = &node.kind else { return None };
+        // The type checker lets a module read the flow of a branch it drives with a potential;
+        // reading it needs the IR's flow read (msl-digital T20 and T35), so until then it is refused.
+        let flow = match &self.design.expr_node(*callee).kind {
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(q)) => matches!(&self.design.decl_data(q).kind, DeclKind::Quantity(data) if data.role == crate::pom::QuantityRole::Flow),
+                Some(Resolution::Builtin(id)) => id.info().name == "flow",
+                _ => false,
+            },
+            _ => false,
+        };
+        if flow {
+            self.unsupported(scope.file, node.span, "a flow probe read as a value");
+            return None;
+        }
         let mut terminals = Vec::new();
         for arg in args {
             terminals.push(self.lower_terminal(scope, arg.value)?);
