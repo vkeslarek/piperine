@@ -155,10 +155,12 @@ impl Checker<'_> {
         }
     }
 
-    /// The node arguments of a placement against the ports of the module.
+    /// The arguments of a placement against the ports of the module: a node by nature, a
+    /// carrier or a discrete expression at an `in` port, a carrier the parent may hand over at
+    /// an `out` port. Their count is the port count (`E0312`).
     fn connections(&mut self, expr: ExprId, module: DeclId, args: &[Arg], file: FileId) {
-        let ports: Vec<TypeId> = self.design.decl_data(module).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
-            DeclKind::Port(p) => Some(p.ty),
+        let ports: Vec<(TypeId, Option<crate::msl::ast::Dir>)> = self.design.decl_data(module).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
+            DeclKind::Port(p) => Some((p.ty, p.dir)),
             _ => None,
         }).collect();
         let named = args.iter().any(|a| a.name.is_some());
@@ -174,13 +176,21 @@ impl Checker<'_> {
             self.coded(file, "E0312", span, message, "wrong number of connections");
         }
         for (i, arg) in args.iter().enumerate() {
-            let found = self.infer(arg.value);
-            let (Some(found), Some(port)) = (found, ports.get(i)) else { continue };
-            if named || args.len() != ports.len() {
+            let port = ports.get(i).copied().filter(|_| !named && args.len() == ports.len());
+            let Some((port_ty, dir)) = port else {
+                self.infer(arg.value);
                 continue;
+            };
+            match self.port_type(port_ty) {
+                Some(Ty::Carrier { value, .. }) => self.connect_carrier(arg.value, dir, &value),
+                Some(expected) => {
+                    let Some(found) = self.infer(arg.value) else { continue };
+                    self.connect(arg.value, &expected, &found);
+                }
+                None => {
+                    self.infer(arg.value);
+                }
             }
-            let Some(expected) = self.port_type(*port) else { continue };
-            self.connect(arg.value, &expected, &found);
         }
     }
 
@@ -188,6 +198,12 @@ impl Checker<'_> {
     fn connect(&mut self, arg: ExprId, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
+        // A discrete carrier read as a value is typed by what it holds; the declaration tells.
+        if let Some((_, Ty::Carrier { .. })) = self.declared_port(arg) {
+            let message = format!("a discrete carrier is connected to a port of {} (§6.1)", port.name(self.design));
+            self.coded(file, "E0250", span, message, "discrete carrier at a continuous port");
+            return;
+        }
         match (port, found) {
             (Ty::Node(p), Ty::Node(f)) if p == f => {}
             (_, Ty::AnyNode) => {}
@@ -196,6 +212,73 @@ impl Checker<'_> {
                 self.coded(file, "E0251", span, format!("a node of another nature is connected: {message}"), &message);
             }
             _ => self.mismatch(file, span, port, found),
+        }
+    }
+
+    /// One argument at a carrier port holding `value`. At an `in` port a carrier of the same
+    /// type or a discrete expression (an anonymous definition, §8.2.9); at an `out` port a
+    /// carrier the parent may hand to one driver, and nothing else (§8.1.11).
+    fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, value: &Ty) {
+        let file = self.file_of_expr(arg);
+        let span = self.design.expr_node(arg).span;
+        let carrier = self.declared_port(arg);
+        let found = self.infer(arg);
+        match (&carrier, dir) {
+            (Some((_, Ty::Node(_))), _) => {
+                self.coded(file, "E0250", span, "a node is connected to a port of a discrete nature (§6.1)".to_string(), "node at a discrete port");
+            }
+            (None, _) if found == Some(Ty::AnyNode) => {
+                self.coded(file, "E0250", span, "`gnd` is connected to a port of a discrete nature (§6.1)".to_string(), "`gnd` at a discrete port");
+            }
+            (Some((decl, Ty::Carrier { value: held, .. })), dir) => {
+                if **held != *value {
+                    let message = format!("a carrier of `Bit<{}>` is connected to a port of `Bit<{}>`", held.name(self.design), value.name(self.design));
+                    self.coded(file, "E0251", span, message, "carrier of another type");
+                } else if dir == Some(crate::msl::ast::Dir::Out) {
+                    self.hand_over(*decl, span, file);
+                }
+            }
+            (Some(_), _) => {}
+            (None, Some(crate::msl::ast::Dir::Out)) => {
+                let message = "an expression is connected to an `out` port: it takes only a carrier the parent may hand to one driver (§8.1.11)".to_string();
+                self.coded(file, "E0314", span, message, "expression at an `out` port");
+            }
+            (None, _) => {
+                self.check_as(arg, value, "E0337");
+                if self.continuous(arg) {
+                    let message = "a continuous expression is connected to an `in` port: it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)` (§8.1.12)".to_string();
+                    self.coded(file, "E0316", span, message, "a continuous expression at an `in` port");
+                }
+            }
+        }
+    }
+
+    /// The parent hands the carrier `decl` to an `out` port of an instance: a signal of the
+    /// parent or an `out` port of the parent (an `in` port is not the parent's to hand over,
+    /// `E0314`). The drive is the instance's from here on.
+    fn hand_over(&mut self, decl: DeclId, span: Span, file: FileId) {
+        if matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
+            let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
+            self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
+            return;
+        }
+        self.book.handed.push((decl, span, file));
+    }
+
+    /// A carrier handed to an `out` port has one drive, the instance's: a second hand-over, or
+    /// a definition or a commit of this module, is `E0220`; an initial value is `E0223`.
+    pub(super) fn handed_drives(&mut self) {
+        let handed = std::mem::take(&mut self.book.handed);
+        let mut seen = std::collections::BTreeSet::new();
+        for (decl, span, file) in handed {
+            let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            if !seen.insert(decl) {
+                self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a one-driver carrier has one drive (§5.2.1)"), "a second drive");
+            } else if self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl) {
+                self.coded(file, "E0220", span, format!("`{name}` is handed to an `out` port and driven by this module too (§5.2.6)"), "a second drive");
+            } else if self.has_initial(decl) {
+                self.coded(file, "E0223", span, format!("`{name}` has an initial value and is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
+            }
         }
     }
 

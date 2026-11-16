@@ -4,6 +4,10 @@
 //! and `prev`, and a catalogue method applied to a carrier. Sources are written over the embedded
 //! standard library, the buck's own enums read as written.
 
+#[path = "support/buck.rs"]
+#[allow(dead_code)]
+mod buck;
+
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, Reflect};
 use piperine_lang::types::{Builtin, Method, Ty, Types};
 
@@ -362,4 +366,149 @@ fn a_loop_of_definitions_is_e0339() {
     checked(&design_of(src), src);
     let src = "module Top(in x: Bit) { signal a: Bit; signal b: Bit; a = !x; b = !a; }";
     checked(&design_of(src), src);
+}
+
+// ---- carrier ports at a placement (T11) ----
+
+/// The buck's `Controller` and `PowerStage` over children that keep only what the placement reads:
+/// their ports, copied from the buck, and the params the parents set.
+fn buck_tops() -> String {
+    let header = |file: &str, name: &str| {
+        let text = buck::item(file, &format!("pub module {name}("));
+        let end = text.find("{").expect("a body");
+        text[..end].trim_end().to_string()
+    };
+    let mut stubs = String::new();
+    for (file, name, params) in [
+        ("control.msl", "SetpointReg", ""),
+        ("control.msl", "RefRamp", ""),
+        ("control.msl", "Pid", ""),
+        ("supervisor.msl", "Supervisor", ""),
+        ("dpwm.msl", "Dpwm", ""),
+        ("power.msl", "GateDriver", "tpd: f64 = 10n;"),
+        ("power.msl", "PowerSwitch", "ron: f64 = 20m;"),
+        ("power.msl", "Inductor", "l: f64; dcr: f64 = 0.0;"),
+        ("power.msl", "CurrentSense", ""),
+        ("power.msl", "Capacitor", "c: f64; esr: f64 = 1m;"),
+    ] {
+        stubs += &format!("{} {{ {params} }}\n", header(file, name).trim_start_matches("pub "));
+    }
+    format!(
+        "{}\n{}\n{}\n{}\n{stubs}{}\n{}",
+        buck::spec(),
+        buck::item("supervisor.msl", "pub enum Mode"),
+        buck::item("supervisor.msl", "pub enum Fault"),
+        buck::item("control.msl", "pub fn target_codes"),
+        buck::item("top.msl", "pub module Controller("),
+        buck::item("power.msl", "pub module PowerStage(")
+    )
+}
+
+fn checked_top(src: &str, top: &str) {
+    let design = design_of(src);
+    if let Err(d) = Types::check(&design, top) {
+        panic!("{top}: {:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn a_continuous_expression_at_an_in_port_is_e0316() {
+    // DIG-04 AC 7 (§8.1.12): an expression at an `in` port is an anonymous definition and must be
+    // discrete: a probe, `now()` and `analysis(Static)`, directly or through a `let`, are `E0316`
+    // at the argument. A discrete expression is the positive case: `Controller` of the buck hands
+    // `target_codes(setpoint.known_or(0))` to the ramp.
+    let items = "module Child(in a: Bit<f64>) { }\n";
+    for (body, at) in [
+        ("let c = Child(v(p));", "v(p)"),
+        ("let c = Child(now());", "now()"),
+        ("let c = Child(if analysis(Static) { 1.0 } else { 0.0 });", "if analysis(Static) { 1.0 } else { 0.0 }"),
+        ("let k = v(p) * 2.0; let c = Child(k);", "k"),
+    ] {
+        let src = format!("{items}module Top(p: Electrical) {{ {body} }}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0316"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{body}");
+    }
+    let src = format!("{items}module Top(in x: Bit<f64>) {{ let c = Child(2.0 * x + 1.0); let d = Child(x); }}");
+    checked_top(&src, "Top");
+    checked_top(&buck_tops(), "Controller");
+}
+
+#[test]
+fn a_second_drive_is_e0220() {
+    // DIG-04 AC 11 (§5.2.1, §5.2.6): a carrier at two `out` ports, or at one while its module
+    // drives it by a definition, has a second drive; the error is at the second connection.
+    let items = "module Source(out q: Bit) { }\n";
+    let src = format!("{items}module Top() {{ signal s: Bit; let a = Source(s); let b = Source(s); }}");
+    let d = diagnostics(&src);
+    assert_eq!(codes(&d), ["E0220"]);
+    assert_eq!(d[0].diagnostic.span().start, src.rfind("s)").unwrap());
+    let src = format!("{items}module Top(in x: Bit) {{ signal s: Bit; s = x; let a = Source(s); }}");
+    let d = diagnostics(&src);
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0220".to_string()], "s"));
+    // An `out` port of the parent handed down is the instance's drive; the parent defines nothing.
+    let src = format!("{items}module Top(out q: Bit) {{ let a = Source(q); }}");
+    checked_top(&src, "Top");
+}
+
+#[test]
+fn an_initial_value_without_the_drive_is_e0223() {
+    // DIG-04 AC 12 (§5.2.6): `signal up: Bit = false;` connected to an `out` port: the instance
+    // holds the drive, so the declaring module may give no initial value. The initial value is
+    // the `out` port's own (`out up: Bit = false`).
+    let items = "module Source(out q: Bit = false) { }\n";
+    let src = format!("{items}module Top() {{ signal up: Bit = false; let a = Source(up); }}");
+    let d = diagnostics(&src);
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0223".to_string()], "up"));
+    let src = format!("{items}module Top(out q: Bit = true) {{ let a = Source(q); }}");
+    let d = diagnostics(&src);
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0223".to_string()], "q"));
+    let src = format!("{items}module Top() {{ signal up: Bit; let a = Source(up); }}");
+    checked_top(&src, "Top");
+}
+
+#[test]
+fn an_out_port_takes_only_a_carrier_the_parent_hands_over() {
+    // DIG-04 AC 14 (§8.1.11): an expression at an `out` port, and an `in` port of the parent, are
+    // `E0314`. A signal of the parent and an `out` port of the parent are the carriers it hands
+    // over: `PowerStage` of the buck hands its own signals to `GateDriver`.
+    let items = "module Source(out q: Bit) { }\n";
+    for (header, body, at) in [
+        ("in x: Bit", "let a = Source(!x);", "!x"),
+        ("in x: Bit", "let a = Source(true);", "true"),
+        ("in x: Bit", "let a = Source(x);", "x"),
+    ] {
+        let src = format!("{items}module Top({header}) {{ {body} }}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0314"], "{body}");
+        assert_eq!(snippet(&src, &d[0]), at, "{body}");
+    }
+    checked_top(&buck_tops(), "PowerStage");
+}
+
+#[test]
+fn a_carrier_of_another_value_type_is_e0251() {
+    // DIG-04 AC 15 (§6.1.3, §8.1.10): a `Bit<u8>` carrier connected to a `Bit<u10>` port is `E0251`,
+    // at an `in` and at an `out` port; a node and a carrier never connect (`E0250`, §6.1); an
+    // expression of another type at an `in` port is a definition of the wrong type (`E0337`).
+    let items = "module Wide(in a: Bit<u10>, out q: Bit<u10>) { }\n";
+    for (body, at) in [("let c = Wide(narrow, wide);", "narrow"), ("let c = Wide(wide, narrow);", "narrow")] {
+        let src = format!("{items}module Top(in narrow: Bit<u8>) {{ signal wide: Bit<u10>; {body} }}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0251"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{body}");
+        assert!(d[0].diagnostic.message.contains("u8") && d[0].diagnostic.message.contains("u10"), "{}", d[0].diagnostic.message);
+    }
+    let src = format!("{items}module Top(in narrow: Bit<u8>, p: Electrical) {{ signal wide: Bit<u10>; let c = Wide(p, wide); }}");
+    let d = diagnostics(&src);
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0250".to_string()], "p"));
+    let src = format!("module Node(p: Electrical) {{ }}\nmodule Top(in b: Bit) {{ let c = Node(b); }}");
+    let d = diagnostics(&src);
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0250".to_string()], "b"));
+    let src = format!("{items}module Top(in narrow: Bit<u8>) {{ signal wide: Bit<u10>; let c = Wide(true, wide); }}");
+    let d = diagnostics(&src);
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0337".to_string()], "true"));
+    // The same type connects, a literal takes the type of the port it is connected to.
+    let src = format!("{items}module Top() {{ signal w: Bit<u10>; signal v: Bit<u10>; let c = Wide(5, w); let d = Wide(w, v); }}");
+    checked_top(&src, "Top");
 }

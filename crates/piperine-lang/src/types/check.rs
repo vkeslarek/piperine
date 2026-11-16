@@ -494,6 +494,7 @@ impl<'d> Checker<'d> {
                 self.infer(instance);
             }
         }
+        self.handed_drives();
         if let (Some(result), None) = (m.result, m.ret) {
             let file = self.file_of_expr(result);
             let span = self.design.expr_node(result).span;

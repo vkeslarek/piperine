@@ -24,7 +24,7 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, params, class } = &node.kind else { return None };
-        if params.is_some() {
+        if params.is_some() && !matches!(class, CallClass::Instance { module: Some(_), .. }) {
             self.unsupported(file, node.span, "param block on a call");
             return None;
         }

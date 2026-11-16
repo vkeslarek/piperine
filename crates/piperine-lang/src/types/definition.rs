@@ -18,6 +18,11 @@ use super::Ty;
 pub(super) struct DriveBook {
     /// The carriers a definition drives.
     pub(super) defined: BTreeMap<DeclId, Span>,
+    /// The carriers a commit drives.
+    pub(super) committed: BTreeMap<DeclId, Span>,
+    /// The carriers handed to an `out` port of an instance, in source order, with where and in
+    /// which file.
+    pub(super) handed: Vec<(DeclId, Span, crate::pom::FileId)>,
     /// The undelayed definitions in source order: the target, where, and the carriers its value
     /// reads (directly or through a `let`).
     loops: Vec<(DeclId, Span, BTreeSet<DeclId>)>,
@@ -126,7 +131,7 @@ impl Checker<'_> {
     }
 
     /// Whether a port or a signal declares an initial value.
-    fn has_initial(&self, carrier: DeclId) -> bool {
+    pub(super) fn has_initial(&self, carrier: DeclId) -> bool {
         match &self.design.decl_data(carrier).kind {
             DeclKind::Port(p) => p.default.is_some(),
             DeclKind::Signal(s) => s.init.is_some(),
