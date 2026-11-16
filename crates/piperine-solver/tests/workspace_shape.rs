@@ -31,6 +31,7 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-abi",
     "crates/piperine-analog-solver",
     "crates/piperine-api",
+    "crates/piperine-cli",
     "crates/piperine-digital-solver",
     "crates/piperine-interp",
     "crates/piperine-ir",
@@ -365,4 +366,44 @@ fn the_root_package_is_a_re_export_and_nothing_else() {
     let text = std::fs::read_to_string(root.join("lib.rs")).expect("read src/lib.rs");
     let items: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("//")).collect();
     assert_eq!(items, ["pub use piperine_api::*;"], "src/lib.rs");
+}
+
+/// Whether `text` holds `word` as a whole identifier (no identifier character on either side).
+fn names_identifier(text: &str, word: &str) -> bool {
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    text.match_indices(word).any(|(at, _)| {
+        let before = text[..at].chars().next_back().is_none_or(|c| !ident(c));
+        let after = text[at + word.len()..].chars().next().is_none_or(|c| !ident(c));
+        before && after
+    })
+}
+
+#[test]
+fn host_crates_name_no_deleted_surface() {
+    // CLI-01 AC 4 (msl-cli T5): no source of `piperine-api` or `piperine-cli` names the deleted
+    // Verilog-AMS front end or the deleted `Element` solver interface
+    let mut files = Vec::new();
+    for krate in ["piperine-api", "piperine-cli"] {
+        let dir = repo_root().join("crates").join(krate);
+        files.push(dir.join("Cargo.toml"));
+        for sub in ["src", "tests"] {
+            if dir.join(sub).is_dir() {
+                files_under(&dir.join(sub), &mut files);
+            }
+        }
+    }
+    let mut offences = Vec::new();
+    for path in files.iter().filter(|p| p.extension().is_some_and(|e| e == "rs" || e == "toml")) {
+        let text = std::fs::read_to_string(path).expect("read a host source");
+        for word in ["parse_and_elaborate", "Element", "piperine_codegen", "piperine_python", "piperine_plugin"] {
+            if names_identifier(&text, word) {
+                offences.push(format!("{}: `{word}`", path.display()));
+            }
+        }
+        if text.contains(".vams") {
+            offences.push(format!("{}: `.vams`", path.display()));
+        }
+    }
+    assert!(files.len() > 2, "the walk found the two crates' sources: {files:?}");
+    assert!(offences.is_empty(), "the host crates name the deleted surface:\n{}", offences.join("\n"));
 }

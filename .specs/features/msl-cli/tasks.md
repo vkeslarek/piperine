@@ -321,12 +321,12 @@ T38
 
 **Done when**:
 
-- [ ] `cargo build` at the root builds the binary `target/debug/piperine` with zero warnings
-- [ ] `crates/piperine-cli/tests/usage.rs` runs the real binary (`env!("CARGO_BIN_EXE_piperine")`)
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-solver --test workspace_shape`: `default_members_are_the_green_crates`, `host_crates_name_no_deleted_surface`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test usage`: `the_binary_is_named_piperine`, `help_lists_exactly_the_seven_commands`, `version_prints_the_workspace_version`, `an_unknown_command_or_flag_exits_2`
-- [ ] Gate check passes: Build (see Gate Check Commands)
-- [ ] Test count: the 6 test(s) named above, and no existing test removed or edited beyond the deletion this task states
+- [x] `cargo build` at the root builds the binary `target/debug/piperine` with zero warnings
+- [x] `crates/piperine-cli/tests/usage.rs` runs the real binary (`env!("CARGO_BIN_EXE_piperine")`)
+- [x] Tests with exactly these names pass in `cargo test -p piperine-solver --test workspace_shape`: `default_members_are_the_green_crates`, `host_crates_name_no_deleted_surface`
+- [x] Tests with exactly these names pass in `cargo test -p piperine-cli --test usage`: `the_binary_is_named_piperine`, `help_lists_exactly_the_seven_commands`, `version_prints_the_workspace_version`, `an_unknown_command_or_flag_exits_2`
+- [x] Gate check passes: Build (see Gate Check Commands)
+- [x] Test count: the 6 test(s) named above, and no existing test removed or edited beyond the deletion this task states
 
 **Tests**: e2e
 **Gate**: build
