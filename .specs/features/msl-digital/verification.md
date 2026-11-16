@@ -192,6 +192,9 @@ Probed on HEAD with throwaway tests, all removed: the T66 resolver change (`pom/
 | C178 | `elab_results.rs` `the_stdlib_d2a_reads_its_match_scrutinee_at_each_test` | yes - exact drive text, four re-reads, binding inside `Some` refused by name |
 | C179 | `buck_boundary.rs` `the_comparator_trips_at_its_thresholds` | yes - same test as C135, bench on the stdlib `D2A` |
 | C180 | `buck_records.rs` `records_of_two_reactions_are_told_apart` | no - covers two reactions whose `log` is at the same statement index only; with different indices the FIFO pairing gives each record the other reaction's text (F1, reproduced) |
+| C181 | `buck_records.rs` `records_of_two_reactions_at_different_statements_keep_their_texts` | author's row, fix round (no second Verifier by rule): the F1 reproduction (statements 0, 1 of reaction 0 and 0 of reaction 1) and the reverse, exact `(instant, severity, text)` list over two edges; a record now decodes from its own site, no pairing |
+| C182 | `types_events.rs` `an_emit_in_analog_is_p0001_by_name` | author's row, fix round: three sites (written, `log`, through a `fn`), one `P0001` each, span and name asserted; the reaction `log` checks |
+| C183 | `pom_resolve.rs` `a_body_let_gives_its_module_only_the_names_of_its_own_pattern` | author's row, fix round: both sides of T66's rule (members `p q a b` resolve in `c`; arm bindings `v w` resolve in their arm and are `E0161` later); fails on the pre-T66 resolver |
 
 ## Findings
 
