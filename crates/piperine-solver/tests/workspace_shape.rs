@@ -27,14 +27,17 @@ const RETIRED_CRATES: &[&str] = &[
 /// The workspace's `default-members`: the crates that build and test green.
 /// Later tasks extend this list as the sub-solver crates appear.
 const DEFAULT_MEMBERS: &[&str] = &[
+    ".",
     "crates/piperine-abi",
     "crates/piperine-analog-solver",
+    "crates/piperine-api",
     "crates/piperine-digital-solver",
     "crates/piperine-interp",
     "crates/piperine-ir",
     "crates/piperine-lang",
     "crates/piperine-parity",
     "crates/piperine-plan",
+    "crates/piperine-project",
     "crates/piperine-solver",
     "crates/piperine-transpile",
 ];
@@ -349,4 +352,17 @@ fn instruction_files_and_state_name_the_abi_crate() {
             assert!(!text.contains(gone), "{file} still names the removed {gone}");
         }
     }
+}
+
+#[test]
+fn the_root_package_is_a_re_export_and_nothing_else() {
+    // CLI-01 AC 3 (msl-cli T4): the root `src/lib.rs` holds `pub use piperine_api::*;` and no
+    // other item; comments and blank lines are not items
+    let root = repo_root().join("src");
+    let mut files = Vec::new();
+    files_under(&root, &mut files);
+    assert_eq!(files, vec![root.join("lib.rs")], "the root package has one source file");
+    let text = std::fs::read_to_string(root.join("lib.rs")).expect("read src/lib.rs");
+    let items: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("//")).collect();
+    assert_eq!(items, ["pub use piperine_api::*;"], "src/lib.rs");
 }

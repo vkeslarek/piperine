@@ -1452,11 +1452,13 @@ dependencies = [
 name = "piperine-api"
 version = "0.2.0"
 dependencies = [
- "ndarray",
- "num-complex",
+ "piperine-interp",
+ "piperine-ir",
  "piperine-lang",
+ "piperine-project",
  "piperine-solver",
- "thiserror 2.0.18",
+ "piperine-transpile",
+ "toml",
 ]
 
 [[package]]

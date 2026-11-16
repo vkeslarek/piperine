@@ -4,8 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-thiserror.workspace = true
-num-complex.workspace = true
-ndarray.workspace = true
 piperine-lang = { path = "../piperine-lang" }
+piperine-project = { path = "../piperine-project" }
+piperine-ir = { path = "../piperine-ir" }
+piperine-interp = { path = "../piperine-interp" }
+piperine-transpile = { path = "../piperine-transpile" }
 piperine-solver = { path = "../piperine-solver" }
+toml = "1.1.2"

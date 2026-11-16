@@ -522,11 +522,16 @@ fn mod_rs_files() -> Vec<(String, usize, String)> {
             (path, lines, text)
         })
         .collect();
+    // msl-cli T4 deleted the old `piperine-api` (five `mod.rs`), so the floor is 10; the walk
+    // must also reach the three registered oversized files, which a blind walk would miss.
     assert!(
-        files.len() > 15,
+        files.len() > 10,
         "the walk found only {} `mod.rs` files — the layout moved and this guard is blind",
         files.len()
     );
+    for known in ["crates/piperine-lang/src/pom/resolve/mod.rs", "crates/piperine-lang/src/pom/reflect/mod.rs", "crates/piperine-lang/src/pom/lower/mod.rs"] {
+        assert!(files.iter().any(|(path, _, _)| path == known), "the walk does not reach {known}: this guard is blind");
+    }
     files
 }
 
