@@ -331,6 +331,9 @@ Proof: run digital | test a_commit_undone_in_its_microstep_is_no_change ... ok
 **C3** - `HIGH`, `LOW`, `HIGH` on a net holding `LOW` is one `Change` to `HIGH`, with `PREVIOUS` `LOW` (DSV-01, AC 3)
 Proof: run digital | test a_settled_change_is_one_observation ... ok
 
+**C25** - An `F64` net holding 1.0 that takes 2.0 then 3.0 in one microstep reads `PREVIOUS` 1.0, the value before the microstep, not 2.0 (DSV-01, AC 3; verification finding)
+Proof: run digital | test previous_is_the_value_before_the_microstep ... ok
+
 **C4** - On the solver, `x <- HIGH; x <- LOW;` on `x = LOW` fires `x.changed()` once in the run, at the initial value (DSV-01, AC 4)
 Proof: run solver | test x_changed_does_not_fire_when_the_settled_value_is_unchanged ... ok
 

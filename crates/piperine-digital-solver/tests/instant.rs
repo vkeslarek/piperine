@@ -324,3 +324,77 @@ fn a_settled_change_is_one_observation() {
     assert_eq!(calls("dff").1, 1);
     assert_eq!(d.read(net(&d, "q")), HIGH, "q sampled d");
 }
+
+/// Copies the `PREVIOUS` of its input `x` to `p`.
+/// pins: x=0, p=1 (PORT F64);  fn 0 "prev": reads [x.VALUE, x.PREVIOUS] writes [p]
+struct Previous;
+static PREVIOUS_SHAPE: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
+static PREVIOUS_MODULE: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
+
+fn previous_shape() -> piperine_abi::shape::ShapeRef {
+    use piperine_abi::layout::F64;
+    use piperine_abi::raw::{Cell, cell, part, role};
+    use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf};
+    let mut s = ShapeBuf::new();
+    let x = s.pin(PinSpec::discrete("x", role::PORT, &F64));
+    let p = s.pin(PinSpec::discrete("p", role::PORT, &F64));
+    s.function(FunctionSpec {
+        name: "prev",
+        origin: "instant.rs",
+        reads: vec![Cell { kind: cell::PIN, index: x, part: part::VALUE }, Cell { kind: cell::PIN, index: x, part: part::PREVIOUS }],
+        writes: vec![Cell { kind: cell::PIN, index: p, part: part::VALUE }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl piperine_abi::device::Device for Previous {
+    fn prototype() -> &'static piperine_abi::raw::Shape<'static> {
+        PREVIOUS_SHAPE.get_or_init(previous_shape).shape()
+    }
+    fn create(
+        _: &piperine_abi::device::Values<'_>,
+    ) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
+        Ok((Previous, std::sync::Arc::clone(PREVIOUS_SHAPE.get_or_init(previous_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut piperine_abi::device::Eval) -> Result<(), piperine_abi::device::Fault> {
+        let previous = cx.f64(1);
+        cx.set(0, previous);
+        Ok(())
+    }
+    fn react(
+        &self,
+        _k: u32,
+        _cx: &mut piperine_abi::device::React,
+    ) -> Result<piperine_abi::device::Flow, piperine_abi::device::Fault> {
+        Ok(piperine_abi::device::Flow::Continue)
+    }
+}
+
+#[test]
+fn previous_is_the_value_before_the_microstep() {
+    // DSV-01 AC 3 (§8.2.3): x holds 1.0; 2.0 then 3.0 in one microstep settle to 3.0, and
+    // PREVIOUS reads 1.0, the value before the microstep, not 2.0, the commit before the last
+    let handle = piperine_abi::caller::Handle::create(
+        PREVIOUS_MODULE.get_or_init(|| piperine_abi::thunk::module::<Previous>("Previous")),
+        &[],
+    )
+    .expect("creates");
+    let mut d = engine(vec![("pv", handle, vec![("x", "x"), ("p", "p")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    let f = |d: &Digital, name: &str| f64::from_le_bytes(d.read(net(d, name)).try_into().expect("an F64"));
+    d.host_commit(net(&d, "x"), 0, &1.0f64.to_le_bytes(), Tick(NS)).unwrap();
+    instant(&mut d, Tick(NS));
+    assert_eq!(f(&d, "p"), 0.0, "x went from 0.0 to 1.0");
+    d.drain_observations();
+    let t = Tick(2 * NS);
+    for v in [2.0f64, 3.0] {
+        d.host_commit(net(&d, "x"), 0, &v.to_le_bytes(), t).unwrap();
+    }
+    instant(&mut d, t);
+    assert_eq!(f(&d, "x"), 3.0, "the later commit wins");
+    assert_eq!(f(&d, "p"), 1.0, "PREVIOUS is the value before the microstep");
+    let seen = d.drain_observations();
+    assert_eq!(changes(&seen, "x", t, 0), vec![3.0f64.to_le_bytes().to_vec()], "one change, to 3.0: {seen:?}");
+}
