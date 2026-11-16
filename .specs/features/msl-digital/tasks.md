@@ -28,6 +28,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run frozen**: `cargo test -p piperine-interp --test frozen`
 **Run planamend**: `cargo test -p piperine-plan --test amended_shape`
 **Run amended**: `cargo test -p piperine-transpile --test amended`
+**Run nets**: `cargo test -p piperine-transpile --test digital_circuit`
 **Run project**: `cargo test -p piperine-parity --test project`
 **Run bcommits**: `cargo test -p piperine-parity --test buck_commits`
 **Run bdpwm**: `cargo test -p piperine-parity --test buck_dpwm`
@@ -40,7 +41,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bwhole**: `cargo test -p piperine-parity --test buck_whole`
 **Run bloop**: `cargo test -p piperine-parity --test buck_closed_loop`
 
-Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong run with no error: T24, T25, T27, T30, T33, T41, T42, T45, T57. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` for each crate a command builds before running it.
+Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong run with no error: T24, T25, T27, T30, T33, T41, T42, T45, T57, T65. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` for each crate a command builds before running it.
 
 **This feature starts after `ir-rust` phases A and B are merged into its worktree.** Every task names the `ir-rust` tasks it stands on in its `Needs from ir-rust` line; T1 confirms the merged code against the design before anything else. The feature has three parts: the front end (phases 2, 3, 5, 6, 7), the amendments behind the IR (phases 4 and 8), and behavior from source (phases 9 and 10). Phases 1 to 7 are mergeable alone: they give a type-checked, elaborated and pinned buck IR.
 
@@ -75,7 +76,7 @@ Rules every task follows:
 | The IR amendments | unit | each of A1 to A7: print, `check()` rule, dependency set; earlier goldens byte-identical | `crates/piperine-ir/tests/amendments.rs` | `cargo test -p piperine-ir --test amendments` |
 | The interpreter's refusal | unit | each amended form refused by name | `crates/piperine-interp/tests/frozen.rs` | `cargo test -p piperine-interp --test frozen` |
 | The plan amendments | unit | each amended shape entry by entry; `piperine_abi::validate` | `crates/piperine-plan/tests/amended_shape.rs` | `cargo test -p piperine-plan --test amended_shape` |
-| Generated code for the amended forms | integration | each AC of DIG-12 and the compiled halves of DIG-11 AC 4 and DIG-13 AC 4, on hand-built IR | `crates/piperine-transpile/tests/amended.rs` | `cargo test -p piperine-transpile --test amended` |
+| Generated code for the amended forms | integration | each AC of DIG-12 and the compiled halves of DIG-11 AC 4 and DIG-13 AC 4, on hand-built IR; the solver halves of DIG-09 AC 1 and 4 (T65) | `crates/piperine-transpile/tests/{amended,digital_circuit}.rs` | `cargo test -p piperine-transpile --test amended --test digital_circuit` |
 | The project loader and behavior from source | integration | DIG-11 (4, 5), DIG-13 (4 to 7), DIG-14 (3 to 12), DIG-15 (3 to 7), DIG-16; expected values computed in the test from the specification | `crates/piperine-parity/tests/{project,buck_*}.rs`, `tests/buck/*.msl` | `cargo test -p piperine-parity` |
 | Feature records, instruction and gap files | none | - (build gate only) | `.specs/`, `GAPS.md`, `ROADMAP.md`, `examples/buck/*.md`, `CLAUDE.md`, `AGENTS.md` | build gate only |
 
@@ -124,7 +125,7 @@ T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16
 Executor: Sonnet.
 
 ```
-T17 → T18 → T19 → T20 → T61 → T21 → T22
+T17 → T18 → T19 → T20 → T61 → T21 → T64 → T22
 ```
 
 ### Phase 5: Elaboration: values
@@ -153,10 +154,10 @@ T37 → T38
 
 ### Phase 8: Plan and generated code for the amended forms
 
-Executor: Opus for T41, T42, T45; Sonnet for the rest. T62 and T63 close the phase.
+Executor: Opus for T41, T42, T45, T65; Sonnet for the rest. T62, T63 and T65 close the phase.
 
 ```
-T39 → T40 → T41 → T42 → T43 → T44 → T45 → T46 → T62 → T63
+T39 → T40 → T41 → T42 → T43 → T44 → T45 → T46 → T62 → T63 → T65
 ```
 
 ### Phase 9: Behavior from source: the slice
@@ -193,10 +194,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] Every name this design takes from the `ir-rust` design is confirmed or corrected, one row each
-- [ ] A node this design assumes and the merged IR lacks, or holds in another shape, is listed under "Differences"; a difference that changes a lowering of design.md stops the feature and is reported before T2
-- [ ] `ir-rust` phases A and B are merged into the worktree: `cargo test -p piperine-ir --test digital` and `cargo test -p piperine-transpile --test dpwm` pass
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [x] Every name this design takes from the `ir-rust` design is confirmed or corrected, one row each
+- [x] A node this design assumes and the merged IR lacks, or holds in another shape, is listed under "Differences"; a difference that changes a lowering of design.md stops the feature and is reported before T2
+- [x] `ir-rust` phases A and B are merged into the worktree: `cargo test -p piperine-ir --test digital` and `cargo test -p piperine-transpile --test dpwm` pass
+- [x] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 
 **Tests**: none
 **Gate**: build
@@ -246,6 +247,7 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 - [ ] The second test has one case per expectation source of DIG-01 AC 2 and one with none (`i32`)
 - [ ] Rows of `tests/types_subset.rs` that assert `P0001` for an integer type are replaced by rows of DIG-07 AC 1 still refused; the commit body lists them
+- [ ] `Float<16>`, `Float<128>`, `f16` and `f128` are `P0001` naming the type as written, the span on the type where it is written (a param, a return, a `let`), as `u128` and `f32` are: the float half of `ir-rust` RS-10 AC 5 that the IR cannot hold (`ir-rust` verification F-B8, contract.md)
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_integers`: `integer_types_and_constants_have_types`, `a_literal_takes_the_expected_integer_type_else_i32`, `a_literal_out_of_range_is_e0909`, `an_unsupported_width_or_float_is_named`, `a_width_below_one_is_e0103`
 - [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
 - [ ] Test count: the 5 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
@@ -666,7 +668,7 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The M1 `check()` rule that refused `Ddt` under `Potential` is replaced by the rule above, and its own test still names the remaining refusals
+- [ ] A potential contribution with a `Ddt` addend passes `check()` (contract.md D5: the merged `check()` has no rule against it to replace); a flow read of a branch with no potential contribution is one entry
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_flow_read_and_a_potential_ddt_print_and_check`
 - [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
 - [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
@@ -704,7 +706,7 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 ### T21: IR: a child param that reads the parent
 
-**What**: `ChildValue::{Const, Expr}` in `Child::params`, with builder, printer and `check()` (the expression reads only params of the parent body).
+**What**: `ChildValue::{Const, Expr}` for a child's param values, stored beside `Child` (contract.md D4: `Child::params` keeps its constants; `IrBuilder::child_param`, `Body::child_params`), with builder, printer and `check()` (the expression reads only params of the parent body).
 **Where**: `crates/piperine-ir/src/model.rs` (modify)
 **Depends on**: T61
 **Reuses**: `Child`, `Constant`
@@ -715,7 +717,7 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 **Done when**:
 
 - [ ] The second test prints every M1 fixture and every `ir-rust` T29 fixture and compares with `crates/piperine-ir/tests/golden/`, byte for byte
-- [ ] `elab/children.rs` compiles against the new field, still writing `Const`
+- [ ] `Child` gains no field: every literal `Child { .. }` of `piperine-ir`, `piperine-lang` and the frozen `piperine-interp` tests compiles unchanged
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_child_param_may_read_the_parents_params`, `the_earlier_prints_are_unchanged`
 - [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 - [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
@@ -727,11 +729,36 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 ---
 
+### T64: IR: the carrier bindings of a child
+
+**What**: `Body::child_carriers(child)`: per carrier port of the child's body, in its order, the parent's carrier it is bound to or open; set by `IrBuilder::bind_child_carriers(body, child, Vec<Option<u32>>)`, stored beside `Child` (contract.md D4), printed only when present, and checked by `check()` (one entry per carrier port, an index in range, equal value types) (`ir-rust` "Left for msl-digital": `Child` records no carrier binding).
+**Where**: `crates/piperine-ir/src/model.rs` (modify)
+**Depends on**: T21
+**Reuses**: `Child::nodes` (the node twin); `IrBuilder::{carrier, bind_nets}` of `ir-rust` T26
+**Requirement**: DIG-09
+**Needs from ir-rust**: ir-rust T26, ir-rust T28
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] The authored tree shows what each placement connects, nodes and carriers, as the POM-navigability rule of `CLAUDE.md` asks; `Child` gains no field
+- [ ] Every M1 and T29 golden print stays byte-identical (no binding, no line)
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-ir --test amendments`: `a_child_records_its_carrier_bindings`
+- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `feat(ir): the carrier bindings of a child`
+
+---
+
 ### T22: The interpreter refuses the amended forms
 
 **What**: `Interpreter::new` returns `Rejected` naming each body that holds a time or static read, an `At` event, an emit site, a flow read or a previous-value read.
 **Where**: `crates/piperine-interp/src/lib.rs`
-**Depends on**: T21
+**Depends on**: T64
 **Reuses**: the refusal of `ir-rust` T30
 **Requirement**: DIG-10
 **Needs from ir-rust**: ir-rust T30
@@ -893,9 +920,11 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 - [ ] `top_has_a_port` of `elab/elaborator.rs` refuses only a continuous port; its M1 test is re-pointed to one
 - [ ] An initial value is folded with `ConstEval`; one that reads a param is `P0001`
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `carriers_follow_ports_then_signals`, `every_signal_carrier_is_a_design_net`, `a_top_with_discrete_ports_gets_one_net_per_port`, `a_carrier_with_no_value_and_no_drive_is_kept`
+- [ ] Every placement's carrier arguments are written with `IrBuilder::bind_child_carriers` (T64), so the authored `Child` shows them
+- [ ] A net's `init` is the folded initial value of the carrier that declares it, `None` when it has none (`ir-rust` F-B2; T65 passes it to the solver)
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `carriers_follow_ports_then_signals`, `every_signal_carrier_is_a_design_net`, `a_top_with_discrete_ports_gets_one_net_per_port`, `a_carrier_with_no_value_and_no_drive_is_kept`, `a_placement_records_its_carrier_bindings`, `a_net_takes_the_init_of_its_declaring_carrier`
 - [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 4 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [ ] Test count: the 6 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full
@@ -1198,9 +1227,10 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 - [ ] The first test commits `now()` from a reaction fired at 15 ns and reads 15e-9, and reads a source `v(p) +> now()` at three accepted times
 - [ ] The second commits `analysis(Static)` at `(0, 0)` and at a transient instant: true, then false
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test amended`: `now_is_the_time_of_the_instant_and_of_the_solve`, `static_is_true_only_in_the_equilibrium`
+- [ ] `Text::ident` prints a hoisted name holding `.` or `$` as a Rust identifier (`.` as `_d`, `$` as `_s`, contract.md D9); the ABI pin keeps the IR name; a collision with another name of the body is refused as a variant collision is
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test amended`: `now_is_the_time_of_the_instant_and_of_the_solve`, `static_is_true_only_in_the_equilibrium`, `hoisted_names_print_as_rust_identifiers`
 - [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: full
@@ -1398,13 +1428,40 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 - [ ] The test commits 3 then 5 to a `Bit<u8>`: a reaction on its change commits `prev` and reads unknown after the first commit (§5.3.8) and 3 after the second
 - [ ] No golden source of `ir-rust` changes
 - [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test amended`: `a_previous_value_is_read_in_a_guard_and_in_a_reaction`
-- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
 - [ ] Test count: the 1 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `feat(transpile): previous-value reads`
+
+---
+
+### T65: A parent's signal on its children's net, and a net's own init
+
+**What**: Real support for the two wirings `Netlist::circuit` refuses today (`ir-rust` "Left for msl-digital" F-B1, F-B2). A `signal` carrier that a child's carrier port is bound to (`Body::child_carriers`, T64) is a `PORT` pin of its body's shape, bound by the netlist to its net with `Port::Net`, so the parent's drives and commits reach the children. A net's `init` reaches the solver as the `HAS_INIT` of the declaring carrier's pin, now bound to the net; a net whose init no bound pin carries is seeded by name through one additive `CircuitBuilder` method, added only if a test needs it and named in the commit body as the one solver change.
+**Where**: `crates/piperine-plan/src/netlist.rs` (modify)
+**Depends on**: T63
+**Reuses**: T64; `Netlist::circuit` and its `refuse_unbound_forms`; the `Wiring::{ParentSignal, NetInit}` fixtures of `crates/piperine-transpile/tests/digital_circuit.rs`
+**Requirement**: DIG-09
+**Needs from ir-rust**: ir-rust T31, ir-rust T41
+**Executor**: Opus
+
+**Done when**:
+
+- [ ] `a_parent_signal_its_children_meet_on_is_refused` and `a_net_with_its_own_init_is_refused` of `ir-rust` (C106, C107) are replaced by the two tests below, which run the same wirings; the commit body lists the replaced rows
+- [ ] The first test drives the flip-flop's clock from a commit of the parent's `signal` and reads `q` true after the first rising edge; the negative control (the signal not bound to the child) leaves `q` unknown
+- [ ] The second test reads the net's value at `(0, 0)` as its `init`, before any write
+- [ ] A shape with a `signal` made a `PORT` pin passes `piperine_abi::validate`; an analog-only design's shape and every `ir-rust` golden source are unchanged
+- [ ] Tests with exactly these names pass in `cargo test -p piperine-transpile --test digital_circuit`: `a_parent_signal_reaches_its_childrens_ports`, `a_net_starts_at_its_own_init`
+- [ ] Gate check passes: Full, then the `**Build**` commands, `cargo test -p piperine-lang`, `cargo test -p piperine-interp`, `cargo test -p piperine-lang --test suite_hygiene`, `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: integration
 **Gate**: build
 
-**Commit**: `feat(transpile): previous-value reads`
+**Commit**: `feat(plan): a parent's signal reaches its children; a net starts at its init`
 
 ---
 
@@ -1782,7 +1839,7 @@ Proof: run tint | test as_goes_between_integers_and_f64 ... ok
 **C8** - `min`, `max`, `clamp` on integers and `f64`, and `floor` on `f64`, give the receiver's type. (DIG-01, AC 8; T5)
 Proof: run tint | test min_max_clamp_and_floor_are_typed ... ok
 
-**C9** - `u128`, `f32` and `f16` are `P0001` naming the type. (DIG-01, AC 9; T3)
+**C9** - `u128`, `f32`, `f16`, `Float<16>` and `Float<128>` are `P0001` naming the type, at the type as written. (DIG-01, AC 9; T3)
 Proof: run tint | test an_unsupported_width_or_float_is_named ... ok
 
 **C10** - `UInt<0>` is `E0103`. (DIG-01, AC 10; T3)
@@ -2268,13 +2325,31 @@ Proof: run iramend | test the_earlier_prints_are_unchanged ... ok
 **C170** - A rejected design comes back from `Project` with the stage that refused it (the loader DIG-15 AC 3 stands on). (DIG-15, AC 3; T2)
 Proof: run project | test a_diagnostic_is_returned_with_its_stage ... ok
 
+**C171** - Each placement's carrier arguments are bound in the authored `Child`, one entry per carrier port of the child (the authored-tree half of DIG-09 AC 4; `ir-rust` "Left for msl-digital"). (DIG-09, AC 4; T28)
+Proof: run edig | test a_placement_records_its_carrier_bindings ... ok
+
+**C172** - A net's `init` is the folded initial value of the carrier that declares it, and none when it has none (the elaboration half of `ir-rust` F-B2). (DIG-09, AC 1; T28)
+Proof: run edig | test a_net_takes_the_init_of_its_declaring_carrier ... ok
+
+**C173** - A hoisted carrier named `gate.x` or `above$0.init$0.up` compiles with no `rustc` warning and keeps its IR name on its ABI pin (the generated-code half of DIG-10 AC 1; contract.md D9). (DIG-10, AC 1; T40)
+Proof: run amended | test hoisted_names_print_as_rust_identifiers ... ok
+
+**C174** - `Body::child_carriers` gives each child's carrier bindings, prints them only when present, and `check()` refuses a wrong count, an index out of range and a value type mismatch, one entry each (the IR half of DIG-09 AC 4). (DIG-09, AC 4; T64)
+Proof: run iramend | test a_child_records_its_carrier_bindings ... ok
+
+**C175** - A parent's `signal` its children's carrier ports meet on reaches them on the solver: the flip-flop clocked by it reads `q` true (the solver half of DIG-09 AC 4; `ir-rust` F-B1). (DIG-09, AC 4; T65)
+Proof: run nets | test a_parent_signal_reaches_its_childrens_ports ... ok
+
+**C176** - A net with an `init` holds it at `(0, 0)` before any write (the solver half of DIG-09 AC 1; `ir-rust` F-B2). (DIG-09, AC 1; T65)
+Proof: run nets | test a_net_starts_at_its_own_init ... ok
+
 ---
 
 ## Handoff
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** T1 (contract.md) - the merged ir-rust needs no redesign; nine differences D1-D9 are renames or where a field lives: widths are `u32`; `Expr::Int(i128)` takes its type from `ExprData`; per-body lists (carriers, drives, events, reactions, and A4's streams) are added by builder methods on a body id, never through literal-built structs; A6 keeps `Child::params` and stores the expression values beside the child (`IrBuilder::child_param`, `Body::child_params`) because `Child` is built literally in the frozen interpreter's tests; T20 has no `check()` rule against `ddt` under a potential to replace; `Deps` keeps its fields, so flow and previous-value reads are accessors beside `carrier_reads` and `At` gets `Target::At(k)`; the plan already has `Source::BranchFlow` and `Source::Static`, so A1 adds `Source::Time` only and A5 adds no `Source`; `Text::ident` does not map `.`/`$`, so T40 maps them (`_d`, `_s`) and the IR keeps DIG-10's names. ir-rust's "Left for msl-digital" items are owned here: F-B8 extends T3 (C9 widened); the `Child` carrier bindings are new task T64 (phase 4, C174) and are filled by T28 (C171); F-B2's elaboration half is T28 (C172); F-B1 and F-B2's solver halves are new task T65 (phase 8, Opus, C175, C176), which replaces ir-rust's two refusal tests and makes a parent's signal met by a child a `PORT` pin, with at most one additive `CircuitBuilder` method if a net's init needs it. T40 gains C173 (hoisted names in generated code). Phase 4 is now 8 tasks, phases 7-8 13.
 **Dispatched:** ir-rust merged to main 9aa03fe8 (2026-11-15). Batch 1 (phases 1-2, T1-T8) - Opus worker.
 **Walked:** none (no screen; each story's Independent Test is a check above)
 
@@ -2288,16 +2363,16 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 
 Phase 1:  T1 ------→ T2
 Phase 2:  T3 ------→ T4 ------→ T5 ------→ T6 ------→ T7 ------→ T8
 Phase 3:  T9 ------→ T10 ------→ T11 ------→ T12 ------→ T13 ------→ T14 ------→ T15 ------→ T16
-Phase 4:  T17 ------→ T18 ------→ T19 ------→ T20 ------→ T61 ------→ T21 ------→ T22
+Phase 4:  T17 ------→ T18 ------→ T19 ------→ T20 ------→ T61 ------→ T21 ------→ T64 ------→ T22
 Phase 5:  T23 ------→ T24 ------→ T25 ------→ T26 ------→ T27
 Phase 6:  T28 ------→ T29 ------→ T30 ------→ T31 ------→ T32 ------→ T33 ------→ T34 ------→ T35 ------→ T36
 Phase 7:  T37 ------→ T38
-Phase 8:  T39 ------→ T40 ------→ T41 ------→ T42 ------→ T43 ------→ T44 ------→ T45 ------→ T46 ------→ T62 ------→ T63
+Phase 8:  T39 ------→ T40 ------→ T41 ------→ T42 ------→ T43 ------→ T44 ------→ T45 ------→ T46 ------→ T62 ------→ T63 ------→ T65
 Phase 9:  T47 ------→ T48 ------→ T49 ------→ T50 ------→ T51 ------→ T52 ------→ T53
 Phase 10:  T54 ------→ T55 ------→ T56 ------→ T57 ------→ T58 ------→ T59 ------→ T60
 ```
 
-Execution is strictly sequential. T61 to T63 are amendment A7 (the previous value of a carrier), added by the orchestrator's ruling on `rise()` after the first 60 tasks were numbered: they keep their numbers and sit where the maps show. Batches for Execute, whole phases each: phases 1 and 2 (8 tasks), phase 3 (8), phase 4 (7), phase 5 (5), phase 6 (9), phases 7 and 8 (12), phase 9 (7), phase 10 (7).
+Execution is strictly sequential. T61 to T63 are amendment A7 (the previous value of a carrier), added by the orchestrator's ruling on `rise()` after the first 60 tasks were numbered: they keep their numbers and sit where the maps show. T64 and T65 are what `ir-rust` left to this feature (its tasks.md `## Handoff`, "Left for msl-digital"), added by T1 (contract.md). Batches for Execute, whole phases each: phases 1 and 2 (8 tasks), phase 3 (8), phase 4 (8), phase 5 (5), phase 6 (9), phases 7 and 8 (13), phase 9 (7), phase 10 (7).
 
 ---
 
@@ -2327,6 +2402,7 @@ Execution is strictly sequential. T61 to T63 are amendment A7 (the previous valu
 | T20: IR: the flow of a potential branch | 1 component | ✅ Granular |
 | T61: IR: the previous value of a carrier | 1 component | ✅ Granular |
 | T21: IR: a child param that reads the parent | 1 component | ✅ Granular |
+| T64: IR: the carrier bindings of a child | 1 component | ✅ Granular |
 | T22: The interpreter refuses the amended forms | 1 component | ✅ Granular |
 | T23: Lowering integers, and folding them | 1 component | ✅ Granular |
 | T24: Known: which values may be unknown | 1 component | ✅ Granular |
@@ -2354,6 +2430,7 @@ Execution is strictly sequential. T61 to T63 are amendment A7 (the previous valu
 | T46: Generated code: the flow read | 1 component | ✅ Granular |
 | T62: Plan: the previous value of a carrier | 1 component | ✅ Granular |
 | T63: Generated code: the previous value | 1 component | ✅ Granular |
+| T65: A parent's signal on its children's net, and a net's own init | 1 component | ✅ Granular |
 | T47: Commit semantics from source | 1 test target | ✅ Granular |
 | T48: The oscillator and the DPWM from source | 1 test target | ✅ Granular |
 | T49: The ramp, the PID and the setpoint register from source | 1 test target | ✅ Granular |
@@ -2397,7 +2474,8 @@ Execution is strictly sequential. T61 to T63 are amendment A7 (the previous valu
 | T20 | T19 | T19 | ✅ Match |
 | T61 | T20 | T20 | ✅ Match |
 | T21 | T61 | T61 | ✅ Match |
-| T22 | T21 | T21 | ✅ Match |
+| T64 | T21 | T21 | ✅ Match |
+| T22 | T64 | T64 | ✅ Match |
 | T23 | None in its phase | None in its phase | ✅ Match |
 | T24 | T23 | T23 | ✅ Match |
 | T25 | T24 | T24 | ✅ Match |
@@ -2424,6 +2502,7 @@ Execution is strictly sequential. T61 to T63 are amendment A7 (the previous valu
 | T46 | T45 | T45 | ✅ Match |
 | T62 | T46 | T46 | ✅ Match |
 | T63 | T62 | T62 | ✅ Match |
+| T65 | T63 | T63 | ✅ Match |
 | T47 | None in its phase | None in its phase | ✅ Match |
 | T48 | T47 | T47 | ✅ Match |
 | T49 | T48 | T48 | ✅ Match |
@@ -2467,6 +2546,7 @@ Execution is strictly sequential. T61 to T63 are amendment A7 (the previous valu
 | T20: IR: the flow of a potential branch | The IR amendments | unit | unit | ✅ OK |
 | T61: IR: the previous value of a carrier | The IR amendments | unit | unit | ✅ OK |
 | T21: IR: a child param that reads the parent | The IR amendments | unit | unit | ✅ OK |
+| T64: IR: the carrier bindings of a child | The IR amendments | unit | unit | ✅ OK |
 | T22: The interpreter refuses the amended forms | The interpreter's refusal | unit | unit | ✅ OK |
 | T23: Lowering integers, and folding them | The elaborator (`piperine-lang` `elab/`) | unit | unit | ✅ OK |
 | T24: Known: which values may be unknown | The elaborator (`piperine-lang` `elab/`) | unit | unit | ✅ OK |
@@ -2494,6 +2574,7 @@ Execution is strictly sequential. T61 to T63 are amendment A7 (the previous valu
 | T46: Generated code: the flow read | Generated code for the amended forms | integration | integration | ✅ OK |
 | T62: Plan: the previous value of a carrier | The plan amendments | unit | unit | ✅ OK |
 | T63: Generated code: the previous value | Generated code for the amended forms | integration | integration | ✅ OK |
+| T65: A parent's signal on its children's net, and a net's own init | Generated code for the amended forms | integration | integration | ✅ OK |
 | T47: Commit semantics from source | The project loader and behavior from source | integration | integration | ✅ OK |
 | T48: The oscillator and the DPWM from source | The project loader and behavior from source | integration | integration | ✅ OK |
 | T49: The ramp, the PID and the setpoint register from source | The project loader and behavior from source | integration | integration | ✅ OK |
