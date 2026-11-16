@@ -5,22 +5,36 @@ use crate::pom::BuiltinId;
 
 use super::{Method, Ty};
 
-/// The Appendix H.2 rows of `f64` the subset types. Each is `fn name(self) -> Self`.
-const F64_METHODS: &[(&str, Method)] = &[("exp", Method::Exp), ("ln", Method::Ln), ("sqrt", Method::Sqrt), ("abs", Method::Abs)];
+/// The Appendix H.2 rows of `f64` the subset types. Each gives `Self`; the second column is the
+/// number of arguments, each of the receiver's type.
+const F64_METHODS: &[(&str, Method, usize)] = &[
+    ("exp", Method::Exp, 0),
+    ("ln", Method::Ln, 0),
+    ("sqrt", Method::Sqrt, 0),
+    ("abs", Method::Abs, 0),
+    ("floor", Method::Floor, 0),
+    ("min", Method::Min, 1),
+    ("max", Method::Max, 1),
+    ("clamp", Method::Clamp, 2),
+];
+
+/// The Appendix H rows of `UInt<N>` and `Int<N>` the subset types, as `F64_METHODS`.
+const INTEGER_METHODS: &[(&str, Method, usize)] = &[("min", Method::Min, 1), ("max", Method::Max, 1), ("clamp", Method::Clamp, 2)];
 
 pub(super) struct Catalogue;
 
 impl Catalogue {
-    /// The row named `name` for a receiver of type `recv`.
-    pub(super) fn method(recv: &Ty, name: &str) -> Option<Method> {
+    /// The row named `name` for a receiver of type `recv`, and how many arguments it takes.
+    pub(super) fn method(recv: &Ty, name: &str) -> Option<(Method, usize)> {
         let rows = match recv {
             Ty::F64 => F64_METHODS,
-            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) => return None,
+            Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
+            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) => return None,
         };
-        rows.iter().find(|(row, _)| *row == name).map(|(_, method)| *method)
+        rows.iter().find(|(row, _, _)| *row == name).map(|(_, method, arity)| (*method, *arity))
     }
 
-    /// The type of the call: every row of the subset takes only `self` and gives `Self`.
+    /// The type of the call: every row of the subset gives `Self`.
     pub(super) fn result(_method: Method, recv: &Ty) -> Ty {
         recv.clone()
     }

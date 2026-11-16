@@ -16,6 +16,14 @@ pub enum Method {
     Ln,
     Sqrt,
     Abs,
+    /// `a.min(b)` on an integer or `f64`.
+    Min,
+    /// `a.max(b)` on an integer or `f64`.
+    Max,
+    /// `x.clamp(lo, hi)` on an integer or `f64`.
+    Clamp,
+    /// `x.floor()` on `f64`.
+    Floor,
 }
 
 /// What a call or a placement of the reachable set refers to.

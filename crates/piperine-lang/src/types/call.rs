@@ -111,14 +111,15 @@ impl Checker<'_> {
             return None;
         }
         let recv_ty = self.infer(*recv)?;
-        let Some(row) = Catalogue::method(&recv_ty, &method.text) else {
+        let Some((row, arity)) = Catalogue::method(&recv_ty, &method.text) else {
             self.unsupported(file, method.span, &format!("method `{}` on `{}`", method.text, recv_ty.name(self.design)));
             for arg in args {
                 self.infer(arg.value);
             }
             return None;
         };
-        self.apply(expr, &[], args)?;
+        // Each argument has the receiver's type: a literal argument takes it (DIG-01 AC 2).
+        self.apply(expr, &vec![recv_ty.clone(); arity], args)?;
         self.methods.insert(expr, row);
         Some(Catalogue::result(row, &recv_ty))
     }

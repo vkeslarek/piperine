@@ -299,3 +299,85 @@ fn as_goes_between_integers_and_f64() {
     assert_eq!(codes(&d), ["P0002"]);
     assert_eq!(snippet(&src, &d[0]), "x");
 }
+
+#[test]
+fn min_max_clamp_and_floor_are_typed() {
+    // DIG-01 AC 8: `min`, `max`, `clamp` on the integer types and `f64`, `floor` on `f64`, each
+    // giving the receiver's type (Appendix H); a literal argument takes the receiver's type
+    // (DIG-01 AC 2, the receiver position).
+    let body = "let d: u8 = 200; let a = d.min(168); let e: i16 = 3; let b = e.clamp(-256, 255); let w: u12 = 9; let c = w.max(31); \
+                let x = 2.5; let f = x.floor(); let g = x.min(1.0); let h = x.clamp(0.0, 1023.0);";
+    let src = source("", body);
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let got: Vec<Ty> = ["a", "b", "c", "f", "g", "h"].iter().map(|n| types.local(binding(&design, n)).cloned().expect("typed")).collect();
+    assert_eq!(got, [Ty::UInt(8), Ty::Int(16), Ty::UInt(12), Ty::F64, Ty::F64, Ty::F64]);
+    let at = |text: &str| types.literal(literal(&design, &src, text)).cloned();
+    assert_eq!([at("168"), at("256"), at("255"), at("31")], [Some(Ty::UInt(8)), Some(Ty::Int(16)), Some(Ty::Int(16)), Some(Ty::UInt(12))]);
+    let calls: Vec<_> = (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| matches!(design.expr_node(*e).kind, ExprKind::MethodCall { .. })).collect();
+    let rows: Vec<_> = calls.iter().map(|e| types.method(*e)).collect();
+    use piperine_lang::types::Method;
+    assert_eq!(rows, [Some(Method::Min), Some(Method::Clamp), Some(Method::Max), Some(Method::Floor), Some(Method::Min), Some(Method::Clamp)]);
+
+    // `floor` is a row of `f64` only; an argument of another type is a mismatch.
+    let (src, d) = diagnostics("", "let d: u8 = 2; let a = d.floor();");
+    assert_eq!(codes(&d), ["P0001"]);
+    assert_eq!(snippet(&src, &d[0]), "floor");
+    let (src, d) = diagnostics("", "let d: u8 = 2; let b: u9 = 3; let a = d.min(b);");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "b");
+}
+
+#[test]
+fn an_uncatalogued_method_is_p0001_by_name() {
+    // DIG-02 AC 2 (buck GAPS.md G3): a method with no catalogue row of its receiver's type is
+    // `P0001` naming the method and the type, never an unresolved call that runs as nothing.
+    let (src, d) = diagnostics("", "let x: u4 = 3; let y = x.saturating_add(1);");
+    assert_eq!(codes(&d), ["P0001"], "{src}");
+    let message = &d[0].diagnostic.message;
+    assert!(message.contains("saturating_add") && message.contains("`u4`"), "{message}");
+    assert_eq!(snippet(&src, &d[0]), "saturating_add");
+}
+
+#[test]
+fn every_accepted_call_has_a_callee() {
+    // DIG-02 AC 3: every call and method call of an accepted model has a callee (a function, a
+    // core primitive, a module) or a catalogue row; a probe is linked by its own path to its
+    // quantity or built-in.
+    let models = [
+        source(&format!("{}\n{}\n{}", buck_spec(), buck_fn("dpwm.msl", "rev3"), buck_fn("dpwm.msl", "dithered_width")), "let a = dithered_width(1325, 3); let b = (1.5).floor().min(2.0);"),
+        "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n\
+         module R(p: E, n: E) { r: f64 = 1k; }\nanalog for R { i(p, n) +> v(p, n) / r + ddt(1p * v(p, n)); }\n\
+         module Top(a: E) { let r = R { r: 2k }(a, gnd); }"
+            .to_string(),
+        source("fn sq(x: f64) -> f64 { x * x }\nconst K: u8 = 3;", "let a = sq(2.0).exp(); let b = K.clamp(1, 2); let c = temperature();"),
+    ];
+    for src in &models {
+        let design = design_of(src);
+        let types = checked(&design, src);
+        let mut seen = 0;
+        for e in (0..design.expr_count()).map(|i| ExprId(i as u32)) {
+            if types.ty(e).is_none() {
+                continue;
+            }
+            match &design.expr_node(e).kind {
+                ExprKind::Call { callee, class: piperine_lang::pom::CallClass::Probe, .. } => {
+                    let ExprKind::Path(path) = &design.expr_node(*callee).kind else { panic!("a probe through a path") };
+                    let res = design.path_node(*path).segments.last().map(|s| s.res);
+                    assert!(matches!(res, Some(piperine_lang::pom::Resolution::Decl(_) | piperine_lang::pom::Resolution::Builtin(_))), "{}", &src[design.expr_node(e).span.range()]);
+                    seen += 1;
+                }
+                ExprKind::Call { .. } => {
+                    assert!(types.callee(e).is_some(), "no callee for `{}`", &src[design.expr_node(e).span.range()]);
+                    seen += 1;
+                }
+                ExprKind::MethodCall { .. } => {
+                    assert!(types.method(e).is_some(), "no row for `{}`", &src[design.expr_node(e).span.range()]);
+                    seen += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(seen >= 3, "the model holds calls: {src}");
+    }
+}

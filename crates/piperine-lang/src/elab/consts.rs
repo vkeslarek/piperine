@@ -300,6 +300,10 @@ impl<'d, 't> ConstEval<'d, 't> {
             Method::Ln => x.ln(),
             Method::Sqrt => x.sqrt(),
             Method::Abs => x.abs(),
+            // Folded from msl-digital T23 on.
+            Method::Min | Method::Max | Method::Clamp | Method::Floor => {
+                return Err(ConstFault::Unsupported { expr, what: "the method `min`, `max`, `clamp` or `floor`".to_string() });
+            }
         };
         Ok(Constant::Real(Real::new(result)))
     }

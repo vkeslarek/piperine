@@ -151,13 +151,18 @@ impl Elaboration<'_, '_> {
                     self.unsupported(file, node.span, "a method outside the catalogue");
                     return None;
                 };
-                let recv = self.lower_expr(scope, *recv)?;
                 let f = match method {
                     Method::Exp => MathFn::Exp,
                     Method::Ln => MathFn::Ln,
                     Method::Sqrt => MathFn::Sqrt,
                     Method::Abs => MathFn::Abs,
+                    // Lowered to the IR's `Method` node from msl-digital T23 on.
+                    Method::Min | Method::Max | Method::Clamp | Method::Floor => {
+                        self.unsupported(file, node.span, "the method `min`, `max`, `clamp` or `floor`");
+                        return None;
+                    }
                 };
+                let recv = self.lower_expr(scope, *recv)?;
                 Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
             }
             ExprKind::Closure { params, body, .. } => {
