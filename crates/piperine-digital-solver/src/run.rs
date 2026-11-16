@@ -19,7 +19,8 @@ use crate::store::{Aligned, Store};
 use crate::tick::{Due, Tick};
 use crate::error::DigitalError;
 
-/// The values a call reads that are not pins: time, `STATIC`, `TICK`, `HORIZON`.
+/// The values a call reads that are not pins: time, `STATIC`, `TICK`, `HORIZON`, and the
+/// continuation values `GMIN` and `SOURCE_SCALE` (abi.md §4.2).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ambient {
     pub tick: Tick,
@@ -29,12 +30,24 @@ pub struct Ambient {
     pub horizon: Tick,
     /// The `HORIZON` of a reaction a `CROSS` watch can reach.
     pub crossing_horizon: Tick,
+    /// `GMIN` and `SOURCE_SCALE`: the values the owner set (`Digital::set_continuation`).
+    pub gmin: f64,
+    pub source_scale: f64,
 }
 
 impl Ambient {
-    /// The ambient of an instant at `tick`, with `HORIZON` the tick itself.
+    /// The ambient of an instant at `tick`, with `HORIZON` the tick itself, `GMIN` 0 and
+    /// `SOURCE_SCALE` 1.
     pub fn at(tick: Tick, seconds_per_tick: f64) -> Ambient {
-        Ambient { tick, time: tick.0 as f64 * seconds_per_tick, is_static: false, horizon: tick, crossing_horizon: tick }
+        Ambient {
+            tick,
+            time: tick.0 as f64 * seconds_per_tick,
+            is_static: false,
+            horizon: tick,
+            crossing_horizon: tick,
+            gmin: 0.0,
+            source_scale: 1.0,
+        }
     }
 }
 
@@ -158,6 +171,8 @@ fn cell_bytes(
             piperine_abi::raw::ambient::STATIC => fill(&mut buf, &[ambient.is_static as u8]),
             piperine_abi::raw::ambient::TICK => fill(&mut buf, &ambient.tick.0.to_le_bytes()),
             piperine_abi::raw::ambient::HORIZON => fill(&mut buf, &ambient.horizon.0.to_le_bytes()),
+            piperine_abi::raw::ambient::GMIN => fill(&mut buf, &ambient.gmin.to_le_bytes()),
+            piperine_abi::raw::ambient::SOURCE_SCALE => fill(&mut buf, &ambient.source_scale.to_le_bytes()),
             _ => {}
         },
         _ => {}

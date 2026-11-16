@@ -252,3 +252,95 @@ fn changed_is_zero_one_microstep_later() {
     e.run().unwrap();
     assert!(!e.store.fired(rise), "the same clk, CHANGED read 0: no edge");
 }
+
+// ─── The environment (feature `solver-crossings`, ENV-02) ───────────────────
+
+/// Reads the environment: a discrete function writes `GMIN` and `SOURCE_SCALE` to `fg` and
+/// `fs`; a reaction on `START` commits them to `rg` and `rs`.
+/// pins: fg=0, fs=1, rg=2, rs=3 (PORT F64); start=4 (GLOBAL START)
+/// fn 0 "env": reads [GMIN, SOURCE_SCALE] writes [fg, fs]
+/// reaction 0 "env": on [start] reads [GMIN, SOURCE_SCALE] writes [S0 {rg}, S1 {rs}]
+struct Environment;
+static ENV_SHAPE: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
+static ENV_MODULE: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
+
+fn environment_shape() -> piperine_abi::shape::ShapeRef {
+    use piperine_abi::layout::F64;
+    use piperine_abi::raw::{Cell, Statement, ambient, cell, global, part, role};
+    use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf};
+    let mut s = ShapeBuf::new();
+    let [fg, fs, rg, rs] = ["fg", "fs", "rg", "rs"].map(|n| s.pin(PinSpec::discrete(n, role::PORT, &F64)));
+    let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
+    let amb = |index| Cell { kind: cell::AMBIENT, index, part: part::VALUE };
+    let pin = |index| Cell { kind: cell::PIN, index, part: part::VALUE };
+    s.function(FunctionSpec {
+        name: "env",
+        origin: "functions.rs",
+        reads: vec![amb(ambient::GMIN), amb(ambient::SOURCE_SCALE)],
+        writes: vec![pin(fg), pin(fs)],
+        ..FunctionSpec::default()
+    });
+    let st = |pin| Statement { pin, offset: 0, len: 8, flags: 0, min_after: 0.0 };
+    s.reaction(ReactionSpec {
+        name: "env",
+        origin: "functions.rs",
+        on: vec![start],
+        reads: vec![amb(ambient::GMIN), amb(ambient::SOURCE_SCALE)],
+        writes: vec![st(rg), st(rs)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl piperine_abi::device::Device for Environment {
+    fn prototype() -> &'static piperine_abi::raw::Shape<'static> {
+        ENV_SHAPE.get_or_init(environment_shape).shape()
+    }
+    fn create(
+        _: &piperine_abi::device::Values<'_>,
+    ) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
+        Ok((Environment, std::sync::Arc::clone(ENV_SHAPE.get_or_init(environment_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut piperine_abi::device::Eval) -> Result<(), piperine_abi::device::Fault> {
+        let (g, s) = (cx.f64(0), cx.f64(1));
+        cx.set(0, g);
+        cx.set(1, s);
+        Ok(())
+    }
+    fn react(
+        &self,
+        _k: u32,
+        cx: &mut piperine_abi::device::React,
+    ) -> Result<piperine_abi::device::Flow, piperine_abi::device::Fault> {
+        let (g, s) = (cx.f64(0), cx.f64(1));
+        cx.commit(0, &g.to_le_bytes(), 0.0)?;
+        cx.commit(1, &s.to_le_bytes(), 0.0)?;
+        Ok(piperine_abi::device::Flow::Continue)
+    }
+}
+
+#[test]
+fn reactions_and_functions_read_the_continuation_values() {
+    // ENV-02 (abi.md §4.2): a reaction and a discrete function read GMIN and SOURCE_SCALE as the
+    // owner set them; 0 and 1 until it does
+    use piperine_digital_solver::engine::{Digital, Horizon, Mode};
+    use piperine_digital_solver::limits::DigitalLimits;
+    let read = |set: Option<(f64, f64)>| {
+        let handle = piperine_abi::caller::Handle::create(
+            ENV_MODULE.get_or_init(|| piperine_abi::thunk::module::<Environment>("Environment")),
+            &[],
+        )
+        .expect("creates");
+        let plan = bind_by_name(vec![("env", handle, vec![])], Resolution::default()).expect("binds");
+        let mut d = Digital::new(plan, DigitalLimits::default());
+        if let Some((g, s)) = set {
+            d.set_continuation(g, s);
+        }
+        d.start().unwrap();
+        d.run_instant(Tick(0), &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs");
+        let f = |name: &str| f64::from_le_bytes(d.read(net_named(d.plan(), name)).try_into().expect("an F64"));
+        [f("env.fg"), f("env.fs"), f("env.rg"), f("env.rs")]
+    };
+    assert_eq!(read(Some((2e-12, 0.25))), [2e-12, 0.25, 2e-12, 0.25], "function then reaction, as set");
+    assert_eq!(read(None), [0.0, 1.0, 0.0, 1.0], "0 and 1 until set");
+}

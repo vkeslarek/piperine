@@ -109,6 +109,8 @@ pub struct Digital {
     pub(crate) waited: Vec<NetId>,
     /// An instant suspended for the host's waiters: its tick and the microstep it continues at.
     pub(crate) suspended: Option<(Tick, u32)>,
+    /// `GMIN` and `SOURCE_SCALE` as reactions and discrete functions read them.
+    pub(crate) continuation: (f64, f64),
 }
 
 impl Digital {
@@ -127,7 +129,21 @@ impl Digital {
             running: false,
             waited: Vec::new(),
             suspended: None,
+            continuation: (0.0, 1.0),
         }
+    }
+
+    /// Sets the values reactions and discrete functions read as `GMIN` and `SOURCE_SCALE`
+    /// (abi.md §4.2): the owner's continuation values at rest, given before `start`, where every
+    /// function is evaluated. 0 and 1 until set.
+    pub fn set_continuation(&mut self, gmin: f64, source_scale: f64) {
+        self.continuation = (gmin, source_scale);
+    }
+
+    /// The ambient of an instant at `tick` (see `Ambient::at`), with the continuation values.
+    pub(crate) fn ambient(&self, tick: Tick) -> Ambient {
+        let (gmin, source_scale) = self.continuation;
+        Ambient { gmin, source_scale, ..Ambient::at(tick, self.plan.resolution.seconds_per_tick) }
     }
 
     /// An analysis from initial values (abi.md §9): zero the store, drop the queue, commit every
@@ -272,7 +288,7 @@ impl Digital {
         let mut obs = Obs::new();
         let here = (self.now, 0);
         write_net(&self.plan, &mut store, &mut dirty, &mut obs, net, offset, bytes, here);
-        let ambient = Ambient::at(self.now, self.plan.resolution.seconds_per_tick);
+        let ambient = self.ambient(self.now);
         if let Some(instance) = run_cone(&self.plan, &mut store, &mut dirty, here, &ambient, &mut obs)? {
             return Ok(Shadow::Reshape { instance });
         }

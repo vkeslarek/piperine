@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::net::{NetId, NetKind};
 use crate::queue::{Instant, Writer};
-use crate::run::{Ambient, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
+use crate::run::{check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
 use piperine_abi::raw::reaction_flag;
 use crate::tick::Tick;
 use crate::error::DigitalError;
@@ -111,7 +111,6 @@ impl Digital {
         mode: Mode,
         lookahead: bool,
     ) -> Result<Stepped, DigitalError> {
-        let res = self.plan.resolution.seconds_per_tick;
         self.now = at;
         let mut out = Outcome::default();
         let mut boundary: BTreeSet<NetId> = BTreeSet::new();
@@ -129,7 +128,7 @@ impl Digital {
                 out.host_param_write |= s.changed && s.host && self.plan.analysis().is_param_net(s.net);
                 check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
             }
-            let mut ambient = Ambient::at(at, res);
+            let mut ambient = self.ambient(at);
             ambient.is_static = mode.is_static;
             ambient.horizon = self.horizon(at, limit.stop);
             ambient.crossing_horizon = self.horizon(at, limit.crossing);
@@ -221,7 +220,7 @@ impl Digital {
                 fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, net, here);
                 fired.insert(net);
             }
-            let mut ambient = Ambient::at(at, res);
+            let mut ambient = self.ambient(at);
             ambient.is_static = mode.is_static;
             ambient.horizon = self.horizon(at, limit.stop);
             ambient.crossing_horizon = self.horizon(at, limit.crossing);

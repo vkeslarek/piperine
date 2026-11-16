@@ -290,8 +290,8 @@ T9 → T10 → T11
 
 **Done when**:
 
-- [ ] `reactions_and_functions_read_the_continuation_values` passes
-- [ ] Gate check passes: `cargo test -p piperine-digital-solver`
+- [x] `reactions_and_functions_read_the_continuation_values` passes
+- [x] Gate check passes: `cargo test -p piperine-digital-solver`
 
 **Tests**: unit
 **Gate**: full
