@@ -2440,6 +2440,11 @@ digital for Watchdog {
 <p class="ch-num">Chapter 11</p>
 <h2>Reading errors</h2>
 
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can read any diagnostic, tell from its code which part of the language it is about and when it was found, and you have a method for the harder case: a model that compiles and still does the wrong thing.</p>
+</div>
+
 <p>Every error condition has one code, <code>Eppnn</code>, where <code>pp</code> names the area of the language the rule belongs to. <code>E01xx</code> covers values, files and packages, <code>E04xx</code> behavior, <code>E09xx</code> the lexer, and so on.</p>
 
 <p>A diagnostic carries a code, a message, a primary label on the source span, optional secondary labels and an optional help line. Here is how one reads in a terminal:</p>
@@ -2469,6 +2474,47 @@ digital for Watchdog {
 
 <p>An error belongs to one of five phases: <strong>package</strong> (reading manifests and dependencies), <strong>parse</strong>, <strong>elaboration</strong> (names, types, params, the netlist), <strong>run</strong> (an analysis fails, naming the instance and the instant) and <strong>host</strong> (a host request is refused, and the analysis goes on). Most of what you meet while writing a model is elaboration.</p>
 
+<h3>A worked example: three errors in one file</h3>
+
+<p>Here is a first attempt at the sample-and-hold of chapter 3, written the way a newcomer would. It parses, so the listing below is legal syntax, and it has three mistakes that elaboration finds.</p>
+
+<pre data-lang="msl">module SampleHold(vin: Electrical, vout: Electrical, clk: Bit) {
+    signal held: Bit<f64> = 0.0;
+}
+digital for SampleHold {
+    on clk { held <- v(vin); }
+}
+analog for SampleHold {
+    v(vout) +> held;
+}</pre>
+
+<ol class="steps">
+<li><strong>E0310 on <code>clk: Bit</code>.</strong> A one-driver port needs a direction. The module only reads the clock: <code>in clk: Bit</code>.</li>
+<li><strong>E0430 on <code>on clk</code>.</strong> The head of a reaction is an event, and <code>clk</code> is a level. The sampler acts on the rising edge: <code>on clk.rise()</code>.</li>
+<li><strong>E0150 on <code>+> held</code>.</strong> <code>analog</code> reads a digital carrier without saying what unknown means: <code>held.known_or(0.0)</code>.</li>
+</ol>
+
+<p>Diagnostics come sorted by file and position, so you fix a file from top to bottom. Each fix here is local: one line, at the place the label points to.</p>
+
+<h3>When it compiles and is still wrong</h3>
+
+<p>A diagnostic tells you that a rule was broken. It cannot tell you that your counter wraps one edge late. For that, the method of this book is always the same: <em>make the model say what it sees</em>, then compare with what you expected.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Symptom</th><th>What to emit</th><th>Chapter</th></tr></thead>
+<tbody>
+<tr><td>A state machine takes a wrong turn.</td><td><code>emit!("state", …)</code> with the state and the inputs, first line of the clocked reaction. Find the first row where the next row surprises you.</td><td>7</td></tr>
+<tr><td>An output is unknown and you do not know why.</td><td>A reaction on <code>q.changed() &amp;&amp; !q.is_known()</code> that emits the inputs of <code>q</code>. The unknown field is the culprit.</td><td>3</td></tr>
+<tr><td>Something happens at the wrong time.</td><td><code>t = now()</code> in a reaction on the event itself, or on a crossing with <code>above</code>.</td><td>1, 8</td></tr>
+<tr><td>A record appears that "cannot happen".</td><td>Look at its <code>maybe</code> flag: it was reached under an unknown condition.</td><td>2, 3</td></tr>
+<tr><td>A waveform has the wrong shape.</td><td><code>on settle { emit!("wave", …) }</code> with the nodes in question, and plot the fields.</td><td>6</td></tr>
+<tr><td>A sampled value is "one step old".</td><td>Nothing: a reaction on a clock edge reads the solution from just before the edge. Check the instant of the record.</td><td>8</td></tr>
+<tr><td>The solver fails to converge, or crawls.</td><td><code>emit!</code> inside the suspect device's <code>analog</code> block, and read the iterations of the failing step.</td><td>6</td></tr>
+<tr><td>Two things you expected in one microstep are in two.</td><td>Compare the microstep numbers of their records: each commit is one hop.</td><td>7, 8</td></tr>
+</tbody></table></div>
+
+<p>When the surprise is gone, keep the useful prints and turn the expectation into a <code>require</code>, so the next change that breaks it is caught without anyone reading a stream.</p>
+
 <h3>The codes you will meet first</h3>
 
 <div class="table-wrap"><table class="codes">
@@ -2494,13 +2540,48 @@ digital for Watchdog {
 <tr><td>E0430</td><td>The head of <code>on</code> is not an <code>Event</code>.</td><td><code>s.changed()</code>, <code>clk.rise()</code>, or a guard <code>ev && c</code>.</td></tr>
 <tr><td>E0171</td><td>A manifest key the format does not allow.</td><td>See chapter 9.</td></tr>
 <tr><td>E0175</td><td>A package without <code>src/lib.msl</code>.</td><td>Create the crate root.</td></tr>
+<tr><td>E0250</td><td>A digital carrier connected to an analog port, or the reverse.</td><td>Place a converter: <code>A2D</code>, <code>D2A</code>.</td></tr>
+<tr><td>E0310</td><td>A <code>Bit</code> port with no <code>in</code> or <code>out</code>, or a direction where none belongs.</td><td>Add or remove the direction.</td></tr>
+<tr><td>E0317</td><td>A param value that fails its <code>where</code>.</td><td>Give a value inside the range.</td></tr>
+<tr><td>E0338</td><td>An initial value on a carrier driven by an undelayed definition.</td><td>Drop the <code>= value</code>.</td></tr>
+<tr><td>E0343</td><td><code>inst.name</code> reaches an item that is not <code>pub</code>.</td><td>Publish it in the child.</td></tr>
+<tr><td>E0410</td><td>The left side of <code>+></code> is not a probe.</td><td><code>v(node) +> …</code> or <code>i(a, b) +> …</code></td></tr>
+<tr><td>E0432</td><td>A commit of the wrong type.</td><td>Commit a value of the carrier's type.</td></tr>
+<tr><td>E0601</td><td><code>emit!</code> outside a reaction, <code>analog</code> or a <code>fn</code>.</td><td>Move it into behavior.</td></tr>
+<tr><td>E0602</td><td><code>emit!</code> without a literal stream name, or with a field that is not <code>name = value</code>.</td><td>Name the stream and every field.</td></tr>
+<tr><td>E0603</td><td>A check or <code>finish</code> reached from <code>analog</code>.</td><td>Call it from a reaction.</td></tr>
 </tbody></table></div>
+
+<p>The codes that appear only while a simulation runs name the instance and the instant:</p>
+
+<div class="table-wrap"><table class="codes">
+<thead><tr><th>Code</th><th>What happened</th><th>Usual cause</th></tr></thead>
+<tbody>
+<tr><td>E0501</td><td>The microsteps at one time never go quiet.</td><td>A feedback loop of commits with no delay.</td></tr>
+<tr><td>E0503</td><td>A solve is singular; the report names the node or branches.</td><td>A node with no DC path, or a loop of voltage sources.</td></tr>
+<tr><td>E0504</td><td>The step after a digital change does not converge.</td><td>An ideal edge into a stiff circuit; use <code>transition</code>.</td></tr>
+<tr><td>E0505</td><td>The operating point does not converge.</td><td>A device with no limiting; use <code>limexp</code> or <code>limit</code>.</td></tr>
+<tr><td>E0507</td><td>A non-finite value in a solve.</td><td>A division by a quantity that reached zero.</td></tr>
+<tr><td>E0508</td><td>A transient step cannot be completed at the smallest step.</td><td>A discontinuity in an <code>analog</code> expression.</td></tr>
+</tbody></table></div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>Fix the three errors of the worked example, then break it in a new way: declare <code>held</code> without <code>= 0.0</code>. It still compiles. What does <code>vout</code> do before the first clock edge, and which line decided that? (It sits at 0&nbsp;V: <code>held</code> is unknown, and <code>known_or(0.0)</code> said what unknown means.)</p>
+</div>
 </section>
 
 <!-- ===================================================== 12 -->
 <section id="pom" class="chapter">
 <p class="ch-num">Chapter 12</p>
 <h2>The object model</h2>
+
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you know what a tool sees when it reads your source, and you can ask a design questions from Rust: which ports a module has, where a signal is declared, and who writes it.</p>
+</div>
+
+<p>Everything so far was about writing models. This chapter is about reading them by program. You need it when you build a tool, and it helps even when you do not, because it is the precise version of a question you ask all the time while debugging: "who drives this signal?"</p>
 
 <p>The <strong>Piperine Object Model</strong>, the POM, is the in-memory model of a set of MSL sources. One call turns source text into an immutable <code>Design</code>, and every later stage starts from it: a type checker, an elaborator, the simulator front end, an editor. It is the Rust library <code>piperine_lang::pom</code>, and it reads the way Java reflection does. You ask a module for its ports, a signal for the module it is declared in, an instance for the module it places.</p>
 
@@ -2569,6 +2650,23 @@ assert_eq!(front.port("q").unwrap().writers().len(), 1); // the commit `q <- d;`
 </ul>
 
 <p>With packages, a design is built over a graph of crates, each kept as authored, and names resolve across crates by the rules of chapter 9.</p>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table>
+  <thead><tr><th>You expected</th><th>What the object model does</th></tr></thead>
+  <tbody>
+  <tr><td>A generation <code>for</code> over 8 cells gives 8 instances to walk.</td><td>It gives one <code>for</code> with one placement inside, as written. The unrolled list belongs to elaboration.</td></tr>
+  <tr><td><code>build()</code> fails on a syntax error.</td><td>It always returns a <code>Design</code>. Check <code>diagnostics()</code> before you trust the answers.</td></tr>
+  <tr><td>A param shows its value.</td><td>It shows its default <em>expression</em>. Nothing is evaluated here.</td></tr>
+  <tr><td>A type error is reported.</td><td>The object model resolves names; it does not check types. An E0432 or E0417 comes from a later stage.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>For the <code>Front</code> module above, predict <code>front.signal("above_th").unwrap().writers().len()</code>. (Two: one commit in each of the first two reactions.)</p>
+</div>
 
 </section>
 
@@ -3079,6 +3177,15 @@ analog for M {
 digital for M {
     on above(v(a) - vth) { d <- true; }    // digital reads analog
 }</pre></div>
+
+<div class="cheat-card"><h4>Debug prints</h4>
+<pre data-lang="msl">digital for M {
+    on clk.rise() { emit!("state", t = now(), q = q); }           // one row per edge
+    on above(v(a) - vth) { emit!("cross", t = now()); }           // a located instant
+    on q.changed() && !q.is_known() { emit!("lost", d = d); }     // went unknown
+    on settle { emit!("wave", t = now(), va = v(a)); }            // one row per time point
+}
+analog for M { emit!("newton", va = v(a)); }                      // every iteration: a trace</pre></div>
 
 <div class="cheat-card"><h4>Templates and extern</h4>
 <pre data-lang="msl">cell: C;                               // C: Fn(Cell)
