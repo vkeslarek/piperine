@@ -33,7 +33,7 @@ The buck reaches further than the `ir-rust` slice. It uses enums and `match`, `O
 | Re-deriving a child's param when the host `set`s a parent param during a run | host surface; recorded in `GAPS.md` |
 | Variant names of an enum on the wire | a `Bit<Mode>` carrier is `UInt<2>` in the IR and the ABI; names belong to the host surface |
 | Spec text for G4 and G5 | owed to `docs/spec/`; the provisional rules of ROADMAP apply unchanged |
-| Changes to `piperine-abi` and the three solver crates | a defect found there is reported with a reproducing ABI device, never patched here |
+| Changes to `piperine-abi` and the three solver crates | a defect found there is reported with a reproducing ABI device, never patched here. One approved exception (orchestrator, 2026-11-16): the observation protocol carries the site of a record - `ObservationKind::Commit` gains `reaction` (T67) and `Record` gains the reaction and the statement that made it (`piperine-digital-solver` `Observation::Record`, `piperine-solver` `ObservationKind::Record::site`, verification F1). Both are additive fields abi.md C5 already names; parity is unchanged (`parity_baseline`, `protocol_sink` green unedited) |
 
 ---
 
