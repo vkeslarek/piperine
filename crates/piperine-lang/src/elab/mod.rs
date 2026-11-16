@@ -5,8 +5,9 @@
 //! result is a side table or the IR, never a write into the object model (the POM navigability
 //! rule).
 //!
-//! Four passes, each writing through [`IrBuilder`](piperine_ir::IrBuilder): natures, functions,
-//! bodies (first-reach order), then the instance tree. Any diagnostic means no `Ir`.
+//! Three passes, each writing through [`IrBuilder`](piperine_ir::IrBuilder): natures, bodies
+//! (first-reach order, each function variant lowered when a call first reaches it), then the
+//! instance tree. Any diagnostic means no `Ir`.
 
 mod body;
 mod children;
@@ -22,6 +23,7 @@ mod nature;
 mod origin;
 mod place;
 mod unlowered;
+mod variants;
 
 pub use consts::{Bindings, ConstEval, ConstFault};
 pub use elaborator::Elaborator;

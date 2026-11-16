@@ -345,3 +345,43 @@ fn a_partial_right_operand_under_a_flagged_short_circuit_is_p0001() {
     let ir = Elab::ir(&reaching("fn f(c: bool, x: u8, n: u8) -> bool { c && (x / n > 1) }", &["f(true, 1, 2)"]), "Top");
     assert!(Read { ir: &ir }.function_text("f").contains("(c && ((x / n) > 1u8))"));
 }
+
+#[test]
+fn a_function_gets_one_variant_per_flag_pattern() {
+    // DIG-08 AC 8. The call of `Dpwm`'s reaction (examples/buck/src/dpwm.msl), here in a function
+    // whose `duty` and `frame` may be unknown as the carriers are: the pattern `01` lowers
+    // `dithered_width~01`, whose `rev3(frame)` lowers `rev3~1`; no variant of all-known
+    // arguments is reached, so no `dithered_width` and no `rev3`.
+    let functions = "fn rev3(k: u3) -> u3 { ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1) }\n\
+                     fn dithered_width(duty: u12, frame: u3) -> u9 {\n\
+                       let coarse = (duty >> 3) as u9;\n\
+                       let fine = (duty & 7) as u3;\n\
+                       if rev3(frame) < fine { coarse + 1 } else { coarse }\n\
+                     }\n\
+                     fn latch() -> u9 { let duty: u12 = Unknown; let frame: u3 = Unknown; let w = dithered_width(duty.known_or(0), frame + 1); w.known_or(0) }";
+    let ir = Elab::ir(&reaching(functions, &["latch()"]), "Top");
+    let names: Vec<&str> = ir.functions().map(|f| f.name()).collect();
+    assert_eq!(names, ["latch", "dithered_width~01", "rev3~1"], "one function per pattern reached, in first-reach order");
+    // The two variants print as the `ir-rust` T29 fixture prints them
+    // (crates/piperine-ir/tests/golden/buck/dpwm.txt).
+    let read = Read { ir: &ir };
+    assert_eq!(
+        read.function_text("\"dithered_width~01\""),
+        "fn \"dithered_width~01\"(duty: u12, frame: flagged<u3>) -> flagged<u9>\n  local coarse: u9\n  local duty: u12\n  local fine: u3\n  local frame: flagged<u3>\n  let coarse = ((duty >> 3i32) as u9)\n  let fine = ((duty & 7u12) as u3)\n  if (\"rev3~1\"(frame) < fine) { (coarse + 1u9) } else { coarse }"
+    );
+    assert_eq!(read.function_text("\"rev3~1\""), "fn \"rev3~1\"(k: flagged<u3>) -> flagged<u3>\n  local k: flagged<u3>\n  ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))");
+    assert!(read.function_text("latch").contains("let w = \"dithered_width~01\"(duty.known_or(0u12), (frame + 1u3))"), "{}", read.function_text("latch"));
+
+    // A call with every argument known reaches the variant under the source name, beside the
+    // other: each pattern its own function.
+    let ir = Elab::ir(&reaching(functions, &["latch()", "dithered_width(1325, 4)"]), "Top");
+    let mut names: Vec<&str> = ir.functions().map(|f| f.name()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["dithered_width", "dithered_width~01", "latch", "rev3", "rev3~1"]);
+    let plain = ir.functions().find(|f| f.name() == "dithered_width").expect("dithered_width");
+    assert_eq!(plain.params().iter().map(|p| p.ty.clone()).collect::<Vec<_>>(), [ValueType::UInt(12), ValueType::UInt(3)]);
+    assert_eq!(*plain.ret(), ValueType::UInt(9));
+    // One variant per pattern, however many calls reach it.
+    let ir = Elab::ir(&reaching(functions, &["latch()", "latch()", "dithered_width(1, 2)", "dithered_width(3, 4)"]), "Top");
+    assert_eq!(ir.functions().count(), 5);
+}

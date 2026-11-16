@@ -1,50 +1,51 @@
-//! Functions: each `fn` the top reaches is one IR function, lowered once however many bodies
-//! call it. Its parameters are its first locals, then every `let` and closure parameter of its
-//! body in declaration order.
+//! Functions: each `fn` a body calls is one IR function per flag pattern of its arguments
+//! (`variants.rs`), lowered when a call first reaches it. Its parameters are its first locals,
+//! then every `let` and closure parameter of its body in declaration order.
 
 use piperine_ir::{FunctionSpec, ValueType};
 
 use super::elaborator::Elaboration;
 use super::known::Flag;
 use super::lower::{Scope, ValueTypes};
+use super::variants::Variants;
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 
 impl Elaboration<'_, '_> {
-    /// Lower `functions`, in first-reach order: the ids a call names were handed out by position.
-    pub(super) fn lower_functions(&mut self, functions: &[DeclId]) {
-        for function in functions {
-            self.lower_function(*function);
-        }
-    }
-
-    fn lower_function(&mut self, function: DeclId) {
+    /// The variant of `function` for `pattern`: a parameter is flagged where the pattern is, and
+    /// the result is the type of the body. `None` after a diagnostic.
+    pub(super) fn lower_function(&mut self, function: DeclId, pattern: &[Flag]) -> Option<FunctionSpec> {
         let data = self.design.decl_data(function).clone();
-        let DeclKind::Fn(f) = &data.kind else { return };
+        let DeclKind::Fn(f) = &data.kind else { return None };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut scope = Scope::new(data.file);
         let mut params = Vec::new();
-        for param in data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))) {
-            if let Some(index) = self.bind_local(&mut scope, param) {
-                params.push(scope.locals[index as usize].clone());
+        let mut ok = true;
+        let declared = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
+        for (param, flag) in declared.zip(pattern.iter().copied().chain(std::iter::repeat(Flag::Plain))) {
+            match self.bind_local(&mut scope, param) {
+                Some(index) => {
+                    let local = &mut scope.locals[index as usize];
+                    local.ty = flag.wrap(local.ty.clone());
+                    params.push(local.clone());
+                }
+                None => ok = false,
             }
         }
-        let ret = match f.ret {
-            Some(ty) => self.lower_type(data.file, ty),
-            None => Some(ValueType::Unit),
+        // The declared result is checked for a type the IR has; the variant's result is its body's.
+        let declared_ret = match f.ret {
+            Some(ty) => self.lower_type(data.file, ty).is_some(),
+            None => true,
         };
         let Some(body) = &f.body else {
             self.unsupported(data.file, data.span, "a function without a body");
-            return;
+            return None;
         };
-        let lowered = self.lower_block(&mut scope, data.file, &body.stmts, body.span);
-        let (Some(ret), Some(lowered)) = (ret, lowered) else { return };
-        if self.flag(lowered) == Flag::Flagged {
-            // A result that may be unknown has its own variant from msl-digital T25 on.
-            self.unsupported(data.file, data.span, "a function whose result may be unknown");
-            return;
+        let lowered = self.lower_block(&mut scope, data.file, &body.stmts, body.span)?;
+        if !(ok && declared_ret) {
+            return None;
         }
-        let id = self.ir.function(FunctionSpec { name, origin: self.locator.decl(function), params, ret, locals: scope.locals, body: lowered });
-        debug_assert_eq!(Some(id), self.function_ids.get(&function).copied(), "functions are built in first-reach order");
+        let ret = self.type_of(lowered);
+        Some(FunctionSpec { name: Variants::name(&name, pattern), origin: self.locator.decl(function), params, ret, locals: scope.locals, body: lowered })
     }
 
     /// The IR type a type written in a signature names: the checker's type of it, as an IR type.

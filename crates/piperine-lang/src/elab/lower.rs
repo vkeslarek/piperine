@@ -258,7 +258,6 @@ impl Elaboration<'_, '_> {
         match (class, self.types.callee(expr)) {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
             (_, Some(Callee::Function(function))) => {
-                let id = self.function_ids.get(&function).copied()?;
                 let mut lowered = Vec::new();
                 let mut ok = true;
                 for arg in args {
@@ -267,12 +266,12 @@ impl Elaboration<'_, '_> {
                         None => ok = false,
                     }
                 }
-                if ok && self.flags(&lowered) == Flag::Flagged {
-                    // One IR function per flag pattern of its arguments comes with msl-digital T25.
-                    self.unsupported(scope.file, span, "a call with an argument that may be unknown");
+                if !ok {
                     return None;
                 }
-                ok.then(|| self.emit(Expr::Call { function: id, args: lowered }, ty, origin))
+                let pattern: Vec<Flag> = lowered.iter().map(|a| self.flag(*a)).collect();
+                let (id, ret) = self.request(function, pattern, scope.file, span)?;
+                Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
             (_, Some(Callee::Module(_))) => {

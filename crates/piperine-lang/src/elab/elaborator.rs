@@ -3,11 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BodyId, FunctionId, Ir, IrBuilder, NatureId, ValueType};
+use piperine_ir::{BodyId, Ir, IrBuilder, NatureId, ValueType};
 
 use super::body::ModulePlan;
 use super::consts::ConstEval;
 use super::origin::Locator;
+use super::variants::Variants;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
 use crate::types::Types;
@@ -46,8 +47,8 @@ pub(super) struct Elaboration<'d, 't> {
     /// The body each reached module will get: bodies are built in first-reach order, so a
     /// placement can name its child's body before that body exists.
     pub(super) body_ids: BTreeMap<DeclId, BodyId>,
-    /// The function each reached `fn` will get, by the same first-reach argument.
-    pub(super) function_ids: BTreeMap<DeclId, FunctionId>,
+    /// The IR function of each `fn` and flag pattern a call reached.
+    pub(super) variants: Variants,
     /// The type of every IR expression added so far, by id.
     pub(super) expr_types: Vec<ValueType>,
     pub(super) plans: BTreeMap<DeclId, ModulePlan>,
@@ -64,7 +65,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             locator: Locator::new(design),
             natures: BTreeMap::new(),
             body_ids: BTreeMap::new(),
-            function_ids: BTreeMap::new(),
+            variants: Variants::default(),
             expr_types: Vec::new(),
             plans: BTreeMap::new(),
             diagnostics: Vec::new(),
@@ -80,13 +81,11 @@ impl<'d, 't> Elaboration<'d, 't> {
             return Err(self.diagnostics);
         }
         self.body_ids = modules.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
-        let functions: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Fn(_))).collect();
-        self.function_ids = functions.iter().enumerate().map(|(k, f)| (*f, FunctionId(k as u32))).collect();
         self.lower_natures(&modules);
-        self.lower_functions(&functions);
         for module in &modules {
             self.lower_body(*module);
         }
+        self.add_functions();
         let top_instance = self.place_top(top);
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
