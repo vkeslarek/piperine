@@ -342,8 +342,11 @@ fn an_uncatalogued_method_is_p0001_by_name() {
 #[test]
 fn every_accepted_call_has_a_callee() {
     // DIG-02 AC 3: every call and method call of an accepted model has a callee (a function, a
-    // core primitive, a module) or a catalogue row; a probe is linked by its own path to its
-    // quantity or built-in.
+    // core primitive, a module), a catalogue row or a built-in (a carrier's flag read or edge,
+    // an `Option` method); a probe and `Some(x)` are linked by their own path to their quantity
+    // or built-in. Every
+    // call the checker reached is visited - the ones it left untyped too - in three small models
+    // and in `Buck`, whose carriers, enums, flag reads and events the small ones lack.
     let models = [
         source(&format!("{}\n{}\n{}", buck_spec(), buck_fn("dpwm.msl", "rev3"), buck_fn("dpwm.msl", "dithered_width")), "let a = dithered_width(1325, 3); let b = (1.5).floor().min(2.0);"),
         "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n\
@@ -355,29 +358,63 @@ fn every_accepted_call_has_a_callee() {
     for src in &models {
         let design = design_of(src);
         let types = checked(&design, src);
-        let mut seen = 0;
-        for e in (0..design.expr_count()).map(|i| ExprId(i as u32)) {
-            if types.ty(e).is_none() {
-                continue;
-            }
-            match &design.expr_node(e).kind {
-                ExprKind::Call { callee, class: piperine_lang::pom::CallClass::Probe, .. } => {
-                    let ExprKind::Path(path) = &design.expr_node(*callee).kind else { panic!("a probe through a path") };
-                    let res = design.path_node(*path).segments.last().map(|s| s.res);
-                    assert!(matches!(res, Some(piperine_lang::pom::Resolution::Decl(_) | piperine_lang::pom::Resolution::Builtin(_))), "{}", &src[design.expr_node(e).span.range()]);
-                    seen += 1;
-                }
-                ExprKind::Call { .. } => {
-                    assert!(types.callee(e).is_some(), "no callee for `{}`", &src[design.expr_node(e).span.range()]);
-                    seen += 1;
-                }
-                ExprKind::MethodCall { .. } => {
-                    assert!(types.method(e).is_some(), "no row for `{}`", &src[design.expr_node(e).span.range()]);
-                    seen += 1;
-                }
-                _ => {}
-            }
-        }
+        let (seen, _) = calls_have_callees(&design, &types);
         assert!(seen >= 3, "the model holds calls: {src}");
     }
+    let design = buck();
+    let types = Types::check(&design, "Buck").unwrap_or_else(|d| panic!("Buck checks: {:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    let (seen, builtins) = calls_have_callees(&design, &types);
+    assert!(seen >= 100, "Buck holds many calls: {seen}");
+    assert!(builtins >= 10, "Buck reads flags and edges of carriers through built-ins: {builtins}");
+}
+
+/// Asserts every call and method call inside a declaration `types` reached (a module and its
+/// `analog`/`digital` blocks, a function, a constant) is linked; gives how many were seen and
+/// how many of them are built-ins.
+fn calls_have_callees(design: &Design, types: &Types<'_>) -> (usize, usize) {
+    let reached: std::collections::BTreeSet<DeclId> = types.reached().iter().copied().collect();
+    let in_reached = |e: ExprId| {
+        let mut decl = Some(design.expr_node(e).owner);
+        while let Some(d) = decl {
+            if reached.contains(&d) || design.decl(d).as_behavior().and_then(|b| b.module()).is_some_and(|m| reached.contains(&m.decl().id())) {
+                return true;
+            }
+            decl = design.decl_data(d).parent;
+        }
+        false
+    };
+    let (mut seen, mut builtins) = (0, 0);
+    for e in (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| in_reached(*e)) {
+        let text = design.expr(e).text();
+        match &design.expr_node(e).kind {
+            ExprKind::Call { callee, class: piperine_lang::pom::CallClass::Probe, .. } => {
+                let ExprKind::Path(path) = &design.expr_node(*callee).kind else { panic!("a probe through a path") };
+                let res = design.path_node(*path).segments.last().map(|s| s.res);
+                assert!(matches!(res, Some(piperine_lang::pom::Resolution::Decl(_) | piperine_lang::pom::Resolution::Builtin(_))), "{text}");
+            }
+            // `Some(x)` is linked as a probe is, by its own path, to the built-in variant
+            ExprKind::Call { callee, .. } if matches!(&design.expr_node(*callee).kind, ExprKind::Path(path) if matches!(design.path_node(*path).segments.last().map(|s| s.res), Some(piperine_lang::pom::Resolution::Builtin(id)) if id.info().name == "Some")) => {}
+            ExprKind::Call { .. } => assert!(types.callee(e).is_some() || types.builtin(e).is_some(), "no callee for `{text}`"),
+            ExprKind::MethodCall { .. } => assert!(types.method(e).is_some() || types.builtin(e).is_some(), "no row for `{text}`"),
+            _ => continue,
+        }
+        seen += 1;
+        builtins += usize::from(types.builtin(e).is_some());
+    }
+    (seen, builtins)
+}
+
+/// `examples/buck` as a one-crate graph named by its manifest, over the embedded standard library.
+fn buck() -> Design {
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
+    let manifest = std::fs::read_to_string(dir.join("Piperine.toml")).expect("examples/buck/Piperine.toml");
+    let name = manifest
+        .lines()
+        .map(str::trim)
+        .skip_while(|l| *l != "[package]")
+        .find_map(|l| l.strip_prefix("name").and_then(|r| r.trim_start().strip_prefix('=')).map(|v| v.trim().trim_matches('"').to_string()))
+        .expect("a [package] name in Piperine.toml");
+    let mut graph = piperine_lang::pom::CrateGraph::new();
+    graph.add_crate(&name, dir.join("src/lib.msl")).expect("a valid crate name");
+    Design::load_crates(graph)
 }
