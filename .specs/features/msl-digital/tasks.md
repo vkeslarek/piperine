@@ -1148,12 +1148,12 @@ T54 → T55 → T56 → T57 → T58 → T59 → T60
 
 **Done when**:
 
-- [ ] The guard of each `rise` event is a listed difference: the fixture has `high()`, the source gives the stdlib guard (ruling 2). The test replaces exactly those guards and nothing else; the fixtures are not edited for it
-- [ ] A difference outside the listed items is not edited away: the task stops and reports which side misreads the `.msl`; a fixture of `piperine-ir` changes only with `cargo test -p piperine-transpile` still green, and the batch summary names it
-- [ ] The second test removes the listed items from the elaborated print and asserts equality with the fixture, and asserts each listed item is present
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_buck`: `six_slice_bodies_equal_their_hand_built_fixtures`, `dpwm_and_a2d_differ_only_as_listed`
-- [ ] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
+- [x] The guard of each `rise` event is a listed difference: the fixture has `high()`, the source gives the stdlib guard (ruling 2). The test replaces exactly those guards and nothing else; the fixtures are not edited for it
+- [x] A difference outside the listed items is not edited away: the task stops and reports which side misreads the `.msl`; a fixture of `piperine-ir` changes only with `cargo test -p piperine-transpile` still green, and the batch summary names it
+- [x] The second test removes the listed items from the elaborated print and asserts equality with the fixture, and asserts each listed item is present
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_buck`: `six_slice_bodies_equal_their_hand_built_fixtures`, `dpwm_and_a2d_differ_only_as_listed`
+- [x] Gate check passes: the task's `Run` line, then `cargo test -p <the crate the task edits>`
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited beyond the replacements the rules allow
 
 **Tests**: unit
 **Gate**: full
