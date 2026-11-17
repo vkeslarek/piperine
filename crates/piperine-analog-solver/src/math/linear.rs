@@ -8,6 +8,12 @@ pub trait AsIndex {
     fn as_index(&self) -> Option<usize>;
 }
 
+impl AsIndex for usize {
+    fn as_index(&self) -> Option<usize> {
+        Some(*self)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Stamp<A: AsIndex, E: Scalar> {
     Matrix(A, A, E),
@@ -20,6 +26,9 @@ pub trait LinearSystem<E: Scalar> {
     /// Clear stamps + RHS in-place for reuse across Newton iterations.
     /// Call instead of `new()` to avoid per-iteration heap allocation.
     fn reset(&mut self);
+    /// The matrix entries stamped since the last reset, as `(row, column,
+    /// value)`: what a singularity diagnosis reads after a failed solve.
+    fn matrix_entries(&self) -> Vec<(usize, usize, E)>;
 }
 
 pub trait SymbolicMatrix {

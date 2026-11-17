@@ -1,7 +1,9 @@
 //! The Newton-Raphson engine: the `NonLinearSystem` contract, the
 //! strategy-driven damped iteration loop with predictor seed, and the
 //! solution-history buffer it owns.
-use crate::error::Error;
+use crate::device::LimitState;
+use crate::error::{Error, RunCode, SolverDomain};
+use crate::math::singular::SingularityReport;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::{InitialValue, InitialValueApplyExt};
 use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
@@ -71,6 +73,12 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
         false
     }
 
+    /// The limits that veto convergence of the iteration just assembled, for
+    /// the error of a Newton exhaustion to name. Default: none.
+    fn limiting_report(&self) -> Vec<LimitState> {
+        Vec::new()
+    }
+
     /// Apply structured limiting reports to the Newton guess before the
     /// convergence test (ABI-10): each report's `limited_value` overwrites its
     /// `net` so the iteration continues from the clamped point. Default: none.
@@ -118,7 +126,21 @@ where
     ) -> crate::error::Result<Self> {
         let state = CircularArrayBuffer2::new(history_depth, size);
         let dry_run_stamps = system.assemble(&state)?;
-        let symbolic = L::SymbolicType::new(size, dry_run_stamps)?;
+        let entries: Vec<Stamp<usize, E>> = dry_run_stamps
+            .iter()
+            .filter_map(|stamp| match stamp {
+                Stamp::Matrix(r, c, v) => Some(Stamp::Matrix(r.as_index()?, c.as_index()?, *v)),
+                Stamp::Rhs(..) => None,
+            })
+            .collect();
+        let symbolic = L::SymbolicType::new(size, dry_run_stamps).map_err(|cause| {
+            SingularityReport::error(
+                SolverDomain::Newton,
+                size,
+                &entries,
+                &format!("the Jacobian is singular ({})", Self::cause_text(&cause)),
+            )
+        })?;
         let linear_system = L::new(size);
 
         Ok(Self {
@@ -134,6 +156,40 @@ where
             predictor_ratio: None,
             _marker: std::marker::PhantomData,
         })
+    }
+
+    /// The library's own text of a failed factorization (the `Caused by` of
+    /// the error, or the error itself).
+    fn cause_text(error: &Error) -> String {
+        match error {
+            Error::WithCause { cause, .. } => cause.to_string(),
+            other => other.to_string(),
+        }
+    }
+
+    /// The `E0503`/`E0507` of the system just stamped, which `what` failed to
+    /// solve: reads the entries still held by the linear system.
+    fn singular(&self, what: &str) -> Error {
+        let entries: Vec<Stamp<usize, E>> = self
+            .linear_system
+            .matrix_entries()
+            .into_iter()
+            .map(|(r, c, v)| Stamp::Matrix(r, c, v))
+            .collect();
+        SingularityReport::error(SolverDomain::Newton, self.state.size(), &entries, what)
+    }
+
+    /// The exhaustion of `max_iter` iterations: names the unknowns of the last
+    /// iteration that failed the update or residual test and the limits still
+    /// vetoing. The caller's driver re-codes it (`E0505`, `E0508`, `E0504`).
+    fn exhausted(max_iter: usize, failing: Vec<usize>, limits: &[LimitState]) -> Error {
+        let mut detail = format!("Newton failed to converge after {max_iter} iterations");
+        if !limits.is_empty() {
+            let named: Vec<String> =
+                limits.iter().map(|l| format!("{} (limit {})", l.instance, l.input)).collect();
+            detail.push_str(&format!(", limiting: {}", named.join(", ")));
+        }
+        Error::run(RunCode::E0505, SolverDomain::Newton, detail).with_unknowns(failing)
     }
 
     /// Rebuild the nonlinear residual + scale vectors in place from the
@@ -192,15 +248,17 @@ where
 
             self.linear_system.reset();
             self.linear_system.apply_stamps(stamps);
-            let mut current_guess = self.linear_system.solve_with_backend(&self.symbolic)?;
+            let mut current_guess = self
+                .linear_system
+                .solve_with_backend(&self.symbolic)
+                .map_err(|cause| {
+                    self.singular(&format!("the Jacobian is singular ({})", Self::cause_text(&cause)))
+                })?;
 
             if current_guess.iter().any(|x| !x.is_finite()) {
                 system.convergence_failed_callback(&self.state, iter, &current_guess.view());
 
-                return Err(Error::simple(
-                    crate::error::SolverDomain::Newton,
-                    "Linear solver returned NaN/Inf",
-                ));
+                return Err(self.singular("the linear solve returned a non-finite value"));
             }
 
             debug!("New guess: {:?}", current_guess);
@@ -233,10 +291,7 @@ where
         self.last_iterations = max_iter;
         self.total_iterations += max_iter;
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
-        Err(Error::simple(
-            crate::error::SolverDomain::Newton,
-            format!("Failed to converge after {} iterations", max_iter),
-        ))
+        Err(Self::exhausted(max_iter, Vec::new(), &system.limiting_report()))
     }
 
     pub fn current_guess(&self) -> Option<ArrayView1<'_, E>> {
@@ -336,6 +391,7 @@ where
         system.update_sources(&mut self.state);
 
         let max_iter = strategy.max_iter(policy);
+        let mut failing = Vec::new();
 
         for iter in 0..max_iter {
             system.before_iter_callback(&self.state, iter);
@@ -350,15 +406,15 @@ where
             self.assembly_ns += t_assembly.elapsed().as_nanos() as u64;
 
             let t_solve = std::time::Instant::now();
-            let mut current_guess = self.linear_system.solve_with_backend(&self.symbolic)?;
+            let solved = self.linear_system.solve_with_backend(&self.symbolic);
             self.solve_ns += t_solve.elapsed().as_nanos() as u64;
+            let mut current_guess = solved.map_err(|cause| {
+                self.singular(&format!("the Jacobian is singular ({})", Self::cause_text(&cause)))
+            })?;
 
             if current_guess.iter().any(|x| !x.is_finite()) {
                 system.convergence_failed_callback(&self.state, iter, &current_guess.view());
-                return Err(Error::simple(
-                    crate::error::SolverDomain::Newton,
-                    "Linear solver returned NaN/Inf",
-                ));
+                return Err(self.singular("the linear solve returned a non-finite value"));
             }
 
             debug!("New guess: {:?}", current_guess);
@@ -395,6 +451,18 @@ where
                 return Ok(current_guess);
             }
 
+            if iter + 1 == max_iter
+                && let Some(previous) = self.state.latest()
+            {
+                failing = tolerances.failing(
+                    previous,
+                    &current_guess.view(),
+                    system.netlist(),
+                    &self.residual,
+                    &self.scale,
+                );
+            }
+
             self.state
                 .latest_mut()
                 .unwrap()
@@ -404,9 +472,82 @@ where
         self.last_iterations = max_iter;
         self.total_iterations += max_iter;
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
-        Err(Error::simple(
-            crate::error::SolverDomain::Newton,
-            format!("Failed to converge after {} iterations", max_iter),
-        ))
+        Err(Self::exhausted(max_iter, failing, &system.limiting_report()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::convergence::DampedNewton;
+    use crate::math::faer::FaerSparseLinearSystem;
+    use crate::netlist::{AnalogReference, Netlist, NodeIdentifier};
+
+    type Solver = NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>;
+
+    /// A diagonal system `g_i · x_i = rhs_i(x)` over anonymous nodes.
+    struct Diagonal {
+        netlist: Netlist,
+        nodes: Vec<AnalogReference>,
+        conductance: Vec<f64>,
+        /// Row `i`'s right-hand side as a function of the previous iterate.
+        rhs: fn(usize, f64) -> f64,
+    }
+
+    impl Diagonal {
+        fn new(conductance: Vec<f64>, rhs: fn(usize, f64) -> f64) -> Self {
+            let mut netlist = Netlist::new();
+            let nodes = (0..conductance.len())
+                .map(|i| netlist.connect_node(NodeIdentifier::Anonymous(i + 1)))
+                .collect();
+            Self { netlist, nodes, conductance, rhs }
+        }
+    }
+
+    impl NonLinearSystem<AnalogReference, f64> for Diagonal {
+        fn assemble(
+            &mut self,
+            state: &CircularArrayBuffer2<f64>,
+        ) -> crate::error::Result<Vec<Stamp<AnalogReference, f64>>> {
+            let mut stamps = Vec::new();
+            for (i, node) in self.nodes.iter().enumerate() {
+                let previous = state.latest().map_or(0.0, |row| row[i]);
+                stamps.push(Stamp::Matrix(node.clone(), node.clone(), self.conductance[i]));
+                stamps.push(Stamp::Rhs(node.clone(), (self.rhs)(i, previous)));
+            }
+            Ok(stamps)
+        }
+
+        fn netlist(&self) -> &Netlist {
+            &self.netlist
+        }
+    }
+
+    #[test]
+    fn a_non_finite_solution_of_finite_stamps_is_e0503() {
+        // 1e-320 S against a 1e300 A source: every stamp is finite, the
+        // solution 1e620 is not.
+        let mut system = Diagonal::new(vec![1e-320], |_, _| 1e300);
+        let mut solver = Solver::new(&mut system, 1, 3).expect("a pattern");
+        let err = solver
+            .solve_with_strategy(&mut system, &DampedNewton, &Tolerances::default(), &Policy::default())
+            .expect_err("the solution is not finite");
+        assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
+        assert!(!err.to_string().contains("returned NaN"), "{err}");
+    }
+
+    #[test]
+    fn exhaustion_names_the_unknowns_that_failed() {
+        // Unknown 0 solves x = x + 1 (it never settles); unknown 1 solves x = 0 (settled from the zero seed).
+        let mut system = Diagonal::new(vec![1.0, 1.0], |i, previous| if i == 0 { previous + 1.0 } else { 0.0 });
+        let mut solver = Solver::new(&mut system, 2, 3).expect("a pattern");
+        let policy = Policy { max_iter: 6, ..Policy::default() };
+        let err = solver
+            .solve_with_strategy(&mut system, &DampedNewton, &Tolerances::default(), &policy)
+            .expect_err("unknown 0 never settles");
+        let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+        assert_eq!(run.code, RunCode::E0505);
+        assert_eq!(run.unknowns, vec![0], "only the diverging unknown failed: {err}");
+        assert!(run.detail.contains("6 iterations"), "{err}");
     }
 }

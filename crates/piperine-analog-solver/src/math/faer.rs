@@ -172,6 +172,9 @@ impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
         self.b_vec.fill(E::zero());
     }
 
+    fn matrix_entries(&self) -> Vec<(usize, usize, E)> {
+        self.triplets.iter().map(|t| (t.row, t.col, t.val)).collect()
+    }
 }
 
 impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> {

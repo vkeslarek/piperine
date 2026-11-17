@@ -9,8 +9,7 @@
 //! alongside every other device's contributions, there is no way back to
 //! which one produced it — the pre-existing `math/newton_raphson.rs`
 //! guard (checking the *solved* vector after a full Newton iteration) can
-//! only report a generic "Linear solver returned NaN/Inf" convergence
-//! failure, not a named branch.
+//! only report the singular system, not a named branch.
 
 use crate::netlist::AnalogReference;
 use crate::error::{Error, SolverDomain};

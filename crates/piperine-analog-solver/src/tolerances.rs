@@ -90,6 +90,28 @@ impl Tolerances {
         }
     }
 
+    /// The update test of one unknown: `|new − old| ≤ reltol·max(|old|, |new|) + abs`.
+    fn update_within(&self, reference: &crate::netlist::AnalogReference, old_v: f64, new_v: f64) -> bool {
+        let abs_limit = if reference.is_branch() {
+            self.abstol
+        } else {
+            self.vntol_for(reference.variable())
+        };
+        let magnitude = old_v.abs().max(new_v.abs());
+        let allowed_error = self.reltol * magnitude + abs_limit;
+        (new_v - old_v).abs() <= allowed_error
+    }
+
+    /// The residual test of one row: `|residual| ≤ abs + reltol·scale`.
+    fn residual_within(&self, reference: &crate::netlist::AnalogReference, residual: f64, scale: f64) -> bool {
+        let abs_limit = if reference.variable().is_branch() {
+            self.abstol
+        } else {
+            self.vntol_for(reference.variable())
+        };
+        !(residual.abs() > abs_limit + self.reltol * scale)
+    }
+
     /// The convergence test that used to be `Context::has_converged` — moved
     /// here because it only reads tolerance fields. Same logic, same output.
     pub fn has_converged(
@@ -111,20 +133,7 @@ impl Tolerances {
                     return true;
                 }
 
-                let old_v = old_values[index];
-                let new_v = new_values[index];
-
-                let abs_limit = if reference.is_branch() {
-                    self.abstol
-                } else {
-                    self.vntol_for(reference.variable())
-                };
-
-                let magnitude = old_v.abs().max(new_v.abs());
-                let allowed_error = self.reltol * magnitude + abs_limit;
-                let diff = (new_v - old_v).abs();
-
-                diff <= allowed_error
+                self.update_within(reference, old_values[index], new_values[index])
             })
     }
 
@@ -142,13 +151,41 @@ impl Tolerances {
             if i >= residual.len() {
                 continue;
             }
-            let abs_limit = if r.variable().is_branch() { self.abstol } else { self.vntol_for(r.variable()) };
-            let tol = abs_limit + self.reltol * scale[i];
-            if residual[i].abs() > tol {
+            if !self.residual_within(r, residual[i], scale[i]) {
                 return false;
             }
         }
         true
+    }
+
+    /// The unknowns that fail the update test of [`has_converged`](Self::has_converged)
+    /// or the residual test of [`residual_test`](Self::residual_test), in index
+    /// order: what a Newton exhaustion names (§17.1).
+    pub fn failing(
+        &self,
+        old_values: ArrayView1<f64>,
+        new_values: &ArrayView1<f64>,
+        netlist: &Netlist,
+        residual: &[f64],
+        scale: &[f64],
+    ) -> Vec<usize> {
+        use crate::math::linear::AsIndex;
+        let mut failing: Vec<usize> = netlist
+            .all_references()
+            .into_iter()
+            .filter_map(|reference| {
+                let i = reference.as_index()?;
+                let update_fails = i < old_values.len()
+                    && i < new_values.len()
+                    && !self.update_within(reference, old_values[i], new_values[i]);
+                let residual_fails = i < residual.len()
+                    && i < scale.len()
+                    && !self.residual_within(reference, residual[i], scale[i]);
+                (update_fails || residual_fails).then_some(i)
+            })
+            .collect();
+        failing.sort_unstable();
+        failing
     }
 }
 

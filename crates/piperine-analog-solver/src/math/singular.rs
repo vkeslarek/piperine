@@ -1,7 +1,9 @@
 //! Which unknowns make a Jacobian singular (§17.1, `E0503`): the null vector
 //! of the dense matrix of the stamps, by singular value decomposition. It runs
 //! only on failure, and not above [`MAX_DENSE`] unknowns.
+use crate::error::{Error, RunCode, SolverDomain};
 use crate::math::linear::{AsIndex, Stamp};
+use crate::math::num::Scalar;
 use faer::Mat;
 
 /// The largest system the dense diagnosis is attempted on.
@@ -21,7 +23,7 @@ pub struct SingularityReport {
 }
 
 impl SingularityReport {
-    pub fn of<A: AsIndex>(size: usize, stamps: &[Stamp<A, f64>]) -> Self {
+    pub fn of<A: AsIndex, E: Scalar>(size: usize, stamps: &[Stamp<A, E>]) -> Self {
         if size > MAX_DENSE {
             return Self { unknowns: Vec::new(), skipped: Some(size) };
         }
@@ -32,7 +34,7 @@ impl SingularityReport {
                 && row < size
                 && col < size
             {
-                dense[(row, col)] += *value;
+                dense[(row, col)] += value.diagnostic_value();
             }
         }
         let unknowns = match dense.svd() {
@@ -44,6 +46,32 @@ impl SingularityReport {
             _ => Vec::new(),
         };
         Self { unknowns, skipped: None }
+    }
+
+    /// The run error of a linear solve that failed (`what` says how): `E0507`
+    /// when a stamp itself is non-finite, else `E0503` with the null-vector
+    /// unknowns (or the note that the diagnosis was skipped).
+    pub fn error<A: AsIndex, E: Scalar>(
+        domain: SolverDomain,
+        size: usize,
+        stamps: &[Stamp<A, E>],
+        what: &str,
+    ) -> Error {
+        let non_finite = stamps.iter().any(|s| match s {
+            Stamp::Matrix(_, _, v) | Stamp::Rhs(_, v) => !v.is_finite(),
+        });
+        if non_finite {
+            return Error::run(RunCode::E0507, domain, format!("{what}: a stamp is non-finite"));
+        }
+        let report = Self::of(size, stamps);
+        match report.skipped {
+            Some(n) => Error::run(
+                RunCode::E0503,
+                domain,
+                format!("{what}; {n} unknowns are above the {MAX_DENSE} the diagnosis covers, so none are named"),
+            ),
+            None => Error::run(RunCode::E0503, domain, what).with_unknowns(report.unknowns),
+        }
     }
 }
 

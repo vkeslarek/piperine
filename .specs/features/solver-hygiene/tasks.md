@@ -377,8 +377,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_non_finite_solution_of_finite_stamps_is_e0503` and `exhaustion_names_the_unknowns_that_failed` pass under `**Run analoglib**`; the text `Linear solver returned NaN/Inf` no longer exists
-- [ ] Gate check passes: Full
+- [x] `a_non_finite_solution_of_finite_stamps_is_e0503` and `exhaustion_names_the_unknowns_that_failed` pass under `**Run analoglib**`; the text `Linear solver returned NaN/Inf` no longer exists
+- [x] Gate check passes: Full
 
 **Tests**: unit
 **Gate**: full

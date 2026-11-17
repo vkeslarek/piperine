@@ -163,6 +163,15 @@ impl Error {
         }
     }
 
+    /// Re-code a run error: the driver that sees a failure decides which Part V
+    /// code it is (an equilibrium, a step at the floor, a step after a jump).
+    pub fn with_code(mut self, code: RunCode) -> Error {
+        if let Error::Run(run) = &mut self {
+            run.code = code;
+        }
+        self
+    }
+
     /// Stamp the time of the failure on a run error; other errors pass through.
     pub fn with_time(mut self, time: f64) -> Error {
         if let Error::Run(run) = &mut self {

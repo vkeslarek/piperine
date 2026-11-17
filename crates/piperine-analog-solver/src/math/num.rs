@@ -24,6 +24,9 @@ pub trait Scalar:
 {
     fn abs(self) -> f64;
     fn is_finite(&self) -> bool;
+    /// The real number a diagnostic sees in place of this entry: the value
+    /// itself for a real scalar, the magnitude for a complex one.
+    fn diagnostic_value(self) -> f64;
 }
 
 impl Scalar for f64 {
@@ -34,6 +37,10 @@ impl Scalar for f64 {
     fn is_finite(&self) -> bool {
         f64::is_finite(*self)
     }
+
+    fn diagnostic_value(self) -> f64 {
+        self
+    }
 }
 
 impl Scalar for Complex<f64> {
@@ -43,5 +50,9 @@ impl Scalar for Complex<f64> {
 
     fn is_finite(&self) -> bool {
         Complex::is_finite(*self)
+    }
+
+    fn diagnostic_value(self) -> f64 {
+        self.norm()
     }
 }
