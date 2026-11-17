@@ -117,3 +117,16 @@ fn idle_keeps_the_mode_off() {
     let mode = column(&header, &rows, "Idle.mode");
     assert!(mode.iter().all(|m| *m == "0"), "a row where the mode is not 0: {:?}", mode.iter().find(|m| **m != "0"));
 }
+
+#[test]
+fn piperine_test_passes_on_the_buck() {
+    // CLI-08 AC 5: `piperine test` in `examples/buck` exits 0, both runs judged by the DPWM's
+    // monitor (the passing checks are hidden on a terminal, but they are counted)
+    let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).arg("test").current_dir(buck()).env("PIPERINE_CACHE_DIR", cache()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
+    let stdout = String::from_utf8(out.stdout).expect("text");
+    assert_eq!(out.status.code(), Some(0), "stdout:\n{stdout}\nstderr:\n{}", String::from_utf8_lossy(&out.stderr));
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "{stdout}");
+    assert!(lines[0].starts_with("PASS idle (") && lines[1].starts_with("PASS startup ("), "{stdout}");
+    assert_eq!(lines[2], "2 runs, 2 passed, 0 failed");
+}

@@ -242,3 +242,103 @@ fn build_goes_on_after_a_failing_run_and_exits_1() {
     let err = text(&out.stderr);
     assert!(err.contains("P0002") && err.contains("bad.msl:2") && err.contains("error: typeck failed"), "{err}");
 }
+
+// ---- test (CLI-08, CLI-16) ------------------------------------------------------------------
+
+/// The lines of a standard output.
+fn lines_of(out: &Output) -> Vec<String> {
+    text(&out.stdout).lines().map(str::to_string).collect()
+}
+
+#[test]
+fn test_runs_every_run_or_the_named_ones() {
+    // CLI-16 AC 1: every run in manifest order (`good`, `bad`), or only the runs named, in the
+    // order named; a name that is no run is a usage error
+    let dir = fixture("one_pass_one_fail");
+    let all = lines_of(&piperine_in(&dir, &["test"]));
+    assert!(all[0].starts_with("PASS good ") && all[1].starts_with("FAIL bad "), "{all:?}");
+    let named = lines_of(&piperine_in(&dir, &["test", "bad", "good"]));
+    assert!(named[0].starts_with("FAIL bad ") && named.iter().any(|l| l.starts_with("PASS good ")), "{named:?}");
+    assert_eq!(named.last().map(String::as_str), Some("2 runs, 1 passed, 1 failed"));
+    let one = lines_of(&piperine_in(&dir, &["test", "good"]));
+    assert_eq!(one, ["PASS good (1 checks)", "1 runs, 1 passed, 0 failed"]);
+    let out = piperine_in(&dir, &["test", "nope"]);
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out.stderr));
+}
+
+#[test]
+fn test_prints_pass_with_the_check_count() {
+    // CLI-16 AC 2: `PASS <name> (<n> checks)`. In `examples/rc` the `op` run writes no check and
+    // `step` writes the one `require` of its monitor. The count includes passing checks the
+    // terminal hides: `run step` prints no `checks` line by default (CLI-06 AC 9) and `test`
+    // still counts it, so the hiding changes neither the count nor the verdict.
+    let out = piperine_in(&rc(), &["test"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "PASS op (0 checks)\nPASS step (1 checks)\n2 runs, 2 passed, 0 failed\n");
+    let hidden = text(&piperine_in(&rc(), &["run", "step"]).stdout);
+    assert!(!hidden.contains(" checks "), "a passing check is hidden on the terminal:\n{hidden}");
+    let shown = text(&piperine_in(&rc(), &["run", "step", "--all-checks"]).stdout);
+    assert_eq!(shown.lines().filter(|l| l.contains(" checks ")).count(), 1, "{shown}");
+}
+
+#[test]
+fn test_prints_fail_and_the_failing_records() {
+    // CLI-16 AC 3: `FAIL <name> (<k> of <n> checks failed)` then the line of each failing
+    // record, and exit 1; the monitor requires `v <= 0.1` at the 0.5 V crossing, which is false
+    let out = piperine_in(&fixture("failing_require"), &["test"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    let lines = lines_of(&out);
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    assert_eq!(lines[0], "FAIL fails (1 of 1 checks failed)");
+    assert!(lines[1].starts_with('@') && lines[1].ends_with(" Fails.mon checks kind=\"require\" name=\"under_limit\" pass=false"), "{}", lines[1]);
+    assert_eq!(lines[2], "1 runs, 0 passed, 1 failed");
+    // of two checks' worth of a run, only the failing record is listed: `bad` of the mixed project
+    let mixed = lines_of(&piperine_in(&fixture("one_pass_one_fail"), &["test", "bad"]));
+    assert_eq!(mixed[0], "FAIL bad (1 of 1 checks failed)");
+    assert!(mixed[1].contains("pass=false"), "{mixed:?}");
+}
+
+#[test]
+fn test_prints_no_table_and_no_other_record() {
+    // CLI-16 AC 4: `rc`'s `step` also writes a `trip` record and a table of `time`, `vin` and
+    // `vout`; none reaches standard output, only the verdict and the count
+    let out = piperine_in(&rc(), &["test", "step"]);
+    assert_eq!(text(&out.stdout), "PASS step (1 checks)\n1 runs, 1 passed, 0 failed\n");
+    // a failing run lists its failing check and nothing else either
+    let out = text(&piperine_in(&fixture("failing_require"), &["test"]).stdout);
+    assert!(!out.contains("time") && !out.contains(" sim ") && out.matches('@').count() == 1, "{out}");
+}
+
+#[test]
+fn a_run_that_does_not_complete_is_a_fail() {
+    // CLI-16 AC 5: `FAIL <name> (did not run)` on standard output, the error on standard error.
+    // `fails_after_emit` meets an infinity in its solve; `type_error` fails before any solve.
+    let out = piperine_in(&fixture("fails_after_emit"), &["test"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(text(&out.stdout), "FAIL grow (did not run)\n1 runs, 0 passed, 1 failed\n");
+    assert!(text(&out.stderr).contains("contributed a NaN"), "{}", text(&out.stderr));
+    let out = piperine_in(&fixture("type_error"), &["test"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(text(&out.stdout), "FAIL main (did not run)\n1 runs, 0 passed, 1 failed\n");
+    assert!(text(&out.stderr).contains("P0002"), "{}", text(&out.stderr));
+}
+
+#[test]
+fn the_last_line_counts_and_the_exit_code_follows() {
+    // CLI-16 AC 6: `<r> runs, <p> passed, <f> failed` is the last line; exit 0 when `f` is 0, 1
+    // otherwise
+    let ok = piperine_in(&rc(), &["test"]);
+    assert_eq!(lines_of(&ok).last().map(String::as_str), Some("2 runs, 2 passed, 0 failed"));
+    assert_eq!(ok.status.code(), Some(0));
+    let mixed = piperine_in(&fixture("one_pass_one_fail"), &["test"]);
+    assert_eq!(lines_of(&mixed).last().map(String::as_str), Some("2 runs, 1 passed, 1 failed"));
+    assert_eq!(mixed.status.code(), Some(1));
+}
+
+#[test]
+fn a_project_without_a_run_passes_with_zero() {
+    // CLI-16 AC 7
+    let out = piperine_in(&fixture("no_run"), &["test"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "0 runs, 0 passed, 0 failed\n");
+}

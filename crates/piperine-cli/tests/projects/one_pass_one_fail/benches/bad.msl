@@ -1,0 +1,10 @@
+use one_pass_one_fail::{Capacitor, Monitor, Resistor, Vsource};
+
+module Bad() {
+    signal vin: Electrical;
+    signal vout: Electrical = 0.0;
+    let v1 = Vsource(vin, gnd) { dc: 1.0 };
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let c1 = Capacitor(vout, gnd) { c: 1n };
+    let mon = Monitor(vout) { limit: 0.1 };
+}

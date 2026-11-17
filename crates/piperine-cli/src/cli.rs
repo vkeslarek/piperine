@@ -15,6 +15,7 @@ use piperine_api::Overrides;
 use crate::commands::build::BuildCommand;
 use crate::commands::check::CheckCommand;
 use crate::commands::run::RunCommand;
+use crate::commands::test::TestCommand;
 use crate::exit::Exit;
 
 /// Where a command writes its data. Shared, because the records of a run are written by the
@@ -284,6 +285,7 @@ impl Cli {
         match invocation {
             Invocation::Build { project, runs, verbose } => BuildCommand { project: project.clone(), runs: runs.clone(), verbose: *verbose }.execute(out, err),
             Invocation::Check { project, target } => CheckCommand { project: project.clone(), target: target.clone() }.execute(out, err),
+            Invocation::Test { project, runs } => TestCommand { project: project.clone(), runs: runs.clone() }.execute(out, err),
             Invocation::Run { project, target, overrides } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone() }.execute(out, err),
             other => {
                 // a closed standard error leaves nothing to tell; the command fails either way

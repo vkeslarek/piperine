@@ -1,0 +1,13 @@
+[package]
+name = "one_pass_one_fail"
+version = "0.1.0"
+
+[run.good]
+bench = "benches/good.msl"
+analysis = "transient"
+stop = 5e-6
+
+[run.bad]
+bench = "benches/bad.msl"
+analysis = "transient"
+stop = 5e-6

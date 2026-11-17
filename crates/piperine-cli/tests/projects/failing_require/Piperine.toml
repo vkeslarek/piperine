@@ -1,0 +1,8 @@
+[package]
+name = "failing_require"
+version = "0.1.0"
+
+[run.fails]
+bench = "benches/fails.msl"
+analysis = "transient"
+stop = 5e-6

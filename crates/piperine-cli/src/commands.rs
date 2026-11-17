@@ -4,10 +4,12 @@
 //! - [`run`]: `piperine run`.
 //! - [`check`]: `piperine check`.
 //! - [`build`]: `piperine build`.
+//! - [`test`]: `piperine test`.
 
 pub mod build;
 pub mod check;
 pub mod run;
+pub mod test;
 
 use std::path::Path;
 
