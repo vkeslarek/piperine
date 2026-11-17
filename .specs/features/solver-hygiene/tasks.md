@@ -440,8 +440,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_non_finite_stamp_is_e0507_with_its_row` passes under `**Run analoglib**`; `grep -rn '7.3.2.1' crates/piperine-*solver*/src` finds nothing
-- [ ] Gate check passes: Quick
+- [x] `a_non_finite_stamp_is_e0507_with_its_row` passes under `**Run analoglib**`; `grep -rn '7.3.2.1' crates/piperine-*solver*/src` finds nothing
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick
