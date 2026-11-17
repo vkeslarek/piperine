@@ -452,9 +452,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Unit tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `rt::real::tests::the_differentiable_rows_agree_with_finite_differences` (each row at several points, central differences, the step and the bound written beside the assertion), `rt::real::tests::the_piecewise_rows_have_derivative_zero_or_one`, `rt::real::tests::each_row_has_the_value_of_rusts_method` (bit-equal)
-- [ ] Gate check passes: Quick (`Run tlib`)
-- [ ] Test count: the 3 tests named above, and no existing test removed or edited
+- [x] Unit tests with exactly these names pass in `cargo test -p piperine-transpile --lib`: `rt::real::tests::the_differentiable_rows_agree_with_finite_differences` (each row at several points, central differences, the step and the bound written beside the assertion), `rt::real::tests::the_piecewise_rows_have_derivative_zero_or_one`, `rt::real::tests::each_row_has_the_value_of_rusts_method` (bit-equal)
+- [x] Gate check passes: Quick (`Run tlib`)
+- [x] Test count: the 3 tests named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick
