@@ -20,6 +20,7 @@ use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
+use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
 use crate::table::Table;
@@ -51,6 +52,9 @@ pub struct Session {
     swept: Option<ParamPath>,
     /// The record streams of the design, filtered by the run's `streams`.
     streams: Streams,
+    /// The table of every accepted step, kept when the request has `plot`: a print grid
+    /// thins the printed table, never the plot (CLI-22 AC 7).
+    accepted: Option<Table>,
 }
 
 /// A param of an instance of the design, by the instance's full path.
@@ -127,7 +131,7 @@ impl Session {
             let refused = |error| Failure::Host { code: "E0802", message: format!("`{entry}` refuses the value {value}: {error}") };
             circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, accepted: None })
     }
 
     /// The top module's name.
@@ -179,6 +183,9 @@ impl Session {
         let failure = Rc::new(RefCell::new(None));
         let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone() });
         let table = self.analysis(circuit, delivery);
+        if let (Ok(table), Some(_)) = (&table, &self.spec.plot) {
+            self.accepted.get_or_insert_with(|| table.clone());
+        }
         // a record that could not be decoded is a defect the run reports first: the records
         // before it were delivered, none after it was guessed
         match failure.borrow_mut().take() {
@@ -188,7 +195,7 @@ impl Session {
     }
 
     /// The request's analysis on `circuit`, every observation of the solver to `delivery`.
-    fn analysis(&self, circuit: CircuitInstance, delivery: Box<Delivery>) -> Result<Table, Failure> {
+    fn analysis(&mut self, circuit: CircuitInstance, delivery: Box<Delivery>) -> Result<Table, Failure> {
         match &self.spec.analysis {
             Analysis::Op => {
                 let mut solver = Solver::new(circuit).with_sink(delivery).build();
@@ -211,6 +218,9 @@ impl Session {
                 let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(delivery).build();
                 let result = solver.tran().and_then(|mut tran| tran.solve()).map_err(|error| Failure::Solver { analysis: "transient", error })?;
                 let table = Table::transient(&self.probes, &result)?;
+                if self.spec.plot.is_some() {
+                    self.accepted = Some(table.clone());
+                }
                 match print_step {
                     Some(step) => table.on_grid(*step, from.unwrap_or(0.0), *stop),
                     None => Ok(table),
@@ -254,6 +264,13 @@ impl Session {
         let b = circuit.bound()?;
         let at = b.digital.plan().nets.iter().position(|n| n.name == path)?;
         Some(b.digital.read(NetId(at as u32)).to_vec())
+    }
+
+    /// The plot of the run that has completed, drawn from every accepted step, whatever
+    /// `print_step` is; `P0010` for an operating point, and a `Failure` before the run.
+    pub fn plot(&self) -> Result<Plot, Failure> {
+        let table = self.accepted.as_ref().ok_or_else(|| Failure::Backend("no plot: the request has no `plot`, or the session has not run".into()))?;
+        Plot::of(table, &self.spec.analysis)
     }
 
     /// The `top` key, else the one module without ports of the root crate (`P0011` when there
