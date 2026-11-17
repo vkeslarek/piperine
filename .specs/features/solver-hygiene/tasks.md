@@ -225,10 +225,10 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `tran_dq` passes under `**Run parity**` on both backends; `every_twin_has_a_cir_and_a_test` passes
-- [ ] `every_twin_prints_the_bytes_it_printed_before_the_long_run` passes under `**Run twins**` (the `tt` default moves no golden); if it does not, `tt` goes to a separate `DiodeTt` module instead
-- [ ] The deviation table after is in the commit body, with `tran_dq`'s row
-- [ ] Gate check passes: Full
+- [x] `tran_dq` passes under `**Run parity**` on both backends; `every_twin_has_a_cir_and_a_test` passes
+- [x] `every_twin_prints_the_bytes_it_printed_before_the_long_run` passes under `**Run twins**` (the `tt` default moves no golden); if it does not, `tt` goes to a separate `DiodeTt` module instead
+- [x] The deviation table after is in the commit body, with `tran_dq`'s row
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

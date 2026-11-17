@@ -1,4 +1,4 @@
-//! Scope: the deviation table (HYG-06): each of the 7 twins is run with the policy of its own
+//! Scope: the deviation table (HYG-06): each of the 8 twins is run with the policy of its own
 //! `parity_*` target and the worst `|golden - actual| / bound` of every compared quantity is
 //! printed (`-- --nocapture`), with the accepted and rejected steps and `dt_min` floor hits of a
 //! transient. It measures; the gate stays the `parity_*` targets under `ToleranceContract`.
@@ -108,6 +108,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
     table.insert("ac_rc", ac(&golden, backend));
     let Reference::Golden(golden) = ngspice.run("tran_rc") else { return None };
     table.insert("tran_rc", tran("tran_rc", "tran_rc_tran", "out", &golden, backend));
+    let Reference::Golden(golden) = ngspice.run("tran_dq") else { return None };
+    table.insert("tran_dq", tran("tran_dq", "tran_dq_tran", "a", &golden, backend));
     Some(table)
 }
 

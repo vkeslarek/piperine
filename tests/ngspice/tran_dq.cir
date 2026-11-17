@@ -1,0 +1,18 @@
+* tran_dq — transient cross-check on a nonlinear diffusion charge ddt(tt * id).
+* 1 V through 1 kOhm charges 1.59 nF in parallel with a diode of tt = 1 us; the node starts at
+* 0 V (`uic`, the piperine twin holds a at 0). The options are set because the diode charge
+* is a nonlinear dynamic term: ngspice's default truncation-error control (trtol 7) and
+* reltol 1e-3 integrate it more coarsely than the 1e-3 contract can separate from piperine's
+* own step choice, so both solvers are tightened (reltol 1e-4, trtol 1) to compare the
+* same trajectory. `.options interp` prints on the grid of multiples of tstep.
+V1 vin 0 DC 1
+R1 vin a 1000
+C1 a 0 1.5915494309189535e-9
+D1 a 0 DMOD
+.model DMOD D (is=1e-14 n=1 tt=1e-6 cjo=0 rs=0)
+.options interp reltol=1e-4 trtol=1
+.control
+tran 0.1u 10u uic
+wrdata tran_dq_tran v(a)
+.endc
+.end

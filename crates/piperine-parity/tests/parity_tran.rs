@@ -1,6 +1,8 @@
-//! Scope: transient parity (requirement PAR-06 AC 6 and 7, edge case 3): `v(out)` of the RC
-//! twin, run to 10 us with a step cap of a tenth of ngspice's print step and read at the exported
-//! times by linear interpolation, agrees with ngspice under `TRAN_VOLTAGE`.
+//! Scope: transient parity (requirement PAR-06 AC 6 and 7, edge case 3; HYG-06): `v(out)` of the RC
+//! twin and `v(a)` of `tran_dq`, the RC charge through a diode whose transit-time charge `tt * id`
+//! is nonlinear in the limited junction voltage, each run to 10 us with a step cap of a tenth of
+//! ngspice's print step and read at the exported times by linear interpolation, agree with ngspice
+//! under `TRAN_VOLTAGE`.
 
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
@@ -40,31 +42,42 @@ fn the_transient_step_cap_is_a_tenth_of_the_print_step() {
 fn tran_rc() {
     let reference = Ngspice::from_environment().run("tran_rc");
     for backend in Backend::selected() {
-        compare_on(&reference, backend);
+        compare_on("tran_rc", "out", &reference, backend);
     }
 }
 
-/// The transient of the RC twin on `backend` against the reference run already made.
-fn compare_on(reference: &Reference, backend: Backend) {
-    let mut bench = Bench::load_on("tran_rc", backend);
-    let out = bench.node("out");
+#[test]
+fn tran_dq() {
+    let reference = Ngspice::from_environment().run("tran_dq");
+    for backend in Backend::selected() {
+        compare_on("tran_dq", "a", &reference, backend);
+    }
+}
+
+/// The transient of the twin `fixture` on `backend`, reading `v(node)`, against the reference run
+/// already made.
+fn compare_on(fixture: &str, node: &str, reference: &Reference, backend: Backend) {
+    let export = format!("{fixture}_tran");
+    let quantity = format!("v({node})");
+    let mut bench = Bench::load_on(fixture, backend);
+    let out = bench.node(node);
     let rows = match reference {
         Reference::Golden(golden) => {
-            let rows = golden.real("tran_rc_tran");
-            golden.expect_rows("tran_rc_tran", &rows, 100);
+            let rows = golden.real(&export);
+            golden.expect_rows(&export, &rows, 100);
             rows
         }
         Reference::Skipped => vec![(0.0, 0.0), (0.1e-6, 0.0)],
     };
     let times: Vec<f64> = rows.iter().map(|(t, _)| *t).collect();
     let options = TranRun::options(&times);
-    let result = bench.circuit().transient(options, Context::default()).expect("transient").solve().unwrap_or_else(|error| panic!("tran_rc: the transient does not solve on {}: {error}", backend.name()));
+    let result = bench.circuit().transient(options, Context::default()).expect("transient").solve().unwrap_or_else(|error| panic!("{fixture}: the transient does not solve on {}: {error}", backend.name()));
     let steps: Vec<_> = result.iter().collect();
-    let waveform = Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).expect("v(out)")).collect());
+    let waveform = Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).unwrap_or_else(|| panic!("{fixture}: no {quantity}"))).collect());
     let Reference::Golden(golden) = reference else { return };
     for (time, wanted) in rows {
-        let actual = waveform.at(time).unwrap_or_else(|| panic!("tran_rc: the time {time:e} s lies outside the solver's result on {}", backend.name()));
-        let at = Point::new("tran_rc", "v(out)", Coordinate::Time(time)).with_ngspice(golden.version()).with_backend(backend.name());
+        let actual = waveform.at(time).unwrap_or_else(|| panic!("{fixture}: the time {time:e} s lies outside the solver's result on {}", backend.name()));
+        let at = Point::new(fixture, &quantity, Coordinate::Time(time)).with_ngspice(golden.version()).with_backend(backend.name());
         ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
     }
 }
