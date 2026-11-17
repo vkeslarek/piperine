@@ -400,7 +400,10 @@ impl Assembly {
     }
 
     /// Records, for every `DDT` term, its value at the converged solution `x`
-    /// as the newest history row. Called once per converged solve, where the
+    /// as the newest history row: every limit holds `x̂ = x` for it, as in a
+    /// small-signal solve, so the row is the term's argument at the solution
+    /// and not its limit linearization `q(x̂) + g·(x − x̂)`, which for a
+    /// nonlinear `q` and a held `x̂` far from `x` is not `q(x)` at all. Called once per converged solve, where the
     /// Newton state buffer gains its row (a stage, an operating point, an
     /// initial-condition row), so the two stay aligned.
     // SPEC_DEVIATION: design.md gives `push_stage(&mut self)`; it takes the
@@ -408,7 +411,7 @@ impl Assembly {
     // Reason: the buffer row the companion reads is the converged `x`, which
     // no assembly evaluated (the last assemble ran at the iterate before it).
     pub fn push_stage(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
-        self.evaluate(x, amb)?;
+        self.evaluate_for(x, amb, Need { small_signal: true, ..Need::NEWTON })?;
         self.iteration = 0;
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             for (ti, t) in inst.terms.iter().enumerate() {

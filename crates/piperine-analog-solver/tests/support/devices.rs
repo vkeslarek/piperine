@@ -440,7 +440,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 27] = [const { OnceLock::new() }; 27];
+    static M: [OnceLock<Module>; 28] = [const { OnceLock::new() }; 28];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -469,6 +469,7 @@ pub fn modules() -> Modules {
         capper: module_of::<Capper>(&M[24], "Capper"),
         tracer: module_of::<Tracer>(&M[25], "Tracer"),
         sample_hold: module_of::<SampleHold>(&M[26], "SampleHold"),
+        charge_diode: module_of::<ChargeDiode>(&M[27], "ChargeDiode"),
     }
 }
 
@@ -502,6 +503,7 @@ pub struct Modules {
     pub capper: &'static Module,
     pub tracer: &'static Module,
     pub sample_hold: &'static Module,
+    pub charge_diode: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)
@@ -1611,6 +1613,80 @@ impl Device for SampleHold {
         real[..8].copy_from_slice(&cx.f64(0).to_le_bytes());
         real[8] = 1;
         cx.commit(0, &real, 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+// ─── A limited junction with a nonlinear charge ─────────────────────────────
+
+/// A diode whose diffusion charge `tt·id` is nonlinear in the limited voltage.
+/// pins:   is=0, n=1, tt=2 (PARAM F64); a=3, k=4 (PORT); temperature=5 (GLOBAL TEMPERATURE)
+/// inputs: I0 LIMIT "vd"     terms: T0 FLOW{a,k} "id", T1 DDT{a,k} "q" = tt·id
+/// fn 0 "limit":   reads [a, k, is, n, temperature, I0.LAST, I0.AGE, STATIC]
+///                 writes [I0.PROPOSED, I0.LIMITED]      partials (0←0)=1 (0←1)=−1
+/// fn 1 "current": reads [I0, is, n, tt, temperature]    writes [T0, T1]
+///                 partials (0←0) (1←0)
+pub struct ChargeDiode;
+static CHARGE_DIODE: OnceLock<ShapeRef> = OnceLock::new();
+
+fn charge_diode_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let is = s.pin(param("is"));
+    let n = s.pin(param("n"));
+    let tt = s.pin(param("tt"));
+    let a = s.pin(PinSpec::continuous("a", role::PORT));
+    let k = s.pin(PinSpec::continuous("k", role::PORT));
+    let t = s.pin(PinSpec { global: global::TEMPERATURE, ..PinSpec::discrete("temperature", role::GLOBAL, &F64) });
+    let i0 = s.input(InputSpec { name: "vd", origin: "abi.md:11.2", kind: input::LIMIT });
+    let t0 = s.term(flow("id", op::FLOW, a, k));
+    let t1 = s.term(flow("q", op::DDT, a, k));
+    s.function(FunctionSpec {
+        name: "limit",
+        reads: vec![pin(a), pin(k), pin(is), pin(n), pin(t), inp(i0, part::LAST), inp(i0, part::AGE), ambient(ambient::STATIC)],
+        writes: vec![inp(i0, part::PROPOSED), inp(i0, part::LIMITED)],
+        partials: vec![partial(0, 0), partial(0, 1)],
+        ..FunctionSpec::default()
+    });
+    s.function(FunctionSpec {
+        name: "current",
+        reads: vec![inp(i0, part::VALUE), pin(is), pin(n), pin(tt), pin(t)],
+        writes: vec![term(t0), term(t1)],
+        partials: vec![partial(0, 0), partial(1, 0)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for ChargeDiode {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&CHARGE_DIODE, charge_diode_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((ChargeDiode, Arc::clone(shared(&CHARGE_DIODE, charge_diode_shape))))
+    }
+    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if k == 0 {
+            let nvt = cx.f64(3) * K_B * cx.f64(4) / Q;
+            let vcrit = nvt * (nvt / (SQRT_2 * cx.f64(2))).ln();
+            let v = cx.f64(0) - cx.f64(1);
+            let (age, is_static) = (cx.u8(6), cx.bool(7));
+            // ngspice's INITJCT: the first evaluation, or the first of an equilibrium solve, starts at
+            // the seed itself, unlimited; every later one limits from `LAST`.
+            let limited = if age == 0 || (is_static && age == 1) { vcrit } else { pnjlim(v, cx.f64(5), nvt, vcrit) };
+            cx.set(0, v);
+            cx.set(1, limited);
+            cx.jac().copy_from_slice(&[1.0, -1.0]);
+        } else {
+            let (vd, is, tt) = (cx.f64(0), cx.f64(1), cx.f64(3));
+            let nvt = cx.f64(2) * K_B * cx.f64(4) / Q;
+            let e = (vd / nvt).exp();
+            cx.set(0, is * (e - 1.0));
+            cx.set(1, tt * is * (e - 1.0));
+            cx.jac().copy_from_slice(&[is * e / nvt, tt * is * e / nvt]);
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
         Ok(Flow::Continue)
     }
 }

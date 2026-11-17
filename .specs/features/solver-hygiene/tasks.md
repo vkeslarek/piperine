@@ -203,9 +203,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_nonlinear_charge_through_a_limit_keeps_the_operating_point` and `the_ddt_history_holds_the_charge_at_the_solution` pass under `**Run analogddt**` and fail on the parent commit (shown in the commit body)
-- [ ] The deviation table before and after is in the commit body; no twin moves
-- [ ] Gate check passes: Full
+- [x] `a_nonlinear_charge_through_a_limit_keeps_the_operating_point` and `the_ddt_history_holds_the_charge_at_the_solution` pass under `**Run analogddt**` and fail on the parent commit (shown in the commit body)
+- [x] The deviation table before and after is in the commit body; no twin moves
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1225,7 +1225,7 @@ Proof: run abitran | test two_jumps_in_one_restart_step_restart_from_the_later .
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** (T1) `Deviation::of(fixture, quantity, contract, rows)` takes fixture and quantity too, since the bare `of(contract, rows)` cannot fill them. (T2) Q3 risk probe, `dt_min_floor_hits` at HEAD of T2: buck_boundary AdcBench 0 (140 accepted, 0 rejected), ComparatorBench 0 (897/0), HeldHighBench 0 (200/0); buck_time TimerBench/StampBench/EdgeBench 0 (no analog unknowns, 0 steps); buck_whole Buck 0 (8000/0). All zero: Q3's retry-at-floor changes none of them.
+**Settled mid-build:** (T1) `Deviation::of(fixture, quantity, contract, rows)` takes fixture and quantity too, since the bare `of(contract, rows)` cannot fill them. (T2) Q3 risk probe, `dt_min_floor_hits` at HEAD of T2: buck_boundary AdcBench 0 (140 accepted, 0 rejected), ComparatorBench 0 (897/0), HeldHighBench 0 (200/0); buck_time TimerBench/StampBench/EdgeBench 0 (no analog unknowns, 0 steps); buck_whole Buck 0 (8000/0). All zero: Q3's retry-at-floor changes none of them. (T3) Root cause: `Assembly::push_stage` stored the limit linearization `q(x̂) + g·(x − x̂)` as the DDT history row; at the transient's equilibrium rows the limit holds `x̂ = vcrit` (0.7303 V, the seed of the static age-1 evaluation) against x = 0.6294 V, and the tangent of the exponential charge at 0.73 evaluated at 0.63 is negative (−5.3e-8 vs +1.0e-9 expected). Fix: `push_stage` evaluates with every limit at `x̂ = x` (`Need { small_signal: true }`). It lay in `piperine-analog-solver`, not lane A's crates. The ChargeDiode fixture's limit returns the seed itself at age 0 / static age 1 (ngspice INITJCT), as the MSL `limit` lowering does.
 **Dispatched:** Batch B1 (T1-T8) - Sonnet worker, 2026-11-17.
 **Walked:** none (no screen)
 

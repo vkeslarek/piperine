@@ -21,12 +21,13 @@ mod devices;
 mod system;
 
 use circuit::{at, f64_bytes, f64_of, instance, netlist, tagged};
-use devices::{calls, modules};
+use devices::{K_B, Q, VT, calls, modules};
 use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
+use piperine_analog_solver::tolerances::Tolerances;
 use piperine_analog_solver::device::{AnalogPlan, Assembly, Stage};
 use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
 use piperine_analog_solver::math::iv::InitialValue;
-use system::{Solver, Tran, at_rest, at_time, close, dense, matrix_positions, size, solve_stage};
+use system::{Solver, Tran, at_rest, at_time, close, dense, matrix_positions, size, solve_dc, solve_stage};
 
 const C: f64 = 1e-6;
 
@@ -181,4 +182,88 @@ fn a_restore_returns_histories_and_limit_state() {
     let held = |c: &devices::Call| (f64_of(&c.reads[2]), c.reads[3][0]);
     assert_eq!(held(&c[2]), (0.75, 2), "the rejected iteration advanced LAST");
     assert_eq!(held(&c[3]), (0.5, 1), "restored: LAST from the accepted solution, AGE 1");
+}
+
+/// 1 V through 1 kOhm into a `ChargeDiode` (`tt` = 1 us, n·k·T/q = VT): a node `a` at about 0.63 V
+/// whose only dynamics is `ddt(tt·id)`, a nonlinear function of a limited voltage.
+fn charge_diode_circuit() -> (Assembly, piperine_analog_solver::netlist::Netlist, Vec<piperine_analog_solver::netlist::AnalogReference>) {
+    let m = modules();
+    let (net, n) = netlist(2, &["v1.f"]);
+    let (top, a, f) = (&n[0], &n[1], &n[2]);
+    let v = instance("v1", m.vsource, vec![Discrete(0), at(top), Ground, at(f)]);
+    let r1 = instance("r1", m.resistor, vec![Discrete(1), at(top), at(a)]);
+    let d1 = instance("d1", m.charge_diode, vec![Discrete(2), Discrete(3), Discrete(4), at(a), Ground, Discrete(5)]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![v, r1, d1], &net).expect("bind"));
+    for (slot, value) in [(0, 1.0), (1, 1e3), (2, 1e-14), (3, 1.0), (4, 1e-6), (5, VT * Q / K_B)] {
+        asm.set_discrete(slot, &f64_bytes(value));
+    }
+    (asm, net, n)
+}
+
+#[test]
+fn a_nonlinear_charge_through_a_limit_keeps_the_operating_point() {
+    let (mut asm, net, n) = charge_diode_circuit();
+    let a = n[1].idx().expect("a");
+    let x_op = solve_dc(&mut asm, &net, &[1.0, 0.0, 0.0]).to_vec();
+    let h = 1e-7;
+    let first = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 0.0 };
+    let mut solver = Solver::new(&mut Tran { asm: &mut asm, net: &net, amb: at_time(0.0), stage: first }, size(&net), 4)
+        .expect("dry run");
+    let ivs: Vec<_> = n.iter().zip(&x_op).map(|(r, value)| InitialValue { reference: r.clone(), value: *value }).collect();
+    solver.push_initial_conditions(ivs.clone());
+    solver.push_initial_conditions(ivs);
+    // As the transient's operating point: accepted, then its rows pushed as equilibrium rows.
+    asm.accept(&x_op, at_rest()).expect("accept the operating point");
+    asm.push_stage(&x_op, at_rest()).expect("push the operating point");
+    asm.push_stage(&x_op, at_rest()).expect("push the operating point");
+    let tol = Tolerances::default();
+    let (mut t, mut prev_h) = (0.0, 0.0);
+    for step in 0..5 {
+        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h };
+        solve_stage(&mut solver, &mut asm, &net, at_time(t + TrBdf2::GAMMA * h), trap);
+        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h, prev_h };
+        let x = solve_stage(&mut solver, &mut asm, &net, at_time(t + h), bdf2);
+        t += h;
+        prev_h = h;
+        let drift = (x[a] - x_op[a]).abs();
+        assert!(drift <= tol.reltol * x_op[a].abs() + tol.vntol, "step {step}: v(a) = {} left the operating point {}", x[a], x_op[a]);
+    }
+}
+
+#[test]
+fn the_ddt_history_holds_the_charge_at_the_solution() {
+    let m = modules();
+    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 1e-7, prev_h: 0.0 };
+    let diode = || {
+        let (net, n) = netlist(1, &[]);
+        let d1 = instance("d1", m.charge_diode, vec![Discrete(0), Discrete(1), Discrete(2), at(&n[0]), Ground, Discrete(3)]);
+        let mut asm = Assembly::new(AnalogPlan::bind(vec![d1], &net).expect("bind"));
+        for (slot, value) in [(0, 1e-14), (1, 1.0), (2, 1e-6), (3, VT * Q / K_B)] {
+            asm.set_discrete(slot, &f64_bytes(value));
+        }
+        asm
+    };
+    // The solution 0.8 V lies above the junction's critical voltage (about 0.73 V).
+    let solution = [0.8];
+    // Held: one evaluation from the seed leaves x̂ = vcrit short of x, and the row is pushed there.
+    let mut held = diode();
+    held.evaluate(&solution, at_time(0.0)).expect("evaluate");
+    held.end_iteration();
+    held.push_stage(&solution, at_time(0.0)).expect("push");
+    // Reference: Newton iterated until the limit caught up, x̂ = x, and the row pushed there.
+    let mut caught_up = diode();
+    for _ in 0..4 {
+        caught_up.evaluate(&solution, at_time(0.0)).expect("evaluate");
+        caught_up.end_iteration();
+    }
+    caught_up.evaluate(&solution, at_time(0.0)).expect("evaluate");
+    assert!(caught_up.limiting_active().is_empty(), "the reference limit caught up with the solution");
+    caught_up.push_stage(&solution, at_time(0.0)).expect("push");
+    // Both read the history at an iterate where no limit acts, so only the row differs.
+    let x = [0.5];
+    let (a, b) = (
+        dense(&held.assemble_tran(&x, at_time(1e-7), stage).expect("assemble"), 1),
+        dense(&caught_up.assemble_tran(&x, at_time(1e-7), stage).expect("assemble"), 1),
+    );
+    close(a.1[0], b.1[0], 1e-12, "the right side reads the history row: q(x), not its linearization");
 }
