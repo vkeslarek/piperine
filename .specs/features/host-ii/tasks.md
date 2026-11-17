@@ -1435,7 +1435,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - T6/T8 temperature finding: the operating point of `v +> temperature()` reads 299.857 K (not 300.15) because Newton stops at `reltol * |x| + vntol` (1e-3 and 1e-6); with `--reltol 1e-9 --vntol 1e-12` it reads 300.15 exactly (and 348.15 at `--temp 75`). The test bound is that criterion, not a loosened constant; not a defect.
 - T43 (orchestrator finding): `max_steps` is a run key and `--max-steps` flag (positive integer, default 2,000,000 unchanged), spec HII-01 AC 7 and HII-02 AC 9 amended; it reaches every transient of the session, and the PSS arm (T18) must pass it to its shots.
 - T8: `parity_corpus.rs` twin count 7 to 8 (append-only edit); lane C made the same edit for `tran_dq`, expect a trivial conflict, the final count is the sum.
-**Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17.
+**Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17. B1 done (c6c0f64b, + T43 max_steps). B2 (phase 3, T9-T16) - Sonnet worker, 2026-11-17.
 **Walked:** none
 
 ---
