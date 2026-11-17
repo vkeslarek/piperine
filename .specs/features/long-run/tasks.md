@@ -143,7 +143,7 @@ T23
 **Depends on**: None
 **Reuses**: `design.md` "What the code does today"; `crates/piperine-digital-solver/src/run.rs`, `observe.rs`
 **Requirement**: LR-01, LR-05
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -188,7 +188,7 @@ T23
 **Depends on**: T1
 **Reuses**: `Delivery` and `with_sink` in `protocol/transient.rs`; the side doubles of `crates/piperine-solver/tests/protocol_transient.rs`
 **Requirement**: LR-01
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -211,7 +211,7 @@ T23
 **Depends on**: T3
 **Reuses**: `HostHooks::install`, `Solver::with_sink`; the helper devices of `crates/piperine-solver/tests/support`
 **Requirement**: LR-01
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -234,7 +234,7 @@ T23
 **Depends on**: T4
 **Reuses**: the end-of-run re-entry code of `solve`; `crates/piperine-solver/tests/transient_reentry.rs` for the re-entry fixture
 **Requirement**: LR-02
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -301,7 +301,7 @@ T23
 **Depends on**: T7
 **Reuses**: the expressions of `Table::on_grid` (`crates/piperine-api/src/table.rs`), copied, not called
 **Requirement**: LR-05, LR-06
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -323,7 +323,7 @@ T23
 **Depends on**: T8
 **Reuses**: `Cell::decode`; `contract.md` (T1) for the net writers
 **Requirement**: LR-05, LR-06
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -345,7 +345,7 @@ T23
 **Depends on**: T9, T5
 **Reuses**: `Delivery`; `tests/ngspice/tran_rc.msl`; the `run`, `twin` and `transient` helpers of `crates/piperine-api/tests/analyses.rs`
 **Requirement**: LR-03, LR-05, LR-06, LR-07
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -440,7 +440,7 @@ T23
 **Depends on**: T10
 **Reuses**: the shared `startup()` fixture and `table`, `column` helpers of `crates/piperine-cli/tests/buck.rs`
 **Requirement**: LR-13
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -463,7 +463,7 @@ T23
 **Depends on**: T14
 **Reuses**: `data-cli-output`, `data-cli-project`, `data-cli-lines` as `crates/piperine-cli/tests/book.rs` reads them; `docs/book/build.py`
 **Requirement**: LR-18
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -531,7 +531,7 @@ T23
 **Depends on**: T10
 **Reuses**: `Ngspice`, `Reference`, `Point`, `Coordinate`, `ToleranceContract`, `Backend::selected` of `piperine-parity`; `crates/piperine-parity/tests/parity_tran.rs` as the pattern
 **Requirement**: LR-15
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -555,7 +555,7 @@ T23
 **Depends on**: T14
 **Reuses**: `crates/piperine-api/tests/support/heap.rs` (T17); the `OnceLock` pattern of `crates/piperine-cli/tests/buck.rs`; `Settings` with a temporary cache directory
 **Requirement**: LR-08, LR-12
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -578,7 +578,7 @@ T23
 **Depends on**: T19
 **Reuses**: the shared run of T19
 **Requirement**: LR-09, LR-10, LR-11
-**Executor**: Opus
+**Executor**: Sonnet
 
 **Done when**:
 
@@ -875,7 +875,7 @@ Proof: run probes | test a_probe_with_no_value_in_the_circuit_is_a_failure_namin
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none yet. The four questions of the spec were answered before the tasks were written (spec.md, "Questions answered").
-**Dispatched:**
+**Dispatched:** Executors all Sonnet (user 2026-11-17: "Implementação sempre em Sonnet e verificação em Opus"). Batch 1 (phase 1, T1-T5) - Sonnet worker, 2026-11-17.
 **Walked:**
 
 ---
