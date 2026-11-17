@@ -512,10 +512,10 @@ T23
 
 **Done when**:
 
-- [ ] The target holds exactly one test, `a_run_ten_times_longer_at_equal_rows_holds_no_more_memory`, asserting both row counts (LR-04 AC 2) and the 256 KiB bound (AC 1), and prints the two peaks on standard error
-- [ ] The test fails when the session is run with `Keep::Every` (tried once by hand, reverted, and noted in the commit body): the bound is falsifiable
-- [ ] Gate check passes: Quick (`Run memory`)
-- [ ] Test count: the 1 test named above, and no existing test removed or edited
+- [x] The target holds exactly one test, `a_run_ten_times_longer_at_equal_rows_holds_no_more_memory`, asserting both row counts (LR-04 AC 2) and the 256 KiB bound (AC 1), and prints the two peaks on standard error
+- [x] The test fails when the session is run with `Keep::Every` (tried once by hand, reverted, and noted in the commit body): the bound is falsifiable
+- [x] Gate check passes: Quick (`Run memory`)
+- [x] Test count: the 1 test named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick
