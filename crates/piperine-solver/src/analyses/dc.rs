@@ -276,8 +276,8 @@ impl<'a> DcSolver<'a> {
         let side = DigitalSide::new(digital, bound, self.analysis);
         let hooks = self.host.clone();
         let nets = hooks.nets(bound);
-        let protocol =
-            Protocol::new(side, EquilibriumSide { dc: self, solution: None }, ProtocolOptions::new(spt));
+        let options = ProtocolOptions { max_rounds: self.system.context.max_rounds, ..ProtocolOptions::new(spt) };
+        let protocol = Protocol::new(side, EquilibriumSide { dc: self, solution: None }, options);
         let mut protocol = hooks.install(protocol, nets.as_deref().unwrap_or(&[]));
         let ran = nets.and_then(|_| protocol.operating_point());
         let (side, analog) = protocol.into_sides();

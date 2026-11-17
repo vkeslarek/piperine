@@ -1093,7 +1093,8 @@ impl TransientSolver<'_> {
         let (start, stop) = (self.options.start_time, self.options.stop_time);
         let hooks = self.host.clone();
         let nets = hooks.nets(bound);
-        let protocol = Protocol::new(side, TransientSide { tran: self, run, settled }, ProtocolOptions::new(spt));
+        let options = ProtocolOptions { max_rounds: self.system.context.max_rounds, ..ProtocolOptions::new(spt) };
+        let protocol = Protocol::new(side, TransientSide { tran: self, run, settled }, options);
         let mut protocol = hooks.install(protocol, nets.as_deref().unwrap_or(&[]));
         let ran = nets
             .and_then(|_| match &resume {

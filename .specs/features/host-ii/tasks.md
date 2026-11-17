@@ -193,10 +193,10 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-solver/tests/session_bounds.rs` (new, `//!` header) holds `max_rounds_defaults_to_twenty` and `an_operating_point_past_max_rounds_fails_naming_the_bound` (a design whose operating point needs two rounds, run with `max_rounds = 1`, fails with the `E0506` error naming 1)
-- [ ] `Run baseline` passes unedited
-- [ ] Gate check passes: Quick (`Run solverbounds`, `Run baseline`)
-- [ ] Test count: 2 new tests, none removed or edited
+- [x] `crates/piperine-solver/tests/session_bounds.rs` (new, `//!` header) holds `max_rounds_defaults_to_twenty` and `an_operating_point_past_max_rounds_fails_naming_the_bound` (a design whose operating point needs two rounds, run with `max_rounds = 1`, fails with the `E0506` error naming 1)
+- [x] `Run baseline` passes unedited
+- [x] Gate check passes: Quick (`Run solverbounds`, `Run baseline`)
+- [x] Test count: 2 new tests, none removed or edited
 
 **Tests**: integration
 **Gate**: quick

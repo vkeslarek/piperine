@@ -48,12 +48,15 @@ impl AnalysisKind {
 #[derive(Clone)]
 pub struct Context {
     pub tolerances: Tolerances,
+    /// The bound on the rounds of an operating point (`E0506`); 20 unless the host says otherwise.
+    pub max_rounds: u32,
 }
 
 impl std::fmt::Debug for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Context")
             .field("tolerances", &self.tolerances)
+            .field("max_rounds", &self.max_rounds)
             .finish()
     }
 }
@@ -62,11 +65,15 @@ impl Default for Context {
     fn default() -> Self {
         Self {
             tolerances: Tolerances::default(),
+            max_rounds: Self::DEFAULT_MAX_ROUNDS,
         }
     }
 }
 
 impl Context {
+    /// The default bound on the rounds of an operating point.
+    pub const DEFAULT_MAX_ROUNDS: u32 = 20;
+
     pub fn init_global() {
         INIT.call_once(|| {
             // Keep piperine's own diagnostics at INFO, but silence the Cranelift
