@@ -27,7 +27,7 @@ pub mod int;
 pub mod real;
 
 pub use flag::{Commits, Flagged};
-pub use int::{Int, UInt};
+pub use int::{Int, UInt, Unwrap};
 pub use real::{Dual, Real};
 ";
 
