@@ -328,9 +328,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `parity_temp.rs` (new) holds `fn temp_res()` (75 °C) and `fn temp_res_at_the_default_temperature()`; `parity_corpus` passes
-- [ ] Gate check passes: Quick (`Run newparity`, `Run parity`), then Build (end of phase 2)
-- [ ] Test count: 2 new tests
+- [x] `parity_temp.rs` (new) holds `fn temp_res()` (75 °C) and `fn temp_res_at_the_default_temperature()`; `parity_corpus` passes
+- [x] Gate check passes: Quick (`Run newparity`, `Run parity`), then Build (end of phase 2)
+- [x] Test count: 2 new tests
 
 **Tests**: integration
 **Gate**: build

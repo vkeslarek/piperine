@@ -1,0 +1,19 @@
+//! Twin of `tests/ngspice/temp_res.cir`: a divider whose lower resistor has a first-order
+//! temperature coefficient, `r * (1 + tc1 * (T - Tnom))`, against ngspice's `tnom` of 27 C.
+mod devices;
+use devices::*;
+
+/// A resistor with a first-order temperature coefficient; its nominal temperature is 300.15 K.
+module TcResistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+    tc1: f64 = 0.0;
+}
+analog for TcResistor { i(p, n) +> v(p, n) / (r * (1.0 + tc1 * (temperature() - 300.15))); }
+
+module TempRes() {
+    signal vin: Electrical;
+    signal mid: Electrical;
+    let v1 = Vsource { dc: 10.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, mid);
+    let r2 = TcResistor { r: 3k, tc1: 0.002 }(mid, gnd);
+}

@@ -97,7 +97,7 @@ impl Tree {
 #[test]
 fn every_twin_has_a_cir_and_a_test() {
     let twins = Tree::stems("msl");
-    assert!(twins.iter().filter(|t| *t != "devices").count() == 11, "the corpus holds eleven twins: {twins:?}");
+    assert!(twins.iter().filter(|t| *t != "devices").count() == 12, "the corpus holds 12 twins: {twins:?}");
     let failures = Guard::unmatched_twins(&twins, &Tree::stems("cir"), &Tree::parity_targets());
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

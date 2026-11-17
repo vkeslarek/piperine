@@ -1,0 +1,14 @@
+* resistor with a first-order temperature coefficient: the divider's lower leg is 3k at 27 C
+V1 vin 0 DC 10
+R1 vin mid 1k
+R2 mid 0 3k tc1=0.002
+.options temp=75
+.control
+op
+print v(mid)
+option temp=27
+op
+let cold = v(mid)
+print cold
+.endc
+.end
