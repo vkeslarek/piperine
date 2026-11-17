@@ -2,13 +2,14 @@
 //! (`variants.rs`), lowered when a call first reaches it. Its parameters are its first locals,
 //! then every `let` and closure parameter of its body in declaration order.
 
-use piperine_ir::{FunctionSpec, ValueType};
+use piperine_ir::{FunctionSpec, Local, ValueType};
 
 use super::elaborator::Elaboration;
 use super::known::Flag;
 use super::lower::Scope;
 use super::variants::Variants;
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
+use crate::types::Ty;
 
 impl Elaboration<'_, '_> {
     /// The variant of `function` for `pattern`: a parameter is flagged where the pattern is, and
@@ -21,11 +22,30 @@ impl Elaboration<'_, '_> {
         let mut params = Vec::new();
         let mut ok = true;
         let declared = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
-        for (param, flag) in declared.zip(pattern.iter().copied().chain(std::iter::repeat(Flag::Plain))) {
+        let mut flags = pattern.iter().copied().chain(std::iter::repeat(Flag::Plain));
+        for param in declared {
+            // An `Option<T>` parameter is two: `name.is` and `name.val` (§3.2), read as the pair
+            // of an `Option` local.
+            if let Some(Ty::Option(payload)) = self.types.local(param).cloned() {
+                let Some(payload) = self.value_type(&payload) else {
+                    self.unsupported(data.file, self.design.decl_data(param).span, "an `Option` parameter whose payload has no value in the IR");
+                    ok = false;
+                    continue;
+                };
+                let name = self.design.decl_data(param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+                let is = scope.locals.len() as u32;
+                for (suffix, ty) in [("is", ValueType::Bool), ("val", payload)] {
+                    let local = Local { name: format!("{name}.{suffix}"), ty: flags.next().unwrap_or(Flag::Plain).wrap(ty) };
+                    scope.locals.push(local.clone());
+                    params.push(local);
+                }
+                scope.options.insert(param, (is, is + 1));
+                continue;
+            }
             match self.bind_local(&mut scope, param) {
                 Some(index) => {
                     let local = &mut scope.locals[index as usize];
-                    local.ty = flag.wrap(local.ty.clone());
+                    local.ty = flags.next().unwrap_or(Flag::Plain).wrap(local.ty.clone());
                     params.push(local.clone());
                 }
                 None => ok = false,

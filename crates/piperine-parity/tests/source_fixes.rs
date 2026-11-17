@@ -30,6 +30,20 @@ fn project(file: &str) -> Project {
     Project::new(&path)
 }
 
+/// The 16 bytes of a known `f64` carrier value: the value, then the known byte.
+fn real_bytes(v: f64) -> Vec<u8> {
+    let mut bytes = vec![0u8; 16];
+    bytes[..8].copy_from_slice(&v.to_le_bytes());
+    bytes[8] = 1;
+    bytes
+}
+
+/// What `top` of `file` commits to the carrier `path` in a 10 ns transient: the one change at
+/// the first rising edge (2.5 ns).
+fn first_commit(file: &str, top: &str, path: &str) -> Vec<(i64, Vec<u8>)> {
+    transient(&build(&project(file), top).run(10e-9, 1e-9), path)
+}
+
 #[test]
 fn an_enum_deriving_partial_ord_orders_its_variants_in_a_reaction() {
     let seen = build(&project("enum_order.msl"), "OrderBench").run(10e-9, 1e-9);
@@ -49,4 +63,31 @@ fn two_analog_blocks_act_as_one() {
     let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
     let actual = solved.get_node(&id).expect("v(a)");
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("two analog blocks", "v(a)", Coordinate::OperatingPoint), 1.0, actual);
+}
+
+#[test]
+fn left_out_optional_arguments_are_none() {
+    // FIX-06 AC 1: `f(1.0)` is 1 + 10 + 100.
+    assert_eq!(first_commit("optional_args.msl", "LeftOutBench", "LeftOutBench.r"), vec![(5 * NS / 2, real_bytes(111.0))]);
+}
+
+#[test]
+fn a_named_optional_argument_binds_by_name() {
+    let seen = build(&project("optional_args.msl"), "NamedBench").run(10e-9, 1e-9);
+    // FIX-06 AC 2: `f(1.0, z: 3.0)` is 1 + 10 + 3; the edge case `f(1.0, z: 3.0, y: 2.0)`
+    // binds both by name, in any order: 1 + 2 + 3.
+    assert_eq!(transient(&seen, "NamedBench.r"), vec![(5 * NS / 2, real_bytes(14.0))]);
+    assert_eq!(transient(&seen, "NamedBench.both"), vec![(5 * NS / 2, real_bytes(6.0))]);
+}
+
+#[test]
+fn a_plain_value_for_an_option_is_some() {
+    // FIX-06 AC 3: `f(1.0, 2.0)` is 1 + 2 + 100.
+    assert_eq!(first_commit("optional_args.msl", "PlainBench", "PlainBench.r"), vec![(5 * NS / 2, real_bytes(103.0))]);
+}
+
+#[test]
+fn none_and_some_pass_positionally() {
+    // FIX-06 AC 4: `f(1.0, None, Some(3.0))` is 1 + 10 + 3.
+    assert_eq!(first_commit("optional_args.msl", "PositionalBench", "PositionalBench.r"), vec![(5 * NS / 2, real_bytes(14.0))]);
 }

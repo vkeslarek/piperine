@@ -418,6 +418,26 @@ impl Elaboration<'_, '_> {
         Some(self.emit(kind, ty.clone(), origin))
     }
 
+    /// The two arguments an `Option<T>` parameter takes in the IR, `is` then `val`: the pair of the
+    /// bound argument, or `(false, zero)` for one left out (§3.2.4). `None` after a diagnostic.
+    pub(super) fn lower_option_slot(&mut self, scope: &mut Scope, slot: Option<ExprId>, payload: &Ty, at: ExprId) -> Option<[LoweredExpr; 2]> {
+        if let Some(arg) = slot {
+            let pair = self.lower_option(scope, arg)?;
+            return Some([pair.is, pair.val]);
+        }
+        let origin = self.expr_origin(at);
+        let Some(payload) = self.value_type(payload) else {
+            self.unsupported(scope.file, self.design.expr_node(at).span, "an `Option` parameter whose payload has no value in the IR");
+            return None;
+        };
+        let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
+        let Some(val) = self.zero(&payload, origin) else {
+            self.unsupported(scope.file, self.design.expr_node(at).span, "an `Option` parameter whose payload has no zero in the IR");
+            return None;
+        };
+        Some([is, val])
+    }
+
     /// The pair an `Option` expression lowers to. `None` after a diagnostic.
     fn lower_option(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Pair> {
         let node = self.design.expr_node(expr).clone();

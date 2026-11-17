@@ -1,0 +1,43 @@
+//! Optional and named arguments (FIX-06), `f` of the spec: a reaction on the rising edge of a
+//! 200 MHz oscillator commits each call into a `Bit<f64>`.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn f(x: f64, y: Option<f64>, z: Option<f64>) -> f64 { x + y.unwrap_or(10.0) + z.unwrap_or(100.0) }
+
+module LeftOut(in clk: Bit, out r: Bit<f64>) {}
+digital for LeftOut { on clk.rise() { r <- f(1.0); } }
+
+module Named(in clk: Bit, out r: Bit<f64>, out both: Bit<f64>) {}
+digital for Named { on clk.rise() { r <- f(1.0, z: 3.0); both <- f(1.0, z: 3.0, y: 2.0); } }
+
+module Plain(in clk: Bit, out r: Bit<f64>) {}
+digital for Plain { on clk.rise() { r <- f(1.0, 2.0); } }
+
+module Positional(in clk: Bit, out r: Bit<f64>) {}
+digital for Positional { on clk.rise() { r <- f(1.0, None, Some(3.0)); } }
+
+module LeftOutBench() {
+    signal clk: Bit; signal r: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let m = LeftOut(clk, r);
+}
+module NamedBench() {
+    signal clk: Bit; signal r: Bit<f64>; signal both: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let m = Named(clk, r, both);
+}
+module PlainBench() {
+    signal clk: Bit; signal r: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let m = Plain(clk, r);
+}
+module PositionalBench() {
+    signal clk: Bit; signal r: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let m = Positional(clk, r);
+}

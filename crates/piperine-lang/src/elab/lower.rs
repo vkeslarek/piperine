@@ -294,17 +294,7 @@ impl Elaboration<'_, '_> {
         match (class, self.types.callee(expr)) {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
             (_, Some(Callee::Function(function))) => {
-                let mut lowered = Vec::new();
-                let mut ok = true;
-                for arg in args {
-                    match self.lower_expr(scope, *arg) {
-                        Some(arg) => lowered.push(arg),
-                        None => ok = false,
-                    }
-                }
-                if !ok {
-                    return None;
-                }
+                let lowered = self.lower_arguments(scope, expr, function)?;
                 let pattern: Vec<Flag> = lowered.iter().map(|a| self.flag(*a)).collect();
                 let (id, ret) = self.request(function, pattern, scope.file, span)?;
                 Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
@@ -321,6 +311,32 @@ impl Elaboration<'_, '_> {
                 None
             }
         }
+    }
+
+    /// The arguments of the call `expr` of `function`, one IR argument per parameter in parameter
+    /// order, from the checker's binding of the call (§3.2): an `Option<T>` parameter takes two,
+    /// its flag and its payload, a parameter left out `(false, zero)`. `None` after a diagnostic.
+    fn lower_arguments(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Vec<LoweredExpr>> {
+        let Some(binding) = self.types.binding(expr).map(<[_]>::to_vec) else {
+            self.unsupported(scope.file, self.design.expr_node(expr).span, "a call whose arguments the type checker did not bind");
+            return None;
+        };
+        let params: Vec<DeclId> = self.design.decl_data(function).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
+        let mut lowered = Vec::new();
+        let mut ok = true;
+        for (param, slot) in params.iter().zip(binding) {
+            match self.types.local(*param).cloned() {
+                Some(Ty::Option(payload)) => match self.lower_option_slot(scope, slot, &payload, expr) {
+                    Some(pair) => lowered.extend(pair),
+                    None => ok = false,
+                },
+                _ => match slot.and_then(|arg| self.lower_expr(scope, arg)) {
+                    Some(arg) => lowered.push(arg),
+                    None => ok = false,
+                },
+            }
+        }
+        ok.then_some(lowered)
     }
 
     /// `expr` without the parentheses around it.

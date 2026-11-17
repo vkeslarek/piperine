@@ -294,9 +294,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test source_fixes`, each with `f` of spec FIX-06: `left_out_optional_arguments_are_none` (111.0), `a_named_optional_argument_binds_by_name` (14.0 and 6.0 for the edge case), `a_plain_value_for_an_option_is_some` (103.0), `none_and_some_pass_positionally` (14.0)
-- [ ] Gate check passes: Quick (`Run sfix`), then `cargo test -p piperine-lang`
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test source_fixes`, each with `f` of spec FIX-06: `left_out_optional_arguments_are_none` (111.0), `a_named_optional_argument_binds_by_name` (14.0 and 6.0 for the edge case), `a_plain_value_for_an_option_is_some` (103.0), `none_and_some_pass_positionally` (14.0)
+- [x] Gate check passes: Quick (`Run sfix`), then `cargo test -p piperine-lang`
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: quick
