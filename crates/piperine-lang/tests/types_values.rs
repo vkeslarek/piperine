@@ -320,3 +320,17 @@ fn an_unsupported_form_does_not_hide_an_independent_error() {
     let (_, d) = diagnostics("fn f(a: f64) -> f64 { return a; }", "let z = f(1.0);");
     assert_eq!(codes_of(&d), ["P0001"]);
 }
+
+#[test]
+fn comparing_an_enum_without_partial_ord_is_p0002() {
+    // FIX-07 AC 2: `<`, `<=`, `>` and `>=` over an enum that does not derive `PartialOrd`.
+    for op in ["<", "<=", ">", ">="] {
+        let (src, d) = diagnostics("#[derive(Repr, PartialEq)]\nenum Md { Lo, Hi }", &format!("let x = Md::Lo {op} Md::Hi;"));
+        assert_eq!(codes_of(&d), ["P0002"], "{op}");
+        assert_eq!(snippet(&src, &d[0]), "Md::Lo", "{op}");
+        assert!(d[0].diagnostic.message.contains("a type that derives `PartialOrd`"), "{}", d[0].diagnostic.message);
+    }
+    // FIX-07 AC 1: deriving `PartialOrd` types the comparison as `bool`.
+    let got = local_types("#[derive(Repr, PartialEq, PartialOrd)]\nenum Md { Lo, Hi }", "let a = Md::Lo < Md::Hi; let b = Md::Hi >= Md::Lo;", &["a", "b"]);
+    assert_eq!(got, [Ty::Bool, Ty::Bool]);
+}

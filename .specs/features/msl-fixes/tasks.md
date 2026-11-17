@@ -224,10 +224,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `comparing_an_enum_without_partial_ord_is_p0002` passes in `cargo test -p piperine-lang --test types_values`
-- [ ] `an_enum_deriving_partial_ord_orders_its_variants_in_a_reaction` passes in `cargo test -p piperine-parity --test source_fixes` (`Lo < Hi` true, `Hi <= Lo` false, read from committed `Bit<bool>` carriers)
-- [ ] Gate check passes: Quick (`Run tvalues`, `Run sfix`)
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] `comparing_an_enum_without_partial_ord_is_p0002` passes in `cargo test -p piperine-lang --test types_values`
+- [x] `an_enum_deriving_partial_ord_orders_its_variants_in_a_reaction` passes in `cargo test -p piperine-parity --test source_fixes` (`Lo < Hi` true, `Hi <= Lo` false, read from committed `Bit<bool>` carriers)
+- [x] Gate check passes: Quick (`Run tvalues`, `Run sfix`)
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: quick

@@ -225,7 +225,7 @@ impl Checker<'_> {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 let comparison = matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge);
-                let ty = match self.operands(lhs, rhs, |t| t.is_integer()) {
+                let ty = match self.operands(lhs, rhs, comparison, |t| t.is_integer()) {
                     Some(t) => t,
                     None => Ty::F64,
                 };
@@ -257,7 +257,7 @@ impl Checker<'_> {
             }
             BinOp::Rem | BinOp::BitXor | BinOp::BitAnd | BinOp::BitOr => {
                 let bitwise = op != BinOp::Rem;
-                match self.operands(lhs, rhs, |t| t.is_integer() || (bitwise && *t == Ty::Bool)) {
+                match self.operands(lhs, rhs, false, |t| t.is_integer() || (bitwise && *t == Ty::Bool)) {
                     Some(t) => Some(t),
                     None => {
                         self.unsupported(file, span, Unsupported::binary(op));
@@ -281,12 +281,24 @@ impl Checker<'_> {
     /// The two operands of an operator that takes one type: the operand that is not a bare
     /// integer literal is typed first and the other is checked against it (local literal
     /// typing). `Some` of that type when `accepts` it; otherwise both operands are held to `f64`,
-    /// as the M1 operators always were, and `None` comes back.
-    fn operands(&mut self, lhs: ExprId, rhs: ExprId, accepts: impl Fn(&Ty) -> bool) -> Option<Ty> {
+    /// as the M1 operators always were, and `None` comes back. An `ordering` operator (`<`, `<=`,
+    /// `>`, `>=`) also takes an enum that derives `PartialOrd` (§2 rule 5), compared in
+    /// declaration order; the result is then that enum.
+    fn operands(&mut self, lhs: ExprId, rhs: ExprId, ordering: bool, accepts: impl Fn(&Ty) -> bool) -> Option<Ty> {
         let (first, second) = self.literal_last(lhs, rhs);
         match self.infer(first) {
             Some(t) if accepts(&t) => {
                 self.check(second, &t);
+                Some(t)
+            }
+            Some(t @ Ty::Enum(e)) if ordering => {
+                self.check(second, &t);
+                if !self.derives(e, "PartialOrd") {
+                    let file = self.file_of_expr(first);
+                    let span = self.design.expr_node(first).span;
+                    let found = t.name(self.design);
+                    self.mismatch_text(file, span, "a type that derives `PartialOrd`", &found);
+                }
                 Some(t)
             }
             found => {

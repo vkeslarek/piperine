@@ -1,0 +1,28 @@
+//! An enum that derives `PartialOrd` compares in declaration order (FIX-07), read from `Bit<bool>`
+//! carriers committed by a reaction on the rising edges of a 200 MHz oscillator.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, Clone, Copy, PartialEq, PartialOrd)]
+enum Md { Lo, Hi }
+
+/// `lt` starts false and `le` true, so each commit below is a change.
+module Order(in clk: Bit, out lt: Bit = false, out le: Bit = true) {}
+digital for Order {
+    on clk.rise() {
+        let a = Md::Lo;
+        let b = Md::Hi;
+        lt <- a < b;
+        le <- b <= a;
+    }
+}
+
+module OrderBench() {
+    signal clk: Bit; signal lt: Bit; signal le: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let order = Order(clk, lt, le);
+}
