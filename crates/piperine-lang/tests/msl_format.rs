@@ -2,12 +2,21 @@
 //! `piperine_lang::msl::comments` (the plain comments beside the tokens and
 //! their anchors) and `piperine_lang::msl::format` (a formatted text that
 //! keeps every comment, the tree and its own fixed point). Expected texts are
-//! written by hand from the acceptance criterion each test cites.
+//! written by hand from the acceptance criterion each test cites. The corpus
+//! tests (CLI-23 AC 10) run the formatter over every MSL file of the tree's
+//! libraries, examples, twins and test fixtures, every block of the
+//! specification and every `msl` block of the Book.
+
+#[path = "support/spec_corpus.rs"]
+mod spec_corpus;
+
+use std::path::{Path, PathBuf};
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::comments::{Anchor, Comment, Comments};
 use piperine_lang::msl::format::Formatter;
 use piperine_lang::msl::parser::parse;
+use spec_corpus::{Class, corpus};
 
 /// The span from the first `from` of `src` to the end of the first `to` after it.
 fn between(src: &str, from: &str, to: &str) -> Span {
@@ -458,4 +467,139 @@ fn a_source_that_does_not_parse_gives_diagnostics_and_no_text() {
     assert!(!parsed.diagnostics.is_empty(), "the source does not parse");
     assert_eq!(Formatter::format(src), Err(parsed.diagnostics.clone()));
     assert_eq!(Formatter::check(src), Err(parsed.diagnostics));
+}
+
+// ---- the corpus (CLI-23 AC 10) ----------------------------------------------------------------
+
+fn repo() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// A fragment wrapped into the smallest context that parses it with no
+/// diagnostics, as `msl_print` wraps one: a file as it is, a module body, an
+/// `analog` body, a reaction body or a function body. `None` when no context
+/// accepts it.
+fn fragment_source(text: &str) -> Option<String> {
+    [
+        text.to_string(),
+        format!("module Fragment() {{\n{text}\n}}"),
+        format!("analog for Fragment {{\n{text}\n}}"),
+        format!("digital for Fragment {{\non event {{\n{text}\n}}\n}}"),
+        format!("fn fragment() {{\n{text}\n}}"),
+    ]
+    .into_iter()
+    .find(|src| parse(src).diagnostics.is_empty())
+}
+
+/// Every `.msl` file under `dir`, recursively, in path order.
+fn msl_files(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut entries: Vec<PathBuf> =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())).map(|e| e.expect("an entry").path()).collect();
+    entries.sort();
+    for path in entries {
+        if path.is_dir() {
+            out.extend(msl_files(&path));
+        } else if path.extension().is_some_and(|e| e == "msl") {
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// The `msl` blocks of the Book, decoded, read with the string functions of `tests/book.rs`.
+fn book_blocks() -> Vec<String> {
+    let html = std::fs::read_to_string(repo().join("docs/book/content.html")).expect("docs/book/content.html exists");
+    let decode = |t: &str| t.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&");
+    let mut out = Vec::new();
+    let mut rest = html.as_str();
+    while let Some(at) = rest.find("<pre data-lang=\"") {
+        let after = &rest[at + "<pre data-lang=\"".len()..];
+        let (lang, body) = after.split_once("\">").expect("a block's opening tag closes");
+        let (text, tail) = body.split_once("</pre>").expect("a block closes");
+        if lang == "msl" {
+            out.push(decode(text));
+        }
+        rest = tail;
+    }
+    out
+}
+
+/// Every source of the corpus with its label: the standard library, the
+/// gallery fixtures, `examples/buck`, `examples/rc` and the MSL twins of
+/// `tests/ngspice/` (each must parse), the MSL files of the test projects and
+/// fixtures of the other crates that parse (some are broken on purpose), the
+/// specification's blocks and the Book's `msl` blocks wrapped as fragments.
+fn sources() -> Vec<(String, String)> {
+    let repo = repo();
+    let mut out = Vec::new();
+    for dir in ["crates/piperine-lang/std", "crates/piperine-lang/tests/fixtures/gallery", "examples/buck", "examples/rc", "tests/ngspice"] {
+        let files = msl_files(&repo.join(dir));
+        assert!(!files.is_empty(), "{dir} holds MSL files");
+        for path in files {
+            let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
+            let label = path.strip_prefix(&repo).unwrap_or(&path).display().to_string();
+            assert!(parse(&text).diagnostics.is_empty(), "{label} parses");
+            out.push((label, text));
+        }
+    }
+    for dir in ["crates/piperine-cli/tests/projects", "crates/piperine-parity/tests"] {
+        for path in msl_files(&repo.join(dir)) {
+            let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
+            if parse(&text).diagnostics.is_empty() {
+                out.push((path.strip_prefix(&repo).unwrap_or(&path).display().to_string(), text));
+            }
+        }
+    }
+    for b in corpus() {
+        if b.class != Class::CompileFail {
+            out.extend(fragment_source(&b.text).map(|s| (format!("docs/spec/{}:{}", b.file, b.line), s)));
+        }
+    }
+    for (n, text) in book_blocks().into_iter().enumerate() {
+        out.extend(fragment_source(&text).map(|s| (format!("docs/book block {n}"), s)));
+    }
+    out
+}
+
+/// CLI-23 AC 10 and AC 1 (C188): over the whole corpus, the comment list of
+/// the formatted text equals the source's, file by file.
+#[test]
+fn the_corpus_keeps_every_comment() {
+    let sources = sources();
+    let mut comments = 0;
+    let mut verbatim = 0;
+    for (label, src) in &sources {
+        let out = Formatter::format(src).unwrap_or_else(|d| panic!("{label}: {d:?}"));
+        let expected = Comments::of(src);
+        assert_eq!(Comments::of(&out).texts(), expected.texts(), "{label}: the formatted text changed its comments");
+        comments += expected.list().len();
+        verbatim += expected.attach(&parse(src).file, src).verbatim().len();
+    }
+    println!("{} sources, {comments} plain comments, {verbatim} nodes kept verbatim", sources.len());
+    assert!(sources.len() >= 60, "the corpus holds at least 60 sources: {}", sources.len());
+    assert!(comments >= 100, "the corpus holds at least 100 plain comments: {comments}");
+}
+
+/// CLI-23 AC 10 and AC 2 (C189): over the whole corpus, the formatted text
+/// parses to the source's tree, spans aside.
+#[test]
+fn the_corpus_keeps_every_tree() {
+    for (label, src) in sources() {
+        let out = Formatter::format(&src).unwrap_or_else(|d| panic!("{label}: {d:?}"));
+        let (before, after) = (parse(&src), parse(&out));
+        assert!(after.diagnostics.is_empty(), "{label}: {:?}", after.diagnostics);
+        assert!(before.file == after.file, "{label}: the formatted text parses to another tree:\n{out}");
+    }
+}
+
+/// CLI-23 AC 10 and AC 3 (C190): over the whole corpus, a second format gives
+/// the first's text.
+#[test]
+fn the_corpus_is_stable_under_a_second_format() {
+    for (label, src) in sources() {
+        let once = Formatter::format(&src).unwrap_or_else(|d| panic!("{label}: {d:?}"));
+        let twice = Formatter::format(&once).unwrap_or_else(|d| panic!("{label} (formatted): {d:?}"));
+        assert_eq!(twice, once, "{label}: a second format changes the text");
+    }
 }
