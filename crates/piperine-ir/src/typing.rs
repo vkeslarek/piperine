@@ -108,17 +108,63 @@ impl Typing {
 
     pub(crate) fn method(method: Method, receiver: &ValueType, args: &[&ValueType]) -> Option<ValueType> {
         let base = Typing::base(receiver);
+        let signed = matches!(base, ValueType::Int(_));
+        let float = *base == ValueType::F64;
         let arity = match method {
-            Method::Min | Method::Max => 1,
             Method::Clamp => 2,
-            Method::Floor => 0,
+            Method::Min
+            | Method::Max
+            | Method::Atan2
+            | Method::Powf
+            | Method::Powi
+            | Method::RemEuclid
+            | Method::Hypot
+            | Method::Pow
+            | Method::SaturatingAdd
+            | Method::SaturatingSub
+            | Method::SaturatingMul
+            | Method::AddOverflows
+            | Method::SubOverflows
+            | Method::MulOverflows => 1,
+            _ => 0,
         };
+        let same = args.iter().all(|a| Typing::base(a) == base);
         let fits = args.len() == arity
             && match method {
-                Method::Floor => *base == ValueType::F64,
-                Method::Min | Method::Max | Method::Clamp => Typing::numeric(base) && args.iter().all(|a| Typing::base(a) == base),
+                Method::Min | Method::Max | Method::Clamp | Method::RemEuclid => Typing::numeric(base) && same,
+                Method::Floor
+                | Method::Sin
+                | Method::Cos
+                | Method::Tan
+                | Method::Asin
+                | Method::Acos
+                | Method::Atan
+                | Method::Sinh
+                | Method::Cosh
+                | Method::Tanh
+                | Method::Log10
+                | Method::Log2
+                | Method::Ceil
+                | Method::Round
+                | Method::Trunc
+                | Method::Fract
+                | Method::IsNan
+                | Method::IsFinite
+                | Method::IsInfinite => float,
+                Method::Atan2 | Method::Powf | Method::Hypot => float && same,
+                Method::Powi => float && args.iter().all(|a| *Typing::base(a) == ValueType::Int(32)),
+                Method::Signum => float || signed,
+                Method::IntAbs => signed,
+                Method::Pow => base.is_integer() && args.iter().all(|a| *Typing::base(a) == ValueType::UInt(32)),
+                Method::SaturatingAdd | Method::SaturatingSub | Method::SaturatingMul | Method::AddOverflows | Method::SubOverflows | Method::MulOverflows => {
+                    base.is_integer() && same
+                }
             };
         let flagged = Typing::flagged(receiver) || args.iter().any(|a| Typing::flagged(a));
-        fits.then(|| Typing::flag(base.clone(), flagged))
+        let result = match method {
+            Method::IsNan | Method::IsFinite | Method::IsInfinite | Method::AddOverflows | Method::SubOverflows | Method::MulOverflows => ValueType::Bool,
+            _ => base.clone(),
+        };
+        fits.then(|| Typing::flag(result, flagged))
     }
 }

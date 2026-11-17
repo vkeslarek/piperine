@@ -786,6 +786,7 @@ impl<'a> ValuePrinter<'a> {
             Method::Max => "max",
             Method::Clamp => "clamp",
             Method::Floor => "floor",
+            _ => return Err(self.unsupported(e, &format!("the method row {method:?} (the printer writes it with the catalogue, T20)"))),
         };
         let operands: Vec<ExprId> = [receiver].into_iter().chain(args.iter().copied()).collect();
         let flagged = operands.iter().any(|o| Self::is_flagged(self.ir.expr_type(*o)));

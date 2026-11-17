@@ -339,9 +339,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `the_new_method_rows_type_their_operands_and_results` passes in `cargo test -p piperine-ir --test amendments`
-- [ ] Gate check passes: Quick (`Run iramend`), then `cargo test -p piperine-ir`
-- [ ] Test count: the 1 test named above, and no existing test removed or edited
+- [x] `the_new_method_rows_type_their_operands_and_results` passes in `cargo test -p piperine-ir --test amendments`
+- [x] Gate check passes: Quick (`Run iramend`), then `cargo test -p piperine-ir`
+- [x] Test count: the 1 test named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

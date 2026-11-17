@@ -983,3 +983,158 @@ fn a_child_records_its_carrier_bindings() {
     assert_eq!(has("carrier bindings of child 8, out of range (5 children)"), 1, "{broken:#?}");
     assert_eq!(broken.len(), 4, "{broken:#?}");
 }
+
+#[test]
+fn the_new_method_rows_type_their_operands_and_results() {
+    // The rows of Appendix H.1 and H.2 the IR gains, each written as the MSL call it stands for
+    // (`x.sin()`, `x.powi(2)`, `a.add_overflows(b)`), typed by the operand and result types of
+    // the spec's signature: `powi` takes an `i32`, `pow` a `u32`, `is_nan` and the `*_overflows`
+    // tests give `bool`, the rest give their receiver's type.
+    use piperine_ir::Method as M;
+    const F: &str = "rows.msl";
+    let f = ValueType::F64;
+    let (i8_, i32_, u8_, u32_) = (Ty::i(8), Ty::i(32), Ty::u(8), Ty::u(32));
+    // (row, MSL name, receiver, argument types, result)
+    let rows: Vec<(M, &str, ValueType, Vec<ValueType>, ValueType)> = vec![
+        (M::Sin, "sin", f.clone(), vec![], f.clone()),
+        (M::Cos, "cos", f.clone(), vec![], f.clone()),
+        (M::Tan, "tan", f.clone(), vec![], f.clone()),
+        (M::Asin, "asin", f.clone(), vec![], f.clone()),
+        (M::Acos, "acos", f.clone(), vec![], f.clone()),
+        (M::Atan, "atan", f.clone(), vec![], f.clone()),
+        (M::Atan2, "atan2", f.clone(), vec![f.clone()], f.clone()),
+        (M::Sinh, "sinh", f.clone(), vec![], f.clone()),
+        (M::Cosh, "cosh", f.clone(), vec![], f.clone()),
+        (M::Tanh, "tanh", f.clone(), vec![], f.clone()),
+        (M::Powf, "powf", f.clone(), vec![f.clone()], f.clone()),
+        (M::Powi, "powi", f.clone(), vec![i32_.clone()], f.clone()),
+        (M::Log10, "log10", f.clone(), vec![], f.clone()),
+        (M::Log2, "log2", f.clone(), vec![], f.clone()),
+        (M::Ceil, "ceil", f.clone(), vec![], f.clone()),
+        (M::Round, "round", f.clone(), vec![], f.clone()),
+        (M::Trunc, "trunc", f.clone(), vec![], f.clone()),
+        (M::Fract, "fract", f.clone(), vec![], f.clone()),
+        (M::Signum, "signum", f.clone(), vec![], f.clone()),
+        (M::Signum, "signum", i8_.clone(), vec![], i8_.clone()),
+        (M::RemEuclid, "rem_euclid", f.clone(), vec![f.clone()], f.clone()),
+        (M::RemEuclid, "rem_euclid", u8_.clone(), vec![u8_.clone()], u8_.clone()),
+        (M::Hypot, "hypot", f.clone(), vec![f.clone()], f.clone()),
+        (M::IsNan, "is_nan", f.clone(), vec![], ValueType::Bool),
+        (M::IsFinite, "is_finite", f.clone(), vec![], ValueType::Bool),
+        (M::IsInfinite, "is_infinite", f.clone(), vec![], ValueType::Bool),
+        (M::IntAbs, "abs", i8_.clone(), vec![], i8_.clone()),
+        (M::Pow, "pow", i8_.clone(), vec![u32_.clone()], i8_.clone()),
+        (M::Pow, "pow", u8_.clone(), vec![u32_.clone()], u8_.clone()),
+        (M::SaturatingAdd, "saturating_add", u8_.clone(), vec![u8_.clone()], u8_.clone()),
+        (M::SaturatingSub, "saturating_sub", i8_.clone(), vec![i8_.clone()], i8_.clone()),
+        (M::SaturatingMul, "saturating_mul", i8_.clone(), vec![i8_.clone()], i8_.clone()),
+        (M::AddOverflows, "add_overflows", u8_.clone(), vec![u8_.clone()], ValueType::Bool),
+        (M::SubOverflows, "sub_overflows", i8_.clone(), vec![i8_.clone()], ValueType::Bool),
+        (M::MulOverflows, "mul_overflows", i8_.clone(), vec![i8_.clone()], ValueType::Bool),
+    ];
+    let value = |x: &mut Dx<'_>, ty: &ValueType| match ty {
+        ValueType::F64 => x.real(0.5),
+        other => x.int(1, other.clone()),
+    };
+
+    // Every row, written with its signature's operand types, checks clean and prints its name.
+    let mut b = IrBuilder::new();
+    let mut stmts = Vec::new();
+    for (k, (method, _, recv, args, result)) in rows.iter().enumerate() {
+        let mut x = Dx::new(&mut b, F, 1 + k as u32, 1);
+        let r = value(&mut x, recv);
+        let a: Vec<ExprId> = args.iter().map(|t| value(&mut x, t)).collect();
+        let call = x.method(*method, r, a, result.clone());
+        stmts.push(b.stmt(Stmt::Expr(call)));
+    }
+    let body = b.body(BodySpec { analog: Some(stmts), ..Buck::spec("Rows", F, 1) });
+    let ir = Design::place(b, body, 0, &[], vec![]);
+    assert_eq!(ir.check(), vec![]);
+    // The printed calls, one per row in order, written from the MSL each stands for.
+    Printed::holds(
+        &ir,
+        &[
+            "  analog",
+            "    0.5.sin()",
+            "    0.5.cos()",
+            "    0.5.tan()",
+            "    0.5.asin()",
+            "    0.5.acos()",
+            "    0.5.atan()",
+            "    0.5.atan2(0.5)",
+            "    0.5.sinh()",
+            "    0.5.cosh()",
+            "    0.5.tanh()",
+            "    0.5.powf(0.5)",
+            "    0.5.powi(1i32)",
+            "    0.5.log10()",
+            "    0.5.log2()",
+            "    0.5.ceil()",
+            "    0.5.round()",
+            "    0.5.trunc()",
+            "    0.5.fract()",
+            "    0.5.signum()",
+            "    1i8.signum()",
+            "    0.5.rem_euclid(0.5)",
+            "    1u8.rem_euclid(1u8)",
+            "    0.5.hypot(0.5)",
+            "    0.5.is_nan()",
+            "    0.5.is_finite()",
+            "    0.5.is_infinite()",
+            "    1i8.abs()",
+            "    1i8.pow(1u32)",
+            "    1u8.pow(1u32)",
+            "    1u8.saturating_add(1u8)",
+            "    1i8.saturating_sub(1i8)",
+            "    1i8.saturating_mul(1i8)",
+            "    1u8.add_overflows(1u8)",
+            "    1i8.sub_overflows(1i8)",
+            "    1i8.mul_overflows(1i8)",
+        ],
+    );
+
+    // A row written against its signature is one entry each: `powi` with an `f64` exponent,
+    // `pow` with a signed exponent, `abs` and `signum` of an unsigned integer (H.1: signed types
+    // only), an `f64` row on an integer, an integer row on an `f64`, a result typed other than
+    // the signature's, and a wrong count.
+    let wrong: Vec<(M, ValueType, Vec<ValueType>, ValueType)> = vec![
+        (M::Powi, f.clone(), vec![f.clone()], f.clone()),
+        (M::Pow, i8_.clone(), vec![i32_.clone()], i8_.clone()),
+        (M::IntAbs, u8_.clone(), vec![], u8_.clone()),
+        (M::Signum, u8_.clone(), vec![], u8_.clone()),
+        (M::Sin, i8_.clone(), vec![], i8_.clone()),
+        (M::SaturatingAdd, f.clone(), vec![f.clone()], f.clone()),
+        (M::IsNan, f.clone(), vec![], f.clone()),
+        (M::AddOverflows, u8_.clone(), vec![u8_.clone()], u8_.clone()),
+        (M::Atan2, f.clone(), vec![], f.clone()),
+    ];
+    let mut b = IrBuilder::new();
+    let mut stmts = Vec::new();
+    for (k, (method, recv, args, result)) in wrong.iter().enumerate() {
+        let mut x = Dx::new(&mut b, F, 1 + k as u32, 1);
+        let r = value(&mut x, recv);
+        let a: Vec<ExprId> = args.iter().map(|t| value(&mut x, t)).collect();
+        let call = x.method(*method, r, a, result.clone());
+        stmts.push(b.stmt(Stmt::Expr(call)));
+    }
+    let body = b.body(BodySpec { analog: Some(stmts), ..Buck::spec("Wrong", F, 1) });
+    let broken = Design::place(b, body, 0, &[], vec![]).check();
+    for k in 0..wrong.len() {
+        let hits = broken.iter().filter(|e| e.origin.line == 1 + k as u32).count();
+        assert_eq!(hits, 1, "row {k} ({:?}): {broken:#?}", wrong[k].0);
+    }
+    assert_eq!(broken.len(), wrong.len(), "{broken:#?}");
+
+    // Unknown flows through: a flagged receiver makes a flagged result, also for the `bool` rows.
+    let flagged = |t: ValueType| ValueType::Flagged(Box::new(t));
+    let mut b = IrBuilder::new();
+    let mut x = Dx::new(&mut b, F, 1, 1);
+    let c = x.real(0.5);
+    let carried = x.b.expr(Expr::Unknown, flagged(ValueType::F64), x.origin());
+    let nan = x.method(M::IsNan, carried, vec![], flagged(ValueType::Bool));
+    let sin = x.method(M::Sin, carried, vec![], flagged(ValueType::F64));
+    let hyp = x.method(M::Hypot, c, vec![carried], flagged(ValueType::F64));
+    let stmts: Vec<_> = [nan, sin, hyp].into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect();
+    let body = b.body(BodySpec { analog: Some(stmts), ..Buck::spec("Flagged", F, 1) });
+    assert_eq!(Design::place(b, body, 0, &[], vec![]).check(), vec![]);
+}

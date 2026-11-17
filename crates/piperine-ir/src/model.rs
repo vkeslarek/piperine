@@ -400,14 +400,48 @@ pub enum BinaryOp {
     Shr,
 }
 
-/// The value methods an expression may call: `a.min(b)`, `a.max(b)`, `x.clamp(lo, hi)` on an
-/// integer or `f64`, and `x.floor()` on `f64`.
+/// The value methods an expression may call: the numeric rows of Appendix H.1 (integers) and
+/// H.2 (`f64`). `Min`, `Max`, `Clamp`, `Signum` and `RemEuclid` take either; `Floor` through
+/// `IsInfinite` are `f64` rows; `IntAbs` through `MulOverflows` are integer rows (`f64`'s `abs`
+/// is `MathFn::Abs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Method {
     Min,
     Max,
     Clamp,
     Floor,
+    Sin,
+    Cos,
+    Tan,
+    Asin,
+    Acos,
+    Atan,
+    Atan2,
+    Sinh,
+    Cosh,
+    Tanh,
+    Powf,
+    Powi,
+    Log10,
+    Log2,
+    Ceil,
+    Round,
+    Trunc,
+    Fract,
+    Signum,
+    RemEuclid,
+    Hypot,
+    IsNan,
+    IsFinite,
+    IsInfinite,
+    IntAbs,
+    Pow,
+    SaturatingAdd,
+    SaturatingSub,
+    SaturatingMul,
+    AddOverflows,
+    SubOverflows,
+    MulOverflows,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
