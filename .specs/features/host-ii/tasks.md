@@ -171,9 +171,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `contract.md` lists every citation of `design.md` with `confirmed` or `moved: <where>`
-- [ ] The S2 probe prints 0.5 and the Blinky probe exits 1, as `GAPS.md` says, both outputs quoted
-- [ ] `cargo test -p piperine-cli --test twins` and the five `parity_*` targets pass at `HEAD` before any code change; their test counts are written in `contract.md`
+- [x] `contract.md` lists every citation of `design.md` with `confirmed` or `moved: <where>`
+- [x] The S2 probe prints 0.5 and the Blinky probe exits 1, as `GAPS.md` says, both outputs quoted
+- [x] `cargo test -p piperine-cli --test twins` and the five `parity_*` targets pass at `HEAD` before any code change; their test counts are written in `contract.md`
 
 **Tests**: none
 **Gate**: build
