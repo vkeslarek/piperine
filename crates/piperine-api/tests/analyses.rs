@@ -128,3 +128,60 @@ fn the_rc_step_follows_one_minus_exp_on_both_backends() {
         assert!((out - expected).abs() <= 1e-3, "{backend}: out({t}) = {out}, expected {expected}");
     }
 }
+
+fn dc(sweep: &str, from: f64, to: f64, step: f64, print: &[&str]) -> Overrides {
+    Overrides {
+        analysis: Some("dc".into()),
+        sweep: Some(sweep.into()),
+        from: Some(from),
+        to: Some(to),
+        step: Some(step),
+        print: print.iter().map(|s| s.to_string()).collect(),
+        ..Overrides::default()
+    }
+}
+
+#[test]
+fn a_dc_sweep_has_one_row_per_point() {
+    // CLI-09 AC 1: the first column is the swept param's full path, one row per `from + k*step`
+    // while not past `to`: 0, 2.5, 5, 7.5, 10 on divider.msl; `mid` is 3k / (1k + 3k) of the source
+    for backend in ["interp", "rust"] {
+        let table = run(&twin("divider.msl"), backend, dc("v1.dc", 0.0, 10.0, 2.5, &["mid"])).unwrap_or_else(|f| panic!("{backend}: {f}"));
+        assert_eq!(table.columns, ["Divider.v1.dc", "Divider.mid"], "{backend}");
+        let swept: Vec<f64> = table.rows.iter().map(|r| real(&r[0])).collect();
+        assert_eq!(swept, [0.0, 2.5, 5.0, 7.5, 10.0], "{backend}");
+        for row in &table.rows {
+            let (v, mid) = (real(&row[0]), real(&row[1]));
+            assert!((mid - 0.75 * v).abs() <= 1e-9, "{backend}: mid({v}) = {mid}");
+        }
+    }
+    // a step that does not divide the range stops before `to`: 0, 3, 6, 9
+    let table = run(&twin("divider.msl"), "interp", dc("v1.dc", 0.0, 10.0, 3.0, &["mid"])).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.rows.len(), 4);
+    // a downward sweep: 10, 5, 0
+    let table = run(&twin("divider.msl"), "interp", dc("v1.dc", 10.0, 0.0, -5.0, &["mid"])).unwrap_or_else(|f| panic!("{f}"));
+    let swept: Vec<f64> = table.rows.iter().map(|r| real(&r[0])).collect();
+    assert_eq!(swept, [10.0, 5.0, 0.0]);
+}
+
+#[test]
+fn the_diode_sweep_has_37_rows() {
+    // CLI-09 AC 8: diode_iv.msl sweeps v1.dc from -1 to 0.8 by 0.05: (0.8 + 1) / 0.05 + 1 = 37
+    for backend in ["interp", "rust"] {
+        let table = run(&twin("diode_iv.msl"), backend, dc("v1.dc", -1.0, 0.8, 0.05, &["a"])).unwrap_or_else(|f| panic!("{backend}: {f}"));
+        assert_eq!(table.rows.len(), 37, "{backend}");
+        assert_eq!(real(&table.rows[0][0]), -1.0);
+        assert!((real(&table.rows[36][0]) - 0.8).abs() <= 1e-9);
+    }
+}
+
+#[test]
+fn a_sweep_of_no_param_is_e0801() {
+    // CLI-09 AC 9: a path that names no param is E0801 naming it, at open: no analysis ran
+    for sweep in ["v1.nothing", "nobody.dc", "dc"] {
+        match run(&twin("divider.msl"), "interp", dc(sweep, 0.0, 1.0, 0.5, &[])) {
+            Err(Failure::Host { code: "E0801", message }) => assert!(message.contains(sweep), "{message}"),
+            other => panic!("`{sweep}`: expected E0801, found {other:?}"),
+        }
+    }
+}

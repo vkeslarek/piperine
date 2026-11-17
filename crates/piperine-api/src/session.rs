@@ -15,7 +15,7 @@ use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
-use piperine_solver::prelude::{CircuitInstance, Solver, TransientAnalysisOptions};
+use piperine_solver::prelude::{CircuitInstance, Context, ParamValue, Solver, TransientAnalysisOptions};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
@@ -47,6 +47,34 @@ pub struct Session {
     backend: Backend,
     spec: RunSpec,
     probes: Vec<Probe>,
+    /// The param a `dc` run sweeps, resolved against the design.
+    swept: Option<ParamPath>,
+}
+
+/// A param of an instance of the design, by the instance's full path.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamPath {
+    pub instance: String,
+    pub param: String,
+}
+
+impl ParamPath {
+    /// `entry`, `<instance>.<param>` split at the last dot, the instance in full or relative to
+    /// `top`; `E0801` when it names no param of an instance of `ir`.
+    pub fn resolve(ir: &Ir, top: &str, entry: &str) -> Result<ParamPath, Failure> {
+        let nothing = |why: &str| Failure::Host { code: "E0801", message: format!("`{entry}` names no param of the design: {why}") };
+        let (path, param) = entry.rsplit_once('.').ok_or_else(|| nothing("a param path is <instance>.<param>"))?;
+        let instance = [path.to_string(), format!("{top}.{path}")].into_iter().find_map(|p| ir.instance_at(&p)).ok_or_else(|| nothing("no instance of that path"))?;
+        if !instance.body().params().iter().any(|p| p.name == param) {
+            return Err(nothing(&format!("the instance `{}` has no param `{param}`", instance.path())));
+        }
+        Ok(ParamPath { instance: instance.path().to_string(), param: param.to_string() })
+    }
+
+    /// The full path, `<instance>.<param>`.
+    pub fn label(&self) -> String {
+        format!("{}.{}", self.instance, self.param)
+    }
 }
 
 impl Session {
@@ -68,6 +96,10 @@ impl Session {
             Err(found) => return Err(Session::diagnosed("elaborate", design, found)),
         };
         let probes = Session::probes_of(&ir, spec)?;
+        let swept = match &spec.analysis {
+            Analysis::Dc { sweep, .. } => Some(ParamPath::resolve(&ir, ir.top().path(), sweep)?),
+            _ => None,
+        };
         let (circuit, compiled) = match backend {
             Backend::Interp => {
                 let interpreter = Interpreter::new(ir.clone()).map_err(|rejected| {
@@ -83,7 +115,7 @@ impl Session {
                 (circuit, Some(compiled))
             }
         };
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept })
     }
 
     /// The top module's name.
@@ -149,13 +181,8 @@ impl Session {
             Analysis::Op => {
                 let mut solver = Solver::new(circuit).with_sink(delivery).build();
                 let result = solver.dc().and_then(|mut dc| dc.solve()).map_err(|error| Failure::Solver { analysis: "op", error })?;
-                let bound = solver.circuit().bound();
-                // a discrete net by its path: its index in the digital plan is its id
-                let net = |path: &str| {
-                    let b = bound?;
-                    let at = b.digital.plan().nets.iter().position(|n| n.name == path)?;
-                    Some(b.digital.read(NetId(at as u32)).to_vec())
-                };
+                let circuit = solver.circuit();
+                let net = |path: &str| Session::discrete(circuit, path);
                 Table::operating_point(&self.probes, &result, &net)
             }
             Analysis::Transient { stop, max_step, from, .. } => {
@@ -173,8 +200,34 @@ impl Session {
                 let result = solver.tran().and_then(|mut tran| tran.solve()).map_err(|error| Failure::Solver { analysis: "transient", error })?;
                 Table::transient(&self.probes, &result)
             }
+            Analysis::Dc { from, to, step, .. } => {
+                let mut circuit = circuit;
+                let swept = self.swept.as_ref().ok_or_else(|| Failure::Backend("a dc run resolved no param to sweep".into()))?;
+                // `from + k*step` for every k while the point is not past `to`; the tolerance on
+                // k absorbs the rounding of `(to - from) / step` (a whole number of steps that
+                // lands a hair under)
+                let count = ((to - from) / step + 1e-9).floor() as usize + 1;
+                let mut points = Vec::with_capacity(count);
+                for k in 0..count {
+                    let value = from + k as f64 * step;
+                    let refused = |error| Failure::Host { code: "E0802", message: format!("`{}` refuses {value}: {error}", swept.label()) };
+                    circuit.set(&swept.instance, &swept.param, ParamValue::Real(value)).map_err(refused)?;
+                    let result = circuit.dc(Context::default()).and_then(|mut dc| dc.solve()).map_err(|error| Failure::Solver { analysis: "dc", error })?;
+                    let net = |path: &str| Session::discrete(&circuit, path);
+                    points.push((value, Table::point(&self.probes, &result, &net)?));
+                }
+                Ok(Table::sweep(&swept.label(), &self.probes, points))
+            }
             other => Err(Failure::Backend(format!("the `{}` analysis is not supported by `Session::run` yet", other.name()))),
         }
+    }
+
+    /// The bytes of the discrete net at `path` in the bound design: its index in the digital
+    /// plan is its id.
+    fn discrete(circuit: &CircuitInstance, path: &str) -> Option<Vec<u8>> {
+        let b = circuit.bound()?;
+        let at = b.digital.plan().nets.iter().position(|n| n.name == path)?;
+        Some(b.digital.read(NetId(at as u32)).to_vec())
     }
 
     /// The `top` key, else the one module without ports of the root crate (`P0011` when there

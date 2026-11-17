@@ -80,17 +80,41 @@ impl Table {
     pub fn operating_point(probes: &[Probe], result: &DcAnalysisResult, net: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Table, Failure> {
         let rows = probes
             .iter()
+            .zip(Table::point(probes, result, net)?)
+            .map(|(probe, value)| vec![Cell::Text(probe.label()), value])
+            .collect();
+        Ok(Table { columns: vec!["signal".into(), "value".into()], rows })
+    }
+
+    /// The value of every probe at one operating point, in order.
+    pub fn point(probes: &[Probe], result: &DcAnalysisResult, net: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Vec<Cell>, Failure> {
+        probes
+            .iter()
             .map(|probe| {
                 let value = match probe {
                     Probe::Node { id, .. } => result.get_node(id).map(Cell::Real),
                     Probe::Flow { branch, .. } => result.get_branch(branch.clone()).map(Cell::Real),
                     Probe::Net { path, ty } => net(path).map(|bytes| Cell::decode(ty, &bytes)).transpose()?,
                 };
-                let value = value.ok_or_else(|| Failure::Backend(format!("the operating point holds no value for `{}`", probe.label())))?;
-                Ok(vec![Cell::Text(probe.label()), value])
+                value.ok_or_else(|| Failure::Backend(format!("the operating point holds no value for `{}`", probe.label())))
             })
-            .collect::<Result<Vec<_>, Failure>>()?;
-        Ok(Table { columns: vec!["signal".into(), "value".into()], rows })
+            .collect()
+    }
+
+    /// A DC sweep: the column `swept` (the param's full path), then one column per probe; one
+    /// row per point, `points` giving the swept value and the probes' values at it.
+    pub fn sweep(swept: &str, probes: &[Probe], points: Vec<(f64, Vec<Cell>)>) -> Table {
+        let mut columns = vec![swept.to_string()];
+        columns.extend(probes.iter().map(Probe::label));
+        let rows = points
+            .into_iter()
+            .map(|(value, cells)| {
+                let mut row = vec![Cell::Real(value)];
+                row.extend(cells);
+                row
+            })
+            .collect();
+        Table { columns, rows }
     }
 
     /// A transient: the column `time`, then one column per probe; one row per step the result
