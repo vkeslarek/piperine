@@ -75,6 +75,13 @@ impl Streams {
         Streams { ir, pins, kept: None }
     }
 
+    /// The pin path `<instance path>.<stream>` of every stream of the design, sorted.
+    pub fn paths(&self) -> Vec<&str> {
+        let mut paths: Vec<&str> = self.pins.keys().map(String::as_str).collect();
+        paths.sort_unstable();
+        paths
+    }
+
     /// Keeps only the streams `entries` name (CLI-12 AC 1, 2): an entry is a stream's name,
     /// which keeps that stream of every instance, or one stream's full path
     /// `<instance path>.<stream>`. No entry keeps every stream. An entry that matches no stream
@@ -87,9 +94,7 @@ impl Streams {
         for entry in entries {
             let matched: Vec<&String> = self.pins.iter().filter(|(pin, (_, stream, _))| *pin == entry || stream.name == *entry).map(|(pin, _)| pin).collect();
             if matched.is_empty() {
-                let mut known: Vec<&str> = self.pins.keys().map(String::as_str).collect();
-                known.sort_unstable();
-                let message = format!("`{entry}` names no record stream of the design: the streams are {}", known.join(", "));
+                let message = format!("`{entry}` names no record stream of the design: the streams are {}", self.paths().join(", "));
                 return Err(Failure::Host { code: "E0801", message });
             }
             kept.extend(matched.into_iter().cloned());

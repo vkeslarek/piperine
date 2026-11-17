@@ -3685,7 +3685,7 @@ time         Step.vin    Step.vout
 <thead><tr><th>Analysis</th><th>Rows</th><th>Columns</th></tr></thead>
 <tbody>
 <tr><td><code>op</code></td><td>one per printed signal</td><td><code>signal</code>, <code>value</code></td></tr>
-<tr><td><code>dc</code></td><td>one per point of the sweep; each point sets the param and solves an operating point. Today the points of a sweep print no record lines</td><td>the swept param's full path, then one per signal</td></tr>
+<tr><td><code>dc</code></td><td>one per point of the sweep; each point sets the param and solves an operating point. A point of a sweep has no time to stamp a record with, so a <code>dc</code> run of a design that writes records is refused with P0010; run <code>op</code> at each value instead</td><td>the swept param's full path, then one per signal</td></tr>
 <tr><td><code>ac</code></td><td>one per frequency</td><td><code>freq</code>, then <code>mag(&lt;path&gt;)</code> and <code>phase(&lt;path&gt;)</code> per signal, the phase in degrees</td></tr>
 <tr><td><code>transient</code></td><td>one per accepted solver step, or one per <code>print_step</code></td><td><code>time</code>, then one per signal</td></tr>
 </tbody></table></div>
@@ -3979,6 +3979,7 @@ time         Startup.buck.ctl.reference  Startup.mode  Startup.buck.vout
   <tr><td>P0010</td><td><code>per_decade</code> and <code>points</code> together, or neither</td><td>An AC grid is exactly one of the two.</td></tr>
   <tr><td>P0010</td><td><code>bench = "benches/stepp.msl"</code></td><td>The file does not exist.</td></tr>
   <tr><td>P0010</td><td><code>piperine run src/lib.msl --analysis op</code></td><td>A file under <code>src/</code> is part of the library. Run a bench, or a run of the project.</td></tr>
+  <tr><td>P0010</td><td>a <code>dc</code> run of a design that writes records</td><td>A point of a sweep has no time to stamp a record with. Run <code>op</code> at each value, or a <code>transient</code>.</td></tr>
   <tr><td>P0011</td><td>a bench file with two modules without ports, and no <code>top</code></td><td>No single top can be chosen. Name it: <code>top = "Step"</code> or <code>--top Step</code>.</td></tr>
   <tr><td>E0801</td><td><code>--print vuot</code>, <code>--stream tripp</code>, <code>--param r9.r=1k</code></td><td>The path names nothing in the design. It is reported before any analysis runs.</td></tr>
   <tr><td>E0802</td><td><code>--param r1.r=-5</code></td><td>The design refuses the value: the param's <code>where r &gt; 0.0</code> fails.</td></tr>

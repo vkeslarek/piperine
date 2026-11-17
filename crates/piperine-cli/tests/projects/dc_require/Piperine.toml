@@ -1,0 +1,15 @@
+[package]
+name = "dc_require"
+version = "0.1.0"
+
+[run.op]
+bench = "benches/divider.msl"
+analysis = "op"
+
+[run.sweep]
+bench = "benches/divider.msl"
+analysis = "dc"
+sweep = "v1.dc"
+from = 0.0
+to = 1.0
+step = 0.5

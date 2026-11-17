@@ -91,6 +91,15 @@ impl Session {
         let (ir, top) = Session::elaborate(project, spec)?;
         let probes = Session::probes_of(&ir, spec)?;
         let mut streams = Streams::of(ir.clone());
+        if matches!(spec.analysis, Analysis::Dc { .. }) && !streams.paths().is_empty() {
+            // CLI-09 AC 10: a point of a sweep has no time, and a record line is stamped
+            // `@<time>`, so the records of a sweep would be lost; refused before any compile
+            let message = format!(
+                "a `dc` run of a design with record streams is refused: a point of a DC sweep has no time to stamp its records with, so they would be lost (the streams are {}); run `op` at each value, or a `transient`",
+                streams.paths().join(", ")
+            );
+            return Err(Failure::Host { code: "P0010", message });
+        }
         streams.keep(&spec.streams)?;
         let swept = match &spec.analysis {
             Analysis::Dc { sweep, .. } => Some(ParamPath::resolve(&ir, ir.top().path(), sweep)?),

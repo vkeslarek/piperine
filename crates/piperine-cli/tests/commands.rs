@@ -327,6 +327,26 @@ fn a_run_that_does_not_complete_is_a_fail() {
 }
 
 #[test]
+fn a_dc_run_of_a_design_with_records_is_refused_never_passed() {
+    // CLI-09 AC 10: a DC sweep point has no time to stamp a record with, so a `dc` run of a
+    // design that holds a record stream is refused with `P0010` before anything compiles, and
+    // `test` counts it a failure. `dc_require`'s monitor requires `v(a) <= 0.1` at time 0 over a
+    // divider at 0.5 V: the `op` run shows the check fails, so a PASS of `sweep` would hide it.
+    let op = piperine_in(&fixture("dc_require"), &["test", "op"]);
+    assert_eq!(lines_of(&op)[0], "FAIL op (1 of 1 checks failed)", "{}", text(&op.stderr));
+    let out = piperine_in(&fixture("dc_require"), &["test", "sweep"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(text(&out.stdout), "FAIL sweep (did not run)\n1 runs, 0 passed, 1 failed\n");
+    let err = text(&out.stderr);
+    assert!(err.contains("P0010") && err.contains("`dc`") && err.contains("Divider.mon.checks"), "{err}");
+    // `run` refuses it the same way: nothing on standard output, exit 1
+    let out = piperine_in(&fixture("dc_require"), &["run", "sweep"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(text(&out.stdout), "");
+    assert!(text(&out.stderr).contains("P0010"), "{}", text(&out.stderr));
+}
+
+#[test]
 fn the_last_line_counts_and_the_exit_code_follows() {
     // CLI-16 AC 6: `<r> runs, <p> passed, <f> failed` is the last line; exit 0 when `f` is 0, 1
     // otherwise

@@ -1,0 +1,10 @@
+use dc_require::{Resistor, Vsource, Zero};
+
+module Divider() {
+    signal vin: Electrical;
+    signal a: Electrical;
+    let v1 = Vsource(vin, gnd) { dc: 1.0 };
+    let r1 = Resistor(vin, a) { r: 1k };
+    let r2 = Resistor(a, gnd) { r: 1k };
+    let mon = Zero(a);
+}

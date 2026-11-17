@@ -1,0 +1,15 @@
+/// Ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A constant voltage from `p` to `n`.
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }
+
+/// Requires `v(a)` to be at or below 0.1 at time 0.
+pub module Zero(a: Electrical) { }
+digital for Zero {
+    on at(0.0) {
+        require("at_zero", v(a) <= 0.1);
+    }
+}

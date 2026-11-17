@@ -1931,6 +1931,9 @@ Proof: run commands | test fmt_on_formatted_files_is_silent ... ok
 **C198** - `piperine fmt --check` exits 0 in `examples/rc` and in a project `piperine new` created. (CLI-24, AC 6; T49)
 Proof: run commands | test fmt_check_passes_on_the_rc_example_and_on_a_new_project ... ok
 
+**C199** - A `dc` run of `dc_require`, whose monitor's `require` fails at time 0 (its `op` run is `FAIL op (1 of 1 checks failed)`), is refused with `P0010` naming `Divider.mon.checks`: `piperine test sweep` prints `FAIL sweep (did not run)` and exits 1, `piperine run sweep` prints nothing on standard output and exits 1. (CLI-09, AC 10; T22, verification F1)
+Proof: run commands | test a_dc_run_of_a_design_with_records_is_refused_never_passed ... ok
+
 ---
 
 ## Handoff

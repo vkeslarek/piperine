@@ -61,10 +61,6 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
   single row at time 0 holding the values of the END of the run (`Blinky.count` = 3 at 0), exit
   0. With `print_step` the run fails instead (`the print grid reaches .., past the last step of
   the run at 0`). The records are right. The Book says so where it shows such a design.
-- **A DC sweep's points deliver no records (`msl-cli` T22).** The sweep `set`s and solves on the
-  bound circuit directly (`Solver` owns its circuit), so the reactions of each point write
-  records the sink never sees: a `dc` run prints no record line and writes none to `--records`,
-  with no diagnostic. An `op` run delivers its records. The Book's chapter 16 says so.
 
 - **A derived child param is not re-derived on a host `set` (`msl-digital`).** A placement
   that gives a child param a value reading the parent's params (`PowerStage { ron: ron }`) is
@@ -81,6 +77,13 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 ---
 
 ## 4. Loud — refused, though the spec allows it
+
+- **A DC sweep's points deliver no records, so a `dc` run of a design with a record stream is
+  refused (`msl-cli` T22, verification F1).** A point of a sweep has no time, and a record line is
+  stamped `@<time>`; the sweep `set`s and solves on the bound circuit directly (`Solver` owns its
+  circuit), so the sink would never see a point's records. `Session::open` refuses such a run with
+  `P0010` naming the streams, before anything compiles, and `piperine test` counts it
+  `FAIL <name> (did not run)`. An `op` run delivers its records. The Book's chapter 16 says so.
 
 - **An MSL local named like an MSL function of the same body** (a param `vt` in a body that calls `vt()`) makes the generated Rust fail to compile (`ir-rust`). Generated names can no longer collide with MSL names (F2/F3), but MSL-vs-MSL shadowing across the value/function namespaces is not renamed yet. A `let`-bound closure named like a function could in principle be called instead of it.
 

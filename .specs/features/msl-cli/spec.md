@@ -293,6 +293,7 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 7. WHEN the RC of `tests/ngspice/ac_rc.msl` runs `ac` from 1e3 to 1e7 with 10 points per decade THEN the system SHALL give at 1e5 a magnitude within 1e-3 of 0.7071067811865476 and a phase within 1e-2 degrees of -45 for `AcRc.out`.
 8. WHEN the diode of `tests/ngspice/diode_iv.msl` sweeps `v1.dc` from -1 to 0.8 by 0.05 THEN the system SHALL give 37 rows.
 9. IF `sweep` names no param of the elaborated design THEN the system SHALL report `E0801` naming it and exit 1.
+10. (Amended 2026-11-17, verification F1.) IF a `dc` run's design holds a record stream THEN the system SHALL refuse the run with `P0010` naming the streams before anything compiles, and exit 1, so `piperine test` counts it `FAIL <name> (did not run)`: a point of a sweep has no time to stamp its records with `@<time>`.
 
 **Independent Test**: `piperine run tests/ngspice/ac_rc.msl --analysis ac --from 1e3 --to 1e7 --per-decade 10 --print out`.
 
