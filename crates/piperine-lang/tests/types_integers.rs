@@ -321,7 +321,7 @@ fn min_max_clamp_and_floor_are_typed() {
 
     // `floor` is a row of `f64` only; an argument of another type is a mismatch.
     let (src, d) = diagnostics("", "let d: u8 = 2; let a = d.floor();");
-    assert_eq!(codes(&d), ["P0001"]);
+    assert_eq!(codes(&d), ["E0161"]);
     assert_eq!(snippet(&src, &d[0]), "floor");
     let (src, d) = diagnostics("", "let d: u8 = 2; let b: u9 = 3; let a = d.min(b);");
     assert_eq!(codes(&d), ["P0002"]);
@@ -329,14 +329,15 @@ fn min_max_clamp_and_floor_are_typed() {
 }
 
 #[test]
-fn an_uncatalogued_method_is_p0001_by_name() {
-    // DIG-02 AC 2 (buck GAPS.md G3): a method with no catalogue row of its receiver's type is
-    // `P0001` naming the method and the type, never an unresolved call that runs as nothing.
-    let (src, d) = diagnostics("", "let x: u4 = 3; let y = x.saturating_add(1);");
-    assert_eq!(codes(&d), ["P0001"], "{src}");
+fn an_uncatalogued_method_is_e0161_by_name() {
+    // DIG-02 AC 2 (buck GAPS.md G3), as Appendix H rule 1 now closes it: a method with no row of
+    // its receiver's complete catalogue is `E0161` naming the method and the type, never an
+    // unresolved call that runs as nothing.
+    let (src, d) = diagnostics("", "let x: u4 = 3; let y = x.leading_zeros();");
+    assert_eq!(codes(&d), ["E0161"], "{src}");
     let message = &d[0].diagnostic.message;
-    assert!(message.contains("saturating_add") && message.contains("`u4`"), "{message}");
-    assert_eq!(snippet(&src, &d[0]), "saturating_add");
+    assert!(message.contains("leading_zeros") && message.contains("`u4`"), "{message}");
+    assert_eq!(snippet(&src, &d[0]), "leading_zeros");
 }
 
 #[test]
@@ -417,4 +418,60 @@ fn buck() -> Design {
     let mut graph = piperine_lang::pom::CrateGraph::new();
     graph.add_crate(&name, dir.join("src/lib.msl")).expect("a valid crate name");
     Design::load_crates(graph)
+}
+
+#[test]
+fn every_h1_row_types_with_its_signature() {
+    // CAT-02 AC 1 (Appendix H.1): 13 rows on `UInt<N>` and `Int<N>`; `pow` takes a `u32`;
+    // `checked_*` give `Option<Self>`; every other row gives `Self`.
+    use piperine_lang::types::Method::*;
+    type Row = (&'static str, piperine_lang::types::Method, fn(Ty) -> Ty);
+    let same: fn(Ty) -> Ty = |t| t;
+    let option: fn(Ty) -> Ty = |t| Ty::Option(Box::new(t));
+    let rows: [Row; 13] = [
+        ("abs()", IntAbs, same),
+        ("min(y)", Min, same),
+        ("max(y)", Max, same),
+        ("clamp(y, y)", Clamp, same),
+        ("pow(3)", Pow, same),
+        ("rem_euclid(y)", RemEuclid, same),
+        ("signum()", Signum, same),
+        ("checked_add(y)", CheckedAdd, option),
+        ("checked_sub(y)", CheckedSub, option),
+        ("checked_mul(y)", CheckedMul, option),
+        ("saturating_add(y)", SaturatingAdd, same),
+        ("saturating_sub(y)", SaturatingSub, same),
+        ("saturating_mul(y)", SaturatingMul, same),
+    ];
+    // `abs` and `signum` exist on the signed type; every row on `i8`, 12 of them on `u8`.
+    for (decl, ty) in [("i8", Ty::Int(8)), ("u8", Ty::UInt(8))] {
+        let signed = decl == "i8";
+        let rows: Vec<&Row> = rows.iter().filter(|(call, ..)| signed || !(call.starts_with("abs") || call.starts_with("signum"))).collect();
+        assert_eq!(rows.len(), if signed { 13 } else { 11 });
+        let lets: String = rows.iter().enumerate().map(|(i, (call, ..))| format!("let r{i} = x.{call}; ")).collect();
+        let src = source("", &format!("let x: {decl} = 5; let y: {decl} = 3; {lets}"));
+        let design = design_of(&src);
+        let types = checked(&design, &src);
+        for (i, (call, method, result)) in rows.iter().enumerate() {
+            assert_eq!(types.local(binding(&design, &format!("r{i}"))), Some(&result(ty.clone())), "{decl}.{call}");
+            let at = (0..design.expr_count()).map(|e| ExprId(e as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::MethodCall { .. }) && src[design.expr_node(*e).span.range()] == format!("x.{call}")).unwrap_or_else(|| panic!("{call}"));
+            assert_eq!(types.method(at), Some(*method), "{decl}.{call}");
+        }
+    }
+    // `pow` takes a `u32`: an `i32` exponent is a mismatch.
+    let (src, d) = diagnostics("", "let x: u8 = 2; let e: i32 = 3; let r = x.pow(e);");
+    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "e");
+}
+
+#[test]
+fn abs_and_signum_on_an_unsigned_integer_are_e0161() {
+    // CAT-02 AC 7 (H.1: "signed types only").
+    for name in ["abs", "signum"] {
+        let (src, d) = diagnostics("", &format!("let x: u8 = 5; let y = x.{name}();"));
+        assert_eq!(codes(&d), ["E0161"], "{name}");
+        let message = &d[0].diagnostic.message;
+        assert!(message.contains(name) && message.contains("`u8`"), "{message}");
+        assert_eq!(snippet(&src, &d[0]), name);
+    }
 }

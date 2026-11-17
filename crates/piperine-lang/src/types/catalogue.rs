@@ -12,6 +12,8 @@ enum Arg {
     SelfTy,
     /// `i32`: the exponent of `powi`.
     I32,
+    /// `u32`: the exponent of `pow`.
+    U32,
 }
 
 impl Arg {
@@ -19,6 +21,7 @@ impl Arg {
         match self {
             Arg::SelfTy => recv.clone(),
             Arg::I32 => Ty::Int(32),
+            Arg::U32 => Ty::UInt(32),
         }
     }
 }
@@ -28,6 +31,8 @@ impl Arg {
 enum Res {
     SelfTy,
     Bool,
+    /// `Option<Self>`: the `checked_*` rows.
+    OptionSelf,
 }
 
 impl Res {
@@ -35,6 +40,7 @@ impl Res {
         match self {
             Res::SelfTy => recv.clone(),
             Res::Bool => Ty::Bool,
+            Res::OptionSelf => Ty::Option(Box::new(recv.clone())),
         }
     }
 }
@@ -45,10 +51,16 @@ struct Row {
     method: Method,
     params: &'static [Arg],
     result: Res,
+    /// A row of the signed integer types only (`abs`, `signum`).
+    signed_only: bool,
 }
 
 const fn row(name: &'static str, method: Method, params: &'static [Arg], result: Res) -> Row {
-    Row { name, method, params, result }
+    Row { name, method, params, result, signed_only: false }
+}
+
+const fn signed(name: &'static str, method: Method, params: &'static [Arg], result: Res) -> Row {
+    Row { name, method, params, result, signed_only: true }
 }
 
 const SELF: Arg = Arg::SelfTy;
@@ -89,8 +101,22 @@ const F64_METHODS: &[Row] = &[
     row("is_infinite", Method::IsInfinite, &[], Res::Bool),
 ];
 
-/// The Appendix H.1 rows of `UInt<N>` and `Int<N>` the subset types, as `F64_METHODS`.
-const INTEGER_METHODS: &[Row] = &[row("min", Method::Min, &[SELF], Res::SelfTy), row("max", Method::Max, &[SELF], Res::SelfTy), row("clamp", Method::Clamp, &[SELF, SELF], Res::SelfTy)];
+/// The rows of Appendix H.1, `UInt<N>` and `Int<N>`: 13 of them.
+const INTEGER_METHODS: &[Row] = &[
+    signed("abs", Method::IntAbs, &[], Res::SelfTy),
+    row("min", Method::Min, &[SELF], Res::SelfTy),
+    row("max", Method::Max, &[SELF], Res::SelfTy),
+    row("clamp", Method::Clamp, &[SELF, SELF], Res::SelfTy),
+    row("pow", Method::Pow, &[Arg::U32], Res::SelfTy),
+    row("rem_euclid", Method::RemEuclid, &[SELF], Res::SelfTy),
+    signed("signum", Method::Signum, &[], Res::SelfTy),
+    row("checked_add", Method::CheckedAdd, &[SELF], Res::OptionSelf),
+    row("checked_sub", Method::CheckedSub, &[SELF], Res::OptionSelf),
+    row("checked_mul", Method::CheckedMul, &[SELF], Res::OptionSelf),
+    row("saturating_add", Method::SaturatingAdd, &[SELF], Res::SelfTy),
+    row("saturating_sub", Method::SaturatingSub, &[SELF], Res::SelfTy),
+    row("saturating_mul", Method::SaturatingMul, &[SELF], Res::SelfTy),
+];
 
 /// What looking a method up on a receiver type found.
 pub(super) enum Lookup {
@@ -107,17 +133,15 @@ pub(super) struct Catalogue;
 impl Catalogue {
     /// The row named `name` for a receiver of type `recv`.
     pub(super) fn method(recv: &Ty, name: &str) -> Lookup {
-        // The second column: whether the table is the whole of Appendix H for the type.
-        let (rows, complete) = match recv {
-            Ty::F64 => (F64_METHODS, true),
-            Ty::UInt(_) | Ty::Int(_) => (INTEGER_METHODS, false),
+        let rows = match recv {
+            Ty::F64 => F64_METHODS,
+            Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
             Ty::Option(inner) => return Self::option(inner, name),
             Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => return Lookup::Uncatalogued,
         };
-        match rows.iter().find(|r| r.name == name) {
+        match rows.iter().find(|r| r.name == name && (!r.signed_only || matches!(recv, Ty::Int(_)))) {
             Some(r) => Lookup::Row(r.method, r.params.iter().map(|a| a.ty(recv)).collect(), r.result.ty(recv)),
-            None if complete => Lookup::Absent,
-            None => Lookup::Uncatalogued,
+            None => Lookup::Absent,
         }
     }
 

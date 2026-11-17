@@ -51,6 +51,17 @@ pub enum Method {
     IsNan,
     IsFinite,
     IsInfinite,
+    /// `x.abs()` on a signed integer.
+    IntAbs,
+    /// `x.pow(e: u32)` on an integer.
+    Pow,
+    SaturatingAdd,
+    SaturatingSub,
+    SaturatingMul,
+    /// `a.checked_add(b)`: an `Option` of the wrapping sum.
+    CheckedAdd,
+    CheckedSub,
+    CheckedMul,
     /// `o.is_some()` on an `Option`.
     IsSome,
     /// `o.is_none()` on an `Option`.

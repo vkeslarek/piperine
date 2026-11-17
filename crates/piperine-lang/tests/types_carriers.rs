@@ -203,11 +203,12 @@ fn a_catalogue_method_on_a_carrier_is_typed_on_its_value() {
     assert_eq!([types.local(decl(&design, "direct", "binding")), types.local(decl(&design, "unwrapped", "binding"))], [Some(&Ty::UInt(8)), Some(&Ty::UInt(8))]);
     let mins = method_calls(&design, &types, "min");
     assert_eq!(mins.iter().map(|e| types.method(*e)).collect::<Vec<_>>(), [Some(Method::Min), Some(Method::Min)]);
-    // DIG-02 AC 2: a method with no row names the method and the value type.
-    let src = "module Top(in oc_count: Bit<u4>) { let n = oc_count.saturating_add(1); }";
+    // DIG-02 AC 2: a method with no row names the method and the value type (`E0161`, Appendix H
+    // rule 1, now that the integer catalogue is complete).
+    let src = "module Top(in oc_count: Bit<u4>) { let n = oc_count.leading_zeros(); }";
     let d = diagnostics(src);
-    assert_eq!(codes(&d), ["P0001"]);
-    assert!(d[0].diagnostic.message.contains("saturating_add") && d[0].diagnostic.message.contains("u4"), "{}", d[0].diagnostic.message);
+    assert_eq!(codes(&d), ["E0161"]);
+    assert!(d[0].diagnostic.message.contains("leading_zeros") && d[0].diagnostic.message.contains("u4"), "{}", d[0].diagnostic.message);
 }
 
 #[test]
