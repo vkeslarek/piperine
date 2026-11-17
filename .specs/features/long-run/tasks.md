@@ -398,10 +398,10 @@ T23
 
 **Done when**:
 
-- [ ] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `verdict::tests::a_verdict_counts_checks_and_keeps_only_the_failed_as_they_arrive`, `verdict::tests::a_record_of_another_stream_never_decides`
-- [ ] `verdict::tests::no_false_and_no_unknown_pass_is_a_pass` and `verdict::tests::an_unknown_pass_fails` pass unedited
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `verdict::tests::a_verdict_counts_checks_and_keeps_only_the_failed_as_they_arrive`, `verdict::tests::a_record_of_another_stream_never_decides`
+- [x] `verdict::tests::no_false_and_no_unknown_pass_is_a_pass` and `verdict::tests::an_unknown_pass_fails` pass unedited
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick

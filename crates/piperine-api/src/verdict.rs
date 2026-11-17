@@ -3,7 +3,7 @@
 //! the run. Every check record counts, a passing one too: what a terminal hides never reaches
 //! this type's input as a filter.
 
-use crate::record::{Field, Record};
+use crate::record::{Field, Record, RecordSink};
 
 /// The checks of a run and the ones that failed.
 #[derive(Debug, Clone, PartialEq)]
@@ -13,17 +13,20 @@ pub struct Verdict {
 }
 
 impl Verdict {
-    /// Judges `records`, the whole record stream of a run: counts those of the `checks` stream
-    /// and keeps those whose `pass` is false or unknown. A `checks` record with no `pass` field
-    /// (a `target`, which reports a margin) counts and does not fail.
+    /// An empty verdict: no check seen, none failed. Hand it to a run as a `RecordSink`.
+    pub fn new() -> Verdict {
+        Verdict { checks: 0, failed: Vec::new() }
+    }
+
+    /// Judges `records`, the whole record stream of a run, through the sink: counts those of
+    /// the `checks` stream and keeps those whose `pass` is false or unknown. A `checks` record
+    /// with no `pass` field (a `target`, which reports a margin) counts and does not fail.
     pub fn judge(records: &[Record]) -> Verdict {
-        let checks: Vec<&Record> = records.iter().filter(|r| r.stream == "checks").collect();
-        let failed = checks
-            .iter()
-            .filter(|r| r.fields.iter().any(|(name, field)| name == "pass" && *field != Field::Bool(true)))
-            .map(|r| (*r).clone())
-            .collect();
-        Verdict { checks: checks.len(), failed }
+        let mut verdict = Verdict::new();
+        for record in records {
+            verdict.record(record);
+        }
+        verdict
     }
 
     /// Whether no check failed.
@@ -39,6 +42,26 @@ impl Verdict {
     /// The checks that failed, in the order they were written.
     pub fn failed(&self) -> &[Record] {
         &self.failed
+    }
+}
+
+impl Default for Verdict {
+    fn default() -> Self {
+        Verdict::new()
+    }
+}
+
+impl RecordSink for Verdict {
+    /// A record of the `checks` stream is counted, and kept when its `pass` is not true; every
+    /// other record is dropped, so a run's memory holds the failures only.
+    fn record(&mut self, record: &Record) {
+        if record.stream != "checks" {
+            return;
+        }
+        self.checks += 1;
+        if record.fields.iter().any(|(name, field)| name == "pass" && *field != Field::Bool(true)) {
+            self.failed.push(record.clone());
+        }
     }
 }
 
@@ -91,5 +114,31 @@ mod tests {
         assert!(!verdict.passed());
         assert_eq!(verdict.checks(), 2);
         assert_eq!(verdict.failed(), [unknown]);
+    }
+
+    #[test]
+    fn a_verdict_counts_checks_and_keeps_only_the_failed_as_they_arrive() {
+        // LR-16: the sink counts every check, keeps the failed (false or unknown) in order
+        let mut verdict = Verdict::new();
+        let (bad, unknown) = (check("b", Field::Bool(false)), check("u", Field::Unknown));
+        verdict.record(&check("a", Field::Bool(true)));
+        assert_eq!((verdict.checks(), verdict.failed().len()), (1, 0));
+        verdict.record(&bad);
+        verdict.record(&check("c", Field::Bool(true)));
+        verdict.record(&unknown);
+        assert_eq!(verdict.checks(), 4);
+        assert!(!verdict.passed());
+        assert_eq!(verdict.failed(), [bad, unknown]);
+    }
+
+    #[test]
+    fn a_record_of_another_stream_never_decides() {
+        // LR-16: a record of another stream is neither counted nor kept, whatever its `pass`
+        let mut verdict = Verdict::new();
+        verdict.record(&other("trip"));
+        verdict.record(&other("sim"));
+        assert!(verdict.passed());
+        assert_eq!(verdict.checks(), 0);
+        assert!(verdict.failed().is_empty());
     }
 }
