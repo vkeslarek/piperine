@@ -535,11 +535,11 @@ T23
 
 **Done when**:
 
-- [ ] The target (with its `//!` header) holds, with exactly these names: `the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports`, `tran_rc_on_the_grid_agrees_with_ngspice`, `a_skipped_reference_still_runs_the_twin`
-- [ ] `crates/piperine-parity/src/contract.rs` and the five `parity_*` targets are unedited: `git diff --quiet a5f23ea4 -- crates/piperine-parity/src crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_corpus.rs tests/ngspice`
-- [ ] `cargo test -p piperine-parity --test parity_corpus` and `cargo test -p piperine-solver --test crate_boundaries --test workspace_shape` pass unedited with the new dev-dependency; if a guard refuses it, the task stops and reports
-- [ ] Gate check passes: Quick (`Run paritygrid`, `Run parity`)
-- [ ] Test count: the 3 tests named above, and no existing test removed or edited
+- [x] The target (with its `//!` header) holds, with exactly these names: `the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports`, `tran_rc_on_the_grid_agrees_with_ngspice`, `a_skipped_reference_still_runs_the_twin`
+- [x] `crates/piperine-parity/src/contract.rs` and the five `parity_*` targets are unedited: `git diff --quiet a5f23ea4 -- crates/piperine-parity/src crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_corpus.rs tests/ngspice`
+- [x] `cargo test -p piperine-parity --test parity_corpus` and `cargo test -p piperine-solver --test crate_boundaries --test workspace_shape` pass unedited with the new dev-dependency; if a guard refuses it, the task stops and reports
+- [x] Gate check passes: Quick (`Run paritygrid`, `Run parity`)
+- [x] Test count: the 3 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick
