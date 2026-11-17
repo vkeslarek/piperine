@@ -7,5 +7,6 @@ pub mod faer;
 pub mod iv;
 pub mod linear;
 pub mod num;
+pub mod singular;
 pub mod integration;
 pub mod newton_raphson;

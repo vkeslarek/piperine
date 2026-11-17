@@ -356,8 +356,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_loop_of_two_potential_sources_is_singular_in_both_flows`, `a_node_reached_only_through_capacitors_is_singular_at_dc` and `a_singular_system_above_the_dense_bound_says_it_skipped` pass under `**Run analoglib**`
-- [ ] Gate check passes: Quick
+- [x] `a_loop_of_two_potential_sources_is_singular_in_both_flows`, `a_node_reached_only_through_capacitors_is_singular_at_dc` and `a_singular_system_above_the_dense_bound_says_it_skipped` pass under `**Run analoglib**`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick
