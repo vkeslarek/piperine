@@ -23,7 +23,7 @@ fn elaborated(path: &Path, top: &str) -> Ir {
 }
 
 /// A top with a discrete port, a node and a discrete signal, in that order, over a resistor.
-const MIXED: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\nmodule Top(in en: Bit) {\n    signal a: Electrical;\n    signal flag: Bit = false;\n    let r1 = Resistor { r: 1k }(a, gnd);\n}\n";
+const MIXED: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\nmodule Top(in en: Bit) {\n    signal a: Electrical;\n    signal flag: Bit = false;\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\n";
 
 fn mixed() -> (tempfile::TempDir, Ir) {
     let dir = tempfile::tempdir().expect("tmp");
