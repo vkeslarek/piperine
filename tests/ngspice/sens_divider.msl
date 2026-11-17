@@ -1,0 +1,12 @@
+//! Twin of `tests/ngspice/sens_divider.cir`: a 10 V source over 1 kOhm then 3 kOhm, whose
+//! `mid` is differentiated by both resistances and the source's value.
+mod devices;
+use devices::*;
+
+module SensDivider() {
+    signal vin: Electrical;
+    signal mid: Electrical;
+    let v1 = Vsource { dc: 10.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, mid);
+    let r2 = Resistor { r: 3k }(mid, gnd);
+}

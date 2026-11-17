@@ -1,0 +1,12 @@
+* sens_divider — DC sensitivity cross-check (.sens): d v(mid) / d R1, d R2 and d V1 of a 10 V
+* divider, 1k over 3k. v(mid) = V1 * R2 / (R1 + R2), so the derivatives are
+* -V1 * R2 / (R1 + R2)^2 = -1.875e-3 (R1), V1 * R1 / (R1 + R2)^2 = 6.25e-4 (R2) and 0.75 (V1).
+V1 vin 0 DC 10
+R1 vin mid 1k
+R2 mid 0 3k
+.control
+set numdgt=10
+sens v(mid)
+print r1 r2 v1
+.endc
+.end

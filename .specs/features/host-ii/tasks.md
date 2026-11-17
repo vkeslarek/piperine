@@ -527,9 +527,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `parity_sens.rs` (new) holds `fn sens_divider()`
-- [ ] Gate check passes: Quick (`Run newparity`, `Run parity`), then Build (end of phase 3)
-- [ ] Test count: 1 new test
+- [x] `parity_sens.rs` (new) holds `fn sens_divider()`
+- [x] Gate check passes: Quick (`Run newparity`, `Run parity`), then Build (end of phase 3)
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: build
@@ -1435,6 +1435,11 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - T6/T8 temperature finding: the operating point of `v +> temperature()` reads 299.857 K (not 300.15) because Newton stops at `reltol * |x| + vntol` (1e-3 and 1e-6); with `--reltol 1e-9 --vntol 1e-12` it reads 300.15 exactly (and 348.15 at `--temp 75`). The test bound is that criterion, not a loosened constant; not a defect.
 - T43 (orchestrator finding): `max_steps` is a run key and `--max-steps` flag (positive integer, default 2,000,000 unchanged), spec HII-01 AC 7 and HII-02 AC 9 amended; it reaches every transient of the session, and the PSS arm (T18) must pass it to its shots.
 - T8: `parity_corpus.rs` twin count 7 to 8 (append-only edit); lane C made the same edit for `tran_dq`, expect a trivial conflict, the final count is the sum.
+- (B2 worker) T9: `Ngspice::print_lines` and `Golden::printed_complex` read `name = re,im`. T10: `TF_RATIO` 1e-6/1e-12 (seven printed digits), `PZ_ROOT` 1e-5/1e-6 (six digits; the cir uses `set numdgt=10`), `SENSITIVITY` 1e-5/1e-12 (ngspice's `.sens` is itself a finite difference, 1e-6 off the exact value).
+- T11: keys `input`, `output`, `wrt` and flags `--input`, `--output`, `--wrt` landed here (the existing flag-list test extended; RUN_KEYS 30 to 33, `RUN_KEYS[20..30]`); `pss` is in `Analysis::NAMES` and refused (P0010 "reserved") until T17. `--analysis` help lists tf, pz, sens.
+- T12: `Table::sensitivities(probes, outputs: &[Net], wrt: &[ParamPath], result)` takes the solved nets too (design.md's three-argument form cannot look a key up: `SensResult` is keyed by `Net::label`). `num-complex` is a dev-dependency of piperine-api.
+- T13: `nodeset` is P0010 on tf, pz and sens. BLOCKER for T14: `TransferFunctionSolver::input_is_voltage_source` (`piperine-solver/src/analyses/tf.rs:260`) classifies the input by `component.starts_with('V')`, so every design path (`Top.v1`) fails with "not a recognised voltage/current source label". Fixing it is a solver edit outside the allowed cross-lane touches; T14 (tf twin) is not done, and the tf happy path is untested.
+- T15: the pz ngspice fixture omits the voltage source (ngspice reports "input signal is shorted" for a pinned input node); `vol pz` of the network behind `in` equals the source-driven transfer. `parity_corpus` twin count 8 to 9 (T15), 10 (T16).
 **Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17. B1 done (c6c0f64b, + T43 max_steps). B2 (phase 3, T9-T16) - Sonnet worker, 2026-11-17.
 **Walked:** none
 
