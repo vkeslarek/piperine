@@ -19,17 +19,24 @@ pub trait Modules {
 pub struct Netlist<'a> {
     ir: &'a Ir,
     resolution: Option<f64>,
+    microsteps: Option<usize>,
 }
 
 impl<'a> Netlist<'a> {
     pub fn new(ir: &'a Ir) -> Netlist<'a> {
-        Netlist { ir, resolution: None }
+        Netlist { ir, resolution: None, microsteps: None }
     }
 
     /// This netlist with the session's tick length (the `RESOLUTION` global), in seconds; the
     /// solver's own default (one femtosecond) when never given.
     pub fn with_resolution(self, seconds_per_tick: f64) -> Netlist<'a> {
         Netlist { resolution: Some(seconds_per_tick), ..self }
+    }
+
+    /// This netlist with the bound on the microsteps of one instant of the digital engine; the
+    /// engine's own default (1000) when never given.
+    pub fn with_microsteps(self, bound: usize) -> Netlist<'a> {
+        Netlist { microsteps: Some(bound), ..self }
     }
 
     /// The design as a solver circuit: one solver node per design node, in the IR's node order
@@ -62,6 +69,9 @@ impl<'a> Netlist<'a> {
         let ground = builder.ground();
         if let Some(seconds) = self.resolution {
             builder.resolution(seconds);
+        }
+        if let Some(bound) = self.microsteps {
+            builder.microsteps(bound);
         }
         for instance in ir.instances() {
             let body = instance.body();
@@ -149,5 +159,51 @@ impl<'a> Netlist<'a> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use piperine_ir::{BodySpec, InstanceSpec, IrBuilder, Origin};
+
+    use super::*;
+
+    /// No body has a module: the circuit is the design's empty top.
+    struct Nothing;
+
+    impl Modules for Nothing {
+        fn module(&self, _: BodyId) -> Option<&'static Module> {
+            None
+        }
+    }
+
+    fn empty_design() -> Ir {
+        let origin = || Origin { file: "netlist.rs".into(), line: 1, col: 1 };
+        let mut b = IrBuilder::new();
+        let body = b.body(BodySpec {
+            name: "Top".into(),
+            origin: origin(),
+            params: Vec::new(),
+            nodes: Vec::new(),
+            branches: Vec::new(),
+            limits: Vec::new(),
+            stims: Vec::new(),
+            locals: Vec::new(),
+            analog: None,
+            children: Vec::new(),
+        });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: Vec::new(), params: Vec::new(), origin: origin() });
+        b.finish(top)
+    }
+
+    #[test]
+    fn with_microsteps_reaches_the_builder() {
+        // HII-02 AC 7: the bound a netlist carries is the bound the circuit binds the digital
+        // engine with; a netlist that was never given one keeps the engine's 1000
+        let ir = empty_design();
+        let given = Netlist::new(&ir).with_microsteps(7).circuit(&Nothing).expect("binds");
+        assert_eq!(given.bound().expect("bound").microsteps, 7);
+        let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");
+        assert_eq!(default.bound().expect("bound").microsteps, 1000);
     }
 }

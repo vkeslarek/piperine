@@ -238,9 +238,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline test `netlist::tests::with_microsteps_reaches_the_builder`
-- [ ] Gate check passes: Quick (`Run planlib`)
-- [ ] Test count: 1 new test
+- [x] Inline test `netlist::tests::with_microsteps_reaches_the_builder`
+- [x] Gate check passes: Quick (`Run planlib`)
+- [x] Test count: 1 new test
 
 **Tests**: unit
 **Gate**: quick
