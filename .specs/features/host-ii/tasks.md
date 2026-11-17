@@ -1440,7 +1440,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - T12: `Table::sensitivities(probes, outputs: &[Net], wrt: &[ParamPath], result)` takes the solved nets too (design.md's three-argument form cannot look a key up: `SensResult` is keyed by `Net::label`). `num-complex` is a dev-dependency of piperine-api.
 - T13: `nodeset` is P0010 on tf, pz and sens. BLOCKER for T14: `TransferFunctionSolver::input_is_voltage_source` (`piperine-solver/src/analyses/tf.rs:260`) classifies the input by `component.starts_with('V')`, so every design path (`Top.v1`) fails with "not a recognised voltage/current source label". Fixing it is a solver edit outside the allowed cross-lane touches; T14 (tf twin) is not done, and the tf happy path is untested.
 - T15: the pz ngspice fixture omits the voltage source (ngspice reports "input signal is shorted" for a pinned input node); `vol pz` of the network behind `in` equals the source-driven transfer. `parity_corpus` twin count 8 to 9 (T15), 10 (T16).
-**Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17. B1 done (c6c0f64b, + T43 max_steps). B2 (phase 3, T9-T16) - Sonnet worker, 2026-11-17.
+**Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17. B1 done (c6c0f64b, + T43 max_steps). B2 (phase 3, T9-T16) - Sonnet worker, 2026-11-17. B2 done except T14 (fc0386fd). Ruling: tf.rs input classification by resolved branch authorized as a host-ii cross-lane touch. B3 (T14, then phases 4-5 T17-T23) - Sonnet worker, 2026-11-17.
 **Walked:** none
 
 ---
