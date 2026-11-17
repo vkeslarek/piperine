@@ -52,6 +52,14 @@ impl Solver {
         self
     }
 
+    /// Hands every accepted step of a transient of devices to `observer`, by reference, once the
+    /// sink has every observation up to its time; the start is observed too. A run that keeps
+    /// nothing per step (`Keep::Last`) is read through it.
+    pub fn with_step_observer(mut self, observer: Box<dyn crate::protocol::StepObserver>) -> Self {
+        self.host.observer = Some(std::rc::Rc::new(std::cell::RefCell::new(observer)));
+        self
+    }
+
     /// Calls `waiter` once each time the event net `net` fires at an accepted
     /// instant of an analysis of a circuit of devices (abi.md §5 R7): the
     /// owner lands there, and what the waiter writes is due at the next

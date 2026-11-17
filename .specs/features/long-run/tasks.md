@@ -215,10 +215,10 @@ T23
 
 **Done when**:
 
-- [ ] `step_observer.rs` gains, with exactly these names: `a_transient_observes_its_start_and_every_accepted_step` (calls equal `stats.steps_accepted + 1`, the first at the start time), `each_observed_step_holds_the_values_of_the_kept_step` (every unknown and every net's bytes against the steps of a `Keep::Every` result), `a_resumed_transient_observes_its_start`, `without_an_observer_the_result_and_the_sink_stream_are_unchanged`
-- [ ] `cargo test -p piperine-solver --test parity_baseline` passes unedited
-- [ ] Gate check passes: Quick (`Run step`, `Run baseline`), then `cargo test -p piperine-solver`
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] `step_observer.rs` gains, with exactly these names: `a_transient_observes_its_start_and_every_accepted_step` (calls equal `stats.steps_accepted + 1`, the first at the start time), `each_observed_step_holds_the_values_of_the_kept_step` (every unknown and every net's bytes against the steps of a `Keep::Every` result), `a_resumed_transient_observes_its_start`, `without_an_observer_the_result_and_the_sink_stream_are_unchanged`
+- [x] `cargo test -p piperine-solver --test parity_baseline` passes unedited
+- [x] Gate check passes: Quick (`Run step`, `Run baseline`), then `cargo test -p piperine-solver`
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick
@@ -874,7 +874,7 @@ Proof: run probes | test a_probe_with_no_value_in_the_circuit_is_a_failure_namin
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. The four questions of the spec were answered before the tasks were written (spec.md, "Questions answered").
+**Settled mid-build:** (T4) `StepView::time()` is the analog side's own time of the step (`AnalogSide::step_time`, the time the kept `TransientStep` records, a sum of steps), falling back to the protocol's tick time `t_c` when a side keeps none: the two differ in the last bit (3e-5 against 3.0000000000000004e-5) and the recorder's grid arithmetic must read what `Table::on_grid` reads off the kept steps (LR-06 bit-equality). T1: no net writer lacks a `Change` observation (see `contract.md`). The four questions of the spec were answered before the tasks were written (spec.md, "Questions answered").
 **Dispatched:** Executors all Sonnet (user 2026-11-17: "Implementação sempre em Sonnet e verificação em Opus"). Batch 1 (phase 1, T1-T5) - Sonnet worker, 2026-11-17.
 **Walked:**
 

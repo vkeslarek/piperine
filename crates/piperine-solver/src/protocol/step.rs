@@ -40,7 +40,8 @@ impl<'a> StepView<'a> {
         StepView { time, solution, nets }
     }
 
-    /// The step's time in seconds.
+    /// The step's time in seconds: the analog side's own time of the step when it keeps one (the
+    /// time of the step it records), else the owner's tick time.
     pub fn time(&self) -> f64 {
         self.time
     }
@@ -56,7 +57,7 @@ impl<'a> StepView<'a> {
     }
 }
 
-/// The call both sites make: the observer, if any, sees the sides at `time`.
+/// The call both sites make: the observer, if any, sees the sides at `time` (the owner's).
 pub(super) fn observe<D: DiscreteSide, A: AnalogSide>(
     observer: &mut Option<Box<dyn StepObserver>>,
     time: f64,
@@ -65,6 +66,6 @@ pub(super) fn observe<D: DiscreteSide, A: AnalogSide>(
 ) {
     if let Some(observer) = observer {
         let nets = Nets(discrete);
-        observer.step(&StepView::new(time, analog.solution(), &nets));
+        observer.step(&StepView::new(analog.step_time().unwrap_or(time), analog.solution(), &nets));
     }
 }

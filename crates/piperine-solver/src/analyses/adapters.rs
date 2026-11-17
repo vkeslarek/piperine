@@ -27,7 +27,7 @@ use piperine_digital_solver::limits::DigitalLimits;
 
 use crate::protocol::{
     Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, HostCx, InstantMode, Observation,
-    ObservationKind, Outcome, Protocol, Restart, Shadow, Sink, Tick, Waiter,
+    ObservationKind, Outcome, Protocol, Restart, Shadow, Sink, StepObserver, StepView, Tick, Waiter,
 };
 use crate::analyses::dc::DcSolver;
 use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
@@ -197,6 +197,10 @@ impl DiscreteSide for DigitalSide {
 
     fn host_commit(&mut self, net: u32, offset: u32, bytes: &[u8], at: Tick) -> Result<()> {
         self.digital.host_commit(NetId(net), offset, bytes, DigitalTick(at)).map_err(digital_error)
+    }
+
+    fn net(&self, id: u32) -> Option<&[u8]> {
+        ((id as usize) < self.digital.plan().nets.len()).then(|| self.digital.read(NetId(id)))
     }
 
     fn net_name(&self, slot: u32) -> String {
@@ -395,6 +399,14 @@ impl AnalogSide for TransientSide<'_, '_> {
         let time = self.run.attempted();
         traces(self.tran.device_bound(), time, out);
     }
+
+    fn solution(&self) -> &[f64] {
+        self.tran.device_solution()
+    }
+
+    fn step_time(&self) -> Option<f64> {
+        Some(self.run.accepted_time())
+    }
 }
 
 /// The host's sink and waiters (`Solver::with_sink`, `Solver::on_event`),
@@ -404,6 +416,8 @@ pub(crate) struct HostHooks {
     pub(crate) sink: Option<Rc<RefCell<Box<dyn Sink>>>>,
     /// Waiters by event net name.
     pub(crate) waiters: Vec<(String, Rc<RefCell<Waiter>>)>,
+    /// The host's observer of accepted steps (a transient's).
+    pub(crate) observer: Option<Rc<RefCell<Box<dyn StepObserver>>>>,
 }
 
 /// A sink every run shares.
@@ -412,6 +426,15 @@ struct SharedSink(Rc<RefCell<Box<dyn Sink>>>);
 impl Sink for SharedSink {
     fn observe(&mut self, o: &Observation) {
         self.0.borrow_mut().observe(o);
+    }
+}
+
+/// An observer every run shares.
+struct SharedObserver(Rc<RefCell<Box<dyn StepObserver>>>);
+
+impl StepObserver for SharedObserver {
+    fn step(&mut self, step: &StepView<'_>) {
+        self.0.borrow_mut().step(step);
     }
 }
 
@@ -432,6 +455,9 @@ impl HostHooks {
     pub(crate) fn install<D: DiscreteSide, A: AnalogSide>(&self, mut p: Protocol<D, A>, nets: &[u32]) -> Protocol<D, A> {
         if let Some(sink) = &self.sink {
             p = p.with_sink(Box::new(SharedSink(Rc::clone(sink))));
+        }
+        if let Some(observer) = &self.observer {
+            p = p.with_step_observer(Box::new(SharedObserver(Rc::clone(observer))));
         }
         for ((_, waiter), net) in self.waiters.iter().zip(nets) {
             let waiter = Rc::clone(waiter);

@@ -230,4 +230,10 @@ pub trait AnalogSide {
     fn solution(&self) -> &[f64] {
         &[]
     }
+    /// The time of the last accepted step as the side keeps it (`None`: it keeps none, and the
+    /// owner's own time of the step stands). The two differ in the last bit, since the owner's
+    /// is a whole number of ticks and the side's is a sum of its steps.
+    fn step_time(&self) -> Option<f64> {
+        None
+    }
 }

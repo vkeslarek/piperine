@@ -1051,6 +1051,7 @@ impl TransientSolver<'_> {
             .and_then(|_| {
                 let (digital, nets) = protocol.discrete().state();
                 protocol.analog_mut().mark_start(digital, nets);
+                protocol.observe_step(start);
                 Ok(())
             })
             .and_then(|_| {
@@ -1098,6 +1099,11 @@ impl TransientSolver<'_> {
             last.set_reentry(Some(std::sync::Arc::new(state)));
         }
         Ok(self.finish_run(&run.st, run.steps))
+    }
+
+    /// The solution as the Newton solver holds it (empty with no unknown), as `snapshot` reads it.
+    pub(crate) fn device_solution(&self) -> &[f64] {
+        self.solver.current_guess().and_then(|guess| guess.to_slice()).unwrap_or(&[])
     }
 
     pub(crate) fn device_has_unknowns(&self) -> bool {
@@ -1530,6 +1536,11 @@ impl DeviceRun {
     /// The time of the last attempt.
     pub(crate) fn attempted(&self) -> f64 {
         self.attempted
+    }
+
+    /// The time of the last accepted step (the start before any), as the step records it.
+    pub(crate) fn accepted_time(&self) -> f64 {
+        self.st.current_time
     }
 
     /// The smallest `CAP` of an accepted solution bounds the next step.
