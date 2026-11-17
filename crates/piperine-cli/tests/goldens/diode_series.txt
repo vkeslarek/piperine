@@ -1,0 +1,5 @@
+
+signal           value
+DiodeSeries.vin  5.000000e0
+DiodeSeries.a    1.376831e0
+DiodeSeries.b    6.884155e-1

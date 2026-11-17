@@ -113,3 +113,18 @@ fn tran_rc_prints_the_bytes_it_printed_before_the_long_run() {
         assert_eq!(after_header, golden, "tran_rc on {backend} prints other bytes than the golden");
     }
 }
+
+#[test]
+fn every_twin_prints_the_bytes_it_printed_before_the_long_run() {
+    // LR-14 AC 1: each of the seven twins' standard output after the header line, on each
+    // backend, is the file captured from the binary of `a5f23ea4` (the commit before the long
+    // run), through the same flags
+    for twin in &TWINS {
+        let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/goldens/{}.txt", twin.name))).expect("the golden file");
+        for backend in BACKENDS {
+            let (.., ran) = all().iter().find(|(t, b, _)| *t == twin.name && *b == backend).expect("every twin ran on both backends");
+            let after_header = ran.stdout.split_once('\n').map(|(_, rest)| rest).unwrap_or_default();
+            assert_eq!(after_header, golden, "{} on {backend} prints other bytes than the golden", twin.name);
+        }
+    }
+}

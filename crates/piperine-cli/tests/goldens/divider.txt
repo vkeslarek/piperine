@@ -1,0 +1,4 @@
+
+signal       value
+Divider.vin  1.000000e1
+Divider.mid  7.500000e0

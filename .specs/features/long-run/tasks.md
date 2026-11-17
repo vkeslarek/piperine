@@ -785,7 +785,7 @@ Proof: run buck | test piperine_test_passes_on_the_buck ... ok
 Proof: run twins | test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 
 **C41** - The seven twins still print the same bytes on both backends. (LR-14, AC 1; T10)
-Proof: run twins | test the_two_backends_print_the_same_bytes ... ok
+Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 
 **C42** - The transient parity of `tran_rc` passes with its target unedited. (LR-14, AC 2; T10)
 Proof: run parity | test tran_rc ... ok
