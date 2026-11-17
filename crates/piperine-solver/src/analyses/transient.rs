@@ -1139,6 +1139,7 @@ impl TransientSolver<'_> {
             nets: std::sync::Arc::new(crate::core::result::DigitalNets::new(run.net_names.clone(), nets)),
             assembly: bound.analog.snapshot(),
             cap: run.cap,
+            analog: self.analog_resume(&run),
         };
         if let Some(last) = run.steps.last_mut() {
             last.set_reentry(Some(std::sync::Arc::new(state)));
@@ -1255,18 +1256,41 @@ impl TransientSolver<'_> {
     ) -> crate::core::result::Result<Vec<f64>> {
         self.system.uic_hold = false;
         self.device_bound().analog.restore(&state.assembly);
-        let ivs: Vec<InitialValue<AnalogReference, f64>> = self
-            .system
-            .circuit
-            .netlist()
-            .all_references()
-            .into_iter()
-            .filter_map(|reference| {
-                step.get(reference.variable().clone()).map(|value| InitialValue { reference: reference.clone(), value })
+        // SPEC_DEVIATION: T6 restores the captured state here (tasks.md assigns T7)
+        // Reason: the capture fields have no reader without it; an unread field warns (L-016).
+        // The captured step's own solution: the Newton history, the time loop and the step
+        // controller continue from where the continuous run stood. A shooting analysis
+        // re-enters from a solution of its own with the state of another step: that run starts
+        // from its solution as a restart, its histories rewritten to it.
+        let analog = &state.analog;
+        let own = self.system.circuit.netlist().all_references().iter().all(|reference| {
+            let Some(i) = reference.idx() else { return true };
+            step.get(reference.variable().clone()).is_none_or(|value| {
+                analog.newton().latest().is_some_and(|row| row[i].to_bits() == value.to_bits())
             })
-            .collect();
-        self.push_initial(ivs.clone())?;
-        self.push_initial(ivs)?;
+        });
+        if own {
+            self.solver.restore_state(analog.newton().clone());
+            run.last_dt = analog.last_dt();
+            run.st.dt = analog.dt();
+            run.st.last_step_accepted = analog.last_step_accepted();
+            run.st.sets_just_applied = analog.restart_pending();
+            self.system.prev_h = analog.prev_h();
+            self.plan.stepper_mut().resume(analog.stepper());
+        } else {
+            let ivs: Vec<InitialValue<AnalogReference, f64>> = self
+                .system
+                .circuit
+                .netlist()
+                .all_references()
+                .into_iter()
+                .filter_map(|reference| {
+                    step.get(reference.variable().clone()).map(|value| InitialValue { reference: reference.clone(), value })
+                })
+                .collect();
+            self.push_initial(ivs.clone())?;
+            self.push_initial(ivs)?;
+        }
         run.cap = state.cap;
         self.device_record_start(run);
         let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
@@ -1302,7 +1326,21 @@ impl TransientSolver<'_> {
     ) -> std::sync::Arc<crate::core::result::ReentryState> {
         let assembly = self.device_bound().analog.snapshot();
         let nets = std::sync::Arc::new(crate::core::result::DigitalNets::new(run.net_names.clone(), nets));
-        std::sync::Arc::new(crate::core::result::ReentryState { digital, nets, assembly, cap: run.cap })
+        let analog = self.analog_resume(run);
+        std::sync::Arc::new(crate::core::result::ReentryState { digital, nets, assembly, cap: run.cap, analog })
+    }
+
+    /// The analog time loop as it stands between two steps.
+    fn analog_resume(&self, run: &DeviceRun) -> crate::core::result::AnalogResume {
+        crate::core::result::AnalogResume::new(
+            self.solver.state_snapshot(),
+            run.st.dt,
+            self.system.prev_h,
+            run.last_dt,
+            run.st.last_step_accepted,
+            run.st.sets_just_applied,
+            self.plan.stepper().memory(),
+        )
     }
 
     /// The end of the next step: the controller's proposal, at most the stop

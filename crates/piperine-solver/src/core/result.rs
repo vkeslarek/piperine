@@ -205,6 +205,66 @@ pub(crate) struct ReentryState {
     pub(crate) nets: Arc<DigitalNets>,
     pub(crate) assembly: piperine_analog_solver::device::AssemblySnapshot,
     pub(crate) cap: f64,
+    /// What the analog time loop carries from one step to the next.
+    pub(crate) analog: AnalogResume,
+}
+
+/// The analog side's resume state: what a run re-entered at a captured step needs, besides the
+/// solution, to take every later step the continuous run took (HYG-04). The Newton history the
+/// predictor reads, the step size the controller proposed, the previous accepted step, the size of
+/// the last accepted step, whether the last step was accepted, whether a restart is pending (the
+/// step after a discontinuity is first order and exempt), and the controller's memory.
+#[derive(Debug, Clone)]
+pub(crate) struct AnalogResume {
+    newton: piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64>,
+    dt: f64,
+    prev_h: f64,
+    last_dt: f64,
+    last_step_accepted: bool,
+    restart_pending: bool,
+    stepper: piperine_analog_solver::convergence::StepperMemory,
+}
+
+impl AnalogResume {
+    pub(crate) fn new(
+        newton: piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64>,
+        dt: f64,
+        prev_h: f64,
+        last_dt: f64,
+        last_step_accepted: bool,
+        restart_pending: bool,
+        stepper: piperine_analog_solver::convergence::StepperMemory,
+    ) -> Self {
+        Self { newton, dt, prev_h, last_dt, last_step_accepted, restart_pending, stepper }
+    }
+
+    pub(crate) fn newton(&self) -> &piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64> {
+        &self.newton
+    }
+
+    pub(crate) fn dt(&self) -> f64 {
+        self.dt
+    }
+
+    pub(crate) fn prev_h(&self) -> f64 {
+        self.prev_h
+    }
+
+    pub(crate) fn last_dt(&self) -> f64 {
+        self.last_dt
+    }
+
+    pub(crate) fn last_step_accepted(&self) -> bool {
+        self.last_step_accepted
+    }
+
+    pub(crate) fn restart_pending(&self) -> bool {
+        self.restart_pending
+    }
+
+    pub(crate) fn stepper(&self) -> &piperine_analog_solver::convergence::StepperMemory {
+        &self.stepper
+    }
 }
 
 impl TransientStep {
