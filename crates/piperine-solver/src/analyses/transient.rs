@@ -552,7 +552,10 @@ impl<'a> TransientSolver<'a> {
             system.context.tolerances = tolerances;
         }
 
-        let solver = NewtonRaphsonSolver::new(&mut system, size, 4)?;
+        let solver = match NewtonRaphsonSolver::new(&mut system, size, 4) {
+            Ok(solver) => solver,
+            Err(error) => return Err(system.circuit.name_error(error)),
+        };
 
         Ok(Self {
             system,
@@ -1151,7 +1154,7 @@ impl TransientSolver<'_> {
         if let Some(bound) = self.system.circuit.abi.as_mut() {
             bound.digital = side.into_digital();
         }
-        ran?;
+        ran.map_err(|error| self.system.circuit.name_error(error))?;
         // Under `Keep::Last` the one step kept is the last, from the final solution.
         if self.options.keep == Keep::Last {
             run.steps.push(self.full_snapshot(run.st.current_time));

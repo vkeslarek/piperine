@@ -54,6 +54,14 @@ impl CircuitInstance {
 
     /// The bound device instances, when the circuit was built from devices.
     pub fn bound(&self) -> Option<&crate::core::bind::Bound> { self.abi.as_ref() }
+    /// A run error with its unknowns named by the pins and branches of this
+    /// circuit; any other error passes through.
+    pub(crate) fn name_error(&self, error: piperine_analog_solver::error::Error) -> piperine_analog_solver::error::Error {
+        match &self.abi {
+            Some(bound) => bound.name(error),
+            None => error,
+        }
+    }
     pub fn bound_mut(&mut self) -> Option<&mut crate::core::bind::Bound> { self.abi.as_mut() }
 
     /// The values the device instance at `path` is created with, by param

@@ -177,7 +177,10 @@ impl<'a> AcSolver<'a> {
             frequency: 0.0,
         };
 
-        let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
+        let solver = match NewtonRaphsonSolver::new(&mut system, size, 1) {
+            Ok(solver) => solver,
+            Err(error) => return Err(system.circuit.name_error(error)),
+        };
 
         Ok(Self { system, solver, policy: piperine_analog_solver::tolerances::Policy::default() })
     }
@@ -214,7 +217,8 @@ impl<'a> AcSolver<'a> {
             let max_iter = self.policy.max_iter;
             let solution = self
                 .solver
-                .solve(&mut self.system, max_iter)?;
+                .solve(&mut self.system, max_iter)
+                .map_err(|error| self.system.circuit.name_error(error))?;
 
             let mut values = HashMap::new();
             for reference in self.system.circuit.netlist().all_references() {

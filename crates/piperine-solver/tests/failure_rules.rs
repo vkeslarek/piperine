@@ -22,12 +22,13 @@ use std::result::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use abi_devices::add_resistor;
+use abi_devices::{add_capacitor, add_resistor, add_vsrc};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, op, part, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{Error, Port, SolverDomain};
+use piperine_analog_solver::error::RunCode;
 use piperine_solver::prelude::*;
 
 const ORIGIN: &str = "failure_rules.rs";
@@ -287,4 +288,70 @@ fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function_except("NanSource", NAN.get_or_init(|| module::<NanSource>("NanSource")), &[(0, Fixture::NonFinite)]);
     // The fixture of "every strategy failed": its conductance flips at every call.
     partials::verify_every_function_except("Oscillator", OSC.get_or_init(|| module::<Oscillator>("Oscillator")), &[(0, Fixture::Impure)]);
+}
+
+// ─── §17.1 E0503 — a singular solve names the unknowns of the singular part ───
+
+/// The error of the operating point of `circuit`.
+fn dc_error(circuit: &mut CircuitInstance) -> Error {
+    circuit
+        .dc(Context::default())
+        .and_then(|mut dc| dc.solve())
+        .map(|_| ())
+        .expect_err("a singular circuit must fail")
+}
+
+/// HYG-01 AC 1: a node reached only through capacitors stamps nothing at DC;
+/// the error is `E0503` and names the node by the pins bound to it.
+#[test]
+fn a_singular_solve_names_the_pins_of_its_node() {
+    let mut b = CircuitBuilder::new("floating");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_capacitor(&mut b, "c1", 1e-9, &a, &gnd);
+    add_capacitor(&mut b, "c2", 2e-9, &a, &gnd);
+    let mut circuit = b.build().expect("build");
+
+    let err = dc_error(&mut circuit);
+    assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
+    let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+    assert_eq!(run.names, vec!["node of c1.p, c2.p".to_string()], "{err}");
+}
+
+/// HYG-01 AC 1: two potential sources across the same pair of nodes are a
+/// loop; both branch flows are the singular part.
+#[test]
+fn a_loop_of_sources_names_both_instances() {
+    let mut b = CircuitBuilder::new("loop");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_vsrc(&mut b, "v1", 1.0, &a, &gnd);
+    add_vsrc(&mut b, "v2", 2.0, &a, &gnd);
+    let mut circuit = b.build().expect("build");
+
+    let err = dc_error(&mut circuit);
+    assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
+    let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+    assert_eq!(
+        run.names,
+        vec!["flow of v1 (f)".to_string(), "flow of v2 (f)".to_string()],
+        "both flows, each instance once: {err}"
+    );
+}
+
+/// HYG-01 edge case 2: an instance with two pins on the singular node is named
+/// once, its pins joined.
+#[test]
+fn an_instance_is_named_once_in_a_singular_report() {
+    let mut b = CircuitBuilder::new("selfloop");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_capacitor(&mut b, "c1", 1e-9, &a, &gnd);
+    add_capacitor(&mut b, "c2", 2e-9, &a, &a);
+    let mut circuit = b.build().expect("build");
+
+    let err = dc_error(&mut circuit);
+    let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+    assert_eq!(run.names, vec!["node of c1.p, c2.p+n".to_string()], "{err}");
+    assert_eq!(err.to_string().matches("c2").count(), 1, "{err}");
 }

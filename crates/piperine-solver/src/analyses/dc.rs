@@ -183,7 +183,10 @@ impl<'a> DcSolver<'a> {
             uic_clamps: Vec::new(),
         };
 
-        let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
+        let solver = match NewtonRaphsonSolver::new(&mut system, size, 1) {
+            Ok(solver) => solver,
+            Err(error) => return Err(system.circuit.name_error(error)),
+        };
 
         Ok(Self {
             system,
@@ -257,7 +260,7 @@ impl<'a> DcSolver<'a> {
         if let Some(bound) = self.system.circuit.abi.as_mut() {
             bound.digital = side.into_digital();
         }
-        ran?;
+        ran.map_err(|error| self.system.circuit.name_error(error))?;
         // A design with no continuous pin runs its instants with no solve.
         let mut values = HashMap::new();
         if let Some(solution) = solution {

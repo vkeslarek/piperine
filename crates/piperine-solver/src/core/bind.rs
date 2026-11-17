@@ -86,6 +86,8 @@ pub struct NameMap {
     pub instances: Vec<String>,
     /// `[instance][pin]`.
     pub pins: Vec<Vec<Site>>,
+    /// `[instance][pin]`: each pin's name in its module's shape.
+    pub pin_names: Vec<Vec<String>>,
     /// Design-wide net by name (named ports, globals, shared params).
     pub nets: HashMap<String, NetId>,
     /// The net of `(instance path, PARAM pin name)`.
@@ -94,6 +96,41 @@ pub struct NameMap {
     pub slots: HashMap<NetId, u32>,
     /// The net behind each analog slot.
     pub slot_nets: Vec<NetId>,
+}
+
+/// How many unknowns a run error names before it says how many more.
+const NAMED_UNKNOWNS: usize = 8;
+
+impl NameMap {
+    /// The unknown `unknown` by what the author wrote: a node by every pin
+    /// bound to it (an instance once, its pins joined by `+`), a flow by the
+    /// instance and the private pin that carries it. `None` when no pin is
+    /// bound to that unknown.
+    pub fn describe(&self, unknown: usize) -> Option<String> {
+        let mut nodes: Vec<(&str, Vec<&str>)> = Vec::new();
+        for (instance, sites) in self.pins.iter().enumerate() {
+            for (pin, site) in sites.iter().enumerate() {
+                let Site::Unknown(reference) = site else { continue };
+                if reference.idx() != Some(unknown) {
+                    continue;
+                }
+                let path = self.instances[instance].as_str();
+                let pin_name = self.pin_names[instance][pin].as_str();
+                if let AnalogVariable::Branch(_) = reference.variable().as_ref() {
+                    return Some(format!("flow of {path} ({pin_name})"));
+                }
+                match nodes.last_mut() {
+                    Some((last, pins)) if *last == path => pins.push(pin_name),
+                    _ => nodes.push((path, vec![pin_name])),
+                }
+            }
+        }
+        if nodes.is_empty() {
+            return None;
+        }
+        let pins: Vec<String> = nodes.iter().map(|(path, pins)| format!("{path}.{}", pins.join("+"))).collect();
+        Some(format!("node of {}", pins.join(", ")))
+    }
 }
 
 /// A continuous pin with `init`: Newton's start, held through a transient's
@@ -158,6 +195,25 @@ impl Bound {
 }
 
 impl Bound {
+    /// Names the unknowns of a run error by their pins and branches (§17.1):
+    /// every owner entry passes its error through here before returning it.
+    pub fn name(&self, error: Error) -> Error {
+        let Error::Run(run) = &error else { return error };
+        if run.unknowns.is_empty() || !run.names.is_empty() {
+            return error;
+        }
+        let mut names: Vec<String> = run
+            .unknowns
+            .iter()
+            .take(NAMED_UNKNOWNS)
+            .map(|&u| self.names.describe(u).unwrap_or_else(|| format!("unknown #{u}")))
+            .collect();
+        if run.unknowns.len() > NAMED_UNKNOWNS {
+            names.push(format!("and {} more", run.unknowns.len() - NAMED_UNKNOWNS));
+        }
+        error.with_names(names)
+    }
+
     /// The `TEMPERATURE` global holds `t` from the next analysis on; a net
     /// seeded with `t` and never moved needs no write.
     pub(crate) fn set_temperature(&mut self, t: f64) {
@@ -608,6 +664,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
             }
         }
         names.instances.push(b.path.clone());
+        names.pin_names.push(shape.pins.iter().map(|p| p.name.as_str().to_string()).collect());
         names.pins.push(b.sites);
         analog_instances.push(AnalogInstance { path: b.path.clone(), handle: b.analog, pins: abinds });
         digital_instances.push(InstancePlan { path: b.path, handle: b.digital, pins: dbinds });

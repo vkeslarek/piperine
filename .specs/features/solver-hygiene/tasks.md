@@ -398,8 +398,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_singular_solve_names_the_pins_of_its_node`, `a_loop_of_sources_names_both_instances` and `an_instance_is_named_once_in_a_singular_report` (edge case 2) pass under `**Run failure**`
-- [ ] Gate check passes: Full
+- [x] `a_singular_solve_names_the_pins_of_its_node`, `a_loop_of_sources_names_both_instances` and `an_instance_is_named_once_in_a_singular_report` (edge case 2) pass under `**Run failure**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
