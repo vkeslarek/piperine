@@ -640,7 +640,7 @@ fn a_cross_event_is_a_watch_with_partials() {
         let v = x.probe(piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Ground);
         let en = x.carrier(0, ValueType::Bool);
         let guard = x.high(en);
-        b.event(body, Event { source: EventSource::Cross(v), guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) });
+        b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) });
         body
     }
     let (ir, body) = Alone::design(guarded);

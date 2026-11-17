@@ -133,7 +133,7 @@ impl StatementPlan {
             .filter_map(|id| match ir.stmt(id) {
                 Stmt::Commit { carrier, after, .. } => Some(StatementPlan::commit(ir, *carrier, *after)),
                 Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
-                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Contribute { .. } => None,
+                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Contribute { .. } | Stmt::BoundStep { .. } => None,
             })
             .collect()
     }
@@ -346,7 +346,7 @@ impl Digital {
             .iter()
             .enumerate()
             .map(|(k, e)| match (&e.source, e.guard) {
-                (EventSource::Cross(_), Some(_)) => {
+                (EventSource::Cross { .. }, Some(_)) => {
                     Some(s.pin(PinSpec { origin: &Self::at(&e.origin), ..PinSpec::event(&format!("cross:{k}"), role::PRIVATE) }))
                 }
                 _ => None,
@@ -361,7 +361,7 @@ impl Digital {
             .iter()
             .enumerate()
             .map(|(k, e)| {
-                let EventSource::Cross(_) = e.source else { return None };
+                let EventSource::Cross { .. } = e.source else { return None };
                 let event = crossed.get(k).copied().flatten().or_else(|| events.get(k).copied())?;
                 Some(s.watch(WatchSpec {
                     name: &format!("cross:{k}"),
@@ -458,7 +458,7 @@ impl Digital {
             functions.push(plan);
         };
         for (k, e) in body.events().iter().enumerate() {
-            let EventSource::Cross(_) = e.source else { continue };
+            let EventSource::Cross { .. } = e.source else { continue };
             let k = k as u32;
             let set = ReadSet::target(body, Query::Cross(k));
             add(s, format!("cross:{k}"), &e.origin, BodyPlan::function(Mode::Cross(k), &set, vec![(Target::Watch(k), Some(&set))]));
@@ -475,10 +475,10 @@ impl Digital {
             let mut set = ReadSet::target(body, Query::Guard(k));
             match e.source {
                 EventSource::Changed(c) => set.0.extend([Source::Carrier(c), Source::CarrierChanged(c)]),
-                EventSource::Cross(_) if e.guard.is_some() => {
+                EventSource::Cross { .. } if e.guard.is_some() => {
                     set.0.insert(Source::Crossed(k));
                 }
-                EventSource::Cross(_) => continue,
+                EventSource::Cross { .. } => continue,
                 // a guarded timer fires its own pin, which the event function gates
                 EventSource::At(_) if e.guard.is_some() => {
                     set.0.insert(Source::Timer(k));

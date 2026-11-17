@@ -25,7 +25,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
-use piperine_ir::{
+use piperine_ir::{AnalysisKind, 
     BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream,
     Terminal, UnaryOp, ValueType,
 };
@@ -430,6 +430,11 @@ impl<'a> ValuePrinter<'a> {
             Env::SourceScale => "source_scale_",
             Env::Time => "time_",
             Env::Static => "is_static_",
+            Env::Freq => "freq_",
+            Env::Analysis(AnalysisKind::Dc) => "is_dc_",
+            Env::Analysis(AnalysisKind::Transient) => "is_transient_",
+            Env::Analysis(AnalysisKind::Ac) => "is_ac_",
+            Env::Analysis(AnalysisKind::Noise) => "is_noise_",
         }
     }
 
@@ -451,6 +456,7 @@ impl<'a> ValuePrinter<'a> {
         match expr {
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => out.push(*expr),
             Expr::KnownOr { value, default } => out.extend([*value, *default]),
+            Expr::Unwrap { is, value, .. } => out.extend([*is, *value]),
             Expr::Method { receiver, args, .. } => out.extend([*receiver].into_iter().chain(args.iter().copied())),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
             Expr::If { cond, then, otherwise } => out.extend([*cond, *then, *otherwise]),
@@ -475,6 +481,7 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Unknown
             | Expr::Carrier(_)
             | Expr::Flow { .. }
+            | Expr::Fired(_)
             | Expr::Previous(_) => {}
         }
     }
@@ -613,7 +620,10 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "a param read outside a body")),
             },
+            Expr::Env(Env::Freq | Env::Analysis(_)) => Err(self.unsupported(e, "a read of `freq()` or `analysis(..)` (the printer writes it with T36)")),
             Expr::Env(env) => atom(self.read(Self::env_name(*env))),
+            Expr::Fired(_) => Err(self.unsupported(e, "`fired` (the printer writes it with T28)")),
+            Expr::Unwrap { .. } => Err(self.unsupported(e, "`unwrap` of an `Option` (the printer writes it with T19)")),
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "a carrier read")),
@@ -978,6 +988,7 @@ impl<'a> ValuePrinter<'a> {
                 path: format!("{} s{}", self.path, s.index()),
                 origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
             }),
+            Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` (the printer writes it with T36)")),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after } => {
                 if !self.commits {

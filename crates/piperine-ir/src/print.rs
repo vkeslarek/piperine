@@ -340,9 +340,14 @@ impl<'a> Printer<'a> {
             let mut text = format!("event E{k} ");
             match &event.source {
                 EventSource::Changed(c) => text.push_str(&format!("changed {}", Printer::carrier(scope, *c))),
-                EventSource::Cross(e) => {
+                EventSource::Cross { e, ttol, etol } => {
                     text.push_str("cross ");
                     text.push_str(&self.render(scope, Piece::Expr(*e)));
+                    for (name, tol) in [("ttol", ttol), ("etol", etol)] {
+                        if let Some(tol) = tol {
+                            text.push_str(&format!(" {name} {}", self.render(scope, Piece::Expr(*tol))));
+                        }
+                    }
                 }
                 EventSource::At(e) => {
                     text.push_str("at ");
@@ -529,6 +534,7 @@ impl<'a> Printer<'a> {
                 next.push(Piece::Expr(*init));
             }
             Stmt::Expr(e) => next.push(Piece::Expr(*e)),
+            Stmt::BoundStep { value, .. } => next.extend([Piece::Text("bound_step(".into()), Piece::Expr(*value), Piece::Text(")".into())]),
             Stmt::Contribute { branch, quantity, addends } => {
                 let q = if *quantity == QuantityRole::Flow { "flow" } else { "potential" };
                 next.push(Piece::Text(format!("b{branch}.{q} +> ")));
@@ -661,6 +667,7 @@ impl<'a> Printer<'a> {
             Expr::Probe { plus, minus } => {
                 next.push(text(format!("probe({}, {})", Printer::terminal(scope, *plus), Printer::terminal(scope, *minus))))
             }
+            Expr::Env(Env::Analysis(kind)) => next.push(text(format!("analysis({kind:?})"))),
             Expr::Env(env) => next.push(text(format!("{}()", Printer::env_name(*env)))),
             Expr::Limit { site, x, f, seed } => {
                 next.extend([text(format!("limit L{site} (")), Piece::Expr(*x), text(", ".into()), Piece::Expr(*f)]);
@@ -696,6 +703,15 @@ impl<'a> Printer<'a> {
             Expr::Carrier(i) => next.push(text(Printer::carrier(scope, *i))),
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
+            Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
+            Expr::Unwrap { is, value, message } => {
+                let name = if message.is_some() { "expect" } else { "unwrap" };
+                next.extend([text(format!("{name}(")), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value)]);
+                if let Some(message) = message {
+                    next.push(text(format!(", {message:?}")));
+                }
+                next.push(text(")".into()));
+            }
         }
         if note {
             next.push(text(format!(" : {})", data.ty)));
@@ -757,7 +773,7 @@ impl<'a> Printer<'a> {
         let ir = self.ir;
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
-            Expr::Env(Env::Static) => Some(ValueType::Bool),
+            Expr::Env(Env::Static | Env::Analysis(_)) | Expr::Fired(_) => Some(ValueType::Bool),
             Expr::Real(_) | Expr::Math { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } => {
                 Some(ValueType::F64)
             }
@@ -778,6 +794,7 @@ impl<'a> Printer<'a> {
             }
             Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
             Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::Carrier(_) | Expr::Previous(_) => None,
+            Expr::Unwrap { value, .. } => ty(value),
         }
     }
 
@@ -846,7 +863,8 @@ impl<'a> Printer<'a> {
                     .iter()
                     .map(|ev| match &ev.source {
                         EventSource::Changed(c) => format!("(changed c{c} {})", opt(ev.guard)),
-                        EventSource::Cross(e) => format!("(cross e{} {})", e.0, opt(ev.guard)),
+                        EventSource::Cross { e, ttol: None, etol: None } => format!("(cross e{} {})", e.0, opt(ev.guard)),
+                        EventSource::Cross { e, ttol, etol } => format!("(cross e{} {} ttol {} etol {})", e.0, opt(ev.guard), opt(*ttol), opt(*etol)),
                         EventSource::At(e) => format!("(at e{} {})", e.0, opt(ev.guard)),
                     })
                     .collect();
@@ -939,6 +957,7 @@ impl<'a> Printer<'a> {
                 format!("closure ({}) {}", params.join(", "), e(body))
             }
             Expr::Probe { plus, minus } => format!("probe {} {}", terminal(plus), terminal(minus)),
+            Expr::Env(Env::Analysis(kind)) => format!("env analysis {kind:?}"),
             Expr::Env(env) => format!("env {}", Printer::env_name(*env)),
             Expr::Limit { site, x, f, seed } => format!("limit L{site} {} {} {}", e(x), e(f), opt(seed)),
             Expr::Stim { site, mag, phase } => format!("ac_stim S{site} {} {}", e(mag), opt(phase)),
@@ -952,6 +971,11 @@ impl<'a> Printer<'a> {
             Expr::Carrier(i) => format!("carrier {i}"),
             Expr::Flow { branch } => format!("flow b{branch}"),
             Expr::Previous(i) => format!("previous {i}"),
+            Expr::Fired(i) => format!("fired {i}"),
+            Expr::Unwrap { is, value, message } => match message {
+                Some(message) => format!("expect {} {} {message:?}", e(is), e(value)),
+                None => format!("unwrap {} {}", e(is), e(value)),
+            },
         }
     }
 
@@ -960,6 +984,7 @@ impl<'a> Printer<'a> {
         match stmt {
             Stmt::Let { local, init } => format!("let {local} e{}", init.0),
             Stmt::Expr(e) => format!("expr e{}", e.0),
+            Stmt::BoundStep { site, value } => format!("bound_step B{site} e{}", value.0),
             Stmt::Contribute { branch, quantity, addends } => {
                 let q = if *quantity == QuantityRole::Flow { "flow" } else { "potential" };
                 let parts: Vec<String> = addends
@@ -1091,6 +1116,8 @@ impl<'a> Printer<'a> {
             Env::SourceScale => "source_scale",
             Env::Time => "time",
             Env::Static => "static",
+            Env::Freq => "freq",
+            Env::Analysis(_) => "analysis",
         }
     }
 }

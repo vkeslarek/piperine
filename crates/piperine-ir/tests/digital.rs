@@ -862,7 +862,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     b.drive(body, Drive { carrier: 2, value: q, after: None, origin: Design::origin(F, 4, 5) });
     let changed = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) });
     let count = Dx::new(&mut b, F, 6, 14).carrier(4, Ty::u(4));
-    b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Cross(count), guard: None, origin: Design::origin(F, 6, 8) });
+    b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Cross { e: count, ttol: None, etol: None }, guard: None, origin: Design::origin(F, 6, 8) });
     let mut x = Dx::new(&mut b, F, 8, 15);
     let no = x.boolean(false);
     let to_input = x.commit(1, no, None);
@@ -993,7 +993,7 @@ fn the_buck_slice_bodies_pass_check_and_print_as_their_golden_texts() {
                     assert_eq!(ir.expr(*read), &piperine_ir::Expr::Carrier(*c), "{name}: a rise reads its own carrier");
                 }
                 (piperine_ir::EventSource::Changed(_), None) => assert_eq!(name, "osc", "only the oscillator waits on a bare change"),
-                (piperine_ir::EventSource::Cross(_), None) => assert_eq!(name, "comparator", "only the comparator crosses"),
+                (piperine_ir::EventSource::Cross { .. }, None) => assert_eq!(name, "comparator", "only the comparator crosses"),
                 (source, guard) => panic!("{name}: an event outside the slice's forms: {source:?} guard {guard:?}"),
             }
         }

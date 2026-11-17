@@ -361,10 +361,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `the_environment_bound_step_fired_and_unwrap_forms_print_and_check` passes in `cargo test -p piperine-ir --test amendments`
-- [ ] `cargo test -p piperine-ir` passes with every existing target unedited (the printed text of existing forms does not move)
-- [ ] Gate check passes: Quick (`Run iramend`)
-- [ ] Test count: the 1 test named above
+- [x] `the_environment_bound_step_fired_and_unwrap_forms_print_and_check` passes in `cargo test -p piperine-ir --test amendments`
+- [x] `cargo test -p piperine-ir` passes with every existing target unedited (the printed text of existing forms does not move)
+- [x] Gate check passes: Quick (`Run iramend`)
+- [x] Test count: the 1 test named above
 
 **Tests**: integration
 **Gate**: quick

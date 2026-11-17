@@ -181,8 +181,10 @@ pub struct Event {
 pub enum EventSource {
     /// `c.changed()`: carrier `c` of the body took a new value.
     Changed(u32),
-    /// `cross(e)`: the real `e` went from `<= 0` to `> 0`, located by the solver.
-    Cross(ExprId),
+    /// `cross(e, ttol, etol)`: the real `e` went from `<= 0` to `> 0`, located by the solver
+    /// within the time tolerance `ttol` and the expression tolerance `etol`, each an `f64` that
+    /// reads no probe, carrier or clock, or absent.
+    Cross { e: ExprId, ttol: Option<ExprId>, etol: Option<ExprId> },
     /// `at(t)`: simulation time `t`, an `f64` that may be unknown and reads no probe. The event
     /// fires once, when the clock reaches `t`; a later change of what `t` reads re-arms it.
     At(ExprId),
@@ -317,6 +319,13 @@ pub enum Expr {
     /// `c.prev()`: carrier `c`'s value before its most recent change (§3.3). Its type is
     /// `Flagged`, as a read of the carrier: unknown until the carrier has changed once.
     Previous(u32),
+    /// `fired(e)` in a reaction: whether the body's event `e` fired in this microstep (the
+    /// `CHANGED` byte of its pin), a known `bool`.
+    Fired(u32),
+    /// `unwrap`/`expect` of an `Option` carried as the pair `(is, value)`: `value` when `is`
+    /// holds, else a fault of the run naming `message` (Rust's `unwrap` text when absent). Its
+    /// type is the value's.
+    Unwrap { is: ExprId, value: ExprId, message: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -329,6 +338,9 @@ pub enum Stmt {
     /// `emit!("stream", f = value, …)`, in a reaction: one record of stream `stream` (its index
     /// in the body's streams). Counted with the commits in the reaction's statement numbering.
     Emit { stream: u32, fields: Vec<EmitField> },
+    /// `bound_step(value);` at the top level of the `analog` block: the solver's next step is no
+    /// longer than `value`, an `f64`. `site` numbers the statements of the body.
+    BoundStep { site: u32, value: ExprId },
 }
 
 impl Stmt {
@@ -340,6 +352,7 @@ impl Stmt {
             Stmt::Expr(e) => vec![*e],
             Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
             Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
+            Stmt::BoundStep { value, .. } => vec![*value],
             Stmt::Emit { fields, .. } => fields
                 .iter()
                 .filter_map(|f| match f {
@@ -463,6 +476,21 @@ pub enum Env {
     Time,
     /// `analysis(Static)`: whether the analysis has no time axis, a `bool`. Read where `Time` is.
     Static,
+    /// `freq()`: the analysis frequency in hertz, an `f64`; 0 outside an AC analysis (§14.4.4).
+    /// An analog read: the ABI gives `FREQ` to analog functions only.
+    Freq,
+    /// `analysis(kind)`: whether the running analysis is of this kind, a `bool` constant during
+    /// the analysis (§14.4.1).
+    Analysis(AnalysisKind),
+}
+
+/// The analysis kinds `analysis(…)` names, ordered as declared (the order of `Deps::env`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum AnalysisKind {
+    Dc,
+    Transient,
+    Ac,
+    Noise,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

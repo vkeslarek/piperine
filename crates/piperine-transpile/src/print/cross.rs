@@ -31,7 +31,7 @@ impl<'a> DigitalPrinter<'a> {
         let Some(event) = self.body.events().get(e as usize) else {
             return Err(unsupported(format!("event {e}")));
         };
-        let EventSource::Cross(crossed) = event.source else {
+        let EventSource::Cross { e: crossed, .. } = event.source else {
             return Err(unsupported(format!("event {e} as a cross watch")));
         };
         // the expression is code over reals: generic, like an `analog` block
@@ -109,7 +109,7 @@ mod tests {
         let printer = DigitalPrinter::new(ir.body(body), &plan);
         let print = |name: &str| {
             let k = plan.shape().shape().functions.iter().position(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no `{name}`"));
-            assert!(matches!(plan.functions()[k].mode, Mode::Cross(_)));
+            assert!(matches!(plan.functions()[k].mode, Mode::Cross { .. }));
             printer.cross(k).unwrap_or_else(|e| panic!("{e}"))
         };
         // convert.msl:11 `on cross(v(a) - vth - hyst / 2.0)`: abi.md §11.5's comparator function

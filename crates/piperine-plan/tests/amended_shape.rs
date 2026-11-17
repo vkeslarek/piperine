@@ -127,7 +127,7 @@ fn time_and_static_are_ambient_reads() {
         let o = x.origin();
         let now = x.b.expr(Expr::Env(Env::Time), ValueType::F64, o);
         let crossed = x.bin(piperine_ir::BinaryOp::Sub, v, now, ValueType::F64);
-        let cross = b.event(body, Event { source: EventSource::Cross(crossed), guard: None, origin: Buck::origin(F, 4, 25) });
+        let cross = b.event(body, Event { source: EventSource::Cross { e: crossed, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 4, 25) });
         let mut x = Dx::new(b, F, 4, 60);
         let o = x.origin();
         let now = x.b.expr(Expr::Env(Env::Time), ValueType::F64, o.clone());

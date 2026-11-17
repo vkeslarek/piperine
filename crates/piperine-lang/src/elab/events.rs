@@ -54,11 +54,12 @@ impl Elaboration<'_, '_> {
     pub(super) fn continuous_kind(&self, kind: &Expr) -> bool {
         let any = |es: &[LoweredExpr]| es.iter().any(|e| self.continuous(*e));
         match kind {
-            Expr::Probe { .. } | Expr::Flow { .. } | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale) => true,
-            Expr::Env(Env::Temperature) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Previous(_) => false,
+            Expr::Probe { .. } | Expr::Flow { .. } | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
+            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Previous(_) => false,
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => self.continuous(*expr),
             Expr::Binary { lhs, rhs, .. } => any(&[*lhs, *rhs]),
             Expr::KnownOr { value, default } => any(&[*value, *default]),
+            Expr::Unwrap { is, value, .. } => any(&[*is, *value]),
             Expr::If { cond, then, otherwise } => any(&[*cond, *then, *otherwise]),
             Expr::Block { stmts, value } => stmts.iter().any(|s| self.stmt_continuous.get(s.index()).copied().unwrap_or(false)) || value.is_some_and(|v| self.continuous(v)),
             Expr::Call { function, args } => self.variants.continuous(*function) || any(args),
@@ -224,7 +225,7 @@ impl Elaboration<'_, '_> {
                     for tolerance in &args[1..] {
                         self.no_tolerance(scope, *tolerance)?;
                     }
-                    Some(vec![Disjunct { source: EventSource::Cross(watched), discrete: Vec::new(), continuous: Vec::new(), origin }])
+                    Some(vec![Disjunct { source: EventSource::Cross { e: watched, ttol: None, etol: None }, discrete: Vec::new(), continuous: Vec::new(), origin }])
                 }
                 Some(Callee::Core(id)) if id.info().name == "at" => {
                     let time = self.event_argument(scope, args[0].value)?;

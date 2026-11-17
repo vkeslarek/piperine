@@ -16,7 +16,7 @@ mod devices;
 use devices::Devices;
 use digital::{Buck, Dx, Ty};
 use piperine_ir::{
-    BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, ChildValue, Constant, Deps, Drive, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
+    AnalysisKind, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, ChildValue, Constant, Deps, Drive, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
     IrBuilder, NetSpec, NodeRef, NodeSpec, Origin, Real, RecordSite, Stmt, Stream, StreamField, Target, Terminal, ValueType,
 };
 
@@ -1137,4 +1137,158 @@ fn the_new_method_rows_type_their_operands_and_results() {
     let stmts: Vec<_> = [nan, sin, hyp].into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect();
     let body = b.body(BodySpec { analog: Some(stmts), ..Buck::spec("Flagged", F, 1) });
     assert_eq!(Design::place(b, body, 0, &[], vec![]).check(), vec![]);
+}
+
+/// The forms of msl-fixes (design C9 to C12, C6): `freq()` and `analysis(kind)` reads, a
+/// `bound_step` statement, a `fired` read, an `unwrap` and `expect` of an `Option` pair, and the
+/// tolerances of a `cross`.
+#[test]
+fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
+    // ambient.msl, a comparator that bounds its step and reads the analysis:
+    //
+    //   module Cmp(p: Electrical, n: Electrical, in flag: Bit, out q: Bit = false,
+    //              tt: f64 = 1p, et: f64 = 1u) {}                                      // 1
+    //   analog { bound_step(2.0);                                                       // 2
+    //            i(p, n) +> v(p, n) * if analysis(Ac) { freq() } else { 0.0 }; }       // 3
+    //   digital for Cmp {
+    //       on cross(v(p, n), tt, et), flag.changed() {                                  // 5
+    //           q <- if fired(0) { flag.unwrap() } else { flag.expect("no flag") };      // 6
+    //       }
+    //   }
+    const F: &str = "ambient.msl";
+    let mut b = IrBuilder::new();
+    let nodes = Design::ports(&mut b, F);
+    let mut x = Dx::new(&mut b, F, 2, 20);
+    let step = x.real(2.0);
+    let bound = b.stmt(Stmt::BoundStep { site: 0, value: step });
+    let mut x = Dx::new(&mut b, F, 3, 20);
+    let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+    let ac = x.b.expr(Expr::Env(Env::Analysis(AnalysisKind::Ac)), ValueType::Bool, x.origin());
+    let freq = x.b.expr(Expr::Env(Env::Freq), ValueType::F64, x.origin());
+    let zero = x.real(0.0);
+    let level = x.if_(ac, freq, zero, ValueType::F64);
+    let value = x.bin(piperine_ir::BinaryOp::Mul, v, level, ValueType::F64);
+    let contribution = b.stmt(Stmt::Contribute {
+        branch: 0,
+        quantity: piperine_ir::QuantityRole::Flow,
+        addends: vec![piperine_ir::Addend { operator: piperine_ir::Operator::Direct, negated: false, value }],
+    });
+    let body = b.body(BodySpec {
+        nodes,
+        params: vec![Buck::param("tt", F, 1, Some(1e-12), None), Buck::param("et", F, 1, Some(1e-6), None)],
+        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+        analog: Some(vec![bound, contribution]),
+        ..Buck::spec("Cmp", F, 1)
+    });
+    b.carrier(body, Buck::carrier("flag", ValueType::Bool, CarrierRole::In, None, F, 1, 40));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 52));
+    let mut x = Dx::new(&mut b, F, 5, 14);
+    let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+    let tt = x.param(0, ValueType::F64);
+    let et = x.param(1, ValueType::F64);
+    let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(tt), etol: Some(et) }, guard: None, origin: Design::origin(F, 5, 8) });
+    let flag = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 45) });
+    let mut x = Dx::new(&mut b, F, 6, 17);
+    let fired = x.b.expr(Expr::Fired(0), ValueType::Bool, x.origin());
+    let c = x.carrier(0, ValueType::Bool);
+    let known = x.is_known(c);
+    let c = x.carrier(0, ValueType::Bool);
+    let off = x.boolean(false);
+    let level = x.known_or(c, off, ValueType::Bool);
+    let present = x.b.expr(Expr::Unwrap { is: known, value: level, message: None }, ValueType::Bool, x.origin());
+    let c = x.carrier(0, ValueType::Bool);
+    let known = x.is_known(c);
+    let c = x.carrier(0, ValueType::Bool);
+    let off = x.boolean(false);
+    let level = x.known_or(c, off, ValueType::Bool);
+    let expected = x.b.expr(Expr::Unwrap { is: known, value: level, message: Some("no flag".into()) }, ValueType::Bool, x.origin());
+    let pick = x.if_(fired, present, expected, ValueType::Bool);
+    let commit = x.commit(1, pick, None);
+    Buck::reaction(&mut b, body, vec![cross, flag], vec![commit], vec![], F, 5);
+    let ir = Design::place(b, body, 2, &[ValueType::Bool, ValueType::Bool], vec![Constant::Real(Real::new(1e-12)), Constant::Real(Real::new(1e-6))]);
+    assert_eq!(ir.check(), vec![]);
+
+    // Written as the source reads: `freq()`, `analysis(Ac)`, `bound_step(..)`, `fired(E0)`,
+    // `unwrap(..)` and `expect(.., "..")` of the pair, the tolerances after the watched value.
+    Printed::holds(
+        &ir,
+        &["  analog", "    bound_step(2.0)", "    b0.flow +> direct (probe(p, n) * if analysis(Ac) { freq() } else { 0.0 })"],
+    );
+    Printed::holds(&ir, &["  event E0 cross probe(p, n) ttol tt etol et", "  event E1 changed flag"]);
+    Printed::holds(
+        &ir,
+        &["  reaction R0 on (E0, E1)", "    q <- if fired(E0) { unwrap(flag.is_known(), flag.known_or(false)) } else { expect(flag.is_known(), flag.known_or(false), \"no flag\") }"],
+    );
+    assert!(!ir.print_structural().contains(" : "), "a type note was written:\n{}", ir.print_structural());
+    let full = ir.to_string();
+    for line in ["bound_step B0 e", "env analysis Ac", "env freq", "fired 0", "unwrap e", "expect e", " ttol e"] {
+        assert!(full.contains(line), "{line} missing from:\n{full}");
+    }
+
+    // The flow of the branch lists both reads in `Env` order: `freq()` before `analysis(..)`.
+    let cmp = ir.top().body();
+    assert_eq!(cmp.dependencies(Target::Flow(0)), Deps { nodes: vec![0, 1], env: vec![Env::Freq, Env::Analysis(AnalysisKind::Ac)], ..Deps::default() });
+
+    // Each form written outside its place or against its type is one entry: `bound_step` in a
+    // reaction, with a `bool` step; `fired` in the analog block and out of range; an `unwrap`
+    // with an `f64` flag; the clock-typed reads of the new environment forms; a `cross`
+    // tolerance that is a `bool`, one that reads a probe; `freq()` read by a drive.
+    let mut b = IrBuilder::new();
+    let nodes = Design::ports(&mut b, F);
+    let mut x = Dx::new(&mut b, F, 2, 5);
+    let yes = x.boolean(true);
+    let bad_step = b.stmt(Stmt::BoundStep { site: 0, value: yes });
+    let x = Dx::new(&mut b, F, 4, 5);
+    let in_analog = x.b.expr(Expr::Fired(0), ValueType::Bool, x.origin());
+    let fired_stmt = b.stmt(Stmt::Expr(in_analog));
+    let x = Dx::new(&mut b, F, 5, 5);
+    let ac_real = x.b.expr(Expr::Env(Env::Analysis(AnalysisKind::Dc)), ValueType::F64, x.origin());
+    let freq_bool = x.b.expr(Expr::Env(Env::Freq), ValueType::Bool, x.origin());
+    let wrong_reads = b.stmt(Stmt::Expr(ac_real));
+    let wrong_freq = b.stmt(Stmt::Expr(freq_bool));
+    let body = b.body(BodySpec {
+        nodes,
+        analog: Some(vec![bad_step, fired_stmt, wrong_reads, wrong_freq]),
+        ..Buck::spec("Bad", F, 1)
+    });
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 20));
+    b.carrier(body, Buck::carrier("r", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 30));
+    let mut x = Dx::new(&mut b, F, 6, 5);
+    let late = x.real(1.0);
+    let late_step_in_reaction = x.b.stmt(Stmt::BoundStep { site: 2, value: late });
+    let out_of_range = x.b.expr(Expr::Fired(7), ValueType::Bool, x.origin());
+    let flag_f64 = x.real(1.0);
+    let value = x.boolean(true);
+    let unwrapped = x.b.expr(Expr::Unwrap { is: flag_f64, value, message: None }, ValueType::F64, x.origin());
+    let o = x.commit(0, out_of_range, None);
+    let u = x.stmt(unwrapped);
+    let reaction_stmts = vec![late_step_in_reaction, o, u];
+    let mut x = Dx::new(&mut b, F, 7, 5);
+    let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+    let flag_tol = x.boolean(true);
+    let probe_tol = x.probe(Terminal::Node(0), Terminal::Node(1));
+    let e0 = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(flag_tol), etol: Some(probe_tol) }, guard: None, origin: Design::origin(F, 7, 8) });
+    Buck::reaction(&mut b, body, vec![e0], reaction_stmts, vec![], F, 6);
+    let mut x = Dx::new(&mut b, F, 8, 5);
+    let freq = x.b.expr(Expr::Env(Env::Freq), ValueType::F64, x.origin());
+    let level = x.real(0.0);
+    let over = x.bin(piperine_ir::BinaryOp::Gt, freq, level, ValueType::Bool);
+    b.drive(body, Drive { carrier: 1, value: over, after: None, origin: Design::origin(F, 8, 3) });
+    let broken = Design::place(b, body, 2, &[ValueType::Bool, ValueType::Bool], vec![]).check();
+    let one = |line: u32, what: &str| {
+        let hits: Vec<_> = broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).collect();
+        assert_eq!(hits.len(), 1, "line {line}: {what}: {broken:#?}");
+    };
+    one(2, "the step of a `bound_step` must be f64, found bool");
+    one(4, "`fired` outside a reaction");
+    one(5, "expression is typed f64, its form gives bool");
+    one(5, "expression is typed bool, its form gives f64");
+    one(6, "`bound_step` outside the top level of an analog block");
+    one(6, "`fired` of event 7, out of range (1 events)");
+    one(6, "the presence flag of an `unwrap` must be bool, found f64");
+    one(6, "expression is typed f64, its form gives bool");
+    one(7, "the `ttol` of a `cross` is an `f64`, found bool");
+    one(7, "the `etol` of a `cross` reads an input");
+    one(8, "reads freq()");
+    assert_eq!(broken.len(), 11, "{broken:#?}");
 }

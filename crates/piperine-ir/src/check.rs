@@ -68,6 +68,10 @@ struct Owner {
     carriers: Vec<ValueType>,
     /// The field types of each of the body's streams.
     streams: Vec<Vec<ValueType>>,
+    /// The number of the body's events.
+    events: usize,
+    /// The statements of a reaction: `fired` may appear.
+    reaction: bool,
     /// A body (probes and params are readable) rather than a function.
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
@@ -168,7 +172,7 @@ impl<'a> Checker<'a> {
             Stmt::Let { init, .. } => Some(*init),
             Stmt::Expr(e) => Some(*e),
             Stmt::Contribute { addends, .. } => addends.first().map(|a| a.value),
-            Stmt::Commit { value, .. } => Some(*value),
+            Stmt::Commit { value, .. } | Stmt::BoundStep { value, .. } => Some(*value),
             Stmt::Emit { fields, .. } => fields.iter().find_map(|f| match f {
                 EmitField::Value { value, .. } => Some(*value),
                 EmitField::Text { .. } => None,
@@ -231,7 +235,12 @@ impl<'a> Checker<'a> {
                 }
             }
             for event in &body.events {
-                if let EventSource::Cross(e) | EventSource::At(e) = event.source {
+                if let EventSource::Cross { e, ttol, etol } = event.source {
+                    for id in [e].into_iter().chain(ttol).chain(etol) {
+                        self.expr_id(&item, &event.origin, id);
+                    }
+                }
+                if let EventSource::At(e) = event.source {
                     self.expr_id(&item, &event.origin, e);
                 }
                 if let Some(guard) = event.guard {
@@ -285,6 +294,7 @@ impl<'a> Checker<'a> {
             match stmt {
                 Stmt::Let { init, .. } => self.expr_id(&item, &origin, *init),
                 Stmt::Expr(e) => self.expr_id(&item, &origin, *e),
+                Stmt::BoundStep { value, .. } => self.expr_id(&item, &origin, *value),
                 Stmt::Contribute { addends, .. } => {
                     for a in addends {
                         self.expr_id(&item, &origin, a.value);
@@ -418,7 +428,8 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {}
+            Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
             Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
             Expr::IsKnown(value) | Expr::High(value) => exprs.push(*value),
             Expr::Cast { expr, .. } => exprs.push(*expr),
@@ -647,6 +658,7 @@ impl<'a> Checker<'a> {
                     Stmt::Expr(e) => stack_e.push(*e),
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
                     Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
+                    Stmt::BoundStep { value, .. } => stack_e.push(*value),
                     Stmt::Emit { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
                         EmitField::Value { value, .. } => Some(*value),
                         EmitField::Text { .. } => None,
@@ -662,7 +674,8 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) => {}
+                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {}
+                Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
                 Expr::KnownOr { value, default } => stack_e.extend([*value, *default]),
@@ -718,7 +731,7 @@ impl<'a> Checker<'a> {
         for (k, event) in body.events.iter().enumerate() {
             let at = match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross(_) => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } => None,
             };
             for e in event.guard.into_iter().chain(at) {
                 positions.push((format!("{item} event {k}"), event.origin.clone(), e));
@@ -726,8 +739,12 @@ impl<'a> Checker<'a> {
         }
         for (position, origin, root) in positions {
             for e in self.reach_calls(&[root]) {
-                if let Some(Expr::Env(env @ (Env::Time | Env::Static))) = self.ir.exprs.get(e.index()).map(|d| &d.kind) {
-                    let what = if *env == Env::Time { "time()" } else { "static()" };
+                if let Some(Expr::Env(env @ (Env::Time | Env::Static | Env::Freq))) = self.ir.exprs.get(e.index()).map(|d| &d.kind) {
+                    let what = match env {
+                        Env::Time => "time()",
+                        Env::Freq => "freq()",
+                        _ => "static()",
+                    };
                     let at = self.ir.exprs.get(e.index()).map_or_else(|| origin.clone(), |d| d.origin.clone());
                     self.report(position.clone(), at, format!("reads {what}: a drive, an event guard and an `at` argument read no input (abi.md §4.2)"));
                 }
@@ -787,9 +804,21 @@ impl<'a> Checker<'a> {
                 }
             }
             for (k, event) in body.events.iter().enumerate() {
-                if let EventSource::Cross(e) = event.source {
+                if let EventSource::Cross { e, ttol, etol } = event.source {
                     if let Some(ty) = self.ty(e).filter(|t| *Typing::base(t) != ValueType::F64) {
                         self.report(format!("{item} event {k}"), event.origin.clone(), format!("a `cross` watches a real, found {ty}"));
+                    }
+                    for (name, tol) in [("ttol", ttol), ("etol", etol)] {
+                        let Some(tol) = tol else { continue };
+                        if let Some(ty) = self.ty(tol).filter(|t| **t != ValueType::F64) {
+                            self.report(format!("{item} event {k}"), event.origin.clone(), format!("the `{name}` of a `cross` is an `f64`, found {ty}"));
+                        }
+                        for read in self.reach_calls(&[tol]) {
+                            if matches!(self.ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Probe { .. } | Expr::Carrier(_) | Expr::Env(Env::Time | Env::Freq))) {
+                                let at = self.expr_origin(read);
+                                self.report(format!("{item} event {k}"), at, format!("the `{name}` of a `cross` reads an input: it is a constant or a param expression"));
+                            }
+                        }
                     }
                 }
                 if let EventSource::At(e) = event.source {
@@ -809,10 +838,11 @@ impl<'a> Checker<'a> {
             roots.extend(body.drives.iter().flat_map(|d| [d.value].into_iter().chain(d.after)));
             roots.extend(body.events.iter().flat_map(|e| {
                 let cross = match e.source {
-                    EventSource::Cross(x) | EventSource::At(x) => Some(x),
-                    EventSource::Changed(_) => None,
+                    EventSource::Cross { e: x, ttol, etol } => [Some(x), ttol, etol],
+                    EventSource::At(x) => [Some(x), None, None],
+                    EventSource::Changed(_) => [None; 3],
                 };
-                cross.into_iter().chain(e.guard)
+                cross.into_iter().flatten().chain(e.guard)
             }));
             let (_, stmts) = self.reach(body.analog.as_deref().unwrap_or(&[]), &roots);
             for (s, _) in self.commits(&stmts) {
@@ -910,6 +940,8 @@ impl<'a> Checker<'a> {
                 stims: body.stims.len(),
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
+                events: body.events.len(),
+                reaction: false,
                 in_body: true,
                 analog,
             };
@@ -953,8 +985,14 @@ impl<'a> Checker<'a> {
             }
             for (k, event) in body.events.iter().enumerate() {
                 let mut w = Walk::new(owner(false, format!("body {} event {k}", body.name)), 0);
-                if let EventSource::Cross(e) | EventSource::At(e) = event.source {
-                    self.walk(&mut w, Task::Expr(e, Ctx::top()));
+                match event.source {
+                    EventSource::Cross { e, ttol, etol } => {
+                        for id in [e].into_iter().chain(ttol).chain(etol) {
+                            self.walk(&mut w, Task::Expr(id, Ctx::top()));
+                        }
+                    }
+                    EventSource::At(e) => self.walk(&mut w, Task::Expr(e, Ctx::top())),
+                    EventSource::Changed(_) => {}
                 }
                 if let Some(guard) = event.guard {
                     self.carried(&w, guard, &ValueType::Bool, "the guard of an event");
@@ -965,6 +1003,7 @@ impl<'a> Checker<'a> {
                 let item = format!("body {} reaction {k}", body.name);
                 let mut owner = owner(false, item);
                 owner.locals = reaction.locals.iter().map(|l| l.ty.clone()).collect();
+                owner.reaction = true;
                 let mut w = Walk::new(owner, 0);
                 for &stmt in &reaction.stmts {
                     self.walk(&mut w, Task::Stmt(stmt, Ctx::top(), false));
@@ -985,6 +1024,8 @@ impl<'a> Checker<'a> {
                 stims: 0,
                 carriers: Vec::new(),
                 streams: Vec::new(),
+                events: 0,
+                reaction: false,
                 in_body: false,
                 analog: false,
             };
@@ -1070,6 +1111,13 @@ impl<'a> Checker<'a> {
                 next.push(Task::Bind(*local));
             }
             Stmt::Expr(e) => next.push(Task::Expr(*e, ctx)),
+            Stmt::BoundStep { value, .. } => {
+                if !top || !w.owner.analog {
+                    self.report(w.owner.item.clone(), origin.clone(), "`bound_step` outside the top level of an analog block".to_string());
+                }
+                self.want(w, *value, &ValueType::F64, "the step of a `bound_step`");
+                next.push(Task::Expr(*value, ctx));
+            }
             Stmt::Contribute { branch, quantity, addends } => {
                 if !top || !w.owner.analog {
                     self.report(w.owner.item.clone(), origin.clone(), "contribution outside the top level of an analog block".to_string());
@@ -1390,7 +1438,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Env(env) => {
                 if first {
-                    let want = if *env == Env::Static { ValueType::Bool } else { ValueType::F64 };
+                    let want = if matches!(env, Env::Static | Env::Analysis(_)) { ValueType::Bool } else { ValueType::F64 };
                     self.own(w, &origin, ty, &want);
                 }
             }
@@ -1470,6 +1518,26 @@ impl<'a> Checker<'a> {
                 }
                 next.push(Task::Expr(*value, ctx));
                 next.push(Task::Expr(*default, ctx));
+            }
+            Expr::Fired(e) => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::Bool);
+                    if !w.owner.reaction {
+                        self.wrong(w, origin, "`fired` outside a reaction".to_string());
+                    } else if *e as usize >= w.owner.events {
+                        self.wrong(w, origin, format!("`fired` of event {e}, out of range ({} events)", w.owner.events));
+                    }
+                }
+            }
+            Expr::Unwrap { is, value, .. } => {
+                if first {
+                    self.want(w, *is, &ValueType::Bool, "the presence flag of an `unwrap`");
+                    if let Some(value_ty) = self.ty(*value).cloned() {
+                        self.own(w, &origin, ty, &value_ty);
+                    }
+                }
+                next.push(Task::Expr(*is, ctx));
+                next.push(Task::Expr(*value, ctx));
             }
             Expr::Carrier(i) => {
                 if first {

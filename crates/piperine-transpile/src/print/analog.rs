@@ -233,6 +233,7 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
                 Expr::KnownOr { value, default } => stack.extend([*value, *default]),
+                Expr::Unwrap { is, value, .. } => stack.extend([*is, *value]),
                 Expr::Method { receiver, args, .. } => stack.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
                 Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
@@ -247,7 +248,7 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
-                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown => {}
+                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Fired(_) => {}
                 Expr::Flow { branch } => {
                     sources.insert(Source::BranchFlow(*branch));
                 }
@@ -266,6 +267,8 @@ impl<'a> AnalogPrinter<'a> {
             Env::SourceScale => Source::SourceScale,
             Env::Time => Source::Time,
             Env::Static => Source::Static,
+            // the plan reads them from T10, the printer writes them from T36
+            Env::Freq | Env::Analysis(_) => return None,
         })
     }
 

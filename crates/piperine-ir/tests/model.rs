@@ -220,7 +220,7 @@ impl Reach {
     fn stmt(ir: &Ir, id: StmtId, out: &mut Vec<ExprId>) {
         match ir.stmt(id) {
             Stmt::Let { init, .. } => Reach::expr(ir, *init, out),
-            Stmt::Expr(e) => Reach::expr(ir, *e, out),
+            Stmt::Expr(e) | Stmt::BoundStep { value: e, .. } => Reach::expr(ir, *e, out),
             Stmt::Contribute { addends, .. } => {
                 for a in addends {
                     Reach::expr(ir, a.value, out);
@@ -246,7 +246,11 @@ impl Reach {
         out.push(id);
         match ir.expr(id) {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {}
+            Expr::Unwrap { is, value, .. } => {
+                Reach::expr(ir, *is, out);
+                Reach::expr(ir, *value, out);
+            }
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => Reach::expr(ir, *expr, out),
             Expr::KnownOr { value, default } => {
                 Reach::expr(ir, *value, out);

@@ -343,7 +343,7 @@ fn changed_rise_fall_and_cross_lower_to_events() {
         assert_eq!(guard_value(&ir, fall, c, prev, cur), Some(falls), "fall on {prev:?} -> {cur:?}");
     }
     // `cross(e)` watches `e`.
-    let EventSource::Cross(watched) = events[3].source else { panic!("a cross: {:?}", events[3].source) };
+    let EventSource::Cross { e: watched, .. } = events[3].source else { panic!("a cross: {:?}", events[3].source) };
     assert!(matches!(ir.expr(watched), Expr::Binary { .. }) && text.contains("cross (probe(a, gnd) - 0.5)"), "{text}");
     // `c.prev()` in a guard and in a reaction body is the previous-value read.
     assert_eq!(events[4].source, EventSource::Changed(d));
@@ -420,7 +420,7 @@ fn an_or_head_is_one_reaction_or_one_per_disjunct() {
     // event; the probing one under its `if`.
     assert_eq!(m.reactions()[1].on, [2]);
     assert_eq!(m.reactions()[2].on, [3]);
-    assert!(matches!(m.events()[2].source, EventSource::Cross(_)));
+    assert!(matches!(m.events()[2].source, EventSource::Cross { .. }));
     assert_eq!(m.events()[3].source, EventSource::Changed(x));
     assert!(matches!(ir.stmt(m.reactions()[1].stmts[0]), Stmt::Commit { .. }), "the cross runs its body as written");
     assert!(matches!(ir.stmt(m.reactions()[2].stmts[0]), Stmt::Expr(_)), "the change runs it under `if v(a) > 0.0`");

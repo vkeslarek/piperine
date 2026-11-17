@@ -382,12 +382,12 @@ impl<'a> Walk<'a> {
                 None => Sources::default(),
             };
             crosses.push(one(match event.source {
-                EventSource::Cross(e) => Some(e),
+                EventSource::Cross { e, .. } => Some(e),
                 EventSource::Changed(_) | EventSource::At(_) => None,
             }));
             ats.push(one(match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross(_) => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } => None,
             }));
             guards.push(one(event.guard));
         }
@@ -515,7 +515,7 @@ impl<'a> Walk<'a> {
         let ir = self.ir;
         match &ir.stmts[id.index()] {
             Stmt::Let { local, init } => next.extend([Task::Expr(*init), Task::Bind(*local, *init)]),
-            Stmt::Expr(e) => next.extend([Task::Expr(*e), Task::Discard]),
+            Stmt::Expr(e) | Stmt::BoundStep { value: e, .. } => next.extend([Task::Expr(*e), Task::Discard]),
             Stmt::Contribute { branch, addends, .. } => {
                 for addend in addends {
                     next.push(Task::Expr(addend.value));
@@ -593,6 +593,9 @@ impl<'a> Walk<'a> {
                 sources.env.insert(*env);
                 return self.done(id, Value::of(sources, Class::Constant));
             }
+            // The microstep's event byte: no dependency of the dependency sets (a reaction is
+            // already tied to its events).
+            Expr::Fired(_) => return self.done(id, Value::constant()),
             Expr::Carrier(i) => {
                 if !in_body {
                     self.refuse(id, "carrier read outside a body");
@@ -633,6 +636,7 @@ impl<'a> Walk<'a> {
             }
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Task::Expr(*expr)),
             Expr::KnownOr { value, default } => next.extend([Task::Expr(*value), Task::Expr(*default)]),
+            Expr::Unwrap { is, value, .. } => next.extend([Task::Expr(*is), Task::Expr(*value)]),
             Expr::Method { receiver, args, .. } => {
                 next.push(Task::Expr(*receiver));
                 next.extend(args.iter().map(|&a| Task::Expr(a)));
@@ -716,7 +720,7 @@ impl<'a> Walk<'a> {
                 let value = self.pop();
                 Value::nonlinear([&value])
             }
-            Expr::KnownOr { .. } => {
+            Expr::KnownOr { .. } | Expr::Unwrap { .. } => {
                 let values = self.pop_n(2);
                 Value::nonlinear(&values)
             }
@@ -751,7 +755,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

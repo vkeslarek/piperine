@@ -445,8 +445,8 @@ impl Buck {
         x.at(12, 41);
         let off = x.boolean(false);
         let clear = x.commit(0, off, None);
-        let up = b.event(body, Event { source: EventSource::Cross(rising), guard: None, origin: Buck::origin(F, 11, 8) });
-        let down = b.event(body, Event { source: EventSource::Cross(falling), guard: None, origin: Buck::origin(F, 12, 8) });
+        let up = b.event(body, Event { source: EventSource::Cross { e: rising, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 11, 8) });
+        let down = b.event(body, Event { source: EventSource::Cross { e: falling, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 12, 8) });
         Buck::reaction(b, body, vec![up], vec![set], vec![], F, 11);
         Buck::reaction(b, body, vec![down], vec![clear], vec![], F, 12);
         body

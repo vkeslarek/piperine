@@ -157,12 +157,12 @@ impl LibraryPrinter {
                 }
                 Mode::Drive(_) => (digital.drive(k)?, digital.function_name(f)),
                 Mode::Event(_) | Mode::DelayedEvent(_) | Mode::Rearm { .. } => (digital.event(k)?, digital.function_name(f)),
-                Mode::Cross(_) => (digital.cross(k)?, digital.function_name(f)),
+                Mode::Cross { .. } => (digital.cross(k)?, digital.function_name(f)),
             };
-            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Cross(_)) {
+            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Cross { .. }) {
                 uses.insert("rt::Dual");
             }
-            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_) | Mode::Cross(_)) {
+            if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Stim(_) | Mode::Check(_) | Mode::Cross { .. }) {
                 uses.insert("rt::Real");
             }
             uses.insert("piperine_abi::device::Eval");
@@ -338,7 +338,7 @@ impl LibraryPrinter {
             for e in body.events() {
                 exprs.extend(e.guard);
                 match e.source {
-                    EventSource::Cross(x) | EventSource::At(x) => exprs.push(x),
+                    EventSource::Cross { e: x, .. } | EventSource::At(x) => exprs.push(x),
                     EventSource::Changed(_) => {}
                 }
             }

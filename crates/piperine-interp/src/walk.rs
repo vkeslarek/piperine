@@ -294,6 +294,8 @@ impl<'a> Walk<'a> {
             Expr::Carrier(_) => "Carrier",
             Expr::Flow { .. } => "Flow",
             Expr::Previous(_) => "Previous",
+            Expr::Fired(_) => "Fired",
+            Expr::Unwrap { .. } => "Unwrap",
         }
     }
 
@@ -435,7 +437,7 @@ impl<'a> Walk<'a> {
                 piperine_ir::Env::SourceScale => &f.source_scale,
                 // Not a frame cell: `eval` faults on it (`UNEXECUTED`), and `Interpreter::new`
                 // rejects a body that holds one.
-                piperine_ir::Env::Time | piperine_ir::Env::Static => return None,
+                piperine_ir::Env::Time | piperine_ir::Env::Static | piperine_ir::Env::Freq | piperine_ir::Env::Analysis(_) => return None,
             })),
             // §18 rule 3, abi.md A2: the held value stands in for `x`; `x`, `f` and the seed are
             // the site function's, not evaluated here.
@@ -533,6 +535,7 @@ impl<'a> Walk<'a> {
                 Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Commit` is not executed by this walk (at {at})")))
             }
             Stmt::Emit { .. } => Err(Fault::new(Self::UNEXECUTED, "the IR form `Emit` is not executed by this walk")),
+            Stmt::BoundStep { .. } => Err(Fault::new(Self::UNEXECUTED, "the IR form `BoundStep` is not executed by this walk")),
         }
     }
 

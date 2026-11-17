@@ -189,6 +189,8 @@ impl ReadSet {
             // hold them, the readers abi.md gives `TIME` and `STATIC`
             Env::Time => Some(Source::Time),
             Env::Static => Some(Source::Static),
+            // read by the plan from T10 on; no form of the source produces them before T34
+            Env::Freq | Env::Analysis(_) => None,
         }));
     }
 
