@@ -503,8 +503,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_loop_of_two_vsources_from_source_is_e0503`, `a_floating_node_from_source_is_e0503` and `a_nan_contribution_from_source_is_e0507` pass under `**Run runerrors**`
-- [ ] Gate check passes: Quick
+- [x] `a_loop_of_two_vsources_from_source_is_e0503`, `a_floating_node_from_source_is_e0503` and `a_nan_contribution_from_source_is_e0507` pass under `**Run runerrors**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

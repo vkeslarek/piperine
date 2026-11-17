@@ -1,0 +1,12 @@
+//! Two potential sources of 1 V and 2 V across the same pair of nodes: a loop of sources.
+
+pub module Vsource(p: Electrical, n: Electrical) {
+    dc: f64 = 0.0;
+}
+analog for Vsource { v(p, n) +> dc; }
+
+module SourceLoop() {
+    signal a: Electrical;
+    let v1 = Vsource { dc: 1.0 }(a, gnd);
+    let v2 = Vsource { dc: 2.0 }(a, gnd);
+}

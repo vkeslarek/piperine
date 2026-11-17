@@ -1,0 +1,17 @@
+//! A contribution that is NaN at the operating point: `0 / 0`.
+
+pub module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+pub module Broken(p: Electrical, n: Electrical) {
+    z: f64 = 0.0;
+}
+analog for Broken { i(p, n) +> v(p, n) / z; }
+
+module Nan() {
+    signal a: Electrical;
+    let r1 = Resistor { r: 1k }(a, gnd);
+    let x1 = Broken { z: 0.0 }(a, gnd);
+}
