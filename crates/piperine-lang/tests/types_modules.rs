@@ -228,3 +228,23 @@ fn an_environment_function_in_a_const_context_is_e0323() {
     let design = design_of(&src);
     Types::check(&design, "Top").expect("the environment at run time");
 }
+
+#[test]
+fn a_where_that_reads_a_later_param_is_e0318() {
+    // FIX-03 AC 1: whatever the two values, a `where` over a param declared after it is E0318.
+    for d_value in ["0.0", "5.0"] {
+        let body = format!("module Top() {{ c: f64 = 1.0 where c > d; d: f64 = {d_value}; }}");
+        let (src, d) = diagnostics(&body);
+        assert_eq!(codes_of(&d), ["E0318"], "d = {d_value}");
+        assert_eq!(snippet(&src, &d[0]), "d", "d = {d_value}");
+        assert!(d[0].diagnostic.message.contains('d'), "names the later param");
+    }
+}
+
+#[test]
+fn a_where_over_its_own_and_earlier_params_is_accepted() {
+    // FIX-03 AC 2.
+    let src = format!("{NATURES}module Top() {{ a: f64 = 1.0; c: f64 = 2.0 where c > a && c > 0.0; }}");
+    let design = design_of(&src);
+    Types::check(&design, "Top").expect("a where over its own and earlier params");
+}

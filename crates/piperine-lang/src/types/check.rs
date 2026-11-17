@@ -503,7 +503,7 @@ impl<'d> Checker<'d> {
                 let item = self.design.decl_data(child).clone();
                 match (&item.kind, phase) {
                     (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
-                    (DeclKind::Param(p), ItemPhase::Declarations) => self.param(&p.clone()),
+                    (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
                     (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
                     (DeclKind::Let(l), ItemPhase::Lets) => self.module_let(&l.clone()),
                     (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),

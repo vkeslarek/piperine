@@ -202,9 +202,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_modules`: `a_where_that_reads_a_later_param_is_e0318` (both `d = 0.0` and `d = 5.0`), `a_where_over_its_own_and_earlier_params_is_accepted`
-- [ ] Gate check passes: Quick (`Run tmod`), then `cargo test -p piperine-lang`
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_modules`: `a_where_that_reads_a_later_param_is_e0318` (both `d = 0.0` and `d = 5.0`), `a_where_over_its_own_and_earlier_params_is_accepted`
+- [x] Gate check passes: Quick (`Run tmod`), then `cargo test -p piperine-lang`
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

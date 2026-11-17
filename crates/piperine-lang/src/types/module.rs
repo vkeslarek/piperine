@@ -55,7 +55,7 @@ impl Checker<'_> {
     }
 
     /// `name: T = default where cond;` — `T` is `f64` or `bool`; `where` is `bool` (`E0318`).
-    pub(super) fn param(&mut self, param: &ParamData) {
+    pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
             Ty::F64 | Ty::Bool => Some(ty),
             other => {
@@ -70,6 +70,27 @@ impl Checker<'_> {
         }
         if let Some(cond) = param.where_ {
             self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0318"));
+            self.where_reads_later_param(decl, cond);
+        }
+    }
+
+    /// A `where` may read its own param and earlier ones only: a read of a param of the same
+    /// module declared after `decl` is `E0318` naming it (§8.1.1).
+    fn where_reads_later_param(&mut self, decl: DeclId, expr: ExprId) {
+        let node = self.design.expr_node(expr).clone();
+        if let ExprKind::Path(path) = &node.kind
+            && let Some(Resolution::Decl(read)) = self.design.path_node(*path).segments.last().map(|s| s.res)
+        {
+            let (own, other) = (self.design.decl_data(decl), self.design.decl_data(read));
+            if matches!(other.kind, DeclKind::Param(_)) && other.parent == own.parent && other.span.start > own.span.start {
+                let name = other.name.as_ref().map_or("?", |n| n.text.as_str()).to_string();
+                let file = self.file_of_expr(expr);
+                let message = format!("a `where` reads the param `{name}`, declared after it (§8.1.1)");
+                self.report(file, Diagnostic::new("E0318", message, node.span, format!("`{name}` is declared later")));
+            }
+        }
+        for child in crate::pom::expr_children(&node.kind, self.design) {
+            self.where_reads_later_param(decl, child);
         }
     }
 
