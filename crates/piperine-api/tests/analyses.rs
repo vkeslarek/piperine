@@ -185,3 +185,59 @@ fn a_sweep_of_no_param_is_e0801() {
         }
     }
 }
+
+fn ac(from: f64, to: f64, per_decade: Option<u32>, points: Option<u32>, print: &[&str]) -> Overrides {
+    Overrides {
+        analysis: Some("ac".into()),
+        from: Some(from),
+        to: Some(to),
+        per_decade,
+        points,
+        print: print.iter().map(|s| s.to_string()).collect(),
+        ..Overrides::default()
+    }
+}
+
+#[test]
+fn an_ac_sweep_has_mag_and_phase_in_degrees() {
+    // CLI-09 AC 2: `freq`, then `mag(<path>)` and `phase(<path>)` per printed signal; ac_rc.msl
+    // from 1e3 to 1e7 at 10 per decade is 41 rows, the first at 1e3 and the last at 1e7; far
+    // below the corner the RC passes everything (mag 1, phase near 0), far above it the phase
+    // heads for -90 degrees
+    for backend in ["interp", "rust"] {
+        let table = run(&twin("ac_rc.msl"), backend, ac(1e3, 1e7, Some(10), None, &["out", "vin"])).unwrap_or_else(|f| panic!("{backend}: {f}"));
+        assert_eq!(table.columns, ["freq", "mag(AcRc.out)", "phase(AcRc.out)", "mag(AcRc.vin)", "phase(AcRc.vin)"], "{backend}");
+        assert_eq!(table.rows.len(), 41, "{backend}");
+        assert!((real(&table.rows[0][0]) - 1e3).abs() <= 1e-6 && (real(&table.rows[40][0]) - 1e7).abs() <= 1.0, "{backend}");
+        let (mag, phase) = (real(&table.rows[0][1]), real(&table.rows[0][2]));
+        assert!((mag - 1.0).abs() <= 1e-3, "{backend}: |out| at 1 kHz = {mag}");
+        assert!(phase < 0.0 && phase > -2.0, "{backend}: phase {phase} degrees at 1 kHz");
+        assert!(real(&table.rows[40][2]) < -85.0, "{backend}: phase at 10 MHz");
+        // the source is the 1 V stimulus: magnitude 1, phase 0
+        assert!((real(&table.rows[10][3]) - 1.0).abs() <= 1e-9 && real(&table.rows[10][4]).abs() <= 1e-9, "{backend}");
+    }
+}
+
+#[test]
+fn points_sweeps_linearly() {
+    // CLI-09 AC 6: `points = 5` from 1e3 to 5e3 is 1e3, 2e3, 3e3, 4e3, 5e3
+    let table = run(&twin("ac_rc.msl"), "interp", ac(1e3, 5e3, None, Some(5), &["out"])).unwrap_or_else(|f| panic!("{f}"));
+    let freqs: Vec<f64> = table.rows.iter().map(|r| real(&r[0])).collect();
+    for (got, want) in freqs.iter().zip([1e3, 2e3, 3e3, 4e3, 5e3]) {
+        assert!((got - want).abs() <= 1e-6, "{freqs:?}");
+    }
+    assert_eq!(freqs.len(), 5);
+}
+
+#[test]
+fn the_rc_corner_is_minus_3_db_and_minus_45_degrees() {
+    // CLI-09 AC 7: ac_rc.msl, 1e3 to 1e7 at 10 per decade, at 1e5 the magnitude is within 1e-3 of
+    // 0.7071067811865476 and the phase within 1e-2 degrees of -45 (the corner is exactly 100 kHz)
+    for backend in ["interp", "rust"] {
+        let table = run(&twin("ac_rc.msl"), backend, ac(1e3, 1e7, Some(10), None, &["out"])).unwrap_or_else(|f| panic!("{backend}: {f}"));
+        let row = table.rows.iter().find(|r| (real(&r[0]) / 1e5 - 1.0).abs() <= 1e-9).unwrap_or_else(|| panic!("{backend}: no row at 1e5"));
+        let (mag, phase) = (real(&row[1]), real(&row[2]));
+        assert!((mag - 0.7071067811865476).abs() <= 1e-3, "{backend}: mag {mag}");
+        assert!((phase + 45.0).abs() <= 1e-2, "{backend}: phase {phase}");
+    }
+}

@@ -15,7 +15,7 @@ use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
-use piperine_solver::prelude::{CircuitInstance, Context, ParamValue, Solver, TransientAnalysisOptions};
+use piperine_solver::prelude::{AcSweepAnalysisOptions, CircuitInstance, Context, ParamValue, Solver, TransientAnalysisOptions};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
@@ -24,7 +24,7 @@ use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
 use crate::table::Table;
 use crate::project::Project;
-use crate::request::{Analysis, RunSpec};
+use crate::request::{Analysis, Grid, RunSpec};
 
 /// How the design of a session was built.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,7 +218,17 @@ impl Session {
                 }
                 Ok(Table::sweep(&swept.label(), &self.probes, points))
             }
-            other => Err(Failure::Backend(format!("the `{}` analysis is not supported by `Session::run` yet", other.name()))),
+            Analysis::Ac { from, to, grid } => {
+                let options = AcSweepAnalysisOptions {
+                    start_frequency: *from,
+                    stop_frequency: *to,
+                    steps: grid.steps(*from, *to),
+                    logarithmic: matches!(grid, Grid::PerDecade(_)),
+                };
+                let mut solver = Solver::new(circuit).with_sink(delivery).build();
+                let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::Solver { analysis: "ac", error })?;
+                Table::frequency(&self.probes, &result)
+            }
         }
     }
 

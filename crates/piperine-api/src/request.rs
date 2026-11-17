@@ -48,6 +48,17 @@ pub enum Grid {
     Points(u32),
 }
 
+impl Grid {
+    /// The number of frequencies from `from` to `to`: `round(n * log10(to / from)) + 1` per
+    /// decade (CLI-09 AC 4), `n` in all (AC 6).
+    pub fn steps(&self, from: f64, to: f64) -> usize {
+        match self {
+            Grid::PerDecade(n) => (f64::from(*n) * (to / from).log10()).round() as usize + 1,
+            Grid::Points(n) => *n as usize,
+        }
+    }
+}
+
 /// The settings the command line gives, one per key of a run table; `None` (or empty) leaves
 /// the table's value. `params` are added after the table's, in order.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -737,6 +748,20 @@ points = 5
         }
         // `to` equal to `from` is ordered
         assert!(read("[run.a]\nanalysis = \"ac\"\nfrom = 1e3\nto = 1e3\npoints = 1\n").is_ok());
+    }
+
+    #[test]
+    fn per_decade_gives_round_n_log10_plus_one_points() {
+        // CLI-09 AC 4: 1e3 to 1e7 is 4 decades, so 10 per decade is 4 * 10 + 1 = 41 (the 41
+        // rows of ac_rc's ngspice export); 1 to 1e3 at 3 per decade is 3 * 3 + 1 = 10
+        assert_eq!(Grid::PerDecade(10).steps(1e3, 1e7), 41);
+        assert_eq!(Grid::PerDecade(3).steps(1.0, 1e3), 10);
+        // not a whole number of decades: 10 * log10(5) = 6.99, which rounds to 7, so 8 points
+        assert_eq!(Grid::PerDecade(10).steps(1.0, 5.0), 8);
+        // `from` equal to `to` is one point
+        assert_eq!(Grid::PerDecade(10).steps(1e3, 1e3), 1);
+        // AC 6: `points = n` is n points in all
+        assert_eq!(Grid::Points(5).steps(1e3, 5e3), 5);
     }
 
     #[test]

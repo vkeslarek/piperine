@@ -6,7 +6,7 @@
 use piperine_abi::raw::leaf;
 use piperine_ir::ValueType;
 use piperine_plan::CarrierLayout;
-use piperine_solver::prelude::{DcAnalysisResult, TransientAnalysisResult};
+use piperine_solver::prelude::{AcAnalysisResult, DcAnalysisResult, TransientAnalysisResult};
 
 use crate::failure::Failure;
 use crate::probe::Probe;
@@ -115,6 +115,38 @@ impl Table {
             })
             .collect();
         Table { columns, rows }
+    }
+
+    /// An AC sweep: the column `freq`, then `mag(<path>)` and `phase(<path>)` per probe, the
+    /// phase in degrees; one row per frequency. A discrete net has no phasor: `E0801`.
+    pub fn frequency(probes: &[Probe], result: &AcAnalysisResult) -> Result<Table, Failure> {
+        let mut columns = vec!["freq".to_string()];
+        for probe in probes {
+            if let Probe::Net { path, .. } = probe {
+                let message = format!("`{path}` is a discrete net: an `ac` run prints nodes and flows, which have a phasor");
+                return Err(Failure::Host { code: "E0801", message });
+            }
+            columns.push(format!("mag({})", probe.label()));
+            columns.push(format!("phase({})", probe.label()));
+        }
+        let rows = result
+            .iter()
+            .map(|step| {
+                let mut row = vec![Cell::Real(step.frequency)];
+                for probe in probes {
+                    let phasor = match probe {
+                        Probe::Node { id, .. } => step.get_node(id),
+                        Probe::Flow { branch, .. } => step.get_branch(branch.clone()),
+                        Probe::Net { .. } => None,
+                    };
+                    let phasor = phasor.ok_or_else(|| Failure::Backend(format!("the step at {} Hz holds no value for `{}`", step.frequency, probe.label())))?;
+                    row.push(Cell::Real(phasor.norm()));
+                    row.push(Cell::Real(phasor.arg().to_degrees()));
+                }
+                Ok(row)
+            })
+            .collect::<Result<Vec<_>, Failure>>()?;
+        Ok(Table { columns, rows })
     }
 
     /// A transient: the column `time`, then one column per probe; one row per step the result
