@@ -394,10 +394,10 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline test `contract::tests::new_domains_carry_a_rationale`
-- [ ] `git diff` shows no line of an existing constant changed
-- [ ] Gate check passes: Quick (`Run paritylib`, `Run parity`)
-- [ ] Test count: 1 new test
+- [x] Inline test `contract::tests::new_domains_carry_a_rationale`
+- [x] `git diff` shows no line of an existing constant changed
+- [x] Gate check passes: Quick (`Run paritylib`, `Run parity`)
+- [x] Test count: 1 new test
 
 **Tests**: unit
 **Gate**: quick

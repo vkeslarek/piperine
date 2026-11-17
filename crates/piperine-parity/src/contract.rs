@@ -93,6 +93,31 @@ impl ToleranceContract {
                     a decade below by the harness's step cap",
     };
 
+    pub const TF_RATIO: Self = Self {
+        reltol: 1e-6,
+        abstol: 1e-12,
+        rationale: "a linear solve at a frozen operating point, compared with what ngspice's `.tf` prints: \
+                    seven significant digits (e.g. 7.500000e-01), so half a unit of the last digit is under 1e-6 \
+                    of the value; the floor is far under every gain and resistance of a twin",
+    };
+
+    pub const PZ_ROOT: Self = Self {
+        reltol: 1e-5,
+        abstol: 1e-6,
+        rationale: "a generalized eigenvalue of the (G, C) pencil, compared with ngspice's `.pz`, which prints six \
+                    significant digits (e.g. -1.33333e+03), so half a unit of the last digit is up to 4e-6 of the \
+                    value; the floor (rad/s) stands for an imaginary part ngspice prints as 0 and the eigenvalue \
+                    solver returns as rounding noise",
+    };
+
+    pub const SENSITIVITY: Self = Self {
+        reltol: 1e-5,
+        abstol: 1e-12,
+        rationale: "both solvers difference the operating point under a relative parameter step of about 1e-6 \
+                    (ngspice's `.sens` prints 6.249994e-04 for an exact 6.25e-04), so each carries a truncation \
+                    error of that order; the bound is a decade above it, never tuned to a result",
+    };
+
     pub fn reltol(&self) -> f64 {
         self.reltol
     }
@@ -172,6 +197,22 @@ mod tests {
             assert_eq!(contract.reltol(), reltol, "{name} reltol");
             assert_eq!(contract.abstol(), abstol, "{name} abstol");
             assert!(!contract.rationale().is_empty(), "{name} has no rationale");
+        }
+    }
+
+    #[test]
+    fn new_domains_carry_a_rationale() {
+        // HII-21: the three domains of `tf`, `pz` and `sens`, each with a bound, a floor and the reason for both
+        for (name, contract, reltol, abstol) in [
+            ("TF_RATIO", ToleranceContract::TF_RATIO, 1e-6, 1e-12),
+            ("PZ_ROOT", ToleranceContract::PZ_ROOT, 1e-5, 1e-6),
+            ("SENSITIVITY", ToleranceContract::SENSITIVITY, 1e-5, 1e-12),
+        ] {
+            assert_eq!(contract.reltol(), reltol, "{name} reltol");
+            assert_eq!(contract.abstol(), abstol, "{name} abstol");
+            assert!(contract.rationale().len() > 40, "{name} has no rationale worth the name");
+            let at = Point::new("f", "q", Coordinate::OperatingPoint);
+            assert!(rejection(&contract, &at, 1.0, 1.1).contains(contract.rationale()), "{name}: a rejection prints its rationale");
         }
     }
 
