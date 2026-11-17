@@ -305,10 +305,10 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `cli::tests::every_run_key_has_its_flag` passes with the nine flags added to its lists
-- [ ] New inline test `cli::tests::a_nodeset_flag_without_equals_exits_2`
-- [ ] Gate check passes: Quick (`Run clilib`, `Run twins`)
-- [ ] Test count: 1 new test, 1 extended
+- [x] `cli::tests::every_run_key_has_its_flag` passes with the nine flags added to its lists
+- [x] New inline test `cli::tests::a_nodeset_flag_without_equals_exits_2`
+- [x] Gate check passes: Quick (`Run clilib`, `Run twins`)
+- [x] Test count: 1 new test, 1 extended
 
 **Tests**: unit
 **Gate**: quick

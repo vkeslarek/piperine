@@ -123,6 +123,15 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "records", kind: ArgKind::Path { value: "FILE" }, help: "write the records as JSON Lines to this file" },
             ArgRow { id: "plot", kind: ArgKind::Path { value: "FILE" }, help: "write the plot as SVG to this file" },
             ArgRow { id: "all-checks", kind: ArgKind::Switch, help: "print the passing checks too; a failing check always prints" },
+            ArgRow { id: "reltol", kind: ArgKind::Real { value: "VALUE" }, help: "the relative tolerance of the solver" },
+            ArgRow { id: "abstol", kind: ArgKind::Real { value: "AMPERES" }, help: "the absolute tolerance of a flow" },
+            ArgRow { id: "vntol", kind: ArgKind::Real { value: "VOLTS" }, help: "the absolute tolerance of a potential" },
+            ArgRow { id: "trtol", kind: ArgKind::Real { value: "VALUE" }, help: "the factor on the truncation error a transient accepts" },
+            ArgRow { id: "temp", kind: ArgKind::Real { value: "CELSIUS" }, help: "the temperature of the run, in degrees Celsius" },
+            ArgRow { id: "resolution", kind: ArgKind::Real { value: "SECONDS" }, help: "the tick of the digital engine, in seconds" },
+            ArgRow { id: "maxrounds", kind: ArgKind::Count { value: "N" }, help: "the bound on the rounds of an operating point" },
+            ArgRow { id: "maxmicro", kind: ArgKind::Count { value: "N" }, help: "the bound on the microsteps of one instant" },
+            ArgRow { id: "nodeset", kind: ArgKind::Param, help: "seed an operating point's first iterate: <node>=<value> (repeatable)" },
         ],
     },
     CommandRow {
@@ -251,7 +260,15 @@ impl Cli {
             records: path("records"),
             plot: path("plot"),
             all_checks: m.get_flag("all-checks").then_some(true),
-            ..Overrides::default()
+            reltol: real("reltol"),
+            abstol: real("abstol"),
+            vntol: real("vntol"),
+            trtol: real("trtol"),
+            temp: real("temp"),
+            resolution: real("resolution"),
+            maxrounds: count("maxrounds"),
+            maxmicro: count("maxmicro"),
+            nodeset: m.get_many::<(String, f64)>("nodeset").map(|v| v.cloned().collect()).unwrap_or_default(),
         }
     }
 
@@ -333,6 +350,7 @@ mod tests {
         // those and `--project` exists (`--help` is clap's, added when the command is built)
         let flags = [
             "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot", "all-checks",
+            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "nodeset",
         ];
         let command = Cli::command();
         let run = command.find_subcommand("run").expect("a `run` command");
@@ -346,6 +364,8 @@ mod tests {
             "piperine", "run", "x", "--bench", "b.msl", "--top", "Top", "--analysis", "transient", "--stop", "1e-3", "--max-step", "1e-6", "--print-step", "1e-5", "--sweep", "v1.dc", "--from", "-1", "--to", "5",
             "--step", "0.5", "--per-decade", "10", "--points", "20", "--print", "a", "--print", "b", "--stream", "s1", "--stream", "s2", "--param", "r1.r=2000", "--param", "c1.c=1e-9", "--backend", "interp",
             "--csv", "o.csv", "--records", "r.jsonl", "--plot", "p.svg", "--all-checks",
+            "--reltol", "1e-4", "--abstol", "1e-13", "--vntol", "2e-6", "--trtol", "5", "--temp", "-40", "--resolution", "1e-12", "--maxrounds", "30", "--maxmicro", "500", "--nodeset", "Top.a=1.5",
+            "--nodeset", "Top.b=0",
         ];
         let Ok(Invocation::Run { target, overrides, .. }) = Cli::parse(args) else { panic!("the flags parse as a run") };
         assert_eq!(target.as_deref(), Some("x"));
@@ -370,15 +390,35 @@ mod tests {
             records: Some("r.jsonl".into()),
             plot: Some("p.svg".into()),
             all_checks: Some(true),
-            ..Overrides::default()
+            reltol: Some(1e-4),
+            abstol: Some(1e-13),
+            vntol: Some(2e-6),
+            trtol: Some(5.0),
+            temp: Some(-40.0),
+            resolution: Some(1e-12),
+            maxrounds: Some(30),
+            maxmicro: Some(500),
+            nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
         };
         assert_eq!(overrides, want);
         // a flag not given leaves its field alone, and a bad value is a usage error
         let Ok(Invocation::Run { overrides, .. }) = Cli::parse(["piperine", "run"]) else { panic!("no flag parses") };
         assert_eq!(overrides, Overrides::default());
-        for bad in [&["--stop", "soon"][..], &["--points", "1.5"], &["--param", "r1.r"], &["--param", "=3"]] {
+        for bad in [&["--stop", "soon"][..], &["--points", "1.5"], &["--param", "r1.r"], &["--param", "=3"], &["--maxrounds", "1.5"], &["--temp", "hot"]] {
             let args: Vec<&str> = ["piperine", "run"].iter().chain(bad).copied().collect();
             assert!(Cli::parse(args).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_nodeset_flag_without_equals_exits_2() {
+        // HII-01 AC 2: `--nodeset` is `<node>=<value>`, as `--param` is; text with no `=`, no node
+        // or no number is a usage error, exit 2
+        for bad in ["Top.a", "=1.0", "Top.a=high"] {
+            let error = Cli::parse(["piperine", "run", "--nodeset", bad]).err().unwrap_or_else(|| panic!("`{bad}` parses"));
+            assert_eq!(error.exit_code(), 2, "{bad}");
+            assert!(error.to_string().contains("--nodeset"), "{bad}: {error}");
+        }
+        assert!(Cli::parse(["piperine", "run", "--nodeset", "Top.a=1.0"]).is_ok());
     }
 }
