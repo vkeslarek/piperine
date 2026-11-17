@@ -628,9 +628,9 @@ T23
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/docs.rs` holds `the_roadmap_lists_what_the_long_run_leaves`, asserting the three futures are named
-- [ ] Gate check passes: Quick (`Run docs`)
-- [ ] Test count: the 1 test named above, and no existing test removed or edited
+- [x] `crates/piperine-cli/tests/docs.rs` holds `the_roadmap_lists_what_the_long_run_leaves`, asserting the three futures are named
+- [x] Gate check passes: Quick (`Run docs`)
+- [x] Test count: the 1 test named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

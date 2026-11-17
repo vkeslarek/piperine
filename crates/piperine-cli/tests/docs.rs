@@ -122,3 +122,16 @@ fn gaps_says_a_host_run_is_bounded() {
     assert!(gaps.contains("`on above(..) { emit!(..) }` is `P0001`"), "GAPS.md still lists the `on above` gap");
     assert!(gaps.contains("prints the whole 600 µs start"), "the command-line row names the whole-start run");
 }
+
+#[test]
+fn the_roadmap_lists_what_the_long_run_leaves() {
+    // long-run LR-18 AC 2: `ROADMAP.md` marks `long-run` delivered and names the three futures
+    // of decision 6
+    let roadmap = read("ROADMAP.md");
+    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
+    let item = queue.lines().find(|l| l.starts_with("3c. ")).expect("the queue has an entry for long-run");
+    assert!(item.starts_with("3c. ✅ **Delivered") && item.contains("long-run"), "the entry is delivered and names the feature: {item}");
+    for future in ["Multi-rate stepping", "Surrogate or averaged models", "Periodic steady state"] {
+        assert!(queue.contains(future), "ROADMAP.md names `{future}`");
+    }
+}
