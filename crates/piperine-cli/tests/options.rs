@@ -130,3 +130,23 @@ fn a_relative_output_path_is_under_the_project() {
     stdout_of(&piperine_in(work.path(), &["run", divider.to_str().expect("path"), "--analysis", "op", "--csv", "op.csv"]));
     assert!(work.path().join("op.csv").is_file());
 }
+
+#[test]
+fn the_stream_flag_keeps_only_that_stream() {
+    // CLI-12 AC 1: `step` emits `trip` (the monitor's `emit!`) and `checks` (its `require`);
+    // `--stream trip` prints the `trip` record and no other; the full path of the stream keeps
+    // the same line
+    let all = stdout_of(&piperine_in(&rc(), &["run", "step"]));
+    assert!(all.lines().any(|l| l.starts_with('@') && l.contains(" checks ")), "the unfiltered run prints a checks record:\n{all}");
+    let out = stdout_of(&piperine_in(&rc(), &["run", "step", "--stream", "trip"]));
+    let records: Vec<&str> = out.lines().filter(|l| l.starts_with('@')).collect();
+    assert_eq!(records.len(), 1, "{out}");
+    assert!(records[0].contains(" Step.mon trip "), "{}", records[0]);
+    let by_path = stdout_of(&piperine_in(&rc(), &["run", "step", "--stream", "Step.mon.trip"]));
+    assert_eq!(by_path, out);
+    // CLI-12 AC 2: an entry that matches nothing is E0801, exit 1, and nothing is printed
+    let bad = piperine_in(&rc(), &["run", "step", "--stream", "nothing"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(text(&bad.stderr).contains("E0801") && text(&bad.stderr).contains("nothing"), "{}", text(&bad.stderr));
+    assert_eq!(text(&bad.stdout), "");
+}

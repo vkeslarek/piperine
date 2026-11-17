@@ -159,3 +159,77 @@ fn a_reserved_stream_keeps_its_name_and_its_site() {
     seen.sort_by_key(|(i, _, _)| *i);
     assert_eq!(seen, [("Top.first", "checks", &Field::Bool(true)), ("Top.second", "checks", &Field::Bool(false))]);
 }
+
+/// The records of a 5 us transient of `text`, the run keeping only the streams `keep` names.
+fn kept_records(text: &str, keep: &[&str]) -> Result<Vec<Record>, Failure> {
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, text).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides {
+        analysis: Some("transient".into()),
+        stop: Some(5e-6),
+        top: Some("Top".into()),
+        max_step: Some(5e-8),
+        streams: keep.iter().map(|s| s.to_string()).collect(),
+        ..Overrides::default()
+    };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &settings())?;
+    let kept = Rc::new(RefCell::new(Kept::default()));
+    session.run(kept.clone())?;
+    let records = kept.borrow().0.clone();
+    Ok(records)
+}
+
+/// Two modules emitting `s` (at 1 us) and `t` (at 2 us), `M` placed as `m` and `n`, `N` as `o`.
+fn two_streams() -> String {
+    design(
+        "module M() {}\ndigital for M { on at(1u) { emit!(\"s\", a = 1.0); } }\nmodule N() {}\ndigital for N { on at(2u) { emit!(\"t\", a = 2.0); } }\n",
+        "    let m = M();\n    let n = M();\n    let o = N();\n",
+    )
+}
+
+/// The `<instance> <stream>` pairs of `records`, sorted.
+fn named(records: &[Record]) -> Vec<(String, String)> {
+    let mut all: Vec<(String, String)> = records.iter().map(|r| (r.instance.clone(), r.stream.clone())).collect();
+    all.sort();
+    all
+}
+
+#[test]
+fn keep_matches_a_stream_name_or_its_full_path() {
+    // CLI-12 AC 1: an entry is a stream's name (every instance's stream of that name) or one
+    // stream's `<instance path>.<stream>`; two instances of `M` each emit `s` at 1 us, `o` emits
+    // `t` at 2 us
+    let text = two_streams();
+    let pair = |i: &str, s: &str| (i.to_string(), s.to_string());
+    let all = kept_records(&text, &[]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(named(&all), [pair("Top.m", "s"), pair("Top.n", "s"), pair("Top.o", "t")]);
+    let by_name = kept_records(&text, &["s"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(named(&by_name), [pair("Top.m", "s"), pair("Top.n", "s")]);
+    let by_path = kept_records(&text, &["Top.m.s"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(named(&by_path), [pair("Top.m", "s")]);
+    let both = kept_records(&text, &["Top.m.s", "t"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(named(&both), [pair("Top.m", "s"), pair("Top.o", "t")]);
+    // the reserved stream is a stream like any other: `checks` of a design with a `require`
+    // is kept by name and dropped by its absence
+    let checked = design("module R() {}\ndigital for R { on at(1u) { require(\"ok\", true); emit!(\"s\", a = 1.0); } }\n", "    let r = R();\n");
+    let only_s = kept_records(&checked, &["s"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(named(&only_s), [pair("Top.r", "s")]);
+    let only_checks = kept_records(&checked, &["checks"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(named(&only_checks), [pair("Top.r", "checks")]);
+}
+
+#[test]
+fn a_filter_entry_that_matches_nothing_is_e0801() {
+    // CLI-12 AC 2: E0801 naming the entry, at open, before any analysis; a name with the right
+    // instance and the wrong stream, and a stream of no design, both match nothing
+    let text = two_streams();
+    for entry in ["nothing", "Top.m.t", "Top.zzz.s"] {
+        match kept_records(&text, &["s", entry]) {
+            Err(Failure::Host { code: "E0801", message }) => assert!(message.contains(entry), "{message}"),
+            other => panic!("`{entry}`: expected E0801, found {:?}", other.map(|r| r.len())),
+        }
+    }
+}

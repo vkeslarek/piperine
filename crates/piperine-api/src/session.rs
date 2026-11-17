@@ -49,6 +49,8 @@ pub struct Session {
     probes: Vec<Probe>,
     /// The param a `dc` run sweeps, resolved against the design.
     swept: Option<ParamPath>,
+    /// The record streams of the design, filtered by the run's `streams`.
+    streams: Streams,
 }
 
 /// A param of an instance of the design, by the instance's full path.
@@ -96,6 +98,8 @@ impl Session {
             Err(found) => return Err(Session::diagnosed("elaborate", design, found)),
         };
         let probes = Session::probes_of(&ir, spec)?;
+        let mut streams = Streams::of(ir.clone());
+        streams.keep(&spec.streams)?;
         let swept = match &spec.analysis {
             Analysis::Dc { sweep, .. } => Some(ParamPath::resolve(&ir, ir.top().path(), sweep)?),
             _ => None,
@@ -123,7 +127,7 @@ impl Session {
             let refused = |error| Failure::Host { code: "E0802", message: format!("`{entry}` refuses the value {value}: {error}") };
             circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams })
     }
 
     /// The top module's name.
@@ -173,7 +177,7 @@ impl Session {
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
         let failure = Rc::new(RefCell::new(None));
-        let delivery = Box::new(Delivery { streams: Streams::of(self.ir.clone()), sink, failure: failure.clone() });
+        let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone() });
         let table = self.analysis(circuit, delivery);
         // a record that could not be decoded is a defect the run reports first: the records
         // before it were delivered, none after it was guessed

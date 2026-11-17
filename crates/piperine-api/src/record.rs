@@ -11,7 +11,7 @@
 //! that moved, abi.md §9 D1) has every value field of its stream and no text field.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -55,6 +55,8 @@ pub struct Streams {
     ir: Arc<Ir>,
     /// `<instance path>.<stream>` to the instance path, the stream and its layout.
     pins: HashMap<String, (String, Stream, RecordLayout)>,
+    /// The pin paths `decode` gives records for; `None` keeps every stream.
+    kept: Option<HashSet<String>>,
 }
 
 impl Streams {
@@ -70,7 +72,30 @@ impl Streams {
                 }
             }
         }
-        Streams { ir, pins }
+        Streams { ir, pins, kept: None }
+    }
+
+    /// Keeps only the streams `entries` name (CLI-12 AC 1, 2): an entry is a stream's name,
+    /// which keeps that stream of every instance, or one stream's full path
+    /// `<instance path>.<stream>`. No entry keeps every stream. An entry that matches no stream
+    /// of the design is `E0801`.
+    pub fn keep(&mut self, entries: &[String]) -> Result<(), Failure> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let mut kept = HashSet::new();
+        for entry in entries {
+            let matched: Vec<&String> = self.pins.iter().filter(|(pin, (_, stream, _))| *pin == entry || stream.name == *entry).map(|(pin, _)| pin).collect();
+            if matched.is_empty() {
+                let mut known: Vec<&str> = self.pins.keys().map(String::as_str).collect();
+                known.sort_unstable();
+                let message = format!("`{entry}` names no record stream of the design: the streams are {}", known.join(", "));
+                return Err(Failure::Host { code: "E0801", message });
+            }
+            kept.extend(matched.into_iter().cloned());
+        }
+        self.kept = Some(kept);
+        Ok(())
     }
 
     /// The record `o` holds; `None` when `o` is no record. A record of a pin no stream has, of a
@@ -78,6 +103,9 @@ impl Streams {
     /// `Failure`, never a guessed or truncated record.
     pub fn decode(&self, o: &Observation) -> Option<Result<Record, Failure>> {
         let ObservationKind::Record { site, bytes } = &o.kind else { return None };
+        if self.kept.as_ref().is_some_and(|kept| !kept.contains(&o.path)) {
+            return None;
+        }
         Some(self.record(o, *site, bytes))
     }
 
