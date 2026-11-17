@@ -296,6 +296,23 @@ fn section_9_exhausting_every_dc_strategy_is_a_convergence_failure() {
     assert_rule(&err, SolverDomain::Newton, "converge");
 }
 
+/// HYG-03 AC 4: an equilibrium no strategy settles is `E0505`, naming the
+/// unknowns of the last attempt that failed the update or residual test.
+#[test]
+fn an_equilibrium_that_never_converges_is_e0505_with_its_unknowns() {
+    let mut b = CircuitBuilder::new("osc");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_resistor(&mut b, "r", 1e6, &a, &gnd);
+    b.device(OSC.get_or_init(|| module::<Oscillator>("Oscillator")), "osc", &[], &[Port::Node(a), Port::Node(gnd)]);
+    let mut circuit = b.build().expect("build");
+
+    let err = dc_error(&mut circuit);
+    assert_eq!(err.code(), Some(RunCode::E0505), "{err}");
+    let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+    assert_eq!(run.names, vec!["node of r.p, osc.p".to_string()], "the one unknown that never settles: {err}");
+}
+
 /// SAI-15: every function of this target's own devices passes the partials
 /// verifier (the guard of `abi_devices.rs` holds each device to it).
 #[test]

@@ -461,8 +461,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `an_equilibrium_that_never_converges_is_e0505_with_its_unknowns` passes under `**Run failure**`
-- [ ] Gate check passes: Quick
+- [x] `an_equilibrium_that_never_converges_is_e0505_with_its_unknowns` passes under `**Run failure**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
