@@ -238,10 +238,10 @@ T23
 
 **Done when**:
 
-- [ ] `step_observer.rs` gains, with exactly these names: `keep_last_holds_only_the_last_step_with_its_reentry_state`, `reentry_from_the_kept_step_equals_reentry_from_a_full_run` (every step of the two continued runs bit-equal), `the_default_keeps_every_accepted_step`, `keep_last_refuses_device_state_recording`
-- [ ] `cargo test -p piperine-solver` passes with every existing target unedited
-- [ ] Gate check passes: Quick (`Run step`, `Run baseline`), then Build (end of phase 1)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] `step_observer.rs` gains, with exactly these names: `keep_last_holds_only_the_last_step_with_its_reentry_state`, `reentry_from_the_kept_step_equals_reentry_from_a_full_run` (every step of the two continued runs bit-equal), `the_default_keeps_every_accepted_step`, `keep_last_refuses_device_state_recording`
+- [x] `cargo test -p piperine-solver` passes with every existing target unedited
+- [x] Gate check passes: Quick (`Run step`, `Run baseline`), then Build (end of phase 1)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build

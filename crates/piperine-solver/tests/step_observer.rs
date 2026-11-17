@@ -23,7 +23,7 @@ use abi_devices::{add_capacitor, add_resistor, node_id};
 use abi_mixed::{counter, dac, timer};
 use piperine_solver::abi::{AnalogReference, ParamValue, Port};
 use piperine_solver::prelude::{
-    CircuitBuilder, CircuitInstance, Context, Solver, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
+    CircuitBuilder, CircuitInstance, Context, Keep, ProbeSelection, Solver, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
 use stub_sides::{Call, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
@@ -308,4 +308,95 @@ fn without_an_observer_the_result_and_the_sink_stream_are_unchanged() {
             assert_eq!(Some(v), result_references(b).into_iter().find(|(i, _)| *i == r).map(|(_, v)| v));
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// `Keep::Last`: a run that holds the last step only (LR-02).
+// ---------------------------------------------------------------------------
+
+/// The clocked RC to `stop`, from `from` when given, keeping `keep`.
+fn run_kept(circuit: &mut CircuitInstance, stop: f64, keep: Keep, from: Option<&TransientStep>) -> TransientAnalysisResult {
+    let mut opts = TransientAnalysisOptions::new(stop, 1.0e-5).with_keep(keep);
+    if let Some(step) = from {
+        opts = opts.with_start(step.time());
+    }
+    let mut tran = circuit.transient(opts, Context::default()).expect("tran");
+    if let Some(step) = from {
+        tran.with_initial_state(step);
+    }
+    tran.solve().expect("solve")
+}
+
+/// A step's unknowns by index and its nets, to compare two steps value for value.
+fn contents(step: &TransientStep) -> (Vec<(usize, f64)>, Option<piperine_solver::prelude::DigitalNets>) {
+    let mut unknowns = result_references(step);
+    unknowns.sort_by_key(|(i, _)| *i);
+    (unknowns, step.digital_nets().cloned())
+}
+
+#[test]
+fn keep_last_holds_only_the_last_step_with_its_reentry_state() {
+    // LR-02 AC 1: one step, the last one, the very step a `Keep::Every` run ends on; and it
+    // carries the state a transient re-enters from (a run started from it goes on)
+    let (mut circuit, c) = build();
+    let full = run_kept(&mut circuit, STOP, Keep::Every, None);
+    let (mut circuit, _) = build();
+    let last = run_kept(&mut circuit, STOP, Keep::Last, None);
+    assert_eq!(last.len(), 1, "one step kept");
+    assert_eq!(last.stats.steps_accepted, full.stats.steps_accepted);
+    let (kept, whole) = (last.last().unwrap(), full.last().unwrap());
+    assert_eq!(kept.time(), STOP);
+    assert_eq!(kept.time(), whole.time());
+    assert_eq!(contents(kept), contents(whole));
+    assert_eq!(kept.get_node(&node_id(&c)), whole.get_node(&node_id(&c)));
+    let go_on = run_kept(&mut circuit, 2.0 * STOP, Keep::Every, Some(kept));
+    assert_eq!(go_on.iter().next().unwrap().time(), STOP, "re-entered at the kept step");
+    assert!(go_on.last().unwrap().time() > STOP);
+}
+
+#[test]
+fn reentry_from_the_kept_step_equals_reentry_from_a_full_run() {
+    // LR-02 AC 2: the half run captured from a `Keep::Every` result and from a `Keep::Last` one
+    // continue to the same steps, bit for bit
+    let half = STOP / 2.0;
+    let (mut a, _) = build();
+    let from_full = run_kept(&mut a, half, Keep::Every, None).last().unwrap().clone();
+    let (mut b, _) = build();
+    let from_last = run_kept(&mut b, half, Keep::Last, None).last().unwrap().clone();
+    assert_eq!(contents(&from_full), contents(&from_last));
+    let a2 = run_kept(&mut a, STOP, Keep::Every, Some(&from_full));
+    let b2 = run_kept(&mut b, STOP, Keep::Every, Some(&from_last));
+    assert!(a2.len() > 10, "{} steps", a2.len());
+    assert_eq!(a2.len(), b2.len());
+    for (x, y) in a2.iter().zip(b2.iter()) {
+        assert_eq!(x.time(), y.time());
+        assert_eq!(contents(x), contents(y), "at {:e} s", x.time());
+    }
+    assert_eq!(a2.stats.steps_accepted, b2.stats.steps_accepted);
+    assert_eq!(a2.stats.steps_rejected, b2.stats.steps_rejected);
+}
+
+#[test]
+fn the_default_keeps_every_accepted_step() {
+    // LR-02 AC 3: with no `keep` set a run holds the start and every accepted step
+    assert_eq!(TransientAnalysisOptions::new(STOP, 1.0e-5).keep, Keep::Every);
+    let (mut circuit, _) = build();
+    let mut tran = circuit.transient(TransientAnalysisOptions::new(STOP, 1.0e-5), Context::default()).expect("tran");
+    let result = tran.solve().expect("solve");
+    assert_eq!(result.len(), result.stats.steps_accepted as usize + 1);
+}
+
+#[test]
+fn keep_last_refuses_device_state_recording() {
+    // LR-02 AC 4: `Keep::Last` with `record_device_state`, or with a probe selection, fails at setup
+    let (mut circuit, _) = build();
+    let with_state = TransientAnalysisOptions { record_device_state: true, ..options().with_keep(Keep::Last) };
+    let err = circuit.transient(with_state, Context::default()).err().expect("refused");
+    assert!(err.to_string().contains("Keep::Last") && err.to_string().contains("record_device_state"), "{err}");
+    let selection = ProbeSelection::new().request("clk", "out");
+    let with_selection = options().with_keep(Keep::Last).with_probe_selection(selection);
+    let err = circuit.transient(with_selection, Context::default()).err().expect("refused");
+    assert!(err.to_string().contains("Keep::Last") && err.to_string().contains("probe_selection"), "{err}");
+    // and the same options keeping every step are accepted
+    assert!(circuit.transient(TransientAnalysisOptions { record_device_state: true, ..options() }, Context::default()).is_ok());
 }

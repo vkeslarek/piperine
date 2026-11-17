@@ -26,6 +26,17 @@ use std::collections::HashMap;
 
 // ── request/state ────────────────────────────────────────────────────────
 
+/// What a transient keeps of the steps it takes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Keep {
+    /// One `TransientStep` per accepted step (the default).
+    #[default]
+    Every,
+    /// The last accepted step only, with its re-entry state: a run whose host reads the steps
+    /// through a `StepObserver` holds nothing per step.
+    Last,
+}
+
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
     /// Simulation stop time
@@ -92,6 +103,11 @@ pub struct TransientAnalysisOptions {
     /// watch with no `ttol` pin is located until the landing exceeds the estimated crossing by
     /// at most this, or its value is under its `etol`. Default 1 ps.
     pub ttol: f64,
+
+    /// Which steps the result holds. `Keep::Last` takes neither `record_device_state` nor a
+    /// `probe_selection` (a transient of devices refuses them at setup): with one step kept,
+    /// the recording they ask for has nothing to attach to. `record_from` has nothing to act on.
+    pub keep: Keep,
 }
 
 impl TransientAnalysisOptions {
@@ -114,7 +130,14 @@ impl TransientAnalysisOptions {
             record_device_state: false,
             probe_selection: crate::core::introspect::ProbeSelection::new(),
             ttol: 1e-12,
+            keep: Keep::Every,
         }
+    }
+
+    /// Set which steps the result holds.
+    pub fn with_keep(mut self, keep: Keep) -> Self {
+        self.keep = keep;
+        self
     }
 
     /// Set the simulation start time (restart-from-`t` semantics).
@@ -473,6 +496,13 @@ impl<'a> TransientSolver<'a> {
     ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
+        if options.keep == Keep::Last && (options.record_device_state || !options.probe_selection.requests.is_empty()) {
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
+                "`Keep::Last` keeps one step and cannot record device state: drop `record_device_state` \
+                 and the `probe_selection`, or keep every step",
+            ));
+        }
         Self::validate_probe_selection(circuit, &options.probe_selection)?;
 
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
@@ -710,7 +740,7 @@ impl<'a> TransientSolver<'a> {
     /// gated by either `record_device_state` (full-bank shorthand) or a
     /// non-empty `probe_selection` (selective recording — ABI-34).
     fn record_step(&self, steps: &mut Vec<TransientStep>, t_next: f64, snapshot: TransientStep) {
-        if t_next >= self.options.record_from {
+        if self.options.keep == Keep::Every && t_next >= self.options.record_from {
             let snapshot = if self.options.record_device_state
                 || !self.options.probe_selection.requests.is_empty()
             {
@@ -775,7 +805,16 @@ impl<'a> TransientSolver<'a> {
         result
     }
 
+    /// The step a converged attempt carries: empty under `Keep::Last`, where nothing is kept
+    /// per step and the one kept step is built after the loop.
     fn snapshot(&self, time: f64) -> TransientStep {
+        if self.options.keep == Keep::Last {
+            return TransientStep::new(time, HashMap::new());
+        }
+        self.full_snapshot(time)
+    }
+
+    fn full_snapshot(&self, time: f64) -> TransientStep {
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
         // A circuit of devices with no unknown has no solution row.
@@ -994,7 +1033,9 @@ impl TransientSolver<'_> {
         let net_names: std::sync::Arc<[String]> = digital.plan().nets.iter().map(|n| n.name.clone()).collect();
         let mut side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
         let settled = crate::analyses::adapters::Settled::default();
-        side.record_settled(settled.clone());
+        if self.options.keep == Keep::Every {
+            side.record_settled(settled.clone());
+        }
         // A host write made since the capture is written again at the re-entry.
         let mut rewrites = Vec::new();
         if let Some((_, state)) = &resume {
@@ -1084,6 +1125,10 @@ impl TransientSolver<'_> {
             bound.digital = side.into_digital();
         }
         ran?;
+        // Under `Keep::Last` the one step kept is the last, from the final solution.
+        if self.options.keep == Keep::Last {
+            run.steps.push(self.full_snapshot(run.st.current_time));
+        }
         // The last step carries the state a later run re-enters from.
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
         let nets = (0..bound.digital.plan().nets.len())
@@ -1182,7 +1227,7 @@ impl TransientSolver<'_> {
     /// truncation test reads.
     fn device_record_start(&mut self, run: &mut DeviceRun) {
         let start_time = self.options.start_time;
-        if start_time >= self.options.record_from {
+        if self.options.keep == Keep::Every && start_time >= self.options.record_from {
             run.steps.push(self.snapshot(start_time));
         }
         self.solver.reset_iteration_counter();
@@ -1230,7 +1275,7 @@ impl TransientSolver<'_> {
 
     /// The re-entry state of this run's first recorded step, at the start.
     pub(crate) fn device_mark_start(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::engine::Checkpoint, nets: Vec<Vec<u8>>) {
-        if run.steps.len() != 1 {
+        if self.options.keep == Keep::Last || run.steps.len() != 1 {
             return;
         }
         let state = self.device_reentry_state(run, digital, nets);
@@ -1242,7 +1287,7 @@ impl TransientSolver<'_> {
     /// moved since): the discrete side's settled state, the assembly's and the
     /// step bound. A step already carrying one, or a time not recorded, is left.
     pub(crate) fn device_capture(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::engine::Checkpoint, nets: Vec<Vec<u8>>) {
-        let due = run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.current_time);
+        let due = self.options.keep == Keep::Every && run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.current_time);
         if due {
             let state = self.device_reentry_state(run, digital, nets);
             run.steps.last_mut().expect("a recorded step").set_reentry(Some(state));
