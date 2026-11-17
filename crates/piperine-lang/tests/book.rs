@@ -336,3 +336,29 @@ fn the_welcome_chapter_says_a_bench_is_msl() {
         .collect();
     assert!(denies.is_empty(), "a sentence says testbenches or stimulus do not live in MSL: {denies:?}");
 }
+
+// ---- the chapter "From source to solver" and the cheat sheet know the command line (CLI-19 AC 9, 10) ----
+
+#[test]
+fn the_compiler_chapter_says_the_command_line_exists() {
+    // CLI-19 AC 9: the chapter `compiler` names `piperine run`, and its part on what comes next
+    // does not list the command line as work to come
+    let html = chapter(&content(), "compiler");
+    assert!(code_spans(&html).iter().any(|s| s.starts_with("piperine run")), "the chapter names `piperine run`");
+    assert!(code_spans(&html).iter().any(|s| s == "--backend"), "the chapter names `--backend` where a host picks a backend");
+    let next = html.split("<h3>What comes next</h3>").nth(1).expect("a part `What comes next`");
+    let text = plain(next.split("<h3>").next().unwrap_or(next));
+    assert!(!text.to_lowercase().contains("command line"), "what comes next still mentions the command line: {text}");
+    assert!(text.contains("Chapter 16"), "what comes next points at the chapter that runs a design: {text}");
+}
+
+#[test]
+fn the_cheat_sheet_lists_the_seven_commands() {
+    // CLI-19 AC 10: the cheat sheet names `piperine check`, `build`, `run`, `test`, `new`,
+    // `clean` and `fmt`
+    let html = chapter(&content(), "cheatsheet");
+    let text = plain(&html);
+    for command in ["check", "build", "run", "test", "new", "clean", "fmt"] {
+        assert!(text.contains(&format!("piperine {command}")), "the cheat sheet names `piperine {command}`");
+    }
+}

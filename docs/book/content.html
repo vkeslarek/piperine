@@ -3356,7 +3356,7 @@ flowchart TD
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built for analog circuits, with two backends. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end from source, under operating point, DC sweep, AC and transient, through the interpreter and as compiled Rust, and every result is compared with ngspice on both. The Rust backend also runs digital and mixed-signal models from source: type checking and elaboration take definitions, carriers, events, reactions, commits, enums, <code>match</code> and unknown values into the intermediate form, and a full buck converter runs with its loop closed. The interpreter stays analog only.</p>
+  <p>Built for analog circuits, with two backends. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end from source, under operating point, DC sweep, AC and transient, through the interpreter and as compiled Rust, and every result is compared with ngspice on both. The Rust backend also runs digital and mixed-signal models from source: type checking and elaboration take definitions, carriers, events, reactions, commits, enums, <code>match</code> and unknown values into the intermediate form, and a full buck converter runs with its loop closed. The interpreter stays analog only. The <code>piperine</code> command line drives all of it: <code>piperine run</code> takes a project or a lone file from source to results in one command (chapter 16).</p>
 </div>
 
 <h3>The stages</h3>
@@ -3443,7 +3443,7 @@ module Divider() {
 <li><strong>The Rust backend</strong> prints the whole design as one Rust source file, compiles it with the <code>rustc</code> it finds on the machine, and loads the library through the device ABI. It covers analog, digital and mixed forms. A design is compiled once and cached by a hash of everything that went into it, so a second run starts at once and nothing is compiled while a simulation runs. The cache entry is checked against its recorded hash before it is loaded.</li>
 </ul>
 
-<p>Both backends compute the same function, function by function, to the last bit; the ngspice comparisons run on both. A host picks one; the test suite picks with <code>PIPERINE_BACKEND</code> (<code>interp</code> or <code>rust</code>) and runs both when it is unset.</p>
+<p>Both backends compute the same function, function by function, to the last bit; the ngspice comparisons run on both. A host picks one: on the command line, <code>--backend</code> (<code>rust</code> by default, chapter 16); the test suite picks with <code>PIPERINE_BACKEND</code> (<code>interp</code> or <code>rust</code>) and runs both when it is unset.</p>
 
 <h3>Reading what runs</h3>
 
@@ -3460,7 +3460,7 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
 
 <h3>What comes next</h3>
 
-<p>The command line of chapter 16, so that a whole MSL project runs with one command, then one integrated test for every example of this book, and a single home for end-to-end scenarios compared with ngspice.</p>
+<p>One integrated test for every example of this book, run through the same entry point you use, and a single home for end-to-end scenarios compared with ngspice. Chapter 16, next, shows how you run a design today: the <code>piperine</code> command.</p>
 </section>
 
 <!-- ===================================================== 16 -->
@@ -4146,7 +4146,7 @@ piperine run f.msl --analysis op    # a lone file
 piperine test                   # judge every run's checks
 piperine build                  # compile ahead
 piperine fmt [--check]          # format, comments kept
-piperine clean [--cache]</pre></div>
+piperine clean [--cache]        # remove target/ (and the cache)</pre></div>
 
 <div class="cheat-card"><h4>A run, and its flags</h4>
 <pre data-lang="toml">[run.step]
@@ -4157,7 +4157,8 @@ print_step = 1e-6
 print = ["vout"]</pre>
 <pre data-lang="sh">--stream trip   --records r.jsonl
 --csv t.csv     --plot p.svg
---param r1.r=2200   --backend interp</pre>
+--param r1.r=2200   --backend interp
+--all-checks    --from 4e-6</pre>
 <pre data-lang="text">@<time> <instance> <stream> field=value …</pre></div>
 </div>
 

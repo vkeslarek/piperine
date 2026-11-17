@@ -1254,9 +1254,9 @@ T38
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test book`: `the_compiler_chapter_says_the_command_line_exists`, `the_cheat_sheet_lists_the_seven_commands`
-- [ ] Gate check passes: Build (see Gate Check Commands)
-- [ ] Test count: the 2 test(s) named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test book`: `the_compiler_chapter_says_the_command_line_exists`, `the_cheat_sheet_lists_the_seven_commands`
+- [x] Gate check passes: Build (see Gate Check Commands)
+- [x] Test count: the 2 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build
