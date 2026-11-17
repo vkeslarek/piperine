@@ -545,8 +545,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `appendix_c_states_the_solver_hygiene_numerics` passes under `**Run spectext**`
-- [ ] Gate check passes: Quick
+- [x] `appendix_c_states_the_solver_hygiene_numerics` passes under `**Run spectext**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

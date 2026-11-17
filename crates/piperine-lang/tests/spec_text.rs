@@ -1594,3 +1594,31 @@ fn part_v_states_the_solver_hygiene_rules() {
     }
     assert!(!text.contains("on node potentials and branch-flow unknowns against their natures' `abstol`, and on a `ddt` state"), "the node basis of rule 1 is gone");
 }
+
+#[test]
+fn appendix_c_states_the_solver_hygiene_numerics() {
+    // HYG-17 AC 2 (Q1 to Q5): the convergence, truncation, step-control and restart rows of C.2,
+    // the defaults of C.2.1 and item 4 of C.2.2 state the decided numerics
+    let text = flat(&spec("appendix_c_implementation.md"));
+    for fact in [
+        // Q4
+        "no damping by default (the plan's `NoDamping`); `NodeDamping`, ngspice's `niiter.c` rule",
+        "is opt-in through the plan's `NewtonStrategy`, which the DC and transient drivers both use",
+        // Q1, Q2
+        "error by Milne's device over the `ddt` states (§15.2 rule 1)",
+        "`reltol·max(|q|, chgtol)`",
+        "with no component skipped for the asymmetry of its two differences",
+        // Q3
+        "is retried there once, and the second failure ends the run with `E0508`",
+        "| step at the floor | one retry at `dt_min`, then `E0508` | §17.2 |",
+        "A step that fails the truncation error at `dt_min` is never accepted: it is retried there once and then fails with `E0508`, so §17.2.1 is never relaxed.",
+        // Q5
+        "at most `0.1·min(last step, gap to the next scheduled time point)`, first order",
+        "| restart step after a landing or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point;",
+    ] {
+        assert!(text.contains(fact), "Appendix C lacks \"{fact}\"");
+    }
+    for gone in ["an update much larger than the last is damped to the midpoint", "accepted with a warning", "Accepting an error rejection at `dt_min` is reported as a warning"] {
+        assert!(!text.contains(gone), "Appendix C still says \"{gone}\"");
+    }
+}
