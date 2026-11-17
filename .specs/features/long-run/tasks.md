@@ -169,10 +169,10 @@ T23
 
 **Done when**:
 
-- [ ] The golden file is written from a run made before any source of `piperine-solver` or `piperine-api` is changed; the commit holds the test and the golden only
-- [ ] The test `tran_rc_prints_the_bytes_it_printed_before_the_long_run` passes in `cargo test -p piperine-cli --test twins`
-- [ ] Gate check passes: Quick
-- [ ] Test count: the 1 test named above, and no existing test removed or edited
+- [x] The golden file is written from a run made before any source of `piperine-solver` or `piperine-api` is changed; the commit holds the test and the golden only
+- [x] The test `tran_rc_prints_the_bytes_it_printed_before_the_long_run` passes in `cargo test -p piperine-cli --test twins`
+- [x] Gate check passes: Quick
+- [x] Test count: the 1 test named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: quick
