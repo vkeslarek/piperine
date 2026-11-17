@@ -419,8 +419,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_non_finite_contribution_is_e0507_and_names_the_instance` passes under `**Run failure**`
-- [ ] Gate check passes: Quick
+- [x] `a_non_finite_contribution_is_e0507_and_names_the_instance` passes under `**Run failure**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

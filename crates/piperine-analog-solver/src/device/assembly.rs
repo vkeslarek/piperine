@@ -16,7 +16,7 @@ use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
 use super::watch::{Accepted, TraceRecord, Watched, accept_watches, record_traces, tolerance};
 use super::small_signal::{ComplexStamps, NoiseColumn, noise_columns, response, stamp_matrix, stimulus};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
-use crate::error::Error;
+use crate::error::{Error, RunCode, SolverDomain};
 use crate::math::linear::Stamp;
 use crate::netlist::AnalogReference;
 
@@ -635,11 +635,15 @@ pub(crate) fn run(
 /// reads is finite, and the strengths the sweep `need` names.
 fn check_finite(inst: &InstancePlan, st: &InstanceState, need: Need) -> Result<(), Error> {
     let fail = |cell: String, origin: &str, v: f64| {
-        Err(device_error(format!(
-            "instance `{}`: {cell} ({origin}) is not finite: {v} (abi.md A4; LRM §7.3.2.1: an analog \
-             expression shall not evaluate to NaN or infinity)",
-            inst.path
-        )))
+        Err(Error::run(
+            RunCode::E0507,
+            SolverDomain::Device,
+            format!(
+                "instance `{}`: {cell} ({origin}) is not finite: {v} (abi.md A4; §17.1 rule 4: a \
+                 contribution or stamp shall not be NaN or infinity)",
+                inst.path
+            ),
+        ))
     };
     for t in &inst.terms {
         let Some((fi, w)) = t.value else { continue };

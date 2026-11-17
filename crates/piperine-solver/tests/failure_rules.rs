@@ -218,13 +218,30 @@ fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
         .and_then(|mut dc| dc.solve())
         .map(|_| ())
         .expect_err("§15/§7.3.2.1: a NaN contribution must fail, never converge");
-    assert_rule(&err, SolverDomain::Device, "§7.3.2.1");
+    assert_rule(&err, SolverDomain::Device, "E0507");
     let text = err.to_string();
     assert!(
         text.contains("instance `nan`"),
-        "§7.3.2.1's message must name the offending instance (`nan`): {err}"
+        "E0507's message must name the offending instance (`nan`): {err}"
     );
-    assert!(text.contains(ORIGIN), "§7.3.2.1's message must name the cell's origin ({ORIGIN}): {err}");
+    assert!(text.contains(ORIGIN), "E0507's message must name the cell's origin ({ORIGIN}): {err}");
+}
+
+/// HYG-02 AC 3: the error is `E0507`, names the instance, and cites no LRM section.
+#[test]
+fn a_non_finite_contribution_is_e0507_and_names_the_instance() {
+    let mut b = CircuitBuilder::new("nan");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_resistor(&mut b, "r", 1000.0, &a, &gnd);
+    b.device(NAN.get_or_init(|| module::<NanSource>("NanSource")), "nan", &[], &[Port::Node(a), Port::Node(gnd)]);
+    let mut circuit = b.build().expect("build");
+
+    let err = dc_error(&mut circuit);
+    assert_eq!(err.code(), Some(RunCode::E0507), "{err}");
+    let text = err.to_string();
+    assert!(text.contains("instance `nan`"), "the instance is named: {err}");
+    assert!(!text.contains("7.3.2.1"), "no LRM section is cited: {err}");
 }
 
 // ─── §18 — non-positive period, negative pre-roll ─────────────────────────────
