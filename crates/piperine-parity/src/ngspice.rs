@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::golden::Golden;
+use crate::golden::{Complex, Golden};
 use crate::scratch::ScratchDir;
 
 /// The name of the environment variable that picks the binary or turns the comparison off.
@@ -23,6 +23,14 @@ pub enum Lookup {
 pub enum Reference {
     Golden(Golden),
     Skipped,
+}
+
+/// The value of one `name = value` line of ngspice's `print`: a real (`v1#input_impedance =
+/// 4.000000e+03`) or a complex number, `re,im` (`pole(1) = -1.33333e+03,0.000000e+00`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Printed {
+    Real(f64),
+    Complex(Complex),
 }
 
 /// A located ngspice (or the decision to skip it).
@@ -72,6 +80,23 @@ impl Ngspice {
             Ok(lookup) => Ngspice { lookup },
             Err(message) => panic!("{message}"),
         }
+    }
+
+    /// Every `name = value` line of `stdout` whose value is a number or a `re,im` pair, in order;
+    /// a line of any other shape (a banner, `Note: ...`, an expression) is not one.
+    pub fn print_lines(stdout: &str) -> Vec<(String, Printed)> {
+        let number = |text: &str| text.trim().parse::<f64>().ok();
+        stdout
+            .lines()
+            .filter_map(|line| {
+                let (name, value) = line.split_once('=')?;
+                let value = match value.split_once(',') {
+                    Some((re, im)) => Printed::Complex(Complex { re: number(re)?, im: number(im)? }),
+                    None => Printed::Real(number(value)?),
+                };
+                Some((name.trim().to_string(), value))
+            })
+            .collect()
     }
 
     /// The line a skipped fixture prints.
@@ -128,6 +153,23 @@ mod tests {
         let directory = tempfile::tempdir().expect("temp dir");
         std::fs::write(directory.path().join("ngspice"), "").expect("write a stand-in binary");
         directory
+    }
+
+    #[test]
+    fn print_lines_parse_to_named_values() {
+        // the lines ngspice 47 prints for `.tf`, `.pz` (`vol pz`) and `.sens`, between banners
+        let stdout = "Circuit: * tf\nNo. of Data Rows : 1\ntransfer_function = 7.500000e-01\noutput_impedance_at_v(out) = 7.500000e+02\n\
+                      v1#input_impedance = 4.000000e+03\npole(1) = -1.33333e+03,0.000000e+00\nzero(1) = -1.00000e+06,-2.5e+00\n\
+                      r1 = -1.87500e-03\nNote: Simulation executed from .control section \nbad = oops\nalso = 1.0,x\n";
+        let lines = Ngspice::print_lines(stdout);
+        let names: Vec<&str> = lines.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["transfer_function", "output_impedance_at_v(out)", "v1#input_impedance", "pole(1)", "zero(1)", "r1"]);
+        assert_eq!(lines[0].1, Printed::Real(0.75));
+        assert_eq!(lines[1].1, Printed::Real(750.0));
+        assert_eq!(lines[2].1, Printed::Real(4000.0));
+        assert_eq!(lines[3].1, Printed::Complex(Complex { re: -1333.33, im: 0.0 }));
+        assert_eq!(lines[4].1, Printed::Complex(Complex { re: -1e6, im: -2.5 }));
+        assert_eq!(lines[5].1, Printed::Real(-1.875e-3));
     }
 
     #[test]

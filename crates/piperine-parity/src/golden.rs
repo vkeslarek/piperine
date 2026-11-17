@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::ngspice::{Ngspice, Printed};
 use crate::scratch::ScratchDir;
 
 /// A complex `wrdata` value: real and imaginary part.
@@ -81,6 +82,17 @@ impl Golden {
             });
         }
         panic!("{}: ngspice printed no value for {name}\n{}", self.fixture, self.captured());
+    }
+
+    /// The value ngspice printed as `<name> = <re>,<im>` (a real value reads as `im` 0). Fails when
+    /// no such line exists.
+    pub fn printed_complex(&self, name: &str) -> Complex {
+        let found = Ngspice::print_lines(&self.stdout).into_iter().find(|(printed, _)| printed == name);
+        match found {
+            Some((_, Printed::Complex(value))) => value,
+            Some((_, Printed::Real(re))) => Complex { re, im: 0.0 },
+            None => panic!("{}: ngspice printed no value for {name}\n{}", self.fixture, self.captured()),
+        }
     }
 
     /// The rows `x y` of a real `wrdata` export.

@@ -372,9 +372,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline test `ngspice::tests::print_lines_parse_to_named_values` over the lines quoted in `contract.md`
-- [ ] Gate check passes: Quick (`Run paritylib`)
-- [ ] Test count: 1 new test
+- [x] Inline test `ngspice::tests::print_lines_parse_to_named_values` over the lines quoted in `contract.md`
+- [x] Gate check passes: Quick (`Run paritylib`)
+- [x] Test count: 1 new test
 
 **Tests**: unit
 **Gate**: quick
