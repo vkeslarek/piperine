@@ -230,6 +230,7 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 6. WHEN a `require` of the standard library fails in a reaction THEN the system SHALL print one record of the stream `checks` with `pass=false`.
 7. The system SHALL print every record line of an analysis before the result table of that analysis.
 8. WHEN a design holds no `emit!` site THEN the system SHALL print no record line.
+9. (Amended 2026-11-16, user: "Só falhas por padrão (Recommended)".) The system SHALL NOT print, on the terminal, a record of the stream `checks` whose `pass` is true, unless `all_checks = true` or `--all-checks` is given; a `checks` record whose `pass` is false or unknown always prints, and every other stream prints as before. The filter is for the terminal only: `records = FILE` keeps every record.
 
 **Independent Test**: the bench of `examples/rc` prints one `trip` record when the output crosses 0.5 V.
 
@@ -266,9 +267,10 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 
 1. The system SHALL hold in `examples/buck` a bench `benches/startup.msl` and the runs `idle` and `startup` in its `Piperine.toml`.
 2. WHEN `piperine run startup` runs in `examples/buck` THEN the system SHALL complete on the Rust backend and print, in the last row of its table, the value 128 for the controller's reference.
-3. WHEN `piperine run startup` runs in `examples/buck` THEN the system SHALL print no `checks` record with `pass=false`.
+3. WHEN `piperine run startup` runs in `examples/buck` THEN the system SHALL print no `checks` record with `pass=false` (a passing check is hidden by default, CLI-06 AC 9, so no `checks` line is printed at all), and `--records FILE` SHALL keep more than 1000 passing checks of the DPWM's monitor, so the claim is not vacuous.
 4. WHEN `piperine run idle` runs in `examples/buck` THEN the system SHALL complete and print the supervisor's mode as 0 in every row.
 5. WHEN `piperine test` runs in `examples/buck` THEN the system SHALL exit 0.
+6. (Amended 2026-11-16.) WHEN `piperine run idle` or `piperine run startup` runs in `examples/buck` with no flag THEN the system SHALL print at most 16 lines on standard output.
 
 **Independent Test**: `cd examples/buck && piperine run startup`.
 

@@ -76,12 +76,35 @@ fn startup_ends_with_the_reference_at_128() {
 
 #[test]
 fn startup_prints_no_failed_check() {
-    // CLI-08 AC 3: no `checks` record with pass=false (the DPWM's no-shoot-through monitor
-    // checks at every clock of the 600 us); and some pass=true, so the claim is not vacuous
-    let checks: Vec<&str> = startup().lines().filter(|l| l.starts_with('@') && l.split_whitespace().nth(2) == Some("checks")).collect();
+    // CLI-08 AC 3: a passing check is hidden on the terminal (CLI-06 AC 9) and a failing one
+    // would print, so no ` checks ` line on standard output means no failed check; the claim is
+    // not vacuous: the DPWM's no-shoot-through monitor checks at every clock of the 600 us, and
+    // `--records` keeps every record, all of them passing
+    assert!(!startup().lines().any(|l| l.starts_with('@') && l.split_whitespace().nth(2) == Some("checks")), "a checks line was printed");
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("startup.jsonl");
+    let out = Command::new(env!("CARGO_BIN_EXE_piperine"))
+        .args(["run", "startup", "--records"])
+        .arg(&file)
+        .current_dir(buck())
+        .env("PIPERINE_CACHE_DIR", cache())
+        .env_remove("PIPERINE_BACKEND")
+        .output()
+        .expect("run piperine");
+    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", String::from_utf8_lossy(&out.stderr));
+    let records = std::fs::read_to_string(&file).expect("the records file");
+    let checks: Vec<&str> = records.lines().filter(|l| l.contains("\"stream\":\"checks\"")).collect();
     assert!(checks.len() > 1000, "the monitor checks at every clock: {} records", checks.len());
-    let failed: Vec<&&str> = checks.iter().filter(|l| l.contains("pass=false")).collect();
-    assert!(failed.is_empty(), "{} failed checks, the first: {:?}", failed.len(), failed.first());
+    let failed: Vec<&&str> = checks.iter().filter(|l| !l.contains("\"pass\":true")).collect();
+    assert!(failed.is_empty(), "{} checks not passing, the first: {:?}", failed.len(), failed.first());
+}
+
+#[test]
+fn the_buck_runs_print_at_most_16_lines() {
+    // CLI-08 AC 6: with no flag, `idle` and `startup` print at most 16 lines
+    for (name, out) in [("startup", startup().to_string()), ("idle", run("idle"))] {
+        assert!(out.lines().count() <= 16, "{name} printed {} lines", out.lines().count());
+    }
 }
 
 #[test]

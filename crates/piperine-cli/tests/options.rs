@@ -136,7 +136,7 @@ fn the_stream_flag_keeps_only_that_stream() {
     // CLI-12 AC 1: `step` emits `trip` (the monitor's `emit!`) and `checks` (its `require`);
     // `--stream trip` prints the `trip` record and no other; the full path of the stream keeps
     // the same line
-    let all = stdout_of(&piperine_in(&rc(), &["run", "step"]));
+    let all = stdout_of(&piperine_in(&rc(), &["run", "step", "--all-checks"]));
     assert!(all.lines().any(|l| l.starts_with('@') && l.contains(" checks ")), "the unfiltered run prints a checks record:\n{all}");
     let out = stdout_of(&piperine_in(&rc(), &["run", "step", "--stream", "trip"]));
     let records: Vec<&str> = out.lines().filter(|l| l.starts_with('@')).collect();
@@ -194,4 +194,39 @@ fn csv_and_records_leave_the_header_and_the_wrote_line() {
     let lines: Vec<&str> = out.lines().filter(|l| !l.is_empty()).collect();
     assert_eq!(lines, ["run step: transient, top Step, backend rust", "wrote o.csv (6 rows)"], "{out}");
     assert!(project.path().join("o.csv").is_file() && project.path().join("r.jsonl").is_file());
+}
+
+/// A lone bench whose monitor passes one check (`ok`) and fails one (`bad`) at 1 us.
+fn two_checks() -> (tempfile::TempDir, PathBuf) {
+    let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule M() {}\ndigital for M { on at(1u) { require(\"ok\", true); require(\"bad\", false); emit!(\"note\", n = 1); } }\n\nmodule Top() {\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let m = M();\n}\n";
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("checks.msl");
+    std::fs::write(&file, text).expect("write");
+    (dir, file)
+}
+
+#[test]
+fn a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both() {
+    // CLI-06 AC 9 (user, 2026-11-16): by default the terminal hides `checks` records with
+    // pass=true and shows pass=false, other streams stay; `--all-checks` shows both; the
+    // records file keeps every record either way
+    let (dir, file) = two_checks();
+    let file = file.to_str().expect("path");
+    let base = ["run", file, "--top", "Top", "--analysis", "transient", "--stop", "3e-6", "--max-step", "1e-7"];
+    let records = |extra: &[&str]| -> Vec<String> {
+        let args: Vec<&str> = base.iter().chain(extra).copied().collect();
+        stdout_of(&piperine_in(dir.path(), &args)).lines().filter(|l| l.starts_with('@')).map(str::to_string).collect()
+    };
+    let default = records(&[]);
+    assert_eq!(default.len(), 2, "{default:?}");
+    assert!(default.iter().any(|l| l.contains("checks") && l.contains("pass=false") && l.contains("\"bad\"")), "{default:?}");
+    assert!(default.iter().any(|l| l.contains(" note ")), "{default:?}");
+    assert!(!default.iter().any(|l| l.contains("pass=true")), "{default:?}");
+    let all = records(&["--all-checks"]);
+    assert_eq!(all.len(), 3, "{all:?}");
+    assert!(all.iter().any(|l| l.contains("pass=true") && l.contains("\"ok\"")), "{all:?}");
+    stdout_of(&piperine_in(dir.path(), &[base.as_slice(), &["--records", "r.jsonl"]].concat()));
+    let kept = std::fs::read_to_string(dir.path().join("r.jsonl")).expect("r.jsonl");
+    assert_eq!(kept.lines().count(), 3, "the file keeps the passing check:\n{kept}");
+    assert!(kept.contains("\"pass\":true") && kept.contains("\"pass\":false"), "{kept}");
 }

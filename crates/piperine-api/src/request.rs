@@ -82,6 +82,8 @@ pub struct Overrides {
     pub csv: Option<PathBuf>,
     pub records: Option<PathBuf>,
     pub plot: Option<PathBuf>,
+    /// `--all-checks`: print the passing `checks` records too.
+    pub all_checks: Option<bool>,
 }
 
 /// One run request, validated.
@@ -98,6 +100,8 @@ pub struct RunSpec {
     pub csv: Option<PathBuf>,
     pub records: Option<PathBuf>,
     pub plot: Option<PathBuf>,
+    /// Whether the terminal shows the passing `checks` records too (CLI-06 AC 7).
+    pub all_checks: bool,
     /// What spelled the request, kept so that flags can be merged and validated again.
     keys: Keys,
     /// The manifest the keys were read from; `None` for a request made from flags.
@@ -147,15 +151,16 @@ struct Keys {
     csv: Option<Given<PathBuf>>,
     records: Option<Given<PathBuf>>,
     plot: Option<Given<PathBuf>>,
+    all_checks: Option<Given<bool>>,
 }
 
 type Key<'i> = Spanned<DeString<'i>>;
 type Value<'i> = Spanned<DeValue<'i>>;
 
 /// The keys of a run table, in the order CLI-03 AC 1 lists them.
-const RUN_KEYS: [&str; 19] = [
+const RUN_KEYS: [&str; 20] = [
     "bench", "top", "analysis", "stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "print", "streams",
-    "params", "backend", "csv", "records", "plot",
+    "params", "backend", "csv", "records", "plot", "all_checks",
 ];
 
 /// The keys whose meaning belongs to an analysis; each analysis reads the ones `reads` lists.
@@ -262,6 +267,7 @@ impl Source {
         let v = value.get_ref();
         let text = || v.as_str().map(|s| Given { value: s.to_string(), at }).ok_or_else(|| wrong("a string"));
         let path = || v.as_str().map(|s| Given { value: PathBuf::from(s), at }).ok_or_else(|| wrong("a string"));
+        let flag = || v.as_bool().map(|b| Given { value: b, at }).ok_or_else(|| wrong("a boolean"));
         let real = || number(v).map(|n| Given { value: n, at }).ok_or_else(|| wrong("a number"));
         let count = || i64_of(v).and_then(|n| u32::try_from(n).ok()).map(|n| Given { value: n, at }).ok_or_else(|| wrong("a whole number"));
         let strings = || {
@@ -294,6 +300,7 @@ impl Source {
             "csv" => keys.csv = Some(path()?),
             "records" => keys.records = Some(path()?),
             "plot" => keys.plot = Some(path()?),
+            "all_checks" => keys.all_checks = Some(flag()?),
             _ => {
                 let message = format!("unknown key `{name}` in a run: a run takes {}", RUN_KEYS.join(", "));
                 return Err(self.fault(Some(span(key.span())), message, "not a key of a run"));
@@ -327,6 +334,7 @@ impl Keys {
         over(&mut self.csv, &o.csv);
         over(&mut self.records, &o.records);
         over(&mut self.plot, &o.plot);
+        over(&mut self.all_checks, &o.all_checks);
         if !o.print.is_empty() {
             self.print = o.print.clone();
         }
@@ -475,6 +483,7 @@ impl Keys {
             csv: self.csv.as_ref().map(|g| g.value.clone()),
             records: self.records.as_ref().map(|g| g.value.clone()),
             plot: self.plot.as_ref().map(|g| g.value.clone()),
+            all_checks: self.all_checks.as_ref().is_some_and(|g| g.value),
             keys: self,
             source,
         })
@@ -577,6 +586,7 @@ backend = "rust"
 csv = "out/step.csv"
 records = "out/step.jsonl"
 plot = "out/step.svg"
+all_checks = true
 
 [run.iv]
 analysis = "dc"
@@ -612,11 +622,12 @@ points = 5
         assert_eq!(step.csv.as_deref(), Some(Path::new("out/step.csv")));
         assert_eq!(step.records.as_deref(), Some(Path::new("out/step.jsonl")));
         assert_eq!(step.plot.as_deref(), Some(Path::new("out/step.svg")));
+        assert!(step.all_checks && !runs[1].all_checks, "`all_checks` is off unless a run turns it on");
         assert_eq!(runs[1].analysis, Analysis::Dc { sweep: "v1.dc".into(), from: -1.0, to: 0.8, step: 0.05 });
         assert_eq!(runs[2].analysis, Analysis::Ac { from: 1e3, to: 1e7, grid: Grid::PerDecade(10) });
         assert_eq!(runs[3].analysis, Analysis::Ac { from: 1e3, to: 5e3, grid: Grid::Points(5) });
-        // the nineteen keys, no more
-        assert_eq!(RUN_KEYS.len(), 19);
+        // the nineteen keys of CLI-03 AC 1 and `all_checks` (CLI-06 AC 7), no more
+        assert_eq!(RUN_KEYS.len(), 20);
         // a manifest with no run table has no run
         assert_eq!(read("").map(|r| r.len()).ok(), Some(0));
     }

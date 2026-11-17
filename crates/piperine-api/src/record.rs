@@ -142,6 +142,14 @@ impl Streams {
     }
 }
 
+impl Record {
+    /// Whether this is a passing check: a record of the reserved `checks` stream whose `pass`
+    /// is true. A failing check, an unknown one and a `target` (which has no `pass`) are not.
+    pub fn is_passing_check(&self) -> bool {
+        self.stream == "checks" && self.fields.iter().any(|(name, field)| name == "pass" && *field == Field::Bool(true))
+    }
+}
+
 impl Field {
     fn of(cell: Cell) -> Field {
         match cell {

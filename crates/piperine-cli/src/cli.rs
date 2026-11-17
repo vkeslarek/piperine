@@ -116,6 +116,7 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "csv", kind: ArgKind::Path { value: "FILE" }, help: "write the table as CSV to this file" },
             ArgRow { id: "records", kind: ArgKind::Path { value: "FILE" }, help: "write the records as JSON Lines to this file" },
             ArgRow { id: "plot", kind: ArgKind::Path { value: "FILE" }, help: "write the plot as SVG to this file" },
+            ArgRow { id: "all-checks", kind: ArgKind::Switch, help: "print the passing checks too; a failing check always prints" },
         ],
     },
     CommandRow {
@@ -243,6 +244,7 @@ impl Cli {
             csv: path("csv"),
             records: path("records"),
             plot: path("plot"),
+            all_checks: m.get_flag("all-checks").then_some(true),
         }
     }
 
@@ -299,7 +301,7 @@ mod tests {
         // (`--print` and `--stream`, `--param` for the three list keys), and no flag besides
         // those and `--project` exists (`--help` is clap's, added when the command is built)
         let flags = [
-            "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot",
+            "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot", "all-checks",
         ];
         let command = Cli::command();
         let run = command.find_subcommand("run").expect("a `run` command");
@@ -312,7 +314,7 @@ mod tests {
         let args = [
             "piperine", "run", "x", "--bench", "b.msl", "--top", "Top", "--analysis", "transient", "--stop", "1e-3", "--max-step", "1e-6", "--print-step", "1e-5", "--sweep", "v1.dc", "--from", "-1", "--to", "5",
             "--step", "0.5", "--per-decade", "10", "--points", "20", "--print", "a", "--print", "b", "--stream", "s1", "--stream", "s2", "--param", "r1.r=2000", "--param", "c1.c=1e-9", "--backend", "interp",
-            "--csv", "o.csv", "--records", "r.jsonl", "--plot", "p.svg",
+            "--csv", "o.csv", "--records", "r.jsonl", "--plot", "p.svg", "--all-checks",
         ];
         let Ok(Invocation::Run { target, overrides, .. }) = Cli::parse(args) else { panic!("the flags parse as a run") };
         assert_eq!(target.as_deref(), Some("x"));
@@ -336,6 +338,7 @@ mod tests {
             csv: Some("o.csv".into()),
             records: Some("r.jsonl".into()),
             plot: Some("p.svg".into()),
+            all_checks: Some(true),
         };
         assert_eq!(overrides, want);
         // a flag not given leaves its field alone, and a bad value is a usage error

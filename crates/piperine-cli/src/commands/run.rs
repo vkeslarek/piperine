@@ -55,7 +55,7 @@ impl From<io::Error> for Stop {
 /// Where the records of a run go the moment the solver delivers them.
 enum Destination {
     /// Standard output, as text lines.
-    Terminal(Out),
+    Terminal { out: Out, all_checks: bool },
     /// A file, as JSON Lines; `path` is the name the user gave it.
     File { file: io::BufWriter<std::fs::File>, path: PathBuf },
 }
@@ -73,7 +73,9 @@ impl RecordSink for LiveRecords {
             return;
         }
         let written = match &mut self.to {
-            Destination::Terminal(out) => {
+            // CLI-06 AC 7: the terminal hides a passing check unless asked; a file keeps every record
+            Destination::Terminal { all_checks: false, .. } if record.is_passing_check() => return,
+            Destination::Terminal { out, .. } => {
                 let mut out = out.borrow_mut();
                 RecordLine::write(record, &mut *out).and_then(|()| out.flush())
             }
@@ -150,7 +152,7 @@ impl RunCommand {
                 let file = std::fs::File::create(base.join(path)).map_err(|error| Failure::Io { path: path.clone(), error })?;
                 Destination::File { file: io::BufWriter::new(file), path: path.clone() }
             }
-            None => Destination::Terminal(out.clone()),
+            None => Destination::Terminal { out: out.clone(), all_checks: spec.all_checks },
         };
         {
             let mut out = out.borrow_mut();

@@ -95,7 +95,8 @@ fn records_come_before_the_table() {
     // CLI-06 AC 7 and CLI-06 AC 1: every record line comes before the table; the RC's monitor
     // (`examples/rc/benches/step.msl`) emits `trip` with `v = v(a)` when the output crosses its
     // `level` 0.5, which a 1 kOhm / 1 nF step does at t = tau * ln 2
-    let out = stdout_of(&piperine(&["run", "step"]));
+    // (`--all-checks`: a passing check is hidden on the terminal otherwise, CLI-06 AC 9)
+    let out = stdout_of(&piperine(&["run", "step", "--all-checks"]));
     let lines: Vec<&str> = out.lines().collect();
     let table = lines.iter().position(|l| l.starts_with("time")).unwrap_or_else(|| panic!("no table in\n{out}"));
     let records: Vec<&str> = lines.iter().copied().filter(|l| l.starts_with('@')).collect();

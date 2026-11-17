@@ -38,6 +38,11 @@ The command line and the project layer run a complete MSL project end to end: `P
 - "O lang-server é o menos importante, vai ficar para bem depois." The language server leaves this feature: CLI-25 and tasks T50 to T54 are removed, `piperine-lang-server` and `editors/` stay untouched, and the crate stays outside `default-members`. This supersedes the answer to Q7. `Project::check_with` (the overlay of open buffers) was needed only by the server and is dropped with it.
 - "Finalizando o cli + api na feature, pode fazer o wiring do root e criar os testes integrados. Eu recomendo que tudo que está no livro tenha ao menos 1 teste integrado". This is the next feature (root e2e), recorded in the spec under "After this feature". This feature already holds its own Book chapter's blocks by tests.
 
+### Passing checks on the terminal (user, 2026-11-16, relayed by the coordinator)
+
+- Question: how should the CLI handle the buck's `checks` stream, which writes one passing record per clock (about 120 000 lines for `startup`) against T21's "at most 16 lines"? The user chose "Só falhas por padrão (Recommended)".
+- Decided: the terminal does not print `checks` records with `pass=true` (records of `require`, the DPWM's `Never` monitor); records with `pass=false` (or unknown) always print; the other streams stay live. A run key `all_checks` and the flag `--all-checks` print them all. `--records FILE` keeps every record: the filter is for the terminal only. Spec: CLI-06 AC 9, CLI-08 AC 3 and 6.
+
 ### What earlier decisions already fix
 
 - Packages follow Cargo, no search path, `std` embedded, `piperine-project` is manifest, dependencies and lockfile (MD-58, MD-59; user: "-I é ruim demais, faremos modelo RUST 100%").
