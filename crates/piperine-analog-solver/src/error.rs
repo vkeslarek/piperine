@@ -172,10 +172,11 @@ impl Error {
         self
     }
 
-    /// Stamp the time of the failure on a run error; other errors pass through.
+    /// Stamp the time of the failure on a run error, unless the failing step
+    /// already did (its own time is the precise one); other errors pass through.
     pub fn with_time(mut self, time: f64) -> Error {
         if let Error::Run(run) = &mut self {
-            run.time = Some(time);
+            run.time.get_or_insert(time);
         }
         self
     }

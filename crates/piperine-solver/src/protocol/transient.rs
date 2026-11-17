@@ -239,7 +239,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             ));
         }
         let stop = self.time(stop_tick);
-        let at = |t: f64, e: Error| Error::wrap(SolverDomain::Transient, format!("at t = {t:e} s"), e);
+        // A run error carries its own code and time: it is stamped, never wrapped.
+        let at = |t: f64, e: Error| match e {
+            Error::Run(_) => e.with_time(t),
+            other => Error::wrap(SolverDomain::Transient, format!("at t = {t:e} s"), other),
+        };
         let mut forced: Option<Tick> = None;
         let mut rejections = 0u32;
         while self.now_tick < stop_tick {

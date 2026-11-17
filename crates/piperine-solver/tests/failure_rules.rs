@@ -15,6 +15,9 @@
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
 #[allow(dead_code)]
+#[path = "helpers/abi_mixed.rs"]
+mod abi_mixed;
+#[allow(dead_code)]
 #[path = "helpers/partials.rs"]
 mod partials;
 
@@ -24,7 +27,8 @@ use std::sync::{Arc, OnceLock};
 
 use abi_devices::{add_capacitor, add_resistor, add_vsrc};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, op, part, role};
+use piperine_abi::layout::BIT;
+use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, ambient, cell, op, part, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{Error, Port, SolverDomain};
@@ -322,6 +326,11 @@ fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function_except("NanSource", NAN.get_or_init(|| module::<NanSource>("NanSource")), &[(0, Fixture::NonFinite)]);
     // The fixture of "every strategy failed": its conductance flips at every call.
     partials::verify_every_function_except("Oscillator", OSC.get_or_init(|| module::<Oscillator>("Oscillator")), &[(0, Fixture::Impure)]);
+    // The fixtures of the step floor: their conductance flips once they trip.
+    // (checked at time 0, where it is a plain resistor)
+    partials::verify_every_function_with("LateOscillator", LATE.get_or_init(|| module::<LateOscillator>("LateOscillator")), &[(0, 2, 0.0)]);
+    // (checked at time 0, where the jump fixture is a plain resistor)
+    partials::verify_every_function_with("JumpOscillator", JUMP.get_or_init(|| module::<JumpOscillator>("JumpOscillator")), &[(0, 3, 0.0)]);
 }
 
 // ─── §17.1 E0503 — a singular solve names the unknowns of the singular part ───
@@ -388,4 +397,147 @@ fn an_instance_is_named_once_in_a_singular_report() {
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     assert_eq!(run.names, vec!["node of c1.p, c2.p+n".to_string()], "{err}");
     assert_eq!(err.to_string().matches("c2").count(), 1, "{err}");
+}
+
+// ─── §17.1 E0508 / E0504 — a step that fails Newton at the floor ──────────────
+
+/// A resistor that turns into the oscillator (its conductance flips sign every
+/// evaluation, so no Newton iteration settles) once it trips: after 2e-7 s
+/// (`LateOscillator`) or while its `go` pin is HIGH in a run (`JumpOscillator`).
+struct LateOscillator {
+    flip: AtomicBool,
+}
+struct JumpOscillator {
+    flip: AtomicBool,
+}
+static LATE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static LATE: OnceLock<Module> = OnceLock::new();
+static JUMP_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static JUMP: OnceLock<Module> = OnceLock::new();
+
+/// pins: p, n (PORT continuous), go (PORT BIT, jump variant only); one FLOW term.
+/// The function reads [p, n, TIME] or [p, n, go, TIME].
+fn tripping_shape(reads_go: bool) -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let time = Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE };
+    let mut extra = Vec::new();
+    if reads_go {
+        let go = s.pin(PinSpec::discrete("go", role::PORT, &BIT));
+        extra.push(cell_of(cell::PIN, go));
+    }
+    extra.push(time);
+    let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: [vec![cell_of(cell::PIN, p), cell_of(cell::PIN, n)], extra].concat(),
+        writes: vec![cell_of(cell::TERM, t0)],
+        partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+/// The current of a resistor of 1 kOhm, or of the oscillator when `trips`.
+fn tripping_current(flip: &AtomicBool, trips: bool, cx: &mut Eval) {
+    let v = cx.f64(0) - cx.f64(1);
+    let (g, rhs) = if trips {
+        let flipped = !flip.fetch_xor(true, Ordering::SeqCst);
+        if flipped { (1e-3, 1.0) } else { (1e3, -1.0) }
+    } else {
+        (1e-3, 0.0)
+    };
+    cx.set(0, g * v - rhs);
+    cx.jac().copy_from_slice(&[g, -g]);
+}
+
+impl Device for LateOscillator {
+    fn prototype() -> &'static Shape<'static> {
+        LATE_SHAPE.get_or_init(|| tripping_shape(false)).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((LateOscillator { flip: AtomicBool::new(false) }, Arc::clone(LATE_SHAPE.get_or_init(|| tripping_shape(false)))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let trips = cx.f64(2) > 2.0e-7;
+        tripping_current(&self.flip, trips, cx);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+impl Device for JumpOscillator {
+    fn prototype() -> &'static Shape<'static> {
+        JUMP_SHAPE.get_or_init(|| tripping_shape(true)).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((JumpOscillator { flip: AtomicBool::new(false) }, Arc::clone(JUMP_SHAPE.get_or_init(|| tripping_shape(true)))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        // `go` HIGH once the run is under way (the operating point is at time 0).
+        let trips = cx.bytes(2)[0] != 0 && cx.f64(3) > 0.0;
+        tripping_current(&self.flip, trips, cx);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// The error of a transient to 1 µs that starts at 100 ns and may shrink to 10 ns.
+fn tran_error(circuit: &mut CircuitInstance) -> Error {
+    let options = TransientAnalysisOptions::new(1.0e-6, 1.0e-7).with_dt_min(1.0e-8);
+    circuit
+        .transient(options, Context::default())
+        .and_then(|mut tran| tran.solve())
+        .map(|_| ())
+        .expect_err("a step no Newton iteration settles must fail")
+}
+
+/// HYG-03 AC 5: a Newton failure at the floor is `E0508` with its time and the
+/// unknowns that failed.
+#[test]
+fn a_step_that_fails_newton_at_the_floor_is_e0508_with_its_time() {
+    let mut b = CircuitBuilder::new("late");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_resistor(&mut b, "r", 1e6, &a, &gnd);
+    b.device(LATE.get_or_init(|| module::<LateOscillator>("LateOscillator")), "late", &[], &[Port::Node(a), Port::Node(gnd)]);
+    let mut circuit = b.build().expect("build");
+
+    let err = tran_error(&mut circuit);
+    assert_eq!(err.code(), Some(RunCode::E0508), "{err}");
+    let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+    let t = run.time.expect("the time of the failing step");
+    assert!(t > 2.0e-7 && t <= 1.0e-6, "the failing step lies after the trip time: {t:e}");
+    assert_eq!(run.names, vec!["node of r.p, late.p".to_string()], "{err}");
+}
+
+/// HYG-03 AC 6: the step that reads a jump (the first after a `Restart::Integrator`
+/// delivery) fails as `E0504`, naming the net whose delivery it reads.
+#[test]
+fn a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier() {
+    let mut b = CircuitBuilder::new("jump");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_resistor(&mut b, "r", 1e6, &a, &gnd);
+    b.device(abi_mixed::timer(), "clk", &[("half", ParamValue::Real(5.0e-7))], &[Port::Net("go".to_string())]);
+    b.device(
+        JUMP.get_or_init(|| module::<JumpOscillator>("JumpOscillator")),
+        "jump",
+        &[],
+        &[Port::Node(a), Port::Node(gnd), Port::Net("go".to_string())],
+    );
+    let mut circuit = b.build().expect("build");
+
+    let err = tran_error(&mut circuit);
+    assert_eq!(err.code(), Some(RunCode::E0504), "{err}");
+    let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+    assert!(run.detail.contains("go"), "the carrier is named: {err}");
+    let t = run.time.expect("the time of the failing step");
+    assert!(t > 5.0e-7 && t <= 1.0e-6, "the failing step lies after the delivery at 500 ns: {t:e}");
 }

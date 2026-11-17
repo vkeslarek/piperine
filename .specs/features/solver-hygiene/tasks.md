@@ -482,8 +482,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_step_that_fails_newton_at_the_floor_is_e0508_with_its_time` and `a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier` pass under `**Run failure**`
-- [ ] Gate check passes: Full
+- [x] `a_step_that_fails_newton_at_the_floor_is_e0508_with_its_time` and `a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier` pass under `**Run failure**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

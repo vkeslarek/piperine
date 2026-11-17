@@ -927,6 +927,9 @@ pub(crate) struct DeviceRun {
     /// A Newton failure at the step floor: reported by the next attempt, after
     /// the protocol restored its checkpoint for the rejection.
     failed: Option<piperine_analog_solver::error::Error>,
+    /// The nets whose values the last delivery changed under a restart, until
+    /// the step that reads them is accepted: what an `E0504` names.
+    delivered: Vec<String>,
     /// The session's tick length.
     spt: f64,
     /// The smallest `CAP` of the last accepted solution: the next step's bound.
@@ -1090,6 +1093,7 @@ impl TransientSolver<'_> {
             attempts: 0,
             op: None,
             failed: None,
+            delivered: Vec::new(),
             spt,
             cap: f64::INFINITY,
             net_names,
@@ -1481,7 +1485,7 @@ impl TransientSolver<'_> {
         if st.dt <= self.options.dt_min
             && let Err(e) = outcome
         {
-            run.failed = Some(e);
+            run.failed = Some(run.floor_error(e, t_next, post_set_step));
         }
         Ok(Attempt::Rejected)
     }
@@ -1594,6 +1598,7 @@ impl TransientSolver<'_> {
             st.dt = st.dt.max(before);
         }
         st.sets_just_applied = false;
+        run.delivered.clear();
         run.last_dt = dt_actual;
         Ok(accepted)
     }
@@ -1613,6 +1618,14 @@ impl TransientSolver<'_> {
             for b in boundary {
                 bound.analog.set_discrete(b.slot, &b.bytes);
             }
+            run.delivered = match restart {
+                Restart::None => Vec::new(),
+                Restart::Integrator | Restart::IntegratorSmall => boundary
+                    .iter()
+                    .filter_map(|b| bound.names.slot_nets.get(b.slot as usize))
+                    .filter_map(|net| run.net_names.get(net.0 as usize).cloned())
+                    .collect(),
+            };
         }
         match restart {
             Restart::None => {}
@@ -1646,6 +1659,37 @@ impl TransientSolver<'_> {
 }
 
 impl DeviceRun {
+    /// The Newton failure `error` of the attempt to `time`, which is at the
+    /// step floor: `E0508`, or `E0504` when it is the first step after a
+    /// delivery under a restart (it reads a jump), naming the nets delivered.
+    /// A failure with a code of its own (singular, non-finite) keeps it.
+    fn floor_error(
+        &self,
+        error: piperine_analog_solver::error::Error,
+        time: f64,
+        reads_a_jump: bool,
+    ) -> piperine_analog_solver::error::Error {
+        use piperine_analog_solver::error::{Error, RunCode, SolverDomain};
+        let Error::Run(run) = &error else { return error };
+        if run.code != RunCode::E0505 {
+            return error.with_time(time);
+        }
+        let (code, what) = if reads_a_jump && !self.delivered.is_empty() {
+            (
+                RunCode::E0504,
+                format!(
+                    "the step after a jump fails at the smallest step; it reads the delivery of {}",
+                    self.delivered.join(", ")
+                ),
+            )
+        } else {
+            (RunCode::E0508, "the step fails at the smallest step".to_string())
+        };
+        Error::run(code, SolverDomain::Transient, format!("{what} ({})", run.detail))
+            .with_time(time)
+            .with_unknowns(run.unknowns.clone())
+    }
+
     /// The time of the last attempt.
     pub(crate) fn attempted(&self) -> f64 {
         self.attempted
