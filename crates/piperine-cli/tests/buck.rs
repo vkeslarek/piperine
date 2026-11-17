@@ -75,6 +75,20 @@ fn startup_ends_with_the_reference_at_128() {
 }
 
 #[test]
+fn startup_prints_the_whole_start_on_its_grid() {
+    // LR-13: with no `from`, `startup` prints the whole start, 0 to 600 us, on its 0.5 us grid:
+    // 1 201 rows, the time of row k being k * 0.5e-6
+    let (header, rows) = table(startup());
+    assert_eq!(rows.len(), 1201, "{header:?}");
+    let times: Vec<f64> = column(&header, &rows, "time").iter().map(|t| t.parse().expect("a time")).collect();
+    assert_eq!(times[0], 0.0);
+    assert!((times[1200] - 600e-6).abs() <= 1e-12, "last row at {}", times[1200]);
+    for (k, t) in times.iter().enumerate() {
+        assert!((t - k as f64 * 0.5e-6).abs() <= 1e-9 * 0.5e-6 + 1e-15, "row {k} at {t}");
+    }
+}
+
+#[test]
 fn startup_prints_no_failed_check() {
     // CLI-08 AC 3: a passing check is hidden on the terminal (CLI-06 AC 9) and a failing one
     // would print, so no ` checks ` line on standard output means no failed check; the claim is
@@ -101,10 +115,11 @@ fn startup_prints_no_failed_check() {
 
 #[test]
 fn the_buck_runs_print_at_most_16_lines() {
-    // CLI-08 AC 6: with no flag, `idle` and `startup` print at most 16 lines
-    for (name, out) in [("startup", startup().to_string()), ("idle", run("idle"))] {
-        assert!(out.lines().count() <= 16, "{name} printed {} lines", out.lines().count());
-    }
+    // CLI-08 AC 6: with no flag, `idle` prints at most 16 lines; `startup` prints the whole
+    // start (long-run Q2): the run line, a blank line, the header and 1 201 rows
+    let out = run("idle");
+    assert!(out.lines().count() <= 16, "idle printed {} lines", out.lines().count());
+    assert_eq!(startup().lines().count(), 3 + 1201);
 }
 
 #[test]

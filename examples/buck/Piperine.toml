@@ -16,14 +16,14 @@ max_step = 1e-8
 print = ["Idle.mode", "Idle.pgood"]
 print_step = 5e-6
 
-# The closed-loop start, 600 us: the reference ramps to code 128 (0.8 V). Only the last
-# microsecond is kept (`from`): each kept step holds every unknown of the converter.
+# The closed-loop start, 600 us: the reference ramps to code 128 (0.8 V). The run prints the
+# whole start on a 0.5 us grid (1 201 rows, time 0 to 600 us); it records those rows as it
+# goes and keeps no step, so its memory does not grow with the length of the run.
 [run.startup]
 bench = "benches/startup.msl"
 top = "Startup"
 analysis = "transient"
 stop = 600e-6
-from = 599e-6
 max_step = 1e-8
 print = ["Startup.buck.ctl.reference", "Startup.mode", "Startup.buck.vout"]
 print_step = 0.5e-6

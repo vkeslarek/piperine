@@ -444,10 +444,10 @@ T23
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/buck.rs` holds `startup_prints_the_whole_start_on_its_grid` (1 201 rows; first time 0, last 600 µs; times `k * 0.5e-6`), and `the_buck_has_its_bench_and_two_runs`, `startup_prints_no_failed_check`, `idle_keeps_the_mode_off` and `piperine_test_passes_on_the_buck` pass, edited only where they named `from` or the two-row table
-- [ ] `examples/buck/Piperine.toml` has no `from` in `[run.startup]`
-- [ ] Gate check passes: Quick (`Run buck`)
-- [ ] Test count: the 1 test named above; the `startup` assertions edited under Q2, no test removed
+- [x] `crates/piperine-cli/tests/buck.rs` holds `startup_prints_the_whole_start_on_its_grid` (1 201 rows; first time 0, last 600 µs; times `k * 0.5e-6`), and `the_buck_has_its_bench_and_two_runs`, `startup_prints_no_failed_check`, `idle_keeps_the_mode_off` and `piperine_test_passes_on_the_buck` pass, edited only where they named `from` or the two-row table
+- [x] `examples/buck/Piperine.toml` has no `from` in `[run.startup]`
+- [x] Gate check passes: Quick (`Run buck`)
+- [x] Test count: the 1 test named above; the `startup` assertions edited under Q2, no test removed
 
 **Tests**: e2e
 **Gate**: quick
