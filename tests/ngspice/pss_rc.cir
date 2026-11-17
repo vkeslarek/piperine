@@ -1,0 +1,15 @@
+* pss_rc — periodic steady state of an RC driven by a square wave. ngspice's `.pss` is not a
+* reference for a driven circuit, so the oracle is the last period of a long transient: the
+* wave has period T = 4 us (PULSE, 1 ps edges, high for the first half), RC = 1 us, so the orbit
+* is reached to e^-36 after nine periods. The tran runs ten periods (40 us); the export is the
+* grid of multiples of 0.04 us (`.options interp`), whose last period is [36 us, 40 us]. The end
+* of the high half of the orbit is 1 / (1 + exp(-T / (2 RC))) = 1 / (1 + e^-2) = 0.880797.
+V1 vin 0 PULSE(0 1 0 1p 1p 2u 4u)
+R1 vin out 1k
+C1 out 0 1n
+.options interp
+.control
+tran 0.04u 40u
+wrdata pss_rc_tran v(out)
+.endc
+.end

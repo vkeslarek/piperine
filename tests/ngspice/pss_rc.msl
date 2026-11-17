@@ -1,0 +1,31 @@
+//! Twin of `tests/ngspice/pss_rc.cir`: an RC (1 kOhm, 1 nF) driven by a square wave of period
+//! 4 us, high for the first half, with 1 ps edges (ngspice's `PULSE(0 1 0 1p 1p 2u 4u)`). The
+//! source reads `now()` and a param, so no discrete state carries an absolute time into the
+//! orbit (a discrete clock's `transition` keeps the time of its last edge, which a periodic
+//! orbit cannot repeat).
+mod devices;
+use devices::*;
+
+/// A pulse source from `p` to ground: `amp` for the first `width` of every `period`, edges of `edge`.
+module Pulse(p: Electrical) {
+    amp: f64 = 1.0;
+    width: f64 = 2u;
+    period: f64 = 4u;
+    edge: f64 = 1p;
+}
+analog for Pulse {
+    let ph = now() - period * (now() / period).floor();
+    let level = if ph < edge { ph / edge }
+                else if ph < width { 1.0 }
+                else if ph < width + edge { 1.0 - (ph - width) / edge }
+                else { 0.0 };
+    v(p) +> amp * level;
+}
+
+module PssRc() {
+    signal vin: Electrical;
+    signal vout: Electrical;
+    let src = Pulse(vin);
+    let r1 = Resistor { r: 1k }(vin, vout);
+    let c1 = Capacitor { c: 1n }(vout, gnd);
+}
