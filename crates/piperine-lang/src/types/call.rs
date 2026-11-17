@@ -71,7 +71,17 @@ impl Checker<'_> {
         self.callees.insert(expr, Callee::Function(function));
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        self.bind_arguments(expr, &name, &params, args)?;
+        let required = params.len() - params.iter().rev().take_while(|ty| matches!(ty, Ty::Option(_))).count();
+        let named: Vec<Option<usize>> = args
+            .iter()
+            .map(|arg| match (&arg.name, arg.res) {
+                (Some(_), Resolution::Decl(param)) => self.design.decl_data(param).parent.and_then(|owner| {
+                    self.design.decl_data(owner).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::FnParam(_))).position(|c| *c == param)
+                }),
+                _ => None,
+            })
+            .collect();
+        self.bind_arguments(expr, &name, &params, required, args, &named)?;
         Some(ret)
     }
 
@@ -87,33 +97,33 @@ impl Checker<'_> {
         None
     }
 
-    /// §3.2: binds the arguments of a call of `name` to its parameters. The optional parameters
-    /// are the maximal trailing run of `Option<T>` ones (§3.2.7); positional arguments bind in
-    /// order, a named one binds the optional parameter it names (the POM has resolved the name
-    /// and reported `E0140` for one that is no optional parameter or is bound twice), and a
-    /// required parameter left unbound or an argument past the last parameter is `E0141`. An
-    /// argument of type `T` for `Option<T>` is `Some` of it, one of type `Option<T>` is as it
-    /// is (§3.2.3, §3.2.10). The binding, one slot per parameter, is kept per call.
-    pub(super) fn bind_arguments(&mut self, expr: ExprId, name: &str, params: &[Ty], args: &[Arg]) -> Option<()> {
+    /// §3.2: binds the arguments of a call of `name` to its parameters. The first `required`
+    /// parameters are required, the rest optional (a function's maximal trailing run of
+    /// `Option<T>` ones, §3.2.7); positional arguments bind in order, a named one binds the
+    /// parameter `named[i]` it names (`None`: it names no parameter, `E0140`; for a function the
+    /// POM has reported that already), a named one for a required parameter is `E0140`
+    /// (§3.2.8), and a required parameter left unbound or an argument past the last parameter
+    /// is `E0141`. An argument of type `T` for `Option<T>` is `Some` of it, one of type
+    /// `Option<T>` is as it is (§3.2.3, §3.2.10). The binding, one slot per parameter, is kept
+    /// per call.
+    pub(super) fn bind_arguments(&mut self, expr: ExprId, name: &str, params: &[Ty], required: usize, args: &[Arg], named: &[Option<usize>]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
-        let optional = params.iter().rev().take_while(|ty| matches!(ty, Ty::Option(_))).count();
-        let required = params.len() - optional;
         let mut slots: Vec<Option<ExprId>> = vec![None; params.len()];
         let mut bound: Vec<(ExprId, usize)> = Vec::new();
         let mut ok = true;
         for (i, arg) in args.iter().enumerate() {
-            let slot = match (&arg.name, arg.res) {
-                (None, _) => Some(i),
-                (Some(_), Resolution::Decl(param)) => self.design.decl_data(param).parent.and_then(|owner| {
-                    self.design.decl_data(owner).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::FnParam(_))).position(|c| *c == param)
-                }),
-                (Some(_), _) => None,
-            };
+            let slot = if arg.name.is_none() { Some(i) } else { named.get(i).copied().flatten() };
             match slot {
+                Some(slot) if slot < params.len() && slots[slot].is_some() => {
+                    let message = format!("the parameter {} of `{name}` is already bound", slot + 1);
+                    self.coded(file, "E0140", arg.span, message, "already bound");
+                    ok = false;
+                    self.infer(arg.value);
+                }
                 Some(slot) if slot < params.len() => {
                     if arg.name.is_some() && slot < required {
-                        let message = format!("`{name}`: an `Option` parameter followed by a required one is positional only, not bound by name (§3.2.8)");
+                        let message = format!("`{name}`: a required parameter, or an `Option` one followed by a required one, is positional only, not bound by name (§3.2.8)");
                         self.coded(file, "E0140", arg.span, message, "positional only");
                         ok = false;
                     }
@@ -121,7 +131,11 @@ impl Checker<'_> {
                     bound.push((arg.value, slot));
                 }
                 _ => {
-                    // Past the last parameter, or a name the POM could not bind.
+                    // Past the last parameter, or a name that is no parameter.
+                    if let Some(written) = &arg.name {
+                        let message = format!("no optional parameter `{}` in `{name}`", written.text);
+                        self.coded(file, "E0140", arg.span, message, "not an optional parameter");
+                    }
                     ok = false;
                     self.infer(arg.value);
                 }

@@ -316,10 +316,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `cross_takes_ttol_and_etol_by_position_and_by_name` passes in `cargo test -p piperine-lang --test types_events`
-- [ ] An existing test asserting the removed refusals is rewritten and named in the commit
-- [ ] Gate check passes: Quick (`Run tevents`), then Build (end of phase 1)
-- [ ] Test count: the 1 test named above
+- [x] `cross_takes_ttol_and_etol_by_position_and_by_name` passes in `cargo test -p piperine-lang --test types_events`
+- [x] An existing test asserting the removed refusals is rewritten and named in the commit
+- [x] Gate check passes: Quick (`Run tevents`), then Build (end of phase 1)
+- [x] Test count: the 1 test named above
 
 **Tests**: integration
 **Gate**: build
@@ -1302,7 +1302,7 @@ Proof: `cargo test -p piperine-parity --test parity_op --test parity_dc --test p
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** (batch 1, worker, 2026-11-17) (1) T4's e2e `two_analog_blocks_act_as_one` drives a param (`i(gnd, p) +> ia;`, `ia` = 0.5m) instead of the literal `0.5m`, because the literal form is B1 (T22) and does not build yet; FIX-04 covers the literal in T22. (2) T5/T7 keep a core primitive's own count check as `P0002` (`ac_stim()`, `temperature(1.0)` assert it in `types_analog`); `E0141` is the function's code and the binder's for a required core parameter left unbound by name. (3) A named argument for a required parameter, or an `Option` one before a required one, is `E0140` (§3.2.8); a name bound twice is `E0140`. (4) T7 removes the row "tolerance given to cross" of `types_subset.rs` and the two cross rows of `types_events.rs::event_expressions_are_typed` (the `settle` row stays): the checker no longer refuses them; the elaborator still refuses a non-`None` tolerance (`no_tolerance`, `elab/events.rs`) until T25. (5) Test runs set `TMPDIR` off the full `/tmp` tmpfs (leaked `.tmp*` test directories filled it).
 **Dispatched:** Batch 1 (phase 1, T1-T7) - Sonnet worker, 2026-11-17.
 **Walked:** none
 

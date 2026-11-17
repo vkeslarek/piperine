@@ -6,7 +6,7 @@
 //! An `Event` has no `Repr`. Written where only a value may stand it is `E0441`; read as a `bool`
 //! it is `P0001` (the elaborator has no read of it yet, part IV §13 rule 2).
 
-use crate::pom::{Arg, BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, Resolution};
+use crate::pom::{Arg, BehaviorKind, DeclId, DeclKind, ExprId};
 
 use super::check::{Checker, Context};
 use super::{Builtin, Ty};
@@ -129,20 +129,9 @@ impl Checker<'_> {
         }
     }
 
-    /// The arguments of `cross` after the first, and the argument of `at`, once typed: a
-    /// tolerance given to `cross` is `P0001` (the `Cross` event carries none), a continuous `at`
-    /// is `E0442` (§13 rule 11).
+    /// The argument of `at`, once typed: a continuous one is `E0442` (§13 rule 11).
     pub(super) fn event_arguments(&mut self, name: &str, args: &[Arg]) {
         match name {
-            "cross" => {
-                for arg in args.iter().skip(1) {
-                    if self.somes.contains(&arg.value) || self.is_some_call_at(arg.value) {
-                        let file = self.file_of_expr(arg.value);
-                        let span = self.design.expr_node(arg.value).span;
-                        self.unsupported(file, span, "a `ttol` or `etol` given to `cross`");
-                    }
-                }
-            }
             "at" => {
                 let Some(arg) = args.first() else { return };
                 if self.continuous(arg.value) {
@@ -179,15 +168,6 @@ impl Checker<'_> {
                 DeclKind::Generation(_) => self.unsupported(item.file, item.span, "generation `for`/`if` in a `digital` block"),
                 _ => {}
             }
-        }
-    }
-
-    /// Whether `expr` is a call of the built-in `Some`, through parens.
-    fn is_some_call_at(&self, expr: ExprId) -> bool {
-        match &self.design.expr_node(expr).kind {
-            ExprKind::Paren(inner) => self.is_some_call_at(*inner),
-            ExprKind::Call { callee, .. } => matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(id)) if id.info().name == "Some"),
-            _ => false,
         }
     }
 }

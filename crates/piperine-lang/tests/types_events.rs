@@ -88,8 +88,9 @@ fn event_expressions_are_typed() {
     let d = diagnostics(src);
     assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0230".to_string()], "p.changed()"));
 
-    // Out of the subset: a tolerance given to `cross`, `settle`.
-    for (head, at, names) in [("cross(v(p), 1n)", "1n", "`ttol`"), ("cross(v(p), None, Some(1n))", "Some(1n)", "`etol`"), ("settle", "settle", "`settle`")] {
+    // Out of the subset: `settle`. (A tolerance given to `cross` types since `msl-fixes` T7, see
+    // `cross_takes_ttol_and_etol_by_position_and_by_name`.)
+    for (head, at, names) in [("settle", "settle", "`settle`")] {
         let src = with_heads(&[head]);
         let d = diagnostics(&src);
         assert_eq!(codes(&d), ["P0001"], "{head}");
@@ -474,4 +475,33 @@ fn an_emit_in_analog_is_p0001_by_name() {
     }
     // The same `log` in a reaction checks.
     checked_top("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { log(Severity::Info, \"stepped\"); } }", "Top");
+}
+
+#[test]
+fn cross_takes_ttol_and_etol_by_position_and_by_name() {
+    // FIX-12 AC 1: `cross(e, ttol, etol)` with either tolerance left out, positionally or by
+    // name (§3.2), is an `Event`; the binding of each call keeps its tolerance in its slot.
+    let heads = [
+        ("cross(v(p), 1p)", [Some("v(p)"), Some("1p"), None]),
+        ("cross(v(p), etol: 1u)", [Some("v(p)"), None, Some("1u")]),
+        ("cross(v(p), 1p, 1u)", [Some("v(p)"), Some("1p"), Some("1u")]),
+        ("cross(v(p), etol: 1u, ttol: 1p)", [Some("v(p)"), Some("1p"), Some("1u")]),
+        ("cross(v(p), None, Some(1u))", [Some("v(p)"), Some("None"), Some("Some(1u)")]),
+    ];
+    for (head, wanted) in heads {
+        let src = with_heads(&[head]);
+        let design = design_of(&src);
+        let types = checked(&design, &src);
+        let call = (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| &src[design.expr_node(*e).span.range()] == head).unwrap_or_else(|| panic!("no `{head}`"));
+        assert_eq!(types.ty(call), Some(&Ty::Event), "{head}");
+        let bound: Vec<Option<&str>> = types.binding(call).unwrap_or_else(|| panic!("no binding for `{head}`")).iter().map(|s| s.map(|e| &src[design.expr_node(e).span.range()])).collect();
+        assert_eq!(bound, wanted, "{head}");
+    }
+    // A name that is no parameter, one bound twice, `e` by name, and a count the row cannot take
+    // (the plain mismatch of a core primitive's own count).
+    for (head, code) in [("cross(v(p), atol: 1u)", "E0140"), ("cross(v(p), 1p, ttol: 2p)", "E0140"), ("cross(v(p), e: 1.0)", "E0140"), ("cross(v(p), 1p, 1u, 2u)", "P0002"), ("cross()", "P0002")] {
+        let src = with_heads(&[head]);
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), [code], "{head}");
+    }
 }

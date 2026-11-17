@@ -185,25 +185,34 @@ impl Checker<'_> {
         if name == "analysis" {
             return self.analysis_call(expr, args);
         }
-        if let Some(named) = args.iter().find(|a| a.name.is_some()) {
-            self.unsupported(file, named.span, "named argument of a core primitive");
-            return None;
-        }
+        // §3.2: the arguments bind as a function's do, by position or by the name the row gives
+        // its parameters. The arguments of a core module are read through a result with a direct
+        // dependence (§8.3.6): a `let` that reads itself through one is a cycle with no unknown
+        // in it.
         let (min, max) = (sig.required.len(), sig.required.len() + sig.optional.len());
         if args.len() < min || args.len() > max {
             let message = format!("`{}` takes {min} to {max} argument(s), found {}", id.name(), args.len());
             self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
             return None;
         }
-        // The arguments of a core module are read through a result with a direct dependence
-        // (§8.3.6): a `let` that reads itself through one is a cycle with no unknown in it.
+        let params: Vec<Ty> = sig.required.iter().chain(sig.optional).map(|p| p.ty()).collect();
+        let names = Self::core_parameter_names(&name);
+        let named: Vec<Option<usize>> = args.iter().map(|a| a.name.as_ref().and_then(|n| names.iter().position(|p| *p == n.text))).collect();
         self.placing.push(None);
-        for (arg, param) in args.iter().zip(sig.required.iter().chain(sig.optional)) {
-            self.check_argument(arg.value, &param.ty());
-        }
+        let bound = self.bind_arguments(expr, &name, &params, sig.required.len(), args, &named);
         self.placing.pop();
+        bound?;
         self.event_arguments(&name, args);
         Some(sig.result.ty())
+    }
+
+    /// The names of the parameters of a core primitive that takes `name:` arguments (§3.2), in
+    /// order; the others take positional arguments only.
+    fn core_parameter_names(name: &str) -> &'static [&'static str] {
+        match name {
+            "cross" => &["e", "ttol", "etol"],
+            _ => &[],
+        }
     }
 
     /// `analysis(Static)` (§14.4): a `bool`, true in an equilibrium solve. The one kind of
