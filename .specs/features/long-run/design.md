@@ -2,7 +2,7 @@
 
 **Spec**: `.specs/features/long-run/spec.md`
 **Context**: `.specs/features/long-run/context.md`
-**Status**: Draft. Not approved; `tasks.md` is not written. Four product questions are open in the spec (Q1 to Q4); the parts of this design that depend on one say so.
+**Status**: Approved with the spec (2026-11-17). The four questions are answered, each with the recommended option: the plot draws the run's rows (Q1), `startup` is the long run (Q2), no new key (Q3), S1's limits carried to 0.8 V (Q4).
 
 Line numbers are those of `feature/long-run` at `dbcd8307`.
 
@@ -124,7 +124,7 @@ Where the rules run: every rule of what a row holds (the window, the grid, inter
 | The protocol's sides | two methods with default bodies: `AnalogSide::solution`, `DiscreteSide::net`; test doubles compile unchanged |
 | `Session::analysis` | the `transient` arm builds the recorder, shares it between `Delivery` and the observer, and takes its table |
 | `piperine test` | `Verdict` becomes the `RecordSink` |
-| `piperine-project` | none: it accepts and locates `[run]` and does not read it (MD-65). Only Q3 option b or c would add a key, and then in `piperine-api`'s `RUN_KEYS`, never here |
+| `piperine-project` | none: it accepts and locates `[run]` and does not read it (MD-65); no key is added (Q3) |
 
 ---
 
@@ -197,7 +197,7 @@ State held: one previous sample (`1 + n` cells), the changes of printed nets sin
 - **Interfaces**: unchanged outside. Inside: resolve each probe to a `Column` against the bound circuit; `TransientAnalysisOptions` with `keep = Keep::Last` and no `record_from`; `Solver` with the sink and the observer; the "ended before its stop" check reads the one kept step, as now; the table is `Recorder::finish`.
 - **Reuses**: every other arm, untouched.
 - **Requirements**: LR-03 AC 4, LR-05 AC 7, LR-07 AC 3.
-- **The plot (Q1).** Option a: `Session::plot` draws from the run's table; `Session::accepted` stops being a second, per-step table. Option b keeps a per-step table of the printed signals when `plot` is set. Option c adds an envelope builder beside the recorder. Only this bullet and LR-17 change with the answer.
+- **The plot (Q1, answered).** `Session::plot` draws from the run's table; `Session::accepted` stops being a second, per-step table.
 
 ### `Verdict` as a sink (api, cli)
 
@@ -284,7 +284,7 @@ pub enum Keep {
 | A third full run of the buck in the suite | `buck_closed_loop` (141 s), `piperine-cli` `buck` (about 2 min), `buck_long` | about two and a half more minutes of `cargo test --workspace` | one shared run per target; no further run is added. Merging the three is for the root e2e feature (`ROADMAP.md` 4b) |
 | Peak-heap measurement in a multi-threaded test binary | `tests/memory.rs`, `tests/buck_long.rs` | another test's allocations would count | `memory.rs` is one test; `buck_long` measures inside the `OnceLock` initializer, while the other tests wait on it |
 | The byte golden of `tran_rc` depends on `powf` in the step controller | the golden file of `tests/twins.rs` | a platform whose `powf` differs in the last bit could print a different digit | the differential test (LR-06 AC 1) is the authority and has no stored number; the golden is regenerated only with the user's consent |
-| The first row of a gridded run with `from` appears where it was missing | `examples/buck` `startup`, the Book's listing, `crates/piperine-cli/tests/buck.rs` | the listing gains a row (3, not 2) unless Q2 replaces the run | spec Assumptions; the Book follows the binary under `tests/book.rs` |
+| `startup` prints the whole start (Q2) | `examples/buck/Piperine.toml`, the Book's listing, `crates/piperine-cli/tests/buck.rs` | the listing is 1 201 rows, not 2; between the session change and the manifest change the Book's listing differs from the binary | the manifest, the test and the Book are reconciled in the phase that changes the session; `tests/book.rs` holds the result |
 | The wall time does not improve | `GAPS.md` §6 (the analog side lands near every 200 MHz instant; the first step after a jump, F-B7) | 600 µs still takes minutes | out of scope (decision 6: multi-rate is future); the test prints the time |
 | The digital checkpoint still clones the store at every mark | `GAPS.md` §6 "The digital checkpoint clones every net on each mark" | CPU per step, not kept memory | not this feature; `Keep::Last` removes only the second clone, the one made for the step's re-entry state |
 | A side that does not implement `solution` or `net` gives nothing | the default bodies of the two new trait methods | rows could not be read | `Recorder::step` fails loud when a column reads `None`; `TransientSide` and `DigitalSide` implement both |
@@ -320,12 +320,12 @@ pub enum Keep {
 | `piperine-solver` | `protocol/step.rs` (`StepObserver`, `StepView`); `Protocol::with_step_observer` and the two call sites; default methods `AnalogSide::solution`, `DiscreteSide::net` and their two implementations; `HostHooks` and `Solver::with_step_observer`; `Keep` in `TransientAnalysisOptions` and its branches in `transient.rs`; prelude exports; `tests/step_observer.rs` |
 | `piperine-analog-solver`, `piperine-digital-solver`, `piperine-abi` | none |
 | `piperine-api` | `recorder.rs`; `Probe::column`; `Delivery` forwards net changes; the `transient` arm of `Session::analysis`; `Verdict` as a `RecordSink`; the plot per Q1; `tests/grid.rs`, `tests/memory.rs`, `tests/buck_long.rs` |
-| `piperine-cli` | `commands/test.rs` uses the streaming verdict; `tests/twins.rs` gains the golden of `tran_rc`; `tests/buck.rs` follows the manifest (Q2). No flag changes unless Q3 adds a key |
+| `piperine-cli` | `commands/test.rs` uses the streaming verdict; `tests/twins.rs` gains the golden of `tran_rc`; `tests/buck.rs` and `tests/options.rs` (the plot test of the amended CLI-22 AC 7) follow the answers. No flag changes |
 | `piperine-project` | none |
 | `piperine-parity` | `piperine-api` as a dev-dependency; `tests/parity_grid.rs`. `src/contract.rs` and every existing target unedited |
-| `examples/buck` | `Piperine.toml` per Q2; `README.md` |
+| `examples/buck` | `Piperine.toml`: `startup` without `from`; `README.md` |
 | Documents | `GAPS.md` §6 (the two entries on kept steps), `ROADMAP.md` (the future items of decision 6), the Book where a listing changes, `CLAUDE.md` and `AGENTS.md` if they describe the result of a transient |
 
 ## Size
 
-About 17 tasks in five phases: the solver seam (3: observer, `Keep::Last`, their tests of record), the recorder (5: columns, per-step rows, real grid, discrete grid with the check, the session arm with the differential tests), the long-run proofs (3: memory scaling, the ngspice grid target, the twin golden captured first), the buck (3: manifest per Q2, `buck_long` measurements, memory cap and wall time), and the edges (3: streaming verdict, plot per Q1, documents and the Book). The golden capture is the first task, before any code changes. More than one batch: the sub-agent offer applies at Tasks.
+23 tasks in five phases; see `tasks.md`.

@@ -2,9 +2,9 @@
 
 **Gathered:** 2026-11-17
 **Spec:** `.specs/features/long-run/spec.md`
-**Status:** Decisions 1 to 7 bind. Four questions are open (spec.md, "Open questions for the user").
+**Status:** Decisions 1 to 7 bind. The four questions of the spec are answered (2026-11-17, below). Spec and tasks approved.
 
-The user's decisions reached the planner through the orchestrator. One sentence arrived verbatim and is quoted as such; the rest arrived as the orchestrator's statement of what the user decided and is recorded here in that wording, not as a quote.
+Everything the user said reached the planner through the orchestrator. What arrived verbatim is quoted; what arrived as the orchestrator's statement of a decision is marked "relayed" and is not a quote.
 
 ---
 
@@ -16,21 +16,38 @@ A transient run of any length keeps only the signals it asks for, on the output 
 
 ## Implementation Decisions
 
-### The goal (user, 2026-11-17, intent as relayed)
+### The goal (user, 2026-11-17)
 
-Run the digitally controlled buck long: the whole 600 µs startup with the full `vout` waveform, and test it completely.
+- "fecha o msl-cli, faz o long-run e suas dependencias, faz um teste mais completo do buck, passa o fable para montar os gaps e me apresenta para decidirmos os proximos passos". Scope and order: `msl-cli` closes, then this feature and what it depends on, then a fuller test of the buck, then the gaps pass.
+- As relayed: run the digitally controlled buck long, the whole 600 µs startup with the full `vout` waveform, and test it completely.
 
 ### The seven decisions (user, 2026-11-17, relayed by the orchestrator)
 
 | # | Topic | Decided | The user's words |
 | - | ----- | ------- | ---------------- |
-| 1 | Layering | `emit!` carries data out to a stream and is the language's only output channel. Sampling and observation policy (which signals, the output grid, the window, interpolate or hold or drop) is not language: it belongs to the run, which is the `[run.<name>]` table of `Piperine.toml` and the matching command-line flags. Every new observation option is a run-table key with its flag, under the key and flag pairing of `msl-cli` CLI-03. | "Coloca no manifest também" |
+| 1 | Layering | `emit!` carries data out to a stream and is the language's only output channel. Sampling and observation policy (which signals, the output grid, the window, interpolate or hold or drop) is not language: it belongs to the run, which is the `[run.<name>]` table of `Piperine.toml` and the matching command-line flags. Every new observation option is a run-table key with its flag, under the key and flag pairing of `msl-cli` CLI-03. | "Eu diria que emit e sampling são duas coisas diferentes... O emit leva o dado da simulação para o stream. Agora se ele vai ser sampled, pego em intervalos regulares, interpolado, omitido, etc... vale talvez algo separado da linguagem." and "Coloca no manifest também." |
 | 2 | What a run records | Only what it asks for (its `print` columns, the requested signals), never the full snapshot. Streaming: memory is constant in the run's length, except for the output rows. | relayed |
 | 3 | The print grid | The grid is the user's output step only. The internal step stays the solver's (truncation error, breakpoints, `max_step`). The grid is applied while the run goes: an analog signal is interpolated linearly, a digital signal holds its last committed value. It behaves like ngspice's TSTEP. Rows never extrapolate. | relayed |
-| 4 | Waveform measurements | Overshoot, settling into ±10 mV and ripple are computed by a host test in Rust through `piperine-api`, reading the run's table. They are not MSL and not a `.meas` of the manifest. `piperine test` keeps judging MSL check records only. | relayed |
+| 4 | Waveform measurements | Overshoot, settling into ±10 mV and ripple are computed by a host test in Rust through `piperine-api`, reading the run's table. They are not MSL and not a `.meas` of the manifest. `piperine test` keeps judging MSL check records only. | "Teste host em Rust (Recommended)" |
 | 5 | The fuller buck test | The whole startup to 600 µs on a fine grid, measuring overshoot, settling and ripple against the limits of `examples/buck/SPEC.md`, plus the long-run checks that make sense: a memory bound, and the wall time reported, not asserted. | relayed |
 | 6 | Out of scope (future) | Multi-rate stepping (digital edges that do not cut analog steps), surrogate or averaged models, periodic steady state (the next feature), and `on above { emit! }` (`P0001`), which goes to the gaps summary. | relayed |
 | 7 | Parity | ngspice parity is the top priority. The 7 twins stay byte-identical where the feature does not touch them. The grid interpolation is cross-checked against ngspice's TSTEP output where that is meaningful. No tolerance is retuned. | relayed |
+
+### The four answers (user, 2026-11-17, relayed by the orchestrator)
+
+| # | Question | The user's words | Decided |
+| - | -------- | ---------------- | ------- |
+| Q1 | the plot of a run with `print_step` | "As linhas da grade (Recommended)" | the plot draws the run's grid rows; `msl-cli` CLI-22 AC 7 is amended |
+| Q2 | which run is the long one | "startup inteira (Recommended)" | `startup` drops `from` and prints 0 to 600 µs on its 0.5 µs grid; the Book's listing and `crates/piperine-cli/tests/buck.rs` are reconciled; the host test overrides `print_step` |
+| Q3 | a new run key | "Nenhuma (Recommended)" | no new key |
+| Q4 | the limits of the 0.8 V start | "Carregar S1 para 0,8 V (Recommended)" | overshoot at most 15 mV, settled inside ±10 mV between 207.5 and 307.5 µs, ripple at most 10 mV peak to peak over the last 40 µs; a miss is a finding, never a moved limit |
+
+The amendments to approved `msl-cli` criteria (the hold rule of CLI-11 AC 5, CLI-22 AC 7, the first row of a gridded run with `from`) are accepted as part of these answers.
+
+### Approvals (user, relayed by the orchestrator)
+
+- The spec, 2026-11-17: "fecha o msl-cli, faz o long-run e suas dependencias, faz um teste mais completo do buck", with the four answers.
+- The tasks, 2026-11-17: "Pode ir rodando os grandes passos", a standing permission to dispatch.
 
 ### What earlier decisions already fix
 
@@ -47,7 +64,7 @@ Every technical choice: where the solver hands an accepted step to the host, how
 
 ### Declined / Undiscussed Gray Areas
 
-None declined. Four gray areas are the user's and are asked, not assumed: spec.md, "Open questions for the user" (Q1 to Q4).
+None declined. The four gray areas that were the user's were asked and answered (above).
 
 ---
 

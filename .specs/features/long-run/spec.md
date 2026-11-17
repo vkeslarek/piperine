@@ -1,17 +1,17 @@
 # Long Run Specification
 
-**Approved**: not yet. Four questions are open (below); the user's answers and approval are written here when they arrive.
+**Approved**: 2026-11-17 - user: "fecha o msl-cli, faz o long-run e suas dependencias, faz um teste mais completo do buck" (answers Q1-Q4 all recommended)
 
-## Open questions for the user
+The approval and the four answers reached the planner through the orchestrator on 2026-11-17; they are recorded in `context.md`.
 
-These are product decisions. Each has a recommendation; none is assumed. The criteria that depend on one say so.
+## Questions answered (user, 2026-11-17)
 
-| # | Question | Options | Recommendation |
-| - | -------- | ------- | -------------- |
-| Q1 | A plot of a run that has `print_step`: `msl-cli` CLI-22 AC 7 says the plot still draws every accepted step. Keeping that means holding every accepted step of the printed signals for the plot (about 108 MB and a 675 000-point SVG for the buck's 600 µs). What does the plot draw? | (a) the run's rows: the grid when `print_step` is given, every accepted step when it is not; (b) every accepted step always, as today, and the memory bound does not hold for a run with `plot`; (c) a min/max envelope per pixel column, built while the run goes | (a). It amends CLI-22 AC 7. A plot of 675 000 points is not readable anyway, and the user chooses the resolution with `print_step` |
-| Q2 | Which run of `examples/buck/Piperine.toml` is the long one? Today `startup` keeps the last microsecond (`from = 599e-6`) and the Book lists its two-row output. | (a) `startup` itself drops `from` and prints the whole start on its 0.5 µs grid (1 201 rows; the Book's listing and `crates/piperine-cli/tests/buck.rs` are reconciled); the host test takes this run and overrides `print_step` to its fine grid; (b) `startup` stays as it is and a second run is added beside it, which doubles the time of `piperine test` in `examples/buck` (about two more minutes); (c) no manifest change: only the host test runs long, through overrides | (a). One run, the limitation its comment describes is gone, and `piperine run startup --plot startup.svg` shows the whole start |
-| Q3 | Decision 1 says every new observation option is a run-table key with its flag. The existing keys already spell the policy this feature needs: `print` (which signals), `print_step` (the grid), `from` and `stop` (the window); decision 3 fixes the sampling rule (analog interpolated, digital held). Is a new key wanted now? | (a) none: the four keys are the policy, and the rule of decision 3 is not selectable; (b) a key that selects the sampling of a run (`interpolate`, `hold`, `steps`); (c) another key the user has in mind (a window end other than `stop`, a list of signals recorded but not printed) | (a). No key is added until a run needs a choice the four do not give |
-| Q4 | `examples/buck/SPEC.md` states one startup overshoot limit, S1's 15 mV, for a start to 3.3 V. The only start proven today is to 0.8 V (setpoint code 0). Which limits judge the 0.8 V start, and what happens if the model misses one? | (a) S1's numbers carried to 0.8 V: overshoot ≤ 15 mV above 0.8 V; settled inside ±10 mV within the ramp's 0.256 ms ± 0.05 ms after `en`; ripple ≤ 10 mV peak to peak. A miss is reported to the user as a finding and the limit is not moved; (b) other limits the user gives | (a) |
+| # | Question | The user's answer | Decided |
+| - | -------- | ----------------- | ------- |
+| Q1 | What does the plot of a run with `print_step` draw? | "As linhas da grade (Recommended)" | The plot draws the run's rows: the grid when `print_step` is given, every accepted step when it is not. `msl-cli` CLI-22 AC 7 is amended |
+| Q2 | Which run of `examples/buck/Piperine.toml` is the long one? | "startup inteira (Recommended)" | `startup` drops `from` and prints 0 to 600 µs on its 0.5 µs grid (1 201 rows). The Book's listing and `crates/piperine-cli/tests/buck.rs` are reconciled. The host test takes this run and overrides `print_step` |
+| Q3 | Is a new run key wanted now? | "Nenhuma (Recommended)" | None. `print`, `print_step`, `from` and `stop` are the observation policy; the sampling rule of decision 3 is not selectable |
+| Q4 | Which limits judge the 0.8 V start? | "Carregar S1 para 0,8 V (Recommended)" | Overshoot at most 15 mV above 0.8 V; settled inside ±10 mV between 207.5 and 307.5 µs; ripple at most 10 mV peak to peak over the last 40 µs. A miss is a finding reported to the user, never a moved limit |
 
 ## Problem Statement
 
@@ -55,9 +55,9 @@ The buck is the flagship mixed-signal prototype and its start has never been see
 | The grid | applied while the run goes; analog linear, digital held, no extrapolation; the internal step stays the solver's | decision 3 | y - user |
 | Measurements | a host test in Rust through `piperine-api`; `piperine test` unchanged in what it judges | decision 4 | y - user |
 | Parity | twins byte-identical, grid cross-checked against ngspice TSTEP, no tolerance retuned | decision 7 | y - user |
-| "Held" for a discrete signal on the grid | the net's value after the last instant at or before the row's time, read from the solver's net-change observations; not the value at the last accepted analog step, which `msl-cli` CLI-11 AC 5 says | decision 3 says "last committed value". A digital instant that the analog side does not read runs between two accepted steps, so the last step's value can be stale by up to one analog step. The two rules agree at every accepted step | n - planner; amends CLI-11 AC 5 |
+| "Held" for a discrete signal on the grid | the net's value after the last instant at or before the row's time, read from the solver's net-change observations; not the value at the last accepted analog step, which `msl-cli` CLI-11 AC 5 says | decision 3 says "last committed value". A digital instant that the analog side does not read runs between two accepted steps, so the last step's value can be stale by up to one analog step. The two rules agree at every accepted step | y - user, with the answers of 2026-11-17; amends CLI-11 AC 5 |
 | A discrete net of a real type (`Bit<f64>`) on the grid | held, like every discrete net | It is a carrier, not a node: it changes by commits. `Table::on_grid` interpolates it today because it looks at the cell's type, not at the signal's kind | n - planner; a fix |
-| The first row of a gridded run with `from` | the first `k*print_step` not before `from`, interpolated between the steps around it | CLI-11 AC 4 says exactly this. Today the row is skipped when no accepted step lies between `from` and it, because steps before `from` are dropped first. The buck's `startup` then prints 3 rows (599.0, 599.5, 600.0 µs), not 2; the Book's listing follows the binary | n - planner; follows CLI-11 AC 4 |
+| The first row of a gridded run with `from` | the first `k*print_step` not before `from`, interpolated between the steps around it | CLI-11 AC 4 says exactly this. Today the row is skipped when no accepted step lies between `from` and it, because steps before `from` are dropped first. A run with `from` gains that row; the buck's `startup` no longer has `from` (Q2) | y - user, with the answers of 2026-11-17; follows CLI-11 AC 4 |
 | No `print_step` | one row per accepted step, as today (CLI-05 AC 2), holding only the printed signals | Approved behaviour; about 160 B per row for three signals instead of 58 KB | n - planner |
 | The fine grid of the buck test | 10 ns (`print_step = 1e-8`), 60 001 rows | It equals the run's `max_step`, so no accepted step is longer than a grid cell; 200 rows per switching period keep the interpolation error of the ripple under 0.1 mV | n - planner |
 | The ripple window | the last 20 switching periods (40 µs), as `buck_closed_loop` reads | Well after power-good (about 388 µs) | n - planner |
@@ -68,12 +68,12 @@ The buck is the flagship mixed-signal prototype and its start has never been see
 | How memory is measured | a counting allocator in the test target, peak live bytes minus the bytes live when the run starts | Exact and portable; peak resident memory counts the loaded library and the allocator's slack | n - planner |
 | Wall time | printed on standard error by the test, never asserted | decision 5 | y - user |
 | `piperine test` | its verdict counts checks and keeps the failed records as they arrive, not every record | The buck writes 120 000 check records per run; keeping them all grows with the run's length. What it judges and prints does not change | n - planner |
-| Limits of the 0.8 V start | S1's, carried to 0.8 V (Q4 option a) | pending Q4 | n - asked |
-| The plot of a gridded run | the run's rows (Q1 option a) | pending Q1 | n - asked |
-| The long run of the manifest | `startup` itself (Q2 option a) | pending Q2 | n - asked |
-| New run keys | none (Q3 option a) | pending Q3 | n - asked |
+| Limits of the 0.8 V start | S1's, carried to 0.8 V; a miss is a finding, never a moved limit | "Carregar S1 para 0,8 V (Recommended)" | y - user |
+| The plot of a gridded run | the run's rows | "As linhas da grade (Recommended)" | y - user |
+| The long run of the manifest | `startup` itself, without `from` | "startup inteira (Recommended)" | y - user |
+| New run keys | none | "Nenhuma (Recommended)" | y - user |
 
-**Open questions:** Q1 to Q4 at the top of this file, awaiting the user. Everything else is resolved or logged above.
+**Open questions:** none - all resolved or logged above. Q1 to Q4 were answered on 2026-11-17 (top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: LR-03 AC 3 (a printed signal with no value fails before the first step), LR-05 AC 6 (no row past the last step); the keys' own validation is `msl-cli` CLI-03 and does not change. Failure and partial-failure states: LR-05 AC 7 and the edge cases (a run that ends short gives no table; the records already delivered stay). Idempotency and retry: N/A because a session runs once (`msl-cli` CLI-04). Auth and rate limits: N/A because the tool is local. Concurrency and ordering: LR-01 AC 3 and 4 (observer order against the sink; a rejected attempt is never observed). Data lifecycle: LR-02 (only the last step is kept, with its re-entry state), LR-04 (nothing per step is held). Observability: LR-12 AC 2 (wall time and peak memory printed). External-dependency failure: LR-14 AC 2 (ngspice absent or skipped, as the parity harness already rules). State-transition integrity: LR-02 AC 2 (re-entry from the kept step equals re-entry from a full run's last step).
 
@@ -177,19 +177,19 @@ The buck is the flagship mixed-signal prototype and its start has never been see
 
 **Acceptance Criteria** (LR-08, the run):
 
-1. WHEN the `Startup` bench of `examples/buck` runs a transient to 600 µs through `piperine-api` with `from` 0, `max_step = 1e-8` and `print_step = 1e-8`, printing `buck.vout`, `buck.ctl.reference`, `mode` and `pgood`, THEN the system SHALL give a table of 60 001 rows whose times are `k * 1e-8` for `k` from 0 to 60 000.
+1. WHEN the run `startup` of `examples/buck` runs through `piperine-api` with `print_step` overridden to `1e-8` and `print` overridden to `buck.vout`, `buck.ctl.reference`, `mode` and `pgood` (a transient to 600 µs, `max_step = 1e-8`, no `from`) THEN the system SHALL give a table of 60 001 rows whose times are `k * 1e-8` for `k` from 0 to 60 000.
 2. WHEN that run completes THEN every record of its `checks` stream SHALL have `pass` true, and the stream SHALL hold at least one record.
 
-**Acceptance Criteria** (LR-09, overshoot; limits pending Q4):
+**Acceptance Criteria** (LR-09, overshoot):
 
 1. WHEN that run completes THEN the largest `buck.vout` of the table SHALL be at most 0.815 V (0.8 V plus the 15 mV of SPEC §10 S1).
 
-**Acceptance Criteria** (LR-10, settling; limits pending Q4):
+**Acceptance Criteria** (LR-10, settling):
 
 1. WHEN that run completes THEN the settling time, the time of the first row from which every later row has `buck.vout` inside 0.8 V ± 10 mV (SPEC §2), SHALL be at least 207.5 µs and at most 307.5 µs (`en` at 1.5 µs, the ramp of 0.256 ms of SPEC §7.2, the ±0.05 ms of S1).
 2. WHEN that run completes THEN the last row SHALL hold `buck.ctl.reference` 128, `mode` 2 and `pgood` true (SPEC §7.1, §8, §8.6).
 
-**Acceptance Criteria** (LR-11, ripple; limits pending Q4):
+**Acceptance Criteria** (LR-11, ripple):
 
 1. WHEN that run completes THEN the difference between the largest and the smallest `buck.vout` of the rows of the last 40 µs SHALL be greater than 0 and at most 10 mV (SPEC §2).
 
@@ -198,9 +198,9 @@ The buck is the flagship mixed-signal prototype and its start has never been see
 1. WHEN that run completes THEN the peak live heap during `Session::run`, less the heap live when it started, SHALL be at most 1 GiB.
 2. WHEN that run completes THEN the test SHALL print the wall time of the run and the measured peak on standard error, asserting neither against a time.
 
-**Acceptance Criteria** (LR-13, the manifest; pending Q2):
+**Acceptance Criteria** (LR-13, the manifest):
 
-1. WHEN `piperine run startup` runs in `examples/buck` THEN the system SHALL print rows from time 0 to 600 µs on the run's `print_step`.
+1. WHEN `piperine run startup` runs in `examples/buck` THEN the system SHALL print 1 201 rows, from time 0 to 600 µs on the run's `print_step` of 0.5 µs.
 2. WHEN `piperine test` runs in `examples/buck` THEN the system SHALL print `PASS idle` and `PASS startup` lines and `2 runs, 2 passed, 0 failed`, as before this feature.
 
 **Independent Test**: `cargo test -p piperine-api --test buck_long` (one shared run, about two and a half minutes), and `cargo test -p piperine-cli --test buck`.
@@ -244,13 +244,13 @@ The buck is the flagship mixed-signal prototype and its start has never been see
 
 ---
 
-### P2: A plot of a streamed run (pending Q1)
+### P2: A plot of a streamed run
 
 **User Story**: As a user, I want `--plot` to keep working on a long run without holding every step.
 
-**Why P2**: The plot exists and must not break the bound; what it draws is Q1.
+**Why P2**: The plot exists and must not break the bound (Q1: it draws the grid rows).
 
-**Acceptance Criteria** (LR-17, written for Q1 option a):
+**Acceptance Criteria** (LR-17):
 
 1. WHEN a `transient` run with `plot` and `print_step` completes THEN the system SHALL draw the rows of its table.
 2. WHEN a `transient` run with `plot` and no `print_step` completes THEN the system SHALL draw every accepted step of the printed signals.
@@ -290,15 +290,15 @@ The buck is the flagship mixed-signal prototype and its start has never been see
 
 ## Amendments to `msl-cli` criteria
 
-`msl-cli` is approved. This feature changes what three of its criteria say; each change needs the user's approval of this spec.
+`msl-cli` is approved. This feature changes what three of its criteria say; the user accepted the three with the answers of 2026-11-17.
 
 | `msl-cli` says | This feature says | Why | Confirmed |
 | -------------- | ----------------- | --- | --------- |
-| CLI-11 AC 5: a discrete signal on the grid takes the value of the last accepted step at or before the row | the value after the last instant at or before the row (LR-05 AC 4) | decision 3: "last committed value" | n - with the approval |
-| CLI-22 AC 7: a plot of a gridded run still draws every accepted step | it draws the run's rows (LR-17 AC 1) | Q1 | n - asked |
-| Assumption "Transient rows": with `from`, only the steps at or after it are kept | no step is kept; rows start at the first grid time not before `from`, interpolated from the steps around it (LR-05 AC 1) | the window is the recorder's, not the solver's | n - with the approval |
+| CLI-11 AC 5: a discrete signal on the grid takes the value of the last accepted step at or before the row | the value after the last instant at or before the row (LR-05 AC 4) | decision 3: "last committed value" | y - user, 2026-11-17 |
+| CLI-22 AC 7: a plot of a gridded run still draws every accepted step | it draws the run's rows (LR-17 AC 1) | Q1: "As linhas da grade (Recommended)" | y - user, 2026-11-17 |
+| Assumption "Transient rows": with `from`, only the steps at or after it are kept | no step is kept; rows start at the first grid time not before `from`, interpolated from the steps around it (LR-05 AC 1) | the window is the recorder's, not the solver's | y - user, 2026-11-17 |
 
-CLI-03 AC 1 (the list of keys) does not change unless Q3 adds a key. CLI-05 AC 2 (one row per accepted step with no grid) stands.
+CLI-03 AC 1 (the list of keys) does not change (Q3: no new key). CLI-05 AC 2 (one row per accepted step with no grid) stands.
 
 ---
 
@@ -306,26 +306,26 @@ CLI-03 AC 1 (the list of keys) does not change unless Q3 adds a key. CLI-05 AC 2
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| LR-01 | P1: the solver hands each step to the host | Design | In Design |
-| LR-02 | P1: the solver hands each step to the host | Design | In Design |
-| LR-03 | P1: a run records only what it prints | Design | In Design |
-| LR-04 | P1: a run records only what it prints | Design | In Design |
-| LR-05 | P1: the print grid while the run goes | Design | In Design |
-| LR-06 | P1: the print grid while the run goes | Design | In Design |
-| LR-07 | P1: the observation policy is the run's | Design | In Design |
-| LR-08 | P1: the buck's whole start, measured | Design | In Design |
-| LR-09 | P1: the buck's whole start, measured | Design | In Design |
-| LR-10 | P1: the buck's whole start, measured | Design | In Design |
-| LR-11 | P1: the buck's whole start, measured | Design | In Design |
-| LR-12 | P1: the buck's whole start, measured | Design | In Design |
-| LR-13 | P1: the buck's whole start, measured | Design | In Design |
-| LR-14 | P1: parity holds | Design | In Design |
-| LR-15 | P1: parity holds | Design | In Design |
-| LR-16 | P2: `piperine test` without keeping records | Design | In Design |
-| LR-17 | P2: a plot of a streamed run | Design | In Design |
-| LR-18 | P3: the documents say what is true | Design | In Design |
+| LR-01 | P1: the solver hands each step to the host | Tasks | In Tasks |
+| LR-02 | P1: the solver hands each step to the host | Tasks | In Tasks |
+| LR-03 | P1: a run records only what it prints | Tasks | In Tasks |
+| LR-04 | P1: a run records only what it prints | Tasks | In Tasks |
+| LR-05 | P1: the print grid while the run goes | Tasks | In Tasks |
+| LR-06 | P1: the print grid while the run goes | Tasks | In Tasks |
+| LR-07 | P1: the observation policy is the run's | Tasks | In Tasks |
+| LR-08 | P1: the buck's whole start, measured | Tasks | In Tasks |
+| LR-09 | P1: the buck's whole start, measured | Tasks | In Tasks |
+| LR-10 | P1: the buck's whole start, measured | Tasks | In Tasks |
+| LR-11 | P1: the buck's whole start, measured | Tasks | In Tasks |
+| LR-12 | P1: the buck's whole start, measured | Tasks | In Tasks |
+| LR-13 | P1: the buck's whole start, measured | Tasks | In Tasks |
+| LR-14 | P1: parity holds | Tasks | In Tasks |
+| LR-15 | P1: parity holds | Tasks | In Tasks |
+| LR-16 | P2: `piperine test` without keeping records | Tasks | In Tasks |
+| LR-17 | P2: a plot of a streamed run | Tasks | In Tasks |
+| LR-18 | P3: the documents say what is true | Tasks | In Tasks |
 
-**Coverage:** 18 total, 0 mapped to tasks (tasks.md is not written yet), 18 unmapped.
+**Coverage:** 18 total, 18 mapped to tasks, 0 unmapped.
 
 ---
 
