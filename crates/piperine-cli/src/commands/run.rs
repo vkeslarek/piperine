@@ -12,6 +12,7 @@ use piperine_transpile::Settings;
 
 use crate::cli::Out;
 use crate::exit::Exit;
+use crate::render::csv::CsvTable;
 use crate::render::diagnostic::Report;
 use crate::render::record::RecordLine;
 use crate::render::table::TextTable;
@@ -119,11 +120,35 @@ impl RunCommand {
             return Err(error.into());
         }
         let table = table?;
+        let base = self.base(&project)?;
         let mut out = out.borrow_mut();
         writeln!(out)?;
-        TextTable::write(&table, &mut *out)?;
+        match &spec.csv {
+            Some(file) => {
+                let mut text = Vec::new();
+                CsvTable::write(&table, &mut text)?;
+                Self::replace(&base, file, &text)?;
+                writeln!(out, "wrote {} ({} rows)", file.display(), table.rows.len())?;
+            }
+            None => TextTable::write(&table, &mut *out)?,
+        }
         out.flush()?;
         Ok(())
+    }
+
+    /// What a relative output path is under (CLI-11 AC 6): the project directory, the working
+    /// directory for a lone file.
+    fn base(&self, project: &Project) -> Result<PathBuf, Failure> {
+        if self.lone().is_some() {
+            return std::env::current_dir().map_err(|error| Failure::Io { path: PathBuf::from("."), error });
+        }
+        Ok(project.dir().to_path_buf())
+    }
+
+    /// Writes `text` to `file` (under `base` when relative), replacing whatever was there.
+    fn replace(base: &Path, file: &Path, text: &[u8]) -> Result<(), Failure> {
+        let target = base.join(file);
+        std::fs::write(&target, text).map_err(|error| Failure::Io { path: file.to_path_buf(), error })
     }
 
     /// The project: a lone file when the target ends in `.msl` (its run is made from the flags,
