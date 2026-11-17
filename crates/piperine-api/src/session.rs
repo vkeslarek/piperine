@@ -87,6 +87,13 @@ impl Session {
     /// `spec` of `project`, from source to a bound circuit on the backend `spec.backend` names
     /// (`rust` when it names none); `settings` locate `rustc` and the cache.
     pub fn open(project: &Project, spec: &RunSpec, settings: &Settings) -> Result<Session, Failure> {
+        Session::open_announced(project, spec, settings, &mut |_| {})
+    }
+
+    /// [`Session::open`], calling `compiling` with the top's name once, before `rustc` runs, when
+    /// the Rust backend builds a design the cache does not hold (CLI-07 AC 8): a host says so
+    /// while the build runs, not after.
+    pub fn open_announced(project: &Project, spec: &RunSpec, settings: &Settings, compiling: &mut dyn FnMut(&str)) -> Result<Session, Failure> {
         let backend = Backend::choose(None, None, spec.backend.as_deref())?;
         let (ir, top) = Session::elaborate(project, spec)?;
         let probes = Session::probes_of(&ir, spec)?;
@@ -117,7 +124,7 @@ impl Session {
             }
             Backend::Rust => {
                 let transpiler = Transpiler::new(ir.clone()).map_err(|e| Failure::Backend(e.to_string()))?;
-                let compiled = transpiler.compile(settings).map_err(|e| Failure::Backend(e.to_string()))?;
+                let compiled = transpiler.compile_announced(settings, &mut || compiling(&top)).map_err(|e| Failure::Backend(e.to_string()))?;
                 let circuit = compiled.circuit().map_err(|e| Failure::Backend(format!("the compiled design cannot bind: {e}")))?;
                 (circuit, Some(compiled))
             }

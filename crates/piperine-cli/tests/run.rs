@@ -150,18 +150,35 @@ fn stdout_is_the_same_from_two_caches_and_two_directories() {
 
 #[test]
 fn a_first_compile_is_announced_on_stderr() {
-    // CLI-07 AC 8: a design that is not cached prints one line on standard error saying that it
-    // compiles and which run; a cached one prints none
+    // CLI-07 AC 8: WHILE a design that is not cached compiles, standard error holds one line
+    // saying that it compiles and which run; a cached one prints none. The compiler is a wrapper
+    // of `rustc` that, at its first build (not the `-vV` probe), copies what `piperine` has
+    // written on standard error so far: the line is there before `rustc` builds anything.
     let cache = tempfile::tempdir().expect("tmp");
-    let first = piperine_in(&rc(), cache.path(), &["run", "op"]);
-    assert_eq!(first.status.code(), Some(0), "{}", text(&first.stderr));
-    let announced: Vec<String> = text(&first.stderr).lines().filter(|l| l.contains("compiled")).map(str::to_string).collect();
-    assert_eq!(announced.len(), 1, "one announcement:\n{}", text(&first.stderr));
-    assert!(announced[0].contains("`op`"), "it names the run: {}", announced[0]);
-    assert!(!text(&first.stdout).contains("compiled"), "standard output is data only");
-    let second = piperine_in(&rc(), cache.path(), &["run", "op"]);
-    assert_eq!(second.status.code(), Some(0), "{}", text(&second.stderr));
-    assert!(!text(&second.stderr).contains("compiled"), "a cached design is not announced:\n{}", text(&second.stderr));
+    let err = cache.path().join("stderr.txt");
+    let seen = cache.path().join("seen-by-rustc.txt");
+    let wrapper = cache.path().join("rustc-wrapper.sh");
+    let script = format!("#!/bin/sh\ncase \"$1\" in -vV) ;; *) [ -f '{seen}' ] || cp '{err}' '{seen}' ;; esac\nexec rustc \"$@\"\n", seen = seen.display(), err = err.display());
+    std::fs::write(&wrapper, script).expect("the wrapper");
+    #[cfg(unix)]
+    std::fs::set_permissions(&wrapper, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("an executable wrapper");
+    let store = cache.path().join("store");
+    let run = |args: &[&str]| {
+        let file = std::fs::File::create(&err).expect("a stderr file");
+        Command::new(binary()).args(args).current_dir(rc()).env("PIPERINE_CACHE_DIR", &store).env("PIPERINE_RUSTC", &wrapper).env_remove("PIPERINE_BACKEND").stderr(file).output().expect("run piperine")
+    };
+    let first = run(&["run", "op"]);
+    let stderr = std::fs::read_to_string(&err).expect("stderr");
+    assert_eq!(first.status.code(), Some(0), "{stderr}");
+    let announced: Vec<&str> = stderr.lines().filter(|l| l.contains("compiling")).collect();
+    assert_eq!(announced, ["compiling run `op` (top Step) with rustc"], "one announcement naming the run:\n{stderr}");
+    let before = std::fs::read_to_string(&seen).expect("the wrapper built something");
+    assert!(before.contains("compiling run `op` (top Step) with rustc"), "the line is written before rustc builds; rustc saw:\n{before}");
+    assert!(!text(&first.stdout).contains("compiling"), "standard output is data only");
+    let second = run(&["run", "op"]);
+    let stderr = std::fs::read_to_string(&err).expect("stderr");
+    assert_eq!(second.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("compiling"), "a cached design is not announced:\n{stderr}");
 }
 
 #[test]

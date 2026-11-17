@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use piperine_api::{Backend, Built, Failure, Overrides, Project, Record, RecordSink, RunSpec, Session};
+use piperine_api::{Backend, Failure, Overrides, Project, Record, RecordSink, RunSpec, Session};
 use piperine_transpile::Settings;
 
 use crate::cli::Out;
@@ -143,11 +143,8 @@ impl RunCommand {
         let mut spec = spec;
         spec.backend = Some(Self::backend(self.overrides.backend.as_deref(), &spec)?.name().into());
         let settings = Settings::from_environment().map_err(|e| Failure::Backend(e.to_string()))?;
-        let mut session = Session::open(&project, &spec, &settings)?;
-        if let Built::Compiled { .. } = session.built() {
-            // the library compiles inside `open`, so the line is written once it has
-            let _ = writeln!(err, "compiled run `{}` (top {}) with rustc, and cached it", spec.name, session.top())?;
-        }
+        // CLI-07 AC 8: said before `rustc` runs, while the user waits for it
+        let mut session = Session::open_announced(&project, &spec, &settings, &mut |top| Self::announce(err, &spec.name, top))?;
         let base = self.base(&project)?;
         let to = match &spec.records {
             Some(path) => {
@@ -184,6 +181,12 @@ impl RunCommand {
         }
         out.flush()?;
         Ok(())
+    }
+
+    /// The line on standard error that says the run's design is being compiled, flushed before
+    /// the compiler starts; a closed standard error leaves nothing to tell.
+    pub(crate) fn announce(err: &mut dyn Write, run: &str, top: &str) {
+        let _ = writeln!(err, "compiling run `{run}` (top {top}) with rustc").and_then(|()| err.flush());
     }
 
     /// What a relative output path is under (CLI-11 AC 6): the project directory, the working

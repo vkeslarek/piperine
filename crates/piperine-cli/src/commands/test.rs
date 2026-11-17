@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use piperine_api::{Built, Failure, Project, Record, RecordSink, RunSpec, Session, Verdict};
+use piperine_api::{Failure, Project, Record, RecordSink, RunSpec, Session, Verdict};
 use piperine_transpile::Settings;
 
 use crate::cli::Out;
@@ -105,11 +105,7 @@ impl TestCommand {
             Err(Stop::Closed(error)) => return Err(Failure::Backend(error.to_string())),
         };
         spec.backend = Some(backend.name().into());
-        let mut session = Session::open(project, &spec, settings)?;
-        if let Built::Compiled { .. } = session.built() {
-            // the library compiles inside `open`, so the line is written once it has
-            let _ = writeln!(err, "compiled run `{}` (top {}) with rustc, and cached it", spec.name, session.top());
-        }
+        let mut session = Session::open_announced(project, &spec, settings, &mut |top| RunCommand::announce(err, &spec.name, top))?;
         let collected = Rc::new(RefCell::new(Collected::default()));
         session.run(collected.clone())?;
         let records = collected.borrow();

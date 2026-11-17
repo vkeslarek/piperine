@@ -26,6 +26,12 @@ impl Transpiler {
     /// with the compiler's standard error, and the generated source stays on disk where the
     /// error names it.
     pub fn compile(&self, settings: &Settings) -> Result<Compiled, Error> {
+        self.compile_announced(settings, &mut || {})
+    }
+
+    /// [`Transpiler::compile`], calling `building` once, before the compiler builds anything,
+    /// when the cache does not hold the design: a host announces a compile while it runs.
+    pub fn compile_announced(&self, settings: &Settings, building: &mut dyn FnMut()) -> Result<Compiled, Error> {
         let started = Instant::now();
         let source = self.source()?;
         let mut report = Report { transpile: started.elapsed(), ..Report::default() };
@@ -67,6 +73,7 @@ impl Transpiler {
                 if present {
                     cache.remove(&key)?;
                 }
+                building();
                 self.build_and_open(&cache, &key, &abi_key, &rustc, &source, &runtime, &mut report)?
             }
         };

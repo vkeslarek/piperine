@@ -1556,7 +1556,7 @@ Proof: run run | test stdout_is_the_same_from_two_caches_and_two_directories ...
 **C73** - `piperine run tests/ngspice/divider.msl --analysis op` prints `run divider: op, top Divider, backend rust` and `Divider.mid  7.500000e0`. (CLI-07, AC 7; T19)
 Proof: run run | test a_lone_file_run_is_named_by_its_stem ... ok
 
-**C74** - With an empty cache, standard error holds one line with `compiling` and `step`; with the cache filled, none. (CLI-07, AC 8; T18)
+**C74** - With an empty cache, standard error holds exactly one line `compiling run \`op\` (top Step) with rustc`, and a wrapper `rustc` finds it already written when its first build starts; with the cache filled, none. (CLI-07, AC 8; T18)
 Proof: run run | test a_first_compile_is_announced_on_stderr ... ok
 
 **C75** - With standard output closed by the reader after the header, the process exits 1 and standard error holds no `panicked`. (CLI-07, AC edge 8; T20)
