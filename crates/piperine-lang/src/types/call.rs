@@ -5,10 +5,13 @@
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, PatKind, Resolution};
 
 use super::carrier::flag_builtin;
-use super::catalogue::Catalogue;
+use super::catalogue::{Catalogue, Lookup};
 use super::check::{Checker, Context};
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Ty};
+
+/// The carrier and flag methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
+const CARRIER_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "changed", "prev", "rise", "fall", "others", "inflow", "level"];
 
 impl Checker<'_> {
     /// What a callee path names, if the callee is a plain path.
@@ -235,12 +238,21 @@ impl Checker<'_> {
                 return result;
             }
         }
-        let Some((row, params, result)) = Catalogue::method(&recv_ty, name) else {
-            self.unsupported(file, method.span, &format!("method `{name}` on `{}`", recv_ty.name(self.design)));
-            for arg in args {
-                self.infer(arg.value);
+        let (row, params, result) = match Catalogue::method(&recv_ty, name) {
+            Lookup::Row(row, params, result) => (row, params, result),
+            miss => {
+                let type_name = recv_ty.name(self.design);
+                if matches!(miss, Lookup::Absent) && !self.project_methods.contains(name) && !CARRIER_METHODS.contains(&name) {
+                    let message = format!("no method `{name}` on `{type_name}`");
+                    self.report(file, crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)")));
+                } else {
+                    self.unsupported(file, method.span, &format!("method `{name}` on `{type_name}`"));
+                }
+                for arg in args {
+                    self.infer(arg.value);
+                }
+                return None;
             }
-            return None;
         };
         // An argument of the receiver's type takes it when it is a literal (DIG-01 AC 2).
         self.apply(expr, &params, args)?;

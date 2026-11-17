@@ -250,6 +250,11 @@ impl Elaboration<'_, '_> {
                         let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                         return self.lower_option_method(scope, method, *recv, &args, ty, origin);
                     }
+                    // Lowered to an IR method by T18.
+                    _ => {
+                        self.unsupported(file, node.span, &format!("method `{method:?}` (lowered from T18 on)"));
+                        return None;
+                    }
                 };
                 let recv = self.lower_expr(scope, *recv)?;
                 if self.flag(recv) == Flag::Flagged {

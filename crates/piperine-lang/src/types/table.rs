@@ -24,6 +24,33 @@ pub enum Method {
     Clamp,
     /// `x.floor()` on `f64`.
     Floor,
+    Sin,
+    Cos,
+    Tan,
+    Asin,
+    Acos,
+    Atan,
+    Atan2,
+    Sinh,
+    Cosh,
+    Tanh,
+    Powf,
+    /// `x.powi(e: i32)` on `f64`.
+    Powi,
+    Log10,
+    Log2,
+    Ceil,
+    Round,
+    Trunc,
+    Fract,
+    /// `x.signum()` on `f64` or a signed integer.
+    Signum,
+    /// `x.rem_euclid(d)` on `f64` or an integer.
+    RemEuclid,
+    Hypot,
+    IsNan,
+    IsFinite,
+    IsInfinite,
     /// `o.is_some()` on an `Option`.
     IsSome,
     /// `o.is_none()` on an `Option`.

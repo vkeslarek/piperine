@@ -234,11 +234,11 @@ fn a_deferred_method_is_resolved() {
     assert_eq!(types.method(call), Some(Method::Exp));
     assert_eq!(types.ty(call), Some(&Ty::F64));
 
-    // A method outside the table is refused by name.
-    let (src, d) = diagnostics("fn p(a: f64) -> f64 { a.powf(2.0) }", "let x = p(1.0);");
-    assert_eq!(codes_of(&d), ["P0001"]);
-    assert!(d[0].diagnostic.message.contains("powf"), "{}", d[0].diagnostic.message);
-    assert_eq!(snippet(&src, &d[0]), "powf");
+    // A method outside Appendix H.2 is `E0161` by name (CAT-01 AC 6).
+    let (src, d) = diagnostics("fn p(a: f64) -> f64 { a.cbrt() }", "let x = p(1.0);");
+    assert_eq!(codes_of(&d), ["E0161"]);
+    assert!(d[0].diagnostic.message.contains("cbrt"), "{}", d[0].diagnostic.message);
+    assert_eq!(snippet(&src, &d[0]), "cbrt");
 }
 
 #[test]
@@ -418,4 +418,69 @@ fn an_option_before_a_required_parameter_is_positional_only() {
     let (src, d) = diagnostics(items, "let r = g(a: 1.0);");
     assert!(codes_of(&d).contains(&"E0140".to_string()), "{:?}", codes_of(&d));
     assert!(d.iter().any(|d| d.diagnostic.code == "E0140" && snippet(&src, d) == "a: 1.0"), "at the named argument");
+}
+
+#[test]
+fn every_h2_row_types_with_its_signature() {
+    // CAT-01 AC 1 (Appendix H.2): 32 rows; `powi` takes an `i32`; `is_nan`, `is_finite` and
+    // `is_infinite` give `bool`; every other row gives `f64`.
+    use Method::*;
+    let rows: [(&str, Method, Ty); 32] = [
+        ("x.abs()", Abs, Ty::F64),
+        ("x.sqrt()", Sqrt, Ty::F64),
+        ("x.powf(y)", Powf, Ty::F64),
+        ("x.powi(2)", Powi, Ty::F64),
+        ("x.exp()", Exp, Ty::F64),
+        ("x.ln()", Ln, Ty::F64),
+        ("x.log10()", Log10, Ty::F64),
+        ("x.log2()", Log2, Ty::F64),
+        ("x.sin()", Sin, Ty::F64),
+        ("x.cos()", Cos, Ty::F64),
+        ("x.tan()", Tan, Ty::F64),
+        ("x.asin()", Asin, Ty::F64),
+        ("x.acos()", Acos, Ty::F64),
+        ("x.atan()", Atan, Ty::F64),
+        ("x.atan2(y)", Atan2, Ty::F64),
+        ("x.sinh()", Sinh, Ty::F64),
+        ("x.cosh()", Cosh, Ty::F64),
+        ("x.tanh()", Tanh, Ty::F64),
+        ("x.floor()", Floor, Ty::F64),
+        ("x.ceil()", Ceil, Ty::F64),
+        ("x.round()", Round, Ty::F64),
+        ("x.trunc()", Trunc, Ty::F64),
+        ("x.fract()", Fract, Ty::F64),
+        ("x.min(y)", Min, Ty::F64),
+        ("x.max(y)", Max, Ty::F64),
+        ("x.clamp(y, 3.0)", Clamp, Ty::F64),
+        ("x.signum()", Signum, Ty::F64),
+        ("x.rem_euclid(y)", RemEuclid, Ty::F64),
+        ("x.hypot(y)", Hypot, Ty::F64),
+        ("x.is_nan()", IsNan, Ty::Bool),
+        ("x.is_finite()", IsFinite, Ty::Bool),
+        ("x.is_infinite()", IsInfinite, Ty::Bool),
+    ];
+    let lets: String = rows.iter().enumerate().map(|(i, (call, ..))| format!("let r{i} = {call}; ")).collect();
+    let src = source("", &format!("let x = 0.5; let y = 2.0; {lets}"));
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}\n{src}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    for (i, (call, method, ty)) in rows.iter().enumerate() {
+        assert_eq!(types.local(binding(&design, &format!("r{i}"))), Some(ty), "{call}");
+        let at = (0..design.expr_count()).map(|e| ExprId(e as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::MethodCall { .. }) && src[design.expr_node(*e).span.range()] == **call).unwrap_or_else(|| panic!("{call}"));
+        assert_eq!(types.method(at), Some(*method), "{call}");
+    }
+    // `powi` takes an `i32`: an `f64` exponent is a mismatch.
+    let (src, d) = diagnostics("", "let x = 0.5; let r = x.powi(2.0);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "2.0");
+}
+
+#[test]
+fn a_method_outside_h2_on_f64_is_e0161() {
+    // CAT-01 AC 6: `cbrt` is not a row of Appendix H.2; the closed catalogue refuses it naming
+    // the method and `f64` (Appendix H rule 1).
+    let (src, d) = diagnostics("", "let x = 0.5; let y = x.cbrt();");
+    assert_eq!(codes_of(&d), ["E0161"]);
+    let message = &d[0].diagnostic.message;
+    assert!(message.contains("cbrt") && message.contains("`f64`"), "{message}");
+    assert_eq!(snippet(&src, &d[0]), "cbrt");
 }

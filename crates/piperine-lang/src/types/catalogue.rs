@@ -1,48 +1,133 @@
-//! The closed method catalogue of the M1 subset: the rows of Appendix H.2 the models call.
-//! A table of rows, one line each to extend; a method outside it is `P0001`.
+//! The closed method catalogue: the rows of Appendix H, one line each. A method outside a
+//! complete receiver type's rows is `E0161` (rule 1); a receiver type without a catalogue is `P0001`.
 
 use crate::pom::BuiltinId;
 
 use super::{Method, Ty};
 
-/// The Appendix H.2 rows of `f64` the subset types. Each gives `Self`; the second column is the
-/// number of arguments, each of the receiver's type.
-const F64_METHODS: &[(&str, Method, usize)] = &[
-    ("exp", Method::Exp, 0),
-    ("ln", Method::Ln, 0),
-    ("sqrt", Method::Sqrt, 0),
-    ("abs", Method::Abs, 0),
-    ("floor", Method::Floor, 0),
-    ("min", Method::Min, 1),
-    ("max", Method::Max, 1),
-    ("clamp", Method::Clamp, 2),
+/// The type of one argument of a row of Appendix H.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Arg {
+    /// The receiver's own type.
+    SelfTy,
+    /// `i32`: the exponent of `powi`.
+    I32,
+}
+
+impl Arg {
+    fn ty(self, recv: &Ty) -> Ty {
+        match self {
+            Arg::SelfTy => recv.clone(),
+            Arg::I32 => Ty::Int(32),
+        }
+    }
+}
+
+/// The result type of a row of Appendix H.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Res {
+    SelfTy,
+    Bool,
+}
+
+impl Res {
+    fn ty(self, recv: &Ty) -> Ty {
+        match self {
+            Res::SelfTy => recv.clone(),
+            Res::Bool => Ty::Bool,
+        }
+    }
+}
+
+/// One row of Appendix H: the method's name, what it is recorded as, its arguments and its result.
+struct Row {
+    name: &'static str,
+    method: Method,
+    params: &'static [Arg],
+    result: Res,
+}
+
+const fn row(name: &'static str, method: Method, params: &'static [Arg], result: Res) -> Row {
+    Row { name, method, params, result }
+}
+
+const SELF: Arg = Arg::SelfTy;
+
+/// The rows of Appendix H.2, `f64`: 32 of them.
+const F64_METHODS: &[Row] = &[
+    row("abs", Method::Abs, &[], Res::SelfTy),
+    row("sqrt", Method::Sqrt, &[], Res::SelfTy),
+    row("powf", Method::Powf, &[SELF], Res::SelfTy),
+    row("powi", Method::Powi, &[Arg::I32], Res::SelfTy),
+    row("exp", Method::Exp, &[], Res::SelfTy),
+    row("ln", Method::Ln, &[], Res::SelfTy),
+    row("log10", Method::Log10, &[], Res::SelfTy),
+    row("log2", Method::Log2, &[], Res::SelfTy),
+    row("sin", Method::Sin, &[], Res::SelfTy),
+    row("cos", Method::Cos, &[], Res::SelfTy),
+    row("tan", Method::Tan, &[], Res::SelfTy),
+    row("asin", Method::Asin, &[], Res::SelfTy),
+    row("acos", Method::Acos, &[], Res::SelfTy),
+    row("atan", Method::Atan, &[], Res::SelfTy),
+    row("atan2", Method::Atan2, &[SELF], Res::SelfTy),
+    row("sinh", Method::Sinh, &[], Res::SelfTy),
+    row("cosh", Method::Cosh, &[], Res::SelfTy),
+    row("tanh", Method::Tanh, &[], Res::SelfTy),
+    row("floor", Method::Floor, &[], Res::SelfTy),
+    row("ceil", Method::Ceil, &[], Res::SelfTy),
+    row("round", Method::Round, &[], Res::SelfTy),
+    row("trunc", Method::Trunc, &[], Res::SelfTy),
+    row("fract", Method::Fract, &[], Res::SelfTy),
+    row("min", Method::Min, &[SELF], Res::SelfTy),
+    row("max", Method::Max, &[SELF], Res::SelfTy),
+    row("clamp", Method::Clamp, &[SELF, SELF], Res::SelfTy),
+    row("signum", Method::Signum, &[], Res::SelfTy),
+    row("rem_euclid", Method::RemEuclid, &[SELF], Res::SelfTy),
+    row("hypot", Method::Hypot, &[SELF], Res::SelfTy),
+    row("is_nan", Method::IsNan, &[], Res::Bool),
+    row("is_finite", Method::IsFinite, &[], Res::Bool),
+    row("is_infinite", Method::IsInfinite, &[], Res::Bool),
 ];
 
-/// The Appendix H rows of `UInt<N>` and `Int<N>` the subset types, as `F64_METHODS`.
-const INTEGER_METHODS: &[(&str, Method, usize)] = &[("min", Method::Min, 1), ("max", Method::Max, 1), ("clamp", Method::Clamp, 2)];
+/// The Appendix H.1 rows of `UInt<N>` and `Int<N>` the subset types, as `F64_METHODS`.
+const INTEGER_METHODS: &[Row] = &[row("min", Method::Min, &[SELF], Res::SelfTy), row("max", Method::Max, &[SELF], Res::SelfTy), row("clamp", Method::Clamp, &[SELF, SELF], Res::SelfTy)];
+
+/// What looking a method up on a receiver type found.
+pub(super) enum Lookup {
+    /// A row: its method, its argument types and its result.
+    Row(Method, Vec<Ty>, Ty),
+    /// The receiver's catalogue is complete and has no such row: `E0161` (Appendix H rule 1).
+    Absent,
+    /// The receiver's type has no catalogue in the subset yet: `P0001`.
+    Uncatalogued,
+}
 
 pub(super) struct Catalogue;
 
 impl Catalogue {
-    /// The row named `name` for a receiver of type `recv`: the row, its argument types and its
-    /// result.
-    pub(super) fn method(recv: &Ty, name: &str) -> Option<(Method, Vec<Ty>, Ty)> {
-        let rows = match recv {
-            Ty::F64 => F64_METHODS,
-            Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
+    /// The row named `name` for a receiver of type `recv`.
+    pub(super) fn method(recv: &Ty, name: &str) -> Lookup {
+        // The second column: whether the table is the whole of Appendix H for the type.
+        let (rows, complete) = match recv {
+            Ty::F64 => (F64_METHODS, true),
+            Ty::UInt(_) | Ty::Int(_) => (INTEGER_METHODS, false),
             Ty::Option(inner) => return Self::option(inner, name),
-            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => return None,
+            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => return Lookup::Uncatalogued,
         };
-        rows.iter().find(|(row, _, _)| *row == name).map(|(_, method, arity)| (*method, vec![recv.clone(); *arity], recv.clone()))
+        match rows.iter().find(|r| r.name == name) {
+            Some(r) => Lookup::Row(r.method, r.params.iter().map(|a| a.ty(recv)).collect(), r.result.ty(recv)),
+            None if complete => Lookup::Absent,
+            None => Lookup::Uncatalogued,
+        }
     }
 
     /// The rows of `Option<T>` (Appendix H): `is_some`, `is_none`, `unwrap_or(T) -> T`.
-    fn option(inner: &Ty, name: &str) -> Option<(Method, Vec<Ty>, Ty)> {
+    fn option(inner: &Ty, name: &str) -> Lookup {
         match name {
-            "is_some" => Some((Method::IsSome, vec![], Ty::Bool)),
-            "is_none" => Some((Method::IsNone, vec![], Ty::Bool)),
-            "unwrap_or" => Some((Method::UnwrapOr, vec![inner.clone()], inner.clone())),
-            _ => None,
+            "is_some" => Lookup::Row(Method::IsSome, vec![], Ty::Bool),
+            "is_none" => Lookup::Row(Method::IsNone, vec![], Ty::Bool),
+            "unwrap_or" => Lookup::Row(Method::UnwrapOr, vec![inner.clone()], inner.clone()),
+            _ => Lookup::Uncatalogued,
         }
     }
 }
