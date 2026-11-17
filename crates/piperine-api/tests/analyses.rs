@@ -241,3 +241,49 @@ fn the_rc_corner_is_minus_3_db_and_minus_45_degrees() {
         assert!((phase + 45.0).abs() <= 1e-2, "{backend}: phase {phase}");
     }
 }
+
+fn with_params(overrides: Overrides, params: &[(&str, f64)]) -> Overrides {
+    Overrides { params: params.iter().map(|(p, v)| (p.to_string(), *v)).collect(), ..overrides }
+}
+
+#[test]
+fn params_are_set_in_order_table_then_flags() {
+    // CLI-10 AC 1 and 4: divider.msl is 10 V over r1 = 1k then r2 = 3k; r2.r = 1000 gives
+    // 10 * 1000 / (1000 + 1000) = 5 for `mid`; the entries apply in order, so a later write of
+    // the same param wins: r2.r = 9000 then r2.r = 1000 is 5, and 1000 then 9000 is 10 * 9/10 = 9
+    for backend in ["interp", "rust"] {
+        let mid = |params: &[(&str, f64)]| {
+            let table = run(&twin("divider.msl"), backend, with_params(op(&["mid"]), params)).unwrap_or_else(|f| panic!("{backend}: {f}"));
+            real(value(&table, "Divider.mid"))
+        };
+        assert!((mid(&[("r2.r", 1000.0)]) - 5.0).abs() <= 1e-9, "{backend}");
+        assert!((mid(&[("r2.r", 9000.0), ("r2.r", 1000.0)]) - 5.0).abs() <= 1e-9, "{backend}");
+        assert!((mid(&[("r2.r", 1000.0), ("r2.r", 9000.0)]) - 9.0).abs() <= 1e-9, "{backend}");
+        // the full path names the same param
+        assert!((mid(&[("Divider.r2.r", 1000.0)]) - 5.0).abs() <= 1e-9, "{backend}");
+    }
+}
+
+#[test]
+fn a_param_path_that_names_nothing_is_e0801() {
+    // CLI-10 AC 2: E0801 naming the path, for a missing instance, a missing param and a path
+    // with no instance; a typo is found before anything compiles
+    for path in ["r9.r", "r2.nothing", "r"] {
+        match run(&twin("divider.msl"), "rust", with_params(op(&[]), &[(path, 1.0)])) {
+            Err(Failure::Host { code: "E0801", message }) => assert!(message.contains(path), "{message}"),
+            other => panic!("`{path}`: expected E0801, found {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_refused_value_is_e0802_and_nothing_runs() {
+    // CLI-10 AC 3: `Resistor`'s `r: f64 where r > 0.0` refuses -5: E0802 naming the path and the
+    // value, and no table
+    for backend in ["interp", "rust"] {
+        match run(&twin("divider.msl"), backend, with_params(op(&[]), &[("r2.r", -5.0)])) {
+            Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("r2.r") && message.contains("-5"), "{backend}: {message}"),
+            other => panic!("{backend}: expected E0802, found {other:?}"),
+        }
+    }
+}

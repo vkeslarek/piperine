@@ -100,7 +100,9 @@ impl Session {
             Analysis::Dc { sweep, .. } => Some(ParamPath::resolve(&ir, ir.top().path(), sweep)?),
             _ => None,
         };
-        let (circuit, compiled) = match backend {
+        // every param path resolves before anything compiles: a typo costs no `rustc`
+        let params = spec.params.iter().map(|(entry, value)| Ok((ParamPath::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
+        let (mut circuit, compiled) = match backend {
             Backend::Interp => {
                 let interpreter = Interpreter::new(ir.clone()).map_err(|rejected| {
                     let entries: Vec<String> = rejected.entries.iter().map(|e| format!("  {}: {}", e.item, e.what)).collect();
@@ -115,6 +117,12 @@ impl Session {
                 (circuit, Some(compiled))
             }
         };
+        // the table's params, then the flags', in the order given: the design's own check may
+        // refuse a value, and then no analysis runs
+        for (path, entry, value) in &params {
+            let refused = |error| Failure::Host { code: "E0802", message: format!("`{entry}` refuses the value {value}: {error}") };
+            circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
+        }
         Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept })
     }
 
