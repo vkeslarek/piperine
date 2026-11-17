@@ -9,7 +9,11 @@
 //! analog steps. At every step the value the changes add up to must be the one the solver
 //! reads; a difference is a change the solver did not report, and the run fails naming the net.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
+
+use piperine_solver::prelude::{StepObserver, StepView};
 
 use crate::failure::Failure;
 use crate::probe::Column;
@@ -243,6 +247,19 @@ impl Recorder {
         let mut columns = vec!["time".to_string()];
         columns.extend(self.labels);
         Ok(Table { columns, rows: self.rows })
+    }
+}
+
+/// The solver's step observer of a run: each accepted step goes to the recorder, read through the
+/// step's solution and net reader.
+pub(crate) struct Tap(pub(crate) Rc<RefCell<Recorder>>);
+
+impl StepObserver for Tap {
+    fn step(&mut self, step: &StepView<'_>) {
+        self.0.borrow_mut().step(step.time(), &|column| match column {
+            Column::Unknown { index } => Ok(step.unknown(*index).map(Cell::Real)),
+            Column::Net { id, ty } => step.net(*id).map(|bytes| Cell::decode(ty, bytes)).transpose(),
+        });
     }
 }
 

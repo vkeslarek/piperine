@@ -15,7 +15,7 @@ use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
-use piperine_solver::prelude::{AcSweepAnalysisOptions, CircuitInstance, Context, ParamValue, Solver, TransientAnalysisOptions};
+use piperine_solver::prelude::{AcSweepAnalysisOptions, CircuitInstance, Context, Keep, ParamValue, Solver, TransientAnalysisOptions};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
@@ -23,6 +23,7 @@ use crate::failure::Failure;
 use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
+use crate::recorder::{Recorder, Tap};
 use crate::table::Table;
 use crate::project::Project;
 use crate::request::{Analysis, Grid, RunSpec};
@@ -204,7 +205,7 @@ impl Session {
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
         let failure = Rc::new(RefCell::new(None));
-        let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone() });
+        let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone(), recorder: None });
         let table = self.analysis(circuit, delivery);
         if let (Ok(table), Some(_)) = (&table, &self.spec.plot) {
             self.accepted.get_or_insert_with(|| table.clone());
@@ -218,7 +219,7 @@ impl Session {
     }
 
     /// The request's analysis on `circuit`, every observation of the solver to `delivery`.
-    fn analysis(&mut self, circuit: CircuitInstance, delivery: Box<Delivery>) -> Result<Table, Failure> {
+    fn analysis(&mut self, circuit: CircuitInstance, mut delivery: Box<Delivery>) -> Result<Table, Failure> {
         match &self.spec.analysis {
             Analysis::Op => {
                 let mut solver = Solver::new(circuit).with_sink(delivery).build();
@@ -228,17 +229,21 @@ impl Session {
                 Table::operating_point(&self.probes, &result, &net)
             }
             Analysis::Transient { stop, max_step, print_step, from } => {
-                // design "How an analysis reaches the solver": `max_step` is the first step and
-                // the largest; without it the first step is `stop / 1000` and the largest the
-                // solver's default; `from` is the first time kept (contract D10)
-                let mut options = match max_step {
-                    Some(step) => TransientAnalysisOptions::new(*stop, *step).with_dt_max(*step),
-                    None => TransientAnalysisOptions::new(*stop, stop / 1000.0),
-                };
-                if let Some(from) = from {
-                    options = options.with_record_from(*from);
+                // every printed signal finds its place in a step before the first one is taken
+                let columns = self.probes.iter().map(|probe| probe.column(&circuit)).collect::<Result<Vec<_>, Failure>>()?;
+                let labels = self.probes.iter().map(Probe::label).collect();
+                let mut recorder = Recorder::new(columns, labels, from.unwrap_or(0.0));
+                if let Some(step) = print_step {
+                    recorder = recorder.with_grid(*step, *stop);
                 }
-                let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(delivery).build();
+                let recorder = Rc::new(RefCell::new(recorder));
+                delivery.recorder = Some(recorder.clone());
+                let options = Session::transient_options(*stop, *max_step);
+                let mut solver = Solver::new(circuit)
+                    .with_tran_opts(options)
+                    .with_sink(delivery)
+                    .with_step_observer(Box::new(Tap(recorder.clone())))
+                    .build();
                 let result = solver.tran().and_then(|mut tran| tran.solve()).map_err(|error| Failure::Solver { analysis: "transient", error })?;
                 // CLI-05 AC 11: a run that stopped short has no table to give; the solver does not
                 // step a design with no analog node, which keeps a single step at 0 holding the
@@ -250,14 +255,10 @@ impl Session {
                         "the transient ended with {at}, before its stop at {stop:e}: the solver does not step a design with no analog node, so a digital-only transient is refused"
                     )));
                 }
-                let table = Table::transient(&self.probes, &result)?;
-                if self.spec.plot.is_some() {
-                    self.accepted = Some(table.clone());
-                }
-                match print_step {
-                    Some(step) => table.on_grid(*step, from.unwrap_or(0.0), *stop),
-                    None => Ok(table),
-                }
+                // the solver held the observers; with it gone the recorder has one owner
+                drop(solver);
+                let recorder = Rc::try_unwrap(recorder).map_err(|_| Failure::Backend("the run's recorder is still shared after the run".into()))?;
+                recorder.into_inner().finish()
             }
             Analysis::Dc { from, to, step, .. } => {
                 let mut circuit = circuit;
@@ -289,6 +290,17 @@ impl Session {
                 Table::frequency(&self.probes, &result)
             }
         }
+    }
+
+    /// The options of a transient: `max_step` is the first step and the largest; without it the
+    /// first step is `stop / 1000` and the largest the solver's default. The run keeps only its
+    /// last step, and no window: the rows are the recorder's (`long-run` LR-07).
+    fn transient_options(stop: f64, max_step: Option<f64>) -> TransientAnalysisOptions {
+        let options = match max_step {
+            Some(step) => TransientAnalysisOptions::new(stop, step).with_dt_max(step),
+            None => TransientAnalysisOptions::new(stop, stop / 1000.0),
+        };
+        options.with_keep(Keep::Last)
     }
 
     /// The bytes of the discrete net at `path` in the bound design: its index in the digital
@@ -339,5 +351,21 @@ impl Session {
 
     fn diagnosed(stage: &'static str, design: Design, found: Vec<DesignDiagnostic>) -> Failure {
         Failure::Diagnostics { stage, design: Box::new(design), found }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_transient_keeps_only_the_last_step() {
+        // LR-07 AC 1: a session's transient keeps the last step alone and sets no `record_from`
+        // window; the first step and the largest are what the request gave
+        let options = Session::transient_options(1.0, Some(0.25));
+        assert_eq!(options.keep, Keep::Last);
+        assert_eq!(options.record_from, 0.0);
+        assert_eq!((options.stop_time, options.dt_max), (1.0, 0.25));
+        assert_eq!(Session::transient_options(1.0, None).keep, Keep::Last);
     }
 }

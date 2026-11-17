@@ -20,6 +20,7 @@ use piperine_plan::RecordLayout;
 use piperine_solver::protocol::{Observation, ObservationKind, Sink};
 
 use crate::failure::Failure;
+use crate::recorder::Recorder;
 use crate::table::Cell;
 
 /// One `emit!` record: when, which instance's site, which stream, and its fields in source
@@ -168,15 +169,24 @@ impl Field {
 }
 
 /// The solver's sink of a session's run: each record decoded and handed to the host's sink as
-/// it is delivered; the first record that cannot be decoded is kept for the run to report.
+/// it is delivered, each change of a net to the recorder of the run's table; the first record
+/// that cannot be decoded is kept for the run to report.
 pub(crate) struct Delivery {
     pub(crate) streams: Streams,
     pub(crate) sink: Rc<RefCell<dyn RecordSink>>,
     pub(crate) failure: Rc<RefCell<Option<Failure>>>,
+    /// The recorder of a transient's rows, which holds the nets as they change.
+    pub(crate) recorder: Option<Rc<RefCell<Recorder>>>,
 }
 
 impl Sink for Delivery {
     fn observe(&mut self, o: &Observation) {
+        // a change with bytes is a net taking a value; one with none is an event firing
+        if let (Some(recorder), ObservationKind::Change { bytes }) = (&self.recorder, &o.kind) {
+            if !bytes.is_empty() {
+                recorder.borrow_mut().change(&o.path, o.time, bytes);
+            }
+        }
         match self.streams.decode(o) {
             Some(Ok(record)) => self.sink.borrow_mut().record(&record),
             Some(Err(failure)) => {

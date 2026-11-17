@@ -349,13 +349,13 @@ T23
 
 **Done when**:
 
-- [ ] New target `crates/piperine-api/tests/grid.rs` (with its `//!` header) holds, with exactly these names: `a_gridless_transient_equals_the_table_of_a_run_that_kept_every_step` (against `Table::transient` over a `Keep::Every` run made in the test, both backends), `the_gridded_tran_rc_is_bit_equal_to_on_grid_on_both_backends`, `a_gridded_run_with_from_starts_at_the_first_multiple_not_before_it`, `a_counter_that_changes_between_analog_steps_is_exact_on_the_grid` (a small clocked design written in the test's own project directory, expected values computed from its clock period), `a_run_table_and_flags_give_equal_tables`, `a_printed_signal_with_no_value_fails_before_the_first_step`
-- [ ] The unit test `session::tests::a_transient_keeps_only_the_last_step` passes in `cargo test -p piperine-api --lib`
-- [ ] `a_transient_has_one_row_per_accepted_step` and `the_rc_step_follows_one_minus_exp_on_both_backends` pass unedited in `cargo test -p piperine-api --test analyses`
-- [ ] `tran_rc_prints_the_bytes_it_printed_before_the_long_run` (T2) and `a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot` pass unedited
-- [ ] Known and expected until T14 and T15: `crates/piperine-cli/tests/buck.rs` and the buck listing of `tests/book.rs` may differ on the first row of `startup` (a gridded run with `from` gains the row CLI-11 AC 4 names). They are not this task's gate; any other failing test stops the task
-- [ ] Gate check passes: Quick (`Run grid`, `Run apilib`, `Run analyses`), then `cargo test -p piperine-api`; `cargo test -p piperine-cli --test run --test twins`
-- [ ] Test count: the 7 tests named above, and no existing test removed or edited
+- [x] New target `crates/piperine-api/tests/grid.rs` (with its `//!` header) holds, with exactly these names: `a_gridless_transient_equals_the_table_of_a_run_that_kept_every_step` (against `Table::transient` over a `Keep::Every` run made in the test, both backends), `the_gridded_tran_rc_is_bit_equal_to_on_grid_on_both_backends`, `a_gridded_run_with_from_starts_at_the_first_multiple_not_before_it`, `a_counter_that_changes_between_analog_steps_is_exact_on_the_grid` (a small clocked design written in the test's own project directory, expected values computed from its clock period), `a_run_table_and_flags_give_equal_tables`, `a_printed_signal_with_no_value_fails_before_the_first_step`
+- [x] The unit test `session::tests::a_transient_keeps_only_the_last_step` passes in `cargo test -p piperine-api --lib`
+- [x] `a_transient_has_one_row_per_accepted_step` and `the_rc_step_follows_one_minus_exp_on_both_backends` pass unedited in `cargo test -p piperine-api --test analyses`
+- [x] `tran_rc_prints_the_bytes_it_printed_before_the_long_run` (T2) and `a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot` pass unedited
+- [x] Known and expected until T14 and T15: `crates/piperine-cli/tests/buck.rs` and the buck listing of `tests/book.rs` may differ on the first row of `startup` (a gridded run with `from` gains the row CLI-11 AC 4 names). They are not this task's gate; any other failing test stops the task
+- [x] Gate check passes: Quick (`Run grid`, `Run apilib`, `Run analyses`), then `cargo test -p piperine-api`; `cargo test -p piperine-cli --test run --test twins`
+- [x] Test count: the 7 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
