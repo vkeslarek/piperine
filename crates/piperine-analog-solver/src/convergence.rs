@@ -128,6 +128,14 @@ impl NewtonStrategy for DampedNewton {
 
 // ── StepperStrategy ────────────────────────────────────────────────────────
 
+/// What a [`StepperStrategy`] remembers between steps, as numbers: the state a run re-entered from
+/// a captured step resumes with. The strategy owns the encoding; an empty memory is a strategy
+/// with nothing to carry.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StepperMemory {
+    pub values: Vec<f64>,
+}
+
 /// Transient timestep policy. The driver computes the global integration
 /// error after each accepted step and hands it here; the strategy proposes
 /// the next `dt` (and a reduced `dt` after a rejection). Stateful strategies
@@ -149,6 +157,15 @@ pub trait StepperStrategy: Send + Sync {
         failed_dt: f64,
         limits: &StepLimits,
     ) -> f64;
+
+    /// The memory a later [`resume`](Self::resume) restores. A strategy with none keeps the
+    /// default: empty.
+    fn memory(&self) -> StepperMemory {
+        StepperMemory::default()
+    }
+
+    /// Restores a memory this strategy's [`memory`](Self::memory) captured. The default is a no-op.
+    fn resume(&mut self, _memory: &StepperMemory) {}
 }
 
 /// Proportional-Integral timestep controller — the default TR-BDF2 stepper.
@@ -238,6 +255,15 @@ impl StepperStrategy for PiController {
         // cascade.
         self.prev_error = None;
         (failed_dt / self.gains.reject_divisor).max(limits.dt_min)
+    }
+
+    /// The previous error, or nothing before the first accepted step.
+    fn memory(&self) -> StepperMemory {
+        StepperMemory { values: self.prev_error.into_iter().collect() }
+    }
+
+    fn resume(&mut self, memory: &StepperMemory) {
+        self.prev_error = memory.values.first().copied();
     }
 }
 
@@ -576,6 +602,31 @@ impl HomotopyStrategy for SourceStepping {
 mod tests {
     use super::*;
     use crate::error::{Error, SolverDomain};
+
+    /// A controller resumed from another's memory proposes what that one proposes next, bit for bit,
+    /// after one accept (`prev_error` set) and after several.
+    #[test]
+    fn the_pi_controller_resumes_its_memory() {
+        let limits = StepLimits { dt_min: 1e-15, dt_max: 1e-3 };
+        let errors = [0.3, 2.5, 0.7, 1.4, 0.05, 0.9];
+        let mut fresh_resumed = PiController::default();
+        fresh_resumed.resume(&PiController::default().memory());
+        assert_eq!(fresh_resumed.memory(), StepperMemory::default(), "no accept yet: nothing to resume");
+        let mut original = PiController::default();
+        for (i, lte) in errors.iter().enumerate() {
+            original.propose_dt(*lte, 1e-6 * (i as f64 + 1.0), &limits);
+            let mut resumed = PiController::default();
+            resumed.resume(&original.memory());
+            let (next_lte, dt) = (errors[(i + 1) % errors.len()] * 1.37, 2.3e-6);
+            let (a, b) = (original.propose_dt(next_lte, dt, &limits), resumed.propose_dt(next_lte, dt, &limits));
+            assert_eq!(a.to_bits(), b.to_bits(), "after {} accepts", i + 1);
+        }
+        // A controller that had accepted once differs from a fresh one: the memory is not a no-op.
+        let mut warm = PiController::default();
+        warm.propose_dt(0.3, 1e-6, &limits);
+        let mut cold = PiController::default();
+        assert_ne!(warm.propose_dt(2.0, 1e-6, &limits).to_bits(), cold.propose_dt(2.0, 1e-6, &limits).to_bits());
+    }
 
     /// Scripted homotopy driver: records every `newton()` call as the
     /// `(src_scale, gmin_extra)` it ran under — the warm-start chain — and

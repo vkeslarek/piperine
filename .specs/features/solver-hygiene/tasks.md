@@ -248,8 +248,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_pi_controller_resumes_its_memory` (a controller resumed from another's memory proposes the same next step, bit for bit, after one and after several accepts) passes under `**Run analoglib**`
-- [ ] Gate check passes: Quick
+- [x] `the_pi_controller_resumes_its_memory` (a controller resumed from another's memory proposes the same next step, bit for bit, after one and after several accepts) passes under `**Run analoglib**`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick
