@@ -29,7 +29,7 @@ pub fn non_finite_stamp_error(device_name: &str, stamps: &[Stamp<AnalogReference
         RunCode::E0507,
         SolverDomain::Device,
         format!(
-            "device `{device_name}` contributed a non-finite stamp at {at} (§17.1 rule 4: a \
+            "device `{device_name}` contributed a NaN or infinite stamp at {at} (§17.1 rule 4: a \
              contribution or stamp shall not be NaN or infinity)"
         ),
     ))
