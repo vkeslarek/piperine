@@ -180,9 +180,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `contract.md` lists each cited location as confirmed or moved, each probe with its output, and the three solver facts with their evidence
-- [ ] No code is edited
-- [ ] Gate check passes: Build
+- [x] `contract.md` lists each cited location as confirmed or moved, each probe with its output, and the three solver facts with their evidence
+- [x] No code is edited
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
