@@ -22,6 +22,7 @@ pub mod plot;
 pub mod probe;
 pub mod project;
 pub mod record;
+mod recorder;
 pub mod request;
 pub mod session;
 pub mod table;

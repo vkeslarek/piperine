@@ -283,9 +283,9 @@ T23
 
 **Done when**:
 
-- [ ] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `recorder::tests::without_a_grid_each_step_at_or_after_from_is_a_row`, `recorder::tests::a_from_past_the_start_drops_the_start_row`, `recorder::tests::a_signal_named_twice_gives_two_equal_columns`, `recorder::tests::a_column_that_reads_nothing_fails_naming_it`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `recorder::tests::without_a_grid_each_step_at_or_after_from_is_a_row`, `recorder::tests::a_from_past_the_start_drops_the_start_row`, `recorder::tests::a_signal_named_twice_gives_two_equal_columns`, `recorder::tests::a_column_that_reads_nothing_fails_naming_it`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick
