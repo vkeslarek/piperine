@@ -2,7 +2,7 @@
 
 **Spec**: `.specs/features/msl-fixes/spec.md`
 **Context**: `.specs/features/msl-fixes/context.md`
-**Status**: Draft. Written to the recommended answer of Q1 to Q4; the tasks a different answer changes are named in each question.
+**Status**: Approved with the spec (2026-11-17). Q1 to Q4 were answered (a), the recommended option (user: "Aceito todas (Recommended)").
 
 Line numbers are those of `feature/msl-fixes` at `4293de6b`.
 

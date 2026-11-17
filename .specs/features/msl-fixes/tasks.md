@@ -9,7 +9,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/msl-fixes/design.md`
-**Status**: Draft
+**Status**: Approved
+**Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
 **Build**: `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piperine-parity -p piperine-solver -p piperine-analog-solver -p piperine-api -p piperine -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 **Run tmod**: `cargo test -p piperine-lang --test types_modules`
 **Run tvalues**: `cargo test -p piperine-lang --test types_values`
@@ -39,7 +40,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 Executors: every task is Sonnet (user rule: "Implementação sempre em Sonnet e verificação em Opus"); a different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 
-The tasks follow the recommended answers of the spec's Q1 to Q4. A different answer changes: Q1 (b) adds a phase for S3; Q2 (b) turns T23 and T24 into one elaboration refusal and drops FIX-05 AC 2 to 4; Q3 (b) drops T35 and the analysis half of T33, T34 and T36; Q4 (b) adds conditional `bound_step` to T34 and T36.
+The tasks follow the answers of the spec's Q1 to Q4, all (a) (user, 2026-11-17: "Aceito todas (Recommended)"). For the record, another answer would have changed: Q1 (b) adds a phase for S3; Q2 (b) turns T23 and T24 into one elaboration refusal and drops FIX-05 AC 2 to 4; Q3 (b) drops T35 and the analysis half of T33, T34 and T36; Q4 (b) adds conditional `bound_step` to T34 and T36.
 
 Rules every task follows:
 
@@ -1302,7 +1303,7 @@ Proof: `cargo test -p piperine-parity --test parity_op --test parity_dc --test p
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:**
 **Walked:** none
 
 ---

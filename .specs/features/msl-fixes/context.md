@@ -2,7 +2,7 @@
 
 **Gathered:** 2026-11-17
 **Spec:** `.specs/features/msl-fixes/spec.md`
-**Status:** Scope chosen by the user; X4 decided. The open questions of the spec are not answered yet. Spec and tasks are not approved.
+**Status:** Scope chosen by the user; X4 decided; Q1 to Q4 answered (2026-11-17). Spec and tasks approved.
 
 Everything the user said reached the planner through the orchestrator. What arrived verbatim is quoted; what arrived as the orchestrator's statement of a decision is marked "relayed".
 
@@ -44,6 +44,18 @@ Note: the stdlib `finish()` takes no message (§22.6.2: `pub fn finish() { emit!
 
 ---
 
+### Q1 to Q4 (user, 2026-11-17)
+
+Verbatim: "Aceito todas (Recommended)". As relayed:
+
+- Q1 (a): S3 is deferred to a feature of its own, with X6.
+- Q2 (a): a `CROSS` watch whose value is NaN is unknown; abi.md A4 is amended.
+- Q3 (a): the minimal solver touch, so an operating point carries its analysis's flag.
+- Q4 (a): `bound_step` under an `if` or a `match` is refused by name now; it comes with L40 later.
+
+---
+
 ## Approvals
 
-None yet.
+- Spec: 2026-11-17 - user: "Topo" (lanes) and "Aceito todas (Recommended)" (Q1-Q4).
+- Tasks: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando".

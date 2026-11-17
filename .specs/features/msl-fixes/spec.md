@@ -1,12 +1,14 @@
 # MSL Fixes Specification
 
-The user chose this feature on 2026-11-17 as lane A's first: "Correções + Catálogo juntas" (`context.md`). It is not approved yet.
+**Approved**: 2026-11-17 - user: "Topo" (lanes) and "Aceito todas (Recommended)" (Q1-Q4)
 
-## Open questions for the user
+The user chose this feature on 2026-11-17 as lane A's first: "Correções + Catálogo juntas" (`context.md`). The approval and the answers reached the planner through the orchestrator; they are recorded in `context.md`.
 
-Four decisions are the user's. Each has the planner's recommendation; the spec and the tasks are written to the recommended option, and the tasks that change with another answer are named.
+## Questions answered (user, 2026-11-17)
 
-| # | Question | Options | Recommendation |
+The user answered all four with the recommended option: "Aceito todas (Recommended)". Each row keeps the options as they were asked; the decided option is (a) in every row.
+
+| # | Question | Options | Recommendation, chosen by the user |
 | - | -------- | ------- | -------------- |
 | Q1 | Does S3 (the type checker checks only what a run's top reaches) belong to this feature? | (a) **Defer** to a feature of its own, with X6. (b) **A narrowed S3 here**: type-check every non-generic item of the project's own crates, `std` exempt, a `P0001` in an unreached item failing `piperine check`. | (a). S3 is M and not separable cleanly. Checking every item changes what `check` accepts across the corpus: `std` alone holds about 47 refused names (`GAPS.md` L58), so the rule needs a `std` exemption the spec does not state, and a library with an unreached refused form would stop checking. Its three elaboration codes (`E0610`, `E0612`, `E0613`) belong to `include_str!` (L57), which is out. Under (b) one phase of about 4 tasks is added and the question of `std` goes into `docs/spec/` first (MD-57). |
 | Q2 | How does a `cross` whose argument may be unknown reach the solver (B2, `absdelta`)? §13 rule 5: "An `e` that is unknown in either solution does not fire." A `CROSS` watch is one `F64` with no known flag, and abi.md A4 fails a solve on any non-finite watch. | (a) **Amend abi.md A4**: a `CROSS` watch whose value is NaN is unknown; it does not fail the solve, does not fire and is not located. The generated watch writes NaN when its argument is unknown. One cross-lane touch in `piperine-analog-solver` (the finite check of a `CROSS` watch). (b) **Refuse** a `cross` over a value that may be unknown, by name at elaboration: B2 becomes loud and `absdelta` stays refused. | (a). NaN compares false both ways, so the detector's own `before <= 0.0 && now > 0.0` already gives "does not fire in either solution" with no new comparison; ±infinity still fails the solve. Under (b) T23 and T24 become one elaboration refusal and FIX-05 AC 2 to 4 leave the feature. |
@@ -29,13 +31,13 @@ The audit of 2026-11-17 (`GAPS.md`) found a run that ignores `finish()` and `fat
 
 | Feature | Reason |
 | ------- | ------ |
-| S3, the check of unreached items | Q1 recommendation (a): M, needs a `std` exemption the spec does not state, and its codes belong to L57 |
+| S3, the check of unreached items | Q1 (a), user 2026-11-17: deferred to its own feature with X6; M, needs a `std` exemption the spec does not state, and its codes belong to L57 |
 | `simparam` (half of L47) | §14.4.6: "This specification names no session parameter"; names are the host's (G.66, X7). Session parameters are lane B (H3). It stays `P0001` |
 | Rows of H.5, H.6, H.7 (arrays, ranges, iterators) | They need arrays (L3), a value form of their own |
 | `normal` (§22.2) | Needs tuple values (L2) |
 | `limexp` | Refused as "binding inside a module" (L58, a module result with a `limit`): the analog-structure cluster |
 | The Book's clipper running | It also needs `settle` (L52) and `limexp`; its refusal listing is brought up to date (CAT-05 AC 3) |
-| `bound_step` under `if` or `match` | Q4 recommendation (a); with L40 |
+| `bound_step` under `if` or `match` | Q4 (a), user 2026-11-17: refused by name now; with L40 later |
 | A math method of a value that may be unknown in `analog` (L19) | Analog has no unknowns (§3.3.5); the existing refusal stays. In reactions the new rows carry the flag |
 | The interpreter running the new forms | R1: it is frozen at the M1 subset. Each new IR form is refused there by name (FIX-14) |
 | A `ttol` or `etol` that reads a carrier, a probe or a local | The tolerance pins of abi.md are discrete `F64` pins; this feature lowers a constant or param expression only and refuses the rest by name |
@@ -63,14 +65,14 @@ The audit of 2026-11-17 (`GAPS.md`) found a run that ignores `finish()` and `fat
 | The message of `expect` | a string literal; any other `&str` is `P0001` by name | A text is kept in the IR as a literal only (MD-64 item 3) | n - planner |
 | Closures of `map`, `and_then`, `unwrap_or_else`, `then` | a closure literal written at the call; a function name passed as a value stays refused (L9) | The checker types a closure only where its parameter type is known; here it is the receiver's | n - planner |
 | The new forms on the interpreter | refused by name, each naming the form | R1; none is a one-line change there (each needs a pin, a watch or a method row the walk does not have) | n - planner (R1) |
-| Q1 | defer S3 | see the top of this file | n - open |
-| Q2 | NaN is "unknown" in a `CROSS` watch | see the top of this file | n - open |
-| Q3 | the operating point of an AC or noise analysis carries its flag | see the top of this file | n - open |
-| Q4 | `bound_step` straight-line only | see the top of this file | n - open |
+| Q1 | defer S3 | see the top of this file; option (a) | y - user: "Aceito todas (Recommended)" |
+| Q2 | NaN is "unknown" in a `CROSS` watch | see the top of this file; option (a) | y - user: "Aceito todas (Recommended)" |
+| Q3 | the operating point of an AC or noise analysis carries its flag | see the top of this file; option (a) | y - user: "Aceito todas (Recommended)" |
+| Q4 | `bound_step` straight-line only | see the top of this file; option (a) | y - user: "Aceito todas (Recommended)" |
 | L11 is wider than `GAPS.md` says | a user `fn` with an `Option` parameter does not elaborate at all today, even with `None` passed positionally ("an expression the type checker gave no value type", probe 2026-11-17); FIX-06 covers the parameter, not only the call | probe | n - planner |
 | L54 and named arguments of core primitives | `cross(e, etol: 1u)` (§3.2's own example) is in FIX-12: a named argument of a core primitive is refused today | §3.2.4, §3.2 examples | n - planner |
 
-**Open questions:** Q1 to Q4 above, each with a recommendation; the rest is resolved or logged.
+**Open questions:** none - all resolved or logged above. Q1 to Q4 were answered on 2026-11-17 (top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: FIX-03, FIX-06 AC 5 and 6, FIX-09 AC 3, FIX-12 AC 4, CAT-01 AC 6, CAT-02 AC 6 and 7, CAT-03 AC 8. Failure and partial-failure states: FIX-02 AC 2 and 5, CAT-02 AC 5, CAT-03 AC 2 and 3 (faults name what failed). Idempotency and retry: N/A because a run is not retried; a session compiles once (`msl-cli`). Auth and rate limits: N/A because the tool is local. Concurrency and ordering: FIX-13 AC 3 (one reaction runs once per microstep). Data lifecycle: N/A because nothing is stored beyond a run. Observability: FIX-02 AC 2 and 3 (the fatal message is printed). External-dependency failure: N/A because `rustc` and ngspice are handled as today. State-transition integrity: FIX-01 (no step after a finish), FIX-05 AC 3 (an unknown solution never fires).
 
