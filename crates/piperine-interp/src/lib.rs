@@ -20,7 +20,7 @@ pub use device::{BodyFactory, Interpreted};
 pub use dual::Dual;
 pub use piperine_plan::BodyPlan;
 pub use walk::{Value, Walk};
-use piperine_ir::{Body, BodyId, Broken, Env, EventSource, Ir, Stmt, Target};
+use piperine_ir::{AnalysisKind, Body, BodyId, Broken, Env, EventSource, Ir, Stmt, Target};
 use piperine_plan::{Modules, Netlist};
 use piperine_solver::prelude::CircuitInstance;
 
@@ -90,8 +90,9 @@ impl Interpreter {
     }
 
     /// The amended forms `body` holds, each once, in a fixed order: what its dependency sets read
-    /// (the clock, the analysis, a branch flow, a previous value, through the functions it calls)
-    /// and the `at` events and emit sites it declares.
+    /// (the clock, the analysis, `freq()`, a branch flow, a previous value, a fired byte, through
+    /// the functions it calls), the `at` events, emit sites, `bound_step` sites and `cross`
+    /// tolerances it declares.
     fn amended_forms(body: Body<'_>) -> Vec<&'static str> {
         let mut targets: Vec<Target> = Vec::new();
         for i in 0..body.branches().len() as u32 {
@@ -107,17 +108,48 @@ impl Interpreter {
             targets.extend([Target::Guard(i), Target::Cross(i), Target::At(i)]);
         }
         targets.extend((0..body.reactions().len() as u32).map(Target::Reaction));
-        let (mut time, mut stat, mut flow, mut previous) = (false, false, false, false);
+        let bound_steps = body.analog().unwrap_or(&[]).iter().filter_map(|s| match body.ir().stmt(*s) {
+            Stmt::BoundStep { site, .. } => Some(*site),
+            _ => None,
+        });
+        targets.extend(bound_steps.map(Target::BoundStep));
+        targets.extend((0..body.events().len() as u32).flat_map(|k| [Target::Ttol(k), Target::Etol(k)]));
+        let (mut time, mut stat, mut flow, mut previous, mut fired, mut freq) = (false, false, false, false, false, false);
+        let mut analysis = [false; 4];
         for t in targets {
             let deps = body.dependencies(t);
             time |= deps.env.contains(&Env::Time);
             stat |= deps.env.contains(&Env::Static);
+            freq |= deps.env.contains(&Env::Freq);
+            for (held, kind) in analysis.iter_mut().zip([AnalysisKind::Dc, AnalysisKind::Transient, AnalysisKind::Ac, AnalysisKind::Noise]) {
+                *held |= deps.env.contains(&Env::Analysis(kind));
+            }
             flow |= !body.flow_reads(t).is_empty();
             previous |= !body.previous_reads(t).is_empty();
+            fired |= !body.fired_reads(t).is_empty();
         }
+        let bound_step = body.analog().unwrap_or(&[]).iter().any(|s| matches!(body.ir().stmt(*s), Stmt::BoundStep { .. }));
+        let ttol = body.events().iter().any(|e| matches!(e.source, EventSource::Cross { ttol: Some(_), .. }));
+        let etol = body.events().iter().any(|e| matches!(e.source, EventSource::Cross { etol: Some(_), .. }));
         let at = body.events().iter().any(|e| matches!(e.source, EventSource::At(_)));
         let emit = (0..body.reactions().len() as u32).any(|k| body.reaction_statements(k).iter().any(|s| matches!(body.ir().stmt(*s), Stmt::Emit { .. })));
-        [(time, "now()"), (stat, "analysis(Static)"), (at, "at(t)"), (emit, "emit!"), (flow, "the flow of a potential branch"), (previous, "the previous value of a carrier")]
+        [
+            (time, "now()"),
+            (stat, "analysis(Static)"),
+            (at, "at(t)"),
+            (emit, "emit!"),
+            (flow, "the flow of a potential branch"),
+            (previous, "the previous value of a carrier"),
+            (freq, "freq()"),
+            (analysis[0], "analysis(Dc)"),
+            (analysis[1], "analysis(Transient)"),
+            (analysis[2], "analysis(Ac)"),
+            (analysis[3], "analysis(Noise)"),
+            (bound_step, "bound_step"),
+            (fired, "fired"),
+            (ttol, "the ttol of a cross"),
+            (etol, "the etol of a cross"),
+        ]
             .into_iter()
             .filter_map(|(held, form)| held.then_some(form))
             .collect()

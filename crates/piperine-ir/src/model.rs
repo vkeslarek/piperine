@@ -457,6 +457,50 @@ pub enum Method {
     MulOverflows,
 }
 
+impl Method {
+    /// The MSL name of the method: `sin` for `x.sin()`, `abs` for an integer's `x.abs()`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Method::Min => "min",
+            Method::Max => "max",
+            Method::Clamp => "clamp",
+            Method::Floor => "floor",
+            Method::Sin => "sin",
+            Method::Cos => "cos",
+            Method::Tan => "tan",
+            Method::Asin => "asin",
+            Method::Acos => "acos",
+            Method::Atan => "atan",
+            Method::Atan2 => "atan2",
+            Method::Sinh => "sinh",
+            Method::Cosh => "cosh",
+            Method::Tanh => "tanh",
+            Method::Powf => "powf",
+            Method::Powi => "powi",
+            Method::Log10 => "log10",
+            Method::Log2 => "log2",
+            Method::Ceil => "ceil",
+            Method::Round => "round",
+            Method::Trunc => "trunc",
+            Method::Fract => "fract",
+            Method::Signum => "signum",
+            Method::RemEuclid => "rem_euclid",
+            Method::Hypot => "hypot",
+            Method::IsNan => "is_nan",
+            Method::IsFinite => "is_finite",
+            Method::IsInfinite => "is_infinite",
+            Method::IntAbs => "abs",
+            Method::Pow => "pow",
+            Method::SaturatingAdd => "saturating_add",
+            Method::SaturatingSub => "saturating_sub",
+            Method::SaturatingMul => "saturating_mul",
+            Method::AddOverflows => "add_overflows",
+            Method::SubOverflows => "sub_overflows",
+            Method::MulOverflows => "mul_overflows",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MathFn {
     Exp,

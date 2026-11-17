@@ -429,10 +429,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `the_interpreter_refuses_each_new_form_by_name` passes in `cargo test -p piperine-interp --test frozen`, one case per form, each message naming it
-- [ ] Every other target of `piperine-interp` passes unedited
-- [ ] Gate check passes: Quick (`Run frozen`), then `cargo test -p piperine-interp`
-- [ ] Test count: the 1 test named above
+- [x] `the_interpreter_refuses_each_new_form_by_name` passes in `cargo test -p piperine-interp --test frozen`, one case per form, each message naming it
+- [x] Every other target of `piperine-interp` passes unedited
+- [x] Gate check passes: Quick (`Run frozen`), then `cargo test -p piperine-interp`
+- [x] Test count: the 1 test named above
 
 **Tests**: integration
 **Gate**: quick

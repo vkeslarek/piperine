@@ -16,7 +16,7 @@
 
 use piperine_abi::device::Fault;
 use piperine_ir::{
-    Body, BinaryOp, Expr, ExprId, FunctionId, Ir, MathFn, Operator, Origin, Stmt, StmtId, Terminal, UnaryOp,
+    Body, BinaryOp, Env, Expr, ExprId, FunctionId, Ir, MathFn, Operator, Origin, Stmt, StmtId, Terminal, UnaryOp,
 };
 
 use crate::dual::Dual;
@@ -269,7 +269,21 @@ impl<'a> Walk<'a> {
     }
 
     /// The name of an expression form, for diagnostics.
-    fn form(expr: &Expr) -> &'static str {
+    fn form(expr: &Expr) -> String {
+        match expr {
+            // The forms msl-fixes added are named as the source spells them.
+            Expr::Method { method, .. } => format!("method `{}`", method.name()),
+            Expr::Env(Env::Freq) => "form `freq()`".to_string(),
+            Expr::Env(Env::Analysis(kind)) => format!("form `analysis({kind:?})`"),
+            Expr::Fired(_) => "form `fired`".to_string(),
+            Expr::Unwrap { message: Some(_), .. } => "form `expect`".to_string(),
+            Expr::Unwrap { message: None, .. } => "form `unwrap`".to_string(),
+            other => format!("form `{}`", Self::form_name(other)),
+        }
+    }
+
+    /// The variant name of an expression form.
+    fn form_name(expr: &Expr) -> &'static str {
         match expr {
             Expr::Real(_) => "Real",
             Expr::Bool(_) => "Bool",
@@ -418,7 +432,7 @@ impl<'a> Walk<'a> {
             Expr::Limit { site, x, f, seed } if self.mode() == Some(Mode::Limit(*site)) => {
                 self.limit_site(id, *x, *f, *seed)
             }
-            other => Err(self.fault(id, &format!("the IR form `{}` is not executed by this walk", Self::form(other)))),
+            other => Err(self.fault(id, &format!("the IR {} is not executed by this walk", Self::form(other)))),
         }
     }
 
@@ -538,7 +552,10 @@ impl<'a> Walk<'a> {
                 Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Commit` is not executed by this walk (at {at})")))
             }
             Stmt::Emit { .. } => Err(Fault::new(Self::UNEXECUTED, "the IR form `Emit` is not executed by this walk")),
-            Stmt::BoundStep { .. } => Err(Fault::new(Self::UNEXECUTED, "the IR form `BoundStep` is not executed by this walk")),
+            Stmt::BoundStep { value, .. } => {
+                let at = Self::origin(ir.expr_origin(*value));
+                Err(Fault::new(Self::UNEXECUTED, format!("the IR form `bound_step` is not executed by this walk (at {at})")))
+            }
         }
     }
 
