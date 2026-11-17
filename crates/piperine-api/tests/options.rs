@@ -114,11 +114,19 @@ fn temp_is_celsius_read_by_temperature() {
     let hot = value(&run(&with_parts(THERMOMETER), Overrides { temp: Some(75.0), ..op(&["a"]) }).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
     let default = Context::default().tolerances.temperature;
     let cold = value(&run(&with_parts(THERMOMETER), op(&["a"])).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
-    // the solver's operating point settles within about 1e-3 of a source's value (it stops at its
-    // own tolerance), so each reading is held to 0.2 % of its kelvin and the two to their gap
-    assert!((hot - 348.15).abs() < 348.15 * 2e-3, "temp = 75 reads 348.15 K: {hot}");
-    assert!((cold - default).abs() < default * 2e-3, "no `temp` leaves the default {default} K: {cold}");
-    assert!((hot - cold - (348.15 - default)).abs() < 0.2, "the two runs differ by the 75 C step: {hot} against {cold}");
+    // The operating point stops Newton when the update is within `reltol * |x| + vntol` (the
+    // solver's convergence criterion, `Tolerances::has_converged`), so a reading is exact only
+    // to that bound: with `--reltol 1e-9 --vntol 1e-12` the same run reads 300.15 exactly. Each
+    // reading is held to that bound at its own value, and the two to the sum of their bounds.
+    let t = Context::default().tolerances;
+    let bound = |x: f64| t.reltol * x.abs() + t.vntol;
+    assert!((hot - 348.15).abs() <= bound(348.15), "temp = 75 reads 348.15 K: {hot}");
+    assert!((cold - default).abs() <= bound(default), "no `temp` leaves the default {default} K: {cold}");
+    assert!((hot - cold - (348.15 - default)).abs() <= bound(348.15) + bound(default), "the two runs differ by the 75 C step: {hot} against {cold}");
+    // tightened, the same run converges to the exact value: the bound above is the criterion, not a defect
+    let tight = Overrides { temp: Some(75.0), reltol: Some(1e-9), vntol: Some(1e-12), ..op(&["a"]) };
+    let exact = value(&run(&with_parts(THERMOMETER), tight).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
+    assert!((exact - 348.15).abs() < 1e-6, "{exact}");
 }
 
 #[test]
@@ -220,4 +228,21 @@ fn a_nodeset_on_a_run_that_takes_its_own_operating_point_is_p0010() {
         let error = open(&with_parts(CUBIC), overrides).err().expect("the analysis cannot seed its operating point");
         assert!(matches!(&error, Failure::Host { code: "P0010", message } if message.contains("`nodeset`")), "{error:?}");
     }
+}
+
+#[test]
+fn a_smaller_trtol_takes_more_steps() {
+    // HII-02 AC 8 (amended): `trtol` reaches the solver's step assessment; the RC charging curve of
+    // `tran_rc` to 10 us with `trtol = 0.001` rejects steps the default (7) accepts, and the
+    // retries make the accepted grid finer: more accepted steps than with no `trtol`
+    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/tran_rc.msl");
+    let steps = |trtol: Option<f64>| {
+        let overrides = Overrides { analysis: Some("transient".into()), stop: Some(10e-6), trtol, backend: Some("interp".into()), top: Some("TranRc".into()), ..Overrides::default() };
+        let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+        session.run(Rc::new(RefCell::new(Kept::default()))).unwrap_or_else(|f| panic!("{f}")).rows.len()
+    };
+    let (default, tight) = (steps(None), steps(Some(0.001)));
+    assert!(tight > default, "trtol = 0.001 took {tight} steps, the default {default}");
 }

@@ -282,10 +282,10 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-api/tests/options.rs` (new) holds `no_option_gives_the_default_context`, `tolerance_keys_reach_the_context`, `temp_is_celsius_read_by_temperature`, `a_nodeset_seeds_the_operating_point_and_keeps_its_solution`, `resolution_rounds_an_at_to_its_tick`, `maxrounds_bounds_the_operating_point`, `maxmicro_bounds_an_instant`, `a_larger_trtol_takes_fewer_steps`, `a_nodeset_naming_nothing_is_e0801`
+- [x] `crates/piperine-api/tests/options.rs` (new) holds `no_option_gives_the_default_context`, `tolerance_keys_reach_the_context`, `temp_is_celsius_read_by_temperature`, `a_nodeset_seeds_the_operating_point_and_keeps_its_solution`, `resolution_rounds_an_at_to_its_tick`, `maxrounds_bounds_the_operating_point`, `maxmicro_bounds_an_instant`, `a_smaller_trtol_takes_more_steps`, `a_nodeset_naming_nothing_is_e0801`
 - [x] `Run twins` and `Run parity` pass unedited
 - [x] Gate check passes: Full
-- [ ] Test count: 9 new tests
+- [x] Test count: 9 new tests
 
 **Tests**: integration
 **Gate**: full
@@ -1132,8 +1132,8 @@ Proof: run apioptions | test maxrounds_bounds_the_operating_point ... ok
 **C13** - An instant past `maxmicro` fails naming the bound. (HII-02, AC 7; T6)
 Proof: run apioptions | test maxmicro_bounds_an_instant ... ok
 
-**C14** - `tran_rc` with `trtol = 70` takes fewer accepted steps than with none. (HII-02, AC 8; T6)
-Proof: run apioptions | test a_larger_trtol_takes_fewer_steps ... ok
+**C14** - `tran_rc` with `trtol = 0.001` takes more accepted steps than with none. (HII-02, AC 8; T6)
+Proof: run apioptions | test a_smaller_trtol_takes_more_steps ... ok
 
 **C15** - `temp_res` at 75 °C agrees with ngspice under `DC_VOLTAGE`. (HII-03, AC 1; T8)
 Proof: run newparity | test temp_res ... ok
@@ -1406,8 +1406,9 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - T2/T3 (E0501 text): the digital engine's `E0501` names the tick and the nets, not the bound; `piperine-digital-solver` is not edited, so `Bound::microsteps` carries the bound and `analyses/adapters.rs::instant_error` appends `(the bound is N microsteps)` to a `NotQuiet` from `run_instant` and `advance`.
 - T5: `RUN_KEYS` grows 20 to 29, so the assertion `RUN_KEYS.len() == 20` of `a_run_table_reads_its_nineteen_keys` became 29 (the only edit of an existing assertion; the comment says why). A `nodeset` flag replaces the table's entry of the same path and keeps the others.
 - T6: `nodeset` seeds `op` and every point of `dc` through `DcSolver::apply_initial_conditions`; `ac` and `transient` take their operating point inside the solver, where the host has no door, so a `nodeset` on them is `P0010` (fail loud) instead of ignored. One extra test covers it (`a_nodeset_on_a_run_that_takes_its_own_operating_point_is_p0010`).
-- T6 BLOCKED, HII-02 AC 8 (`a_larger_trtol_takes_fewer_steps`): `trtol` only gates rejection (`assess_step`, `milne > trtol`); the step controller does not read it (`propose_dt`, with the comment that normalising by `trtol` was tried and broke `tran_rc` parity). `tran_rc` to 10 us takes 112 steps at every `trtol` from 0.5 to 1e9, so the AC cannot hold without a solver numerics change (lane C). The test is not written; the first Done-when line and the test-count line of T6 stay open.
-- T8 BLOCKED: `parity_corpus.rs::every_twin_has_a_cir_and_a_test` asserts the corpus holds exactly seven twins, so any new twin (T8, T10, T14 to T16, T19) fails it, and HII-21 AC 2 forbids editing the target. The T8 files are written and green against ngspice but kept out of the tree.
+- T6, HII-02 AC 8 amended (orchestrator ruling): `trtol` only gates rejection today (`assess_step`), so "`trtol = 70` takes fewer steps" is moved to solver-hygiene (LTE); host-ii owns that `trtol` reaches the step assessment: `tran_rc` takes 3241 steps at `trtol = 0.001` against 115 by default (`a_smaller_trtol_takes_more_steps`). HII-21 AC 2 amended: `parity_corpus.rs` may grow its twin count by one per new twin.
+- T6/T8 temperature finding: the operating point of `v +> temperature()` reads 299.857 K (not 300.15) because Newton stops at `reltol * |x| + vntol` (1e-3 and 1e-6); with `--reltol 1e-9 --vntol 1e-12` it reads 300.15 exactly (and 348.15 at `--temp 75`). The test bound is that criterion, not a loosened constant; not a defect.
+- T8: `parity_corpus.rs` twin count 7 to 8 (append-only edit); lane C made the same edit for `tran_dq`, expect a trivial conflict, the final count is the sum.
 **Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17.
 **Walked:** none
 

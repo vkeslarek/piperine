@@ -112,7 +112,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 5. WHEN a run gives `resolution = r` THEN the system SHALL bind the design with a tick of `r` seconds, so that an `at(t)` fires at `t` rounded to a multiple of `r`.
 6. WHEN an operating point needs more rounds than `maxrounds` THEN the system SHALL fail the run with the solver's `E0506` error naming the bound.
 7. WHEN an instant needs more microsteps than `maxmicro` THEN the system SHALL fail the run with an error naming the bound.
-8. WHEN `tran_rc` runs to 10 µs with `trtol = 70` THEN the system SHALL take fewer accepted steps than with no `trtol`.
+8. WHEN `tran_rc` runs to 10 µs with `trtol = 0.001` THEN the system SHALL take more accepted steps than with no `trtol`: `trtol` reaches the solver's step assessment, and a smaller value rejects at least as many steps. (Amended 2026-11-17: the original wording, `trtol = 70` taking fewer accepted steps, moved to `solver-hygiene` (LTE), because today `trtol` only gates rejection and does not shape the step.)
 
 **Acceptance Criteria** (HII-03, temperature against ngspice):
 
@@ -329,7 +329,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 **Acceptance Criteria** (HII-21):
 
 1. WHEN each of the 7 twins runs from the command line with the flags of `crates/piperine-cli/tests/twins.rs` THEN the system SHALL print, on each backend, the bytes it printed before this feature.
-2. The system SHALL pass `parity_op`, `parity_dc`, `parity_ac`, `parity_tran`, `parity_grid`, `parity_corpus` and `piperine-solver`'s `parity_baseline` with their sources unedited and the existing constants of `ToleranceContract` unchanged.
+2. The system SHALL pass `parity_op`, `parity_dc`, `parity_ac`, `parity_tran`, `parity_grid`, `parity_corpus` and `piperine-solver`'s `parity_baseline` with their sources unedited and the existing constants of `ToleranceContract` unchanged, except that `parity_corpus.rs` may have its twin count extended by one per new twin (append-only; amended 2026-11-17).
 3. WHERE the ngspice comparison is disabled the new `parity_*` targets SHALL still run their twin and print the harness's skip line.
 
 **Independent Test**: `cargo test -p piperine-cli --test twins` and the five `parity_*` targets.
