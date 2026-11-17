@@ -12,6 +12,7 @@
 //! - [`session`]: a run request from source to a circuit bound on a backend, and its run.
 //! - [`table`]: the result of an analysis as columns of typed cells.
 //! - [`record`]: an `emit!` record, its decoding, and where a session hands it.
+//! - [`verdict`]: pass or fail of a run, from its `checks` records.
 //! - [`request`]: a run request, read from a run table or from flags, validated.
 
 pub mod backend;
@@ -24,6 +25,7 @@ pub mod record;
 pub mod request;
 pub mod session;
 pub mod table;
+pub mod verdict;
 
 pub use backend::Backend;
 pub use failure::Failure;
@@ -34,3 +36,4 @@ pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
 pub use session::{Built, Session};
 pub use table::{Cell, Table};
+pub use verdict::Verdict;

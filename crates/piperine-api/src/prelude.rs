@@ -8,3 +8,4 @@ pub use crate::session::{Built, Session};
 pub use crate::probe::Probe;
 pub use crate::record::{Field, Record, RecordSink, Streams};
 pub use crate::table::{Cell, Table};
+pub use crate::verdict::Verdict;
