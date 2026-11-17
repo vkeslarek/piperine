@@ -196,7 +196,16 @@ digital for Monitor {
 
 <p>Each record is printed as one line, the moment it is written:</p>
 
-<pre data-lang="text" data-cli-output="piperine run step --stream trip" data-cli-project="rc" data-cli-lines="2">@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
+<pre data-lang="text" data-cli-output="piperine run step --stream trip" data-cli-project="rc" data-cli-lines="2">run step: transient, top Step, backend rust
+@6.931075e-7 Step.mon trip v=5.000000e-1
+
+time         Step.vin    Step.vout
+0.000000e0   1.000000e0  0.000000e0
+1.000000e-6  1.000000e0  6.320926e-1
+2.000000e-6  1.000000e0  8.646682e-1
+3.000000e-6  1.000000e0  9.502193e-1
+4.000000e-6  1.000000e0  9.816886e-1
+5.000000e-6  1.000000e0  9.932653e-1</pre>
 
 <p>The line has four parts: <code>@</code> and the time, the path of the instance that wrote the record, the stream name, and the fields. You wrote only the last two; where and when come for free. Two monitors on two nodes never mix their records, because each has its own path.</p>
 
@@ -204,8 +213,17 @@ digital for Monitor {
 
 <pre data-lang="sh">piperine run step --all-checks</pre>
 
-<pre data-lang="text" data-cli-output="piperine run step --all-checks" data-cli-project="rc" data-cli-lines="2-3">@6.931075e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
-@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
+<pre data-lang="text" data-cli-output="piperine run step --all-checks" data-cli-project="rc" data-cli-lines="2-3">run step: transient, top Step, backend rust
+@6.931075e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
+@6.931075e-7 Step.mon trip v=5.000000e-1
+
+time         Step.vin    Step.vout
+0.000000e0   1.000000e0  0.000000e0
+1.000000e-6  1.000000e0  6.320926e-1
+2.000000e-6  1.000000e0  8.646682e-1
+3.000000e-6  1.000000e0  9.502193e-1
+4.000000e-6  1.000000e0  9.816886e-1
+5.000000e-6  1.000000e0  9.932653e-1</pre>
 
 <p>Both records belong to the same instant, and they come in the order the solver hands them over, which here puts the check first. The filter is for your eyes only: a records file (chapter 16) keeps every record, and <code>piperine test</code> counts every check, passing or not.</p>
 
@@ -260,7 +278,15 @@ digital for Delayed {
 <pre data-lang="sh">piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6</pre>
 
 <pre data-lang="text" data-cli-output="piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6" data-cli-project="rc" data-cli-lines="1-2">run delayed: transient, top Delayed, backend rust
-@2.000428e-6 Delayed tau t=2.000428e-6 vout=6.321206e-1</pre>
+@2.000428e-6 Delayed tau t=2.000428e-6 vout=6.321206e-1
+
+time         Delayed.vin  Delayed.vout
+0.000000e0   0.000000e0   0.000000e0
+1.000000e-6  0.000000e0   0.000000e0
+2.000000e-6  1.000000e0   6.319625e-1
+3.000000e-6  1.000000e0   8.646191e-1
+4.000000e-6  1.000000e0   9.502012e-1
+5.000000e-6  1.000000e0   9.816821e-1</pre>
 
 <p>One time constant after the step: <code>vout</code> is 1&nbsp;−&nbsp;1/<em>e</em> to the digit, at 0.4&nbsp;ns past 2&nbsp;µs. To keep the run, give it a table in <code>Piperine.toml</code>; every flag has a key of the same name:</p>
 
@@ -676,7 +702,116 @@ module MonitorTop() {
 <pre data-lang="text" data-cli-output="piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone" data-cli-lines="1-4">run monitor: transient, top MonitorTop, backend rust
 @5.000000e-7 MonitorTop.mon zone t=5.000000e-7 v=5.000000e-1 from=1 to=0
 @1.500000e-6 MonitorTop.mon zone t=1.500000e-6 v=1.500000e0 from=0 to=1
-@2.500000e-6 MonitorTop.mon zone t=2.500000e-6 v=2.500000e0 from=1 to=2</pre>
+@2.500000e-6 MonitorTop.mon zone t=2.500000e-6 v=2.500000e0 from=1 to=2
+
+time         MonitorTop.x  MonitorTop.clk  MonitorTop.zone
+0.000000e0   0.000000e0    false           1
+3.000000e-9  3.000000e-3   false           1
+7.500000e-9  7.500000e-3   false           1
+1.425000e-8  1.425000e-2   false           1
+2.437500e-8  2.437500e-2   false           1
+3.956250e-8  3.956250e-2   false           1
+6.234375e-8  6.234375e-2   false           1
+9.234375e-8  9.234375e-2   false           1
+1.223437e-7  1.223437e-1   false           1
+1.523437e-7  1.523438e-1   false           1
+1.823438e-7  1.823437e-1   false           1
+2.123438e-7  2.123437e-1   false           1
+2.423437e-7  2.423437e-1   false           1
+2.723438e-7  2.723437e-1   false           1
+3.023438e-7  3.023438e-1   false           1
+3.323438e-7  3.323438e-1   false           1
+3.623438e-7  3.623438e-1   false           1
+3.923438e-7  3.923438e-1   false           1
+4.223438e-7  4.223438e-1   false           1
+4.523438e-7  4.523438e-1   false           1
+4.823438e-7  4.823438e-1   false           1
+5.000000e-7  5.000000e-1   true            0
+5.264844e-7  5.264844e-1   true            0
+5.564844e-7  5.564844e-1   true            0
+5.864844e-7  5.864844e-1   true            0
+6.164844e-7  6.164844e-1   true            0
+6.464844e-7  6.464844e-1   true            0
+6.764844e-7  6.764844e-1   true            0
+7.064844e-7  7.064844e-1   true            0
+7.364844e-7  7.364844e-1   true            0
+7.664844e-7  7.664844e-1   true            0
+7.964844e-7  7.964844e-1   true            0
+8.264844e-7  8.264844e-1   true            0
+8.564844e-7  8.564844e-1   true            0
+8.864844e-7  8.864844e-1   true            0
+9.164844e-7  9.164844e-1   true            0
+9.464844e-7  9.464844e-1   true            0
+9.764844e-7  9.764844e-1   true            0
+1.000000e-6  1.000000e0    false           0
+1.030000e-6  1.030000e0    false           0
+1.060000e-6  1.060000e0    false           0
+1.090000e-6  1.090000e0    false           0
+1.120000e-6  1.120000e0    false           0
+1.150000e-6  1.150000e0    false           0
+1.180000e-6  1.180000e0    false           0
+1.210000e-6  1.210000e0    false           0
+1.240000e-6  1.240000e0    false           0
+1.270000e-6  1.270000e0    false           0
+1.300000e-6  1.300000e0    false           0
+1.330000e-6  1.330000e0    false           0
+1.360000e-6  1.360000e0    false           0
+1.390000e-6  1.390000e0    false           0
+1.420000e-6  1.420000e0    false           0
+1.450000e-6  1.450000e0    false           0
+1.480000e-6  1.480000e0    false           0
+1.500000e-6  1.500000e0    true            1
+1.530000e-6  1.530000e0    true            1
+1.560000e-6  1.560000e0    true            1
+1.590000e-6  1.590000e0    true            1
+1.620000e-6  1.620000e0    true            1
+1.650000e-6  1.650000e0    true            1
+1.680000e-6  1.680000e0    true            1
+1.710000e-6  1.710000e0    true            1
+1.740000e-6  1.740000e0    true            1
+1.770000e-6  1.770000e0    true            1
+1.800000e-6  1.800000e0    true            1
+1.830000e-6  1.830000e0    true            1
+1.860000e-6  1.860000e0    true            1
+1.890000e-6  1.890000e0    true            1
+1.920000e-6  1.920000e0    true            1
+1.950000e-6  1.950000e0    true            1
+1.980000e-6  1.980000e0    true            1
+2.000000e-6  2.000000e0    false           1
+2.030000e-6  2.030000e0    false           1
+2.060000e-6  2.060000e0    false           1
+2.090000e-6  2.090000e0    false           1
+2.120000e-6  2.120000e0    false           1
+2.150000e-6  2.150000e0    false           1
+2.180000e-6  2.180000e0    false           1
+2.210000e-6  2.210000e0    false           1
+2.240000e-6  2.240000e0    false           1
+2.270000e-6  2.270000e0    false           1
+2.300000e-6  2.300000e0    false           1
+2.330000e-6  2.330000e0    false           1
+2.360000e-6  2.360000e0    false           1
+2.390000e-6  2.390000e0    false           1
+2.420000e-6  2.420000e0    false           1
+2.450000e-6  2.450000e0    false           1
+2.480000e-6  2.480000e0    false           1
+2.500000e-6  2.500000e0    true            2
+2.530000e-6  2.530000e0    true            2
+2.560000e-6  2.560000e0    true            2
+2.590000e-6  2.590000e0    true            2
+2.620000e-6  2.620000e0    true            2
+2.650000e-6  2.650000e0    true            2
+2.680000e-6  2.680000e0    true            2
+2.710000e-6  2.710000e0    true            2
+2.740000e-6  2.740000e0    true            2
+2.770000e-6  2.770000e0    true            2
+2.800000e-6  2.800000e0    true            2
+2.830000e-6  2.830000e0    true            2
+2.860000e-6  2.860000e0    true            2
+2.890000e-6  2.890000e0    true            2
+2.920000e-6  2.920000e0    true            2
+2.950000e-6  2.950000e0    true            2
+2.980000e-6  2.980000e0    true            2
+3.000000e-6  3.000000e0    false           2</pre>
   <p>Three record lines from <code>MonitorTop.mon</code>, at 0.5, 1.5 and 2.5&nbsp;µs. Check the <code>from</code> and <code>to</code> fields against the table above. The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration: <code>Under</code> is 0, <code>Ok</code> 1 and <code>Over</code> 2, so <code>from=1 to=0</code> is <code>Ok</code> to <code>Under</code>.</p>
 </div>
 
@@ -920,7 +1055,137 @@ digital for Alarm {
   <p>Count the record lines from <code>Alarm.watch</code>: three, at times 0, 1&nbsp;µs and 3&nbsp;µs, and none at 2&nbsp;µs. That is, once resolved natures are compiled. Today the command refuses the file and runs nothing:</p>
 <pre data-lang="text" data-cli-output="piperine run alarm.msl --analysis transient --stop 4e-6 --stream line" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-  × resolved nature `Wire` is not supported yet</pre>
+  × resolved nature `Wire` is not supported yet
+   ╭─[alarm.msl:2:37]
+ 1 │ /// Pulls the line low while `req` is high, and lets go of it otherwise.
+ 2 │ module OpenDrain(in req: Bit, line: Wire) {
+   ·                                     ──┬─
+   ·                                       ╰── resolved nature `Wire` is outside the M1 subset
+ 3 │     line = if req { Logic::strong(false) } else { Logic::Z };
+   ╰────
+
+P0001
+
+  × resolved nature `Wire` is not supported yet
+   ╭─[alarm.msl:7:24]
+ 6 │ /// Reports every change of a line.
+ 7 │ module LineWatch(line: Wire) {}
+   ·                        ──┬─
+   ·                          ╰── resolved nature `Wire` is outside the M1 subset
+ 8 │ digital for LineWatch {
+   ╰────
+
+P0001
+
+  × method `changed` on this receiver is not supported yet
+    ╭─[alarm.msl:9:8]
+  8 │ digital for LineWatch {
+  9 │     on line.changed() {
+    ·        ───────┬──────
+    ·               ╰── method `changed` on this receiver is outside the M1 subset
+ 10 │         emit!("line", t = now(), level = line.v, strength = line.s);
+    ╰────
+
+P0001
+
+  × field access is not supported yet
+    ╭─[alarm.msl:10:42]
+  9 │     on line.changed() {
+ 10 │         emit!("line", t = now(), level = line.v, strength = line.s);
+    ·                                          ───┬──
+    ·                                             ╰── field access is outside the M1 subset
+ 11 │     }
+    ╰────
+
+P0001
+
+  × field access is not supported yet
+    ╭─[alarm.msl:10:61]
+  9 │     on line.changed() {
+ 10 │         emit!("line", t = now(), level = line.v, strength = line.s);
+    ·                                                             ───┬──
+    ·                                                                ╰── field access is outside the M1 subset
+ 11 │     }
+    ╰────
+
+P0001
+
+  × resolved nature `Wire` is not supported yet
+    ╭─[alarm.msl:18:21]
+ 17 │     signal window: Bit = false;
+ 18 │     signal alarm_n: Wire;
+    ·                     ──┬─
+    ·                       ╰── resolved nature `Wire` is outside the M1 subset
+ 19 │     let pu = Pullup(alarm_n);
+    ╰────
+
+P0001
+
+  × `struct` item used as a type is not supported yet
+    ╭─[nets.msl:10:18]
+  9 │ impl Logic {
+ 10 │     pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
+    ·                  ──┬──
+    ·                    ╰── `struct` item used as a type is outside the M1 subset
+ 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
+    ╰────
+
+P0001
+
+  × `struct` item used as a type is not supported yet
+    ╭─[nets.msl:11:31]
+ 10 │     pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
+ 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
+    ·                               ──┬──
+    ·                                 ╰── `struct` item used as a type is outside the M1 subset
+ 12 │     pub fn pull(v: bool)   -&gt; Logic { Logic { v, s: Strength::Pull } }
+    ╰────
+
+P0001
+
+  × struct expression is not supported yet
+    ╭─[nets.msl:11:39]
+ 10 │     pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
+ 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
+    ·                                       ────────────────┬───────────────
+    ·                                                       ╰── struct expression is outside the M1 subset
+ 12 │     pub fn pull(v: bool)   -&gt; Logic { Logic { v, s: Strength::Pull } }
+    ╰────
+
+P0001
+
+  × `struct` item used as a type is not supported yet
+    ╭─[nets.msl:12:31]
+ 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
+ 12 │     pub fn pull(v: bool)   -&gt; Logic { Logic { v, s: Strength::Pull } }
+    ·                               ──┬──
+    ·                                 ╰── `struct` item used as a type is outside the M1 subset
+ 13 │     pub fn weak(v: bool)   -&gt; Logic { Logic { v, s: Strength::Weak } }
+    ╰────
+
+P0001
+
+  × struct expression is not supported yet
+    ╭─[nets.msl:12:39]
+ 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
+ 12 │     pub fn pull(v: bool)   -&gt; Logic { Logic { v, s: Strength::Pull } }
+    ·                                       ───────────────┬──────────────
+    ·                                                      ╰── struct expression is outside the M1 subset
+ 13 │     pub fn weak(v: bool)   -&gt; Logic { Logic { v, s: Strength::Weak } }
+    ╰────
+
+P0001
+
+  × resolved nature `Wire` is not supported yet
+    ╭─[nets.msl:36:22]
+ 35 │ pub module Tribuf(in d: Bit, in oe: Bit, y: Wire) { y = if oe { Logic::strong(d) } else { Logic::Z }; }
+ 36 │ pub module Pullup(w: Wire)   { w = Logic::pull(true); }
+    ·                      ──┬─
+    ·                        ╰── resolved nature `Wire` is outside the M1 subset
+ 37 │ pub module Pulldown(w: Wire) { w = Logic::pull(false); }
+    ╰────
+
+error: typeck failed with 12 diagnostic(s)</pre>
 </div>
 
 <h3>Two continuous natures in one module</h3>
@@ -1108,7 +1373,16 @@ module LadderTop() {
 piperine run ladder.msl --analysis dc --sweep src.dc --from 0 --to 1 --step 0.5</pre>
 <pre data-lang="text" data-cli-output="piperine run ladder.msl --analysis op" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-  × generic module is not supported yet</pre>
+  × generic module is not supported yet
+    ╭─[ladder.msl:36:19]
+ 35 │     let src = Vdc(vin) { dc: 1.0 };
+ 36 │     pub let lad = Ladder::&lt;3&gt;(vin, vout) { r: 1k, c: 1n };
+    ·                   ───────────────────┬───────────────────
+    ·                                      ╰── generic module is outside the M1 subset
+ 37 │ }
+    ╰────
+
+error: typeck failed with 1 diagnostic(s)</pre>
   <p>Once it runs: at DC the capacitors are open, so the output equals the input at every point of the sweep. For the <code>half</code> stream, use the version with the step source and run <code>--analysis transient --stop 20e-6 --stream half</code>: three record lines, <code>stage=1</code> to <code>stage=3</code>, in time order.</p>
 </div>
 
@@ -1383,7 +1657,60 @@ module Clipper() {
   <p>Look for two <code>clip</code> lines, one per period, each with <code>vin</code> near 0.72. Then open <code>clipper.svg</code> in a browser: the sine and its clipped copy on one axis. To keep the <code>wave</code> records instead of printing them, send every record to a file with <code>--records wave.jsonl</code>, one JSON object per line. That is, once <code>sin</code> and <code>settle</code> are compiled. Today the command stops at the source, the first of the two, and runs nothing:</p>
 <pre data-lang="text" data-cli-output="piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-  × method `sin` on `f64` is not supported yet</pre>
+  × method `sin` on `f64` is not supported yet
+    ╭─[clipper.msl:10:45]
+  9 │ analog for Vsin {
+ 10 │     v(p, n) +&gt; amp * (2.0 * PI * f * now()).sin();
+    ·                                             ─┬─
+    ·                                              ╰── method `sin` on `f64` is outside the M1 subset
+ 11 │     bound_step(0.02 / f);                    // never fewer than 50 points per period
+    ╰────
+
+P0001
+
+  × core primitive `bound_step` is not supported yet
+    ╭─[clipper.msl:11:5]
+ 10 │     v(p, n) +&gt; amp * (2.0 * PI * f * now()).sin();
+ 11 │     bound_step(0.02 / f);                    // never fewer than 50 points per period
+    ·     ──────────┬─────────
+    ·               ╰── core primitive `bound_step` is outside the M1 subset
+ 12 │ }
+    ╰────
+
+P0001
+
+  × built-in `settle` is not supported yet
+    ╭─[clipper.msl:34:8]
+ 33 │ digital for Clipper {
+ 34 │     on settle {
+    ·        ───┬──
+    ·           ╰── built-in `settle` is outside the M1 subset
+ 35 │         emit!("wave", t = now(), vin = v(vin), vout = v(vout));
+    ╰────
+
+P0001
+
+  × binding inside a module is not supported yet
+    ╭─[analog.msl:19:46]
+ 18 │ 
+ 19 │ pub module limexp(x: f64) -&gt; f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
+    ·                                              ─┬─
+    ·                                               ╰── binding inside a module is outside the M1 subset
+ 20 │ 
+    ╰────
+
+P0001
+
+  × binding inside a module is not supported yet
+    ╭─[analog.msl:19:51]
+ 18 │ 
+ 19 │ pub module limexp(x: f64) -&gt; f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
+    ·                                                   ─┬─
+    ·                                                    ╰── binding inside a module is outside the M1 subset
+ 20 │ 
+    ╰────
+
+error: typeck failed with 5 diagnostic(s)</pre>
 </div>
 
 <h3>Looking inside Newton: <code>emit!</code> in <code>analog</code></h3>
@@ -1725,7 +2052,16 @@ stream Press.db.flip
 <pre data-lang="sh">piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip</pre>
 <pre data-lang="text" data-cli-output="piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-  × param of type `u8` is not supported yet</pre>
+  × param of type `u8` is not supported yet
+   ╭─[debounce.msl:7:8]
+ 6 │ module Debounce(in clk: Bit, in raw: Bit, out clean: Bit = false) {
+ 7 │     n: u8 = 4 where n &gt;= 1;
+   ·        ─┬
+   ·         ╰── param of type `u8` is outside the M1 subset
+ 8 │     /// Consecutive samples that differ from `clean`.
+   ╰────
+
+error: typeck failed with 1 diagnostic(s)</pre>
   <p>Once it runs, it prints one record line: the output flipped once, at the fourth clean sample, <code>@5.500000e-3 Press.db flip t=5.500000e-3 to=true</code>. Run it again with <code>--stream state</code> to get the row-per-edge table above as seven record lines.</p>
 </div>
 
@@ -1781,7 +2117,16 @@ digital for PwmBench {
 <pre data-lang="sh">piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle</pre>
 <pre data-lang="text" data-cli-output="piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-  × param of type `u8` is not supported yet</pre>
+  × param of type `u8` is not supported yet
+   ╭─[pwm.msl:7:13]
+ 6 │ module Pwm(in clk: Bit, in duty: Bit&lt;u8&gt;, out pwm: Bit = false, out wrap: Bit) {
+ 7 │     period: u8 = 100 where period &gt;= 2;
+   ·             ─┬
+   ·              ╰── param of type `u8` is outside the M1 subset
+ 8 │     signal count: Bit&lt;u8&gt; = 0;
+   ╰────
+
+error: typeck failed with 1 diagnostic(s)</pre>
   <p>Once it runs, the <code>cycle</code> records come at 99.5, 199.5, 299.5 and 399.5&nbsp;µs, with <code>duty=25</code> twice and then <code>duty=60</code>: the change made at 250&nbsp;µs shows up in the record at 299.5&nbsp;µs, the next wrap. Add <code>--plot pwm.svg</code> to see the pulses widen: a digital signal is drawn as a step trace in a lane of its own.</p>
 </div>
 
@@ -1969,7 +2314,27 @@ module CycleCounter() {
   <p>Once <code>sin</code> is compiled, it prints three record lines from <code>CycleCounter.ctr</code>, with <code>n=1</code>, <code>n=2</code> and <code>n=3</code>, about 15.9&nbsp;µs into each millisecond. The last row of the table shows <code>CycleCounter.count</code> at 3. Today the command refuses the source and runs nothing:</p>
 <pre data-lang="text" data-cli-output="piperine run cycles.msl --analysis transient --stop 3e-3 --stream pulse" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-  × method `sin` on `f64` is not supported yet</pre>
+  × method `sin` on `f64` is not supported yet
+    ╭─[cycles.msl:10:45]
+  9 │ analog for Vsin {
+ 10 │     v(p, n) +&gt; amp * (2.0 * PI * f * now()).sin();
+    ·                                             ─┬─
+    ·                                              ╰── method `sin` on `f64` is outside the M1 subset
+ 11 │     bound_step(0.02 / f);
+    ╰────
+
+P0001
+
+  × core primitive `bound_step` is not supported yet
+    ╭─[cycles.msl:11:5]
+ 10 │     v(p, n) +&gt; amp * (2.0 * PI * f * now()).sin();
+ 11 │     bound_step(0.02 / f);
+    ·     ──────────┬─────────
+    ·               ╰── core primitive `bound_step` is outside the M1 subset
+ 12 │ }
+    ╰────
+
+error: typeck failed with 2 diagnostic(s)</pre>
 </div>
 
 <h3>The instant</h3>
@@ -2145,7 +2510,16 @@ module Buck() {
   <p>The plot holds every accepted step, so the switching ripple is visible on <code>vout</code> even though the table is printed once per millisecond. All of this waits for one event: the check's <code>settle</code> is not compiled yet, so today both commands refuse the file and run nothing. Leave the <code>digital for Buck</code> block out and the converter runs, loop records and all.</p>
 <pre data-lang="text" data-cli-output="piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-  × built-in `settle` is not supported yet</pre>
+  × built-in `settle` is not supported yet
+    ╭─[buck.msl:60:8]
+ 59 │ digital for Buck {
+ 60 │     on settle {
+    ·        ───┬──
+    ·           ╰── built-in `settle` is outside the M1 subset
+ 61 │         if now() &gt; 10m { require("regulated", (v(vout) - 3.3).abs() &lt; 50m); }
+    ╰────
+
+error: typeck failed with 1 diagnostic(s)</pre>
 </div>
 
 <div class="callout good">
@@ -3717,7 +4091,16 @@ time         Step.vin    Step.vout
 
 <p>For the monitor that is this line of <code>piperine run step</code>: the time of the crossing, the instance <code>mon</code> under the top <code>Step</code>, the stream <code>trip</code> and the one field <code>v</code>.</p>
 
-<pre data-lang="text" data-cli-output="piperine run step" data-cli-project="rc" data-cli-lines="2">@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
+<pre data-lang="text" data-cli-output="piperine run step" data-cli-project="rc" data-cli-lines="2">run step: transient, top Step, backend rust
+@6.931075e-7 Step.mon trip v=5.000000e-1
+
+time         Step.vin    Step.vout
+0.000000e0   1.000000e0  0.000000e0
+1.000000e-6  1.000000e0  6.320926e-1
+2.000000e-6  1.000000e0  8.646682e-1
+3.000000e-6  1.000000e0  9.502193e-1
+4.000000e-6  1.000000e0  9.816886e-1
+5.000000e-6  1.000000e0  9.932653e-1</pre>
 
 <p>The fields come in the order you wrote them. Lines appear in the order the records are written, never one from a later time before one from an earlier time, and all of them before the table. The two reserved streams, <code>sim</code> and <code>checks</code>, print like any other, with one exception: a <code>checks</code> record whose <code>pass</code> is true is not printed unless you give <code>--all-checks</code> (or <code>all_checks = true</code> in the run table), because a monitor that checks every clock edge would bury everything else. A failing check, or one whose <code>pass</code> is unknown, always prints. The instance shown is the one whose reaction made the call. A design with no <code>emit!</code> prints no record line.</p>
 
@@ -3725,7 +4108,15 @@ time         Step.vin    Step.vout
 
 <pre data-lang="text" data-cli-output="piperine run step --all-checks" data-cli-project="rc" data-cli-lines="1-3">run step: transient, top Step, backend rust
 @6.931075e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
-@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
+@6.931075e-7 Step.mon trip v=5.000000e-1
+
+time         Step.vin    Step.vout
+0.000000e0   1.000000e0  0.000000e0
+1.000000e-6  1.000000e0  6.320926e-1
+2.000000e-6  1.000000e0  8.646682e-1
+3.000000e-6  1.000000e0  9.502193e-1
+4.000000e-6  1.000000e0  9.816886e-1
+5.000000e-6  1.000000e0  9.932653e-1</pre>
 
 <p>At one instant the records come in the order the solver delivers them, not necessarily the order of the statements: here the check, written second, prints first. To print the stream you are debugging and nothing else, filter it:</p>
 
@@ -3742,7 +4133,15 @@ time         Step.vin    Step.vout
 <pre data-lang="sh">piperine run step --stream trip</pre>
 
 <pre data-lang="text" data-cli-output="piperine run step --stream trip" data-cli-project="rc" data-cli-lines="1-2">run step: transient, top Step, backend rust
-@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
+@6.931075e-7 Step.mon trip v=5.000000e-1
+
+time         Step.vin    Step.vout
+0.000000e0   1.000000e0  0.000000e0
+1.000000e-6  1.000000e0  6.320926e-1
+2.000000e-6  1.000000e0  8.646682e-1
+3.000000e-6  1.000000e0  9.502193e-1
+4.000000e-6  1.000000e0  9.816886e-1
+5.000000e-6  1.000000e0  9.932653e-1</pre>
 
 <p>A records file is JSON Lines: one object per record, with the keys <code>time</code>, <code>instance</code>, <code>stream</code> and <code>fields</code>. A real or an integer is a JSON number, a <code>bool</code> a JSON boolean, a text a string, and an unknown value is <code>null</code>. A real is written with every digit it has, so a script reads back exactly the number the solver computed. The file holds every record, the passing checks included:</p>
 
@@ -3763,7 +4162,17 @@ time         Step.vin    Step.vout
 
 <pre data-lang="sh">piperine run step --plot step.svg</pre>
 
-<pre data-lang="text" data-cli-output="piperine run step --plot step.svg" data-cli-project="rc" data-cli-lines="11">wrote step.svg</pre>
+<pre data-lang="text" data-cli-output="piperine run step --plot step.svg" data-cli-project="rc" data-cli-lines="11">run step: transient, top Step, backend rust
+@6.931075e-7 Step.mon trip v=5.000000e-1
+
+time         Step.vin    Step.vout
+0.000000e0   1.000000e0  0.000000e0
+1.000000e-6  1.000000e0  6.320926e-1
+2.000000e-6  1.000000e0  8.646682e-1
+3.000000e-6  1.000000e0  9.502193e-1
+4.000000e-6  1.000000e0  9.816886e-1
+5.000000e-6  1.000000e0  9.932653e-1
+wrote step.svg</pre>
 
 <p>This is the file it wrote, as it is: <code>Step.vin</code> flat at 1&nbsp;V, <code>Step.vout</code> rising towards it with the time constant of 1&nbsp;µs. The plot draws every accepted step of the solver, not only the six printed rows.</p>
 

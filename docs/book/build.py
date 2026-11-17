@@ -104,6 +104,12 @@ def pre_block(m):
     # Extra attributes of the <pre> (data-cli-output: a listing the command line prints) are kept on the block.
     lang, attrs, raw = m.group(1), m.group(2), m.group(3)
     raw = raw.strip("\n")
+    # data-cli-lines="a-b" (or "a"): the block holds the command's whole output, which the CLI's
+    # Book guard holds to the binary; the page shows only those lines, 1-based and inclusive.
+    sel = re.search(r'data-cli-lines="(\d+)(?:-(\d+))?"', attrs)
+    if sel:
+        a, b = int(sel.group(1)), int(sel.group(2) or sel.group(1))
+        raw = "\n".join(raw.split("\n")[a - 1:b])
     if lang in ("msl", "rust"):
         body = hl_code(raw)
     elif lang == "toml":

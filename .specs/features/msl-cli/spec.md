@@ -567,6 +567,7 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 11. The system SHALL show in the chapter `cli` the plot of the RC step response, the SVG equal to the file `piperine run step --plot` writes in `examples/rc`.
 12. The system SHALL show in the chapter `cli` `piperine fmt` and `piperine fmt --check` and say that comments are kept.
 13. The system SHALL say in the Book's first chapter that a bench is written in MSL and that sweeps, Monte Carlo and optimization live in the host, and SHALL NOT say there that testbenches or stimulus do not live in MSL.
+14. (Amended 2026-11-17, verification F6.) The system SHALL hold every listing of the whole Book that claims to be the binary's output (`data-cli-output`, any chapter, any project) equal to the binary's whole output and exit code; a `data-cli-lines` range SHALL only select the lines the page shows, inside the block, and the block SHALL hold the whole output.
 
 **Independent Test**: `python3 docs/book/build.py`, open `docs/book/index.html`, copy the RC project out of chapter 16 and run it.
 

@@ -1940,6 +1940,9 @@ Proof: run commands | test clean_cache_refuses_a_directory_it_does_not_own ... o
 **C201** - The Book's `blinky.msl` (no analog node) run as a transient to 3e-6, plain, with `--csv` and with `--plot`, each exits 1 with `before its stop` and `no analog node` on standard error, keeps its 3 record lines on standard output, prints no table and no `wrote` line, and writes no file. (CLI-05, AC 11; T13, verification F2)
 Proof: run run | test a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot ... ok
 
+**C202** - All 29 `data-cli-output` listings of the Book, in every chapter and of any project (`rc`, `buck`, `lowpass`, lone files), equal the binary's whole output and exit code (`data-cli-exit`, `data-cli-stream`), run once and shared with C145 and C146; every `data-cli-lines` range lies inside its block, which holds the whole output, and `build.py` renders only those lines. (CLI-19, AC 14; T36, verification F6)
+Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
+
 ---
 
 ## Handoff

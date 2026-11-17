@@ -10,7 +10,9 @@
 //!   the project `data-cli-project` names (`rc` is a copy of `examples/rc`, `buck` is
 //!   `examples/buck`, any other name is assembled from the Book's own files), or in an empty
 //!   directory holding the Book's lone files when there is none;
-//! - `data-cli-lines="a-b"` (or `"a"`): only those lines of the output, 1-based, inclusive;
+//! - `data-cli-lines="a-b"` (or `"a"`): the page shows only those lines of the block, 1-based,
+//!   inclusive (`build.py` selects them); the block itself holds the whole output and the guard
+//!   holds all of it to the binary, so a line the page leaves out cannot hide a wrong one;
 //! - `data-cli-stream="stderr"`: the block is standard error of a command that exits 1;
 //! - `data-cli-exit="1"`: the block is standard output of a command that exits 1 (records
 //!   printed before a failure stay, CLI-07 AC 5);
@@ -194,12 +196,25 @@ fn workdir(all: &[Block], block: &Block) -> (Option<tempfile::TempDir>, PathBuf)
     }
 }
 
-/// Runs a listing's command and returns the text the listing claims, with the command for the
-/// failure message.
-fn produce(all: &[Block], block: &Block) -> (String, String) {
-    let command = block.attr("data-cli-output").expect("a listing names its command").to_string();
+/// One listing of the Book run against the binary: where it is, its project, its command, the
+/// text the Book holds and the text the binary gave (or why the run is not what the listing
+/// claims).
+struct Checked {
+    at: usize,
+    project: Option<String>,
+    command: String,
+    book: String,
+    got: Result<String, String>,
+}
+
+/// Runs a listing's command; the whole text the listing claims (standard output, standard error
+/// or the file written), or why the run is not what the listing claims.
+fn produce(all: &[Block], block: &Block) -> Result<String, String> {
+    let command = block.attr("data-cli-output").expect("a listing names its command");
     let words: Vec<&str> = command.split_whitespace().collect();
-    assert_eq!(words.first(), Some(&"piperine"), "a listing's command starts with `piperine`: {command}");
+    if words.first() != Some(&"piperine") {
+        return Err("a listing's command starts with `piperine`".into());
+    }
     let (_tmp, dir) = workdir(all, block);
     let empty = tempfile::tempdir().expect("tmp");
     let cache = if block.attr("data-cli-cache") == Some("empty") { empty.path() } else { shared_cache() };
@@ -211,47 +226,78 @@ fn produce(all: &[Block], block: &Block) -> (String, String) {
         .output()
         .unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()));
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    let text = if block.attr("data-cli-stream") == Some("stderr") {
-        assert_eq!(out.status.code(), Some(1), "`{command}` is shown refused, so it exits 1; stderr:\n{stderr}");
-        stderr
-    } else {
-        let exit: i32 = block.attr("data-cli-exit").map_or(0, |code| code.parse().expect("an exit code"));
-        assert_eq!(out.status.code(), Some(exit), "`{command}` exits {exit}; stderr:\n{stderr}");
-        match block.attr("data-cli-written") {
-            Some(file) => std::fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("`{command}` wrote {file}: {e}")),
-            None => String::from_utf8(out.stdout).expect("standard output is text"),
-        }
+    let refused = block.attr("data-cli-stream") == Some("stderr");
+    let exit: i32 = match block.attr("data-cli-exit") {
+        Some(code) => code.parse().map_err(|_| format!("`data-cli-exit=\"{code}\"` is no exit code"))?,
+        None if refused => 1,
+        None => 0,
     };
-    (command, select(&text, block.attr("data-cli-lines")))
+    if out.status.code() != Some(exit) {
+        return Err(format!("exits {:?}, the listing claims {exit}; stderr:\n{stderr}", out.status.code()));
+    }
+    let text = match (refused, block.attr("data-cli-written")) {
+        (true, _) => stderr,
+        (false, Some(file)) => std::fs::read_to_string(dir.join(file)).map_err(|e| format!("wrote no {file}: {e}"))?,
+        (false, None) => String::from_utf8(out.stdout).map_err(|_| "standard output is not text".to_string())?,
+    };
+    Ok(text.trim_end_matches('\n').to_string())
 }
 
-/// The lines `a-b` (or the line `a`), 1-based and inclusive, of `text`; all of it without a range.
-fn select(text: &str, lines: Option<&str>) -> String {
-    let Some(range) = lines else {
-        return text.trim_end_matches('\n').to_string();
-    };
+/// `data-cli-lines="a-b"` (or `"a"`) of a listing: a range of its own lines, 1-based and
+/// inclusive, that the rendered page shows. It only selects: the block holds the command's whole
+/// output, so a line it leaves out is still held to the binary.
+fn selection(block: &Block) -> Result<(), String> {
+    let Some(range) = block.attr("data-cli-lines") else { return Ok(()) };
     let (a, b) = range.split_once('-').unwrap_or((range, range));
-    let (a, b): (usize, usize) = (a.parse().expect("a line number"), b.parse().expect("a line number"));
-    let all: Vec<&str> = text.lines().collect();
-    assert!(b <= all.len(), "the output has {} lines, the listing asks for {range}:\n{text}", all.len());
-    all[a - 1..b].join("\n")
+    let (a, b): (usize, usize) = match (a.parse(), b.parse()) {
+        (Ok(a), Ok(b)) => (a, b),
+        _ => return Err(format!("`data-cli-lines=\"{range}\"` is no line range")),
+    };
+    let lines = block.text.lines().count();
+    if a == 0 || a > b || b > lines {
+        return Err(format!("`data-cli-lines=\"{range}\"` selects outside the block's {lines} lines"));
+    }
+    Ok(())
 }
 
-/// The listings of `html` (whole Book) that lie inside `[from, to)` and satisfy `keep`, each
-/// checked against the binary; returns the commands checked.
-fn check_listings(html: &str, from: usize, to: usize, keep: impl Fn(&Block) -> bool) -> Vec<String> {
-    let all = blocks(html);
+/// Every listing of the whole Book, any chapter and any project, run once per test binary
+/// and shared by the tests that read it (the buck alone takes minutes).
+fn checked() -> &'static [Checked] {
+    static CHECKED: OnceLock<Vec<Checked>> = OnceLock::new();
+    CHECKED.get_or_init(|| {
+        let html = content();
+        let all = blocks(&html);
+        all.iter()
+            .filter(|b| b.attr("data-cli-output").is_some())
+            .map(|block| Checked {
+                at: block.at,
+                project: block.attr("data-cli-project").map(str::to_string),
+                command: block.attr("data-cli-output").expect("a listing").to_string(),
+                book: block.text.clone(),
+                got: selection(block).and_then(|()| produce(&all, block)),
+            })
+            .collect()
+    })
+}
+
+/// Asserts that each listing of `listings` is what the binary prints, whole; returns their
+/// commands.
+fn hold(listings: &[&Checked]) -> Vec<String> {
     let mut failures = Vec::new();
-    let mut commands = Vec::new();
-    for block in all.iter().filter(|b| b.at >= from && b.at < to && b.attr("data-cli-output").is_some() && keep(b)) {
-        let (command, got) = produce(&all, block);
-        if got != block.text {
-            failures.push(format!("`{command}`:\n--- the Book\n{}\n--- the binary\n{got}", block.text));
+    for c in listings {
+        match &c.got {
+            Ok(got) if *got == c.book => {}
+            Ok(got) => failures.push(format!("`{}`:\n--- the Book\n{}\n--- the binary\n{got}", c.command, c.book)),
+            Err(why) => failures.push(format!("`{}`: {why}", c.command)),
         }
-        commands.push(command);
     }
     assert!(failures.is_empty(), "{} listings differ from the binary:\n{}", failures.len(), failures.join("\n\n"));
-    commands
+    listings.iter().map(|c| c.command.clone()).collect()
+}
+
+/// The listings inside `[from, to)` of the Book whose project is `project`.
+fn listings_of(from: usize, to: usize, project: &str) -> Vec<&'static Checked> {
+    checked().iter().filter(|c| c.at >= from && c.at < to && c.project.as_deref() == Some(project)).collect()
 }
 
 /// The offsets of the chapter `id` in the whole Book.
@@ -333,7 +379,7 @@ fn the_rc_output_blocks_are_what_the_binary_prints() {
     // `examples/rc`, and every other RC listing of the chapter, equal to what the binary prints
     let html = content();
     let (from, to) = span_of(&html, "cli");
-    let commands = check_listings(&html, from, to, |b| b.attr("data-cli-project") == Some("rc"));
+    let commands = hold(&listings_of(from, to, "rc"));
     for asked in ["piperine check", "piperine run op", "piperine run step", "piperine test"] {
         assert!(commands.iter().any(|c| c == asked), "the chapter shows the output of `{asked}`: {commands:?}");
     }
@@ -341,12 +387,15 @@ fn the_rc_output_blocks_are_what_the_binary_prints() {
 
 #[test]
 fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
-    // the Book's handoff: every listing outside the chapter `cli` that claims to be the binary's
-    // output (chapter 1 and the "Run it" boxes of the language chapters) is what it prints
+    // verification F6: every listing of the whole Book that claims to be the binary's output, in
+    // every chapter and of any project, is the binary's whole output; `data-cli-lines` only
+    // selects the lines the page shows, so a line it leaves out is held all the same
+    let all: Vec<&Checked> = checked().iter().collect();
+    let commands = hold(&all);
+    assert!(commands.len() >= 29, "the Book shows {} listings: {commands:?}", commands.len());
     let html = content();
     let (from, to) = span_of(&html, "cli");
-    let commands = check_listings(&html, 0, html.len(), |b| b.at < from || b.at >= to);
-    assert!(commands.len() >= 15, "the Book outside chapter `cli` shows {} listings: {commands:?}", commands.len());
+    assert!(all.iter().any(|c| c.at >= from && c.at < to) && all.iter().any(|c| c.at < from), "listings of chapter `cli` and of the other chapters are held");
 }
 
 #[test]
@@ -361,7 +410,7 @@ fn the_buck_block_is_what_the_binary_prints() {
     assert!(manifest.ends_with(&table.text), "the `startup` table is the end of examples/buck/Piperine.toml, as it is:\n{}", table.text);
     assert!(holds(&cli, "sh", "piperine run startup"), "the chapter gives the command in a shell block");
     let (from, to) = span_of(&html, "cli");
-    let commands = check_listings(&html, from, to, |b| b.attr("data-cli-project") == Some("buck"));
+    let commands = hold(&listings_of(from, to, "buck"));
     assert_eq!(commands, ["piperine run startup"]);
 }
 
