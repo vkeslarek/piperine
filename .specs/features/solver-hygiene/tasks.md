@@ -159,9 +159,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_worst_ratio_is_the_largest_difference_over_its_bound` (non-uniform rows, the worst not first or last; lesson L-006) and `a_pair_at_the_bound_has_ratio_one` pass under `**Run deviationlib**`
-- [ ] `contract.rs` is unchanged (`git diff --stat` shows no line of it)
-- [ ] Gate check passes: Quick
+- [x] `the_worst_ratio_is_the_largest_difference_over_its_bound` (non-uniform rows, the worst not first or last; lesson L-006) and `a_pair_at_the_bound_has_ratio_one` pass under `**Run deviationlib**`
+- [x] `contract.rs` is unchanged (`git diff --stat` shows no line of it)
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick

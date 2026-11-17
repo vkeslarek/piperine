@@ -5,6 +5,7 @@
 pub mod backend;
 pub mod bench;
 pub mod contract;
+pub mod deviation;
 pub mod golden;
 pub mod ngspice;
 pub mod operating_point;
