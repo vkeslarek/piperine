@@ -524,8 +524,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `part_v_states_the_solver_hygiene_rules` passes under `**Run spectext**`; no existing test of the target is edited
-- [ ] Gate check passes: Quick
+- [x] `part_v_states_the_solver_hygiene_rules` passes under `**Run spectext**`; no existing test of the target is edited
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -1571,3 +1571,26 @@ fn no_spec_text_says_stimulus_is_host_only() {
         }
     }
 }
+
+#[test]
+fn part_v_states_the_solver_hygiene_rules() {
+    // HYG-17 AC 2 (Q1, Q3, Q5, Q6): the decided truncation basis, the floor, the restart step and
+    // the later start are written in Part V
+    // the Resolution blocks are quoted: drop the `> ` a wrapped line starts with
+    let text = flat(&spec("part_v_execution.md")).replace(" > ", " ");
+    for fact in [
+        // Q5: the restart step after a landing or a host `set`
+        "The step that restarts the integrator after a landing or a host `set` is at most a tenth of the smaller of the last accepted step and the time from `t` to the next scheduled time point",
+        // Q6: a later start from an operating point
+        "starts from an operating point at `(t_start, 0)`",
+        "A start time that is not finite or is negative fails before the operating point",
+        // Q1: the basis of rule 1 is the `ddt` states, with the charge tolerance
+        "Where rule 1 is measured: on the `ddt` states of §15.2 rule 1",
+        "which is at least the session's charge tolerance `chgtol`",
+        // Q3: E0508 also covers a truncation failure at the floor
+        "or the step still fails the truncation error (§17.2 rule 1) when retaken there once",
+    ] {
+        assert!(text.contains(fact), "Part V lacks \"{fact}\"");
+    }
+    assert!(!text.contains("on node potentials and branch-flow unknowns against their natures' `abstol`, and on a `ddt` state"), "the node basis of rule 1 is gone");
+}

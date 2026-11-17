@@ -299,8 +299,11 @@ of its own.
    landed on `t` because something was due there, and the step that reads a host `set`. Restarting, the trapezoidal stage drops the previous
    derivative and runs as backward Euler over its sub-step. A change made after the solve of
    `t` restarts nothing. After a host `set` the step size also restarts
-   at 10⁻³ of the last step (Appendix C.2); in every other case the controller's proposal is
-   kept.
+   at 10⁻³ of the last step (Appendix C.2). **The step that restarts the integrator after a
+   landing or a host `set` is at most a tenth of the smaller of the last accepted step and the
+   time from `t` to the next scheduled time point, and never larger than the controller's
+   proposal; the first stage is first order, whose error grows with the square of the step.
+   In every other case the controller's proposal is kept.
 7. The step that reads a jump converges under §17.1. Each primitive has in it the meaning of
    the "Jump solve" column of §16.2, which is the meaning in a transient step.
    `analysis(Static)` is false and `now()` is the time of the step.
@@ -527,6 +530,12 @@ no operating point of its own. No initial value is committed again, nothing is h
    nothing in it comes due. Newton starts from the transient's final solution. The transient
    can be continued after it.
 
+**A `Transient` whose start time is later than zero, with no such last instant to start from,
+starts from an operating point at `(t_start, 0)`**: the operating point of §16 is solved at
+the start time, the initial commits and `START` run at that instant, `now()` reads the start
+time there and the first time point is the start time. No instant before the start time runs.
+A start time that is not finite or is negative fails before the operating point.
+
 `ClockGen` (Appendix D.2) keeps ticking across a continuation, and a `transition` mid-ramp
 finishes its edge. A periodic steady state is continued transients only (§16.3).
 
@@ -646,15 +655,21 @@ A digital clock that nothing analog depends on costs the solver nothing.
 > exactly the one rule 2 gives: `settle` observes it. The `finish` clause is dynamic too: it
 > is the instant at which the record is written.
 
-> **Resolution.** Where rule 1 is measured: on node potentials and branch-flow unknowns
-> against their natures' `abstol`, and on a `ddt` state against that instance's own `abstol`
-> argument (§14) when one is given.
+> **Resolution.** Where rule 1 is measured: on the `ddt` states of §15.2 rule 1, which is
+> what the integrator advances. The error of a state is tested against the larger of two
+> bounds: the step times the state's current tolerance, the `abstol` of the flow it
+> contributes to (or that instance's own `abstol` argument (§14) when one is given) plus
+> `reltol` of the larger magnitude of the state's two currents; and `reltol` of the larger
+> magnitude of the state's value, which is at least the session's charge tolerance
+> `chgtol`. Node potentials and branch flows are not measured on their own: they are tested
+> for convergence (§17.1), and a circuit with no `ddt` state has no truncation error to
+> limit the step.
 
 **Errors**
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0508` | A transient step cannot be completed: Newton does not converge at the smallest step the simulator takes. The report names the time and the failing unknowns or `limit` instances. | run |
+| `E0508` | A transient step cannot be completed at the smallest step the simulator takes: Newton does not converge there, or the step still fails the truncation error (§17.2 rule 1) when retaken there once. The report names the time and the failing unknowns or `limit` instances. | run |
 | `E0509` | `bound_step(dt)` evaluated with `dt` not finite or `dt ≤ 0`. | run |
 
 ### 17.3 Locating crossings
