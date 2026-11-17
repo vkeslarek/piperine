@@ -1,0 +1,6 @@
+[package]
+name = "two_sources"
+version = "0.1.0"
+
+[run.main]
+analysis = "op"

@@ -1,0 +1,3 @@
+module Top() {
+    flag: bool = 1.5;
+}

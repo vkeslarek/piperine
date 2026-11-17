@@ -1,0 +1,9 @@
+[package]
+name = "missing_dependency"
+version = "0.1.0"
+
+[dependencies]
+parts = { path = "../no_such_package" }
+
+[run.main]
+analysis = "op"

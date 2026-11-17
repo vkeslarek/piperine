@@ -195,3 +195,199 @@ fn a_lone_file_run_is_named_by_its_stem() {
     let mid = lines.iter().find(|l| l.starts_with("Divider.mid")).unwrap_or_else(|| panic!("no Divider.mid row in\n{out}"));
     assert_eq!(cells(mid), ["Divider.mid", "7.500000e0"], "{out}");
 }
+
+/// The fixture project `name` under `tests/projects/`.
+fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/projects").join(name)
+}
+
+/// Writes `files` (relative path, text) under a new temporary directory and returns it.
+fn written(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tmp");
+    for (path, text) in files {
+        let at = dir.path().join(path);
+        std::fs::create_dir_all(at.parent().expect("a parent")).expect("mkdir");
+        std::fs::write(at, text).expect("write");
+    }
+    dir
+}
+
+/// A run that failed with `code`: nothing on standard output, a message on standard error.
+fn failed(out: &Output, code: i32) -> String {
+    let err = text(&out.stderr);
+    assert_eq!(out.status.code(), Some(code), "stdout:\n{}\nstderr:\n{err}", text(&out.stdout));
+    err
+}
+
+#[test]
+fn no_manifest_is_e0170_and_exit_1() {
+    // CLI-02 AC 3: no manifest upward, and the command needs a project: E0170, exit 1
+    let nowhere = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(nowhere.path(), shared_cache(), &["run", "step"]);
+    let err = failed(&out, 1);
+    assert!(err.contains("E0170"), "{err}");
+    assert!(out.stdout.is_empty(), "{}", text(&out.stdout));
+}
+
+#[test]
+fn a_package_error_is_rendered_with_code_file_and_line() {
+    // CLI-02 AC 6: the code, the file and the source line of a package error on standard error.
+    // `missing_dependency/Piperine.toml` names a path no package is at, on its line 6.
+    let out = piperine_in(&fixture("missing_dependency"), shared_cache(), &["run", "main"]);
+    let err = failed(&out, 1);
+    assert!(err.contains("E0172"), "the code:\n{err}");
+    assert!(err.contains("Piperine.toml:6:1"), "the file and the line:\n{err}");
+    assert!(err.contains("parts = { path = \"../no_such_package\" }"), "the source line:\n{err}");
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn no_name_with_no_run_or_several_lists_them_and_exits_2() {
+    // CLI-03 AC 10: no name and several runs (`two_runs` has `first` and `second`), or no run at
+    // all: exit 2, the run names listed on standard error
+    let several = piperine_in(&fixture("two_runs"), shared_cache(), &["run"]);
+    let err = failed(&several, 2);
+    assert!(err.contains("first") && err.contains("second"), "{err}");
+    assert!(several.stdout.is_empty());
+    let none = written(&[("Piperine.toml", "[package]\nname = \"none\"\nversion = \"0.1.0\"\n"), ("src/lib.msl", "module Top() { signal a: Electrical; }\n")]);
+    let out = piperine_in(none.path(), shared_cache(), &["run"]);
+    let err = failed(&out, 2);
+    assert!(err.contains("no run"), "{err}");
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn an_unknown_run_name_lists_the_runs_and_exits_2() {
+    // CLI-03 AC 11
+    let out = piperine_in(&fixture("two_runs"), shared_cache(), &["run", "third"]);
+    let err = failed(&out, 2);
+    assert!(err.contains("third"), "it names what was asked:\n{err}");
+    assert!(err.contains("first") && err.contains("second"), "it lists the runs:\n{err}");
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn a_lone_file_without_analysis_exits_2() {
+    // CLI-03 AC 12: a run asked from flags alone with no --analysis exits 2 naming the flag
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/divider.msl");
+    let out = piperine_in(&rc(), shared_cache(), &["run", &file.to_string_lossy()]);
+    let err = failed(&out, 2);
+    assert!(err.contains("--analysis"), "{err}");
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn a_single_valued_flag_given_twice_exits_2() {
+    // CLI-01 AC 7 (a usage error is exit 2): `--stop` takes one value
+    let out = piperine(&["run", "step", "--stop", "1e-6", "--stop", "2e-6"]);
+    let err = failed(&out, 2);
+    assert!(err.contains("--stop") && err.contains("Usage:"), "{err}");
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn a_type_error_is_rendered_with_its_stage_and_exits_1() {
+    // CLI-04 AC 4: every diagnostic with its code, file, line and excerpt, the stage named,
+    // exit 1. `type_error/src/lib.msl` puts a real where a `bool` is declared, at line 2.
+    let out = piperine_in(&fixture("type_error"), shared_cache(), &["run", "main"]);
+    let err = failed(&out, 1);
+    assert!(err.contains("P0002"), "the code:\n{err}");
+    assert!(err.contains("lib.msl:2:"), "the file and the line:\n{err}");
+    assert!(err.contains("flag: bool = 1.5;"), "the excerpt:\n{err}");
+    assert!(err.contains("error: typeck failed with 1 diagnostic(s)"), "the stage:\n{err}");
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn a_bad_backend_exits_2_for_the_flag_and_1_otherwise() {
+    // CLI-04 AC 8: a value that is no backend names the two valid ones; exit 2 for the flag, 1
+    // for `PIPERINE_BACKEND` and for the run's `backend` key
+    let flag = piperine(&["run", "op", "--backend", "spice"]);
+    let err = failed(&flag, 2);
+    assert!(err.contains("interp") && err.contains("rust"), "{err}");
+    let variable = Command::new(binary()).args(["run", "op"]).current_dir(rc()).env("PIPERINE_CACHE_DIR", shared_cache()).env("PIPERINE_BACKEND", "spice").output().expect("run");
+    let err = failed(&variable, 1);
+    assert!(err.contains("interp") && err.contains("rust"), "{err}");
+    let key = written(&[
+        ("Piperine.toml", "[package]\nname = \"keyed\"\nversion = \"0.1.0\"\n\n[run.main]\nanalysis = \"op\"\nbackend = \"spice\"\n"),
+        ("src/lib.msl", "module Top() { signal a: Electrical; }\n"),
+    ]);
+    let out = piperine_in(key.path(), shared_cache(), &["run", "main"]);
+    let err = failed(&out, 1);
+    assert!(err.contains("interp") && err.contains("rust"), "{err}");
+    for out in [flag, variable, out] {
+        assert!(out.stdout.is_empty(), "{}", text(&out.stdout));
+    }
+}
+
+#[test]
+fn a_solver_failure_prints_no_table_and_exits_1() {
+    // CLI-05 AC 9: the solver's error and the analysis on standard error, no table. Two ideal
+    // sources of 1 V and 2 V across the same node (`two_sources`) have no operating point.
+    let out = piperine_in(&fixture("two_sources"), shared_cache(), &["run", "main"]);
+    let err = failed(&out, 1);
+    assert!(err.contains("op analysis failed"), "the analysis:\n{err}");
+    let stdout = text(&out.stdout);
+    assert_eq!(stdout.lines().collect::<Vec<_>>(), ["run main: op, top Top, backend rust"], "the header and no table:\n{stdout}");
+}
+
+#[test]
+fn a_failure_before_the_analysis_prints_nothing_on_stdout() {
+    // CLI-07 AC 4: any stage before the analysis fails: nothing on standard output, exit 1.
+    // A parse-stage error is no different from a typeck one, a bad run table, a missing
+    // dependency, a `print` that names nothing (E0801) or a missing project.
+    let cases: [(&str, &[&str]); 4] = [
+        ("type_error", &["run", "main"]),
+        ("bad_run_table", &["run", "main"]),
+        ("missing_dependency", &["run", "main"]),
+        ("two_runs", &["run", "first", "--print", "nothing"]),
+    ];
+    for (project, args) in cases {
+        let out = piperine_in(&fixture(project), shared_cache(), args);
+        let err = failed(&out, 1);
+        assert!(out.stdout.is_empty(), "{project}: {}", text(&out.stdout));
+        assert!(err.contains("error:"), "{project}: {err}");
+    }
+    let bad_table = piperine_in(&fixture("bad_run_table"), shared_cache(), &["run", "main"]);
+    let err = text(&bad_table.stderr);
+    assert!(err.contains("P0010") && err.contains("Piperine.toml:7:"), "the run table's fault points at `stopp`:\n{err}");
+}
+
+#[test]
+fn records_stay_when_the_analysis_fails() {
+    // CLI-07 AC 5: records already printed stay, the error goes to standard error, exit 1.
+    // `fails_after_emit`: a node that starts at 0.1 V crosses the monitor's 0.5 V at 1.6 us
+    // (0.1 * exp(t / 1 us)), emitting `trip`, then grows until the solver meets an infinity.
+    let out = piperine_in(&fixture("fails_after_emit"), shared_cache(), &["run", "grow"]);
+    let err = failed(&out, 1);
+    let stdout = text(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines[0], "run grow: transient, top Top, backend rust", "{stdout}");
+    assert_eq!(lines.len(), 2, "the header and the one record, no table:\n{stdout}");
+    let trip = cells(lines[1]);
+    assert_eq!(&trip[1..3], ["Top.mon", "trip"], "{stdout}");
+    let at: f64 = trip[0].trim_start_matches('@').parse().expect("a time");
+    assert!(close(at, 1e-6 * 5f64.ln(), 1e-2), "the crossing time {at}");
+    assert!(err.contains("transient analysis failed"), "{err}");
+}
+
+#[test]
+fn a_closed_stdout_ends_with_exit_1_and_no_panic() {
+    // design.md "Error Handling Strategy": a closed standard output ends the command
+    // with exit 1 and no panic message. The read end of the pipe is closed before the child
+    // writes its header.
+    let mut child = Command::new(binary())
+        .args(["run", "step"])
+        .current_dir(rc())
+        .env("PIPERINE_CACHE_DIR", shared_cache())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    drop(child.stdout.take());
+    let out = child.wait_with_output().expect("wait");
+    let err = text(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(!err.contains("panicked"), "{err}");
+    assert!(err.contains("standard output"), "{err}");
+}

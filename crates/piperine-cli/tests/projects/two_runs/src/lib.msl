@@ -1,0 +1,13 @@
+/// A constant voltage from `p` to `n`.
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }
+
+/// Ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module Top() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let r1 = Resistor(a, gnd) { r: 1k };
+}

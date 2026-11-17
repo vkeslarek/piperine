@@ -1,0 +1,11 @@
+/// A constant voltage from `p` to `n`.
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }
+
+/// Two ideal voltage sources in parallel with different values: the operating point has no
+/// solution.
+module Top() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let v2 = Vsource(a, gnd) { dc: 2.0 };
+}

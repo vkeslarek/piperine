@@ -1,0 +1,7 @@
+[package]
+name = "fails_after_emit"
+version = "0.1.0"
+
+[run.grow]
+analysis = "transient"
+stop = 2e-3
