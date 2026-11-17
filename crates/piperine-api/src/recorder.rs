@@ -55,6 +55,10 @@ pub(crate) struct Recorder {
     applied: usize,
     /// Whether a step has been seen: the first seeds `held` from the net reader.
     started: bool,
+    /// The rows already made whose time plus the slack is still past the last step: the index in
+    /// `rows` and the time. A change that arrives with a time inside one's slack reaches it, so
+    /// at most the rows of one slack window are held here.
+    pending: Vec<(usize, f64)>,
     /// The first failure of the run: the recorder makes no row after it and `finish` reports it.
     failure: Option<Failure>,
 }
@@ -70,24 +74,38 @@ impl Recorder {
             }
         }
         let held = vec![Cell::Unknown; columns.len()];
-        Recorder { columns, labels, from, grid: None, rows: Vec::new(), by_path, held, changes: Vec::new(), applied: 0, started: false, failure: None }
+        Recorder { columns, labels, from, grid: None, rows: Vec::new(), by_path, held, changes: Vec::new(), applied: 0, started: false, pending: Vec::new(), failure: None }
     }
 
     /// A change of the net at `path` to `bytes` at `time`, as the solver commits it. A path no
     /// column prints is not the recorder's.
     pub(crate) fn change(&mut self, path: &str, time: f64, bytes: &[u8]) {
         let Some(at) = self.by_path.get(path) else { return };
+        let slack = self.grid.as_ref().map_or(0.0, |grid| grid.slack);
         if self.failure.is_some() {
             return;
         }
         for &column in at {
             let Column::Net { ty, .. } = &self.columns[column] else { continue };
             match Cell::decode(ty, bytes) {
-                Ok(cell) => self.changes.push((column, time, cell)),
+                Ok(cell) => {
+                    Recorder::reach_pending(&mut self.rows, &self.pending, slack, column, time, &cell);
+                    self.changes.push((column, time, cell));
+                }
                 Err(failure) => {
                     self.failure = Some(failure);
                     return;
                 }
+            }
+        }
+    }
+
+    /// A change at `time` reaches every row already made whose time plus the slack is not before
+    /// it: the row shows the net as the last instant within rounding of it left it.
+    fn reach_pending(rows: &mut [Vec<Cell>], pending: &[(usize, f64)], slack: f64, column: usize, time: f64, cell: &Cell) {
+        for &(row, at) in pending {
+            if time <= at + slack {
+                rows[row][column + 1] = cell.clone();
             }
         }
     }
@@ -190,6 +208,7 @@ impl Recorder {
         let Some(grid) = self.grid.as_ref() else { return };
         let (h, kmax, slack) = (grid.h, grid.kmax, grid.slack);
         let mut k = grid.k;
+        self.pending.retain(|(_, at)| at + slack > time);
         if grid.prev.is_none() {
             while k <= kmax && (k as f64 * h) < time {
                 k += 1;
@@ -211,6 +230,9 @@ impl Recorder {
                 (Column::Unknown { .. }, _) => b.clone(),
             });
             let row = Recorder::row(at, values.collect());
+            if at + slack > time {
+                self.pending.push((self.rows.len(), at));
+            }
             self.rows.push(row);
             k += 1;
         }
@@ -562,6 +584,48 @@ mod tests {
             assert_eq!(q(&table)[1], Cell::Bool(at_row), "a change {late} past the row");
             assert_eq!(q(&table)[2], Cell::Bool(true));
         }
+    }
+
+    #[test]
+    fn a_change_within_rounding_after_a_row_already_made_reaches_it() {
+        // LR-05 AC 5 (verification F1): steps at 0, 0.5, 1.0 on the grid 0.5; the row at 0.5 is
+        // made at the step at 0.5, and the change 1e-10 past it (slack 5e-10) arrives after; the
+        // row shows the changed value and its analog cell stays the step's own
+        let ty = ValueType::Bool;
+        let mut recorder = with_net(&ty, 0.5, 1.0);
+        recorder.step(0.0, &reading(1.0, &[Cell::Bool(false)]));
+        recorder.step(0.5, &reading(2.0, &[Cell::Bool(false)]));
+        recorder.change("T.q", 0.5 + 1e-10, &bytes(&ty, &Cell::Bool(true)));
+        recorder.step(1.0, &reading(4.0, &[Cell::Bool(true)]));
+        let table = recorder.finish().expect("table");
+        assert_eq!(q(&table), [Cell::Bool(false), Cell::Bool(true), Cell::Bool(true)]);
+        let v: Vec<Cell> = table.rows.iter().map(|r| r[1].clone()).collect();
+        assert_eq!(v, [Cell::Real(1.0), Cell::Real(2.0), Cell::Real(4.0)]);
+    }
+
+    #[test]
+    fn several_changes_and_steps_within_the_slack_of_a_made_row_all_reach_it() {
+        // F1: the row at 0.5 stays pending through a second step 2e-10 past it, then two changes
+        // arrive (the last wins); a change 1e-6 past the row, beyond its slack, is not the row's.
+        // A second net column is updated beside the first
+        let ty = ValueType::Bool;
+        let columns = vec![unknown(0), net(0, ty.clone()), net(1, ty.clone())];
+        let labels = vec!["v".into(), "T.q".into(), "T.r".into()];
+        let mut recorder = Recorder::new(columns, labels, 0.0).with_grid(0.5, 1.0);
+        let off = [Cell::Bool(false), Cell::Bool(false)];
+        recorder.step(0.0, &reading(1.0, &off));
+        recorder.step(0.5, &reading(2.0, &off));
+        recorder.step(0.5 + 2e-10, &reading(2.0, &off));
+        recorder.change("T.q", 0.5 + 3e-10, &bytes(&ty, &Cell::Bool(true)));
+        recorder.change("T.r", 0.5 + 3e-10, &bytes(&ty, &Cell::Bool(true)));
+        recorder.change("T.q", 0.5 + 4e-10, &bytes(&ty, &Cell::Bool(false)));
+        recorder.change("T.r", 0.5 + 1e-6, &bytes(&ty, &Cell::Bool(false)));
+        recorder.step(1.0, &reading(4.0, &[Cell::Bool(false), Cell::Bool(false)]));
+        let table = recorder.finish().expect("table");
+        let col = |at: usize| table.rows.iter().map(|r| r[at].clone()).collect::<Vec<_>>();
+        assert_eq!(col(2), [Cell::Bool(false), Cell::Bool(false), Cell::Bool(false)]);
+        assert_eq!(col(3), [Cell::Bool(false), Cell::Bool(true), Cell::Bool(false)]);
+        assert_eq!(col(1), [Cell::Real(1.0), Cell::Real(2.0), Cell::Real(4.0)]);
     }
 
     #[test]
