@@ -181,9 +181,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_table_covers_every_twin` passes (asserts one row per twin of `tests/ngspice/*.msl` but `devices`, no number) under `**Run deviation**`
-- [ ] The baseline table is in the commit body; the buck floor-hit numbers are on the Handoff
-- [ ] Gate check passes: Quick
+- [x] `the_table_covers_every_twin` passes (asserts one row per twin of `tests/ngspice/*.msl` but `devices`, no number) under `**Run deviation**`
+- [x] The baseline table is in the commit body; the buck floor-hit numbers are on the Handoff
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1225,7 +1225,7 @@ Proof: run abitran | test two_jumps_in_one_restart_step_restart_from_the_later .
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** (T1) `Deviation::of(fixture, quantity, contract, rows)` takes fixture and quantity too, since the bare `of(contract, rows)` cannot fill them. (T2) Q3 risk probe, `dt_min_floor_hits` at HEAD of T2: buck_boundary AdcBench 0 (140 accepted, 0 rejected), ComparatorBench 0 (897/0), HeldHighBench 0 (200/0); buck_time TimerBench/StampBench/EdgeBench 0 (no analog unknowns, 0 steps); buck_whole Buck 0 (8000/0). All zero: Q3's retry-at-floor changes none of them.
 **Dispatched:** Batch B1 (T1-T8) - Sonnet worker, 2026-11-17.
 **Walked:** none (no screen)
 
