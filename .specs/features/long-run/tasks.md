@@ -147,9 +147,9 @@ T23
 
 **Done when**:
 
-- [ ] `contract.md` lists each cited location as confirmed or moved, and each net writer with its observation or its absence
-- [ ] No code is edited
-- [ ] Gate check passes: Build
+- [x] `contract.md` lists each cited location as confirmed or moved, and each net writer with its observation or its absence
+- [x] No code is edited
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
