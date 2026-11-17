@@ -6,6 +6,7 @@
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::comments::{Anchor, Comment, Comments};
+use piperine_lang::msl::format::Formatter;
 use piperine_lang::msl::parser::parse;
 
 /// The span from the first `from` of `src` to the end of the first `to` after it.
@@ -155,4 +156,306 @@ fn f(a: f64, b: f64, c: bool) -> f64 {
             _ => assert!(holders.is_empty(), "{} is anchored and in a verbatim node", c.text),
         }
     }
+}
+
+/// The formatted text of `src`, which must format.
+fn formatted(src: &str) -> String {
+    Formatter::format(src).unwrap_or_else(|d| panic!("{d:?}\n{src}"))
+}
+
+/// CLI-23 AC 1 (C176): six comments in six positions (before an item, after
+/// a list element, after a member, ending a module, inside an expression,
+/// ending the file) come out once each, in order, with their text unchanged.
+const SIX: &str = "\
+// 1 before the item
+module M(in a: Electrical, // 2 after an element
+) {
+  x:f64=1.0;      // 3 after a member
+        // 4 ending the module
+}
+fn f(a: f64) -> f64 {
+      let y = a /* 5 inside an expression */ + 1.0;
+  y
+}
+
+
+/* 6 ending the file */
+";
+
+#[test]
+fn every_plain_comment_comes_out_once_in_order_unchanged() {
+    // AC 4 to 7 place each one; the rest is the printer's layout (items one blank line apart,
+    // a list with a comment one element per line).
+    let expected = "\
+// 1 before the item
+module M(
+    in a: Electrical, // 2 after an element
+) {
+    x: f64 = 1.0; // 3 after a member
+    // 4 ending the module
+}
+
+fn f(a: f64) -> f64 {
+    let y = a /* 5 inside an expression */ + 1.0;
+    y
+}
+
+/* 6 ending the file */
+";
+    let out = formatted(SIX);
+    assert_eq!(out, expected);
+    let texts = vec![
+        "// 1 before the item",
+        "// 2 after an element",
+        "// 3 after a member",
+        "// 4 ending the module",
+        "/* 5 inside an expression */",
+        "/* 6 ending the file */",
+    ];
+    assert_eq!(Comments::of(SIX).texts(), texts);
+    assert_eq!(Comments::of(&out).texts(), texts);
+}
+
+/// CLI-23 AC 1 (C177): the guard lexes a formatted text and refuses one with
+/// a comment fewer than the source: an internal-error diagnostic at the lost
+/// comment, and no text. A text that keeps them passes through unchanged.
+#[test]
+fn the_guard_refuses_a_text_that_lost_a_comment() {
+    let src = "fn f() {\n    let x = 1; // one\n    // two\n    x\n}\n";
+    let good = formatted(src);
+    assert_eq!(Formatter::guard(src, good.clone()), Ok(good.clone()));
+
+    let lost = good.replace("    // two\n", "");
+    assert_eq!(Comments::of(&lost).texts(), vec!["// one"], "the doctored text lost one comment");
+    let refused = Formatter::guard(src, lost).expect_err("a text that lost a comment is refused");
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].code, "P0004");
+    assert!(refused[0].message.starts_with("internal error"), "{}", refused[0].message);
+    assert_eq!(refused[0].span(), between(src, "// two", "two"));
+
+    // AC 2's half of the guard: a text whose tree differs is refused too.
+    let changed = good.replace("let x = 1;", "let x = 2;");
+    let refused = Formatter::guard(src, changed).expect_err("a text with another tree is refused");
+    assert_eq!((refused.len(), refused[0].code.as_ref()), (1, "P0004"));
+}
+
+/// Every source this target formats: the cases of the tests above and below.
+const CASES: &[&str] = &[
+    SIX,
+    OWN_LINE,
+    TRAILING,
+    ENDING,
+    INNER,
+    BLANKS,
+    "fn f() {\n    let x = 1; // one\n    // two\n    x\n}\n",
+    // A comment before docs and attributes stands before the whole node.
+    "// before the docs\n/// the doc\n#[inline]\nfn f() {}\n",
+    // A CRLF source: the comment ends before the `\r`.
+    "fn f() {\r\n    let x = 1; // crlf\r\n    x\r\n}\r\n",
+    // A comment alone in a file, and one after the inner docs.
+    "// only a comment\n",
+    "//! inner doc\n\n// after the docs\nfn f() {}\n",
+    // A multi-line block comment keeps its lines as written, and a verbatim statement its string.
+    "fn f() {\n        /* one\n   two */\n    let s = \"a\n  b\" /* in */;\n}\n",
+];
+
+/// CLI-23 AC 2 (C178): for each case, the formatted text parses to the
+/// source's tree, spans aside.
+#[test]
+fn the_formatted_tree_equals_the_sources() {
+    for src in CASES {
+        let out = formatted(src);
+        let (before, after) = (parse(src), parse(&out));
+        assert!(after.diagnostics.is_empty(), "{:?}\n{out}", after.diagnostics);
+        assert!(before.file == after.file, "the formatted text parses to another tree:\n{src}\n---\n{out}");
+    }
+}
+
+/// CLI-23 AC 3 (C179): for each case, formatting the formatted text gives it back.
+#[test]
+fn formatting_twice_changes_nothing() {
+    for src in CASES {
+        let once = formatted(src);
+        assert_eq!(formatted(&once), once, "formatting is not idempotent on:\n{src}");
+        assert_eq!(Formatter::check(&once), Ok(true));
+    }
+    assert_eq!(Formatter::check(SIX), Ok(false), "an unformatted text is not formatted");
+}
+
+/// CLI-23 AC 4 (C181): an own-line comment, badly indented, before a member,
+/// a statement and a match arm.
+const OWN_LINE: &str = "\
+module M() {
+x: f64 = 1.0;
+        // before the member
+  y: f64 = 2.0;
+}
+
+fn f(a: i32) -> i32 {
+// before the statement
+      let b = a;
+    match b {
+  // before the arm
+        0 => 1,
+        _ => 2,
+    }
+}
+";
+
+#[test]
+fn a_comment_on_its_own_line_stays_before_its_node() {
+    // AC 4: on its own line, before the same node, at that node's indentation.
+    let expected = "\
+module M() {
+    x: f64 = 1.0;
+    // before the member
+    y: f64 = 2.0;
+}
+
+fn f(a: i32) -> i32 {
+    // before the statement
+    let b = a;
+    match b {
+        // before the arm
+        0 => 1,
+        _ => 2,
+    }
+}
+";
+    assert_eq!(formatted(OWN_LINE), expected);
+}
+
+/// CLI-23 AC 5 (C182): a comment on a node's last line.
+const TRAILING: &str = "fn f() {\n    let x = 1;   // why\n    x\n}\nfn g() -> f64 { 1.0 }    // one line in the source\n";
+
+#[test]
+fn a_trailing_comment_stays_on_its_line() {
+    // AC 5: after the node, on the node's last line, one space before it.
+    let expected = "fn f() {\n    let x = 1; // why\n    x\n}\n\nfn g() -> f64 {\n    1.0\n} // one line in the source\n";
+    assert_eq!(formatted(TRAILING), expected);
+}
+
+/// CLI-23 AC 6 (C183): a comment as the last line of a block, and as the only
+/// content of one (an item's body and a nested block).
+const ENDING: &str = "\
+fn f() {
+    let x = 1;
+        // the last line
+}
+
+analog for M {
+// the only line
+}
+
+fn g(c: bool) {
+    if c {
+            // only in the if
+    }
+}
+";
+
+#[test]
+fn a_comment_ending_a_block_stays_inside_it() {
+    // AC 6: before the block's closing brace, at the block's inner indentation.
+    let expected = "\
+fn f() {
+    let x = 1;
+    // the last line
+}
+
+analog for M {
+    // the only line
+}
+
+fn g(c: bool) {
+    if c {
+        // only in the if
+    }
+}
+";
+    assert_eq!(formatted(ENDING), expected);
+}
+
+/// CLI-23 AC 7 (C185): a statement holding a comment no anchor reaches.
+const INNER: &str = "\
+fn f(a: f64, b: f64) -> f64 {
+        let x   =   a;
+        let y = a /* mid */
+            +   b;
+        let z  = x+y;
+    z
+}
+";
+
+#[test]
+fn a_statement_with_an_inner_comment_is_kept_as_written() {
+    // AC 7: `let y` as the source writes it, its lines moved left by the indentation its first
+    // line had (8) and indented as a statement of the body (4); its neighbours are formatted.
+    let expected = "\
+fn f(a: f64, b: f64) -> f64 {
+    let x = a;
+    let y = a /* mid */
+        +   b;
+    let z = x + y;
+    z
+}
+";
+    assert_eq!(formatted(INNER), expected);
+}
+
+/// CLI-23 AC 8 (C186): blank lines between statements and between members.
+const BLANKS: &str = "\
+fn f() {
+    let a = 1;
+
+
+
+    let b = 2;
+    let c = 3;
+}
+
+module M() {
+    a: f64 = 1.0;
+
+
+    // b's comment
+
+    b: f64 = 2.0;
+    c: f64 = 3.0;
+}
+";
+
+#[test]
+fn blank_lines_collapse_to_one() {
+    // AC 8: one blank line where the source has one or more, none where it has none; a comment
+    // keeps the blank lines on either side of it the same way.
+    let expected = "\
+fn f() {
+    let a = 1;
+
+    let b = 2;
+    let c = 3;
+}
+
+module M() {
+    a: f64 = 1.0;
+
+    // b's comment
+
+    b: f64 = 2.0;
+    c: f64 = 3.0;
+}
+";
+    assert_eq!(formatted(BLANKS), expected);
+}
+
+/// CLI-23 AC 9 (C187): a source that does not parse gives the parser's
+/// diagnostics and no text.
+#[test]
+fn a_source_that_does_not_parse_gives_diagnostics_and_no_text() {
+    let src = "module M( {";
+    let parsed = parse(src);
+    assert!(!parsed.diagnostics.is_empty(), "the source does not parse");
+    assert_eq!(Formatter::format(src), Err(parsed.diagnostics.clone()));
+    assert_eq!(Formatter::check(src), Err(parsed.diagnostics));
 }

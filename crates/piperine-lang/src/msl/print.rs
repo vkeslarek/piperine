@@ -177,6 +177,12 @@ impl<'h> Printer<'h> {
         Printer { hooks }
     }
 
+    /// `text` in the escaped form a hook hands back: its line breaks are
+    /// printed as written, never indented.
+    pub(crate) fn escape(text: &str) -> String {
+        enc(text)
+    }
+
     /// The source range of a node with its documentation and attributes.
     fn extent(meta: &Meta, span: Loc) -> Span {
         let start = meta
