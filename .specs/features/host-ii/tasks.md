@@ -439,9 +439,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline tests `table::tests::a_transfer_table_has_three_rows_in_order`, `roots_list_poles_then_zeros`, `a_sensitivity_table_has_a_row_per_wrt`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: 3 new tests
+- [x] Inline tests `table::tests::a_transfer_table_has_three_rows_in_order`, `roots_list_poles_then_zeros`, `a_sensitivity_table_has_a_row_per_wrt`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: 3 new tests
 
 **Tests**: unit
 **Gate**: quick

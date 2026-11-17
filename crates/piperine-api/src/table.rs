@@ -6,10 +6,11 @@
 use piperine_abi::raw::leaf;
 use piperine_ir::ValueType;
 use piperine_plan::CarrierLayout;
-use piperine_solver::prelude::{AcAnalysisResult, DcAnalysisResult, TransientAnalysisResult};
+use piperine_solver::prelude::{AcAnalysisResult, DcAnalysisResult, Net, PoleZeroResult, SensResult, TransferFunctionAnalysisResult, TransientAnalysisResult};
 
 use crate::failure::Failure;
 use crate::probe::Probe;
+use crate::session::ParamPath;
 
 /// One value of a table.
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +100,49 @@ impl Table {
                 value.ok_or_else(|| Failure::Backend(format!("the operating point holds no value for `{}`", probe.label())))
             })
             .collect()
+    }
+
+    /// The transfer function: columns `quantity` and `value`, the rows `gain`, `input_resistance`
+    /// and `output_resistance` in that order (the solver's own field names).
+    pub fn transfer(result: &TransferFunctionAnalysisResult) -> Table {
+        let rows = [("gain", result.gain), ("input_resistance", result.input_resistance), ("output_resistance", result.output_resistance)]
+            .into_iter()
+            .map(|(quantity, value)| vec![Cell::Text(quantity.into()), Cell::Real(value)])
+            .collect();
+        Table { columns: vec!["quantity".into(), "value".into()], rows }
+    }
+
+    /// The poles and zeros: columns `kind`, `real` and `imag` (radians per second), one row per
+    /// pole then one per zero, each in the solver's order.
+    pub fn roots(result: &PoleZeroResult) -> Table {
+        let kinds = [("pole", &result.poles), ("zero", &result.zeros)];
+        let rows = kinds
+            .into_iter()
+            .flat_map(|(kind, roots)| roots.iter().map(move |root| vec![Cell::Text(kind.into()), Cell::Real(root.re), Cell::Real(root.im)]))
+            .collect();
+        Table { columns: vec!["kind".into(), "real".into(), "imag".into()], rows }
+    }
+
+    /// The sensitivities: the column `param` (the full path), then `d(<label>)` per probe; one row
+    /// per `wrt` entry in order. `outputs[i]` is the net the solver differentiated for
+    /// `probes[i]`, the key its result holds the derivative under. A derivative the result lacks is
+    /// a `Failure`, never a zero.
+    pub fn sensitivities(probes: &[Probe], outputs: &[Net], wrt: &[ParamPath], result: &SensResult) -> Result<Table, Failure> {
+        let mut columns = vec!["param".to_string()];
+        columns.extend(probes.iter().map(|probe| format!("d({})", probe.label())));
+        let rows = wrt
+            .iter()
+            .map(|param| {
+                let mut row = vec![Cell::Text(param.label())];
+                for (probe, net) in probes.iter().zip(outputs) {
+                    let derivative = result.get(net.label(), &param.instance, &param.param);
+                    let missing = || Failure::Backend(format!("the sensitivity holds no derivative of `{}` by `{}`", probe.label(), param.label()));
+                    row.push(Cell::Real(derivative.ok_or_else(missing)?));
+                }
+                Ok(row)
+            })
+            .collect::<Result<Vec<_>, Failure>>()?;
+        Ok(Table { columns, rows })
     }
 
     /// A DC sweep: the column `swept` (the param's full path), then one column per probe; one
@@ -224,6 +268,8 @@ impl Table {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_complex::Complex;
+    use piperine_solver::prelude::{NodeIdentifier, TransferType};
 
     /// time, a real, a bool, an integer.
     fn run(steps: &[(f64, f64, bool, i128)]) -> Table {
@@ -296,5 +342,66 @@ mod tests {
         assert_eq!(grid.rows, [vec![Cell::Real(0.0), Cell::Real(4.0), Cell::Bool(true), Cell::Int(1)]]);
         // a table the run cut short of `stop` is a failure, never a row held past its end
         assert!(table.on_grid(1.0, 0.0, 3.5).is_err());
+    }
+
+    #[test]
+    fn a_transfer_table_has_three_rows_in_order() {
+        // HII-04 AC 1: columns quantity and value; rows gain, input then output resistance (the
+        // solver's field names); a value is the solver's, to the bit
+        let result = TransferFunctionAnalysisResult { gain: 0.75, input_resistance: 4000.0, output_resistance: 750.0, tf_type: TransferType::VoltageGain };
+        let table = Table::transfer(&result);
+        assert_eq!(table.columns, ["quantity", "value"]);
+        assert_eq!(
+            table.rows,
+            [
+                vec![Cell::Text("gain".into()), Cell::Real(0.75)],
+                vec![Cell::Text("input_resistance".into()), Cell::Real(4000.0)],
+                vec![Cell::Text("output_resistance".into()), Cell::Real(750.0)],
+            ]
+        );
+    }
+
+    #[test]
+    fn roots_list_poles_then_zeros() {
+        // HII-05 AC 1: kind, real, imag; every pole in the solver's order, then every zero
+        let result = PoleZeroResult {
+            poles: vec![Complex::new(-1.0e3, 2.0e3), Complex::new(-1.0e3, -2.0e3), Complex::new(-5.0, 0.0)],
+            zeros: vec![Complex::new(7.0, 0.0)],
+        };
+        let table = Table::roots(&result);
+        assert_eq!(table.columns, ["kind", "real", "imag"]);
+        let row = |kind: &str, re: f64, im: f64| vec![Cell::Text(kind.into()), Cell::Real(re), Cell::Real(im)];
+        assert_eq!(table.rows, [row("pole", -1.0e3, 2.0e3), row("pole", -1.0e3, -2.0e3), row("pole", -5.0, 0.0), row("zero", 7.0, 0.0)]);
+        // no zeros is a legitimate answer: the poles alone
+        let none = Table::roots(&PoleZeroResult { poles: vec![Complex::new(-1.0, 0.0)], zeros: Vec::new() });
+        assert_eq!(none.rows, [row("pole", -1.0, 0.0)]);
+    }
+
+    #[test]
+    fn a_sensitivity_table_has_a_row_per_wrt() {
+        // HII-06 AC 1: `param`, then `d(<signal>)` per printed signal; one row per `wrt` entry in
+        // the order given, each cell the derivative the result holds under that signal's net
+        let probes = [
+            Probe::Node { path: "Top.out".into(), id: NodeIdentifier::Anonymous(2) },
+            Probe::Node { path: "Top.mid".into(), id: NodeIdentifier::Anonymous(3) },
+        ];
+        let outputs = [Net::node(1, "v(n2)"), Net::node(2, "v(n3)")];
+        let wrt = [ParamPath { instance: "Top.r2".into(), param: "r".into() }, ParamPath { instance: "Top.r1".into(), param: "r".into() }];
+        let mut d = std::collections::HashMap::new();
+        for (net, param, value) in [("v(n2)", "Top.r2.r", 6.25e-4), ("v(n2)", "Top.r1.r", -1.875e-3), ("v(n3)", "Top.r2.r", 1.0), ("v(n3)", "Top.r1.r", 2.0)] {
+            d.insert((net.to_string(), param.to_string()), value);
+        }
+        let table = Table::sensitivities(&probes, &outputs, &wrt, &SensResult { d }).expect("table");
+        assert_eq!(table.columns, ["param", "d(Top.out)", "d(Top.mid)"]);
+        assert_eq!(
+            table.rows,
+            [
+                vec![Cell::Text("Top.r2.r".into()), Cell::Real(6.25e-4), Cell::Real(1.0)],
+                vec![Cell::Text("Top.r1.r".into()), Cell::Real(-1.875e-3), Cell::Real(2.0)],
+            ]
+        );
+        // a derivative the solver did not give is a failure, never a zero
+        let empty = SensResult { d: std::collections::HashMap::new() };
+        assert!(Table::sensitivities(&probes, &outputs, &wrt, &empty).is_err());
     }
 }
