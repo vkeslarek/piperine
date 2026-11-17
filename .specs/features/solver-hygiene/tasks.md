@@ -9,7 +9,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/solver-hygiene/design.md`
-**Status**: Draft
+**Status**: Approved
+**Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
 **Build**: `cargo build -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-parity -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 **Run deviationlib**: `cargo test -p piperine-parity --lib deviation`
 **Run deviation**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`
@@ -34,9 +35,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 The deviation table every numerics commit carries: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`, run before and after the change, both outputs pasted in the commit body.
 
-Executors: **every task is Sonnet** (user rule, 2026-11-17). A different model verifies the feature.
+Executors: **every task is Sonnet** (user, 2026-11-17: "Sonnet implementando e Opus verificando"). Opus verifies the feature.
 
-**Before Execute.** The spec's questions Q0 to Q7 are answered and written into `spec.md`. The tasks of Phases 4 to 7 follow the recommended options; an answer other than the recommendation rewrites the affected tasks (and their checks) before the first of them starts. Phases 1 to 3 and 8 do not depend on the answers, except T3 and T4 (Q0) and T13's test rewrite (Q7).
+**Answers.** Q0 to Q7 were answered on 2026-11-17, all option (a) ("Aceito todas (Recommended)", `context.md`); every task below follows them as written.
 
 Rules every task follows:
 
@@ -1225,7 +1226,7 @@ Proof: run abitran | test two_jumps_in_one_restart_step_restart_from_the_later .
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:**
 **Walked:** none (no screen)
 
 ---

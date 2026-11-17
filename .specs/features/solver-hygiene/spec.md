@@ -1,5 +1,9 @@
 # Solver Hygiene Specification
 
+**Approved**: 2026-11-17 - user: "Topo" (lanes) and "Aceito todas (Recommended)" (Q0-Q7)
+
+The approval and the answers reached the planner through the orchestrator on 2026-11-17; they are recorded in `context.md`.
+
 Lane C of the 2026-11-17 plan (user): the "Solver hygiene" cluster of `GAPS.md` (V1 to V11, V14,
 V15 and §4.8). Goal: numerics closer to ngspice, and failures that are loud and named.
 
@@ -7,14 +11,12 @@ Every number quoted below was measured on 2026-11-17 at `4293de6b` with ngspice-
 (`/usr/bin/ngspice`), the interpreter backend, and the probes kept under the session scratchpad
 `plan-c/` (not committed).
 
-## Open questions for the user
+## Questions answered (user, 2026-11-17)
 
-Each one changes results or a pinned test, so it is the user's (CLAUDE.md, rule of the lane). The
-P2 stories wait for these answers; the P1 and P3 stories do not depend on them. "Results" lists what
-the recommended option may move. No tolerance moves in any option.
+The user's answer to all eight: "Aceito todas (Recommended)". Each question is decided as option (a), the recommendation below. The golden and pin changes listed under "Results" are authorized only with the before/after deviation table vs ngspice in the commit and the unchanged tolerance contract. No tolerance moves.
 
-| # | Question | Options | Recommendation |
-| - | -------- | ------- | -------------- |
+| # | Question | Options | Decided: (a) |
+| - | -------- | ------- | ------------ |
 | Q0 | Scope: a silent defect found while planning. A `ddt` whose argument is nonlinear in a `limit`ed value is wrong from the first transient step: a diode with diffusion charge `ddt(tt * id)` jumps from its operating point 0.629 V to -32.47 V at the first step, on both backends; the same charge written on the unlimited `v(a, k)` stays at 0.629 V, and a linear `ddt(cj0 * vd)` through the same `limit` is right. It is not in `GAPS.md`. | (a) fix it here as HYG-05, P1: the nonlinear-charge twin of V1 cannot pass without it; (b) record it in `GAPS.md` §3 as a silent entry and leave it | (a). Results: none of the 7 twins places a nonlinear charge |
 | Q1 | V1, the basis of the truncation-error test | (a) the `ddt` states, as ngspice `CKTterr`: each `DDT` term's Milne difference against `max(h·(abstol + reltol·max(|i_n|, |i_n+1|)), reltol·max(|q_n|, |q_n+1|, chgtol))`; node potentials are no longer measured; `chgtol` is read; the PI target (1) and the gate (`trtol` 7) do not change. (b) states and node potentials both (today's §17.2 Resolution). (c) node potentials only, as today; `chgtol` is deleted and the spec says so | (a). It is ngspice's basis and the one §15.2 rule 1 names as the state. Results: the grid of every circuit with a `ddt`; `tran_rc` runs at the harness's 10 ns cap with no rejection (1 000 accepted steps, probe), so `goldens/tran_rc.txt` is not expected to move but may; `parity_baseline.rs` `parity_rc_transient` (161 steps, `v_last`) is re-pinned with converged-grid evidence |
 | Q2 | V2, the Milne skip of a component whose two differences are asymmetric (`math/integration.rs:148`) | (a) remove it: ngspice has none; landings and the step after a jump are already exempt by the protocol. (b) keep it. (c) keep it only for the first step after the operating point | (a). The skip also hides the start of a fast rise from flat. Results: `goldens/tran_rc.txt` may move; `parity_baseline.rs` `parity_rc_transient` re-pinned with Q1 |
@@ -74,7 +76,7 @@ to prove it").
 | Spec edits | Part V and Appendix C sentences change with the decided behaviour, each with an assertion in `crates/piperine-lang/tests/spec_text.rs` (MD-57) | The spec leads; the guard is the project's | y (delegated) |
 | The digital checkpoint (V7) | A journal of first writes since a mark, in the store and the queue; `checkpoint()` (a full copy) stays for re-entry | The look-ahead marks and restores every instant; a full copy per mark is O(nets) | y (delegated) |
 
-**Open questions:** Q0 to Q7, at the top of this file, for the user. Nothing else is open.
+**Open questions:** none - Q0 to Q7 answered by the user on 2026-11-17 ("Aceito todas (Recommended)"), all option (a).
 
 ---
 

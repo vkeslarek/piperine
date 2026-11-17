@@ -1,8 +1,7 @@
 # Solver Hygiene Design
 
 **Spec**: `.specs/features/solver-hygiene/spec.md`
-**Status**: Draft. The P2 components follow the recommended option of each open question (Q1 to
-Q6); an answer other than the recommendation rewrites that component and its tasks before Execute.
+**Status**: Approved with the spec (2026-11-17). Q0 to Q7 were answered with option (a) each ("Aceito todas (Recommended)"), which is what every component below describes.
 
 Line numbers are those of `feature/solver-hygiene` at `4293de6b`. Measurements are the planner's
 probes of 2026-11-17 (scratchpad `plan-c/`, not committed), ngspice-47, interpreter backend unless
