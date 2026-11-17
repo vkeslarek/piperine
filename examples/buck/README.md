@@ -25,8 +25,26 @@ power-good are all MSL, in one package.
 
 The whole package runs from its `.msl` (feature `msl-digital`): `Buck` type-checks, elaborates
 into the IR, compiles to Rust with no `rustc` warning and runs on the solver, on the transpiled
-backend. The tests drive it from Rust through `piperine-parity`'s `Project`, since no host API or
-CLI runs MSL yet:
+backend. It runs from the command line (feature `msl-cli`): `benches/startup.msl` holds two
+benches, and `Piperine.toml` two runs over them.
+
+```sh
+cd examples/buck
+piperine run startup    # the closed-loop start, 600 us; about two minutes in a dev build
+piperine run idle       # 20 us with `en` held low: the mode stays 0 (`Off`)
+piperine test           # both runs, judged by their `checks` records
+```
+
+`piperine run startup` prints a header and a two-row table (it keeps only the last microsecond,
+`from = 599e-6`): the controller's reference at 128 (0.8 V), the mode at 2 (`Regulate`) and
+`vout` within 3 mV of 0.8 V. It prints no record line: the DPWM's `Never` monitor writes one
+passing `checks` record per 200 MHz clock, and the terminal shows a check only when it fails
+(`--all-checks` shows them all, `--records FILE` keeps them all). `piperine test` prints
+`PASS idle (<n> checks)`, `PASS startup (<n> checks)` and `2 runs, 2 passed, 0 failed`, counting
+every check. The same runs are proven by `cargo test -p piperine-cli --test buck`.
+
+The Rust tests that drove the converter before the command line existed still run it from
+`piperine-parity`'s `Project`:
 
 ```sh
 cargo test -p piperine-lang --test buck_example       # parses and resolves, zero diagnostics
@@ -38,14 +56,16 @@ cargo test -p piperine-parity --test buck_closed_loop # starts and regulates at 
 Each block also runs alone from source against the SPEC's own numbers: `buck_dpwm`,
 `buck_control`, `buck_boundary`, `buck_power`, `buck_supervisor`, `buck_records`, `buck_time` and
 `buck_commits` in `crates/piperine-parity/tests/`. The closed loop is proven at one operating
-point (setpoint 0.8 V, Vin 12 V, 6.6 Ω); the bench scenarios of `SPEC.md` §10 wait for the
-host surface (`ROADMAP.md`, queue item 4).
+point (setpoint 0.8 V, Vin 12 V, 6.6 Ω); the bench scenarios of `SPEC.md` §10 need host stimulus
+during a run (drives, waits, `set`), which no host offers yet (`ROADMAP.md`, queue item 4).
 
 ## Driving it from a host
 
-There is no testbench in MSL: stimulus, sequencing and judgment live in the host (Part VIII of
-the spec). The host elaborates `Buck` as the top module, drives its `in` ports, `set`s its
-params during a run, and reads `pgood`, `fault`, `mode` and any node or carrier by path.
+The stimulus of a command-line run is an MSL bench: `benches/startup.msl` places `Buck`, writes
+its setpoint and raises `en` from reactions. What a bench cannot do is decide while the run is
+going (wait for a mode, then step the load) or `set` a param mid-run; that is a host program's
+work. The host elaborates `Buck` as the top module, drives its `in` ports, `set`s its params
+during a run, and reads `pgood`, `fault`, `mode` and any node or carrier by path.
 
 | Knob | Kind | Used by |
 | --- | --- | --- |
@@ -58,8 +78,9 @@ params during a run, and reads `pgood`, `fault`, `mode` and any node or carrier 
 | `vout`, `vin`, `isense`, `power.sw`, `power.lx` | nodes to probe | all |
 | `ctl.reference`, `ctl.duty`, `ctl.setpoint`, `mode`, `fault`, `pgood` | carriers to read | all |
 
-A sketch in Python of three scenarios of `SPEC.md` §10. The host API names are illustrative, in
-the style of the spec's own sketches, not a library that exists today:
+A sketch in Python of three scenarios of `SPEC.md` §10. No such host exists yet: there is no
+Python host, and `piperine-api` (Rust) has no drives, waits or mid-run `set`. The names are
+illustrative, in the style of the spec's own sketches:
 
 ```python
 import piperine as pp

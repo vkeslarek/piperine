@@ -1276,9 +1276,9 @@ T38
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `the_buck_readme_says_how_to_run_it`
-- [ ] Gate check passes: Quick (see Gate Check Commands)
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `the_buck_readme_says_how_to_run_it`
+- [x] Gate check passes: Quick (see Gate Check Commands)
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick
