@@ -319,6 +319,16 @@ fn tf_input_must_be_a_voltage_source() {
     let Err(Failure::Host { code, message }) = run_text(DIVIDER, tf("r1")) else { panic!("a resistor input is a P0010") };
     assert_eq!(code, "P0010");
     assert!(message.contains("Top.r1") && message.contains("voltage source"), "{message}");
+
+    // and a voltage source is accepted by its entry or by its design path alike: 10 V over 1 kOhm
+    // then 3 kOhm gives gain 3/4, input resistance 4 kOhm, output resistance 750 Ohm
+    for input in ["v1", "Top.v1"] {
+        let table = run_text(DIVIDER, tf(input)).unwrap_or_else(|f| panic!("{input}: {f}"));
+        for (quantity, wanted) in [("gain", 0.75), ("input_resistance", 4000.0), ("output_resistance", 750.0)] {
+            let got = real(value(&table, quantity));
+            assert!((got - wanted).abs() <= 1e-9 * wanted, "{input}: {quantity} = {got}, wanted {wanted}");
+        }
+    }
 }
 
 #[test]

@@ -27,6 +27,8 @@ fn compare(reference: &Reference, backend: Backend) {
         let actual = result.get(&label, &bench.path(instance), param).unwrap_or_else(|| panic!("sens_divider: no d(v(mid))/d({instance}.{param}) on {}", backend.name()));
         let quantity = format!("d v(mid) / d {instance}.{param}");
         let at = Point::new("sens_divider", &quantity, Coordinate::OperatingPoint).with_ngspice(golden.version()).with_backend(backend.name());
+        let wanted = golden.printed(printed);
+        eprintln!("sens_divider {quantity} on {}: ngspice {wanted:e}, piperine {actual:e}, deviation {:e}", backend.name(), (wanted - actual).abs());
         ToleranceContract::SENSITIVITY.assert(&at, golden.printed(printed), actual);
     }
 }

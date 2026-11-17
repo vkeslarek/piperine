@@ -1,0 +1,12 @@
+* tf_divider — transfer-function cross-check (.tf): a 10 V divider, 1k over 3k, the output v(out),
+* the input the source V1. The gain is R2 / (R1 + R2) = 7.5e-1, the output resistance
+* R1 || R2 = 7.5e2 ohm and the input resistance R1 + R2 = 4e3 ohm.
+V1 in 0 DC 10
+R1 in out 1k
+R2 out 0 3k
+.control
+set numdgt=10
+tf v(out) v1
+print all
+.endc
+.end

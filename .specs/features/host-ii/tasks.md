@@ -483,9 +483,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `parity_tf.rs` (new) holds `fn tf_divider()`; `parity_corpus` passes
-- [ ] Gate check passes: Quick (`Run newparity`)
-- [ ] Test count: 1 new test
+- [x] `parity_tf.rs` (new) holds `fn tf_divider()`; `parity_corpus` passes
+- [x] Gate check passes: Quick (`Run newparity`)
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: quick

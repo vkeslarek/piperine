@@ -244,7 +244,7 @@ impl<'a> TransferFunctionSolver<'a> {
         // with a loud error in `new` / `calculate_gain`. We still call this
         // helper to classify the four transfer kinds for the result.
         let output_is_voltage = self.options.output.is_node();
-        let input_is_voltage = self.input_is_voltage_source().unwrap_or(false);
+        let input_is_voltage = self.input_is_voltage_source();
         match (input_is_voltage, output_is_voltage) {
             (true, true) => TransferType::VoltageGain,
             (true, false) => TransferType::Transconductance,
@@ -253,19 +253,12 @@ impl<'a> TransferFunctionSolver<'a> {
         }
     }
 
-    /// Heuristic: a branch whose component label starts with `V` is a
-    /// voltage source. Replaced by an explicit error when the user supplies
-    /// any other kind; ngspice accepts current sources via the same `.tf`
-    /// syntax but Piperine has not lowered the path yet (D5).
-    fn input_is_voltage_source(&self) -> Option<bool> {
-        let c = &self.options.input_source.component;
-        if c.starts_with('V') {
-            Some(true)
-        } else if c.starts_with('I') {
-            Some(false)
-        } else {
-            None
-        }
+    /// Whether the resolved input is a voltage source: the netlist gives a branch-current
+    /// unknown only to a branch that forces a potential, so the resolved reference's kind is the
+    /// classification (the component label is a design path such as `Top.v1`, whatever it is
+    /// named). A current-source input has no branch unknown and fails to resolve in `new` (D5).
+    fn input_is_voltage_source(&self) -> bool {
+        self.input_branch_ref.is_branch()
     }
 
     /// Calculates transfer function gain.
@@ -294,15 +287,7 @@ impl<'a> TransferFunctionSolver<'a> {
         system.apply_stamps(matrix_only_stamps);
 
         // Now apply ONLY the unit excitation at input.
-        let input_is_voltage = self.input_is_voltage_source().ok_or_else(|| {
-            piperine_analog_solver::error::Error::simple(
-                piperine_analog_solver::error::SolverDomain::Tf,
-                format!(
-                    "TF: input source branch '{}' is not a recognised voltage/current source label",
-                    self.options.input_source.component
-                ),
-            )
-        })?;
+        let input_is_voltage = self.input_is_voltage_source();
 
         if input_is_voltage {
             // Voltage source: apply 1V by setting RHS[branch] = 1.0
@@ -357,7 +342,7 @@ impl<'a> TransferFunctionSolver<'a> {
     ///
     /// PB-08 (P3b): `calculate_gain` (called before this, `run`'s call
     /// order at the top of this impl) already fails loud whenever
-    /// `input_is_voltage_source()` is not `Some(true)` — so by construction
+    /// `input_is_voltage_source()` is false — so by construction
     /// this function only ever runs for a voltage-source input. The
     /// previous code carried a dead `if input_is_voltage { .. } else {
     /// current-source placeholder returning 1e20 }` branch that could never
@@ -369,7 +354,7 @@ impl<'a> TransferFunctionSolver<'a> {
     fn calculate_input_resistance(&self, solution: &Array1<f64>) -> crate::core::result::Result<f64> {
         debug_assert_eq!(
             self.input_is_voltage_source(),
-            Some(true),
+            true,
             "calculate_input_resistance reached with a non-voltage input — \
              calculate_gain should have already rejected this (D5)"
         );
@@ -395,10 +380,12 @@ impl<'a> TransferFunctionSolver<'a> {
         use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
         use piperine_analog_solver::math::linear::{LinearSystem, Stamp};
 
-        // Build linear system (same as gain calculation)
+        // Build the linear system the way the gain does: the Jacobian only. The right-hand side
+        // of the operating point (a source's own value) is not part of the small-signal problem,
+        // and would add the DC solution to the test response.
         let stamps = Self::assemble_dc_stamps(self.circuit, &self.dc_point, &self.context)?;
         let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
-        system.apply_stamps(stamps);
+        system.apply_stamps(stamps.into_iter().filter(|stamp| !matches!(stamp, Stamp::Rhs(_, _))).collect());
 
         // Apply unit excitation at OUTPUT
         if self.options.output.is_node() {

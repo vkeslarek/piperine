@@ -54,6 +54,7 @@ fn compare(reference: &Reference, backend: Backend) {
             for (part, golden_value, actual_value) in [("re", wanted.re, actual.re), ("im", wanted.im, actual.im)] {
                 let quantity = format!("{kind}({}) {part}", k + 1);
                 let at = Point::new("pz_lowpass", &quantity, Coordinate::OperatingPoint).with_ngspice(golden.version()).with_backend(backend.name());
+                eprintln!("pz_lowpass {quantity} on {}: ngspice {golden_value:e}, piperine {actual_value:e}, deviation {:e}", backend.name(), (golden_value - actual_value).abs());
                 ToleranceContract::PZ_ROOT.assert(&at, golden_value, actual_value);
             }
         }

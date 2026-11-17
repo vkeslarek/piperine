@@ -1,0 +1,12 @@
+//! Twin of `tests/ngspice/tf_divider.cir`: a 10 V source over 1 kOhm then 3 kOhm, whose transfer
+//! from the source to `vout` is taken.
+mod devices;
+use devices::*;
+
+module TfDivider() {
+    signal vin: Electrical;
+    signal vout: Electrical;
+    let v1 = Vsource { dc: 10.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, vout);
+    let r2 = Resistor { r: 3k }(vout, gnd);
+}
