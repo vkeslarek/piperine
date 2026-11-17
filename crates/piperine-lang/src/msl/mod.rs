@@ -2,9 +2,10 @@
 //!
 //! Parser for the Piperine mixed-signal language specified in `docs/spec/`
 //! (Appendix A lexical structure, Appendix B.3 grammar): text to tokens to a
-//! spanned AST, plus diagnostics.
+//! spanned AST, plus diagnostics; the plain comments beside the tokens.
 
 pub mod ast;
+pub mod comments;
 pub mod diag;
 pub mod lexer;
 pub mod parser;

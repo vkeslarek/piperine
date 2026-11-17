@@ -293,6 +293,14 @@ fn cook(body: &str) -> String {
 /// Lex `src`. Malformed tokens yield a diagnostic and, where a value was
 /// expected, a [`Token::Error`] placeholder; lexing always runs to the end.
 pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
+    let (tokens, diags, _) = lex_with_comments(src);
+    (tokens, diags)
+}
+
+/// [`lex`], plus the span of every plain comment (a `//` or `/* */` that is
+/// no doc comment), in source order: the tokens and diagnostics are `lex`'s.
+pub(crate) fn lex_with_comments(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>, Vec<Span>) {
+    let mut comments = Vec::new();
     let mut tokens = Vec::new();
     let mut diags = Vec::new();
     // A byte order mark opens the file and is not a token.
@@ -365,6 +373,8 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                     tokens.push((Token::DocOuter(line[3..].to_string()), span));
                 } else if line.starts_with("//!") {
                     tokens.push((Token::DocInner(line[3..].to_string()), span));
+                } else {
+                    comments.push(span);
                 }
             }
             Ok(Raw::BlockComment) => {
@@ -375,6 +385,8 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                     tokens.push((Token::DocOuterBlock(body()), span));
                 } else if text.starts_with("/*!") {
                     tokens.push((Token::DocInnerBlock(body()), span));
+                } else {
+                    comments.push(span);
                 }
             }
             Ok(Raw::Lifetime) if text == "'static" => tokens.push((Token::StaticLifetime, span)),
@@ -401,7 +413,7 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
             }
         }
     }
-    (tokens, diags)
+    (tokens, diags, comments)
 }
 
 /// Lex raw bytes: invalid UTF-8 is one diagnostic and no tokens.
