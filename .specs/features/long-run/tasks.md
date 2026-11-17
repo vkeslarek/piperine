@@ -875,7 +875,7 @@ Proof: run probes | test a_probe_with_no_value_in_the_circuit_is_a_failure_namin
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** (T4) `StepView::time()` is the analog side's own time of the step (`AnalogSide::step_time`, the time the kept `TransientStep` records, a sum of steps), falling back to the protocol's tick time `t_c` when a side keeps none: the two differ in the last bit (3e-5 against 3.0000000000000004e-5) and the recorder's grid arithmetic must read what `Table::on_grid` reads off the kept steps (LR-06 bit-equality). T1: no net writer lacks a `Change` observation (see `contract.md`). The four questions of the spec were answered before the tasks were written (spec.md, "Questions answered").
-**Dispatched:** Executors all Sonnet (user 2026-11-17: "Implementação sempre em Sonnet e verificação em Opus"). Batch 1 (phase 1, T1-T5) - Sonnet worker, 2026-11-17.
+**Dispatched:** Executors all Sonnet (user 2026-11-17: "Implementação sempre em Sonnet e verificação em Opus"). Batch 1 (phase 1, T1-T5) - Sonnet worker, 2026-11-17. Batch 1 done (a1250fd5). Batch 2 (phase 2, T6-T11) - Sonnet worker, 2026-11-17.
 **Walked:**
 
 ---
