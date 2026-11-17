@@ -32,6 +32,7 @@ impl<'a> Read<'a> {
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
                 Expr::KnownOr { value, default } => stack.extend([*value, *default]),
+                Expr::Unwrap { is, value, .. } => stack.extend([*is, *value]),
                 Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
                 Expr::Method { receiver, args, .. } => stack.extend(std::iter::once(*receiver).chain(args.iter().copied())),
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack.extend(args.iter().copied()),
@@ -721,4 +722,53 @@ fn numeric_rows_lower_to_methods_and_checked_ops_to_pairs() {
     // A constant `rem_euclid` by zero is a panic while a const expression is evaluated (`E0104`).
     let err = Elab::run(&reaching("fn f() -> u8 { 7u8.rem_euclid(0) }", &["f()"]), "Top").expect_err("rem_euclid by zero");
     assert_eq!(Elab::codes(&err), ["E0104"]);
+}
+
+#[test]
+fn option_rows_lower_on_the_pair() {
+    // CAT-03 (design C6): an `Option` is the pair `(is, val)`; the rows lower on it. `unwrap` and
+    // `expect` are one `Unwrap`; `unwrap_or_else(|| d)` is `if is { val } else { d }`; `map` keeps
+    // the flag and binds the closure's parameter to the payload; `and_then` takes the pair of the
+    // closure's `Option` under that binding, only for `Some`; `a.or(b)` is `(a.is || b.is,
+    // if a.is { a.val } else { b.val })`; `c.then(|| v)` and `c.then_some(v)` are `(c, v)`. No IR
+    // type is an `Option` and no closure survives.
+    let some = "let o = if c > 1 { Some(x) } else { None };";
+    let items = format!(
+        "fn unw(c: u8, x: u8) -> u8 {{ {some} o.unwrap() + o.expect(\"need the reading\") }}\n\
+         fn els(c: u8, x: u8) -> u8 {{ {some} o.unwrap_or_else(|| 9) }}\n\
+         fn mp(c: u8, x: u8) -> u8 {{ {some} let m = o.map(|v| v + 1); m.unwrap_or(0) }}\n\
+         fn chain(c: u8, x: u8) -> u8 {{ {some} let m = o.and_then(|v| if v > 3 {{ Some(v) }} else {{ None }}); m.unwrap_or(0) }}\n\
+         fn orr(c: u8, x: u8) -> u8 {{ {some} let p = if c > 5 {{ Some(x) }} else {{ None }}; let m = o.or(p); m.unwrap_or(0) }}\n\
+         fn th(c: u8) -> u8 {{ let t = (c > 1).then(|| 7u8); let s = (c > 2).then_some(5u8); t.unwrap_or(0) + s.unwrap_or(0) }}"
+    );
+    let ir = Elab::ir(&reaching(&items, &["unw(2, 1)", "els(2, 1)", "mp(2, 1)", "chain(2, 1)", "orr(2, 1)", "th(2)"]), "Top");
+    let text = ir.print_structural();
+    assert!(!text.contains("Option") && !text.contains("|"), "no `Option` and no closure in the IR:\n{text}");
+    let read = Read { ir: &ir };
+
+    // `unwrap` and `expect`: an `Unwrap` of the flag and the payload; `expect` carries its text.
+    let unwraps: Vec<Option<String>> = read.reach(read.body_of("unw")).into_iter().filter_map(|e| if let Expr::Unwrap { message, .. } = ir.expr(e) { Some(message.clone()) } else { None }).collect();
+    assert_eq!(unwraps.len(), 2);
+    assert!(unwraps.contains(&None) && unwraps.contains(&Some("need the reading".to_string())), "{unwraps:?}");
+    let unw_text = read.function_text("unw");
+    assert!(unw_text.contains("let o.is =") && unw_text.contains("let o.val ="), "{unw_text}");
+
+    let els = read.function_text("els");
+    assert!(els.contains("if o.is { o.val } else { 9u8 }"), "{els}");
+
+    let mp = read.function_text("mp");
+    assert!(mp.contains("let m.is = o.is"), "{mp}");
+    assert!(mp.contains("let m.val = if o.is { let v = o.val; (v + 1u8) } else { 0u8 }"), "{mp}");
+
+    let chain = read.function_text("chain");
+    assert!(chain.contains("let m.is = if o.is { let v = o.val; if (v > 3u8) { true } else { false } } else { false }"), "{chain}");
+    assert!(chain.contains("let m.val = if o.is { let v = o.val; if (v > 3u8) { v } else { 0u8 } } else { 0u8 }"), "{chain}");
+
+    let orr = read.function_text("orr");
+    assert!(orr.contains("let m.is = if o.is { true } else { p.is }"), "{orr}");
+    assert!(orr.contains("let m.val = if o.is { o.val } else { p.val }"), "{orr}");
+
+    let th = read.function_text("th");
+    assert!(th.contains("let t.is = (c > 1u8)") && th.contains("let t.val = if (c > 1u8) { 7u8 } else { 0u8 }"), "{th}");
+    assert!(th.contains("let s.is = (c > 2u8)") && th.contains("let s.val = 5u8"), "{th}");
 }

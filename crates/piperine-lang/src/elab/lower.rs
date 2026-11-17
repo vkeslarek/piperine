@@ -283,13 +283,14 @@ impl Elaboration<'_, '_> {
                         return Some(self.emit(Expr::Method { method, receiver, args }, ty, origin));
                     }
                     // Lowered as a flag and a payload from msl-digital T27 on.
-                    Method::IsSome | Method::IsNone | Method::UnwrapOr => {
+                    Method::IsSome | Method::IsNone | Method::UnwrapOr | Method::Unwrap | Method::Expect | Method::UnwrapOrElse => {
                         let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                         return self.lower_option_method(scope, method, *recv, &args, ty, origin);
                     }
-                    // The rest of H.4 and H.3 (T19); `checked_*` is an `Option`, lowered on its pair.
+                    // The rest are `Option`s (`checked_*`, `map`, `and_then`, `or`, `then`, `then_some`): they lower
+                    // on their pair, never as one value.
                     _ => {
-                        self.unsupported(file, node.span, &format!("method `{method:?}` (lowered from T19 on)"));
+                        self.unsupported(file, node.span, &format!("a `{method:?}` row read as a value rather than as an `Option`"));
                         return None;
                     }
                 };

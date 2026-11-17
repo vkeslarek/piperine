@@ -520,6 +520,12 @@ impl Elaboration<'_, '_> {
                 let val = self.emit(Expr::Binary { op, lhs: a, rhs: b }, flags.wrap(payload), origin);
                 Some(Pair { is, val, literal: None })
             }
+            // `o.map(|x| e)`, `o.and_then(|x| p)`, `a.or(b)`, `c.then(|| v)`, `c.then_some(v)` (H.3, H.4).
+            ExprKind::MethodCall { recv, args, .. } if matches!(self.types.method(expr), Some(Method::Map | Method::AndThen | Method::Or | Method::Then | Method::ThenSome)) => {
+                let method = self.types.method(expr)?;
+                let [arg] = args.as_slice() else { return unsupported(self) };
+                self.lower_option_row(scope, method, *recv, arg.value, payload, origin)
+            }
             // `if c { a } else { b }` of `Option`s: the flag and the payload each an `if` on `c`.
             ExprKind::If { cond, then, else_: Some(else_) } if !matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => {
                 let [stmt] = then.stmts.as_slice() else { return unsupported(self) };
@@ -580,7 +586,170 @@ impl Elaboration<'_, '_> {
                     }
                 }
             }
+            Method::Unwrap | Method::Expect => {
+                let message = match (method, args) {
+                    (Method::Expect, [message]) => match &self.design.expr_node(*message).kind {
+                        ExprKind::Lit(lit) => lit.str_value(),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if method == Method::Expect && message.is_none() {
+                    self.unsupported(scope.file, self.design.expr_node(recv).span, "`expect` with a message that is not a string literal");
+                    return None;
+                }
+                if self.flag(pair.is) == Flag::Flagged {
+                    self.unsupported(scope.file, self.design.expr_node(recv).span, "`unwrap` of an `Option` whose presence may be unknown");
+                    return None;
+                }
+                match pair.literal {
+                    // A literal `Some(v)` is `v`; a literal `None` always faults, so it stays an `Unwrap`.
+                    Some(true) => Some(pair.val),
+                    _ => {
+                        let ty = self.type_of(pair.val);
+                        Some(self.emit(Expr::Unwrap { is: pair.is, value: pair.val, message }, ty, origin))
+                    }
+                }
+            }
+            Method::UnwrapOrElse => {
+                let [closure] = args else { return None };
+                let (_, body) = self.closure_parts(scope, *closure)?;
+                match pair.literal {
+                    Some(true) => Some(pair.val),
+                    _ => {
+                        scope.nesting += 1;
+                        let default = self.lower_expr(scope, body);
+                        scope.nesting -= 1;
+                        let default = default?;
+                        let ty = self.flags(&[pair.is, pair.val, default]).wrap(base);
+                        Some(self.emit(Expr::If { cond: pair.is, then: pair.val, otherwise: default }, ty, origin))
+                    }
+                }
+            }
             _ => None,
+        }
+    }
+
+    /// The parameter binding and the body of the closure literal `closure` (`|x| body` gives
+    /// `Some(x)`, `|| body` gives `None`).
+    fn closure_parts(&mut self, scope: &mut Scope, closure: ExprId) -> Option<(Option<DeclId>, ExprId)> {
+        let node = self.design.expr_node(closure).clone();
+        let ExprKind::Closure { params, body, .. } = node.kind else {
+            self.unsupported(scope.file, node.span, "a closure argument that is not a closure literal");
+            return None;
+        };
+        match params.as_slice() {
+            [] => Some((None, body)),
+            [param] => match self.design.pat_node(param.pat).kind.clone() {
+                PatKind::Ident { binding, sub: None, .. } => Some((Some(binding), body)),
+                PatKind::Wild => Some((None, body)),
+                _ => {
+                    self.unsupported(scope.file, node.span, "a closure parameter that is not a name");
+                    None
+                }
+            },
+            _ => {
+                self.unsupported(scope.file, node.span, "a closure of more than one parameter");
+                None
+            }
+        }
+    }
+
+    /// `let binding = value;` followed by `lower(scope)`, as one block: the closure body of a
+    /// row, its parameter bound to the payload.
+    fn closure_block(&mut self, scope: &mut Scope, binding: Option<DeclId>, local: Option<u32>, value: LoweredExpr, span: crate::msl::Span, lower: impl FnOnce(&mut Self, &mut Scope) -> Option<LoweredExpr>) -> Option<LoweredExpr> {
+        let origin = self.locator.origin(scope.file, span);
+        let mut stmts = Vec::new();
+        if binding.is_some() {
+            let local = local?;
+            stmts.push(self.stmt(Stmt::Let { local, init: value }));
+        }
+        scope.nesting += 1;
+        let body = lower(self, scope);
+        scope.nesting -= 1;
+        let body = body?;
+        let ty = self.type_of(body);
+        Some(self.emit(Expr::Block { stmts, value: Some(body) }, ty, origin))
+    }
+
+    /// The pair an `Option`-valued row lowers to. The closure of a row runs only when its
+    /// condition holds (Rust runs it for `Some` only): its body sits under an `if` on the
+    /// flag, `None`'s payload being the zero.
+    fn lower_option_row(&mut self, scope: &mut Scope, method: Method, recv: ExprId, arg: ExprId, payload: ValueType, origin: Origin) -> Option<Pair> {
+        let span = self.design.expr_node(arg).span;
+        match method {
+            Method::Or => {
+                let (a, b) = (self.lower_option(scope, recv)?, self.lower_option(scope, arg)?);
+                let yes = self.emit(Expr::Bool(true), ValueType::Bool, origin.clone());
+                let is_ty = self.flags(&[a.is, b.is]).wrap(ValueType::Bool);
+                let is = self.emit(Expr::If { cond: a.is, then: yes, otherwise: b.is }, is_ty, origin.clone());
+                let val_ty = self.flags(&[a.is, a.val, b.val]).wrap(payload);
+                let val = self.emit(Expr::If { cond: a.is, then: a.val, otherwise: b.val }, val_ty, origin);
+                Some(Pair { is, val, literal: None })
+            }
+            Method::ThenSome => {
+                // `(c, v)`: `v` is evaluated as Rust evaluates an argument.
+                let is = self.lower_expr(scope, recv)?;
+                let val = self.lower_expr(scope, arg)?;
+                Some(Pair { is, val, literal: None })
+            }
+            Method::Then => {
+                let (_, body) = self.closure_parts(scope, arg)?;
+                let is = self.lower_expr(scope, recv)?;
+                scope.nesting += 1;
+                let value = self.lower_expr(scope, body);
+                scope.nesting -= 1;
+                let value = value?;
+                let Some(zero) = self.zero(&payload, origin.clone()) else {
+                    self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
+                    return None;
+                };
+                let val_ty = self.flags(&[is, value]).wrap(payload);
+                let val = self.emit(Expr::If { cond: is, then: value, otherwise: zero }, val_ty, origin);
+                Some(Pair { is, val, literal: None })
+            }
+            _ => {
+                // `map` and `and_then`: the closure's parameter is a local bound to the payload.
+                let pair = self.lower_option(scope, recv)?;
+                let (binding, body) = self.closure_parts(scope, arg)?;
+                let local = match binding {
+                    Some(binding) => {
+                        let local = self.bind_local(scope, binding)?;
+                        scope.locals[local as usize].ty = self.type_of(pair.val);
+                        Some(local)
+                    }
+                    None => None,
+                };
+                let zero_of = |this: &mut Self, ty: &ValueType| this.zero(ty, origin.clone());
+                if method == Method::Map {
+                    let value = self.closure_block(scope, binding, local, pair.val, span, |this, scope| this.lower_expr(scope, body))?;
+                    let guarded = match pair.literal {
+                        Some(true) => value,
+                        _ => {
+                            let Some(zero) = zero_of(self, &payload) else {
+                                self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
+                                return None;
+                            };
+                            let ty = self.flags(&[pair.is, value]).wrap(payload);
+                            self.emit(Expr::If { cond: pair.is, then: value, otherwise: zero }, ty, origin)
+                        }
+                    };
+                    return Some(Pair { is: pair.is, val: guarded, literal: pair.literal });
+                }
+                // `and_then`: the pair of the closure's `Option`, each half under the binding, and
+                // both only when the receiver is `Some`.
+                let is_inner = self.closure_block(scope, binding, local, pair.val, span, |this, scope| this.lower_option(scope, body).map(|p| p.is))?;
+                let val_inner = self.closure_block(scope, binding, local, pair.val, span, |this, scope| this.lower_option(scope, body).map(|p| p.val))?;
+                let (Some(no), Some(zero)) = (Some(self.emit(Expr::Bool(false), ValueType::Bool, origin.clone())), zero_of(self, &payload)) else {
+                    self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
+                    return None;
+                };
+                let is_ty = self.flags(&[pair.is, is_inner]).wrap(ValueType::Bool);
+                let is = self.emit(Expr::If { cond: pair.is, then: is_inner, otherwise: no }, is_ty, origin.clone());
+                let val_ty = self.flags(&[pair.is, val_inner]).wrap(payload);
+                let val = self.emit(Expr::If { cond: pair.is, then: val_inner, otherwise: zero }, val_ty, origin);
+                Some(Pair { is, val, literal: None })
+            }
         }
     }
 
