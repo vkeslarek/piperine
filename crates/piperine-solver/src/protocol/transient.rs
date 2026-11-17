@@ -23,6 +23,7 @@ use piperine_analog_solver::error::{Error, Result, SolverDomain};
 use super::host::Waiter;
 use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Restart, Tick};
 use super::sink::{Delivery, Sink};
+use super::step::{StepObserver, observe};
 
 /// How the protocol maps time and bounds its loops.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,6 +77,8 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     pub(super) samples: Vec<f64>,
     /// Host waiters by event net (abi.md R7).
     pub(super) waiters: Vec<(u32, Waiter)>,
+    /// The host's observer of accepted steps.
+    pub(super) observer: Option<Box<dyn StepObserver>>,
 }
 
 /// The three marks of one checkpoint.
@@ -99,7 +102,21 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             started: false,
             samples: Vec::new(),
             waiters: Vec::new(),
+            observer: None,
         }
+    }
+
+    /// Hands every accepted step of a transient to `observer`, after the sink has the
+    /// observations up to its time.
+    pub fn with_step_observer(mut self, observer: Box<dyn StepObserver>) -> Protocol<D, A> {
+        self.observer = Some(observer);
+        self
+    }
+
+    /// Hands the observer the sides as they stand at `time`: after each flush, and for the start
+    /// of a transient (called by its driver).
+    pub(crate) fn observe_step(&mut self, time: f64) {
+        observe(&mut self.observer, time, &self.discrete, &self.analog);
     }
 
     /// Sends every observation to `sink` from now on.
@@ -321,6 +338,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             // Step 6.
             self.collect(AnalysisKind::Transient);
             self.delivery.flush(t_c);
+            self.observe_step(t_c);
             self.now = t_c;
             self.now_tick = tick_c;
             if final_mark || outcome.finish {

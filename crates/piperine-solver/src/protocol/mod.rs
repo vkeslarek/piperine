@@ -9,6 +9,7 @@ mod host;
 mod operating_point;
 mod sides;
 mod sink;
+mod step;
 mod transient;
 
 pub use sides::{
@@ -17,4 +18,5 @@ pub use sides::{
 };
 pub use host::{HostCx, SetOutcome, Waiter};
 pub use sink::Sink;
+pub use step::{StepObserver, StepView};
 pub use transient::{Ended, Protocol, ProtocolOptions};

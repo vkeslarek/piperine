@@ -192,10 +192,10 @@ T23
 
 **Done when**:
 
-- [ ] New target `crates/piperine-solver/tests/step_observer.rs` (with its `//!` header) holds, with exactly these names: `the_observer_is_called_once_per_accepted_step_in_time_order`, `the_sink_has_every_observation_up_to_the_step_before_the_observer`, `a_rejected_or_retaken_attempt_is_never_observed`
-- [ ] Every existing target of `piperine-solver` passes unedited: `cargo test -p piperine-solver`
-- [ ] Gate check passes: Quick (`Run step`), then `cargo test -p piperine-solver`
-- [ ] Test count: the 3 tests named above, and no existing test removed or edited
+- [x] New target `crates/piperine-solver/tests/step_observer.rs` (with its `//!` header) holds, with exactly these names: `the_observer_is_called_once_per_accepted_step_in_time_order`, `the_sink_has_every_observation_up_to_the_step_before_the_observer`, `a_rejected_or_retaken_attempt_is_never_observed`
+- [x] Every existing target of `piperine-solver` passes unedited: `cargo test -p piperine-solver`
+- [x] Gate check passes: Quick (`Run step`), then `cargo test -p piperine-solver`
+- [x] Test count: the 3 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

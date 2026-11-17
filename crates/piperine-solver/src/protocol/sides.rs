@@ -192,6 +192,11 @@ pub trait DiscreteSide {
     fn wait(&mut self, net: u32);
     /// Moves the observations made since the last drain into `out`, in instant order.
     fn drain(&mut self, out: &mut Vec<Observation>);
+    /// A discrete net's bytes as it stands (`None`: the side does not expose its nets). The
+    /// host's step observer reads nets through it.
+    fn net(&self, _id: u32) -> Option<&[u8]> {
+        None
+    }
 }
 
 /// The analog sub-solver as the owner drives it.
@@ -220,4 +225,9 @@ pub trait AnalogSide {
     fn restore(&mut self, mark: &Self::Mark);
     /// Moves the trace records of the attempts since the last drain into `out`.
     fn drain_traces(&mut self, out: &mut Vec<Observation>);
+    /// The solution as it stands, indexed as `AnalogReference::idx` (empty: the side does not
+    /// expose it). The host's step observer reads unknowns through it.
+    fn solution(&self) -> &[f64] {
+        &[]
+    }
 }
