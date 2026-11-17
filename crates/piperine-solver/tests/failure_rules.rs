@@ -251,7 +251,7 @@ fn a_non_finite_contribution_is_e0507_and_names_the_instance() {
 // ─── §18 — non-positive period, negative pre-roll ─────────────────────────────
 
 fn pss_options(period: f64, tstab: f64) -> PssAnalysisOptions {
-    PssAnalysisOptions { period, tstab, max_shoot_iter: 4, shoot_tol: 1e-6, dt: None }
+    PssAnalysisOptions { period, tstab, max_shoot_iter: 4, shoot_tol: 1e-6, dt: None, dt_max: None, max_steps: None }
 }
 
 #[test]

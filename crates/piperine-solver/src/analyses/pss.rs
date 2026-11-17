@@ -42,16 +42,33 @@ pub struct PssAnalysisOptions {
     pub shoot_tol: f64,
     /// Initial integrator dt for each shot; `None` → `period / 100`.
     pub dt: Option<f64>,
+    /// The largest step of a shot; `None` leaves the transient's own default.
+    pub dt_max: Option<f64>,
+    /// The step budget of every transient of the run (pre-roll and shots); `None` leaves the
+    /// transient's own default.
+    pub max_steps: Option<usize>,
 }
 
 impl PssAnalysisOptions {
     pub fn new(period: f64) -> Self {
-        Self { period, tstab: 0.0, max_shoot_iter: 40, shoot_tol: 1.0e-6, dt: None }
+        Self { period, tstab: 0.0, max_shoot_iter: 40, shoot_tol: 1.0e-6, dt: None, dt_max: None, max_steps: None }
     }
 
     pub fn with_tstab(mut self, tstab: f64) -> Self {
         self.tstab = tstab;
         self
+    }
+
+    /// The transient options of one integration of this run, from `start` to `stop`.
+    fn transient(&self, start: f64, stop: f64, dt: f64) -> TransientAnalysisOptions {
+        let mut options = TransientAnalysisOptions::new(stop, dt).with_start(start);
+        if let Some(dt_max) = self.dt_max {
+            options = options.with_dt_max(dt_max);
+        }
+        if let Some(budget) = self.max_steps {
+            options = options.with_max_steps(budget);
+        }
+        options
     }
 }
 
@@ -159,7 +176,7 @@ impl<'a> PssSolver<'a> {
         span: f64,
     ) -> crate::core::result::Result<crate::core::result::TransientAnalysisResult> {
         let dt = self.options.dt.unwrap_or(self.options.period / 100.0);
-        let opts = TransientAnalysisOptions::new(t0 + span, dt).with_start(t0);
+        let opts = self.options.transient(t0, t0 + span, dt);
         let mut solver = TransientSolver::new(self.circuit, opts, self.context.clone())?;
         solver.policy = self.policy.clone();
         solver.with_initial_state(state);
@@ -176,7 +193,7 @@ impl<'a> PssSolver<'a> {
         let mut x0_step: TransientStep = {
             let dt = self.options.dt.unwrap_or(period / 100.0);
             if t0 > 0.0 {
-                let opts = TransientAnalysisOptions::new(t0, dt);
+                let opts = self.options.transient(0.0, t0, dt);
                 let mut solver =
                     TransientSolver::new(self.circuit, opts, self.context.clone())?;
                         solver.policy = self.policy.clone();
@@ -185,7 +202,7 @@ impl<'a> PssSolver<'a> {
                 // A zero-length "shot" is not defined; take the DC point via
                 // a minimal transient record at t=0: integrate one dt and
                 // keep the *initial* snapshot (index 0).
-                let opts = TransientAnalysisOptions::new(dt, dt);
+                let opts = self.options.transient(0.0, dt, dt);
                 let mut solver =
                     TransientSolver::new(self.circuit, opts, self.context.clone())?;
                         solver.policy = self.policy.clone();

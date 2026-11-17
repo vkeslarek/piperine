@@ -571,9 +571,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `tests/analyses.rs` gains `pss_gives_one_period_of_rows`, `pss_on_a_grid_gives_the_grid_rows`, `pss_starts_its_orbit_at_tstab`, `pss_that_does_not_converge_fails`, `a_pss_plot_draws_its_rows`
-- [ ] Gate check passes: Full
-- [ ] Test count: 5 new tests
+- [x] `tests/analyses.rs` gains `pss_gives_one_period_of_rows`, `pss_on_a_grid_gives_the_grid_rows`, `pss_starts_its_orbit_at_tstab`, `pss_that_does_not_converge_fails`, `a_pss_plot_draws_its_rows`
+- [x] Gate check passes: Full
+- [x] Test count: 5 new tests
 
 **Tests**: integration
 **Gate**: full

@@ -386,3 +386,117 @@ fn sens_wrt_a_derived_param_is_refused() {
     let table = run_text(text, own).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(table.columns, ["param", "d(Top.b)"]);
 }
+
+/// The RC of `PSS_RC`: period 4 us, RC 1 us, high for the first half.
+fn pss(period: f64, tstab: f64, print_step: Option<f64>) -> Overrides {
+    Overrides {
+        analysis: Some("pss".into()),
+        top: Some("PssRc".into()),
+        period: Some(period),
+        tstab: Some(tstab),
+        print_step,
+        // the source has 1 ps edges and no breakpoint: a step cap of 1 ns keeps the orbit true
+        max_step: Some(1e-9),
+        print: vec!["vout".into()],
+        ..Overrides::default()
+    }
+}
+
+/// `Top` of `PssRc`: the pulse source of the `pss_rc` twin (period 4 us, high for 2 us, 1 ps
+/// edges, reading `now()` and its params) over 1 kOhm and 1 nF, written here from its parts.
+const PSS_RC: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Capacitor(p: Electrical, n: Electrical) { c: f64 where c >= 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\nmodule Pulse(p: Electrical) { amp: f64 = 1.0; width: f64 = 2u; period: f64 = 4u; edge: f64 = 1p; }\nanalog for Pulse {\n    let ph = now() - period * (now() / period).floor();\n    let level = if ph < edge { ph / edge } else if ph < width { 1.0 } else if ph < width + edge { 1.0 - (ph - width) / edge } else { 0.0 };\n    v(p) +> amp * level;\n}\nmodule PssRc() {\n    signal vin: Electrical;\n    signal vout: Electrical;\n    let src = Pulse(vin);\n    let r1 = Resistor { r: 1k }(vin, vout);\n    let c1 = Capacitor { c: 1n }(vout, gnd);\n}\n";
+
+fn pss_file() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, PSS_RC).expect("write");
+    (dir, file)
+}
+
+fn pss_run(overrides: Overrides) -> Result<Table, Failure> {
+    let (_dir, file) = pss_file();
+    run(&file, "rust", overrides)
+}
+
+fn column_of(table: &Table, name: &str) -> usize {
+    table.columns.iter().position(|c| c == name).unwrap_or_else(|| panic!("no column `{name}` in {:?}", table.columns))
+}
+
+#[test]
+fn pss_gives_one_period_of_rows() {
+    // HII-07 AC 1: `time` first, one column per printed signal, rows from t0 to t0 + T
+    let table = pss_run(pss(4e-6, 8e-6, None)).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.columns[0], "time");
+    assert_eq!(table.columns.len(), 2, "{:?}", table.columns);
+    let t = times(&table);
+    assert!(t.len() > 4, "one row per accepted step: {}", t.len());
+    assert!((t[0] - 8e-6).abs() < 1e-12, "starts at t0: {}", t[0]);
+    assert!((t[t.len() - 1] - 12e-6).abs() < 1e-12, "ends at t0 + T: {}", t[t.len() - 1]);
+    assert!(t.windows(2).all(|w| w[0] < w[1]), "time increases");
+    // the orbit closes: the last row of the period is the first
+    let v = column_of(&table, &table.columns[1].clone());
+    let (first, last) = (real(&table.rows[0][v]), real(&table.rows[table.rows.len() - 1][v]));
+    assert!((first - last).abs() < 1e-3, "x(t0) = {first}, x(t0 + T) = {last}");
+}
+
+#[test]
+fn pss_on_a_grid_gives_the_grid_rows() {
+    // HII-07 AC 2: one row per t0 + k*h up to t0 + T (101 rows for h = T / 100)
+    let table = pss_run(pss(4e-6, 8e-6, Some(4e-8))).unwrap_or_else(|f| panic!("{f}"));
+    let t = times(&table);
+    assert_eq!(t.len(), 101, "{} rows", t.len());
+    for (k, time) in t.iter().enumerate() {
+        let want = 8e-6 + k as f64 * 4e-8;
+        assert!((time - want).abs() < 1e-12, "row {k}: {time} against {want}");
+    }
+}
+
+#[test]
+fn pss_starts_its_orbit_at_tstab() {
+    // HII-07 AC 3: `t0` is `tstab`, whatever it is: the first row is at `tstab`, the last at
+    // `tstab + T`, and the orbit does not depend on it (the end of the high half, at 10 us, is
+    // 1 / (1 + exp(-2)) of the 1 V drive, reached from a start at 8 us or at 9 us)
+    let closed = 1.0 / (1.0 + (-2.0_f64).exp());
+    for tstab in [8e-6, 9e-6] {
+        let table = pss_run(pss(4e-6, tstab, Some(1e-7))).unwrap_or_else(|f| panic!("tstab {tstab}: {f}"));
+        let t = times(&table);
+        assert!((t[0] - tstab).abs() < 1e-12 && (t[t.len() - 1] - (tstab + 4e-6)).abs() < 1e-12, "tstab {tstab}: {} to {}", t[0], t[t.len() - 1]);
+        let row = table.rows.iter().find(|r| (real(&r[0]) - 10e-6).abs() < 1e-12).unwrap_or_else(|| panic!("tstab {tstab}: no row at 10 us"));
+        assert!((real(&row[1]) - closed).abs() < 1e-3, "tstab {tstab}: {} against {closed}", real(&row[1]));
+    }
+}
+
+#[test]
+fn pss_that_does_not_converge_fails() {
+    // HII-07 AC 6: a period the drive does not have (4 us drive, period 3 us) has no orbit: the
+    // solver's own error names the period, and there is no table
+    let Err(failure) = pss_run(pss(3e-6, 0.0, None)) else { panic!("a period the drive does not have gives no orbit") };
+    assert!(matches!(&failure, Failure::Solver { analysis: "pss", .. }), "{failure:?}");
+    let text = format!("{failure}");
+    assert!(text.contains("pss") && (text.contains("residual") || text.contains("period") || text.contains("repeat")), "{text}");
+}
+
+#[test]
+fn a_pss_plot_draws_its_rows() {
+    // HII-07 AC 7: the plot of a pss run is drawn from its table, as a transient's
+    let (_dir, file) = pss_file();
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { backend: Some("rust".into()), plot: Some("p.svg".into()), ..pss(4e-6, 8e-6, Some(4e-8)) };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+    let plot = session.plot().unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.rows.len(), 101);
+    let points: usize = plot.panels.iter().flat_map(|p| &p.series).map(|s| s.runs.iter().map(Vec::len).sum::<usize>()).sum();
+    assert_eq!(points, 101, "the panel draws the 101 rows of the table");
+    assert_eq!(plot.panels[0].x.title, "time");
+}
+
+#[test]
+fn pss_takes_the_sessions_step_budget() {
+    // HII-02 AC 9 reaches every transient of the session, the shots of a pss among them: a
+    // budget of 100 attempts cannot cover a period of 4000 steps of 1 ns
+    let (period, budget) = (4e-6, 100);
+    let Err(failure) = pss_run(Overrides { max_steps: Some(budget), ..pss(period, 8e-6, None) }) else { panic!("{budget} attempts cannot cover a period") };
+    assert!(matches!(&failure, Failure::Solver { analysis: "pss", .. }), "{failure:?}");
+}

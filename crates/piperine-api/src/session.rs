@@ -18,7 +18,7 @@ use piperine_lang::types::Types;
 use piperine_plan::Netlist;
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{
-    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, ParamValue, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions,
+    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, ParamValue, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
     TransientAnalysisOptions,
 };
 use piperine_transpile::{Compiled, Settings, Transpiler};
@@ -532,7 +532,23 @@ impl Session {
                     .map_err(|error| Failure::Solver { analysis: "pz", error })?;
                 Ok(Table::roots(&roots))
             }
-            Analysis::Pss { .. } => Err(Failure::Host { code: "P0010", message: "`pss` has no run yet in this build".into() }),
+            Analysis::Pss { period, tstab, max_step, print_step } => {
+                let mut circuit = circuit;
+                let mut options = PssAnalysisOptions::new(*period).with_tstab(*tstab);
+                options.dt = *max_step;
+                options.dt_max = *max_step;
+                options.max_steps = self.spec.options.max_steps.map(|budget| budget as usize);
+                let orbit = circuit
+                    .pss(options, self.context.clone())
+                    .and_then(|pss| pss.solve())
+                    .map_err(|error| Failure::Solver { analysis: "pss", error })?;
+                // the orbit starts at `tstab` and holds one period
+                let table = Table::transient(&self.probes, &orbit.trace)?;
+                match print_step {
+                    Some(step) => table.on_grid(*step, *tstab, tstab + period),
+                    None => Ok(table),
+                }
+            }
             Analysis::Sens { .. } => {
                 let mut circuit = circuit;
                 let nets = circuit.nets();
