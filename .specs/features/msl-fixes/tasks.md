@@ -271,10 +271,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_left_out_optional_argument_types`, `a_named_optional_argument_types` (also `f(1.0, z: 3.0, y: 2.0)`), `a_named_argument_that_is_not_optional_or_bound_is_e0140`, `a_wrong_argument_count_is_e0141`, `an_option_before_a_required_parameter_is_positional_only`
-- [ ] An existing test asserting `P0002` for an argument count is rewritten to `E0141` and named in the commit
-- [ ] Gate check passes: Quick (`Run tvalues`), then `cargo test -p piperine-lang`
-- [ ] Test count: the 5 tests named above
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test types_values`: `a_left_out_optional_argument_types`, `a_named_optional_argument_types` (also `f(1.0, z: 3.0, y: 2.0)`), `a_named_argument_that_is_not_optional_or_bound_is_e0140`, `a_wrong_argument_count_is_e0141`, `an_option_before_a_required_parameter_is_positional_only`
+- [x] An existing test asserting `P0002` for an argument count is rewritten to `E0141` and named in the commit
+- [x] Gate check passes: Quick (`Run tvalues`), then `cargo test -p piperine-lang`
+- [x] Test count: the 5 tests named above
 
 **Tests**: integration
 **Gate**: quick

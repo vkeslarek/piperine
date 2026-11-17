@@ -54,6 +54,8 @@ pub(super) struct Checker<'d> {
     pub(super) locals: BTreeMap<DeclId, Ty>,
     pub(super) methods: BTreeMap<ExprId, Method>,
     pub(super) callees: BTreeMap<ExprId, Callee>,
+    /// The argument bound to each parameter of a call, `None` for one left out (§3.2).
+    pub(super) bindings: BTreeMap<ExprId, Vec<Option<ExprId>>>,
     pub(super) reached: Vec<DeclId>,
     /// Arguments read as `Some` of themselves (§3.2.3).
     pub(super) somes: BTreeSet<ExprId>,
@@ -109,6 +111,7 @@ impl<'d> Checker<'d> {
             locals: BTreeMap::new(),
             methods: BTreeMap::new(),
             callees: BTreeMap::new(),
+            bindings: BTreeMap::new(),
             reached: Vec::new(),
             somes: BTreeSet::new(),
             carriers: BTreeMap::new(),
@@ -162,7 +165,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, written: self.written, continuous, emits })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, written: self.written, continuous, emits })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.

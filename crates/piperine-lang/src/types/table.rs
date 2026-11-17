@@ -81,6 +81,7 @@ pub struct Types<'d> {
     pub(super) locals: BTreeMap<DeclId, Ty>,
     pub(super) methods: BTreeMap<ExprId, Method>,
     pub(super) callees: BTreeMap<ExprId, Callee>,
+    pub(super) bindings: BTreeMap<ExprId, Vec<Option<ExprId>>>,
     pub(super) reached: Vec<DeclId>,
     pub(super) somes: BTreeSet<ExprId>,
     pub(super) carriers: BTreeMap<DeclId, Ty>,
@@ -92,7 +93,7 @@ pub struct Types<'d> {
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits
     }
 }
 
@@ -168,6 +169,12 @@ impl<'d> Types<'d> {
     /// What a call or a placement refers to.
     pub fn callee(&self, expr: ExprId) -> Option<Callee> {
         self.callees.get(&expr).copied()
+    }
+
+    /// The arguments of a call of a function, one slot per parameter in order: the argument bound
+    /// to it, or `None` for an optional parameter left out (§3.2).
+    pub fn binding(&self, expr: ExprId) -> Option<&[Option<ExprId>]> {
+        self.bindings.get(&expr).map(Vec::as_slice)
     }
 
     /// The type a type node of the reachable set writes (a signature, an annotation, a cast).

@@ -70,7 +70,8 @@ impl Checker<'_> {
         let (params, ret) = self.signature(function)?;
         self.callees.insert(expr, Callee::Function(function));
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
-        self.apply(expr, &params, args)?;
+        let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        self.bind_arguments(expr, &name, &params, args)?;
         Some(ret)
     }
 
@@ -86,8 +87,65 @@ impl Checker<'_> {
         None
     }
 
-    /// Check each argument against its parameter, in order. A function takes positional
-    /// arguments only (the POM refuses `name: value` on a call that is not a placement).
+    /// §3.2: binds the arguments of a call of `name` to its parameters. The optional parameters
+    /// are the maximal trailing run of `Option<T>` ones (§3.2.7); positional arguments bind in
+    /// order, a named one binds the optional parameter it names (the POM has resolved the name
+    /// and reported `E0140` for one that is no optional parameter or is bound twice), and a
+    /// required parameter left unbound or an argument past the last parameter is `E0141`. An
+    /// argument of type `T` for `Option<T>` is `Some` of it, one of type `Option<T>` is as it
+    /// is (§3.2.3, §3.2.10). The binding, one slot per parameter, is kept per call.
+    pub(super) fn bind_arguments(&mut self, expr: ExprId, name: &str, params: &[Ty], args: &[Arg]) -> Option<()> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let optional = params.iter().rev().take_while(|ty| matches!(ty, Ty::Option(_))).count();
+        let required = params.len() - optional;
+        let mut slots: Vec<Option<ExprId>> = vec![None; params.len()];
+        let mut bound: Vec<(ExprId, usize)> = Vec::new();
+        let mut ok = true;
+        for (i, arg) in args.iter().enumerate() {
+            let slot = match (&arg.name, arg.res) {
+                (None, _) => Some(i),
+                (Some(_), Resolution::Decl(param)) => self.design.decl_data(param).parent.and_then(|owner| {
+                    self.design.decl_data(owner).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::FnParam(_))).position(|c| *c == param)
+                }),
+                (Some(_), _) => None,
+            };
+            match slot {
+                Some(slot) if slot < params.len() => {
+                    if arg.name.is_some() && slot < required {
+                        let message = format!("`{name}`: an `Option` parameter followed by a required one is positional only, not bound by name (§3.2.8)");
+                        self.coded(file, "E0140", arg.span, message, "positional only");
+                        ok = false;
+                    }
+                    slots[slot] = Some(arg.value);
+                    bound.push((arg.value, slot));
+                }
+                _ => {
+                    // Past the last parameter, or a name the POM could not bind.
+                    ok = false;
+                    self.infer(arg.value);
+                }
+            }
+        }
+        let unbound = slots[..required].iter().any(Option::is_none);
+        if unbound || args.len() > params.len() {
+            let found = args.len();
+            let message = if required == params.len() { format!("`{name}` takes {required} argument(s), found {found}") } else { format!("`{name}` takes {required} to {} arguments, found {found}", params.len()) };
+            self.coded(file, "E0141", span, message, "wrong number of arguments");
+            ok = false;
+        }
+        for (value, slot) in bound {
+            self.check_argument(value, &params[slot]);
+        }
+        if !ok {
+            return None;
+        }
+        self.bindings.insert(expr, slots);
+        Some(())
+    }
+
+    /// Check each argument against its parameter, in order. Only a function call binds by name
+    /// (`bind_arguments`); the callers of this one take positional arguments.
     pub(super) fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;

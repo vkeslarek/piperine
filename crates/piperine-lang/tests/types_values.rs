@@ -172,10 +172,11 @@ fn a_call_takes_its_declared_result() {
     let (src, d) = diagnostics(FUNCTIONS, "let a = half(true);");
     assert_eq!(codes_of(&d), ["P0002"]);
     assert_eq!(snippet(&src, &d[0]), "true");
+    // A wrong count is `E0141` (§3.2.6), no longer the plain mismatch.
     let (_, d) = diagnostics(FUNCTIONS, "let a = half(1.0, 2.0);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0141"]);
     let (_, d) = diagnostics(FUNCTIONS, "let a = half();");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0141"]);
 
     // A function takes positional arguments only: the POM refuses a named one (`E0140`).
     let named = support::build(&source(FUNCTIONS, "let a = half(a: 1.0);"));
@@ -333,4 +334,88 @@ fn comparing_an_enum_without_partial_ord_is_p0002() {
     // FIX-07 AC 1: deriving `PartialOrd` types the comparison as `bool`.
     let got = local_types("#[derive(Repr, PartialEq, PartialOrd)]\nenum Md { Lo, Hi }", "let a = Md::Lo < Md::Hi; let b = Md::Hi >= Md::Lo;", &["a", "b"]);
     assert_eq!(got, [Ty::Bool, Ty::Bool]);
+}
+
+/// `f` of FIX-06: one required parameter and two optional ones.
+const OPTIONALS: &str = "fn f(x: f64, y: Option<f64>, z: Option<f64>) -> f64 { x + y.unwrap_or(10.0) + z.unwrap_or(100.0) }";
+
+/// The expression whose source text is exactly `text`.
+fn expr_at(design: &Design, src: &str, text: &str) -> ExprId {
+    (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| &src[design.expr_node(*e).span.range()] == text).unwrap_or_else(|| panic!("no expression `{text}`"))
+}
+
+/// The binding of the call `call` as the source text of each slot's argument (`None` for a slot
+/// left out), and the call's type.
+fn binding_of(call: &str) -> (Vec<Option<String>>, Option<Ty>) {
+    let src = source(OPTIONALS, &format!("let r = {call};"));
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{src}", codes_of(&d)));
+    let expr = expr_at(&design, &src, call);
+    let slots = types.binding(expr).unwrap_or_else(|| panic!("no binding for `{call}`")).iter().map(|s| s.map(|e| src[design.expr_node(e).span.range()].to_string())).collect();
+    (slots, types.ty(expr).cloned())
+}
+
+fn some(text: &str) -> Option<String> {
+    Some(text.to_string())
+}
+
+#[test]
+fn a_left_out_optional_argument_types() {
+    // FIX-06 AC 1: trailing optional parameters left out; the call is the declared `f64` and the
+    // binding leaves their slots empty.
+    assert_eq!(binding_of("f(1.0)"), (vec![some("1.0"), None, None], Some(Ty::F64)));
+    assert_eq!(binding_of("f(1.0, 2.0)"), (vec![some("1.0"), some("2.0"), None], Some(Ty::F64)));
+    // AC 4: `None` and `Some(v)` pass as they are.
+    assert_eq!(binding_of("f(1.0, None, Some(3.0))"), (vec![some("1.0"), some("None"), some("Some(3.0)")], Some(Ty::F64)));
+}
+
+#[test]
+fn a_named_optional_argument_types() {
+    // FIX-06 AC 2: `z: 3.0` binds the last parameter and leaves `y` out; named arguments bind in
+    // any order (`f(1.0, z: 3.0, y: 2.0)`); a plain value for an `Option<f64>` is `Some` of it (AC 3).
+    assert_eq!(binding_of("f(1.0, z: 3.0)"), (vec![some("1.0"), None, some("3.0")], Some(Ty::F64)));
+    assert_eq!(binding_of("f(1.0, z: 3.0, y: 2.0)"), (vec![some("1.0"), some("2.0"), some("3.0")], Some(Ty::F64)));
+    let src = source(OPTIONALS, "let r = f(1.0, 2.0);");
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").expect("a plain value for an Option");
+    assert!(types.implicit_some(expr_at(&design, &src, "2.0")), "a plain value for an `Option<T>` is read as `Some`");
+    assert!(!types.implicit_some(expr_at(&design, &src, "1.0")), "the required argument is no `Some`");
+}
+
+#[test]
+fn a_named_argument_that_is_not_optional_or_bound_is_e0140() {
+    // FIX-06 AC 5: a name that is no optional parameter, or that an earlier argument bound.
+    for call in ["f(x: 1.0)", "f(1.0, w: 2.0)", "f(1.0, 2.0, y: 3.0)", "f(1.0, z: 2.0, z: 3.0)"] {
+        let design = support::build(&source(OPTIONALS, &format!("let r = {call};")));
+        assert_eq!(support::codes(&design), ["E0140"], "{call}");
+    }
+}
+
+#[test]
+fn a_wrong_argument_count_is_e0141() {
+    // FIX-06 AC 6: too few positional arguments for the required parameters, or more arguments
+    // than parameters, is E0141 naming the call, not P0002.
+    for call in ["f()", "f(1.0, 2.0, 3.0, 4.0)"] {
+        let (src, d) = diagnostics(OPTIONALS, &format!("let r = {call};"));
+        assert_eq!(codes_of(&d), ["E0141"], "{call}");
+        assert_eq!(snippet(&src, &d[0]), call);
+    }
+}
+
+#[test]
+fn an_option_before_a_required_parameter_is_positional_only() {
+    // FIX-06 AC 7 (§3.2.8): in `g(a: Option<f64>, b: f64)` `a` is not optional, so leaving it
+    // out is E0141, and so is leaving out `b`; both given positionally is accepted, with `None`
+    // or a plain value for `a`.
+    let items = "fn g(a: Option<f64>, b: f64) -> f64 { b }";
+    let (src, d) = diagnostics(items, "let r = g(1.0);");
+    assert_eq!((codes_of(&d), snippet(&src, &d[0])), (vec!["E0141".to_string()], "g(1.0)"));
+    let (_, d) = diagnostics(items, "let r = g();");
+    assert_eq!(codes_of(&d), ["E0141"]);
+    local_types(items, "let r = g(None, 2.0); let s = g(1.0, 2.0);", &["r", "s"]);
+    // Named, `a` is not an optional parameter either: E0140 at the name (and the required `b` is
+    // still unbound, E0141).
+    let (src, d) = diagnostics(items, "let r = g(a: 1.0);");
+    assert!(codes_of(&d).contains(&"E0140".to_string()), "{:?}", codes_of(&d));
+    assert!(d.iter().any(|d| d.diagnostic.code == "E0140" && snippet(&src, d) == "a: 1.0"), "at the named argument");
 }
