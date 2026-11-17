@@ -246,3 +246,32 @@ fn a_smaller_trtol_takes_more_steps() {
     let (default, tight) = (steps(None), steps(Some(0.001)));
     assert!(tight > default, "trtol = 0.001 took {tight} steps, the default {default}");
 }
+
+/// The transient of `tran_rc` to 10 us at `trtol = 0.001` (3241 steps, `a_smaller_trtol_takes_more_steps`)
+/// with the budget `max_steps`.
+fn tran_rc_with_budget(max_steps: Option<u32>) -> Result<Table, Failure> {
+    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/tran_rc.msl");
+    let overrides = Overrides { analysis: Some("transient".into()), stop: Some(10e-6), trtol: Some(0.001), max_steps, backend: Some("interp".into()), top: Some("TranRc".into()), ..Overrides::default() };
+    let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    Session::open(&project, &spec, &settings())?.run(Rc::new(RefCell::new(Kept::default())))
+}
+
+#[test]
+fn a_run_past_max_steps_fails_and_succeeds_when_raised() {
+    // HII-02 AC 9: a transient that needs about 3300 attempts fails at a budget of 1000 with the
+    // solver's own message naming it, and succeeds with the budget raised to 100000
+    let error = tran_rc_with_budget(Some(1000)).err().expect("1000 attempts are not enough");
+    assert!(error.to_string().contains("exceeded the 1000 step budget"), "{error}");
+    let table = tran_rc_with_budget(Some(100_000)).unwrap_or_else(|f| panic!("{f}"));
+    assert!(table.rows.len() > 1000, "{} rows", table.rows.len());
+}
+
+#[test]
+fn max_steps_defaults_to_two_million() {
+    // HII-02 AC 9: with no `max_steps` the run gives the solver no budget of its own, and the
+    // solver's default is 2,000,000 (the value before this feature)
+    let session = open(&with_parts(THERMOMETER), op(&["a"])).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(session.spec().options.max_steps, None);
+    assert_eq!(piperine_solver::prelude::TransientAnalysisOptions::new(1.0, 1e-3).max_steps, 2_000_000);
+}

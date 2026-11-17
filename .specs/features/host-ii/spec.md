@@ -102,6 +102,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 4. IF `temp` is not a number greater than -273.15 THEN the system SHALL report `P0010` naming the key.
 5. IF `maxrounds` or `maxmicro` is not an integer of at least 1 THEN the system SHALL report `P0010` naming the key.
 6. IF a `nodeset` entry names no node of the elaborated design THEN the system SHALL report `E0801` naming the entry before any analysis runs.
+7. The system SHALL accept in a run table the key `max_steps` and give it the flag `--max-steps`; IF it is not an integer of at least 1 THEN the system SHALL report `P0010` naming the key. (Amendment, orchestrator finding 2026-11-17: the transient's budget of 2,000,000 attempts could not be raised from the command line, so the buck's 0.8 to 5.0 V setpoint ramp cannot run.)
 
 **Acceptance Criteria** (HII-02, what they change):
 
@@ -113,6 +114,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 6. WHEN an operating point needs more rounds than `maxrounds` THEN the system SHALL fail the run with the solver's `E0506` error naming the bound.
 7. WHEN an instant needs more microsteps than `maxmicro` THEN the system SHALL fail the run with an error naming the bound.
 8. WHEN `tran_rc` runs to 10 µs with `trtol = 0.001` THEN the system SHALL take more accepted steps than with no `trtol`: `trtol` reaches the solver's step assessment, and a smaller value rejects at least as many steps. (Amended 2026-11-17: the original wording, `trtol = 70` taking fewer accepted steps, moved to `solver-hygiene` (LTE), because today `trtol` only gates rejection and does not shape the step.)
+9. WHEN a run gives `max_steps` THEN the system SHALL hand the transient that budget in place of 2,000,000 (the default, unchanged when the key is absent): a transient that needs more attempts than the budget fails with the solver's `exceeded the <budget> step budget` message, and the same run with the budget raised succeeds.
 
 **Acceptance Criteria** (HII-03, temperature against ngspice):
 

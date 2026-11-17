@@ -79,6 +79,9 @@ pub struct Options {
     pub maxrounds: Option<u32>,
     /// The bound on the microsteps of one instant.
     pub maxmicro: Option<u32>,
+    /// The budget of attempts a transient may make before it fails; the solver's 2,000,000 when
+    /// not given.
+    pub max_steps: Option<u32>,
     /// The node values that seed the first Newton iterate of an operating point: a path and a
     /// value each, in the order given.
     pub nodeset: Vec<(String, f64)>,
@@ -117,6 +120,7 @@ pub struct Overrides {
     pub resolution: Option<f64>,
     pub maxrounds: Option<u32>,
     pub maxmicro: Option<u32>,
+    pub max_steps: Option<u32>,
     /// `--nodeset <path>=<value>`: an entry replaces the table's entry of the same path.
     pub nodeset: Vec<(String, f64)>,
 }
@@ -197,6 +201,7 @@ struct Keys {
     resolution: Option<Given<f64>>,
     maxrounds: Option<Given<u32>>,
     maxmicro: Option<Given<u32>>,
+    max_steps: Option<Given<u32>>,
     nodeset: Vec<(String, f64)>,
 }
 
@@ -208,10 +213,10 @@ type Value<'i> = Spanned<DeValue<'i>>;
 
 /// The keys of a run table, in the order CLI-03 AC 1 lists them, then the session options of
 /// HII-01.
-const RUN_KEYS: [&str; 29] = [
+const RUN_KEYS: [&str; 30] = [
     "bench", "top", "analysis", "stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "print", "streams",
     "params", "backend", "csv", "records", "plot", "all_checks", "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds",
-    "maxmicro", "nodeset",
+    "maxmicro", "nodeset", "max_steps",
 ];
 
 /// The keys whose meaning belongs to an analysis; each analysis reads the ones `reads` lists.
@@ -360,6 +365,7 @@ impl Source {
             "resolution" => keys.resolution = Some(real()?),
             "maxrounds" => keys.maxrounds = Some(count()?),
             "maxmicro" => keys.maxmicro = Some(count()?),
+            "max_steps" => keys.max_steps = Some(count()?),
             "nodeset" => {
                 let table = v.as_table().ok_or_else(|| wrong("a table of node paths and numbers"))?;
                 for (path, n) in entries(table) {
@@ -409,6 +415,7 @@ impl Keys {
         over(&mut self.resolution, &o.resolution);
         over(&mut self.maxrounds, &o.maxrounds);
         over(&mut self.maxmicro, &o.maxmicro);
+        over(&mut self.max_steps, &o.max_steps);
         for (path, value) in &o.nodeset {
             match self.nodeset.iter_mut().find(|(p, _)| p == path) {
                 Some(entry) => entry.1 = *value,
@@ -499,7 +506,7 @@ impl Keys {
                 return Err(fault(*at, message, "not above absolute zero"));
             }
         }
-        for (key, given) in [("maxrounds", &self.maxrounds), ("maxmicro", &self.maxmicro)] {
+        for (key, given) in [("maxrounds", &self.maxrounds), ("maxmicro", &self.maxmicro), ("max_steps", &self.max_steps)] {
             if let Some(Given { value: 0, at }) = given {
                 return Err(fault(*at, format!("run `{name}`: `{key}` must be a whole number of at least 1, found 0"), "less than 1"));
             }
@@ -588,6 +595,7 @@ impl Keys {
                 resolution: self.resolution.as_ref().map(|g| g.value),
                 maxrounds: self.maxrounds.as_ref().map(|g| g.value),
                 maxmicro: self.maxmicro.as_ref().map(|g| g.value),
+                max_steps: self.max_steps.as_ref().map(|g| g.value),
                 nodeset: self.nodeset.clone(),
             },
             keys: self,
@@ -733,8 +741,8 @@ points = 5
         assert_eq!(runs[2].analysis, Analysis::Ac { from: 1e3, to: 1e7, grid: Grid::PerDecade(10) });
         assert_eq!(runs[3].analysis, Analysis::Ac { from: 1e3, to: 5e3, grid: Grid::Points(5) });
         // the nineteen keys of CLI-03 AC 1, `all_checks` (CLI-06 AC 7) and the nine session options
-        // of HII-01, no more
-        assert_eq!(RUN_KEYS.len(), 29);
+        // of HII-01 and `max_steps` (HII-01 amendment), no more
+        assert_eq!(RUN_KEYS.len(), 30);
         // a manifest with no run table has no run
         assert_eq!(read("").map(|r| r.len()).ok(), Some(0));
     }
@@ -908,7 +916,7 @@ points = 5
     }
 
     /// The nine option keys of HII-01 AC 1, as a run table gives them.
-    const ALL_OPTIONS: &str = "reltol = 1e-4\nabstol = 1e-13\nvntol = 2e-6\ntrtol = 5\ntemp = 75\nresolution = 1e-12\nmaxrounds = 30\nmaxmicro = 500\nnodeset = { \"Top.a\" = 1.5, \"Top.b\" = 0 }\n";
+    const ALL_OPTIONS: &str = "reltol = 1e-4\nabstol = 1e-13\nvntol = 2e-6\ntrtol = 5\ntemp = 75\nresolution = 1e-12\nmaxrounds = 30\nmaxmicro = 500\nmax_steps = 4000000\nnodeset = { \"Top.a\" = 1.5, \"Top.b\" = 0 }\n";
 
     fn options() -> Options {
         Options {
@@ -920,6 +928,7 @@ points = 5
             resolution: Some(1e-12),
             maxrounds: Some(30),
             maxmicro: Some(500),
+            max_steps: Some(4_000_000),
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
         }
     }
@@ -933,7 +942,7 @@ points = 5
             assert_eq!(spec.options, options(), "{analysis}");
             assert_eq!(one(&format!("[run.a]\n{analysis}")).options, Options::default(), "{analysis}");
         }
-        assert_eq!(RUN_KEYS[20..], ["reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "nodeset"]);
+        assert_eq!(RUN_KEYS[20..], ["reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "nodeset", "max_steps"]);
     }
 
     #[test]
@@ -966,7 +975,7 @@ points = 5
     #[test]
     fn bounds_must_be_whole_numbers_of_at_least_one() {
         // HII-01 AC 5: 0, a fraction and a negative number are each a P0010 naming the key
-        for key in ["maxrounds", "maxmicro"] {
+        for key in ["maxrounds", "maxmicro", "max_steps"] {
             for value in ["0", "1.5", "-2"] {
                 let f = fault(&format!("[run.a]\nanalysis = \"op\"\n{key} = {value}\n"));
                 let (code, message, _) = located(&f);

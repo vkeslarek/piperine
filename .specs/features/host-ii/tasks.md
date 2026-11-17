@@ -105,7 +105,7 @@ T1
 Two small solver doors, one plan method, then the keys, the session and the flags; a temperature twin.
 
 ```
-T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8
+T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T43
 ```
 
 ### Phase 3: Transfer function, pole-zero, sensitivity
@@ -336,6 +336,28 @@ T38 → T39 → T40 → T41 → T42
 **Gate**: build
 
 **Commit**: `test(parity): temperature against ngspice`
+
+---
+
+### T43: `max_steps`
+
+**What**: The run key `max_steps` and the flag `--max-steps` (an amendment of HII-01, orchestrator finding 2026-11-17): a positive integer that replaces the transient's budget of 2,000,000 attempts; absent, the budget is today's. It reaches every transient of the session (the PSS shots join it in T18).
+**Where**: `crates/piperine-api/src/request.rs`, `crates/piperine-api/src/session.rs`, `crates/piperine-cli/src/cli.rs`, `crates/piperine-api/tests/options.rs`
+**Depends on**: T8
+**Reuses**: `TransientAnalysisOptions::with_max_steps`
+**Requirement**: HII-01, HII-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [x] `RUN_KEYS` holds `max_steps`; `max_steps = 0` or a fraction is `P0010` naming the key; the flag `--max-steps` exists and `every_run_key_has_its_flag` lists it
+- [x] `options.rs` gains `a_run_past_max_steps_fails_and_succeeds_when_raised` (a transient that needs more attempts than a small budget fails with `exceeded the <budget> step budget`; the same run with the budget raised succeeds) and `max_steps_defaults_to_two_million`
+- [x] Gate check passes: Quick (`Run apilib`, `Run apioptions`, `Run clilib`, `Run twins`)
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(api): the transient's step budget is a run key`
 
 ---
 
@@ -1135,6 +1157,9 @@ Proof: run apioptions | test maxmicro_bounds_an_instant ... ok
 **C14** - `tran_rc` with `trtol = 0.001` takes more accepted steps than with none. (HII-02, AC 8; T6)
 Proof: run apioptions | test a_smaller_trtol_takes_more_steps ... ok
 
+**C14a** - A transient past the `max_steps` budget fails naming it, and succeeds with the budget raised; the default is 2,000,000. (HII-02, AC 9; T43)
+Proof: run apioptions | test a_run_past_max_steps_fails_and_succeeds_when_raised ... ok
+
 **C15** - `temp_res` at 75 °C agrees with ngspice under `DC_VOLTAGE`. (HII-03, AC 1; T8)
 Proof: run newparity | test temp_res ... ok
 
@@ -1408,6 +1433,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - T6: `nodeset` seeds `op` and every point of `dc` through `DcSolver::apply_initial_conditions`; `ac` and `transient` take their operating point inside the solver, where the host has no door, so a `nodeset` on them is `P0010` (fail loud) instead of ignored. One extra test covers it (`a_nodeset_on_a_run_that_takes_its_own_operating_point_is_p0010`).
 - T6, HII-02 AC 8 amended (orchestrator ruling): `trtol` only gates rejection today (`assess_step`), so "`trtol = 70` takes fewer steps" is moved to solver-hygiene (LTE); host-ii owns that `trtol` reaches the step assessment: `tran_rc` takes 3241 steps at `trtol = 0.001` against 115 by default (`a_smaller_trtol_takes_more_steps`). HII-21 AC 2 amended: `parity_corpus.rs` may grow its twin count by one per new twin.
 - T6/T8 temperature finding: the operating point of `v +> temperature()` reads 299.857 K (not 300.15) because Newton stops at `reltol * |x| + vntol` (1e-3 and 1e-6); with `--reltol 1e-9 --vntol 1e-12` it reads 300.15 exactly (and 348.15 at `--temp 75`). The test bound is that criterion, not a loosened constant; not a defect.
+- T43 (orchestrator finding): `max_steps` is a run key and `--max-steps` flag (positive integer, default 2,000,000 unchanged), spec HII-01 AC 7 and HII-02 AC 9 amended; it reaches every transient of the session, and the PSS arm (T18) must pass it to its shots.
 - T8: `parity_corpus.rs` twin count 7 to 8 (append-only edit); lane C made the same edit for `tran_dq`, expect a trivial conflict, the final count is the sum.
 **Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17.
 **Walked:** none
@@ -1420,7 +1446,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9
 
 Phase 1:  T1
-Phase 2:  T2 ------→ T3 ------→ T4 ------→ T5 ------→ T6 ------→ T7 ------→ T8
+Phase 2:  T2 ------→ T3 ------→ T4 ------→ T5 ------→ T6 ------→ T7 ------→ T8 ------→ T43
 Phase 3:  T9 ------→ T10 ------→ T11 ------→ T12 ------→ T13 ------→ T14 ------→ T15 ------→ T16
 Phase 4:  T17 ------→ T18 ------→ T19 ------→ T20
 Phase 5:  T21 ------→ T22 ------→ T23

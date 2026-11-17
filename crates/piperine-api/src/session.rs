@@ -348,6 +348,10 @@ impl Session {
                 let finished = delivery.finished.clone();
                 delivery.recorder = Some(recorder.clone());
                 let options = Session::transient_options(*stop, *max_step);
+                let options = match self.spec.options.max_steps {
+                    Some(budget) => options.with_max_steps(budget as usize),
+                    None => options,
+                };
                 let mut solver = Solver::new(circuit)
                     .with_context(self.context.clone())
                     .with_tran_opts(options)
