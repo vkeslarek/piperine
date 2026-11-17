@@ -2,7 +2,7 @@
 
 **Gathered:** 2026-11-17
 **Spec:** `.specs/features/host-ii/spec.md`
-**Status:** Five decisions of the user bind (below). Spec and tasks are not approved yet; the open questions are at the top of `spec.md`.
+**Status:** The five decisions and the answers of 2026-11-17 bind (below). Spec and tasks approved.
 
 Everything the user said reached the planner through the orchestrator. What arrived verbatim is quoted; what arrived as the orchestrator's statement of a decision is marked "relayed".
 
@@ -33,6 +33,26 @@ The host library and the command line reach what the solver already does and the
 | X4 | `finish`, `fatal` and the `failed` field of `sim` | "Encerra e falha (Recommended)" | `finish` ends the run, ok (`failed = false`); `fatal` ends it with `failed = true`: exit 1, and `piperine test` prints `FAIL` with the message. Lane A implements the ending of the analysis under S1; host-ii only consumes the record |
 | X7 | Names of the session options | relayed: the orchestrator's proposal, to which the user did not object | ngspice `.options` names, lowercase, as run keys with their flags: `reltol`, `abstol`, `vntol`, `trtol`, `temp`, `tnom`, plus `nodeset`. Time resolution and the bounds take ngspice-aligned names the spec lists |
 
+### The answers to the spec's questions (user, 2026-11-17, relayed by the orchestrator)
+
+Verbatim: "Aceito todas (Recommended)".
+
+| # | Question | Decided |
+| - | -------- | ------- |
+| host-ii Q1 | metadata from the command line | a new command `piperine info [<run>]` |
+| host-ii Q2 | the timed `set` surface | library only, `Session::set_at` |
+| host-ii Q3 | small-signal keys | `input`/`output` for `tf` and `pz`; `wrt` for `sens` |
+| host-ii | `tnom` | stays out until `simparam` (L47) |
+| root-e2e Q1 | a Book claim | blocks, listings and every stated value or outcome |
+| root-e2e Q2 | where the tests live | root `tests/book/` |
+| root-e2e Q3 | the move | one move to `tests/e2e/<scenario>/`, no symlink |
+
+### Approvals (user, relayed by the orchestrator)
+
+- The host-ii spec, 2026-11-17: "Topo" (lanes) and "Aceito todas (Recommended)" (Q1-Q3, tnom).
+- The host-ii tasks, 2026-11-17: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando".
+- The root-e2e spec, 2026-11-17: "Aceito todas (Recommended)"; its design and tasks come later.
+
 ### What earlier decisions already fix
 
 - A `[run.<name>]` key has a flag of `piperine run`, and a flag wins (MD-65 item 2, `msl-cli` CLI-03). A new observation or analysis option is a run key with its flag (MD-66 item 2).
@@ -48,7 +68,7 @@ Every technical choice: the shape of the new tables, the fixtures of the parity 
 
 ### Declined / Undiscussed Gray Areas
 
-None declined. The questions the user has not answered are at the top of `spec.md`.
+None declined. Every question was answered on 2026-11-17.
 
 ---
 

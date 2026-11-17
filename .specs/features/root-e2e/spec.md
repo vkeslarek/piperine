@@ -1,13 +1,20 @@
 # Root E2E Specification
 
-**Approved**: [written when the user approves - YYYY-MM-DD - user: "their words"]
+**Approved**: 2026-11-17 - user: "Aceito todas (Recommended)" (Q1-Q3)
 
 Planned after `host-ii` (spec only; design and tasks follow its approval). It is part 2 of the user's lane-B scope of 2026-11-17, "Host II mais o wiring do root", split out because the two together exceed 30 tasks.
 
-## Open questions for the user
+## Questions answered (user, 2026-11-17)
 
-| # | Question | Options | Recommendation |
-| - | -------- | ------- | -------------- |
+Answered "Aceito todas (Recommended)".
+
+| # | Question | Decided |
+| - | -------- | ------- |
+| Q1 | What a behavioral claim of the Book is | (a) every `msl` block presented as a model to run, every listing, and every sentence that states a value or an outcome the binary produces (a record, a number, a refusal) |
+| Q2 | Where the integrated tests live | (a) the root package, `tests/book/`, one target per Book chapter, through `piperine::` and the binary |
+| Q3 | How `tests/ngspice/` moves | (a) one move to `tests/e2e/<scenario>/`, every reader updated in the same task, no symlink |
+
+-------- | ------- | -------------- |
 | Q1 | What is a "behavioral claim" of the Book that needs its own integrated test? | (a) every `msl` block that the Book presents as a model to run, every listing (already held by `piperine-cli/tests/book.rs`) and every sentence that states a value or an outcome the binary can produce (a record, a number, a refusal); (b) only blocks and listings; (c) (a) plus every prose sentence about semantics | **(a)**: a stated outcome is falsifiable through the entry point; (c) would test the spec, which `docs/spec/` guards own |
 | Q2 | Where do the integrated tests live? | (a) the root package, `tests/book/*.rs`, one target per Book chapter, through `piperine::` and the binary; (b) `piperine-cli/tests/book_*.rs` beside `book.rs` | **(a)**: the user's words ("Root package `piperine` re-exports the new `piperine-api` and holds the integrated tests"); MD-28 puts the host surface at the root |
 | Q3 | The move of `tests/ngspice/` under `tests/e2e/`: one move, or the old path kept as a link for a release? | (a) one move: `tests/e2e/<scenario>/` with `<name>.msl`, `<name>.cir` and its expected output; every reader (`piperine-parity`, `piperine-cli/tests/twins.rs`, the guards) updated in the same task; (b) a symlink kept | **(a)**: one home, as ROADMAP 4b says; a link would leave two paths for guards to read |
@@ -40,14 +47,14 @@ The Book (`docs/book/content.html`) has 97 `msl` blocks and 29 command-line list
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
-| Q1 What a claim is | option (a) | recommended | n - open |
-| Q2 Where tests live | root `tests/book/` | recommended | n - open |
-| Q3 The move | one move | recommended | n - open |
+| Q1 What a claim is | option (a) | recommended option | y - user: "Aceito todas (Recommended)" |
+| Q2 Where tests live | root `tests/book/` | recommended option | y - user: "Aceito todas (Recommended)" |
+| Q3 The move | one move | recommended option | y - user: "Aceito todas (Recommended)" |
 | Inventory | a table generated from the Book (block id, chapter, kind: run, refused, fragment) is checked in and a guard fails when a block has no row or a row no test | the guard pattern of `parity_corpus` and `suite_hygiene` (MD-31) | n - planner |
 | Fragments | a block that is not a whole model (a single expression, a signature) is tested inside the smallest model the Book builds around it, or marked `fragment` with the block that contains it | a fragment cannot run alone | n - planner |
 | Starts after `host-ii` | yes | the Book changes in `host-ii` (new keys, analyses, `Blinky`) | n - planner |
 
-**Open questions:** Q1, Q2 and Q3 above.
+**Open questions:** none - all resolved or logged above. Q1 to Q3 were answered on 2026-11-17 (top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: N/A because no input surface is added. Failure states: RE-02 (a refused example asserted with its diagnostic). Idempotency: N/A because tests only read. Auth and rate limits: N/A, local tool. Concurrency: RE-05 AC 3 (each scenario in its own directory, no shared output). Data lifecycle: RE-04 (the move). Observability: RE-01 AC 3 (the inventory guard names the uncovered block). External-dependency failure: RE-05 AC 2 (ngspice absent: the harness's skip line). State-transition integrity: N/A because tests hold no state.
 

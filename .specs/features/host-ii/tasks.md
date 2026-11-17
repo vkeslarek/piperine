@@ -9,8 +9,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/host-ii/design.md`
-**Status**: Draft
-**Approved**: [written when the user approves - YYYY-MM-DD - user: "their words"]
+**Status**: Approved
+**Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
 **Build**: `cargo build -p piperine-solver -p piperine-plan -p piperine-transpile -p piperine-api -p piperine -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
 **Run solverbounds**: `cargo test -p piperine-solver --test session_bounds`
 **Run solverhost**: `cargo test -p piperine-solver --test host_writes`
@@ -39,7 +39,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 Executors: every task is Sonnet (user rule). A different model verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 
-**Open questions gate tasks.** T23 assumes Q1 (a), T27 assumes Q2 (a), T11 and T20 assume Q3 (a). An answer other than the recommendation changes those tasks before Execute; with Q2 (b) one task (a run key `sets` and its flag) is added to Phase 6.
+**Questions answered** (user, 2026-11-17: "Aceito todas (Recommended)"): T23 is Q1 (a), T27 is Q2 (a), T11 and T20 are Q3 (a); `tnom` stays out.
 
 Rules every task follows:
 
@@ -1403,7 +1403,7 @@ Proof: run paritylib | test contract::tests::new_domains_carry_a_rationale ... o
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:**
 **Walked:** none
 
 ---

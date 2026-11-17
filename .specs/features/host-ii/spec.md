@@ -1,13 +1,19 @@
 # Host II Specification
 
-**Approved**: [written when the user approves - YYYY-MM-DD - user: "their words"]
+**Approved**: 2026-11-17 - user: "Topo" (lanes) and "Aceito todas (Recommended)" (Q1-Q3, tnom)
 
-## Open questions for the user
+## Questions answered (user, 2026-11-17)
 
-The user's decisions X3, X4, X7, X8 and X9 of 2026-11-17 are settled (`context.md`) and resolved in the criteria below. Three choices of command-line surface remain the user's. Each criterion that depends on one says so; the recommendation is what the criteria assume.
+The user's decisions X3, X4, X7, X8 and X9 are settled (`context.md`). The three surface questions and the `tnom` departure were answered "Aceito todas (Recommended)".
 
-| # | Question | Options | Recommendation |
-| - | -------- | ------- | -------------- |
+| # | Question | Decided |
+| - | -------- | ------- |
+| Q1 | How a user lists a design's metadata from the command line | (a) a new command `piperine info [<run>]` (HII-11) |
+| Q2 | Is a timed `set` also a run key | (a) library only, `Session::set_at` (HII-13) |
+| Q3 | Run keys of the small-signal analyses | (a) `input` and `output` for `tf` and `pz`; `wrt` for `sens`, whose outputs are `print` |
+| - | `tnom` | stays out until `simparam` (L47) lands |
+
+-------- | ------- | -------------- |
 | Q1 | How does a user list a design's metadata (params with type, default, `where` and structural flag; ports; streams) from the command line? | (a) a new command `piperine info [<run>]` that elaborates the run's top and prints three tables, exit 0, nothing simulated; (b) a flag `piperine check --list`; (c) the library only (`Session::metadata`), no command-line surface in this feature | **(a)**: metadata is a host operation of §21 of its own; `check` stays the pass or fail of a project, and the Book gets one short listing. HII-11 assumes (a); with (c) HII-11 is dropped and HII-10 stands |
 | Q2 | Is a timed `set` (a param changed at a time during a transient) also a run key with its flag, or only a library call like the drive (X8)? | (a) library only: `Session::set_at`, used by Rust host tests; (b) also a run key `sets = [{ at = 1e-3, path = "r1.r", value = 2e3 }]` with a repeatable flag `--set <path>=<value>@<time>` | **(a)**: it matches X8 ("benches in MSL stay the command-line path"); a bench already changes its own behavior over time, and the run table stays the observation and session policy. With (b) one task is added to Phase 6 and HII-13 gains a criterion |
 | Q3 | Which run keys name the small-signal analyses' input, output and params? | (a) `input` (the instance path of a voltage source) and `output` (a node path) for `tf` and `pz`; `wrt` (a list of param paths) for `sens`, whose outputs are the run's `print`; (b) ngspice's spellings: `src` and `out`, and `params` for `sens` (which collides with the existing `params` key of overrides) | **(a)**: plain words, no collision with `params`, and `print` already means "the outputs" |
@@ -40,7 +46,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 | Noise analysis (H2) | MSL has no noise source (`GAPS.md` L45): every density would be zero |
 | S-parameters, adjoint gradients, Monte Carlo, optimization (H2, H7, H8) | Need ports of their own (`sp.rs` still documents PHDL's `@rfport`, V6) or the gradient machinery of §23.3 |
 | A `drive` key or flag in the manifest | X8: the host drives a top only through `piperine-api` |
-| `tnom` as a run key | X7 lists it, but no MSL construct reads it: `simparam` is refused (`GAPS.md` L47), so the key would change nothing, silently. It lands with L47. See the Assumptions row |
+| `tnom` as a run key | No MSL construct reads it: `simparam` is refused (`GAPS.md` L47), so the key would change nothing, silently. It lands with L47 (user, 2026-11-17: "Aceito todas (Recommended)") |
 | The default `ttol` of `cross` as a session option | The solver has no session-level default; each `CROSS` watch carries its own `DEFAULT` pin (`piperine-analog-solver/src/device/watch.rs:49`) |
 | Ending the analysis at `finish` or `fatal` | Lane A (`msl-fixes`, S1). Host II reads the `sim` record whatever the analysis does after it |
 | A top with a continuous port (L39) | X8 leaves it: the host drives discrete ports only; L39 stays in `GAPS.md` |
@@ -58,11 +64,11 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 | X3 A `target` | `piperine test` prints each target's last margin at the end and never fails on it | "Só informa (Recommended)" | y - user |
 | X4 `finish` and `fatal` | a `sim` record with `failed = true` fails the run (exit 1) and `piperine test` prints `FAIL` with its `msg`; `finish` alone is not a failure | "Encerra e falha (Recommended)" | y - user |
 | X7 Option names | `reltol`, `abstol`, `vntol`, `trtol`, `temp`, `nodeset` as ngspice spells them, lowercase; `resolution`, `maxrounds`, `maxmicro` for the three options ngspice has no name for | the orchestrator's proposal, not objected to; ngspice has no time resolution and no bound on rounds or microsteps, so the names are the spec's own terms, lowercase, no separator, as ngspice writes `reltol` | y - user (names); n - planner (the last three) |
-| `tnom` | not a key in this feature | Nothing reads it (L47); a key that changes nothing is a silent one. Departs from the X7 list | n - planner, for the user to confirm |
+| `tnom` | not a key in this feature | Nothing reads it (L47); a key that changes nothing is a silent one | y - user: "Aceito todas (Recommended)" |
 | `temp` unit | degrees Celsius, as ngspice's `.options temp`; the solver gets `temp + 273.15` kelvin | the key is ngspice's, so its unit is too | n - planner |
-| Q1 Metadata surface | `piperine info [<run>]` | recommended option | n - open |
-| Q2 Timed `set` surface | library only | recommended option | n - open |
-| Q3 Key names | `input`, `output`, `wrt` | recommended option | n - open |
+| Q1 Metadata surface | `piperine info [<run>]` | recommended option | y - user: "Aceito todas (Recommended)" |
+| Q2 Timed `set` surface | library only | recommended option | y - user: "Aceito todas (Recommended)" |
+| Q3 Key names | `input`, `output`, `wrt` | recommended option | y - user: "Aceito todas (Recommended)" |
 | Which analyses join | `tf`, `pz`, `sens`, `pss` | each runs on the device ABI today (`tests/pss.rs`, `abi_sens.rs`, `pz_device_fault.rs` in `piperine-solver`) and ngspice has the same quantity: `.tf`, `.pz ... vol`, `.sens`, and a long `.tran` for a steady state (probed on ngspice-47, 2026-11-17) | n - planner |
 | PSS against ngspice | the last period of an ngspice transient long enough to settle, on ngspice's own print grid, plus the closed form of a square-driven RC | ngspice's `.pss` is built for autonomous oscillators: on a driven RC it moved the fundamental to 900 Hz (probe, 2026-11-17) | n - planner |
 | `tf` and `pz` input | a voltage source: an instance whose `analog` writes a potential contribution; a current input is refused naming the instance | MD-14 (TF is voltage-source only); the solver's PZ takes a branch the same way (`pz.rs:53`) | n - planner |
@@ -74,7 +80,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 | A `set` of a param that a parent derives | refused (`E0802`) naming the parent param to set | The child's value is the parent's function now; a write to it would be overwritten at the next change of the parent | n - planner |
 | The interpreter under X9 | keeps the folded constants; a `set` of a param that a child derives from is refused there (`E0802`) naming `--backend rust` | the interpreter is frozen at the M1 subset (R1); a refusal is loud, a stale child is not | n - planner |
 
-**Open questions:** Q1, Q2 and Q3 above, at the top of this file. Everything else is resolved or logged.
+**Open questions:** none - all resolved or logged above. Q1 to Q3 were answered on 2026-11-17 (top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: HII-01 AC 3 to 6, HII-04 AC 4 and 5, HII-07 AC 5, HII-12 AC 3 and 4, HII-13 AC 3 to 5. Failure and partial-failure states: HII-15 (a `fatal` run), HII-17 AC 3, HII-02 AC 6 and 7 (a bound reached). Idempotency and retry: N/A because a session runs once (`msl-cli` CLI-04); a second `run` is refused as today. Auth boundaries and rate limits: N/A because the tool is local. Concurrency and ordering: HII-13 AC 2 (a timed `set` applies after the step to its time is accepted, §23.1 rule 4), HII-12 AC 2. Data lifecycle: HII-16 AC 1 (the last record of a target is kept, §23.2 rule 2). Observability: HII-10, HII-11, HII-16. External-dependency failure: HII-21 AC 3 (ngspice absent, the harness's skip rule). State-transition integrity: HII-14 (no subscription after the run starts), HII-18 AC 4 (a refused `set` changes nothing).
 
@@ -205,7 +211,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 2. WHEN a host asks a session for its metadata THEN the system SHALL give the top's ports with their direction and type, in declaration order, and every record stream with its field names and types.
 3. The system SHALL give the metadata without running an analysis.
 
-**Acceptance Criteria** (HII-11, the command; assumes Q1 (a)):
+**Acceptance Criteria** (HII-11, the command; Q1 (a)):
 
 1. WHEN `piperine info [<run>]` runs THEN the system SHALL print the run's top and backend, then the tables `params`, `ports` and `streams` of HII-10, and exit 0, simulating nothing.
 2. IF the run cannot be elaborated THEN the system SHALL print the diagnostics as `piperine check` does and exit 1.
@@ -228,7 +234,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 4. IF a host drives with a value whose type is not the port's THEN the system SHALL refuse with `E0802` naming the port and the value.
 5. WHILE a discrete `in` port of the top is never driven the system SHALL give it the unknown value (§23.1 rule 9).
 
-**Acceptance Criteria** (HII-13, timed set; assumes Q2 (a)):
+**Acceptance Criteria** (HII-13, timed set; Q2 (a)):
 
 1. WHEN a host sets a param at `at = 0` before the run THEN the system SHALL apply it as a `set` before the analysis.
 2. WHEN a host sets a param at `at > 0` THEN the system SHALL apply it after the step to `at` is accepted (§23.1 rule 4), so that a node read by the param's behavior keeps its old value at `at` and changes after it.

@@ -1,7 +1,7 @@
 # Host II Design
 
 **Spec**: `.specs/features/host-ii/spec.md`
-**Status**: Draft
+**Status**: Approved
 
 ---
 
