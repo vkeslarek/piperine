@@ -193,7 +193,7 @@ impl Session {
                 let net = |path: &str| Session::discrete(circuit, path);
                 Table::operating_point(&self.probes, &result, &net)
             }
-            Analysis::Transient { stop, max_step, from, .. } => {
+            Analysis::Transient { stop, max_step, print_step, from } => {
                 // design "How an analysis reaches the solver": `max_step` is the first step and
                 // the largest; without it the first step is `stop / 1000` and the largest the
                 // solver's default; `from` is the first time kept (contract D10)
@@ -206,7 +206,11 @@ impl Session {
                 }
                 let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(delivery).build();
                 let result = solver.tran().and_then(|mut tran| tran.solve()).map_err(|error| Failure::Solver { analysis: "transient", error })?;
-                Table::transient(&self.probes, &result)
+                let table = Table::transient(&self.probes, &result)?;
+                match print_step {
+                    Some(step) => table.on_grid(*step, from.unwrap_or(0.0), *stop),
+                    None => Ok(table),
+                }
             }
             Analysis::Dc { from, to, step, .. } => {
                 let mut circuit = circuit;
