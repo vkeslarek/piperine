@@ -314,8 +314,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `reentry_last_step_attaches_state_to_the_last_step_only`, `the_default_reentry_keeps_every_step_state` and `a_middle_step_under_last_step_cannot_be_reentered` (edge case 4) pass under `**Run reentry**`
-- [ ] Gate check passes: Quick
+- [x] `reentry_last_step_attaches_state_to_the_last_step_only`, `the_default_reentry_keeps_every_step_state` and `a_middle_step_under_last_step_cannot_be_reentered` (edge case 4) pass under `**Run reentry**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

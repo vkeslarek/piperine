@@ -37,6 +37,17 @@ pub enum Keep {
     Last,
 }
 
+/// Which steps of a transient carry the state a later run re-enters from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Reentry {
+    /// Every recorded step (the default): any of them can be re-entered.
+    #[default]
+    EveryStep,
+    /// The last step only: the other steps carry none, and a run that records many steps holds
+    /// one state instead of one per step.
+    LastStep,
+}
+
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
     /// Simulation stop time
@@ -108,6 +119,10 @@ pub struct TransientAnalysisOptions {
     /// `probe_selection` (a transient of devices refuses them at setup): with one step kept,
     /// the recording they ask for has nothing to attach to. `record_from` has nothing to act on.
     pub keep: Keep,
+
+    /// Which steps carry a re-entry state (a transient of devices). `Reentry::LastStep` is for a
+    /// run that continues from its last step only: a re-entry from any other step fails.
+    pub reentry: Reentry,
 }
 
 impl TransientAnalysisOptions {
@@ -131,7 +146,19 @@ impl TransientAnalysisOptions {
             probe_selection: crate::core::introspect::ProbeSelection::new(),
             ttol: 1e-12,
             keep: Keep::Every,
+            reentry: Reentry::EveryStep,
         }
+    }
+
+    /// Set which steps carry a re-entry state.
+    pub fn with_reentry(mut self, reentry: Reentry) -> Self {
+        self.reentry = reentry;
+        self
+    }
+
+    /// Whether every recorded step is to carry a re-entry state.
+    fn reenters_every_step(&self) -> bool {
+        self.keep == Keep::Every && self.reentry == Reentry::EveryStep
     }
 
     /// Set which steps the result holds.
@@ -1033,7 +1060,7 @@ impl TransientSolver<'_> {
         let net_names: std::sync::Arc<[String]> = digital.plan().nets.iter().map(|n| n.name.clone()).collect();
         let mut side = DigitalSide::new(digital, bound, piperine_abi::raw::global::TRAN);
         let settled = crate::analyses::adapters::Settled::default();
-        if self.options.keep == Keep::Every {
+        if self.options.reenters_every_step() {
             side.record_settled(settled.clone());
         }
         // A host write made since the capture is written again at the re-entry.
@@ -1299,7 +1326,7 @@ impl TransientSolver<'_> {
 
     /// The re-entry state of this run's first recorded step, at the start.
     pub(crate) fn device_mark_start(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::engine::Checkpoint, nets: Vec<Vec<u8>>) {
-        if self.options.keep == Keep::Last || run.steps.len() != 1 {
+        if !self.options.reenters_every_step() || run.steps.len() != 1 {
             return;
         }
         let state = self.device_reentry_state(run, digital, nets);
@@ -1311,7 +1338,7 @@ impl TransientSolver<'_> {
     /// moved since): the discrete side's settled state, the assembly's and the
     /// step bound. A step already carrying one, or a time not recorded, is left.
     pub(crate) fn device_capture(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::engine::Checkpoint, nets: Vec<Vec<u8>>) {
-        let due = self.options.keep == Keep::Every && run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.current_time);
+        let due = self.options.reenters_every_step() && run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.current_time);
         if due {
             let state = self.device_reentry_state(run, digital, nets);
             run.steps.last_mut().expect("a recorded step").set_reentry(Some(state));

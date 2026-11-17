@@ -23,7 +23,7 @@ use abi_mixed::{count_of, counter, dac, timer};
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_solver::abi::{AnalogReference, InitialValue, ParamValue, Port};
 use piperine_solver::prelude::{
-    CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
+    CircuitBuilder, CircuitInstance, Context, Reentry, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
 
 /// `v(out) = 0` initial condition (discharged capacitor) so the runs show
@@ -413,4 +413,62 @@ fn a_reentry_with_another_stop_lands_on_the_old_stop() {
     assert_eq!(end.digital_named("code"), want.digital_named("code"));
     let (v, v_full) = (end.get_node(&node_id(&c)).expect("v(c)"), want.get_node(&node_id(&c)).expect("v(c)"));
     assert!((v - v_full).abs() <= 1e-9 + 1e-3 * v_full.abs(), "v(c) = {v} vs {v_full} of the run that never stopped");
+}
+
+// ---------------------------------------------------------------------------
+// `Reentry::LastStep` (HYG-13): the state a run re-enters from is kept on the last step only.
+// ---------------------------------------------------------------------------
+
+fn run_clocked_with(circuit: &mut CircuitInstance, reentry: Reentry) -> TransientAnalysisResult {
+    let opts = TransientAnalysisOptions::new(STOP, 1.0e-5).with_reentry(reentry);
+    circuit.transient(opts, Context::default()).expect("tran").solve().expect("solve")
+}
+
+/// The run `from` steps through the state `captured` carries, until `STOP`, or its failure.
+fn reenter_clocked(circuit: &mut CircuitInstance, captured: &TransientStep) -> piperine_solver::prelude::Result<TransientAnalysisResult> {
+    let opts = TransientAnalysisOptions::new(STOP + 1.0e-4, 1.0e-5).with_start(captured.time());
+    let mut solver = circuit.transient(opts, Context::default()).expect("tran");
+    solver.with_initial_state(captured);
+    solver.solve()
+}
+
+#[test]
+fn reentry_last_step_attaches_state_to_the_last_step_only() {
+    let (mut circuit, _c) = build_clocked_rc();
+    let every = run_clocked_with(&mut circuit, Reentry::EveryStep);
+    let last_only = run_clocked_with(&mut circuit, Reentry::LastStep);
+    assert!(last_only.len() > 20, "{} steps", last_only.len());
+    // The option changes the state kept, not the run.
+    assert_bit_for_bit(&every, &last_only, 0);
+    for i in 0..last_only.len() - 1 {
+        let step = last_only.get(i).expect("a recorded step").clone();
+        let err = reenter_clocked(&mut circuit, &step).err().unwrap_or_else(|| panic!("step {i} (t = {:e} s) carries a re-entry state under LastStep", step.time()));
+        assert!(err.to_string().contains("carries no state of the device instances"), "step {i}: {err}");
+    }
+    let last = last_only.last().expect("steps").clone();
+    let leg = reenter_clocked(&mut circuit, &last).expect("the last step is re-entered");
+    assert_eq!(leg.iter().next().expect("steps").time(), last.time(), "the re-entry starts at the last step");
+    assert_eq!(leg.last().expect("steps").time(), STOP + 1.0e-4);
+}
+
+#[test]
+fn the_default_reentry_keeps_every_step_state() {
+    assert_eq!(TransientAnalysisOptions::new(STOP, 1.0e-5).reentry, Reentry::EveryStep);
+    let (mut circuit, _c) = build_clocked_rc();
+    let result = run_clocked(&mut circuit, None);
+    for i in 0..result.len() {
+        let step = result.get(i).expect("a recorded step").clone();
+        reenter_clocked(&mut circuit, &step).unwrap_or_else(|e| panic!("step {i} (t = {:e} s) has no re-entry state by default: {e}", step.time()));
+    }
+}
+
+/// Edge case 4: a run asked to re-enter from a middle step of a `LastStep` run fails as a step no
+/// transient recorded state for does today.
+#[test]
+fn a_middle_step_under_last_step_cannot_be_reentered() {
+    let (mut circuit, _c) = build_clocked_rc();
+    let result = run_clocked_with(&mut circuit, Reentry::LastStep);
+    let middle = result.get(result.len() / 2).expect("a middle step").clone();
+    let err = reenter_clocked(&mut circuit, &middle).expect_err("a middle step holds no state under LastStep");
+    assert!(err.to_string().contains("carries no state of the device instances"), "{err}");
 }

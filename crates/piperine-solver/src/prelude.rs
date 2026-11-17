@@ -32,7 +32,7 @@ pub use crate::analyses::sensitivity::{
     ParamDerivative, ParamRequest, ParamStampCollector, SensitivityEngine,
 };
 pub use crate::analyses::sp::{SpOptions, SpPort, SpSolver};
-pub use crate::analyses::transient::{Keep, TransientAnalysisOptions};
+pub use crate::analyses::transient::{Keep, Reentry, TransientAnalysisOptions};
 pub use crate::analyses::Context;
 pub use piperine_analog_solver::tolerances::{Policy, Tolerances};
 pub use crate::analyses::Solver;
