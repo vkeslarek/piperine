@@ -623,7 +623,10 @@ impl<'a> ValuePrinter<'a> {
             Expr::Env(Env::Freq | Env::Analysis(_)) => Err(self.unsupported(e, "a read of `freq()` or `analysis(..)` (the printer writes it with T36)")),
             Expr::Env(env) => atom(self.read(Self::env_name(*env))),
             Expr::Fired(_) => Err(self.unsupported(e, "`fired` (the printer writes it with T28)")),
-            Expr::Unwrap { .. } => Err(self.unsupported(e, "`unwrap` of an `Option` (the printer writes it with T19)")),
+            Expr::Unwrap { is, value, message } => {
+                let message = message.as_ref().map_or_else(|| "None".to_string(), |m| format!("Some({m:?})"));
+                atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
+            }
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "a carrier read")),
@@ -789,21 +792,20 @@ impl<'a> ValuePrinter<'a> {
         })
     }
 
-    /// `receiver.method(args)`.
+    /// `receiver.method(args)`, each row by its MSL name (`Method::name`). A value that may be
+    /// unknown goes through `Flagged::map`, `zip` or `zip3`, so the result is unknown exactly when
+    /// an operand is (§3.3).
     fn method(&self, e: ExprId, method: Method, receiver: ExprId, args: &[ExprId]) -> Result<Piece, Error> {
-        let name = match method {
-            Method::Min => "min",
-            Method::Max => "max",
-            Method::Clamp => "clamp",
-            Method::Floor => "floor",
-            _ => return Err(self.unsupported(e, &format!("the method row {method:?} (the printer writes it with the catalogue, T20)"))),
-        };
+        let name = method.name();
         let operands: Vec<ExprId> = [receiver].into_iter().chain(args.iter().copied()).collect();
         let flagged = operands.iter().any(|o| Self::is_flagged(self.ir.expr_type(*o)));
+        // `powi` takes a Rust `i32`; the IR's `i32` is an `rt::Int<32>`.
+        let exponent = |text: &str| if method == Method::Powi { format!("{text}.get() as i32") } else { text.to_string() };
         if !flagged {
             let mut printed = Vec::with_capacity(args.len());
             for a in args {
-                printed.push(self.expr(*a)?);
+                let text = if method == Method::Powi { self.piece(*a)?.at(Prec::Atom) } else { self.expr(*a)? };
+                printed.push(exponent(&text));
             }
             return Ok(Piece::new(format!("{}.{name}({})", self.piece(receiver)?.at(Prec::Atom), printed.join(", ")), Prec::Atom));
         }
@@ -811,10 +813,10 @@ impl<'a> ValuePrinter<'a> {
         for o in &operands {
             printed.push(self.flagged(*o)?.at(Prec::Atom));
         }
-        let text = match (method, printed.as_slice()) {
-            (Method::Floor, [x]) => format!("{x}.map(|x_| x_.floor())"),
-            (Method::Min | Method::Max, [x, y]) => format!("{x}.zip({y}, |x_, y_| x_.{name}(y_))"),
-            (Method::Clamp, [x, lo, hi]) => format!("{x}.zip3({lo}, {hi}, |x_, lo_, hi_| x_.clamp(lo_, hi_))"),
+        let text = match printed.as_slice() {
+            [x] => format!("{x}.map(|x_| x_.{name}())"),
+            [x, y] => format!("{x}.zip({y}, |x_, y_| x_.{name}({}))", exponent("y_")),
+            [x, lo, hi] => format!("{x}.zip3({lo}, {hi}, |x_, lo_, hi_| x_.{name}(lo_, hi_))"),
             _ => return Err(self.unsupported(e, &format!("`{name}` with {} arguments", args.len()))),
         };
         Ok(Piece::new(text, Prec::Atom))
@@ -1210,6 +1212,88 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
             locals,
             body,
         })
+    }
+
+    #[test]
+    fn each_new_row_prints_plain_and_flagged() {
+        // CAT-01 to CAT-03 (Appendix H): each row of `f64` and of the integers prints as the
+        // method of its MSL name on the receiver, and, over a value that may be unknown, through
+        // `Flagged::map`, `zip` or `zip3`; `powi` takes its `i32` exponent as a Rust `i32`;
+        // `unwrap` and `expect` are `rt::Unwrap::of` of the flag and the payload.
+        let f = ValueType::F64;
+        let (u8_, i8_, i32_, u32_) = (Ty::u(8), Ty::i(8), Ty::i(32), Ty::u(32));
+        let flag = Ty::flagged;
+        // (row, receiver, other operands, result type, plain text, flagged text)
+        type Row = (Method, ValueType, Vec<ValueType>, ValueType, &'static str, &'static str);
+        let rows: Vec<Row> = vec![
+            (Method::Sin, f.clone(), vec![], f.clone(), "x.sin()", "x.map(|x_| x_.sin())"),
+            (Method::Cos, f.clone(), vec![], f.clone(), "x.cos()", "x.map(|x_| x_.cos())"),
+            (Method::Tan, f.clone(), vec![], f.clone(), "x.tan()", "x.map(|x_| x_.tan())"),
+            (Method::Asin, f.clone(), vec![], f.clone(), "x.asin()", "x.map(|x_| x_.asin())"),
+            (Method::Acos, f.clone(), vec![], f.clone(), "x.acos()", "x.map(|x_| x_.acos())"),
+            (Method::Atan, f.clone(), vec![], f.clone(), "x.atan()", "x.map(|x_| x_.atan())"),
+            (Method::Sinh, f.clone(), vec![], f.clone(), "x.sinh()", "x.map(|x_| x_.sinh())"),
+            (Method::Cosh, f.clone(), vec![], f.clone(), "x.cosh()", "x.map(|x_| x_.cosh())"),
+            (Method::Tanh, f.clone(), vec![], f.clone(), "x.tanh()", "x.map(|x_| x_.tanh())"),
+            (Method::Log10, f.clone(), vec![], f.clone(), "x.log10()", "x.map(|x_| x_.log10())"),
+            (Method::Log2, f.clone(), vec![], f.clone(), "x.log2()", "x.map(|x_| x_.log2())"),
+            (Method::Ceil, f.clone(), vec![], f.clone(), "x.ceil()", "x.map(|x_| x_.ceil())"),
+            (Method::Round, f.clone(), vec![], f.clone(), "x.round()", "x.map(|x_| x_.round())"),
+            (Method::Trunc, f.clone(), vec![], f.clone(), "x.trunc()", "x.map(|x_| x_.trunc())"),
+            (Method::Fract, f.clone(), vec![], f.clone(), "x.fract()", "x.map(|x_| x_.fract())"),
+            (Method::Signum, f.clone(), vec![], f.clone(), "x.signum()", "x.map(|x_| x_.signum())"),
+            (Method::IsNan, f.clone(), vec![], ValueType::Bool, "x.is_nan()", "x.map(|x_| x_.is_nan())"),
+            (Method::IsFinite, f.clone(), vec![], ValueType::Bool, "x.is_finite()", "x.map(|x_| x_.is_finite())"),
+            (Method::IsInfinite, f.clone(), vec![], ValueType::Bool, "x.is_infinite()", "x.map(|x_| x_.is_infinite())"),
+            (Method::Atan2, f.clone(), vec![f.clone()], f.clone(), "x.atan2(y)", "x.zip(y, |x_, y_| x_.atan2(y_))"),
+            (Method::Powf, f.clone(), vec![f.clone()], f.clone(), "x.powf(y)", "x.zip(y, |x_, y_| x_.powf(y_))"),
+            (Method::Hypot, f.clone(), vec![f.clone()], f.clone(), "x.hypot(y)", "x.zip(y, |x_, y_| x_.hypot(y_))"),
+            (Method::RemEuclid, f.clone(), vec![f.clone()], f.clone(), "x.rem_euclid(y)", "x.zip(y, |x_, y_| x_.rem_euclid(y_))"),
+            (Method::Powi, f.clone(), vec![i32_.clone()], f.clone(), "x.powi(y.get() as i32)", "x.zip(y, |x_, y_| x_.powi(y_.get() as i32))"),
+            (Method::IntAbs, i8_.clone(), vec![], i8_.clone(), "x.abs()", "x.map(|x_| x_.abs())"),
+            (Method::Signum, i8_.clone(), vec![], i8_.clone(), "x.signum()", "x.map(|x_| x_.signum())"),
+            (Method::Pow, u8_.clone(), vec![u32_.clone()], u8_.clone(), "x.pow(y)", "x.zip(y, |x_, y_| x_.pow(y_))"),
+            (Method::RemEuclid, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.rem_euclid(y)", "x.zip(y, |x_, y_| x_.rem_euclid(y_))"),
+            (Method::SaturatingAdd, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.saturating_add(y)", "x.zip(y, |x_, y_| x_.saturating_add(y_))"),
+            (Method::SaturatingSub, i8_.clone(), vec![i8_.clone()], i8_.clone(), "x.saturating_sub(y)", "x.zip(y, |x_, y_| x_.saturating_sub(y_))"),
+            (Method::SaturatingMul, u8_.clone(), vec![u8_.clone()], u8_.clone(), "x.saturating_mul(y)", "x.zip(y, |x_, y_| x_.saturating_mul(y_))"),
+            (Method::AddOverflows, u8_.clone(), vec![u8_.clone()], ValueType::Bool, "x.add_overflows(y)", "x.zip(y, |x_, y_| x_.add_overflows(y_))"),
+            (Method::SubOverflows, i8_.clone(), vec![i8_.clone()], ValueType::Bool, "x.sub_overflows(y)", "x.zip(y, |x_, y_| x_.sub_overflows(y_))"),
+            (Method::MulOverflows, u8_.clone(), vec![u8_.clone()], ValueType::Bool, "x.mul_overflows(y)", "x.zip(y, |x_, y_| x_.mul_overflows(y_))"),
+        ];
+        let mut b = IrBuilder::new();
+        for (k, (method, recv, others, result, ..)) in rows.iter().enumerate() {
+            for flagged in [false, true] {
+                let at = |t: &ValueType| if flagged { flag(t.clone()) } else { t.clone() };
+                let mut params = vec![("x", at(recv))];
+                params.extend(others.iter().enumerate().map(|(i, t)| (["y", "z"][i], at(t))));
+                defined(&mut b, &format!("row{k}_{}", u8::from(flagged)), &params, at(result), |x| {
+                    let receiver = x.local(0, at(recv));
+                    let args: Vec<ExprId> = others.iter().enumerate().map(|(i, t)| x.local(i as u32 + 1, at(t))).collect();
+                    x.method(*method, receiver, args, at(result))
+                });
+            }
+        }
+        // `unwrap` and `expect` of the pair: `rt::Unwrap::of(is, value, message)`.
+        defined(&mut b, "unwrapped", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
+            let (is, v) = (x.local(0, ValueType::Bool), x.local(1, Ty::u(8)));
+            let o = x.origin();
+            x.b.expr(Expr::Unwrap { is, value: v, message: None }, Ty::u(8), o)
+        });
+        defined(&mut b, "expected", &[("is", ValueType::Bool), ("v", flag(u8_.clone()))], flag(u8_.clone()), |x| {
+            let (is, v) = (x.local(0, ValueType::Bool), x.local(1, flag(Ty::u(8))));
+            let o = x.origin();
+            x.b.expr(Expr::Unwrap { is, value: v, message: Some("need the \"reading\"".to_string()) }, flag(Ty::u(8)), o)
+        });
+        let ir = Alone::finish(b);
+        for (k, (method, _, _, _, plain, flagged)) in rows.iter().enumerate() {
+            for (name, want) in [(format!("row{k}_0"), plain), (format!("row{k}_1"), flagged)] {
+                let text = function(&ir, &name);
+                assert!(text.lines().any(|l| l.trim() == *want), "{method:?}: `{want}` is the body of {name}:\n{text}");
+            }
+        }
+        assert!(function(&ir, "unwrapped").contains("rt::Unwrap::of(is, v, None)"), "{}", function(&ir, "unwrapped"));
+        assert!(function(&ir, "expected").contains("rt::Unwrap::of(is, v, Some(\"need the \\\"reading\\\"\"))"), "{}", function(&ir, "expected"));
     }
 
     #[test]
