@@ -1,5 +1,6 @@
-//! The project commands of the binary (feature `msl-cli`, phase 5; CLI-14 to CLI-18): `check`,
-//! `build`, `test`, `new` and `clean`, each run as the real `piperine` child process on
+//! The project commands of the binary (feature `msl-cli`, phases 5 and 6; CLI-14 to CLI-18 and
+//! CLI-24): `check`, `build`, `test`, `new`, `clean` and `fmt`, each run as the real `piperine`
+//! child process on
 //! projects on disk (`examples/rc` and the fixtures under `tests/projects/`). A project that a
 //! test changes is copied to a temporary directory first.
 //!
@@ -122,11 +123,13 @@ fn check_renders_every_diagnostic_and_exits_1() {
     let bench = dir.join("benches/step.msl");
     let source = std::fs::read_to_string(&bench).expect("the bench");
     std::fs::write(&bench, source.replace("level: f64 = 0.5;", "level: bool = 0.5;")).expect("a write");
+    // the line of `level` in the bench (line 5 since `examples/rc` is committed formatted, T49)
+    let line = source[..source.find("level: f64 = 0.5;").expect("the bench declares `level`")].lines().count();
     let out = piperine_in(&dir, &["check"]);
     let err = text(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{err}");
     assert_eq!(text(&out.stdout), "", "no ok line");
-    assert!(err.contains("P0002") && err.contains("step.msl:4"), "{err}");
+    assert!(err.contains("P0002") && err.contains(&format!("step.msl:{line}:")), "{err}");
     assert_eq!(err.matches("error: typeck failed").count(), 1, "one report for two runs:\n{err}");
     // the broken fixture's three runs print three reports, none dropped
     let out = piperine_in(&fixture("broken_benches"), &["check"]);
@@ -523,4 +526,132 @@ fn clean_touches_nothing_else() {
     let out = piperine_with(&dir, &cache, None, &["clean", "--cache"]);
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(files_under(tmp.path()), before);
+}
+
+// ---- fmt (CLI-24) ---------------------------------------------------------------------------
+// Every `fmt` here works on a copy of `examples/rc` (committed formatted, CLI-24 AC 6) in a
+// temporary directory; no test formats a file of the repository in place.
+
+/// `examples/rc/src/lib.msl` with its first member re-spaced and a trailing comment after it,
+/// and the text the formatter gives for it: the member in the printer's layout and the comment
+/// after it, one space before it (CLI-23 AC 5).
+fn unformatted_lib() -> (String, String) {
+    let lib = std::fs::read_to_string(rc().join("src/lib.msl")).expect("the rc library");
+    let member = "    r: f64 where r > 0.0;";
+    assert!(lib.contains(member), "examples/rc is formatted:\n{lib}");
+    (lib.replace(member, "  r:f64   where r>0.0;     // why r > 0"), lib.replace(member, "    r: f64 where r > 0.0; // why r > 0"))
+}
+
+/// `examples/rc/benches/step.msl` with its last member re-spaced and three blank lines and an
+/// own-line comment after it, and the formatted text: the member in the printer's layout, one
+/// blank line, and the comment at the body's indentation before the closing brace (CLI-23 AC 6
+/// and 8).
+fn unformatted_step() -> (String, String) {
+    let step = std::fs::read_to_string(rc().join("benches/step.msl")).expect("the rc bench");
+    let member = "    let mon = Monitor(vout);\n";
+    assert!(step.contains(member), "examples/rc is formatted:\n{step}");
+    (
+        step.replace(member, "        let mon = Monitor( vout );\n\n\n\n// the monitor is last\n"),
+        step.replace(member, "    let mon = Monitor(vout);\n\n    // the monitor is last\n"),
+    )
+}
+
+/// A copy of `examples/rc` with both sources unformatted and a third, formatted source;
+/// returns the temporary directory, the project and the two formatted texts expected.
+fn unformatted_rc() -> (tempfile::TempDir, PathBuf, String, String) {
+    let (tmp, dir) = copy_of(&rc(), "rc");
+    let ((lib, lib_formatted), (step, step_formatted)) = (unformatted_lib(), unformatted_step());
+    std::fs::write(dir.join("src/lib.msl"), lib).expect("a file");
+    std::fs::write(dir.join("benches/step.msl"), step).expect("a file");
+    std::fs::write(dir.join("src/parts.msl"), "/// A part with nothing in it.\npub module Part() {}\n").expect("a file");
+    (tmp, dir, lib_formatted, step_formatted)
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+#[test]
+fn fmt_rewrites_what_differs_and_names_it() {
+    // CLI-24 AC 1: every `.msl` under `src/` and `benches/` that differs is rewritten in place
+    // and named by its project-relative path; a formatted one is not touched
+    let (_tmp, dir, lib, step) = unformatted_rc();
+    let parts = dir.join("src/parts.msl");
+    let parts_time = std::fs::metadata(&parts).and_then(|m| m.modified()).expect("a modification time");
+    let out = piperine_in(&dir, &["fmt"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "formatted src/lib.msl\nformatted benches/step.msl\n");
+    assert_eq!(read(&dir.join("src/lib.msl")), lib);
+    assert_eq!(read(&dir.join("benches/step.msl")), step);
+    assert!(read(&dir.join("src/lib.msl")).contains("; // why r > 0\n"), "the comment is read back");
+    assert_eq!(std::fs::metadata(&parts).and_then(|m| m.modified()).expect("a modification time"), parts_time, "the formatted file is not rewritten");
+    // the temporary file of the rename does not stay behind
+    let names: Vec<String> = files_under(&dir).into_iter().map(|(p, _)| p).filter(|p| p.contains(".tmp")).collect();
+    assert!(names.is_empty(), "{names:?}");
+}
+
+#[test]
+fn fmt_takes_files() {
+    // CLI-24 AC 2: the files named, and only those
+    let (_tmp, dir, _, step) = unformatted_rc();
+    let lib_before = read(&dir.join("src/lib.msl"));
+    let out = piperine_in(&dir, &["fmt", "benches/step.msl"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "formatted benches/step.msl\n");
+    assert_eq!(read(&dir.join("benches/step.msl")), step);
+    assert_eq!(read(&dir.join("src/lib.msl")), lib_before);
+}
+
+#[test]
+fn fmt_check_writes_nothing_and_exits_1_on_a_difference() {
+    // CLI-24 AC 3: `would format <path>` for each file that differs, no byte changed, exit 1
+    let (_tmp, dir, _, _) = unformatted_rc();
+    let before = files_under(&dir);
+    let out = piperine_in(&dir, &["fmt", "--check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "would format src/lib.msl\nwould format benches/step.msl\n");
+    assert_eq!(files_under(&dir), before);
+}
+
+#[test]
+fn fmt_skips_a_file_that_does_not_parse_and_exits_1() {
+    // CLI-24 AC 4: the broken file's diagnostics on standard error, the file untouched, the
+    // others formatted, exit 1
+    let (_tmp, dir, lib, _) = unformatted_rc();
+    let broken = format!("{}module Broken( {{\n", read(&dir.join("benches/step.msl")));
+    std::fs::write(dir.join("benches/step.msl"), &broken).expect("a file");
+    let out = piperine_in(&dir, &["fmt"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert_eq!(read(&dir.join("benches/step.msl")), broken, "the broken file is byte-equal");
+    assert_eq!(read(&dir.join("src/lib.msl")), lib);
+    assert_eq!(text(&out.stdout), "formatted src/lib.msl\n");
+    let err = text(&out.stderr);
+    assert!(err.contains("benches/step.msl:") && err.contains("module Broken( {"), "the diagnostic with its file and excerpt:\n{err}");
+    assert!(err.contains("error: benches/step.msl is left as it is"), "{err}");
+}
+
+#[test]
+fn fmt_on_formatted_files_is_silent() {
+    // CLI-24 AC 5: a second `fmt` finds every file formatted: nothing printed, exit 0
+    let (_tmp, dir, _, _) = unformatted_rc();
+    assert_eq!(piperine_in(&dir, &["fmt"]).status.code(), Some(0));
+    let before = files_under(&dir);
+    let out = piperine_in(&dir, &["fmt"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!((text(&out.stdout), text(&out.stderr)), (String::new(), String::new()));
+    assert_eq!(files_under(&dir), before);
+}
+
+#[test]
+fn fmt_check_passes_on_the_rc_example_and_on_a_new_project() {
+    // CLI-24 AC 6: `examples/rc` (a byte-equal copy) and a project `new` created are formatted
+    let (tmp, dir) = copy_of(&rc(), "rc");
+    assert_eq!(files_under(&dir), files_under(&rc()));
+    let out = piperine_in(&dir, &["fmt", "--check"]);
+    assert_eq!(out.status.code(), Some(0), "{}{}", text(&out.stdout), text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+    assert_eq!(piperine_in(tmp.path(), &["new", "demo"]).status.code(), Some(0));
+    let out = piperine_in(&tmp.path().join("demo"), &["fmt", "--check"]);
+    assert_eq!(out.status.code(), Some(0), "{}{}", text(&out.stdout), text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
 }

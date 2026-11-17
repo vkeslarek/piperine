@@ -1,7 +1,10 @@
 use rc::{Capacitor, Resistor, Vsource};
 
 /// Writes a record when `a` rises through `level`.
-module Monitor(a: Electrical) { level: f64 = 0.5; }
+module Monitor(a: Electrical) {
+    level: f64 = 0.5;
+}
+
 digital for Monitor {
     on cross(v(a) - level) {
         emit!("trip", v = v(a));

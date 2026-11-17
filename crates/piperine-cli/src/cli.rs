@@ -15,6 +15,7 @@ use piperine_api::Overrides;
 use crate::commands::build::BuildCommand;
 use crate::commands::check::CheckCommand;
 use crate::commands::clean::CleanCommand;
+use crate::commands::fmt::FmtCommand;
 use crate::commands::new::NewCommand;
 use crate::commands::run::RunCommand;
 use crate::commands::test::TestCommand;
@@ -281,8 +282,7 @@ impl Cli {
         })
     }
 
-    /// Runs `invocation`, writing data to `out` and diagnostics to `err`. A command whose task
-    /// has not landed says so and fails.
+    /// Runs `invocation`, writing data to `out` and diagnostics to `err`.
     pub fn execute(invocation: &Invocation, out: &Out, err: &mut dyn Write) -> Exit {
         match invocation {
             Invocation::Build { project, runs, verbose } => BuildCommand { project: project.clone(), runs: runs.clone(), verbose: *verbose }.execute(out, err),
@@ -291,11 +291,7 @@ impl Cli {
             Invocation::New { name } => NewCommand { name: name.clone() }.execute(out, err),
             Invocation::Test { project, runs } => TestCommand { project: project.clone(), runs: runs.clone() }.execute(out, err),
             Invocation::Run { project, target, overrides } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone() }.execute(out, err),
-            other => {
-                // a closed standard error leaves nothing to tell; the command fails either way
-                let _ = writeln!(err, "{}: not built yet", other.name());
-                Exit::Failed
-            }
+            Invocation::Fmt { project, files, check } => FmtCommand { project: project.clone(), files: files.clone(), check: *check }.execute(out, err),
         }
     }
 }
@@ -304,6 +300,30 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_command_is_built() {
+        // CLI-01 AC 5: each of the seven commands runs its own code. Given a project directory
+        // that does not exist (and `new` a name the manifest rule refuses, so nothing is
+        // written), each fails with its own error, exit 1, and none says it is not built.
+        let nowhere = std::env::temp_dir().join(format!("piperine-cli-no-such-project-{}", std::process::id()));
+        assert!(!nowhere.exists());
+        let nowhere = nowhere.to_string_lossy().into_owned();
+        let names: Vec<&str> = COMMANDS.iter().map(|c| c.name).collect();
+        assert_eq!(names, ["check", "build", "run", "test", "new", "clean", "fmt"]);
+        for name in names {
+            let args: Vec<&str> = if name == "new" { vec!["piperine", name, "a/b"] } else { vec!["piperine", name, "--project", &nowhere] };
+            let invocation = Cli::parse(&args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            assert_eq!(invocation.name(), name);
+            let out: Out = Rc::new(RefCell::new(Vec::<u8>::new()));
+            let mut err = Vec::new();
+            let exit = Cli::execute(&invocation, &out, &mut err);
+            let err = String::from_utf8_lossy(&err);
+            assert_eq!(exit, Exit::Failed, "{name}: {err}");
+            assert!(err.starts_with("error") || err.contains("\nerror: "), "{name} reports its own error:\n{err}");
+            assert!(!err.contains("not built yet"), "{name}: {err}");
+        }
+    }
 
     #[test]
     fn every_run_key_has_its_flag() {
