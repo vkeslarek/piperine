@@ -251,6 +251,7 @@ impl Cli {
             records: path("records"),
             plot: path("plot"),
             all_checks: m.get_flag("all-checks").then_some(true),
+            ..Overrides::default()
         }
     }
 
@@ -369,6 +370,7 @@ mod tests {
             records: Some("r.jsonl".into()),
             plot: Some("p.svg".into()),
             all_checks: Some(true),
+            ..Overrides::default()
         };
         assert_eq!(overrides, want);
         // a flag not given leaves its field alone, and a bad value is a usage error

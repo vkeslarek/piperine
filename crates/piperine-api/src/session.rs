@@ -15,7 +15,9 @@ use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
-use piperine_solver::prelude::{AcSweepAnalysisOptions, CircuitInstance, Context, Keep, ParamValue, Solver, TransientAnalysisOptions};
+use piperine_plan::Netlist;
+use piperine_solver::abi::InitialValue;
+use piperine_solver::prelude::{AcSweepAnalysisOptions, AnalogVariable, CircuitInstance, Context, Keep, NodeIdentifier, ParamValue, Solver, TransientAnalysisOptions};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
@@ -26,7 +28,7 @@ use crate::record::{Delivery, RecordSink, Streams};
 use crate::recorder::{Recorder, Tap};
 use crate::table::Table;
 use crate::project::Project;
-use crate::request::{Analysis, Grid, RunSpec};
+use crate::request::{Analysis, Grid, Options, RunSpec};
 
 /// How the design of a session was built.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +58,10 @@ pub struct Session {
     /// The table the run gave, kept when the request has `plot`: the plot draws the rows the
     /// run prints (CLI-22 AC 7 as amended, `long-run` LR-17).
     plotted: Option<Table>,
+    /// The context every analysis of the run takes, built from the run's options (HII-02).
+    context: Context,
+    /// The `nodeset` entries, each node by what the solver knows it by, with the entry as written.
+    nodeset: Vec<(NodeIdentifier, f64, String)>,
 }
 
 /// A param of an instance of the design, by the instance's full path.
@@ -115,18 +121,29 @@ impl Session {
         };
         // every param path resolves before anything compiles: a typo costs no `rustc`
         let params = spec.params.iter().map(|(entry, value)| Ok((ParamPath::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
+        let context = Session::context_of(&spec.options);
+        let nodeset = Session::nodeset_of(&ir, spec)?;
+        let netlist = Session::netlist_of(&ir, &spec.options);
         let (mut circuit, compiled) = match backend {
             Backend::Interp => {
                 let interpreter = Interpreter::new(ir.clone()).map_err(|rejected| {
                     let entries: Vec<String> = rejected.entries.iter().map(|e| format!("  {}: {}", e.item, e.what)).collect();
                     Failure::Backend(format!("the interpreter cannot run this design (use --backend rust):\n{}", entries.join("\n")))
                 })?;
-                (interpreter.circuit().map_err(|e| Failure::Backend(format!("the interpreter cannot bind the design: {e}")))?, None)
+                let circuit = match &netlist {
+                    Some(netlist) => netlist.circuit(&interpreter),
+                    None => interpreter.circuit(),
+                };
+                (circuit.map_err(|e| Failure::Backend(format!("the interpreter cannot bind the design: {e}")))?, None)
             }
             Backend::Rust => {
                 let transpiler = Transpiler::new(ir.clone()).map_err(|e| Failure::Backend(e.to_string()))?;
                 let compiled = transpiler.compile_announced(settings, &mut || compiling(&top)).map_err(|e| Failure::Backend(e.to_string()))?;
-                let circuit = compiled.circuit().map_err(|e| Failure::Backend(format!("the compiled design cannot bind: {e}")))?;
+                let circuit = match &netlist {
+                    Some(netlist) => netlist.circuit(&compiled),
+                    None => compiled.circuit(),
+                };
+                let circuit = circuit.map_err(|e| Failure::Backend(format!("the compiled design cannot bind: {e}")))?;
                 (circuit, Some(compiled))
             }
         };
@@ -136,7 +153,91 @@ impl Session {
             let refused = |error| Failure::Host { code: "E0802", message: format!("`{entry}` refuses the value {value}: {error}") };
             circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset })
+    }
+
+    /// The context a run's options give: the solver's own default with each given option in its
+    /// place; `temp` is Celsius in the run and Kelvin in the solver (HII-02 AC 2 and 3).
+    fn context_of(options: &Options) -> Context {
+        let mut context = Context::default();
+        let tolerances = &mut context.tolerances;
+        for (given, slot) in [
+            (options.reltol, &mut tolerances.reltol),
+            (options.abstol, &mut tolerances.abstol),
+            (options.vntol, &mut tolerances.vntol),
+            (options.trtol, &mut tolerances.trtol),
+        ] {
+            if let Some(value) = given {
+                *slot = value;
+            }
+        }
+        if let Some(celsius) = options.temp {
+            tolerances.temperature = celsius + 273.15;
+        }
+        if let Some(rounds) = options.maxrounds {
+            context.max_rounds = rounds;
+        }
+        context
+    }
+
+    /// The netlist that binds the design when the run gives a `resolution` or a `maxmicro`; `None`
+    /// leaves the backend's own `circuit()`, which is what a run with neither has always used.
+    fn netlist_of<'a>(ir: &'a Ir, options: &Options) -> Option<Netlist<'a>> {
+        if options.resolution.is_none() && options.maxmicro.is_none() {
+            return None;
+        }
+        let mut netlist = Netlist::new(ir);
+        if let Some(seconds) = options.resolution {
+            netlist = netlist.with_resolution(seconds);
+        }
+        if let Some(bound) = options.maxmicro {
+            netlist = netlist.with_microsteps(bound as usize);
+        }
+        Some(netlist)
+    }
+
+    /// The `nodeset` entries of `spec`, each resolved to a node of `ir` (`E0801` for one that
+    /// names none). A nodeset seeds an operating point the session takes itself, so the analyses
+    /// that take theirs inside the solver (`ac`, `transient`) refuse it (`P0010`) rather than
+    /// ignore it.
+    fn nodeset_of(ir: &Ir, spec: &RunSpec) -> Result<Vec<(NodeIdentifier, f64, String)>, Failure> {
+        let top = ir.top().path();
+        let seeds = spec
+            .options
+            .nodeset
+            .iter()
+            .map(|(entry, value)| {
+                let node = [entry.clone(), format!("{top}.{entry}")].iter().find_map(|path| ir.node_at(path));
+                let node = node.ok_or_else(|| Failure::Host { code: "E0801", message: format!("the nodeset entry `{entry}` names no node of the design") })?;
+                Ok((NodeIdentifier::Anonymous(node.id().index()), *value, entry.clone()))
+            })
+            .collect::<Result<Vec<_>, Failure>>()?;
+        if !seeds.is_empty() && matches!(spec.analysis, Analysis::Ac { .. } | Analysis::Transient { .. }) {
+            let message = format!(
+                "run `{}`: `nodeset` seeds an operating point, and a `{}` run takes its own inside the solver, where the host cannot seed it; use `op` or `dc`",
+                spec.name,
+                spec.analysis.name()
+            );
+            return Err(Failure::Host { code: "P0010", message });
+        }
+        Ok(seeds)
+    }
+
+    /// The nodeset as the first Newton iterate of `circuit`'s operating point.
+    fn seeds(&self, circuit: &CircuitInstance) -> Result<Vec<InitialValue<piperine_solver::prelude::AnalogReference, f64>>, Failure> {
+        self.nodeset
+            .iter()
+            .map(|(id, value, entry)| {
+                let reference = circuit.netlist().reference_for(&AnalogVariable::Node(id.clone()));
+                let reference = reference.ok_or_else(|| Failure::Backend(format!("the nodeset entry `{entry}` is no unknown of the circuit")))?;
+                Ok(InitialValue { reference: reference.clone(), value: *value })
+            })
+            .collect()
+    }
+
+    /// The context every analysis of this session takes.
+    pub fn context(&self) -> &Context {
+        &self.context
     }
 
     /// The stages before a backend: the design of `spec` read, its top chosen, type-checked and
@@ -222,8 +323,15 @@ impl Session {
     fn analysis(&mut self, circuit: CircuitInstance, mut delivery: Box<Delivery>) -> Result<Table, Failure> {
         match &self.spec.analysis {
             Analysis::Op => {
-                let mut solver = Solver::new(circuit).with_sink(delivery).build();
-                let result = solver.dc().and_then(|mut dc| dc.solve()).map_err(|error| Failure::Solver { analysis: "op", error })?;
+                let seeds = self.seeds(&circuit)?;
+                let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
+                let result = solver
+                    .dc()
+                    .and_then(|mut dc| {
+                        dc.apply_initial_conditions(seeds);
+                        dc.solve()
+                    })
+                    .map_err(|error| Failure::Solver { analysis: "op", error })?;
                 let circuit = solver.circuit();
                 let net = |path: &str| Session::discrete(circuit, path);
                 Table::operating_point(&self.probes, &result, &net)
@@ -241,6 +349,7 @@ impl Session {
                 delivery.recorder = Some(recorder.clone());
                 let options = Session::transient_options(*stop, *max_step);
                 let mut solver = Solver::new(circuit)
+                    .with_context(self.context.clone())
                     .with_tran_opts(options)
                     .with_sink(delivery)
                     .with_step_observer(Box::new(Tap(recorder.clone())))
@@ -267,6 +376,7 @@ impl Session {
             }
             Analysis::Dc { from, to, step, .. } => {
                 let mut circuit = circuit;
+                let seeds = self.seeds(&circuit)?;
                 let swept = self.swept.as_ref().ok_or_else(|| Failure::Backend("a dc run resolved no param to sweep".into()))?;
                 // `from + k*step` for every k while the point is not past `to`; the tolerance on
                 // k absorbs the rounding of `(to - from) / step` (a whole number of steps that
@@ -277,7 +387,13 @@ impl Session {
                     let value = from + k as f64 * step;
                     let refused = |error| Failure::Host { code: "E0802", message: format!("`{}` refuses {value}: {error}", swept.label()) };
                     circuit.set(&swept.instance, &swept.param, ParamValue::Real(value)).map_err(refused)?;
-                    let result = circuit.dc(Context::default()).and_then(|mut dc| dc.solve()).map_err(|error| Failure::Solver { analysis: "dc", error })?;
+                    let result = circuit
+                        .dc(self.context.clone())
+                        .and_then(|mut dc| {
+                            dc.apply_initial_conditions(seeds.clone());
+                            dc.solve()
+                        })
+                        .map_err(|error| Failure::Solver { analysis: "dc", error })?;
                     let net = |path: &str| Session::discrete(&circuit, path);
                     points.push((value, Table::point(&self.probes, &result, &net)?));
                 }
@@ -290,7 +406,7 @@ impl Session {
                     steps: grid.steps(*from, *to),
                     logarithmic: matches!(grid, Grid::PerDecade(_)),
                 };
-                let mut solver = Solver::new(circuit).with_sink(delivery).build();
+                let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
                 let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::Solver { analysis: "ac", error })?;
                 Table::frequency(&self.probes, &result)
             }
