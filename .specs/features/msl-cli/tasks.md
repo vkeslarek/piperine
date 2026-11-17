@@ -1844,7 +1844,7 @@ Proof: run apilib | test plot::tests::a_discrete_signal_gets_a_lane_and_no_serie
 **C169** - An `ac` table gives two panels: the first plots `20*log10(mag)`, the second the phase; with `per_decade` the x axis is logarithmic and 1e5 lies midway between 1e3 and 1e7. (CLI-22, AC 6; T42)
 Proof: run apilib | test plot::tests::an_ac_plot_has_a_db_panel_over_a_degree_panel_and_a_log_axis ... ok
 
-**C170** - With `print_step` giving an 11-row table, the series' path has more than 11 points and as many as the run without `print_step`. (CLI-22, AC 7; T43)
+**C170** - With `print_step` giving a 6-row table (`examples/rc`'s `step`), the series' path has more than 20 points and exactly as many as the table of the same run without `print_step` has rows. (CLI-22, AC 7; T43)
 Proof: run options | test a_plot_draws_every_accepted_step_whatever_the_print_step ... ok
 
 **C171** - `Plot::of` on an `op` run is `P0010` whose message says an operating point has nothing to plot. (CLI-22, AC 8; T42)

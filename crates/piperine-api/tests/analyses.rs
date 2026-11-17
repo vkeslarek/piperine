@@ -211,7 +211,11 @@ fn an_ac_sweep_has_mag_and_phase_in_degrees() {
         assert!((real(&table.rows[0][0]) - 1e3).abs() <= 1e-6 && (real(&table.rows[40][0]) - 1e7).abs() <= 1.0, "{backend}");
         let (mag, phase) = (real(&table.rows[0][1]), real(&table.rows[0][2]));
         assert!((mag - 1.0).abs() <= 1e-3, "{backend}: |out| at 1 kHz = {mag}");
-        assert!(phase < 0.0 && phase > -2.0, "{backend}: phase {phase} degrees at 1 kHz");
+        // the RC of ac_rc.msl (1 kOhm, 1.5915494309189535 nF): phase -atan(2 pi f R C), in degrees,
+        // -0.5729 at 1 kHz; the spec's tolerance, 1e-2 degrees
+        let expected = -(2.0 * std::f64::consts::PI * real(&table.rows[0][0]) * 1000.0 * 1.5915494309189535e-9).atan().to_degrees();
+        assert!((expected + 0.5729).abs() <= 1e-4, "the analytic phase at 1 kHz is {expected}");
+        assert!((phase - expected).abs() <= 1e-2, "{backend}: phase {phase} degrees at 1 kHz, expected {expected}");
         assert!(real(&table.rows[40][2]) < -85.0, "{backend}: phase at 10 MHz");
         // the source is the 1 V stimulus: magnitude 1, phase 0
         assert!((real(&table.rows[10][3]) - 1.0).abs() <= 1e-9 && real(&table.rows[10][4]).abs() <= 1e-9, "{backend}");

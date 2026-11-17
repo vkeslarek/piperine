@@ -273,6 +273,14 @@ fn a_plot_draws_every_accepted_step_whatever_the_print_step() {
     let svg = std::fs::read_to_string(project.path().join("step.svg")).expect("step.svg");
     let points = series_points(&svg, "Step.vout").len();
     assert!(points > 20, "{points} points for {rows} printed rows");
+    // as many points as the run without `print_step` has rows: one per accepted step
+    let manifest = project.path().join("Piperine.toml");
+    let text = std::fs::read_to_string(&manifest).expect("the manifest");
+    assert!(text.contains("print_step = 1e-6\n"), "{text}");
+    std::fs::write(&manifest, text.replace("print_step = 1e-6\n", "")).expect("the manifest");
+    let all = stdout_of(&piperine_in(project.path(), &["run", "step"]));
+    let accepted = all.lines().skip_while(|l| !l.starts_with("time")).count() - 1;
+    assert_eq!(points, accepted, "the plot draws every accepted step:\n{all}");
 }
 
 #[test]
