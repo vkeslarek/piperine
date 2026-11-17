@@ -335,8 +335,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_run_error_displays_its_code_time_and_names` and `a_run_error_without_names_shows_its_unknowns` pass under `**Run analoglib**`
-- [ ] Gate check passes: Quick
+- [x] `a_run_error_displays_its_code_time_and_names` and `a_run_error_without_names_shows_its_unknowns` pass under `**Run analoglib**`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick
