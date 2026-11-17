@@ -14,6 +14,7 @@ use crate::cli::Out;
 use crate::exit::Exit;
 use crate::render::csv::CsvTable;
 use crate::render::diagnostic::Report;
+use crate::render::json::JsonRecord;
 use crate::render::record::RecordLine;
 use crate::render::table::TextTable;
 
@@ -51,10 +52,18 @@ impl From<io::Error> for Stop {
     }
 }
 
-/// The records of a run, written to standard output the moment the solver delivers them. A
-/// write that fails is kept, for the command to report once the solve ends.
+/// Where the records of a run go the moment the solver delivers them.
+enum Destination {
+    /// Standard output, as text lines.
+    Terminal(Out),
+    /// A file, as JSON Lines; `path` is the name the user gave it.
+    File { file: io::BufWriter<std::fs::File>, path: PathBuf },
+}
+
+/// The records of a run, written as the solver delivers them. A write that fails is kept, for
+/// the command to report once the solve ends.
 struct LiveRecords {
-    out: Out,
+    to: Destination,
     closed: Option<io::Error>,
 }
 
@@ -63,9 +72,35 @@ impl RecordSink for LiveRecords {
         if self.closed.is_some() {
             return;
         }
-        let mut out = self.out.borrow_mut();
-        if let Err(error) = RecordLine::write(record, &mut *out).and_then(|()| out.flush()) {
+        let written = match &mut self.to {
+            Destination::Terminal(out) => {
+                let mut out = out.borrow_mut();
+                RecordLine::write(record, &mut *out).and_then(|()| out.flush())
+            }
+            Destination::File { file, .. } => JsonRecord::write(record, file),
+        };
+        if let Err(error) = written {
             self.closed = Some(error);
+        }
+    }
+}
+
+impl LiveRecords {
+    /// Writes out what a file has buffered; the error of a failed write, whenever it happened,
+    /// is the command's to report.
+    fn finish(&mut self) -> Result<(), Stop> {
+        if let Destination::File { file, path } = &mut self.to {
+            if let Err(error) = file.flush() {
+                self.closed.get_or_insert(error);
+            }
+            if let Some(error) = self.closed.take() {
+                return Err(Stop::Failed(Failure::Io { path: path.clone(), error }));
+            }
+            return Ok(());
+        }
+        match self.closed.take() {
+            Some(error) => Err(error.into()),
+            None => Ok(()),
         }
     }
 }
@@ -109,18 +144,23 @@ impl RunCommand {
             // the library compiles inside `open`, so the line is written once it has
             let _ = writeln!(err, "compiled run `{}` (top {}) with rustc, and cached it", spec.name, session.top())?;
         }
+        let base = self.base(&project)?;
+        let to = match &spec.records {
+            Some(path) => {
+                let file = std::fs::File::create(base.join(path)).map_err(|error| Failure::Io { path: path.clone(), error })?;
+                Destination::File { file: io::BufWriter::new(file), path: path.clone() }
+            }
+            None => Destination::Terminal(out.clone()),
+        };
         {
             let mut out = out.borrow_mut();
             writeln!(out, "run {}: {}, top {}, backend {}", spec.name, spec.analysis.name(), session.top(), session.backend().name())?;
             out.flush()?;
         }
-        let live = Rc::new(RefCell::new(LiveRecords { out: out.clone(), closed: None }));
+        let live = Rc::new(RefCell::new(LiveRecords { to, closed: None }));
         let table = session.run(live.clone());
-        if let Some(error) = live.borrow_mut().closed.take() {
-            return Err(error.into());
-        }
+        live.borrow_mut().finish()?;
         let table = table?;
-        let base = self.base(&project)?;
         let mut out = out.borrow_mut();
         writeln!(out)?;
         match &spec.csv {

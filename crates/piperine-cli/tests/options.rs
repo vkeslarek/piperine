@@ -150,3 +150,48 @@ fn the_stream_flag_keeps_only_that_stream() {
     assert!(text(&bad.stderr).contains("E0801") && text(&bad.stderr).contains("nothing"), "{}", text(&bad.stderr));
     assert_eq!(text(&bad.stdout), "");
 }
+
+#[test]
+fn records_go_to_the_file_as_json_lines_and_not_to_stdout() {
+    // CLI-12 AC 3 and 5: every kept record is one JSON object per line with the keys time,
+    // instance, stream and fields, and no record line reaches standard output. `step` writes
+    // `checks` (kind, name, pass) and `trip` (v = 0.5) at the half-way crossing
+    let project = rc_copy();
+    let out = stdout_of(&piperine_in(project.path(), &["run", "step", "--records", "rec.jsonl"]));
+    assert!(!out.lines().any(|l| l.starts_with('@')), "{out}");
+    let file = std::fs::read_to_string(project.path().join("rec.jsonl")).expect("rec.jsonl");
+    let lines: Vec<&str> = file.lines().collect();
+    assert_eq!(lines.len(), 2, "{file}");
+    let trip = lines.iter().find(|l| l.contains("\"stream\":\"trip\"")).unwrap_or_else(|| panic!("no trip in {file}"));
+    assert!(trip.starts_with("{\"time\":") && trip.contains("\"instance\":\"Step.mon\"") && trip.contains("\"fields\":{\"v\":0.5"), "{trip}");
+    // `v` is the crossing's value, 0.5 to the solver's step: a full-precision JSON number
+    let v: f64 = trip.split("\"v\":").nth(1).and_then(|t| t.strip_suffix("}}")).expect("v").parse().expect("a number");
+    assert!((v - 0.5).abs() <= 1e-3, "{v}");
+    // the time reads back as the f64 the solver delivered: 6.931075e-7 to the table's digits
+    let time: f64 = trip["{\"time\":".len()..].split(',').next().expect("time").parse().expect("a number");
+    assert!((time - 6.931075e-7).abs() <= 1e-12, "{time}");
+    let check = lines.iter().find(|l| l.contains("\"stream\":\"checks\"")).unwrap_or_else(|| panic!("no checks in {file}"));
+    assert!(check.ends_with("\"fields\":{\"kind\":\"require\",\"name\":\"crossed_upward\",\"pass\":true}}"), "{check}");
+}
+
+#[test]
+fn an_existing_records_file_is_replaced() {
+    // CLI-12 AC 4
+    let project = rc_copy();
+    std::fs::write(project.path().join("rec.jsonl"), "old\nold\nold\nold\n").expect("write");
+    stdout_of(&piperine_in(project.path(), &["run", "step", "--records", "rec.jsonl"]));
+    let file = std::fs::read_to_string(project.path().join("rec.jsonl")).expect("rec.jsonl");
+    assert!(!file.contains("old"), "{file}");
+    assert_eq!(file.lines().count(), 2, "{file}");
+}
+
+#[test]
+fn csv_and_records_leave_the_header_and_the_wrote_line() {
+    // spec edge case: `--csv` with `--records` prints the header line and the `wrote` line only
+    // (the empty line that always separates the two is no content)
+    let project = rc_copy();
+    let out = stdout_of(&piperine_in(project.path(), &["run", "step", "--csv", "o.csv", "--records", "r.jsonl"]));
+    let lines: Vec<&str> = out.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines, ["run step: transient, top Step, backend rust", "wrote o.csv (6 rows)"], "{out}");
+    assert!(project.path().join("o.csv").is_file() && project.path().join("r.jsonl").is_file());
+}

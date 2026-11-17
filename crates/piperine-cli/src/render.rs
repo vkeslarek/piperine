@@ -2,6 +2,7 @@
 //! the stream it is given; none decides what is shown (that is `piperine-api`'s).
 //!
 //! - [`csv`]: a result table as CSV.
+//! - [`json`]: an `emit!` record as one JSON object.
 //! - [`number`]: the one place a cell becomes text.
 //! - [`table`]: a result table as aligned text.
 //! - [`record`]: an `emit!` record as one line.
@@ -9,6 +10,7 @@
 
 pub mod csv;
 pub mod diagnostic;
+pub mod json;
 pub mod number;
 pub mod record;
 pub mod table;
