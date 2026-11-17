@@ -1403,7 +1403,7 @@ Proof: run paritylib | test contract::tests::new_domains_carry_a_rationale ... o
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:**
+**Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17.
 **Walked:** none
 
 ---
