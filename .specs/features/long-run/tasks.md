@@ -559,10 +559,10 @@ T23
 
 **Done when**:
 
-- [ ] The target (with its `//!` header) holds, with exactly these names: `the_whole_start_is_60001_rows_on_a_10_ns_grid` (times `k * 1e-8`, `k` from 0 to 60 000), `every_check_of_the_whole_start_passes` (at least one `checks` record, none failed), `the_whole_start_stays_under_one_gibibyte`, `the_wall_time_and_the_peak_are_reported` (the line printed on standard error holds both numbers; no time is asserted)
-- [ ] The run happens once for the target
-- [ ] Gate check passes: Quick (`Run bucklong`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] The target (with its `//!` header) holds, with exactly these names: `the_whole_start_is_60001_rows_on_a_10_ns_grid` (times `k * 1e-8`, `k` from 0 to 60 000), `every_check_of_the_whole_start_passes` (at least one `checks` record, none failed), `the_whole_start_stays_under_one_gibibyte`, `the_wall_time_and_the_peak_are_reported` (the line printed on standard error holds both numbers; no time is asserted)
+- [x] The run happens once for the target
+- [x] Gate check passes: Quick (`Run bucklong`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick
