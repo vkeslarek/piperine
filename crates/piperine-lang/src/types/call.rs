@@ -2,13 +2,13 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
-use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, PatKind, Resolution};
+use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, LitKind, PatKind, Resolution};
 
 use super::carrier::flag_builtin;
 use super::catalogue::{Catalogue, Lookup};
 use super::check::{Checker, Context};
 use super::unsupported::Unsupported;
-use super::{Builtin, Callee, Ty};
+use super::{Builtin, Callee, Method, Ty};
 
 /// The carrier and flag methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
 const CARRIER_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "changed", "prev", "rise", "fall", "others", "inflow", "level"];
@@ -240,6 +240,7 @@ impl Checker<'_> {
         }
         let (row, params, result) = match Catalogue::method(&recv_ty, name) {
             Lookup::Row(row, params, result) => (row, params, result),
+            Lookup::Payload(row) => return self.payload_row(expr, row, &recv_ty, args),
             miss => {
                 let type_name = recv_ty.name(self.design);
                 if matches!(miss, Lookup::Absent) && !self.project_methods.contains(name) && !CARRIER_METHODS.contains(&name) {
@@ -260,16 +261,84 @@ impl Checker<'_> {
         Some(result)
     }
 
+    /// A row of H.3 or H.4 that takes a closure, a message or a value of the payload's type:
+    /// `expect`, `unwrap_or_else`, `map`, `and_then` on an `Option<T>`, `then` and `then_some` on
+    /// a `bool`. A closure's parameter is the payload `T`; its body's type is the result's.
+    fn payload_row(&mut self, expr: ExprId, row: Method, recv: &Ty, args: &[Arg]) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let payload = match recv {
+            Ty::Option(inner) => (**inner).clone(),
+            _ => Ty::Unit,
+        };
+        if args.len() != 1 {
+            let message = format!("expected 1 argument(s), found {}", args.len());
+            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            for arg in args {
+                self.infer(arg.value);
+            }
+            return None;
+        }
+        let value = args[0].value;
+        let result = match row {
+            Method::Expect => {
+                if !matches!(&self.design.expr_node(value).kind, ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Str { .. })) {
+                    self.infer(value);
+                    self.unsupported(file, self.design.expr_node(value).span, "`expect` with a message that is not a string literal");
+                    return None;
+                }
+                self.check(value, &Ty::Str);
+                payload
+            }
+            Method::ThenSome => Ty::Option(Box::new(self.infer(value)?)),
+            Method::UnwrapOrElse => {
+                self.check_argument(value, &Ty::Fn(vec![], Box::new(payload.clone())));
+                payload
+            }
+            Method::Map | Method::AndThen | Method::Then => {
+                if !matches!(self.design.expr_node(value).kind, ExprKind::Closure { .. }) {
+                    self.infer(value);
+                    self.unsupported(file, self.design.expr_node(value).span, &format!("`{}` with an argument that is not a closure", match row { Method::Map => "map", Method::AndThen => "and_then", _ => "then" }));
+                    return None;
+                }
+                let params: Vec<Ty> = if row == Method::Then { vec![] } else { vec![payload] };
+                let body = self.closure_typed(value, &params, None)?;
+                match row {
+                    Method::AndThen if matches!(body, Ty::Option(_)) => body,
+                    Method::AndThen => {
+                        let span = self.design.expr_node(value).span;
+                        self.mismatch_text(file, span, "Option<_>", &body.name(self.design));
+                        return None;
+                    }
+                    _ => Ty::Option(Box::new(body)),
+                }
+            }
+            _ => return None,
+        };
+        self.methods.insert(expr, row);
+        Some(result)
+    }
+
     /// A closure passed where `expected` is the declared type of the parameter. Anywhere else
     /// it is `P0001`: the subset has no type variable to infer its parameters with.
     pub(super) fn closure(&mut self, expr: ExprId, expected: &Ty) -> Option<Ty> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        let ExprKind::Closure { params, ret, body, .. } = &node.kind else { return None };
         let Ty::Fn(declared, result) = expected else {
             self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
             return None;
         };
+        self.closure_typed(expr, declared, Some(result))?;
+        Some(expected.clone())
+    }
+
+    /// A closure whose parameters take `declared`: its body is checked against `result`, or
+    /// inferred when `result` is `None` (the rows of Appendix H.3 and H.4 that take a closure,
+    /// whose result type is the body's). Gives the type of the body.
+    pub(super) fn closure_typed(&mut self, expr: ExprId, declared: &[Ty], result: Option<&Ty>) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let ExprKind::Closure { params, ret, body, .. } = &node.kind else { return None };
         if params.len() != declared.len() {
             let message = format!("expected a closure of {} parameter(s), found {}", declared.len(), params.len());
             self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
@@ -290,16 +359,24 @@ impl Checker<'_> {
             }
             self.locals.insert(*binding, ty.clone());
         }
-        if let Some(annotation) = ret
-            && let Some(written) = self.lower_type(*annotation)
-            && written != **result
+        let written = ret.and_then(|annotation| self.lower_type(annotation).map(|ty| (annotation, ty)));
+        if let (Some(result), Some((annotation, written))) = (result, &written)
+            && written != result
         {
             let span = self.design.type_node(*annotation).span;
-            self.mismatch(file, span, result, &written);
+            self.mismatch(file, span, result, written);
         }
         let outer = std::mem::replace(&mut self.context, Context::Function);
-        self.check(*body, result);
+        let found = match result.or(written.as_ref().map(|(_, ty)| ty)) {
+            Some(result) => {
+                self.check(*body, result);
+                Some(result.clone())
+            }
+            None => self.infer(*body),
+        };
         self.context = outer;
-        Some(expected.clone())
+        let found = found?;
+        self.exprs[expr.index()] = Some(Ty::Fn(declared.to_vec(), Box::new(found.clone())));
+        Some(found)
     }
 }

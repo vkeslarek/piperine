@@ -247,11 +247,11 @@ fn catalogue_methods_on_f64_are_f64() {
     let t = local_types(items, "let r = all(1.0);", &["r"]);
     assert_eq!(t, [Ty::F64]);
 
-    // A method takes no argument; a bool receiver has no catalogue row.
+    // A method takes no argument; a bool receiver has no `exp` row (`E0161`: H.3 is complete).
     let (_, d) = diagnostics("fn p(a: f64) -> f64 { a.exp(1.0) }", "let x = p(1.0);");
     assert_eq!(codes_of(&d), ["P0002"]);
     let (_, d) = diagnostics("fn p(a: bool) -> f64 { a.exp() }", "let x = p(true);");
-    assert_eq!(codes_of(&d), ["P0001"]);
+    assert_eq!(codes_of(&d), ["E0161"]);
 }
 
 #[test]

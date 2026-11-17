@@ -5,8 +5,8 @@
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
-use piperine_lang::types::{Ty, Types};
+use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, Reflect};
+use piperine_lang::types::{Method, Ty, Types};
 
 /// A design of `Top` with `body` as its analog block and `items` before it, over an empty std.
 fn source(items: &str, body: &str) -> String {
@@ -152,10 +152,11 @@ fn option_values_and_their_methods_are_typed() {
     let (src, d) = diagnostics("", "let o: Option<u8> = Some(1); let x = o.unwrap_or(1.0);");
     assert_eq!(codes(&d), ["P0002"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
-    // A method `Option` has no row for is named with the type.
-    let (_, d) = diagnostics("", "let o: Option<u8> = Some(1); let x = o.unwrap();");
-    assert_eq!(codes(&d), ["P0001"]);
-    assert!(d[0].diagnostic.message.contains("unwrap") && d[0].diagnostic.message.contains("Option<u8>"), "{}", d[0].diagnostic.message);
+    // A method `Option` has no row for is named with the type (`E0161`, Appendix H rule 1: the
+    // `Option` catalogue is complete since `unwrap` is a row).
+    let (_, d) = diagnostics("", "let o: Option<u8> = Some(1); let x = o.flatten();");
+    assert_eq!(codes(&d), ["E0161"]);
+    assert!(d[0].diagnostic.message.contains("flatten") && d[0].diagnostic.message.contains("Option<u8>"), "{}", d[0].diagnostic.message);
 }
 
 #[test]
@@ -344,4 +345,72 @@ fn if_let_some_binds_the_payload() {
     assert_eq!(snippet(&src, &d[0]), "x");
     let (src, d) = diagnostics("", "let o: Option<f64> = None; let y = if let None = o { 1.0 } else { 0.0 };");
     assert_eq!(codes(&d), ["P0001"], "{src}");
+}
+
+#[test]
+fn every_option_and_bool_row_types_with_a_closure_or_value() {
+    // CAT-03 (Appendix H.3 and H.4): the rows, each with its signature. A closure takes the
+    // payload as its parameter and its body's type is the result's.
+    let opt = |t: Ty| Ty::Option(Box::new(t));
+    let rows: [(&str, Method, Ty); 12] = [
+        ("o.unwrap()", Method::Unwrap, Ty::UInt(8)),
+        ("o.expect(\"it is there\")", Method::Expect, Ty::UInt(8)),
+        ("o.unwrap_or(4)", Method::UnwrapOr, Ty::UInt(8)),
+        ("o.unwrap_or_else(|| 4)", Method::UnwrapOrElse, Ty::UInt(8)),
+        ("o.map(|x| x + 1)", Method::Map, opt(Ty::UInt(8))),
+        ("o.map(|x| 2.5)", Method::Map, opt(Ty::F64)),
+        ("o.and_then(|x| if x > 1 { Some(2.5) } else { None })", Method::AndThen, opt(Ty::F64)),
+        ("o.or(p)", Method::Or, opt(Ty::UInt(8))),
+        ("o.is_some()", Method::IsSome, Ty::Bool),
+        ("o.is_none()", Method::IsNone, Ty::Bool),
+        ("c.then(|| 2.5)", Method::Then, opt(Ty::F64)),
+        // An unsuffixed integer literal with no position to take a type from is an `i32`.
+        ("c.then_some(7)", Method::ThenSome, opt(Ty::Int(32))),
+    ];
+    let lets: String = rows.iter().enumerate().map(|(i, (call, ..))| format!("let r{i} = {call}; ")).collect();
+    let src = source("", &format!("let o: Option<u8> = Some(3); let p: Option<u8> = None; let c = 2.0 > 1.0; {lets}"));
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    for (i, (call, method, ty)) in rows.iter().enumerate() {
+        assert_eq!(types.local(decl(&design, &format!("r{i}"), false)), Some(ty), "{call}");
+        let at = (0..design.expr_count()).map(|e| ExprId(e as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::MethodCall { .. }) && src[design.expr_node(*e).span.range()] == **call).unwrap_or_else(|| panic!("{call}"));
+        assert_eq!(types.method(at), Some(*method), "{call}");
+    }
+    // The closure of `map` has the payload as its parameter: `x` is a `u8`, so `x + 2.5` is a
+    // mismatch; the body of `and_then` must be an `Option`.
+    let (src, d) = diagnostics("", "let o: Option<u8> = Some(3); let r = o.map(|x| x + 2.5);");
+    assert_eq!(codes(&d), ["P0002"], "{src}");
+    let (src, d) = diagnostics("", "let o: Option<u8> = Some(3); let r = o.and_then(|x| x);");
+    assert_eq!(codes(&d), ["P0002"], "{src}");
+    // A default that is not the payload's type is a mismatch.
+    let (src, d) = diagnostics("", "let o: Option<u8> = Some(3); let r = o.unwrap_or_else(|| 2.5);");
+    assert_eq!(codes(&d), ["P0002"], "{src}");
+}
+
+#[test]
+fn expect_with_a_non_literal_message_is_p0001() {
+    // CAT-03 AC 8: the message of `expect` is a string literal, so the fault names it at compile
+    // time; anything else is `P0001` naming `expect`.
+    let (src, d) = diagnostics("", "let o: Option<u8> = Some(3); let m = 2.5; let r = o.expect(m);");
+    assert_eq!(codes(&d), ["P0001"], "{src}");
+    assert!(d[0].diagnostic.message.contains("expect"), "{}", d[0].diagnostic.message);
+    assert_eq!(snippet(&src, &d[0]), "m");
+}
+
+#[test]
+fn a_method_outside_h3_h4_is_e0161() {
+    // CAT-03 AC 9: the catalogues of `bool` and `Option` are complete; a miss names the method
+    // and the receiver type.
+    for (body, name, ty) in [
+        ("let o: Option<u8> = Some(3); let r = o.flatten();", "flatten", "Option<u8>"),
+        ("let o: Option<u8> = Some(3); let r = o.take();", "take", "Option<u8>"),
+        ("let c = 1.0 > 0.0; let r = c.not();", "not", "`bool`"),
+        ("let c = 1.0 > 0.0; let r = c.then_none();", "then_none", "`bool`"),
+    ] {
+        let (src, d) = diagnostics("", body);
+        assert_eq!(codes(&d), ["E0161"], "{src}");
+        let message = &d[0].diagnostic.message;
+        assert!(message.contains(name) && message.contains(ty), "{message}");
+        assert_eq!(snippet(&src, &d[0]), name);
+    }
 }

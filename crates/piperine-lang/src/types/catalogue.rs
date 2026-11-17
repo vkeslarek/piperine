@@ -122,6 +122,9 @@ const INTEGER_METHODS: &[Row] = &[
 pub(super) enum Lookup {
     /// A row: its method, its argument types and its result.
     Row(Method, Vec<Ty>, Ty),
+    /// A row of H.3 or H.4 whose arguments are typed from the receiver's payload and a closure's
+    /// body (`Checker::payload_row`).
+    Payload(Method),
     /// The receiver's catalogue is complete and has no such row: `E0161` (Appendix H rule 1).
     Absent,
     /// The receiver's type has no catalogue in the subset yet: `P0001`.
@@ -137,7 +140,14 @@ impl Catalogue {
             Ty::F64 => F64_METHODS,
             Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
             Ty::Option(inner) => return Self::option(inner, name),
-            Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => return Lookup::Uncatalogued,
+            Ty::Bool => {
+                return match name {
+                    "then" => Lookup::Payload(Method::Then),
+                    "then_some" => Lookup::Payload(Method::ThenSome),
+                    _ => Lookup::Absent,
+                };
+            }
+            Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => return Lookup::Uncatalogued,
         };
         match rows.iter().find(|r| r.name == name && (!r.signed_only || matches!(recv, Ty::Int(_)))) {
             Some(r) => Lookup::Row(r.method, r.params.iter().map(|a| a.ty(recv)).collect(), r.result.ty(recv)),
@@ -145,13 +155,19 @@ impl Catalogue {
         }
     }
 
-    /// The rows of `Option<T>` (Appendix H): `is_some`, `is_none`, `unwrap_or(T) -> T`.
+    /// The rows of `Option<T>` (Appendix H.4).
     fn option(inner: &Ty, name: &str) -> Lookup {
         match name {
             "is_some" => Lookup::Row(Method::IsSome, vec![], Ty::Bool),
             "is_none" => Lookup::Row(Method::IsNone, vec![], Ty::Bool),
+            "unwrap" => Lookup::Row(Method::Unwrap, vec![], inner.clone()),
             "unwrap_or" => Lookup::Row(Method::UnwrapOr, vec![inner.clone()], inner.clone()),
-            _ => Lookup::Uncatalogued,
+            "or" => Lookup::Row(Method::Or, vec![Ty::Option(Box::new(inner.clone()))], Ty::Option(Box::new(inner.clone()))),
+            "expect" => Lookup::Payload(Method::Expect),
+            "unwrap_or_else" => Lookup::Payload(Method::UnwrapOrElse),
+            "map" => Lookup::Payload(Method::Map),
+            "and_then" => Lookup::Payload(Method::AndThen),
+            _ => Lookup::Absent,
         }
     }
 }

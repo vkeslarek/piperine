@@ -68,6 +68,22 @@ pub enum Method {
     IsNone,
     /// `o.unwrap_or(d)` on an `Option`.
     UnwrapOr,
+    /// `o.unwrap()`: a fault on `None`.
+    Unwrap,
+    /// `o.expect("msg")`: a fault with `msg` on `None`.
+    Expect,
+    /// `o.unwrap_or_else(|| d)`.
+    UnwrapOrElse,
+    /// `o.map(|x| e)`.
+    Map,
+    /// `o.and_then(|x| p)`.
+    AndThen,
+    /// `a.or(b)` on `Option`s.
+    Or,
+    /// `c.then(|| v)` on a `bool`.
+    Then,
+    /// `c.then_some(v)` on a `bool`.
+    ThenSome,
 }
 
 /// A method the checker treats as part of the language because it resolved to the stdlib's own
