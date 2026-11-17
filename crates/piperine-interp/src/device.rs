@@ -88,7 +88,7 @@ impl Interpreted {
                 // `now()`: `Interpreter::new` refuses every body that reads it (msl-digital T22).
                 Source::Time => None,
                 // `freq()` and `analysis(..)`: not a frame cell; the walk refuses the read by name.
-                Source::Freq | Source::Analysis(_) => None,
+                Source::Freq | Source::Analysis(_) | Source::Fired(_) => None,
                 // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
                 Source::Carrier(_) | Source::CarrierChanged(_) | Source::Delayed(_) | Source::DelayedChanged(_) | Source::Crossed(_) => None,
                 // a timer's pin, a previous value: `Interpreter::new` refuses every body with an
@@ -280,6 +280,10 @@ impl Factory for BodyFactory {
             Mode::Check(param) => instance.check(f, param, cx),
             // `Interpreter::new` refuses every body with a carrier, so no digital function runs (R1).
             Mode::Cross(_) | Mode::Drive(_) | Mode::Event(_) | Mode::DelayedEvent(_) | Mode::Rearm { .. } => {
+                Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
+            }
+            // `bound_step` and a `cross` tolerance: refused by name (T12).
+            Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) => {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
             }
         }

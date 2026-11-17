@@ -4,7 +4,7 @@
 //! by hand and reads its shape entry by entry; every expected entry is written from abi.md (the
 //! section cited at its assertion), and every shape passes `piperine_abi::validate`.
 
-use piperine_abi::raw::{Cell, Shape, ambient, cell, field_flag, global, kind, leaf, part, pin_flag, role, statement_flag};
+use piperine_abi::raw::{Cell, DEFAULT, Shape, ambient, watch, cell, field_flag, global, kind, leaf, part, pin_flag, role, statement_flag};
 use piperine_ir::{
     Addend, AnalysisKind, BodyId, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, EmitField, Env, Event, EventSource, Expr, InstanceSpec, Ir,
     IrBuilder, NodeRole, Operator, Origin, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
@@ -518,5 +518,98 @@ fn freq_reads_the_ambient_and_analysis_reads_its_global_pin() {
         [Source::Node(0), Source::Node(1), Source::Freq, Source::Analysis(AnalysisKind::Dc), Source::Analysis(AnalysisKind::Ac)]
     );
     assert_eq!(terms.slots, 2, "two tangent slots: p and n");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn bound_step_is_a_cap_watch_and_cross_tolerances_are_pins() {
+    // ```text
+    // module Step(p, n, out q: Bit, tt: f64 = 1p, et: f64 = 1u) {
+    //     analog { bound_step(1n * (1.0 + v(p, n))); }
+    // }
+    // digital for Step { on cross(v(p, n), tt, et) { q <- true; } }
+    // ```
+    let (ir, body) = Alone::design(|b| {
+        let nodes = ports(b);
+        let mut x = Dx::new(b, F, 3, 20);
+        let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+        let (one, base) = (x.real(1.0), x.real(1e-9));
+        let sum = x.bin(piperine_ir::BinaryOp::Add, one, v, ValueType::F64);
+        let step = x.bin(piperine_ir::BinaryOp::Mul, base, sum, ValueType::F64);
+        let cap = b.stmt(Stmt::BoundStep { site: 0, value: step });
+        let body = b.body(BodySpec {
+            nodes,
+            params: vec![Buck::param("tt", F, 1, Some(1e-12), None), Buck::param("et", F, 1, Some(1e-6), None)],
+            analog: Some(vec![cap]),
+            ..Buck::spec("Step", F, 1)
+        });
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, F, 1, 30));
+        let mut x = Dx::new(b, F, 5, 30);
+        let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+        let (tt, et) = (x.param(0, ValueType::F64), x.param(1, ValueType::F64));
+        let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(tt), etol: Some(et) }, guard: None, origin: Buck::origin(F, 5, 25) });
+        let mut x = Dx::new(b, F, 5, 60);
+        let yes = x.boolean(true);
+        let commit = x.commit(0, yes, None);
+        Buck::reaction(b, body, vec![cross], vec![commit], vec![], F, 5);
+        body
+    });
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (p, n, tt, et) = (Find::pin(shape, "p"), Find::pin(shape, "n"), Find::pin(shape, "tt"), Find::pin(shape, "et"));
+    let (ttol, etol) = (Find::pin(shape, "ttol:0"), Find::pin(shape, "etol:0"));
+
+    // C11: a `PRIVATE` discrete pin per tolerance, no pin for a tolerance not given.
+    let kind_role = |pin: u32| shape.pins.get(pin as usize).map(|x| (x.kind, x.role));
+    assert_eq!(kind_role(ttol), Some((kind::DISCRETE, role::PRIVATE)));
+    assert_eq!(kind_role(etol), Some((kind::DISCRETE, role::PRIVATE)));
+
+    // C9, C11: the `CROSS` watch names both pins; one `CAP` watch per `bound_step` site, after the
+    // `CROSS` watches, firing no event (abi.md: only a `CROSS` watch has an event).
+    let watches: Vec<(&str, u32, u32, u32)> = shape.watches.iter().map(|w| (w.name.as_str(), w.kind, w.ttol, w.etol)).collect();
+    assert_eq!(watches, [("cross:0", watch::CROSS, ttol, etol), ("cap:0", watch::CAP, DEFAULT, DEFAULT)]);
+
+    // The tolerances are written by discrete functions reading the params they name; the cap by
+    // an analog function reading the probe, writing the watch's `VALUE`.
+    let value = |k: u32, index: u32| Cell { kind: k, index, part: part::VALUE };
+    assert_eq!(Find::function(shape, "ttol:0"), (vec![pin(tt, part::VALUE)], vec![pin(ttol, part::VALUE)], vec![]));
+    assert_eq!(Find::function(shape, "etol:0"), (vec![pin(et, part::VALUE)], vec![pin(etol, part::VALUE)], vec![]));
+    assert_eq!(Find::function(shape, "cap:0"), (vec![pin(p, part::VALUE), pin(n, part::VALUE)], vec![value(cell::WATCH, 1)], vec![]));
+    let modes: Vec<Mode> = plan.functions().iter().map(|f| f.mode).collect();
+    assert!(modes.contains(&Mode::Cap(0)) && modes.contains(&Mode::Ttol(0)) && modes.contains(&Mode::Etol(0)), "{modes:?}");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn a_fired_read_names_the_event_pin() {
+    // ```text
+    // module Which(in a: Bit, out q: Bit = false) {}
+    // digital for Which {
+    //     on a.changed(), cross(v(p, n)) { q <- fired(0); }
+    // }
+    // ```
+    let (ir, body) = Alone::design(|b| {
+        let nodes = ports(b);
+        let body = b.body(BodySpec { nodes, ..Buck::spec("Which", F, 1) });
+        b.carrier(body, Buck::carrier("a", ValueType::Bool, CarrierRole::In, None, F, 1, 30));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, F, 1, 45));
+        let mut x = Dx::new(b, F, 3, 30);
+        let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+        let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 3, 25) });
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 3, 8) });
+        let mut x = Dx::new(b, F, 3, 60);
+        let fired = x.b.expr(Expr::Fired(0), ValueType::Bool, x.origin());
+        let commit = x.commit(1, fired, None);
+        Buck::reaction(b, body, vec![cross, changed], vec![commit], vec![], F, 3);
+        body
+    });
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (event0, event1, q) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"), Find::pin(shape, "q"));
+
+    // abi.md §4.1: a reaction reads the `CHANGED` byte of an event pin: here event 0's, and
+    // nothing of event 1 (which the reaction only waits on).
+    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0, event1], vec![pin(event0, part::CHANGED)], vec![(q, 0, 2, 0, 0.0)]));
+    assert_eq!(plan.reactions()[0].reads, [Source::Fired(0)]);
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }

@@ -96,6 +96,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::LimitAge(k) => site(self.body.limits(), k, "age"),
             Source::Static => Text::generated("is_static"),
             Source::Time => Text::generated("time"),
+            Source::Fired(k) => Text::generated(&format!("event{k}_fired")),
             Source::Freq => ValuePrinter::env_name(Env::Freq).to_string(),
             Source::Analysis(kind) => ValuePrinter::env_name(Env::Analysis(kind)).to_string(),
         }
@@ -152,6 +153,9 @@ impl<'a> AnalogPrinter<'a> {
                 format!("at:{event}.{}", self.body.carriers().get(carrier as usize).map_or_else(|| carrier.to_string(), |x| x.name.clone()))
             }
             Target::Record(r) => self.body.streams().get(r as usize).map_or_else(|| format!("stream {r}"), |x| x.name.clone()),
+            Target::Cap(site) => format!("cap:{site}"),
+            Target::Ttol(k) => format!("ttol:{k}"),
+            Target::Etol(k) => format!("etol:{k}"),
         }
     }
 

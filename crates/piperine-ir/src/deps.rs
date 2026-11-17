@@ -70,6 +70,13 @@ pub enum Target {
     At(u32),
     /// Everything a reaction (`Body::reactions`) reads.
     Reaction(u32),
+    /// The step of a `bound_step` site (`Stmt::BoundStep::site`); empty for a site the body
+    /// does not have.
+    BoundStep(u32),
+    /// The `ttol` of a `Cross` event; empty when the event has none or is not a `Cross`.
+    Ttol(u32),
+    /// The `etol` of a `Cross` event; empty when the event has none or is not a `Cross`.
+    Etol(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -112,6 +119,12 @@ impl<'a> Body<'a> {
         self.sources_of(target).previous.iter().copied().collect()
     }
 
+    /// The events whose `fired` byte `target` reads (`Expr::Fired`), by index (`Body::events`),
+    /// sorted, through locals and function calls.
+    pub fn fired_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).fired.iter().copied().collect()
+    }
+
     fn sources_of(&self, target: Target) -> &'a Sources {
         let deps = self.deps();
         let (list, i, what) = match target {
@@ -126,6 +139,9 @@ impl<'a> Body<'a> {
             Target::Cross(i) => (&deps.crosses, i, "event"),
             Target::At(i) => (&deps.ats, i, "event"),
             Target::Reaction(i) => (&deps.reactions, i, "reaction"),
+            Target::BoundStep(i) => (&deps.caps, i, "bound_step site"),
+            Target::Ttol(i) => (&deps.ttols, i, "event"),
+            Target::Etol(i) => (&deps.etols, i, "event"),
         };
         match list.get(i as usize) {
             Some(sources) => sources,
@@ -184,6 +200,9 @@ pub(crate) struct BodyDeps {
     crosses: Vec<Sources>,
     ats: Vec<Sources>,
     reactions: Vec<Sources>,
+    caps: Vec<Sources>,
+    ttols: Vec<Sources>,
+    etols: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -198,6 +217,8 @@ struct Sources {
     flows: BTreeSet<u32>,
     /// The carriers whose previous value is read (`Expr::Previous`).
     previous: BTreeSet<u32>,
+    /// The events whose `CHANGED` byte this microstep is read (`Expr::Fired`).
+    fired: BTreeSet<u32>,
 }
 
 impl Sources {
@@ -210,6 +231,7 @@ impl Sources {
         self.carriers.extend(&other.carriers);
         self.flows.extend(&other.flows);
         self.previous.extend(&other.previous);
+        self.fired.extend(&other.fired);
     }
 
     fn to_deps(&self) -> Deps {
@@ -294,6 +316,8 @@ enum Task {
     Discard,
     /// An addend's value (on the stack) is contributed to a branch.
     Addend { branch: u32, operator: Operator, at: ExprId },
+    /// The step of a `bound_step` site (its value on the stack).
+    Cap(u32),
     /// A closure's parameters are bound before its body is walked.
     BindParams(ExprId),
     /// A block or a closure ends: the locals it bound go out of scope.
@@ -323,6 +347,8 @@ struct Walk<'a> {
     stims: Vec<Sources>,
     /// While a reaction is walked: the sources of every expression it evaluates.
     reads: Option<Sources>,
+    /// The step of each `bound_step` site, grown as sites are met.
+    caps: Vec<Sources>,
 }
 
 impl<'a> Walk<'a> {
@@ -340,6 +366,7 @@ impl<'a> Walk<'a> {
             limits: vec![Sources::default(); data.limits.len()],
             stims: vec![Sources::default(); data.stims.len()],
             reads: None,
+            caps: Vec::new(),
         };
         let owner = format!("body {}", data.name);
         let checks = data
@@ -370,6 +397,8 @@ impl<'a> Walk<'a> {
             });
         }
         let mut guards = Vec::with_capacity(data.events.len());
+        let mut ttols = Vec::with_capacity(data.events.len());
+        let mut etols = Vec::with_capacity(data.events.len());
         let mut crosses = Vec::with_capacity(data.events.len());
         let mut ats = Vec::with_capacity(data.events.len());
         for event in &data.events {
@@ -383,6 +412,14 @@ impl<'a> Walk<'a> {
             };
             crosses.push(one(match event.source {
                 EventSource::Cross { e, .. } => Some(e),
+                EventSource::Changed(_) | EventSource::At(_) => None,
+            }));
+            ttols.push(one(match event.source {
+                EventSource::Cross { ttol, .. } => ttol,
+                EventSource::Changed(_) | EventSource::At(_) => None,
+            }));
+            etols.push(one(match event.source {
+                EventSource::Cross { etol, .. } => etol,
                 EventSource::Changed(_) | EventSource::At(_) => None,
             }));
             ats.push(one(match event.source {
@@ -419,6 +456,9 @@ impl<'a> Walk<'a> {
             crosses,
             ats,
             reactions,
+            caps: walk.caps,
+            ttols,
+            etols,
         }
     }
 
@@ -482,6 +522,13 @@ impl<'a> Walk<'a> {
                         Operator::Ddt => self.charge[b].join(&value.sources),
                     }
                 }
+                Task::Cap(site) => {
+                    let value = self.pop();
+                    if self.caps.len() <= site as usize {
+                        self.caps.resize(site as usize + 1, Sources::default());
+                    }
+                    self.caps[site as usize].join(&value.sources);
+                }
                 Task::BindParams(id) => {
                     // A closure parameter is supplied at run time (the limiter's `new` and `old`):
                     // it carries no static source and is an iterate of a potential.
@@ -515,7 +562,8 @@ impl<'a> Walk<'a> {
         let ir = self.ir;
         match &ir.stmts[id.index()] {
             Stmt::Let { local, init } => next.extend([Task::Expr(*init), Task::Bind(*local, *init)]),
-            Stmt::Expr(e) | Stmt::BoundStep { value: e, .. } => next.extend([Task::Expr(*e), Task::Discard]),
+            Stmt::Expr(e) => next.extend([Task::Expr(*e), Task::Discard]),
+            Stmt::BoundStep { site, value } => next.extend([Task::Expr(*value), Task::Cap(*site)]),
             Stmt::Contribute { branch, addends, .. } => {
                 for addend in addends {
                     next.push(Task::Expr(addend.value));
@@ -593,9 +641,12 @@ impl<'a> Walk<'a> {
                 sources.env.insert(*env);
                 return self.done(id, Value::of(sources, Class::Constant));
             }
-            // The microstep's event byte: no dependency of the dependency sets (a reaction is
-            // already tied to its events).
-            Expr::Fired(_) => return self.done(id, Value::constant()),
+            // The microstep's event byte: a read of its own, not in `Deps` (`fired_reads`).
+            Expr::Fired(e) => {
+                let mut sources = Sources::default();
+                sources.fired.insert(*e);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
             Expr::Carrier(i) => {
                 if !in_body {
                     self.refuse(id, "carrier read outside a body");

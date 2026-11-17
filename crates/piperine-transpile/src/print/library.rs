@@ -158,6 +158,13 @@ impl LibraryPrinter {
                 Mode::Drive(_) => (digital.drive(k)?, digital.function_name(f)),
                 Mode::Event(_) | Mode::DelayedEvent(_) | Mode::Rearm { .. } => (digital.event(k)?, digital.function_name(f)),
                 Mode::Cross { .. } => (digital.cross(k)?, digital.function_name(f)),
+                Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) => {
+                    return Err(Error::Unsupported {
+                        form: format!("{:?} (the printer writes `bound_step` and the cross tolerances with T26 and T36)", f.mode),
+                        path: format!("body {} function {k}", body.name()),
+                        origin: body.origin().clone(),
+                    });
+                }
             };
             if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Cross { .. }) {
                 uses.insert("rt::Dual");

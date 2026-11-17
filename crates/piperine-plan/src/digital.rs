@@ -356,7 +356,13 @@ impl Digital {
 
     /// Adds one `CROSS` watch per `cross` event, firing the event's pin (or, guarded, its
     /// `cross:<k>` pin); returns each event's watch.
-    pub(crate) fn watches(s: &mut ShapeBuf, body: Body<'_>, events: &[u32], crossed: &[Option<u32>]) -> Vec<Option<u32>> {
+    pub(crate) fn watches(
+        s: &mut ShapeBuf,
+        body: Body<'_>,
+        events: &[u32],
+        crossed: &[Option<u32>],
+        tolerances: &[(Option<u32>, Option<u32>)],
+    ) -> Vec<Option<u32>> {
         body.events()
             .iter()
             .enumerate()
@@ -369,9 +375,45 @@ impl Digital {
                     kind: watch::CROSS,
                     layout: &F64,
                     event,
+                    ttol: tolerances.get(k).and_then(|t| t.0).unwrap_or(DEFAULT),
+                    etol: tolerances.get(k).and_then(|t| t.1).unwrap_or(DEFAULT),
+                }))
+            })
+            .collect()
+    }
+
+    /// Adds the private `F64` pins `ttol:<k>` and `etol:<k>` of each `cross` event that gives a
+    /// tolerance, written by a function of the parameter cone.
+    pub(crate) fn tolerance_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<(Option<u32>, Option<u32>)> {
+        body.events()
+            .iter()
+            .enumerate()
+            .map(|(k, e)| {
+                let EventSource::Cross { ttol, etol, .. } = e.source else { return (None, None) };
+                let mut pin = |given: Option<ExprId>, name: &str| {
+                    given.map(|_| s.pin(PinSpec { origin: &Self::at(&e.origin), ..PinSpec::discrete(&format!("{name}:{k}"), role::PRIVATE, &F64) }))
+                };
+                (pin(ttol, "ttol"), pin(etol, "etol"))
+            })
+            .collect()
+    }
+
+    /// Adds one `CAP` watch per `bound_step` site of the `analog` block, `cap:<site>`; returns
+    /// `(site, watch)`.
+    pub(crate) fn cap_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<(u32, u32)> {
+        BodyPlan::bound_steps(body)
+            .into_iter()
+            .map(|site| {
+                let watch_index = s.watch(WatchSpec {
+                    name: &format!("cap:{site}"),
+                    origin: &Self::at(body.origin()),
+                    kind: watch::CAP,
+                    layout: &F64,
+                    event: DEFAULT,
                     ttol: DEFAULT,
                     etol: DEFAULT,
-                }))
+                });
+                (site, watch_index)
             })
             .collect()
     }
@@ -462,6 +504,18 @@ impl Digital {
             let k = k as u32;
             let set = ReadSet::target(body, Query::Cross(k));
             add(s, format!("cross:{k}"), &e.origin, BodyPlan::function(Mode::Cross(k), &set, vec![(Target::Watch(k), Some(&set))]));
+        }
+        for (k, e) in body.events().iter().enumerate() {
+            let k = k as u32;
+            let EventSource::Cross { ttol, etol, .. } = e.source else { continue };
+            if ttol.is_some() {
+                let set = ReadSet::target(body, Query::Ttol(k));
+                add(s, format!("ttol:{k}"), &e.origin, BodyPlan::function(Mode::Ttol(k), &set, vec![(Target::Ttol(k), None)]));
+            }
+            if etol.is_some() {
+                let set = ReadSet::target(body, Query::Etol(k));
+                add(s, format!("etol:{k}"), &e.origin, BodyPlan::function(Mode::Etol(k), &set, vec![(Target::Etol(k), None)]));
+            }
         }
         for (k, d) in body.drives().iter().enumerate() {
             let k = k as u32;

@@ -407,9 +407,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-plan --test amended_shape`: `bound_step_is_a_cap_watch_and_cross_tolerances_are_pins`, `a_fired_read_names_the_event_pin`
-- [ ] Gate check passes: Quick (`Run plan`), then `cargo test -p piperine-plan`
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-plan --test amended_shape`: `bound_step_is_a_cap_watch_and_cross_tolerances_are_pins`, `a_fired_read_names_the_event_pin`
+- [x] Gate check passes: Quick (`Run plan`), then `cargo test -p piperine-plan`
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

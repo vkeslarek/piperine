@@ -188,7 +188,10 @@ impl<'a> Walk<'a> {
             | Mode::Drive(_)
             | Mode::Event(_)
             | Mode::DelayedEvent(_)
-            | Mode::Rearm { .. } => {
+            | Mode::Rearm { .. }
+            | Mode::Cap(_)
+            | Mode::Ttol(_)
+            | Mode::Etol(_) => {
                 Err(Fault::new(Self::UNEXECUTED, format!("{}: the walk of {mode:?} ended without reaching its site", body.name())))
             }
         }

@@ -63,6 +63,12 @@ pub enum Mode {
     Event(u32),
     /// The `cross` event `k`: the value of its `CROSS` watch.
     Cross(u32),
+    /// `bound_step` site `k`: the value of its `CAP` watch.
+    Cap(u32),
+    /// The `ttol` of `cross` event `k`: its tolerance pin.
+    Ttol(u32),
+    /// The `etol` of `cross` event `k`: its tolerance pin.
+    Etol(u32),
     /// The `changed` event of drive `k`'s undelayed pin.
     DelayedEvent(u32),
     /// The `changed` event of `carrier`, which the time of `at` event `event` reads: it fires
@@ -111,6 +117,9 @@ pub enum Source {
     Freq,
     /// The `GLOBAL` pin of an analysis kind: whether the running analysis is of this kind.
     Analysis(AnalysisKind),
+    /// The `CHANGED` byte of the event pin of event `k`: whether the event fired in this
+    /// microstep (`Expr::Fired`, abi.md §4.1).
+    Fired(u32),
 }
 
 impl Source {
@@ -149,6 +158,12 @@ pub enum Target {
     Timer(u32),
     /// The event pin of the `changed` event of `carrier` that re-arms `at` event `event`.
     Rearm { event: u32, carrier: u32 },
+    /// The `CAP` watch of `bound_step` site `k`.
+    Cap(u32),
+    /// The `ttol` pin of `cross` event `k`.
+    Ttol(u32),
+    /// The `etol` pin of `cross` event `k`.
+    Etol(u32),
     /// The `RECORD` pin of stream `s` (a statement of a reaction that emits).
     Record(u32),
 }
@@ -210,6 +225,7 @@ impl ReadSet {
         set.0.extend(body.carrier_reads(target).into_iter().map(Source::Carrier));
         set.0.extend(body.flow_reads(target).into_iter().map(Source::BranchFlow));
         set.0.extend(body.previous_reads(target).into_iter().map(Source::CarrierPrevious));
+        set.0.extend(body.fired_reads(target).into_iter().map(Source::Fired));
         set
     }
 }
@@ -259,6 +275,11 @@ pub struct Pins {
     pub rearms: Vec<Vec<(u32, u32)>>,
     /// The `RECORD` pin of each stream of the body, in stream order, after the re-arming pins.
     pub records: Vec<u32>,
+    /// Per event, the `ttol` and `etol` pins of its `cross` (`ttol:<k>`, `etol:<k>`), after the
+    /// record pins; `None` for a tolerance the event does not give.
+    pub tolerances: Vec<(Option<u32>, Option<u32>)>,
+    /// The `CAP` watch of each `bound_step` site, as `(site, watch)`, after the `CROSS` watches.
+    pub caps: Vec<(u32, u32)>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -295,6 +316,21 @@ impl Pins {
     /// `GROUND` when there is none.
     pub fn rearm(&self, event: u32, carrier: u32) -> u32 {
         self.rearms.get(event as usize).and_then(|r| r.iter().find(|(c, _)| *c == carrier)).map_or(GROUND, |(_, p)| *p)
+    }
+
+    /// The `CAP` watch of `bound_step` site `k`; `GROUND` for a site the body does not have.
+    pub fn cap(&self, k: u32) -> u32 {
+        self.caps.iter().find(|(site, _)| *site == k).map_or(GROUND, |(_, watch)| *watch)
+    }
+
+    /// The `ttol` pin of `cross` event `k`; `GROUND` when it has none.
+    pub fn ttol(&self, k: u32) -> u32 {
+        self.tolerances.get(k as usize).and_then(|t| t.0).unwrap_or(GROUND)
+    }
+
+    /// The `etol` pin of `cross` event `k`; `GROUND` when it has none.
+    pub fn etol(&self, k: u32) -> u32 {
+        self.tolerances.get(k as usize).and_then(|t| t.1).unwrap_or(GROUND)
     }
 
     /// The `RECORD` pin of stream `s`; `GROUND` out of range.
@@ -430,8 +466,27 @@ impl BodyPlan {
         let start = Digital::start_pin(&mut s, body);
         let rearms = Digital::rearm_pins(&mut s, body);
         let records = Digital::record_pins(&mut s, body);
-        let watches = Digital::watches(&mut s, body, &events, &crossed);
-        let pins = Pins { nodes, branches, temperature, analysis, checks, carriers, events, crossed, watches, delayed, timers, start, rearms, records };
+        let tolerances = Digital::tolerance_pins(&mut s, body);
+        let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
+        let caps = Digital::cap_watches(&mut s, body);
+        let pins = Pins {
+            nodes,
+            branches,
+            temperature,
+            analysis,
+            checks,
+            carriers,
+            events,
+            crossed,
+            watches,
+            delayed,
+            timers,
+            start,
+            rearms,
+            records,
+            tolerances,
+            caps,
+        };
 
         // Terms, branch by branch.
         let mut terms = Vec::new();
@@ -524,6 +579,13 @@ impl BodyPlan {
             functions.push(plan);
         }
 
+        for (site, _) in &pins.caps {
+            let set = ReadSet::target(body, Query::BoundStep(*site));
+            let plan = Self::function(Mode::Cap(*site), &set, vec![(Target::Cap(*site), None)]);
+            let at = origin(body.origin());
+            Self::declare(&mut s, &pins, &terms, body, &format!("cap:{site}"), &at, &plan);
+            functions.push(plan);
+        }
         functions.extend(Digital::functions(&mut s, &pins, body));
         let reactions = Digital::reactions(&mut s, &pins, body);
 
@@ -592,6 +654,9 @@ impl BodyPlan {
                 Target::Timer(k) => at(cell::PIN, pins.timer(k), part::CHANGED),
                 Target::Rearm { event, carrier } => at(cell::PIN, pins.rearm(event, carrier), part::CHANGED),
                 Target::Record(stream) => value(cell::PIN, pins.record(stream)),
+                Target::Cap(site) => value(cell::WATCH, pins.cap(site)),
+                Target::Ttol(k) => value(cell::PIN, pins.ttol(k)),
+                Target::Etol(k) => value(cell::PIN, pins.etol(k)),
             })
             .collect();
         let partials =
@@ -626,6 +691,7 @@ impl BodyPlan {
             Source::Time => value(cell::AMBIENT, ambient::TIME),
             Source::Freq => value(cell::AMBIENT, ambient::FREQ),
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
+            Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
         }
     }
 
@@ -647,6 +713,19 @@ impl BodyPlan {
             }
         }
         received
+    }
+
+    /// The `bound_step` sites of the body's `analog` block, in order.
+    pub(crate) fn bound_steps(body: Body<'_>) -> Vec<u32> {
+        let ir = body.ir();
+        body.analog()
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|id| match ir.stmt(*id) {
+                Stmt::BoundStep { site, .. } => Some(*site),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Whether any target of the body reads `temperature()`.
@@ -678,7 +757,7 @@ impl BodyPlan {
     }
 
     /// Every dependency query of a body: each branch's two parts, each site, each param, and
-    /// each drive, delay, guard, crossed expression and reaction.
+    /// each drive, delay, guard, crossed expression, tolerance, `bound_step` site and reaction.
     fn queries(body: Body<'_>) -> Vec<Query> {
         let n = |len: usize| 0..len as u32;
         n(body.branches().len())
@@ -687,8 +766,9 @@ impl BodyPlan {
             .chain(n(body.stims().len()).map(Query::Stim))
             .chain(n(body.params().len()).map(Query::Check))
             .chain(n(body.drives().len()).flat_map(|k| [Query::Drive(k), Query::DriveAfter(k)]))
-            .chain(n(body.events().len()).flat_map(|k| [Query::Guard(k), Query::Cross(k)]))
+            .chain(n(body.events().len()).flat_map(|k| [Query::Guard(k), Query::Cross(k), Query::Ttol(k), Query::Etol(k)]))
             .chain(n(body.reactions().len()).map(Query::Reaction))
+            .chain(Self::bound_steps(body).into_iter().map(Query::BoundStep))
             .collect()
     }
 
