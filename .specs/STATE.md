@@ -1399,6 +1399,28 @@ and three choices fix how.
 
 ---
 
+### MD-66: observation is the run's, not the language's
+
+`long-run` (2026-11-17). A long run keeps rows, not steps.
+
+1. **Observation is the run's.** A transient hands each accepted step to a host observer, and a
+   host keeps rows, never steps: a session records the signals it prints, on its print grid as
+   the steps arrive, and the solver keeps its last step only (`Keep::Last`); the solver's own
+   default result still keeps every step (N2).
+2. **A new observation option is a key of `[run.<name>]` with its flag**, as MD-65 item 2 says of
+   every run option; no key or flag was added by this feature.
+3. **Measurements over a waveform are host code**: overshoot, settling and ripple are computed in
+   a host test over the run's rows, never in the language.
+
+It extends MD-65 item 1 and supersedes nothing.
+
+**Scope:** `crates/piperine-solver` (`protocol/step.rs`, `Keep`), `crates/piperine-api`
+(`recorder.rs`, `Session`), `crates/piperine-cli`, `crates/piperine-parity` (`parity_grid`),
+`examples/buck`.
+**Status:** Accepted (2026-11-17), from the approved `.specs/features/long-run/design.md`.
+
+---
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)

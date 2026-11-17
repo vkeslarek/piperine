@@ -135,3 +135,14 @@ fn the_roadmap_lists_what_the_long_run_leaves() {
         assert!(queue.contains(future), "ROADMAP.md names `{future}`");
     }
 }
+
+#[test]
+fn state_records_the_observation_decision() {
+    // long-run LR-07 AC 3, LR-18: `.specs/STATE.md` holds MD-66, which says observation is the
+    // run's, and extends MD-65 without superseding it
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-66:").expect("STATE.md holds MD-66");
+    let decision = state[at..].split("\n---").next().expect("a decision");
+    assert!(decision.contains("observation is the run's"), "MD-66 says observation is the run's");
+    assert!(decision.contains("`[run.<name>]`") && decision.contains("extends MD-65"), "MD-66 names the run table and MD-65");
+}
