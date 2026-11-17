@@ -3,6 +3,7 @@
 //!
 //! - [`csv`]: a result table as CSV.
 //! - [`json`]: an `emit!` record as one JSON object.
+//! - [`svg`]: a plot as an SVG document.
 //! - [`number`]: the one place a cell becomes text.
 //! - [`table`]: a result table as aligned text.
 //! - [`record`]: an `emit!` record as one line.
@@ -13,4 +14,5 @@ pub mod diagnostic;
 pub mod json;
 pub mod number;
 pub mod record;
+pub mod svg;
 pub mod table;

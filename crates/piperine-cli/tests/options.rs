@@ -230,3 +230,62 @@ fn a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both() {
     assert_eq!(kept.lines().count(), 3, "the file keeps the passing check:\n{kept}");
     assert!(kept.contains("\"pass\":true") && kept.contains("\"pass\":false"), "{kept}");
 }
+
+/// The numbers of the path `d` attribute of the `series` path for `signal`, as (x, y) pairs.
+fn series_points(svg: &str, signal: &str) -> Vec<(f64, f64)> {
+    let line = svg.lines().find(|l| l.contains("class=\"series\"") && l.contains(&format!("data-signal=\"{signal}\""))).unwrap_or_else(|| panic!("no series for {signal}"));
+    let d = line.split("d=\"").nth(1).and_then(|r| r.split('"').next()).expect("a d attribute");
+    let numbers: Vec<f64> = d.split(|c: char| c == ' ' || c == 'M' || c == 'L').filter(|t| !t.is_empty()).map(|t| t.parse().expect("a number")).collect();
+    numbers.chunks(2).map(|p| (p[0], p[1])).collect()
+}
+
+#[test]
+fn plot_writes_an_svg_and_prints_wrote() {
+    // CLI-22 AC 1 and 2: the file is one SVG with a series per printed signal (`Step.vin`,
+    // `Step.vout`) and standard output ends with `wrote step.svg` after the table. The plot area
+    // is x 70..780, y 20..430: `vout` starts at (70, 430) (0 V at t = 0, the axis range 0..1)
+    // and ends at x = 780 (t = stop = 5 us) at 430 - 410 * 0.99326 (1 - exp(-5), the RC step)
+    let project = rc_copy();
+    let out = stdout_of(&piperine_in(project.path(), &["run", "step", "--plot", "step.svg"]));
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.last(), Some(&"wrote step.svg"), "{out}");
+    assert!(lines.iter().any(|l| l.starts_with("time")), "the table is printed first:\n{out}");
+    let svg = std::fs::read_to_string(project.path().join("step.svg")).expect("step.svg");
+    assert!(svg.starts_with("<svg ") && svg.trim_end().ends_with("</svg>"));
+    assert_eq!(svg.matches("<path class=\"series\"").count(), 2);
+    let vout = series_points(&svg, "Step.vout");
+    assert_eq!(vout.first(), Some(&(70.0, 430.0)));
+    let last = vout.last().expect("a point");
+    assert_eq!(last.0, 780.0);
+    assert!((last.1 - (430.0 - 410.0 * (1.0 - (-5f64).exp()))).abs() <= 1.0, "{last:?}");
+    let vin = series_points(&svg, "Step.vin");
+    assert!(vin.iter().all(|p| p.1 == 20.0), "vin holds 1 V, the top of the 0..1 axis: {vin:?}");
+}
+
+#[test]
+fn a_plot_draws_every_accepted_step_whatever_the_print_step() {
+    // CLI-22 AC 7: `step` prints 6 rows (`print_step = 1e-6`) but the plot draws every accepted
+    // step, many more points
+    let project = rc_copy();
+    let out = stdout_of(&piperine_in(project.path(), &["run", "step", "--plot", "step.svg"]));
+    let rows = out.lines().skip_while(|l| !l.starts_with("time")).count() - 2;
+    assert_eq!(rows, 6, "{out}");
+    let svg = std::fs::read_to_string(project.path().join("step.svg")).expect("step.svg");
+    let points = series_points(&svg, "Step.vout").len();
+    assert!(points > 20, "{points} points for {rows} printed rows");
+}
+
+#[test]
+fn an_unwritable_plot_names_the_path_and_exits_1() {
+    // CLI-22 AC 11
+    let project = rc_copy();
+    let out = piperine_in(project.path(), &["run", "step", "--plot", "no/such/dir/step.svg"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("no/such/dir/step.svg"), "{}", text(&out.stderr));
+    assert!(!text(&out.stdout).contains("wrote"), "{}", text(&out.stdout));
+    // CLI-22 AC 8: an operating point has nothing to plot, P0010, exit 1
+    let op = piperine_in(project.path(), &["run", "op", "--plot", "op.svg"]);
+    assert_eq!(op.status.code(), Some(1));
+    assert!(text(&op.stderr).contains("P0010") && text(&op.stderr).contains("nothing to plot"), "{}", text(&op.stderr));
+    assert!(!project.path().join("op.svg").exists());
+}

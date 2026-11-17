@@ -16,6 +16,7 @@ use crate::render::csv::CsvTable;
 use crate::render::diagnostic::Report;
 use crate::render::json::JsonRecord;
 use crate::render::record::RecordLine;
+use crate::render::svg::SvgPlot;
 use crate::render::table::TextTable;
 
 /// The variable that names a backend when the flag does not (CLI-04 AC 7).
@@ -173,6 +174,12 @@ impl RunCommand {
                 writeln!(out, "wrote {} ({} rows)", file.display(), table.rows.len())?;
             }
             None => TextTable::write(&table, &mut *out)?,
+        }
+        if let Some(file) = &spec.plot {
+            let mut text = Vec::new();
+            SvgPlot::write(&session.plot()?, &mut text)?;
+            Self::replace(&base, file, &text)?;
+            writeln!(out, "wrote {}", file.display())?;
         }
         out.flush()?;
         Ok(())

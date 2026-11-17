@@ -400,7 +400,8 @@ impl Keys {
             }
         };
         if let Some(key) = ANALYSIS_KEYS.iter().find(|k| self.has(k) && !reads.contains(k)) {
-            let message = format!("run `{name}`: `{key}` is not read by a `{}` run", analysis.value);
+            let nothing = if *key == "plot" && analysis.value == "op" { ": an operating point has nothing to plot" } else { "" };
+            let message = format!("run `{name}`: `{key}` is not read by a `{}` run{nothing}", analysis.value);
             return Err(fault(self.at(key), message, &format!("not a key of `{}`", analysis.value)));
         }
         let positive = |key: &str, g: &Option<Given<f64>>| match g {
