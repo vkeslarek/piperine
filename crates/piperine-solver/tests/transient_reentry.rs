@@ -304,3 +304,113 @@ fn reentry_from_any_captured_step_matches_the_continuous_run() {
         assert!((v - v_full).abs() <= tol, "re-entered at step {i} ({:e} s): v(c) = {v} vs {v_full} (tol {tol})", captured.time());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Exact re-entry (HYG-04): a run re-entered from any step it recorded, with the same options and
+// stop, takes every later step the continuous run took, bit for bit.
+// ---------------------------------------------------------------------------
+
+/// Every accepted time and every unknown of `leg`, the run re-entered at step `from` of `full`,
+/// against `full` from that step on: `f64::to_bits` equal.
+fn assert_bit_for_bit(full: &TransientAnalysisResult, leg: &TransientAnalysisResult, from: usize) {
+    assert_eq!(leg.len(), full.len() - from, "re-entered at step {from}: the same number of steps from there");
+    for (k, (got, want)) in leg.iter().zip(full.iter().skip(from)).enumerate() {
+        assert_eq!(got.time().to_bits(), want.time().to_bits(), "re-entered at step {from}, step +{k}: time {:e} vs {:e}", got.time(), want.time());
+        assert_eq!(got.values().len(), want.values().len(), "re-entered at step {from}, step +{k}: the same unknowns");
+        for (variable, want_value) in want.values() {
+            let got_value = got.get(variable.clone()).unwrap_or_else(|| panic!("re-entered at step {from}, step +{k}: no {variable:?}"));
+            assert_eq!(
+                got_value.to_bits(),
+                want_value.to_bits(),
+                "re-entered at step {from}, step +{k} (t = {:e}): {variable:?} = {got_value:e} vs {want_value:e}",
+                want.time()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_reentry_from_every_recorded_step_continues_bit_for_bit() {
+    let (mut circuit, _c) = build_clocked_rc();
+    let full = run_clocked(&mut circuit, None);
+    assert!(full.len() > 20, "{} steps", full.len());
+    for i in 0..full.len() {
+        let captured = full.get(i).expect("a recorded step").clone();
+        let leg = run_clocked(&mut circuit, Some(&captured));
+        assert_bit_for_bit(&full, &leg, i);
+    }
+}
+
+/// The step at an edge of the clock is the first after a jump's delivery: its state holds the
+/// restart (first-order stage, the exemption, the step size), and the run re-entered there takes it.
+#[test]
+fn a_reentry_after_a_jump_takes_the_same_restart() {
+    let (mut circuit, _c) = build_clocked_rc();
+    let full = run_clocked(&mut circuit, None);
+    let edges: Vec<usize> = (0..full.len()).filter(|&i| i > 0 && (full.get(i).unwrap().time() / HALF).fract() == 0.0).collect();
+    assert!(edges.len() >= 8, "the run records every edge of the clock: {edges:?}");
+    for i in edges {
+        let captured = full.get(i).expect("a recorded step").clone();
+        let leg = run_clocked(&mut circuit, Some(&captured));
+        assert_bit_for_bit(&full, &leg, i);
+    }
+}
+
+/// An RC whose steps the controller shapes (no events): what a re-entry carries besides the
+/// solution, the Newton history the predictor reads and the controller's memory, decides every
+/// later time, so a re-entry that dropped either one leaves the grid.
+#[test]
+fn the_reentry_state_holds_the_newton_history_and_the_controller() {
+    let t_half = 1.0e-3;
+    let (mut circuit, info) = build_rc();
+    let run = |circuit: &mut CircuitInstance, from: Option<&TransientStep>| {
+        let mut opts = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0);
+        if let Some(step) = from {
+            opts = opts.with_start(step.time());
+        }
+        let ic = discharged_ic(&info, circuit);
+        let mut solver = circuit.transient(opts, Context::default()).expect("tran");
+        match from {
+            Some(step) => solver.with_initial_state(step),
+            None => solver.apply_initial_conditions(ic),
+        }
+        solver.solve().expect("solve")
+    };
+    let full = run(&mut circuit, None);
+    assert!(full.len() > 30, "{} steps", full.len());
+    let sizes: std::collections::BTreeSet<u64> = full.iter().zip(full.iter().skip(1)).map(|(a, b)| (b.time() - a.time()).to_bits()).collect();
+    assert!(sizes.len() > 5, "the controller changes the step size ({} distinct sizes)", sizes.len());
+    for i in (1..full.len()).step_by(3) {
+        let captured = full.get(i).expect("a recorded step").clone();
+        let leg = run(&mut circuit, Some(&captured));
+        assert_bit_for_bit(&full, &leg, i);
+    }
+}
+
+/// Edge case 3 (§16.4): a re-entry whose stop is not the captured run's continues from the capture
+/// and reaches the new stop; the old stop is its first time point. It is not required to equal a run
+/// that never stopped.
+#[test]
+fn a_reentry_with_another_stop_lands_on_the_old_stop() {
+    let (mut circuit, c) = build_clocked_rc();
+    let old_stop = 4.5e-4;
+    let mut leg1 = circuit.transient(TransientAnalysisOptions::new(old_stop, 1.0e-5), Context::default()).expect("tran 1");
+    let captured = leg1.solve().expect("solve 1").last().expect("steps").clone();
+    assert_eq!(captured.time(), old_stop, "the first run ends at its stop");
+
+    let full = run_clocked(&mut circuit, None);
+    let opts = TransientAnalysisOptions::new(STOP, 1.0e-5).with_start(old_stop);
+    let mut leg2 = circuit.transient(opts, Context::default()).expect("tran 2");
+    leg2.with_initial_state(&captured);
+    let leg2 = leg2.solve().expect("solve 2");
+    let times: Vec<f64> = leg2.iter().map(|s| s.time()).collect();
+    assert_eq!(times.first(), Some(&old_stop), "the old stop is the first time point");
+    assert_eq!(times.last(), Some(&STOP), "the run ends at the new stop");
+    for pair in times.windows(2) {
+        assert!(pair[1] > pair[0], "times increase: {times:?}");
+    }
+    let (end, want) = (leg2.last().unwrap(), full.last().unwrap());
+    assert_eq!(end.digital_named("code"), want.digital_named("code"));
+    let (v, v_full) = (end.get_node(&node_id(&c)).expect("v(c)"), want.get_node(&node_id(&c)).expect("v(c)"));
+    assert!((v - v_full).abs() <= 1e-9 + 1e-3 * v_full.abs(), "v(c) = {v} vs {v_full} of the run that never stopped");
+}
