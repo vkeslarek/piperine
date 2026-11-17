@@ -113,3 +113,75 @@ fn the_wall_time_and_the_peak_are_reported() {
     assert!(line.contains(&format!("{:.1} s", start.wall.as_secs_f64())), "{line}");
     assert!(line.contains(&format!("{} B", start.peak)), "{line}");
 }
+
+/// The index of the column whose label is `name` or ends in `.name`.
+fn column(table: &Table, name: &str) -> usize {
+    let dotted = format!(".{name}");
+    table.columns.iter().position(|c| c == name || c.ends_with(&dotted)).unwrap_or_else(|| panic!("no column `{name}` in {:?}", table.columns))
+}
+
+/// The real cells of a column, with the time of each row.
+fn series(table: &Table, name: &str) -> Vec<(f64, f64)> {
+    let at = column(table, name);
+    table
+        .rows
+        .iter()
+        .map(|row| match (&row[0], &row[at]) {
+            (Cell::Real(t), Cell::Real(v)) => (*t, *v),
+            other => panic!("a real `{name}` at a real time, found {other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn the_overshoot_is_within_15_mv() {
+    // LR-09 AC 1, SPEC §10 S1: the output never exceeds 0.8 V by more than 15 mV
+    let vout = series(&start().table, "vout");
+    let (time, peak) = vout.iter().copied().fold((0.0, f64::MIN), |best, (t, v)| if v > best.1 { (t, v) } else { best });
+    eprintln!("overshoot: largest buck.vout {peak:.6} V at {time:e} s (limit 0.815 V)");
+    assert!(peak <= 0.815, "the largest buck.vout is {peak} V at {time:e} s, limit 0.815 V");
+}
+
+#[test]
+fn the_output_settles_into_10_mv_within_the_ramp_window() {
+    // LR-10 AC 1, SPEC §2 (regulation of 10 mV) and §10 S1: `en` rises at 1.5 us
+    // (`benches/startup.msl`) and the reference ramps over 0.256 ms (§7.2), so the output is
+    // inside 0.8 V +- 10 mV from 0.2575 ms +- 0.05 ms; the settling time is the time of the first
+    // row from which every later row is inside the band
+    let vout = series(&start().table, "vout");
+    let inside = |v: f64| (v - 0.8).abs() <= 10e-3;
+    let last_outside = vout.iter().rposition(|(_, v)| !inside(*v));
+    let settled = match last_outside {
+        None => vout[0].0,
+        Some(k) if k + 1 < vout.len() => vout[k + 1].0,
+        Some(_) => f64::INFINITY,
+    };
+    eprintln!("settling: buck.vout inside 0.8 V +- 10 mV from {settled:e} s (window 207.5 to 307.5 us)");
+    assert!(settled >= 207.5e-6, "settled at {settled:e} s, before 207.5 us");
+    assert!(settled <= 307.5e-6, "settled at {settled:e} s, after 307.5 us");
+}
+
+#[test]
+fn the_start_ends_in_regulation_with_power_good() {
+    // LR-10 AC 2: the last row holds reference code 128 (SPEC §7.2: 0.8 V is code 0, reference
+    // 128), supervisor mode 2 (`Regulate`, §8) and `pgood` true (§8.6)
+    let table = &start().table;
+    let last = table.rows.last().expect("rows");
+    let (reference, mode, pgood) = (&last[column(table, "reference")], &last[column(table, "mode")], &last[column(table, "pgood")]);
+    eprintln!("end state: reference {reference:?}, mode {mode:?}, pgood {pgood:?} at {:?}", last[0]);
+    assert_eq!(reference, &Cell::Int(128), "reference at the end");
+    assert_eq!(mode, &Cell::Int(2), "mode at the end");
+    assert_eq!(pgood, &Cell::Bool(true), "pgood at the end");
+}
+
+#[test]
+fn the_ripple_is_within_10_mv_peak_to_peak() {
+    // LR-11 AC 1, SPEC §2: over the last 40 us the output moves, and by at most 10 mV peak to peak
+    let vout = series(&start().table, "vout");
+    let window: Vec<f64> = vout.iter().filter(|(t, _)| *t >= 560e-6).map(|(_, v)| *v).collect();
+    let (low, high) = window.iter().fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
+    let ripple = high - low;
+    eprintln!("ripple: {:.6} mV peak to peak over {} rows of the last 40 us (limit 10 mV)", ripple * 1e3, window.len());
+    assert!(ripple > 0.0, "the output does not move over the last 40 us: {ripple} V");
+    assert!(ripple <= 10e-3, "ripple {ripple} V peak to peak over the last 40 us, limit 10 mV");
+}

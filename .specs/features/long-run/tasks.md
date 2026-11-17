@@ -582,10 +582,10 @@ T23
 
 **Done when**:
 
-- [ ] The target gains, with exactly these names: `the_overshoot_is_within_15_mv`, `the_output_settles_into_10_mv_within_the_ramp_window`, `the_start_ends_in_regulation_with_power_good`, `the_ripple_is_within_10_mv_peak_to_peak`
-- [ ] The four measured values are printed on standard error and copied into the commit body
-- [ ] Gate check passes: Quick (`Run bucklong`), then Build (end of phase 4)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] The target gains, with exactly these names: `the_overshoot_is_within_15_mv`, `the_output_settles_into_10_mv_within_the_ramp_window`, `the_start_ends_in_regulation_with_power_good`, `the_ripple_is_within_10_mv_peak_to_peak`
+- [x] The four measured values are printed on standard error and copied into the commit body
+- [x] Gate check passes: Quick (`Run bucklong`), then Build (end of phase 4)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build
