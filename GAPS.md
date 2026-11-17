@@ -1,18 +1,41 @@
 # GAPS.md — what does not work yet
 
-**Rewritten 2026-11-15**, after M1 (the first MSL → solver path) merged; **updated 2026-11-16**
-after `msl-digital` (digital and mixed MSL from source) and on 2026-11-17 after `msl-cli` (the
-command line and the host library). The previous version
-(2026-08) audited the retired PHDL / Verilog-AMS / Cranelift stack; none of that code exists any
-more, so it was dropped rather than amended.
+**Full audit 2026-11-17** of the implementation at `54139be1` against `docs/spec/` (Parts I–VIII,
+Appendices A–H), section by section. It replaces the incremental file written after `msl-digital`,
+`msl-cli` and `long-run`; every entry of that file that still holds is kept here, re-verified.
 
-This file lists **known gaps**: things that are missing, wrong, or unproven today. Planned work
-and its order live in `ROADMAP.md` ("Queue after ir-rust"); this file says what a user hits
-*now*. Remove an entry in the commit that closes it.
+This file lists **known gaps**: what is missing, wrong or unproven today. Planned work and its
+order live in `ROADMAP.md` ("Queue after ir-rust"); this file says what a user hits *now*. Remove
+an entry in the commit that closes it.
 
-Ranking, most serious first: **silent** (accepted, then wrong or ignored) › **broken** (does not
-build or run) › **loud** (refused with a diagnostic) › **spec hole** (the spec does not say) ›
-**unproven** (works, nothing falsifies it).
+**Ranking**, most serious first: **silent** (accepted, then wrong or ignored) › **broken** (does
+not build or run) › **loud** (refused with a diagnostic) › **spec hole** (the spec does not say, or
+says something the code does not do) › **unproven** (works, nothing falsifies it). The section
+numbers are the previous file's (`piperine-cli/tests/docs.rs` reads them), so *Broken* is §2 and
+*Silent* §3.
+
+**Evidence.** `probe` means a lone `.msl` file run on 2026-11-17 with
+`piperine run <file> --analysis op|transient` on the Rust backend; the repro is given inline where
+it is short. A diagnostic is quoted as the binary prints it. `P0001` is the code of "not supported
+yet"; `P0002` of a plain type mismatch.
+
+**Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
+change of the IR or the ABI.
+
+**Counts.** 6 silent, 4 broken, 58 loud (L1 to L58, in six tables) plus 7 backend and diagnostic
+notes, 14 spec holes or disagreements, 16 solver and performance points, 13 host gaps, 10 unproven.
+
+| Section | Ids |
+| ------- | --- |
+| §2 Broken | B1–B4 |
+| §3 Silent (read this first) | S1–S6 |
+| §4 Loud | L1–L58 |
+| §5 Spec holes and disagreements | G1–G6 (the buck's), X1–X9 |
+| §6 Solver, numerics, performance | V1–V16 |
+| §7 Host surface | H1–H13 |
+| §8 Unproven | U1–U10 |
+| §9 Coverage by spec part | — |
+| §10 Reference lists, changed entries, clusters | — |
 
 ---
 
@@ -20,181 +43,434 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 
 | Path | State |
 | ---- | ----- |
-| `.msl` → parse → POM → resolve | every stdlib module, gallery model and `examples/buck` |
-| type check (`msl-typeck`, `msl-digital`) | the M1 analog subset and the digital and mixed forms `examples/buck` uses (integers, unit enums, `match`, `Option`, carriers, definitions, events, reactions, commits, records, modules with a result, `now()`, `analysis(Static)`, a flow probe under a potential contribution); anything else is `P0001` by name (§4) |
-| elaboration → IR → interpreter → solver | analog only: R, C, V/I sources, diode with `limit`/`pnjlim`; OP, DC, AC, transient. The interpreter is frozen at M1 (R1) and refuses every digital or amended form by name |
-| ngspice parity | 7 fixtures in `tests/ngspice/`, all green |
-| IR → Rust → `rustc` → ABI (`ir-rust`) | the M1 analog subset compiles to Rust, bit-equal to the interpreter, 7 twins green on both backends (`PIPERINE_BACKEND`) |
-| digital and mixed-signal execution (`msl-digital`) | **from MSL source, on the transpiled backend only**: the whole `examples/buck` elaborates, compiles with no `rustc` warning and runs; its closed loop starts and regulates at 0.8 V (`cargo test -p piperine-parity --test buck_closed_loop`). The stdlib items the buck reaches run too: `transition`, `A2D`, `D2A`, `above`, `init`, `every`, `Never`, `log`, `require`. From the command line too: `piperine run startup` in `examples/buck`, which prints the whole 600 µs start |
-| command line and host library (`msl-cli`) | `piperine-api`, `piperine-cli`, `piperine-project` and the root package build in the default members. `piperine check`, `build`, `run`, `test`, `new`, `clean` and `fmt` run an MSL project (`examples/rc`, `examples/buck`, the 7 twins on both backends): `op`, `dc`, `ac`, `transient`, records live, CSV, JSON Lines, SVG plots; a transient records the rows it prints as it goes and keeps no step, so a whole-start run of the buck holds the same memory as a short one. Every CLI listing of the Book is held to the binary (`cargo test -p piperine-cli --test book`) |
-| formatter (`msl-cli`) | `piperine fmt` / `msl::format` keeps every plain comment, proven over 277 sources |
-| language server | **does not build**, outside the default build, deferred by the user (§2) |
+| lex, parse, print, format | the whole grammar of Appendix B; every stdlib module, gallery model, spec fence and `examples/buck` (`msl_corpus`, `msl_format`: 277 sources) |
+| POM, name and member resolution | complete over the same corpus (`pom_*`); crates, packages, path and git dependencies, the lockfile (`piperine-project`) |
+| type check and elaboration | a **subset**: `bool`, `UInt<N>`/`Int<N>` up to 64 bits, `f64`, unit enums, `Option` (three methods), plain functions, continuous natures with a flow, `Bit<T>` of a scalar or unit enum, modules with `f64`/`bool` params and `where`, definitions with `after`, a straight-line `analog` block, reactions with `if`/`match`/`if let`, `at`, `cross`, `changed`, `prev`. Everything else is `P0001` by name (§4) |
+| backends | IR → Rust → `rustc` → device library: everything the checker accepts, except the two defects of §2 (B1, B2). The interpreter is frozen at the M1 analog subset (R1) |
+| analyses from a host | `op`, `dc` (one sweep), `ac`, `transient`; on both backends for the 7 ngspice twins |
+| digital and mixed-signal | on the Rust backend only: `examples/buck` whole, closed loop at 0.8 V (`buck_closed_loop`, `buck_long`) |
+| stdlib that runs | `known`, `known_or`, `is_known`, `rise`, `fall`, `high`, `init`, `every`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `above`, `last_crossing`, `transition`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 28 of the 75 names of the §22 index |
+| command line and host library | `check`, `build`, `run`, `test`, `new`, `clean`, `fmt`; tables, record lines, CSV, JSON Lines, SVG; `--param` before a run; a transient keeps rows, not steps: `piperine run startup` in `examples/buck` prints the whole 600 µs start |
+| language server | **does not build**, deferred by the user |
 
 ---
 
-## 2. Broken — what does not build or is missing from the host surface
+## 2. Broken — does not build or run
 
-- **`piperine-lang-server`** does not build (it still targets the deleted VAMS front end) and sits
-  outside `default-members`. Deferred by the user (2026-11-16): "O lang-server é o menos
-  importante, vai ficar para bem depois." `piperine check` gives the same diagnostics meanwhile.
-- **No host sequences from the command line.** The stimulus of a CLI run is an MSL bench; a run
-  cannot wait for a condition, `drive`/`force` a port or `set` a param mid-run. `piperine-api` has
-  no such surface yet either, so the buck's scenarios S1 to S9 (`examples/buck/SPEC.md` §10) have
-  no host (queue item 4).
-- **No Python host.** There is no Python crate; `examples/buck/README.md`'s Python is a sketch.
-- **The old `piperine-api` is gone** (`msl-cli` T4, approved "Agora, pequeno"): sweep drivers
-  beyond one DC sweep, Monte Carlo, optimization, sensitivities, noise/TF/PZ/PSS/S-parameter runs,
-  Fourier and waveform measurements, `SimHooks`, live params. Each returns on the device ABI
-  under a spec of its own; the CLI asks for `op`, `dc`, `ac` and `transient` only.
-- **Not in the CLI:** `add`, `remove`, `tree`, `--locked`, `--offline`, `update`, plugin scripts,
-  a REPL, ngspice raw output, a terminal or PNG plot.
-- **The standard library, the galleries and `examples/buck/src` are not reformatted** by
-  `piperine fmt`: the formatter is proven on them (`msl_format`), rewriting them is a separate
-  change.
+### B1. A flow contribution that reads no param and no probe is refused by `rustc` — size S
+
+- **What.** `i(p, n) +> 1m;`, `pwr(t) +> -1.0;` and `i(a) +> -lv.known_or(0.0) * 1m;` (a current
+  set by a carrier) generate Rust that does not compile:
+  `error[E0282]: type annotations needed for [_; 1]` at `let at_zero_ = Self::terms_block();`,
+  reported as "a transpiler defect". With a param in the expression (`i(p, n) +> dc;`) it works;
+  the interpreter runs the literal form.
+- **Impact.** A current source written with a literal, and any current DAC driven by a discrete
+  carrier, do not build on the only backend that runs mixed designs.
+
+### B2. `absdelta` is refused by `rustc` — size S
+
+- `on absdelta(v(a), 0.2) { .. }` generates `cross*_block` functions that mix `R` and
+  `rt::Flagged<f64>` (`error[E0308]`, four times). The pattern is a `cross` whose argument reads
+  a probe and a carrier (`e - last - delta`). `last_crossing` and `above` run.
+
+### B3. `piperine-lang-server` does not build — size M, deferred
+
+- It targets the deleted front end and sits outside `default-members`. User, 2026-11-16: "O
+  lang-server é o menos importante, vai ficar para bem depois." `piperine check` gives the same
+  diagnostics meanwhile.
+
+### B4. No Python host — size L
+
+- There is no Python crate; `examples/buck/README.md`'s Python and the sketches of §23 have no
+  implementation.
 
 ---
 
-## 3. Silent
+## 3. Silent — accepted, then wrong or ignored
 
-- **A derived child param is not re-derived on a host `set` (`msl-digital`).** A placement
-  that gives a child param a value reading the parent's params (`PowerStage { ron: ron }`) is
-  evaluated once per instance at elaboration, and the instance table holds the constant. A host
-  `set` of the parent's param during a run changes the parent only: the child keeps the value
-  derived at elaboration, with no diagnostic. No host can `set` yet (§2), so nothing hits it
-  today; the host surface owes the re-derivation or a refusal.
-- **A child's own signals read as `gnd` in the authored `Child` (msl-elab).** `Child::nodes` pads
-  each `signal` of the placed module with `Ground`, because `Terminal` cannot name the child's own
-  node. The flat instance table carries the right node, so simulation is correct, but anyone
-  walking the IR's child records sees ground. Needs `Terminal::Own` in `piperine-ir`. No M1
-  device has a signal, so no test shows it.
+### S1. `finish()` and `fatal()` do not end the analysis, and `piperine test` passes a run that called `fatal` — size S
+
+- **What.** §19 rule 5: a `sim` record with `finish = true` ends the analysis at its instant.
+  Today the record is written and the run goes on to its `stop`. `piperine run` exits 0 after a
+  `fatal`, and `piperine test` prints `PASS f (0 checks)` for it.
+- **Evidence.** Probe: `on at(1n) { finish(); } on at(3n) { k <- 9; emit!("late", x = 1); }` with
+  `--stop 4e-9` prints the `late` record at 3 ns and `k = 9`. The solver has the mechanism
+  (`piperine-digital-solver/src/run.rs:467` `finish`, `piperine-solver/src/protocol/transient.rs:344`);
+  nothing in `piperine-transpile` sets it. `piperine-api/src/verdict.rs:58` judges the `checks`
+  stream only, so `failed = true` on `sim` is never read.
+- **Impact.** A bench that stops on a condition runs to the end; a regression that calls `fatal`
+  is green.
+
+### S2. A child param derived from a parent's param is not re-derived on a host `set`; reachable from the command line today — size M
+
+- **What.** `Mid { rr }` placing `R(p, n) { r: rr }` is evaluated once at elaboration and the
+  instance table holds the constant (§8.1.23 wants it recomputed). `--param Top.m.rr=3000` and
+  `dc --sweep Top.m.rr` change `Mid` only: the child keeps `r = 1k`, with no diagnostic. The
+  previous file said no host could `set`; since `msl-cli` two can.
+- **Evidence.** Probe: `R(a, b)` over `Mid(b, gnd)` whose child is `R { r: rr }`, 1 V at `a`:
+  `--param Top.m.rr=3000` prints `Top.b 4.999999e-1` (0.75 expected); the DC sweep over
+  1k, 2k, 3k prints three rows of 0.5.
+- **Impact.** A sweep or an override of any param that a parent passes down gives the unswept
+  answer. `examples/buck` passes most of its params down this way.
+- Related, loud: a param that no behavior of its own module reads cannot be set at all (H5).
+
+### S3. The type checker checks only what a run's top reaches — size M
+
+- **What.** `Types::check` walks the reachable set from the top (`types/check.rs:147`). A
+  function or module nothing reaches is resolved and never typed:
+  `fn broken(x: f64) -> bool { x + 1.0 }` and a module that calls `ddx` pass `piperine check`
+  (`ok: u (2 crates, 0 runs)`). A library package with no run is never type-checked. An unreached
+  `const X: &str = include_str!("missing.txt")` is accepted: `E0610`, `E0612` and `E0613` are
+  raised nowhere.
+- **Impact.** `check` is green for a library that cannot compile. §0.3 puts every static check
+  in elaboration, of the whole model.
+- Generic items need an instantiation to check (X6); the others do not.
+
+### S4. A child's own signals read as `gnd` in the authored `Child` of the IR — size S
+
+- `elab/children.rs:119` pads each `signal` of a placed module with `Terminal::Ground`;
+  `Terminal` (`piperine-ir/src/model.rs:123`) has no `Own`. The flat instance table carries the
+  right node, so simulation is correct; anyone walking the IR's child records sees ground.
+
+### S5. A `where` that reads a later param is evaluated instead of refused — size S
+
+- §8.1.1: a `where` reads this param and earlier ones (`E0318`). Probe:
+  `c: f64 = 1.0 where c > d; d: f64 = 5.0;` reports `E0317` (false for 1.0), so the later param
+  was read; with `d = 0.0` the model is accepted.
+
+### S6. Unknown integers are one flag per value, so `&` and `|` lose known bits (G6) — size L (ABI)
+
+- §3.3.2 is per level. Probe: with `x` unknown, `((x & 1) & 2).known_or(9)` gives 9; the spec
+  gives 0. `x & 0` and `b && false` are right. Ruled provisional on 2026-11-15 (`ir-rust` F-B4);
+  listed here because the result differs from the spec text with no diagnostic. Per-level flags
+  change the ABI's one known byte per value.
 
 ---
 
 ## 4. Loud — refused, though the spec allows it
 
-- **A digital-only transient is refused; the solver does not step a design with no analog node
-  (`msl-cli`, found by T36, verification F2).** A purely digital design (the Book's `Blinky`,
-  `Count`) keeps one transient step, at time 0, holding the values of the end of the run. A
-  transient whose last step is before its `stop` is a failure naming that cause: the records
-  written before it stay, no table, CSV or plot is written, exit 1. The Book says so where it
-  shows such a design.
+Every entry is a diagnostic at type check or elaboration unless it says otherwise. The refusals
+are tables with no wildcard arm: `types/unsupported.rs`, `elab/unlowered.rs`,
+`types/catalogue.rs` (`F64_METHODS`, `INTEGER_METHODS`, `CORE_ROWS`). The diagnostic column
+quotes the text after `P0001:` unless another code is shown.
 
-- **A DC sweep's points deliver no records, so a `dc` run of a design with a record stream is
-  refused (`msl-cli` T22, verification F1).** A point of a sweep has no time, and a record line is
-  stamped `@<time>`; the sweep `set`s and solves on the bound circuit directly (`Solver` owns its
-  circuit), so the sink would never see a point's records. `Session::open` refuses such a run with
-  `P0010` naming the streams, before anything compiles, and `piperine test` counts it
-  `FAIL <name> (did not run)`. An `op` run delivers its records. The Book's chapter 16 says so.
+### 4.1 Values (Part I §1–§3, Appendix H)
 
-- **An MSL local named like an MSL function of the same body** (a param `vt` in a body that calls `vt()`) makes the generated Rust fail to compile (`ir-rust`). Generated names can no longer collide with MSL names (F2/F3), but MSL-vs-MSL shadowing across the value/function namespaces is not renamed yet. A `let`-bound closure named like a function could in principle be called instead of it.
+| # | Refused | Spec | Diagnostic (probe) | Size |
+| - | ------- | ---- | ------------------ | ---- |
+| L1 | `struct` values, struct expressions, field access | §1, §2 | `struct item used as a type`, `struct expression`, `field access` | L, with L2–L4 |
+| L2 | tuples outside `let (a, b) = (x, y);` | §1 | `tuple expression`, `tuple type` | |
+| L3 | arrays, indexing, slices, `&` | §1, H.5 | `array type`, `array expression`, `index expression`, `reference type` | |
+| L4 | enums with a payload, `#[repr(uN)]`, an explicit discriminant, generic enums, an enum of one variant as a carrier | §2 rules 2, 5 | `enum Tx with a variant with a payload`, `with a #[repr] attribute` | |
+| L5 | `let mut`, assignment, `for`, `while`, `loop`, `break`, `return` | §0.4, §11 rule 12, §12.1.11 | `let mut binding`, `assignment`, `for loop`, `while loop` | M |
+| L6 | `match` arm guards, range patterns, bindings in or-patterns; `if let` other than `Some(p)` | §0.4 | `a match arm guard`, `range pattern in a match arm` | S |
+| L7 | generic functions, `self` parameters, `impl` on a value type, user traits | §3 rule 9, §3.1 | `generic function`, `generic parameter used as a type` | L, with L30 |
+| L8 | `impl` on a nature (other than the stdlib's `impl Bit`); a function that takes a carrier or a node and probes it (a handle) | §3.1, §3 rule 7 | `method mv`; `E0450: a probe is allowed in an analog block and a module body only` | M |
+| L9 | closures other than the argument of `limit`; a function name passed as a value (`limit(x, limvds)`) | §3 rule 3, §14.7.1 | `closure outside an argument whose parameter has a function type`; `this name as a value` | S |
+| L10 | recursion | §3 rule 12 | `a function that calls itself` | S |
+| L11 | optional and named arguments of a user function: `f(1.0)` and `f(1.0, z: 3.0)` for `fn f(x: f64, y: Option<f64>, z: Option<f64>)` | §3.2.2, §3.2.4 | `P0002: mismatched types: expected 3 argument(s), found 1` (the call is legal) | S |
+| L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
+| L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
+| L14 | 24 of the 32 `f64` methods of H.2: `sin cos tan asin acos atan atan2 sinh cosh tanh powf powi log10 log2 ceil round trunc fract signum rem_euclid hypot is_nan is_finite is_infinite` | H.2 | `method sin on f64` | S |
+| L15 | 10 of the 13 integer methods of H.1: `abs pow rem_euclid signum checked_add checked_sub checked_mul saturating_add saturating_sub saturating_mul` | H.1 | `method saturating_add on u8` | S |
+| L16 | `Option`: `unwrap expect unwrap_or_else map and_then or`; `bool`: `then`, `then_some`; every row of H.5, H.6, H.7 (arrays, ranges, iterators) | H.3–H.7 | `method unwrap on Option<f64>` | S for `Option` and `bool`; the rest with L3 |
+| L17 | `<` and `>` on an enum that derives `PartialOrd` | H.8 | `P0002: mismatched types: expected f64, found enum Md` | S |
+| L18 | `Unknown` as an initial value; `x.level(k)`; `merge`, `same`, `cast`, `logic`, `matches_bits` | §3.3.1, §3.3.4, §22.1 | `this literal in a carrier's initial value`; `method level`; `built-in Repr::WIDTH` | M |
+| L19 | **Unknown control is a fault, not a merge.** An `if`, a `match` or a guard whose condition is unknown stops the run: `fault 3 in Top at tick 0: the condition of an if is unknown`. So `maybe = true` is never written. Refused at elaboration: a math function, a contribution or a `known_or` default of a value that may be unknown | §3.3.3, §1 rule 13, §19 rule 1 | run-time fault | L |
+| L20 | a param named like a function it calls (`vt` and `vt()`). The previous file said the generated Rust failed to compile; the type checker now stops it first. As in Rust the local shadows the function, so the refusal is right and only its code is generic | §3.5.4 | `call of this declaration` | S |
 
-- **An unknown control is a fault (`msl-digital`, `ir-rust` RS-11 AC 5).** An `if`, a `match` or
-  a reaction guard whose condition is unknown at run time stops the run with a fault naming its
-  origin. §3.3.3 instead merges the effects of both branches; that merge is M2. Every decision of
-  the buck is written with a `known_or`, so it never faults.
-- **Enum variant names are not carried (`msl-digital`).** A `Bit<Mode>` carrier is its tag,
-  `UInt<ceil(log2 V)>`, in the IR, on the ABI and in every observation: a host reads `2`, not
-  `Regulate`. The command line prints the index too, in tables and in record fields
-  (`from=1 to=0` for `Ok` to `Under`); the Book says so.
-- **`on above(..) { emit!(..) }` is `P0001` (`msl-digital`, D14 of `msl-cli`).** `above` is a
-  head of two disjuncts (the crossing, and the start when already positive), and a split head
-  whose body emits is refused: "a head whose disjuncts each need a reaction, over a body that
-  emits a record, is not supported yet". `cross` works; the Book's examples use it.
-- **A module-body `let` used as a param value is `E0321`** ("reads a name with no value yet"):
-  `let c = 1.0 / (2.0 * PI * r * fc); let c1 = Capacitor(b, gnd) { c };`. Writing the expression
-  in the param block works. The spec's named expression should be usable there.
-- **Book examples refused today, each shown with its refusal in the Book:** the ladder (generic
-  module), the debouncer and the PWM (param of type `u8`; the debouncer also a `known_or` whose
-  default may be unknown), the alarm line (`Wire`), the clipper and the cycle counter (`sin` on
-  `f64`), the chapter-8 buck (`settle`).
-- **No trace records.** `emit!` inside `analog` is `P0001`; only reactions write records.
-- **Everything outside the subset of M1 and `msl-digital`** is `P0001` naming the construct, at
-  type check or elaboration (DIG-07 AC 1): loops, `let mut`, assignments, structs, arrays and
-  indexing, closures other than a `limit` function, user traits and `impl`s, generic modules and
-  functions, enums with a payload or an explicit discriminant, natures with `resolve` (`Wire`,
-  `Tri`), bundles, `others()`, `settle`, element and field commits, `delay`, `noise`, `ddx`,
-  `bound_step`, `freq()`, `simparam`, `analysis` of a kind other than `Static`, generation `for`
-  and `if`, templates, `extern` modules, params of an integer type (`n: u8`), the math methods
-  of `f64` (`sin`, ...), a `known_or` whose default may be unknown, a `ttol` or `etol` given to `cross`, a binding inside
-  `Some` in a definition, an `||` head split into reactions whose body holds `emit!`, and an
-  event read as a `bool`. The stdlib items built on them (`Bidir`, `slew`, `idt`, `idtmod`,
-  `zi_*`, `laplace_*`, `inertial`, `absdelta`, `last_crossing`) are refused with them.
-- **The interpreter is frozen at the M1 analog subset** (user decision R1, 2026-11-15). Digital
-  and mixed forms run on the transpiled path only; the interpreter refuses each by name.
-- **`ir-rust` refuses** `UInt<N>`/`Int<N>` with N outside 1..=64 by name (`check()` and the
-  printer); the ABI's leaves end at 64 bits. **`Float<16>` and `Float<128>`** have no IR form (the
-  IR's one real is `f64`): the type checker refuses them by name (`P0001`, `msl-digital`).
-- **A `limit` or `ac_stim` function reading a carrier is refused by name (`ir-rust` F-B6).** No
-  lowering decodes a carrier in those functions yet; no body of the buck slice has one.
+### 4.2 Carriers (Part II §4–§7)
+
+| # | Refused | Spec | Diagnostic (probe) | Size |
+| - | ------- | ---- | ------------------ | ---- |
+| L21 | natures with `resolve`: `Wire`, `Tri`, `SumNet`; `others()`; relaxation of loops | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
+| L22 | a discrete nature the project declares (`nature Byte { value: u8 }`) | §4 rule 1 | `discrete nature Byte` | S |
+| L23 | signal-flow natures (`VSignal`) | §6 rule 2 | `signal-flow nature VSignal` | M |
+| L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
+| L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
+| L26 | `p.inflow()`; `changed()` on a param | §6 rule 5, §5.3.1 | `method inflow`; `method changed on f64` | M |
+| L27 | an initial value that reads a param (`signal s: Bit<f64> = k0;`, `signal a: Electrical = v0;`) | §5.1.5, §6 rule 6 | `a carrier's initial value that reads a param` | S |
+
+Works, by probe: continuous natures with their own access names (`State` runs; `Thermal` and a
+project's nature pass the checker), `potential`/`flow`, a flow probe of a potential branch, a
+held node (`= 0.7` holds through a transient's operating point and is free in `op`), `prev()`
+before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, `E0241`, `E0250`,
+`E0251`, `E0310`.
+
+### 4.3 Structure (Part III §8–§9)
+
+| # | Refused | Spec | Diagnostic (probe) | Size |
+| - | ------- | ---- | ------------------ | ---- |
+| L28 | params of an integer, enum, `Option` or module type (`n: u8`, `md: Mode`, `rs: Option<f64>`, `cell: C`) | §8.1.15, §3.2.6 | `param of type u8` | M |
+| L29 | `m` and `dtemp`: binding them at a placement and reading them | §8.5.1–§8.5.6 | `E0320: no param m in R`; `built-in m` | M |
+| L30 | generic modules and const generics: the prelude's own `Short<N>` and every stdlib module built on them | §8 rule 4 | `generic module` | L |
+| L31 | generation `for` and `if`, in a body and in a `digital` block | §8.2.7, §12 rule 1 | `generation for/if in a module body` | M |
+| L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M, after L28 |
+| L33 | `extern` modules: `"osdi"`, `"cosim"`, `#[link]` | §8.5.7–§8.5.16 | `extern module` | L |
+| L34 | a value input of a module without a result (`module G(o: Electrical, x: f64)`) | §8.1.13, §8.3.1 | `a value input` | M |
+| L35 | a module with a result that holds a node: every stateful analog operator a user or the stdlib writes | §8.3.2, §8.3.16 | `a module with a result that holds a node` | M |
+| L36 | `inst.name` on a `pub` item of a child: probing a child's node, reading a child's carrier | §8.2.8 | `field access` | M |
+| L37 | a body `let` used as a param value (`let c = 1.0 / (2.0 * PI * r * fc); Capacitor(b, gnd) { c }`) | §8.1.19 | `E0321: reads a name with no value yet` | S |
+| L38 | feedback through an instance (`let y = idt(f(y));`) | §8.3.5 | `the feedback of .. through an instance` (`types/result.rs:236`) | with L35 |
+| L39 | a top module with a continuous port: the host connects nothing | §8.1.14, §23.1 rule 1 | `top module Top has the continuous port a` | with H1 |
+
+Works, by probe: `where` at elaboration and on a set (`E0317`, `E0802`), `E0312`, `E0314`,
+`E0316`, `E0320`, `E0330`, `E0335` to `E0339`, `E0343`, `E0457`, definitions with and without
+`after`, an expression at an `in` port, a result module without state, a body `let` shared by
+blocks.
+
+### 4.4 Analog (Part IV §11, §14)
+
+| # | Refused | Spec | Diagnostic (probe) | Size |
+| - | ------- | ---- | ------------------ | ---- |
+| L40 | **A contribution under an `if` or a `match`**: switch branches, `Switch`, `CapIc`, `Bounded`, `Water`, the `Diode` of §18 with `match rs`, the reset of `idt` | §11 rules 2, 3, 18 | `a contribution under an if or in a closure` | M to L |
+| L41 | a second `analog` block for one module | §10 rule 4 | `a second analog block for one module` | S |
+| L42 | a `ddt` that is not a whole addend (`2.0 * ddt(q)`), a `ddt` with `abstol` | §14.5 | `a ddt that is not a whole addend of a flow contribution or of a potential contribution` | M |
+| L43 | `ddx` | §14.2 | `core primitive ddx` | M |
+| L44 | `delay` | §14.6 | `core primitive delay` | M |
+| L45 | `noise`, and so `white_noise`, `flicker_noise`, `noise_table` | §14.8, §11.1.8 | `core primitive noise` | M |
+| L46 | `bound_step` | §14.10 | `core primitive bound_step` | S |
+| L47 | `freq()`, `simparam` | §14.4 | `core primitive freq` | S |
+| L48 | `analysis(Dc)`, `analysis(Transient)`, `analysis(Ac)`, `analysis(Noise)` | §11.1.1 | `analysis of a kind other than Static` | S |
+| L49 | No trace records: `emit!` in `analog` is refused | §19 rule 4, §11 rule 20 | `an emit! in an analog block` | M |
+| L50 | a `limit` or an `ac_stim` under an `if`; either reading a carrier | §14.3, §14.7 | `a limit under an if or in a closure` | S |
+
+Works, by probe: `ddt` of a flow and of a potential (capacitor, inductor, coupled inductors),
+`limit` with a closure and a seed, `ac_stim` with a phase, `temperature()`, `gmin()`,
+`source_scale()`, `now()`, `analysis(Static)`, an `if` *expression* on a probe, `E0415`.
+
+### 4.5 Digital and events (Part IV §12–§13)
+
+| # | Refused | Spec | Diagnostic (probe) | Size |
+| - | ------- | ---- | ------------------ | ---- |
+| L51 | an event read as a `bool`: `if fref.rise() { .. }` in a reaction, `on d.changed() && en && !en.changed()` | §13 rules 2, 9 | `an event read as a bool` | M |
+| L52 | `settle` | §13 rule 17, §15 S1–S7 | `built-in settle` | M |
+| L53 | a function that returns `Event` (`fn handshake(req: Bit, ack: Bit) -> Event`) | §13 rule 7 | `method rise on this receiver` | with L8 |
+| L54 | a `ttol` or an `etol` given to `cross` | §13, §17.3 | `a ttol or etol given to cross` | S |
+| L55 | `on above(..) { emit!(..) }` is `P0001`, as is any head split per disjunct over a body that emits | §13 rule 1 | `a head whose disjuncts each need a reaction, over a body that emits a record` | S |
+| L56 | A digital-only transient is refused: a design with no analog node keeps one step at time 0, and the run fails naming that cause | §15 ("also in a design with nothing analog") | `the solver does not step a design with no analog node` | M |
+
+Works, by probe: commits with and without `after`, transport per statement (a pulse from two
+commits), `at(0.0)` at `(0, 1)` and a negative `at` never, `every`, `cross` located within 0.1 ps
+of `RC·ln 2`, `changed`, `rise`, `fall`, an event named by a body `let`, `a.rise() || b.rise()` as
+a head, a reaction that probes, `E0430`, `E0432`, `E0433`, `E0442`, `E0443`, `E0501` naming the
+carrier, wrapping arithmetic, an integer division by zero as a fault naming the operation.
+
+### 4.6 Output, input, stdlib (Parts VI–VII)
+
+| # | Refused | Spec | Size |
+| - | ------- | ---- | ---- |
+| L57 | `include_str!`, `parse_table`, `parse_hex`, `table_model` (`P0001` when reached; see S3) | §20, §22.6.4, §22.2.15 | M, after L3 |
+| L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `merge`, `cast`, `same`. **Resolved nets (L21):** `Logic`, `Strength`, `Wire`, `Tri`, `SumNet`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **A node in a result (L35):** `slew`. **Other:** `limexp` (`binding inside a module`), `AckWithin` (a `u32` param), `MinPulse` (`since`), `db10` and `db20` (`log10`), `normal` (tuples, `cos`), `limvds` as a function value (L9), `absdelta` (B2) | §22 | by its group |
+
+### 4.7 Backends
+
+- **The interpreter is frozen at the M1 analog subset** (R1, 2026-11-15); it refuses every
+  digital or amended form by name.
+- **`ir-rust` refuses** `UInt<N>`/`Int<N>` with N outside 1..=64 by name; the ABI's leaves end at
+  64 bits.
+- **Enum variant names are not carried.** A `Bit<Mode>` is its tag in the IR, on the ABI and in
+  every observation: a host reads `2`, not `Regulate`. Size M (metadata on the shape).
+- **A DC sweep's points deliver no records**, so a `dc` run of a design with a record stream is `P0010`
+  before anything compiles; `piperine test` counts it `FAIL <name> (did not run)`.
+
+### 4.8 Diagnostics that are loud and say too little
+
+- **Run errors carry no spec code and name nothing.** A loop of potential sources prints
+  `SpaceMatrix: The library threw an error while trying to create the RHS of the sparse matrix`;
+  a floating node prints `Newton: Linear solver returned NaN/Inf`. §15.2 wants `E0503` naming the
+  branches or the node. A NaN contribution is named well, but cites "LRM §7.3.2.1" (Verilog-AMS)
+  where the spec has `E0507`. Size M.
+- **73 of the spec's 180 error codes appear nowhere in the source** (list in §10). Most belong to
+  a refused construct; `E0102`, `E0105`, `E0503` to `E0508` and `E0803` to `E0806` do not.
+- `P0001` says "outside the M1 subset" for forms the spec defines.
 
 ---
 
-## 5. Spec holes — the spec does not decide
+## 5. Spec holes and disagreements
 
-Each has a provisional rule so work is not blocked; the spec sentence is still owed. Details in
-`examples/buck/GAPS.md`.
+Each has a provisional rule or a note so work is not blocked; the spec sentence is still owed.
+G1 to G6 are the buck's (`examples/buck/GAPS.md`). The spec's own open list is Appendix G
+(`G.1` to `G.68`, about 30 open) and is not repeated here.
 
-- **G4 — `f64 as u10` outside the range.** Part I §1 rule 1 says "truncates or extends, as in
-  Rust", which is ambiguous for widths Rust lacks. Provisional: saturate, NaN → 0.
-- **G5 — shift by N or more bits.** No rule. Provisional: the mathematical result truncated to
-  N bits (0 for `<<` and for unsigned `>>`, sign fill for signed `>>`). A negative amount has no rule
-  either; compiled code panics naming the shift (a fault, `ir-rust` F-B9).
-- **G6 — unknown integers are per value, not per bit (`ir-rust` F-B4).** §3.3.2 gives `&`, `|`,
-  `^`, `!` per level, so a partial mask leaves known bits: `(x & 1) & 2` with `x` unknown is known
-  0. The ABI has one known byte per value, so the compiled code applies §3.3.2's shortcuts only
-  when one operand is all-zeros (`&`) or all-ones (`|`); otherwise the result is unknown, and a
-  later `known_or(d)` returns `d` where §3.3.2 gives the known bits. Per-bit flags would change the
-  ABI; ruling 2026-11-15, the user may revisit.
-- **G1 — no fixed-point type; G2 — no ranged integer.** Language proposals the buck wanted, not
-  bugs.
-
----
-
-## 6. Solver — open points
-
-From the solver internals review (artifact `TEV6Hqo6d3QRi1ssZtJTW5`, "Pontos para decidir") and
-the solver-abi-integration verification. None breaks the 7 parity fixtures today; the first two
-are the parity risks.
-
-- **The step is controlled by LTE on node voltages, not on charge.** ngspice controls it on
-  charge; `chgtol` is unused. Expect divergence on circuits with large or nonlinear charges.
-- **The Milne predictor's skip is asymmetric** compared with ngspice.
-- **A step that reaches `dt_min` is accepted** instead of failing the analysis.
-- **Newton damping is one global L2 factor**, not per unknown.
-- **Dead hooks:** `apply_limit` / `apply_limiting_reports` are never called.
-- **Stale doc:** `sp.rs` still documents the PHDL `@rfport`.
-- **The digital checkpoint clones every net** on each mark.
-- **Re-entry is approximate (N1):** re-entering a transient at a captured step ends up to
-  7.3e-4 relative off the continuous run.
-- **Re-entry state is stored on every accepted step (N2):** memory grows with step count.
-- **The partials guard matches devices by label (N3)**, not by module.
-- **The solver's default transient result keeps every accepted step, with its re-entry state
-  (N2); a mixed design takes many (`msl-digital`, `long-run`).** The whole buck takes about
-  45 000 accepted steps per 40 µs (the analog side lands near every 200 MHz instant), each about
-  58 KB in `TransientAnalysisResult` when kept: 25 GB for a 600 µs run under that default. A host
-  run through `piperine-api` no longer pays it: it records only the signals it prints, on the
-  print grid as the steps arrive, and keeps its last step only, so its memory depends on the rows
-  and not on the run's length (`piperine run startup` prints the whole 600 µs start, 1 201 rows;
-  60 001 rows on a 10 ns grid peak at about 11 MiB of live heap). The step count and the wall time
-  are unchanged: the same run still takes about 130 s in a dev build, as the analog side still
-  lands near every digital edge.
-- **First step after a digital-to-analog jump (`ir-rust` F-B7).** With a 10 ns step cap the
-  analog response to a carrier change is off by more than `TRAN_VOLTAGE` 5.55 ns after `t0` (the
-  first step after the jump is first order); `piperine-parity/tests/boundary.rs` runs at a 1 ns
-  cap, 20x tighter than `parity_tran`'s, to pass. The restart step after a boundary event needs
-  the solver's attention.
+- **G4 — `f64 as u10` outside the range.** §1 rule 1 says "truncates or extends, as in Rust".
+  Provisional: saturate, NaN → 0 (probe: `5000.7 as u10` is 1023).
+- **G5 — shift by N or more bits.** No rule. Provisional: the mathematical result truncated to N
+  bits (probe: `1u8 << 9` is 0). A negative amount panics in compiled code (a fault, F-B9).
+- **G6 — unknown integers are per value** (S6).
+- **G1 — no fixed-point type; G2 — no ranged integer.** Language proposals of the buck.
+- **X1 — §15 describes a solver that is gone.** Its notes say the microsteps of `t` run before
+  the solve of `t`, and that the device ABI order (solve, then react) "is adopted: `solver-abi`
+  implements it and rewrites §15 when it changes the code". MD-62 changed the code; §15, §15.2
+  and the rows of C.2 (`run_digital_at`, `predict_step`, `settle_digital`) were not rewritten.
+  Nobody has compared what a reaction at `(t, 0)` reads with what the text says.
+- **X2 — Appendix C.2.3 and G.38 say "nothing is executed".** Of the conformance set,
+  `transition` runs; `zi_nd`, `inertial` and `Tran` are refused; the §15.1 trace has no test from
+  source.
+- **X3 — what a host does with a `target`.** §23.2 leaves the role to the host; `piperine test`
+  counts a `target` as a check that never fails, whatever its margin (`verdict.rs:23`). Nothing
+  says how a run states "this target is a constraint".
+- **X4 — the `failed` field of `sim`.** §19 rule 15 gives it a type and no meaning; the host
+  gives it none either (S1).
+- **X5 — a type mismatch has no spec code.** The checker uses `P0002`; `E0417`, `E0432`, `E0337`
+  and `E0210` cover four positions and the rest is "as in Rust".
+- **X6 — what `check` owes a library.** Is a generic body checked once against its bounds, or per
+  instantiation only (§3 rule 9 reads as the latter)? S3 depends on the answer.
+- **X7 — session options have no names.** §23 lists time resolution, `reltol`, `trtol`, `ttol`,
+  the bounds, nodesets and temperature as the host's; `simparam` names are open too (G.66).
+- **X8 — the top's ports.** §23.1 rule 1 has the host drive them; G.17 leaves the choice of top
+  to the host; the implementation takes a module without ports only (L39).
+- **X9 — a derived param under a `set`.** §8.1.23 says recomputed; MD-18 and the instance table
+  of constants say fixed at elaboration. One of the two has to give (S2).
 
 ---
 
-## 7. Unproven
+## 6. Solver, numerics and performance
 
-- **Parity covers 7 small analog circuits.** No MOS, BJT, JFET, nonlinear capacitance, noise, or
-  switching transient. Two fixtures (`diode_iv`, `tran_rc`) sit near the tolerance floor, so a
-  small regression there may still pass.
-- **No oracle for digital or mixed-signal behavior.** The interpreter cannot run them and no
-  ngspice twin exists for MSL digital; `ir-rust` phase B and `msl-digital` test them against the
-  spec's own expected values only (`docs/spec/`, `examples/buck/SPEC.md`).
-- **The buck's closed loop is proven at one operating point**: setpoint 0.8 V, Vin 12 V, 6.6 Ω,
-  600 µs. The bench scenarios S1 to S9 of `examples/buck/SPEC.md` §10 are queue item 4.
-- **Parity tests are scattered** (`tests/ngspice/` + `piperine-parity`); the planned single root
-  `tests/e2e/` home does not exist yet.
+From the solver internals review (artifact `TEV6Hqo6d3QRi1ssZtJTW5`), the `solver-abi-integration`
+verification, and this audit. None breaks the 7 parity fixtures; V1 and V2 are the parity risks.
+
+| # | Point | Evidence | Size |
+| - | ----- | -------- | ---- |
+| V1 | The step is controlled by LTE on node voltages, not on charge; `chgtol` is unused | `tolerances.rs:36`, read by no controller | M |
+| V2 | The Milne predictor's skip is asymmetric compared with ngspice | review | S |
+| V3 | A step that reaches `dt_min` is accepted with a warning instead of failing (C.2.2 item 4 admits it) | `analyses/transient.rs:59` | S |
+| V4 | Newton damping is one global factor, not per unknown | review | M |
+| V5 | Dead hooks: `apply_limit`, `apply_limiting_reports` | `math/newton_raphson.rs:46`, `:77` | S |
+| V6 | Stale doc: `sp.rs` documents the PHDL `@rfport` | `analyses/sp.rs:7` | S |
+| V7 | The digital checkpoint clones every net on each mark | review | M |
+| V8 | Re-entry is approximate: up to 7.3e-4 relative off the continuous run | verification (N1) | M |
+| V9 | The solver's default transient result keeps every accepted step, with its re-entry state (N2) of the same verification: about 58 KB a step, which is 25 GB over the buck's whole start. A host run through `piperine-api` does not pay it: it records only the signals it prints, on the print grid as the steps arrive, and keeps its last step only (60 001 rows peak at about 11 MiB) | `long-run` | S (an opt-out) |
+| V10 | The partials guard matches devices by label, not by module | verification (N3) | S |
+| V11 | The first step after a digital-to-analog jump is first order: off by more than `TRAN_VOLTAGE` at a 10 ns cap; `boundary.rs` runs at 1 ns to pass | `ir-rust` F-B7 | M |
+| V12 | **A mixed design steps at every digital edge.** The buck takes about 45 000 accepted steps per 40 µs (about 675 000 for the 600 µs start), 130 s in a dev build: the analog side lands near every 200 MHz instant. §17.2.2 says a clock nothing analog depends on costs nothing, which suggests the reachability set is coarser than the rule; not measured here. Multi-rate stepping is the user's next item after `long-run` | `long-run`, ROADMAP 3c | L |
+| V13 | No surrogate or averaged model for runs longer than a start | ROADMAP 3c | L |
+| V14 | A transient with a non-zero start and no captured step fails loud | ROADMAP, P1 backlog | S |
+| V15 | Singular and non-finite solves are not diagnosed by name (§4.8) | probes | M |
+| V16 | The periodic small-signal and periodic noise linearization is not implemented | C.2, G.37 | L |
+
+---
+
+## 7. Host surface (Part VIII, §21)
+
+`piperine-solver` still has noise, transfer function, pole-zero, S-parameters, sensitivity,
+adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyses.
+
+| # | Missing | Spec | Size |
+| - | ------- | ---- | ---- |
+| H1 | **No host sequences from the command line**, nor from the library. Host actions during a run: `drive` of a top port, `set` at a time, `force` and `release`, wait for an event, read at an instant. The stimulus of a run is an MSL bench only. The buck's scenarios S1 to S9 have no host | §23.1 rules 1–4, 8, 11 | L |
+| H2 | Analyses beyond `op`, `dc`, `ac`, `transient`: `Noise` (also blocked by L45), TF, PZ, S-parameters, sensitivities, PSS, Fourier and distortion, more than one sweep axis | §11.1, §16.3 | M each, on the device ABI |
+| H3 | Session options: time resolution, `reltol`, `trtol`, `ttol`, the microstep and round bounds, nodesets, temperature. A run takes 20 keys (`request.rs:161`), none of these | §23 table | M |
+| H4 | Metadata operations: list params with type, default, `where`, structural or not; list ports, public items, streams and sites; read a param back (`--print Top.r1.r` is `E0801`); read an operating-point variable (`--print Top.g.id` is `E0801`); the flow of a branch that is not a potential source (`i(Top.r1)` is `E0801`) | §21 table, rule 6 | M |
+| H5 | A `set` of a param no behavior of its module reads (`--param Top.r=..` where `r` only feeds children): `E0802: .. no PARAM pin r; the instance declares no writable parameters` | §23.1 rule 6 | with S2 |
+| H6 | Continued transients, and an analysis at a transient's last instant | §16.4 | M |
+| H7 | Monte Carlo, optimization, objectives and constraints from `target`s, bounds from `where` | §23.1 rule 5, §23.2 | L |
+| H8 | Gradients: gradient params, `∂(record)/∂p`, saltation, `E0807` to `E0809`. The solver's `adjoint` and `sens` are not reached from MSL | §21 rule 7, §23.3 | L |
+| H9 | Host error codes `E0803` to `E0806` (structural set, drive without a drive, late subscription, past time) | §23.1 | with H1 |
+| H10 | Command line: `add`, `remove`, `tree`, `update`, `--locked`, `--offline`, plugin scripts, a REPL, ngspice raw output, a terminal or PNG plot | — | S each |
+| H11 | The root package's integrated tests: one per Book example and claim, through the api or the CLI (queue item 4), and the single root `tests/e2e/` with ngspice parity (4b) | ROADMAP | M |
+| H12 | The stdlib, the galleries and `examples/buck/src` are not reformatted by `piperine fmt` (the formatter is proven on them) | — | S |
+| H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/`, `VAMS-LRM-2-4.md` | — | S |
+
+---
+
+## 8. Unproven
+
+- **U1. Parity covers 7 small analog circuits** (`tests/ngspice/*.msl`: a divider, a current
+  source, three diode circuits, `ac_rc`, `tran_rc`). 43 of the 50 `.cir` fixtures have no MSL
+  twin: BJT, JFET, MOS 1 to 3, noise, distortion, homotopy, temperature. Two twins (`diode_iv`,
+  `tran_rc`) sit near the tolerance floor.
+- **U2. No oracle for digital or mixed-signal behavior.** The interpreter cannot run them; they
+  are tested against the spec's own expected values and `examples/buck/SPEC.md` only.
+- **U3. The buck's closed loop is proven at one operating point**: 0.8 V, Vin 12 V, 6.6 Ω,
+  600 µs. Scenarios S1 to S9 of its SPEC §10 need H1.
+- **U4. The galleries (Appendices D, E, F: 18 fences) are parsed and resolved only**
+  (`std_galleries`); none is type-checked, elaborated or run. Most use a refused form.
+- **U5. The Book.** Its 97 `msl` blocks are held to the parser and its 29 command-line listings
+  to the binary (`piperine-cli/tests/book.rs`). No block is run as a model unless a listing runs
+  it. Shown with their refusal: the ladder (generic module), the debouncer and the PWM (a `u8`
+  param), the alarm line (`Wire`), the clipper and the cycle counter (`sin`), the chapter-8 buck
+  (`settle`), `Blinky` and `Count` (digital-only transient).
+- **U6. Rules of Part V with no test that names them**: record order within a microstep (§19
+  rule 8), the tick rounding of T2 to T4, `E0502`, the round bound `E0506`, crossings between
+  sweep points (§16.1.2), a rejected step leaving no record (§19 rule 7).
+- **U7. The `abstol` of a user nature in the convergence test, and compatible natures at one
+  node** (§4 rules 5, 13; §17.1) are not exercised from source.
+- **U8. AC from MSL is proven on one RC.** Nothing checks an AC run of a design with a digital
+  part (§16.1.4) or a DC sweep that crosses a threshold (§16.1.2).
+- **U9. The two backends agree on the M1 subset only** (`backends`, `twins`); everything else has
+  one implementation and no second opinion.
+- **U10. Parity tests are scattered** (`tests/ngspice/` + `piperine-parity`); the single root
+  `tests/e2e/` does not exist yet (H11).
+
+---
+
+## 9. Coverage by spec part
+
+A rough share of the normative constructs of each part that run end to end from `.msl`. "Parses"
+does not count.
+
+| Part | Runs | Biggest holes |
+| ---- | ---- | ------------- |
+| I §1–§2 values, `Repr` | 35 % | composites, payload enums, floats other than `f64`, widths over 64 |
+| I §3–§3.3 functions, calls, unknown values | 35 % | generics, `impl`, traits, handles, optional arguments, loops, the merge (L19), `level` |
+| I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
+| II §4–§5 natures, discrete carriers | 40 % | `resolve`, arrays, user discrete natures, `Unknown` initial values |
+| II §6 nodes, probes | 70 % | signal-flow, `inflow`, a child's nodes |
+| II §7 bundles | 0 % | all |
+| III §8–§8.2 modules, ports, params, the body | 50 % | generics, generation, params that are not `f64` or `bool`, `pub` access, a `let` as a param value |
+| III §8.3 instances in expressions | 30 % | value inputs, results with a node, feedback |
+| III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
+| IV §10–§11 analog | 40 % | conditional contributions, several blocks, where a `ddt` may sit |
+| IV §12–§13 digital, events | 60 % | an event as a `bool`, `settle`, `Event` functions, loops, element commits |
+| IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `bound_step`, `freq`, `simparam`, analysis kinds, `others`, `level`, `inflow`, `include_str!` |
+| V §15–§18 execution | 60 % | the merge, `settle`, digital-only runs, error naming, the text of §15 itself (X1) |
+| VI §19–§21 output, input, metadata | 35 % | `finish` (S1), traces, `maybe`, files, host metadata |
+| VII §22 stdlib | 35 % (about 28 of 75 names) | everything generic, every resolved net, `idt`, `slew`, filters, noise, tables |
+| VIII §23 host | 15 % | host actions, options, Monte Carlo, optimization, gradients |
+| A lexical, B grammar | 100 % parsed | the placement matrix B.2 is enforced for the subset only |
+| C reference implementation | defaults in place | the C.2 text is stale (X1, X2); 1 of the 5 conformance items runs |
+| D, E, F galleries | 0 % proven | U4 |
+| H inherited library | 19 % (14 of 75 method rows) | L14, L15, L16 |
+
+---
+
+## 10. Reference lists
+
+**Error codes of the spec that no source file mentions (73 of 180).**
+`E0102 E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0151 E0203 E0204
+E0205 E0224 E0242 E0243 E0244 E0260 E0261 E0262 E0264 E0313 E0315 E0322 E0333 E0340 E0342 E0351
+E0354 E0360 E0361 E0362 E0371 E0372 E0373 E0374 E0413 E0414 E0416 E0418 E0451 E0452 E0453 E0454
+E0456 E0503 E0504 E0505 E0507 E0508 E0610 E0612 E0613 E0614 E0701 E0702 E0703 E0704 E0705 E0706
+E0803 E0804 E0805 E0806 E0807 E0808 E0809 E0904 E0906`
+
+**Entries of the previous file that changed.**
+
+- "A derived child param is not re-derived … no host can `set` yet": the second half stopped
+  being true with `msl-cli` (`--param`, `dc --sweep`). Now S2.
+- "An MSL local named like an MSL function makes the generated Rust fail to compile": the type
+  checker stops it first (`types/call.rs:54`, there since `295b5ab8`). Now L20.
+- `examples/buck/GAPS.md` G3 (a method on a carrier left unresolved) was already closed by
+  `msl-digital`: it is a `P0001` naming the method (L15).
+- Every other entry is kept: S4, B3, B4, L19, L37, L54 to L56, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
+  U3, U10.
+
+**Clusters one feature would close.** Sizes are rough; the order is the user's.
+
+| Cluster | Closes | Size |
+| ------- | ------ | ---- |
+| Correctness fixes | S1, S5, B1, B2, L11, L17, L41, L46, L47, L48, L54, L55 | S to M |
+| `set` and params | S2, H5, L27, L28, L29, L37, H4 | M |
+| Math and method catalogue | L14, L15, L16 (the scalar rows), then `db10`, `db20` | S |
+| Analog structure | L40, L42, L34, L35, L36, L38, L50: `Switch`, `CapIc`, `idt`, `slew`, the `Diode` of §18 | M to L |
+| Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
+| Composite values | L1 to L6, L24, L57 | L |
+| Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
+| Resolved nets and bundles | L21, L22, L23, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
+| Unknown semantics | L18, L19, S6 (ABI), L51, L52, L53, L8 | L |
+| Host II | H1, H3, H6, H9, H11, L39, L56, then B4 (Python) | L |
+| Speed | V12, V13, V16, PSS on the device ABI | L |
+| Foreign models | L12, L33 | L |
+| Solver hygiene | V1 to V11, V14, V15, §4.8 | M |
+| Language server | B3 | M, deferred |
+| Documents | X1, X2, H13 | S |
