@@ -260,9 +260,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline tests `request::tests::option_keys_are_read_for_every_analysis`, `tolerance_keys_must_be_positive`, `temp_must_be_above_absolute_zero`, `bounds_must_be_whole_numbers_of_at_least_one`, `a_flag_wins_over_its_option_key`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: 5 new tests
+- [x] Inline tests `request::tests::option_keys_are_read_for_every_analysis`, `tolerance_keys_must_be_positive`, `temp_must_be_above_absolute_zero`, `bounds_must_be_whole_numbers_of_at_least_one`, `a_flag_wins_over_its_option_key`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: 5 new tests
 
 **Tests**: unit
 **Gate**: quick

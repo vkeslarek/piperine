@@ -59,6 +59,31 @@ impl Grid {
     }
 }
 
+/// The session options of a run, read for every analysis (HII-01): ngspice's `.options` names,
+/// lowercase. `None` leaves the solver's own default, so a run that gives none runs as it did.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Options {
+    /// The relative tolerance of a Newton iterate and of a step's error.
+    pub reltol: Option<f64>,
+    /// The absolute tolerance of a flow, amperes.
+    pub abstol: Option<f64>,
+    /// The absolute tolerance of a potential, volts.
+    pub vntol: Option<f64>,
+    /// The factor on the local truncation error a transient accepts.
+    pub trtol: Option<f64>,
+    /// The temperature of the run in degrees Celsius.
+    pub temp: Option<f64>,
+    /// The session's tick length in seconds.
+    pub resolution: Option<f64>,
+    /// The bound on the rounds of an operating point.
+    pub maxrounds: Option<u32>,
+    /// The bound on the microsteps of one instant.
+    pub maxmicro: Option<u32>,
+    /// The node values that seed the first Newton iterate of an operating point: a path and a
+    /// value each, in the order given.
+    pub nodeset: Vec<(String, f64)>,
+}
+
 /// The settings the command line gives, one per key of a run table; `None` (or empty) leaves
 /// the table's value. `params` are added after the table's, in order.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -84,6 +109,16 @@ pub struct Overrides {
     pub plot: Option<PathBuf>,
     /// `--all-checks`: print the passing `checks` records too.
     pub all_checks: Option<bool>,
+    pub reltol: Option<f64>,
+    pub abstol: Option<f64>,
+    pub vntol: Option<f64>,
+    pub trtol: Option<f64>,
+    pub temp: Option<f64>,
+    pub resolution: Option<f64>,
+    pub maxrounds: Option<u32>,
+    pub maxmicro: Option<u32>,
+    /// `--nodeset <path>=<value>`: an entry replaces the table's entry of the same path.
+    pub nodeset: Vec<(String, f64)>,
 }
 
 /// One run request, validated.
@@ -102,6 +137,8 @@ pub struct RunSpec {
     pub plot: Option<PathBuf>,
     /// Whether the terminal shows the passing `checks` records too (CLI-06 AC 7).
     pub all_checks: bool,
+    /// The session options (HII-01), read for every analysis.
+    pub options: Options,
     /// What spelled the request, kept so that flags can be merged and validated again.
     keys: Keys,
     /// The manifest the keys were read from; `None` for a request made from flags.
@@ -152,15 +189,29 @@ struct Keys {
     records: Option<Given<PathBuf>>,
     plot: Option<Given<PathBuf>>,
     all_checks: Option<Given<bool>>,
+    reltol: Option<Given<f64>>,
+    abstol: Option<Given<f64>>,
+    vntol: Option<Given<f64>>,
+    trtol: Option<Given<f64>>,
+    temp: Option<Given<f64>>,
+    resolution: Option<Given<f64>>,
+    maxrounds: Option<Given<u32>>,
+    maxmicro: Option<Given<u32>>,
+    nodeset: Vec<(String, f64)>,
 }
+
+/// The lowest temperature, degrees Celsius: `temp` must be above it.
+const ABSOLUTE_ZERO: f64 = -273.15;
 
 type Key<'i> = Spanned<DeString<'i>>;
 type Value<'i> = Spanned<DeValue<'i>>;
 
-/// The keys of a run table, in the order CLI-03 AC 1 lists them.
-const RUN_KEYS: [&str; 20] = [
+/// The keys of a run table, in the order CLI-03 AC 1 lists them, then the session options of
+/// HII-01.
+const RUN_KEYS: [&str; 29] = [
     "bench", "top", "analysis", "stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "print", "streams",
-    "params", "backend", "csv", "records", "plot", "all_checks",
+    "params", "backend", "csv", "records", "plot", "all_checks", "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds",
+    "maxmicro", "nodeset",
 ];
 
 /// The keys whose meaning belongs to an analysis; each analysis reads the ones `reads` lists.
@@ -301,6 +352,21 @@ impl Source {
             "records" => keys.records = Some(path()?),
             "plot" => keys.plot = Some(path()?),
             "all_checks" => keys.all_checks = Some(flag()?),
+            "reltol" => keys.reltol = Some(real()?),
+            "abstol" => keys.abstol = Some(real()?),
+            "vntol" => keys.vntol = Some(real()?),
+            "trtol" => keys.trtol = Some(real()?),
+            "temp" => keys.temp = Some(real()?),
+            "resolution" => keys.resolution = Some(real()?),
+            "maxrounds" => keys.maxrounds = Some(count()?),
+            "maxmicro" => keys.maxmicro = Some(count()?),
+            "nodeset" => {
+                let table = v.as_table().ok_or_else(|| wrong("a table of node paths and numbers"))?;
+                for (path, n) in entries(table) {
+                    let Some(n) = number(n.get_ref()) else { return Err(wrong("a table of node paths and numbers")) };
+                    keys.nodeset.push((path.get_ref().to_string(), n));
+                }
+            }
             _ => {
                 let message = format!("unknown key `{name}` in a run: a run takes {}", RUN_KEYS.join(", "));
                 return Err(self.fault(Some(span(key.span())), message, "not a key of a run"));
@@ -335,6 +401,20 @@ impl Keys {
         over(&mut self.records, &o.records);
         over(&mut self.plot, &o.plot);
         over(&mut self.all_checks, &o.all_checks);
+        over(&mut self.reltol, &o.reltol);
+        over(&mut self.abstol, &o.abstol);
+        over(&mut self.vntol, &o.vntol);
+        over(&mut self.trtol, &o.trtol);
+        over(&mut self.temp, &o.temp);
+        over(&mut self.resolution, &o.resolution);
+        over(&mut self.maxrounds, &o.maxrounds);
+        over(&mut self.maxmicro, &o.maxmicro);
+        for (path, value) in &o.nodeset {
+            match self.nodeset.iter_mut().find(|(p, _)| p == path) {
+                Some(entry) => entry.1 = *value,
+                None => self.nodeset.push((path.clone(), *value)),
+            }
+        }
         if !o.print.is_empty() {
             self.print = o.print.clone();
         }
@@ -410,6 +490,20 @@ impl Keys {
             }
             _ => Ok(()),
         };
+        for (key, given) in [("reltol", &self.reltol), ("abstol", &self.abstol), ("vntol", &self.vntol), ("trtol", &self.trtol), ("resolution", &self.resolution)] {
+            positive(key, given)?;
+        }
+        if let Some(Given { value, at }) = &self.temp {
+            if !(*value > ABSOLUTE_ZERO) {
+                let message = format!("run `{name}`: `temp` must be greater than {ABSOLUTE_ZERO} (degrees Celsius), found {value}");
+                return Err(fault(*at, message, "not above absolute zero"));
+            }
+        }
+        for (key, given) in [("maxrounds", &self.maxrounds), ("maxmicro", &self.maxmicro)] {
+            if let Some(Given { value: 0, at }) = given {
+                return Err(fault(*at, format!("run `{name}`: `{key}` must be a whole number of at least 1, found 0"), "less than 1"));
+            }
+        }
         let parsed = match analysis.value.as_str() {
             "op" => Analysis::Op,
             "dc" => {
@@ -485,6 +579,17 @@ impl Keys {
             records: self.records.as_ref().map(|g| g.value.clone()),
             plot: self.plot.as_ref().map(|g| g.value.clone()),
             all_checks: self.all_checks.as_ref().is_some_and(|g| g.value),
+            options: Options {
+                reltol: self.reltol.as_ref().map(|g| g.value),
+                abstol: self.abstol.as_ref().map(|g| g.value),
+                vntol: self.vntol.as_ref().map(|g| g.value),
+                trtol: self.trtol.as_ref().map(|g| g.value),
+                temp: self.temp.as_ref().map(|g| g.value),
+                resolution: self.resolution.as_ref().map(|g| g.value),
+                maxrounds: self.maxrounds.as_ref().map(|g| g.value),
+                maxmicro: self.maxmicro.as_ref().map(|g| g.value),
+                nodeset: self.nodeset.clone(),
+            },
             keys: self,
             source,
         })
@@ -627,8 +732,9 @@ points = 5
         assert_eq!(runs[1].analysis, Analysis::Dc { sweep: "v1.dc".into(), from: -1.0, to: 0.8, step: 0.05 });
         assert_eq!(runs[2].analysis, Analysis::Ac { from: 1e3, to: 1e7, grid: Grid::PerDecade(10) });
         assert_eq!(runs[3].analysis, Analysis::Ac { from: 1e3, to: 5e3, grid: Grid::Points(5) });
-        // the nineteen keys of CLI-03 AC 1 and `all_checks` (CLI-06 AC 7), no more
-        assert_eq!(RUN_KEYS.len(), 20);
+        // the nineteen keys of CLI-03 AC 1, `all_checks` (CLI-06 AC 7) and the nine session options
+        // of HII-01, no more
+        assert_eq!(RUN_KEYS.len(), 29);
         // a manifest with no run table has no run
         assert_eq!(read("").map(|r| r.len()).ok(), Some(0));
     }
@@ -799,5 +905,103 @@ points = 5
         let lone = RunSpec::from_flags("divider", &Overrides { analysis: Some("op".into()), ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
         assert_eq!((lone.name.as_str(), &lone.analysis), ("divider", &Analysis::Op));
         assert!(RunSpec::from_flags("divider", &Overrides::default()).is_err(), "no analysis");
+    }
+
+    /// The nine option keys of HII-01 AC 1, as a run table gives them.
+    const ALL_OPTIONS: &str = "reltol = 1e-4\nabstol = 1e-13\nvntol = 2e-6\ntrtol = 5\ntemp = 75\nresolution = 1e-12\nmaxrounds = 30\nmaxmicro = 500\nnodeset = { \"Top.a\" = 1.5, \"Top.b\" = 0 }\n";
+
+    fn options() -> Options {
+        Options {
+            reltol: Some(1e-4),
+            abstol: Some(1e-13),
+            vntol: Some(2e-6),
+            trtol: Some(5.0),
+            temp: Some(75.0),
+            resolution: Some(1e-12),
+            maxrounds: Some(30),
+            maxmicro: Some(500),
+            nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
+        }
+    }
+
+    #[test]
+    fn option_keys_are_read_for_every_analysis() {
+        // HII-01 AC 1: the nine keys are read by each of the four analyses; a run that gives none
+        // has no option (HII-02 AC 1)
+        for analysis in ["analysis = \"op\"\n", "analysis = \"dc\"\nsweep = \"v1.dc\"\nfrom = 0\nto = 1\nstep = 0.5\n", "analysis = \"ac\"\nfrom = 1\nto = 10\npoints = 3\n", "analysis = \"transient\"\nstop = 1e-3\n"] {
+            let spec = one(&format!("[run.a]\n{analysis}{ALL_OPTIONS}"));
+            assert_eq!(spec.options, options(), "{analysis}");
+            assert_eq!(one(&format!("[run.a]\n{analysis}")).options, Options::default(), "{analysis}");
+        }
+        assert_eq!(RUN_KEYS[20..], ["reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "nodeset"]);
+    }
+
+    #[test]
+    fn tolerance_keys_must_be_positive() {
+        // HII-01 AC 3: not a number greater than 0 is a P0010 at the value, naming the key
+        for key in ["reltol", "abstol", "vntol", "trtol", "resolution"] {
+            for value in ["0", "-1e-3"] {
+                let f = fault(&format!("[run.a]\nanalysis = \"op\"\n{key} = {value}\n"));
+                let (code, message, at) = located(&f);
+                assert_eq!((code, at), ("P0010", value), "{key} = {value}");
+                assert!(message.contains(&format!("`{key}`")) && message.contains("greater than 0"), "{message}");
+            }
+            one(&format!("[run.a]\nanalysis = \"op\"\n{key} = 1e-9\n"));
+        }
+    }
+
+    #[test]
+    fn temp_must_be_above_absolute_zero() {
+        // HII-01 AC 4: -273.15 itself is refused, a value above it (negative included) is read
+        for value in ["-273.15", "-300"] {
+            let f = fault(&format!("[run.a]\nanalysis = \"op\"\ntemp = {value}\n"));
+            let (code, message, at) = located(&f);
+            assert_eq!((code, at), ("P0010", value));
+            assert!(message.contains("`temp`") && message.contains("-273.15"), "{message}");
+        }
+        assert_eq!(one("[run.a]\nanalysis = \"op\"\ntemp = -273.0\n").options.temp, Some(-273.0));
+        assert_eq!(one("[run.a]\nanalysis = \"op\"\ntemp = 0\n").options.temp, Some(0.0), "an integer is a number");
+    }
+
+    #[test]
+    fn bounds_must_be_whole_numbers_of_at_least_one() {
+        // HII-01 AC 5: 0, a fraction and a negative number are each a P0010 naming the key
+        for key in ["maxrounds", "maxmicro"] {
+            for value in ["0", "1.5", "-2"] {
+                let f = fault(&format!("[run.a]\nanalysis = \"op\"\n{key} = {value}\n"));
+                let (code, message, _) = located(&f);
+                assert_eq!(code, "P0010", "{key} = {value}");
+                assert!(message.contains(&format!("`{key}`")), "{message}");
+            }
+        }
+        let spec = one("[run.a]\nanalysis = \"op\"\nmaxrounds = 1\nmaxmicro = 1\n");
+        assert_eq!((spec.options.maxrounds, spec.options.maxmicro), (Some(1), Some(1)));
+    }
+
+    #[test]
+    fn a_flag_wins_over_its_option_key() {
+        // HII-01 AC 2: a flag replaces the key it shares; a nodeset flag replaces the entry of its
+        // path and leaves the others; a bad flag value is a P0010 with no span
+        let table = one(&format!("[run.a]\nanalysis = \"op\"\n{ALL_OPTIONS}"));
+        let flags = Overrides {
+            reltol: Some(1e-6),
+            temp: Some(-40.0),
+            maxrounds: Some(3),
+            nodeset: vec![("Top.a".into(), 9.0), ("Top.c".into(), 2.0)],
+            ..Overrides::default()
+        };
+        let merged = table.merged(&flags).unwrap_or_else(|f| panic!("{f}"));
+        let want = Options {
+            reltol: Some(1e-6),
+            temp: Some(-40.0),
+            maxrounds: Some(3),
+            nodeset: vec![("Top.a".into(), 9.0), ("Top.b".into(), 0.0), ("Top.c".into(), 2.0)],
+            ..options()
+        };
+        assert_eq!(merged.options, want);
+        let alone = RunSpec::from_flags("a", &Overrides { analysis: Some("op".into()), vntol: Some(1e-7), ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
+        assert_eq!(alone.options, Options { vntol: Some(1e-7), ..Options::default() });
+        let bad = table.merged(&Overrides { maxmicro: Some(0), ..Overrides::default() }).expect_err("maxmicro 0");
+        assert!(matches!(&bad, Failure::Host { code: "P0010", message } if message.contains("`maxmicro`")), "{bad:?}");
     }
 }
