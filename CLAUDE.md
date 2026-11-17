@@ -20,11 +20,10 @@ the device ABI is the only device contract. Rust workspace, edition 2024.
 
 **The crates that compile are the root `Cargo.toml`'s `default-members`:** `piperine-lang`,
 `piperine-ir`, `piperine-abi`, the three solver crates, `piperine-interp`, `piperine-plan`,
-`piperine-transpile` and `piperine-parity`. The root `piperine` shell package, `piperine-project`,
-`piperine-api`, `piperine-cli` and `piperine-lang-server` are kept in the tree but do not build
-yet: they target the retired Verilog-AMS front end and the solver interface MD-62 replaced.
-The CLI and the project are next (`ROADMAP.md`, "Queue after ir-rust"); the language server is
-deferred to a feature of its own.
+`piperine-transpile`, `piperine-parity`, and the host crates `piperine-project`, `piperine-api`,
+`piperine-cli` and the root `piperine` shell package, which build (feature `msl-cli`). Only
+`piperine-lang-server` stays outside the default build: it still targets the retired Verilog-AMS
+front end, is not edited, and is deferred by the user to a feature of its own.
 
 ## Pipeline (the spine)
 
@@ -44,7 +43,7 @@ source ──parse──► Design (POM)                     crate: piperine-lan
           (owner protocol, analyses)     piperine-digital-solver
                                     │
                                     ▼
-                    hosts: piperine-api (Rust), piperine-cli   (do not build yet)
+                    hosts: piperine-api (Project, Session) ◄── piperine-cli (`piperine`)
 ```
 
 The owner `piperine-solver` depends on both sub-solvers and on `piperine-abi`; the sub-solvers
@@ -75,26 +74,28 @@ cargo test -- --nocapture         # see solver output
 ```
 
 At the root, `cargo build` / `cargo test` run the `default-members` (the crates that
-compile). Never pass `--workspace`: the root `piperine` shell and the other four crates do not
-build yet.
+compile). Never pass `--workspace`: `piperine-lang-server` does not build.
 
 ## Crate responsibilities
 
 | Crate | Role |
 |-------|------|
-| `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`); the type checker (`types/`: `Types::check`, the M1 analog subset and the digital and mixed forms of `msl-digital`, one `P0001` naming each construct outside them) and the elaborator (`elab/`: `Elaborator::run`, `Design` + top module to an `Ir`, reading the POM and never writing it; modules with a result hoisted and unknown-ness computed as `Flagged`, MD-64).  Spec: `docs/spec/`; POM guide: `docs/pom/`. |
+| `piperine-lang` | The MSL front end: lexer and parser (`msl/`, logos + chumsky, miette diagnostics, canonical printer `msl::print`, and the formatter `msl::format` behind `piperine fmt`, which keeps every plain comment through `msl::comments`) and the Piperine Object Model (`pom/`: an arena `Design` over a crate graph, name and member resolution, reflection, serde), with the embedded standard library (`std/*.msl`); the type checker (`types/`: `Types::check`, the M1 analog subset and the digital and mixed forms of `msl-digital`, one `P0001` naming each construct outside them) and the elaborator (`elab/`: `Elaborator::run`, `Design` + top module to an `Ir`, reading the POM and never writing it; modules with a result hoisted and unknown-ness computed as `Flagged`, MD-64).  Spec: `docs/spec/`; POM guide: `docs/pom/`. |
 | `piperine-ir` | The IR: an elaborated design as an object model (`Ir`: arenas of bodies, functions, instances, nodes, natures behind typed `u32` ids), its builder (`IrBuilder`), `Ir::check()` and the printer (`print_structural`). A leaf crate: no in-tree dependency. Produced by `piperine-lang`'s `elab/`; read by `piperine-plan`, `piperine-transpile` and `piperine-interp`. |
 | `piperine-abi` | The device ABI (MD-61, `.specs/features/device-abi/abi.md`): the `#[repr(C)]` shape, frames and `u32` constants (`raw.rs`), the shipped layouts `BIT`/`REAL`/`BYTE`/`F64`/`NONE` (`layout.rs`), the owned shape builder `ShapeBuf`/`ShapeRef` (`shape.rs`), the `Device` trait and its `Eval`/`React` lenses (`device.rs`), the generic `extern "C"` thunks `module::<D>`/`library` (`thunk.rs`), the solver-side `caller::Handle`, shape-local `validate` and the finite-difference `verify_partials`. Depends on no crate; `unsafe` only in `raw.rs`, `thunk.rs`, `caller.rs`. |
 | `piperine-solver` | The solver owner: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), the owner protocol (`protocol/`) and its adapters (`analyses/adapters.rs`), the bind of device instances (`core/bind.rs`, `core/builder.rs`), `Net` naming, `prelude.rs`. Depends on `piperine-abi` (the device ABI), `piperine-analog-solver` and `piperine-digital-solver`; depends on no other in-tree crate. |
 | `piperine-analog-solver` | The analog sub-solver: MNA/linear algebra (`math/`), `Netlist`, `Tolerances`, `ConvergencePlan` (`convergence.rs`) with its homotopy/Newton/stepper strategies, `TrBdf2` + LTE (`math/integration.rs`), `SolverDomain` errors, the device `Assembly` (`device/`: terms, partials, histories, limit iterates, checkpoints) and the secant step of crossing location (`crossing.rs`). Depends only on `piperine-abi`; it names no digital type. |
 | `piperine-digital-solver` | The digital sub-solver: the byte-net engine of the device ABI (`engine.rs`, `plan.rs`, `queue.rs`, `dag.rs`, `instant.rs`, `advance.rs`, `tick.rs`, `observe.rs`, `DigitalLimits`). Depends only on `piperine-abi`; it names no analog type. |
-| `piperine-api` | The library face (MD-20): the one host entry point `Session` + `SessionBuilder`, the sweep drivers, and `SolverConfig` (`session/`), result objects (`results.rs`, `waveform.rs`, `fourier.rs`, `units.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
-| `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
-| `piperine-project` | `Piperine.toml` discovery, git dependency resolver (a dependency that declares contributions **is** a plugin — MD-30), `SourceMap` recipe, GitHub-release device-binary fetch + cache (`release.rs`), plugin lockfile. |
-| `piperine-lang-server` | LSP server. Handlers share `RequestExt::parse`/`ConnectionExt::respond` (every request id gets a response), `DocumentState::{analyze,resolve_at,word_occurrences}`, `ProjectContext::discover`. |
+| `piperine-api` | The library face (MD-20), rewritten small by `msl-cli` (its old content is gone): `Project` (a package found from `Piperine.toml`, its crate graph and its `[run.<name>]` tables; a lone file), `RunSpec`/`Overrides` (a run request, keys and flags), `Backend`, `Session` (one run: parse, type check, elaborate, compile on a backend once, run its analysis), `Probe`, `Table`, `Record`/`Streams` (`emit!` records decoded from the sink), `Plot`, `Verdict`, `Failure` (`P0010`, `P0011`, `E0801`, `E0802`). Every rule of what a run prints or judges lives here, with a Rust test. |
+| `piperine-cli` | The `piperine` binary, a shell over `piperine-api` (clap builder, no derive): the seven commands `check`, `build`, `run`, `test`, `new`, `clean`, `fmt`; text tables, record lines, CSV, JSON Lines and SVG in `render/`; exit codes 0/1/2. Its e2e targets run the real binary; `tests/book.rs` holds every CLI listing of the Book to the binary. |
+| `piperine-project` | `Piperine.toml` (manifest, `[run]` tables accepted and located but not read: `piperine-api` reads them), path and git dependencies, the lockfile (MD-58, MD-59). |
+| `piperine-lang-server` | LSP server. **Outside the default build and deferred** (user, 2026-11-16): it still targets the retired front end and is not edited. |
 | `piperine-plan` | What the two backends of an `Ir` share (MD-63): `BodyPlan` (a body's ABI shape and the table of what each function computes: `FunctionPlan`, `Mode`, `Source`, `Target`, `Term`) and `Netlist::circuit`, the design's instance table bound to whatever implements `Modules`. Depends on `piperine-ir`, `piperine-abi`, `piperine-solver`. |
 | `piperine-transpile` | The compiled backend (MD-63): `Transpiler::new` checks and plans an `Ir`; the IR is printed as one readable Rust source, built by `rustc` into a `cdylib` exporting `piperine_abi_1`, cached by hash and loaded. Generated code links only `piperine-abi` and the embedded runtime `rt`. |
 | `piperine-parity` | The parity harness and the runner of MSL from source (`publish = false`): runs ngspice on `tests/ngspice/*.cir` at test time and compares the MSL twins under one `ToleranceContract`; `Project` takes a crate graph from disk to a compiled circuit, which the `buck_*` targets use to run `examples/buck` from its `.msl`. |
+
+The root package `piperine` is the shell over `piperine-api` (`pub use piperine_api::*`, so a Rust
+host writes `use piperine::…`); it builds, and its integrated tests are queue item 4 of `ROADMAP.md`.
 
 ## Solver architecture (current state)
 
@@ -116,9 +117,9 @@ build yet.
 
 ## Known gaps
 
-- The hosts (`piperine-api`, `piperine-cli`), `piperine-project` and the language server do not
-  build: an MSL design runs only from a Rust test. What runs, what is refused and what is wrong
-  today: `GAPS.md`. Planned order: `ROADMAP.md`.
+- The hosts build and run an MSL project end to end: `piperine run` in `examples/rc` or
+  `examples/buck`. The language server does not build and is deferred. What runs, what is refused
+  and what is wrong today: `GAPS.md`. Planned order: `ROADMAP.md`.
 - Solver ABI work in progress: `.specs/STATE.md` holds the decision log and
   `.specs/features/` the feature specs.
 

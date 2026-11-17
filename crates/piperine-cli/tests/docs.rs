@@ -25,3 +25,33 @@ fn the_buck_readme_says_how_to_run_it() {
     }
     assert!(readme.contains("No such host exists yet"), "the Python sketch says the host it sketches does not exist");
 }
+
+#[test]
+fn the_instruction_files_say_the_host_crates_build() {
+    // CLI-20 AC 1: `CLAUDE.md` and `AGENTS.md` no longer say the host crates do not build; their
+    // rows say what `msl-cli` left (`Project`/`Session` for `piperine-api`, the seven commands for
+    // `piperine-cli`, `msl::format` for `piperine-lang`); `piperine-lang-server` is outside the
+    // default build and deferred
+    for path in ["CLAUDE.md", "AGENTS.md"] {
+        let text = read(path);
+        for stale in ["(does not build yet)", "do not build yet", "five do not build", "four crates do not\nbuild", "piperine-cli`, `piperine-project` and the language server do not"] {
+            assert!(!text.contains(stale), "{path} still says `{stale}`");
+        }
+        assert!(text.contains("piperine-lang-server") && text.contains("outside the default build") && text.contains("deferred"), "{path} says the language server is outside the default build and deferred");
+        assert!(text.contains("msl::format"), "{path} names `msl::format`");
+    }
+    let claude = read("CLAUDE.md");
+    let row = |name: &str| claude.lines().find(|l| l.starts_with(&format!("| `{name}` |"))).unwrap_or_else(|| panic!("CLAUDE.md has a row for {name}")).to_string();
+    let api = row("piperine-api");
+    assert!(api.contains("`Project`") && api.contains("`Session`"), "the piperine-api row names Project and Session: {api}");
+    let cli = row("piperine-cli");
+    for command in ["check", "build", "run", "test", "new", "clean", "fmt"] {
+        assert!(cli.contains(&format!("`{command}`")), "the piperine-cli row names `{command}`: {cli}");
+    }
+    assert!(row("piperine-lang").contains("msl::format"), "the piperine-lang row names `msl::format`");
+    assert!(claude.contains("The root package `piperine`") && claude.contains("it builds"), "CLAUDE.md says the root package builds");
+    let agents = read("AGENTS.md");
+    for name in ["piperine-project", "piperine-api", "piperine-cli", "root `piperine` shell package"] {
+        assert!(agents.contains(name), "AGENTS.md names {name}");
+    }
+}

@@ -15,9 +15,10 @@ from its `.msl`. The native solver is three crates:
 `piperine-digital-solver`, which meet only through events at an instant, run by the owner protocol (MD-62). PHDL was retired in full
 (MD-44/MD-45).
 
-**The root `Cargo.toml`'s `default-members` are the crates that compile.** The root `piperine`
-shell package, `piperine-project`, `piperine-api`, `piperine-cli` and `piperine-lang-server` stay
-in the tree but do not build: the CLI and the project are next, the language server is deferred.
+**The root `Cargo.toml`'s `default-members` are the crates that compile**, the host crates
+`piperine-project`, `piperine-api`, `piperine-cli` and the root `piperine` shell package included
+(feature `msl-cli`). Only `piperine-lang-server` stays outside the default build: it does not build,
+is not edited, and is deferred by the user to a feature of its own.
 
 ```
 source ──► piperine-lang ──► Design (POM) ──► Ir (piperine-ir) ──► piperine-transpile (Rust, rustc)
@@ -26,7 +27,7 @@ source ──► piperine-lang ──► Design (POM) ──► Ir (piperine-ir)
                        ├── piperine-analog-solver
                        └── piperine-digital-solver
                                    │
-                  hosts: piperine-api (Rust) / piperine-cli
+                  hosts: piperine-api (Project, Session) ◄── piperine-cli (`piperine`)
 ```
 
 Dependency direction: the owner `piperine-solver` depends on both sub-solvers and on
@@ -41,23 +42,23 @@ Always build and test before declaring work done:
 
 ```sh
 cargo build     # the default members; zero warnings is the bar
-cargo test      # their whole suite, ngspice parity included; never `--workspace` (five do not build)
+cargo test      # their whole suite, ngspice parity included; never `--workspace` (the language server does not build)
 ```
 
 ## Workspace map
 
 ```
 crates/
-├── piperine-lang/            parser + type checker + elaborator: msl/ pom/ types/ elab/ (+ std/)
+├── piperine-lang/            parser + type checker + elaborator: msl/ pom/ types/ elab/ (+ std/), msl::format (fmt)
 ├── piperine-ir/              the IR: arenas, builder, check(), printer and parser
 ├── piperine-abi/             device ABI: repr(C) contract, Device trait, thunks, caller::Handle, validate, verify
 ├── piperine-solver/          owner: protocol/, analyses/, bind (core/), Net naming, prelude
 ├── piperine-analog-solver/   analog sub-solver: math/, device/ (Assembly), convergence, TrBdf2
 ├── piperine-digital-solver/  digital sub-solver (the byte-net engine of the device ABI)
-├── piperine-api/             the library face: session, results, waveform (does not build yet)
-├── piperine-cli/             `piperine` CLI (does not build yet)
-├── piperine-project/         Piperine.toml + dependency resolver (does not build yet)
-├── piperine-lang-server/     LSP server (does not build yet)
+├── piperine-api/             the library face, small: Project, RunSpec, Session, Probe, Table, Record, Plot, Verdict
+├── piperine-cli/             the `piperine` binary, a shell over piperine-api: check build run test new clean fmt
+├── piperine-project/         Piperine.toml (+ [run] tables, unread) + dependency resolver + lockfile
+├── piperine-lang-server/     LSP server: outside the default build, deferred (does not build)
 ├── piperine-plan/             the plan both backends share: BodyPlan (shape + function table), Netlist::circuit (MD-63)
 ├── piperine-transpile/       the compiled backend: IR printed as Rust, built by rustc, cached, loaded (MD-63)
 └── piperine-parity/          parity harness (ngspice vs the MSL twins) and MSL from source (`Project`, buck_*) (test-only)

@@ -1298,10 +1298,10 @@ T38
 
 **Done when**:
 
-- [ ] `AGENTS.md` receives the same statements; `cargo test -p piperine-solver --test workspace_shape` passes
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `the_instruction_files_say_the_host_crates_build`
-- [ ] Gate check passes: Build (see Gate Check Commands)
-- [ ] Test count: the 1 test(s) named above, and no existing test removed or edited
+- [x] `AGENTS.md` receives the same statements; `cargo test -p piperine-solver --test workspace_shape` passes
+- [x] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `the_instruction_files_say_the_host_crates_build`
+- [x] Gate check passes: Build (see Gate Check Commands)
+- [x] Test count: the 1 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build
