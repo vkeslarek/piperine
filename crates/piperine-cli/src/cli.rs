@@ -14,6 +14,7 @@ use piperine_api::Overrides;
 
 use crate::commands::build::BuildCommand;
 use crate::commands::check::CheckCommand;
+use crate::commands::clean::CleanCommand;
 use crate::commands::new::NewCommand;
 use crate::commands::run::RunCommand;
 use crate::commands::test::TestCommand;
@@ -285,6 +286,7 @@ impl Cli {
     pub fn execute(invocation: &Invocation, out: &Out, err: &mut dyn Write) -> Exit {
         match invocation {
             Invocation::Build { project, runs, verbose } => BuildCommand { project: project.clone(), runs: runs.clone(), verbose: *verbose }.execute(out, err),
+            Invocation::Clean { project, cache } => CleanCommand { project: project.clone(), cache: *cache }.execute(out, err),
             Invocation::Check { project, target } => CheckCommand { project: project.clone(), target: target.clone() }.execute(out, err),
             Invocation::New { name } => NewCommand { name: name.clone() }.execute(out, err),
             Invocation::Test { project, runs } => TestCommand { project: project.clone(), runs: runs.clone() }.execute(out, err),

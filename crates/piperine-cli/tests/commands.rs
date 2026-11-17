@@ -443,3 +443,84 @@ fn new_without_a_name_exits_2() {
     assert_eq!(out.status.code(), Some(2), "{}", text(&out.stderr));
     assert_eq!(std::fs::read_dir(tmp.path()).expect("a directory").count(), 0);
 }
+
+// ---- clean (CLI-18) -------------------------------------------------------------------------
+// Every `clean` here works inside a temporary directory: the project is a copy, and the cache
+// is a directory of the test's own named by `PIPERINE_CACHE_DIR`.
+
+/// A copy of `rc` in a temporary directory, with a `target/` tree and a separate cache
+/// directory holding a file; returns the temporary directory, the project and the cache.
+fn project_with_target() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let (tmp, dir) = copy_of(&rc(), "rc");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(dir.join("target/debug")).expect("a target");
+    std::fs::write(dir.join("target/debug/out.bin"), "built").expect("a file");
+    std::fs::create_dir_all(&cache).expect("a cache");
+    std::fs::write(cache.join("design.so"), "compiled").expect("a file");
+    (tmp, dir, cache)
+}
+
+#[test]
+fn clean_removes_the_target_directory() {
+    // CLI-18 AC 1: `<project>/target` is removed and `removed target` is printed; the cache,
+    // which `--cache` was not given for, is still there
+    let (_tmp, dir, cache) = project_with_target();
+    let out = piperine_with(&dir, &cache, None, &["clean"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "removed target\n");
+    assert!(!dir.join("target").exists());
+    assert!(cache.join("design.so").is_file(), "the cache is removed only with --cache");
+    // run from a subdirectory: the nearest `Piperine.toml` upward is the project
+    std::fs::create_dir_all(dir.join("target")).expect("a target");
+    let out = piperine_with(&dir.join("src"), &cache, None, &["clean"]);
+    assert_eq!(text(&out.stdout), "removed target\n");
+    assert!(!dir.join("target").exists());
+}
+
+#[test]
+fn clean_cache_removes_the_compiled_cache() {
+    // CLI-18 AC 2: `--cache` also removes the cache directory the settings name and says so on
+    // standard error. The Independent Test: build, `clean --cache`, build prints `compiled`
+    // again (a cached build prints `cached`).
+    let (_tmp, dir, cache) = project_with_target();
+    let out = piperine_with(&dir, &cache, None, &["clean", "--cache"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "removed target\n");
+    assert!(text(&out.stderr).contains(&cache.display().to_string()), "{}", text(&out.stderr));
+    assert!(!cache.exists() && !dir.join("target").exists());
+    let first = piperine_with(&dir, &cache, None, &["build", "step"]);
+    assert_eq!(text(&first.stdout), "built step: compiled\n", "{}", text(&first.stderr));
+    let again = piperine_with(&dir, &cache, None, &["build", "step"]);
+    assert_eq!(text(&again.stdout), "built step: cached\n");
+    assert_eq!(piperine_with(&dir, &cache, None, &["clean", "--cache"]).status.code(), Some(0));
+    let third = piperine_with(&dir, &cache, None, &["build", "step"]);
+    assert_eq!(text(&third.stdout), "built step: compiled\n", "{}", text(&third.stderr));
+}
+
+#[test]
+fn clean_with_nothing_to_remove_exits_0() {
+    // CLI-18 AC 3: no `target`, no cache directory: `nothing to remove` and exit 0, twice
+    let (tmp, dir) = copy_of(&rc(), "rc");
+    let cache = tmp.path().join("no_cache_here");
+    for _ in 0..2 {
+        let out = piperine_with(&dir, &cache, None, &["clean", "--cache"]);
+        assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+        assert_eq!(text(&out.stdout), "nothing to remove\n");
+        assert_eq!(text(&out.stderr), "");
+    }
+}
+
+#[test]
+fn clean_touches_nothing_else() {
+    // CLI-18 AC 4: with `--cache` the project's sources and manifest, a file next to `target`,
+    // a sibling of the cache directory and a file next to the project are all still there
+    let (tmp, dir, cache) = project_with_target();
+    std::fs::write(dir.join("target_notes.txt"), "mine").expect("a file");
+    std::fs::write(tmp.path().join("cache_sibling.txt"), "mine").expect("a file");
+    std::fs::create_dir_all(tmp.path().join("other")).expect("a directory");
+    std::fs::write(tmp.path().join("other/keep.txt"), "mine").expect("a file");
+    let before: Vec<(String, String)> = files_under(tmp.path()).into_iter().filter(|(p, _)| !p.starts_with("rc/target/") && !p.starts_with("cache/")).collect();
+    let out = piperine_with(&dir, &cache, None, &["clean", "--cache"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(files_under(tmp.path()), before);
+}
