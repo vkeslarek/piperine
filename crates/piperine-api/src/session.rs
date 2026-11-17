@@ -88,19 +88,7 @@ impl Session {
     /// (`rust` when it names none); `settings` locate `rustc` and the cache.
     pub fn open(project: &Project, spec: &RunSpec, settings: &Settings) -> Result<Session, Failure> {
         let backend = Backend::choose(None, None, spec.backend.as_deref())?;
-        let design = project.design(spec)?;
-        if !design.diagnostics().is_empty() {
-            let found = design.diagnostics().to_vec();
-            return Err(Failure::Diagnostics { stage: "parse", design: Box::new(design), found });
-        }
-        let top = Session::top_of(&design, spec)?;
-        if let Err(found) = Types::check(&design, &top) {
-            return Err(Session::diagnosed("typeck", design, found));
-        }
-        let ir = match Elaborator::new(&design).run(&top) {
-            Ok(ir) => Arc::new(ir),
-            Err(found) => return Err(Session::diagnosed("elaborate", design, found)),
-        };
+        let (ir, top) = Session::elaborate(project, spec)?;
         let probes = Session::probes_of(&ir, spec)?;
         let mut streams = Streams::of(ir.clone());
         streams.keep(&spec.streams)?;
@@ -132,6 +120,25 @@ impl Session {
             circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
         }
         Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, accepted: None })
+    }
+
+    /// The stages before a backend: the design of `spec` read, its top chosen, type-checked and
+    /// elaborated. `open` and `Project::check` run the same code, so a check finds what a run
+    /// would.
+    pub(crate) fn elaborate(project: &Project, spec: &RunSpec) -> Result<(Arc<Ir>, String), Failure> {
+        let design = project.design(spec)?;
+        if !design.diagnostics().is_empty() {
+            let found = design.diagnostics().to_vec();
+            return Err(Failure::Diagnostics { stage: "parse", design: Box::new(design), found });
+        }
+        let top = Session::top_of(&design, spec)?;
+        if let Err(found) = Types::check(&design, &top) {
+            return Err(Session::diagnosed("typeck", design, found));
+        }
+        match Elaborator::new(&design).run(&top) {
+            Ok(ir) => Ok((Arc::new(ir), top)),
+            Err(found) => Err(Session::diagnosed("elaborate", design, found)),
+        }
     }
 
     /// The top module's name.

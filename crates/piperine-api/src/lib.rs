@@ -29,7 +29,7 @@ pub use backend::Backend;
 pub use failure::Failure;
 pub use plot::Plot;
 pub use probe::Probe;
-pub use project::Project;
+pub use project::{Checked, Project};
 pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
 pub use session::{Built, Session};

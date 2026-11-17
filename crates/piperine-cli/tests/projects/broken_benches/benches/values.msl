@@ -1,0 +1,7 @@
+use broken_benches::{Resistor, Vsource};
+
+module Values() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let r1 = Resistor(a, gnd) { r: -1.0 };
+}

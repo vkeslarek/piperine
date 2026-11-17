@@ -1,0 +1,6 @@
+use parts::Vsource;
+
+module Top() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+}

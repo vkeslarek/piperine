@@ -13,10 +13,25 @@ use piperine_project::{Options, PackageError, PackageGraph, find_project_root, r
 
 use crate::failure::Failure;
 use crate::request::{Overrides, RunSpec};
+use crate::session::Session;
 
 /// The name the root crate of a run with a bench takes.
 const BENCH: &str = "bench";
 const MANIFEST: &str = "Piperine.toml";
+
+/// What `Project::check` found when every stage passed: the package and how much it covered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Checked {
+    /// The package's name; a lone file's stem.
+    pub package: String,
+    /// The crates of the package graph, the root package's own among them, and the embedded
+    /// `std` (a lone file with no package: the file and `std`). A bench is not counted.
+    pub crates: usize,
+    /// The runs of the manifest whose top was type-checked and elaborated.
+    pub runs: usize,
+    /// Whether any top was type-checked: false for a package with no run (CLI-14 AC 4).
+    pub typed: bool,
+}
 
 /// A package, or a lone file, ready to run.
 #[derive(Debug)]
@@ -110,6 +125,36 @@ impl Project {
             (Some(text), None) => RunSpec::read(text, &self.dir.join(MANIFEST)).err().unwrap_or_default(),
             _ => Vec::new(),
         }
+    }
+
+    /// Every stage before a backend, for the whole project (CLI-14): the run table, then for
+    /// each run the request, the design, its top, the type check and the elaboration. A package
+    /// with no run is parsed and resolved only; a lone file is checked as a run of its own
+    /// (an operating point) so that the top rule of a session applies. No backend is invoked.
+    /// Every failure of every run is collected.
+    pub fn check(&self) -> Result<Checked, Vec<Failure>> {
+        let done = |runs: usize, typed: bool| Checked { package: self.name.clone(), crates: self.packages.as_ref().map_or(2, |p| p.graph.crates().len() + 1), runs, typed };
+        let mut failures = self.faults();
+        if self.lone.is_some() {
+            let probe = RunSpec::from_flags(&self.name, &Overrides { analysis: Some("op".into()), ..Overrides::default() }).and_then(|spec| Session::elaborate(self, &spec).map(|_| ()));
+            failures.extend(probe.err());
+            return if failures.is_empty() { Ok(done(0, true)) } else { Err(failures) };
+        }
+        if self.runs.is_empty() && failures.is_empty() {
+            if let Some(packages) = &self.packages {
+                let design = Design::load_crates(packages.graph.clone());
+                if !design.diagnostics().is_empty() {
+                    let found = design.diagnostics().to_vec();
+                    failures.push(Failure::Diagnostics { stage: "parse", design: Box::new(design), found });
+                }
+            }
+            return if failures.is_empty() { Ok(done(0, false)) } else { Err(failures) };
+        }
+        for run in &self.runs {
+            let checked = self.request(Some(&run.name), &Overrides::default()).and_then(|spec| Session::elaborate(self, &spec).map(|_| ()));
+            failures.extend(checked.err());
+        }
+        if failures.is_empty() { Ok(done(self.runs.len(), true)) } else { Err(failures) }
     }
 
     /// The run `name` (the only run when `name` is `None`) with `overrides` applied, validated;

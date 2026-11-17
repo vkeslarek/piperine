@@ -11,6 +11,7 @@ use piperine_api::{Backend, Built, Failure, Overrides, Project, Record, RecordSi
 use piperine_transpile::Settings;
 
 use crate::cli::Out;
+use crate::commands::Locate;
 use crate::exit::Exit;
 use crate::render::csv::CsvTable;
 use crate::render::diagnostic::Report;
@@ -207,13 +208,7 @@ impl RunCommand {
         if let Some(file) = self.lone() {
             return Project::file(file);
         }
-        match &self.project {
-            Some(dir) => Project::at(dir),
-            None => {
-                let here = std::env::current_dir().map_err(|error| Failure::Io { path: PathBuf::from("."), error })?;
-                Project::discover(&here)
-            }
-        }
+        Locate::package(self.project.as_deref())
     }
 
     /// The target, when it names a file.

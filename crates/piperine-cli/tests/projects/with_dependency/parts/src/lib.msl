@@ -1,0 +1,3 @@
+/// A constant voltage from `p` to `n`.
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }

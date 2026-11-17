@@ -1,0 +1,15 @@
+[package]
+name = "broken_benches"
+version = "0.1.0"
+
+[run.syntax]
+bench = "benches/syntax.msl"
+analysis = "op"
+
+[run.types]
+bench = "benches/types.msl"
+analysis = "op"
+
+[run.values]
+bench = "benches/values.msl"
+analysis = "op"

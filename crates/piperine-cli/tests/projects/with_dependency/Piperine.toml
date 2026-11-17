@@ -1,0 +1,9 @@
+[package]
+name = "with_dependency"
+version = "0.1.0"
+
+[dependencies]
+parts = { path = "parts" }
+
+[run.main]
+analysis = "op"

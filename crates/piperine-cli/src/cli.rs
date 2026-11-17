@@ -12,6 +12,7 @@ use clap::{Arg, ArgAction, Command};
 
 use piperine_api::Overrides;
 
+use crate::commands::check::CheckCommand;
 use crate::commands::run::RunCommand;
 use crate::exit::Exit;
 
@@ -280,6 +281,7 @@ impl Cli {
     /// has not landed says so and fails.
     pub fn execute(invocation: &Invocation, out: &Out, err: &mut dyn Write) -> Exit {
         match invocation {
+            Invocation::Check { project, target } => CheckCommand { project: project.clone(), target: target.clone() }.execute(out, err),
             Invocation::Run { project, target, overrides } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone() }.execute(out, err),
             other => {
                 // a closed standard error leaves nothing to tell; the command fails either way
