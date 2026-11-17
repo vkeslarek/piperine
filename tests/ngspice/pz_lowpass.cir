@@ -1,0 +1,15 @@
+* pz_lowpass — pole-zero cross-check (.pz, voltage transfer)
+* ngspice shorts a node a voltage source pins, so the source of the twin is left out here:
+* `vol pz` is the ratio v(out)/v(in) of the network behind `in`, which is the transfer of
+* the same network driven by a voltage source. The single finite pole is at
+* -(1/R1 + 1/R2)/C = -(1/1k + 1/3k)/1u = -1.33333e3 rad/s, and there is no finite zero.
+R1 in out 1k
+R2 out 0 3k
+C1 out 0 1u
+.control
+set numdgt=10
+pz in 0 out 0 vol pz
+display
+print pole(1)
+.endc
+.end

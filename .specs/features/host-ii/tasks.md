@@ -505,9 +505,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `parity_pz.rs` (new) holds `fn pz_lowpass()`
-- [ ] Gate check passes: Quick (`Run newparity`)
-- [ ] Test count: 1 new test
+- [x] `parity_pz.rs` (new) holds `fn pz_lowpass()`
+- [x] Gate check passes: Quick (`Run newparity`)
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: quick
