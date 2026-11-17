@@ -7,6 +7,8 @@
 //! kernel does not need to know the integration formula family. (Breakpoint
 //! landing belongs to the owner protocol, not to a separate trait.)
 
+use crate::tolerances::Tolerances;
+
 /// BDF2 (non-uniform) coefficients for `dQ/dt ≈ c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}`.
 ///
 /// `dt0 = t_n − t_{n-1}` is the current step; `dt1 = t_{n-1} − t_{n-2}` is the
@@ -41,6 +43,19 @@ pub enum TrBdf2Phase {
     Trapezoidal,
     /// BDF2 stage over `(1−γ)h` → solves for `x_{n+1}` from `x_{n+γ}` and `x_n`.
     Bdf2,
+}
+
+/// One `ddt` state's history across a TR-BDF2 step: the argument of one `ddt` instance
+/// (§15.2 rule 1), the quantity the integrator advances and the truncation error is measured on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DdtState {
+    /// The state at `t_n`, `t_{n+γ}` and `t_{n+1}`.
+    pub q: [f64; 3],
+    /// The companion current (the state's derivative) at `t_n` and `t_{n+1}`.
+    pub i: [f64; 2],
+    /// The instance's own `abstol` (§14, §17.2 Resolution), when it gave one: it replaces the
+    /// run's flow `abstol` for this state.
+    pub abstol: Option<f64>,
 }
 
 /// TR-BDF2 — the sole transient integration scheme. Owns the per-phase
@@ -114,6 +129,29 @@ impl TrBdf2 {
         let n = q_n1.len().min(q_n.len()).min(q_n_gamma.len());
         let indices: Vec<usize> = (0..n).collect();
         Self::milne_lte_indexed(q_n, q_n_gamma, q_n1, &indices, reltol, tol)
+    }
+
+    /// The truncation error of a step over its `ddt` states, normalized as ngspice's `CKTterr`:
+    /// per state, Milne's difference `|q_{n+1} − (q_{n+γ} + ((1−γ)/γ)(q_{n+γ} − q_n))|` over the
+    /// larger of `h·(abstol + reltol·max(|i_n|, |i_{n+1}|))` and
+    /// `reltol·max(|q_n|, |q_{n+1}|, chgtol)`; the worst is returned. No state is skipped and a
+    /// run with no state returns `0.0` (nothing limits the step).
+    pub fn state_lte(states: &[DdtState], tol: &Tolerances, h: f64) -> f64 {
+        let slope_scale = (1.0 - Self::GAMMA) / Self::GAMMA;
+        let mut worst = 0.0_f64;
+        for state in states {
+            let [q_n, q_gamma, q_n1] = state.q;
+            let predicted = q_gamma + slope_scale * (q_gamma - q_n);
+            let error = (q_n1 - predicted).abs();
+            let abstol = state.abstol.unwrap_or(tol.abstol);
+            let by_current = h * (abstol + tol.reltol * state.i[0].abs().max(state.i[1].abs()));
+            let by_charge = tol.reltol * q_n.abs().max(q_n1.abs()).max(tol.chgtol);
+            let bound = by_current.max(by_charge);
+            if bound > 0.0 {
+                worst = worst.max(error / bound);
+            }
+        }
+        worst
     }
 
     /// Milne LTE restricted to `indices` — used by the driver to evaluate the
@@ -239,6 +277,46 @@ mod tests {
     }
 
     // ── TR-BDF2 ───────────────────────────────────────────────────────────
+
+    /// Tolerances with `chgtol` as given and every other value as the run's default.
+    fn with_chgtol(chgtol: f64) -> Tolerances {
+        Tolerances { chgtol, ..Tolerances::default() }
+    }
+
+    #[test]
+    fn the_state_estimate_reads_chgtol() {
+        // q = [0, 1e-16, 3e-16] C, no current, abstol 0: Milne's difference is
+        // 3e-16 − (1e-16 + 0.7071…·1e-16) = 1.2929e-16 C. With chgtol 1e-14 the bound is
+        // reltol·chgtol = 1e-17 C → 12.929; with chgtol 1e-16 it is reltol·3e-16 = 3e-19 C → 430.97.
+        let state = DdtState { q: [0.0, 1e-16, 3e-16], i: [0.0, 0.0], abstol: Some(0.0) };
+        let slope_scale = (1.0 - TrBdf2::GAMMA) / TrBdf2::GAMMA;
+        let error = 3e-16 - (1e-16 + slope_scale * 1e-16);
+        let under = TrBdf2::state_lte(&[state], &with_chgtol(1e-14), 1e-9);
+        let above = TrBdf2::state_lte(&[state], &with_chgtol(1e-16), 1e-9);
+        assert!((under - error / 1e-17).abs() < 1e-6 * under, "chgtol above the charge: {under}");
+        assert!((above - error / 3e-19).abs() < 1e-6 * above, "chgtol below the charge: {above}");
+        assert!(above > 10.0 * under);
+    }
+
+    #[test]
+    fn the_state_estimate_is_zero_for_a_linear_charge() {
+        // q(t) = 2e-9·t is exact for the linear predictor at t = 0, γh, h.
+        let h = 1e-6;
+        let q = |fraction: f64| 2e-9 * fraction * h;
+        let state = DdtState { q: [q(0.0), q(TrBdf2::GAMMA), q(1.0)], i: [2e-9, 2e-9], abstol: None };
+        assert!(TrBdf2::state_lte(&[state], &Tolerances::default(), h) < 1e-9);
+        assert_eq!(TrBdf2::state_lte(&[], &Tolerances::default(), h), 0.0, "no state, nothing limits the step");
+    }
+
+    #[test]
+    fn a_rise_from_flat_is_measured_and_rejected() {
+        // Flat over γh, a rise of 1e-9 C over the rest: the old node estimate skipped it (the
+        // asymmetric differences), the state estimate measures 1e-9 / (reltol·1e-9) = 1000.
+        let tol = Tolerances::default();
+        let state = DdtState { q: [0.0, 0.0, 1e-9], i: [0.0, 1e-3], abstol: None };
+        let error = TrBdf2::state_lte(&[state], &tol, 1e-6);
+        assert!(error > tol.trtol, "error {error} against trtol {}", tol.trtol);
+    }
 
     #[test]
     fn trbdf2_gamma_is_two_minus_sqrt2() {

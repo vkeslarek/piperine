@@ -566,8 +566,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_state_estimate_reads_chgtol` (a value under `chgtol` and the same one above it give different normalized errors, hand-computed), `the_state_estimate_is_zero_for_a_linear_charge` and `a_rise_from_flat_is_measured_and_rejected` (flat over `γh`, a rise above the tolerance over the rest: error above `trtol`) pass under `**Run analoglib**`
-- [ ] Gate check passes: Quick
+- [x] `the_state_estimate_reads_chgtol` (a value under `chgtol` and the same one above it give different normalized errors, hand-computed), `the_state_estimate_is_zero_for_a_linear_charge` and `a_rise_from_flat_is_measured_and_rejected` (flat over `γh`, a rise above the tolerance over the rest: error above `trtol`) pass under `**Run analoglib**`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick
