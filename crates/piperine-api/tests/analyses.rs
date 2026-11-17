@@ -291,3 +291,88 @@ fn a_refused_value_is_e0802_and_nothing_runs() {
         }
     }
 }
+
+fn small_signal(analysis: &str) -> Overrides {
+    Overrides { analysis: Some(analysis.into()), top: Some("Top".into()), backend: Some("interp".into()), ..Overrides::default() }
+}
+
+/// The lone file `text` run with `overrides`: a source over a divider, `Top`.
+fn run_text(text: &str, overrides: Overrides) -> Result<Table, Failure> {
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, text).expect("write");
+    run(&file, "interp", overrides)
+}
+
+/// `Top`: 10 V over 1 kOhm then 3 kOhm, built from the shared parts.
+const DIVIDER: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Top() {\n    signal vin: Electrical;\n    signal mid: Electrical;\n    let v1 = Vsource(vin, gnd) { dc: 10.0 };\n    let r1 = Resistor(vin, mid) { r: 1k };\n    let r2 = Resistor(mid, gnd) { r: 3k };\n}\n";
+
+fn message(failure: &Failure) -> String {
+    format!("{failure}")
+}
+
+#[test]
+fn tf_input_must_be_a_voltage_source() {
+    // HII-04 AC 4: a resistor has no potential contribution: P0010 naming the instance and saying
+    // that the input must be a voltage source
+    let tf = |input: &str| Overrides { input: Some(input.into()), output: Some("mid".into()), ..small_signal("tf") };
+    let Err(Failure::Host { code, message }) = run_text(DIVIDER, tf("r1")) else { panic!("a resistor input is a P0010") };
+    assert_eq!(code, "P0010");
+    assert!(message.contains("Top.r1") && message.contains("voltage source"), "{message}");
+}
+
+#[test]
+fn tf_output_naming_nothing_is_e0801() {
+    // HII-04 AC 5, and an input that names no instance, are E0801 naming the entry
+    let tf = |input: &str, output: &str| Overrides { input: Some(input.into()), output: Some(output.into()), ..small_signal("tf") };
+    for (input, output, named) in [("v1", "nowhere", "nowhere"), ("ghost", "mid", "ghost")] {
+        let Err(Failure::Host { code, message }) = run_text(DIVIDER, tf(input, output)) else { panic!("{input}/{output} is refused") };
+        assert_eq!(code, "E0801");
+        assert!(message.contains(named), "{message}");
+    }
+}
+
+#[test]
+fn pz_of_a_circuit_without_poles_fails() {
+    // HII-05 AC 3: a resistive divider has no finite pole: the solver's error, no table
+    let pz = Overrides { input: Some("v1".into()), output: Some("mid".into()), ..small_signal("pz") };
+    let Err(failure) = run_text(DIVIDER, pz) else { panic!("a circuit with no poles gives no table") };
+    assert!(matches!(&failure, Failure::Solver { analysis: "pz", .. }), "{failure:?}");
+    assert!(message(&failure).contains("no finite poles"), "{failure}");
+}
+
+#[test]
+fn sens_wrt_naming_nothing_is_e0801() {
+    // HII-06 AC 4: a `wrt` entry that names no param is E0801 naming it
+    for entry in ["r1.nope", "ghost.r"] {
+        let sens = Overrides { wrt: vec![entry.into()], print: vec!["mid".into()], ..small_signal("sens") };
+        let Err(Failure::Host { code, message }) = run_text(DIVIDER, sens) else { panic!("{entry} is refused") };
+        assert_eq!(code, "E0801");
+        assert!(message.contains(entry), "{message}");
+    }
+}
+
+#[test]
+fn sens_of_a_discrete_net_is_refused() {
+    // HII-06 AC 5: a printed discrete net has no sensitivity: P0010 naming it
+    let sens = Overrides { wrt: vec!["r1.r".into()], print: vec!["mid".into(), "flag".into()], ..small_signal("sens") };
+    let with_flag = DIVIDER.replace("    let v1", "    signal flag: Bit = false;\n    let v1");
+    let Err(Failure::Host { code, message }) = run_text(&with_flag, sens) else { panic!("a discrete net is refused") };
+    assert_eq!(code, "P0010");
+    assert!(message.contains("Top.flag"), "{message}");
+}
+
+#[test]
+fn sens_wrt_a_derived_param_is_refused() {
+    // HII-18's edge: `Mid.rr` is the value its child's `r` derives from (the probe of GAPS S2), so
+    // a finite difference of `rr` alone would skip the child: P0010 naming both
+    let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Mid(a: Electrical, b: Electrical) {\n    rr: f64 = 1k;\n    let r = Resistor { r: rr }(a, b);\n}\nmodule Top() {\n    signal a: Electrical;\n    signal b: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let m = Mid(a, b);\n    let r2 = Resistor(b, gnd) { r: 3k };\n}\n";
+    let sens = Overrides { wrt: vec!["m.rr".into()], print: vec!["b".into()], ..small_signal("sens") };
+    let Err(Failure::Host { code, message }) = run_text(text, sens) else { panic!("a param a child derives from is refused") };
+    assert_eq!(code, "P0010");
+    assert!(message.contains("Top.m.rr") && message.contains("r.r"), "{message}");
+    // the child's own param is not derived from anything: it is accepted
+    let own = Overrides { wrt: vec!["r2.r".into()], print: vec!["b".into()], ..small_signal("sens") };
+    let table = run_text(text, own).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.columns, ["param", "d(Top.b)"]);
+}

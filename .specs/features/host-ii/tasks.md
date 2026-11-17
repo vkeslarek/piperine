@@ -461,9 +461,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-api/tests/analyses.rs` gains `tf_input_must_be_a_voltage_source`, `tf_output_naming_nothing_is_e0801`, `pz_of_a_circuit_without_poles_fails`, `sens_wrt_naming_nothing_is_e0801`, `sens_of_a_discrete_net_is_refused`, `sens_wrt_a_derived_param_is_refused`
-- [ ] Gate check passes: Full
-- [ ] Test count: 6 new tests
+- [x] `crates/piperine-api/tests/analyses.rs` gains `tf_input_must_be_a_voltage_source`, `tf_output_naming_nothing_is_e0801`, `pz_of_a_circuit_without_poles_fails`, `sens_wrt_naming_nothing_is_e0801`, `sens_of_a_discrete_net_is_refused`, `sens_wrt_a_derived_param_is_refused`
+- [x] Gate check passes: Full
+- [x] Test count: 6 new tests
 
 **Tests**: integration
 **Gate**: full

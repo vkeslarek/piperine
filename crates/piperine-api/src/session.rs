@@ -11,13 +11,16 @@ use std::sync::Arc;
 
 use piperine_digital_solver::net::NetId;
 use piperine_interp::Interpreter;
-use piperine_ir::Ir;
+use piperine_ir::{BranchKind, ChildValue, Expr, ExprId, Ir};
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
 use piperine_plan::Netlist;
 use piperine_solver::abi::InitialValue;
-use piperine_solver::prelude::{AcSweepAnalysisOptions, AnalogVariable, CircuitInstance, Context, Keep, NodeIdentifier, ParamValue, Solver, TransientAnalysisOptions};
+use piperine_solver::prelude::{
+    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, ParamValue, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions,
+    TransientAnalysisOptions,
+};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
@@ -62,6 +65,18 @@ pub struct Session {
     context: Context,
     /// The `nodeset` entries, each node by what the solver knows it by, with the entry as written.
     nodeset: Vec<(NodeIdentifier, f64, String)>,
+    /// The source and the node of a `tf` or `pz` run, resolved against the design.
+    transfer: Option<Transfer>,
+    /// The params a `sens` run differentiates by, resolved against the design, in the order given.
+    wrt: Vec<ParamPath>,
+}
+
+/// The input and the output of a `tf` or `pz` run, by what the solver knows them by.
+#[derive(Debug, Clone)]
+struct Transfer {
+    /// The first potential branch of the voltage source named by `input`.
+    input: BranchIdentifier,
+    output: NodeIdentifier,
 }
 
 /// A param of an instance of the design, by the instance's full path.
@@ -87,6 +102,41 @@ impl ParamPath {
     /// The full path, `<instance>.<param>`.
     pub fn label(&self) -> String {
         format!("{}.{}", self.instance, self.param)
+    }
+
+    /// The params of the children of this param's instance whose placement derives them from it
+    /// (`ChildValue::Expr` reading this param), each as `<child>.<param>`; empty when none does.
+    pub fn derived(&self, ir: &Ir) -> Vec<String> {
+        let Some(instance) = ir.instance_at(&self.instance) else { return Vec::new() };
+        let body = instance.body();
+        let Some(index) = body.params().iter().position(|p| p.name == self.param) else { return Vec::new() };
+        let mut derived = Vec::new();
+        for (at, child) in body.children().iter().enumerate() {
+            for (param, value) in body.child_params(at) {
+                let ChildValue::Expr(expr) = value else { continue };
+                if ParamPath::reads(ir, *expr, index as u32) {
+                    let name = ir.body(child.body).params().get(*param as usize).map_or("?", |p| p.name.as_str()).to_string();
+                    derived.push(format!("{}.{name}", child.name));
+                }
+            }
+        }
+        derived
+    }
+
+    /// Whether the expression `expr` reads param `index` of its body, through the operators a
+    /// placement's value is built from.
+    fn reads(ir: &Ir, expr: ExprId, index: u32) -> bool {
+        let reads = |e: &ExprId| ParamPath::reads(ir, *e, index);
+        match ir.expr(expr) {
+            Expr::Param(p) => *p == index,
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => reads(expr),
+            Expr::Binary { lhs, rhs, .. } => reads(lhs) || reads(rhs),
+            Expr::If { cond, then, otherwise } => reads(cond) || reads(then) || reads(otherwise),
+            Expr::KnownOr { value, default } => reads(value) || reads(default),
+            Expr::Math { args, .. } | Expr::Call { args, .. } => args.iter().any(reads),
+            Expr::Method { receiver, args, .. } => reads(receiver) || args.iter().any(reads),
+            _ => false,
+        }
     }
 }
 
@@ -123,6 +173,7 @@ impl Session {
         let params = spec.params.iter().map(|(entry, value)| Ok((ParamPath::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
         let context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
+        let (transfer, wrt) = Session::small_signal_of(&ir, spec, &probes)?;
         let netlist = Session::netlist_of(&ir, &spec.options);
         let (mut circuit, compiled) = match backend {
             Backend::Interp => {
@@ -153,7 +204,7 @@ impl Session {
             let refused = |error| Failure::Host { code: "E0802", message: format!("`{entry}` refuses the value {value}: {error}") };
             circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset, transfer, wrt })
     }
 
     /// The context a run's options give: the solver's own default with each given option in its
@@ -196,6 +247,49 @@ impl Session {
         Some(netlist)
     }
 
+    /// What the `tf`, `pz` and `sens` requests name, resolved against `ir` before anything compiles:
+    /// the voltage source `input` (`P0010` for an instance with no potential branch, `E0801` for
+    /// none), the node `output` (`E0801`), the `wrt` params (`E0801`; `P0010` for one a child
+    /// derives a param from), and for `sens` that no printed signal is a discrete net (`P0010`).
+    fn small_signal_of(ir: &Ir, spec: &RunSpec, probes: &[Probe]) -> Result<(Option<Transfer>, Vec<ParamPath>), Failure> {
+        let top = ir.top().path();
+        let full = |entry: &str| [entry.to_string(), format!("{top}.{entry}")];
+        match &spec.analysis {
+            Analysis::Tf { input, output } | Analysis::Pz { input, output } => {
+                let instance = full(input).into_iter().find_map(|path| ir.instance_at(&path));
+                let instance = instance.ok_or_else(|| Failure::Host { code: "E0801", message: format!("`input` names no instance of the design: `{input}`") })?;
+                let branch = instance.body().branches().iter().position(|b| b.kind == BranchKind::Potential).ok_or_else(|| Failure::Host {
+                    code: "P0010",
+                    message: format!("`input` must be a voltage source: the instance `{}` has no potential contribution", instance.path()),
+                })?;
+                let node = full(output).into_iter().find_map(|path| ir.node_at(&path));
+                let node = node.ok_or_else(|| Failure::Host { code: "E0801", message: format!("`output` names no node of the design: `{output}`") })?;
+                let input = BranchIdentifier::new(instance.path().to_string(), format!("b{branch}.flow"));
+                Ok((Some(Transfer { input, output: NodeIdentifier::Anonymous(node.id().index()) }), Vec::new()))
+            }
+            Analysis::Sens { wrt } => {
+                if let Some(path) = probes.iter().find_map(|probe| if let Probe::Net { path, .. } = probe { Some(path) } else { None }) {
+                    let message = format!("`{path}` is a discrete net: a `sens` run differentiates nodes and flows, not a discrete value");
+                    return Err(Failure::Host { code: "P0010", message });
+                }
+                let params = wrt.iter().map(|entry| ParamPath::resolve(ir, top, entry)).collect::<Result<Vec<_>, Failure>>()?;
+                for param in &params {
+                    let derived = param.derived(ir);
+                    if !derived.is_empty() {
+                        let message = format!(
+                            "`wrt` names `{}`, from which the params {} derive: the solver's finite difference writes one instance only, so the derivative would skip them",
+                            param.label(),
+                            derived.join(", ")
+                        );
+                        return Err(Failure::Host { code: "P0010", message });
+                    }
+                }
+                Ok((None, params))
+            }
+            _ => Ok((None, Vec::new())),
+        }
+    }
+
     /// The `nodeset` entries of `spec`, each resolved to a node of `ir` (`E0801` for one that
     /// names none). A nodeset seeds an operating point the session takes itself, so the analyses
     /// that take theirs inside the solver (`ac`, `transient`) refuse it (`P0010`) rather than
@@ -212,7 +306,7 @@ impl Session {
                 Ok((NodeIdentifier::Anonymous(node.id().index()), *value, entry.clone()))
             })
             .collect::<Result<Vec<_>, Failure>>()?;
-        if !seeds.is_empty() && matches!(spec.analysis, Analysis::Ac { .. } | Analysis::Transient { .. }) {
+        if !seeds.is_empty() && matches!(spec.analysis, Analysis::Ac { .. } | Analysis::Transient { .. } | Analysis::Tf { .. } | Analysis::Pz { .. } | Analysis::Sens { .. }) {
             let message = format!(
                 "run `{}`: `nodeset` seeds an operating point, and a `{}` run takes its own inside the solver, where the host cannot seed it; use `op` or `dc`",
                 spec.name,
@@ -414,10 +508,58 @@ impl Session {
                 let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::Solver { analysis: "ac", error })?;
                 Table::frequency(&self.probes, &result)
             }
-            Analysis::Tf { .. } | Analysis::Pz { .. } | Analysis::Sens { .. } => {
-                Err(Failure::Backend(format!("a `{}` run is requested and validated, but its arm is not built yet", self.spec.analysis.name())))
+            Analysis::Tf { .. } => {
+                let mut circuit = circuit;
+                let transfer = self.transfer()?;
+                let options = TransferFunctionAnalysisOptions {
+                    output: AnalogVariable::Node(transfer.output.clone()),
+                    output_ref: None,
+                    input_source: transfer.input.clone(),
+                };
+                let result = circuit
+                    .transfer_function(options, self.context.clone())
+                    .and_then(|mut tf| tf.solve())
+                    .map_err(|error| Failure::Solver { analysis: "tf", error })?;
+                Ok(Table::transfer(&result))
+            }
+            Analysis::Pz { .. } => {
+                let mut circuit = circuit;
+                let transfer = self.transfer()?;
+                let options = PoleZeroOptions { input_source: transfer.input.clone(), output: AnalogVariable::Node(transfer.output.clone()), output_ref: None };
+                let roots = circuit
+                    .pz(options, self.context.clone())
+                    .and_then(|pz| Ok(PoleZeroResult { poles: pz.poles()?, zeros: pz.zeros()? }))
+                    .map_err(|error| Failure::Solver { analysis: "pz", error })?;
+                Ok(Table::roots(&roots))
+            }
+            Analysis::Sens { .. } => {
+                let mut circuit = circuit;
+                let nets = circuit.nets();
+                let outputs = self.probes.iter().map(|probe| Session::net_of(&nets, probe)).collect::<Result<Vec<Net>, Failure>>()?;
+                let params = self.wrt.iter().map(|path| (path.instance.clone(), path.param.clone())).collect();
+                let result = circuit
+                    .sens(SensAnalysisOptions::new(outputs.clone(), params), self.context.clone())
+                    .and_then(|sens| sens.solve())
+                    .map_err(|error| Failure::Solver { analysis: "sens", error })?;
+                Table::sensitivities(&self.probes, &outputs, &self.wrt, &result)
             }
         }
+    }
+
+    /// The source and the node a `tf` or `pz` run resolved at open.
+    fn transfer(&self) -> Result<&Transfer, Failure> {
+        self.transfer.as_ref().ok_or_else(|| Failure::Backend("a transfer run resolved no input and output".into()))
+    }
+
+    /// The solved net of `probe` among `nets`, the one a result is keyed by.
+    fn net_of(nets: &[Net], probe: &Probe) -> Result<Net, Failure> {
+        let variable = match probe {
+            Probe::Node { id, .. } => AnalogVariable::Node(id.clone()),
+            Probe::Flow { branch, .. } => AnalogVariable::Branch(branch.clone()),
+            Probe::Net { path, .. } => return Err(Failure::Backend(format!("`{path}` is a discrete net: it has no solved analog net"))),
+        };
+        let found = nets.iter().find(|net| net.analog_variable().is_some_and(|v| **v == variable));
+        found.cloned().ok_or_else(|| Failure::Backend(format!("`{}` is no solved net of the circuit", probe.label())))
     }
 
     /// The options of a transient: `max_step` is the first step and the largest; without it the
