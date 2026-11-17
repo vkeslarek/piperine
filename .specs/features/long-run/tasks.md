@@ -305,9 +305,9 @@ T23
 
 **Done when**:
 
-- [ ] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `recorder::tests::grid_rows_run_from_the_first_multiple_not_before_from_to_stop`, `recorder::tests::a_real_column_is_bit_equal_to_on_grid` (irregular steps, with and without `from`, compared with `to_bits`), `recorder::tests::a_row_on_an_accepted_step_takes_its_value`, `recorder::tests::each_grid_row_is_made_when_its_step_arrives` (the row count after each step, and one previous step held), `recorder::tests::a_row_within_rounding_of_the_last_step_takes_its_values`, `recorder::tests::a_row_past_the_last_step_fails`, `recorder::tests::a_print_step_past_stop_gives_the_row_at_zero`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: the 7 tests named above, and no existing test removed or edited
+- [x] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `recorder::tests::grid_rows_run_from_the_first_multiple_not_before_from_to_stop`, `recorder::tests::a_real_column_is_bit_equal_to_on_grid` (irregular steps, with and without `from`, compared with `to_bits`), `recorder::tests::a_row_on_an_accepted_step_takes_its_value`, `recorder::tests::each_grid_row_is_made_when_its_step_arrives` (the row count after each step, and one previous step held), `recorder::tests::a_row_within_rounding_of_the_last_step_takes_its_values`, `recorder::tests::a_row_past_the_last_step_fails`, `recorder::tests::a_print_step_past_stop_gives_the_row_at_zero`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: the 7 tests named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick
