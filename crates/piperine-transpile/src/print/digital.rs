@@ -97,11 +97,11 @@ impl<'a> DigitalPrinter<'a> {
             Source::CarrierChanged(_) | Source::DelayedChanged(_) | Source::Crossed(_) | Source::Timer(_) => {
                 format!("let {name} = {cx}.bool({i});")
             }
-            Source::Node(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time => {
+            Source::Node(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq => {
                 format!("let {name} = {cx}.f64({i});")
             }
             // abi.md §4.2: `STATIC` is one `BOOL` byte
-            Source::Static => format!("let {name} = {cx}.bool({i});"),
+            Source::Static | Source::Analysis(_) => format!("let {name} = {cx}.bool({i});"),
             Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {

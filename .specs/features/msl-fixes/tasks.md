@@ -384,10 +384,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `freq_reads_the_ambient_and_analysis_reads_its_global_pin` passes in `cargo test -p piperine-plan --test amended_shape`
-- [ ] The shape of every body that reads neither is unchanged: `cargo test -p piperine-plan` passes with every existing target unedited
-- [ ] Gate check passes: Quick (`Run plan`)
-- [ ] Test count: the 1 test named above
+- [x] `freq_reads_the_ambient_and_analysis_reads_its_global_pin` passes in `cargo test -p piperine-plan --test amended_shape`
+- [x] The shape of every body that reads neither is unchanged: `cargo test -p piperine-plan` passes with every existing target unedited
+- [x] Gate check passes: Quick (`Run plan`)
+- [x] Test count: the 1 test named above
 
 **Tests**: integration
 **Gate**: quick

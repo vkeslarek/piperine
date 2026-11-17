@@ -6,7 +6,7 @@
 
 use piperine_abi::raw::{Cell, Shape, ambient, cell, field_flag, global, kind, leaf, part, pin_flag, role, statement_flag};
 use piperine_ir::{
-    Addend, BodyId, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, EmitField, Env, Event, EventSource, Expr, InstanceSpec, Ir,
+    Addend, AnalysisKind, BodyId, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, EmitField, Env, Event, EventSource, Expr, InstanceSpec, Ir,
     IrBuilder, NodeRole, Operator, Origin, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
 };
 use piperine_plan::{BodyPlan, Mode, Source, Target};
@@ -457,5 +457,66 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
         assert_eq!(shape.pins.get(p as usize).map(|x| x.flags & pin_flag::QUIET), Some(0));
     }
 
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn freq_reads_the_ambient_and_analysis_reads_its_global_pin() {
+    // ```text
+    // module Probe(p, n) {
+    //     analog { i(p, n) +> v(p, n) * if analysis(Dc) { 1.0 } else if analysis(Ac) { freq() } else { 0.0 }; }
+    // }
+    // ```
+    let (ir, body) = Alone::design(|b| {
+        let nodes = ports(b);
+        let mut x = Dx::new(b, F, 2, 20);
+        let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+        let o = x.origin();
+        let dc = x.b.expr(Expr::Env(Env::Analysis(AnalysisKind::Dc)), ValueType::Bool, o.clone());
+        let ac = x.b.expr(Expr::Env(Env::Analysis(AnalysisKind::Ac)), ValueType::Bool, o.clone());
+        let freq = x.b.expr(Expr::Env(Env::Freq), ValueType::F64, o);
+        let (one, zero) = (x.real(1.0), x.real(0.0));
+        let inner = x.if_(ac, freq, zero, ValueType::F64);
+        let level = x.if_(dc, one, inner, ValueType::F64);
+        let value = x.bin(piperine_ir::BinaryOp::Mul, v, level, ValueType::F64);
+        let contribution = b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Flow,
+            addends: vec![Addend { operator: Operator::Direct, negated: false, value }],
+        });
+        b.body(BodySpec {
+            nodes,
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+            analog: Some(vec![contribution]),
+            ..Buck::spec("Probe", F, 1)
+        })
+    });
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (p, n) = (Find::pin(shape, "p"), Find::pin(shape, "n"));
+
+    // abi.md §3: a `GLOBAL` pin names its global; `DC`, `TRAN`, `AC` and `NOISE` are flags the
+    // host sets to 1 during the analysis. One pin per kind read, in kind order (`dc` before `ac`),
+    // each a `BIT`; a kind the body does not read has none.
+    let (dc, ac) = (Find::pin(shape, "analysis:dc"), Find::pin(shape, "analysis:ac"));
+    assert!(dc < ac, "the pins follow the order of the kinds");
+    let global_of = |pin: u32| shape.pins.get(pin as usize).map(|x| (x.kind, x.role, x.global));
+    assert_eq!(global_of(dc), Some((kind::DISCRETE, role::GLOBAL, global::DC)));
+    assert_eq!(global_of(ac), Some((kind::DISCRETE, role::GLOBAL, global::AC)));
+    for name in ["analysis:tran", "analysis:noise"] {
+        assert!(shape.pins.iter().all(|x| x.name.as_str() != name), "{name} is declared only when read");
+    }
+
+    // abi.md §4.2: `FREQ` is an ambient, read by constant and never differentiated; a global
+    // pins are read as any pin is, after the continuous reads and before the ambients.
+    let (reads, _, partials) = Find::function(shape, "terms");
+    assert_eq!(reads, [pin(p, part::VALUE), pin(n, part::VALUE), ambient(ambient::FREQ), pin(dc, part::VALUE), pin(ac, part::VALUE)]);
+    assert_eq!(partials, [(0, 0), (0, 1)], "no partial against FREQ or a global");
+    let terms = plan.functions().iter().find(|f| f.mode == Mode::Terms).expect("terms");
+    assert_eq!(
+        terms.reads,
+        [Source::Node(0), Source::Node(1), Source::Freq, Source::Analysis(AnalysisKind::Dc), Source::Analysis(AnalysisKind::Ac)]
+    );
+    assert_eq!(terms.slots, 2, "two tangent slots: p and n");
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }

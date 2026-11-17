@@ -28,7 +28,7 @@ use crate::digital::{CarrierLayout, Digital, ReactionPlan};
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_ir::{
-    Body, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType,
+    AnalysisKind, Body, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType,
 };
 
 /// What one term of the shape computes.
@@ -107,6 +107,10 @@ pub enum Source {
     Static,
     /// The ambient `TIME`: the time of the solve or of the instant (abi.md §4.2).
     Time,
+    /// The ambient `FREQ`: the analysis frequency, 0 outside an AC analysis (abi.md §4.2).
+    Freq,
+    /// The `GLOBAL` pin of an analysis kind: whether the running analysis is of this kind.
+    Analysis(AnalysisKind),
 }
 
 impl Source {
@@ -189,8 +193,8 @@ impl ReadSet {
             // hold them, the readers abi.md gives `TIME` and `STATIC`
             Env::Time => Some(Source::Time),
             Env::Static => Some(Source::Static),
-            // read by the plan from T10 on; no form of the source produces them before T34
-            Env::Freq | Env::Analysis(_) => None,
+            Env::Freq => Some(Source::Freq),
+            Env::Analysis(kind) => Some(Source::Analysis(*kind)),
         }));
     }
 
@@ -226,6 +230,9 @@ pub struct Pins {
     /// The private flow pin of each branch; `None` for a flow branch.
     pub branches: Vec<Option<u32>>,
     pub temperature: Option<u32>,
+    /// The `GLOBAL` pin of each analysis kind the body reads, in `AnalysisKind` order, after the
+    /// temperature pin.
+    pub analysis: Vec<(AnalysisKind, u32)>,
     /// The private check pin of each param with a `where`, after every other M1 pin.
     pub checks: Vec<Option<u32>>,
     /// The pin of carrier 0; carrier `i` is pin `carriers + i`, after every M1 pin.
@@ -339,7 +346,8 @@ impl BodyPlan {
         let pin_count = body.params().len()
             + body.nodes().len()
             + body.branches().iter().filter(|b| b.kind == BranchKind::Potential).count()
-            + usize::from(Self::reads_temperature(body));
+            + usize::from(Self::reads_temperature(body))
+            + Self::reads_analysis(body).len();
         let mut next_check = pin_count as u32;
         let mut check_pins = Vec::with_capacity(body.params().len());
         for (p, init) in body.params().iter().zip(&defaults) {
@@ -395,6 +403,15 @@ impl BodyPlan {
                 ..PinSpec::discrete("temperature", role::GLOBAL, &F64)
             })
         });
+        // One `GLOBAL` `BIT` pin per analysis kind the body reads (`analysis(kind)`).
+        let analysis: Vec<(AnalysisKind, u32)> = Self::reads_analysis(body)
+            .into_iter()
+            .map(|kind| {
+                let (global, name) = Self::analysis_pin(kind);
+                let at = origin(body.origin());
+                (kind, s.pin(PinSpec { origin: &at, global, ..PinSpec::discrete(name, role::GLOBAL, &BIT) }))
+            })
+            .collect();
         // The check pins: a private `BIT` per `where`, written by `check:<p>`.
         let mut checks = Vec::with_capacity(check_pins.len());
         for (p, check) in body.params().iter().zip(&check_pins) {
@@ -414,7 +431,7 @@ impl BodyPlan {
         let rearms = Digital::rearm_pins(&mut s, body);
         let records = Digital::record_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed);
-        let pins = Pins { nodes, branches, temperature, checks, carriers, events, crossed, watches, delayed, timers, start, rearms, records };
+        let pins = Pins { nodes, branches, temperature, analysis, checks, carriers, events, crossed, watches, delayed, timers, start, rearms, records };
 
         // Terms, branch by branch.
         let mut terms = Vec::new();
@@ -607,6 +624,8 @@ impl BodyPlan {
             Source::LimitAge(k) => at(cell::INPUT, k, part::AGE),
             Source::Static => value(cell::AMBIENT, ambient::STATIC),
             Source::Time => value(cell::AMBIENT, ambient::TIME),
+            Source::Freq => value(cell::AMBIENT, ambient::FREQ),
+            Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
         }
     }
 
@@ -633,6 +652,29 @@ impl BodyPlan {
     /// Whether any target of the body reads `temperature()`.
     fn reads_temperature(body: Body<'_>) -> bool {
         Self::queries(body).iter().any(|q| body.dependencies(*q).env.contains(&Env::Temperature))
+    }
+
+    /// The analysis kinds some target of the body reads, in `AnalysisKind` order.
+    fn reads_analysis(body: Body<'_>) -> Vec<AnalysisKind> {
+        let kinds: BTreeSet<AnalysisKind> = Self::queries(body)
+            .iter()
+            .flat_map(|q| body.dependencies(*q).env)
+            .filter_map(|e| match e {
+                Env::Analysis(kind) => Some(kind),
+                _ => None,
+            })
+            .collect();
+        kinds.into_iter().collect()
+    }
+
+    /// The `GLOBAL` and the name of the pin of analysis kind `kind`.
+    fn analysis_pin(kind: AnalysisKind) -> (u32, &'static str) {
+        match kind {
+            AnalysisKind::Dc => (global::DC, "analysis:dc"),
+            AnalysisKind::Transient => (global::TRAN, "analysis:tran"),
+            AnalysisKind::Ac => (global::AC, "analysis:ac"),
+            AnalysisKind::Noise => (global::NOISE, "analysis:noise"),
+        }
     }
 
     /// Every dependency query of a body: each branch's two parts, each site, each param, and
