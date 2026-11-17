@@ -32,12 +32,26 @@ pub module Diode(a: Electrical, k: Electrical) {
     is: f64 = 1e-14 where is > 0.0;
     n: f64 = 1.0 where n > 0.0;
     cj0: f64 = 0.0 where cj0 >= 0.0;
-    tt: f64 = 0.0 where tt >= 0.0;
 }
 analog for Diode {
     let nvt   = n * vt();
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
     let id    = is * ((vd / nvt).exp() - 1.0);
-    i(a, k) +> id + gmin() * vd + ddt(cj0 * vd) + ddt(tt * id);
+    i(a, k) +> id + gmin() * vd + ddt(cj0 * vd);
+}
+
+/// Junction diode with transit-time charge `ddt(tt * id)`, nonlinear in the limited junction
+/// voltage (a separate module so `Diode`'s elaborated shape stays the frozen goldens').
+pub module DiodeTt(a: Electrical, k: Electrical) {
+    is: f64 = 1e-14 where is > 0.0;
+    n: f64 = 1.0 where n > 0.0;
+    tt: f64 = 0.0 where tt >= 0.0;
+}
+analog for DiodeTt {
+    let nvt   = n * vt();
+    let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
+    let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
+    let id    = is * ((vd / nvt).exp() - 1.0);
+    i(a, k) +> id + gmin() * vd + ddt(tt * id);
 }

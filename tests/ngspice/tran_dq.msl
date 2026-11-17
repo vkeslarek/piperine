@@ -10,5 +10,5 @@ module TranDq() {
     let v1 = Vsource { dc: 1.0 }(vin, gnd);
     let r1 = Resistor { r: 1000.0 }(vin, a);
     let c1 = Capacitor { c: 1.5915494309189535e-9 }(a, gnd);
-    let d1 = Diode { tt: 1e-6 }(a, gnd);
+    let d1 = DiodeTt { tt: 1e-6 }(a, gnd);
 }
