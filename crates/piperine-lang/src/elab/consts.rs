@@ -413,6 +413,31 @@ impl<'d, 't> ConstEval<'d, 't> {
                 (Method::Max, [y]) => Ok(Constant::Int(x.max(*y))),
                 (Method::Clamp, [lo, hi]) if lo > hi => crossed(),
                 (Method::Clamp, [lo, hi]) => Ok(Constant::Int(x.max(*lo).min(*hi))),
+                (Method::RemEuclid, [0]) => Err(ConstFault::Panic { expr, what: "a `rem_euclid` by zero".to_string() }),
+                (Method::RemEuclid, [d]) => Ok(Constant::Int(x.rem_euclid(*d))),
+                (Method::IntAbs | Method::Signum | Method::Pow | Method::SaturatingAdd | Method::SaturatingSub | Method::SaturatingMul, _) => {
+                    let Some(width) = self.width(expr) else { return Err(ConstFault::Unsupported { expr, what: "this method of an integer".to_string() }) };
+                    match (method, ints.as_slice()) {
+                        // Arithmetic wraps (§1): `(-128i8).abs()` is `-128`, `2u8.pow(9)` is 0.
+                        (Method::IntAbs, []) => Ok(width.wrap(x.abs())),
+                        (Method::Signum, []) => Ok(Constant::Int(x.signum())),
+                        (Method::Pow, [e]) => {
+                            let (mut base, mut acc, mut e) = (x, 1i128, *e);
+                            while e > 0 {
+                                if e & 1 == 1 {
+                                    acc = width.wrapped(acc.wrapping_mul(base));
+                                }
+                                base = width.wrapped(base.wrapping_mul(base));
+                                e >>= 1;
+                            }
+                            Ok(width.wrap(acc))
+                        }
+                        (Method::SaturatingAdd, [y]) => Ok(Constant::Int(width.clamp(x + *y))),
+                        (Method::SaturatingSub, [y]) => Ok(Constant::Int(width.clamp(x - *y))),
+                        (Method::SaturatingMul, [y]) => Ok(Constant::Int(width.clamp(x.saturating_mul(*y)))),
+                        _ => Err(ConstFault::Unsupported { expr, what: "this method of an integer".to_string() }),
+                    }
+                }
                 _ => Err(ConstFault::Unsupported { expr, what: "this method of an integer".to_string() }),
             };
         }
@@ -461,6 +486,20 @@ impl Width {
         let modulus = 1i128 << self.bits;
         let low = v.rem_euclid(modulus);
         Constant::Int(if self.signed && low >= modulus / 2 { low - modulus } else { low })
+    }
+
+    /// The value of `v` modulo `2^bits` as an `i128`, for a running product.
+    fn wrapped(self, v: i128) -> i128 {
+        match self.wrap(v) {
+            Constant::Int(w) => w,
+            _ => v,
+        }
+    }
+
+    /// `v` clamped to the range of this type (`saturating_*`).
+    fn clamp(self, v: i128) -> i128 {
+        let (min, max) = if self.signed { (-(1i128 << (self.bits - 1)), (1i128 << (self.bits - 1)) - 1) } else { (0, (1i128 << self.bits) - 1) };
+        v.clamp(min, max)
     }
 
     /// `x as` this type (G4): truncated toward zero, saturated to the type's range, NaN as 0.

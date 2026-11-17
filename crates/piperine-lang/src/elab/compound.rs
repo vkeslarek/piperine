@@ -18,7 +18,7 @@
 //!   literal `None` or `Some` is its value.
 //! - `let (a, b) = (x, y);` is one local per component.
 
-use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Method as IrMethod, Origin, Stmt, StmtId, UnaryOp, ValueType};
 
 use super::elaborator::Elaboration;
 use super::known::Flag;
@@ -500,6 +500,24 @@ impl Elaboration<'_, '_> {
                 let read = self.lower_expr(scope, *recv)?;
                 let Some(zero) = self.zero(&payload, origin.clone()) else { return unsupported(self) };
                 let val = self.emit(Expr::KnownOr { value: read, default: zero }, payload, origin);
+                Some(Pair { is, val, literal: None })
+            }
+            // `a.checked_add(b)`: `None` when the wrapping operation overflowed (H.1), so the flag is
+            // `!overflows(a, b)` and the payload is the wrapping result, each reading `a` and `b`
+            // where they stand.
+            ExprKind::MethodCall { recv, args, .. } if matches!(self.types.method(expr), Some(Method::CheckedAdd | Method::CheckedSub | Method::CheckedMul)) => {
+                let (overflows, op) = match self.types.method(expr)? {
+                    Method::CheckedAdd => (IrMethod::AddOverflows, BinaryOp::Add),
+                    Method::CheckedSub => (IrMethod::SubOverflows, BinaryOp::Sub),
+                    _ => (IrMethod::MulOverflows, BinaryOp::Mul),
+                };
+                let [arg] = args.as_slice() else { return unsupported(self) };
+                let (a, b) = (self.lower_expr(scope, *recv)?, self.lower_expr(scope, arg.value)?);
+                let flags = self.flags(&[a, b]);
+                let overflowed = self.emit(Expr::Method { method: overflows, receiver: a, args: vec![b] }, flags.wrap(ValueType::Bool), origin.clone());
+                let is = self.emit(Expr::Unary { op: UnaryOp::Not, expr: overflowed }, flags.wrap(ValueType::Bool), origin.clone());
+                let (a, b) = (self.lower_expr(scope, *recv)?, self.lower_expr(scope, arg.value)?);
+                let val = self.emit(Expr::Binary { op, lhs: a, rhs: b }, flags.wrap(payload), origin);
                 Some(Pair { is, val, literal: None })
             }
             // `if c { a } else { b }` of `Option`s: the flag and the payload each an `if` on `c`.

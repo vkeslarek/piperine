@@ -83,6 +83,48 @@ impl ValueTypes<'_> {
 }
 
 impl Elaboration<'_, '_> {
+    /// The IR method a numeric row of Appendix H lowers to; `None` for the rows that lower
+    /// elsewhere (`exp`, `ln`, `sqrt`, `abs` of `f64` are `Math`; `checked_*` and the `Option`
+    /// and `bool` rows are pairs).
+    pub(super) fn ir_method(method: Method) -> Option<IrMethod> {
+        Some(match method {
+            Method::Min => IrMethod::Min,
+            Method::Max => IrMethod::Max,
+            Method::Clamp => IrMethod::Clamp,
+            Method::Floor => IrMethod::Floor,
+            Method::Sin => IrMethod::Sin,
+            Method::Cos => IrMethod::Cos,
+            Method::Tan => IrMethod::Tan,
+            Method::Asin => IrMethod::Asin,
+            Method::Acos => IrMethod::Acos,
+            Method::Atan => IrMethod::Atan,
+            Method::Atan2 => IrMethod::Atan2,
+            Method::Sinh => IrMethod::Sinh,
+            Method::Cosh => IrMethod::Cosh,
+            Method::Tanh => IrMethod::Tanh,
+            Method::Powf => IrMethod::Powf,
+            Method::Powi => IrMethod::Powi,
+            Method::Log10 => IrMethod::Log10,
+            Method::Log2 => IrMethod::Log2,
+            Method::Ceil => IrMethod::Ceil,
+            Method::Round => IrMethod::Round,
+            Method::Trunc => IrMethod::Trunc,
+            Method::Fract => IrMethod::Fract,
+            Method::Signum => IrMethod::Signum,
+            Method::RemEuclid => IrMethod::RemEuclid,
+            Method::Hypot => IrMethod::Hypot,
+            Method::IsNan => IrMethod::IsNan,
+            Method::IsFinite => IrMethod::IsFinite,
+            Method::IsInfinite => IrMethod::IsInfinite,
+            Method::IntAbs => IrMethod::IntAbs,
+            Method::Pow => IrMethod::Pow,
+            Method::SaturatingAdd => IrMethod::SaturatingAdd,
+            Method::SaturatingSub => IrMethod::SaturatingSub,
+            Method::SaturatingMul => IrMethod::SaturatingMul,
+            _ => return None,
+        })
+    }
+
     /// The IR type of a type of the subset; `None` when no value has it in the IR.
     pub(super) fn value_type(&self, ty: &Ty) -> Option<ValueType> {
         ValueTypes { design: self.design }.of(ty)
@@ -229,13 +271,8 @@ impl Elaboration<'_, '_> {
                     Method::Ln => MathFn::Ln,
                     Method::Sqrt => MathFn::Sqrt,
                     Method::Abs => MathFn::Abs,
-                    Method::Min | Method::Max | Method::Clamp | Method::Floor => {
-                        let method = match method {
-                            Method::Min => IrMethod::Min,
-                            Method::Max => IrMethod::Max,
-                            Method::Clamp => IrMethod::Clamp,
-                            _ => IrMethod::Floor,
-                        };
+                    row if Self::ir_method(row).is_some() => {
+                        let method = Self::ir_method(row)?;
                         let receiver = self.lower_expr(scope, *recv);
                         let mut lowered = Vec::new();
                         for arg in args {
@@ -250,9 +287,9 @@ impl Elaboration<'_, '_> {
                         let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                         return self.lower_option_method(scope, method, *recv, &args, ty, origin);
                     }
-                    // Lowered to an IR method by T18.
+                    // The rest of H.4 and H.3 (T19); `checked_*` is an `Option`, lowered on its pair.
                     _ => {
-                        self.unsupported(file, node.span, &format!("method `{method:?}` (lowered from T18 on)"));
+                        self.unsupported(file, node.span, &format!("method `{method:?}` (lowered from T19 on)"));
                         return None;
                     }
                 };

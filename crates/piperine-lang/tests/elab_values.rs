@@ -640,3 +640,85 @@ fn a_tuple_let_is_one_local_per_component() {
     let locals = locals_in(&mixed);
     assert!(locals.contains(&"a: flagged<u8>".to_string()) && locals.contains(&"b: u8".to_string()), "{mixed}");
 }
+
+#[test]
+fn numeric_rows_lower_to_methods_and_checked_ops_to_pairs() {
+    // CAT-01, CAT-02 (design C6): every f64 and integer row of Appendix H lowers to one
+    // `Expr::Method` of its own, with the type H gives (`bool` for `is_nan`, `is_finite`,
+    // `is_infinite`, the receiver's otherwise); `exp`, `ln`, `sqrt`, `abs` of an `f64` stay
+    // `Math` (the twins' text does not move). `checked_op(a, b)` is the pair
+    // `(!op_overflows(a, b), a op b)`, and no IR type is an `Option`.
+    let items = "fn real(x: f64, y: f64) -> f64 {\n\
+                   let a = x.sin() + x.cos() + x.tan() + x.asin() + x.acos() + x.atan() + x.atan2(y) + x.sinh() + x.cosh() + x.tanh();\n\
+                   let b = x.powf(y) + x.powi(3) + x.log10() + x.log2() + x.ceil() + x.round() + x.trunc() + x.fract() + x.signum() + x.rem_euclid(y) + x.hypot(y);\n\
+                   let c = x.exp() + x.ln() + x.sqrt() + x.abs() + x.floor();\n\
+                   let d = x.is_nan() || x.is_finite() || x.is_infinite();\n\
+                   if d { a + b + c } else { 0.0 }\n\
+                 }\n\
+                 fn whole(k: i8, u: u8) -> i8 {\n\
+                   let a = k.abs() + k.signum() + k.pow(2) + k.rem_euclid(3) + k.saturating_add(1) + k.saturating_sub(1) + k.saturating_mul(2);\n\
+                   let b = u.pow(2) + u.rem_euclid(3) + u.saturating_add(1);\n\
+                   a + (b as i8)\n\
+                 }\n\
+                 fn checked(a: u8, b: u8) -> u8 { let s = a.checked_add(b); let d = a.checked_sub(b); let m = a.checked_mul(b); s.unwrap_or(0) + d.unwrap_or(1) + m.unwrap_or(2) }";
+    let ir = Elab::ir(&reaching(items, &["real(1.0, 2.0)", "whole(1, 2)", "checked(1, 2)"]), "Top");
+    let text = ir.print_structural();
+    assert!(!text.contains("Option"), "no IR type is an `Option`:\n{text}");
+    let read = Read { ir: &ir };
+    let methods = |name: &str| -> Vec<(Method, ValueType)> {
+        let mut found: Vec<(Method, ValueType)> = read.reach(read.body_of(name)).into_iter().filter_map(|e| if let Expr::Method { method, .. } = ir.expr(e) { Some((*method, ir.expr_type(e).clone())) } else { None }).collect();
+        found.sort_by_key(|(m, _)| m.name());
+        found
+    };
+    use Method::*;
+    let real: Vec<Method> = methods("real").into_iter().map(|(m, _)| m).collect();
+    let mut want: Vec<Method> = vec![Sin, Cos, Tan, Asin, Acos, Atan, Atan2, Sinh, Cosh, Tanh, Powf, Powi, Log10, Log2, Ceil, Round, Trunc, Fract, Signum, RemEuclid, Hypot, Floor, IsNan, IsFinite, IsInfinite];
+    want.sort_by_key(|m| m.name());
+    assert_eq!(real, want);
+    for (method, ty) in methods("real") {
+        let expected = if matches!(method, IsNan | IsFinite | IsInfinite) { ValueType::Bool } else { ValueType::F64 };
+        assert_eq!(ty, expected, "{}", method.name());
+    }
+    let real_text = read.function_text("real");
+    for call in ["x.sin()", "x.atan2(y)", "x.powi(3i32)", "x.rem_euclid(y)", "x.is_nan()"] {
+        assert!(real_text.contains(call), "`{call}` in:\n{real_text}");
+    }
+    assert!(read.reach(read.body_of("real")).iter().any(|e| matches!(ir.expr(*e), Expr::Math { f: piperine_ir::MathFn::Exp, .. })), "`exp` stays `Math`");
+
+    let whole: Vec<Method> = methods("whole").into_iter().map(|(m, _)| m).collect();
+    let mut want: Vec<Method> = vec![IntAbs, Signum, Pow, RemEuclid, SaturatingAdd, SaturatingSub, SaturatingMul, Pow, RemEuclid, SaturatingAdd];
+    want.sort_by_key(|m| m.name());
+    assert_eq!(whole, want);
+    let whole_text = read.function_text("whole");
+    assert!(whole_text.contains("k.abs()") && whole_text.contains("k.pow(2u32)") && whole_text.contains("u.saturating_add(1u8)"), "{whole_text}");
+
+    // `checked_op`: the flag is `!overflows`, the payload the wrapping operation.
+    let checked = read.function_text("checked");
+    for line in [
+        "let s.is = (!a.add_overflows(b))",
+        "let s.val = (a + b)",
+        "let d.is = (!a.sub_overflows(b))",
+        "let d.val = (a - b)",
+        "let m.is = (!a.mul_overflows(b))",
+        "let m.val = (a * b)",
+    ] {
+        assert!(checked.contains(line), "`{line}` in:\n{checked}");
+    }
+    let overflows: Vec<(Method, ValueType)> = methods("checked");
+    assert_eq!(overflows.iter().map(|(m, _)| *m).collect::<Vec<_>>(), [AddOverflows, MulOverflows, SubOverflows]);
+    assert!(overflows.iter().all(|(_, ty)| *ty == ValueType::Bool));
+
+    // Over constants the rows fold at elaboration with the values the spec states (CAT-02 AC 2,
+    // 3, 6): `pow` and `abs` wrap, `saturating_*` clamp, `signum` and `rem_euclid` follow Rust.
+    let folded = "fn k0() -> u8 { 2u8.pow(9) }\nfn k1() -> u8 { 250u8.saturating_add(10) }\nfn k2() -> i8 { (-100i8).saturating_sub(100) }\n\
+                  fn k3() -> i8 { (-128i8).abs() }\nfn k4() -> i8 { (-5i8).signum() }\nfn k5() -> i8 { (-7i8).rem_euclid(3) }\nfn k6() -> u8 { 16u8.saturating_mul(16) }";
+    let ir = Elab::ir(&reaching(folded, &["k0()", "k1()", "k2()", "k3()", "k4()", "k5()", "k6()"]), "Top");
+    let read = Read { ir: &ir };
+    for (k, want, ty) in [(0, 0, ValueType::UInt(8)), (1, 255, ValueType::UInt(8)), (2, -128, ValueType::Int(8)), (3, -128, ValueType::Int(8)), (4, -1, ValueType::Int(8)), (5, 2, ValueType::Int(8)), (6, 255, ValueType::UInt(8))] {
+        let body = read.body_of(&format!("k{k}"));
+        assert_eq!((ir.expr(body).clone(), ir.expr_type(body).clone()), (Expr::Int(want), ty), "k{k}");
+    }
+    // A constant `rem_euclid` by zero is a panic while a const expression is evaluated (`E0104`).
+    let err = Elab::run(&reaching("fn f() -> u8 { 7u8.rem_euclid(0) }", &["f()"]), "Top").expect_err("rem_euclid by zero");
+    assert_eq!(Elab::codes(&err), ["E0104"]);
+}
