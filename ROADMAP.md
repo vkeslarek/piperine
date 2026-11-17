@@ -310,3 +310,59 @@ User, verbatim: "Depois desses desenvolvimentos do ir -> transpilation -> abi eu
 4b. **Root e2e fixtures with ngspice parity.** One place, root `tests/e2e/`: many scenarios, each an MSL project (or file) + its `.cir` twin + expected outputs, run through the same entry point a user runs (the CLI / project path), compared with ngspice through the single `ToleranceContract`. The current `tests/ngspice/` twins move under it; `piperine-parity` stays the harness.
 5. **M2 remainder** - galleries E/F and conformance C.2.3 on the transpiler path, and the stdlib digital/mixed modules the buck does not use (`msl-digital` already brings `transition`, `A2D`, `above`, `init`, `Never`, `log`, `require`, enums/`match`/`Option`, timers).
 
+
+## Every gap has a feature (user, 2026-11-17)
+
+User, verbatim: "gostaria que abrisse feature e escrevesse a spec para todos esses gaps, pode dividir da maneira que achar legal pois eles todos são super importantes. Não precisa avançar para o design mas deixa aqui as features abertas e coloca no roadmap. Preciso que TODOS os gaps estejam endereçados ok? Principalmente esses que tu listou que limitam a expressividade da linguagem ok?"
+
+Every id of `GAPS.md` (audit of 2026-11-17) has one owning feature. Specs only for the open ones (`.specs/features/<name>/spec.md`); each carries its open questions for the user and a "Gaps closed" table. Design and tasks come when a feature is picked.
+
+**In flight (three lanes, user 2026-11-17 "Topo"):**
+
+| Lane | Feature | Gaps | State |
+| --- | --- | --- | --- |
+| A | `msl-fixes` | S1, S5, B1, B2, L11, L14, L15, L16 (H.1–H.4), L17, L41, L46, L47 (`freq`), L48, L54, L55 | implementing |
+| B | `host-ii` | S2, X3, X4, X7, X8, X9, H2 (tf, pz, sens, pss), H3, H4, H5, H9, L56, `max_steps` | implementing |
+| C | `solver-hygiene` | V1–V11, V14, V15 | implementing |
+| B next | `root-e2e` | H11, U5, U10 | spec approved |
+| B next | `buck-scenarios` | U3 (SPEC S2–S9 as runs + host tests; load tests at 3.3 V) | queued, after host-ii |
+
+**Language expressiveness (the user's priority):**
+
+| Feature | Gaps | Size | Waits on |
+| --- | --- | --- | --- |
+| `analog-structure` | L26, L27, L34–L38, L40, L42, L50, S4 | L (~30–35) | msl-fixes; host-ii (`set_at`, X9); generics and params-and-io for the stdlib `idt`, `Water`, §18 `Diode` |
+| `analog-operators` | L43, L44, L45, L47 (`simparam`, `tnom`), L49, H2 (noise analysis), U7 | L (~25) | msl-fixes; host-ii; analog-structure (AS-07) |
+| `composite-values` | L1–L6, L9, L10, L13, L16 (H.5–H.7, `normal`), L24, the enum variant names | L (~95, phases A–D) | msl-fixes; generics A for `Fn`; unknown-semantics for unknown loops |
+| `generics` | L4 (generic enums), L7, L8, L29–L32, L58 (generics group), S3, X6 | L (~114, phases A–E) | composite-values A–C; order CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E |
+| `unknown-semantics` | L18, L19 | L (~26) | msl-fixes S1 |
+| `unknown-semantics-events` | L51, L52, L53, `limexp`, the Book's clipper and chapter-8 buck | M (~17) | unknown-semantics; generics L8 |
+| `unknown-semantics-per-level` | S6, G6 (re-opens the 2026-11-15 ruling) | S–L by the answer | unknown-semantics |
+| `resolved-nets` | L21, L22, L23, L58 (resolved-net group), the Book's alarm | L (~30, 3 phases) | phase 1 none; then composite-values, unknown-semantics, generics |
+| `resolved-nets-bundles` | L25 | M (~15) | composite-values, generics, resolved-nets |
+| `params-and-io` | L20, L28, L39, L57, X5, H12, the GAPS §10 code guard | L (~30) | composite-values (arrays); host-ii |
+| `foreign-models` | L12, L33 | L (~35) | host-ii; generics (`m`/`dtemp`); decisions on OSDI and linking |
+| `spec-closure` | G1, G2, G4, G5, X1, X2, H13 | S–M (10–22) | solver-hygiene (lands after it) |
+
+**Host and use:**
+
+| Feature | Gaps | Size | Waits on |
+| --- | --- | --- | --- |
+| `host-iii` | H1 (force, release, waits), H6 | L (~32) | host-ii; solver-hygiene (exact re-entry) |
+| `host-analyses` | H2 (S-parameters, Fourier, distortion), op variables | M (~24) | host-ii |
+| `sweeps-montecarlo-optimization` | H2 (multi-axis sweeps), H7 | L (~34) | host-ii |
+| `gradients` | H8, E0807–E0809 | L (~40) | host-ii; solver-hygiene |
+| `cli-packages` | H10 | M (~26) | piperine-project |
+| `python-host` | B4 | L (~35) | piperine-api; host-ii; host-iii |
+| `lang-server` | B3 | M (~20), low priority (user) | — |
+
+**Performance and proof:**
+
+| Feature | Gaps | Size | Waits on |
+| --- | --- | --- | --- |
+| `multi-rate` | V12 | L (~14), later (user) | solver-hygiene; host-ii `max_steps` |
+| `surrogate-models` | V13 | M (~12), later (user) | generics; params-and-io; multi-rate |
+| `periodic-small-signal` | V16 | L (~20) | host-ii (pss); analog-operators (noise) |
+| `conformance` | U1, U2, U4, U6, U8, U9 | L (~55, 6 phases; 1–5 can start now) | per phase: generics, composite-values, resolved-nets, analog-*, host-analyses (Fourier) |
+
+Ownership notes: Fourier and distortion belong to `host-analyses` (conformance's `four_diode`/`disto_diode` wait on it); V6 stays with `solver-hygiene`; `E0361` is raised first by `params-and-io`.
