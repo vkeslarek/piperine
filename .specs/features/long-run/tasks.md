@@ -261,9 +261,9 @@ T23
 
 **Done when**:
 
-- [ ] `crates/piperine-api/tests/probes.rs` gains, with exactly these names: `a_node_a_flow_and_a_net_resolve_to_their_columns`, `a_probe_with_no_value_in_the_circuit_is_a_failure_naming_it`
-- [ ] Gate check passes: Quick (`Run probes`)
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] `crates/piperine-api/tests/probes.rs` gains, with exactly these names: `a_node_a_flow_and_a_net_resolve_to_their_columns`, `a_probe_with_no_value_in_the_circuit_is_a_failure_naming_it`
+- [x] Gate check passes: Quick (`Run probes`)
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

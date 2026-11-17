@@ -4,7 +4,7 @@
 //! analysis runs.
 
 use piperine_ir::{BranchKind, Ir, ValueType};
-use piperine_solver::prelude::{BranchIdentifier, NodeIdentifier};
+use piperine_solver::prelude::{AnalogVariable, BranchIdentifier, CircuitInstance, NodeIdentifier};
 
 use crate::failure::Failure;
 
@@ -17,6 +17,15 @@ pub enum Probe {
     Net { path: String, ty: ValueType },
     /// The flow of the instance at `instance`: its first potential branch's.
     Flow { instance: String, branch: BranchIdentifier },
+}
+
+/// Where a probe's value sits in a run, found before the run starts.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Column {
+    /// The index of a node or a flow in the analog solution.
+    Unknown { index: usize },
+    /// A discrete net, by its id in the digital plan, with its type.
+    Net { id: u32, ty: ValueType },
 }
 
 impl Probe {
@@ -61,6 +70,26 @@ impl Probe {
             Probe::Node { path, .. } | Probe::Net { path, .. } => path.clone(),
             Probe::Flow { instance, .. } => format!("i({instance})"),
         }
+    }
+
+    /// Where this probe's value sits in a run of `circuit`: a node or a flow to its index in the
+    /// solution, a discrete net to its id in the digital plan. A probe with neither is a
+    /// `Failure::Backend` naming its label, before any step.
+    pub fn column(&self, circuit: &CircuitInstance) -> Result<Column, Failure> {
+        let none = |why: &str| Failure::Backend(format!("`{}` has no value in the circuit: {why}", self.label()));
+        match self {
+            Probe::Node { id, .. } => Probe::unknown(circuit, AnalogVariable::Node(id.clone())).ok_or_else(|| none("no unknown of the solution is that node")),
+            Probe::Flow { branch, .. } => Probe::unknown(circuit, AnalogVariable::Branch(branch.clone())).ok_or_else(|| none("no unknown of the solution is that branch current")),
+            Probe::Net { path, ty } => {
+                let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
+                let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))?;
+                Ok(Column::Net { id: at as u32, ty: ty.clone() })
+            }
+        }
+    }
+
+    fn unknown(circuit: &CircuitInstance, variable: AnalogVariable) -> Option<Column> {
+        circuit.netlist().reference_for(&variable)?.idx().map(|index| Column::Unknown { index })
     }
 
     fn nothing(entry: &str, why: &str) -> Failure {

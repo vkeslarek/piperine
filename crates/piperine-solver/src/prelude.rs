@@ -13,7 +13,7 @@
 //! ```
 
 // ── Building blocks ────────────────────────────────────────────────────────
-pub use piperine_analog_solver::netlist::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
+pub use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, Netlist, NodeIdentifier};
 pub use crate::core::bind::{ParamValue, Port};
 pub use crate::core::builder::CircuitBuilder;
 pub use crate::core::circuit::CircuitInstance;

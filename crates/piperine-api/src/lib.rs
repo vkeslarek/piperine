@@ -30,7 +30,7 @@ pub mod verdict;
 pub use backend::Backend;
 pub use failure::Failure;
 pub use plot::Plot;
-pub use probe::Probe;
+pub use probe::{Column, Probe};
 pub use project::{Checked, Project};
 pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
