@@ -1,7 +1,8 @@
 # GAPS.md — what does not work yet
 
 **Rewritten 2026-11-15**, after M1 (the first MSL → solver path) merged; **updated 2026-11-16**
-after `msl-digital` (digital and mixed MSL from source). The previous version
+after `msl-digital` (digital and mixed MSL from source) and on 2026-11-17 after `msl-cli` (the
+command line and the host library). The previous version
 (2026-08) audited the retired PHDL / Verilog-AMS / Cranelift stack; none of that code exists any
 more, so it was dropped rather than amended.
 
@@ -24,27 +25,46 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 | elaboration → IR → interpreter → solver | analog only: R, C, V/I sources, diode with `limit`/`pnjlim`; OP, DC, AC, transient. The interpreter is frozen at M1 (R1) and refuses every digital or amended form by name |
 | ngspice parity | 7 fixtures in `tests/ngspice/`, all green |
 | IR → Rust → `rustc` → ABI (`ir-rust`) | the M1 analog subset compiles to Rust, bit-equal to the interpreter, 7 twins green on both backends (`PIPERINE_BACKEND`) |
-| digital and mixed-signal execution (`msl-digital`) | **from MSL source, on the transpiled backend only**: the whole `examples/buck` elaborates, compiles with no `rustc` warning and runs; its closed loop starts and regulates at 0.8 V (`cargo test -p piperine-parity --test buck_closed_loop`). The stdlib items the buck reaches run too: `transition`, `A2D`, `D2A`, `above`, `init`, `every`, `Never`, `log`, `require`. Only from a Rust test (`piperine-parity::Project`): no host drives it yet (§2) |
-| CLI / host API / LSP | **do not build** (§2); the language server is deferred |
+| digital and mixed-signal execution (`msl-digital`) | **from MSL source, on the transpiled backend only**: the whole `examples/buck` elaborates, compiles with no `rustc` warning and runs; its closed loop starts and regulates at 0.8 V (`cargo test -p piperine-parity --test buck_closed_loop`). The stdlib items the buck reaches run too: `transition`, `A2D`, `D2A`, `above`, `init`, `every`, `Never`, `log`, `require`. From the command line too: `piperine run startup` in `examples/buck` |
+| command line and host library (`msl-cli`) | `piperine-api`, `piperine-cli`, `piperine-project` and the root package build in the default members. `piperine check`, `build`, `run`, `test`, `new`, `clean` and `fmt` run an MSL project (`examples/rc`, `examples/buck`, the 7 twins on both backends): `op`, `dc`, `ac`, `transient`, records live, CSV, JSON Lines, SVG plots. Every CLI listing of the Book is held to the binary (`cargo test -p piperine-cli --test book`) |
+| formatter (`msl-cli`) | `piperine fmt` / `msl::format` keeps every plain comment, proven over 277 sources |
+| language server | **does not build**, outside the default build, deferred by the user (§2) |
 
 ---
 
-## 2. Broken — the user-facing surface does not build
+## 2. Broken — what does not build or is missing from the host surface
 
-- **`piperine-api`** (165 errors), **`piperine-cli`** (43), **`piperine-lang-server`** (91), and the
-  root package `piperine` (it re-exports `piperine-api`) fail `cargo check`. They still target the
-  deleted VAMS front end and the deleted `Element` solver interface. All four sit outside
-  `default-members`, so `cargo build` stays green while they rot. Consequence: **an MSL project
-  can only be run from a Rust test** (`piperine-parity::{Bench, Project}`). The CLI and the
-  project are queue item 3 of `ROADMAP.md`; **the language server is deferred** to a feature of
-  its own after them (user: "lang-server é bom ficar... cli também mas ambos vão ter sua própria
-  feature"), so it stays unbuilt through the CLI work.
-- **`piperine-project`** builds, but only as manifest + dependencies + lockfile; nothing on the
-  run path consumes it.
+- **`piperine-lang-server`** does not build (it still targets the deleted VAMS front end) and sits
+  outside `default-members`. Deferred by the user (2026-11-16): "O lang-server é o menos
+  importante, vai ficar para bem depois." `piperine check` gives the same diagnostics meanwhile.
+- **No host sequences from the command line.** The stimulus of a CLI run is an MSL bench; a run
+  cannot wait for a condition, `drive`/`force` a port or `set` a param mid-run. `piperine-api` has
+  no such surface yet either, so the buck's scenarios S1 to S9 (`examples/buck/SPEC.md` §10) have
+  no host (queue item 4).
+- **No Python host.** There is no Python crate; `examples/buck/README.md`'s Python is a sketch.
+- **The old `piperine-api` is gone** (`msl-cli` T4, approved "Agora, pequeno"): sweep drivers
+  beyond one DC sweep, Monte Carlo, optimization, sensitivities, noise/TF/PZ/PSS/S-parameter runs,
+  Fourier and waveform measurements, `SimHooks`, live params. Each returns on the device ABI
+  under a spec of its own; the CLI asks for `op`, `dc`, `ac` and `transient` only.
+- **Not in the CLI:** `add`, `remove`, `tree`, `--locked`, `--offline`, `update`, plugin scripts,
+  a REPL, ngspice raw output, a terminal or PNG plot.
+- **The standard library, the galleries and `examples/buck/src` are not reformatted** by
+  `piperine fmt`: the formatter is proven on them (`msl_format`), rewriting them is a separate
+  change.
 
 ---
 
 ## 3. Silent
+
+- **The transient table of a design with no analog node is wrong (`msl-cli`, found by T36).** A
+  purely digital design (the Book's `Blinky`, `Count`) keeps one transient step: its table is a
+  single row at time 0 holding the values of the END of the run (`Blinky.count` = 3 at 0), exit
+  0. With `print_step` the run fails instead (`the print grid reaches .., past the last step of
+  the run at 0`). The records are right. The Book says so where it shows such a design.
+- **A DC sweep's points deliver no records (`msl-cli` T22).** The sweep `set`s and solves on the
+  bound circuit directly (`Solver` owns its circuit), so the reactions of each point write
+  records the sink never sees: a `dc` run prints no record line and writes none to `--records`,
+  with no diagnostic. An `op` run delivers its records. The Book's chapter 16 says so.
 
 - **A derived child param is not re-derived on a host `set` (`msl-digital`).** A placement
   that gives a child param a value reading the parent's params (`PowerStage { ron: ron }`) is
@@ -70,14 +90,28 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
   the buck is written with a `known_or`, so it never faults.
 - **Enum variant names are not carried (`msl-digital`).** A `Bit<Mode>` carrier is its tag,
   `UInt<ceil(log2 V)>`, in the IR, on the ABI and in every observation: a host reads `2`, not
-  `Regulate`. The names belong to the host surface.
+  `Regulate`. The command line prints the index too, in tables and in record fields
+  (`from=1 to=0` for `Ok` to `Under`); the Book says so.
+- **`on above(..) { emit!(..) }` is `P0001` (`msl-digital`, D14 of `msl-cli`).** `above` is a
+  head of two disjuncts (the crossing, and the start when already positive), and a split head
+  whose body emits is refused: "a head whose disjuncts each need a reaction, over a body that
+  emits a record, is not supported yet". `cross` works; the Book's examples use it.
+- **A module-body `let` used as a param value is `E0321`** ("reads a name with no value yet"):
+  `let c = 1.0 / (2.0 * PI * r * fc); let c1 = Capacitor(b, gnd) { c };`. Writing the expression
+  in the param block works. The spec's named expression should be usable there.
+- **Book examples refused today, each shown with its refusal in the Book:** the ladder (generic
+  module), the debouncer and the PWM (param of type `u8`; the debouncer also a `known_or` whose
+  default may be unknown), the alarm line (`Wire`), the clipper and the cycle counter (`sin` on
+  `f64`), the chapter-8 buck (`settle`).
+- **No trace records.** `emit!` inside `analog` is `P0001`; only reactions write records.
 - **Everything outside the subset of M1 and `msl-digital`** is `P0001` naming the construct, at
   type check or elaboration (DIG-07 AC 1): loops, `let mut`, assignments, structs, arrays and
   indexing, closures other than a `limit` function, user traits and `impl`s, generic modules and
   functions, enums with a payload or an explicit discriminant, natures with `resolve` (`Wire`,
   `Tri`), bundles, `others()`, `settle`, element and field commits, `delay`, `noise`, `ddx`,
   `bound_step`, `freq()`, `simparam`, `analysis` of a kind other than `Static`, generation `for`
-  and `if`, templates, `extern` modules, a `ttol` or `etol` given to `cross`, a binding inside
+  and `if`, templates, `extern` modules, params of an integer type (`n: u8`), the math methods
+  of `f64` (`sin`, ...), a `known_or` whose default may be unknown, a `ttol` or `etol` given to `cross`, a binding inside
   `Some` in a definition, an `||` head split into reactions whose body holds `emit!`, and an
   event read as a `bool`. The stdlib items built on them (`Bidir`, `slew`, `idt`, `idtmod`,
   `zi_*`, `laplace_*`, `inertial`, `absdelta`, `last_crossing`) are refused with them.
@@ -134,7 +168,8 @@ are the parity risks.
   whole buck takes about 45 000 accepted steps per 40 µs (the analog side lands near every
   200 MHz instant), each about 58 KB in `TransientAnalysisResult`: a 600 µs run held 25 GB
   before it was stopped. `buck_closed_loop` keeps only its last 40 µs (`record_from`); a host
-  needs a bounded recording (selected probes, a decimated grid) before long mixed runs. The same
+  needs a bounded recording (selected probes, a decimated grid) before long mixed runs; the
+  CLI's `from` key (`record_from`, `msl-cli` D10) bounds a run to its end meanwhile. The same
   run takes 779 s in a dev build.
 - **First step after a digital-to-analog jump (`ir-rust` F-B7).** With a 10 ns step cap the
   analog response to a carrier change is off by more than `TRAN_VOLTAGE` 5.55 ns after `t0` (the

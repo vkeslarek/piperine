@@ -1368,6 +1368,37 @@ and three choices fix how.
 
 ---
 
+### MD-65: the command line is a shell over `piperine-api`; a run is a `[run.<name>]` table
+
+`msl-cli` (2026-11-17). The command line and the host library run an MSL project end to end.
+
+1. **The command line is a shell over `piperine-api`.** `piperine-cli` parses arguments (clap's
+   builder, no derive), calls the library and lays out text; every rule of what a run prints or
+   judges (which signals, rows and records, pass or fail, every validation) is a `piperine-api`
+   method with a Rust test. The old content of `piperine-api` is gone and each of its features
+   returns on the device ABI under its own spec (amends MD-20's module list; its topology, the
+   library face with the root package re-exporting it, stands).
+2. **A run is a `[run.<name>]` table of `Piperine.toml`** whose keys are also flags of
+   `piperine run` (a flag wins); a lone `.msl` file runs from flags. `piperine-project` accepts
+   and locates the table and does not read it (amends MD-58's "and nothing else");
+   `piperine-api` reads it.
+3. **A bench is a crate under `benches/`**, named `bench`, depending on the package and on its
+   direct dependencies: a bench is MSL (stimulus and monitors), and the spec says so; sweeps,
+   Monte Carlo, optimization and mid-run stimulus stay in the host.
+4. **`msl::format` is the formatter, `msl::print` stays the canonical text of a tree.** The
+   formatter keeps every plain comment (anchored by span from a side list of the lexer) and
+   refuses to return a text that loses one.
+5. **The language server is deferred and untouched** (user, 2026-11-16), outside the default
+   build.
+
+**Scope:** `crates/piperine-api`, `crates/piperine-cli`, `crates/piperine-project`,
+`crates/piperine-lang` (`msl/{comments,format,print}.rs`), `docs/spec/`, `docs/book/`, `examples/rc`,
+`examples/buck`, `CLAUDE.md`, `AGENTS.md`.
+**Status:** Accepted (2026-11-17), from the approved `.specs/features/msl-cli/design.md`
+("Tech Decisions") and the user's eight answers of 2026-11-15.
+
+---
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)

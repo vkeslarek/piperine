@@ -1321,10 +1321,10 @@ T38
 
 **Done when**:
 
-- [ ] `ROADMAP.md` and `.specs/STATE.md` are edited in the same commit; item 3b's instruction (present `GAPS.md` to the user before the spec-completeness pass) is left as it is
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `gaps_drops_what_closed_and_lists_what_is_left`, `the_roadmap_marks_the_cli_item_done`, `state_records_the_cli_decision`
-- [ ] Gate check passes: Build (see Gate Check Commands)
-- [ ] Test count: the 3 test(s) named above, and no existing test removed or edited
+- [x] `ROADMAP.md` and `.specs/STATE.md` are edited in the same commit; item 3b's instruction (present `GAPS.md` to the user before the spec-completeness pass) is left as it is
+- [x] Tests with exactly these names pass in `cargo test -p piperine-cli --test docs`: `gaps_drops_what_closed_and_lists_what_is_left`, `the_roadmap_marks_the_cli_item_done`, `state_records_the_cli_decision`
+- [x] Gate check passes: Build (see Gate Check Commands)
+- [x] Test count: the 3 test(s) named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build
