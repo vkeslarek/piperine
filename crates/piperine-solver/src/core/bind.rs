@@ -162,6 +162,8 @@ pub struct Bound {
     /// committed at the start of every analysis (the `TEMPERATURE` global
     /// holds the session's value, abi.md §9).
     pub temperature: Option<(NetId, Vec<u8>)>,
+    /// The bound on the microsteps of one instant the digital engine was built with.
+    pub microsteps: usize,
 }
 
 /// What bind ran on, kept so that an instance can be created and bound again
@@ -172,6 +174,7 @@ pub(crate) struct Recipe {
     pub shared: Vec<(String, ParamValue)>,
     pub session: Vec<(String, ParamValue)>,
     pub resolution: f64,
+    pub microsteps: usize,
     pub temperature: f64,
 }
 
@@ -251,6 +254,7 @@ pub(crate) struct BindInput<'a> {
     pub session: Vec<(String, ParamValue)>,
     pub netlist: &'a mut Netlist,
     pub resolution: f64,
+    pub microsteps: usize,
     pub temperature: f64,
 }
 
@@ -397,7 +401,7 @@ fn create(module: &'static Module, path: &str, values: &[(u32, Vec<u8>)]) -> Res
 
 /// Binds `input` to its two plans.
 pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
-    let BindInput { specs, shared, session, netlist, resolution, temperature } = input;
+    let BindInput { specs, shared, session, netlist, resolution, microsteps, temperature } = input;
     let mut nets = Nets::default();
     let mut shared_by_name: HashMap<String, ParamValue> = HashMap::new();
     for (name, seed) in shared {
@@ -695,6 +699,6 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
             analog.set_discrete(slot, &init);
         }
     }
-    let digital = Digital::new(digital_plan, DigitalLimits::default());
-    Ok(Bound { analog, digital, names, holds, vntol, analyses, host_writes: Vec::new(), temperature: None })
+    let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() });
+    Ok(Bound { analog, digital, names, holds, vntol, analyses, host_writes: Vec::new(), temperature: None, microsteps })
 }

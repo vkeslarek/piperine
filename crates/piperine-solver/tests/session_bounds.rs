@@ -11,7 +11,7 @@ mod abi_devices;
 mod abi_mixed;
 
 use abi_devices::{add_vsrc, node_id};
-use abi_mixed::{comparator, dac, dff, inverter, settle_count};
+use abi_mixed::{comparator, dac, dff, inverter, settle_count, timer};
 use piperine_solver::abi::{AnalogReference, ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, Context};
 
@@ -62,4 +62,37 @@ fn an_operating_point_past_max_rounds_fails_naming_the_bound() {
     let mut circuit = b.build().expect("build");
     let op = circuit.dc(Context::default()).expect("dc").solve().expect("the default bound lets it settle");
     assert!(op.get_node(&node_id(&a2)).unwrap().abs() < 1e-12);
+}
+
+/// A clock with a half period of zero: it toggles its own trigger at every microstep, so its
+/// instant never goes quiet (`E0501`).
+fn zero_delay_clock(bound: Option<usize>) -> CircuitBuilder {
+    let mut b = CircuitBuilder::new("zero delay");
+    b.device(timer(), "t", &[("half", ParamValue::Real(0.0))], &[net("clk")]);
+    if let Some(bound) = bound {
+        b.microsteps(bound);
+    }
+    b
+}
+
+#[test]
+fn microsteps_default_to_a_thousand() {
+    // HII-02 AC 1: with no `microsteps` call the engine keeps its 1000 microsteps, and an instant
+    // that never goes quiet fails naming that bound.
+    let mut circuit = zero_delay_clock(None).build().expect("build");
+    let error = circuit.dc(Context::default()).expect("dc").solve().expect_err("the instant never goes quiet");
+    let text = format!("{error}");
+    assert!(text.contains("E0501"), "{text}");
+    assert!(text.contains("1000 microsteps"), "{text}");
+}
+
+#[test]
+fn an_instant_past_the_microstep_bound_fails_naming_it() {
+    // HII-02 AC 7: a zero-delay toggle bound at 5 microsteps fails naming 5, not the default.
+    let mut circuit = zero_delay_clock(Some(5)).build().expect("build");
+    let error = circuit.dc(Context::default()).expect("dc").solve().expect_err("5 microsteps are not enough");
+    let text = format!("{error}");
+    assert!(text.contains("E0501"), "{text}");
+    assert!(text.contains("5 microsteps"), "{text}");
+    assert!(!text.contains("1000"), "{text}");
 }

@@ -36,6 +36,15 @@ use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
 use crate::core::bind::{Bound, NameMap, Site};
 use crate::core::result::{ReentryState, TransientStep};
 
+/// An instant that does not go quiet (`E0501`) as the owner reports it, naming
+/// the bound it ran into: the engine's own text names the nets and the tick, not the bound.
+pub(crate) fn instant_error(e: DigitalError, microsteps: usize) -> Error {
+    match e {
+        DigitalError::NotQuiet { .. } => Error::simple(SolverDomain::Digital, format!("{e} (the bound is {microsteps} microsteps)")),
+        other => digital_error(other),
+    }
+}
+
 /// A digital failure as the owner reports it (the text keeps every typed field).
 pub(crate) fn digital_error(e: DigitalError) -> Error {
     Error::simple(SolverDomain::Digital, e.to_string())
@@ -70,6 +79,8 @@ pub(crate) struct DigitalSide {
     /// The engine was rewound since the last mark: the next mark finds the state the last one
     /// copied, which the step already carries, so it is not copied again.
     rewound: bool,
+    /// The microstep bound of the engine, named when an instant does not go quiet.
+    microsteps: usize,
 }
 
 impl DigitalSide {
@@ -99,7 +110,7 @@ impl DigitalSide {
             .chain(bound.temperature.iter().cloned())
             .chain(bound.host_writes.iter().cloned())
             .collect();
-        DigitalSide { digital, slots: names.slots.clone(), slot_nets: names.slot_nets.clone(), copy, on_start, settled: None, rewound: false }
+        DigitalSide { digital, slots: names.slots.clone(), slot_nets: names.slot_nets.clone(), copy, on_start, settled: None, rewound: false, microsteps: bound.microsteps }
     }
 
     /// Each mark also leaves the settled state in `settled`.
@@ -152,7 +163,8 @@ impl DiscreteSide for DigitalSide {
     }
 
     fn advance(&mut self, to: Tick) -> Result<Advance> {
-        Ok(match self.digital.advance(DigitalTick(to)).map_err(digital_error)? {
+        let microsteps = self.microsteps;
+        Ok(match self.digital.advance(DigitalTick(to)).map_err(|e| instant_error(e, microsteps))? {
             DigitalAdvance::Reached => Advance::Reached,
             DigitalAdvance::Landing { tick, time_point } => Advance::Landing { tick: tick.0, time_point },
             DigitalAdvance::Final(tick) => Advance::Final(tick.0),
@@ -166,7 +178,8 @@ impl DiscreteSide for DigitalSide {
     fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome> {
         let limit = DigitalHorizon { stop: DigitalTick(limit.stop), crossing: DigitalTick(limit.crossing) };
         let mode = Mode { is_static: mode.is_static, settle: mode.settle };
-        let out = self.digital.run_instant(DigitalTick(at), samples, limit, mode).map_err(digital_error)?;
+        let microsteps = self.microsteps;
+        let out = self.digital.run_instant(DigitalTick(at), samples, limit, mode).map_err(|e| instant_error(e, microsteps))?;
         let mut boundary = Vec::new();
         for (net, bytes) in out.boundary {
             let slot = self.slots[&net];

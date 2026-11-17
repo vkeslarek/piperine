@@ -216,9 +216,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `session_bounds.rs` gains `microsteps_default_to_a_thousand` and `an_instant_past_the_microstep_bound_fails_naming_it` (a zero-delay toggle bound at 5 fails naming 5)
-- [ ] Gate check passes: Quick (`Run solverbounds`, `Run baseline`)
-- [ ] Test count: 2 new tests
+- [x] `session_bounds.rs` gains `microsteps_default_to_a_thousand` and `an_instant_past_the_microstep_bound_fails_naming_it` (a zero-delay toggle bound at 5 fails naming 5)
+- [x] Gate check passes: Quick (`Run solverbounds`, `Run baseline`)
+- [x] Test count: 2 new tests
 
 **Tests**: integration
 **Gate**: quick

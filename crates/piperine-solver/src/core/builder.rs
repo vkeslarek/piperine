@@ -39,6 +39,8 @@ pub struct CircuitBuilder {
     shared_params: Vec<(String, ParamValue)>,
     session_params: Vec<(String, ParamValue)>,
     resolution: f64,
+    /// The bound on the microsteps of one instant of the digital engine.
+    microsteps: usize,
     /// monotonically increasing counter for fresh Anonymous node IDs
     next_anon: usize,
 }
@@ -59,6 +61,7 @@ impl CircuitBuilder {
             shared_params: Vec::new(),
             session_params: Vec::new(),
             resolution: piperine_digital_solver::tick::Resolution::default().seconds_per_tick,
+            microsteps: piperine_digital_solver::limits::DigitalLimits::default().max_delta_cycles,
             next_anon: 0,
         }
     }
@@ -129,6 +132,13 @@ impl CircuitBuilder {
         self
     }
 
+    /// The bound on the microsteps of one instant: an instant that needs more fails with `E0501`
+    /// naming it. The default is the digital engine's own, 1000.
+    pub fn microsteps(&mut self, bound: usize) -> &mut Self {
+        self.microsteps = bound;
+        self
+    }
+
     /// Freeze: bind the device instances (abi.md §9) into a circuit.
     pub fn build(mut self) -> Result<CircuitInstance> {
         let temperature = piperine_analog_solver::tolerances::Tolerances::default().temperature;
@@ -137,6 +147,7 @@ impl CircuitBuilder {
             shared: std::mem::take(&mut self.shared_params),
             session: std::mem::take(&mut self.session_params),
             resolution: self.resolution,
+            microsteps: self.microsteps,
             temperature,
         };
         let bound = bind(BindInput {
@@ -145,6 +156,7 @@ impl CircuitBuilder {
             session: recipe.session.clone(),
             netlist: &mut self.netlist,
             resolution: recipe.resolution,
+            microsteps: recipe.microsteps,
             temperature: recipe.temperature,
         })?;
         let ground = self.nodes.get("gnd").cloned();
