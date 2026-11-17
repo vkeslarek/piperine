@@ -421,10 +421,10 @@ T23
 
 **Done when**:
 
-- [ ] `test_prints_pass_with_the_check_count`, `test_prints_fail_and_the_failing_records`, `test_prints_no_table_and_no_other_record`, `a_run_that_does_not_complete_is_a_fail` and `the_last_line_counts_and_the_exit_code_follows` pass unedited in `cargo test -p piperine-cli --test commands`
-- [ ] `commands/test.rs` holds no `Vec<Record>` of a run's records
-- [ ] Gate check passes: Quick (`Run commands`)
-- [ ] Test count: no test added (the output is unchanged and already held); no existing test removed or edited
+- [x] `test_prints_pass_with_the_check_count`, `test_prints_fail_and_the_failing_records`, `test_prints_no_table_and_no_other_record`, `a_run_that_does_not_complete_is_a_fail` and `the_last_line_counts_and_the_exit_code_follows` pass unedited in `cargo test -p piperine-cli --test commands`
+- [x] `commands/test.rs` holds no `Vec<Record>` of a run's records
+- [x] Gate check passes: Quick (`Run commands`)
+- [x] Test count: no test added (the output is unchanged and already held); no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: quick

@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use piperine_api::{Failure, Project, Record, RecordSink, RunSpec, Session, Verdict};
+use piperine_api::{Failure, Project, RunSpec, Session, Verdict};
 use piperine_transpile::Settings;
 
 use crate::cli::Out;
@@ -21,17 +21,6 @@ use crate::render::record::RecordLine;
 pub struct TestCommand {
     pub project: Option<PathBuf>,
     pub runs: Vec<String>,
-}
-
-/// Every record of a run, kept for the verdict. Nothing is filtered: a passing check counts
-/// even where `run` would hide it from a terminal.
-#[derive(Default)]
-struct Collected(Vec<Record>);
-
-impl RecordSink for Collected {
-    fn record(&mut self, record: &Record) {
-        self.0.push(record.clone());
-    }
 }
 
 impl TestCommand {
@@ -106,9 +95,9 @@ impl TestCommand {
         };
         spec.backend = Some(backend.name().into());
         let mut session = Session::open_announced(project, &spec, settings, &mut |top| RunCommand::announce(err, &spec.name, top))?;
-        let collected = Rc::new(RefCell::new(Collected::default()));
-        session.run(collected.clone())?;
-        let records = collected.borrow();
-        Ok(Verdict::judge(&records.0))
+        let verdict = Rc::new(RefCell::new(Verdict::new()));
+        session.run(verdict.clone())?;
+        let verdict = verdict.borrow().clone();
+        Ok(verdict)
     }
 }
