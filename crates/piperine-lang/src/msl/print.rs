@@ -10,26 +10,99 @@
 //!
 //! A node's text is built bottom-up as a `String`; a multi-line child is
 //! indented by its parent.
+//!
+//! # One node at a time
+//!
+//! The layout is a [`Printer`] over [`Hooks`]. Every container (a file, a
+//! braced body, a block, a match, a comma-separated list) lays out its
+//! children one by one: it asks [`Hooks::verbatim`] whether a child keeps the
+//! source's text, gives each child's text (terminator included) to
+//! [`Hooks::around`], and asks [`Hooks::inside`] for lines before its closing
+//! delimiter. [`print`] runs the printer with hooks that change nothing; the
+//! formatter (`msl::format`) runs it with hooks that put comments back.
 
 use super::ast::*;
+use super::span::Span;
 
 const WIDTH: usize = 80;
 
 /// Print a file in the canonical layout.
 pub fn print(file: &File) -> String {
-    let mut out = String::new();
-    for d in &file.inner_docs {
-        out.push_str(&format!("{}\n", doc(d, "!")));
+    Printer::new(&Canonical).file(file)
+}
+
+// ---- hooks ------------------------------------------------------------------------------------
+
+/// How a container separates its children.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Shape {
+    /// Items of a file or a `mod`: always one blank line between two.
+    Items,
+    /// One child per line inside braces: members, statements, arms, fields.
+    Lines,
+    /// A comma-separated list: on one line when it fits, one element per line otherwise.
+    List,
+}
+
+/// Where a container's closing delimiter stands in the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Close {
+    /// At this byte offset (a `}` the node's span ends with).
+    At(usize),
+    /// The first token after this offset (the last child's end) that is no `,` or `;`.
+    After(usize),
+    /// The end of the file.
+    End,
+    /// Not known: an empty container whose delimiters no span gives.
+    Unknown,
+}
+
+/// What a container asks while it lays out its children. Text handed over
+/// and returned is in the printer's escaped form (see `enc`).
+pub(crate) trait Hooks {
+    /// `Some(text)` when the child at `extent` is printed as the source
+    /// writes it instead of in the printer's layout.
+    fn verbatim(&self, extent: Span) -> Option<String>;
+    /// The final text of the child at `extent`, from its laid out `text`
+    /// (terminator included); `prev` is the previous sibling's extent.
+    fn around(&self, extent: Span, text: String, prev: Option<Span>, shape: Shape) -> String;
+    /// Lines to print before the closing delimiter of a container whose
+    /// children have the extents `kids`.
+    fn inside(&self, close: Close, kids: &[Span], shape: Shape) -> Vec<String>;
+}
+
+/// The hooks of [`print`]: the canonical layout, nothing added.
+struct Canonical;
+
+impl Hooks for Canonical {
+    fn verbatim(&self, _: Span) -> Option<String> {
+        None
     }
-    if !file.inner_docs.is_empty() && !file.items.is_empty() {
-        out.push('\n');
+
+    fn around(&self, _: Span, text: String, _: Option<Span>, _: Shape) -> String {
+        text
     }
-    let items: Vec<String> = file.items.iter().map(item).collect();
-    out.push_str(&items.join("\n\n"));
-    if !items.is_empty() {
-        out.push('\n');
+
+    fn inside(&self, _: Close, _: &[Span], _: Shape) -> Vec<String> {
+        Vec::new()
     }
-    dec(&out)
+}
+
+/// One child of a container: its source range and its layout.
+struct Kid<'k> {
+    extent: Span,
+    lay: Box<dyn Fn() -> String + 'k>,
+}
+
+impl<'k> Kid<'k> {
+    fn new(extent: Span, lay: impl Fn() -> String + 'k) -> Kid<'k> {
+        Kid { extent, lay: Box::new(lay) }
+    }
+}
+
+/// The canonical layout over a set of [`Hooks`].
+pub(crate) struct Printer<'h> {
+    hooks: &'h dyn Hooks,
 }
 
 // ---- verbatim text ----------------------------------------------------------------------------
@@ -90,16 +163,6 @@ fn indent(s: &str) -> String {
         .join("\n")
 }
 
-/// `open items close`: on one line when it fits, one item per line otherwise.
-fn list(open: &str, items: &[String], close: &str) -> String {
-    let inline = items.join(", ");
-    if inline.len() + open.len() + close.len() <= WIDTH && !inline.contains('\n') {
-        return format!("{open}{inline}{close}");
-    }
-    let lines: Vec<String> = items.iter().map(|i| indent(&format!("{i},"))).collect();
-    format!("{open}\n{}\n{close}", lines.join("\n"))
-}
-
 /// `{ .. }` holding one entry per line, or `{}` when empty.
 fn braces(lines: &[String]) -> String {
     if lines.is_empty() {
@@ -109,208 +172,847 @@ fn braces(lines: &[String]) -> String {
     }
 }
 
-fn ident(i: &Ident) -> String {
-    i.spelled()
-}
-
-fn meta(m: &Meta) -> String {
-    let mut out = String::new();
-    for d in &m.docs {
-        out.push_str(&format!("{}\n", doc(d, "/")));
+impl<'h> Printer<'h> {
+    pub(crate) fn new(hooks: &'h dyn Hooks) -> Printer<'h> {
+        Printer { hooks }
     }
-    for a in &m.attrs {
-        out.push_str(&format!("{}\n", attr(a)));
+
+    /// The source range of a node with its documentation and attributes.
+    fn extent(meta: &Meta, span: Loc) -> Span {
+        let start = meta
+            .docs
+            .iter()
+            .map(|d| d.span.0.start)
+            .chain(meta.attrs.iter().map(|a| a.span.0.start))
+            .fold(span.0.start, usize::min);
+        Span::new(start, span.0.end)
     }
-    out
-}
 
-fn attr(a: &Attr) -> String {
-    let input = match &a.input {
-        AttrInput::None => String::new(),
-        AttrInput::Eq(e) => format!(" = {}", expr(e)),
-        AttrInput::List(args) => {
-            let items: Vec<String> = args
-                .iter()
-                .map(|a| match a {
-                    AttrArg::Path(p) => path(p),
-                    AttrArg::Lit(l) => lit(l),
-                    AttrArg::NameValue(n, l) => format!("{} = {}", n.spelled(), lit(l)),
-                })
-                .collect();
-            format!("({})", items.join(", "))
-        }
-    };
-    format!("#[{}{input}]", path(&a.path))
-}
+    /// The `}` a node's span ends with.
+    fn last_brace(span: Loc) -> Option<usize> {
+        span.0.end.checked_sub(1)
+    }
 
-// ---- paths, generics, types -------------------------------------------------------------------
-
-fn path(p: &Path) -> String {
-    p.segments
-        .iter()
-        .map(|s| format!("{}{}", s.ident.spelled(), s.args.as_ref().map_or(String::new(), generic_args)))
-        .collect::<Vec<_>>()
-        .join("::")
-}
-
-fn generic_args(g: &GenericArgs) -> String {
-    match g {
-        GenericArgs::Angle { args, turbofish, .. } => {
-            let items: Vec<String> = args
-                .iter()
-                .map(|a| match a {
-                    GenericArg::Type(t) => ty(t),
-                    GenericArg::Const(e) => expr(e),
-                })
-                .collect();
-            // `<-` is the commit operator: a leading minus needs a space.
-            let gap = if items.first().is_some_and(|i| i.starts_with('-')) { " " } else { "" };
-            format!("{}<{gap}{}>", if *turbofish { "::" } else { "" }, items.join(", "))
-        }
-        GenericArgs::Paren { inputs, output, .. } => {
-            let items: Vec<String> = inputs.iter().map(ty).collect();
-            let ret = output.as_ref().map_or(String::new(), |o| format!(" -> {}", ty(o)));
-            format!("({}){ret}", items.join(", "))
+    /// Where a container's closing delimiter is: `at` when a span gives it,
+    /// else the first token after its last child.
+    fn close(at: Option<usize>, kids: &[Span]) -> Close {
+        match (at, kids.last()) {
+            (Some(o), _) => Close::At(o),
+            (None, Some(k)) => Close::After(k.end),
+            (None, None) => Close::Unknown,
         }
     }
-}
 
-fn generics(g: &Option<Generics>) -> String {
-    let Some(g) = g else { return String::new() };
-    let items: Vec<String> = g
-        .params
-        .iter()
-        .map(|p| match &p.kind {
-            GenericParamKind::Type { bounds, default } => {
-                let mut s = p.name.spelled();
-                if !bounds.is_empty() {
-                    s.push_str(&format!(": {}", bounds.iter().map(path).collect::<Vec<_>>().join(" + ")));
+    /// A whole file: inner docs, then the items one blank line apart.
+    pub(crate) fn file(&self, file: &File) -> String {
+        let mut out = String::new();
+        let mut prev = None;
+        for d in &file.inner_docs {
+            let text = self.hooks.around(d.span.0, doc(d, "!"), prev, Shape::Lines);
+            out.push_str(&format!("{text}\n"));
+            prev = Some(d.span.0);
+        }
+        if !file.inner_docs.is_empty() && !file.items.is_empty() {
+            out.push('\n');
+        }
+        let kids = file.items.iter().map(|i| Kid::new(Self::extent(&i.meta, i.span), move || self.item(i))).collect();
+        let (items, item_spans) = self.children(kids, "", Shape::Items);
+        let spans: Vec<Span> = file.inner_docs.iter().map(|d| d.span.0).chain(item_spans).collect();
+        let items: Vec<String> = items.into_iter().map(|(_, t)| t).collect();
+        out.push_str(&items.join("\n\n"));
+        if !items.is_empty() {
+            out.push('\n');
+        }
+        for line in self.hooks.inside(Close::End, &spans, Shape::Items) {
+            out.push_str(&format!("{line}\n"));
+        }
+        dec(&out)
+    }
+
+    /// The children of a container, each with its extent and final text (the
+    /// terminator `term` added), and their extents.
+    fn children(&self, kids: Vec<Kid<'_>>, term: &str, shape: Shape) -> (Vec<(Span, String)>, Vec<Span>) {
+        let spans: Vec<Span> = kids.iter().map(|k| k.extent).collect();
+        let mut out = Vec::with_capacity(kids.len());
+        let mut prev = None;
+        for k in kids {
+            let text = match self.hooks.verbatim(k.extent) {
+                Some(t) if t.ends_with(term) => t,
+                Some(t) => format!("{t}{term}"),
+                None => format!("{}{term}", (k.lay)()),
+            };
+            out.push((k.extent, self.hooks.around(k.extent, text, prev, shape)));
+            prev = Some(k.extent);
+        }
+        (out, spans)
+    }
+
+    /// The lines of a braced container: its children, then what goes before
+    /// its closing delimiter (`at`, when a span gives it).
+    fn lines(&self, kids: Vec<Kid<'_>>, term: &str, at: Option<usize>) -> Vec<String> {
+        let (out, spans) = self.children(kids, term, Shape::Lines);
+        let mut lines: Vec<String> = out.into_iter().map(|(_, t)| t).collect();
+        lines.extend(self.hooks.inside(Self::close(at, &spans), &spans, Shape::Lines));
+        lines
+    }
+
+    /// `open items close`: on one line when it fits, one item per line
+    /// otherwise (and whenever the hooks add to an item or before `close`).
+    fn list(&self, open: &str, kids: Vec<Kid<'_>>, close_: &str) -> String {
+        let spans: Vec<Span> = kids.iter().map(|k| k.extent).collect();
+        let items: Vec<String> = kids.iter().map(|k| (k.lay)()).collect();
+        let (lines, added) = self.list_lines(&items, &spans);
+        let inline = items.join(", ");
+        if !added && inline.len() + open.len() + close_.len() <= WIDTH && !inline.contains('\n') {
+            return format!("{open}{inline}{close_}");
+        }
+        format!("{open}\n{}\n{close_}", lines.join("\n"))
+    }
+
+    /// The lines of a list printed one element per line, indented, and
+    /// whether the hooks added anything.
+    fn list_lines(&self, items: &[String], spans: &[Span]) -> (Vec<String>, bool) {
+        let mut added = false;
+        let mut lines = Vec::with_capacity(items.len());
+        let mut prev = None;
+        for (item, span) in items.iter().zip(spans) {
+            let plain = format!("{item},");
+            let text = self.hooks.around(*span, plain.clone(), prev, Shape::List);
+            added |= text != plain;
+            lines.push(indent(&text));
+            prev = Some(*span);
+        }
+        let inside = self.hooks.inside(Self::close(None, spans), spans, Shape::List);
+        added |= !inside.is_empty();
+        lines.extend(inside.iter().map(|l| indent(l)));
+        (lines, added)
+    }
+
+    fn ident(&self, i: &Ident) -> String {
+        i.spelled()
+    }
+
+    fn meta(&self, m: &Meta) -> String {
+        let mut out = String::new();
+        for d in &m.docs {
+            out.push_str(&format!("{}\n", doc(d, "/")));
+        }
+        for a in &m.attrs {
+            out.push_str(&format!("{}\n", self.attr(a)));
+        }
+        out
+    }
+
+    fn attr(&self, a: &Attr) -> String {
+        let input = match &a.input {
+            AttrInput::None => String::new(),
+            AttrInput::Eq(e) => format!(" = {}", self.expr(e)),
+            AttrInput::List(args) => {
+                let items: Vec<String> = args
+                    .iter()
+                    .map(|a| match a {
+                        AttrArg::Path(p) => self.path(p),
+                        AttrArg::Lit(l) => self.lit(l),
+                        AttrArg::NameValue(n, l) => format!("{} = {}", n.spelled(), self.lit(l)),
+                    })
+                    .collect();
+                format!("({})", items.join(", "))
+            }
+        };
+        format!("#[{}{input}]", self.path(&a.path))
+    }
+
+    // ---- paths, generics, types ---------------------------------------------------------------
+
+    fn path(&self, p: &Path) -> String {
+        p.segments
+            .iter()
+            .map(|s| format!("{}{}", s.ident.spelled(), s.args.as_ref().map_or(String::new(), |g| self.generic_args(g))))
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+
+    fn generic_args(&self, g: &GenericArgs) -> String {
+        match g {
+            GenericArgs::Angle { args, turbofish, .. } => {
+                let items: Vec<String> = args
+                    .iter()
+                    .map(|a| match a {
+                        GenericArg::Type(t) => self.ty(t),
+                        GenericArg::Const(e) => self.expr(e),
+                    })
+                    .collect();
+                // `<-` is the commit operator: a leading minus needs a space.
+                let gap = if items.first().is_some_and(|i| i.starts_with('-')) { " " } else { "" };
+                format!("{}<{gap}{}>", if *turbofish { "::" } else { "" }, items.join(", "))
+            }
+            GenericArgs::Paren { inputs, output, .. } => {
+                let items: Vec<String> = inputs.iter().map(|t| self.ty(t)).collect();
+                let ret = output.as_ref().map_or(String::new(), |o| format!(" -> {}", self.ty(o)));
+                format!("({}){ret}", items.join(", "))
+            }
+        }
+    }
+
+    fn generics(&self, g: &Option<Generics>) -> String {
+        let Some(g) = g else { return String::new() };
+        let items: Vec<String> = g
+            .params
+            .iter()
+            .map(|p| match &p.kind {
+                GenericParamKind::Type { bounds, default } => {
+                    let mut s = p.name.spelled();
+                    if !bounds.is_empty() {
+                        s.push_str(&format!(": {}", bounds.iter().map(|b| self.path(b)).collect::<Vec<_>>().join(" + ")));
+                    }
+                    if let Some(d) = default {
+                        s.push_str(&format!(" = {}", self.ty(d)));
+                    }
+                    s
                 }
-                if let Some(d) = default {
-                    s.push_str(&format!(" = {}", ty(d)));
+                GenericParamKind::Const { ty: t, default } => {
+                    let mut s = format!("const {}: {}", p.name.spelled(), self.ty(t));
+                    if let Some(d) = default {
+                        s.push_str(&format!(" = {}", self.expr(d)));
+                    }
+                    s
+                }
+            })
+            .collect();
+        format!("<{}>", items.join(", "))
+    }
+
+    fn ty(&self, t: &Type) -> String {
+        match &t.kind {
+            TypeKind::Path(p) => self.path(p),
+            TypeKind::Array { elem, len } => format!("[{}; {}]", self.ty(elem), self.expr(len)),
+            TypeKind::Slice(e) => format!("[{}]", self.ty(e)),
+            TypeKind::Tuple(items) => match items.as_slice() {
+                [one] => format!("({},)", self.ty(one)),
+                _ => format!("({})", items.iter().map(|t| self.ty(t)).collect::<Vec<_>>().join(", ")),
+            },
+            TypeKind::Ref { static_lifetime, inner } => {
+                format!("&{}{}", if *static_lifetime { "'static " } else { "" }, self.ty(inner))
+            }
+            TypeKind::Flip(inner) => format!("flip {}", self.ty(inner)),
+            TypeKind::FnPtr { params, ret } => {
+                let ret = ret.as_ref().map_or(String::new(), |r| format!(" -> {}", self.ty(r)));
+                format!("fn({}){ret}", params.iter().map(|t| self.ty(t)).collect::<Vec<_>>().join(", "))
+            }
+            TypeKind::Infer => "_".to_string(),
+        }
+    }
+
+    // ---- patterns -----------------------------------------------------------------------------
+
+    /// A pattern where alternatives are not allowed at the top: parenthesized.
+    fn pat1(&self, p: &Pat) -> String {
+        match p.kind {
+            PatKind::Or(_) => format!("({})", self.pat(p)),
+            _ => self.pat(p),
+        }
+    }
+
+    fn pat(&self, p: &Pat) -> String {
+        match &p.kind {
+            PatKind::Wild => "_".to_string(),
+            PatKind::Rest => "..".to_string(),
+            PatKind::Ident { by_ref, mutable, name, sub } => {
+                let mut s = String::new();
+                if *by_ref {
+                    s.push_str("ref ");
+                }
+                if *mutable {
+                    s.push_str("mut ");
+                }
+                s.push_str(&name.spelled());
+                if let Some(sub) = sub {
+                    s.push_str(&format!(" @ {}", self.pat1(sub)));
                 }
                 s
             }
-            GenericParamKind::Const { ty: t, default } => {
-                let mut s = format!("const {}: {}", p.name.spelled(), ty(t));
-                if let Some(d) = default {
-                    s.push_str(&format!(" = {}", expr(d)));
+            PatKind::Lit(e) => self.expr(e),
+            PatKind::Path(p) => self.path(p),
+            PatKind::Tuple(items) => match items.as_slice() {
+                [one] => format!("({},)", self.pat(one)),
+                _ => format!("({})", items.iter().map(|p| self.pat(p)).collect::<Vec<_>>().join(", ")),
+            },
+            PatKind::TupleStruct { path: p, pats } => {
+                format!("{}({})", self.path(p), pats.iter().map(|p| self.pat(p)).collect::<Vec<_>>().join(", "))
+            }
+            PatKind::Struct { path: p, fields, rest } => {
+                let mut items: Vec<String> = fields
+                    .iter()
+                    .map(|f| match &f.pat {
+                        Some(q) => format!("{}: {}", f.name.spelled(), self.pat(q)),
+                        None => f.name.spelled(),
+                    })
+                    .collect();
+                if *rest {
+                    items.push("..".to_string());
+                }
+                if items.is_empty() {
+                    format!("{} {{}}", self.path(p))
+                } else {
+                    format!("{} {{ {} }}", self.path(p), items.join(", "))
+                }
+            }
+            PatKind::Or(alts) => alts.iter().map(|p| self.pat1_alt(p)).collect::<Vec<_>>().join(" | "),
+            PatKind::Range { lo, hi, inclusive } => {
+                let op = if *inclusive { "..=" } else { ".." };
+                format!(
+                    "{}{op}{}",
+                    lo.as_ref().map_or(String::new(), |e| self.expr(e)),
+                    hi.as_ref().map_or(String::new(), |e| self.expr(e))
+                )
+            }
+            PatKind::Ref(inner) => format!("&{}", self.pat1(inner)),
+            PatKind::Slice(items) => format!("[{}]", items.iter().map(|p| self.pat(p)).collect::<Vec<_>>().join(", ")),
+        }
+    }
+
+    /// An alternative of an `|` pattern: itself never an alternative.
+    fn pat1_alt(&self, p: &Pat) -> String {
+        self.pat1(p)
+    }
+
+    // ---- expressions --------------------------------------------------------------------------
+
+    fn lit(&self, l: &Lit) -> String {
+        match &l.kind {
+            LitKind::Int(s) => s.clone(),
+            LitKind::Float { raw, .. } => raw.clone(),
+            LitKind::Str { text, raw_hashes: Some(n) } => {
+                let hashes = "#".repeat(usize::from(*n));
+                let body = super::lexer::unescape(text).0;
+                format!("r{hashes}\"{body}\"{hashes}")
+            }
+            LitKind::Str { text, raw_hashes: None } => format!("\"{}\"", enc(text)),
+            LitKind::Bool(b) => b.to_string(),
+            LitKind::Unknown => "Unknown".to_string(),
+        }
+    }
+
+    fn args<'a>(&'a self, a: &'a [Arg]) -> Vec<Kid<'a>> {
+        a.iter()
+            .map(|a| {
+                Kid::new(a.span.0, move || match &a.name {
+                    Some(n) => format!("{}: {}", n.spelled(), self.expr(&a.value)),
+                    None => self.expr(&a.value),
+                })
+            })
+            .collect()
+    }
+
+    fn exprs<'a>(&'a self, items: &'a [Expr]) -> Vec<Kid<'a>> {
+        items.iter().map(|e| Kid::new(e.span.0, move || self.expr(e))).collect()
+    }
+
+    fn field_inits(&self, f: &[FieldInit]) -> String {
+        if f.is_empty() {
+            return "{}".to_string();
+        }
+        let items: Vec<String> = f
+            .iter()
+            .map(|f| match f.shorthand {
+                true => f.name.spelled(),
+                false => format!("{}: {}", f.name.spelled(), self.expr(&f.value)),
+            })
+            .collect();
+        let spans: Vec<Span> = f.iter().map(|f| f.span.0).collect();
+        let (lines, added) = self.list_lines(&items, &spans);
+        let inline = format!("{{ {} }}", items.join(", "));
+        if !added && inline.len() <= WIDTH && !inline.contains('\n') {
+            inline
+        } else {
+            format!("{{\n{}\n}}", lines.join("\n"))
+        }
+    }
+
+    fn expr(&self, e: &Expr) -> String {
+        crate::stack::deep(|| self.expr_inner(e))
+    }
+
+    fn expr_inner(&self, e: &Expr) -> String {
+        match &e.kind {
+            ExprKind::Lit(l) => self.lit(l),
+            ExprKind::Path(p) => self.path(p),
+            ExprKind::Unary { op, expr: x } => {
+                let (sym, space) = match op {
+                    UnOp::Neg => ("-", false),
+                    UnOp::Not => ("!", false),
+                    UnOp::Deref => ("*", false),
+                    UnOp::Ref => ("&", true),
+                };
+                let inner = self.expr(x);
+                // `& &x` must not read as `&&`; `- -x` is fine but kept apart too.
+                let sep = if (space && inner.starts_with('&')) || (sym == "-" && inner.starts_with('-')) { " " } else { "" };
+                format!("{sym}{sep}{inner}")
+            }
+            ExprKind::Binary { op, lhs, rhs } => format!("{} {} {}", self.expr(lhs), binop(*op), self.expr(rhs)),
+            ExprKind::Assign { op, lhs, rhs } => {
+                let sym = op.map_or("=".to_string(), |o| format!("{}=", binop(o)));
+                format!("{} {sym} {}", self.expr(lhs), self.expr(rhs))
+            }
+            ExprKind::Cast { expr: x, ty: t } => format!("{} as {}", self.expr(x), self.ty(t)),
+            ExprKind::Call { callee, args: a, params } => {
+                let mut s = format!("{}{}", self.expr(callee), self.list("(", self.args(a), ")"));
+                if let Some(p) = params {
+                    s.push(' ');
+                    s.push_str(&self.field_inits(p));
                 }
                 s
             }
-        })
-        .collect();
-    format!("<{}>", items.join(", "))
-}
-
-fn ty(t: &Type) -> String {
-    match &t.kind {
-        TypeKind::Path(p) => path(p),
-        TypeKind::Array { elem, len } => format!("[{}; {}]", ty(elem), expr(len)),
-        TypeKind::Slice(e) => format!("[{}]", ty(e)),
-        TypeKind::Tuple(items) => match items.as_slice() {
-            [one] => format!("({},)", ty(one)),
-            _ => format!("({})", items.iter().map(ty).collect::<Vec<_>>().join(", ")),
-        },
-        TypeKind::Ref { static_lifetime, inner } => {
-            format!("&{}{}", if *static_lifetime { "'static " } else { "" }, ty(inner))
+            ExprKind::MethodCall { recv, method, generics: g, args: a } => {
+                format!(
+                    "{}.{}{}{}",
+                    self.expr(recv),
+                    method.spelled(),
+                    g.as_ref().map_or(String::new(), |g| self.generic_args(g)),
+                    self.list("(", self.args(a), ")")
+                )
+            }
+            ExprKind::Field { expr: x, name } => format!("{}.{}", self.expr(x), name.spelled()),
+            ExprKind::Index { expr: x, index } => format!("{}[{}]", self.expr(x), self.expr(index)),
+            ExprKind::Range { lo, hi, inclusive } => format!(
+                "{}{}{}",
+                lo.as_ref().map_or(String::new(), |x| self.expr(x)),
+                if *inclusive { "..=" } else { ".." },
+                hi.as_ref().map_or(String::new(), |x| self.expr(x))
+            ),
+            ExprKind::Paren(x) => format!("({})", self.expr(x)),
+            ExprKind::Tuple(items) => match items.as_slice() {
+                [one] => format!("({},)", self.expr(one)),
+                _ => self.list("(", self.exprs(items), ")"),
+            },
+            ExprKind::Array(items) => self.list("[", self.exprs(items), "]"),
+            ExprKind::ArrayRepeat { elem, len } => format!("[{}; {}]", self.expr(elem), self.expr(len)),
+            ExprKind::Struct { path: p, fields } => format!("{} {}", self.path(p), self.field_inits(fields)),
+            ExprKind::Block(b) => self.block(b),
+            ExprKind::If { cond, then, else_ } => {
+                let mut s = format!("if {} {}", self.expr(cond), self.block(then));
+                if let Some(x) = else_ {
+                    s.push_str(&format!(" else {}", self.expr(x)));
+                }
+                s
+            }
+            ExprKind::Let { pat: p, expr: x } => format!("let {} = {}", self.pat(p), self.expr(x)),
+            ExprKind::Match { scrutinee, arms } => {
+                let kids = arms.iter().map(|a| Kid::new(Self::extent(&a.meta, a.span), move || self.arm(a))).collect();
+                let lines = self.lines(kids, ",", Self::last_brace(e.span));
+                format!("match {} {}", self.expr(scrutinee), braces(&lines))
+            }
+            ExprKind::While { cond, body } => format!("while {} {}", self.expr(cond), self.block(body)),
+            ExprKind::Loop { body } => format!("loop {}", self.block(body)),
+            ExprKind::For { pat: p, iter, body } => {
+                format!("for {} in {} {}", self.pat1(p), self.expr(iter), self.block(body))
+            }
+            ExprKind::Break(v) => v.as_ref().map_or("break".to_string(), |x| format!("break {}", self.expr(x))),
+            ExprKind::Continue => "continue".to_string(),
+            ExprKind::Return(v) => v.as_ref().map_or("return".to_string(), |x| format!("return {}", self.expr(x))),
+            ExprKind::Closure { is_move, params, ret, body } => {
+                let ps: Vec<String> = params
+                    .iter()
+                    .map(|p| match &p.ty {
+                        Some(t) => format!("{}: {}", self.pat1(&p.pat), self.ty(t)),
+                        None => self.pat1(&p.pat),
+                    })
+                    .collect();
+                let head = if ps.is_empty() { "||".to_string() } else { format!("|{}|", ps.join(", ")) };
+                let mv = if *is_move { "move " } else { "" };
+                match ret {
+                    Some(r) => format!("{mv}{head} -> {} {}", self.ty(r), self.expr(body)),
+                    None => format!("{mv}{head} {}", self.expr(body)),
+                }
+            }
+            ExprKind::Try(x) => format!("{}?", self.expr(x)),
+            ExprKind::Emit { stream, fields } => {
+                let mut kids = vec![Kid::new(stream.span.0, move || self.lit(stream))];
+                kids.extend(
+                    fields
+                        .iter()
+                        .map(|f| Kid::new(f.span.0, move || format!("{} = {}", f.name.spelled(), self.expr(&f.value)))),
+                );
+                format!("emit!{}", self.list("(", kids, ")"))
+            }
+            ExprKind::IncludeStr(l) => format!("include_str!({})", self.lit(l)),
+            ExprKind::Error => "/* error */".to_string(),
         }
-        TypeKind::Flip(inner) => format!("flip {}", ty(inner)),
-        TypeKind::FnPtr { params, ret } => {
-            let ret = ret.as_ref().map_or(String::new(), |r| format!(" -> {}", ty(r)));
-            format!("fn({}){ret}", params.iter().map(ty).collect::<Vec<_>>().join(", "))
-        }
-        TypeKind::Infer => "_".to_string(),
     }
-}
 
-// ---- patterns ---------------------------------------------------------------------------------
-
-/// A pattern where alternatives are not allowed at the top: parenthesized.
-fn pat1(p: &Pat) -> String {
-    match p.kind {
-        PatKind::Or(_) => format!("({})", pat(p)),
-        _ => pat(p),
+    /// A match arm, without the `,` the match adds.
+    fn arm(&self, a: &Arm) -> String {
+        let mut s = self.attrs_only(&a.meta);
+        s.push_str(&self.pat(&a.pat));
+        if let Some(g) = &a.guard {
+            s.push_str(&format!(" if {}", self.expr(g)));
+        }
+        s.push_str(&format!(" => {}", self.expr(&a.body)));
+        s
     }
-}
 
-fn pat(p: &Pat) -> String {
-    match &p.kind {
-        PatKind::Wild => "_".to_string(),
-        PatKind::Rest => "..".to_string(),
-        PatKind::Ident { by_ref, mutable, name, sub } => {
-            let mut s = String::new();
-            if *by_ref {
-                s.push_str("ref ");
+    /// Documentation and attributes, each on its own line, in front of a node.
+    fn attrs_only(&self, m: &Meta) -> String {
+        self.meta(m)
+    }
+
+    // ---- blocks and statements ----------------------------------------------------------------
+
+    fn block(&self, b: &Block) -> String {
+        braces(&self.lines(self.stmts(&b.stmts), "", Self::last_brace(b.span)))
+    }
+
+    fn stmts<'a>(&'a self, stmts: &'a [Stmt]) -> Vec<Kid<'a>> {
+        stmts.iter().map(|s| Kid::new(Self::extent(&s.meta, s.span), move || self.stmt(s))).collect()
+    }
+
+    fn stmt(&self, s: &Stmt) -> String {
+        format!("{}{}", self.meta(&s.meta), self.stmt_kind(&s.kind))
+    }
+
+    fn stmt_kind(&self, k: &StmtKind) -> String {
+        match k {
+            StmtKind::Let { pat: p, ty: t, init, else_ } => {
+                let mut out = format!("let {}", self.pat1(p));
+                if let Some(t) = t {
+                    out.push_str(&format!(": {}", self.ty(t)));
+                }
+                if let Some(i) = init {
+                    out.push_str(&format!(" = {}", self.expr(i)));
+                }
+                if let Some(b) = else_ {
+                    out.push_str(&format!(" else {}", self.block(b)));
+                }
+                out.push(';');
+                out
             }
-            if *mutable {
-                s.push_str("mut ");
+            StmtKind::Expr { expr: e, semi } => {
+                format!("{}{}", self.expr(e), if *semi { ";" } else { "" })
             }
-            s.push_str(&name.spelled());
-            if let Some(sub) = sub {
-                s.push_str(&format!(" @ {}", pat1(sub)));
+            StmtKind::Item(i) => self.item(i),
+            StmtKind::Contribution { lhs, rhs } => format!("{} +> {};", self.expr(lhs), self.expr(rhs)),
+            StmtKind::Commit { place, value, after } => {
+                let mut out = format!("{} <- {}", self.expr(place), self.expr(value));
+                if let Some(a) = after {
+                    out.push_str(&format!(" after {}", self.expr(a)));
+                }
+                out.push(';');
+                out
             }
-            s
+            StmtKind::Empty => ";".to_string(),
+            StmtKind::Signal { name, ty: t, init } => self.signal(name, t, init),
+            StmtKind::Reaction(r) => self.reaction(r),
         }
-        PatKind::Lit(e) => expr(e),
-        PatKind::Path(p) => path(p),
-        PatKind::Tuple(items) => match items.as_slice() {
-            [one] => format!("({},)", pat(one)),
-            _ => format!("({})", items.iter().map(pat).collect::<Vec<_>>().join(", ")),
-        },
-        PatKind::TupleStruct { path: p, pats } => {
-            format!("{}({})", path(p), pats.iter().map(pat).collect::<Vec<_>>().join(", "))
+    }
+
+    fn signal(&self, name: &Ident, t: &Type, init: &Option<Expr>) -> String {
+        let init = init.as_ref().map_or(String::new(), |e| format!(" = {}", self.expr(e)));
+        format!("signal {}: {}{init};", name.spelled(), self.ty(t))
+    }
+
+    fn reaction(&self, r: &Reaction) -> String {
+        format!("on {} {}", self.expr(&r.event), self.block(&r.body))
+    }
+
+    // ---- items --------------------------------------------------------------------------------
+
+    fn item(&self, i: &Item) -> String {
+        format!("{}{}{}", self.meta(&i.meta), vis(i.public), self.item_kind(&i.kind, Self::last_brace(i.span)))
+    }
+
+    /// An item's own text; `brace` is where the `}` closing its body stands.
+    fn item_kind(&self, k: &ItemKind, brace: Option<usize>) -> String {
+        match k {
+            ItemKind::Fn(f) => self.fn_decl(f),
+            ItemKind::Struct(s) => {
+                format!("struct {}{}{}", s.name.spelled(), self.generics(&s.generics), self.fields(&s.fields, true, brace))
+            }
+            ItemKind::Enum(e) => {
+                let kids = e.variants.iter().map(|v| Kid::new(Self::extent(&v.meta, v.span), move || self.variant(v))).collect();
+                let lines = self.lines(kids, ",", brace);
+                format!("enum {}{} {}", e.name.spelled(), self.generics(&e.generics), braces(&lines))
+            }
+            ItemKind::Impl(i) => {
+                let head = match &i.trait_ {
+                    Some(t) => format!("{} for {}", self.path(t), self.ty(&i.self_ty)),
+                    None => self.ty(&i.self_ty),
+                };
+                format!("impl{} {head} {}", self.generics(&i.generics), braces(&self.impl_items(&i.items, brace)))
+            }
+            ItemKind::Trait(t) => {
+                let supers = if t.supertraits.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {}", t.supertraits.iter().map(|p| self.path(p)).collect::<Vec<_>>().join(" + "))
+                };
+                format!(
+                    "trait {}{}{supers} {}",
+                    t.name.spelled(),
+                    self.generics(&t.generics),
+                    braces(&self.impl_items(&t.items, brace))
+                )
+            }
+            ItemKind::Const(c) => self.const_item(c),
+            ItemKind::Use(u) => format!("use {};", self.use_tree(u)),
+            ItemKind::Mod(m) => match &m.items {
+                None => format!("mod {};", m.name.spelled()),
+                Some(items) => {
+                    let kids = items.iter().map(|i| Kid::new(Self::extent(&i.meta, i.span), move || self.item(i))).collect();
+                    let (out, spans) = self.children(kids, "", Shape::Items);
+                    let blocks: Vec<String> = out.into_iter().map(|(_, t)| t).collect();
+                    let mut body = blocks.join("\n\n");
+                    for line in self.hooks.inside(Self::close(brace, &spans), &spans, Shape::Items) {
+                        body.push_str(&format!("\n{line}"));
+                    }
+                    if body.is_empty() {
+                        format!("mod {} {{}}", m.name.spelled())
+                    } else {
+                        format!("mod {} {{\n{}\n}}", m.name.spelled(), indent(body.trim_start_matches('\n')))
+                    }
+                }
+            },
+            ItemKind::Nature(n) => self.nature(n, brace),
+            ItemKind::Module(m) => self.module(m, brace),
+            ItemKind::Behavior(b) => self.behavior(b, brace),
+            ItemKind::Error => "/* error */".to_string(),
         }
-        PatKind::Struct { path: p, fields, rest } => {
-            let mut items: Vec<String> = fields
-                .iter()
-                .map(|f| match &f.pat {
-                    Some(q) => format!("{}: {}", f.name.spelled(), pat(q)),
-                    None => f.name.spelled(),
+    }
+
+    fn fn_decl(&self, f: &FnDecl) -> String {
+        let mut s = String::new();
+        if f.is_const {
+            s.push_str("const ");
+        }
+        if let Some(abi) = &f.abi {
+            s.push_str(&format!("extern {} ", self.lit(abi)));
+        }
+        s.push_str(&format!("fn {}{}", f.name.spelled(), self.generics(&f.generics)));
+        let params: Vec<Kid<'_>> = f
+            .params
+            .iter()
+            .filter_map(|p| match p {
+                FnParam::SelfValue(at) => Some(Kid::new(at.0, || "self".to_string())),
+                FnParam::Named { name, ty: t, span } => {
+                    Some(Kid::new(span.0, move || format!("{}: {}", name.spelled(), self.ty(t))))
+                }
+                FnParam::Error(_) => None,
+            })
+            .collect();
+        s.push_str(&self.list("(", params, ")"));
+        if let Some(r) = &f.ret {
+            s.push_str(&format!(" -> {}", self.ty(r)));
+        }
+        if let Some(w) = &f.where_ {
+            s.push_str(&format!(" where {}", self.expr(w)));
+        }
+        match &f.body {
+            Some(b) => s.push_str(&format!(" {}", self.block(b))),
+            None => s.push(';'),
+        }
+        s
+    }
+
+    fn const_item(&self, c: &ConstItem) -> String {
+        let value = c.value.as_ref().map_or(String::new(), |v| format!(" = {}", self.expr(v)));
+        format!("const {}: {}{value};", c.name.spelled(), self.ty(&c.ty))
+    }
+
+    fn impl_items(&self, items: &[ImplItem], brace: Option<usize>) -> Vec<String> {
+        let kids = items
+            .iter()
+            .map(|i| {
+                Kid::new(Self::extent(&i.meta, i.span), move || {
+                    let body = match &i.kind {
+                        ImplItemKind::Fn(f) => self.fn_decl(f),
+                        ImplItemKind::Const(c) => self.const_item(c),
+                    };
+                    format!("{}{}{body}", self.meta(&i.meta), vis(i.public))
                 })
-                .collect();
-            if *rest {
-                items.push("..".to_string());
-            }
-            if items.is_empty() {
-                format!("{} {{}}", path(p))
-            } else {
-                format!("{} {{ {} }}", path(p), items.join(", "))
-            }
-        }
-        PatKind::Or(alts) => alts.iter().map(pat1_alt).collect::<Vec<_>>().join(" | "),
-        PatKind::Range { lo, hi, inclusive } => {
-            let op = if *inclusive { "..=" } else { ".." };
-            format!(
-                "{}{op}{}",
-                lo.as_ref().map_or(String::new(), |e| expr(e)),
-                hi.as_ref().map_or(String::new(), |e| expr(e))
-            )
-        }
-        PatKind::Ref(inner) => format!("&{}", pat1(inner)),
-        PatKind::Slice(items) => format!("[{}]", items.iter().map(pat).collect::<Vec<_>>().join(", ")),
+            })
+            .collect();
+        self.lines(kids, "", brace)
     }
-}
 
-/// An alternative of an `|` pattern: itself never an alternative.
-fn pat1_alt(p: &Pat) -> String {
-    pat1(p)
-}
+    fn field(&self, f: &Field) -> String {
+        let body = match &f.name {
+            Some(n) => format!("{}: {}", n.spelled(), self.ty(&f.ty)),
+            None => self.ty(&f.ty),
+        };
+        format!("{}{}{}{body}", self.meta(&f.meta), vis(f.public), dir(&f.dir))
+    }
 
-// ---- expressions ------------------------------------------------------------------------------
-
-fn lit(l: &Lit) -> String {
-    match &l.kind {
-        LitKind::Int(s) => s.clone(),
-        LitKind::Float { raw, .. } => raw.clone(),
-        LitKind::Str { text, raw_hashes: Some(n) } => {
-            let hashes = "#".repeat(usize::from(*n));
-            let body = super::lexer::unescape(text).0;
-            format!("r{hashes}\"{body}\"{hashes}")
+    /// The body of a struct (`unit_semi`: a unit struct or tuple struct ends in
+    /// `;`) or of an enum variant; `brace` is where its `}` stands, when known.
+    fn fields(&self, f: &Fields, unit_semi: bool, brace: Option<usize>) -> String {
+        match f {
+            Fields::Named(fs) => {
+                let kids = fs.iter().map(|f| Kid::new(Self::extent(&f.meta, f.span), move || self.field(f))).collect();
+                format!(" {}", braces(&self.lines(kids, ",", brace)))
+            }
+            Fields::Tuple(fs) => {
+                let kids = fs.iter().map(|f| Kid::new(Self::extent(&f.meta, f.span), move || self.field(f))).collect();
+                format!("{}{}", self.list("(", kids, ")"), if unit_semi { ";" } else { "" })
+            }
+            Fields::Unit => if unit_semi { ";".to_string() } else { String::new() },
         }
-        LitKind::Str { text, raw_hashes: None } => format!("\"{}\"", enc(text)),
-        LitKind::Bool(b) => b.to_string(),
-        LitKind::Unknown => "Unknown".to_string(),
+    }
+
+    /// An enum variant, without the `,` the enum adds.
+    fn variant(&self, v: &Variant) -> String {
+        let disc = v.discriminant.as_ref().map_or(String::new(), |d| format!(" = {}", self.expr(d)));
+        format!("{}{}{}{disc}", self.meta(&v.meta), v.name.spelled(), self.fields(&v.fields, false, None))
+    }
+
+    fn use_tree(&self, u: &UseTree) -> String {
+        let prefix: Vec<String> = u.path.iter().map(|i| i.spelled()).collect();
+        let joined = prefix.join("::");
+        match &u.kind {
+            UseKind::Simple { alias } => match alias {
+                Some(a) => format!("{joined} as {}", a.spelled()),
+                None => joined,
+            },
+            UseKind::Glob => if joined.is_empty() { "*".to_string() } else { format!("{joined}::*") },
+            UseKind::Group(trees) => {
+                let inner = trees.iter().map(|t| self.use_tree(t)).collect::<Vec<_>>().join(", ");
+                if joined.is_empty() { format!("{{{inner}}}") } else { format!("{joined}::{{{inner}}}") }
+            }
+        }
+    }
+
+    fn nature(&self, n: &NatureDecl, brace: Option<usize>) -> String {
+        let kids = n
+            .fields
+            .iter()
+            .map(|f| Kid::new(Self::extent(&f.meta, f.span), move || format!("{}{}", self.meta(&f.meta), self.nature_field(&f.kind))))
+            .collect();
+        let lines = self.lines(kids, ",", brace);
+        format!("nature {}{} {}", n.name.spelled(), self.generics(&n.generics), braces(&lines))
+    }
+
+    /// A nature field, without the `,` the nature adds.
+    fn nature_field(&self, k: &NatureFieldKind) -> String {
+        match k {
+            NatureFieldKind::Quantity { which, name, attrs } => {
+                let w = match which {
+                    Quantity::Potential => "potential",
+                    Quantity::Flow => "flow",
+                };
+                let block = if attrs.is_empty() { String::new() } else { format!(" {}", self.field_inits(attrs)) };
+                format!("{w}: {}{block}", name.spelled())
+            }
+            NatureFieldKind::Value(t) => format!("value: {}", self.ty(t)),
+            NatureFieldKind::Resolve(e) => format!("resolve: {}", self.expr(e)),
+        }
+    }
+
+    fn module(&self, m: &ModuleDecl, brace: Option<usize>) -> String {
+        let mut s = String::new();
+        if let Some(abi) = &m.abi {
+            s.push_str(&format!("extern {} ", self.lit(abi)));
+        }
+        s.push_str(&format!("module {}{}", m.name.spelled(), self.generics(&m.generics)));
+        let ports = m
+            .ports
+            .iter()
+            .map(|p| {
+                Kid::new(Self::extent(&p.meta, p.span), move || {
+                    let default = p.default.as_ref().map_or(String::new(), |d| format!(" = {}", self.expr(d)));
+                    format!("{}{}{}: {}{default}", self.meta(&p.meta), dir(&p.dir), p.name.spelled(), self.ty(&p.ty))
+                })
+            })
+            .collect();
+        s.push_str(&self.list("(", ports, ")"));
+        if let Some(r) = &m.ret {
+            s.push_str(&format!(" -> {}", self.ty(r)));
+        }
+        if let Some(w) = &m.where_ {
+            s.push_str(&format!(" where {}", self.expr(w)));
+        }
+        let mut kids: Vec<Kid<'_>> =
+            m.body.iter().map(|i| Kid::new(Self::extent(&i.meta, i.span), move || self.module_item(i))).collect();
+        if let Some(r) = &m.result {
+            kids.push(Kid::new(r.span.0, move || self.expr(r)));
+        }
+        s.push_str(&format!(" {}", braces(&self.lines(kids, "", brace))));
+        s
+    }
+
+    fn module_item(&self, i: &ModuleItem) -> String {
+        let body = match &i.kind {
+            ModuleItemKind::Param { name, ty: t, default, where_ } => {
+                let mut s = format!("{}: {}", name.spelled(), self.ty(t));
+                if let Some(d) = default {
+                    s.push_str(&format!(" = {}", self.expr(d)));
+                }
+                if let Some(w) = where_ {
+                    s.push_str(&format!(" where {}", self.expr(w)));
+                }
+                s.push(';');
+                s
+            }
+            ModuleItemKind::Signal { name, ty: t, init } => self.signal(name, t, init),
+            ModuleItemKind::Let { pat: p, value } => format!("let {} = {};", self.pat1(p), self.expr(value)),
+            ModuleItemKind::Def { place, value, after } => {
+                let after = after.as_ref().map_or(String::new(), |a| format!(" after {}", self.expr(a)));
+                format!("{} = {}{after};", self.expr(place), self.expr(value))
+            }
+            ModuleItemKind::Gen(g) => {
+                self.generation(g, &|i: &ModuleItem| Self::extent(&i.meta, i.span), &|i| self.module_item(i))
+            }
+            ModuleItemKind::Error => "/* error */".to_string(),
+        };
+        format!("{}{}{body}", self.meta(&i.meta), vis(i.public))
+    }
+
+    /// `for`/`if` generation over items with the extent `ext`, printed by `leaf`.
+    fn generation<X>(&self, g: &Gen<X>, ext: &dyn Fn(&X) -> Span, leaf: &dyn Fn(&X) -> String) -> String {
+        let body = |items: &[X], brace: Option<usize>| {
+            let kids = items.iter().map(|x| Kid::new(ext(x), move || leaf(x))).collect();
+            braces(&self.lines(kids, "", brace))
+        };
+        match &g.kind {
+            GenKind::For { pat: p, iter, body: b } => {
+                format!("for {} in {} {}", self.pat1(p), self.expr(iter), body(b, Self::last_brace(g.span)))
+            }
+            GenKind::If { cond, then, else_ } => {
+                let then_brace = if else_.is_none() { Self::last_brace(g.span) } else { None };
+                let mut s = format!("if {} {}", self.expr(cond), body(then, then_brace));
+                match else_.as_deref() {
+                    Some(GenElse::Block(b)) => s.push_str(&format!(" else {}", body(b, Self::last_brace(g.span)))),
+                    Some(GenElse::If(inner)) => s.push_str(&format!(" else {}", self.generation(inner, ext, leaf))),
+                    None => {}
+                }
+                s
+            }
+        }
+    }
+
+    fn behavior(&self, b: &BehaviorBlock, brace: Option<usize>) -> String {
+        let (word, kids) = match &b.body {
+            BehaviorBody::Analog(stmts) => ("analog", self.stmts(stmts)),
+            BehaviorBody::Digital(items) => (
+                "digital",
+                items.iter().map(|i| Kid::new(Self::extent(&i.meta, i.span), move || self.digital_item(i))).collect(),
+            ),
+        };
+        let lines = self.lines(kids, "", brace);
+        let names = if b.names.is_empty() {
+            String::new()
+        } else {
+            format!("<{}>", b.names.iter().map(|i| self.ident(i)).collect::<Vec<_>>().join(", "))
+        };
+        format!("{word}{names} for {} {}", self.path(&b.target), braces(&lines))
+    }
+
+    fn digital_item(&self, i: &DigitalItem) -> String {
+        let body = match &i.kind {
+            DigitalItemKind::Reaction(r) => self.reaction(r),
+            DigitalItemKind::Gen(g) => {
+                self.generation(g, &|i: &DigitalItem| Self::extent(&i.meta, i.span), &|i| self.digital_item(i))
+            }
+            DigitalItemKind::Error => "/* error */".to_string(),
+        };
+        format!("{}{body}", self.meta(&i.meta))
     }
 }
 
@@ -323,212 +1025,6 @@ fn binop(op: BinOp) -> &'static str {
     }
 }
 
-fn args(a: &[Arg]) -> Vec<String> {
-    a.iter()
-        .map(|a| match &a.name {
-            Some(n) => format!("{}: {}", n.spelled(), expr(&a.value)),
-            None => expr(&a.value),
-        })
-        .collect()
-}
-
-fn field_inits(f: &[FieldInit]) -> String {
-    if f.is_empty() {
-        return "{}".to_string();
-    }
-    let items: Vec<String> = f
-        .iter()
-        .map(|f| match f.shorthand {
-            true => f.name.spelled(),
-            false => format!("{}: {}", f.name.spelled(), expr(&f.value)),
-        })
-        .collect();
-    let inline = format!("{{ {} }}", items.join(", "));
-    if inline.len() <= WIDTH && !inline.contains('\n') {
-        inline
-    } else {
-        let lines: Vec<String> = items.iter().map(|i| indent(&format!("{i},"))).collect();
-        format!("{{\n{}\n}}", lines.join("\n"))
-    }
-}
-
-fn expr(e: &Expr) -> String {
-    crate::stack::deep(|| expr_inner(e))
-}
-
-fn expr_inner(e: &Expr) -> String {
-    match &e.kind {
-        ExprKind::Lit(l) => lit(l),
-        ExprKind::Path(p) => path(p),
-        ExprKind::Unary { op, expr: x } => {
-            let (sym, space) = match op {
-                UnOp::Neg => ("-", false),
-                UnOp::Not => ("!", false),
-                UnOp::Deref => ("*", false),
-                UnOp::Ref => ("&", true),
-            };
-            let inner = expr(x);
-            // `& &x` must not read as `&&`; `- -x` is fine but kept apart too.
-            let sep = if (space && inner.starts_with('&')) || (sym == "-" && inner.starts_with('-')) { " " } else { "" };
-            format!("{sym}{sep}{inner}")
-        }
-        ExprKind::Binary { op, lhs, rhs } => format!("{} {} {}", expr(lhs), binop(*op), expr(rhs)),
-        ExprKind::Assign { op, lhs, rhs } => {
-            let sym = op.map_or("=".to_string(), |o| format!("{}=", binop(o)));
-            format!("{} {sym} {}", expr(lhs), expr(rhs))
-        }
-        ExprKind::Cast { expr: x, ty: t } => format!("{} as {}", expr(x), ty(t)),
-        ExprKind::Call { callee, args: a, params } => {
-            let mut s = format!("{}{}", expr(callee), list("(", &args(a), ")"));
-            if let Some(p) = params {
-                s.push(' ');
-                s.push_str(&field_inits(p));
-            }
-            s
-        }
-        ExprKind::MethodCall { recv, method, generics: g, args: a } => {
-            format!(
-                "{}.{}{}{}",
-                expr(recv),
-                method.spelled(),
-                g.as_ref().map_or(String::new(), generic_args),
-                list("(", &args(a), ")")
-            )
-        }
-        ExprKind::Field { expr: x, name } => format!("{}.{}", expr(x), name.spelled()),
-        ExprKind::Index { expr: x, index } => format!("{}[{}]", expr(x), expr(index)),
-        ExprKind::Range { lo, hi, inclusive } => format!(
-            "{}{}{}",
-            lo.as_ref().map_or(String::new(), |x| expr(x)),
-            if *inclusive { "..=" } else { ".." },
-            hi.as_ref().map_or(String::new(), |x| expr(x))
-        ),
-        ExprKind::Paren(x) => format!("({})", expr(x)),
-        ExprKind::Tuple(items) => match items.as_slice() {
-            [one] => format!("({},)", expr(one)),
-            _ => list("(", &items.iter().map(expr).collect::<Vec<_>>(), ")"),
-        },
-        ExprKind::Array(items) => list("[", &items.iter().map(expr).collect::<Vec<_>>(), "]"),
-        ExprKind::ArrayRepeat { elem, len } => format!("[{}; {}]", expr(elem), expr(len)),
-        ExprKind::Struct { path: p, fields } => format!("{} {}", path(p), field_inits(fields)),
-        ExprKind::Block(b) => block(b),
-        ExprKind::If { cond, then, else_ } => {
-            let mut s = format!("if {} {}", expr(cond), block(then));
-            if let Some(x) = else_ {
-                s.push_str(&format!(" else {}", expr(x)));
-            }
-            s
-        }
-        ExprKind::Let { pat: p, expr: x } => format!("let {} = {}", pat(p), expr(x)),
-        ExprKind::Match { scrutinee, arms } => {
-            let lines: Vec<String> = arms.iter().map(arm).collect();
-            format!("match {} {}", expr(scrutinee), braces(&lines))
-        }
-        ExprKind::While { cond, body } => format!("while {} {}", expr(cond), block(body)),
-        ExprKind::Loop { body } => format!("loop {}", block(body)),
-        ExprKind::For { pat: p, iter, body } => {
-            format!("for {} in {} {}", pat1(p), expr(iter), block(body))
-        }
-        ExprKind::Break(v) => v.as_ref().map_or("break".to_string(), |x| format!("break {}", expr(x))),
-        ExprKind::Continue => "continue".to_string(),
-        ExprKind::Return(v) => v.as_ref().map_or("return".to_string(), |x| format!("return {}", expr(x))),
-        ExprKind::Closure { is_move, params, ret, body } => {
-            let ps: Vec<String> = params
-                .iter()
-                .map(|p| match &p.ty {
-                    Some(t) => format!("{}: {}", pat1(&p.pat), ty(t)),
-                    None => pat1(&p.pat),
-                })
-                .collect();
-            let head = if ps.is_empty() { "||".to_string() } else { format!("|{}|", ps.join(", ")) };
-            let mv = if *is_move { "move " } else { "" };
-            match ret {
-                Some(r) => format!("{mv}{head} -> {} {}", ty(r), expr(body)),
-                None => format!("{mv}{head} {}", expr(body)),
-            }
-        }
-        ExprKind::Try(x) => format!("{}?", expr(x)),
-        ExprKind::Emit { stream, fields } => {
-            let mut items = vec![lit(stream)];
-            items.extend(fields.iter().map(|f| format!("{} = {}", f.name.spelled(), expr(&f.value))));
-            format!("emit!{}", list("(", &items, ")"))
-        }
-        ExprKind::IncludeStr(l) => format!("include_str!({})", lit(l)),
-        ExprKind::Error => "/* error */".to_string(),
-    }
-}
-
-fn arm(a: &Arm) -> String {
-    let mut s = attrs_only(&a.meta);
-    s.push_str(&pat(&a.pat));
-    if let Some(g) = &a.guard {
-        s.push_str(&format!(" if {}", expr(g)));
-    }
-    s.push_str(&format!(" => {},", expr(&a.body)));
-    s
-}
-
-/// Documentation and attributes, each on its own line, in front of a node.
-fn attrs_only(m: &Meta) -> String {
-    meta(m)
-}
-
-// ---- blocks and statements --------------------------------------------------------------------
-
-fn block(b: &Block) -> String {
-    braces(&b.stmts.iter().map(stmt).collect::<Vec<_>>())
-}
-
-fn stmt(s: &Stmt) -> String {
-    format!("{}{}", meta(&s.meta), stmt_kind(&s.kind))
-}
-
-fn stmt_kind(k: &StmtKind) -> String {
-    match k {
-        StmtKind::Let { pat: p, ty: t, init, else_ } => {
-            let mut out = format!("let {}", pat1(p));
-            if let Some(t) = t {
-                out.push_str(&format!(": {}", ty(t)));
-            }
-            if let Some(i) = init {
-                out.push_str(&format!(" = {}", expr(i)));
-            }
-            if let Some(b) = else_ {
-                out.push_str(&format!(" else {}", block(b)));
-            }
-            out.push(';');
-            out
-        }
-        StmtKind::Expr { expr: e, semi } => {
-            format!("{}{}", expr(e), if *semi { ";" } else { "" })
-        }
-        StmtKind::Item(i) => item(i),
-        StmtKind::Contribution { lhs, rhs } => format!("{} +> {};", expr(lhs), expr(rhs)),
-        StmtKind::Commit { place, value, after } => {
-            let mut out = format!("{} <- {}", expr(place), expr(value));
-            if let Some(a) = after {
-                out.push_str(&format!(" after {}", expr(a)));
-            }
-            out.push(';');
-            out
-        }
-        StmtKind::Empty => ";".to_string(),
-        StmtKind::Signal { name, ty: t, init } => signal(name, t, init),
-        StmtKind::Reaction(r) => reaction(r),
-    }
-}
-
-fn signal(name: &Ident, t: &Type, init: &Option<Expr>) -> String {
-    let init = init.as_ref().map_or(String::new(), |e| format!(" = {}", expr(e)));
-    format!("signal {}: {}{init};", name.spelled(), ty(t))
-}
-
-fn reaction(r: &Reaction) -> String {
-    format!("on {} {}", expr(&r.event), block(&r.body))
-}
-
-// ---- items ------------------------------------------------------------------------------------
-
 fn vis(public: bool) -> &'static str {
     if public { "pub " } else { "" }
 }
@@ -539,263 +1035,4 @@ fn dir(d: &Option<Dir>) -> &'static str {
         Some(Dir::Out) => "out ",
         None => "",
     }
-}
-
-fn item(i: &Item) -> String {
-    format!("{}{}{}", meta(&i.meta), vis(i.public), item_kind(&i.kind))
-}
-
-fn item_kind(k: &ItemKind) -> String {
-    match k {
-        ItemKind::Fn(f) => fn_decl(f),
-        ItemKind::Struct(s) => format!("struct {}{}{}", s.name.spelled(), generics(&s.generics), fields(&s.fields, true)),
-        ItemKind::Enum(e) => {
-            let lines: Vec<String> = e.variants.iter().map(variant).collect();
-            format!("enum {}{} {}", e.name.spelled(), generics(&e.generics), braces(&lines))
-        }
-        ItemKind::Impl(i) => {
-            let head = match &i.trait_ {
-                Some(t) => format!("{} for {}", path(t), ty(&i.self_ty)),
-                None => ty(&i.self_ty),
-            };
-            format!("impl{} {head} {}", generics(&i.generics), braces(&impl_items(&i.items)))
-        }
-        ItemKind::Trait(t) => {
-            let supers = if t.supertraits.is_empty() {
-                String::new()
-            } else {
-                format!(": {}", t.supertraits.iter().map(path).collect::<Vec<_>>().join(" + "))
-            };
-            format!("trait {}{}{supers} {}", t.name.spelled(), generics(&t.generics), braces(&impl_items(&t.items)))
-        }
-        ItemKind::Const(c) => const_item(c),
-        ItemKind::Use(u) => format!("use {};", use_tree(u)),
-        ItemKind::Mod(m) => match &m.items {
-            None => format!("mod {};", m.name.spelled()),
-            Some(items) => {
-                let blocks: Vec<String> = items.iter().map(item).collect();
-                if blocks.is_empty() {
-                    format!("mod {} {{}}", m.name.spelled())
-                } else {
-                    format!("mod {} {{\n{}\n}}", m.name.spelled(), indent(&blocks.join("\n\n")))
-                }
-            }
-        },
-        ItemKind::Nature(n) => nature(n),
-        ItemKind::Module(m) => module(m),
-        ItemKind::Behavior(b) => behavior(b),
-        ItemKind::Error => "/* error */".to_string(),
-    }
-}
-
-fn fn_decl(f: &FnDecl) -> String {
-    let mut s = String::new();
-    if f.is_const {
-        s.push_str("const ");
-    }
-    if let Some(abi) = &f.abi {
-        s.push_str(&format!("extern {} ", lit(abi)));
-    }
-    s.push_str(&format!("fn {}{}", f.name.spelled(), generics(&f.generics)));
-    let params: Vec<String> = f
-        .params
-        .iter()
-        .filter_map(|p| match p {
-            FnParam::SelfValue(_) => Some("self".to_string()),
-            FnParam::Named { name, ty: t, .. } => Some(format!("{}: {}", name.spelled(), ty(t))),
-            FnParam::Error(_) => None,
-        })
-        .collect();
-    s.push_str(&list("(", &params, ")"));
-    if let Some(r) = &f.ret {
-        s.push_str(&format!(" -> {}", ty(r)));
-    }
-    if let Some(w) = &f.where_ {
-        s.push_str(&format!(" where {}", expr(w)));
-    }
-    match &f.body {
-        Some(b) => s.push_str(&format!(" {}", block(b))),
-        None => s.push(';'),
-    }
-    s
-}
-
-fn const_item(c: &ConstItem) -> String {
-    let value = c.value.as_ref().map_or(String::new(), |v| format!(" = {}", expr(v)));
-    format!("const {}: {}{value};", c.name.spelled(), ty(&c.ty))
-}
-
-fn impl_items(items: &[ImplItem]) -> Vec<String> {
-    items
-        .iter()
-        .map(|i| {
-            let body = match &i.kind {
-                ImplItemKind::Fn(f) => fn_decl(f),
-                ImplItemKind::Const(c) => const_item(c),
-            };
-            format!("{}{}{body}", meta(&i.meta), vis(i.public))
-        })
-        .collect()
-}
-
-fn field(f: &Field) -> String {
-    let body = match &f.name {
-        Some(n) => format!("{}: {}", n.spelled(), ty(&f.ty)),
-        None => ty(&f.ty),
-    };
-    format!("{}{}{}{body}", meta(&f.meta), vis(f.public), dir(&f.dir))
-}
-
-/// The body of a struct (`unit_semi`: a unit struct or tuple struct ends in
-/// `;`) or of an enum variant.
-fn fields(f: &Fields, unit_semi: bool) -> String {
-    match f {
-        Fields::Named(fs) => {
-            let lines: Vec<String> = fs.iter().map(|f| format!("{},", field(f))).collect();
-            format!(" {}", braces(&lines))
-        }
-        Fields::Tuple(fs) => {
-            let items: Vec<String> = fs.iter().map(field).collect();
-            format!("{}{}", list("(", &items, ")"), if unit_semi { ";" } else { "" })
-        }
-        Fields::Unit => if unit_semi { ";".to_string() } else { String::new() },
-    }
-}
-
-fn variant(v: &Variant) -> String {
-    let disc = v.discriminant.as_ref().map_or(String::new(), |d| format!(" = {}", expr(d)));
-    format!("{}{}{}{disc},", meta(&v.meta), v.name.spelled(), fields(&v.fields, false))
-}
-
-fn use_tree(u: &UseTree) -> String {
-    let prefix: Vec<String> = u.path.iter().map(|i| i.spelled()).collect();
-    let joined = prefix.join("::");
-    match &u.kind {
-        UseKind::Simple { alias } => match alias {
-            Some(a) => format!("{joined} as {}", a.spelled()),
-            None => joined,
-        },
-        UseKind::Glob => if joined.is_empty() { "*".to_string() } else { format!("{joined}::*") },
-        UseKind::Group(trees) => {
-            let inner = trees.iter().map(use_tree).collect::<Vec<_>>().join(", ");
-            if joined.is_empty() { format!("{{{inner}}}") } else { format!("{joined}::{{{inner}}}") }
-        }
-    }
-}
-
-fn nature(n: &NatureDecl) -> String {
-    let lines: Vec<String> = n
-        .fields
-        .iter()
-        .map(|f| format!("{}{}", meta(&f.meta), nature_field(&f.kind)))
-        .collect();
-    format!("nature {}{} {}", n.name.spelled(), generics(&n.generics), braces(&lines))
-}
-
-fn nature_field(k: &NatureFieldKind) -> String {
-    match k {
-            NatureFieldKind::Quantity { which, name, attrs } => {
-                let w = match which {
-                    Quantity::Potential => "potential",
-                    Quantity::Flow => "flow",
-                };
-                let block = if attrs.is_empty() { String::new() } else { format!(" {}", field_inits(attrs)) };
-                format!("{w}: {}{block},", name.spelled())
-            }
-            NatureFieldKind::Value(t) => format!("value: {},", ty(t)),
-            NatureFieldKind::Resolve(e) => format!("resolve: {},", expr(e)),
-    }
-}
-
-fn module(m: &ModuleDecl) -> String {
-    let mut s = String::new();
-    if let Some(abi) = &m.abi {
-        s.push_str(&format!("extern {} ", lit(abi)));
-    }
-    s.push_str(&format!("module {}{}", m.name.spelled(), generics(&m.generics)));
-    let ports: Vec<String> = m
-        .ports
-        .iter()
-        .map(|p| {
-            let default = p.default.as_ref().map_or(String::new(), |d| format!(" = {}", expr(d)));
-            format!("{}{}{}: {}{default}", meta(&p.meta), dir(&p.dir), p.name.spelled(), ty(&p.ty))
-        })
-        .collect();
-    s.push_str(&list("(", &ports, ")"));
-    if let Some(r) = &m.ret {
-        s.push_str(&format!(" -> {}", ty(r)));
-    }
-    if let Some(w) = &m.where_ {
-        s.push_str(&format!(" where {}", expr(w)));
-    }
-    let mut lines: Vec<String> = m.body.iter().map(module_item).collect();
-    if let Some(r) = &m.result {
-        lines.push(expr(r));
-    }
-    s.push_str(&format!(" {}", braces(&lines)));
-    s
-}
-
-fn module_item(i: &ModuleItem) -> String {
-    let body = match &i.kind {
-        ModuleItemKind::Param { name, ty: t, default, where_ } => {
-            let mut s = format!("{}: {}", name.spelled(), ty(t));
-            if let Some(d) = default {
-                s.push_str(&format!(" = {}", expr(d)));
-            }
-            if let Some(w) = where_ {
-                s.push_str(&format!(" where {}", expr(w)));
-            }
-            s.push(';');
-            s
-        }
-        ModuleItemKind::Signal { name, ty: t, init } => signal(name, t, init),
-        ModuleItemKind::Let { pat: p, value } => format!("let {} = {};", pat1(p), expr(value)),
-        ModuleItemKind::Def { place, value, after } => {
-            let after = after.as_ref().map_or(String::new(), |a| format!(" after {}", expr(a)));
-            format!("{} = {}{after};", expr(place), expr(value))
-        }
-        ModuleItemKind::Gen(g) => generation(g, &|i| module_item(i)),
-        ModuleItemKind::Error => "/* error */".to_string(),
-    };
-    format!("{}{}{body}", meta(&i.meta), vis(i.public))
-}
-
-/// `for`/`if` generation over items printed by `leaf`.
-fn generation<X>(g: &Gen<X>, leaf: &dyn Fn(&X) -> String) -> String {
-    let body = |items: &[X]| braces(&items.iter().map(leaf).collect::<Vec<_>>());
-    match &g.kind {
-        GenKind::For { pat: p, iter, body: b } => format!("for {} in {} {}", pat1(p), expr(iter), body(b)),
-        GenKind::If { cond, then, else_ } => {
-            let mut s = format!("if {} {}", expr(cond), body(then));
-            match else_.as_deref() {
-                Some(GenElse::Block(b)) => s.push_str(&format!(" else {}", body(b))),
-                Some(GenElse::If(inner)) => s.push_str(&format!(" else {}", generation(inner, leaf))),
-                None => {}
-            }
-            s
-        }
-    }
-}
-
-fn behavior(b: &BehaviorBlock) -> String {
-    let (word, lines) = match &b.body {
-        BehaviorBody::Analog(stmts) => ("analog", stmts.iter().map(stmt).collect::<Vec<_>>()),
-        BehaviorBody::Digital(items) => ("digital", items.iter().map(digital_item).collect::<Vec<_>>()),
-    };
-    let names = if b.names.is_empty() {
-        String::new()
-    } else {
-        format!("<{}>", b.names.iter().map(ident).collect::<Vec<_>>().join(", "))
-    };
-    format!("{word}{names} for {} {}", path(&b.target), braces(&lines))
-}
-
-fn digital_item(i: &DigitalItem) -> String {
-    let body = match &i.kind {
-        DigitalItemKind::Reaction(r) => reaction(r),
-        DigitalItemKind::Gen(g) => generation(g, &|i| digital_item(i)),
-        DigitalItemKind::Error => "/* error */".to_string(),
-    };
-    format!("{}{body}", meta(&i.meta))
 }
