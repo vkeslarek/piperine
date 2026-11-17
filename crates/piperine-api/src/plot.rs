@@ -196,6 +196,9 @@ impl Plot {
             Analysis::Op => Err(Failure::Host { code: "P0010", message: "an operating point has nothing to plot".into() }),
             Analysis::Ac { grid, .. } => Plot::frequency(table, matches!(grid, Grid::PerDecade(_))),
             Analysis::Dc { .. } | Analysis::Transient { .. } => Plot::against_first_column(table),
+            Analysis::Tf { .. } | Analysis::Pz { .. } | Analysis::Sens { .. } => {
+                Err(Failure::Host { code: "P0010", message: format!("a `{}` run has nothing to plot: its result is a table of values, not a curve", analysis.name()) })
+            }
         }
     }
 

@@ -105,7 +105,7 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "target", kind: ArgKind::Positional { required: false, many: false }, help: "a run name, or a .msl file" },
             ArgRow { id: "bench", kind: ArgKind::Path { value: "FILE" }, help: "the bench file; the root crate is this file" },
             ArgRow { id: "top", kind: ArgKind::Text { value: "MODULE" }, help: "the module without ports to elaborate" },
-            ArgRow { id: "analysis", kind: ArgKind::Text { value: "ANALYSIS" }, help: "op, dc, ac or transient" },
+            ArgRow { id: "analysis", kind: ArgKind::Text { value: "ANALYSIS" }, help: "op, dc, ac, transient, tf, pz or sens" },
             ArgRow { id: "stop", kind: ArgKind::Real { value: "SECONDS" }, help: "transient: the end time" },
             ArgRow { id: "max-step", kind: ArgKind::Real { value: "SECONDS" }, help: "transient: the largest step" },
             ArgRow { id: "print-step", kind: ArgKind::Real { value: "SECONDS" }, help: "transient: the spacing of the printed rows" },
@@ -133,6 +133,9 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "maxmicro", kind: ArgKind::Count { value: "N" }, help: "the bound on the microsteps of one instant" },
             ArgRow { id: "max-steps", kind: ArgKind::Count { value: "N" }, help: "the budget of attempts a transient may make (default 2000000)" },
             ArgRow { id: "nodeset", kind: ArgKind::Param, help: "seed an operating point's first iterate: <node>=<value> (repeatable)" },
+            ArgRow { id: "input", kind: ArgKind::Text { value: "SOURCE" }, help: "tf, pz: the voltage source that excites" },
+            ArgRow { id: "output", kind: ArgKind::Text { value: "NODE" }, help: "tf, pz: the node that is measured" },
+            ArgRow { id: "wrt", kind: ArgKind::Texts { value: "PARAM" }, help: "sens: a param to differentiate by (repeatable)" },
         ],
     },
     CommandRow {
@@ -270,6 +273,9 @@ impl Cli {
             maxrounds: count("maxrounds"),
             maxmicro: count("maxmicro"),
             max_steps: count("max-steps"),
+            input: text("input"),
+            output: text("output"),
+            wrt: texts("wrt"),
             nodeset: m.get_many::<(String, f64)>("nodeset").map(|v| v.cloned().collect()).unwrap_or_default(),
         }
     }
@@ -352,7 +358,7 @@ mod tests {
         // those and `--project` exists (`--help` is clap's, added when the command is built)
         let flags = [
             "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot", "all-checks",
-            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset",
+            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt",
         ];
         let command = Cli::command();
         let run = command.find_subcommand("run").expect("a `run` command");
@@ -367,7 +373,7 @@ mod tests {
             "--step", "0.5", "--per-decade", "10", "--points", "20", "--print", "a", "--print", "b", "--stream", "s1", "--stream", "s2", "--param", "r1.r=2000", "--param", "c1.c=1e-9", "--backend", "interp",
             "--csv", "o.csv", "--records", "r.jsonl", "--plot", "p.svg", "--all-checks",
             "--reltol", "1e-4", "--abstol", "1e-13", "--vntol", "2e-6", "--trtol", "5", "--temp", "-40", "--resolution", "1e-12", "--maxrounds", "30", "--maxmicro", "500", "--max-steps", "4000000", "--nodeset", "Top.a=1.5",
-            "--nodeset", "Top.b=0",
+            "--nodeset", "Top.b=0", "--input", "v1", "--output", "Top.out", "--wrt", "r1.r", "--wrt", "r2.r",
         ];
         let Ok(Invocation::Run { target, overrides, .. }) = Cli::parse(args) else { panic!("the flags parse as a run") };
         assert_eq!(target.as_deref(), Some("x"));
@@ -401,6 +407,9 @@ mod tests {
             maxrounds: Some(30),
             maxmicro: Some(500),
             max_steps: Some(4_000_000),
+            input: Some("v1".into()),
+            output: Some("Top.out".into()),
+            wrt: vec!["r1.r".into(), "r2.r".into()],
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
         };
         assert_eq!(overrides, want);

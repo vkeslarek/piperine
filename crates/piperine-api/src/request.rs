@@ -22,11 +22,22 @@ pub enum Analysis {
     Ac { from: f64, to: f64, grid: Grid },
     /// A transient to `stop`; `from` is the first time the result keeps (ngspice's `tstart`).
     Transient { stop: f64, max_step: Option<f64>, print_step: Option<f64>, from: Option<f64> },
+    /// The DC transfer function (ngspice `.tf`) from the voltage source `input` to the node `output`.
+    Tf { input: String, output: String },
+    /// The poles and zeros (ngspice `.pz`) of the transfer from the voltage source `input` to the node `output`.
+    Pz { input: String, output: String },
+    /// The DC sensitivity (ngspice `.sens`) of the printed signals with respect to each param of `wrt`.
+    Sens { wrt: Vec<String> },
 }
 
 impl Analysis {
-    /// The four names a user writes, in the order they are listed.
-    pub const NAMES: [&'static str; 4] = ["op", "dc", "ac", "transient"];
+    /// The eight names a user writes, in the order they are listed; `pss` is reserved until its run.
+    pub const NAMES: [&'static str; 8] = ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss"];
+
+    /// The names as a fault lists them: each in backquotes, comma separated.
+    fn listed() -> String {
+        Analysis::NAMES.map(|name| format!("`{name}`")).join(", ")
+    }
 
     /// The name a user writes.
     pub fn name(&self) -> &'static str {
@@ -35,6 +46,9 @@ impl Analysis {
             Analysis::Dc { .. } => "dc",
             Analysis::Ac { .. } => "ac",
             Analysis::Transient { .. } => "transient",
+            Analysis::Tf { .. } => "tf",
+            Analysis::Pz { .. } => "pz",
+            Analysis::Sens { .. } => "sens",
         }
     }
 }
@@ -121,6 +135,12 @@ pub struct Overrides {
     pub maxrounds: Option<u32>,
     pub maxmicro: Option<u32>,
     pub max_steps: Option<u32>,
+    /// `--input`: the voltage source a `tf` or `pz` run excites.
+    pub input: Option<String>,
+    /// `--output`: the node a `tf` or `pz` run measures.
+    pub output: Option<String>,
+    /// `--wrt`, repeatable: the params a `sens` run differentiates by; a flag list replaces the key.
+    pub wrt: Vec<String>,
     /// `--nodeset <path>=<value>`: an entry replaces the table's entry of the same path.
     pub nodeset: Vec<(String, f64)>,
 }
@@ -202,6 +222,9 @@ struct Keys {
     maxrounds: Option<Given<u32>>,
     maxmicro: Option<Given<u32>>,
     max_steps: Option<Given<u32>>,
+    input: Option<Given<String>>,
+    output: Option<Given<String>>,
+    wrt: Option<Given<Vec<String>>>,
     nodeset: Vec<(String, f64)>,
 }
 
@@ -213,14 +236,14 @@ type Value<'i> = Spanned<DeValue<'i>>;
 
 /// The keys of a run table, in the order CLI-03 AC 1 lists them, then the session options of
 /// HII-01.
-const RUN_KEYS: [&str; 30] = [
+const RUN_KEYS: [&str; 33] = [
     "bench", "top", "analysis", "stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "print", "streams",
     "params", "backend", "csv", "records", "plot", "all_checks", "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds",
-    "maxmicro", "nodeset", "max_steps",
+    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt",
 ];
 
 /// The keys whose meaning belongs to an analysis; each analysis reads the ones `reads` lists.
-const ANALYSIS_KEYS: [&str; 10] = ["stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "plot"];
+const ANALYSIS_KEYS: [&str; 13] = ["stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "plot", "input", "output", "wrt"];
 
 impl RunSpec {
     /// Every `[run.<name>]` of the manifest `text` (the content of `file`), in source order. A
@@ -366,6 +389,9 @@ impl Source {
             "maxrounds" => keys.maxrounds = Some(count()?),
             "maxmicro" => keys.maxmicro = Some(count()?),
             "max_steps" => keys.max_steps = Some(count()?),
+            "input" => keys.input = Some(text()?),
+            "output" => keys.output = Some(text()?),
+            "wrt" => keys.wrt = Some(Given { value: strings()?, at }),
             "nodeset" => {
                 let table = v.as_table().ok_or_else(|| wrong("a table of node paths and numbers"))?;
                 for (path, n) in entries(table) {
@@ -416,6 +442,11 @@ impl Keys {
         over(&mut self.maxrounds, &o.maxrounds);
         over(&mut self.maxmicro, &o.maxmicro);
         over(&mut self.max_steps, &o.max_steps);
+        over(&mut self.input, &o.input);
+        over(&mut self.output, &o.output);
+        if !o.wrt.is_empty() {
+            self.wrt = Some(Given::flag(o.wrt.clone()));
+        }
         for (path, value) in &o.nodeset {
             match self.nodeset.iter_mut().find(|(p, _)| p == path) {
                 Some(entry) => entry.1 = *value,
@@ -445,6 +476,9 @@ impl Keys {
             "per_decade" => self.per_decade.as_ref().and_then(|g| g.at),
             "points" => self.points.as_ref().and_then(|g| g.at),
             "plot" => self.plot.as_ref().and_then(|g| g.at),
+            "input" => self.input.as_ref().and_then(|g| g.at),
+            "output" => self.output.as_ref().and_then(|g| g.at),
+            "wrt" => self.wrt.as_ref().and_then(|g| g.at),
             _ => None,
         }
     }
@@ -462,6 +496,9 @@ impl Keys {
             "per_decade" => self.per_decade.is_some(),
             "points" => self.points.is_some(),
             "plot" => self.plot.is_some(),
+            "input" => self.input.is_some(),
+            "output" => self.output.is_some(),
+            "wrt" => self.wrt.is_some(),
             _ => false,
         }
     }
@@ -473,7 +510,7 @@ impl Keys {
             fault(self.name_at, format!("run `{name}`: a `{analysis}` run needs `{key}`"), &format!("no `{key}`"))
         };
         let Some(analysis) = &self.analysis else {
-            let message = format!("run `{name}` has no `analysis`: it is one of `op`, `dc`, `ac`, `transient`");
+            let message = format!("run `{name}` has no `analysis`: it is one of {}", Analysis::listed());
             return Err(fault(self.name_at, message, "no `analysis`"));
         };
         let reads: &[&str] = match analysis.value.as_str() {
@@ -481,8 +518,14 @@ impl Keys {
             "dc" => &["sweep", "from", "to", "step", "plot"],
             "ac" => &["from", "to", "per_decade", "points", "plot"],
             "transient" => &["stop", "max_step", "print_step", "from", "plot"],
+            "tf" | "pz" => &["input", "output"],
+            "sens" => &["wrt"],
+            "pss" => {
+                let message = format!("run `{name}`: `pss` is reserved and has no run yet; the analyses that run are `op`, `dc`, `ac`, `transient`, `tf`, `pz`, `sens`");
+                return Err(fault(analysis.at, message, "not runnable yet"));
+            }
             other => {
-                let message = format!("unknown analysis `{other}`: the analyses are `op`, `dc`, `ac`, `transient`");
+                let message = format!("unknown analysis `{other}`: the analyses are {}", Analysis::listed());
                 return Err(fault(analysis.at, message, "not an analysis"));
             }
         };
@@ -553,6 +596,19 @@ impl Keys {
                     return Err(fault(to.at, message, "less than `from`"));
                 }
                 Analysis::Ac { from: from.value, to: to.value, grid }
+            }
+            "tf" | "pz" => {
+                let input = self.input.as_ref().ok_or_else(|| missing("input", &analysis.value))?;
+                let output = self.output.as_ref().ok_or_else(|| missing("output", &analysis.value))?;
+                let (input, output) = (input.value.clone(), output.value.clone());
+                if analysis.value == "tf" { Analysis::Tf { input, output } } else { Analysis::Pz { input, output } }
+            }
+            "sens" => {
+                let wrt = self.wrt.as_ref().ok_or_else(|| missing("wrt", "sens"))?;
+                if wrt.value.is_empty() {
+                    return Err(fault(wrt.at.or(self.name_at), format!("run `{name}`: `wrt` must name at least one param"), "empty"));
+                }
+                Analysis::Sens { wrt: wrt.value.clone() }
             }
             _ => {
                 let stop = self.stop.as_ref().ok_or_else(|| missing("stop", "transient"))?;
@@ -742,7 +798,7 @@ points = 5
         assert_eq!(runs[3].analysis, Analysis::Ac { from: 1e3, to: 5e3, grid: Grid::Points(5) });
         // the nineteen keys of CLI-03 AC 1, `all_checks` (CLI-06 AC 7) and the nine session options
         // of HII-01 and `max_steps` (HII-01 amendment), no more
-        assert_eq!(RUN_KEYS.len(), 30);
+        assert_eq!(RUN_KEYS.len(), 33);
         // a manifest with no run table has no run
         assert_eq!(read("").map(|r| r.len()).ok(), Some(0));
     }
@@ -942,7 +998,7 @@ points = 5
             assert_eq!(spec.options, options(), "{analysis}");
             assert_eq!(one(&format!("[run.a]\n{analysis}")).options, Options::default(), "{analysis}");
         }
-        assert_eq!(RUN_KEYS[20..], ["reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "nodeset", "max_steps"]);
+        assert_eq!(RUN_KEYS[20..30], ["reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "nodeset", "max_steps"]);
     }
 
     #[test]
@@ -1012,5 +1068,75 @@ points = 5
         assert_eq!(alone.options, Options { vntol: Some(1e-7), ..Options::default() });
         let bad = table.merged(&Overrides { maxmicro: Some(0), ..Overrides::default() }).expect_err("maxmicro 0");
         assert!(matches!(&bad, Failure::Host { code: "P0010", message } if message.contains("`maxmicro`")), "{bad:?}");
+    }
+
+    #[test]
+    fn tf_and_pz_need_input_and_output() {
+        // HII-04 AC 3 and HII-05 AC 4: a run lacking either key is a P0010 naming it
+        for analysis in ["tf", "pz"] {
+            let both = one(&format!("[run.a]\nanalysis = \"{analysis}\"\ninput = \"v1\"\noutput = \"out\"\n"));
+            let want = if analysis == "tf" { Analysis::Tf { input: "v1".into(), output: "out".into() } } else { Analysis::Pz { input: "v1".into(), output: "out".into() } };
+            assert_eq!(both.analysis, want);
+            for (keys, missing) in [("output = \"out\"\n", "input"), ("input = \"v1\"\n", "output"), ("", "input")] {
+                let f = fault(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}"));
+                let (code, message, spanned) = located(&f);
+                assert_eq!((code, spanned), ("P0010", "a"), "{analysis} {keys}");
+                assert!(message.contains(&format!("`{missing}`")) && message.contains(&format!("`{analysis}`")), "{message}");
+            }
+        }
+        // a flag gives the key as a table does
+        let flags = Overrides { analysis: Some("tf".into()), input: Some("v1".into()), output: Some("out".into()), ..Overrides::default() };
+        let spec = RunSpec::from_flags("d", &flags).unwrap_or_else(|f| panic!("{f}"));
+        assert_eq!(spec.analysis, Analysis::Tf { input: "v1".into(), output: "out".into() });
+        // `input` belongs to `tf` and `pz` alone
+        let f = fault("[run.a]\nanalysis = \"op\"\ninput = \"v1\"\n");
+        let (_, message, spanned) = located(&f);
+        assert!(message.contains("`input`") && message.contains("`op`"), "{message}");
+        assert_eq!(spanned, "\"v1\"");
+    }
+
+    #[test]
+    fn sens_needs_a_non_empty_wrt() {
+        // HII-06 AC 3: no `wrt`, or an empty one, is a P0010 naming the key
+        let ok = one("[run.a]\nanalysis = \"sens\"\nwrt = [\"r1.r\", \"r2.r\"]\n");
+        assert_eq!(ok.analysis, Analysis::Sens { wrt: vec!["r1.r".into(), "r2.r".into()] });
+        for (keys, at) in [("", "a"), ("wrt = []\n", "[]")] {
+            let f = fault(&format!("[run.a]\nanalysis = \"sens\"\n{keys}"));
+            let (code, message, spanned) = located(&f);
+            assert_eq!((code, spanned), ("P0010", at), "{keys:?}");
+            assert!(message.contains("`wrt`"), "{message}");
+        }
+        // the flag list replaces the key, in the order given
+        let table = one("[run.a]\nanalysis = \"sens\"\nwrt = [\"r1.r\"]\n");
+        let merged = table.merged(&Overrides { wrt: vec!["r2.r".into(), "v1.dc".into()], ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
+        assert_eq!(merged.analysis, Analysis::Sens { wrt: vec!["r2.r".into(), "v1.dc".into()] });
+        // `wrt` belongs to `sens` alone
+        let f = fault("[run.a]\nanalysis = \"tf\"\ninput = \"v1\"\noutput = \"out\"\nwrt = [\"r1.r\"]\n");
+        assert!(located(&f).1.contains("`wrt`"), "{f:?}");
+    }
+
+    #[test]
+    fn the_eight_analysis_names() {
+        // HII-08 AC 3: eight names, in the order listed, each written in an unknown-analysis fault
+        assert_eq!(Analysis::NAMES, ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss"]);
+        let f = fault("[run.a]\nanalysis = \"tran\"\nstop = 1e-3\n");
+        let (_, message, _) = located(&f);
+        for name in Analysis::NAMES {
+            assert!(message.contains(&format!("`{name}`")), "{message} names {name}");
+        }
+        for (analysis, keys) in [("tf", "input = \"v1\"\noutput = \"o\"\n"), ("pz", "input = \"v1\"\noutput = \"o\"\n"), ("sens", "wrt = [\"r.r\"]\n")] {
+            assert_eq!(one(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}")).analysis.name(), analysis);
+        }
+    }
+
+    #[test]
+    fn plot_is_refused_for_tf_pz_and_sens() {
+        // HII-08 AC 3: a `plot` key on a run of the three is a P0010 at the key's value, naming both
+        for (analysis, keys) in [("tf", "input = \"v1\"\noutput = \"o\"\n"), ("pz", "input = \"v1\"\noutput = \"o\"\n"), ("sens", "wrt = [\"r.r\"]\n")] {
+            let f = fault(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}plot = \"p.svg\"\n"));
+            let (code, message, spanned) = located(&f);
+            assert_eq!((code, spanned), ("P0010", "\"p.svg\""), "{analysis}");
+            assert!(message.contains("`plot`") && message.contains(&format!("`{analysis}`")), "{message}");
+        }
     }
 }

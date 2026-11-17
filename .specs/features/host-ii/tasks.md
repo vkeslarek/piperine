@@ -417,9 +417,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline tests `request::tests::tf_and_pz_need_input_and_output`, `sens_needs_a_non_empty_wrt`, `the_eight_analysis_names`, `plot_is_refused_for_tf_pz_and_sens`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: 4 new tests
+- [x] Inline tests `request::tests::tf_and_pz_need_input_and_output`, `sens_needs_a_non_empty_wrt`, `the_eight_analysis_names`, `plot_is_refused_for_tf_pz_and_sens`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: 4 new tests
 
 **Tests**: unit
 **Gate**: quick

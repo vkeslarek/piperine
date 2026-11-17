@@ -414,6 +414,9 @@ impl Session {
                 let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::Solver { analysis: "ac", error })?;
                 Table::frequency(&self.probes, &result)
             }
+            Analysis::Tf { .. } | Analysis::Pz { .. } | Analysis::Sens { .. } => {
+                Err(Failure::Backend(format!("a `{}` run is requested and validated, but its arm is not built yet", self.spec.analysis.name())))
+            }
         }
     }
 
