@@ -107,3 +107,18 @@ fn state_records_the_cli_decision() {
         assert!(decision.contains(name), "MD-65 names {name}");
     }
 }
+
+#[test]
+fn gaps_says_a_host_run_is_bounded() {
+    // long-run LR-18 AC 2: a host run records what it prints and keeps no step, so `GAPS.md` no
+    // longer lists the unbounded recording of a host run as open; the solver's own default keeps
+    // every step (N2) and `GAPS.md` still says so; the loud gap of `on above` stays
+    let gaps = read("GAPS.md");
+    for stale in ["a host\n  needs a bounded recording", "a 600 µs run held 25 GB"] {
+        assert!(!gaps.contains(stale), "GAPS.md still says `{stale}`");
+    }
+    assert!(gaps.contains("it records only the signals it prints"), "GAPS.md says a host run records only what it prints");
+    assert!(gaps.contains("(N2)") && gaps.contains("keeps every accepted step"), "GAPS.md still says the solver's default keeps every step");
+    assert!(gaps.contains("`on above(..) { emit!(..) }` is `P0001`"), "GAPS.md still lists the `on above` gap");
+    assert!(gaps.contains("prints the whole 600 µs start"), "the command-line row names the whole-start run");
+}

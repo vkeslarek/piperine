@@ -605,10 +605,10 @@ T23
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/docs.rs` holds `gaps_says_a_host_run_is_bounded`: `GAPS.md` no longer holds "a host\n  needs a bounded recording" nor "a 600 µs run held 25 GB" as an open gap of host runs, and still holds "`on above(..) { emit!(..) }` is `P0001`"
-- [ ] `gaps_drops_what_closed_and_lists_what_is_left` passes unedited
-- [ ] Gate check passes: Quick (`Run docs`)
-- [ ] Test count: the 1 test named above, and no existing test removed or edited
+- [x] `crates/piperine-cli/tests/docs.rs` holds `gaps_says_a_host_run_is_bounded`: `GAPS.md` no longer holds "a host\n  needs a bounded recording" nor "a 600 µs run held 25 GB" as an open gap of host runs, and still holds "`on above(..) { emit!(..) }` is `P0001`"
+- [x] `gaps_drops_what_closed_and_lists_what_is_left` passes unedited
+- [x] Gate check passes: Quick (`Run docs`)
+- [x] Test count: the 1 test named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

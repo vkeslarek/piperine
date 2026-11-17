@@ -25,8 +25,8 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 | elaboration → IR → interpreter → solver | analog only: R, C, V/I sources, diode with `limit`/`pnjlim`; OP, DC, AC, transient. The interpreter is frozen at M1 (R1) and refuses every digital or amended form by name |
 | ngspice parity | 7 fixtures in `tests/ngspice/`, all green |
 | IR → Rust → `rustc` → ABI (`ir-rust`) | the M1 analog subset compiles to Rust, bit-equal to the interpreter, 7 twins green on both backends (`PIPERINE_BACKEND`) |
-| digital and mixed-signal execution (`msl-digital`) | **from MSL source, on the transpiled backend only**: the whole `examples/buck` elaborates, compiles with no `rustc` warning and runs; its closed loop starts and regulates at 0.8 V (`cargo test -p piperine-parity --test buck_closed_loop`). The stdlib items the buck reaches run too: `transition`, `A2D`, `D2A`, `above`, `init`, `every`, `Never`, `log`, `require`. From the command line too: `piperine run startup` in `examples/buck` |
-| command line and host library (`msl-cli`) | `piperine-api`, `piperine-cli`, `piperine-project` and the root package build in the default members. `piperine check`, `build`, `run`, `test`, `new`, `clean` and `fmt` run an MSL project (`examples/rc`, `examples/buck`, the 7 twins on both backends): `op`, `dc`, `ac`, `transient`, records live, CSV, JSON Lines, SVG plots. Every CLI listing of the Book is held to the binary (`cargo test -p piperine-cli --test book`) |
+| digital and mixed-signal execution (`msl-digital`) | **from MSL source, on the transpiled backend only**: the whole `examples/buck` elaborates, compiles with no `rustc` warning and runs; its closed loop starts and regulates at 0.8 V (`cargo test -p piperine-parity --test buck_closed_loop`). The stdlib items the buck reaches run too: `transition`, `A2D`, `D2A`, `above`, `init`, `every`, `Never`, `log`, `require`. From the command line too: `piperine run startup` in `examples/buck`, which prints the whole 600 µs start |
+| command line and host library (`msl-cli`) | `piperine-api`, `piperine-cli`, `piperine-project` and the root package build in the default members. `piperine check`, `build`, `run`, `test`, `new`, `clean` and `fmt` run an MSL project (`examples/rc`, `examples/buck`, the 7 twins on both backends): `op`, `dc`, `ac`, `transient`, records live, CSV, JSON Lines, SVG plots; a transient records the rows it prints as it goes and keeps no step, so a whole-start run of the buck holds the same memory as a short one. Every CLI listing of the Book is held to the binary (`cargo test -p piperine-cli --test book`) |
 | formatter (`msl-cli`) | `piperine fmt` / `msl::format` keeps every plain comment, proven over 277 sources |
 | language server | **does not build**, outside the default build, deferred by the user (§2) |
 
@@ -168,13 +168,16 @@ are the parity risks.
   7.3e-4 relative off the continuous run.
 - **Re-entry state is stored on every accepted step (N2):** memory grows with step count.
 - **The partials guard matches devices by label (N3)**, not by module.
-- **A transient keeps every accepted step, and a mixed design takes many (`msl-digital`).** The
-  whole buck takes about 45 000 accepted steps per 40 µs (the analog side lands near every
-  200 MHz instant), each about 58 KB in `TransientAnalysisResult`: a 600 µs run held 25 GB
-  before it was stopped. `buck_closed_loop` keeps only its last 40 µs (`record_from`); a host
-  needs a bounded recording (selected probes, a decimated grid) before long mixed runs; the
-  CLI's `from` key (`record_from`, `msl-cli` D10) bounds a run to its end meanwhile. The same
-  run takes 779 s in a dev build.
+- **The solver's default transient result keeps every accepted step, with its re-entry state
+  (N2); a mixed design takes many (`msl-digital`, `long-run`).** The whole buck takes about
+  45 000 accepted steps per 40 µs (the analog side lands near every 200 MHz instant), each about
+  58 KB in `TransientAnalysisResult` when kept: 25 GB for a 600 µs run under that default. A host
+  run through `piperine-api` no longer pays it: it records only the signals it prints, on the
+  print grid as the steps arrive, and keeps its last step only, so its memory depends on the rows
+  and not on the run's length (`piperine run startup` prints the whole 600 µs start, 1 201 rows;
+  60 001 rows on a 10 ns grid peak at about 11 MiB of live heap). The step count and the wall time
+  are unchanged: the same run still takes about 130 s in a dev build, as the analog side still
+  lands near every digital edge.
 - **First step after a digital-to-analog jump (`ir-rust` F-B7).** With a 10 ns step cap the
   analog response to a carrier change is off by more than `TRAN_VOLTAGE` 5.55 ns after `t0` (the
   first step after the jump is first order); `piperine-parity/tests/boundary.rs` runs at a 1 ns
