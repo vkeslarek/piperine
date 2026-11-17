@@ -32,7 +32,7 @@ pub struct RunCommand {
 
 /// Why a run ended before its table: a failure of the request (a usage error when the command
 /// line is wrong), or a standard output that cannot be written.
-enum Stop {
+pub(crate) enum Stop {
     Failed(Failure),
     Usage(Failure),
     Closed(io::Error),
@@ -141,7 +141,7 @@ impl RunCommand {
         let name = if self.lone().is_some() { None } else { self.target.as_deref() };
         let spec = project.request(name, &Overrides { backend: None, ..self.overrides.clone() })?;
         let mut spec = spec;
-        spec.backend = Some(self.backend(&spec)?.name().into());
+        spec.backend = Some(Self::backend(self.overrides.backend.as_deref(), &spec)?.name().into());
         let settings = Settings::from_environment().map_err(|e| Failure::Backend(e.to_string()))?;
         let mut session = Session::open(&project, &spec, &settings)?;
         if let Built::Compiled { .. } = session.built() {
@@ -218,8 +218,7 @@ impl RunCommand {
 
     /// CLI-04 AC 7 and 8: the flag, then `PIPERINE_BACKEND`, then the run's `backend` key, then
     /// `rust`. A flag that names no backend is a usage error; the variable or the key, a failure.
-    fn backend(&self, spec: &RunSpec) -> Result<Backend, Stop> {
-        let flag = self.overrides.backend.as_deref();
+    pub(crate) fn backend(flag: Option<&str>, spec: &RunSpec) -> Result<Backend, Stop> {
         if let Some(flag) = flag {
             Backend::parse(flag).map_err(Stop::Usage)?;
         }

@@ -1,0 +1,3 @@
+module Bad() {
+    flag: bool = 1.5;
+}

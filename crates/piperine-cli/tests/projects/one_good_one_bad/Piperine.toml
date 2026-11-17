@@ -1,0 +1,13 @@
+[package]
+name = "one_good_one_bad"
+version = "0.1.0"
+
+[run.good]
+analysis = "op"
+
+[run.bad]
+bench = "benches/bad.msl"
+analysis = "op"
+
+[run.also_good]
+analysis = "op"

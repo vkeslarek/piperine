@@ -45,6 +45,11 @@ fn piperine_in(dir: &Path, args: &[&str]) -> Output {
     piperine_with(dir, shared_cache(), None, args)
 }
 
+/// `piperine <args>` in `dir` with `PIPERINE_BACKEND` set to `backend`.
+fn piperine_on(dir: &Path, backend: &str, args: &[&str]) -> Output {
+    Command::new(binary()).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", shared_cache()).env("PIPERINE_BACKEND", backend).env_remove("PIPERINE_RUSTC").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()))
+}
+
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
@@ -153,4 +158,87 @@ fn check_takes_a_lone_file() {
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
     assert_eq!(text(&out.stdout), "");
     assert!(text(&out.stderr).contains("P0002") && text(&out.stderr).contains("bad.msl:2"), "{}", text(&out.stderr));
+}
+
+// ---- build (CLI-15) -------------------------------------------------------------------------
+
+#[test]
+fn build_prints_one_line_per_run() {
+    // CLI-15 AC 1: one line per run, in manifest order, `built <name>: compiled | cached |
+    // interp, nothing to compile`. On an empty cache the first Rust run of `rc` compiles; the
+    // second run has the same design (both name the bench's `Step`), so it is found cached.
+    let cache = tempfile::tempdir().expect("tmp");
+    let out = piperine_with(&rc(), cache.path(), None, &["build"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "built op: compiled\nbuilt step: cached\n");
+    // the interpreter has nothing to compile
+    let out = piperine_on(&fixture("two_runs"), "interp", &["build"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "built first: interp, nothing to compile\nbuilt second: interp, nothing to compile\n");
+    // a run named on the command line is the only one built
+    let out = piperine_on(&fixture("two_runs"), "interp", &["build", "second"]);
+    assert_eq!(text(&out.stdout), "built second: interp, nothing to compile\n");
+    // a name that is no run is a usage error
+    let out = piperine_on(&fixture("two_runs"), "interp", &["build", "third"]);
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out.stderr));
+}
+
+#[test]
+fn a_second_build_is_cached_and_compiles_nothing() {
+    // CLI-15 AC 2: the second build of an unchanged project says `cached` for every Rust run and
+    // invokes the compiler for no design. The compiler is a wrapper that logs every argument
+    // list and runs the real `rustc`; the first build logs at least one compile (an invocation
+    // that makes a library), the second logs none (the version probe that keys the cache is
+    // not a design build).
+    let cache = tempfile::tempdir().expect("tmp");
+    let tools = tempfile::tempdir().expect("tmp");
+    let log = tools.path().join("calls.log");
+    let wrapper = tools.path().join("rustc-wrapper");
+    std::fs::write(&wrapper, format!("#!/bin/sh\necho \"$*\" >> {}\nexec rustc \"$@\"\n", log.display())).expect("a wrapper");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).expect("executable");
+    }
+    let compiles = || std::fs::read_to_string(&log).unwrap_or_default().lines().filter(|l| l.contains("--crate-type")).count();
+    let wrapper = wrapper.to_str().expect("a path");
+    let first = piperine_with(&rc(), cache.path(), Some(wrapper), &["build"]);
+    assert_eq!(first.status.code(), Some(0), "{}", text(&first.stderr));
+    assert!(text(&first.stdout).contains("compiled"), "{}", text(&first.stdout));
+    let after_first = compiles();
+    assert!(after_first >= 1, "the first build compiled nothing: {}", std::fs::read_to_string(&log).unwrap_or_default());
+    let second = piperine_with(&rc(), cache.path(), Some(wrapper), &["build"]);
+    assert_eq!(second.status.code(), Some(0), "{}", text(&second.stderr));
+    assert_eq!(text(&second.stdout), "built op: cached\nbuilt step: cached\n");
+    assert_eq!(compiles(), after_first, "the second build invoked the compiler on a design");
+}
+
+#[test]
+fn verbose_prints_a_source_path_that_exists() {
+    // CLI-15 AC 3: after each compiled or cached line, a line with the path of the generated
+    // Rust source, and the file exists (the cached line too); an interpreted run has none
+    let cache = tempfile::tempdir().expect("tmp");
+    let out = piperine_with(&rc(), cache.path(), None, &["build", "--verbose"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 4, "{stdout}");
+    assert_eq!(lines[0], "built op: compiled");
+    assert_eq!(lines[2], "built step: cached");
+    for path in [lines[1], lines[3]] {
+        assert!(Path::new(path).is_file(), "`{path}` is not a file");
+        assert!(std::fs::read_to_string(path).expect("source").contains("fn "), "`{path}` holds no Rust");
+    }
+    let out = piperine_on(&fixture("two_runs"), "interp", &["build", "--verbose"]);
+    assert_eq!(text(&out.stdout), "built first: interp, nothing to compile\nbuilt second: interp, nothing to compile\n");
+}
+
+#[test]
+fn build_goes_on_after_a_failing_run_and_exits_1() {
+    // CLI-15 AC 4: the middle run fails its type check; its error is rendered on standard
+    // error, the runs before and after it are still built, and the exit code is 1
+    let out = piperine_on(&fixture("one_good_one_bad"), "interp", &["build"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "built good: interp, nothing to compile\nbuilt also_good: interp, nothing to compile\n");
+    let err = text(&out.stderr);
+    assert!(err.contains("P0002") && err.contains("bad.msl:2") && err.contains("error: typeck failed"), "{err}");
 }
