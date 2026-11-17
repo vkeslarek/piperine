@@ -1226,7 +1226,7 @@ Proof: run abitran | test two_jumps_in_one_restart_step_restart_from_the_later .
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:**
+**Dispatched:** Batch B1 (T1-T8) - Sonnet worker, 2026-11-17.
 **Walked:** none (no screen)
 
 ---
