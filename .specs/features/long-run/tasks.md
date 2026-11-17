@@ -467,10 +467,10 @@ T23
 
 **Done when**:
 
-- [ ] `the_buck_block_is_what_the_binary_prints`, `every_cli_listing_of_the_book_is_what_the_binary_prints` and `the_chapter_lists_commands_keys_flags_codes` pass unedited in `cargo test -p piperine-cli --test book`
-- [ ] `cargo test -p piperine-lang --test book` passes (the Book's `msl` blocks still parse)
-- [ ] Gate check passes: Quick (`Run clibook`)
-- [ ] Test count: no test added (the Book is held by the existing targets); no test removed or edited
+- [x] `the_buck_block_is_what_the_binary_prints`, `every_cli_listing_of_the_book_is_what_the_binary_prints` and `the_chapter_lists_commands_keys_flags_codes` pass unedited in `cargo test -p piperine-cli --test book`
+- [x] `cargo test -p piperine-lang --test book` passes (the Book's `msl` blocks still parse)
+- [x] Gate check passes: Quick (`Run clibook`)
+- [x] Test count: no test added (the Book is held by the existing targets); no test removed or edited
 
 **Tests**: e2e
 **Gate**: quick
