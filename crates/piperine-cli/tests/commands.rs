@@ -342,3 +342,104 @@ fn a_project_without_a_run_passes_with_zero() {
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(text(&out.stdout), "0 runs, 0 passed, 0 failed\n");
 }
+
+// ---- new (CLI-17) ---------------------------------------------------------------------------
+
+/// The files of a project, by path under `dir`, as (path, text), sorted.
+fn files_under(dir: &Path) -> Vec<(String, String)> {
+    fn walk(root: &Path, at: &Path, found: &mut Vec<(String, String)>) {
+        for entry in std::fs::read_dir(at).expect("a directory") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                walk(root, &path, found);
+            } else {
+                found.push((path.strip_prefix(root).expect("under root").to_string_lossy().into_owned(), std::fs::read_to_string(&path).expect("text")));
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(dir, dir, &mut found);
+    found.sort();
+    found
+}
+
+#[test]
+fn new_creates_the_four_files_and_says_created() {
+    // CLI-17 AC 1: the directory `<name>` holds `Piperine.toml`, `src/lib.msl`,
+    // `benches/step.msl` and `.gitignore`, and `created <name>` is printed
+    let tmp = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(tmp.path(), &["new", "demo"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "created demo\n");
+    let paths: Vec<String> = files_under(&tmp.path().join("demo")).into_iter().map(|(p, _)| p).collect();
+    assert_eq!(paths, [".gitignore", "Piperine.toml", "benches/step.msl", "src/lib.msl"]);
+}
+
+#[test]
+fn new_writes_the_rc_example_under_the_new_name() {
+    // CLI-17 AC 2: the files of `examples/rc` with the package name replaced by `<name>`
+    // (the manifest's `name` and the bench's `use`); every other byte is the example's, and a
+    // project named `rc` is the example itself
+    let tmp = tempfile::tempdir().expect("tmp");
+    assert_eq!(piperine_in(tmp.path(), &["new", "filter"]).status.code(), Some(0));
+    let want: Vec<(String, String)> = files_under(&rc())
+        .into_iter()
+        .map(|(path, text)| {
+            let text = text.replace("name = \"rc\"", "name = \"filter\"").replace("use rc::", "use filter::");
+            (path, text)
+        })
+        .collect();
+    assert_eq!(files_under(&tmp.path().join("filter")), want);
+    assert_eq!(piperine_in(tmp.path(), &["new", "rc"]).status.code(), Some(0));
+    assert_eq!(files_under(&tmp.path().join("rc")), files_under(&rc()));
+}
+
+#[test]
+fn new_refuses_an_existing_directory() {
+    // CLI-17 AC 3: nothing is written and the exit code is 1; what was there is untouched
+    let tmp = tempfile::tempdir().expect("tmp");
+    let dir = tmp.path().join("demo");
+    std::fs::create_dir(&dir).expect("a directory");
+    std::fs::write(dir.join("mine.txt"), "keep").expect("a file");
+    let out = piperine_in(tmp.path(), &["new", "demo"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(text(&out.stdout), "");
+    assert!(text(&out.stderr).contains("`demo` already exists"), "{}", text(&out.stderr));
+    assert_eq!(files_under(&dir), [("mine.txt".to_string(), "keep".to_string())]);
+}
+
+#[test]
+fn new_refuses_a_name_the_manifest_rule_forbids() {
+    // CLI-17 AC 4: a hyphen, a leading digit, a keyword and `std` are no package names; each
+    // writes nothing, exits 1 and states the rule
+    let tmp = tempfile::tempdir().expect("tmp");
+    for name in ["my-filter", "1filter", "module", "std", "a/b"] {
+        let out = piperine_in(tmp.path(), &["new", name]);
+        assert_eq!(out.status.code(), Some(1), "{name}: {}", text(&out.stderr));
+        assert_eq!(text(&out.stdout), "", "{name}");
+        assert!(text(&out.stderr).contains(&format!("`{name}` is not a package name")) && text(&out.stderr).contains("one identifier"), "{name}: {}", text(&out.stderr));
+    }
+    assert_eq!(std::fs::read_dir(tmp.path()).expect("a directory").count(), 0, "a refused name wrote something");
+}
+
+#[test]
+fn a_new_project_checks_runs_and_tests() {
+    // CLI-17 AC 5: in a project `new` created, `check`, `run step` and `test` each exit 0
+    let tmp = tempfile::tempdir().expect("tmp");
+    assert_eq!(piperine_in(tmp.path(), &["new", "demo"]).status.code(), Some(0));
+    let dir = tmp.path().join("demo");
+    for args in [&["check"][..], &["run", "step"], &["test"]] {
+        let out = piperine_in(&dir, args);
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", text(&out.stderr));
+    }
+    assert_eq!(text(&piperine_in(&dir, &["check"]).stdout), "ok: demo (2 crates, 2 runs)\n");
+}
+
+#[test]
+fn new_without_a_name_exits_2() {
+    // CLI-01 AC 7: `new` takes one required name; none is a usage error
+    let tmp = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(tmp.path(), &["new"]);
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out.stderr));
+    assert_eq!(std::fs::read_dir(tmp.path()).expect("a directory").count(), 0);
+}

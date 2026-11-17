@@ -4,10 +4,12 @@
 //! - [`run`]: `piperine run`.
 //! - [`check`]: `piperine check`.
 //! - [`build`]: `piperine build`.
+//! - [`new`]: `piperine new`.
 //! - [`test`]: `piperine test`.
 
 pub mod build;
 pub mod check;
+pub mod new;
 pub mod run;
 pub mod test;
 
