@@ -1303,7 +1303,7 @@ Proof: `cargo test -p piperine-parity --test parity_op --test parity_dc --test p
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:**
+**Dispatched:** Batch 1 (phase 1, T1-T7) - Sonnet worker, 2026-11-17.
 **Walked:** none
 
 ---
