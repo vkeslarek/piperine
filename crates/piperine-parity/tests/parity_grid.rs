@@ -76,6 +76,9 @@ fn the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports() {
         for (time, _) in &rows {
             assert!(row_at(&table, *time, print_step).is_some(), "{}: no grid row within 1e-9 * {print_step:e} s of ngspice's time {time:e} s", backend.name());
         }
+        // the proof line of C45: only a run that compared prints it, a skipped reference returns
+        // above before any
+        println!("tran_rc grid on {}: {} rows matched", backend.name(), rows.len());
     }
 }
 
@@ -94,7 +97,8 @@ fn tran_rc_on_the_grid_agrees_with_ngspice() {
             ToleranceContract::TRAN_VOLTAGE.assert(&at, *wanted, real(&row[1]));
             worst = worst.max((real(&row[1]) - wanted).abs());
         }
-        eprintln!("tran_rc on {}: {} pairs, largest |v(out)| deviation from ngspice {worst:e} V", backend.name(), rows.len());
+        // the proof line of C46: only a run that compared prints it
+        println!("tran_rc on {}: {} pairs, largest |v(out)| deviation from ngspice {worst:e} V", backend.name(), rows.len());
     }
 }
 

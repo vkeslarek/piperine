@@ -21,7 +21,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run memory**: `cargo test -p piperine-api --test memory`
 **Run bucklong**: `cargo test -p piperine-api --test buck_long`
 **Run parity**: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus`
-**Run paritygrid**: `cargo test -p piperine-parity --test parity_grid`
+**Run paritygrid**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_grid -- --nocapture`
 **Run clilib**: `cargo test -p piperine-cli --lib`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run run**: `cargo test -p piperine-cli --test run`
@@ -797,10 +797,10 @@ Proof: run baseline | test parity_rc_transient ... ok
 Proof: `git diff --quiet a5f23ea4 -- crates/piperine-parity/src crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_corpus.rs crates/piperine-solver/tests/parity_baseline.rs tests/ngspice`
 
 **C45** - Every row of ngspice's export of `tran_rc` has a grid row within `1e-9 * print_step` of its time. (LR-15, AC 1; T18)
-Proof: run paritygrid | test the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports ... ok
+Proof: run paritygrid | tran_rc grid on rust: 100 rows matched
 
 **C46** - `v(out)` of each paired row agrees with ngspice under `TRAN_VOLTAGE`, with no interpolation in the test. (LR-15, AC 2; T18)
-Proof: run paritygrid | test tran_rc_on_the_grid_agrees_with_ngspice ... ok
+Proof: run paritygrid | tran_rc on rust: 100 pairs
 
 **C47** - With the comparison disabled the twin still runs. (LR-15, AC 3; T18)
 Proof: run paritygrid | test a_skipped_reference_still_runs_the_twin ... ok
