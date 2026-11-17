@@ -8,7 +8,7 @@
 
 use piperine_abi::raw::{ambient, op, watch};
 
-use super::ddt::{History, Stage, stamp_ddt};
+use super::ddt::{History, Stage, companion_current, stamp_ddt};
 use super::delay::{Delayed, stamp_delay};
 use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
@@ -17,6 +17,7 @@ use super::watch::{Accepted, TraceRecord, Watched, accept_watches, record_traces
 use super::small_signal::{ComplexStamps, NoiseColumn, noise_columns, response, stamp_matrix, stimulus};
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
 use crate::error::{Error, RunCode, SolverDomain};
+use crate::math::integration::DdtState;
 use crate::math::linear::Stamp;
 use crate::netlist::AnalogReference;
 
@@ -122,6 +123,9 @@ pub struct Assembly {
     traces: Vec<TraceRecord>,
     /// Newton iterations since the last recorded converged solve.
     iteration: u64,
+    /// The transient stage of the last assembly (`None` after an equilibrium one): the stage the
+    /// next converged solve's companion currents belong to.
+    stage: Option<Stage>,
 }
 
 impl Assembly {
@@ -148,7 +152,7 @@ impl Assembly {
                 watched: vec![Watched::default(); inst.watches.len()],
             })
             .collect();
-        Assembly { written: vec![false; slots.len()], previous: slots.clone(), slots, plan, state, scratch: Vec::new(), traces: Vec::new(), iteration: 0 }
+        Assembly { written: vec![false; slots.len()], previous: slots.clone(), slots, plan, state, scratch: Vec::new(), traces: Vec::new(), iteration: 0, stage: None }
     }
 
     /// The plan this assembly runs.
@@ -342,6 +346,7 @@ impl Assembly {
         stage: Option<Stage>,
     ) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
         self.evaluate(x, amb)?;
+        self.stage = stage;
         let mut out = Vec::new();
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
             for (ti, t) in inst.terms.iter().enumerate() {
@@ -413,15 +418,38 @@ impl Assembly {
     pub fn push_stage(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
         self.evaluate_for(x, amb, Need { small_signal: true, ..Need::NEWTON })?;
         self.iteration = 0;
+        let stage = self.stage.take();
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DDT {
                     let q = linear(t, inst, st).v;
-                    st.ddt[ti].push(q);
+                    let i = stage.map_or(0.0, |stage| companion_current(stage, q, &st.ddt[ti]));
+                    st.ddt[ti].push(q, i);
                 }
             }
         }
         Ok(())
+    }
+
+    /// The `DDT` states of the step the last two stages completed: per term, its value at `t_n`,
+    /// `t_{n+γ}` and `t_{n+1}` (the three newest history rows), its companion current at `t_n`
+    /// and `t_{n+1}`, and its own `abstol` when the instance gave a finite positive one. What the
+    /// truncation test measures (§15.2 rule 1, §17.2 Resolution); a row no stage produced reads
+    /// 0 for its current.
+    pub fn ddt_states(&self) -> Vec<DdtState> {
+        let mut out = Vec::new();
+        for (inst, st) in self.plan.instances.iter().zip(&self.state) {
+            for (ti, t) in inst.terms.iter().enumerate().filter(|(_, t)| t.op == op::DDT) {
+                let h = &st.ddt[ti];
+                let abstol = t.abstol.map(|s| f64::from_le_bytes(self.slots[s][..8].try_into().expect("an F64 at byte 0")));
+                out.push(DdtState {
+                    q: [h.back(3), h.back(2), h.back(1)],
+                    i: [h.current_back(3), h.current_back(1)],
+                    abstol: abstol.filter(|a| a.is_finite() && *a > 0.0),
+                });
+            }
+        }
+        out
     }
 
     /// `∂F/∂param` of one instance at the equilibrium iterate `x` (abi.md §10

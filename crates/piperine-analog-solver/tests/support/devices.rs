@@ -278,6 +278,46 @@ impl Device for Capacitor {
     }
 }
 
+/// A capacitor whose `DDT` term gives its own `abstol` (§14).
+/// pins: c=0, tol=1 (PARAM F64); p=2, n=3 (PORT)      terms: T0 DDT{p,n} "q", abstol = tol
+pub struct TightCapacitor;
+static TIGHT_CAPACITOR: OnceLock<ShapeRef> = OnceLock::new();
+
+fn tight_capacitor_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let c = s.pin(param("c"));
+    let tol = s.pin(param("tol"));
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(TermSpec { abstol: tol, ..flow("q", op::DDT, p, n) });
+    s.function(FunctionSpec {
+        name: "q",
+        reads: vec![pin(p), pin(n), pin(c)],
+        writes: vec![term(t0)],
+        partials: vec![partial(0, 0), partial(0, 1), partial(0, 2)],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for TightCapacitor {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&TIGHT_CAPACITOR, tight_capacitor_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((TightCapacitor, Arc::clone(shared(&TIGHT_CAPACITOR, tight_capacitor_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (v, c) = (cx.f64(0) - cx.f64(1), cx.f64(2));
+        cx.set(0, c * v);
+        cx.jac().copy_from_slice(&[c, -c, v]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
 // ─── 11.4 D flip-flop ───────────────────────────────────────────────────────
 
 /// pins: clk=0, d=1 (PORT BIT);  q=2 (PORT BIT, init LOW);  rise=3 (PRIVATE event)
@@ -440,7 +480,7 @@ impl Device for Dac {
 
 /// One module per fixture type, built once.
 pub fn modules() -> Modules {
-    static M: [OnceLock<Module>; 28] = [const { OnceLock::new() }; 28];
+    static M: [OnceLock<Module>; 29] = [const { OnceLock::new() }; 29];
     Modules {
         resistor: module_of::<Resistor>(&M[0], "Resistor"),
         diode: module_of::<Diode>(&M[1], "Diode"),
@@ -470,6 +510,7 @@ pub fn modules() -> Modules {
         tracer: module_of::<Tracer>(&M[25], "Tracer"),
         sample_hold: module_of::<SampleHold>(&M[26], "SampleHold"),
         charge_diode: module_of::<ChargeDiode>(&M[27], "ChargeDiode"),
+        tight_capacitor: module_of::<TightCapacitor>(&M[28], "TightCapacitor"),
     }
 }
 
@@ -504,6 +545,7 @@ pub struct Modules {
     pub tracer: &'static Module,
     pub sample_hold: &'static Module,
     pub charge_diode: &'static Module,
+    pub tight_capacitor: &'static Module,
 }
 
 /// pins: k=0 (PARAM F64); p=1, n=2 (PORT continuous)

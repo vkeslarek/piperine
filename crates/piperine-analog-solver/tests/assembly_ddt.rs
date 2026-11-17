@@ -267,3 +267,46 @@ fn the_ddt_history_holds_the_charge_at_the_solution() {
     );
     close(a.1[0], b.1[0], 1e-12, "the right side reads the history row: q(x), not its linearization");
 }
+
+/// A capacitor with its own `abstol` of 2e-12 (pin 1) between unknowns 0 and 1.
+fn tight_capacitor() -> Assembly {
+    let m = modules();
+    let (net, n) = netlist(2, &[]);
+    let c = instance("c1", m.tight_capacitor, vec![Discrete(0), Discrete(1), at(&n[0]), at(&n[1])]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    asm.set_discrete(0, &f64_bytes(C));
+    asm.set_discrete(1, &f64_bytes(2e-12));
+    asm
+}
+
+#[test]
+fn the_assembly_reports_each_ddt_state_after_a_step() {
+    // The operating point's two equilibrium rows, then one step driven by hand: the trapezoidal
+    // stage (restarted, prev_h = 0: backward Euler over γh) at x_g, the BDF2 stage at x_1. Each
+    // state is the term's value at t_n, t_{n+γ}, t_{n+1} and its companion current at t_n (0: the
+    // operating point is no stage) and t_{n+1}: c0·q_{n+1} + c1·q_{n+γ} + c2·q_n of
+    // `phase_coeffs(Bdf2, h)` (abi.md §4.3), computed here.
+    let (x_op, x_g, x_1) = ([0.50, 0.10], [0.62, 0.11], [0.80, 0.15]);
+    let h = 2e-6;
+    let q = |x: &[f64; 2]| C * (x[0] - x[1]);
+    for (module, expected_abstol) in [(capacitor(), None), (tight_capacitor(), Some(2e-12))] {
+        let mut asm = module;
+        asm.assemble_dc(&x_op, at_rest()).expect("the equilibrium solve");
+        asm.push_stage(&x_op, at_rest()).expect("push the operating point");
+        asm.push_stage(&x_op, at_rest()).expect("push the operating point");
+        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 0.0 };
+        asm.assemble_tran(&x_g, at_time(TrBdf2::GAMMA * h), trap).expect("trapezoidal stage");
+        asm.push_stage(&x_g, at_time(TrBdf2::GAMMA * h)).expect("push the trapezoidal stage");
+        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h, prev_h: 0.0 };
+        asm.assemble_tran(&x_1, at_time(h), bdf2).expect("BDF2 stage");
+        asm.push_stage(&x_1, at_time(h)).expect("push the BDF2 stage");
+
+        let states = asm.ddt_states();
+        assert_eq!(states.len(), 1, "one DDT term");
+        let (c0, c1, c2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, h);
+        let i_end = c0 * q(&x_1) + c1 * q(&x_g) + c2 * q(&x_op);
+        assert_eq!(states[0].q, [q(&x_op), q(&x_g), q(&x_1)], "the state at t_n, t_n+γ, t_n+1");
+        assert_eq!(states[0].i, [0.0, i_end], "the current at t_n (the operating point) and t_n+1");
+        assert_eq!(states[0].abstol, expected_abstol, "the term's own abstol, when it has one");
+    }
+}

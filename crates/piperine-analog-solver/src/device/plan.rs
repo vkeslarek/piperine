@@ -104,6 +104,8 @@ pub(crate) struct TermPlan {
     pub td: Option<(usize, usize)>,
     /// The discrete slot of a `DELAY` term's `max`; `None`: unbounded.
     pub max: Option<usize>,
+    /// The discrete slot of a `DDT` term's own `abstol`; `None`: the run's flow `abstol`.
+    pub abstol: Option<usize>,
     /// `(partial, column)`: partials of the value against a continuous pin.
     pub direct: Vec<(usize, AnalogReference)>,
     /// `(partial, input)`: partials of the value against a held input's `VALUE`.
@@ -320,6 +322,10 @@ fn bind_instance(
             Some(AnalogBinding::Discrete(s)) if t.max != DEFAULT => Some(*s as usize),
             _ => None,
         };
+        let abstol = match pins.get(t.abstol as usize) {
+            Some(AnalogBinding::Discrete(s)) if t.abstol != DEFAULT => Some(*s as usize),
+            _ => None,
+        };
         terms.push(TermPlan {
             name: t.name.as_str().into(),
             origin: t.origin.as_str().into(),
@@ -329,6 +335,7 @@ fn bind_instance(
             value: None,
             td: None,
             max,
+            abstol,
             direct: Vec::new(),
             via: Vec::new(),
         });

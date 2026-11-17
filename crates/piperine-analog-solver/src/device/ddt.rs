@@ -26,18 +26,27 @@ pub struct Stage {
 }
 
 /// The accepted values of one `DDT` term, newest first: lookbacks 1 to 3, as
-/// a transient Newton buffer of depth 4 holds them behind its iterate.
+/// a transient Newton buffer of depth 4 holds them behind its iterate, each with the
+/// companion current (the term's derivative) its stage computed there: 0 for a row no stage
+/// produced (an operating point, an initial condition).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct History {
     q: [f64; 3],
+    i: [f64; 3],
     len: usize,
 }
 
 impl History {
-    /// Records the value of a converged solve.
-    pub fn push(&mut self, q: f64) {
+    /// Records the value of a converged solve and the companion current at it.
+    pub fn push(&mut self, q: f64, i: f64) {
         self.q = [q, self.q[0], self.q[1]];
+        self.i = [i, self.i[0], self.i[1]];
         self.len = (self.len + 1).min(3);
+    }
+
+    /// The companion current `lookback` (1 to 3) solves back; 0 when the history is shorter.
+    pub fn current_back(&self, lookback: usize) -> f64 {
+        if lookback <= self.len { self.i[lookback - 1] } else { 0.0 }
     }
 
     /// The value `lookback` (1 to 3) solves back; 0 when the history is
@@ -45,6 +54,22 @@ impl History {
     pub fn back(&self, lookback: usize) -> f64 {
         if lookback <= self.len { self.q[lookback - 1] } else { 0.0 }
     }
+}
+
+/// The companion current `i = c0·q + c1·q₁ + c2·q₂` of a term whose value at the solve of `stage`
+/// is `q` (minus the previous BDF2 derivative in a trapezoidal stage after a regular step); 0
+/// when the step is not positive.
+pub(crate) fn companion_current(stage: Stage, q: f64, hist: &History) -> f64 {
+    if stage.h <= 0.0 {
+        return 0.0;
+    }
+    let (c0, c1, c2) = TrBdf2::stage_coeffs(stage.phase, stage.h, stage.prev_h);
+    let mut i = c0 * q + c1 * hist.back(1) + c2 * hist.back(2);
+    if matches!(stage.phase, TrBdf2Phase::Trapezoidal) && stage.prev_h > 0.0 {
+        let (d0, d1, d2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, stage.prev_h);
+        i -= d0 * hist.back(1) + d1 * hist.back(2) + d2 * hist.back(3);
+    }
+    i
 }
 
 /// The companion stamps of a `DDT` term of value `lin.v = q` at iterate `x`:
@@ -64,11 +89,7 @@ pub(crate) fn stamp_ddt(
         stamp_rows(t, lin, 0.0, 0.0, out);
         return;
     }
-    let (c0, c1, c2) = TrBdf2::stage_coeffs(stage.phase, stage.h, stage.prev_h);
-    let mut i = c0 * lin.v + c1 * hist.back(1) + c2 * hist.back(2);
-    if matches!(stage.phase, TrBdf2Phase::Trapezoidal) && stage.prev_h > 0.0 {
-        let (d0, d1, d2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, stage.prev_h);
-        i -= d0 * hist.back(1) + d1 * hist.back(2) + d2 * hist.back(3);
-    }
+    let (c0, ..) = TrBdf2::stage_coeffs(stage.phase, stage.h, stage.prev_h);
+    let i = companion_current(stage, lin.v, hist);
     stamp_rows(t, lin, c0, c0 * lin.dot(x) - i, out);
 }

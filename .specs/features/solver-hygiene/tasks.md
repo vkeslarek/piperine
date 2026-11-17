@@ -587,8 +587,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_assembly_reports_each_ddt_state_after_a_step` passes under `**Run analogddt**`
-- [ ] Gate check passes: Quick
+- [x] `the_assembly_reports_each_ddt_state_after_a_step` passes under `**Run analogddt**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
