@@ -1,13 +1,13 @@
-//! The closed-loop start of the buck converter (SPEC §2, §7, §8, §10), as two benches over the
-//! package: `Startup` writes the setpoint code 0 (0.8 V) and then raises `en`, with Vin 12 V into
-//! the 6.6 ohm load of `Buck`'s defaults; `Idle` never raises `en`, so the supervisor stays `Off`.
+//! The closed-loop start of the buck converter, as two benches over the package: `Startup`
+//! writes the setpoint code 0 (0.8 V) and then raises `en`, with Vin 12 V into the 6.6 ohm load
+//! of `Buck`'s defaults; `Idle` never raises `en`, so the supervisor stays `Off`.
 use buck::dpwm::Osc;
 use buck::top::Buck;
 use buck::{Fault, Mode};
 
 /// The host's two writes, on a 1 MHz clock (rising at 0.5 us, 1.5 us, ...): `sp_wr` rises at the
-/// first edge with `sp_data` 0 already presented (SPEC §7.1: the register takes it on the
-/// rising `wr`), and `en` rises at the second.
+/// first edge with `sp_data` 0 already presented (the setpoint register takes it on the rising
+/// `wr`), and `en` rises at the second.
 module Host(in clk: Bit, out sp_wr: Bit = false, out en: Bit = false) {
     signal n: Bit<u8> = 0;
 }

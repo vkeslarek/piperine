@@ -291,3 +291,48 @@ fn the_book_says_transient() {
     assert!(!html.contains("<code>Dc</code>, <code>Tran</code>"), "the analysis kinds are Dc, Transient, Ac and Noise");
     assert!(html.contains("<code>Dc</code>, <code>Transient</code>"), "the analysis kinds name `Transient`");
 }
+
+// ---- the chapter "The command line" (feature `msl-cli`, CLI-19 AC 1 and 13) -------------------------
+
+#[test]
+fn the_cli_chapter_sits_between_compiler_and_cheatsheet() {
+    // CLI-19 AC 1: the chapter `cli`, titled `The command line`, after `compiler` and before
+    // `cheatsheet`; between it and the cheat sheet stands `structure` (the Book's order, settled
+    // mid-build: the command line 16, how Piperine is organized 17, the cheat sheet 18); the
+    // chapter numbers are consecutive from 1
+    let html = content();
+    let ids = chapter_ids(&html);
+    let tail: Vec<&str> = ids.iter().rev().take(4).rev().map(String::as_str).collect();
+    assert_eq!(tail, ["compiler", "cli", "structure", "cheatsheet"], "{ids:?}");
+    assert!(chapter(&html, "cli").contains("<h2>The command line</h2>"), "the title");
+    let numbers: Vec<usize> = html
+        .split("<p class=\"ch-num\">Chapter ")
+        .skip(1)
+        .map(|s| s.split_once('<').expect("the label closes").0.parse().expect("a chapter number"))
+        .collect();
+    assert_eq!(numbers, (1..=ids.len()).collect::<Vec<_>>(), "chapter numbers are consecutive from 1");
+    assert_eq!(ids.len(), 18, "{ids:?}");
+}
+
+#[test]
+fn the_welcome_chapter_says_a_bench_is_msl() {
+    // CLI-19 AC 13: chapter 1 says a bench is written in MSL and that sweeps, Monte Carlo and
+    // optimization live in the host, and no sentence of it says testbenches or stimulus do not
+    // live in MSL
+    let text = plain(&chapter(&content(), "welcome"));
+    let sentences: Vec<&str> = text.split(". ").collect();
+    assert!(sentences.iter().any(|s| s.contains("bench") && s.contains("written in MSL")), "a sentence says a bench is written in MSL");
+    assert!(
+        sentences.iter().any(|s| s.contains("Sweeps") && s.contains("Monte Carlo") && s.contains("optimization") && s.contains("host")),
+        "a sentence says sweeps, Monte Carlo and optimization live in the host"
+    );
+    let negations = [" not ", " no ", "outside", "never"];
+    let denies: Vec<&&str> = sentences
+        .iter()
+        .filter(|s| {
+            let lower = s.to_lowercase();
+            (lower.contains("testbench") || lower.contains("stimulus")) && lower.contains("msl") && negations.iter().any(|n| lower.contains(n))
+        })
+        .collect();
+    assert!(denies.is_empty(), "a sentence says testbenches or stimulus do not live in MSL: {denies:?}");
+}

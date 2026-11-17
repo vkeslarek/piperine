@@ -54,28 +54,44 @@ cd rc</pre>
 └── benches/
     └── step.msl           a bench: the circuit, its source and a monitor</pre>
 
-<p>The <strong>library</strong> holds the parts. The resistor you just read is the first of three:</p>
+<p>The <strong>library</strong> holds the parts. The resistor you just read is the first of three. This is <code>src/lib.msl</code>:</p>
 
-<pre data-lang="msl">// src/lib.msl
-/// Ideal resistor.
-pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
-analog for Resistor { i(p, n) +> v(p, n) / r; }
+<pre data-lang="msl">/// Ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+
+analog for Resistor {
+    i(p, n) +> v(p, n) / r;
+}
 
 /// Ideal capacitor.
-pub module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
-analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+pub module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c > 0.0;
+}
+
+analog for Capacitor {
+    i(p, n) +> ddt(c * v(p, n));
+}
 
 /// A constant voltage from `p` to `n`.
-pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
-analog for Vsource { v(p, n) +> dc; }</pre>
+pub module Vsource(p: Electrical, n: Electrical) {
+    dc: f64 = 1.0;
+}
 
-<p>The <strong>bench</strong> is the circuit you actually simulate: a module with no ports that places the parts, wires them together and watches them. A bench is written in MSL, like everything else.</p>
+analog for Vsource {
+    v(p, n) +> dc;
+}</pre>
 
-<pre data-lang="msl">// benches/step.msl
-use rc::{Capacitor, Resistor, Vsource};
+<p>The <strong>bench</strong> is the circuit you actually simulate: a module with no ports that places the parts, wires them together and watches them. A bench is written in MSL, like everything else. This is <code>benches/step.msl</code>:</p>
+
+<pre data-lang="msl">use rc::{Capacitor, Resistor, Vsource};
 
 /// Writes a record when `a` rises through `level`.
-module Monitor(a: Electrical) { level: f64 = 0.5; }
+module Monitor(a: Electrical) {
+    level: f64 = 0.5;
+}
+
 digital for Monitor {
     on cross(v(a) - level) {
         emit!("trip", v = v(a));
@@ -93,7 +109,7 @@ module Step() {
     let mon = Monitor(vout);
 }</pre>
 
-<p>The <strong>manifest</strong> names the package and describes its <strong>runs</strong>. A run is a bench plus an analysis:</p>
+<p>The <strong>manifest</strong>, <code>Piperine.toml</code>, names the package and describes its <strong>runs</strong>. A run is a bench plus an analysis:</p>
 
 <pre data-lang="toml">[package]
 name = "rc"
@@ -126,18 +142,17 @@ Step.vout  1.000000e0</pre>
 <pre data-lang="sh">piperine run step</pre>
 
 <pre data-lang="text" data-cli-output="piperine run step" data-cli-project="rc">run step: transient, top Step, backend rust
-@6.931472e-7 Step.mon trip v=5.000000e-1
-@6.931472e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
+@6.931075e-7 Step.mon trip v=5.000000e-1
 
 time         Step.vin    Step.vout
 0.000000e0   1.000000e0  0.000000e0
-1.000000e-6  1.000000e0  6.321206e-1
-2.000000e-6  1.000000e0  8.646647e-1
-3.000000e-6  1.000000e0  9.502129e-1
-4.000000e-6  1.000000e0  9.816844e-1
-5.000000e-6  1.000000e0  9.932621e-1</pre>
+1.000000e-6  1.000000e0  6.320926e-1
+2.000000e-6  1.000000e0  8.646682e-1
+3.000000e-6  1.000000e0  9.502193e-1
+4.000000e-6  1.000000e0  9.816886e-1
+5.000000e-6  1.000000e0  9.932653e-1</pre>
 
-<p>That is a capacitor charging through a resistor: 63&nbsp;% after one time constant <code>r · c</code> = 1&nbsp;µs, 86&nbsp;% after two. The two lines that start with <code>@</code> are the bench talking: its monitor saw the output pass 0.5&nbsp;V at 693&nbsp;ns, which is 1&nbsp;µs&nbsp;·&nbsp;ln&nbsp;2, exactly where the theory puts it. You will learn to write such lines in a moment.</p>
+<p>That is a capacitor charging through a resistor: 63&nbsp;% after one time constant <code>r · c</code> = 1&nbsp;µs, 86&nbsp;% after two. The line that starts with <code>@</code> is the bench talking: its monitor saw the output pass 0.5&nbsp;V at 693.1&nbsp;ns. The theory puts it at 1&nbsp;µs&nbsp;·&nbsp;ln&nbsp;2 = 693.147&nbsp;ns; the solver locates the crossing to within its time tolerance, here 0.04&nbsp;ns early. The numbers in the table are the solver's too, so they agree with 1&nbsp;−&nbsp;e<sup>−t/τ</sup> to about four digits, not to the last one. You will learn to write such lines in a moment.</p>
 
 <p>The first time a design runs, the command compiles it, and says so on a separate line that is not part of the result. Later runs of an unchanged design start at once. Chapter 16 is the full reference of the command; from here on, every chapter tells you how to run its example.</p>
 
@@ -176,14 +191,23 @@ digital for Monitor {
 <li><strong><code>cross(e)</code></strong> is an event that fires when the expression <code>e</code> goes from negative to positive. The solver finds the time of the crossing for you; it is not rounded to a time step.</li>
 <li><strong><code>"trip"</code></strong> is the name of a <strong>stream</strong>: an ordered list of records. It must be a string literal.</li>
 <li><strong><code>v = v(a)</code></strong> is a <strong>field</strong>: a name, <code>=</code>, any value. An <code>emit!</code> takes as many as you like. There is no format string. Each field keeps its type.</li>
-<li><strong><code>require(name, pass)</code></strong> is a check. It is a library function that itself calls <code>emit!</code>, on the stream <code>checks</code>, which is why it showed up as a second record.</li>
+<li><strong><code>require(name, pass)</code></strong> is a check. It is a library function that itself calls <code>emit!</code>, on the stream <code>checks</code>. A check that passes is not printed unless you ask for it, which is why the run above shows only the <code>trip</code> record.</li>
 </ul>
 
 <p>Each record is printed as one line, the moment it is written:</p>
 
-<pre data-lang="text" data-cli-output="piperine run step --stream trip" data-cli-project="rc" data-cli-lines="2">@6.931472e-7 Step.mon trip v=5.000000e-1</pre>
+<pre data-lang="text" data-cli-output="piperine run step --stream trip" data-cli-project="rc" data-cli-lines="2">@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
 
 <p>The line has four parts: <code>@</code> and the time, the path of the instance that wrote the record, the stream name, and the fields. You wrote only the last two; where and when come for free. Two monitors on two nodes never mix their records, because each has its own path.</p>
+
+<p>A design full of checks would bury its own prints under passing checks: a monitor that checks every clock edge writes one record per edge. So the terminal shows a <code>checks</code> record only when it fails, or when its <code>pass</code> is unknown. To see the passing ones too, add <code>--all-checks</code>:</p>
+
+<pre data-lang="sh">piperine run step --all-checks</pre>
+
+<pre data-lang="text" data-cli-output="piperine run step --all-checks" data-cli-project="rc" data-cli-lines="2-3">@6.931075e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
+@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
+
+<p>Both records belong to the same instant, and they come in the order the solver hands them over, which here puts the check first. The filter is for your eyes only: a records file (chapter 16) keeps every record, and <code>piperine test</code> counts every check, passing or not.</p>
 
 <p>When a design prints more than you want to read, keep one stream:</p>
 
@@ -203,6 +227,7 @@ digital for Monitor {
 
 <p>The first bench got its step for free, from an initial value. A real stimulus changes during the run. Add a second bench to the project, with a source that switches on at 1&nbsp;µs:</p>
 
+<!-- cli-file: rc/benches/delayed.msl -->
 <pre data-lang="msl">// benches/delayed.msl
 use rc::{Capacitor, Resistor};
 
@@ -223,21 +248,21 @@ module Delayed() {
     let c1 = Capacitor(vout, gnd) { c: 1n };
 }
 digital for Delayed {
-    on above(v(vout) - (1.0 - 1.0 / E)) {
+    on cross(v(vout) - (1.0 - 1.0 / E)) {
         emit!("tau", t = now(), vout = v(vout));
     }
 }</pre>
 
 <p><code>StepSource</code> is a mixed-signal module, and a tiny one. It has a piece of digital state, <code>signal fired: Bit = false</code>: a one-bit register that starts low. Its reaction, <code>on at(t0) { fired &lt;- true; }</code>, means "when time reaches <code>t0</code>, set <code>fired</code>". The arrow <code>&lt;-</code> is a <strong>commit</strong>. Its <code>analog</code> block reads that bit: <code>v(p) +&gt; …</code> with one node means "from <code>p</code> to ground", and <code>fired.high()</code> is true when the bit is known and high.</p>
 
-<p>The bench has a reaction of its own this time. <code>above</code> is <code>cross</code> that also fires at the start if the expression is already positive, and <code>E</code> is the constant <em>e</em>: the record is written when <code>vout</code> reaches 63.2&nbsp;% of the step. A bench outside the manifest runs by its file name, with flags in place of the run table's keys:</p>
+<p>The bench has a reaction of its own this time, on a crossing again, and <code>E</code> is the constant <em>e</em>: the record is written when <code>vout</code> rises through 63.2&nbsp;% of the step. A bench outside the manifest runs by its file name, with flags in place of the run table's keys:</p>
 
 <pre data-lang="sh">piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6</pre>
 
 <pre data-lang="text" data-cli-output="piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6" data-cli-project="rc" data-cli-lines="1-2">run delayed: transient, top Delayed, backend rust
-@2.000000e-6 Delayed tau t=2.000000e-6 vout=6.321206e-1</pre>
+@2.000428e-6 Delayed tau t=2.000428e-6 vout=6.321206e-1</pre>
 
-<p>One time constant after the step, to the digit. To keep the run, give it a table in <code>Piperine.toml</code>; every flag has a key of the same name:</p>
+<p>One time constant after the step: <code>vout</code> is 1&nbsp;−&nbsp;1/<em>e</em> to the digit, at 0.4&nbsp;ns past 2&nbsp;µs. To keep the run, give it a table in <code>Piperine.toml</code>; every flag has a key of the same name:</p>
 
 <pre data-lang="toml">[run.delayed]
 bench = "benches/delayed.msl"
@@ -286,7 +311,7 @@ print_step = 1e-6</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 13 and 14). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 15). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. Parts of the analog language beyond that first set (noise, <code>idt</code>, <code>delay</code>) are still refused by name. The <code>piperine</code> command line of this book is being built now, and the output shown under each command is what it is specified to print. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 13 and 14). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 15). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, noise, <code>idt</code>, <code>delay</code> and math methods such as <code>sin</code>; elsewhere, generic modules, params of an integer type, resolved natures such as <code>Wire</code> and the <code>settle</code> event. When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -347,6 +372,7 @@ fn mean(xs: &[f64]) -> f64 {
 
 <p>Here is a complete file: a clock, a counter and a top that connects them. It is the "blinky" of this book.</p>
 
+<!-- cli-file: blinky.msl -->
 <pre data-lang="msl">/// A free-running clock of frequency `f`.
 module Osc(out clk: Bit = false) {
     f: f64 = 1M where f > 0.0;
@@ -404,7 +430,7 @@ module Blinky() {
 @5.000000e-7 Blinky.ctr edge t=5.000000e-7 count=0
 @1.500000e-6 Blinky.ctr edge t=1.500000e-6 count=1
 @2.500000e-6 Blinky.ctr edge t=2.500000e-6 count=2</pre>
-  <p>These are the three records of the table above, as the command prints them: one line each, live. After them comes a table with the columns <code>Blinky.clk</code> and <code>Blinky.count</code>, the signals of the top.</p>
+  <p>These are the three records of the table above, as the command prints them: one line each, live. After them comes a table with the columns <code>Blinky.clk</code> and <code>Blinky.count</code>, the signals of the top. (Today that table is not right yet for a design with no analog node: it holds a single row, at time 0, with the values of the end of the run. The records are right; read them.)</p>
 </div>
 
 <p>Coming from Rust, this is how the two compare:</p>
@@ -583,6 +609,7 @@ enum Zone { Under, Ok, Over }</pre>
 
 <p>Put a type, a function and a module together. This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window. The source is a ramp of 1&nbsp;V/µs, so the node walks through all three zones.</p>
 
+<!-- cli-file: monitor.msl -->
 <pre data-lang="msl">#[derive(Repr, Clone, Copy, PartialEq)]
 enum Zone { Under, Ok, Over }
 
@@ -644,7 +671,11 @@ module MonitorTop() {
   <p class="callout-label">Run it</p>
   <p>Save the file as <code>monitor.msl</code> and keep only the stream you care about:</p>
 <pre data-lang="sh">piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone</pre>
-  <p>Look for three record lines from <code>MonitorTop.mon</code>, at 0.5, 1.5 and 2.5&nbsp;µs, and check the <code>from</code> and <code>to</code> fields against the table above.</p>
+<pre data-lang="text" data-cli-output="piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone" data-cli-lines="1-4">run monitor: transient, top MonitorTop, backend rust
+@5.000000e-7 MonitorTop.mon zone t=5.000000e-7 v=5.000000e-1 from=1 to=0
+@1.500000e-6 MonitorTop.mon zone t=1.500000e-6 v=1.500000e0 from=0 to=1
+@2.500000e-6 MonitorTop.mon zone t=2.500000e-6 v=2.500000e0 from=1 to=2</pre>
+  <p>Three record lines from <code>MonitorTop.mon</code>, at 0.5, 1.5 and 2.5&nbsp;µs. Check the <code>from</code> and <code>to</code> fields against the table above. The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration: <code>Under</code> is 0, <code>Ok</code> 1 and <code>Over</code> 2, so <code>from=1 to=0</code> is <code>Ok</code> to <code>Under</code>.</p>
 </div>
 
 <h3>Known and unknown</h3>
@@ -666,6 +697,7 @@ module MonitorTop() {
 
 <p>The classic bug: an input nobody drives. This adder is placed in a top that gives <code>a</code> the constant 3 and takes <code>b</code> from an <code>in</code> port of its own, which nothing drives. (<code>Osc</code> is the clock from the file above.)</p>
 
+<!-- cli-file: monitor.msl -->
 <pre data-lang="msl">/// Registers a + b on every clock edge.
 module Adder(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>, out sum: Bit<u8> = 0) {}
 digital for Adder {
@@ -827,6 +859,7 @@ signal vout:  Electrical = 0.0;          // where Newton starts; held there as a
 
 <p>Two sensors share one active-low alarm line. Each may pull it low; a pull-up keeps it high when nobody does. With a <code>Bit</code> this cannot be built: a <code>Bit</code> has one driver, and the second one is an error. The line is a <code>Wire</code>.</p>
 
+<!-- cli-file: alarm.msl -->
 <pre data-lang="msl">/// Pulls the line low while `req` is high, and lets go of it otherwise.
 module OpenDrain(in req: Bit, line: Wire) {
     line = if req { Logic::strong(false) } else { Logic::Z };
@@ -882,7 +915,10 @@ digital for Alarm {
   <p class="callout-label">Run it</p>
   <p>Save the file as <code>alarm.msl</code>. The bench <code>Alarm</code> is its one module without ports, so it is the top:</p>
 <pre data-lang="sh">piperine run alarm.msl --analysis transient --stop 4e-6 --stream line</pre>
-  <p>Count the record lines from <code>Alarm.watch</code>: three, at times 0, 1&nbsp;µs and 3&nbsp;µs, and none at 2&nbsp;µs.</p>
+  <p>Count the record lines from <code>Alarm.watch</code>: three, at times 0, 1&nbsp;µs and 3&nbsp;µs, and none at 2&nbsp;µs. That is, once resolved natures are compiled. Today the command refuses the file and runs nothing:</p>
+<pre data-lang="text" data-cli-output="piperine run alarm.msl --analysis transient --stop 4e-6 --stream line" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+
+  × resolved nature `Wire` is not supported yet</pre>
 </div>
 
 <h3>Two continuous natures in one module</h3>
@@ -991,6 +1027,7 @@ digital<T> for Slice<T> {
 
 <p>Build a three-section RC ladder out of the <code>Resistor</code> and <code>Capacitor</code> of chapter 1. The file has three levels of hierarchy: a section, a ladder of <code>N</code> sections, and a top with a source.</p>
 
+<!-- cli-file: ladder.msl -->
 <pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
 analog for Resistor { i(p, n) +> v(p, n) / r; }
 
@@ -1048,7 +1085,7 @@ module LadderTop() {
 
 <pre data-lang="msl">digital for LadderTop {
     for k in 1..4 {
-        on above(v(lad.tap[k]) - 0.5) { emit!("half", stage = k, t = now()); }
+        on cross(v(lad.tap[k]) - 0.5) { emit!("half", stage = k, t = now()); }
     }
 }</pre>
 
@@ -1064,15 +1101,13 @@ module LadderTop() {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the first listing as <code>ladder.msl</code>. An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point:</p>
+  <p>Save the first listing as <code>ladder.msl</code>. An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point. Today the compiler does not take generic modules yet, so both commands stop at the ladder with this refusal and run nothing:</p>
 <pre data-lang="sh">piperine run ladder.msl --analysis op
 piperine run ladder.msl --analysis dc --sweep src.dc --from 0 --to 1 --step 0.5</pre>
-<pre data-lang="text" data-cli-output="piperine run ladder.msl --analysis op">run ladder: op, top LadderTop, backend rust
+<pre data-lang="text" data-cli-output="piperine run ladder.msl --analysis op" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-signal          value
-LadderTop.vin   1.000000e0
-LadderTop.vout  1.000000e0</pre>
-  <p>At DC the capacitors are open, so the output equals the input at every point of the sweep. For the <code>half</code> stream, use the version with the step source and run <code>--analysis transient --stop 20e-6 --stream half</code>: three record lines, <code>stage=1</code> to <code>stage=3</code>, in time order.</p>
+  × generic module is not supported yet</pre>
+  <p>Once it runs: at DC the capacitors are open, so the output equals the input at every point of the sweep. For the <code>half</code> stream, use the version with the step source and run <code>--analysis transient --stop 20e-6 --stream half</code>: three record lines, <code>stage=1</code> to <code>stage=3</code>, in time order.</p>
 </div>
 
 <h3>Modules that return a value</h3>
@@ -1272,6 +1307,7 @@ analog for Inductor  { v(p, n) +> ddt(l * i(p, n)); }      // v = dφ/dt</pre>
 
 <p>A 2&nbsp;V sine drives a resistor into two diodes back to back. The output follows the input while it is small and is clipped near ±0.65&nbsp;V.</p>
 
+<!-- cli-file: clipper.msl -->
 <pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
 analog for Resistor { i(p, n) +> v(p, n) / r; }
 
@@ -1318,11 +1354,12 @@ module Clipper() {
 
 <p>To see the clipper work you want <code>vin</code> and <code>vout</code> over time. The event for that is <code>settle</code>. It fires once per <strong>time point</strong>, the times at which the solver has an accepted solution, after everything else at that time has finished. A reaction on <code>settle</code> reads the solution of that time point:</p>
 
+<!-- cli-file: clipper.msl -->
 <pre data-lang="msl">digital for Clipper {
     on settle {
         emit!("wave", t = now(), vin = v(vin), vout = v(vout));
     }
-    on above(v(vout) - 0.6) {
+    on cross(v(vout) - 0.6) {
         emit!("clip", t = now(), vin = v(vin));
     }
 }</pre>
@@ -1341,7 +1378,10 @@ module Clipper() {
   <p class="callout-label">Run it</p>
   <p>Save the clipper with its <code>digital</code> block as <code>clipper.msl</code>. Two periods, the <code>clip</code> records on the terminal, the waveform as a picture:</p>
 <pre data-lang="sh">piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg</pre>
-  <p>Look for two <code>clip</code> lines, one per period, each with <code>vin</code> near 0.72. Then open <code>clipper.svg</code> in a browser: the sine and its clipped copy on one axis. To keep the <code>wave</code> records instead of printing them, send every record to a file with <code>--records wave.jsonl</code>, one JSON object per line.</p>
+  <p>Look for two <code>clip</code> lines, one per period, each with <code>vin</code> near 0.72. Then open <code>clipper.svg</code> in a browser: the sine and its clipped copy on one axis. To keep the <code>wave</code> records instead of printing them, send every record to a file with <code>--records wave.jsonl</code>, one JSON object per line. That is, once <code>sin</code> and <code>settle</code> are compiled. Today the command stops at the source, the first of the two, and runs nothing:</p>
+<pre data-lang="text" data-cli-output="piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+
+  × method `sin` on `f64` is not supported yet</pre>
 </div>
 
 <h3>Looking inside Newton: <code>emit!</code> in <code>analog</code></h3>
@@ -1373,7 +1413,7 @@ module Clipper() {
 <thead><tr><th>You want</th><th>Write</th><th>Records exist for</th></tr></thead>
 <tbody>
 <tr><td>a waveform</td><td><code>on settle { emit!(…) }</code></td><td>each accepted time point, once</td></tr>
-<tr><td>the moment something happens</td><td><code>on above(…) { emit!(…) }</code>, or any event</td><td>each firing, in accepted steps only</td></tr>
+<tr><td>the moment something happens</td><td><code>on cross(…) { emit!(…) }</code>, or any event</td><td>each firing, in accepted steps only</td></tr>
 <tr><td>to see why Newton struggles</td><td><code>emit!(…)</code> in <code>analog</code></td><td>every evaluation, rejected ones included</td></tr>
 </tbody></table></div>
 
@@ -1542,8 +1582,8 @@ digital for Counter {
     let osc = Osc(clk) { f: 1M };
     let ctr = Counter(clk, count, full);
 }</pre>
-<pre data-lang="sh">piperine run count.msl --analysis transient --stop 257e-6 --print full --print-step 1e-6 --records state.jsonl</pre>
-  <p>In the table, the column <code>Count.full</code> reads <code>true</code> in exactly one row, the one at 255&nbsp;µs. The 257 <code>state</code> records are in <code>state.jsonl</code>, one object per line, ready for a script.</p>
+<pre data-lang="sh">piperine run count.msl --analysis transient --stop 257e-6 --print full --records state.jsonl</pre>
+  <p>The 257 <code>state</code> records are in <code>state.jsonl</code>, one object per line, ready for a script, and exactly one of them, the one at 255.5&nbsp;µs, has <code>full</code> true. The table should show the same in its <code>Count.full</code> column; today the table of a design with no analog node is not right yet (it holds a single row, at time 0, with the values of the end of the run), so read the records.</p>
 </div>
 
 <h3>The rules of a microstep</h3>
@@ -1610,6 +1650,7 @@ digital for Pfd3 {
 
 <p>A mechanical button bounces for a few milliseconds. The classic fix samples it with a slow clock and accepts a new level only after it has been seen on several consecutive samples.</p>
 
+<!-- cli-file: debounce.msl -->
 <pre data-lang="msl">/// A free-running clock.
 module Osc(out clk: Bit = false) { f: f64 = 1M where f > 0.0; }
 digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
@@ -1678,18 +1719,24 @@ stream Press.db.flip
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the file as <code>debounce.msl</code> and ask for the interesting stream only:</p>
+  <p>Save the file as <code>debounce.msl</code> and ask for the interesting stream only. Two things in it are not compiled yet, a param of an integer type (<code>n: u8</code>) and a <code>known_or</code> whose default may itself be unknown, so today the command refuses the file at the first one and runs nothing:</p>
 <pre data-lang="sh">piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip</pre>
-<pre data-lang="text" data-cli-output="piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip" data-cli-lines="1-2">run debounce: transient, top Press, backend rust
-@5.500000e-3 Press.db flip t=5.500000e-3 to=true</pre>
-  <p>One line: the output flipped once, at the fourth clean sample. Run it again with <code>--stream state</code> to get the row-per-edge table above as seven record lines.</p>
+<pre data-lang="text" data-cli-output="piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+
+  × param of type `u8` is not supported yet</pre>
+  <p>Once it runs, it prints one record line: the output flipped once, at the fourth clean sample, <code>@5.500000e-3 Press.db flip t=5.500000e-3 to=true</code>. Run it again with <code>--stream state</code> to get the row-per-edge table above as seven record lines.</p>
 </div>
 
 <h3>A complete example: a PWM generator</h3>
 
 <p>A counter that wraps every <code>period</code> clocks, and an output that is high while the count is below a duty word. Two details make it a good PWM: the duty word is latched once per cycle, so a change never splits a pulse, and the output is a register, so it never glitches.</p>
 
-<pre data-lang="msl">/// Counter-based PWM: `period` clocks per cycle, high for `duty` of them.
+<!-- cli-file: pwm.msl -->
+<pre data-lang="msl">/// A free-running clock.
+module Osc(out clk: Bit = false) { f: f64 = 1M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Counter-based PWM: `period` clocks per cycle, high for `duty` of them.
 module Pwm(in clk: Bit, in duty: Bit<u8>, out pwm: Bit = false, out wrap: Bit) {
     period: u8 = 100 where period >= 2;
     signal count: Bit<u8> = 0;
@@ -1728,14 +1775,12 @@ digital for PwmBench {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the file, with <code>Osc</code>, as <code>pwm.msl</code>:</p>
+  <p>Save the file as <code>pwm.msl</code>; it carries its own clock. Its <code>period</code> is a param of an integer type, which the compiler does not take yet, so today the command refuses the file and runs nothing:</p>
 <pre data-lang="sh">piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle</pre>
-<pre data-lang="text" data-cli-output="piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle" data-cli-lines="1-5">run pwm: transient, top PwmBench, backend rust
-@9.950000e-5 PwmBench.pulse cycle t=9.950000e-5 duty=25
-@1.995000e-4 PwmBench.pulse cycle t=1.995000e-4 duty=25
-@2.995000e-4 PwmBench.pulse cycle t=2.995000e-4 duty=60
-@3.995000e-4 PwmBench.pulse cycle t=3.995000e-4 duty=60</pre>
-  <p>The change made at 250&nbsp;µs shows up in the record at 299.5&nbsp;µs, the next wrap. Add <code>--plot pwm.svg</code> to see the pulses widen: a digital signal is drawn as a step trace in a lane of its own.</p>
+<pre data-lang="text" data-cli-output="piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+
+  × param of type `u8` is not supported yet</pre>
+  <p>Once it runs, the <code>cycle</code> records come at 99.5, 199.5, 299.5 and 399.5&nbsp;µs, with <code>duty=25</code> twice and then <code>duty=60</code>: the change made at 250&nbsp;µs shows up in the record at 299.5&nbsp;µs, the next wrap. Add <code>--plot pwm.svg</code> to see the pulses widen: a digital signal is drawn as a step trace in a lane of its own.</p>
 </div>
 
 <h3>From print to check</h3>
@@ -1766,7 +1811,7 @@ digital for PwmCheck {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>With the check placed in the bench, <code>piperine run pwm.msl --analysis transient --stop 3e-3</code> prints each <code>checks</code> record as it is written and stops by itself at the twentieth cycle. In a project, give the run a table in <code>Piperine.toml</code> and let one command judge it:</p>
+  <p>With the check placed in the bench, <code>piperine run pwm.msl --analysis transient --stop 3e-3</code> prints each failing <code>checks</code> record as it is written (add <code>--all-checks</code> to see the passing ones too) and stops by itself at the twentieth cycle. In a project, give the run a table in <code>Piperine.toml</code> and let one command judge it:</p>
 <pre data-lang="sh">piperine test</pre>
   <p>It runs every run of the project and prints one <code>PASS</code> or <code>FAIL</code> line each, with the failing check records under a <code>FAIL</code>. A check whose <code>pass</code> is unknown counts as a failure.</p>
 </div>
@@ -1824,7 +1869,7 @@ digital for MacPipe {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Everything in this chapter runs from source. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 15); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above.</p>
+  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 15); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above. Two forms of this chapter are not compiled yet and are refused with P0001: a param of an integer type, such as <code>n: u8</code>, and a <code>known_or</code> whose default may itself be unknown. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. The table of a design with no analog node is not right yet either (one row, at time 0); its records are.</p>
 </div>
 
 <div class="callout mistake">
@@ -1870,6 +1915,7 @@ digital for MacPipe {
 
 <p>Turn a sine wave into pulses and count them. The analog-to-digital step is a comparator with <em>hysteresis</em>: it switches high above one threshold and low below a lower one, so a noisy input that lingers near the threshold cannot make it chatter. The library has it as <code>A2D</code>, and its whole source is four lines:</p>
 
+<!-- cli-file: cycles.msl -->
 <pre data-lang="msl">module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
 digital for A2D {
     on above(v(a) - vth - hyst / 2.0) { d <- true; }
@@ -1878,6 +1924,7 @@ digital for A2D {
 
 <p>Two reactions, each on a crossing: the first fires when <code>v(a)</code> rises through <code>vth + hyst/2</code>, the second when it falls through <code>vth − hyst/2</code>. Here is the complete design around it:</p>
 
+<!-- cli-file: cycles.msl -->
 <pre data-lang="msl">/// A sine voltage source.
 module Vsin(p: Electrical, n: Electrical) { amp: f64 = 1.0; f: f64 = 1k where f > 0.0; }
 analog for Vsin {
@@ -1915,9 +1962,12 @@ module CycleCounter() {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the design as <code>cycles.msl</code>:</p>
+  <p>Save the design, with the comparator above it, as <code>cycles.msl</code>:</p>
 <pre data-lang="sh">piperine run cycles.msl --analysis transient --stop 3e-3 --stream pulse</pre>
-  <p>Three record lines from <code>CycleCounter.ctr</code>, with <code>n=1</code>, <code>n=2</code> and <code>n=3</code>, about 15.9&nbsp;µs into each millisecond. The last row of the table shows <code>CycleCounter.count</code> at 3.</p>
+  <p>Once <code>sin</code> is compiled, it prints three record lines from <code>CycleCounter.ctr</code>, with <code>n=1</code>, <code>n=2</code> and <code>n=3</code>, about 15.9&nbsp;µs into each millisecond. The last row of the table shows <code>CycleCounter.count</code> at 3. Today the command refuses the source and runs nothing:</p>
+<pre data-lang="text" data-cli-output="piperine run cycles.msl --analysis transient --stop 3e-3 --stream pulse" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+
+  × method `sin` on `f64` is not supported yet</pre>
 </div>
 
 <h3>The instant</h3>
@@ -1992,6 +2042,7 @@ analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }</pre>
 
 <p>Now close a loop through both worlds. A buck converter steps 12&nbsp;V down to 3.3&nbsp;V by switching: a high-side switch connects an inductor to the input for a fraction <em>d</em> of each period, and the output settles near <em>d</em>&nbsp;·&nbsp;12&nbsp;V. A digital controller measures the output once per period and adjusts <em>d</em>. This is a simplified version of a real digital controller: one integrator instead of a full compensator, and a pulse timed directly instead of a counter-based PWM.</p>
 
+<!-- cli-file: buck.msl -->
 <pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
 analog for Resistor { i(p, n) +> v(p, n) / r; }
 
@@ -2076,6 +2127,7 @@ module Buck() {
 
 <p>With the print in place, the acceptance test is one more reaction in the top. It checks, at every time point after start-up, that the output stays within 50&nbsp;mV of the target:</p>
 
+<!-- cli-file: buck.msl -->
 <pre data-lang="msl">digital for Buck {
     on settle {
         if now() > 10m { require("regulated", (v(vout) - 3.3).abs() < 50m); }
@@ -2088,7 +2140,10 @@ module Buck() {
 <pre data-lang="sh">piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop</pre>
   <p>Read the <code>duty</code> field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the <code>Buck.vout</code> column of the table rises to 3.3. Then draw it, and keep the records for a script:</p>
 <pre data-lang="sh">piperine run buck.msl --analysis transient --stop 12e-3 --print vout --plot startup.svg --records loop.jsonl</pre>
-  <p>The plot holds every accepted step, so the switching ripple is visible on <code>vout</code> even though the table is printed once per millisecond.</p>
+  <p>The plot holds every accepted step, so the switching ripple is visible on <code>vout</code> even though the table is printed once per millisecond. All of this waits for one event: the check's <code>settle</code> is not compiled yet, so today both commands refuse the file and run nothing. Leave the <code>digital for Buck</code> block out and the converter runs, loop records and all.</p>
+<pre data-lang="text" data-cli-output="piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+
+  × built-in `settle` is not supported yet</pre>
 </div>
 
 <div class="callout good">
@@ -2146,7 +2201,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Mixed-signal designs run from source as compiled Rust, on the same solver that runs analog MSL. A full-size digitally controlled buck converter (12&nbsp;V in, 200&nbsp;MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its <code>.msl</code> and regulates at 0.8&nbsp;V within 3&nbsp;mV with its loop closed. The front end parses and resolves every complete file of this chapter.</p>
+  <p>Mixed-signal designs run from source as compiled Rust, on the same solver that runs analog MSL. A full-size digitally controlled buck converter (12&nbsp;V in, 200&nbsp;MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its <code>.msl</code> and regulates at 0.8&nbsp;V within 3&nbsp;mV with its loop closed, and the <code>piperine</code> command runs it (chapter 16). The front end parses and resolves every complete file of this chapter. Two things the examples here use are not compiled yet and are refused with P0001: the math methods of <code>f64</code> such as <code>sin</code> (the sine sources) and the <code>settle</code> event (the converter's check).</p>
 </div>
 
 <div class="callout mistake">
@@ -2194,6 +2249,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
     ├── parts.msl          mod parts;
     └── filter.msl         mod filter;</pre>
 
+<!-- cli-file: lowpass/src/parts.msl -->
 <pre data-lang="msl">// src/parts.msl
 /// Ideal resistor.
 pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
@@ -2207,6 +2263,7 @@ analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
 pub module Vdc(p: Electrical) { dc: f64 = 1.0; }
 analog for Vdc { v(p) +> dc; }</pre>
 
+<!-- cli-file: lowpass/src/filter.msl -->
 <pre data-lang="msl">// src/filter.msl
 use crate::parts::{Capacitor, Resistor};
 
@@ -2214,11 +2271,11 @@ use crate::parts::{Capacitor, Resistor};
 pub module LowPass(a: Electrical, b: Electrical) {
     fc: f64 = 1k where fc > 0.0;
     r: f64 = 1k where r > 0.0;
-    let c = 1.0 / (2.0 * PI * r * fc);       // the capacitor that gives this corner
     let r1 = Resistor(a, b) { r };
-    let c1 = Capacitor(b, gnd) { c };
+    let c1 = Capacitor(b, gnd) { c: 1.0 / (2.0 * PI * r * fc) };   // the capacitor of this corner
 }</pre>
 
+<!-- cli-file: lowpass/src/lib.msl -->
 <pre data-lang="msl">// src/lib.msl
 pub mod parts;              // loads src/parts.msl
 pub mod filter;             // loads src/filter.msl
@@ -2234,6 +2291,7 @@ pub module Bench() {
     pub let lp = LowPass(vin, vout) { fc: 10k };
 }</pre>
 
+<!-- cli-file: lowpass/Piperine.toml -->
 <pre data-lang="toml">[package]
 name = "lowpass"
 version = "0.1.0"
@@ -2268,7 +2326,7 @@ Bench.vout  1.000000e0</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Crates and packages are implemented: the object model resolves names across crates, and <code>piperine-project</code> reads <code>Piperine.toml</code>, locates path and git dependencies and writes the lockfile.</p>
+  <p>Crates and packages are implemented: the object model resolves names across crates, and <code>piperine-project</code> reads <code>Piperine.toml</code>, locates path and git dependencies and writes the lockfile. The <code>piperine</code> command runs a project of several files, as the box above shows.</p>
 </div>
 
 <h3>A bigger project on disk</h3>
@@ -3435,11 +3493,91 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
 
 <pre data-lang="text">rc/
 ├── Piperine.toml          [package], [dependencies], and one [run.<name>] table per run
+├── .gitignore             target/
 ├── src/
 │   └── lib.msl            the library crate
 ├── benches/
 │   └── step.msl           a bench: a crate of its own
 └── target/                written by the tool; removed by `piperine clean`</pre>
+
+<p>This is the project <code>piperine new rc</code> writes, the RC low-pass of chapter 1, file for file. <code>Piperine.toml</code>:</p>
+
+<pre data-lang="toml">[package]
+name = "rc"
+version = "0.1.0"
+
+[run.op]
+bench = "benches/step.msl"
+analysis = "op"
+
+[run.step]
+bench = "benches/step.msl"
+analysis = "transient"
+stop = 5e-6
+print_step = 1e-6</pre>
+
+<p><code>src/lib.msl</code>, the parts:</p>
+
+<pre data-lang="msl">/// Ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+
+analog for Resistor {
+    i(p, n) +> v(p, n) / r;
+}
+
+/// Ideal capacitor.
+pub module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c > 0.0;
+}
+
+analog for Capacitor {
+    i(p, n) +> ddt(c * v(p, n));
+}
+
+/// A constant voltage from `p` to `n`.
+pub module Vsource(p: Electrical, n: Electrical) {
+    dc: f64 = 1.0;
+}
+
+analog for Vsource {
+    v(p, n) +> dc;
+}</pre>
+
+<p><code>benches/step.msl</code>, the circuit with its monitor:</p>
+
+<pre data-lang="msl">use rc::{Capacitor, Resistor, Vsource};
+
+/// Writes a record when `a` rises through `level`.
+module Monitor(a: Electrical) {
+    level: f64 = 0.5;
+}
+
+digital for Monitor {
+    on cross(v(a) - level) {
+        emit!("trip", v = v(a));
+        require("crossed_upward", v(a) >= level);
+    }
+}
+
+/// A 1 V source into R and C. `vout` starts at 0 V, so a transient is the step response.
+module Step() {
+    signal vin: Electrical;
+    signal vout: Electrical = 0.0;
+    let v1 = Vsource(vin, gnd) { dc: 1.0 };
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let c1 = Capacitor(vout, gnd) { c: 1n };
+    let mon = Monitor(vout);
+}</pre>
+
+<p>Before running anything, ask whether the project is sound. <code>piperine check</code> reads every file, resolves every name and type-checks the top of each run:</p>
+
+<pre data-lang="sh">piperine check</pre>
+
+<pre data-lang="text" data-cli-output="piperine check" data-cli-project="rc">ok: rc (2 crates, 2 runs)</pre>
+
+<p>The two crates are the library and <code>std</code>, the standard library every crate depends on. A bench is loaded by the run that names it.</p>
 
 <p><strong>Finding the project.</strong> A command uses the nearest <code>Piperine.toml</code> found upward from the directory you are in, so it works anywhere inside a project. <code>--project &lt;dir&gt;</code> names the project directly and searches nowhere else. With no manifest, a command that needs a project fails with E0170.</p>
 
@@ -3459,7 +3597,7 @@ stop       = 10e-6                # transient
 max_step   = 10e-9                # transient, optional
 print_step = 1e-6                 # transient, optional
 sweep      = "v1.dc"              # dc: the path of a param
-from       = -1.0                 # dc, ac
+from       = -1.0                 # dc, ac; transient: the first time kept
 to         = 0.8                  # dc, ac
 step       = 0.05                 # dc
 per_decade = 10                   # ac, or:
@@ -3470,7 +3608,8 @@ params     = { "r1.r" = 2000.0 }  # set before the analysis
 backend    = "rust"               # rust | interp
 csv        = "out/step.csv"       # the table, as a file
 plot       = "out/step.svg"       # the table, as a picture; not for op
-records    = "out/step.jsonl"     # the records, as a file</pre>
+records    = "out/step.jsonl"     # the records, as a file
+all_checks = true                 # print the passing checks too</pre>
 
 <p>That listing shows the keys side by side; it is not a run you could execute, because each analysis reads only its own numbers and a key outside its analysis is an error. Numbers are TOML numbers: write <code>10e-6</code>, not <code>10u</code>.</p>
 
@@ -3483,6 +3622,7 @@ records    = "out/step.jsonl"     # the records, as a file</pre>
 <tr><td><code>stop</code></td><td><code>--stop</code></td><td><code>transient</code></td><td>The end time, in seconds. Required, greater than 0.</td></tr>
 <tr><td><code>max_step</code></td><td><code>--max-step</code></td><td><code>transient</code></td><td>The largest time step the solver may take.</td></tr>
 <tr><td><code>print_step</code></td><td><code>--print-step</code></td><td><code>transient</code></td><td>One table row per multiple of it, instead of one per solver step.</td></tr>
+<tr><td><code>from</code></td><td><code>--from</code></td><td><code>transient</code></td><td>The first time the result keeps, 0 by default. The solver still runs from 0; steps before it are computed and not kept.</td></tr>
 <tr><td><code>sweep</code></td><td><code>--sweep</code></td><td><code>dc</code></td><td>The param to step, by path.</td></tr>
 <tr><td><code>from</code>, <code>to</code></td><td><code>--from</code>, <code>--to</code></td><td><code>dc</code>, <code>ac</code></td><td>The ends of the sweep: param values, or frequencies in hertz.</td></tr>
 <tr><td><code>step</code></td><td><code>--step</code></td><td><code>dc</code></td><td>The increment: points are <code>from + k · step</code> while not past <code>to</code>.</td></tr>
@@ -3495,6 +3635,7 @@ records    = "out/step.jsonl"     # the records, as a file</pre>
 <tr><td><code>csv</code></td><td><code>--csv</code></td><td>all</td><td>Write the table to this file.</td></tr>
 <tr><td><code>plot</code></td><td><code>--plot</code></td><td><code>dc</code>, <code>ac</code>, <code>transient</code></td><td>Write the result as an SVG picture.</td></tr>
 <tr><td><code>records</code></td><td><code>--records</code></td><td>all</td><td>Write the records to this file.</td></tr>
+<tr><td><code>all_checks</code></td><td><code>--all-checks</code></td><td>all</td><td>Print the passing <code>checks</code> records too. A failing check always prints.</td></tr>
 </tbody></table></div>
 
 <h3>Three ways to ask for a run</h3>
@@ -3511,19 +3652,30 @@ piperine run benches/delayed.msl --analysis transient --stop 5e-6    # a file, d
 
 <h3>What a run prints</h3>
 
+<p>The project has two runs. The operating point first:</p>
+
+<pre data-lang="sh">piperine run op</pre>
+
+<pre data-lang="text" data-cli-output="piperine run op" data-cli-project="rc">run op: op, top Step, backend rust
+
+signal     value
+Step.vin   1.000000e0
+Step.vout  1.000000e0</pre>
+
+<p>Then the step response:</p>
+
 <pre data-lang="sh">piperine run step</pre>
 
 <pre data-lang="text" data-cli-output="piperine run step" data-cli-project="rc">run step: transient, top Step, backend rust
-@6.931472e-7 Step.mon trip v=5.000000e-1
-@6.931472e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
+@6.931075e-7 Step.mon trip v=5.000000e-1
 
 time         Step.vin    Step.vout
 0.000000e0   1.000000e0  0.000000e0
-1.000000e-6  1.000000e0  6.321206e-1
-2.000000e-6  1.000000e0  8.646647e-1
-3.000000e-6  1.000000e0  9.502129e-1
-4.000000e-6  1.000000e0  9.816844e-1
-5.000000e-6  1.000000e0  9.932621e-1</pre>
+1.000000e-6  1.000000e0  6.320926e-1
+2.000000e-6  1.000000e0  8.646682e-1
+3.000000e-6  1.000000e0  9.502193e-1
+4.000000e-6  1.000000e0  9.816886e-1
+5.000000e-6  1.000000e0  9.932653e-1</pre>
 
 <p>Always in this order: a <strong>header</strong> line, <code>run &lt;name&gt;: &lt;analysis&gt;, top &lt;Top&gt;, backend &lt;backend&gt;</code>; the <strong>record</strong> lines, each printed as its record is written; one empty line; the <strong>table</strong>. If anything fails before the analysis starts, nothing is printed here at all, only the error. If the analysis fails midway, the records already printed stay and no table follows.</p>
 
@@ -3533,12 +3685,14 @@ time         Step.vin    Step.vout
 <thead><tr><th>Analysis</th><th>Rows</th><th>Columns</th></tr></thead>
 <tbody>
 <tr><td><code>op</code></td><td>one per printed signal</td><td><code>signal</code>, <code>value</code></td></tr>
-<tr><td><code>dc</code></td><td>one per point of the sweep; each point sets the param and solves an operating point</td><td>the swept param's full path, then one per signal</td></tr>
+<tr><td><code>dc</code></td><td>one per point of the sweep; each point sets the param and solves an operating point. Today the points of a sweep print no record lines</td><td>the swept param's full path, then one per signal</td></tr>
 <tr><td><code>ac</code></td><td>one per frequency</td><td><code>freq</code>, then <code>mag(&lt;path&gt;)</code> and <code>phase(&lt;path&gt;)</code> per signal, the phase in degrees</td></tr>
 <tr><td><code>transient</code></td><td>one per accepted solver step, or one per <code>print_step</code></td><td><code>time</code>, then one per signal</td></tr>
 </tbody></table></div>
 
 <p>With <code>print_step</code>, an analog value is interpolated linearly between the two solver steps around the row's time, and a digital value is the one it held at that time. Use it whenever a run takes many steps: the solver's own steps are still all computed, and all drawn by <code>--plot</code>.</p>
+
+<p>A long run with many unknowns can hold more steps than you want in memory. <code>from</code> keeps only the end of it: the solver integrates from 0 as always, and the result keeps the steps at or after <code>from</code>. Records are not affected; every one prints. With <code>print_step</code> too, the first row is the first multiple of <code>print_step</code> at or after the first kept step, which can be one grid point past <code>from</code> itself. The buck converter at the end of this chapter uses both.</p>
 
 <p><strong>What you can print.</strong> A node gives its voltage, a digital signal its value, and <code>i(&lt;instance&gt;)</code> the current through an instance such as a source. Each is named by its path, written in full or relative to the top: <code>vout</code> and <code>Step.vout</code> are the same signal. A column is always headed by the full path. With no <code>print</code>, the table shows the top module's own signals and ports, in the order they are declared.</p>
 
@@ -3546,11 +3700,32 @@ time         Step.vin    Step.vout
 
 <h3>Records: your <code>emit!</code>, live</h3>
 
-<p>Every <code>emit!</code> executed by a reaction prints one line:</p>
+<p><code>emit!</code> is the print statement of MSL, and the command line is where its output lands. The monitor of the RC bench has one in its reaction:</p>
+
+<pre data-lang="msl">digital for Monitor {
+    on cross(v(a) - level) {
+        emit!("trip", v = v(a));
+        require("crossed_upward", v(a) >= level);
+    }
+}</pre>
+
+<p>Every <code>emit!</code> executed by a reaction prints one line, the moment the record is written:</p>
 
 <pre data-lang="text">@<time> <instance path> <stream> <field>=<value> <field>=<value> …</pre>
 
-<p>The fields come in the order you wrote them. Lines appear in the order the records are written, never one from a later time before one from an earlier time, and all of them before the table. The two reserved streams, <code>sim</code> and <code>checks</code>, print like any other; the instance shown is the one whose reaction made the call. A design with no <code>emit!</code> prints no record line.</p>
+<p>For the monitor that is this line of <code>piperine run step</code>: the time of the crossing, the instance <code>mon</code> under the top <code>Step</code>, the stream <code>trip</code> and the one field <code>v</code>.</p>
+
+<pre data-lang="text" data-cli-output="piperine run step" data-cli-project="rc" data-cli-lines="2">@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
+
+<p>The fields come in the order you wrote them. Lines appear in the order the records are written, never one from a later time before one from an earlier time, and all of them before the table. The two reserved streams, <code>sim</code> and <code>checks</code>, print like any other, with one exception: a <code>checks</code> record whose <code>pass</code> is true is not printed unless you give <code>--all-checks</code> (or <code>all_checks = true</code> in the run table), because a monitor that checks every clock edge would bury everything else. A failing check, or one whose <code>pass</code> is unknown, always prints. The instance shown is the one whose reaction made the call. A design with no <code>emit!</code> prints no record line.</p>
+
+<pre data-lang="sh">piperine run step --all-checks</pre>
+
+<pre data-lang="text" data-cli-output="piperine run step --all-checks" data-cli-project="rc" data-cli-lines="1-3">run step: transient, top Step, backend rust
+@6.931075e-7 Step.mon checks kind="require" name="crossed_upward" pass=true
+@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
+
+<p>At one instant the records come in the order the solver delivers them, not necessarily the order of the statements: here the check, written second, prints first. To print the stream you are debugging and nothing else, filter it:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>You want</th><th>Write</th></tr></thead>
@@ -3559,13 +3734,20 @@ time         Step.vin    Step.vout
 <tr><td>one stream of one instance</td><td><code>--stream Step.mon.trip</code></td></tr>
 <tr><td>several</td><td><code>--stream trip --stream checks</code>, or the <code>streams</code> key</td></tr>
 <tr><td>everything in a file, nothing on the terminal</td><td><code>--records step.jsonl</code></td></tr>
+<tr><td>the passing checks too</td><td><code>--all-checks</code></td></tr>
 </tbody></table></div>
 
-<p>A records file is JSON Lines: one object per record, with the keys <code>time</code>, <code>instance</code>, <code>stream</code> and <code>fields</code>. A real or an integer is a JSON number, a <code>bool</code> a JSON boolean, a text a string, and an unknown value is <code>null</code>.</p>
+<pre data-lang="sh">piperine run step --stream trip</pre>
 
-<pre data-lang="text">{"time":6.931472e-7,"instance":"Step.mon","stream":"trip","fields":{"v":0.5}}</pre>
+<pre data-lang="text" data-cli-output="piperine run step --stream trip" data-cli-project="rc" data-cli-lines="1-2">run step: transient, top Step, backend rust
+@6.931075e-7 Step.mon trip v=5.000000e-1</pre>
 
-<p class="note">The line above shows the shape of one object; the exact spelling of its numbers is the tool's.</p>
+<p>A records file is JSON Lines: one object per record, with the keys <code>time</code>, <code>instance</code>, <code>stream</code> and <code>fields</code>. A real or an integer is a JSON number, a <code>bool</code> a JSON boolean, a text a string, and an unknown value is <code>null</code>. A real is written with every digit it has, so a script reads back exactly the number the solver computed. The file holds every record, the passing checks included:</p>
+
+<pre data-lang="sh">piperine run step --records step.jsonl</pre>
+
+<pre data-lang="text" data-cli-output="piperine run step --records step.jsonl" data-cli-project="rc" data-cli-written="step.jsonl">{"time":6.931075020000001e-7,"instance":"Step.mon","stream":"checks","fields":{"kind":"require","name":"crossed_upward","pass":true}}
+{"time":6.931075020000001e-7,"instance":"Step.mon","stream":"trip","fields":{"v":0.500000034739147}}</pre>
 
 <h3>Tables and plots as files</h3>
 
@@ -3575,7 +3757,51 @@ time         Step.vin    Step.vout
 <li><strong>Paths.</strong> A relative <code>csv</code> or <code>records</code> path is taken from the project directory, or from the directory you are in for a lone file. An existing file is replaced.</li>
 </ul>
 
+<p>Here is the step response of the RC project as a picture:</p>
+
 <pre data-lang="sh">piperine run step --plot step.svg</pre>
+
+<pre data-lang="text" data-cli-output="piperine run step --plot step.svg" data-cli-project="rc" data-cli-lines="11">wrote step.svg</pre>
+
+<p>This is the file it wrote, as it is: <code>Step.vin</code> flat at 1&nbsp;V, <code>Step.vout</code> rising towards it with the time constant of 1&nbsp;µs. The plot draws every accepted step of the solver, not only the six printed rows.</p>
+
+<figure class="plot">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480" font-family="sans-serif" font-size="11">
+<rect class="panel" x="70.00" y="20.00" width="710.00" height="410.00" fill="none" stroke="#888888"/>
+<line class="tick x" x1="70.00" y1="430.00" x2="70.00" y2="436.00" stroke="#444444"/>
+<text class="tick-label x" x="70.00" y="448.00" text-anchor="middle">0</text>
+<line class="tick x" x1="212.00" y1="430.00" x2="212.00" y2="436.00" stroke="#444444"/>
+<text class="tick-label x" x="212.00" y="448.00" text-anchor="middle">0.000001</text>
+<line class="tick x" x1="354.00" y1="430.00" x2="354.00" y2="436.00" stroke="#444444"/>
+<text class="tick-label x" x="354.00" y="448.00" text-anchor="middle">0.000002</text>
+<line class="tick x" x1="496.00" y1="430.00" x2="496.00" y2="436.00" stroke="#444444"/>
+<text class="tick-label x" x="496.00" y="448.00" text-anchor="middle">0.000003</text>
+<line class="tick x" x1="638.00" y1="430.00" x2="638.00" y2="436.00" stroke="#444444"/>
+<text class="tick-label x" x="638.00" y="448.00" text-anchor="middle">0.000004</text>
+<line class="tick x" x1="780.00" y1="430.00" x2="780.00" y2="436.00" stroke="#444444"/>
+<text class="tick-label x" x="780.00" y="448.00" text-anchor="middle">0.000005</text>
+<line class="tick y" x1="64.00" y1="430.00" x2="70.00" y2="430.00" stroke="#444444"/>
+<text class="tick-label y" x="61.00" y="434.00" text-anchor="end">0</text>
+<line class="tick y" x1="64.00" y1="348.00" x2="70.00" y2="348.00" stroke="#444444"/>
+<text class="tick-label y" x="61.00" y="352.00" text-anchor="end">0.2</text>
+<line class="tick y" x1="64.00" y1="266.00" x2="70.00" y2="266.00" stroke="#444444"/>
+<text class="tick-label y" x="61.00" y="270.00" text-anchor="end">0.4</text>
+<line class="tick y" x1="64.00" y1="184.00" x2="70.00" y2="184.00" stroke="#444444"/>
+<text class="tick-label y" x="61.00" y="188.00" text-anchor="end">0.6</text>
+<line class="tick y" x1="64.00" y1="102.00" x2="70.00" y2="102.00" stroke="#444444"/>
+<text class="tick-label y" x="61.00" y="106.00" text-anchor="end">0.8</text>
+<line class="tick y" x1="64.00" y1="20.00" x2="70.00" y2="20.00" stroke="#444444"/>
+<text class="tick-label y" x="61.00" y="24.00" text-anchor="end">1</text>
+<text class="axis-title x" x="425.00" y="468.00" text-anchor="middle">time</text>
+<text class="axis-title y" x="16.00" y="225.00" text-anchor="middle" transform="rotate(-90 16.00 225.00)">value</text>
+<path class="series" data-signal="Step.vin" d="M70.00 20.00 L70.71 20.00 L71.78 20.00 L72.99 20.00 L74.51 20.00 L76.45 20.00 L78.70 20.00 L81.30 20.00 L84.26 20.00 L87.58 20.00 L91.27 20.00 L95.34 20.00 L99.81 20.00 L104.68 20.00 L109.97 20.00 L115.69 20.00 L121.86 20.00 L128.50 20.00 L135.60 20.00 L142.70 20.00 L149.80 20.00 L156.90 20.00 L164.00 20.00 L168.42 20.00 L168.42 20.00 L175.52 20.00 L182.62 20.00 L189.72 20.00 L196.82 20.00 L203.92 20.00 L211.02 20.00 L218.12 20.00 L225.22 20.00 L232.32 20.00 L239.42 20.00 L246.52 20.00 L253.62 20.00 L260.72 20.00 L267.82 20.00 L274.92 20.00 L282.02 20.00 L289.12 20.00 L296.22 20.00 L303.32 20.00 L310.42 20.00 L317.52 20.00 L324.62 20.00 L331.72 20.00 L338.82 20.00 L345.92 20.00 L353.02 20.00 L360.12 20.00 L367.22 20.00 L374.32 20.00 L381.42 20.00 L388.52 20.00 L395.62 20.00 L402.72 20.00 L409.82 20.00 L416.92 20.00 L424.02 20.00 L431.12 20.00 L438.22 20.00 L445.32 20.00 L452.42 20.00 L459.52 20.00 L466.62 20.00 L473.72 20.00 L480.82 20.00 L487.92 20.00 L495.02 20.00 L502.12 20.00 L509.22 20.00 L516.32 20.00 L523.42 20.00 L530.52 20.00 L537.62 20.00 L544.72 20.00 L551.82 20.00 L558.92 20.00 L566.02 20.00 L573.12 20.00 L580.22 20.00 L587.32 20.00 L594.42 20.00 L601.52 20.00 L608.62 20.00 L615.72 20.00 L622.82 20.00 L629.92 20.00 L637.02 20.00 L644.12 20.00 L651.22 20.00 L658.32 20.00 L665.42 20.00 L672.52 20.00 L679.62 20.00 L686.72 20.00 L693.82 20.00 L700.92 20.00 L708.02 20.00 L715.12 20.00 L722.22 20.00 L729.32 20.00 L736.42 20.00 L743.52 20.00 L750.62 20.00 L757.72 20.00 L764.82 20.00 L771.92 20.00 L779.02 20.00 L780.00 20.00" fill="none" stroke="#1f77b4" stroke-width="1.5"/>
+<path class="series" data-signal="Step.vout" d="M70.00 430.00 L70.71 427.96 L71.78 424.91 L72.99 421.46 L74.51 417.18 L76.45 411.81 L78.70 405.63 L81.30 398.64 L84.26 390.84 L87.58 382.27 L91.27 372.97 L95.34 362.99 L99.81 352.37 L104.68 341.16 L109.97 329.42 L115.69 317.20 L121.86 304.56 L128.50 291.56 L135.60 278.31 L142.70 265.71 L149.80 253.73 L156.90 242.33 L164.00 231.48 L168.42 225.00 L168.42 225.00 L175.52 215.00 L182.62 205.49 L189.72 196.44 L196.82 187.84 L203.92 179.65 L211.02 171.86 L218.12 164.46 L225.22 157.41 L232.32 150.71 L239.42 144.33 L246.52 138.27 L253.62 132.50 L260.72 127.01 L267.82 121.79 L274.92 116.83 L282.02 112.10 L289.12 107.61 L296.22 103.34 L303.32 99.27 L310.42 95.41 L317.52 91.73 L324.62 88.23 L331.72 84.90 L338.82 81.74 L345.92 78.73 L353.02 75.86 L360.12 73.14 L367.22 70.55 L374.32 68.08 L381.42 65.73 L388.52 63.50 L395.62 61.38 L402.72 59.36 L409.82 57.44 L416.92 55.62 L424.02 53.88 L431.12 52.23 L438.22 50.66 L445.32 49.16 L452.42 47.74 L459.52 46.39 L466.62 45.10 L473.72 43.87 L480.82 42.71 L487.92 41.60 L495.02 40.55 L502.12 39.55 L509.22 38.59 L516.32 37.69 L523.42 36.82 L530.52 36.00 L537.62 35.22 L544.72 34.48 L551.82 33.77 L558.92 33.10 L566.02 32.46 L573.12 31.85 L580.22 31.28 L587.32 30.73 L594.42 30.20 L601.52 29.71 L608.62 29.23 L615.72 28.78 L622.82 28.35 L629.92 27.95 L637.02 27.56 L644.12 27.19 L651.22 26.84 L658.32 26.51 L665.42 26.19 L672.52 25.89 L679.62 25.60 L686.72 25.33 L693.82 25.07 L700.92 24.82 L708.02 24.58 L715.12 24.36 L722.22 24.15 L729.32 23.95 L736.42 23.75 L743.52 23.57 L750.62 23.40 L757.72 23.23 L764.82 23.07 L771.92 22.92 L779.02 22.78 L780.00 22.76" fill="none" stroke="#d62728" stroke-width="1.5"/>
+<line class="legend" x1="620.00" y1="30.00" x2="638.00" y2="30.00" stroke="#1f77b4" stroke-width="2"/>
+<text class="legend-label" x="644.00" y="34.00">Step.vin</text>
+<line class="legend" x1="620.00" y1="46.00" x2="638.00" y2="46.00" stroke="#d62728" stroke-width="2"/>
+<text class="legend-label" x="644.00" y="50.00">Step.vout</text>
+</svg>
+</figure>
 
 <h3>Params for one run</h3>
 
@@ -3605,14 +3831,26 @@ time         Step.vin    Step.vout
 built <name>: cached
 built <name>: interp, nothing to compile</pre>
 
+<p>In a new RC project, with nothing compiled yet:</p>
+
+<pre data-lang="sh">piperine build</pre>
+
+<pre data-lang="text" data-cli-output="piperine build" data-cli-project="rc" data-cli-cache="empty">built op: compiled
+built step: cached</pre>
+
+<p>The second run is <code>cached</code> although nothing was compiled for it before: a compiled design depends on the design, not on the analysis, and both runs elaborate the same top, <code>Step</code>, into the same design. One compile serves both.</p>
+
 <p>With <code>--verbose</code> each compiled or cached line is followed by the path of the generated Rust source, which is yours to read: it is what actually runs.</p>
 
 <p><strong><code>piperine test</code></strong> executes every run of the project in the order of the manifest, or the runs you name, and judges them by their <code>checks</code> records. It prints no table and no other record.</p>
 
-<pre data-lang="sh">piperine test step</pre>
+<pre data-lang="sh">piperine test</pre>
 
-<pre data-lang="text" data-cli-output="piperine test step" data-cli-project="rc">PASS step (1 checks)
-1 runs, 1 passed, 0 failed</pre>
+<pre data-lang="text" data-cli-output="piperine test" data-cli-project="rc">PASS op (0 checks)
+PASS step (1 checks)
+2 runs, 2 passed, 0 failed</pre>
+
+<p>The operating point has no check to judge, and passes with zero. The step's check is counted although <code>piperine run step</code> did not print it: the terminal hides a passing check, the verdict never does. <code>piperine test step</code> judges that one run only.</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Line</th><th>When</th></tr></thead>
@@ -3626,6 +3864,91 @@ built <name>: interp, nothing to compile</pre>
 <p><strong><code>piperine fmt</code></strong> rewrites in place every <code>.msl</code> file under <code>src/</code> and <code>benches/</code> whose layout differs from the standard one, and prints <code>formatted &lt;path&gt;</code> for each; given file names, it formats those only. Every comment you wrote is kept, in its place. <code>piperine fmt --check</code> writes nothing, prints <code>would format &lt;path&gt;</code> for each file that differs and fails if there is one, which is the line for a CI job. A file that does not parse is reported and left untouched.</p>
 
 <p><strong><code>piperine clean</code></strong> removes the project's <code>target</code> directory and prints <code>removed target</code>, or <code>nothing to remove</code>. With <code>--cache</code> it also removes the cache of compiled designs, which is shared by all your projects. It removes nothing else.</p>
+
+<h3>A bigger project: the buck converter</h3>
+
+<p>The RC project is a toy. The same commands run a full-size design: a digitally controlled buck converter that steps 12&nbsp;V down to 0.8&nbsp;V, with an analog power stage, a 200&nbsp;MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL. It is the bigger sibling of the converter of chapter 8, and a package like any other: the library <code>buck</code> under <code>src/</code>, one bench file, and two runs.</p>
+
+<p>The bench, <code>benches/startup.msl</code>, plays the host that brings the converter up: it writes the setpoint, then raises <code>en</code>. A second bench in the same file holds <code>en</code> low.</p>
+
+<pre data-lang="msl">//! The closed-loop start of the buck converter, as two benches over the package: `Startup`
+//! writes the setpoint code 0 (0.8 V) and then raises `en`, with Vin 12 V into the 6.6 ohm load
+//! of `Buck`'s defaults; `Idle` never raises `en`, so the supervisor stays `Off`.
+use buck::dpwm::Osc;
+use buck::top::Buck;
+use buck::{Fault, Mode};
+
+/// The host's two writes, on a 1 MHz clock (rising at 0.5 us, 1.5 us, ...): `sp_wr` rises at the
+/// first edge with `sp_data` 0 already presented (the setpoint register takes it on the rising
+/// `wr`), and `en` rises at the second.
+module Host(in clk: Bit, out sp_wr: Bit = false, out en: Bit = false) {
+    signal n: Bit<u8> = 0;
+}
+digital for Host {
+    on clk.rise() {
+        let s = n.known_or(0);
+        if s < 2 { n <- s + 1; }
+        if s == 0 { sp_wr <- true; }
+        if s == 1 { en <- true; }
+    }
+}
+
+/// The start: 128 samples of soft-start ramp, 64 of power-good delay, then regulation.
+module Startup() {
+    signal clk: Bit;
+    signal en: Bit;
+    signal sp_wr: Bit;
+    signal sp_data: Bit<u8> = 0;
+    signal load_step: Bit = false;
+    signal inject: Bit = false;
+    signal pgood: Bit;
+    signal fault: Bit<Fault>;
+    signal mode: Bit<Mode>;
+    let osc = Osc(clk) { f: 1M };
+    let host = Host(clk, sp_wr, en);
+    pub let buck = Buck(en, sp_wr, sp_data, load_step, inject, pgood, fault, mode);
+}
+
+/// The converter with `en` held low: no start, the supervisor's mode is `Off` throughout.
+module Idle() {
+    signal en: Bit = false;
+    signal sp_wr: Bit = false;
+    signal sp_data: Bit<u8> = 0;
+    signal load_step: Bit = false;
+    signal inject: Bit = false;
+    signal pgood: Bit;
+    signal fault: Bit<Fault>;
+    signal mode: Bit<Mode>;
+    pub let buck = Buck(en, sp_wr, sp_data, load_step, inject, pgood, fault, mode);
+}</pre>
+
+<p>The run <code>startup</code>, the last table of the package's <code>Piperine.toml</code>:</p>
+
+<pre data-lang="toml"># The closed-loop start, 600 us: the reference ramps to code 128 (0.8 V). Only the last
+# microsecond is kept (`from`): each kept step holds every unknown of the converter.
+[run.startup]
+bench = "benches/startup.msl"
+top = "Startup"
+analysis = "transient"
+stop = 600e-6
+from = 599e-6
+max_step = 1e-8
+print = ["Startup.buck.ctl.reference", "Startup.mode", "Startup.buck.vout"]
+print_step = 0.5e-6</pre>
+
+<p>Three keys deserve a word. <code>top</code> is needed because the bench file has two modules without ports. <code>from = 599e-6</code> keeps only the last microsecond of 600: every step of the converter holds every unknown of the circuit, and 600&nbsp;µs of them would not fit in memory, so the solver integrates the whole start and the result keeps its end. <code>print</code> names three signals deep in the hierarchy by their full paths.</p>
+
+<pre data-lang="sh">piperine run startup</pre>
+
+<pre data-lang="text" data-cli-output="piperine run startup" data-cli-project="buck">run startup: transient, top Startup, backend rust
+
+time         Startup.buck.ctl.reference  Startup.mode  Startup.buck.vout
+5.995000e-4  128                         2             8.029522e-1
+6.000000e-4  128                         2             8.024392e-1</pre>
+
+<p>The first time, the command compiles the converter, which takes a while, and says so on the error output. Then it simulates 600&nbsp;µs of a circuit switching at 500&nbsp;kHz with a 200&nbsp;MHz clock, a couple of minutes on a laptop. The table has two rows: the first multiple of <code>print_step</code> at or after the first kept step is 599.5&nbsp;µs, then 600&nbsp;µs. The reference is 128, the code of 0.8&nbsp;V; the mode is 2, regulation, after off and soft start; and the output sits within 3&nbsp;mV of 0.8&nbsp;V.</p>
+
+<p>There are no record lines, yet the converter checks itself at every clock: its PWM carries a monitor that writes a <code>checks</code> record at every edge of the 200&nbsp;MHz clock, saying the two power switches are never on together. Over the whole start that is more than a hundred thousand records, all passing, so the terminal hides them. <code>piperine test</code> runs both runs of the package and counts every one of them; <code>--records startup.jsonl</code> keeps them in a file.</p>
 
 <h3>Output, errors and exit codes</h3>
 
@@ -3665,7 +3988,7 @@ built <name>: interp, nothing to compile</pre>
 
 <div class="callout good">
   <p class="callout-label">Good to know</p>
-  <p>The command line does four analyses and one top at a time, with the stimulus written in the bench. Sweeps over many runs, Monte Carlo, optimization and stimulus decided while a run is going are a host program's work, in Rust, on the same library the command is built on (chapter 17). The full-size buck converter that chapter 8 simplifies is a project like any other: a library, a bench, and a run named <code>startup</code>.</p>
+  <p>The command line does four analyses and one top at a time, with the stimulus written in the bench. Sweeps over many runs, Monte Carlo, optimization and stimulus decided while a run is going are a host program's work, in Rust, on the same library the command is built on (chapter 17).</p>
 </div>
 
 <div class="callout try">
@@ -3702,10 +4025,10 @@ flowchart TD
 <div class="table-wrap"><table>
 <thead><tr><th>Crate</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><code>piperine-cli</code></td><td>The <code>piperine</code> command. It reads your project, runs what you ask and prints the results. It holds no logic of its own; everything it does goes through <code>piperine-api</code>.</td></tr>
-<tr><td><code>piperine-api</code></td><td>The library a Rust program uses to drive Piperine: open a project, run an analysis, read tables of values and the records your models emit. The command line is built on it.</td></tr>
+<tr><td><code>piperine-cli</code></td><td>The <code>piperine</code> command of chapter 16 and its seven commands. It reads the command line, calls <code>piperine-api</code> and lays out the text; every rule of what a run prints and judges lives in the library.</td></tr>
+<tr><td><code>piperine-api</code></td><td>The library a Rust program uses to drive Piperine, small on purpose: a <code>Project</code> found from its <code>Piperine.toml</code>, the runs it describes, a <code>Session</code> that compiles one run's top and runs its analysis, and the result as a table of values and the records your models emit. The command line is built on it.</td></tr>
 <tr><td><code>piperine-project</code></td><td>Reads <code>Piperine.toml</code>, finds the crates your project depends on and pins them in the lockfile.</td></tr>
-<tr><td><code>piperine-lang</code></td><td>The language. It parses your files, builds the object model of chapter 12 with every name resolved, checks types and places, and elaborates the design: parameters folded, instances walked, one body per variant.</td></tr>
+<tr><td><code>piperine-lang</code></td><td>The language. It parses your files, builds the object model of chapter 12 with every name resolved, checks types and places, and elaborates the design: parameters folded, instances walked, one body per variant. It also holds the formatter behind <code>piperine fmt</code>, which keeps every comment.</td></tr>
 <tr><td><code>piperine-ir</code></td><td>The elaborated design as an object model of its own: the bodies, the flat table of instances, the nets. It knows neither the language nor the solver, and prints in a stable form for reading.</td></tr>
 <tr><td><code>piperine-plan</code></td><td>Turns each body into the shape the solver expects: its pins, terms, functions and the order of their reads. Both backends use the same plan, so they cannot disagree on it.</td></tr>
 <tr><td><code>piperine-interp</code></td><td>The reference backend. It walks a body at every call and computes values with their derivatives. It needs no compiler, and every other backend is checked against it.</td></tr>
@@ -3715,6 +4038,8 @@ flowchart TD
 <tr><td><code>piperine-analog-solver</code></td><td>The continuous side: Newton iterations, linear algebra, TR-BDF2 integration and the location of crossings. It knows nothing digital.</td></tr>
 <tr><td><code>piperine-digital-solver</code></td><td>The discrete side: nets, the commit queue, instants and microsteps. It knows nothing analog.</td></tr>
 </tbody></table></div>
+
+<p>One more crate is in the tree and not built yet: a language server that will put the diagnostics of chapter 11 into your editor as you type. Until it is, <code>piperine check</code> gives the same diagnostics on the command line.</p>
 
 <h3>Three rules that hold it together</h3>
 
@@ -3788,7 +4113,7 @@ digital for M {
 <div class="cheat-card"><h4>Debug prints</h4>
 <pre data-lang="msl">digital for M {
     on clk.rise() { emit!("state", t = now(), q = q); }           // one row per edge
-    on above(v(a) - vth) { emit!("cross", t = now()); }           // a located instant
+    on cross(v(a) - vth) { emit!("cross", t = now()); }           // a located instant
     on q.changed() && !q.is_known() { emit!("lost", d = d); }     // went unknown
     on settle { emit!("wave", t = now(), va = v(a)); }            // one row per time point
 }
