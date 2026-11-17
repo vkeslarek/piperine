@@ -5,3 +5,25 @@ authors = ["Piperine"]
 description = "A digitally controlled buck converter: the flagship mixed-signal prototype"
 
 [dependencies]
+
+# The converter with `en` low, 10 switching periods: the supervisor's mode stays 0 (`Off`).
+[run.idle]
+bench = "benches/startup.msl"
+top = "Idle"
+analysis = "transient"
+stop = 20e-6
+max_step = 1e-8
+print = ["Idle.mode", "Idle.pgood"]
+print_step = 5e-6
+
+# The closed-loop start, 600 us: the reference ramps to code 128 (0.8 V). Only the last
+# microsecond is kept (`from`): each kept step holds every unknown of the converter.
+[run.startup]
+bench = "benches/startup.msl"
+top = "Startup"
+analysis = "transient"
+stop = 600e-6
+from = 599e-6
+max_step = 1e-8
+print = ["Startup.buck.ctl.reference", "Startup.mode", "Startup.buck.vout"]
+print_step = 0.5e-6
