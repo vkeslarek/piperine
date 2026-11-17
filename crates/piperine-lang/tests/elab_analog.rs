@@ -326,3 +326,25 @@ fn a_ddt_off_the_top_of_a_flow_contribution_is_refused() {
         assert_eq!(&src[span.start..span.end], ddt, "{body}");
     }
 }
+
+#[test]
+fn two_analog_blocks_keep_their_locals_apart() {
+    // FIX-08 AC 2 (§10 rule 7): two `analog` blocks of one module are one body in source order,
+    // and the `x` of each is its own local.
+    let src = "module A() { k: f64 = 2.0; }\nanalog for A { let x = k + 1.0; }\nanalog for A { let x = k * 3.0; }\nmodule Top() { let a = A { }(); }";
+    let ir = Elab::ir(src, "Top");
+    let body = ir.bodies().find(|b| b.name() == "A").expect("body A");
+    let stmts = body.analog().expect("an analog block");
+    assert_eq!(stmts.len(), 2, "both blocks are in the one body");
+    let locals: Vec<u32> = stmts
+        .iter()
+        .map(|s| match ir.stmt(*s) {
+            piperine_ir::Stmt::Let { local, .. } => *local,
+            other => panic!("a `let`, got {other:?}"),
+        })
+        .collect();
+    assert_ne!(locals[0], locals[1], "the two `x` are two locals");
+    let text = ir.print_structural();
+    let (first, second) = (text.find("let x = (k + 1.0)").expect("the first block's let"), text.find("let x = (k * 3.0)").expect("the second block's let"));
+    assert!(first < second, "source order: {text}");
+}

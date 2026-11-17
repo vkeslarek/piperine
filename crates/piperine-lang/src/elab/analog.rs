@@ -10,7 +10,8 @@ use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId,
 
 impl Elaboration<'_, '_> {
     /// The statements of the `analog` block bound to `module`, in source order; `None` when it
-    /// has none. A second `analog` block is `P0001`.
+    /// has none. Every `analog` block of the module is lowered in source order into the one body
+    /// (§10 rule 7); each binding is its own local, so two blocks keep their names apart.
     pub(super) fn lower_analog(&mut self, scope: &mut Scope, module: DeclId) -> Option<Vec<LoweredStmt>> {
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return None };
         let blocks = data.behaviors.clone();
@@ -22,17 +23,13 @@ impl Elaboration<'_, '_> {
             if behavior.kind != BehaviorKind::Analog {
                 continue;
             }
-            if stmts.is_some() {
-                self.refuse(decl.file, decl.span, Unlowered::SecondAnalogBlock);
-                continue;
-            }
             // After a diagnostic the block is empty: no `Ir` is built anyway.
             let (mut lowered, value) = self.lower_statements(scope, &behavior.body).unwrap_or_default();
             // At the top of the block a trailing expression without `;` is a statement like any other.
             if let Some(value) = value {
                 lowered.push(self.stmt(piperine_ir::Stmt::Expr(value)));
             }
-            stmts = Some(lowered);
+            stmts.get_or_insert_with(Vec::new).extend(lowered);
         }
         stmts
     }

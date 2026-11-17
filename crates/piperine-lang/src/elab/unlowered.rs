@@ -27,8 +27,6 @@ pub(super) enum Unlowered<'a> {
     DdtTolerance,
     /// A placement that sets a name that is no param of the placed module (`m`, `dtemp`).
     PlacementSets(&'a str),
-    /// A second `analog` block of one module.
-    SecondAnalogBlock,
     /// A port of a value type, the expression the caller wrote.
     ValueInput,
 }
@@ -44,7 +42,6 @@ impl Unlowered<'_> {
             Unlowered::DdtOffTop => "a `ddt` that is not a whole addend of a flow contribution or of a potential contribution".to_string(),
             Unlowered::DdtTolerance => "a `ddt` with a tolerance".to_string(),
             Unlowered::PlacementSets(name) => format!("a placement that sets `{name}`"),
-            Unlowered::SecondAnalogBlock => "a second `analog` block for one module".to_string(),
             Unlowered::ValueInput => "a value input".to_string(),
         }
     }

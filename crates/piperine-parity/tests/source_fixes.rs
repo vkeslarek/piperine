@@ -6,7 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
+use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
+use piperine_solver::prelude::{Context, NodeIdentifier};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -35,4 +37,16 @@ fn an_enum_deriving_partial_ord_orders_its_variants_in_a_reaction() {
     // `Hi <= Lo` is false (`le` goes true to false), at the first rising edge, 2.5 ns.
     assert_eq!(transient(&seen, "OrderBench.lt"), vec![(5 * NS / 2, HIGH.to_vec())]);
     assert_eq!(transient(&seen, "OrderBench.le"), vec![(5 * NS / 2, LOW.to_vec())]);
+}
+
+#[test]
+fn two_analog_blocks_act_as_one() {
+    // FIX-08 AC 1: two blocks each a 0.5 mA source into 1 kΩ: v(a) = 2 · 0.5 mA · 1 kΩ. The sources
+    // read a param (`ia`) because the literal `0.5m` is B1, FIX-04 (T22).
+    let mut running = project("two_blocks.msl").compile("Bench").unwrap_or_else(|r| panic!("{r}"));
+    let a = running.ir.node_at("Bench.a").expect("node a");
+    let id = NodeIdentifier::Anonymous(a.id().index());
+    let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
+    let actual = solved.get_node(&id).expect("v(a)");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("two analog blocks", "v(a)", Coordinate::OperatingPoint), 1.0, actual);
 }

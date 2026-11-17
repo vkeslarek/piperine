@@ -247,11 +247,11 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `two_analog_blocks_keep_their_locals_apart` passes in `cargo test -p piperine-lang --test elab_analog`
-- [ ] `two_analog_blocks_act_as_one` passes in `cargo test -p piperine-parity --test source_fixes` (two `i(gnd, a) +> 0.5m;` into 1 kΩ: `v(a)` = 1.0 V)
-- [ ] An existing test asserting the `P0001` of a second block, if any, is rewritten to the new behavior and named in the commit
-- [ ] Gate check passes: Quick (`Run eanalog`, `Run sfix`), then `cargo test -p piperine-lang`
-- [ ] Test count: the 2 tests named above
+- [x] `two_analog_blocks_keep_their_locals_apart` passes in `cargo test -p piperine-lang --test elab_analog`
+- [x] `two_analog_blocks_act_as_one` passes in `cargo test -p piperine-parity --test source_fixes` (two `i(gnd, a) +> 0.5m;` into 1 kΩ: `v(a)` = 1.0 V)
+- [x] An existing test asserting the `P0001` of a second block, if any, is rewritten to the new behavior and named in the commit
+- [x] Gate check passes: Quick (`Run eanalog`, `Run sfix`), then `cargo test -p piperine-lang`
+- [x] Test count: the 2 tests named above
 
 **Tests**: e2e
 **Gate**: quick

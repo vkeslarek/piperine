@@ -1,0 +1,19 @@
+//! Two `analog` blocks of one module act as one (FIX-08).
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// Two blocks, each a 0.5 mA source into node `p`. The source reads its param: a contribution
+/// that reads nothing is B1 (FIX-04), which the transpiler does not build yet.
+module Source(p: Electrical) { ia: f64 = 0.5m; }
+analog for Source { i(gnd, p) +> ia; }
+analog for Source { i(gnd, p) +> ia; }
+
+module Bench() {
+    signal a: Electrical;
+    let s = Source(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
