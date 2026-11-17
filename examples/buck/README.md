@@ -35,9 +35,16 @@ piperine run idle       # 20 us with `en` held low: the mode stays 0 (`Off`)
 piperine test           # both runs, judged by their `checks` records
 ```
 
-`piperine run startup` prints a header and a two-row table (it keeps only the last microsecond,
-`from = 599e-6`): the controller's reference at 128 (0.8 V), the mode at 2 (`Regulate`) and
-`vout` within 3 mV of 0.8 V. It prints no record line: the DPWM's `Never` monitor writes one
+`piperine run startup` prints the whole start: a header and 1 201 rows on a 0.5 us grid, from
+0 to 600 us. It records them as it runs and keeps no step, so its memory does not grow with the
+run. The last row holds the controller's reference at 128 (0.8 V), the mode at 2 (`Regulate`) and
+`vout` within 3 mV of 0.8 V. For the waveform on a fine grid, give the flags:
+
+```sh
+piperine run startup --print-step 1e-8 --csv startup.csv --plot startup.svg
+```
+
+It prints no record line: the DPWM's `Never` monitor writes one
 passing `checks` record per 200 MHz clock, and the terminal shows a check only when it fails
 (`--all-checks` shows them all, `--records FILE` keeps them all). `piperine test` prints
 `PASS idle (<n> checks)`, `PASS startup (<n> checks)` and `2 runs, 2 passed, 0 failed`, counting

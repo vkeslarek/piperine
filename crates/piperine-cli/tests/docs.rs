@@ -20,6 +20,12 @@ fn the_buck_readme_says_how_to_run_it() {
     let readme = read("examples/buck/README.md");
     assert!(readme.contains("piperine run startup"), "the README names `piperine run startup`");
     assert!(readme.contains("piperine test"), "the README names `piperine test`");
+    // long-run LR-18: `startup` prints the whole start, no longer the last microsecond only
+    assert!(readme.contains("prints the whole start"), "the README says `startup` prints the whole start");
+    assert!(readme.contains("--print-step 1e-8 --csv") && readme.contains("--plot"), "the README shows the fine-grid waveform from flags");
+    for stale in ["from = 599e-6", "last microsecond", "two-row table"] {
+        assert!(!readme.contains(stale), "the README still says `{stale}`");
+    }
     for stale in ["no host API or\nCLI runs MSL yet", "no host API or CLI runs MSL yet", "There is no testbench in MSL"] {
         assert!(!readme.contains(stale), "the README still says `{stale}`");
     }
