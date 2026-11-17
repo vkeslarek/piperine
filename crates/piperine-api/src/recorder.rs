@@ -2,6 +2,14 @@
 //! session hands it each accepted step; it keeps the rows the run prints and nothing of the
 //! steps the solver took. A step is read through a closure over the step's own values, so the
 //! recorder knows nothing of the solver.
+//!
+//! A discrete net is held, not sampled: the solver reports each change of a net as it commits
+//! it (`Recorder::change`, before the step's call), so a row on the grid at `k*h` shows the net
+//! as it was after the last instant at or before `k*h`, however many instants lay between two
+//! analog steps. At every step the value the changes add up to must be the one the solver
+//! reads; a difference is a change the solver did not report, and the run fails naming the net.
+
+use std::collections::HashMap;
 
 use crate::failure::Failure;
 use crate::probe::Column;
@@ -31,6 +39,18 @@ pub(crate) struct Recorder {
     from: f64,
     grid: Option<Grid>,
     rows: Vec<Vec<Cell>>,
+    /// The columns of each printed net, by its path (a net printed twice is two columns).
+    by_path: HashMap<String, Vec<usize>>,
+    /// Each net column's value as the changes so far make it; `Unknown` for a column that is no
+    /// net.
+    held: Vec<Cell>,
+    /// The changes of printed nets since the previous step, in the order they were made:
+    /// the column, the time and the value after it.
+    changes: Vec<(usize, f64, Cell)>,
+    /// How many of `changes` a grid row has applied to `held` already.
+    applied: usize,
+    /// Whether a step has been seen: the first seeds `held` from the net reader.
+    started: bool,
     /// The first failure of the run: the recorder makes no row after it and `finish` reports it.
     failure: Option<Failure>,
 }
@@ -39,7 +59,33 @@ impl Recorder {
     /// A recorder of `columns`, named `labels` (one each, in order), keeping the steps at or after
     /// `from`.
     pub(crate) fn new(columns: Vec<Column>, labels: Vec<String>, from: f64) -> Recorder {
-        Recorder { columns, labels, from, grid: None, rows: Vec::new(), failure: None }
+        let mut by_path: HashMap<String, Vec<usize>> = HashMap::new();
+        for (at, (column, label)) in columns.iter().zip(&labels).enumerate() {
+            if matches!(column, Column::Net { .. }) {
+                by_path.entry(label.clone()).or_default().push(at);
+            }
+        }
+        let held = vec![Cell::Unknown; columns.len()];
+        Recorder { columns, labels, from, grid: None, rows: Vec::new(), by_path, held, changes: Vec::new(), applied: 0, started: false, failure: None }
+    }
+
+    /// A change of the net at `path` to `bytes` at `time`, as the solver commits it. A path no
+    /// column prints is not the recorder's.
+    pub(crate) fn change(&mut self, path: &str, time: f64, bytes: &[u8]) {
+        let Some(at) = self.by_path.get(path) else { return };
+        if self.failure.is_some() {
+            return;
+        }
+        for &column in at {
+            let Column::Net { ty, .. } = &self.columns[column] else { continue };
+            match Cell::decode(ty, bytes) {
+                Ok(cell) => self.changes.push((column, time, cell)),
+                Err(failure) => {
+                    self.failure = Some(failure);
+                    return;
+                }
+            }
+        }
     }
 
     /// The recorder of a run with a print grid of step `h` up to `stop`: one row per multiple
@@ -57,14 +103,72 @@ impl Recorder {
         if self.failure.is_some() {
             return;
         }
-        match self.cells(time, read) {
-            Ok(cells) if self.grid.is_some() => self.on_grid(time, cells),
-            Ok(cells) => {
-                if time >= self.from {
-                    self.rows.push(Recorder::row(time, cells));
+        let cells = match self.cells(time, read) {
+            Ok(cells) => cells,
+            Err(failure) => {
+                self.failure = Some(failure);
+                return;
+            }
+        };
+        if !self.started {
+            // the start of a run: a net holds what the reader says (a restored run has no change
+            // for it), and the changes of instants up to the start are in it
+            self.started = true;
+            self.changes.clear();
+            for (held, (cell, column)) in self.held.iter_mut().zip(cells.iter().zip(&self.columns)) {
+                if matches!(column, Column::Net { .. }) {
+                    *held = cell.clone();
                 }
             }
-            Err(failure) => self.failure = Some(failure),
+        }
+        if self.grid.is_some() {
+            self.on_grid(time, &cells);
+        } else if time >= self.from {
+            self.rows.push(Recorder::row(time, cells.clone()));
+        }
+        self.settle(time, cells);
+    }
+
+    /// Applies the changes up to `limit` (every one when `None`) not yet applied, in order.
+    fn apply(&mut self, limit: Option<f64>) {
+        while let Some((column, time, cell)) = self.changes.get(self.applied) {
+            if limit.is_some_and(|limit| *time > limit) {
+                break;
+            }
+            self.held[*column] = cell.clone();
+            self.applied += 1;
+        }
+    }
+
+    /// The end of a step: every change of the step is applied, and each net the changes make
+    /// must be the net the solver reads. Then the step is the previous one.
+    fn settle(&mut self, time: f64, mut cells: Vec<Cell>) {
+        self.apply(None);
+        self.changes.clear();
+        self.applied = 0;
+        for (at, column) in self.columns.iter().enumerate() {
+            if matches!(column, Column::Net { .. }) {
+                if !Recorder::same(&self.held[at], &cells[at]) {
+                    let (held, read) = (&self.held[at], &cells[at]);
+                    self.failure = Some(Failure::Backend(format!(
+                        "the net `{}` changed without a change reaching the recorder: its changes make {held:?} at {time} and the solver reads {read:?}",
+                        self.labels[at]
+                    )));
+                    return;
+                }
+                cells[at] = self.held[at].clone();
+            }
+        }
+        if let Some(grid) = self.grid.as_mut() {
+            grid.prev = Some((time, cells));
+        }
+    }
+
+    /// Whether two cells are the same value, a real by its bits.
+    fn same(a: &Cell, b: &Cell) -> bool {
+        match (a, b) {
+            (Cell::Real(a), Cell::Real(b)) => a.to_bits() == b.to_bits(),
+            _ => a == b,
         }
     }
 
@@ -74,37 +178,41 @@ impl Recorder {
         row
     }
 
-    /// A step on the grid: a row for every pending multiple not past it, then the step is the
-    /// previous one. A multiple before the first step is no row; a node or a flow on an accepted
-    /// step is that step's value and between two steps the linear interpolation of
-    /// `Table::on_grid`, expression for expression.
-    fn on_grid(&mut self, time: f64, cells: Vec<Cell>) {
-        let Some(grid) = self.grid.as_mut() else { return };
+    /// A step on the grid: a row for every pending multiple not past it. A multiple before the
+    /// first step is no row; a node or a flow on an accepted step is that step's value and
+    /// between two steps the linear interpolation of `Table::on_grid`, expression for
+    /// expression; a net is its value after the last change at or before the multiple.
+    fn on_grid(&mut self, time: f64, cells: &[Cell]) {
+        let Some(grid) = self.grid.as_ref() else { return };
+        let (h, kmax, slack) = (grid.h, grid.kmax, grid.slack);
+        let mut k = grid.k;
         if grid.prev.is_none() {
-            while grid.k <= grid.kmax && (grid.k as f64 * grid.h) < time {
-                grid.k += 1;
+            while k <= kmax && (k as f64 * h) < time {
+                k += 1;
             }
         }
-        while grid.k <= grid.kmax {
-            let at = grid.k as f64 * grid.h;
+        while k <= kmax {
+            let at = k as f64 * h;
             if at > time {
                 break;
             }
-            let row = match &grid.prev {
-                Some((t0, before)) if at != time => {
-                    let held = before.iter().zip(&cells).zip(&self.columns).map(|((a, b), column)| match (column, a, b) {
-                        (Column::Unknown { .. }, Cell::Real(a), Cell::Real(b)) => Cell::Real(a + (b - a) * (at - t0) / (time - t0)),
-                        (Column::Unknown { .. }, _, _) => Cell::Unknown,
-                        (Column::Net { .. }, held, _) => held.clone(),
-                    });
-                    Recorder::row(at, held.collect())
-                }
-                _ => Recorder::row(at, cells.clone()),
-            };
+            self.apply(Some(at + slack));
+            let prev = self.grid.as_ref().and_then(|g| g.prev.as_ref());
+            let values = cells.iter().enumerate().map(|(i, b)| match (&self.columns[i], prev) {
+                (Column::Net { .. }, _) => self.held[i].clone(),
+                (Column::Unknown { .. }, Some((t0, before))) if at != time => match (&before[i], b) {
+                    (Cell::Real(a), Cell::Real(b)) => Cell::Real(a + (b - a) * (at - t0) / (time - t0)),
+                    _ => Cell::Unknown,
+                },
+                (Column::Unknown { .. }, _) => b.clone(),
+            });
+            let row = Recorder::row(at, values.collect());
             self.rows.push(row);
-            grid.k += 1;
+            k += 1;
         }
-        grid.prev = Some((time, cells));
+        if let Some(grid) = self.grid.as_mut() {
+            grid.k = k;
+        }
     }
 
     /// Every column's cell at the step at `time`.
@@ -140,6 +248,9 @@ impl Recorder {
 
 #[cfg(test)]
 mod tests {
+    use piperine_ir::ValueType;
+    use piperine_plan::CarrierLayout;
+
     use super::*;
 
     fn unknown(index: usize) -> Column {
@@ -317,5 +428,181 @@ mod tests {
         // edge case: a print step greater than stop gives the one row at 0
         let table = gridded(&[(0.0, 4.0), (1.0, 8.0), (2.5, 9.0)], 10.0, 0.0, 2.5).finish().expect("table");
         assert_eq!(table.rows, [vec![Cell::Real(0.0), Cell::Real(4.0)]]);
+    }
+
+    // -- discrete nets -----------------------------------------------------------------------
+
+    fn net(id: u32, ty: ValueType) -> Column {
+        Column::Net { id, ty }
+    }
+
+    /// The bytes of `cell` as a carrier of `ty` holds them: the value at its offset, the known
+    /// byte beside it (clear for `Unknown`).
+    fn bytes(ty: &ValueType, cell: &Cell) -> Vec<u8> {
+        let layout = CarrierLayout::of(ty).expect("a carrier");
+        let field = layout.fields.get(0).expect("a field");
+        let mut out = vec![0u8; layout.size as usize];
+        let at = field.offset as usize;
+        match cell {
+            Cell::Unknown => return out,
+            Cell::Bool(v) => out[at] = u8::from(*v),
+            Cell::Real(v) => out[at..at + 8].copy_from_slice(&v.to_le_bytes()),
+            Cell::Int(v) => out[at..at + 4].copy_from_slice(&(*v as i32).to_le_bytes()),
+            Cell::Text(_) => panic!("no net holds text"),
+        }
+        out[field.known as usize] = 1;
+        out
+    }
+
+    /// One analog unknown and the nets, read as the cells the solver would hold at the step.
+    fn reading<'a>(v: f64, nets: &'a [Cell]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + 'a {
+        move |column| match column {
+            Column::Unknown { .. } => Ok(Some(Cell::Real(v))),
+            Column::Net { id, .. } => Ok(nets.get(*id as usize).cloned()),
+        }
+    }
+
+    /// A recorder of `v` and the net `q` of type `ty`, on a grid of `h` to `stop`.
+    fn with_net(ty: &ValueType, h: f64, stop: f64) -> Recorder {
+        Recorder::new(vec![unknown(0), net(0, ty.clone())], vec!["v".into(), "T.q".into()], 0.0).with_grid(h, stop)
+    }
+
+    fn q(table: &Table) -> Vec<Cell> {
+        table.rows.iter().map(|r| r[2].clone()).collect()
+    }
+
+    #[test]
+    fn a_discrete_column_holds_the_value_after_the_last_instant() {
+        // LR-05 AC 4: at 0.5 the net is what the last instant at or before 0.5 left, though two
+        // instants between the analog steps changed it; at 1.0 it is the change at 0.9
+        let ty = ValueType::Bool;
+        let mut recorder = with_net(&ty, 0.5, 1.5);
+        recorder.step(0.0, &reading(0.0, &[Cell::Bool(false)]));
+        for (time, value) in [(0.4, true), (0.4, false), (0.9, true)] {
+            recorder.change("T.q", time, &bytes(&ty, &Cell::Bool(value)));
+        }
+        recorder.step(1.5, &reading(0.0, &[Cell::Bool(true)]));
+        let table = recorder.finish().expect("table");
+        assert_eq!(q(&table), [Cell::Bool(false), Cell::Bool(false), Cell::Bool(true), Cell::Bool(true)]);
+    }
+
+    #[test]
+    fn a_change_between_two_steps_reaches_the_rows_after_it() {
+        // LR-05 AC 4: a change at 0.5 between the steps at 0 and 1 is in the rows from 0.5 on
+        // (a row at the instant of the change shows it) and not in 0.25
+        let ty = ValueType::Bool;
+        let mut recorder = with_net(&ty, 0.25, 1.0);
+        recorder.step(0.0, &reading(0.0, &[Cell::Bool(false)]));
+        recorder.change("T.q", 0.5, &bytes(&ty, &Cell::Bool(true)));
+        recorder.step(1.0, &reading(0.0, &[Cell::Bool(true)]));
+        let table = recorder.finish().expect("table");
+        let want = [false, false, true, true, true].map(Cell::Bool);
+        assert_eq!(q(&table), want);
+    }
+
+    #[test]
+    fn a_discrete_column_that_changes_only_at_steps_equals_on_grid() {
+        // LR-06 AC 3: when a net changes only at accepted steps, the held column is the column
+        // `on_grid` makes of the table of every step, for a bool and an integer
+        let steps = irregular();
+        for ty in [ValueType::Bool, ValueType::Int(32)] {
+            let cell = |n: usize| if ty == ValueType::Bool { Cell::Bool(n / 7 % 2 == 1) } else { Cell::Int((n / 7) as i128) };
+            let all = Table {
+                columns: vec!["time".into(), "v".into(), "T.q".into()],
+                rows: steps.iter().enumerate().map(|(n, (t, v))| vec![Cell::Real(*t), Cell::Real(*v), cell(n)]).collect(),
+            };
+            for (h, from) in [(0.01, 0.0), (0.0137, 0.3331), (0.25, 0.2)] {
+                let mut recorder = Recorder::new(vec![unknown(0), net(0, ty.clone())], vec!["v".into(), "T.q".into()], from).with_grid(h, 1.0);
+                for (n, (t, v)) in steps.iter().enumerate() {
+                    // the solver reports a change when it commits it, before the step's call
+                    if n == 0 || cell(n) != cell(n - 1) {
+                        recorder.change("T.q", *t, &bytes(&ty, &cell(n)));
+                    }
+                    recorder.step(*t, &reading(*v, &[cell(n)]));
+                }
+                let want = all.on_grid(h, from, 1.0).unwrap_or_else(|f| panic!("{f}"));
+                let got = recorder.finish().unwrap_or_else(|f| panic!("{f}"));
+                assert_eq!(got.rows.len(), want.rows.len(), "{ty} h {h}");
+                for (row, want) in got.rows.iter().zip(&want.rows) {
+                    assert_eq!(row[0], want[0], "{ty} h {h}");
+                    assert_eq!(row[2], want[2], "{ty} h {h} at {:?}", row[0]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_change_within_rounding_of_a_row_counts_at_it() {
+        // LR-05 AC 5: a change 1e-10 past the multiple 0.5 (slack 5e-10) is at it; one 1e-6 past
+        // is after it
+        let ty = ValueType::Bool;
+        for (late, at_row) in [(1e-10, true), (1e-6, false)] {
+            let mut recorder = with_net(&ty, 0.5, 1.0);
+            recorder.step(0.0, &reading(0.0, &[Cell::Bool(false)]));
+            recorder.change("T.q", 0.5 + late, &bytes(&ty, &Cell::Bool(true)));
+            recorder.step(1.0, &reading(0.0, &[Cell::Bool(true)]));
+            let table = recorder.finish().expect("table");
+            assert_eq!(q(&table)[1], Cell::Bool(at_row), "a change {late} past the row");
+            assert_eq!(q(&table)[2], Cell::Bool(true));
+        }
+    }
+
+    #[test]
+    fn a_real_typed_net_is_held_not_interpolated() {
+        // LR-05 AC 4: a net of type f64 holds its last value; only a node or a flow is
+        // interpolated
+        let ty = ValueType::F64;
+        let mut recorder = with_net(&ty, 0.5, 1.0);
+        recorder.step(0.0, &reading(0.0, &[Cell::Real(1.0)]));
+        recorder.change("T.q", 1.0, &bytes(&ty, &Cell::Real(5.0)));
+        recorder.step(1.0, &reading(0.0, &[Cell::Real(5.0)]));
+        let table = recorder.finish().expect("table");
+        assert_eq!(q(&table), [Cell::Real(1.0), Cell::Real(1.0), Cell::Real(5.0)]);
+    }
+
+    #[test]
+    fn an_unknown_net_value_is_an_unknown_cell() {
+        // LR-05: a net whose known byte is clear is `Cell::Unknown`, at the start and after a
+        // change
+        let ty = ValueType::Bool;
+        let mut recorder = with_net(&ty, 0.5, 1.0);
+        recorder.step(0.0, &reading(0.0, &[Cell::Unknown]));
+        recorder.change("T.q", 0.5, &bytes(&ty, &Cell::Bool(true)));
+        recorder.change("T.q", 0.75, &bytes(&ty, &Cell::Unknown));
+        recorder.step(1.0, &reading(0.0, &[Cell::Unknown]));
+        let table = recorder.finish().expect("table");
+        assert_eq!(q(&table), [Cell::Unknown, Cell::Bool(true), Cell::Unknown]);
+    }
+
+    #[test]
+    fn a_net_that_changed_unobserved_fails_naming_it() {
+        // LR-06 AC 4: the reader says true at the step and no change reached the recorder: the
+        // run fails naming the net and the time, never taking the reader's value
+        let ty = ValueType::Bool;
+        for grid in [true, false] {
+            let mut recorder = Recorder::new(vec![unknown(0), net(0, ty.clone())], vec!["v".into(), "T.q".into()], 0.0);
+            if grid {
+                recorder = recorder.with_grid(0.5, 1.0);
+            }
+            recorder.step(0.0, &reading(0.0, &[Cell::Bool(false)]));
+            recorder.step(1.0, &reading(0.0, &[Cell::Bool(true)]));
+            match recorder.finish() {
+                Err(Failure::Backend(message)) => assert!(message.contains("`T.q`") && message.contains("at 1"), "{message}"),
+                other => panic!("a failure naming the net, found {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_resumed_run_seeds_its_nets_from_the_reader() {
+        // contract.md point 2: a run restored from a state has no change for the nets it holds;
+        // the first step is what the reader says, and the changes after it add up from there
+        let ty = ValueType::Bool;
+        let mut recorder = with_net(&ty, 0.5, 1.0);
+        recorder.step(0.0, &reading(0.0, &[Cell::Bool(true)]));
+        recorder.change("T.q", 0.75, &bytes(&ty, &Cell::Bool(false)));
+        recorder.step(1.0, &reading(0.0, &[Cell::Bool(false)]));
+        let table = recorder.finish().expect("table");
+        assert_eq!(q(&table), [Cell::Bool(true), Cell::Bool(true), Cell::Bool(false)]);
     }
 }

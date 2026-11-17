@@ -327,9 +327,9 @@ T23
 
 **Done when**:
 
-- [ ] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `recorder::tests::a_discrete_column_holds_the_value_after_the_last_instant`, `recorder::tests::a_change_between_two_steps_reaches_the_rows_after_it`, `recorder::tests::a_discrete_column_that_changes_only_at_steps_equals_on_grid`, `recorder::tests::a_change_within_rounding_of_a_row_counts_at_it`, `recorder::tests::a_real_typed_net_is_held_not_interpolated`, `recorder::tests::an_unknown_net_value_is_an_unknown_cell`, `recorder::tests::a_net_that_changed_unobserved_fails_naming_it`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: the 7 tests named above, and no existing test removed or edited
+- [x] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `recorder::tests::a_discrete_column_holds_the_value_after_the_last_instant`, `recorder::tests::a_change_between_two_steps_reaches_the_rows_after_it`, `recorder::tests::a_discrete_column_that_changes_only_at_steps_equals_on_grid`, `recorder::tests::a_change_within_rounding_of_a_row_counts_at_it`, `recorder::tests::a_real_typed_net_is_held_not_interpolated`, `recorder::tests::an_unknown_net_value_is_an_unknown_cell`, `recorder::tests::a_net_that_changed_unobserved_fails_naming_it`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: the 7 tests named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick
