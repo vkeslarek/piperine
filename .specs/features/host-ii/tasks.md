@@ -549,9 +549,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline test `request::tests::pss_needs_a_positive_period_and_a_non_negative_tstab`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: 1 new test
+- [x] Inline test `request::tests::pss_needs_a_positive_period_and_a_non_negative_tstab`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: 1 new test
 
 **Tests**: unit
 **Gate**: quick

@@ -136,6 +136,8 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "input", kind: ArgKind::Text { value: "SOURCE" }, help: "tf, pz: the voltage source that excites" },
             ArgRow { id: "output", kind: ArgKind::Text { value: "NODE" }, help: "tf, pz: the node that is measured" },
             ArgRow { id: "wrt", kind: ArgKind::Texts { value: "PARAM" }, help: "sens: a param to differentiate by (repeatable)" },
+            ArgRow { id: "period", kind: ArgKind::Real { value: "SECONDS" }, help: "pss: the period of the drive" },
+            ArgRow { id: "tstab", kind: ArgKind::Real { value: "SECONDS" }, help: "pss: the length of the transient that comes before the orbit (default 0)" },
         ],
     },
     CommandRow {
@@ -276,6 +278,8 @@ impl Cli {
             input: text("input"),
             output: text("output"),
             wrt: texts("wrt"),
+            period: real("period"),
+            tstab: real("tstab"),
             nodeset: m.get_many::<(String, f64)>("nodeset").map(|v| v.cloned().collect()).unwrap_or_default(),
         }
     }
@@ -358,7 +362,7 @@ mod tests {
         // those and `--project` exists (`--help` is clap's, added when the command is built)
         let flags = [
             "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot", "all-checks",
-            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt",
+            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab",
         ];
         let command = Cli::command();
         let run = command.find_subcommand("run").expect("a `run` command");
@@ -373,7 +377,7 @@ mod tests {
             "--step", "0.5", "--per-decade", "10", "--points", "20", "--print", "a", "--print", "b", "--stream", "s1", "--stream", "s2", "--param", "r1.r=2000", "--param", "c1.c=1e-9", "--backend", "interp",
             "--csv", "o.csv", "--records", "r.jsonl", "--plot", "p.svg", "--all-checks",
             "--reltol", "1e-4", "--abstol", "1e-13", "--vntol", "2e-6", "--trtol", "5", "--temp", "-40", "--resolution", "1e-12", "--maxrounds", "30", "--maxmicro", "500", "--max-steps", "4000000", "--nodeset", "Top.a=1.5",
-            "--nodeset", "Top.b=0", "--input", "v1", "--output", "Top.out", "--wrt", "r1.r", "--wrt", "r2.r",
+            "--nodeset", "Top.b=0", "--input", "v1", "--output", "Top.out", "--wrt", "r1.r", "--wrt", "r2.r", "--period", "1e-3", "--tstab", "5e-3",
         ];
         let Ok(Invocation::Run { target, overrides, .. }) = Cli::parse(args) else { panic!("the flags parse as a run") };
         assert_eq!(target.as_deref(), Some("x"));
@@ -410,6 +414,8 @@ mod tests {
             input: Some("v1".into()),
             output: Some("Top.out".into()),
             wrt: vec!["r1.r".into(), "r2.r".into()],
+            period: Some(1e-3),
+            tstab: Some(5e-3),
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
         };
         assert_eq!(overrides, want);

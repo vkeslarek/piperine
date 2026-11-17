@@ -306,7 +306,7 @@ impl Session {
                 Ok((NodeIdentifier::Anonymous(node.id().index()), *value, entry.clone()))
             })
             .collect::<Result<Vec<_>, Failure>>()?;
-        if !seeds.is_empty() && matches!(spec.analysis, Analysis::Ac { .. } | Analysis::Transient { .. } | Analysis::Tf { .. } | Analysis::Pz { .. } | Analysis::Sens { .. }) {
+        if !seeds.is_empty() && matches!(spec.analysis, Analysis::Ac { .. } | Analysis::Transient { .. } | Analysis::Tf { .. } | Analysis::Pz { .. } | Analysis::Sens { .. } | Analysis::Pss { .. }) {
             let message = format!(
                 "run `{}`: `nodeset` seeds an operating point, and a `{}` run takes its own inside the solver, where the host cannot seed it; use `op` or `dc`",
                 spec.name,
@@ -532,6 +532,7 @@ impl Session {
                     .map_err(|error| Failure::Solver { analysis: "pz", error })?;
                 Ok(Table::roots(&roots))
             }
+            Analysis::Pss { .. } => Err(Failure::Host { code: "P0010", message: "`pss` has no run yet in this build".into() }),
             Analysis::Sens { .. } => {
                 let mut circuit = circuit;
                 let nets = circuit.nets();

@@ -28,10 +28,13 @@ pub enum Analysis {
     Pz { input: String, output: String },
     /// The DC sensitivity (ngspice `.sens`) of the printed signals with respect to each param of `wrt`.
     Sens { wrt: Vec<String> },
+    /// The periodic steady state of a circuit driven with period `period`; the orbit starts at
+    /// `tstab` (a transient of that length comes first). `max_step` bounds the steps of a shot.
+    Pss { period: f64, tstab: f64, max_step: Option<f64>, print_step: Option<f64> },
 }
 
 impl Analysis {
-    /// The eight names a user writes, in the order they are listed; `pss` is reserved until its run.
+    /// The eight names a user writes, in the order they are listed.
     pub const NAMES: [&'static str; 8] = ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss"];
 
     /// The names as a fault lists them: each in backquotes, comma separated.
@@ -49,6 +52,7 @@ impl Analysis {
             Analysis::Tf { .. } => "tf",
             Analysis::Pz { .. } => "pz",
             Analysis::Sens { .. } => "sens",
+            Analysis::Pss { .. } => "pss",
         }
     }
 }
@@ -141,6 +145,10 @@ pub struct Overrides {
     pub output: Option<String>,
     /// `--wrt`, repeatable: the params a `sens` run differentiates by; a flag list replaces the key.
     pub wrt: Vec<String>,
+    /// `--period`: the period of a `pss` run.
+    pub period: Option<f64>,
+    /// `--tstab`: the length of the transient a `pss` run takes before its first shot.
+    pub tstab: Option<f64>,
     /// `--nodeset <path>=<value>`: an entry replaces the table's entry of the same path.
     pub nodeset: Vec<(String, f64)>,
 }
@@ -225,6 +233,8 @@ struct Keys {
     input: Option<Given<String>>,
     output: Option<Given<String>>,
     wrt: Option<Given<Vec<String>>>,
+    period: Option<Given<f64>>,
+    tstab: Option<Given<f64>>,
     nodeset: Vec<(String, f64)>,
 }
 
@@ -236,14 +246,14 @@ type Value<'i> = Spanned<DeValue<'i>>;
 
 /// The keys of a run table, in the order CLI-03 AC 1 lists them, then the session options of
 /// HII-01.
-const RUN_KEYS: [&str; 33] = [
+const RUN_KEYS: [&str; 35] = [
     "bench", "top", "analysis", "stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "print", "streams",
     "params", "backend", "csv", "records", "plot", "all_checks", "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds",
-    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt",
+    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt", "period", "tstab",
 ];
 
 /// The keys whose meaning belongs to an analysis; each analysis reads the ones `reads` lists.
-const ANALYSIS_KEYS: [&str; 13] = ["stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "plot", "input", "output", "wrt"];
+const ANALYSIS_KEYS: [&str; 15] = ["stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "plot", "input", "output", "wrt", "period", "tstab"];
 
 impl RunSpec {
     /// Every `[run.<name>]` of the manifest `text` (the content of `file`), in source order. A
@@ -392,6 +402,8 @@ impl Source {
             "input" => keys.input = Some(text()?),
             "output" => keys.output = Some(text()?),
             "wrt" => keys.wrt = Some(Given { value: strings()?, at }),
+            "period" => keys.period = Some(real()?),
+            "tstab" => keys.tstab = Some(real()?),
             "nodeset" => {
                 let table = v.as_table().ok_or_else(|| wrong("a table of node paths and numbers"))?;
                 for (path, n) in entries(table) {
@@ -444,6 +456,8 @@ impl Keys {
         over(&mut self.max_steps, &o.max_steps);
         over(&mut self.input, &o.input);
         over(&mut self.output, &o.output);
+        over(&mut self.period, &o.period);
+        over(&mut self.tstab, &o.tstab);
         if !o.wrt.is_empty() {
             self.wrt = Some(Given::flag(o.wrt.clone()));
         }
@@ -479,6 +493,8 @@ impl Keys {
             "input" => self.input.as_ref().and_then(|g| g.at),
             "output" => self.output.as_ref().and_then(|g| g.at),
             "wrt" => self.wrt.as_ref().and_then(|g| g.at),
+            "period" => self.period.as_ref().and_then(|g| g.at),
+            "tstab" => self.tstab.as_ref().and_then(|g| g.at),
             _ => None,
         }
     }
@@ -499,6 +515,8 @@ impl Keys {
             "input" => self.input.is_some(),
             "output" => self.output.is_some(),
             "wrt" => self.wrt.is_some(),
+            "period" => self.period.is_some(),
+            "tstab" => self.tstab.is_some(),
             _ => false,
         }
     }
@@ -520,10 +538,7 @@ impl Keys {
             "transient" => &["stop", "max_step", "print_step", "from", "plot"],
             "tf" | "pz" => &["input", "output"],
             "sens" => &["wrt"],
-            "pss" => {
-                let message = format!("run `{name}`: `pss` is reserved and has no run yet; the analyses that run are `op`, `dc`, `ac`, `transient`, `tf`, `pz`, `sens`");
-                return Err(fault(analysis.at, message, "not runnable yet"));
-            }
+            "pss" => &["period", "tstab", "max_step", "print_step", "plot"],
             other => {
                 let message = format!("unknown analysis `{other}`: the analyses are {}", Analysis::listed());
                 return Err(fault(analysis.at, message, "not an analysis"));
@@ -609,6 +624,23 @@ impl Keys {
                     return Err(fault(wrt.at.or(self.name_at), format!("run `{name}`: `wrt` must name at least one param"), "empty"));
                 }
                 Analysis::Sens { wrt: wrt.value.clone() }
+            }
+            "pss" => {
+                let period = self.period.as_ref().ok_or_else(|| missing("period", "pss"))?;
+                positive("period", &self.period)?;
+                positive("max_step", &self.max_step)?;
+                positive("print_step", &self.print_step)?;
+                if let Some(Given { value, at }) = &self.tstab {
+                    if !(*value >= 0.0) {
+                        return Err(fault(*at, format!("run `{name}`: `tstab` must be at least 0, found {value}"), "negative"));
+                    }
+                }
+                Analysis::Pss {
+                    period: period.value,
+                    tstab: self.tstab.as_ref().map_or(0.0, |g| g.value),
+                    max_step: self.max_step.as_ref().map(|g| g.value),
+                    print_step: self.print_step.as_ref().map(|g| g.value),
+                }
             }
             _ => {
                 let stop = self.stop.as_ref().ok_or_else(|| missing("stop", "transient"))?;
@@ -798,7 +830,7 @@ points = 5
         assert_eq!(runs[3].analysis, Analysis::Ac { from: 1e3, to: 5e3, grid: Grid::Points(5) });
         // the nineteen keys of CLI-03 AC 1, `all_checks` (CLI-06 AC 7) and the nine session options
         // of HII-01 and `max_steps` (HII-01 amendment), no more
-        assert_eq!(RUN_KEYS.len(), 33);
+        assert_eq!(RUN_KEYS.len(), 35);
         // a manifest with no run table has no run
         assert_eq!(read("").map(|r| r.len()).ok(), Some(0));
     }
@@ -1096,6 +1128,33 @@ points = 5
     }
 
     #[test]
+    fn pss_needs_a_positive_period_and_a_non_negative_tstab() {
+        // HII-07 AC 5: a `pss` run lacking `period`, with a `period` not above 0 or a negative
+        // `tstab` is a P0010 naming the key
+        let ok = one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\ntstab = 5e-3\nprint_step = 1e-5\n");
+        assert_eq!(ok.analysis, Analysis::Pss { period: 1e-3, tstab: 5e-3, max_step: None, print_step: Some(1e-5) });
+        // `tstab` defaults to 0, and 0 itself is allowed
+        for keys in ["", "tstab = 0\n"] {
+            let spec = one(&format!("[run.a]\nanalysis = \"pss\"\nperiod = 2e-3\n{keys}"));
+            assert_eq!(spec.analysis, Analysis::Pss { period: 2e-3, tstab: 0.0, max_step: None, print_step: None }, "{keys:?}");
+        }
+        for (keys, key, at) in [("", "period", "a"), ("period = 0\n", "period", "0"), ("period = -1e-3\n", "period", "-1e-3"), ("period = 1e-3\ntstab = -1e-3\n", "tstab", "-1e-3")] {
+            let f = fault(&format!("[run.a]\nanalysis = \"pss\"\n{keys}"));
+            let (code, message, spanned) = located(&f);
+            assert_eq!((code, spanned), ("P0010", at), "{keys:?}");
+            assert!(message.contains(&format!("`{key}`")), "{message}");
+        }
+        // a flag gives the keys as a table does, and wins over the table
+        let table = one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\n");
+        let merged = table.merged(&Overrides { period: Some(4e-3), tstab: Some(1e-3), ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
+        assert_eq!(merged.analysis, Analysis::Pss { period: 4e-3, tstab: 1e-3, max_step: None, print_step: None });
+        // `period` and `tstab` belong to `pss` alone, and `plot` is allowed on it
+        let f = fault("[run.a]\nanalysis = \"op\"\nperiod = 1e-3\n");
+        assert!(located(&f).1.contains("`period`"), "{f:?}");
+        one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\nplot = \"p.svg\"\n");
+    }
+
+    #[test]
     fn sens_needs_a_non_empty_wrt() {
         // HII-06 AC 3: no `wrt`, or an empty one, is a P0010 naming the key
         let ok = one("[run.a]\nanalysis = \"sens\"\nwrt = [\"r1.r\", \"r2.r\"]\n");
@@ -1124,7 +1183,7 @@ points = 5
         for name in Analysis::NAMES {
             assert!(message.contains(&format!("`{name}`")), "{message} names {name}");
         }
-        for (analysis, keys) in [("tf", "input = \"v1\"\noutput = \"o\"\n"), ("pz", "input = \"v1\"\noutput = \"o\"\n"), ("sens", "wrt = [\"r.r\"]\n")] {
+        for (analysis, keys) in [("tf", "input = \"v1\"\noutput = \"o\"\n"), ("pz", "input = \"v1\"\noutput = \"o\"\n"), ("sens", "wrt = [\"r.r\"]\n"), ("pss", "period = 1e-3\n")] {
             assert_eq!(one(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}")).analysis.name(), analysis);
         }
     }
