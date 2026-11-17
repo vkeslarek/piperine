@@ -1556,7 +1556,7 @@ Proof: run run | test stdout_is_the_same_from_two_caches_and_two_directories ...
 **C73** - `piperine run tests/ngspice/divider.msl --analysis op` prints `run divider: op, top Divider, backend rust` and `Divider.mid  7.500000e0`. (CLI-07, AC 7; T19)
 Proof: run run | test a_lone_file_run_is_named_by_its_stem ... ok
 
-**C74** - With an empty cache, standard error holds exactly one line `compiling run \`op\` (top Step) with rustc`, and a wrapper `rustc` finds it already written when its first build starts; with the cache filled, none. (CLI-07, AC 8; T18)
+**C74** - With an empty cache, standard error holds exactly one line ``compiling run `op` (top Step) with rustc``, and a wrapper `rustc` finds it already written when its first build starts; with the cache filled, none. (CLI-07, AC 8; T18)
 Proof: run run | test a_first_compile_is_announced_on_stderr ... ok
 
 **C75** - With standard output closed by the reader after the header, the process exits 1 and standard error holds no `panicked`. (CLI-07, AC edge 8; T20)
@@ -1936,6 +1936,9 @@ Proof: run commands | test a_dc_run_of_a_design_with_records_is_refused_never_pa
 
 **C200** - In a temporary copy of `examples/rc`, `piperine clean --cache` with the cache set to `.` (the project), to its parent, to the working directory, to `$HOME`, or to a directory with no `rust/`, exits 1 with `refused` on standard error, nothing on standard output, and every file (`target` included) byte-equal; in a real cache the entry `rust/<key>/` is removed and a file of the user's in the cache or in `rust/` stays. (CLI-18, AC 5; T35, verification F3)
 Proof: run commands | test clean_cache_refuses_a_directory_it_does_not_own ... ok
+
+**C201** - The Book's `blinky.msl` (no analog node) run as a transient to 3e-6, plain, with `--csv` and with `--plot`, each exits 1 with `before its stop` and `no analog node` on standard error, keeps its 3 record lines on standard output, prints no table and no `wrote` line, and writes no file. (CLI-05, AC 11; T13, verification F2)
+Proof: run run | test a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot ... ok
 
 ---
 

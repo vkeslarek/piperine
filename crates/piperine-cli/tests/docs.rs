@@ -69,13 +69,14 @@ fn gaps_drops_what_closed_and_lists_what_is_left() {
         assert!(gaps.contains(left), "GAPS.md lists `{left}`");
     }
     // and what this feature's own reading found
-    for found in ["A DC sweep's points deliver no records", "`on above(..) { emit!(..) }` is `P0001`", "no analog node is wrong"] {
+    for found in ["A DC sweep's points deliver no records", "`on above(..) { emit!(..) }` is `P0001`", "A digital-only transient is refused"] {
         assert!(gaps.contains(found), "GAPS.md lists `{found}`");
     }
     // a gap the command line refuses is loud, not silent (verification F1)
     let silent = gaps.split("## 3. Silent").nth(1).and_then(|s| s.split("## 4.").next()).expect("GAPS.md has a section 3");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("GAPS.md has a section 4");
     assert!(!silent.contains("A DC sweep's points deliver no records") && loud.contains("A DC sweep's points deliver no records"), "the dc gap is listed as loud");
+    assert!(!silent.contains("no analog node") && loud.contains("A digital-only transient is refused"), "the digital-only transient is listed as loud (F2)");
 }
 
 #[test]

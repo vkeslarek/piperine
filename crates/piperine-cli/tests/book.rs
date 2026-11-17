@@ -12,6 +12,8 @@
 //!   directory holding the Book's lone files when there is none;
 //! - `data-cli-lines="a-b"` (or `"a"`): only those lines of the output, 1-based, inclusive;
 //! - `data-cli-stream="stderr"`: the block is standard error of a command that exits 1;
+//! - `data-cli-exit="1"`: the block is standard output of a command that exits 1 (records
+//!   printed before a failure stay, CLI-07 AC 5);
 //! - `data-cli-written="<file>"`: the block is the file the command writes;
 //! - `data-cli-cache="empty"`: the command runs on a cache of its own, empty.
 //!
@@ -213,7 +215,8 @@ fn produce(all: &[Block], block: &Block) -> (String, String) {
         assert_eq!(out.status.code(), Some(1), "`{command}` is shown refused, so it exits 1; stderr:\n{stderr}");
         stderr
     } else {
-        assert_eq!(out.status.code(), Some(0), "`{command}` exits 0; stderr:\n{stderr}");
+        let exit: i32 = block.attr("data-cli-exit").map_or(0, |code| code.parse().expect("an exit code"));
+        assert_eq!(out.status.code(), Some(exit), "`{command}` exits {exit}; stderr:\n{stderr}");
         match block.attr("data-cli-written") {
             Some(file) => std::fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("`{command}` wrote {file}: {e}")),
             None => String::from_utf8(out.stdout).expect("standard output is text"),

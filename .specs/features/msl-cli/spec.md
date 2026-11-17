@@ -209,6 +209,7 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 8. WHEN the RC of `tests/ngspice/tran_rc.msl` runs `transient` to 10e-6 THEN the system SHALL give for `TranRc.out` at the first row at or after 1.5915494309189535e-6 a value within 1e-3 of `1 - exp(-t/1.5915494309189535e-6)` at that row's time.
 9. IF the solver fails an analysis THEN the system SHALL print the solver's error and the analysis on standard error, print no table, and exit 1.
 10. The system SHALL render a real as `{:.6e}`, a `bool` as `true` or `false`, an integer in decimal and an unknown value as `x`.
+11. (Amended 2026-11-17, verification F2.) IF a `transient` run's last step is before its `stop` (the solver does not step a design with no analog node) THEN the system SHALL fail the run naming that cause, give no table, CSV or plot, keep the records already written, and exit 1.
 
 **Independent Test**: `piperine run tests/ngspice/divider.msl --analysis op` prints `Divider.mid  7.500000e0`.
 

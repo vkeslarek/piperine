@@ -426,11 +426,13 @@ module Blinky() {
   <p class="callout-label">Run it</p>
   <p>Save the file as <code>blinky.msl</code>, anywhere. A file with no project around it runs by its name; the flags say which analysis. The top is the one module without ports.</p>
 <pre data-lang="sh">piperine run blinky.msl --analysis transient --stop 3e-6</pre>
-<pre data-lang="text" data-cli-output="piperine run blinky.msl --analysis transient --stop 3e-6" data-cli-lines="1-4">run blinky: transient, top Blinky, backend rust
+<pre data-lang="text" data-cli-output="piperine run blinky.msl --analysis transient --stop 3e-6" data-cli-exit="1">run blinky: transient, top Blinky, backend rust
 @5.000000e-7 Blinky.ctr edge t=5.000000e-7 count=0
 @1.500000e-6 Blinky.ctr edge t=1.500000e-6 count=1
 @2.500000e-6 Blinky.ctr edge t=2.500000e-6 count=2</pre>
-  <p>These are the three records of the table above, as the command prints them: one line each, live. After them comes a table with the columns <code>Blinky.clk</code> and <code>Blinky.count</code>, the signals of the top. (Today that table is not right yet for a design with no analog node: it holds a single row, at time 0, with the values of the end of the run. The records are right; read them.)</p>
+  <p>These are the three records of the table above, as the command prints them: one line each, live. No table follows them. Today the solver does not step a design with no analog node, so a transient of a purely digital design is refused once its records are out, and the command exits 1 with this on standard error:</p>
+<pre data-lang="text" data-cli-output="piperine run blinky.msl --analysis transient --stop 3e-6" data-cli-stream="stderr">error: the transient ended with the last step at 0e0, before its stop at 3e-6: the solver does not step a design with no analog node, so a digital-only transient is refused</pre>
+  <p>The records are right; read them.</p>
 </div>
 
 <p>Coming from Rust, this is how the two compare:</p>
@@ -728,9 +730,9 @@ module AdderTop(in b: Bit<u8>) {
   <p class="callout-label">Run it</p>
   <p>Add the two modules to <code>monitor.msl</code>. The file now has two candidates for the top, so name the one you want. Its <code>in</code> port is left undriven, which is the bug under study:</p>
 <pre data-lang="sh">piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost</pre>
-<pre data-lang="text" data-cli-output="piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost" data-cli-lines="1-2">run monitor: transient, top AdderTop, backend rust
+<pre data-lang="text" data-cli-output="piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost" data-cli-exit="1">run monitor: transient, top AdderTop, backend rust
 @5.000000e-7 AdderTop.add lost t=5.000000e-7 a=3 b=x</pre>
-  <p>An unknown value prints as <code>x</code>. One look at the line names the input nobody drives.</p>
+  <p>An unknown value prints as <code>x</code>. One look at the line names the input nobody drives. No table follows and the command exits 1: <code>AdderTop</code> has no analog node, and like the blinky its transient is refused once its records are out.</p>
 </div>
 
 <p>A second flavor of the same tool: a record reached under an unknown condition is written with <code>maybe = true</code>. If the adder also had <code>if a &gt; b { emit!("bigger", a = a); }</code>, that record would appear here marked <code>maybe</code>: the model cannot tell whether <code>a &gt; b</code>, and it says so instead of guessing.</p>
@@ -1583,7 +1585,7 @@ digital for Counter {
     let ctr = Counter(clk, count, full);
 }</pre>
 <pre data-lang="sh">piperine run count.msl --analysis transient --stop 257e-6 --print full --records state.jsonl</pre>
-  <p>The 257 <code>state</code> records are in <code>state.jsonl</code>, one object per line, ready for a script, and exactly one of them, the one at 255.5&nbsp;µs, has <code>full</code> true. The table should show the same in its <code>Count.full</code> column; today the table of a design with no analog node is not right yet (it holds a single row, at time 0, with the values of the end of the run), so read the records.</p>
+  <p>The 257 <code>state</code> records are in <code>state.jsonl</code>, one object per line, ready for a script, and exactly one of them, the one at 255.5&nbsp;µs, has <code>full</code> true. A table would show the same in its <code>Count.full</code> column, but today the solver does not step a design with no analog node: once the records are written, the transient is refused and the command exits 1 with no table. Read the records.</p>
 </div>
 
 <h3>The rules of a microstep</h3>
@@ -1869,7 +1871,7 @@ digital for MacPipe {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 15); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above. Two forms of this chapter are not compiled yet and are refused with P0001: a param of an integer type, such as <code>n: u8</code>, and a <code>known_or</code> whose default may itself be unknown. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. The table of a design with no analog node is not right yet either (one row, at time 0); its records are.</p>
+  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 15); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above. Two forms of this chapter are not compiled yet and are refused with P0001: a param of an integer type, such as <code>n: u8</code>, and a <code>known_or</code> whose default may itself be unknown. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. A transient of a design with no analog node is refused after its records are written (the solver does not step such a design yet), so read its records; there is no table.</p>
 </div>
 
 <div class="callout mistake">

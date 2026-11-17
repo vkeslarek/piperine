@@ -409,3 +409,27 @@ fn a_closed_stdout_ends_with_exit_1_and_no_panic() {
     assert!(!err.contains("panicked"), "{err}");
     assert!(err.contains("standard output"), "{err}");
 }
+
+/// The Book's blinky: a clock and a counter, no analog node.
+const BLINKY: &str = "module Osc(out clk: Bit = false) {\n    f: f64 = 1M where f > 0.0;\n}\ndigital for Osc {\n    on clk.changed() { clk <- !clk after 0.5 / f; }\n}\n\nmodule Counter(in clk: Bit, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count);\n    }\n}\n\nmodule Blinky() {\n    signal clk: Bit;\n    pub signal count: Bit<u8>;\n    let osc = Osc(clk) { f: 1M };\n    let ctr = Counter(clk, count);\n}\n";
+
+#[test]
+fn a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot() {
+    // CLI-05 AC 11 (verification F2): the solver does not step a design with no analog node, so
+    // its transient keeps one step at 0 holding the end of the run. A transient whose last step
+    // is before `stop` is a failure naming the cause: no table, no file, exit 1, for the table,
+    // `--csv` and `--plot` alike; the records already printed stay (CLI-07 AC 5).
+    let dir = tempfile::tempdir().expect("tmp");
+    std::fs::write(dir.path().join("blinky.msl"), BLINKY).expect("blinky.msl");
+    let base = ["run", "blinky.msl", "--analysis", "transient", "--stop", "3e-6"];
+    for extra in [&[][..], &["--csv", "out.csv"][..], &["--plot", "out.svg"][..]] {
+        let args: Vec<&str> = base.iter().chain(extra).copied().collect();
+        let out = piperine_in(dir.path(), shared_cache(), &args);
+        let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {stdout}\n{stderr}");
+        assert!(stderr.contains("before its stop") && stderr.contains("no analog node"), "{args:?}: the cause is named:\n{stderr}");
+        assert_eq!(stdout.lines().filter(|l| l.starts_with('@')).count(), 3, "{args:?}: the records stay:\n{stdout}");
+        assert!(!stdout.contains("time") && !stdout.contains("wrote"), "{args:?}: no table and no file:\n{stdout}");
+    }
+    assert!(!dir.path().join("out.csv").exists() && !dir.path().join("out.svg").exists(), "no file is written");
+}

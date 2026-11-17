@@ -56,12 +56,6 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 
 ## 3. Silent
 
-- **The transient table of a design with no analog node is wrong (`msl-cli`, found by T36).** A
-  purely digital design (the Book's `Blinky`, `Count`) keeps one transient step: its table is a
-  single row at time 0 holding the values of the END of the run (`Blinky.count` = 3 at 0), exit
-  0. With `print_step` the run fails instead (`the print grid reaches .., past the last step of
-  the run at 0`). The records are right. The Book says so where it shows such a design.
-
 - **A derived child param is not re-derived on a host `set` (`msl-digital`).** A placement
   that gives a child param a value reading the parent's params (`PowerStage { ron: ron }`) is
   evaluated once per instance at elaboration, and the instance table holds the constant. A host
@@ -77,6 +71,13 @@ build or run) › **loud** (refused with a diagnostic) › **spec hole** (the sp
 ---
 
 ## 4. Loud — refused, though the spec allows it
+
+- **A digital-only transient is refused; the solver does not step a design with no analog node
+  (`msl-cli`, found by T36, verification F2).** A purely digital design (the Book's `Blinky`,
+  `Count`) keeps one transient step, at time 0, holding the values of the end of the run. A
+  transient whose last step is before its `stop` is a failure naming that cause: the records
+  written before it stay, no table, CSV or plot is written, exit 1. The Book says so where it
+  shows such a design.
 
 - **A DC sweep's points deliver no records, so a `dc` run of a design with a record stream is
   refused (`msl-cli` T22, verification F1).** A point of a sweep has no time, and a record line is

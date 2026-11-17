@@ -240,6 +240,16 @@ impl Session {
                 }
                 let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(delivery).build();
                 let result = solver.tran().and_then(|mut tran| tran.solve()).map_err(|error| Failure::Solver { analysis: "transient", error })?;
+                // CLI-05 AC 11: a run that stopped short has no table to give; the solver does not
+                // step a design with no analog node, which keeps a single step at 0 holding the
+                // values of the end of the run
+                let last = result.iter().last().map(|step| step.time());
+                if last.is_none_or(|last| last < stop * (1.0 - 1e-9)) {
+                    let at = last.map_or_else(|| "no step".to_string(), |t| format!("the last step at {t:e}"));
+                    return Err(Failure::Backend(format!(
+                        "the transient ended with {at}, before its stop at {stop:e}: the solver does not step a design with no analog node, so a digital-only transient is refused"
+                    )));
+                }
                 let table = Table::transient(&self.probes, &result)?;
                 if self.spec.plot.is_some() {
                     self.accepted = Some(table.clone());
