@@ -375,10 +375,10 @@ T23
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/options.rs` holds `a_plot_of_a_gridded_run_draws_its_rows` (as many points as the table has rows: 6 for `examples/rc` `step`) and `a_plot_of_a_gridless_run_draws_every_accepted_step`; the old test name is gone and no other test of the target is edited
-- [ ] `the_plot_in_the_chapter_is_the_file_the_binary_writes` passes in `cargo test -p piperine-cli --test book`; if the Book's SVG differs because it drew every step, the Book's file is regenerated from the binary in this task and the commit says so
-- [ ] Gate check passes: Full, then Build (end of phase 2; the two `startup` differences T10 names are still expected)
-- [ ] Test count: the 2 tests named above; 1 existing test replaced under the amendment, none other removed or edited
+- [x] `crates/piperine-cli/tests/options.rs` holds `a_plot_of_a_gridded_run_draws_its_rows` (as many points as the table has rows: 6 for `examples/rc` `step`) and `a_plot_of_a_gridless_run_draws_every_accepted_step`; the old test name is gone and no other test of the target is edited
+- [x] `the_plot_in_the_chapter_is_the_file_the_binary_writes` passes in `cargo test -p piperine-cli --test book`; if the Book's SVG differs because it drew every step, the Book's file is regenerated from the binary in this task and the commit says so
+- [x] Gate check passes: Full, then Build (end of phase 2; the two `startup` differences T10 names are still expected)
+- [x] Test count: the 2 tests named above; 1 existing test replaced under the amendment, none other removed or edited
 
 **Tests**: e2e
 **Gate**: build

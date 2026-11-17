@@ -263,24 +263,33 @@ fn plot_writes_an_svg_and_prints_wrote() {
 }
 
 #[test]
-fn a_plot_draws_every_accepted_step_whatever_the_print_step() {
-    // CLI-22 AC 7: `step` prints 6 rows (`print_step = 1e-6`) but the plot draws every accepted
-    // step, many more points
+fn a_plot_of_a_gridded_run_draws_its_rows() {
+    // CLI-22 AC 7 as amended (long-run LR-17 AC 1): `step` prints 6 rows (`print_step = 1e-6`)
+    // and the plot draws those 6 points, one per row of the run's table
     let project = rc_copy();
     let out = stdout_of(&piperine_in(project.path(), &["run", "step", "--plot", "step.svg"]));
     let rows = out.lines().skip_while(|l| !l.starts_with("time")).count() - 2;
     assert_eq!(rows, 6, "{out}");
     let svg = std::fs::read_to_string(project.path().join("step.svg")).expect("step.svg");
-    let points = series_points(&svg, "Step.vout").len();
-    assert!(points > 20, "{points} points for {rows} printed rows");
-    // as many points as the run without `print_step` has rows: one per accepted step
+    assert_eq!(series_points(&svg, "Step.vout").len(), rows, "one point per printed row");
+    assert_eq!(series_points(&svg, "Step.vin").len(), rows, "one point per printed row");
+}
+
+#[test]
+fn a_plot_of_a_gridless_run_draws_every_accepted_step() {
+    // long-run LR-17 AC 2: with no `print_step` the table has one row per accepted step, and the
+    // plot draws as many points as that table has rows
+    let project = rc_copy();
     let manifest = project.path().join("Piperine.toml");
     let text = std::fs::read_to_string(&manifest).expect("the manifest");
     assert!(text.contains("print_step = 1e-6\n"), "{text}");
     std::fs::write(&manifest, text.replace("print_step = 1e-6\n", "")).expect("the manifest");
-    let all = stdout_of(&piperine_in(project.path(), &["run", "step"]));
-    let accepted = all.lines().skip_while(|l| !l.starts_with("time")).count() - 1;
-    assert_eq!(points, accepted, "the plot draws every accepted step:\n{all}");
+    let out = stdout_of(&piperine_in(project.path(), &["run", "step", "--plot", "step.svg"]));
+    let rows = out.lines().skip_while(|l| !l.starts_with("time")).count() - 2;
+    let svg = std::fs::read_to_string(project.path().join("step.svg")).expect("step.svg");
+    let points = series_points(&svg, "Step.vout").len();
+    assert!(points > 20, "{points} points for {rows} rows");
+    assert_eq!(points, rows, "the plot draws every accepted step:\n{out}");
 }
 
 #[test]

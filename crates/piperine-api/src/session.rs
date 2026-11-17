@@ -53,9 +53,9 @@ pub struct Session {
     swept: Option<ParamPath>,
     /// The record streams of the design, filtered by the run's `streams`.
     streams: Streams,
-    /// The table of every accepted step, kept when the request has `plot`: a print grid
-    /// thins the printed table, never the plot (CLI-22 AC 7).
-    accepted: Option<Table>,
+    /// The table the run gave, kept when the request has `plot`: the plot draws the rows the
+    /// run prints (CLI-22 AC 7 as amended, `long-run` LR-17).
+    plotted: Option<Table>,
 }
 
 /// A param of an instance of the design, by the instance's full path.
@@ -136,7 +136,7 @@ impl Session {
             let refused = |error| Failure::Host { code: "E0802", message: format!("`{entry}` refuses the value {value}: {error}") };
             circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, accepted: None })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None })
     }
 
     /// The stages before a backend: the design of `spec` read, its top chosen, type-checked and
@@ -208,7 +208,7 @@ impl Session {
         let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone(), recorder: None });
         let table = self.analysis(circuit, delivery);
         if let (Ok(table), Some(_)) = (&table, &self.spec.plot) {
-            self.accepted.get_or_insert_with(|| table.clone());
+            self.plotted.get_or_insert_with(|| table.clone());
         }
         // a record that could not be decoded is a defect the run reports first: the records
         // before it were delivered, none after it was guessed
@@ -311,10 +311,11 @@ impl Session {
         Some(b.digital.read(NetId(at as u32)).to_vec())
     }
 
-    /// The plot of the run that has completed, drawn from every accepted step, whatever
-    /// `print_step` is; `P0010` for an operating point, and a `Failure` before the run.
+    /// The plot of the run that has completed, drawn from the rows of its table: every accepted
+    /// step without `print_step`, the grid's rows with it; `P0010` for an operating point, and a
+    /// `Failure` before the run.
     pub fn plot(&self) -> Result<Plot, Failure> {
-        let table = self.accepted.as_ref().ok_or_else(|| Failure::Backend("no plot: the request has no `plot`, or the session has not run".into()))?;
+        let table = self.plotted.as_ref().ok_or_else(|| Failure::Backend("no plot: the request has no `plot`, or the session has not run".into()))?;
         Plot::of(table, &self.spec.analysis)
     }
 
