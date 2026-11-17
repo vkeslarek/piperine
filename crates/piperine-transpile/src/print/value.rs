@@ -804,8 +804,13 @@ impl<'a> ValuePrinter<'a> {
         if !flagged {
             let mut printed = Vec::with_capacity(args.len());
             for a in args {
-                let text = if method == Method::Powi { self.piece(*a)?.at(Prec::Atom) } else { self.expr(*a)? };
-                printed.push(exponent(&text));
+                let text = match (method, self.ir.expr(*a)) {
+                    // A literal exponent is an `i32` literal: analog code has no `rt::Int`.
+                    (Method::Powi, Expr::Int(v)) => format!("{v}_i32"),
+                    (Method::Powi, _) => exponent(&self.piece(*a)?.at(Prec::Atom)),
+                    _ => self.expr(*a)?,
+                };
+                printed.push(text);
             }
             return Ok(Piece::new(format!("{}.{name}({})", self.piece(receiver)?.at(Prec::Atom), printed.join(", ")), Prec::Atom));
         }
@@ -931,6 +936,9 @@ impl<'a> ValuePrinter<'a> {
                 return Err(self.unsupported(e, "an `if` on an unknown condition in analog code"));
             }
             format!("{}.decide({:?})?", self.piece(cond)?.at(Prec::Atom), self.at(e))
+        } else if matches!(self.ir.expr(cond), Expr::If { .. }) {
+            // `if if a { b } else { c } { .. }` is valid Rust; parentheses around it are a warning.
+            self.piece(cond)?.text
         } else {
             self.piece(cond)?.at(Prec::Or)
         };
@@ -1274,6 +1282,12 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
                 });
             }
         }
+        // A literal exponent prints as an `i32` literal (analog code has no `rt::Int`).
+        defined(&mut b, "powi_literal", &[("x", f.clone())], f.clone(), |x| {
+            let receiver = x.local(0, ValueType::F64);
+            let exponent = x.int(3, Ty::i(32));
+            x.method(Method::Powi, receiver, vec![exponent], ValueType::F64)
+        });
         // `unwrap` and `expect` of the pair: `rt::Unwrap::of(is, value, message)`.
         defined(&mut b, "unwrapped", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
             let (is, v) = (x.local(0, ValueType::Bool), x.local(1, Ty::u(8)));
@@ -1292,6 +1306,7 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
                 assert!(text.lines().any(|l| l.trim() == *want), "{method:?}: `{want}` is the body of {name}:\n{text}");
             }
         }
+        assert!(function(&ir, "powi_literal").lines().any(|l| l.trim() == "x.powi(3_i32)"), "{}", function(&ir, "powi_literal"));
         assert!(function(&ir, "unwrapped").contains("rt::Unwrap::of(is, v, None)"), "{}", function(&ir, "unwrapped"));
         assert!(function(&ir, "expected").contains("rt::Unwrap::of(is, v, Some(\"need the \\\"reading\\\"\"))"), "{}", function(&ir, "expected"));
     }
