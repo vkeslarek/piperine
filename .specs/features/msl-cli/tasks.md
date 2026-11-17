@@ -1934,6 +1934,9 @@ Proof: run commands | test fmt_check_passes_on_the_rc_example_and_on_a_new_proje
 **C199** - A `dc` run of `dc_require`, whose monitor's `require` fails at time 0 (its `op` run is `FAIL op (1 of 1 checks failed)`), is refused with `P0010` naming `Divider.mon.checks`: `piperine test sweep` prints `FAIL sweep (did not run)` and exits 1, `piperine run sweep` prints nothing on standard output and exits 1. (CLI-09, AC 10; T22, verification F1)
 Proof: run commands | test a_dc_run_of_a_design_with_records_is_refused_never_passed ... ok
 
+**C200** - In a temporary copy of `examples/rc`, `piperine clean --cache` with the cache set to `.` (the project), to its parent, to the working directory, to `$HOME`, or to a directory with no `rust/`, exits 1 with `refused` on standard error, nothing on standard output, and every file (`target` included) byte-equal; in a real cache the entry `rust/<key>/` is removed and a file of the user's in the cache or in `rust/` stays. (CLI-18, AC 5; T35, verification F3)
+Proof: run commands | test clean_cache_refuses_a_directory_it_does_not_own ... ok
+
 ---
 
 ## Handoff

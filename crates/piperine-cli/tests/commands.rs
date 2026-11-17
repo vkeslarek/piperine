@@ -478,10 +478,14 @@ fn project_with_target() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let cache = tmp.path().join("cache");
     std::fs::create_dir_all(dir.join("target/debug")).expect("a target");
     std::fs::write(dir.join("target/debug/out.bin"), "built").expect("a file");
-    std::fs::create_dir_all(&cache).expect("a cache");
-    std::fs::write(cache.join("design.so"), "compiled").expect("a file");
+    // the transpiler's layout: an entry `<cache>/rust/<key>/`
+    std::fs::create_dir_all(cache.join(ENTRY)).expect("a cache");
+    std::fs::write(cache.join(ENTRY).join("design.so"), "compiled").expect("a file");
     (tmp, dir, cache)
 }
+
+/// An entry of the cache, under the cache directory, as the transpiler lays it out.
+const ENTRY: &str = "rust/0123456789abcdef0123456789abcdef";
 
 #[test]
 fn clean_removes_the_target_directory() {
@@ -492,7 +496,7 @@ fn clean_removes_the_target_directory() {
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(text(&out.stdout), "removed target\n");
     assert!(!dir.join("target").exists());
-    assert!(cache.join("design.so").is_file(), "the cache is removed only with --cache");
+    assert!(cache.join(ENTRY).join("design.so").is_file(), "the cache is removed only with --cache");
     // run from a subdirectory: the nearest `Piperine.toml` upward is the project
     std::fs::create_dir_all(dir.join("target")).expect("a target");
     let out = piperine_with(&dir.join("src"), &cache, None, &["clean"]);
@@ -546,6 +550,45 @@ fn clean_touches_nothing_else() {
     let out = piperine_with(&dir, &cache, None, &["clean", "--cache"]);
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(files_under(tmp.path()), before);
+}
+
+#[test]
+fn clean_cache_refuses_a_directory_it_does_not_own() {
+    // CLI-18 AC 5 (verification F3): `PIPERINE_CACHE_DIR=. piperine clean --cache` in a project
+    // removed the project. A cache directory that is or holds the project, the working directory
+    // or the home directory, or that holds no `rust/` of the transpiler, is refused: nothing is
+    // removed, exit 1, the reason on standard error. Every case runs in a temporary copy.
+    let (tmp, dir, cache) = project_with_target();
+    let everything = files_under(tmp.path());
+    let refused = |out: &Output, why: &str| {
+        assert_eq!(out.status.code(), Some(1), "{why}: {}", text(&out.stderr));
+        assert_eq!(text(&out.stdout), "", "{why}");
+        assert!(text(&out.stderr).contains("refused"), "{why}: {}", text(&out.stderr));
+    };
+    // the verifier's repro: the cache is the project itself, given relative
+    refused(&piperine_with(&dir, Path::new("."), None, &["clean", "--cache"]), "the project");
+    // the cache holds the project (its parent), and the cache is the working directory
+    refused(&piperine_with(&dir, tmp.path(), None, &["clean", "--cache"]), "a parent of the project");
+    refused(&piperine_with(&dir.join("src"), &dir.join("src"), None, &["clean", "--cache"]), "the working directory");
+    // the cache is the home directory
+    let home = Command::new(binary()).args(["clean", "--cache"]).current_dir(&dir).env("HOME", &cache).env("PIPERINE_CACHE_DIR", &cache).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
+    refused(&home, "the home directory");
+    // a directory with no `rust/` of the transpiler is no cache of compiled designs
+    let foreign = tmp.path().join("foreign");
+    std::fs::create_dir_all(&foreign).expect("a directory");
+    std::fs::write(foreign.join("notes.txt"), "mine").expect("a file");
+    refused(&piperine_with(&dir, &foreign, None, &["clean", "--cache"]), "no rust/");
+    let mut expected = everything.clone();
+    expected.push(("foreign/notes.txt".into(), "mine".into()));
+    expected.sort();
+    assert_eq!(files_under(tmp.path()), expected, "a refused clean removes nothing, `target` included");
+    // inside a real cache only what the layout writes goes: a file of the user's stays
+    std::fs::write(cache.join("mine.txt"), "mine").expect("a file");
+    std::fs::write(cache.join("rust/mine.txt"), "mine").expect("a file");
+    let out = piperine_with(&dir, &cache, None, &["clean", "--cache"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert!(!cache.join(ENTRY).exists(), "the entry is removed");
+    assert!(cache.join("mine.txt").is_file() && cache.join("rust/mine.txt").is_file(), "a file the layout does not write stays");
 }
 
 // ---- fmt (CLI-24) ---------------------------------------------------------------------------

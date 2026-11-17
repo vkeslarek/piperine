@@ -155,6 +155,14 @@ impl Cache {
         builder.create(dir)
     }
 
+    /// Whether `name`, an entry of `<cache>/rust`, is one this layout writes: an entry `<key>`,
+    /// an ABI library `abi-<key>`, or the staging directory or probe of a build. A host that
+    /// clears the cache removes these and nothing else.
+    pub fn owns(name: &str) -> bool {
+        let key = |k: &str| k.len() == 32 && k.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        key(name) || name.strip_prefix("abi-").is_some_and(key) || name.starts_with(".staging-") || name.starts_with(".probe-")
+    }
+
     /// The directory the entries live in.
     pub fn rust_dir(&self) -> &Path {
         &self.rust

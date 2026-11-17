@@ -454,6 +454,7 @@ Rows `Q1` to `Q8` are the user's answers of 2026-11-15, in the user's words. The
 2. WHEN `--cache` is given THEN the system SHALL also remove the compiled-design cache directory the transpiler's settings name, and say so on standard error.
 3. WHEN there is nothing to remove THEN the system SHALL print `nothing to remove` and exit 0.
 4. The system SHALL remove no file outside those two directories.
+5. (Amended 2026-11-17, verification F3.) IF the cache directory, canonical, is `/`, or is or holds the project directory, the working directory or the home directory, or holds no `rust/` directory, THEN the system SHALL remove nothing, `target` included, say why on standard error and exit 1; from a cache it SHALL remove only the entries the transpiler's cache layout writes under `rust/`.
 
 **Independent Test**: `piperine build && piperine clean --cache && piperine build` prints `compiled` again.
 
