@@ -251,8 +251,8 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `a_flag_total_function_may_take_a_carrier_in_analog` and `a_function_that_reads_its_parameter_bare_is_not_flag_total` (`E0150` naming the carrier) pass under `**Run typesunknowns**`
-- [ ] Gate check passes: Quick
+- [x] `a_flag_total_function_may_take_a_carrier_in_analog` and `a_function_that_reads_its_parameter_bare_is_not_flag_total` (`E0150` naming the carrier) pass under `**Run typesunknowns**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

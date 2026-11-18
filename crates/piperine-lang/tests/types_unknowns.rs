@@ -112,3 +112,46 @@ fn a_bad_pattern_is_e0702() {
         assert_eq!(&src[d[0].diagnostic.span().range()], pattern, "the error sits at the pattern");
     }
 }
+
+/// A stage reading `c` in `analog` through the function `f`, over the electrical nature.
+fn flag_total_source(function: &str, call: &str) -> String {
+    format!("{function}\nmodule Amp(x: f64, p: Electrical) {{ }}\nanalog for Amp {{ v(p) +> x; }}\nmodule Top(in c: Bit<f64>, p: Electrical) {{ }}\nanalog for Top {{ {call} }}")
+}
+
+#[test]
+fn a_flag_total_function_may_take_a_carrier_in_analog() {
+    // §3.3.6: every use of the parameter passes through `level`, directly, through `known_or`,
+    // or as the argument of another flag-total function: `analog` may pass it a carrier.
+    for function in [
+        "fn low(x: f64) -> bool { x.level(0).is_some() }",
+        "fn known_sum(x: f64) -> f64 { x.known_or(0.0) + x.known_or(1.0) }",
+        "fn through(x: f64) -> bool { low(x) }\nfn low(x: f64) -> bool { x.level(0).is_some() }",
+        "fn spin(x: f64) -> bool { spin(x) }",
+    ] {
+        let name = function.split('(').next().unwrap().rsplit(' ').next().unwrap().to_string();
+        let src = flag_total_source(function, &format!("let a = {name}(c);"));
+        let design = design_of(&src);
+        Types::check(&design, "Top").unwrap_or_else(|d| panic!("{function}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    }
+}
+
+#[test]
+fn a_function_that_reads_its_parameter_bare_is_not_flag_total() {
+    // §3.3.6 and §3.3.5: one bare use of the parameter, beside a `level` read or on its own, keeps
+    // the call `E0150`, naming the carrier at the argument.
+    for function in [
+        "fn twice(x: f64) -> f64 { x * 2.0 }",
+        "fn mixed(x: f64) -> f64 { if x.level(0).is_some() { x } else { 0.0 } }",
+        "fn forwards(x: f64) -> f64 { twice(x) }\nfn twice(x: f64) -> f64 { x * 2.0 }",
+    ] {
+        let name = function.split('(').next().unwrap().rsplit(' ').next().unwrap().to_string();
+        let src = flag_total_source(function, &format!("let a = {name}(c);"));
+        let (src, d) = {
+            let design = design_of(&src);
+            (src.clone(), Types::check(&design, "Top").expect_err("a bare read is refused"))
+        };
+        assert_eq!(codes_of(&d), ["E0150"], "{function}");
+        assert_eq!(&src[d[0].diagnostic.span().range()], "c", "{function}");
+        assert!(d[0].diagnostic.message.contains("`c`"), "the carrier is named: {}", d[0].diagnostic.message);
+    }
+}

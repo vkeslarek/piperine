@@ -98,7 +98,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let here = anchor.unwrap_or((node.span, file));
         match &node.kind {
-            ExprKind::MethodCall { recv, args, res: Resolution::Decl(f), .. } if matches!(self.stdlib_builtin(*f), Some(Builtin::Known | Builtin::KnownOr | Builtin::IsKnown | Builtin::High)) => {
+            ExprKind::MethodCall { recv, args, method, res, .. } if self.is_flag_read(res, &method.text) => {
                 // The flag reads: the receiver is read through `level`; its arguments are read.
                 if !self.is_carrier_path(*recv) {
                     self.carrier_reads_in(*recv, frame, frames, anchor, followed, reported);
@@ -110,6 +110,16 @@ impl Checker<'_> {
             // The edges and `changed` make an `Event`, which an `analog` block cannot hold (`E0441`).
             ExprKind::MethodCall { res: Resolution::Builtin(id), .. } if id.info().name == "changed" => {}
             ExprKind::MethodCall { res: Resolution::Decl(f), .. } if matches!(self.stdlib_builtin(*f), Some(Builtin::Rise | Builtin::Fall)) => {}
+            // A call of a function reads a carrier argument through flags only when the parameter it
+            // binds is flag-total (§3.3.6); every other argument is read as written.
+            ExprKind::Call { callee, args, class: CallClass::Function, .. } if matches!(self.callee_resolution(*callee), Some(Resolution::Decl(_))) => {
+                let Some(Resolution::Decl(function)) = self.callee_resolution(*callee) else { return };
+                for (index, arg) in args.iter().enumerate() {
+                    if !(arg.name.is_none() && self.is_carrier_path(arg.value) && self.is_flag_total(function, index)) {
+                        self.carrier_reads_in(arg.value, frame, frames, anchor, followed, reported);
+                    }
+                }
+            }
             ExprKind::Path(path) => {
                 let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return };
                 if self.is_discrete_carrier(decl) {

@@ -18,6 +18,7 @@ mod control;
 mod definition;
 mod event;
 mod expr;
+mod flag_total;
 mod intrinsic;
 mod module;
 mod reaction;
