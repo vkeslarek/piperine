@@ -195,6 +195,7 @@ impl Digital {
                 made: (tick, 0),
                 call: self.call,
                 due: (tick, 0),
+                flags: 0,
             };
             self.queue.push(pending, false);
         }
@@ -247,6 +248,7 @@ impl Digital {
                 Some((tick, microstep)) if tick == at => (at, microstep),
                 _ => (at, 0),
             },
+            flags: 0,
         };
         self.queue.push(pending, false);
         Ok(())

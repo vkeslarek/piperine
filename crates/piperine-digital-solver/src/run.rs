@@ -481,6 +481,8 @@ struct Planned {
     due: Option<Instant>,
     replace: bool,
     record: Option<String>,
+    /// `commit_flag::*` bits the device passed (0 for a plain commit).
+    flags: u32,
 }
 
 /// What one call of a reaction made.
@@ -596,6 +598,7 @@ fn call_reaction(
             due,
             replace: s.flags & statement_flag::REPLACE != 0,
             record,
+            flags: c.flags,
         });
         status::OK
     };
@@ -733,6 +736,7 @@ pub fn run_reactions(
                 made: at,
                 call: *call,
                 due: (at.0, 0),
+                flags: p.flags,
             };
             match p.due {
                 Some(due) => {

@@ -2,6 +2,7 @@
 //! abi.md §6 C2 and C3): pending commits by due instant, the order commits to
 //! one instant apply in, and transport removal.
 
+use piperine_abi::raw::commit_flag;
 use piperine_digital_solver::net::NetId;
 use piperine_digital_solver::queue::{Pending, Queue, Writer};
 use piperine_digital_solver::tick::Tick;
@@ -25,6 +26,7 @@ fn commit(statement: u32, offset: u32, v: u8, made: i64, due: i64) -> Pending {
         made: (Tick(made), 0),
         call: 0,
         due: (Tick(due), 0),
+        flags: 0,
     }
 }
 
@@ -164,4 +166,56 @@ fn a_queue_rewind_restores_its_pending_commits() {
     assert_eq!(q.journal_len(), 0, "the outermost release empties the log");
     q.push(commit(0, 0, 8, 3, 40), false);
     assert_eq!(q.journal_len(), 0, "no mark open: nothing is journaled");
+}
+
+/// The flags of every commit due at `instant`, in C2 order.
+fn flags_at(q: &mut Queue, instant: i64) -> Vec<(u8, u32)> {
+    q.take_due((Tick(instant), 0)).iter().map(|c| (c.bytes[0], c.flags)).collect()
+}
+
+#[test]
+fn a_maybe_commit_converts_the_pending_it_would_remove() {
+    // abi.md C7 (part I §3.3.3 applied to C3): a commit made under unknown control may not have
+    // happened, so the pending commits of its statement that a plain commit would remove stay and
+    // take MERGE; the ones it would not remove are untouched.
+    let mut q = Queue::new();
+    // pushed in due order, or the plain pushes would transport each other (C3)
+    q.push(commit(0, 0, 1, 0, 5), false); // earlier due: not removed by it, untouched
+    q.push(commit(0, 0, 3, 0, 10), false); // due at the new one's instant: converted
+    q.push(commit(0, 0, 2, 0, 20), false); // later due, same statement and range: converted
+    q.push(Pending { statement: 1, ..commit(1, 0, 4, 0, 20) }, false); // another statement: untouched
+    q.push(Pending { flags: commit_flag::MAYBE, ..commit(0, 0, 9, 1, 10) }, false);
+    assert_eq!(q.len(), 5, "nothing was removed");
+    assert_eq!(flags_at(&mut q, 5), [(1, 0)]);
+    assert_eq!(flags_at(&mut q, 10), [(3, commit_flag::MERGE), (9, commit_flag::MAYBE)]);
+    assert_eq!(flags_at(&mut q, 20), [(2, commit_flag::MERGE), (4, 0)]);
+}
+
+#[test]
+fn a_maybe_replace_converts_every_pending_commit_of_the_statement() {
+    // C3's REPLACE under MAYBE: every pending commit of the statement, earlier ones included,
+    // becomes MERGE instead of going.
+    let mut q = Queue::new();
+    q.push(commit(0, 0, 1, 0, 5), false);
+    q.push(commit(0, 3, 2, 0, 20), false);
+    q.push(Pending { flags: commit_flag::MAYBE, ..commit(0, 0, 9, 1, 12) }, true);
+    assert_eq!(flags_at(&mut q, 5), [(1, commit_flag::MERGE)]);
+    assert_eq!(flags_at(&mut q, 20), [(2, commit_flag::MERGE)]);
+}
+
+#[test]
+fn a_rewind_undoes_a_conversion() {
+    // HYG-14: a rejected step leaves no trace, a conversion included; a commit that already carried
+    // MERGE keeps it.
+    let mut q = Queue::new();
+    q.push(commit(0, 0, 1, 0, 20), false);
+    q.push(Pending { flags: commit_flag::MERGE, ..commit(0, 4, 2, 0, 20) }, false);
+    let before = q.clone();
+    let mark = q.mark();
+    q.push(Pending { flags: commit_flag::MAYBE, ..commit(0, 0, 9, 1, 10) }, false);
+    q.push(Pending { flags: commit_flag::MAYBE, ..commit(0, 4, 8, 1, 12) }, false);
+    assert_ne!(q, before);
+    q.rewind(&mark);
+    assert_eq!(q, before, "the queue equals the copy taken at the mark: flags 0 again, the pushed gone");
+    assert_eq!(flags_at(&mut q, 20), [(1, 0), (2, commit_flag::MERGE)]);
 }
