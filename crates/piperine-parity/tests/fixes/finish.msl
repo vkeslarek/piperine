@@ -37,6 +37,7 @@ module FatalBench() {
 module Idle(a: Electrical, out k: Bit<f64> = 0.0) {}
 digital for Idle {
     on at(1n) { emit!("sim", finish = false); }
+    on at(2n) { let u: bool = Unknown; emit!("sim", finish = u); }
     on at(3n) { k <- 9.0; }
 }
 

@@ -253,8 +253,8 @@ fn fatal_ends_the_transient_at_its_instant() {
 
 #[test]
 fn a_finish_field_false_or_unknown_runs_to_stop() {
-    // FIX-01 AC 3: a `sim` record with `finish` false leaves the run to its `stop` (4 ns), and
-    // the reaction at 3 ns still writes `k`.
+    // FIX-01 AC 3: a `sim` record with `finish` false (at 1 ns) or unknown (at 2 ns) leaves the
+    // run to its `stop` (4 ns), and the reaction at 3 ns still writes `k`.
     let (seen, last) = last_step("IdleBench");
     assert!((last - 4e-9).abs() <= 1e-15, "last step at {last}, wanted 4 ns");
     assert!(transient(&seen, "IdleBench.k").iter().any(|(_, b)| b[..8] == 9f64.to_le_bytes()), "k reaches 9");
