@@ -1,10 +1,10 @@
 //! A `NonLinearSystem` over the device assembly, so the analog targets solve
 //! circuits with the real Newton engine of this crate (`solve_with_strategy`,
-//! `DampedNewton`, the default tolerances and policy), and a dense view of a
+//! `NoDamping`, the default tolerances and policy), and a dense view of a
 //! stamp list for comparing stamps against hand-computed values.
 
 use ndarray::Array1;
-use piperine_analog_solver::convergence::DampedNewton;
+use piperine_analog_solver::convergence::NoDamping;
 use piperine_analog_solver::device::{Ambient, Assembly, Stage};
 use piperine_analog_solver::error::Result;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
@@ -112,7 +112,7 @@ pub fn solve_dc_with(asm: &mut Assembly, net: &Netlist, start: &[f64], tol: &Tol
         .filter_map(|r| r.idx().map(|i| InitialValue { reference: r.clone(), value: start[i] }))
         .collect();
     solver.push_initial_conditions(ivs);
-    solver.solve_with_strategy(&mut sys, &DampedNewton, tol, &Policy::default()).expect("the Newton solve converges")
+    solver.solve_with_strategy(&mut sys, &NoDamping, tol, &Policy::default()).expect("the Newton solve converges")
 }
 
 /// Solves one transient stage with the engine's own Newton loop, then
@@ -120,7 +120,7 @@ pub fn solve_dc_with(asm: &mut Assembly, net: &Netlist, start: &[f64], tol: &Tol
 pub fn solve_stage(solver: &mut Solver, asm: &mut Assembly, net: &Netlist, amb: Ambient, stage: Stage) -> Array1<f64> {
     let mut sys = Tran { asm, net, amb, stage };
     let x = solver
-        .solve_with_strategy(&mut sys, &DampedNewton, &Tolerances::default(), &Policy::default())
+        .solve_with_strategy(&mut sys, &NoDamping, &Tolerances::default(), &Policy::default())
         .expect("the stage converges");
     sys.asm.push_stage(x.as_slice().expect("contiguous"), amb).expect("push the stage");
     x

@@ -222,9 +222,11 @@ fn diode_circuit() -> (piperine_solver::prelude::CircuitInstance, piperine_solve
 #[test]
 fn dc_homotopy_fallthrough_drives_restore_between_strategies() {
     let (circuit, anode) = diode_circuit();
-    // max_iter=4 starves plain Newton on the stiff diode so it falls through
-    // to gmin stepping (which converges from the easy high-gmin start).
-    let policy = Policy { max_iter: 4, ..Policy::default() };
+    // `starved_iterations` starve plain Newton on the stiff diode (no damping, as ngspice, takes
+    // six where the midpoint damping took four) so it falls through to gmin stepping (which
+    // converges from the easy high-gmin start).
+    let starved_iterations = 6;
+    let policy = Policy { max_iter: starved_iterations, ..Policy::default() };
     let mut solver = Solver::new(circuit).with_policy(policy).build();
     AGES.with(|a| a.borrow_mut().clear());
     let res = solver.dc().unwrap().solve().unwrap();
@@ -237,14 +239,14 @@ fn dc_homotopy_fallthrough_drives_restore_between_strategies() {
         "plain Newton must fall through so the homotopy restore fires"
     );
     // ABI-07: the fallthrough restored the limit state the plain attempt left:
-    // its four iterations aged the junction limit, and the first evaluation of
+    // its iterations aged the junction limit, and the first evaluation of
     // gmin stepping reads it unevaluated again (AGE 0), as before the attempt.
     // The converging attempt is not restored: no later evaluation reads 0.
-    assert!(ages.len() > 4, "{ages:?}");
+    assert!(ages.len() > starved_iterations, "{ages:?}");
     assert_eq!(ages[0], 0, "the plain attempt starts on an unevaluated limit: {ages:?}");
-    assert!(ages[1..4].iter().all(|a| *a > 0), "the plain attempt ages the limit: {ages:?}");
-    assert_eq!(ages[4], 0, "the fallthrough restored the limit state before gmin stepping: {ages:?}");
-    assert!(ages[5..].iter().all(|a| *a > 0), "the converging attempt is not restored: {ages:?}");
+    assert!(ages[1..starved_iterations].iter().all(|a| *a > 0), "the plain attempt ages the limit: {ages:?}");
+    assert_eq!(ages[starved_iterations], 0, "the fallthrough restored the limit state before gmin stepping: {ages:?}");
+    assert!(ages[starved_iterations + 1..].iter().all(|a| *a > 0), "the converging attempt is not restored: {ages:?}");
     let starved = res.get_node(&node_id(&anode)).unwrap();
 
     let (circuit, anode) = diode_circuit();

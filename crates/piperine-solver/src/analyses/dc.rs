@@ -55,6 +55,10 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         self.circuit.netlist()
     }
 
+    fn static_solve(&self) -> bool {
+        true
+    }
+
     fn any_limiting_report(&self) -> bool {
         self.circuit.abi.as_ref().is_some_and(|bound| !bound.analog.limiting_active().is_empty())
     }
@@ -228,7 +232,7 @@ impl<'a> DcSolver<'a> {
             self.homotopy_strategy = outcome.strategy;
             return Ok(outcome.solution);
         }
-        let strategy = piperine_analog_solver::convergence::DampedNewton;
+        let strategy = piperine_analog_solver::convergence::NoDamping;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         self.solver.solve_with_strategy(&mut self.system, &strategy, &tolerances, &policy)
@@ -285,7 +289,7 @@ impl<'a> DcSolver<'a> {
 impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::core::result::Result<ndarray::Array1<f64>> {
         self.newton_calls += 1;
-        let strategy = piperine_analog_solver::convergence::DampedNewton;
+        let strategy = piperine_analog_solver::convergence::NoDamping;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         self.solver.solve_with_strategy(

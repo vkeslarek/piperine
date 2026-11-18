@@ -8,7 +8,7 @@ use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::{InitialValue, InitialValueApplyExt};
 use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::num::Scalar;
-use crate::convergence::NewtonStrategy;
+use crate::convergence::{DampContext, NewtonStrategy};
 use crate::tolerances::{Policy, Tolerances};
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use tracing::debug;
@@ -70,6 +70,12 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     /// a device whose `LIMIT` input is limiting vetoes convergence until the
     /// limited value settles.
     fn any_limiting_report(&self) -> bool {
+        false
+    }
+
+    /// Whether this is an operating-point system (ngspice `MODEDCOP`/`MODETRANOP`), the only kind
+    /// a node-damping strategy acts on. Default: no.
+    fn static_solve(&self) -> bool {
         false
     }
 
@@ -391,6 +397,13 @@ where
         system.update_sources(&mut self.state);
 
         let max_iter = strategy.max_iter(policy);
+        let nodes: Vec<usize> = system
+            .netlist()
+            .all_references()
+            .iter()
+            .filter(|reference| reference.is_node())
+            .filter_map(|reference| reference.idx())
+            .collect();
         let mut failing = Vec::new();
 
         for iter in 0..max_iter {
@@ -421,7 +434,13 @@ where
 
             // Damping via strategy (replaces system.apply_limit)
             if let Some(prev) = self.state.latest() {
-                strategy.damp_update(prev, current_guess.view_mut(), policy);
+                let context = DampContext {
+                    static_solve: system.static_solve(),
+                    iteration: iter,
+                    limiting: system.any_limiting_report(),
+                    nodes: &nodes,
+                };
+                strategy.damp_update(prev, current_guess.view_mut(), &context);
             }
 
             // Structured limiting (ABI-10): devices that know *what* they
@@ -479,7 +498,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::convergence::DampedNewton;
+    use crate::convergence::NoDamping;
     use crate::math::faer::FaerSparseLinearSystem;
     use crate::netlist::{AnalogReference, Netlist, NodeIdentifier};
 
@@ -530,7 +549,7 @@ mod tests {
         let mut system = Diagonal::new(vec![1e-320], |_, _| 1e300);
         let mut solver = Solver::new(&mut system, 1, 3).expect("a pattern");
         let err = solver
-            .solve_with_strategy(&mut system, &DampedNewton, &Tolerances::default(), &Policy::default())
+            .solve_with_strategy(&mut system, &NoDamping, &Tolerances::default(), &Policy::default())
             .expect_err("the solution is not finite");
         assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
         assert!(!err.to_string().contains("returned NaN"), "{err}");
@@ -543,7 +562,7 @@ mod tests {
         let mut solver = Solver::new(&mut system, 2, 3).expect("a pattern");
         let policy = Policy { max_iter: 6, ..Policy::default() };
         let err = solver
-            .solve_with_strategy(&mut system, &DampedNewton, &Tolerances::default(), &policy)
+            .solve_with_strategy(&mut system, &NoDamping, &Tolerances::default(), &policy)
             .expect_err("unknown 0 never settles");
         let Error::Run(run) = &err else { panic!("a run error, got {err}") };
         assert_eq!(run.code, RunCode::E0505);

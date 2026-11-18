@@ -675,8 +675,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `node_damping_follows_ngspice` (each of its four conditions off leaves the update; on, the factor at maxΔv 20 V and 200 V) and `no_damping_leaves_the_update` pass under `**Run analoglib**`
-- [ ] Gate check passes: Quick
+- [x] `node_damping_follows_ngspice` (each of its four conditions off leaves the update; on, the factor at maxΔv 20 V and 200 V) and `no_damping_leaves_the_update` pass under `**Run analoglib**`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick

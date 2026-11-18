@@ -53,13 +53,13 @@ pub struct StepLimits {
 /// instead of calling `NonLinearSystem::apply_limit`/`converged`/
 /// `residual_converged` directly (MD-05, MD-13 rule 2).
 pub trait NewtonStrategy: Send + Sync {
-    /// Damp the Newton update in-place before the convergence test.
-    /// `policy.dc_damp_tolerance` controls the threshold.
+    /// Damp the Newton update in-place before the convergence test. `context` says what the
+    /// iteration is: ngspice's node damping reads it, [`NoDamping`] ignores it.
     fn damp_update(
         &self,
         prev: ArrayView1<f64>,
         update: ArrayViewMut1<f64>,
-        policy: &Policy,
+        context: &DampContext,
     );
 
     /// Converged if: update test passes AND residual test passes.
@@ -80,31 +80,25 @@ pub trait NewtonStrategy: Send + Sync {
     fn max_iter(&self, policy: &Policy) -> usize;
 }
 
-/// Default Newton strategy: midpoint damping + voltage-step + residual
-/// convergence. Body is the exact logic from today's free fns
-/// `check_convergence`, `residual_converged`, `apply_damping` in
-/// `solver/mod.rs`, just moved into a trait impl.
-pub struct DampedNewton;
+/// What a Newton iteration is, as [`NewtonStrategy::damp_update`] sees it.
+#[derive(Debug, Clone, Copy)]
+pub struct DampContext<'a> {
+    /// The solve is an operating point (ngspice `MODEDCOP`/`MODETRANOP`), not a transient step.
+    pub static_solve: bool,
+    /// Zero-based Newton iteration within the solve.
+    pub iteration: usize,
+    /// A device reports an active limit in this iteration (ngspice `CKTnoncon`).
+    pub limiting: bool,
+    /// The unknown indices that are node voltages (branch currents are not damped).
+    pub nodes: &'a [usize],
+}
 
-impl NewtonStrategy for DampedNewton {
-    fn damp_update(
-        &self,
-        prev: ArrayView1<f64>,
-        mut update: ArrayViewMut1<f64>,
-        policy: &Policy,
-    ) {
-        let last_guess = prev;
-        let diff_norm_sq: f64 = update
-            .iter()
-            .zip(last_guess.iter())
-            .fold(0.0, |acc, (curr, prev)| acc + (curr - prev).powi(2));
-        let diff_norm = diff_norm_sq.sqrt();
-        if diff_norm >= policy.dc_damp_tolerance {
-            for (curr, prev) in update.iter_mut().zip(last_guess.iter()) {
-                *curr = (*curr + *prev) * 0.5;
-            }
-        }
-    }
+/// Default Newton strategy: no damping; the update-and-residual convergence test of
+/// `Tolerances` (ngspice's `NIconvTest`). Junction limiting is per device (`LIMIT` inputs).
+pub struct NoDamping;
+
+impl NewtonStrategy for NoDamping {
+    fn damp_update(&self, _prev: ArrayView1<f64>, _update: ArrayViewMut1<f64>, _context: &DampContext) {}
 
     fn is_converged(
         &self,
@@ -119,6 +113,51 @@ impl NewtonStrategy for DampedNewton {
         // both owned by `Tolerances`, the single home of the convergence math.
         tolerances.has_converged(state.view(0), guess, netlist)
             && tolerances.residual_test(netlist, residual, scale)
+    }
+
+    fn max_iter(&self, policy: &Policy) -> usize {
+        policy.max_iter
+    }
+}
+
+/// ngspice's node damping (`niiter.c:297-323`, off by default there): in a static solve, after
+/// the first iteration, while a device limits, when the largest node-voltage step exceeds 10 V,
+/// every node's step is scaled by `max(10/maxΔv, 0.1)`. Opt in with
+/// [`ConvergencePlan::with_newton`]; the convergence test is [`NoDamping`]'s.
+pub struct NodeDamping;
+
+impl NodeDamping {
+    /// The largest node-voltage step ngspice leaves undamped, in volts.
+    const MAX_STEP: f64 = 10.0;
+    /// The smallest factor ngspice scales a step by.
+    const MIN_FACTOR: f64 = 0.1;
+}
+
+impl NewtonStrategy for NodeDamping {
+    fn damp_update(&self, prev: ArrayView1<f64>, mut update: ArrayViewMut1<f64>, context: &DampContext) {
+        if !context.static_solve || context.iteration == 0 || !context.limiting {
+            return;
+        }
+        let max_step = context.nodes.iter().fold(0.0_f64, |m, &i| m.max((update[i] - prev[i]).abs()));
+        if max_step <= Self::MAX_STEP {
+            return;
+        }
+        let factor = (Self::MAX_STEP / max_step).max(Self::MIN_FACTOR);
+        for &i in context.nodes {
+            update[i] = prev[i] + factor * (update[i] - prev[i]);
+        }
+    }
+
+    fn is_converged(
+        &self,
+        state: &CircularArrayBuffer2<f64>,
+        guess: &ArrayView1<f64>,
+        residual: &[f64],
+        scale: &[f64],
+        netlist: &Netlist,
+        tolerances: &Tolerances,
+    ) -> bool {
+        NoDamping.is_converged(state, guess, residual, scale, netlist, tolerances)
     }
 
     fn max_iter(&self, policy: &Policy) -> usize {
@@ -345,7 +384,7 @@ impl Default for ConvergencePlan {
     /// gains).
     fn default() -> Self {
         Self {
-            newton: Box::new(DampedNewton),
+            newton: Box::new(NoDamping),
             strategies: vec![Box::new(GminStepping), Box::new(SourceStepping)],
             stepper: Box::new(PiController::default()),
             limits: PlanLimits::default(),
@@ -359,7 +398,7 @@ impl ConvergencePlan {
     /// Build a plan from an explicit strategy list (escalation order preserved).
     pub fn new(strategies: Vec<Box<dyn HomotopyStrategy>>) -> Self {
         Self {
-            newton: Box::new(DampedNewton),
+            newton: Box::new(NoDamping),
             strategies,
             stepper: Box::new(PiController::default()),
             limits: PlanLimits::default(),
@@ -626,6 +665,50 @@ mod tests {
         warm.propose_dt(0.3, 1e-6, &limits);
         let mut cold = PiController::default();
         assert_ne!(warm.propose_dt(2.0, 1e-6, &limits).to_bits(), cold.propose_dt(2.0, 1e-6, &limits).to_bits());
+    }
+
+    /// A static solve, past the first iteration, with a limit active and a 20 V node step.
+    fn damp(strategy: &dyn NewtonStrategy, context: DampContext, prev: [f64; 3], new: [f64; 3]) -> [f64; 3] {
+        let prev = Array1::from(prev.to_vec());
+        let mut update = Array1::from(new.to_vec());
+        strategy.damp_update(prev.view(), update.view_mut(), &context);
+        [update[0], update[1], update[2]]
+    }
+
+    /// ngspice `niiter.c:297-323`: each of the four conditions off leaves the update; on, the
+    /// node steps scale by `max(10/maxΔv, 0.1)` (maxΔv 20 V gives 0.5, 200 V the floor 0.1) and the
+    /// branch current (index 2) is untouched.
+    #[test]
+    fn node_damping_follows_ngspice() {
+        let nodes = [0usize, 1];
+        let on = DampContext { static_solve: true, iteration: 1, limiting: true, nodes: &nodes };
+        let (prev, new) = ([1.0, 2.0, 0.5], [21.0, 4.0, 3.0]);
+        for (off, what) in [
+            (DampContext { static_solve: false, ..on }, "a transient step"),
+            (DampContext { iteration: 0, ..on }, "the first iteration"),
+            (DampContext { limiting: false, ..on }, "no limit active"),
+        ] {
+            assert_eq!(damp(&NodeDamping, off, prev, new), new, "{what} leaves the update");
+        }
+        assert_eq!(damp(&NodeDamping, on, prev, [10.9, 4.0, 3.0]), [10.9, 4.0, 3.0], "maxΔv 9.9 V is not above 10 V");
+        let at_20 = damp(&NodeDamping, on, prev, new);
+        assert_eq!(at_20, [11.0, 3.0, 3.0], "maxΔv 20 V: factor 0.5 on the nodes, the branch untouched");
+        let at_200 = damp(&NodeDamping, on, prev, [201.0, 4.0, 3.0]);
+        assert!((at_200[0] - 21.0).abs() < 1e-12 && (at_200[1] - 2.2).abs() < 1e-12, "maxΔv 200 V: factor 0.1, got {at_200:?}");
+        assert_eq!(at_200[2], 3.0);
+    }
+
+    /// The default strategy leaves every update alone, whatever the context.
+    #[test]
+    fn no_damping_leaves_the_update() {
+        let nodes = [0usize, 1];
+        let on = DampContext { static_solve: true, iteration: 5, limiting: true, nodes: &nodes };
+        let new = [201.0, 4.0, 3.0];
+        assert_eq!(damp(&NoDamping, on, [1.0, 2.0, 0.5], new), new);
+        let plan = ConvergencePlan::default();
+        let mut update = Array1::from(new.to_vec());
+        plan.newton().damp_update(Array1::from(vec![1.0, 2.0, 0.5]).view(), update.view_mut(), &on);
+        assert_eq!(update.to_vec(), new.to_vec(), "the default plan damps nothing");
     }
 
     /// Scripted homotopy driver: records every `newton()` call as the

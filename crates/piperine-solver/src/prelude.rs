@@ -41,7 +41,7 @@ pub use crate::protocol::{StepObserver, StepView};
 // ── Convergence policy (opt-in customization) ──────────────────────────────
 pub use piperine_analog_solver::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};
 pub use piperine_analog_solver::convergence::{
-    ConvergencePlan, DampedNewton, HomotopyStrategy, NewtonStrategy, PiController, StepLimits,
+    ConvergencePlan, DampContext, HomotopyStrategy, NewtonStrategy, NoDamping, NodeDamping, PiController, StepLimits,
     StepperStrategy,
 };
 

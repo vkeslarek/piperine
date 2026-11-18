@@ -696,7 +696,7 @@ impl<'a> TransientSolver<'a> {
         dt: f64,
         use_predictor: bool,
     ) -> crate::core::result::Result<Option<TransientStep>> {
-        let strategy = piperine_analog_solver::convergence::DampedNewton;
+        let strategy = piperine_analog_solver::convergence::NoDamping;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         let t_next = t_n + dt;
