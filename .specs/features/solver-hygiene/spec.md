@@ -145,7 +145,7 @@ to prove it").
 **Acceptance Criteria**:
 
 1. HYG-07: The truncation test SHALL measure each `DDT` term's state with the normalization of Q1(a), and SHALL read `chgtol`.
-2. HYG-07: WHEN a sine source of 1 V at 100 kHz drives a nonlinear capacitor `q = c0·v + c1·v³` directly THEN the source's current SHALL stay within `reltol·|i| + abstol·10³` of the analytic `dq/dt` at every accepted step of one period, which the node-potential basis does not achieve (its node voltage is the source's).
+2. HYG-07: WHEN a sine source of 1 V at 100 kHz drives a nonlinear capacitor `q = c0·v + c1·v³` (c0 = 1e-10, c1 = 1e-9) directly THEN the source's current SHALL differ from the analytic `dq/dt` by at most `trtol·tol`, `tol = max(abstol + reltol·|i|, reltol·max(|q|, chgtol)/h)` (ngspice `CKTterr`'s criterion), at every accepted step of one period, which the node-potential basis does not achieve (measured 2.28 of that bound). (Amended 2026-11-17, orchestrator: AC 2 restated as ngspice CKTterr's criterion per Q1(a); the literal `reltol·|i| + abstol·10³` is unreachable, its charge floor being `reltol·|q|/h`.)
 3. HYG-07: WHEN `chgtol` is raised by 10⁶ on a circuit whose charges lie under it THEN the run SHALL take fewer accepted steps than with the default.
 4. HYG-08: The truncation estimate SHALL skip no state for the asymmetry of its two differences; WHEN a node is flat over the first sub-step and rises over the second by more than the tolerance THEN the step SHALL be rejected.
 5. HYG-07: The 7 twins and `tran_dq` SHALL stay within their unchanged contracts on both backends.
