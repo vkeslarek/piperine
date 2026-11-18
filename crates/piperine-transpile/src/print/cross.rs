@@ -105,7 +105,11 @@ impl<'a> DigitalPrinter<'a> {
                 t.line(&format!("let at_iterate_ = at_iterate_.known_or(Dual::<{}>::constant(f64::NAN));", f.slots));
             }
             t.line(&format!("// the watch `{write}`: its value"));
-            t.line("cx_.set(0, at_iterate_.v);");
+            // abi.md A4: only an unknown value is NaN to the solver; a NaN computed from a known
+            // value is a defect, written as an infinity so the solve fails on it
+            let defect = if maybe_unknown { "known_ && at_iterate_.v.is_nan()" } else { "at_iterate_.v.is_nan()" };
+            t.line("// a NaN computed from known values is a defect: an infinity, which fails the solve (abi.md A4)");
+            t.line(&format!("cx_.set(0, if {defect} {{ f64::INFINITY }} else {{ at_iterate_.v }});"));
             for (p, (_, slot)) in f.partials.iter().enumerate() {
                 t.line(&format!("// partial {p}: d {write} / d {}", names[*slot]));
                 t.line(&format!("if cx_.wanted({p}) {{"));
@@ -159,7 +163,8 @@ fn cross0(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     // the evaluation at the iterate
     let at_iterate_ = Self::cross0_block(Dual::<1>::seeded(a, 0), Dual::<1>::constant(vth), Dual::<1>::constant(hyst));
     // the watch `cross:0`: its value
-    cx_.set(0, at_iterate_.v);
+    // a NaN computed from known values is a defect: an infinity, which fails the solve (abi.md A4)
+    cx_.set(0, if at_iterate_.v.is_nan() { f64::INFINITY } else { at_iterate_.v });
     // partial 0: d cross:0 / d a
     if cx_.wanted(0) {
         cx_.jac()[0] = at_iterate_.d[0];
@@ -183,7 +188,8 @@ fn cross1(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     // the evaluation at the iterate
     let at_iterate_ = Self::cross1_block(Dual::<1>::seeded(a, 0), Dual::<1>::constant(vth), Dual::<1>::constant(hyst));
     // the watch `cross:1`: its value
-    cx_.set(0, at_iterate_.v);
+    // a NaN computed from known values is a defect: an infinity, which fails the solve (abi.md A4)
+    cx_.set(0, if at_iterate_.v.is_nan() { f64::INFINITY } else { at_iterate_.v });
     // partial 0: d cross:1 / d a
     if cx_.wanted(0) {
         cx_.jac()[0] = at_iterate_.d[0];

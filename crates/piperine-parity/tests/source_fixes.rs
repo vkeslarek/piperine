@@ -159,6 +159,19 @@ fn absdelta_fires_every_two_tenths_of_a_volt() {
 }
 
 #[test]
+fn a_cross_over_a_nan_of_known_values_fails_the_solve() {
+    // FIX-05 (Q2 amends abi.md A4 for an unknown value only): only an unknown value is NaN to the solver; `ln` of a negative
+    // number, from known inputs, is a defect and fails the transient loud, naming the watch.
+    let built = build(&project("cross_nan.msl"), "NanBench");
+    let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+    let mut options = piperine_solver::prelude::TransientAnalysisOptions::new(0.5e-6, 0.1e-6);
+    options.dt_max = 0.1e-6;
+    let mut solver = piperine_solver::prelude::Solver::new(circuit).with_tran_opts(options).build();
+    let err = solver.tran().and_then(|mut t| t.solve()).err().expect("the run fails").to_string();
+    assert!(err.contains("not finite") && err.contains("abi.md A4"), "{err}");
+}
+
+#[test]
 fn cross_with_tolerances_runs() {
     // FIX-12 AC 1: `cross(e, 1p)`, `cross(e, etol: 1u)` and `cross(e, 1p, 1u)` type-check, build
     // and run: each fires once, at the 0.5 V of a 1 V/µs ramp (0.5 µs), within the solver's default

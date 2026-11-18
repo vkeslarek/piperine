@@ -1,0 +1,17 @@
+//! A `cross` over a value that is NaN with every input known (FIX-05 Q2, abi.md A4): a defect that
+//! fails the solve, as an infinity does, and no unknown value.
+
+/// A node ramping at 1 V per microsecond.
+module Ramp(p: Electrical) {}
+analog for Ramp { v(p, gnd) +> now() * 1.0e6; }
+
+/// `ln` of a negative number at every solution.
+module Watch(p: Electrical, out hit: Bit = false) {}
+digital for Watch { on cross((0.0 - v(p) - 1.0).ln()) { hit <- true; } }
+
+module NanBench() {
+    signal a: Electrical;
+    signal hit: Bit;
+    let r = Ramp(a);
+    let w = Watch(a, hit);
+}
