@@ -55,8 +55,8 @@ crates/
 ├── piperine-solver/          owner: protocol/, analyses/, bind (core/), Net naming, prelude
 ├── piperine-analog-solver/   analog sub-solver: math/, device/ (Assembly), convergence, TrBdf2
 ├── piperine-digital-solver/  digital sub-solver (the byte-net engine of the device ABI)
-├── piperine-api/             the library face, small: Project, RunSpec, Session, Probe, Table, Record, Plot, Verdict
-├── piperine-cli/             the `piperine` binary, a shell over piperine-api: check build run test new clean fmt
+├── piperine-api/             the library face, small: Project, RunSpec, Session (drive, set_at, subscribe), Probe, Table, Record, Plot, Verdict, Metadata, Params
+├── piperine-cli/             the `piperine` binary, a shell over piperine-api: check build run test info new clean fmt
 ├── piperine-project/         Piperine.toml (+ [run] tables, unread) + dependency resolver + lockfile
 ├── piperine-lang-server/     LSP server: outside the default build, deferred (does not build)
 ├── piperine-plan/             the plan both backends share: BodyPlan (shape + function table), Netlist::circuit (MD-63)

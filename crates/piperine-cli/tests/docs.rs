@@ -117,6 +117,26 @@ fn the_roadmap_lists_the_host_follow_ups() {
 }
 
 #[test]
+fn state_records_the_derived_param_decision() {
+    // HII-23 AC 3: `.specs/STATE.md` holds MD-68 naming the generated derive function, the unchanged
+    // MD-18 and the library surface of the drive and the timed `set`; the instruction files name the
+    // new api modules and the new command
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-68:").expect("STATE.md holds MD-68");
+    let decision = state[at..].split("\n---").next().expect("a decision");
+    for name in ["`piperine_derive_1(", "MD-18", "`Session::drive`", "`Session::set_at`", "S2"] {
+        assert!(decision.contains(name), "MD-68 names {name}");
+    }
+    let claude = read("CLAUDE.md");
+    let api = claude.lines().find(|l| l.starts_with("| `piperine-api` |")).expect("a piperine-api row");
+    for module in ["`metadata.rs`", "`params.rs`", "`drive`", "`set_at`"] {
+        assert!(api.contains(module), "the piperine-api row names {module}");
+    }
+    assert!(claude.lines().any(|l| l.starts_with("| `piperine-cli` |") && l.contains("`info`")), "the piperine-cli row names `info`");
+    assert!(read("AGENTS.md").contains("check build run test info"), "AGENTS.md lists `info`");
+}
+
+#[test]
 fn the_roadmap_marks_the_cli_item_done() {
     // CLI-20 AC 3: item 3 of "Queue after ir-rust" is marked done; item 3b is left as it is
     let roadmap = read("ROADMAP.md");

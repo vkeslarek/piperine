@@ -1503,6 +1503,36 @@ deviation tables of their commits.
 
 ---
 
+### MD-68: a host `set` recomputes the params derived from it, through generated functions
+
+`host-ii` (2026-11-18). The host reaches what the solver already does.
+
+1. **A host `set` recomputes every value derived from the param it changes** (§8.1.23, decision
+   X9): the child params, the constant `let`s and the definitions whose expression reads it. The
+   derivation is a function the compiled backend generates, `piperine_derive_1(k, params) -> f64`,
+   from a `DerivePlan` that `piperine-plan` builds from the IR; the host calls it, then writes each
+   changed pin through `CircuitInstance::set`, checking each child's `where` first and undoing
+   the writes on a refusal (§23.1 rule 6). A timed `set` derives when it is scheduled, one write
+   per changed pin at the same time. This closes S2 of `GAPS.md`.
+2. **MD-18 stands unchanged.** Elaboration fixes the devices and the circuit compiles once; a
+   `set` restamps the compiled circuit and neither re-elaborates nor recompiles. The interpreter
+   backend has no derive function, so a param with readers is refused there naming
+   `--backend rust`.
+3. **The host drive and the timed `set` are a library surface** (X8, Q2): `Session::drive`,
+   `Session::set_at` and `Session::subscribe` of `piperine-api`; the command line has neither a
+   key nor a flag, and a bench in MSL stays its stimulus. A session's options are run keys with
+   ngspice's `.options` names (X7), and `piperine test` reports a `target` and never fails on it
+   (X3).
+
+It supersedes nothing and extends MD-18 and MD-65.
+
+**Scope:** `crates/piperine-plan` (`DerivePlan`), `crates/piperine-transpile` (the derive export),
+`crates/piperine-api` (`params.rs`, `Session`), `crates/piperine-solver` (`CircuitInstance`
+writes), `crates/piperine-cli`, `docs/book`.
+**Status:** Accepted (2026-11-17), from the approved `.specs/features/host-ii/design.md`.
+
+---
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)

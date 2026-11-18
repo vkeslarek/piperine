@@ -1102,9 +1102,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `docs.rs` gains `state_records_the_derived_param_decision`
-- [ ] Gate check passes: Build
-- [ ] Test count: 1 new test
+- [x] `docs.rs` gains `state_records_the_derived_param_decision`
+- [x] Gate check passes: Build
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: build
