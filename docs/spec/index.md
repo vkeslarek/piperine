@@ -137,7 +137,7 @@ does not define is not part of the language.
    ([Appendix A](appendix_a_lexical.md)), the types, expressions, patterns, statements and
    control flow ([§1.1](part_i_values.md#11-scalar-types) to
    [§1.8](part_i_values.md#18-control-flow)), the items, traits, generics and names
-   ([§3](part_i_values.md#3-functions) to [§3.8](part_i_values.md#38-generics-and-bounds)), and
+   ([§3](part_i_values.md#3-functions) to [§3.9](part_i_values.md#39-constants)), and
    the grammar ([Appendix B.3](appendix_b_grammar.md)). The mixed-signal constructs are defined
    in Parts II to VIII.
 2. The grammar of [Appendix B.3](appendix_b_grammar.md) is complete. Source text that no
