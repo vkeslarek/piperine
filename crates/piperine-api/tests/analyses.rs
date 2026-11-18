@@ -324,7 +324,7 @@ fn tf_input_must_be_a_voltage_source() {
     // then 3 kOhm gives gain 3/4, input resistance 4 kOhm, output resistance 750 Ohm
     for input in ["v1", "Top.v1"] {
         let table = run_text(DIVIDER, tf(input)).unwrap_or_else(|f| panic!("{input}: {f}"));
-        for (quantity, wanted) in [("gain", 0.75), ("input_resistance", 4000.0), ("output_resistance", 750.0)] {
+        for (quantity, wanted) in [("gain", 0.75), ("input_impedance", 4000.0), ("output_impedance", 750.0)] {
             let got = real(value(&table, quantity));
             assert!((got - wanted).abs() <= 1e-9 * wanted, "{input}: {quantity} = {got}, wanted {wanted}");
         }

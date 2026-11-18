@@ -27,6 +27,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apihost**: `cargo test -p piperine-api --test host_actions`
 **Run apidigital**: `cargo test -p piperine-api --test digital_only`
 **Run apiderived**: `cargo test -p piperine-api --test derived`
+**Run apireach**: `cargo test -p piperine-api --test option_reach`
 **Run clilib**: `cargo test -p piperine-cli --lib`
 **Run clianalyses**: `cargo test -p piperine-cli --test analyses`
 **Run cliinfo**: `cargo test -p piperine-cli --test info`

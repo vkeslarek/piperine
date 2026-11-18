@@ -133,10 +133,12 @@ impl Table {
             .collect()
     }
 
-    /// The transfer function: columns `quantity` and `value`, the rows `gain`, `input_resistance`
-    /// and `output_resistance` in that order (the solver's own field names).
+    /// The transfer function: columns `quantity` and `value`, the rows `gain`, `input_impedance`
+    /// and `output_impedance` in that order (HII-04 AC 1; ngspice's `.tf` names them so). The
+    /// solver's fields are `input_resistance` and `output_resistance`: for a resistive input
+    /// they are the same number.
     pub fn transfer(result: &TransferFunctionAnalysisResult) -> Table {
-        let rows = [("gain", result.gain), ("input_resistance", result.input_resistance), ("output_resistance", result.output_resistance)]
+        let rows = [("gain", result.gain), ("input_impedance", result.input_resistance), ("output_impedance", result.output_resistance)]
             .into_iter()
             .map(|(quantity, value)| vec![Cell::Text(quantity.into()), Cell::Real(value)])
             .collect();
@@ -400,8 +402,8 @@ mod tests {
             table.rows,
             [
                 vec![Cell::Text("gain".into()), Cell::Real(0.75)],
-                vec![Cell::Text("input_resistance".into()), Cell::Real(4000.0)],
-                vec![Cell::Text("output_resistance".into()), Cell::Real(750.0)],
+                vec![Cell::Text("input_impedance".into()), Cell::Real(4000.0)],
+                vec![Cell::Text("output_impedance".into()), Cell::Real(750.0)],
             ]
         );
     }

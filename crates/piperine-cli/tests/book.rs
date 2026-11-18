@@ -583,7 +583,7 @@ fn the_chapter_runs_each_new_analysis() {
 
     let tf = run_listing("piperine run lowpass.msl --analysis tf");
     assert!((number(&row(&tf, "gain"), 1) - 0.75).abs() < 1e-6, "{tf}");
-    assert!((number(&row(&tf, "input_resistance"), 1) - 4000.0).abs() < 1e-3, "{tf}");
+    assert!((number(&row(&tf, "input_impedance"), 1) - 4000.0).abs() < 1e-3, "{tf}");
 
     let pz = run_listing("piperine run lowpass.msl --analysis pz");
     let pole = row(&pz, "pole");

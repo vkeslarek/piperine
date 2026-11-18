@@ -4076,7 +4076,7 @@ time         Step.vin    Step.vout
 <tr><td><code>dc</code></td><td>one per point of the sweep; each point sets the param and solves an operating point. A point of a sweep has no time to stamp a record with, so a <code>dc</code> run of a design that writes records is refused with P0010; run <code>op</code> at each value instead</td><td>the swept param's full path, then one per signal</td></tr>
 <tr><td><code>ac</code></td><td>one per frequency</td><td><code>freq</code>, then <code>mag(&lt;path&gt;)</code> and <code>phase(&lt;path&gt;)</code> per signal, the phase in degrees</td></tr>
 <tr><td><code>transient</code></td><td>one per accepted solver step, or one per <code>print_step</code></td><td><code>time</code>, then one per signal</td></tr>
-<tr><td><code>tf</code></td><td>three: <code>gain</code>, <code>input_resistance</code>, <code>output_resistance</code></td><td><code>quantity</code>, <code>value</code></td></tr>
+<tr><td><code>tf</code></td><td>three: <code>gain</code>, <code>input_impedance</code>, <code>output_impedance</code></td><td><code>quantity</code>, <code>value</code></td></tr>
 <tr><td><code>pz</code></td><td>one per pole and zero</td><td><code>kind</code>, <code>real</code>, <code>imag</code></td></tr>
 <tr><td><code>sens</code></td><td>one per <code>wrt</code> param</td><td><code>param</code>, then <code>d(&lt;path&gt;)</code> per signal</td></tr>
 <tr><td><code>pss</code></td><td>one per <code>print_step</code> across one period of the orbit</td><td><code>time</code>, then one per signal</td></tr>
@@ -4280,10 +4280,10 @@ Lowpass.vout  7.500000e0</pre>
 
 <pre data-lang="text" data-cli-output="piperine run lowpass.msl --analysis tf --input v1 --output vout">run lowpass: tf, top Lowpass, backend rust
 
-quantity           value
-gain               7.500000e-1
-input_resistance   4.000000e3
-output_resistance  7.500000e2</pre>
+quantity          value
+gain              7.500000e-1
+input_impedance   4.000000e3
+output_impedance  7.500000e2</pre>
 
 <p>The divider has gain 3/4, and the source sees 1&nbsp;kΩ in series with 3&nbsp;kΩ. <strong><code>pz</code></strong> takes the same two keys and lists the poles and zeros of that transfer function, in rad/s; the capacitor makes one pole, at −(1/R1 + 1/R2)/C:</p>
 
