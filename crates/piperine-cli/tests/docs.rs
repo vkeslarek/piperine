@@ -75,7 +75,7 @@ fn gaps_drops_what_closed_and_lists_what_is_left() {
         assert!(gaps.contains(left), "GAPS.md lists `{left}`");
     }
     // and what this feature's own reading found
-    for found in ["A DC sweep's points deliver no records", "`on above(..) { emit!(..) }` is `P0001`", "A digital-only transient is refused"] {
+    for found in ["A DC sweep's points deliver no records", "A digital-only transient is refused"] {
         assert!(gaps.contains(found), "GAPS.md lists `{found}`");
     }
     // a gap the command line refuses is loud, not silent (verification F1)
@@ -112,14 +112,15 @@ fn state_records_the_cli_decision() {
 fn gaps_says_a_host_run_is_bounded() {
     // long-run LR-18 AC 2: a host run records what it prints and keeps no step, so `GAPS.md` no
     // longer lists the unbounded recording of a host run as open; the solver's own default keeps
-    // every step (N2) and `GAPS.md` still says so; the loud gap of `on above` stays
+    // every step (N2) and `GAPS.md` still says so; the loud gap of `on above` closed with msl-fixes
     let gaps = read("GAPS.md");
     for stale in ["a host\n  needs a bounded recording", "a 600 µs run held 25 GB"] {
         assert!(!gaps.contains(stale), "GAPS.md still says `{stale}`");
     }
     assert!(gaps.contains("it records only the signals it prints"), "GAPS.md says a host run records only what it prints");
     assert!(gaps.contains("(N2)") && gaps.contains("keeps every accepted step"), "GAPS.md still says the solver's default keeps every step");
-    assert!(gaps.contains("`on above(..) { emit!(..) }` is `P0001`"), "GAPS.md still lists the `on above` gap");
+    // (the loud gap of `on above(..) { emit!(..) }` closed with msl-fixes FIX-13, L55)
+    assert!(!gaps.contains("`on above(..) { emit!(..) }` is `P0001`"), "GAPS.md no longer lists the closed `on above` gap");
     assert!(gaps.contains("prints the whole 600 µs start"), "the command-line row names the whole-start run");
 }
 
@@ -145,4 +146,32 @@ fn state_records_the_observation_decision() {
     let decision = state[at..].split("\n---").next().expect("a decision");
     assert!(decision.contains("observation is the run's"), "MD-66 says observation is the run's");
     assert!(decision.contains("`[run.<name>]`") && decision.contains("extends MD-65"), "MD-66 names the run table and MD-65");
+}
+
+#[test]
+fn gaps_drops_what_msl_fixes_closed() {
+    // msl-fixes DOC-01 AC 1: `GAPS.md` drops the entries the feature closed, keeps what is left
+    // (`simparam`, S3, H.5 to H.7, `normal`, `limexp`), and the counts follow
+    let gaps = read("GAPS.md");
+    for id in ["B1", "B2", "S1", "S5"] {
+        assert!(!gaps.contains(&format!("### {id}.")), "GAPS.md still has the entry {id}");
+    }
+    for id in ["L11", "L14", "L15", "L17", "L41", "L46", "L48", "L54", "L55"] {
+        assert!(!gaps.contains(&format!("| {id} |")), "GAPS.md still has the row {id}");
+    }
+    // L47 keeps `simparam` only; L16 keeps H.5 to H.7; L58 drops `db10`/`db20` and `absdelta`
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
+    assert!(row("L47").contains("`simparam`") && !row("L47").contains("`freq()`, "), "L47 keeps simparam: {}", row("L47"));
+    assert!(row("L16").contains("H.5, H.6, H.7") && !row("L16").contains("unwrap expect"), "L16 keeps H.5 to H.7: {}", row("L16"));
+    assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && row("L58").contains("`limexp`") && row("L58").contains("`normal`"), "L58: {}", row("L58"));
+    for kept in ["### S3.", "### S2.", "### S4.", "### S6.", "### B3.", "### B4."] {
+        assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
+    }
+    // the counts follow: 4 silent, 2 broken
+    assert!(gaps.contains("4 silent, 2 broken, 50 loud"), "the counts of §9 follow");
+    let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
+    assert_eq!(rows("## 3. Silent", "## 4."), 4, "four silent entries");
+    assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
+    let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 50, "fifty loud rows");
 }
