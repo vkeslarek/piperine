@@ -19,7 +19,7 @@ mod abi_mixed;
 mod partials;
 
 use abi_mixed::{dac, timer};
-use abi_devices::{Counting, add_capacitor, add_resistor, add_vsrc, node_id};
+use abi_devices::{Counting, add_capacitor, add_diode, add_resistor, add_vsrc, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::F64;
 use piperine_abi::raw::{Cell, DEFAULT, Module, Shape, ambient, cell, op, part, pin_flag, role};
@@ -357,31 +357,46 @@ fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function_with("FlakyC", FLAKY_MODULE.get_or_init(|| module::<FlakyC>("FlakyC")), &[(0, 3, 0.0)]);
 }
 
-#[test]
-fn the_transient_driver_iterates_with_the_plans_strategy() {
-    // Every Newton solve of a step goes through the strategy of the plan the driver was given:
-    // one damp_update per iteration, so the count equals the run's iterations.
-    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let (r, c) = (1.0e3, 1.0e-6);
-    let mut b = CircuitBuilder::new("rc");
+/// A 5 V source through 1 kohm into a diode (the operating point needs several Newton
+/// iterations) with a 1 uF capacitor across it, as a built circuit.
+fn diode_clamp() -> piperine_solver::prelude::CircuitInstance {
+    let mut b = CircuitBuilder::new("clamp");
     let gnd = b.ground();
     let top = b.node("top");
     let out = b.node("out");
-    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
-    add_resistor(&mut b, "r1", r, &top, &out);
-    add_capacitor(&mut b, "c1", c, &out, &gnd);
-    let mut circuit = b.build().expect("build");
-    let plan = piperine_analog_solver::convergence::ConvergencePlan::default().with_newton(Box::new(Counting(Arc::clone(&calls))));
-    let mut solver = circuit
-        .transient(TransientAnalysisOptions::new(r * c, r * c / 100.0), Context::default())
-        .expect("tran")
-        ;
+    add_vsrc(&mut b, "v1", 5.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 1.0e3, &top, &out);
+    add_diode(&mut b, "d1", 1.0e-14, &out, &gnd);
+    add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
+    b.build().expect("build")
+}
+
+#[test]
+fn the_transient_driver_iterates_with_the_plans_strategy() {
+    // Every Newton solve of a run goes through the strategy of the plan the driver was given,
+    // the transient's operating point included (HYG-10 AC 1): one damp_update per iteration, so
+    // the strategy's count is the steps' iterations plus the iterations of the same operating
+    // point solved alone under the same plan.
+    let counting_plan = || {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let plan = piperine_analog_solver::convergence::ConvergencePlan::default().with_newton(Box::new(Counting(Arc::clone(&calls))));
+        (calls, plan)
+    };
+    let (operating_calls, operating_plan) = counting_plan();
+    let mut alone = diode_clamp();
+    let operating = alone.dc(Context::default()).expect("dc").with_plan(operating_plan).solve().expect("the operating point");
+    let operating_iterations = operating_calls.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(operating_iterations > 2, "the operating point needs several iterations: {operating_iterations}");
+    assert_eq!(operating_iterations, operating.stats.newton_iterations, "the strategy sees every iteration of a DC solve");
+
+    let (calls, plan) = counting_plan();
+    let mut circuit = diode_clamp();
+    let mut solver = circuit.transient(TransientAnalysisOptions::new(1.0e-4, 1.0e-6), Context::default()).expect("tran");
     solver.set_plan(plan);
-    solver.apply_initial_conditions(vec![InitialValue { reference: out.clone(), value: 0.0 }]);
     let result = solver.solve().expect("solve");
     let seen = calls.load(std::sync::atomic::Ordering::SeqCst);
     assert!(result.len() > 10, "the run took steps");
-    assert!(seen >= 2 * (result.len() - 1), "two Newton solves per accepted step went through the strategy: {seen} calls");
+    assert_eq!(seen, operating_iterations + result.stats.newton_iterations, "the strategy saw the steps and the operating point ({operating_iterations} op, {} steps)", result.stats.newton_iterations);
 }
 
 /// A timer on `code` toggling every `half`, a DAC of 1 V on it driving `o`, and `o` charging 1 nF

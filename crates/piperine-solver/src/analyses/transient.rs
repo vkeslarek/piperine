@@ -1201,11 +1201,16 @@ impl TransientSolver<'_> {
             // The session's context: its gmin, the one the transient's reactions read, and its
             // tolerances.
             let context = self.system.context.clone();
-            let mut dc = DcSolver::new(self.system.circuit, context)?;
+            // The operating point iterates with the transient's own plan (its Newton strategy and
+            // homotopies); the plan comes back whatever the solve returned.
+            let plan = std::mem::take(&mut self.plan);
+            let mut dc = DcSolver::new(self.system.circuit, context)?.with_plan(plan);
             dc.system.uic_clamps = uic_clamps.clone();
             dc.system.time = self.options.start_time;
             dc.apply_initial_conditions(guess);
-            dc.equilibrium(true)?
+            let solved = dc.equilibrium(true);
+            self.plan = dc.into_plan();
+            solved?
         };
         self.system.uic_clamps = uic_clamps;
         run.op = Some(x.clone());

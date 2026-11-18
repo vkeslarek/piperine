@@ -227,6 +227,12 @@ impl<'a> DcSolver<'a> {
         self
     }
 
+    /// The convergence plan back from a driver that was lent it through [`with_plan`](Self::with_plan):
+    /// the transient hands its own plan to the driver of its operating point and takes it back.
+    pub(crate) fn into_plan(self) -> ConvergencePlan {
+        std::sync::Arc::try_unwrap(self.plan).unwrap_or_else(|_| unreachable!("the plan is shared only while a solve runs"))
+    }
+
     /// Seed the DC Newton initial guess with node-voltage hints (the host
     /// §5.1 `OpConfig.nodeset`). Applied before [`solve`](Self::solve); the
     /// solver still converges to the operating point — this only changes the
