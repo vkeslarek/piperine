@@ -849,8 +849,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_phdl_port_text_is_gone` passes under `**Run removed**`
-- [ ] Gate check passes: Quick
+- [x] `the_phdl_port_text_is_gone` passes under `**Run removed**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

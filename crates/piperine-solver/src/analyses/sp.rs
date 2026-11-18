@@ -3,9 +3,9 @@
 //! Kurokawa power-wave normalization (`design.md` Algorithm 3).
 //!
 //! **Ports are analysis-time, not authored (SP-01).** Each port (a node, a
-//! reference impedance `z0`, a 1-based `num`) is declared in PHDL via the
-//! `@rfport(num, z0)` attribute (`piperine-lang`) — no stdlib device, no
-//! `IS_PORT` capability. The `.sp` driver itself adds the `z0` termination
+//! reference impedance `z0`, a 1-based `num`) is an [`SpPort`] value the host
+//! gives the analysis — no stdlib device, no `IS_PORT` capability, no
+//! attribute in the source. The `.sp` driver itself adds the `z0` termination
 //! and the switchable excitation for the duration of the analysis.
 //!
 //! **Per-frequency algorithm.** For every driven port `j` (all others left
@@ -45,7 +45,7 @@ use num_complex::Complex;
 // ── request/state ────────────────────────────────────────────────────────
 
 /// One `.sp` port declaration: the node it sits on, its reference impedance,
-/// and its 1-based port number (from `@rfport(num, z0)`).
+/// and its 1-based port number. The host builds one per port and passes them to the analysis.
 #[derive(Clone, Debug)]
 pub struct SpPort {
     pub num: usize,

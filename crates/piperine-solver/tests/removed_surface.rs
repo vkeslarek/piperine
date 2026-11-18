@@ -193,6 +193,14 @@ fn the_dead_newton_hooks_are_gone() {
     assert!(found.is_empty(), "removed Newton hook still named: {found:#?}");
 }
 
+/// HYG-15 AC 2: the `.sp` documentation names the host's `SpPort` values, not the retired PHDL
+/// attribute.
+#[test]
+fn the_phdl_port_text_is_gone() {
+    let found = names_found(&["PHDL", "@rfport"]);
+    assert!(found.is_empty(), "retired PHDL text still in a solver source: {found:#?}");
+}
+
 #[test]
 fn simprobe_is_gone() {
     let found = names_found(&["simprobe", "SimprobeError"]);
