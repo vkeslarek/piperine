@@ -1252,7 +1252,7 @@ Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_print
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:**
+**Dispatched:** B1 - Sonnet worker, 2026-11-18 (host-ii merged 1a3d69dc).
 **Walked:** not applicable: no screen; every story's Independent Test is a run from source or a test target named in `## Checks`.
 
 ---
