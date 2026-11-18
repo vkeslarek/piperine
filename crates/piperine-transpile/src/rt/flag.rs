@@ -11,6 +11,8 @@
 //! known levels (§3.3.11): an unknown value shifted out entirely is known 0, except by a signed
 //! `>>`, which fills with the sign. `known_or`, `is_known` and `high` read the flag (§3.3.4);
 //! `decide` is the condition of an `if`, a `Fault` naming its origin when unknown (RS-11 AC 5).
+//! `Merge` combines two values level by level, as the merge of unknown control does (§3.3.3,
+//! §22.1.2); `same`, `level`, `recast` and `known_or_flagged` are the rest of §22.1 on one value.
 //!
 //! `Commits` collects the commits of one reaction and hands them to `React` in the order they
 //! were made, after the body ran, so a fault makes none (design "Phase B: generated digital
@@ -20,6 +22,7 @@ use core::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, S
 
 use piperine_abi::device::{Fault, React};
 
+use super::control::Panic;
 use super::int::{Int, UInt};
 
 /// A type a pin carries: its value bytes little-endian at offset 0, then one known byte; the
@@ -33,6 +36,13 @@ pub trait Carried: Copy + Default + PartialEq {
     fn encode(self, out: &mut [u8]);
     /// The value of `bytes[..WIDTH]`.
     fn decode(bytes: &[u8]) -> Self;
+    /// How many levels the type has (§2): the `T::WIDTH` of MSL, not the byte width above.
+    const LEVELS: u32;
+    /// The levels as bits, level `k` being bit `k`: the form `level` reads and `cast` moves
+    /// between types of the same level count (§22.1.3).
+    fn to_levels(self) -> u64;
+    /// The value whose levels are the low `LEVELS` bits of `bits`.
+    fn from_levels(bits: u64) -> Self;
 }
 
 /// A carried type with levels, so with `&` and `|`: `bool` and the integers.
@@ -49,6 +59,13 @@ impl Carried for bool {
     }
     fn decode(bytes: &[u8]) -> bool {
         bytes[0] != 0
+    }
+    const LEVELS: u32 = 1;
+    fn to_levels(self) -> u64 {
+        u64::from(self)
+    }
+    fn from_levels(bits: u64) -> bool {
+        bits & 1 != 0
     }
 }
 
@@ -68,6 +85,13 @@ impl Carried for f64 {
         let mut b = [0u8; 8];
         b.copy_from_slice(&bytes[..8]);
         f64::from_le_bytes(b)
+    }
+    const LEVELS: u32 = 64;
+    fn to_levels(self) -> u64 {
+        self.to_bits()
+    }
+    fn from_levels(bits: u64) -> f64 {
+        f64::from_bits(bits)
     }
 }
 
@@ -105,6 +129,13 @@ impl<const N: u32> Carried for UInt<N> {
     fn decode(bytes: &[u8]) -> UInt<N> {
         UInt::new(Word::read(bytes, Self::WIDTH))
     }
+    const LEVELS: u32 = N;
+    fn to_levels(self) -> u64 {
+        self.get()
+    }
+    fn from_levels(bits: u64) -> UInt<N> {
+        UInt::new(bits)
+    }
 }
 
 impl<const N: u32> Levels for UInt<N> {
@@ -123,6 +154,14 @@ impl<const N: u32> Carried for Int<N> {
         // the stored bytes hold the value sign-extended to their width: extend to 64 bits
         let shift = 64 - 8 * Self::WIDTH as u32;
         Int::new(((Word::read(bytes, Self::WIDTH) << shift) as i64) >> shift)
+    }
+    const LEVELS: u32 = N;
+    fn to_levels(self) -> u64 {
+        // the low `N` bits of the two's complement value
+        (self.get() as u64) & UInt::<N>::MAX
+    }
+    fn from_levels(bits: u64) -> Int<N> {
+        Int::new(bits as i64)
     }
 }
 
@@ -263,6 +302,93 @@ impl Flagged<bool> {
         } else {
             Err(Fault::new(Self::UNKNOWN_CONTROL, format!("{origin}: the condition of an `if` is unknown")))
         }
+    }
+}
+
+/// Two values that merge level by level (§3.3.3, §22.1.2): the value of an unknown `if` is the
+/// merge of what its arms yield.
+pub trait Merge: Sized {
+    /// Equal known levels kept, the rest unknown. Commutative and associative, and
+    /// `a.merge(a)` is `a` (§22.1.2 rules 1 and 2).
+    fn merge(self, other: Self) -> Self;
+    /// The value every level of which is unknown: what a path that panicked yields under
+    /// unknown control (§1 rule 13).
+    fn unknown() -> Self;
+}
+
+impl<T: Carried> Merge for Flagged<T> {
+    /// One flag per value: known only when both are known and hold the same levels.
+    fn merge(self, other: Flagged<T>) -> Flagged<T> {
+        if self.known && other.known && self.value.to_levels() == other.value.to_levels() { self } else { Flagged::unknown() }
+    }
+
+    fn unknown() -> Flagged<T> {
+        Flagged { value: T::default(), known: false }
+    }
+}
+
+impl Merge for () {
+    /// A statement yields nothing to merge.
+    fn merge(self, _other: ()) {}
+
+    fn unknown() {}
+}
+
+impl<T: Carried> Flagged<T> {
+    /// `same(a, b)` (§22.1.4): every level has the same flag and, where known, the same value.
+    /// Always known, so a plain `bool`; two unknown values are the same, unlike `==` (§3.3.10).
+    pub fn same(self, other: Flagged<T>) -> bool {
+        match (self.known, other.known) {
+            (true, true) => self.value.to_levels() == other.value.to_levels(),
+            (false, false) => true,
+            _ => false,
+        }
+    }
+
+    /// `x.level(k)` as the pair `(is, value)` of the `Option<bool>` it yields (§3.3.4): `is`
+    /// says the level is known, `value` is its value (`false` when it is not, the form `None`
+    /// takes). With a known `k` both are known (§3.3.14) and a `k` outside the type's levels
+    /// is the panic of §1 rule 11 naming `origin` and `k`. An unknown `k` is an unknown index:
+    /// the merge of the pair of every level (§3.3.13).
+    pub fn level(self, index: Flagged<UInt<32>>, origin: &str) -> (Flagged<bool>, Flagged<bool>) {
+        if !index.known {
+            return (0..T::LEVELS)
+                .map(|k| self.level_at(k))
+                .reduce(|(is, value), (next_is, next_value)| (is.merge(next_is), value.merge(next_value)))
+                .unwrap_or((Flagged::unknown(), Flagged::unknown()));
+        }
+        let k = index.value.get();
+        if k >= u64::from(T::LEVELS) {
+            Panic::raise(format!("{origin}: level {k} is out of range for a value of {} levels", T::LEVELS));
+        }
+        self.level_at(k as u32)
+    }
+
+    /// Level `k` (below `T::LEVELS`) as the known pair of `level`.
+    fn level_at(self, k: u32) -> (Flagged<bool>, Flagged<bool>) {
+        (Flagged::known(self.known), Flagged::known(self.known && (self.value.to_levels() >> k) & 1 != 0))
+    }
+
+    /// `cast::<T, U>(x)` (§22.1.3): the same levels under another type of the same level count,
+    /// with their flag. `tags` lists the tags `U` decodes when it is an enum: any other
+    /// pattern has no variant, and the result is `Unknown` (rule 2).
+    pub fn recast<U: Carried>(self, tags: Option<&[i128]>) -> Flagged<U> {
+        if !self.known {
+            return Flagged::unknown();
+        }
+        let bits = self.value.to_levels();
+        match tags {
+            Some(tags) if !tags.contains(&i128::from(bits)) => Flagged::unknown(),
+            _ => Flagged::known(U::from_levels(bits)),
+        }
+    }
+}
+
+impl<T: Copy + Default> Flagged<T> {
+    /// `x.known_or(d)` where `d` may itself be unknown (§22.1.1 rule 4): `x` when known,
+    /// otherwise `d` with its own flag.
+    pub fn known_or_flagged(self, default: Flagged<T>) -> Flagged<T> {
+        if self.known { self } else { default }
     }
 }
 
@@ -467,7 +593,7 @@ impl Commits {
 
 #[cfg(test)]
 mod tests {
-    use super::{Commits, Flagged};
+    use super::{Commits, Flagged, Merge};
     use crate::rt::int::{Int, UInt};
     use piperine_abi::device::React;
     use piperine_abi::layout::{HIGH, LOW};
@@ -601,6 +727,113 @@ mod tests {
         let fault = u::<bool>().decide("control.msl:28:12").expect_err("an unknown condition is a fault");
         assert!(fault.message.contains("control.msl:28:12"), "{}", fault.message);
         assert!(!fault.reshape);
+    }
+
+    /// The message of the panic `f` raises, `None` when it does not panic.
+    fn panic_message(f: impl FnOnce() + std::panic::UnwindSafe) -> Option<String> {
+        std::panic::catch_unwind(f).err().and_then(|e| e.downcast_ref::<String>().cloned())
+    }
+
+    #[test]
+    fn merge_follows_the_level_rule() {
+        // §22.1.2 rule 1 (one flag per value): known exactly when both are known and equal,
+        // and then that value; any other pair is unknown
+        assert_eq!(k(true).merge(k(true)), k(true));
+        assert_eq!(k(true).merge(k(false)), u());
+        assert_eq!(k(true).merge(u()), u());
+        assert_eq!(u::<bool>().merge(u()), u());
+        assert_eq!(k(UInt::<8>::new(5)).merge(k(UInt::<8>::new(5))), k(UInt::<8>::new(5)));
+        assert_eq!(k(UInt::<8>::new(5)).merge(k(UInt::<8>::new(6))), u());
+        assert_eq!(k(Int::<4>::new(-1)).merge(k(Int::<4>::new(-1))), k(Int::<4>::new(-1)));
+        // rule 2: commutative, and `merge(a, a)` has the levels and flags of `a`, a NaN
+        // included (it is one known value, §3.3.9)
+        let values = [k(1.5f64), k(2.5), u(), k(f64::NAN)];
+        for a in values {
+            for b in values {
+                assert_eq!(a.merge(b).is_known(), b.merge(a).is_known(), "{a:?} {b:?}");
+            }
+            assert_eq!(a.merge(a).is_known(), a.is_known(), "{a:?}");
+        }
+        assert!(k(f64::NAN).merge(k(f64::NAN)).is_known());
+        // rule 2: associative
+        let (a, b, c) = (k(true), k(true), k(false));
+        assert_eq!(a.merge(b).merge(c), a.merge(b.merge(c)));
+        // a statement yields nothing, so there is nothing to merge
+        assert_eq!(().merge(()), ());
+        assert_eq!(<Flagged<bool> as Merge>::unknown(), u());
+    }
+
+    #[test]
+    fn same_compares_flags() {
+        // §22.1.4 rule 1: `same` is always known and compares flags; `==` is unknown on an
+        // unknown operand (§3.3.10)
+        assert!(u::<UInt<8>>().same(u()), "same(Unknown, Unknown) is true");
+        assert_eq!(u::<UInt<8>>().equal(u()), u::<bool>(), "Unknown == Unknown is unknown");
+        assert!(!k(UInt::<8>::new(0)).same(u()));
+        assert!(!u::<bool>().same(k(false)));
+        assert!(k(UInt::<8>::new(9)).same(k(UInt::new(9))));
+        assert!(!k(UInt::<8>::new(9)).same(k(UInt::new(8))));
+        assert!(k(Int::<8>::new(-3)).same(k(Int::new(-3))));
+        assert!(k(f64::NAN).same(k(f64::NAN)), "a NaN is one known value");
+    }
+
+    #[test]
+    fn level_reads_a_level_and_merges_an_unknown_index() {
+        let at = |x: Flagged<UInt<8>>, i: u64| x.level(k(UInt::<32>::new(i)), "t.msl:1:1");
+        // §3.3.4, US-02 AC 1: `Some(b)` for a known level, `None` for an unknown value, and the
+        // pair itself known whatever the flags of `x` (§3.3.14, AC 2)
+        let x = k(UInt::<8>::new(0b1010_0101));
+        for i in 0..8 {
+            assert_eq!(at(x, i), (k(true), k((0b1010_0101 >> i) & 1 == 1)), "level {i}");
+            assert_eq!(at(u(), i), (k(false), k(false)), "level {i} of an unknown value is None");
+        }
+        assert_eq!(k(true).level(k(UInt::new(0)), "t"), (k(true), k(true)));
+        assert_eq!(u::<bool>().level(k(UInt::new(0)), "t"), (k(false), k(false)));
+        assert_eq!(k(Int::<4>::new(-8)).level(k(UInt::new(3)), "t"), (k(true), k(true)), "the sign level");
+        assert_eq!(k(-1.0f64).level(k(UInt::new(63)), "t"), (k(true), k(true)), "f64 has 64 levels");
+        // AC 4, §1 rule 11: a known `k` not below the level count is a panic naming the
+        // origin and `k`
+        let message = panic_message(|| {
+            let _ = at(k(UInt::<8>::new(1)), 8);
+        })
+        .expect("level 8 of a u8 panics");
+        assert!(message.contains("t.msl:1:1") && message.contains('8'), "{message}");
+        assert!(panic_message(|| {
+            let _ = k(true).level(k(UInt::new(1)), "t");
+        })
+        .is_some());
+        // AC 5, §3.3.13: an unknown index is the merge of every level: known only when every
+        // level agrees
+        let any = u::<UInt<32>>();
+        assert_eq!(k(UInt::<8>::new(0xFF)).level(any, "t"), (k(true), k(true)));
+        assert_eq!(k(UInt::<8>::new(0)).level(any, "t"), (k(true), k(false)));
+        assert_eq!(k(UInt::<8>::new(1)).level(any, "t"), (k(true), u()));
+        assert_eq!(u::<UInt<8>>().level(any, "t"), (k(false), k(false)), "every level is None");
+    }
+
+    #[test]
+    fn recast_keeps_levels_and_decodes_tags() {
+        // §22.1.3 rule 1: level `k` of the result is level `k` of the operand, flag included
+        assert_eq!(k(UInt::<4>::new(0b1011)).recast::<Int<4>>(None), k(Int::<4>::new(-5)));
+        assert_eq!(k(Int::<4>::new(-1)).recast::<UInt<4>>(None), k(UInt::<4>::new(15)));
+        assert_eq!(k(true).recast::<UInt<1>>(None), k(UInt::<1>::new(1)));
+        assert_eq!(k(UInt::<1>::new(0)).recast::<bool>(None), k(false));
+        assert_eq!(k(1.0f64).recast::<UInt<64>>(None), k(UInt::<64>::new(1.0f64.to_bits())));
+        assert_eq!(u::<UInt<4>>().recast::<Int<4>>(None), u(), "an unknown value stays unknown");
+        // rule 2: a tag the target has no variant for is `Unknown`
+        let tags = [0, 1, 2];
+        assert_eq!(k(UInt::<2>::new(2)).recast::<UInt<2>>(Some(&tags)), k(UInt::<2>::new(2)));
+        assert_eq!(k(UInt::<2>::new(3)).recast::<UInt<2>>(Some(&tags)), u());
+        assert_eq!(u::<UInt<2>>().recast::<UInt<2>>(Some(&tags)), u());
+    }
+
+    #[test]
+    fn known_or_flagged_gives_the_default_with_its_flag() {
+        // §22.1.1 rule 4: `x` when known, otherwise `d` with its own flag
+        assert_eq!(k(1.0f64).known_or_flagged(k(2.0)), k(1.0));
+        assert_eq!(k(1.0f64).known_or_flagged(u()), k(1.0));
+        assert_eq!(u::<f64>().known_or_flagged(k(2.0)), k(2.0));
+        assert_eq!(u::<f64>().known_or_flagged(u()), u());
     }
 
     /// A reaction frame whose commits are recorded.
