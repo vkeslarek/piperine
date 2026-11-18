@@ -122,6 +122,7 @@ The audit of 2026-11-17 (`GAPS.md`) found a run that ignores `finish()` and `fat
 2. WHEN a potential contribution reads nothing (`v(a, gnd) +> 2.0;`) THEN the system SHALL build and run it: `v(a)` = 2.0 V.
 3. WHEN a flow contribution reads only a carrier (`i(gnd, a) +> lv.known_or(0.0) * 1m;`, `lv` a `Bit<f64>` committed to 2.0 at 1 ns) THEN the system SHALL build and run it: `v(a)` = 2.0 V after 1 ns into 1 kΩ.
 4. The system SHALL print the generated Rust of every body that reads a value exactly as before this feature.
+5. WHEN a function with no argument (`fn two() -> f64 { 2.0 }`) is called in an `analog` block or a reaction THEN the system SHALL build and run it: `v(a, gnd) +> two();` gives `v(a)` = 2.0 V and a reaction commits 2.0 (added by the fix round, F10).
 
 **Acceptance Criteria** (FIX-05, B2):
 
@@ -129,6 +130,7 @@ The audit of 2026-11-17 (`GAPS.md`) found a run that ignores `finish()` and `fat
 2. WHEN `on absdelta(v(a), 0.2) { emit!("hit", t = now()); }` runs on `v(a)` = 1 V/µs·t to 0.9 µs THEN the system SHALL write `hit` records at 0 and at 0.2, 0.4, 0.6 and 0.8 µs, each within the solver's default `ttol` of the exact time.
 3. IF a `cross` argument is unknown at an accepted solution THEN the system SHALL NOT fire it at that solution nor at the next one (§13 rule 5).
 4. IF a `cross` argument is plus or minus infinity THEN the system SHALL fail the solve naming the watch, as abi.md A4 says today.
+5. IF a `cross` argument is NaN while every value it reads is known (`(0.0 - v(a) - 1.0).ln()`) THEN the system SHALL fail the solve naming the watch: only an unknown value is NaN to the solver (added by the fix round, F2).
 
 **Independent Test**: each probe of `GAPS.md` B1, B2 and S5 run through the Rust backend.
 
@@ -198,6 +200,8 @@ The audit of 2026-11-17 (`GAPS.md`) found a run that ignores `finish()` and `fat
 2. WHEN `cross` has a `ttol` or an `etol` THEN the system SHALL declare its `CROSS` watch with a tolerance pin holding that value, not `DEFAULT`.
 3. WHEN a `cross` with `ttol` locates a crossing of an RC charge THEN the system SHALL fire it within `ttol` of `RC · ln 2`.
 4. IF a `ttol` or `etol` reads a carrier, a probe or a local THEN the system SHALL report `P0001` naming "a `cross` tolerance that is not a constant or a param".
+5. WHEN two runs of the same RC charge differ only in the `ttol` of their `cross` (1 ps and 300 ns) THEN the located instants SHALL differ, both within 1 ns and 300 ns of `RC · ln 2` (added by the fix round, F5).
+6. IF a `ttol` is not positive (a param of -1 ns) THEN the system SHALL fail the run with `E0510` naming `ttol` (added by the fix round, F5).
 
 **Acceptance Criteria** (FIX-13, L55):
 
@@ -227,6 +231,7 @@ The audit of 2026-11-17 (`GAPS.md`) found a run that ignores `finish()` and `fat
 4. WHEN `floor`, `ceil`, `round`, `trunc` or `signum` is read by a contribution THEN its partial with respect to the receiver SHALL be 0; for `fract` and `rem_euclid` it SHALL be 1.
 5. WHEN a row is called on a value that may be unknown in a reaction THEN the result SHALL be unknown exactly when an operand is (§3.3).
 6. IF a method that H.2 does not list is called on `f64` (`x.cbrt()`) THEN the system SHALL report `E0161` naming the method and `f64`.
+7. IF `clamp` is called on `f64` with a lower bound above the upper bound or with a NaN bound THEN the system SHALL fault naming `clamp`, in an `analog` block as in a reaction, as Rust's does (H.2; added by the fix round, F3).
 
 **Acceptance Criteria** (CAT-02, H.1 integers):
 

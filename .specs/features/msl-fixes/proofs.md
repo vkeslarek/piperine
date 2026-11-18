@@ -1,9 +1,9 @@
 # msl-fixes proofs
 
-**HEAD**: c2510880
+**HEAD**: 15978a8a
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 85 pass, 0 fail
+**Result**: 90 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -89,6 +89,11 @@
 | C80 | `run docs / test the_roadmap_and_state_record_msl_fixes ... ok` | pass |
 | C81 | `run twins / test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok` | pass |
 | C82 | `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test par` | pass |
+| C83 | `run sfix / test a_cross_over_a_nan_of_known_values_fails_the_solve ... ok` | pass |
+| C84 | `run scat / test a_crossed_or_nan_clamp_in_analog_faults_naming_it ... ok` | pass |
+| C85 | `run sfix / test the_ttol_given_to_a_cross_reaches_the_solver ... ok` | pass |
+| C86 | `run sfix / test a_cross_ttol_that_is_not_positive_is_e0510 ... ok` | pass |
+| C87 | `run sfix / test a_zero_argument_function_builds_and_runs ... ok` | pass |
 | Build | `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piper` | pass |
 | Build | `cargo test -p piperine-lang --test suite_hygiene` | pass |
 | Build | `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries` | pass |
@@ -98,40 +103,40 @@
 `Run sfix` - exit 0
 
 ```
+test two_analog_blocks_act_as_one ... ok
+test an_enum_deriving_partial_ord_orders_its_variants_in_a_reaction ... ok
+test finish_ends_the_transient_at_its_instant ... ok
+test finish_ends_an_operating_point ... ok
+test fatal_ends_the_transient_at_its_instant ... ok
+test cross_with_tolerances_runs ... ok
+test two_disjuncts_of_one_microstep_run_the_body_once ... ok
+test left_out_optional_arguments_are_none ... ok
+test none_and_some_pass_positionally ... ok
+test the_ttol_given_to_a_cross_reaches_the_solver ... ok
 
-   Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-abi)
-   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-ir)
-   Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-analog-solver)
-   Compiling piperine-digital-solver v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-digital-solver)
-   Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-solver)
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-lang)
-   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-plan)
-   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-transpile)
-   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-interp)
-   Compiling piperine-project v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-project)
-   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-parity)
-   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-api)
-    Finished `test` profile [unoptimized] target(s) in 1m 11s
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.95s
+
+    Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/source_fixes.rs (/var/tmp/piperine-target-a/debug/deps/source_fixes-88f117572db6c497)
 ```
 
 `Run records` - exit 0
 
 ```
-test a_reserved_stream_keeps_its_name_and_its_site ... ok
+test a_short_run_without_finish_still_fails ... ok
+test a_text_field_is_the_sources_literal ... ok
 test a_design_without_emit_gives_no_record ... ok
 test records_arrive_in_time_order ... ok
-test a_failed_require_is_one_checks_record_with_pass_false ... ok
+test a_reserved_stream_keeps_its_name_and_its_site ... ok
 test an_unknown_field_is_unknown ... ok
-test a_text_field_is_the_sources_literal ... ok
+test a_failed_require_is_one_checks_record_with_pass_false ... ok
 test an_emit_gives_one_record_with_time_instance_stream_and_fields ... ok
 test a_run_ended_by_finish_gives_its_rows_to_the_instant ... ok
 test keep_matches_a_stream_name_or_its_full_path ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.16s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.07s
 
-   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-api)
-    Finished `test` profile [unoptimized] target(s) in 1.83s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/records.rs (/var/tmp/piperine-target-a/debug/deps/records-3347b0766b7addd0)
 ```
 
@@ -139,99 +144,99 @@ test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 test a_closed_stdout_ends_with_exit_1_and_no_panic ... ok
+test run_prints_the_fatal_line_and_exits_1 ... ok
 test records_come_before_the_table ... ok
-test a_completed_run_exits_0 ... ok
 test run_prints_header_records_blank_line_and_table ... ok
+test a_completed_run_exits_0 ... ok
 test a_first_compile_is_announced_on_stderr ... ok
-test a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot ... ok
 test the_project_flag_uses_that_directory_and_never_searches ... ok
+test a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot ... ok
 test records_stay_when_the_analysis_fails ... ok
 test stdout_is_the_same_from_two_caches_and_two_directories ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.33s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.63s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-cli)
-    Finished `test` profile [unoptimized] target(s) in 3.54s
+    Finished `test` profile [unoptimized] target(s) in 0.38s
      Running tests/run.rs (/var/tmp/piperine-target-a/debug/deps/run-ef7b05ca62e6bd9b)
 ```
 
 `Run clicmd` - exit 0
 
 ```
-test test_prints_no_table_and_no_other_record ... ok
 test a_second_build_is_cached_and_compiles_nothing ... ok
+test build_prints_one_line_per_run ... ok
+test test_prints_no_table_and_no_other_record ... ok
+test test_prints_pass_with_the_check_count ... ok
 test a_new_project_checks_runs_and_tests ... ok
 test test_prints_fail_and_the_failing_records ... ok
-test test_prints_pass_with_the_check_count ... ok
 test the_last_line_counts_and_the_exit_code_follows ... ok
-test clean_cache_removes_the_compiled_cache ... ok
 test test_runs_every_run_or_the_named_ones ... ok
+test clean_cache_removes_the_compiled_cache ... ok
 test verbose_prints_a_source_path_that_exists ... ok
 
-test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.62s
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.63s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-cli)
-    Finished `test` profile [unoptimized] target(s) in 1.19s
+    Finished `test` profile [unoptimized] target(s) in 0.27s
      Running tests/commands.rs (/var/tmp/piperine-target-a/debug/deps/commands-2cccc266e135b8c2)
 ```
 
 `Run tmod` - exit 0
 
 ```
-test a_core_primitive_is_checked_where_it_is_written ... ok
-test a_where_on_a_module_or_fn_is_bool ... ok
+test a_where_that_is_not_bool_is_e0318 ... ok
 test ports_and_signals_are_nodes_and_gnd_fits_any ... ok
-test params_are_f64_or_bool ... ok
 test an_environment_function_in_a_const_context_is_e0323 ... ok
+test a_where_on_a_module_or_fn_is_bool ... ok
 test a_placement_checks_nodes_count_and_params ... ok
+test a_core_primitive_is_checked_where_it_is_written ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
    Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-ir)
    Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-plan)
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-lang)
    Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-transpile)
-    Finished `test` profile [unoptimized] target(s) in 28.37s
+    Finished `test` profile [unoptimized] target(s) in 22.41s
      Running tests/types_modules.rs (/var/tmp/piperine-target-a/debug/deps/types_modules-e42f34873c4ac40f)
 ```
 
 `Run watch` - exit 0
 
 ```
-test a_tolerance_the_discrete_side_has_not_written_is_the_default ... ok
 test accept_fails_with_e0510_on_an_invalid_tolerance ... ok
-test accept_fails_with_e0509_on_an_invalid_cap ... ok
-test accept_reports_the_smallest_cap ... ok
-test a_var_watch_is_readable_at_an_accepted_solution ... ok
+test a_trace_record_survives_a_rejected_step ... ok
 test an_infinite_cross_watch_fails_the_solve ... ok
+test a_var_watch_is_readable_at_an_accepted_solution ... ok
+test accept_reports_the_smallest_cap ... ok
+test accept_fails_with_e0509_on_an_invalid_cap ... ok
 test an_instance_lists_its_terms_and_var_watches_and_reads_a_term ... ok
-test rising_reports_a_sign_change_without_accepting ... ok
 test samples_are_the_continuous_pins_reactions_read ... ok
+test rising_reports_a_sign_change_without_accepting ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-analog-solver)
-    Finished `test` profile [unoptimized] target(s) in 8.95s
+    Finished `test` profile [unoptimized] target(s) in 5.32s
      Running tests/assembly_watch.rs (/var/tmp/piperine-target-a/debug/deps/assembly_watch-eea1d8e19770cb42)
 ```
 
 `Run tvalues` - exit 0
 
 ```
-test a_function_is_a_value_only_as_an_argument ... ok
-test literals_are_f64_or_bool ... ok
+test an_option_before_a_required_parameter_is_positional_only ... ok
+test catalogue_methods_on_f64_are_f64 ... ok
 test every_h2_row_types_with_its_signature ... ok
 test comparing_an_enum_without_partial_ord_is_p0002 ... ok
-test an_unsupported_form_does_not_hide_an_independent_error ... ok
 test diagnostics_come_in_source_order_one_per_expression ... ok
+test an_unsupported_form_does_not_hide_an_independent_error ... ok
 test a_call_takes_its_declared_result ... ok
 test operators_type_as_rust_types_them ... ok
 test the_std_pnjlim_checks_clean ... ok
 
-test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.58s
+    Finished `test` profile [unoptimized] target(s) in 0.53s
      Running tests/types_values.rs (/var/tmp/piperine-target-a/debug/deps/types_values-65c645751b306c9f)
 ```
 
@@ -239,48 +244,48 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 test freq_analysis_and_bound_step_lower ... ok
-test a_reversed_pair_negates_its_addends ... ok
+test a_sum_splits_into_direct_and_ddt_addends ... ok
+test value_code_lowers_to_the_same_forms_and_functions_once ... ok
+test two_analog_blocks_keep_their_locals_apart ... ok
+test the_device_bodies_equal_the_structural_goldens ... ok
 test a_branch_from_a_node_to_itself_is_e0241 ... ok
 test sites_are_numbered_in_source_order_and_named ... ok
-test the_device_bodies_equal_the_structural_goldens ... ok
-test two_analog_blocks_keep_their_locals_apart ... ok
-test value_code_lowers_to_the_same_forms_and_functions_once ... ok
 test bound_step_under_an_if_is_p0001 ... ok
 test a_ddt_off_the_top_of_a_flow_contribution_is_refused ... ok
 
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.60s
+    Finished `test` profile [unoptimized] target(s) in 0.48s
      Running tests/elab_analog.rs (/var/tmp/piperine-target-a/debug/deps/elab_analog-52fe00f5ce65d9cd)
 ```
 
 `Run senv` - exit 0
 
 ```
+test analysis_ac_holds_in_an_ac_run ... ok
 test analysis_dc_holds_in_an_op ... ok
 test freq_follows_the_ac_sweep ... ok
-test the_smaller_of_two_caps_wins ... ok
 test analysis_transient_holds_in_a_transient ... ok
+test the_smaller_of_two_caps_wins ... ok
 test a_reaction_reads_the_analysis_kind ... ok
-test bound_step_caps_every_step ... ok
-test freq_in_a_reaction_is_zero ... ok
 test freq_is_zero_outside_a_sweep ... ok
+test freq_in_a_reaction_is_zero ... ok
+test bound_step_caps_every_step ... ok
 test a_non_positive_bound_step_is_e0509 ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.88s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.95s
 
-   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-parity)
-    Finished `test` profile [unoptimized] target(s) in 0.83s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_environment.rs (/var/tmp/piperine-target-a/debug/deps/source_environment-cb130105ec6bd598)
 ```
 
 `Run tanalog` - exit 0
 
 ```
+test a_contribution_that_is_not_f64_is_e0417 ... ok
 test probe_nodes_of_two_natures_are_e0240 ... ok
 test a_contribution_target_that_is_no_probe_is_e0410 ... ok
-test a_contribution_that_is_not_f64_is_e0417 ... ok
 test potential_probes_are_f64 ... ok
 test a_core_primitive_in_a_fn_is_e0450 ... ok
 test limit_checks_its_input_function_and_seed ... ok
@@ -288,10 +293,10 @@ test ddt_ac_stim_and_environment_are_f64 ... ok
 test the_std_vt_checks_clean ... ok
 test freq_analysis_kinds_and_bound_step_type ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.52s
+    Finished `test` profile [unoptimized] target(s) in 0.47s
      Running tests/types_analog.rs (/var/tmp/piperine-target-a/debug/deps/types_analog-a4abdab24d7cd951)
 ```
 
@@ -302,27 +307,27 @@ running 7 tests
 test its_devices_pass_the_partials_verifier ... ok
 test a_noise_operating_point_carries_the_noise_flag ... ok
 test an_ac_operating_point_carries_the_ac_flag ... ok
+test analog_and_reactions_read_one_gmin_at_the_transient_start ... ok
 test a_discrete_function_reads_gmin_and_source_scale ... ok
 test a_transient_operating_point_carries_the_tran_flag ... ok
 test a_reaction_reads_temperature_gmin_and_source_scale ... ok
-test analog_and_reactions_read_one_gmin_at_the_transient_start ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 2.41s
+    Finished `test` profile [unoptimized] target(s) in 1.58s
      Running tests/environment.rs (/var/tmp/piperine-target-a/debug/deps/environment-c79fe8f8302871d8)
 ```
 
 `Run plan` - exit 0
 
 ```
+test time_and_static_are_ambient_reads ... ok
+test a_stream_is_a_record_pin_with_one_field_per_value ... ok
 test bound_step_is_a_cap_watch_and_cross_tolerances_are_pins ... ok
 test a_previous_value_is_the_previous_part_of_the_pin ... ok
-test an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement ... ok
-test time_and_static_are_ambient_reads ... ok
-test freq_reads_the_ambient_and_analysis_reads_its_global_pin ... ok
 test a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term ... ok
+test an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -330,27 +335,27 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-solver)
    Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-plan)
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-interp)
-    Finished `test` profile [unoptimized] target(s) in 12.60s
+    Finished `test` profile [unoptimized] target(s) in 9.66s
      Running tests/amended_shape.rs (/var/tmp/piperine-target-a/debug/deps/amended_shape-530066127389ba5a)
 ```
 
 `Run edig` - exit 0
 
 ```
-test a_child_param_reads_the_parents_value ... ok
 test a_cross_tolerance_that_is_not_constant_is_p0001 ... ok
-test every_signal_carrier_is_a_design_net ... ok
+test a_child_param_reads_the_parents_value ... ok
 test a_reaction_body_lowers_in_source_order ... ok
+test every_signal_carrier_is_a_design_net ... ok
 test carriers_follow_ports_then_signals ... ok
 test the_m1_goldens_are_unchanged ... ok
 test every_ir_passes_check ... ok
 test the_design_is_not_written ... ok
 test elaborating_twice_gives_the_same_print ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.97s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.01s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.70s
+    Finished `test` profile [unoptimized] target(s) in 0.63s
      Running tests/elab_digital.rs (/var/tmp/piperine-target-a/debug/deps/elab_digital-421f4441f369eca2)
 ```
 
@@ -365,26 +370,26 @@ test the_interpreter_refuses_each_new_form_by_name ... ok
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-interp)
-    Finished `test` profile [unoptimized] target(s) in 0.71s
+    Finished `test` profile [unoptimized] target(s) in 0.62s
      Running tests/frozen.rs (/var/tmp/piperine-target-a/debug/deps/frozen-1902f3691d3ff8e6)
 ```
 
 `Run scat` - exit 0
 
 ```
-thread '<unnamed>' (471629) panicked at /var/tmp/piperine-tmp-a/.tmpsEmW4u/rust/.staging-a5bf45cf6ad916d392c8773f8ae0d10d-471619-27/rt/int.rs:109:13:
-`rem_euclid` by zero: UInt<8> 7 rem_euclid 0
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
-thread '<unnamed>' (471624) panicked at /var/tmp/piperine-tmp-a/.tmpWjxBj9/rust/.staging-8ee1cf4e8be7dee151347c98e2b3eb7c-471619-30/rt/int.rs:292:30:
+thread '<unnamed>' (662241) panicked at /var/tmp/piperine-tmp-a/.tmpPWjoIZ/rust/.staging-16f1f054439da24c6e87a3220d6407e3-662235-28/rt/int.rs:292:30:
 the reading is gone
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
-thread '<unnamed>' (472472) panicked at /var/tmp/piperine-tmp-a/.tmpLwEq9z/rust/.staging-84ad35a82dce9e2bddb67e216e87b7d4-471619-46/rt/int.rs:293:21:
+thread '<unnamed>' (662246) panicked at /var/tmp/piperine-tmp-a/.tmpYRD6ux/rust/.staging-09e9e007ce1f2e3c59a8e12bc4c24beb-662235-34/rt/int.rs:109:13:
+`rem_euclid` by zero: UInt<8> 7 rem_euclid 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread '<unnamed>' (663114) panicked at /var/tmp/piperine-tmp-a/.tmphQuoRm/rust/.staging-a883d92cf6aa5a6c7331fd0383f336dc-662235-49/rt/int.rs:293:21:
 called `Option::unwrap()` on a `None` value
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
-thread '<unnamed>' (472504) panicked at /var/tmp/piperine-tmp-a/.tmpO97yum/rust/.staging-b1781575b1d06a8fea708cb9dedc112c-471619-51/rt/int.rs:323:13:
+thread '<unnamed>' (663115) panicked at /var/tmp/piperine-tmp-a/.tmpSyknjw/rust/.staging-d59c6cc2531b778de0555470a5fb4c8e-662235-55/rt/int.rs:323:13:
 integer division by zero: UInt<8> 90 / 0
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
@@ -392,66 +397,67 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 `Run tlib` - exit 0
 
 ```
-test rt::real::tests::f64_is_a_real ... ok
 test settings::tests::the_compiler_is_the_variable_then_the_path ... ok
 test shape_check::tests::equal_shapes_have_no_difference_and_a_changed_entry_is_named ... ok
-test rt::int::tests::integer_rows_wrap_saturate_and_test_overflow ... ok
+test print::value::tests::each_new_row_prints_plain_and_flagged ... ok
 test rt::real::tests::dual_gives_the_interpreters_values_and_tangents ... ok
+test rt::int::tests::integer_rows_wrap_saturate_and_test_overflow ... ok
 test rt::int::tests::a_shift_by_the_width_or_more_is_the_truncated_result ... ok
 test rt::real::tests::each_row_has_the_value_of_rusts_method ... ok
 test rt::int::tests::arithmetic_wraps_at_every_width ... ok
 
-test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-interp)
    Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-transpile)
-    Finished `test` profile [unoptimized] target(s) in 2.69s
+    Finished `test` profile [unoptimized] target(s) in 2.26s
      Running unittests src/lib.rs (/var/tmp/piperine-target-a/debug/deps/piperine_transpile-6d48b28f4fb0a670)
 ```
 
 `Run tint` - exit 0
 
 ```
-test every_h1_row_types_with_its_signature ... ok
+test a_width_below_one_is_e0103 ... ok
 test min_max_clamp_and_floor_are_typed ... ok
-test integer_types_and_constants_have_types ... ok
 test a_literal_out_of_range_is_e0909 ... ok
-test mixed_integer_operands_are_p0002 ... ok
+test every_h1_row_types_with_its_signature ... ok
 test an_unsupported_width_or_float_is_named ... ok
+test mixed_integer_operands_are_p0002 ... ok
 test integer_operators_take_one_type ... ok
 test as_goes_between_integers_and_f64 ... ok
 test every_accepted_call_has_a_callee ... ok
 
-test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.66s
+    Finished `test` profile [unoptimized] target(s) in 0.55s
      Running tests/types_integers.rs (/var/tmp/piperine-target-a/debug/deps/types_integers-473f76264640c674)
 ```
 
 `Run tcomp` - exit 0
 
 ```
-test every_option_and_bool_row_types_with_a_closure_or_value ... ok
-test option_values_and_their_methods_are_typed ... ok
+test a_value_for_an_option_parameter_is_some_of_it ... ok
 test a_tuple_let_names_each_component ... ok
 test a_method_outside_h3_h4_is_e0161 ... ok
-test if_let_some_binds_the_payload ... ok
+test option_values_and_their_methods_are_typed ... ok
+test every_option_and_bool_row_types_with_a_closure_or_value ... ok
 test match_is_typed_over_enums_bools_integers_and_options ... ok
 test a_match_that_is_not_exhaustive_is_p0002 ... ok
 test unit_enums_and_their_variants_are_typed ... ok
 test a_nested_pattern_inside_some_covers_its_payload ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-lang)
-    Finished `test` profile [unoptimized] target(s) in 0.59s
+    Finished `test` profile [unoptimized] target(s) in 0.51s
      Running tests/types_compound.rs (/var/tmp/piperine-target-a/debug/deps/types_compound-1cbb3f8d1a2a062c)
 ```
 
 `Run clibook` - exit 0
 
 ```
+test the_chapter_shows_fmt_and_says_comments_stay ... ok
 test the_clipper_refusal_no_longer_names_sin ... ok
 test the_cycle_counter_prints_three_pulses ... ok
 test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
@@ -462,30 +468,29 @@ test the_buck_block_is_what_the_binary_prints ... ok
 test the_rc_output_blocks_are_what_the_binary_prints ... ok
 test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 161.23s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 124.36s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-cli)
-    Finished `test` profile [unoptimized] target(s) in 0.48s
+    Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/book.rs (/var/tmp/piperine-target-a/debug/deps/book-f38e47a15c9a1081)
 ```
 
 `Run docs` - exit 0
 
 ```
-test state_records_the_cli_decision ... ok
 test gaps_says_a_host_run_is_bounded ... ok
+test the_buck_readme_says_how_to_run_it ... ok
 test gaps_drops_what_closed_and_lists_what_is_left ... ok
-test state_records_the_observation_decision ... ok
+test the_instruction_files_say_the_host_crates_build ... ok
 test the_roadmap_marks_the_cli_item_done ... ok
 test the_roadmap_lists_what_the_long_run_leaves ... ok
+test state_records_the_observation_decision ... ok
+test state_records_the_cli_decision ... ok
 test the_roadmap_and_state_record_msl_fixes ... ok
-test the_instruction_files_say_the_host_crates_build ... ok
 test gaps_drops_what_msl_fixes_closed ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-cli)
-    Finished `test` profile [unoptimized] target(s) in 0.31s
+    Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/docs.rs (/var/tmp/piperine-target-a/debug/deps/docs-a5e77d72b1cc2f1e)
 ```
 
@@ -493,16 +498,15 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 5 tests
-test the_three_op_twins_run_on_both_backends ... ok
-test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_two_backends_print_the_same_bytes ... ok
-test the_sweep_and_transient_twins_run_on_both_backends ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
+test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
+test the_three_op_twins_run_on_both_backends ... ok
+test the_sweep_and_transient_twins_run_on_both_backends ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.76s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.13s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-cli)
-    Finished `test` profile [unoptimized] target(s) in 0.31s
+    Finished `test` profile [unoptimized] target(s) in 0.12s
      Running tests/twins.rs (/var/tmp/piperine-target-a/debug/deps/twins-9c63cef8d18c33f2)
 ```
 
@@ -512,29 +516,29 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 5 tests
 test the_three_op_twins_run_on_both_backends ... ok
+test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_two_backends_print_the_same_bytes ... ok
-test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_sweep_and_transient_twins_run_on_both_backends ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.23s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.04s
 
    Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-transpile)
-    Finished `test` profile [unoptimized] target(s) in 0.68s
+    Finished `test` profile [unoptimized] target(s) in 0.56s
      Running tests/golden.rs (/var/tmp/piperine-target-a/debug/deps/golden-ab85f3ee5d658ee1)
-    Finished `test` profile [unoptimized] target(s) in 0.17s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/twins.rs (/var/tmp/piperine-target-a/debug/deps/twins-9c63cef8d18c33f2)
 ```
 
 `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test par` - exit 0
 
 ```
+test parity_rlc_ac_resonant_peak ... ok
 test parity_rc_transient ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
-   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-parity)
-    Finished `test` profile [unoptimized] target(s) in 1.19s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/parity_ac.rs (/var/tmp/piperine-target-a/debug/deps/parity_ac-55a5dfa8bfad5186)
      Running tests/parity_corpus.rs (/var/tmp/piperine-target-a/debug/deps/parity_corpus-3c6b0216946f1435)
      Running tests/parity_dc.rs (/var/tmp/piperine-target-a/debug/deps/parity_dc-e39252c43babc518)
@@ -542,6 +546,6 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/parity_op.rs (/var/tmp/piperine-target-a/debug/deps/parity_op-89aa68e5e8a64ddb)
      Running tests/parity_tran.rs (/var/tmp/piperine-target-a/debug/deps/parity_tran-92e4bdddedb6562d)
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-msl-fixes/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 2.23s
+    Finished `test` profile [unoptimized] target(s) in 1.91s
      Running tests/parity_baseline.rs (/var/tmp/piperine-target-a/debug/deps/parity_baseline-2aced5317f54915e)
 ```

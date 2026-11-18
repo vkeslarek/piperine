@@ -1296,6 +1296,21 @@ Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_long_r
 **C82** - Every parity target passes with its sources, the contract and the transpile goldens unedited. (PAR-01, AC 2)
 Proof: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus --test parity_grid && cargo test -p piperine-solver --test parity_baseline && git diff --exit-code 4293de6b -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_corpus.rs crates/piperine-parity/tests/parity_grid.rs crates/piperine-solver/tests/parity_baseline.rs tests/ngspice crates/piperine-transpile/tests/golden`
 
+**C83** - A `cross` over a NaN computed from known values fails the solve. (FIX-05, AC 5; fix round F2)
+Proof: run sfix | test a_cross_over_a_nan_of_known_values_fails_the_solve ... ok
+
+**C84** - `clamp` with a crossed or NaN bound faults naming `clamp` in an `analog` block. (CAT-01, AC 7; fix round F3)
+Proof: run scat | test a_crossed_or_nan_clamp_in_analog_faults_naming_it ... ok
+
+**C85** - A `ttol` of 1 ps and one of 300 ns locate the RC crossing at different instants. (FIX-12, AC 5; fix round F5)
+Proof: run sfix | test the_ttol_given_to_a_cross_reaches_the_solver ... ok
+
+**C86** - A `ttol` of -1 ns fails the run with `E0510`. (FIX-12, AC 6; fix round F5)
+Proof: run sfix | test a_cross_ttol_that_is_not_positive_is_e0510 ... ok
+
+**C87** - A zero-argument function builds and runs in an `analog` block and in a reaction. (FIX-04, AC 5; fix round F10)
+Proof: run sfix | test a_zero_argument_function_builds_and_runs ... ok
+
 ---
 
 ## Handoff
