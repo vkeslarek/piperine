@@ -493,3 +493,50 @@ fn the_chapter_stands_alone() {
         assert!(href.starts_with('#'), "a link out of the Book: href=\"{}", href.split('"').next().unwrap_or(""));
     }
 }
+
+/// The Book's listing whose command starts with `prefix`, run on the binary.
+fn run_listing(prefix: &str) -> String {
+    let html = content();
+    let all = blocks(&html);
+    let block = all
+        .iter()
+        .find(|b| b.attr("data-cli-output").is_some_and(|c| c.starts_with(prefix)))
+        .unwrap_or_else(|| panic!("the Book has a listing of `{prefix}`"));
+    produce(&all, block).unwrap_or_else(|why| panic!("`{prefix}`: {why}"))
+}
+
+#[test]
+fn the_cycle_counter_prints_three_pulses() {
+    // CAT-05 AC 1: three records, `n` = 1 to 3, each within 1 us of 15.9 us past a whole
+    // millisecond, and `count` 3 in the last row of the table.
+    let out = run_listing("piperine run cycles.msl");
+    let records: Vec<&str> = out.lines().filter(|l| l.starts_with('@')).collect();
+    assert_eq!(records.len(), 3, "{out}");
+    for (k, line) in records.iter().enumerate() {
+        let field = |name: &str| line.split_whitespace().find_map(|w| w.strip_prefix(name)).unwrap_or_else(|| panic!("`{name}` in `{line}`"));
+        let t: f64 = field("t=").parse().expect("a time");
+        assert_eq!(field("n="), (k + 1).to_string(), "{line}");
+        let wanted = 15.9e-6 + k as f64 * 1e-3;
+        assert!((t - wanted).abs() < 1e-6, "pulse {}: t = {t:e}, wanted {wanted:e} within 1 us", k + 1);
+    }
+    let last = out.lines().rev().find(|l| !l.trim().is_empty()).expect("a table row");
+    assert_eq!(last.split_whitespace().last(), Some("3"), "the last row shows count 3: {last}");
+}
+
+#[test]
+fn the_clipper_refusal_no_longer_names_sin() {
+    // CAT-05 AC 3: the clipper's refusal names `settle` and `limexp`, not `sin` or `bound_step`,
+    // and the page's prose around it does not wait for them either.
+    let out = run_listing("piperine run clipper.msl");
+    assert!(out.contains("`settle`") && out.contains("limexp"), "{out}");
+    for gone in ["`sin`", "method sin", "bound_step"] {
+        assert!(!out.contains(gone), "the refusal still names {gone}: {out}");
+    }
+    let html = content();
+    let at = html.find("piperine run clipper.msl").expect("the clipper's command");
+    let callout = &html[at..at + html[at..].find("</div>").expect("the callout closes")];
+    let prose = plain(callout);
+    for gone in ["once `sin`", "`bound_step` is compiled", "sin is compiled", "bound_step is compiled"] {
+        assert!(!prose.contains(gone), "the clipper's prose still says {gone:?}");
+    }
+}
