@@ -1,0 +1,15 @@
+//! `cross` over values that may be unknown (FIX-05, B2): `absdelta` of the standard library, whose
+//! `last` carrier is unknown until its first commit.
+
+/// A node ramping at 1 V per microsecond.
+module Ramp(p: Electrical) {}
+analog for Ramp { v(p, gnd) +> now() * 1.0e6; }
+
+module Watch(p: Electrical) {}
+digital for Watch { on absdelta(v(p), 0.2) { emit!("hit", t = now()); } }
+
+module AbsdeltaBench() {
+    signal a: Electrical;
+    let r = Ramp(a);
+    let w = Watch(a);
+}

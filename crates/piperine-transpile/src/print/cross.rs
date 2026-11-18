@@ -8,13 +8,29 @@
 //! the dual's tangent. A param is a constant of the dual and a carrier read is passed as it is
 //! (an `rt::Flagged<T>`, not differentiable, like every read of `terms` that is no pin).
 
-use piperine_ir::EventSource;
+use piperine_ir::{EventSource, ValueType};
 use piperine_plan::Mode;
 
 use crate::Error;
 use crate::print::{DigitalPrinter, Text, ValuePrinter};
 
 impl<'a> DigitalPrinter<'a> {
+    /// Whether read `s` is a carrier that holds a real.
+    fn is_real_carrier(&self, s: piperine_plan::Source) -> bool {
+        matches!(s, piperine_plan::Source::Carrier(c) | piperine_plan::Source::CarrierPrevious(c)
+            if self.body.carriers().get(c as usize).is_some_and(|x| x.ty == ValueType::F64))
+    }
+
+    /// The type of read `s` in the watch block: as in `terms`, but a real carrier is a
+    /// `rt::Flagged<R>` when the value may be unknown.
+    fn block_param(&self, values: &ValuePrinter<'_>, s: piperine_plan::Source, maybe_unknown: bool) -> Result<String, Error> {
+        if maybe_unknown && self.is_real_carrier(s) {
+            return Ok("rt::Flagged<R>".to_string());
+        }
+        let _ = values;
+        self.names.block_type(s)
+    }
+
     /// Function `k` of the plan, which runs `Mode::Cross`: the watch's value and its partials.
     pub fn cross(&self, k: usize) -> Result<String, Error> {
         let unsupported = |form: String| Error::Unsupported {
@@ -36,6 +52,10 @@ impl<'a> DigitalPrinter<'a> {
         };
         // the expression is code over reals: generic, like an `analog` block
         let values = ValuePrinter::of_body(self.ir, self.body).with_reads(self.reads());
+        // an expression that may be unknown computes on `rt::Flagged<R>`, so the tangent of each
+        // probe it reads survives (design C8)
+        let maybe_unknown = matches!(self.ir.expr_type(crossed), ValueType::Flagged(_));
+        let values = if maybe_unknown { values.with_flagged_reals() } else { values };
         let expr = values.expr(crossed)?;
         let reads: Vec<(usize, _)> =
             f.reads.iter().copied().enumerate().filter(|(_, s)| values.uses(&self.names.read_name(*s))).collect();
@@ -43,7 +63,7 @@ impl<'a> DigitalPrinter<'a> {
         let mut params = Vec::with_capacity(reads.len());
         let mut binds = Vec::with_capacity(reads.len());
         for (i, s) in &reads {
-            params.push(format!("{}: {}", self.names.read_name(*s), self.names.block_type(*s)?));
+            params.push(format!("{}: {}", self.names.read_name(*s), self.block_param(&values, *s, maybe_unknown)?));
             binds.push(self.names.decode("cx_", *i, *s)?);
         }
         let names: Vec<String> = f.reads.iter().map(|s| self.names.read_name(*s)).collect();
@@ -54,6 +74,8 @@ impl<'a> DigitalPrinter<'a> {
             .map(|(i, s)| {
                 if *i < f.slots {
                     format!("Dual::<{}>::seeded({}, {i})", f.slots, names[*i])
+                } else if maybe_unknown && self.is_real_carrier(*s) {
+                    format!("{}.map(Dual::<{}>::constant)", names[*i], f.slots)
                 } else if self.names.is_plain(*s) {
                     names[*i].clone()
                 } else {
@@ -64,7 +86,8 @@ impl<'a> DigitalPrinter<'a> {
 
         let mut t = Text::new();
         t.comment(&format!("{}.cross {e}: the value the watch crosses zero on", self.body.name()), &event.origin);
-        t.line(&format!("fn {name}_block<R: Real>({}) -> R {{", params.join(", ")));
+        let returns = if maybe_unknown { "rt::Flagged<R>" } else { "R" };
+        t.line(&format!("fn {name}_block<R: Real>({}) -> {returns} {{", params.join(", ")));
         t.indented(|t| t.line(&expr));
         t.line("}");
         t.line("");
@@ -76,12 +99,18 @@ impl<'a> DigitalPrinter<'a> {
             }
             t.line("// the evaluation at the iterate");
             t.line(&format!("let at_iterate_ = Self::{name}_block({});", args.join(", ")));
+            if maybe_unknown {
+                t.line("// an unknown value is NaN to the solver (abi.md A4), and its partials are 0");
+                t.line("let known_ = at_iterate_.is_known();");
+                t.line(&format!("let at_iterate_ = at_iterate_.known_or(Dual::<{}>::constant(f64::NAN));", f.slots));
+            }
             t.line(&format!("// the watch `{write}`: its value"));
             t.line("cx_.set(0, at_iterate_.v);");
             for (p, (_, slot)) in f.partials.iter().enumerate() {
                 t.line(&format!("// partial {p}: d {write} / d {}", names[*slot]));
                 t.line(&format!("if cx_.wanted({p}) {{"));
-                t.indented(|t| t.line(&format!("cx_.jac()[{p}] = at_iterate_.d[{slot}];")));
+                let tangent = if maybe_unknown { format!("if known_ {{ at_iterate_.d[{slot}] }} else {{ 0.0 }}") } else { format!("at_iterate_.d[{slot}]") };
+                t.indented(|t| t.line(&format!("cx_.jac()[{p}] = {tangent};")));
                 t.line("}");
             }
             t.line("Ok(())");

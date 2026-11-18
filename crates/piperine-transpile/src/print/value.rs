@@ -94,6 +94,9 @@ pub struct ValuePrinter<'a> {
     /// A real is a plain `f64` (the digital printers) rather than `R` (an `analog` block, an IR
     /// function).
     plain: bool,
+    /// A real inside `rt::Flagged` is the code's own real `R` rather than a plain `f64`: the
+    /// value of a `cross` that may be unknown, whose probe tangents must survive (design C8).
+    flagged_reals: bool,
     /// Whether the code may use `?`: it runs in a function returning `Result<_, Fault>`.
     faults: bool,
     /// Whether a commit has a place to go: the code of a reaction.
@@ -141,6 +144,7 @@ impl<'a> ValuePrinter<'a> {
             origin,
             analog: None,
             plain: false,
+            flagged_reals: false,
             faults: true,
             commits: false,
             committed: RefCell::new(Vec::new()),
@@ -165,6 +169,7 @@ impl<'a> ValuePrinter<'a> {
             origin,
             analog: None,
             plain: false,
+            flagged_reals: false,
             faults: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
@@ -204,6 +209,12 @@ impl<'a> ValuePrinter<'a> {
             .collect()
     }
 
+    /// This printer with a real inside `rt::Flagged` kept as `R`, so arithmetic on a value that
+    /// may be unknown carries the tangent of the reads it uses.
+    pub fn with_flagged_reals(self) -> ValuePrinter<'a> {
+        ValuePrinter { flagged_reals: true, ..self }
+    }
+
     /// This printer with the analog read forms printing as `reads` names them.
     pub fn with_reads(self, reads: Reads) -> ValuePrinter<'a> {
         ValuePrinter { analog: Some(reads), ..self }
@@ -229,6 +240,7 @@ impl<'a> ValuePrinter<'a> {
     /// whatever the code's own real is.
     pub fn pin_type(&self, ty: &ValueType) -> Result<String, Error> {
         match ty {
+            ValueType::F64 if self.flagged_reals && !self.plain => Ok("R".to_string()),
             ValueType::F64 => Ok("f64".to_string()),
             other => self.rust_type(other, &self.path),
         }
@@ -543,7 +555,7 @@ impl<'a> ValuePrinter<'a> {
             ValueType::UInt(n) => Ok(format!("rt::UInt<{n}>")),
             ValueType::Int(n) => Ok(format!("rt::Int<{n}>")),
             ValueType::Flagged(inner) => {
-                let inner = if **inner == ValueType::F64 { "f64".to_string() } else { self.rust_type(inner, path)? };
+                let inner = if **inner == ValueType::F64 && !self.flagged_reals { "f64".to_string() } else { self.rust_type(inner, path)? };
                 Ok(format!("rt::Flagged<{inner}>"))
             }
             ValueType::Fn(..) => Err(Error::Unsupported {
@@ -590,7 +602,7 @@ impl<'a> ValuePrinter<'a> {
         if !Self::is_flagged(want) || Self::is_flagged(from) {
             return piece;
         }
-        let plain = if *from == ValueType::F64 && !self.plain { format!("{}.value()", piece.at(Prec::Atom)) } else { piece.text };
+        let plain = if *from == ValueType::F64 && !self.plain && !self.flagged_reals { format!("{}.value()", piece.at(Prec::Atom)) } else { piece.text };
         Piece::new(format!("rt::Flagged::known({plain})"), Prec::Atom)
     }
 
@@ -634,7 +646,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::Unknown => {
                 let ty = self.ir.expr_type(e);
                 let inner = match Self::base(ty) {
-                    ValueType::F64 => "f64".to_string(),
+                    ValueType::F64 if !self.flagged_reals => "f64".to_string(),
                     other => self.rust_type(other, &format!("{} e{}", self.path, e.index()))?,
                 };
                 atom(format!("rt::Flagged::<{inner}>::unknown()"))
@@ -721,7 +733,7 @@ impl<'a> ValuePrinter<'a> {
                 }
                 let default_type = self.ir.expr_type(*default);
                 let d = self.piece(*default)?;
-                if *default_type == ValueType::F64 && !self.plain {
+                if *default_type == ValueType::F64 && !self.plain && !self.flagged_reals {
                     // the default is an `R`; the value is a plain `f64`
                     atom(format!("R::constant({}.known_or({}.value()))", self.piece(*value)?.at(Prec::Atom), d.at(Prec::Atom)))
                 } else {
@@ -751,7 +763,7 @@ impl<'a> ValuePrinter<'a> {
         let (source, target) = (Self::base(from), Self::base(to));
         let flagged = Self::is_flagged(from);
         // a real inside `Flagged` is a plain `f64`, so a mapped closure never sees an `R`
-        let generic_real = *source == ValueType::F64 && !self.plain && !flagged;
+        let generic_real = *source == ValueType::F64 && !self.plain && (!flagged || self.flagged_reals);
         let operand = if flagged { "v_".to_string() } else { self.piece(expr)?.at(Prec::Atom) };
         let converted = match (source, target) {
             (ValueType::UInt(_) | ValueType::Int(_), ValueType::UInt(_)) => {
@@ -771,7 +783,7 @@ impl<'a> ValuePrinter<'a> {
             }
             (ValueType::UInt(_) | ValueType::Int(_), ValueType::F64) => {
                 self.integer_path(source, e)?;
-                if self.plain || flagged { format!("{operand}.to_f64()") } else { format!("R::constant({operand}.to_f64())") }
+                if self.plain || (flagged && !self.flagged_reals) { format!("{operand}.to_f64()") } else { format!("R::constant({operand}.to_f64())") }
             }
             _ => return Err(self.unsupported(e, &format!("a cast from {from} to {to}"))),
         };
@@ -886,6 +898,13 @@ impl<'a> ValuePrinter<'a> {
             _ => None,
         };
         if let Some(method) = method {
+            if self.flagged_reals && !self.plain && *Self::base(self.ir.expr_type(lhs)) == ValueType::F64 {
+                // a dual compares by value
+                return Ok(Piece::new(
+                    format!("{}.zip({}, |x_, y_| x_.value() {symbol} y_.value())", self.flagged(lhs)?.at(Prec::Atom), self.flagged(rhs)?.text),
+                    Prec::Atom,
+                ));
+            }
             return Ok(Piece::new(format!("{}.{method}({})", self.flagged(lhs)?.at(Prec::Atom), self.flagged(rhs)?.text), Prec::Atom));
         }
         let (l, r) = match prec {

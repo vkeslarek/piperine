@@ -699,9 +699,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test source_fixes`: `a_cross_over_a_maybe_unknown_carrier_builds`, `absdelta_fires_every_two_tenths_of_a_volt` (records at 0, 0.2, 0.4, 0.6, 0.8 µs within the default `ttol`)
-- [ ] Gate check passes: Full
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test source_fixes`: `a_cross_over_a_maybe_unknown_carrier_builds`, `absdelta_fires_every_two_tenths_of_a_volt` (records at 0, 0.2, 0.4, 0.6, 0.8 µs within the default `ttol`)
+- [x] Gate check passes: Full
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: full

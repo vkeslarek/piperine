@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
+use piperine_solver::protocol::ObservationKind;
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -122,4 +123,36 @@ fn a_carrier_driven_current_builds_and_runs() {
     let last = result.iter().last().expect("a time point");
     assert!(last.time() > 1.5e-9, "the run passes 1 ns: {}", last.time());
     ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("carrier driven current", "v(a)", Coordinate::OperatingPoint), 2.0, last.get_node(&a).expect("v(a)"));
+}
+
+/// The instants of every record of the transient of `top` of `file`, in order.
+fn record_times(file: &str, top: &str, stop: f64, step: f64) -> Vec<f64> {
+    let seen = build(&project(file), top).run(stop, step);
+    seen.all()
+        .iter()
+        .filter(|o| matches!(o.kind, ObservationKind::Record { .. }))
+        .map(|o| o.time)
+        .collect()
+}
+
+#[test]
+fn a_cross_over_a_maybe_unknown_carrier_builds() {
+    // FIX-05 AC 1: a `cross` argument that reads a carrier that may be unknown (`absdelta`'s
+    // `last`, unknown until its first commit) builds on the Rust backend: `build` compiles the
+    // generated source and fails on any rustc error or warning.
+    let built = build(&project("absdelta.msl"), "AbsdeltaBench");
+    assert!(built.compiled.circuit().is_ok(), "the compiled design makes a circuit");
+}
+
+#[test]
+fn absdelta_fires_every_two_tenths_of_a_volt() {
+    // FIX-05 AC 2: `v(a)` = 1 V/µs · t; `absdelta(v(a), 0.2)` writes `hit` at 0 (`init()`) and at
+    // 0.2, 0.4, 0.6 and 0.8 µs, each within the solver's default `ttol` (1 ps, `Keep` docs of
+    // `TransientAnalysisOptions::ttol`) of the exact time.
+    let times = record_times("absdelta.msl", "AbsdeltaBench", 0.9e-6, 0.05e-6);
+    let exact = [0.0, 0.2e-6, 0.4e-6, 0.6e-6, 0.8e-6];
+    assert_eq!(times.len(), exact.len(), "five records: {times:?}");
+    for (t, want) in times.iter().zip(exact) {
+        assert!((t - want).abs() <= 1e-12, "a record at {t}, wanted {want} within 1 ps: {times:?}");
+    }
 }

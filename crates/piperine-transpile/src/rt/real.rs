@@ -7,7 +7,7 @@ use core::ops::{Add, Div, Mul, Neg, Sub};
 
 /// A number analog code computes with: a plain `f64`, or a value with its tangent.
 pub trait Real:
-    Copy + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Neg<Output = Self>
+    Copy + Default + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Neg<Output = Self>
 {
     /// A value with no dependence on any read.
     fn constant(v: f64) -> Self;
@@ -209,6 +209,13 @@ impl Real for f64 {
 pub struct Dual<const N: usize> {
     pub v: f64,
     pub d: [f64; N],
+}
+
+impl<const N: usize> Default for Dual<N> {
+    /// Zero, with a zero tangent (what a `Flagged<Dual<N>>` holds when unknown).
+    fn default() -> Dual<N> {
+        Dual { v: 0.0, d: [0.0; N] }
+    }
 }
 
 impl<const N: usize> Dual<N> {
