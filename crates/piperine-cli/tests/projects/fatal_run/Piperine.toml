@@ -1,0 +1,9 @@
+[package]
+name = "fatal_run"
+version = "0.1.0"
+
+[run.fatal]
+bench = "benches/fatal.msl"
+analysis = "transient"
+stop = 5e-6
+top = "Fatal"

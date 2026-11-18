@@ -1,0 +1,12 @@
+use finish_run::{Resistor, Vsource};
+
+/// Calls `finish` at 2 us, after a passing check.
+module Stopper() {}
+digital for Stopper { on at(1u) { require("fine", true); } on at(2u) { finish(); } }
+
+module Finish() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let r1 = Resistor(a, gnd) { r: 1k };
+    let s = Stopper();
+}

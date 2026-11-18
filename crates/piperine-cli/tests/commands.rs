@@ -718,3 +718,20 @@ fn fmt_check_passes_on_the_rc_example_and_on_a_new_project() {
     assert_eq!(out.status.code(), Some(0), "{}{}", text(&out.stdout), text(&out.stderr));
     assert_eq!(text(&out.stdout), "");
 }
+
+#[test]
+fn test_prints_fail_with_the_fatal_message() {
+    // FIX-02 AC 3: a run that called `fatal("boom")` at 2 us is `FAIL <name>` with the record's
+    // message and time, and the exit code is 1
+    let out = piperine_in(&fixture("fatal_run"), &["test"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "FAIL fatal (fatal at 2.000000e-6: boom)\n1 runs, 0 passed, 1 failed\n");
+}
+
+#[test]
+fn test_passes_a_run_ended_by_finish() {
+    // FIX-02 AC 4: `finish()` at 2 us after one passing check is `PASS <name> (1 checks)`
+    let out = piperine_in(&fixture("finish_run"), &["test"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "PASS finish (1 checks)\n1 runs, 1 passed, 0 failed\n");
+}

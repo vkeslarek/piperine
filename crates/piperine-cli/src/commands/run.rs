@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use piperine_api::{Backend, Failure, Overrides, Project, Record, RecordSink, RunSpec, Session};
+use piperine_api::{Backend, Cell, Failure, Field, Overrides, Project, Record, RecordSink, RunSpec, Session};
 use piperine_transpile::Settings;
 
 use crate::cli::Out;
@@ -16,6 +16,7 @@ use crate::exit::Exit;
 use crate::render::csv::CsvTable;
 use crate::render::diagnostic::Report;
 use crate::render::json::JsonRecord;
+use crate::render::number::Number;
 use crate::render::record::RecordLine;
 use crate::render::svg::SvgPlot;
 use crate::render::table::TextTable;
@@ -67,10 +68,15 @@ enum Destination {
 struct LiveRecords {
     to: Destination,
     closed: Option<io::Error>,
+    /// The first `sim` record whose `failed` is known true: a `fatal` of the model.
+    fatal: Option<Record>,
 }
 
 impl RecordSink for LiveRecords {
     fn record(&mut self, record: &Record) {
+        if self.fatal.is_none() && record.stream == "sim" && record.fields.iter().any(|(name, field)| name == "failed" && *field == Field::Bool(true)) {
+            self.fatal = Some(record.clone());
+        }
         if self.closed.is_some() {
             return;
         }
@@ -110,11 +116,26 @@ impl LiveRecords {
 }
 
 impl RunCommand {
-    /// Runs the command: exit 0 when the run completed, 1 for a failed design or run, 2 for a
-    /// run that cannot be chosen or a backend the flag does not name.
+    /// `fatal at <t:e>: <msg>`: what a run says of the `fatal` record that ended it (FIX-02).
+    pub(crate) fn fatal_line(record: &Record) -> String {
+        let msg = record.fields.iter().find_map(|(name, field)| match field {
+            Field::Text(text) if name == "msg" => Some(text.as_str()),
+            _ => None,
+        });
+        format!("fatal at {}: {}", Number::text(&Cell::Real(record.time)), msg.unwrap_or(""))
+    }
+
+    /// Runs the command: exit 0 when the run completed, 1 for a failed design or run or a
+    /// `fatal` of the model, 2 for a run that cannot be chosen or a backend the flag does not
+    /// name.
     pub fn execute(&self, out: &Out, err: &mut dyn Write) -> Exit {
         match self.attempt(out, err) {
-            Ok(()) => Exit::Done,
+            Ok(None) => Exit::Done,
+            Ok(Some(fatal)) => {
+                // a closed standard error leaves nothing to tell; the command fails either way
+                let _ = writeln!(err, "{}", Self::fatal_line(&fatal));
+                Exit::Failed
+            }
             Err(Stop::Failed(failure)) => {
                 // a closed standard error leaves nothing to tell; the command fails either way
                 let _ = Report::write(&failure, err);
@@ -131,7 +152,7 @@ impl RunCommand {
         }
     }
 
-    fn attempt(&self, out: &Out, err: &mut dyn Write) -> Result<(), Stop> {
+    fn attempt(&self, out: &Out, err: &mut dyn Write) -> Result<Option<Record>, Stop> {
         if self.lone().is_some() && self.overrides.analysis.is_none() {
             // CLI-03 AC 12: a lone file has no run table, so the flags must say what to run
             let message = "a lone file has no run table: name the analysis with --analysis (op, dc, ac or transient)".to_string();
@@ -158,10 +179,11 @@ impl RunCommand {
             writeln!(out, "run {}: {}, top {}, backend {}", spec.name, spec.analysis.name(), session.top(), session.backend().name())?;
             out.flush()?;
         }
-        let live = Rc::new(RefCell::new(LiveRecords { to, closed: None }));
+        let live = Rc::new(RefCell::new(LiveRecords { to, closed: None, fatal: None }));
         let table = session.run(live.clone());
         live.borrow_mut().finish()?;
         let table = table?;
+        let fatal = live.borrow().fatal.clone();
         let mut out = out.borrow_mut();
         writeln!(out)?;
         match &spec.csv {
@@ -180,7 +202,7 @@ impl RunCommand {
             writeln!(out, "wrote {}", file.display())?;
         }
         out.flush()?;
-        Ok(())
+        Ok(fatal)
     }
 
     /// The line on standard error that says the run's design is being compiled, flushed before

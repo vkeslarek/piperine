@@ -1,0 +1,9 @@
+[package]
+name = "finish_run"
+version = "0.1.0"
+
+[run.finish]
+bench = "benches/finish.msl"
+analysis = "transient"
+stop = 5e-6
+top = "Finish"

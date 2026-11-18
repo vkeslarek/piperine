@@ -1,0 +1,12 @@
+use fatal_run::{Resistor, Vsource};
+
+/// Calls `fatal` at 2 us.
+module Stopper() {}
+digital for Stopper { on at(2u) { fatal("boom"); } }
+
+module Fatal() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let r1 = Resistor(a, gnd) { r: 1k };
+    let s = Stopper();
+}

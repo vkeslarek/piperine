@@ -433,3 +433,16 @@ fn a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot() {
     }
     assert!(!dir.path().join("out.csv").exists() && !dir.path().join("out.svg").exists(), "no file is written");
 }
+
+#[test]
+fn run_prints_the_fatal_line_and_exits_1() {
+    // FIX-02 AC 2: `fatal("boom")` at 2 us in a run to 5 us: the table up to 2 us is printed,
+    // `fatal at 2.000000e-6: boom` is the last line of standard error, and the exit code is 1
+    let out = piperine_in(&fixture("fatal_run"), shared_cache(), &["run", "fatal"]);
+    let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+    assert_eq!(out.status.code(), Some(1), "{stdout}\n{stderr}");
+    assert_eq!(stderr.lines().last(), Some("fatal at 2.000000e-6: boom"), "{stderr}");
+    let rows: Vec<&str> = stdout.lines().skip_while(|l| !l.is_empty()).skip(2).collect();
+    let last = cells(rows.last().expect("table rows"));
+    assert!((last[0].parse::<f64>().expect("a time") - 2e-6).abs() <= 1e-12, "the table ends at the fatal instant: {stdout}");
+}

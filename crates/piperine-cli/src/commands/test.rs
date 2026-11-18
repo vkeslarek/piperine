@@ -43,7 +43,13 @@ impl TestCommand {
             let text = match verdict {
                 Ok(verdict) => {
                     let mut text = Vec::new();
-                    if verdict.passed() {
+                    if let Some(fatal) = verdict.fatal() {
+                        failed += 1;
+                        let _ = writeln!(text, "FAIL {} ({})", spec.name, RunCommand::fatal_line(fatal));
+                        for record in verdict.failed() {
+                            let _ = RecordLine::write(record, &mut text);
+                        }
+                    } else if verdict.passed() {
                         passed += 1;
                         let _ = writeln!(text, "PASS {} ({} checks)", spec.name, verdict.checks());
                     } else {
