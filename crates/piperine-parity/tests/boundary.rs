@@ -212,13 +212,12 @@ fn a_carrier_change_is_a_time_point_and_starts_the_response() {
     w.place_analog("c1", capacitor, &["x", "gnd"], &[NETWORK.c]);
     let built = Built::new(w.finish());
     let x = NodeIdentifier::Anonymous(built.ir.node_at("Top.x").expect("a node x").id().index());
-    // 8.9 us: the oscillator rises again at 9 us. The step is capped at 1 ns (the first step from a
-    // jump is first order, and its error grows with the square of the step). That cap is tighter
-    // than the harness's own policy: with the 10 ns cap that policy gives this run, the response
-    // is off by more than TRAN_VOLTAGE 5.55 ns after t0 (`ir-rust` verification F-B7, GAPS.md §6):
-    // the solver's restart after a digital-to-analog jump, reported to the solver, not a defect
-    // of the compiled switch, whose terms are proven bit-equal
-    let (seen, result) = built.run_with(8.9e-6, 1e-9);
+    // 8.9 us: the oscillator rises again at 9 us. The step is capped at 10 ns, the harness's own
+    // policy: the first step after the jump is at most a tenth of the last step and of the gap to
+    // the next scheduled time, floored at dt_min, so the response is as close as the 1 ns cap
+    // held it (the older restart took a full controller step and needed the tighter cap; GAPS.md
+    // F-B7).
+    let (seen, result) = built.run_with(8.9e-6, 1e-8);
     // the gate is committed at t0 = 3.0037 us (half the period 6.0074 us), one change
     let t0_ticks = 3_003_700_000_i64;
     assert_eq!(seen.transient("gate"), vec![(t0_ticks, HIGH.to_vec())]);

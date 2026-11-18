@@ -12,9 +12,13 @@ use std::sync::{Arc, OnceLock};
 #[path = "helpers/abi_devices.rs"]
 mod abi_devices;
 #[allow(dead_code)]
+#[path = "helpers/abi_mixed.rs"]
+mod abi_mixed;
+#[allow(dead_code)]
 #[path = "helpers/partials.rs"]
 mod partials;
 
+use abi_mixed::{dac, timer};
 use abi_devices::{Counting, add_capacitor, add_resistor, add_vsrc, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::F64;
@@ -378,4 +382,65 @@ fn the_transient_driver_iterates_with_the_plans_strategy() {
     let seen = calls.load(std::sync::atomic::Ordering::SeqCst);
     assert!(result.len() > 10, "the run took steps");
     assert!(seen >= 2 * (result.len() - 1), "two Newton solves per accepted step went through the strategy: {seen} calls");
+}
+
+/// A timer on `code` toggling every `half`, a DAC of 1 V on it driving `o`, and `o` charging 1 nF
+/// through 1 kohm.
+fn jump_into_rc(b: &mut CircuitBuilder, name: &str, half: f64) {
+    let gnd = b.ground();
+    let o = b.node(&format!("{name}_o"));
+    let c = b.node(&format!("{name}_c"));
+    let code = || Port::Net(format!("{name}_code"));
+    b.device(timer(), &format!("clk_{name}"), &[("half", ParamValue::Real(half))], &[code()]);
+    b.device(dac(), &format!("dac_{name}"), &[("vref", ParamValue::Real(1.0))], &[code(), Port::Node(o.clone())]);
+    add_resistor(b, &format!("r_{name}"), 1.0e3, &o, &c);
+    add_capacitor(b, &format!("c_{name}"), 1.0e-9, &c, &gnd);
+}
+
+/// The step after each edge in `edges` is at most a tenth of the step that landed on the edge and
+/// of the gap to the next edge (HYG-11 AC 1); returns how many edges were checked.
+fn assert_jump_steps_are_capped(times: &[f64], edges: &[f64]) -> usize {
+    let mut checked = 0;
+    for (n, edge) in edges.iter().enumerate() {
+        let Some(k) = times.iter().position(|t| (t - edge).abs() < 1.0e-15) else { continue };
+        if k == 0 || k + 1 >= times.len() {
+            continue;
+        }
+        let (landing, after) = (times[k] - times[k - 1], times[k + 1] - times[k]);
+        let gap = edges.get(n + 1).map_or(f64::INFINITY, |next| next - edge);
+        let bound = 0.1 * landing.min(gap);
+        assert!(after <= bound * (1.0 + 1.0e-9) + 1.0e-15, "after the edge at {edge:e}: step {after:e} exceeds a tenth of the landing step {landing:e} and of the gap {gap:e}");
+        assert!(after >= 1.0e-15, "the step is floored at dt_min, not zero: {after:e}");
+        checked += 1;
+    }
+    checked
+}
+
+#[test]
+fn the_step_after_a_jump_is_capped_at_a_tenth_of_the_last() {
+    // One timer edges every microsecond; a controller that has grown its step (the RC is at rest
+    // between edges, the ceiling is 100 ns) would otherwise take a full step into the jump.
+    let mut b = CircuitBuilder::new("jumps");
+    jump_into_rc(&mut b, "a", 1.0e-6);
+    let mut circuit = b.build().expect("build");
+    let options = TransientAnalysisOptions::new(4.5e-6, 1.0e-7);
+    let result = circuit.transient(options, Context::default()).expect("tran").solve().expect("solve");
+    let times: Vec<f64> = result.iter().map(|s| s.time()).collect();
+    let edges = [1.0e-6, 2.0e-6, 3.0e-6, 4.0e-6];
+    assert_eq!(assert_jump_steps_are_capped(&times, &edges), 4, "every edge was a landing: {times:?}");
+}
+
+#[test]
+fn two_jumps_in_one_restart_step_restart_from_the_later() {
+    // Two timers whose edges are 0.25 us apart: the step after the later edge is capped from the
+    // step that landed on it, not from the earlier jump's.
+    let mut b = CircuitBuilder::new("two jumps");
+    jump_into_rc(&mut b, "a", 1.0e-6);
+    jump_into_rc(&mut b, "b", 1.25e-6);
+    let mut circuit = b.build().expect("build");
+    let options = TransientAnalysisOptions::new(3.0e-6, 1.0e-7);
+    let result = circuit.transient(options, Context::default()).expect("tran").solve().expect("solve");
+    let times: Vec<f64> = result.iter().map(|s| s.time()).collect();
+    let edges = [1.0e-6, 1.25e-6, 2.0e-6, 2.5e-6];
+    assert_eq!(assert_jump_steps_are_capped(&times, &edges), 4, "every edge was a landing: {times:?}");
 }

@@ -359,8 +359,8 @@ impl AnalogSide for TransientSide<'_, '_> {
         self.tran.device_has_unknowns()
     }
 
-    fn propose(&mut self, _now: f64, _stop: f64, _next_due: Option<f64>) -> f64 {
-        self.tran.device_propose(&mut self.run)
+    fn propose(&mut self, _now: f64, _stop: f64, next_due: Option<f64>) -> f64 {
+        self.tran.device_propose(&mut self.run, next_due)
     }
 
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart) {

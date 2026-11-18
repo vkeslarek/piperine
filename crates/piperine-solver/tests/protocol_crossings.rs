@@ -450,7 +450,12 @@ fn a_crossing_in_the_step_after_a_jump_is_not_located() {
     let edge = period / 4.0;
     let after: Vec<f64> = times.iter().copied().filter(|t| *t > edge + 0.5 * TICK).collect();
     assert_eq!(fired[0], after[0], "it fires at the end of the step that reads the jump");
-    assert!(fired[0] - edge > 1.0e-6, "a controller step after the edge, not a landing next to it: {:e}", fired[0] - edge);
+    // The step that reads the jump is the controller's, capped at a tenth of the step that landed
+    // on the edge (HYG-11): a step of its own, not a landing within a tick of the edge.
+    let landed = times.iter().position(|t| (t - edge).abs() < 0.5 * TICK).expect("a step lands on the edge");
+    let cap = 0.1 * (times[landed] - times[landed - 1]);
+    assert!(fired[0] - edge > 100.0 * TICK, "a controller step after the edge, not a landing next to it: {:e}", fired[0] - edge);
+    assert!((fired[0] - edge - cap).abs() <= 2.0 * TICK, "the step after the jump is the capped one: {:e} vs {cap:e}", fired[0] - edge);
 }
 
 /// A `CROSS` watch on a curved function of time: `e = 1 − exp(−t/tau) − vth`, concave, so the

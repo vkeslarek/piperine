@@ -761,11 +761,11 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_step_after_a_jump_is_capped_at_a_tenth_of_the_last` and `two_jumps_in_one_restart_step_restart_from_the_later` (edge case 5) pass under `**Run abitran**`
-- [ ] `a_carrier_change_is_a_time_point_and_starts_the_response` passes at the 10 ns cap under `**Run boundary**`
-- [ ] `a_scheduled_host_write_lands_and_restarts_small` passes under `**Run hostset**`
-- [ ] The buck targets of `crates/piperine-parity` pass (else this task stops)
-- [ ] Gate check passes: Full
+- [x] `the_step_after_a_jump_is_capped_at_a_tenth_of_the_last` and `two_jumps_in_one_restart_step_restart_from_the_later` (edge case 5) pass under `**Run abitran**`
+- [x] `a_carrier_change_is_a_time_point_and_starts_the_response` passes at the 10 ns cap under `**Run boundary**`
+- [x] `a_scheduled_host_write_lands_and_restarts_small` passes under `**Run hostset**`
+- [x] The buck targets of `crates/piperine-parity` pass (else this task stops)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

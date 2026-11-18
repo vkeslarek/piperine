@@ -1352,10 +1352,28 @@ impl TransientSolver<'_> {
     }
 
     /// The end of the next step: the controller's proposal, at most the stop
-    /// time and the smallest `CAP` of the last accepted solution.
-    pub(crate) fn device_propose(&mut self, run: &mut DeviceRun) -> f64 {
+    /// time and the smallest `CAP` of the last accepted solution. The step after a jump (a
+    /// delivery under a restart) is at most a tenth of the last step and of the gap to the next
+    /// scheduled time `next_due`, floored at `dt_min` (the step reads a discontinuity; ngspice
+    /// breaks the same way, a tenth of the interval, `dctran.c`).
+    pub(crate) fn device_propose(&mut self, run: &mut DeviceRun, next_due: Option<f64>) -> f64 {
         let st = &run.st;
-        run.proposed = (st.current_time + st.dt).min(self.options.stop_time).min(st.current_time + run.cap);
+        let mut dt = st.dt;
+        if st.sets_just_applied {
+            let last = (run.last_dt > 0.0).then_some(run.last_dt);
+            let gap = next_due.map(|due| due - st.current_time).filter(|gap| *gap > 0.0);
+            if let Some(span) = [last, gap].into_iter().flatten().reduce(f64::min) {
+                dt = dt.min(Self::JUMP_FRACTION * span).max(self.options.dt_min);
+            }
+        }
+        let mut end = (st.current_time + dt).min(self.options.stop_time).min(st.current_time + run.cap);
+        // A step that would end within two ticks short of the stop ends at the stop: the
+        // remainder would be a step of a few femtoseconds, or less than a tick, which the
+        // companion of a charge integrates as noise (a capped step after a jump can end there).
+        if self.options.stop_time - end < 2.0 * run.spt {
+            end = self.options.stop_time;
+        }
+        run.proposed = end;
         run.proposed
     }
 
@@ -1656,6 +1674,10 @@ impl TransientSolver<'_> {
             }
         }
     }
+
+    /// The step after a jump is at most this fraction of the last step and of the gap to the next
+    /// scheduled time.
+    const JUMP_FRACTION: f64 = 0.1;
 
     pub(crate) fn device_mark(&self) -> DeviceMark {
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
