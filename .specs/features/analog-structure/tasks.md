@@ -178,10 +178,10 @@ T35 → T36
 
 **Done when**:
 
-- [ ] `contract.md` lists each cited location as confirmed or moved, each probe with its output, and the eight facts with their evidence
-- [ ] The branch is rebased on `main` with `host-ii` and `solver-hygiene` merged, and the `**Build**` line passes
-- [ ] No code is edited
-- [ ] Gate check passes: Build
+- [x] `contract.md` lists each cited location as confirmed or moved, each probe with its output, and the eight facts with their evidence
+- [x] The branch is rebased on `main` with `host-ii` and `solver-hygiene` merged, and the `**Build**` line passes
+- [x] No code is edited
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -1252,6 +1252,7 @@ Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_print
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
+**Contract (T1):** `contract.md`. Anchors moved by 1-2 lines only; `Frame` is in `carriers.rs`, `no_locals` in `compound.rs`/`drives.rs`. host-ii added `piperine-api/src/params.rs` (`Params`, `Derive`), `piperine-plan/src/derive.rs` (`DerivePlan`), `Context.nodeset`; solver-hygiene V1 (`TermPlan::abstol`) is merged. **Facts 1 and 2 do not hold**: a param pin's `init` and a before-run binding are committed at `(0, 0)` from a zeroed store, so `CHANGED` reads true at `(0, 0)` and `PREVIOUS` reads 0.0 until a later write; T33 must guard the start microstep (reported to the orchestrator before phase 5). Fact 8: the `limit`/`ac_stim` carrier refusal is in `piperine-transpile/src/print/analog.rs:583`, asserted by `tests/reject.rs`; T21 rewrites it.
 **Dispatched:** B1 - Sonnet worker, 2026-11-18 (host-ii merged 1a3d69dc).
 **Walked:** not applicable: no screen; every story's Independent Test is a run from source or a test target named in `## Checks`.
 
