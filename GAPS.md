@@ -24,7 +24,7 @@ change of the IR or the ABI.
 
 **Counts.** 4 silent, 2 broken, 50 loud (L1 to L59 less the nine `msl-fixes` closed, in six tables) plus
 7 backend and diagnostic notes, 14 spec holes or disagreements, 3 solver and performance points,
-13 host gaps, 11 unproven.
+16 host gaps, 11 unproven.
 
 | Section | Ids |
 | ------- | --- |
@@ -33,7 +33,7 @@ change of the IR or the ABI.
 | §4 Loud | L1–L59 (L11, L14, L15, L17, L41, L46, L48, L54, L55 closed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1–X9 |
 | §6 Solver, numerics, performance | V12, V13, V16 |
-| §7 Host surface | H1–H13 |
+| §7 Host surface | H1–H16 |
 | §8 Unproven | U1–U11 |
 | §9 Coverage by spec part | — |
 | §10 Reference lists, changed entries, clusters | — |
@@ -325,6 +325,9 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 | H11 | The root package's integrated tests: one per Book example and claim, through the api or the CLI (queue item 4), and the single root `tests/e2e/` with ngspice parity (4b) | ROADMAP | M |
 | H12 | The stdlib, the galleries and `examples/buck/src` are not reformatted by `piperine fmt` (the formatter is proven on them) | — | S |
 | H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/`, `VAMS-LRM-2-4.md` | — | S |
+| H14 | A flow term `i(<instance>)` of an instance with no potential branch prints in `op` and `dc` only; `transient`, `ac`, `pss` and `sens` refuse it (`E0801`/`P0010`) because `StepView` carries no device term, so a transient table cannot show it. Needs a `StepView` read of `Assembly::term_value`. Owner: `host-analyses` | §21 | S |
+| H15 | `pss` of a design whose `transition` holds an absolute time (`ramp.t0`, a `D2A` driven by a discrete clock) never closes its digital periodicity (`digital state is not periodic at T`), so a D2A-driven design cannot shoot; the `pss_rc` twin drives the source from `now()` instead. Owner: `periodic-small-signal` | §16.3 | M |
+| H16 | A transient shot whose stop is `2e-5` s with a `1 ns` step fails `a step to t = 1.9999999999999998e-5 s does not advance` (the float end-snap of the transient); a `pss` run with such a period or `tstab` hits it. Owner: `solver-hygiene` | §16 | S |
 
 ---
 
