@@ -1,7 +1,10 @@
 //! Scope: the deviation table (HYG-06): each of the 11 twins is run with the policy of its own
 //! `parity_*` target and the worst `|golden - actual| / bound` of every compared quantity is
 //! printed (`-- --nocapture`), with the accepted and rejected steps and `dt_min` floor hits of a
-//! transient. It measures; the gate stays the `parity_*` targets under `ToleranceContract`.
+//! transient, and, beside ngspice's own point count, the steps of the same transient run free (the
+//! step cap ngspice's own: its print step, not a tenth of it), which the capped run hides: the twins
+//! run at a cap where every step sits at it. It measures; the gate stays the `parity_*` targets
+//! under `ToleranceContract`.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -19,6 +22,15 @@ use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, TransientAnalysi
 struct Measured {
     deviations: Vec<Deviation>,
     steps: Option<(usize, usize, usize)>,
+    /// A transient's cost with the step free: ngspice's points, and the accepted steps of the run
+    /// capped at ngspice's own maximum step (its print step).
+    free_running: Option<FreeRunning>,
+}
+
+/// The step count of a transient run at ngspice's own maximum step, beside ngspice's point count.
+struct FreeRunning {
+    ngspice_points: usize,
+    steps: usize,
 }
 
 fn operating_point(twin: &OperatingPoint, golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
@@ -35,7 +47,7 @@ fn operating_point(twin: &OperatingPoint, golden: &piperine_parity::golden::Gold
             Deviation::of(twin.fixture, &format!("v({node})"), &ToleranceContract::DC_VOLTAGE, &[(Coordinate::OperatingPoint, wanted, actual)])
         })
         .collect();
-    Measured { deviations, steps: None }
+    Measured { deviations, steps: None, free_running: None }
 }
 
 fn sweep(fixture: &str, export: &str, golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
@@ -47,7 +59,7 @@ fn sweep(fixture: &str, export: &str, golden: &piperine_parity::golden::Golden, 
         let result = bench.circuit().dc(Context::default()).expect("dc").solve().expect("the sweep point solves");
         rows.push((Coordinate::Sweep(value), wanted, result.get_branch(source.clone()).expect("the flow of v1")));
     }
-    Measured { deviations: vec![Deviation::of(fixture, "i(v1)", &ToleranceContract::DC_CURRENT, &rows)], steps: None }
+    Measured { deviations: vec![Deviation::of(fixture, "i(v1)", &ToleranceContract::DC_CURRENT, &rows)], steps: None, free_running: None }
 }
 
 fn ac(golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
@@ -70,6 +82,7 @@ fn ac(golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
             Deviation::of("ac_rc", "arg v(out)", &ToleranceContract::AC_PHASE, &phase),
         ],
         steps: None,
+        free_running: None,
     }
 }
 
@@ -98,14 +111,28 @@ fn tran_to(fixture: &str, export: &str, node: &str, golden: &piperine_parity::go
     Measured {
         deviations: vec![Deviation::of(fixture, &format!("v({node})"), &ToleranceContract::TRAN_VOLTAGE, &compared)],
         steps: Some((stats.steps_accepted, stats.steps_rejected, stats.dt_min_floor_hits)),
+        free_running: Some(FreeRunning { ngspice_points: rows.len(), steps: free_running_steps(fixture, backend, stop, print_step, dt_min) }),
     }
+}
+
+/// The accepted steps of the twin `fixture` run to `stop` with the step cap at `print_step`, ngspice's
+/// own maximum step (`tstep`), instead of a tenth of it.
+fn free_running_steps(fixture: &str, backend: Backend, stop: f64, print_step: f64, dt_min: f64) -> usize {
+    let mut bench = Bench::load_on(fixture, backend);
+    let mut options = TransientAnalysisOptions::new(stop, print_step / 10.0);
+    options.dt_max = print_step;
+    if dt_min > f64::MIN_POSITIVE {
+        options.dt_min = dt_min;
+    }
+    let result = bench.circuit().transient(options, Context::default()).expect("transient").solve().expect("the free transient solves");
+    result.stats.steps_accepted
 }
 
 /// `tran_floor`: no number to compare. ngspice stops with "Timestep too small"; the run of the twin
 /// must fail (`parity_tran.rs` asserts the code and the time).
 fn floor(golden: &piperine_parity::golden::Golden) -> Measured {
     assert!(golden.said("Timestep too small"), "ngspice stops at the floor");
-    Measured { deviations: Vec::new(), steps: None }
+    Measured { deviations: Vec::new(), steps: None, free_running: None }
 }
 
 /// The twins whose source reads the time, which only the compiled backend runs.
@@ -161,6 +188,9 @@ fn the_table_covers_every_twin() {
         for (fixture, measured) in &table {
             if let Some((accepted, rejected, floor)) = measured.steps {
                 println!("{fixture} on {}: steps accepted {accepted}, rejected {rejected}, dt_min floor hits {floor}", backend.name());
+            }
+            if let Some(free) = &measured.free_running {
+                println!("{fixture} on {}: free-running steps {} against ngspice's {} points", backend.name(), free.steps, free.ngspice_points);
             }
         }
     }
