@@ -771,9 +771,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `tests/host_actions.rs` gains `a_set_at_zero_applies_before_the_analysis`, `a_timed_set_applies_after_the_step_to_its_time`, `a_timed_set_of_a_structural_param_is_e0803`, `a_timed_set_failing_where_is_e0802`
-- [ ] Gate check passes: Quick (`Run apihost`)
-- [ ] Test count: 4 new tests
+- [x] `tests/host_actions.rs` gains `a_set_at_zero_applies_before_the_analysis`, `a_timed_set_applies_after_the_step_to_its_time`, `a_timed_set_of_a_structural_param_is_e0803`, `a_timed_set_failing_where_is_e0802`
+- [x] Gate check passes: Quick (`Run apihost`)
+- [x] Test count: 4 new tests
 
 **Tests**: integration
 **Gate**: quick

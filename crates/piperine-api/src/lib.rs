@@ -38,7 +38,7 @@ pub use probe::{Column, Probe};
 pub use project::{Checked, Project};
 pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
-pub use session::{Built, Session};
+pub use session::{Built, ParamPath, Session};
 pub use piperine_solver::prelude::ParamValue;
 pub use table::{Cell, Table};
 pub use verdict::Verdict;

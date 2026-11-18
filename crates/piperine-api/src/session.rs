@@ -16,7 +16,7 @@ use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
 use piperine_plan::Netlist;
-use piperine_solver::abi::InitialValue;
+use piperine_solver::abi::{InitialValue, Value};
 use piperine_solver::prelude::{
     AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, ParamValue, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
     TransientAnalysisOptions,
@@ -106,6 +106,16 @@ impl ParamPath {
     /// The full path, `<instance>.<param>`.
     pub fn label(&self) -> String {
         format!("{}.{}", self.instance, self.param)
+    }
+
+    /// `E0803` when this param is structural: a structural param is fixed at elaboration, so a
+    /// `set` of it during a run (at a time after the start) is refused (§23.1 rule 7).
+    pub fn refuse_timed(&self, ir: &Ir) -> Result<(), Failure> {
+        let structural = ir.instance_at(&self.instance).and_then(|i| i.body().params().iter().find(|p| p.name == self.param).map(|p| p.structural));
+        match structural {
+            Some(true) => Err(Failure::Host { code: "E0803", message: format!("`{}` is a structural param: it cannot change during a run, re-elaborate instead", self.label()) }),
+            _ => Ok(()),
+        }
     }
 
     /// The params of the children of this param's instance whose placement derives them from it
@@ -464,6 +474,7 @@ impl Session {
                         for action in &timed {
                             match action {
                                 HostAction::Drive { net, value, at } => tran.schedule_write(*at, net.clone(), value.clone()),
+                                HostAction::Set { path, value, at } => tran.schedule_set(*at, path.instance.clone(), path.param.clone(), Value::Real(*value)),
                             }
                         }
                         tran.solve()

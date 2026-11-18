@@ -1367,6 +1367,7 @@ dependencies = [
  "piperine-project",
  "piperine-solver",
  "piperine-transpile",
+ "serde_json",
  "tempfile",
  "toml",
 ]

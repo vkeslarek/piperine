@@ -255,6 +255,27 @@ impl CircuitInstance {
         Ok(())
     }
 
+    /// Whether a `set` of `param` of the instance at `path` to `value` would be accepted during a
+    /// transient (HII-13), changing nothing: the value must fit the param's layout and pass its
+    /// `where`, and the write must not need another shape. The refusal is the error.
+    pub fn check_set(&self, path: &str, param: &str, value: &crate::core::bind::ParamValue) -> crate::core::result::Result<()> {
+        use piperine_digital_solver::engine::Shadow;
+        let bound = self.abi.as_ref().ok_or_else(|| {
+            Error::simple(SolverDomain::Device, "`check_set` addresses device instances; this circuit has none")
+        })?;
+        let (net, bytes) = bound.param_bytes(path, param, value)?;
+        match bound.digital.shadow(net, 0, &bytes).map_err(|e| Error::simple(SolverDomain::Digital, e.to_string()))? {
+            Shadow::Accept => Ok(()),
+            Shadow::Refused { check } => {
+                Err(Error::simple(SolverDomain::Device, format!("`{path}.{param}`: the write is refused, check {check} is false")))
+            }
+            Shadow::Reshape { instance } => Err(Error::simple(
+                SolverDomain::Device,
+                format!("`{path}.{param}`: the write would need instance {instance} in another shape"),
+            )),
+        }
+    }
+
     /// Writes `value` to the discrete net `net` (its name in the digital plan) between analyses
     /// (abi.md §10 "Host actions"): the net's shadow checks it first, a refusal or a `RESHAPE`
     /// changes nothing, and an accepted write is one of the host's initial writes of every later

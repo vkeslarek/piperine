@@ -10,13 +10,15 @@ use piperine_solver::prelude::ParamValue;
 
 use crate::failure::Failure;
 use crate::request::Analysis;
-use crate::session::Session;
+use crate::session::{ParamPath, Session};
 
 /// A host action due after the start of a transient.
 #[derive(Debug, Clone)]
 pub(crate) enum HostAction {
     /// The discrete net `net` of the plan takes `value`.
     Drive { net: String, value: ParamValue, at: f64 },
+    /// The param takes `value`.
+    Set { path: ParamPath, value: f64, at: f64 },
 }
 
 impl Session {
@@ -44,6 +46,40 @@ impl Session {
         }
         let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
         circuit.write_net(&net, value).map_err(|error| Failure::Backend(format!("the drive of `{port}` is refused: {error}")))
+    }
+
+    /// Sets the param `path` (`<instance>.<param>`) to `value` at time `at`: before the run
+    /// (`at = 0`) as a `set` before the analysis, later after the step to `at` is accepted, so a
+    /// node its behavior reads keeps its old value at `at`. `E0801` for a path that names no
+    /// param, `E0803` for a structural param at `at > 0`, `E0802` for a value its `where`
+    /// refuses, `E0806` for a negative `at`.
+    pub fn set_at(&mut self, path: &str, value: f64, at: f64) -> Result<(), Failure> {
+        let action = format!("the set of `{path}`");
+        Session::not_before(at, &action)?;
+        let param = ParamPath::resolve(self.ir(), self.ir().top().path(), path)?;
+        if at > 0.0 {
+            param.refuse_timed(self.ir())?;
+        }
+        self.ready_for(at, &action)?;
+        let refused = |error| Failure::Host { code: "E0802", message: format!("`{}` refuses the value {value}: {error}", param.label()) };
+        let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
+        if at > 0.0 {
+            circuit.check_set(&param.instance, &param.param, &ParamValue::Real(value)).map_err(refused)?;
+            self.actions.push(HostAction::Set { path: param, value, at });
+            return Ok(());
+        }
+        circuit.set(&param.instance, &param.param, ParamValue::Real(value)).map_err(refused)
+    }
+
+    /// Narrows the session's record streams to those `streams` name (a stream's name, or one
+    /// stream's full path), before the run: only their records reach the sink. `E0801` for a
+    /// name that matches no stream, `E0805` once the session has run.
+    pub fn subscribe(&mut self, streams: &[&str]) -> Result<(), Failure> {
+        if self.circuit.is_none() {
+            return Err(Failure::Host { code: "E0805", message: format!("the session has run: it cannot subscribe to {} now", streams.join(", ")) });
+        }
+        let entries: Vec<String> = streams.iter().map(|s| s.to_string()).collect();
+        self.streams.keep(&entries)
     }
 
     fn ran() -> Failure {

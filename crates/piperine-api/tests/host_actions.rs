@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use piperine_api::{Cell, Failure, Field, Overrides, ParamValue, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Failure, Field, Overrides, ParamPath, ParamValue, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
 
 /// Keeps every record, in the order it is handed over.
@@ -29,7 +29,7 @@ fn settings() -> Settings {
 
 /// A source, a resistor, a module whose structure a param selects, and a counter that reads two
 /// of the top's inputs; `Top` holds the analog part and the counter.
-const DESIGN: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Opt(p: Electrical, n: Electrical) { extra: bool = true; }\nmodule Counter(in clk: Bit, in level: Bit<u8>, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count, level = level);\n    }\n}\nmodule Top(in clk: Bit, in level: Bit<u8>, out count: Bit<u8>) {\n    signal a: Electrical;\n    signal armed: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let ctr = Counter(clk, level, count);\n}\n";
+const DESIGN: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Counter(in clk: Bit, in level: Bit<u8>, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count, level = level);\n    }\n}\nmodule Top(in clk: Bit, in level: Bit<u8>, out count: Bit<u8>) {\n    signal a: Electrical;\n    signal armed: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let ctr = Counter(clk, level, count);\n}\n";
 
 fn session(analysis: &str, extra: Overrides) -> Session {
     let dir = tempfile::tempdir().expect("tmp");
@@ -141,10 +141,84 @@ fn an_undriven_top_input_is_unknown() {
 
 #[test]
 fn a_negative_at_is_e0806() {
-    // HII-13 AC 4: a drive at a negative time is refused, naming the action
+    // HII-13 AC 4: a drive and a set at a negative time are refused, naming the action
     let mut s = transient(1e-6, &[]);
     match s.drive("clk", ParamValue::Bool(true), -1e-9).expect_err("past") {
         Failure::Host { code: "E0806", message } => assert!(message.contains("`clk`"), "{message}"),
         other => panic!("E0806, found {other}"),
     }
+    match s.set_at("v1.dc", 2.0, -1e-9).expect_err("past") {
+        Failure::Host { code: "E0806", message } => assert!(message.contains("`v1.dc`"), "{message}"),
+        other => panic!("E0806, found {other}"),
+    }
+}
+
+/// The values of column `at` of a grid table, one per row.
+fn column(table: &Table, at: usize) -> Vec<f64> {
+    table.rows.iter().map(|row| match &row[at] {
+        Cell::Real(v) => *v,
+        other => panic!("a real, found {other:?}"),
+    }).collect()
+}
+
+fn grid(print: &[&str]) -> Session {
+    session("transient", Overrides { stop: Some(1e-6), max_step: Some(1e-7), print_step: Some(5e-7), print: print.iter().map(|s| s.to_string()).collect(), ..Overrides::default() })
+}
+
+#[test]
+fn a_set_at_zero_applies_before_the_analysis() {
+    // HII-13 AC 1 (§23.1 rule 4): a `set` at 0 binds the param before the run, so the source holds
+    // 2 V from the first row
+    let mut s = grid(&["a"]);
+    s.set_at("v1.dc", 2.0, 0.0).expect("set");
+    let (table, _) = run(&mut s).unwrap_or_else(|f| panic!("{f}"));
+    for v in column(&table, 1) {
+        assert!((v - 2.0).abs() < 1e-9, "{table:?}");
+    }
+}
+
+#[test]
+fn a_timed_set_applies_after_the_step_to_its_time() {
+    // HII-13 AC 2 (§23.1 rule 4): `dc` moves from 1 V to 2 V at 0.5 us; the node `a` is read by
+    // that behavior and keeps 1 V at 0.5 us (the step to it is accepted before the set applies),
+    // and holds 2 V at 1 us
+    let mut s = grid(&["a"]);
+    s.set_at("v1.dc", 2.0, 5e-7).expect("set");
+    let (table, _) = run(&mut s).unwrap_or_else(|f| panic!("{f}"));
+    let a = column(&table, 1);
+    assert_eq!(a.len(), 3, "{table:?}");
+    assert!((a[0] - 1.0).abs() < 1e-9 && (a[1] - 1.0).abs() < 1e-9, "old value up to the set: {a:?}");
+    assert!((a[2] - 2.0).abs() < 1e-6, "new value after it: {a:?}");
+}
+
+#[test]
+fn a_timed_set_of_a_structural_param_is_e0803() {
+    // HII-13 AC 3 (§8.1.2, §23.1 rule 7): the elaborator marks no param structural yet (the
+    // language's generation is outside the M1 subset), so the design's IR is marked here: its `r1.r`
+    // is structural, and a set of it at 0.5 us is refused naming it, while a set of a param that is
+    // not structural is not
+    let s = grid(&["a"]);
+    let marked = serde_json::to_string(s.ir()).expect("serialize").replace("\"structural\":false", "\"structural\":true");
+    let ir: piperine_ir::Ir = serde_json::from_str(&marked).expect("deserialize");
+    let r = ParamPath::resolve(&ir, ir.top().path(), "r1.r").expect("resolves");
+    match r.refuse_timed(&ir).expect_err("structural") {
+        Failure::Host { code: "E0803", message } => assert!(message.contains("Top.r1.r"), "{message}"),
+        other => panic!("E0803, found {other}"),
+    }
+    let plain = ParamPath::resolve(s.ir(), s.ir().top().path(), "r1.r").expect("resolves");
+    plain.refuse_timed(s.ir()).expect("a param the elaborator leaves unmarked is not refused");
+}
+
+#[test]
+fn a_timed_set_failing_where_is_e0802() {
+    // HII-13 AC 5 (§23.1 rule 6): `r > 0.0`: -1 fails it at 0.5 us and is refused naming the
+    // param, with no analysis run; a value that passes is accepted
+    let mut s = grid(&["a"]);
+    match s.set_at("r1.r", -1.0, 5e-7).expect_err("where") {
+        Failure::Host { code: "E0802", message } => assert!(message.contains("Top.r1.r"), "{message}"),
+        other => panic!("E0802, found {other}"),
+    }
+    s.set_at("r1.r", 2000.0, 5e-7).expect("a value that passes the where");
+    assert!(s.circuit().is_some(), "no analysis ran");
+    assert_eq!(code(s.set_at("r1.nothing", 1.0, 5e-7).expect_err("no such param")), "E0801");
 }
