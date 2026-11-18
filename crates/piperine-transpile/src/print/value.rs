@@ -685,7 +685,9 @@ impl<'a> ValuePrinter<'a> {
                     });
                 }
                 printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
-                let call = format!("{}({})", Text::ident(self.ir.function(*function).name()), printed.join(", "));
+                // a generic function called with nothing to fix its `Real` type names it
+                let real = if printed.is_empty() && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
+                let call = format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", "));
                 if !Self::faults(self.ir, *function) {
                     return atom(call);
                 }

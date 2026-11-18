@@ -116,6 +116,16 @@ fn a_literal_potential_source_builds_and_runs() {
 }
 
 #[test]
+fn a_zero_argument_function_builds_and_runs() {
+    // A function called with no argument has nothing to fix its `Real` type: `fn two() -> f64 { 2.0 }`
+    // in `v(a, gnd) +> two();` is 2.0 V (it was a `rustc` E0283), and in a reaction commits 2.0.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("zero-argument function", "v(a)", Coordinate::OperatingPoint), 2.0, literal_source_op("FnBench"));
+    let seen = build(&project("literal_sources.msl"), "FnReactionBench").run(3e-9, 0.5e-9);
+    let last = transient(&seen, "FnReactionBench.lv").pop().expect("a commit").1;
+    assert_eq!(&last[..8], &2.0f64.to_le_bytes(), "{last:?}");
+}
+
+#[test]
 fn a_carrier_driven_current_builds_and_runs() {
     // FIX-04 AC 3: `lv` committed to 2.0 at 1 ns gives 2 mA into 1 kΩ: 2.0 V after 1 ns.
     let built = build(&project("literal_sources.msl"), "CarrierBench");

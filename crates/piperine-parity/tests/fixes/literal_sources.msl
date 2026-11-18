@@ -48,3 +48,24 @@ module CarrierBench() {
     let s = CarrierSource(a, lv);
     let r = Resistor { r: 1k }(a, gnd);
 }
+
+/// A function with no argument: nothing it is called with fixes its `Real` type (F10).
+fn two() -> f64 { 2.0 }
+
+module FnSource(p: Electrical) {}
+analog for FnSource { v(p, gnd) +> two(); }
+
+module FnBench() {
+    signal a: Electrical;
+    let s = FnSource(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+/// The same function in a reaction: 2.0 committed at 1 ns.
+module FnDrive(out lv: Bit<f64> = 0.0) {}
+digital for FnDrive { on at(1n) { lv <- two(); } }
+
+module FnReactionBench() {
+    signal lv: Bit<f64>;
+    let d = FnDrive(lv);
+}
