@@ -384,4 +384,6 @@ Dispatched without asking, up to three lanes at a time (implementation Sonnet, v
 
 **Then, after item 12 closes and before anything else lands code:** `code-clarity` — a refactor for readability and internal structure under the user's seven cleanliness rules (`.specs/features/code-clarity/spec.md`). Its full findings inventory is written first by a Fable reading the whole codebase.
 
-**Then item 13:** `spec-closure` with a Fable verification of spec closure (spec ↔ implementation), and the development of the final gaps (`host-iii`, `host-analyses`, `sweeps-montecarlo-optimization`, `gradients`, `cli-packages`, `conformance`, `multi-rate`, `surrogate-models`, `periodic-small-signal`, `foreign-models`; `python-host` and `lang-server` last). These wait for the user's go.
+**Then item 13:** `spec-closure` with a Fable verification of spec closure (spec ↔ implementation), and the development of the final gaps (`host-iii`, `host-analyses`, `sweeps-montecarlo-optimization`, `gradients`, `cli-packages`, `conformance`, `multi-rate`, `surrogate-models`, `periodic-small-signal`, `foreign-models`; `python-host` and `lang-server` last).
+
+**Item 13 is also dispatched without asking. The automatic run stops after item 13** (user, 2026-11-18: "a gnt para o run automatico e engatilhado pós 13, aí eu vou avaliar o closure, spec, código para levantar nosso backlog de melhorias"): the user then reviews the spec closure, the spec and the code to build the improvement backlog.
