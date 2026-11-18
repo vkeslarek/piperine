@@ -12,6 +12,8 @@
 
 use core::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
+use super::control::Panic;
+
 /// `UInt<N>` (`uN`): `N` bits, unsigned.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UInt<const N: u32>(u64);
@@ -51,7 +53,7 @@ impl<const N: u32> UInt<N> {
     /// `self` limited to `lo..=hi`; panics when `lo > hi`, as Rust's `clamp` does.
     pub fn clamp(self, lo: UInt<N>, hi: UInt<N>) -> UInt<N> {
         if lo.0 > hi.0 {
-            panic!("`clamp` on UInt<{N}> with a lower bound {} above the upper bound {}", lo.0, hi.0);
+            Panic::raise(format!("`clamp` on UInt<{N}> with a lower bound {} above the upper bound {}", lo.0, hi.0));
         }
         self.max(lo).min(hi)
     }
@@ -106,7 +108,7 @@ impl<const N: u32> UInt<N> {
     /// operation.
     pub fn rem_euclid(self, d: UInt<N>) -> UInt<N> {
         if d.0 == 0 {
-            panic!("`rem_euclid` by zero: UInt<{N}> {} rem_euclid 0", self.0);
+            Panic::raise(format!("`rem_euclid` by zero: UInt<{N}> {} rem_euclid 0", self.0));
         }
         UInt::new(self.0 % d.0)
     }
@@ -175,7 +177,7 @@ impl<const N: u32> Int<N> {
     /// `self` limited to `lo..=hi`; panics when `lo > hi`, as Rust's `clamp` does.
     pub fn clamp(self, lo: Int<N>, hi: Int<N>) -> Int<N> {
         if lo.0 > hi.0 {
-            panic!("`clamp` on Int<{N}> with a lower bound {} above the upper bound {}", lo.0, hi.0);
+            Panic::raise(format!("`clamp` on Int<{N}> with a lower bound {} above the upper bound {}", lo.0, hi.0));
         }
         self.max(lo).min(hi)
     }
@@ -219,7 +221,7 @@ impl<const N: u32> Int<N> {
     /// The amount of a shift: a negative one panics naming the operation.
     fn amount(self, op: &str) -> u64 {
         if self.0 < 0 {
-            panic!("a shift by a negative amount: `{op}` by Int<{N}> {}", self.0);
+            Panic::raise(format!("a shift by a negative amount: `{op}` by Int<{N}> {}", self.0));
         }
         self.0 as u64
     }
@@ -242,7 +244,7 @@ impl<const N: u32> Int<N> {
     /// The Euclidean remainder, never negative; a zero `d` panics naming the operation.
     pub fn rem_euclid(self, d: Int<N>) -> Int<N> {
         if d.0 == 0 {
-            panic!("`rem_euclid` by zero: Int<{N}> {} rem_euclid 0", self.0);
+            Panic::raise(format!("`rem_euclid` by zero: Int<{N}> {} rem_euclid 0", self.0));
         }
         Int::new(self.0.wrapping_rem_euclid(d.0))
     }
@@ -289,8 +291,8 @@ impl Unwrap {
             return value;
         }
         match message {
-            Some(message) => panic!("{message}"),
-            None => panic!("called `Option::unwrap()` on a `None` value"),
+            Some(message) => Panic::raise(message.to_string()),
+            None => Panic::raise("called `Option::unwrap()` on a `None` value".to_string()),
         }
     }
 }
@@ -320,7 +322,7 @@ impl<const N: u32> Div for UInt<N> {
     type Output = UInt<N>;
     fn div(self, rhs: UInt<N>) -> UInt<N> {
         if rhs.0 == 0 {
-            panic!("integer division by zero: UInt<{N}> {} / 0", self.0);
+            Panic::raise(format!("integer division by zero: UInt<{N}> {} / 0", self.0));
         }
         UInt::new(self.0 / rhs.0)
     }
@@ -330,7 +332,7 @@ impl<const N: u32> Rem for UInt<N> {
     type Output = UInt<N>;
     fn rem(self, rhs: UInt<N>) -> UInt<N> {
         if rhs.0 == 0 {
-            panic!("integer remainder by zero: UInt<{N}> {} % 0", self.0);
+            Panic::raise(format!("integer remainder by zero: UInt<{N}> {} % 0", self.0));
         }
         UInt::new(self.0 % rhs.0)
     }
@@ -425,7 +427,7 @@ impl<const N: u32> Div for Int<N> {
     /// Truncated toward zero, as Rust's; `MIN / -1` wraps to `MIN`.
     fn div(self, rhs: Int<N>) -> Int<N> {
         if rhs.0 == 0 {
-            panic!("integer division by zero: Int<{N}> {} / 0", self.0);
+            Panic::raise(format!("integer division by zero: Int<{N}> {} / 0", self.0));
         }
         Int::new(self.0.wrapping_div(rhs.0))
     }
@@ -436,7 +438,7 @@ impl<const N: u32> Rem for Int<N> {
     /// The sign of the dividend, as Rust's; `MIN % -1` is 0.
     fn rem(self, rhs: Int<N>) -> Int<N> {
         if rhs.0 == 0 {
-            panic!("integer remainder by zero: Int<{N}> {} % 0", self.0);
+            Panic::raise(format!("integer remainder by zero: Int<{N}> {} % 0", self.0));
         }
         Int::new(self.0.wrapping_rem(rhs.0))
     }
