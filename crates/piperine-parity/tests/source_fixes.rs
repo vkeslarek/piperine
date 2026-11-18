@@ -182,3 +182,27 @@ fn a_cross_with_ttol_fires_within_it() {
     let wanted = 1e3 * 1e-9 * std::f64::consts::LN_2;
     assert!((at - wanted).abs() <= 1e-9, "fired at {at}, wanted {wanted} within 1 ns");
 }
+
+#[test]
+fn above_with_an_emit_writes_one_record_at_its_crossing() {
+    // FIX-13 AC 1: `on above(v(a) - 0.5) { emit!("hit", x = 1); }` on a 1 V/µs ramp to 1 µs writes
+    // exactly one record, within the default `ttol` (1 ps) of 0.5 µs.
+    let times = record_times("fired.msl", "RampBench", 1e-6, 0.05e-6);
+    assert_eq!(times.len(), 1, "one record: {times:?}");
+    assert!((times[0] - 0.5e-6).abs() <= 1e-12, "at {}, wanted 0.5 µs within 1 ps", times[0]);
+}
+
+#[test]
+fn above_true_from_the_start_writes_one_record_at_zero() {
+    // FIX-13 AC 2: the same reaction on `v(a)` = 1 V from the start writes one record, at time 0.
+    let times = record_times("fired.msl", "HeldBench", 1e-7, 0.05e-6);
+    assert_eq!(times, vec![0.0], "one record at 0");
+}
+
+#[test]
+fn two_disjuncts_of_one_microstep_run_the_body_once() {
+    // FIX-13 AC 3: `(init() && v(a) > 0.0) || (init() && v(a) > -1.0)` at 1 V: both disjuncts fire
+    // in the first microstep and the body runs once.
+    let times = record_times("fired.msl", "TwiceBench", 1e-7, 0.05e-6);
+    assert_eq!(times, vec![0.0], "one record");
+}

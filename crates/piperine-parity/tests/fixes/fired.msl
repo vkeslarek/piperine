@@ -1,0 +1,34 @@
+//! A head split per disjunct is one reaction (FIX-13): `above` over a body that emits, and two
+//! disjuncts that fire in one microstep.
+
+/// A node ramping at 1 V per microsecond.
+module Ramp(p: Electrical) {}
+analog for Ramp { v(p, gnd) +> now() * 1.0e6; }
+
+/// A node held at 1 V.
+module Held(p: Electrical) {}
+analog for Held { v(p, gnd) +> 1.0; }
+
+module Hits(a: Electrical) {}
+digital for Hits { on above(v(a) - 0.5) { emit!("hit", x = 1); } }
+
+module Twice(a: Electrical) {}
+digital for Twice { on (init() && v(a) > 0.0) || (init() && v(a) > -1.0) { emit!("hit", x = 1); } }
+
+module RampBench() {
+    signal a: Electrical;
+    let r = Ramp(a);
+    let h = Hits(a);
+}
+
+module HeldBench() {
+    signal a: Electrical;
+    let r = Held(a);
+    let h = Hits(a);
+}
+
+module TwiceBench() {
+    signal a: Electrical;
+    let r = Held(a);
+    let h = Twice(a);
+}

@@ -634,7 +634,8 @@ impl<'a> ValuePrinter<'a> {
             },
             Expr::Env(Env::Freq | Env::Analysis(_)) => Err(self.unsupported(e, "a read of `freq()` or `analysis(..)` (the printer writes it with T36)")),
             Expr::Env(env) => atom(self.read(Self::env_name(*env))),
-            Expr::Fired(_) => Err(self.unsupported(e, "`fired` (the printer writes it with T28)")),
+            // the event pin's `CHANGED` byte of this microstep, bound as a `bool` (abi.md §4.1)
+            Expr::Fired(k) => atom(self.read(&Text::generated(&format!("event{k}_fired")))),
             Expr::Unwrap { is, value, message } => {
                 let message = message.as_ref().map_or_else(|| "None".to_string(), |m| format!("Some({m:?})"));
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
