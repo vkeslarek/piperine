@@ -933,9 +933,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_rewind_equals_the_checkpoint_taken_at_the_mark` (random commit and instant sequences, compared with a `checkpoint()` taken at the mark), `nested_marks_rewind_in_order` and `a_mark_journals_only_the_nets_that_changed` (1 of 1 000 nets changed: one entry) pass under `**Run digital**`
-- [ ] `cargo test -p piperine-digital-solver` passes
-- [ ] Gate check passes: Full
+- [x] `a_rewind_equals_the_checkpoint_taken_at_the_mark` (random commit and instant sequences, compared with a `checkpoint()` taken at the mark), `nested_marks_rewind_in_order` and `a_mark_journals_only_the_nets_that_changed` (1 of 1 000 nets changed: one entry) pass under `**Run digital**`
+- [x] `cargo test -p piperine-digital-solver` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

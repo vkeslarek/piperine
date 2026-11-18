@@ -7,9 +7,9 @@ use crate::observe::{Obs, Observation};
 use piperine_abi::raw::pin_flag;
 
 use crate::plan::{Binding, DigitalPlan, NetWriter};
-use crate::queue::{Pending, Queue, Writer};
+use crate::queue::{Pending, Queue, QueueMark, Writer};
 use crate::run::{Ambient, DirtySet, run_cone, write_net};
-use crate::store::Store;
+use crate::store::{Store, StoreMark};
 use crate::tick::Tick;
 use crate::error::DigitalError;
 use crate::limits::DigitalLimits;
@@ -76,6 +76,21 @@ pub struct Outcome {
 pub struct Checkpoint {
     store: Store,
     queue: Queue,
+    dirty: DirtySet,
+    observed: usize,
+    now: Tick,
+    call: u32,
+    running: bool,
+    suspended: Option<(Tick, u32)>,
+}
+
+/// A place of the engine to rewind to without a copy of its state (HYG-14): the journal
+/// positions of the store and the queue, and the small bookkeeping. Taking one opens a journal
+/// that `Digital::release` closes; marks nest and are released newest first.
+#[derive(Clone, Debug)]
+pub struct Mark {
+    store: StoreMark,
+    queue: QueueMark,
     dirty: DirtySet,
     observed: usize,
     now: Tick,
@@ -266,6 +281,46 @@ impl Digital {
             running: self.running,
             suspended: self.suspended,
         }
+    }
+
+    /// A mark to `rewind` to: the store and the queue journal what changes from here, so no net
+    /// is copied. Release it with `release` once it is no longer needed.
+    pub fn mark(&mut self) -> Mark {
+        Mark {
+            store: self.store.mark(),
+            queue: self.queue.mark(),
+            dirty: self.dirty.clone(),
+            observed: self.obs.mark(),
+            now: self.now,
+            call: self.call,
+            running: self.running,
+            suspended: self.suspended,
+        }
+    }
+
+    /// Puts the engine back as `mark` found it, as `restore` does a checkpoint: store, queue and
+    /// observations equal, byte for byte, and no device called. The mark stays open.
+    pub fn rewind(&mut self, mark: &Mark) {
+        self.store.rewind(&mark.store);
+        self.queue.rewind(&mark.queue);
+        self.dirty = mark.dirty.clone();
+        self.obs.truncate(mark.observed);
+        self.now = mark.now;
+        self.call = mark.call;
+        self.running = mark.running;
+        self.suspended = mark.suspended;
+    }
+
+    /// Ends the newest open mark; the journals empty with the outermost.
+    pub fn release(&mut self, mark: Mark) {
+        self.store.release(mark.store);
+        self.queue.release(mark.queue);
+    }
+
+    /// The number of nets a `rewind` would put back: those written since the oldest open mark
+    /// (a diagnostic).
+    pub fn journaled_nets(&self) -> usize {
+        self.store.journal_len()
     }
 
     /// Puts the engine back as `cp` found it: store, queue and observations equal, byte for byte,

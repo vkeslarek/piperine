@@ -10,7 +10,7 @@ mod devices;
 
 use devices::*;
 use piperine_digital_solver::engine::{Digital, Horizon, Mode, Outcome};
-use piperine_digital_solver::net::NetId;
+use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::observe::Observation;
 use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::limits::DigitalLimits;
@@ -158,4 +158,107 @@ fn observations_after_a_checkpoint_are_gone_after_restore() {
     assert!(!drained.is_empty());
     d.restore(&cp);
     assert!(d.observations().is_empty(), "nothing is left to un-say beyond what was drained");
+}
+
+// ---- the journal (HYG-14) ---------------------------------------------------------------
+
+use piperine_abi::layout::{HIGH, LOW};
+
+/// A deterministic stream of small numbers (no dependency on a random crate).
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self, below: u64) -> u64 {
+        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (self.0 >> 33) % below
+    }
+}
+
+/// One random step: a host commit on a bit net a few ns ahead, or the next due instant.
+fn random_step(d: &mut Digital, rng: &mut Lcg) {
+    if rng.next(3) == 0 {
+        let net = net(d, ["q2", "dn"][rng.next(2) as usize]);
+        let value = if rng.next(2) == 0 { HIGH } else { LOW };
+        let at = Tick(d.next_due().map_or(0, |t| t.0) + rng.next(40) as i64 * NS / 4);
+        d.host_commit(net, 0, &value, at).unwrap();
+    } else if let Some(t) = d.next_due() {
+        instant(d, t);
+    }
+}
+
+#[test]
+fn a_rewind_equals_the_checkpoint_taken_at_the_mark() {
+    // HYG-14 AC 4: random commit and instant sequences, each rewound to a mark and compared with
+    // the checkpoint taken at it (store, queue, observations, bookkeeping), no device called.
+    let mut d = divider(&[0, 1, 2, 3, 4]);
+    d.start().unwrap();
+    let mut rng = Lcg(7);
+    let mut moved = 0;
+    for _ in 0..60 {
+        let cp = d.checkpoint();
+        let observed = d.observations().to_vec();
+        let mark = d.mark();
+        for _ in 0..1 + rng.next(6) {
+            random_step(&mut d, &mut rng);
+        }
+        moved += usize::from(d.checkpoint() != cp);
+        reset_calls();
+        d.rewind(&mark);
+        for device in ["timer", "dff", "inverter", "counter"] {
+            assert_eq!(calls(device), (0, 0), "rewind called {device}");
+        }
+        assert_eq!(d.checkpoint(), cp, "the rewound engine equals the checkpoint at the mark");
+        assert_eq!(d.observations(), observed.as_slice(), "and so are the observations");
+        d.release(mark);
+        assert_eq!(d.journaled_nets(), 0, "the release empties the journal");
+        // move the base on, so the next trial starts somewhere else
+        random_step(&mut d, &mut rng);
+    }
+    assert!(moved > 40, "the random steps moved the engine ({moved} of 60)");
+}
+
+#[test]
+fn nested_marks_rewind_in_order() {
+    let mut d = divider(&[0, 1, 2, 3, 4]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    let outer_cp = d.checkpoint();
+    let outer = d.mark();
+    instant(&mut d, Tick(10 * NS));
+    let inner_cp = d.checkpoint();
+    let inner = d.mark();
+    instant(&mut d, Tick(20 * NS));
+    instant(&mut d, Tick(30 * NS));
+    assert_ne!(d.checkpoint(), inner_cp);
+    d.rewind(&inner);
+    assert_eq!(d.checkpoint(), inner_cp, "the inner rewind stops at the inner mark");
+    d.release(inner);
+    d.rewind(&outer);
+    assert_eq!(d.checkpoint(), outer_cp, "the outer rewind goes on to the outer mark");
+    d.release(outer);
+    // and the run from there is the run it was
+    let mut fresh = divider(&[0, 1, 2, 3, 4]);
+    fresh.start().unwrap();
+    instant(&mut fresh, Tick(0));
+    instant(&mut d, Tick(10 * NS));
+    instant(&mut fresh, Tick(10 * NS));
+    assert_eq!(d.observations(), fresh.observations());
+}
+
+#[test]
+fn a_mark_journals_only_the_nets_that_changed() {
+    // HYG-14 AC 5: 1 of 1 000 nets changes between the mark and the rewind: one entry.
+    let nets: Vec<NetSpec> = (0..1000).map(|i| NetSpec::discrete(&format!("n{i}"), 2, 1)).collect();
+    let plan = piperine_digital_solver::plan::DigitalPlan::bind(nets, vec![], Resolution::default()).unwrap();
+    let mut d = Digital::new(plan, DigitalLimits::default());
+    d.start().unwrap();
+    let mark = d.mark();
+    d.host_commit(NetId(417), 0, &HIGH, Tick(7)).unwrap();
+    instant(&mut d, Tick(7));
+    assert_eq!(d.read(NetId(417)), HIGH);
+    assert_eq!(d.journaled_nets(), 1, "one net changed: one entry, not a thousand");
+    d.rewind(&mark);
+    assert_eq!(d.read(NetId(417)), [0, 0]);
+    assert_eq!(d.next_due(), None);
+    d.release(mark);
 }
