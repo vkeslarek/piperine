@@ -1116,7 +1116,7 @@ Proof: run verdict | test verdict::tests::a_maybe_fatal_is_not_fatal ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:**
+**Dispatched:** B1 (phases 1-3, T1-T8) - Sonnet worker, 2026-11-18.
 **Walked:** none (no screen)
 
 ---
