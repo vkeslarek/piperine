@@ -401,7 +401,13 @@ impl Ctx<'_> {
                 let (found, visible) = self.ns_item(owner, name, prefer, Some(from), visiting)?;
                 Some((Resolution::Decl(found), visible))
             }
-            DeclKind::Enum(_) => self.variant(owner, name).or_else(|| self.associated(owner, name)).map(|v| (Resolution::Decl(v), true)),
+            // `Mode::WIDTH` reads a member of `Repr` through the enum (§2); a variant or an item of
+            // the enum's own named alike wins, and the checker refuses an enum without `Repr`.
+            DeclKind::Enum(_) => self
+                .variant(owner, name)
+                .or_else(|| self.associated(owner, name))
+                .map(|v| (Resolution::Decl(v), true))
+                .or_else(|| builtin_member("Repr", name).map(|member| (Resolution::Builtin(member), true))),
             // `Self::NAME` in a trait: its own items, then each supertrait in the order written.
             DeclKind::Trait(t) => match self.associated(owner, name) {
                 Some(item) => Some((Resolution::Decl(item), true)),

@@ -542,11 +542,21 @@ impl Checker<'_> {
                 self.report(file, Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
                 None
             }
-            Resolution::Builtin(id) => {
-                self.unsupported(file, node.span, &format!("built-in `{}`", id.name()));
-                None
-            }
-            Resolution::Unresolved | Resolution::Deferred(_) => {
+            Resolution::Builtin(id) => match self.width_read(expr) {
+                Some(width) => Some(width),
+                None => {
+                    self.unsupported(file, node.span, &format!("built-in `{}`", id.name()));
+                    None
+                }
+            },
+            Resolution::Deferred(_) => match self.width_read(expr) {
+                Some(width) => Some(width),
+                None => {
+                    self.unsupported(file, node.span, "an unresolved name");
+                    None
+                }
+            },
+            Resolution::Unresolved => {
                 self.unsupported(file, node.span, "an unresolved name");
                 None
             }

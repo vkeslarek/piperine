@@ -208,8 +208,8 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `level_is_typed_on_every_repr_type` (bool, `u8`, `i4`, `f64`, a unit enum; a receiver without `Repr` refused) and `width_is_typed_u32_on_a_concrete_type` pass under `**Run typesunknowns**`
-- [ ] Gate check passes: Quick
+- [x] `level_is_typed_on_every_repr_type` (bool, `u8`, `i4`, `f64`, a unit enum; a receiver without `Repr` refused) and `width_is_typed_u32_on_a_concrete_type` pass under `**Run typesunknowns**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

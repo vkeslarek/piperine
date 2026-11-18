@@ -150,6 +150,11 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, span, "`known()`, an `Option`,");
                 None
             }
+            // Typed by the checker (T2); its lowering to a level pair is T27.
+            Builtin::Level => {
+                self.unsupported(scope.file, span, "method `level`");
+                None
+            }
             Builtin::Prev => {
                 let carrier = self.carrier_of(scope, recv)?;
                 Some(self.previous(carrier, origin))

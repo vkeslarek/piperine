@@ -140,7 +140,8 @@ const STD_ROWS: &[Row] = &[
     Row { construct: "element definition", source: "module Top(out q: Bit) { q[0] = true; }", names: "element or field definition" },
     Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },
-    Row { construct: "known flag", source: "module Top() { }\nanalog for Top { let x = 1.0.level(1.0); }", names: "method `level`" },
+    // `level` itself is typed since `unknown-semantics` T2 (US-02); a receiver without `Repr` is still refused by name.
+    Row { construct: "known flag", source: "module Top() { }\nanalog for Top { let x = Some(1.0).level(1); }", names: "method `level`" },
 ];
 
 #[test]

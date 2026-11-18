@@ -18,6 +18,7 @@ pub(super) fn flag_builtin(name: &str) -> Option<Builtin> {
         "known" => Some(Builtin::Known),
         "known_or" => Some(Builtin::KnownOr),
         "is_known" => Some(Builtin::IsKnown),
+        "level" => Some(Builtin::Level),
         "high" => Some(Builtin::High),
         _ => None,
     }
@@ -209,6 +210,8 @@ impl Checker<'_> {
             Builtin::Known => (vec![], Ty::Option(Box::new(recv_ty.clone()))),
             Builtin::KnownOr => (vec![recv_ty.clone()], recv_ty.clone()),
             Builtin::IsKnown | Builtin::High => (vec![], Ty::Bool),
+            // §22.1: level `k` of the value, `k: u32`; known when `k` is (§3.3.14).
+            Builtin::Level => (vec![Ty::UInt(32)], Ty::Option(Box::new(Ty::Bool))),
             Builtin::Changed | Builtin::Prev | Builtin::Rise | Builtin::Fall => return None,
         };
         if self.apply(expr, &params, args).is_none() {
@@ -216,6 +219,34 @@ impl Checker<'_> {
         }
         self.builtins.insert(expr, builtin);
         Some(Some(result))
+    }
+
+    /// `T::WIDTH` written with a concrete `Repr` type `T` as its first segment: the level count
+    /// of `T`, a const `u32` (§2, US-02 AC 3). `None` when `expr` is not such a path, so the caller
+    /// reports it as it reports any other built-in name.
+    pub(super) fn width_read(&mut self, expr: ExprId) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let ExprKind::Path(path) = &node.kind else { return None };
+        let segments = self.design.path_node(*path).segments.clone();
+        let [owner, member] = segments.as_slice() else { return None };
+        if member.name.text != "WIDTH" || !matches!(member.res, Resolution::Deferred(_) | Resolution::Builtin(_)) {
+            return None;
+        }
+        let file = self.file_of_expr(expr);
+        let owner_type = match owner.res {
+            Resolution::Builtin(id) => match (id.info().name, id.width()) {
+                ("fN", Some(64)) => Ty::F64,
+                ("bool", _) => Ty::Bool,
+                ("uN", Some(w)) => self.integer_type(file, node.span, Ty::UInt, u128::from(w), &id.name())?,
+                ("iN", Some(w)) => self.integer_type(file, node.span, Ty::Int, u128::from(w), &id.name())?,
+                ("usize", _) => Ty::UInt(64),
+                ("isize", _) => Ty::Int(64),
+                _ => return None,
+            },
+            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, node.span)?,
+            _ => return None,
+        };
+        owner_type.has_repr().then_some(Ty::UInt(32))
     }
 
     /// `c.prev()` on a discrete carrier: the value before its most recent change, of the

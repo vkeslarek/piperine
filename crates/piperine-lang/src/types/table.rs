@@ -97,6 +97,8 @@ pub enum Builtin {
     KnownOr,
     /// `x.is_known() -> bool`.
     IsKnown,
+    /// `x.level(k) -> Option<bool>`: level `k` of `x`, `None` when that level is unknown (§22.1).
+    Level,
     /// `c.high() -> bool` on a `Bit`.
     High,
     /// `c.changed() -> Event`.
