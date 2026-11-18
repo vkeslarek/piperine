@@ -8,7 +8,8 @@
 mod devices;
 
 use devices::*;
-use piperine_abi::layout::{HIGH, LOW};
+use piperine_abi::layout::{BIT, HIGH, LOW};
+use piperine_abi::raw::commit_flag;
 use piperine_digital_solver::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::observe::Observation;
@@ -414,4 +415,124 @@ fn previous_is_the_value_before_the_microstep() {
     assert_eq!(f(&d, "p"), 1.0, "PREVIOUS is the value before the microstep");
     let seen = d.drain_observations();
     assert_eq!(changes(&seen, "x", t, 0), vec![3.0f64.to_le_bytes().to_vec()], "one change, to 3.0: {seen:?}");
+}
+
+/// Commits when `go` fires: statement `i` does `out <- value` one microstep later, as a plain
+/// `commit` when its flags are 0 and as `commit_with` otherwise. One device, so the commits are
+/// the statements of one reaction (a net has one writer, P1) and C2 orders them by statement.
+/// pins: go=0 (PORT event); out=1 (PORT BIT)   reaction 0: on [go] writes [S0 {out}, S1 {out}, ..]
+struct Driver {
+    commits: Vec<(Vec<u8>, u32)>,
+    shape: piperine_abi::shape::ShapeRef,
+}
+
+impl Driver {
+    /// A driver of `commits` to a `BIT`, leaked so its module can borrow it.
+    fn handle(commits: &[([u8; 2], u32)]) -> piperine_abi::caller::Handle {
+        let commits: Vec<(Vec<u8>, u32)> = commits.iter().map(|(value, flags)| (value.to_vec(), *flags)).collect();
+        Driver::on(&BIT, commits)
+    }
+
+    /// A driver of `commits` to a pin of `layout`.
+    fn on(layout: &'static piperine_abi::raw::Layout<'static>, commits: Vec<(Vec<u8>, u32)>) -> piperine_abi::caller::Handle {
+        use piperine_abi::raw::{Statement, role};
+        use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf};
+        let mut shape = ShapeBuf::new();
+        let go = shape.pin(PinSpec::event("go", role::PORT));
+        let out = shape.pin(PinSpec::discrete("out", role::PORT, layout));
+        shape.reaction(ReactionSpec {
+            name: "drive",
+            on: vec![go],
+            writes: commits.iter().map(|(value, _)| Statement { pin: out, offset: 0, len: value.len() as u32, flags: 0, min_after: 0.0 }).collect(),
+            ..ReactionSpec::default()
+        });
+        let driver: &'static Driver = Box::leak(Box::new(Driver { commits, shape: shape.freeze() }));
+        let module: &'static piperine_abi::raw::Module = Box::leak(Box::new(piperine_abi::thunk::module_with("Driver", driver)));
+        piperine_abi::caller::Handle::create(module, &[]).expect("creates")
+    }
+}
+
+impl piperine_abi::device::Factory for Driver {
+    type Instance = Vec<(Vec<u8>, u32)>;
+    fn prototype(&self) -> &piperine_abi::raw::Shape<'_> {
+        self.shape.shape()
+    }
+    fn create(&self, _: &piperine_abi::device::Values<'_>) -> Result<(Self::Instance, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
+        Ok((self.commits.clone(), std::sync::Arc::clone(&self.shape)))
+    }
+    fn eval(_: &Self::Instance, _: u32, _: &mut piperine_abi::device::Eval<'_>) -> Result<(), piperine_abi::device::Fault> {
+        Ok(())
+    }
+    fn react(commits: &Self::Instance, _: u32, cx: &mut piperine_abi::device::React<'_>) -> Result<piperine_abi::device::Flow, piperine_abi::device::Fault> {
+        for (statement, (value, flags)) in commits.iter().enumerate() {
+            if *flags == 0 {
+                cx.commit(statement as u32, value, 0.0)?;
+            } else {
+                cx.commit_with(statement as u32, value, 0.0, *flags)?;
+            }
+        }
+        Ok(piperine_abi::device::Flow::Continue)
+    }
+}
+
+const UNKNOWN_BIT: [u8; 2] = [0, 0];
+const MAYBE_MERGE: u32 = commit_flag::MAYBE | commit_flag::MERGE;
+
+/// The value of net `q` after one reaction made `commits` (value, flags) to it, in statement
+/// order, in one microstep, when `q` held `held` before; and what the run observed.
+fn driven(held: [u8; 2], commits: &[([u8; 2], u32)]) -> (Vec<u8>, Vec<Observation>) {
+    let mut d = engine(vec![("d", Driver::handle(commits), vec![("go", "go"), ("out", "q")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    d.host_commit(net(&d, "q"), 0, &held, Tick(NS)).unwrap();
+    instant(&mut d, Tick(NS));
+    d.drain_observations();
+    let t = Tick(2 * NS);
+    d.host_commit(net(&d, "go"), 0, &[], t).unwrap();
+    instant(&mut d, t);
+    (d.read(net(&d, "q")).to_vec(), d.drain_observations())
+}
+
+#[test]
+fn a_merge_commit_merges_with_the_value_then() {
+    // abi.md C7 (part I §3.3.3): a MERGE commit applies as the level-wise merge of its value with
+    // the value the net holds at that point of the C2 order.
+    // alone: q holds HIGH; LOW merged with it differs: unknown; HIGH equals it: HIGH, known
+    assert_eq!(driven(HIGH, &[(LOW, MAYBE_MERGE)]).0, UNKNOWN_BIT);
+    assert_eq!(driven(HIGH, &[(HIGH, MAYBE_MERGE)]).0, HIGH);
+    // q holds unknown: merging with anything is unknown
+    assert_eq!(driven(UNKNOWN_BIT, &[(HIGH, MAYBE_MERGE)]).0, UNKNOWN_BIT);
+    // a plain commit before it in C2 order (statement 0) is merged with: LOW, then HIGH merged with it
+    assert_eq!(driven(HIGH, &[(LOW, 0), (HIGH, MAYBE_MERGE)]).0, UNKNOWN_BIT, "the value then is LOW, the earlier plain commit");
+    // one after it wins: the merge (unknown) is overwritten by the later plain LOW
+    assert_eq!(driven(HIGH, &[(HIGH, MAYBE_MERGE), (LOW, 0)]).0, LOW, "the later plain commit wins");
+}
+
+#[test]
+fn a_merge_commit_equal_to_the_value_fires_no_change() {
+    // Edge case 6: a merged commit equal to the net's value, levels and flags, is no change
+    // (§8.2.3), so `changed()` stays false and no change is observed.
+    let (value, seen) = driven(HIGH, &[(HIGH, MAYBE_MERGE)]);
+    assert_eq!(value, HIGH);
+    assert!(changes(&seen, "q", Tick(2 * NS), 1).is_empty(), "no change observed: {seen:?}");
+    // a merge that does differ is one change, to unknown
+    let (value, seen) = driven(HIGH, &[(LOW, MAYBE_MERGE)]);
+    assert_eq!(value, UNKNOWN_BIT);
+    assert_eq!(changes(&seen, "q", Tick(2 * NS), 1), vec![UNKNOWN_BIT.to_vec()], "{seen:?}");
+}
+
+#[test]
+fn a_merge_commit_the_layout_cannot_merge_is_a_run_error_naming_the_net() {
+    // abi.md C7: a MERGE commit to a field with no known byte (here an `F64`) is refused; the run
+    // stops with an error naming the net and the writer, never a silent plain commit.
+    let handle = Driver::on(&piperine_abi::layout::F64, vec![(1.0f64.to_le_bytes().to_vec(), MAYBE_MERGE)]);
+    let mut d = engine(vec![("d", handle, vec![("go", "go"), ("out", "q")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    let t = Tick(NS);
+    d.host_commit(net(&d, "go"), 0, &[], t).unwrap();
+    let err = d.run_instant(t, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect_err("a merge the layout refuses");
+    let text = err.to_string();
+    assert!(matches!(err, DigitalError::Merge { .. }), "{err:?}");
+    assert!(text.contains("`q`") && text.contains("`d`") && text.contains("no known byte"), "{text}");
 }

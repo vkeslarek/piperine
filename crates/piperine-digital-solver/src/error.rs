@@ -3,6 +3,8 @@
 
 use std::fmt;
 
+use piperine_abi::layout::MergeError;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DigitalError {
     /// More delta cycles than the cap at one evaluation time.
@@ -25,6 +27,9 @@ pub enum DigitalError {
     Unsupported { what: &'static str },
     /// A host write the engine refuses; nothing changed.
     HostWrite { net: String, reason: &'static str },
+    /// A `MERGE` commit (abi.md C7) the net's layout cannot merge: a field with no known byte, a
+    /// defect of a hand-written device (generated code never commits one).
+    Merge { net: String, writer: String, error: MergeError },
 }
 
 impl fmt::Display for DigitalError {
@@ -53,6 +58,9 @@ impl fmt::Display for DigitalError {
             DigitalError::Bind { rule, what } => write!(f, "bind rule {rule} broken: {}", what.join("; ")),
             DigitalError::Unsupported { what } => write!(f, "unsupported: {what}"),
             DigitalError::HostWrite { net, reason } => write!(f, "host write to net `{net}` refused: {reason}"),
+            DigitalError::Merge { net, writer, error } => {
+                write!(f, "commit of `{writer}` to net `{net}` made under unknown control cannot be merged: {error}")
+            }
         }
     }
 }
