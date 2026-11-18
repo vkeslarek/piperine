@@ -10,7 +10,7 @@ The root package gets its integrated tests, and the ngspice twins get one home. 
 
 **The code follows the spec** (user, 2026-11-18: "O código que diverge da spec tem que ser ajustado"). Where the binary or the library disagrees with the Book or the spec, the code is fixed in this feature (Phase 9), never the Book; see "Divergences".
 
-Starts on `main` with `host-ii` merged (it adds five twins, the Book's new listings and the root target `tests/host_ii.rs`). T1 confirms that state and stops when it does not hold.
+Starts on `main` with `host-ii` merged (it adds five twins, and `solver-hygiene` four more: sixteen twins in all; the Book's new listings and the root target `tests/host_ii.rs`). T1 confirms that state and stops when it does not hold.
 
 ---
 
@@ -62,7 +62,7 @@ flowchart LR
 | Question | Options | Chosen |
 | -------- | ------- | ------ |
 | How the root reaches the binary | (a) run the CLI's library in process (`Cli::execute`); (b) spawn `target/<profile>/piperine` found from the test's own path; (c) root tests through `piperine::`, the binary's own output held where cargo builds it | **(c)**. (a) reads the process environment (`PIPERINE_CACHE_DIR`, `PIPERINE_BACKEND`, the working directory), which a test may not set; it would write into the user's cache. (b) cargo hands `CARGO_BIN_EXE_piperine` only to `piperine-cli`'s own targets; from the root a stale binary would be tested silently. The spec allows "through `piperine-api` or the binary" (Goal 1, RE-02 AC 1, RE-05 AC 1): every model and claim runs through `piperine::` at the root; the listings stay held to the real binary by `piperine-cli/tests/book.rs` (Q1 (a) says so), and a claim only the binary can make (an exit code, the layout of a line) names a `piperine-cli` test in the inventory. The root's scenarios parse their command with the binary's own parser, `Cli::parse`. |
-| Where a twin lives | (a) one directory per twin; (b) one scenario directory for the twins that share `devices.msl` | **(b) `tests/e2e/twins/`**. Every twin starts `mod devices;`, which MSL resolves beside the file (MD-55, no `#[path]`). (a) needs twelve copies of the library, a link (refused by Q3) or turning each twin into a package, which edits the twins and every reader of them. The spec names `tests/e2e/<scenario>/` holding `<name>.msl`, `<name>.cir` and the output: (b) is that layout. RE-05 AC 3 ("a directory of its own") is about the run: each scenario builds into its own directory. |
+| Where a twin lives | (a) one directory per twin; (b) one scenario directory for the twins that share `devices.msl` | **(b) `tests/e2e/twins/`**. Every twin starts `mod devices;`, which MSL resolves beside the file (MD-55, no `#[path]`). (a) needs sixteen copies of the library, a link (refused by Q3) or turning each twin into a package, which edits the twins and every reader of them. The spec names `tests/e2e/<scenario>/` holding `<name>.msl`, `<name>.cir` and the output: (b) is that layout. RE-05 AC 3 ("a directory of its own") is about the run: each scenario builds into its own directory. |
 | The inventory's form | (a) TOML read with serde; (b) a Rust table; (c) tab-separated text read with `split` | **(c)**. serde's derive is a macro (AGENTS rule 5). A Rust table of ~600 struct literals reads worse than one line per row, and a guard's failure can print the missing rows ready to paste. |
 | How a block is named | (a) its index among `msl` blocks; (b) `<chapter>#<n>` over every `<pre>` block of the chapter, with a fingerprint | **(b)**. The spec asks for chapter and index; the fingerprint (FNV-1a 64 of the decoded text) makes a changed or shifted block fail by name. |
 
@@ -205,7 +205,7 @@ Tab-separated, one row per line, `#` starts a comment. Columns:
 | `gap` | the `GAPS.md` id for `refused`, `unraised`, `diverges`, `disputed`; else `-` | the same |
 | `text` | the listing's command, else `-` | the sentence |
 
-Sizes at `99d05af2` (before `host-ii`'s Book edits; T1 recounts): 199 blocks (97 `msl`, 29 listings, 2 `diag`, 71 `sh`/`text`/`toml`/`rust`), 18 chapters; the planner's detector flags about 400 sentences (163 with a code, 82 with a number and unit, 161 with an outcome verb), of which some 150 to 250 are expected to be claims.
+Sizes at `99d05af2` (before `host-ii`'s Book edits; T1 recounted at `1a3d69dc`: 221 `<pre>` blocks, 214 with `data-lang` (99 `msl`, 2 `diag`, 113 `sh`/`text`/`toml`/`rust`), 35 listings (`data-cli-output`), 18 chapters; the sentence count is T14's): 199 blocks (97 `msl`, 29 listings, 2 `diag`, 71 `sh`/`text`/`toml`/`rust`), 18 chapters; the planner's detector flags about 400 sentences (163 with a code, 82 with a number and unit, 161 with an outcome verb), of which some 150 to 250 are expected to be claims.
 
 ### `GAPS.md` §11
 
@@ -276,7 +276,7 @@ Areas of Phase 9: diagnostics (T35), values and records (T36), analog (T37), dig
 | ---- | --------- | --------------------------- |
 | root `Cargo.toml` | dev-dependencies for `tests/host_ii.rs` (HII-24, T39) | adds its dev-dependencies and `[[test]]` entries beside them |
 | root `tests/` | `tests/host_ii.rs` | `tests/scenarios.rs`, `tests/book/`, `tests/e2e/`; the walker and `workspace_shape` admit all three |
-| `tests/ngspice/` | five twins (`tf_divider`, `pz_lowpass`, `sens_divider`, `pss_rc`, `temp_res`), `parity_corpus` count 12 | moves all twelve |
+| `tests/ngspice/` | sixteen twins: the original seven, `solver-hygiene`'s `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` and `host-ii`'s `tf_divider`, `pz_lowpass`, `sens_divider`, `pss_rc`, `temp_res`; `parity_corpus` count 16 | moves all sixteen |
 | `crates/piperine-parity/src/contract.rs` | `TF_RATIO`, `PZ_ROOT`, `SENSITIVITY` | reads them; never edits |
 | `docs/book/content.html` | T40: the command line chapter, `Blinky`, `AdderTop`, `Count` | read only; the inventory is generated from the merged Book |
 | `crates/piperine-cli/tests/{book,docs}.rs` | three Book tests, record tests | adds binary-claim tests and two record tests |

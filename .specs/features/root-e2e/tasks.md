@@ -26,7 +26,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 Executors: every task is Sonnet (user rule). A different model verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch src/lib.rs` (and `crates/<crate>/src/lib.rs` of a crate the task edits) before a gate so cargo rebuilds this tree's sources.
 
-**Starts after `host-ii` merges.** The branch is rebased onto `main` holding `host-ii` (queue item 2) before T1; T1 stops when `tests/ngspice/` does not hold the five `host-ii` twins or the Book does not hold `host-ii`'s listings.
+**Starts after `host-ii` merges.** The branch is rebased onto `main` holding `host-ii` (queue item 2) before T1; T1 stops when `tests/ngspice/` does not hold the sixteen twins (the nine of `host-ii` and `solver-hygiene` included) or the Book does not hold `host-ii`'s listings.
 
 **Questions answered** (user, 2026-11-17: "Aceito todas (Recommended)"): a claim is every block, listing and stated value or outcome (Q1 (a)); the tests live in root `tests/book/`, one target per chapter (Q2 (a)); `tests/ngspice/` moves once to `tests/e2e/<scenario>/`, no link (Q3 (a)).
 
@@ -35,7 +35,7 @@ Rules every task follows:
 - **Parity is top priority and untouched.** `crates/piperine-parity/src/contract.rs` is not edited; no tolerance is retuned or written outside it; the `parity_*` comparison targets are not edited (only `parity_grid.rs`'s path literal and the guard `parity_corpus.rs` change, in T3 to T5). A twin's `.cir` and `.stdout` move byte for byte. A miss is reported to the orchestrator, never a moved bound.
 - **The code follows the spec** (user, 2026-11-18: "O código que diverge da spec tem que ser ajustado"). Where the binary or the library disagrees with the Book or the spec, the code is fixed; the Book does not move. A divergence has one of three causes (design "Divergences"): (1) an implemented construct gives another output, number, message, code, name or exit code: a `diverges` row while the chapters are written, fixed by Phase 9 and then `holds`; (2) a construct not implemented, refused by name, owned by an approved feature: a `refused` row naming its owner in §11, not a divergence; (3) an error code the spec names that no source raises: an `unraised` row naming `params-and-io` (PI-13) or the feature of `GAPS.md` §10, listed, not fixed here. A sentence where the spec itself looks wrong is `disputed`, listed in `divergences.md` for the user; no task decides it. The Book changes only by the user's answer to a `disputed` row.
 - **Tests state what the Book says, not what the code does.** A `holds` test asserts the value the sentence states (at the precision it prints, through `PrintedNumber` where it prints a number); a `refused`, `unraised`, `disputed` or (until Phase 9 fixes it) `diverges` test asserts today's exact code and message and fails when that changes; Phase 9 rewrites each `diverges` test to assert the Book's value, the only planned edit of a test's expectation in this feature. Every test opens with a comment citing its inventory ids and, for a claim, the sentence. Test functions have exactly the names `## Checks` cites.
-- **Existing tests that change, and only these:** `piperine-cli/tests/twins.rs` (T2: twelve twins; T3: paths; T5: commands read from the scenario), `parity_corpus.rs` (T3 paths, T4 and T5 the e2e layout), `workspace_shape.rs::root_tests_hold_no_end_to_end_target` (T3 the `.cir` count, T7 the declared root targets), the path literals of the readers T3 lists, `suite_hygiene.rs`'s walker and `ROOT_TARGET_EXEMPTIONS` (T11, T12, T14), and an existing test that asserted a divergent output a Phase 9 fix corrects (named in the fix's commit body, its new expectation cited from the Book or the spec). No test is removed, weakened or skipped, but the `SETTLED_CHAPTERS` registry tests T41 replaces with stricter ones (MD-28 rule 3).
+- **Existing tests that change, and only these:** `piperine-cli/tests/twins.rs` (T2: sixteen twins; T3: paths; T5: commands read from the scenario), `parity_corpus.rs` (T3 paths, T4 and T5 the e2e layout), `workspace_shape.rs::root_tests_hold_no_end_to_end_target` (T3 the `.cir` count, T7 the declared root targets), the path literals of the readers T3 lists, `suite_hygiene.rs`'s walker and `ROOT_TARGET_EXEMPTIONS` (T11, T12, T14), and an existing test that asserted a divergent output a Phase 9 fix corrects (named in the fix's commit body, its new expectation cited from the Book or the spec). No test is removed, weakened or skipped, but the `SETTLED_CHAPTERS` registry tests T41 replaces with stricter ones (MD-28 rule 3).
 - **The user's cleanliness rules bind test support code** (`.specs/features/code-clarity/spec.md`): no free function in new code (every function a method of a type), one purpose per type, no abbreviated names, no god method, every type and method doc-commented, the data path evident. AGENTS rules: no macro of your own, no `unwrap()`/`expect()` on a path user input reaches. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
 - **A fix in another lane's area** (a crate an in-flight feature is editing) is reported to the orchestrator before it is made; a fix never moves a tolerance, a golden or a twin's bytes; a fix that would is reported.
 - Zero warnings on every crate of the `**Build**` line. Cargo with `-p <crate>` or the default members: never `--workspace`, never `cargo clean`. ngspice runs for real: `env -u PIPERINE_NGSPICE` on every parity and scenario gate.
@@ -82,7 +82,7 @@ Phases are ordered and run sequentially - each phase completes before the next b
 
 ### Phase 1: The move
 
-The tree is read first, the five new twins get their goldens before anything moves, then one move with every reader.
+The tree is read first, the nine twins with no golden get one before anything moves, then one move with every reader.
 
 ```
 T1 → T2 → T3 → T4 → T5 → T6
@@ -150,7 +150,7 @@ T40 → T41 → T42 → T43
 
 ### T1: Contract: the tree against the design
 
-**What**: Read every location `design.md` cites at `HEAD` (after the rebase onto `main` with `host-ii`) and write `contract.md`: each citation `confirmed` or `moved: <where>`; the five `host-ii` twins and the command-line flags of their analyses (from `crates/piperine-cli/tests/analyses.rs` and the Book); whether `piperine::Settings` exists; what `host-ii` did to the root `Cargo.toml`, `tests/host_ii.rs`, `workspace_shape.rs` and `suite_hygiene.rs`; the Book's counts (chapters, blocks by language, listings) and the planner's sentence count (design "Data Models"), recounted; every file that reads `tests/ngspice` (`grep -rn "tests/ngspice\|\"ngspice\"" crates src tests`). A citation that changes a task is reported to the orchestrator before T2.
+**What**: Read every location `design.md` cites at `HEAD` (after the rebase onto `main` with `host-ii`) and write `contract.md`: each citation `confirmed` or `moved: <where>`; the nine twins with no golden (`host-ii`'s five, `solver-hygiene`'s four) and the command-line flags of their analyses (from `crates/piperine-cli/tests/analyses.rs` and the Book); whether `piperine::Settings` exists; what `host-ii` did to the root `Cargo.toml`, `tests/host_ii.rs`, `workspace_shape.rs` and `suite_hygiene.rs`; the Book's counts (chapters, blocks by language, listings) and the planner's sentence count (design "Data Models"), recounted; every file that reads `tests/ngspice` (`grep -rn "tests/ngspice\|\"ngspice\"" crates src tests`). A citation that changes a task is reported to the orchestrator before T2.
 **Where**: `.specs/features/root-e2e/contract.md`
 **Depends on**: None
 **Reuses**: `.specs/features/host-ii/contract.md` (the form)
@@ -159,9 +159,9 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `contract.md` lists every citation of `design.md` with `confirmed` or `moved: <where>`, and the readers of `tests/ngspice` one per line
-- [ ] `Run twins`, `Run corpus` and every `parity_*` target pass at `HEAD` before any change, their test counts written in `contract.md`
-- [ ] Gate check passes: Build
+- [x] `contract.md` lists every citation of `design.md` with `confirmed` or `moved: <where>`, and the readers of `tests/ngspice` one per line
+- [x] `Run twins`, `Run corpus` and every `parity_*` target pass at `HEAD` before any change, their test counts written in `contract.md`
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -170,9 +170,9 @@ T40 → T41 → T42 → T43
 
 ---
 
-### T2: The goldens of the five `host-ii` twins
+### T2: The goldens of the nine twins with none
 
-**What**: `twins.rs` covers all twelve twins: the five `host-ii` twins join `TWINS` with the flags their `.cir` asks for (from T1), and their standard output after the header line, captured from the binary at this commit on each backend, is written to `crates/piperine-cli/tests/goldens/<name>.txt`. A new test holds every twin to its golden, so the move (T3) is proven against bytes captured before it. A twin a backend refuses is reported to the orchestrator, not dropped.
+**What**: `twins.rs` covers all sixteen twins: the nine twins with no golden (`host-ii`'s five, `solver-hygiene`'s four) join `TWINS` with the flags their `.cir` asks for (from T1), and their standard output after the header line, captured from the binary at this commit on each backend, is written to `crates/piperine-cli/tests/goldens/<name>.txt`. A new test holds every twin to its golden, so the move (T3) is proven against bytes captured before it. A twin a backend refuses is reported to the orchestrator, not dropped.
 **Where**: `crates/piperine-cli/tests/twins.rs`
 **Depends on**: T1
 **Reuses**: `every_twin_prints_the_bytes_it_printed_before_the_long_run` (the form)
@@ -182,14 +182,14 @@ T40 → T41 → T42 → T43
 **Done when**:
 
 - [ ] `crates/piperine-cli/tests/goldens/` holds `tf_divider.txt`, `pz_lowpass.txt`, `sens_divider.txt`, `pss_rc.txt`, `temp_res.txt`, each the binary's output
-- [ ] `twins.rs` gains `every_twin_prints_the_bytes_it_printed_before_the_move` (twelve twins, both backends); the existing tests pass with twelve twins
+- [ ] `twins.rs` gains `every_twin_prints_the_bytes_it_printed_before_the_move` (sixteen twins, every backend that runs each); the existing tests pass with sixteen twins
 - [ ] Gate check passes: Quick (`Run twins`)
 - [ ] Test count: 1 new test
 
 **Tests**: e2e
 **Gate**: quick
 
-**Commit**: `test(cli): the twelve twins' bytes before the move`
+**Commit**: `test(cli): the sixteen twins' bytes before the move`
 
 ---
 
@@ -251,7 +251,7 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] Twelve `.command` files exist; `twins.rs` holds no flag of a twin
+- [ ] Sixteen `.command` files exist; `twins.rs` holds no flag of a twin
 - [ ] `every_twin_prints_the_bytes_it_printed_before_the_move` and every other test of `twins.rs` pass unchanged in what they assert
 - [ ] Gate check passes: Quick (`Run twins`, `Run corpus`)
 - [ ] Test count: unchanged
@@ -310,7 +310,7 @@ T40 → T41 → T42 → T43
 
 ### T8: The sweep, AC and transient scenarios
 
-**What**: `scenarios.rs` gains `diode_iv` and `diode_rev` (each row of ngspice's export under `DC_CURRENT`), `ac_rc` (`mag`/`phase` columns under `AC_MAGNITUDE` and `AC_PHASE`) and `tran_rc` (the print grid of the export, then each row under `TRAN_VOLTAGE`), the quantities of `parity_{dc,ac,tran}.rs`.
+**What**: `scenarios.rs` gains `diode_iv` and `diode_rev` (each row of ngspice's export under `DC_CURRENT`), `ac_rc` (`mag`/`phase` columns under `AC_MAGNITUDE` and `AC_PHASE`), `tran_rc` and `tran_dq` (the print grid of the export, then each row under `TRAN_VOLTAGE`) and the three step-floor twins `tran_jump`, `tran_corner` (the grid of `FLOOR_ROWS`, `TRAN_VOLTAGE`) and `tran_floor` (the run fails `E0508` near 1 us, ngspice stops with "Timestep too small"; Rust backend only), the quantities of `parity_{dc,ac,tran}.rs`.
 **Where**: `tests/scenarios.rs`
 **Depends on**: T7
 **Reuses**: `parity_dc.rs`, `parity_ac.rs`, `parity_tran.rs`, `Golden::same_grid`
@@ -319,9 +319,9 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `scenarios.rs` holds `diode_iv`, `diode_rev`, `ac_rc`, `tran_rc`
+- [ ] `scenarios.rs` holds `diode_iv`, `diode_rev`, `ac_rc`, `tran_rc`, `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor`
 - [ ] Gate check passes: Quick (`Run scenarios`)
-- [ ] Test count: 4 new tests
+- [ ] Test count: 8 new tests
 
 **Tests**: integration
 **Gate**: quick
@@ -1159,7 +1159,7 @@ Proof: run corpus | test every_twin_has_its_files_in_one_scenario_directory ... 
 **C14** - `tests/ngspice/` holds no twin. (RE-04, AC 1; T4)
 Proof: run corpus | test tests_ngspice_holds_no_twin ... ok
 
-**C15** - Each of the twelve twins prints, on each backend, the bytes it printed before the move. (RE-04, AC 2; T2, T3)
+**C15** - Each of the sixteen twins prints, on each backend that runs it, the bytes it printed before the move. (RE-04, AC 2; T2, T3)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
 **C16** - Every `parity_*` target passes, reading the new paths. (RE-04, AC 3; T3)
@@ -1228,7 +1228,7 @@ Proof: run paritylib | test corpus::tests::a_name_in_two_scenarios_is_refused ..
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** T1 (2026-11-18, B1): main holds `host-ii` and `solver-hygiene`, so the corpus is sixteen twins, not twelve: the original seven, `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` and the five of `host-ii` (`parity_corpus` already counts 16; `tf` rows read `*_impedance`; `HostRun` is in `piperine-parity`; root `[[test]] host_ii` is `crates/piperine-api/tests/root_surface/host_ii.rs`). Nine twins have no golden (T2), not five. The scenario list is sixteen: T8 also carries `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` (8 tests); T9 keeps the five of `host-ii`. `piperine::Settings` does not exist: the root takes `piperine-transpile` as it already does.
 **Dispatched:** B1 - Sonnet worker, 2026-11-18 (host-ii merged 1a3d69dc).
 **Walked:** none
 
