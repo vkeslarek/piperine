@@ -174,15 +174,28 @@ impl Lcg {
     }
 }
 
-/// One random step: a host commit on a bit net a few ns ahead, or the next due instant.
+/// One random step: a host commit on a bit net a few ns ahead, a host firing of the clock's own
+/// `tick` event (the clock re-arms through a REPLACE commit and a transported commit, which remove
+/// the commits of their statements that are still pending: the queue's `Removed` undo), or the
+/// next due instant.
 fn random_step(d: &mut Digital, rng: &mut Lcg) {
-    if rng.next(3) == 0 {
-        let net = net(d, ["q2", "dn"][rng.next(2) as usize]);
-        let value = if rng.next(2) == 0 { HIGH } else { LOW };
-        let at = Tick(d.next_due().map_or(0, |t| t.0) + rng.next(40) as i64 * NS / 4);
-        d.host_commit(net, 0, &value, at).unwrap();
-    } else if let Some(t) = d.next_due() {
-        instant(d, t);
+    match rng.next(4) {
+        0 => {
+            let net = net(d, ["q2", "dn"][rng.next(2) as usize]);
+            let value = if rng.next(2) == 0 { HIGH } else { LOW };
+            let at = Tick(d.next_due().map_or(0, |t| t.0) + rng.next(40) as i64 * NS / 4);
+            d.host_commit(net, 0, &value, at).unwrap();
+        }
+        1 => {
+            let at = Tick(d.next_due().map_or(0, |t| t.0) + rng.next(40) as i64 * NS / 4);
+            let tick = net(d, "clock.tick");
+            d.fire(tick, at).unwrap();
+        }
+        _ => {
+            if let Some(t) = d.next_due() {
+                instant(d, t);
+            }
+        }
     }
 }
 
