@@ -9,7 +9,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use crate::device::{Device, Eval, Factory, Flow, Fault, React, Values, cell_lens};
 use crate::raw::{
-    self, Created, Instance, Library, List, MINOR, Module, NOTE_TEXT, Note, Shape, Str, Value, role, status,
+    self, Created, Host, Instance, Library, List, MINOR, Module, NOTE_TEXT, Note, Shape, Str, Value, role, status,
 };
 use crate::shape::ShapeRef;
 use crate::validate::{Access, validate};
@@ -354,8 +354,14 @@ unsafe fn react_on<T>(
         };
         // SAFETY: abi.md §3 React: `input` holds one pointer per read cell.
         let input = unsafe { cut(frame.input, &reads) };
-        // SAFETY: abi.md §3 React: `host` is the solver's `Host` for this call.
-        let host = unsafe { &*frame.host };
+        // SAFETY: abi.md §3 React: `host` is the solver's `Host` for this call. Fields are read
+        // through the pointer, never through a `&Host`: a minor-0 host is shorter than `Host`, and
+        // `size` says which fields exist.
+        let host = frame.host;
+        let (commit, commit_with) = unsafe {
+            let entry = ((*host).size as usize >= size_of::<Host>()).then(|| (*host).commit_with);
+            ((*host).commit, entry)
+        };
         let host_data = frame.host_data;
         let statements = r.writes;
         let mut sink = |statement: u32, bytes: &[u8], after: f64| -> u32 {
@@ -365,9 +371,22 @@ unsafe fn react_on<T>(
             }
             // SAFETY: abi.md §2 entry 6 and §12 "`commit` is called only inside
             // the `react` that received the `Host`": this is that call.
-            unsafe { (host.commit)(host_data, statement, 0, bytes.len() as u32, bytes.as_ptr(), after) }
+            unsafe { commit(host_data, statement, 0, bytes.len() as u32, bytes.as_ptr(), after) }
+        };
+        let mut sink_with = |statement: u32, bytes: &[u8], after: f64, flags: u32| -> u32 {
+            let declared = statements.get(statement as usize);
+            let Some(commit_with) = commit_with else { return status::FAULT };
+            if declared.is_none_or(|s| bytes.len() > s.len as usize) {
+                return status::FAULT;
+            }
+            // SAFETY: as for `commit`; `commit_with` is `Some` only when the host's `size`
+            // reaches the entry.
+            unsafe { commit_with(host_data, statement, 0, bytes.len() as u32, bytes.as_ptr(), after, flags) }
         };
         let mut cx = React::new(input, &mut sink);
+        if commit_with.is_some() {
+            cx = cx.with_commit_with(&mut sink_with);
+        }
         Ok(match run(&inst.device, k, &mut cx)? {
             Flow::Continue => status::OK,
             Flow::Finish => status::FINISH,

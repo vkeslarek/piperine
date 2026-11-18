@@ -71,7 +71,8 @@ fn every_constant_has_its_pinned_value() {
     assert_eq!(DEFAULT, u32::MAX - 1);
     assert_ne!(GROUND, DEFAULT);
     assert_eq!(MAJOR, 1);
-    assert_eq!(MINOR, 0);
+    // ABI minor 1 appended `Host.commit_with` (abi.md C7); minor 0 was the first release.
+    assert_eq!(MINOR, 1);
     assert_eq!(SYMBOL, "piperine_abi_1");
     assert_eq!(NOTE_TEXT, 248);
 }

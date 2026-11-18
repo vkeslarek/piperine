@@ -9,7 +9,7 @@ use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 use crate::device::{Access, Flow, cell_lens};
-use crate::raw::{self, Host, Instance, List, Module, NOTE_TEXT, Note, Shape, Value, status};
+use crate::raw::{self, Host, Instance, List, Module, NOTE_TEXT, Note, Shape, Value, commit_flag, status};
 
 /// A call that did not return `OK` (or `FINISH` from a reaction).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +53,9 @@ pub struct Commit<'a> {
     pub offset: u32,
     pub bytes: &'a [u8],
     pub after: f64,
+    /// `raw::commit_flag` bits: 0 for a commit made with `commit`, `MAYBE`/`MERGE` for one made
+    /// with `commit_with` under unknown control (abi.md C7).
+    pub flags: u32,
 }
 
 fn empty_note() -> Note {
@@ -95,34 +98,48 @@ struct Trampoline<'f> {
     panic: Option<Box<dyn Any + Send>>,
 }
 
-unsafe extern "C" fn trampoline(
-    data: *mut c_void,
-    statement: u32,
-    offset: u32,
-    len: u32,
-    bytes: *const u8,
-    after: f64,
-) -> u32 {
-    // SAFETY: abi.md §3 React: `host_data` is what `Handle::react` passed, a
-    // live `Trampoline` for this call.
-    let t = unsafe { &mut *data.cast::<Trampoline<'_>>() };
-    if t.panic.is_some() {
-        return status::FAULT;
-    }
-    let bytes: &[u8] = if len == 0 {
-        &[]
-    } else {
-        // SAFETY: abi.md §2 entry 6: `bytes` holds `len` bytes for this call.
-        unsafe { core::slice::from_raw_parts(bytes, len as usize) }
-    };
-    let commit = &mut t.commit;
-    match catch_unwind(AssertUnwindSafe(|| commit(Commit { statement, offset, bytes, after }))) {
-        Ok(s) => s,
-        Err(payload) => {
-            t.panic = Some(payload);
-            status::FAULT
+impl Trampoline<'_> {
+    /// Hands one commit to the solver's closure: a panic it raises is kept (resumed once the device returned) and
+    /// the device is answered `FAULT` (abi.md §12). Flags outside `commit_flag::*` are refused,
+    /// so a later minor's flag is never silently dropped.
+    ///
+    /// # Safety
+    ///
+    /// `data` is the `Trampoline` of the live `react` call and `bytes` holds `len` bytes.
+    unsafe fn deliver(data: *mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64, flags: u32) -> u32 {
+        // SAFETY: abi.md §3 React: `host_data` is what `Handle::react` passed, a
+        // live `Trampoline` for this call.
+        let t = unsafe { &mut *data.cast::<Trampoline<'_>>() };
+        if t.panic.is_some() || flags & !(commit_flag::MAYBE | commit_flag::MERGE) != 0 {
+            return status::FAULT;
+        }
+        let bytes: &[u8] = if len == 0 {
+            &[]
+        } else {
+            // SAFETY: abi.md §2 entry 6: `bytes` holds `len` bytes for this call.
+            unsafe { core::slice::from_raw_parts(bytes, len as usize) }
+        };
+        let commit = &mut t.commit;
+        match catch_unwind(AssertUnwindSafe(|| commit(Commit { statement, offset, bytes, after, flags }))) {
+            Ok(s) => s,
+            Err(payload) => {
+                t.panic = Some(payload);
+                status::FAULT
+            }
         }
     }
+}
+
+/// `Host.commit`: a commit with no flags.
+unsafe extern "C" fn trampoline(data: *mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64) -> u32 {
+    // SAFETY: as `deliver` requires; the device passes what `react` handed it (abi.md §2 entry 6).
+    unsafe { Trampoline::deliver(data, statement, offset, len, bytes, after, 0) }
+}
+
+/// `Host.commit_with` (ABI minor 1): a commit under unknown control.
+unsafe extern "C" fn trampoline_with(data: *mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64, flags: u32) -> u32 {
+    // SAFETY: as for `trampoline`.
+    unsafe { Trampoline::deliver(data, statement, offset, len, bytes, after, flags) }
 }
 
 impl Handle {
@@ -239,7 +256,7 @@ impl Handle {
         };
         check_cells("read", input.iter().map(|b| b.len()), &reads)?;
         let input: Vec<*const u8> = input.iter().map(|b| b.as_ptr()).collect();
-        let host = Host { size: size_of::<Host>() as u32, commit: trampoline };
+        let host = Host { size: size_of::<Host>() as u32, commit: trampoline, commit_with: trampoline_with };
         let mut data = Trampoline { commit, panic: None };
         let mut note = empty_note();
         let frame = raw::React {

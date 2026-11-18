@@ -244,10 +244,16 @@ impl<'a> Deref for Eval<'a> {
 /// status.
 pub type CommitSink<'a> = dyn FnMut(u32, &[u8], f64) -> u32 + 'a;
 
+/// Queues one write of the calling reaction made under unknown control: `(statement, bytes,
+/// after, flags)` to a status, `flags` being `raw::commit_flag` bits (abi.md C7).
+pub type CommitWithSink<'a> = dyn FnMut(u32, &[u8], f64, u32) -> u32 + 'a;
+
 /// The lens of `react`.
 pub struct React<'a> {
     reads: Reads<'a>,
     commit: &'a mut CommitSink<'a>,
+    /// `None` when the host predates ABI minor 1 and has no `commit_with` entry.
+    commit_with: Option<&'a mut CommitWithSink<'a>>,
 }
 
 impl fmt::Debug for React<'_> {
@@ -259,7 +265,13 @@ impl fmt::Debug for React<'_> {
 impl<'a> React<'a> {
     /// A lens over already-cut read cells and the host's commit.
     pub fn new(input: Vec<&'a [u8]>, commit: &'a mut CommitSink<'a>) -> React<'a> {
-        React { reads: Reads { input }, commit }
+        React { reads: Reads { input }, commit, commit_with: None }
+    }
+
+    /// The same lens with the host's `commit_with` entry (ABI minor 1) behind `commit_with`.
+    pub fn with_commit_with(mut self, commit_with: &'a mut CommitWithSink<'a>) -> React<'a> {
+        self.commit_with = Some(commit_with);
+        self
     }
 
     /// Commits `bytes` through statement `statement`, due `after` seconds
@@ -268,6 +280,21 @@ impl<'a> React<'a> {
         match (self.commit)(statement, bytes, after) {
             status::OK => Ok(()),
             s => Err(Fault::new(s, format!("commit of statement {statement} refused with status {s}"))),
+        }
+    }
+
+    /// Commits as `commit` does, on a path taken under unknown control (abi.md C7): `flags` are
+    /// `raw::commit_flag` bits. A host without the entry (it predates ABI minor 1) is a fault
+    /// naming the statement, never a plain commit: dropping the flags would change what the model
+    /// says.
+    pub fn commit_with(&mut self, statement: u32, bytes: &[u8], after: f64, flags: u32) -> Result<(), Fault> {
+        let Some(sink) = self.commit_with.as_mut() else {
+            let message = format!("commit of statement {statement} under unknown control: the host has no `commit_with` entry (it predates ABI minor 1)");
+            return Err(Fault::new(status::FAULT, message));
+        };
+        match sink(statement, bytes, after, flags) {
+            status::OK => Ok(()),
+            s => Err(Fault::new(s, format!("commit of statement {statement} (flags {flags}) refused with status {s}"))),
         }
     }
 }
