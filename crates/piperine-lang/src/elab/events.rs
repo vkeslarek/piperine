@@ -20,7 +20,7 @@
 //! | --- | --- |
 //! | no disjunct has a continuous conjunct | one, on every disjunct's event |
 //! | one disjunct, with continuous conjuncts | one, its body under `if` |
-//! | several disjuncts, one with continuous conjuncts | one per disjunct, in source order; `P0001` when the body emits a record |
+//! | several disjuncts, one with continuous conjuncts | one, on every disjunct's event, its body under `(fired(e₁) && c₁) \|\| (fired(e₂) && c₂) …` |
 //!
 //! A `ttol` or `etol` of `cross` (positional or by name) is `None`, a constant or a param, lowered
 //! onto the event; one that reads a carrier, a probe or a local is `P0001`.
@@ -113,20 +113,28 @@ impl Elaboration<'_, '_> {
             return;
         }
         let span = self.design.expr_node(r.event).span;
-        if self.emits_in(&r.body) {
-            self.unsupported(scope.file, span, "a head whose disjuncts each need a reaction, over a body that emits a record,");
-            return;
-        }
         if !head.locals.is_empty() {
             self.unsupported(scope.file, span, "a `let` in the guard of a head split per disjunct");
             return;
         }
+        // One reaction on every disjunct's event, run once per microstep whichever fired (abi.md
+        // R1), its body under `(fired(e₁) && c₁) || (fired(e₂) && c₂) || …`: `cₖ` the disjunct's
+        // continuous conjuncts.
+        let mut on = Vec::new();
+        let mut arms = Vec::new();
         for d in disjuncts {
-            let on = vec![self.add_event(d.source, &d.discrete, d.origin)];
-            let mut body = Self::sub_scope(scope);
-            if let Some(stmts) = self.reaction_body(&mut body, &r.body.stmts, &d.continuous) {
-                self.structure.reactions.push(Reaction { on, stmts, locals: body.locals, origin: origin.clone() });
+            let event = self.add_event(d.source, &d.discrete, d.origin.clone());
+            on.push(event);
+            let fired = self.emit(Expr::Fired(event), ValueType::Bool, d.origin);
+            let operands: Vec<LoweredExpr> = std::iter::once(fired).chain(d.continuous).collect();
+            if let Some(arm) = self.conjunction(&operands) {
+                arms.push(arm);
             }
+        }
+        let guard = self.disjunction(&arms);
+        let mut body = Self::sub_scope(scope);
+        if let Some(stmts) = self.reaction_body_under(&mut body, &r.body.stmts, |_| guard) {
+            self.structure.reactions.push(Reaction { on, stmts, locals: body.locals, origin });
         }
     }
 
@@ -150,6 +158,19 @@ impl Elaboration<'_, '_> {
         }))
     }
 
+    /// `a || b || …` over lowered `bool`s, left to right: `|` when an operand may be unknown
+    /// (§3.3.12), `||` otherwise. `None` for no operand.
+    fn disjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
+        let mut iter = operands.iter().copied();
+        let first = iter.next()?;
+        Some(iter.fold(first, |acc, next| {
+            let flag = self.flags(&[acc, next]);
+            let op = if flag == Flag::Flagged { BinaryOp::BitOr } else { BinaryOp::Or };
+            let origin = self.ir_origin(next);
+            self.emit(Expr::Binary { op, lhs: acc, rhs: next }, flag.wrap(ValueType::Bool), origin)
+        }))
+    }
+
     /// The origin an expression already added was given.
     fn ir_origin(&self, expr: LoweredExpr) -> Origin {
         self.expr_origins[expr.index()].clone()
@@ -158,31 +179,22 @@ impl Elaboration<'_, '_> {
     /// The body of a reaction in `scope`, under `if c₁ && c₂ …` when `wrap` holds continuous
     /// conjuncts. `None` after a diagnostic.
     fn reaction_body(&mut self, scope: &mut Scope, stmts: &[StmtId], wrap: &[LoweredExpr]) -> Option<Vec<piperine_ir::StmtId>> {
+        self.reaction_body_under(scope, stmts, |this| this.conjunction(wrap))
+    }
+
+    /// The body of a reaction in `scope`, under `if cond` when `condition`, run once the body is
+    /// lowered, gives one. `None` after a diagnostic.
+    fn reaction_body_under(&mut self, scope: &mut Scope, stmts: &[StmtId], condition: impl FnOnce(&mut Self) -> Option<LoweredExpr>) -> Option<Vec<piperine_ir::StmtId>> {
         let (mut lowered, value) = self.lower_statements(scope, stmts)?;
         if let Some(value) = value {
             lowered.push(self.stmt(Stmt::Expr(value)));
         }
-        let Some(cond) = self.conjunction(wrap) else { return Some(lowered) };
+        let Some(cond) = condition(self) else { return Some(lowered) };
         let origin = self.ir_origin(cond);
         let then = self.emit(Expr::Block { stmts: lowered, value: None }, ValueType::Unit, origin.clone());
         let otherwise = self.emit(Expr::Unit, ValueType::Unit, origin.clone());
         let whole = self.emit(Expr::If { cond, then, otherwise }, ValueType::Unit, origin);
         Some(vec![self.stmt(Stmt::Expr(whole))])
-    }
-
-    /// Whether the statements reach `emit!`, directly or through a function that emits.
-    fn emits_in(&self, block: &crate::pom::BlockNode) -> bool {
-        let mut stack = crate::pom::block_exprs(self.design, block);
-        while let Some(e) = stack.pop() {
-            let kind = &self.design.expr_node(e).kind;
-            match kind {
-                ExprKind::Emit { .. } => return true,
-                ExprKind::Call { .. } if matches!(self.types.callee(e), Some(Callee::Function(f)) if self.types.emits(f).is_some()) => return true,
-                _ => {}
-            }
-            stack.extend(crate::pom::expr_children(kind, self.design));
-        }
-        false
     }
 
     /// The disjuncts of the head `expr`. `None` after a diagnostic.

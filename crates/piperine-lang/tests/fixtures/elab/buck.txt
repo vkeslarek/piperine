@@ -12,14 +12,10 @@ body A2D
   event E1 changed above$0.init$0.up
   event E2 cross ((vth - (hyst / 2.0)) - probe(a, gnd))
   event E3 changed above$1.init$0.up
-  reaction R0 on (E0)
-    d <- true
-  reaction R1 on (E1)
-    if (((probe(a, gnd) - vth) - (hyst / 2.0)) > 0.0) { d <- true } else { () }
-  reaction R2 on (E2)
-    d <- false
-  reaction R3 on (E3)
-    if (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0) { d <- false } else { () }
+  reaction R0 on (E0, E1)
+    if (fired(E0) || (fired(E1) && (((probe(a, gnd) - vth) - (hyst / 2.0)) > 0.0))) { d <- true } else { () }
+  reaction R1 on (E2, E3)
+    if (fired(E2) || (fired(E3) && (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0))) { d <- false } else { () }
 body Adc
   param vref: f64 = 1.6 where (vref > 0.0)
   param tconv: f64 = 5e-7 where (tconv > 0.0)

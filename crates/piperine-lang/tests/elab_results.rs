@@ -128,11 +128,12 @@ fn value_inputs_are_substituted_at_each_read() {
     let params_read: Vec<u32> = commits_of_dt.iter().flat_map(|v| reach(&ir, *v)).filter_map(|e| if let Expr::Param(p) = ir.expr(e) { Some(*p) } else { None }).collect();
     assert_eq!(params_read, [tsw, tsw], "`tr` and `tf` are the caller's `tsw`");
     // A value input read in the callee's reaction: `above`'s `e > 0.0` in `A2D` is the caller's
-    // `v(a) - vth - hyst / 2.0`, its params `A2D`'s own.
+    // `v(a) - vth - hyst / 2.0`, its params `A2D`'s own; the head split per disjunct is one
+    // reaction under `fired(..)` (FIX-13).
     let ir = Elab::ir(A2D, "Top");
     let text = ir.print_structural();
-    assert!(text.contains("if (((probe(a, gnd) - vth) - (hyst / 2.0)) > 0.0) { d <- true }"), "{text}");
-    assert!(text.contains("if (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0) { d <- false }"), "{text}");
+    assert!(text.contains("(fired(E1) && (((probe(a, gnd) - vth) - (hyst / 2.0)) > 0.0))) { d <- true }"), "{text}");
+    assert!(text.contains("(fired(E3) && (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0))) { d <- false }"), "{text}");
 }
 
 #[test]

@@ -412,31 +412,39 @@ fn an_or_head_is_one_reaction_or_one_per_disjunct() {
     let m = read.body("M");
     let (x, y) = (m.carriers().iter().position(|k| k.name == "x").expect("x") as u32, m.carriers().iter().position(|k| k.name == "y").expect("y") as u32);
     use piperine_ir::{EventSource, Stmt};
-    assert_eq!(m.reactions().len(), 3, "one reaction for the first head, two for the second");
     // Discrete disjuncts: one reaction listing each event.
     assert_eq!(m.reactions()[0].on, [0, 1]);
     assert_eq!((&m.events()[0].source, &m.events()[1].source), (&EventSource::Changed(x), &EventSource::Changed(y)));
-    // A disjunct whose guard probes: one reaction per disjunct, in source order, each on its own
-    // event; the probing one under its `if`.
-    assert_eq!(m.reactions()[1].on, [2]);
-    assert_eq!(m.reactions()[2].on, [3]);
+    // A head with a disjunct whose guard probes is one reaction on every disjunct's event, run
+    // once per microstep (abi.md R1), its body under `(fired(e₂) && ..) || (fired(e₃) && v(a) > 0.0)`.
+    assert_eq!(m.reactions().len(), 2, "one reaction for the first head, one for the second");
+    assert_eq!(m.reactions()[1].on, [2, 3]);
     assert!(matches!(m.events()[2].source, EventSource::Cross { .. }));
     assert_eq!(m.events()[3].source, EventSource::Changed(x));
-    assert!(matches!(ir.stmt(m.reactions()[1].stmts[0]), Stmt::Commit { .. }), "the cross runs its body as written");
-    assert!(matches!(ir.stmt(m.reactions()[2].stmts[0]), Stmt::Expr(_)), "the change runs it under `if v(a) > 0.0`");
+    assert!(matches!(ir.stmt(m.reactions()[1].stmts[0]), Stmt::Expr(_)), "the body runs under the `fired` guard");
+    let text = ir.print_structural();
+    assert!(text.contains("fired(E2)") && text.contains("fired(E3)"), "{text}");
+}
+
+#[test]
+fn a_split_head_over_an_emitting_body_is_one_reaction() {
+    // FIX-13 AC 3 (§13): two disjuncts over a body that emits a record are one reaction on both
+    // events: it runs once per microstep, so it writes one record when both fire.
+    let src = "module M(a: Electrical, in x: Bit, out q: Bit) { }\n\
+               digital for M { on cross(v(a)) || (x.changed() && v(a) > 0.0) { emit!(\"log\", n = 1.0); } }\n\
+               module Top() { signal n: Electrical; signal x: Bit; signal q: Bit; let m = M(n, x, q); }";
+    let ir = Elab::ir(src, "Top");
+    let m = Read { ir: &ir }.body("M");
+    assert_eq!(m.reactions().len(), 1, "one reaction for the whole head");
+    assert_eq!(m.reactions()[0].on, [0, 1], "on both events");
+    let text = ir.print_structural();
+    assert!(text.contains("fired(E0)") && text.contains("fired(E1)"), "{text}");
 }
 
 #[test]
 fn a_head_the_ir_cannot_hold_is_p0001() {
-    // DIG-09 AC 9, C83. Two reactions for one head would write a record twice when both fire.
-    let src = "module M(a: Electrical, in x: Bit, out q: Bit) { }\n\
-               digital for M { on cross(v(a)) || (x.changed() && v(a) > 0.0) { emit!(\"log\", n = 1.0); } }\n\
-               module Top() { signal n: Electrical; signal x: Bit; signal q: Bit; let m = M(n, x, q); }";
-    let err = Elab::run(src, "Top").expect_err("a split head over a body that emits");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
-    assert!(err[0].diagnostic.message.contains("emits a record"), "{}", err[0].diagnostic.message);
-    let span = err[0].diagnostic.span();
-    assert_eq!(&src[span.start..span.end], "cross(v(a)) || (x.changed() && v(a) > 0.0)");
+    // DIG-09 AC 9, C83. (A split head over a body that emits is one reaction since FIX-13:
+    // `a_split_head_over_an_emitting_body_is_one_reaction`.)
     // An event read as a `bool` in a reaction body: the IR has no read of it (§13 rule 2).
     let src = "module M(in x: Bit, out q: Bit) { }\ndigital for M { on x.changed() { if x.rise() { q <- true; } } }\nmodule Top() { signal x: Bit; signal q: Bit; let m = M(x, q); }";
     let err = Elab::run(src, "Top").expect_err("an event read as a bool");

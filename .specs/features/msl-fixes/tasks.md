@@ -765,10 +765,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] `a_split_head_over_an_emitting_body_is_one_reaction` passes in `cargo test -p piperine-lang --test elab_digital`
-- [ ] The existing test `an_or_head_is_one_reaction_or_one_per_disjunct`, whose second row this changes, is rewritten to the one-reaction form and named in the commit
-- [ ] Gate check passes: Quick (`Run edig`), then `cargo test -p piperine-lang`
-- [ ] Test count: the 1 test named above
+- [x] `a_split_head_over_an_emitting_body_is_one_reaction` passes in `cargo test -p piperine-lang --test elab_digital`
+- [x] The existing test `an_or_head_is_one_reaction_or_one_per_disjunct`, whose second row this changes, is rewritten to the one-reaction form and named in the commit
+- [x] Gate check passes: Quick (`Run edig`), then `cargo test -p piperine-lang`
+- [x] Test count: the 1 test named above
 
 **Tests**: integration
 **Gate**: quick

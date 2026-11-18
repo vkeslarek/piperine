@@ -125,26 +125,25 @@ fn dpwm_and_a2d_differ_only_as_listed() {
         assert_same(header, &item(&fixture("dpwm"), header), &item(&print, header));
     }
 
-    // A2D (the fixture `comparator`) adds the `init` of each `above`: two signals and an event
-    // and reaction for each. Its events and reactions are numbered after those, so the two
-    // survivors are renamed: E2 is the fixture's E1, R2 its R1.
+    // A2D (the fixture `comparator`) adds the `init` of each `above`: two signals and an event for
+    // each, numbered after the cross, so the second cross is E2 where the fixture has E1. Each
+    // `above` is one reaction on both its events (FIX-13: `cross(e) || (init() && e > 0.0)` is a
+    // head split per disjunct), its body under the `fired` guard, where the fixture has one
+    // reaction per cross and no `init`.
     let a2d_extras = [
         Extra("  carrier above$0.init$0.up: bool signal init true"),
         Extra("  carrier above$1.init$0.up: bool signal init true"),
         Extra("  event E1 changed above$0.init$0.up"),
         Extra("  event E3 changed above$1.init$0.up"),
-        Extra("  reaction R1 on (E1)"),
-        Extra("    if (((probe(a, gnd) - vth) - (hyst / 2.0)) > 0.0) { d <- true } else { () }"),
-        Extra("  reaction R3 on (E3)"),
-        Extra("    if (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0) { d <- false } else { () }"),
+        Extra("  reaction R0 on (E0, E1)"),
+        Extra("    if (fired(E0) || (fired(E1) && (((probe(a, gnd) - vth) - (hyst / 2.0)) > 0.0))) { d <- true } else { () }"),
+        Extra("  reaction R1 on (E2, E3)"),
+        Extra("    if (fired(E2) || (fired(E3) && (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0))) { d <- false } else { () }"),
     ];
-    let renames = [("  event E2 cross", "  event E1 cross"), ("  reaction R2 on (E2)", "  reaction R1 on (E1)")];
+    let fixture_reactions = [Extra("  reaction R0 on (E0)"), Extra("    d <- true"), Extra("  reaction R1 on (E1)"), Extra("    d <- false")];
     let mut survivors = without(&item(&print, "body A2D"), &a2d_extras);
-    for (from, to) in renames {
-        assert_eq!(survivors.iter().filter(|l| l.starts_with(from)).count(), 1, "{from}");
-        survivors = survivors.iter().map(|l| if l.starts_with(from) { l.replacen(from, to, 1) } else { l.clone() }).collect();
-    }
-    assert_same("A2D", &item(&fixture("comparator"), "body A2D"), &survivors);
+    survivors = survivors.iter().map(|l| if l.starts_with("  event E2 cross") { l.replacen("  event E2 cross", "  event E1 cross", 1) } else { l.clone() }).collect();
+    assert_same("A2D", &without(&item(&fixture("comparator"), "body A2D"), &fixture_reactions), &survivors);
 }
 
 #[test]
