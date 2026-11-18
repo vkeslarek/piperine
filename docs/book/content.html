@@ -3951,7 +3951,7 @@ module Step() {
 <pre data-lang="toml">[run.step]
 bench      = "benches/step.msl"   # the root crate is this file; without it, the library
 top        = "Step"               # needed only when the choice is not unique
-analysis   = "transient"          # op | dc | ac | transient
+analysis   = "transient"          # op | dc | ac | transient | tf | pz | sens | pss
 stop       = 10e-6                # transient
 max_step   = 10e-9                # transient, optional
 print_step = 1e-6                 # transient, optional
@@ -3968,7 +3968,22 @@ backend    = "rust"               # rust | interp
 csv        = "out/step.csv"       # the table, as a file
 plot       = "out/step.svg"       # the table, as a picture; not for op
 records    = "out/step.jsonl"     # the records, as a file
-all_checks = true                 # print the passing checks too</pre>
+all_checks = true                 # print the passing checks too
+reltol     = 1e-3                 # the solver's options, for every analysis:
+abstol     = 1e-12                #   tolerances,
+vntol      = 1e-6
+trtol      = 7.0
+temp       = 27.0                 #   the temperature, in degrees Celsius,
+resolution = 1e-12                #   the digital engine's tick,
+maxrounds  = 20                   #   and the bounds the solver gives up at
+maxmicro   = 1000
+max_steps  = 2000000
+nodeset    = { "vout" = 0.5 }     # op, dc: the first guess of the operating point
+input      = "v1"                 # tf, pz: the source that excites
+output     = "vout"               # tf, pz: the node that is measured
+wrt        = ["r1.r"]             # sens: the params to differentiate by
+period     = 4e-6                 # pss
+tstab      = 8e-6                 # pss: the transient before the orbit</pre>
 
 <p>That listing shows the keys side by side; it is not a run you could execute, because each analysis reads only its own numbers and a key outside its analysis is an error. Numbers are TOML numbers: write <code>10e-6</code>, not <code>10u</code>.</p>
 
@@ -3977,7 +3992,7 @@ all_checks = true                 # print the passing checks too</pre>
 <tbody>
 <tr><td><code>bench</code></td><td><code>--bench</code></td><td>all</td><td>The bench file, relative to the project.</td></tr>
 <tr><td><code>top</code></td><td><code>--top</code></td><td>all</td><td>The top module, by name.</td></tr>
-<tr><td><code>analysis</code></td><td><code>--analysis</code></td><td>all</td><td><code>op</code>, <code>dc</code>, <code>ac</code> or <code>transient</code>. Required.</td></tr>
+<tr><td><code>analysis</code></td><td><code>--analysis</code></td><td>all</td><td><code>op</code>, <code>dc</code>, <code>ac</code>, <code>transient</code>, <code>tf</code>, <code>pz</code>, <code>sens</code> or <code>pss</code>. Required.</td></tr>
 <tr><td><code>stop</code></td><td><code>--stop</code></td><td><code>transient</code></td><td>The end time, in seconds. Required, greater than 0.</td></tr>
 <tr><td><code>max_step</code></td><td><code>--max-step</code></td><td><code>transient</code></td><td>The largest time step the solver may take.</td></tr>
 <tr><td><code>print_step</code></td><td><code>--print-step</code></td><td><code>transient</code></td><td>One table row per multiple of it, instead of one per solver step.</td></tr>
@@ -3995,6 +4010,20 @@ all_checks = true                 # print the passing checks too</pre>
 <tr><td><code>plot</code></td><td><code>--plot</code></td><td><code>dc</code>, <code>ac</code>, <code>transient</code></td><td>Write the result as an SVG picture.</td></tr>
 <tr><td><code>records</code></td><td><code>--records</code></td><td>all</td><td>Write the records to this file.</td></tr>
 <tr><td><code>all_checks</code></td><td><code>--all-checks</code></td><td>all</td><td>Print the passing <code>checks</code> records too. A failing check always prints.</td></tr>
+<tr><td><code>reltol</code></td><td><code>--reltol</code></td><td>all</td><td>The relative tolerance of the solver, 1e-3 by default.</td></tr>
+<tr><td><code>abstol</code></td><td><code>--abstol</code></td><td>all</td><td>The absolute tolerance of a current, in amperes.</td></tr>
+<tr><td><code>vntol</code></td><td><code>--vntol</code></td><td>all</td><td>The absolute tolerance of a voltage, in volts, 1e-6 by default.</td></tr>
+<tr><td><code>trtol</code></td><td><code>--trtol</code></td><td><code>transient</code></td><td>The factor on the truncation error a step may have and be accepted, 7 by default.</td></tr>
+<tr><td><code>temp</code></td><td><code>--temp</code></td><td>all</td><td>The temperature of the run, in degrees Celsius; 27 by default.</td></tr>
+<tr><td><code>resolution</code></td><td><code>--resolution</code></td><td>all</td><td>The tick of the digital engine, in seconds.</td></tr>
+<tr><td><code>maxrounds</code></td><td><code>--maxrounds</code></td><td>all</td><td>The most rounds an operating point may take before it fails, 20 by default.</td></tr>
+<tr><td><code>maxmicro</code></td><td><code>--maxmicro</code></td><td>all</td><td>The most microsteps one instant of the digital engine may take before it fails.</td></tr>
+<tr><td><code>max_steps</code></td><td><code>--max-steps</code></td><td><code>transient</code>, <code>pss</code></td><td>The budget of attempts a transient may make before it fails naming it, 2000000 by default.</td></tr>
+<tr><td><code>nodeset</code></td><td><code>--nodeset node=value</code>, repeatable</td><td><code>op</code>, <code>dc</code></td><td>Seeds the first guess of an operating point. A flag replaces the table's entry of the same node.</td></tr>
+<tr><td><code>input</code>, <code>output</code></td><td><code>--input</code>, <code>--output</code></td><td><code>tf</code>, <code>pz</code></td><td>The voltage source that excites, by instance, and the node that is measured.</td></tr>
+<tr><td><code>wrt</code></td><td><code>--wrt</code>, repeatable</td><td><code>sens</code></td><td>A param to differentiate by, by path.</td></tr>
+<tr><td><code>period</code></td><td><code>--period</code></td><td><code>pss</code></td><td>The period of the drive, in seconds. Required.</td></tr>
+<tr><td><code>tstab</code></td><td><code>--tstab</code></td><td><code>pss</code></td><td>The length of the transient that comes before the orbit, 0 by default.</td></tr>
 </tbody></table></div>
 
 <h3>Three ways to ask for a run</h3>
@@ -4047,6 +4076,10 @@ time         Step.vin    Step.vout
 <tr><td><code>dc</code></td><td>one per point of the sweep; each point sets the param and solves an operating point. A point of a sweep has no time to stamp a record with, so a <code>dc</code> run of a design that writes records is refused with P0010; run <code>op</code> at each value instead</td><td>the swept param's full path, then one per signal</td></tr>
 <tr><td><code>ac</code></td><td>one per frequency</td><td><code>freq</code>, then <code>mag(&lt;path&gt;)</code> and <code>phase(&lt;path&gt;)</code> per signal, the phase in degrees</td></tr>
 <tr><td><code>transient</code></td><td>one per accepted solver step, or one per <code>print_step</code></td><td><code>time</code>, then one per signal</td></tr>
+<tr><td><code>tf</code></td><td>three: <code>gain</code>, <code>input_resistance</code>, <code>output_resistance</code></td><td><code>quantity</code>, <code>value</code></td></tr>
+<tr><td><code>pz</code></td><td>one per pole and zero</td><td><code>kind</code>, <code>real</code>, <code>imag</code></td></tr>
+<tr><td><code>sens</code></td><td>one per <code>wrt</code> param</td><td><code>param</code>, then <code>d(&lt;path&gt;)</code> per signal</td></tr>
+<tr><td><code>pss</code></td><td>one per <code>print_step</code> across one period of the orbit</td><td><code>time</code>, then one per signal</td></tr>
 </tbody></table></div>
 
 <p>With <code>print_step</code>, an analog value is interpolated linearly between the two solver steps around the row's time, and a digital value is the one it held at that time. Use it whenever a run takes many steps: the solver still computes all of its steps, but the table, the plot and the memory of the run hold only the rows of the grid.</p>
@@ -4205,6 +4238,142 @@ wrote step.svg</pre>
 
 <p>The entries of the <code>params</code> key are applied first, then the flags, in the order given. A path that names nothing is E0801. A value the design refuses, such as one that fails the param's <code>where</code>, is E0802: no analysis runs. The same paths serve <code>--sweep</code> in a DC sweep.</p>
 
+<h3>The solver's options</h3>
+
+<p>Tolerances, the temperature and the bounds the solver gives up at are keys of a run too, each with its flag (table above). They carry the names ngspice gives its <code>.options</code>, in lowercase. A run that sets none behaves as it always has. <code>nodeset</code> seeds the first guess of an operating point; the iteration converges on the same point whatever the guess when the circuit has one, so a seed matters for a circuit that has several. Save this as <code>lowpass.msl</code>, a divider with a capacitor, anywhere:</p>
+
+<!-- cli-file: lowpass.msl -->
+<pre data-lang="msl">pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+pub module Capacitor(p: Electrical, n: Electrical) { c: f64 where c >= 0.0; }
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }
+
+module Lowpass() {
+    signal vin: Electrical;
+    signal vout: Electrical;
+    let v1 = Vsource(vin, gnd) { dc: 10.0 };
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let r2 = Resistor(vout, gnd) { r: 3k };
+    let c1 = Capacitor(vout, gnd) { c: 1u };
+}</pre>
+
+<pre data-lang="sh">piperine run lowpass.msl --analysis op --reltol 1e-9 --vntol 1e-12 --nodeset vout=5 --print vout</pre>
+
+<pre data-lang="text" data-cli-output="piperine run lowpass.msl --analysis op --reltol 1e-9 --vntol 1e-12 --nodeset vout=5 --print vout">run lowpass: op, top Lowpass, backend rust
+
+signal        value
+Lowpass.vout  7.500000e0</pre>
+
+<p>An analysis that takes its own operating point inside the solver, <code>ac</code> and <code>transient</code>, has no door for a seed, and a <code>nodeset</code> on it is a P0010 error rather than a silent no-op. A transient that needs more attempts than <code>max_steps</code> fails naming the budget; raise it and the same run succeeds.</p>
+
+<h3>Four more analyses</h3>
+
+<p>Beyond <code>op</code>, <code>dc</code>, <code>ac</code> and <code>transient</code>, a run can ask for the small-signal transfer function, the poles and zeros, the sensitivity of a node to params, and the periodic steady state. Each reads its own keys, and the table has its own shape (the table of shapes above).</p>
+
+<p><strong><code>tf</code></strong> excites a voltage source and measures a node: the gain, the input resistance seen by the source and the output resistance seen at the node. The source is named by its instance, <code>v1</code> or in full, <code>Lowpass.v1</code>; a source that is not a voltage source is a P0010 error.</p>
+
+<pre data-lang="sh">piperine run lowpass.msl --analysis tf --input v1 --output vout</pre>
+
+<pre data-lang="text" data-cli-output="piperine run lowpass.msl --analysis tf --input v1 --output vout">run lowpass: tf, top Lowpass, backend rust
+
+quantity           value
+gain               7.500000e-1
+input_resistance   4.000000e3
+output_resistance  7.500000e2</pre>
+
+<p>The divider has gain 3/4, and the source sees 1&nbsp;kΩ in series with 3&nbsp;kΩ. <strong><code>pz</code></strong> takes the same two keys and lists the poles and zeros of that transfer function, in rad/s; the capacitor makes one pole, at −(1/R1 + 1/R2)/C:</p>
+
+<pre data-lang="sh">piperine run lowpass.msl --analysis pz --input v1 --output vout</pre>
+
+<pre data-lang="text" data-cli-output="piperine run lowpass.msl --analysis pz --input v1 --output vout">run lowpass: pz, top Lowpass, backend rust
+
+kind  real         imag
+pole  -1.333333e3  0.000000e0</pre>
+
+<p><strong><code>sens</code></strong> gives the derivative of each printed signal with respect to each param named by <code>wrt</code>, at the operating point:</p>
+
+<pre data-lang="sh">piperine run lowpass.msl --analysis sens --wrt r1.r --wrt r2.r --print vout</pre>
+
+<pre data-lang="text" data-cli-output="piperine run lowpass.msl --analysis sens --wrt r1.r --wrt r2.r --print vout">run lowpass: sens, top Lowpass, backend rust
+
+param         d(Lowpass.vout)
+Lowpass.r1.r  -1.875000e-3
+Lowpass.r2.r  6.250000e-4</pre>
+
+<p>Raising <code>r1</code> by one ohm lowers the output by 1.875&nbsp;mV, and raising <code>r2</code> by one ohm raises it by 0.625&nbsp;mV: the output is 10·R2/(R1+R2), and the numbers are its two partial derivatives.</p>
+
+<p><strong><code>pss</code></strong> finds the periodic steady state of a circuit driven with period <code>period</code>. A transient of length <code>tstab</code> runs first, then the orbit is iterated until it repeats; the table is one period of it. Save a square wave over an RC as <code>pulse.msl</code>:</p>
+
+<!-- cli-file: pulse.msl -->
+<pre data-lang="msl">pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+pub module Capacitor(p: Electrical, n: Electrical) { c: f64 where c >= 0.0; }
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+module Pulse(p: Electrical) {
+    amp: f64 = 1.0;
+    width: f64 = 2u;
+    period: f64 = 4u;
+    edge: f64 = 1p;
+}
+analog for Pulse {
+    let ph = now() - period * (now() / period).floor();
+    let level = if ph < edge { ph / edge }
+        else if ph < width { 1.0 }
+        else if ph < width + edge { 1.0 - (ph - width) / edge }
+        else { 0.0 };
+    v(p) +> amp * level;
+}
+
+module Steady() {
+    signal vin: Electrical;
+    signal vout: Electrical;
+    let src = Pulse(vin);
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let c1 = Capacitor(vout, gnd) { c: 1n };
+}</pre>
+
+<pre data-lang="sh">piperine run pulse.msl --analysis pss --period 4e-6 --tstab 8e-6 --max-step 1e-9 --print-step 1e-6 --print vout</pre>
+
+<pre data-lang="text" data-cli-output="piperine run pulse.msl --analysis pss --period 4e-6 --tstab 8e-6 --max-step 1e-9 --print-step 1e-6 --print vout">run pulse: pss, top Steady, backend rust
+
+time         Steady.vout
+8.000000e-6  1.192517e-1
+9.000000e-6  6.759907e-1
+1.000000e-5  8.808037e-1
+1.100000e-5  3.241597e-1
+1.200000e-5  1.192517e-1</pre>
+
+<p>The first and last rows are equal: the circuit is back where the period began. The source's edges are a picosecond wide, so <code>max_step</code> is what keeps the solver from stepping over them.</p>
+
+<h3>Describing a design: <code>piperine info</code></h3>
+
+<p><strong><code>piperine info [&lt;run&gt;]</code></strong> elaborates the top of a run and prints what a host can read of it, simulating and compiling nothing: the params with their type, value, <code>where</code> condition and whether they are structural; the ports; and the record streams. With no run named it describes the only run, or the first when there are several; a lone <code>.msl</code> file works too. A design that does not elaborate gets the diagnostics <code>piperine check</code> prints, and exit 1.</p>
+
+<pre data-lang="sh">piperine info lowpass.msl</pre>
+
+<pre data-lang="text" data-cli-output="piperine info lowpass.msl">info lowpass: top Lowpass, backend rust
+
+params
+path           type  value        where       structural
+Lowpass.v1.dc  f64   1.000000e1   -           false
+Lowpass.r1.r   f64   1.000000e3   (r > 0.0)   false
+Lowpass.r2.r   f64   3.000000e3   (r > 0.0)   false
+Lowpass.c1.c   f64   1.000000e-6  (c >= 0.0)  false
+
+ports
+name  direction  type
+
+streams
+stream  fields</pre>
+
+<p>The top of <code>lowpass.msl</code> has no ports and writes no records, so those two tables are empty.</p>
+
 <h3>Two backends</h3>
 
 <p>A run executes on one of two backends, and the header says which. <code>rust</code>, the default, turns the design into Rust and compiles it; it runs everything. <code>interp</code> interprets the design directly and starts at once, for analog designs; given a design it does not run, it says so and names <code>--backend rust</code>. For a design both run, the two are expected to print the same table.</p>
@@ -4251,9 +4420,12 @@ PASS step (1 checks)
 <tbody>
 <tr><td><code>PASS &lt;name&gt; (&lt;n&gt; checks)</code></td><td>The run completed and every check passed.</td></tr>
 <tr><td><code>FAIL &lt;name&gt; (&lt;k&gt; of &lt;n&gt; checks failed)</code></td><td>A check's <code>pass</code> was false or unknown. The line of each such record follows.</td></tr>
+<tr><td><code>FAIL &lt;name&gt; (fatal at &lt;t&gt;: &lt;msg&gt;)</code></td><td>The model called <code>fatal</code>: the run ended at that instant and fails with the message. A <code>finish</code> ends a run too, and does not fail it.</td></tr>
 <tr><td><code>FAIL &lt;name&gt; (did not run)</code></td><td>The run did not complete; the error is on the error output.</td></tr>
 <tr><td><code>&lt;r&gt; runs, &lt;p&gt; passed, &lt;f&gt; failed</code></td><td>Always the last line.</td></tr>
 </tbody></table></div>
+
+<p>A <code>target</code> is an objective that reports and never fails. After the line of a run, <code>piperine test</code> prints one line per target, <code>  target &lt;name&gt; margin=&lt;value&gt;</code>, holding the last margin the run wrote, in the order the targets first wrote one; a negative margin is shown and does not turn the run red. A <code>require</code> is the constraint that fails.</p>
 
 <p><strong><code>piperine fmt</code></strong> rewrites in place every <code>.msl</code> file under <code>src/</code> and <code>benches/</code> whose layout differs from the standard one, and prints <code>formatted &lt;path&gt;</code> for each; given file names, it formats those only. Every comment you wrote is kept, in its place. <code>piperine fmt --check</code> writes nothing, prints <code>would format &lt;path&gt;</code> for each file that differs and fails if there is one, which is the line for a CI job. A file that does not parse is reported and left untouched.</p>
 

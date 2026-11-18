@@ -540,3 +540,79 @@ fn the_clipper_refusal_no_longer_names_sin() {
         assert!(!prose.contains(gone), "the clipper's prose still says {gone:?}");
     }
 }
+
+#[test]
+fn the_chapter_shows_the_session_options() {
+    // HII-22 AC 2: every option key of a run with its flag in a code span, and a listing that sets
+    // some of them whose output is the binary's (an operating point of the divider: 7.5 V)
+    let html = chapter(&content(), "cli");
+    let spans = code_spans(&html);
+    let has = |s: &str| spans.iter().any(|span| span == s || span.starts_with(&format!("{s} ")));
+    for (key, flag) in [
+        ("reltol", "--reltol"),
+        ("abstol", "--abstol"),
+        ("vntol", "--vntol"),
+        ("trtol", "--trtol"),
+        ("temp", "--temp"),
+        ("resolution", "--resolution"),
+        ("maxrounds", "--maxrounds"),
+        ("maxmicro", "--maxmicro"),
+        ("max_steps", "--max-steps"),
+        ("nodeset", "--nodeset"),
+    ] {
+        assert!(has(key), "the chapter names the option `{key}`");
+        assert!(has(flag), "the chapter names the flag `{flag}`");
+    }
+    let out = run_listing("piperine run lowpass.msl --analysis op --reltol");
+    let row = out.lines().find(|l| l.starts_with("Lowpass.vout")).unwrap_or_else(|| panic!("the vout row in\n{out}"));
+    assert_eq!(row.split_whitespace().last(), Some("7.500000e0"), "{out}");
+}
+
+#[test]
+fn the_chapter_runs_each_new_analysis() {
+    // HII-22 AC 2: one listing per new analysis, and `piperine info`, each the binary's output; the
+    // values are the divider's: gain 3/4, input resistance 4 kOhm, one pole at -1/(R1||R2)/C, the
+    // two sensitivities, a periodic orbit whose last row is its first, and the three tables of `info`
+    let html = chapter(&content(), "cli");
+    let spans = code_spans(&html);
+    for key in ["--input", "--output", "--wrt", "--period", "--tstab"] {
+        assert!(spans.iter().any(|span| span == key || span.starts_with(&format!("{key} "))), "the chapter names `{key}`");
+    }
+    let number = |line: &str, at: usize| -> f64 { line.split_whitespace().nth(at).and_then(|w| w.parse().ok()).unwrap_or_else(|| panic!("a number at {at} of `{line}`")) };
+    let row = |out: &str, start: &str| out.lines().find(|l| l.starts_with(start)).map(str::to_string).unwrap_or_else(|| panic!("no `{start}` row in\n{out}"));
+
+    let tf = run_listing("piperine run lowpass.msl --analysis tf");
+    assert!((number(&row(&tf, "gain"), 1) - 0.75).abs() < 1e-6, "{tf}");
+    assert!((number(&row(&tf, "input_resistance"), 1) - 4000.0).abs() < 1e-3, "{tf}");
+
+    let pz = run_listing("piperine run lowpass.msl --analysis pz");
+    let pole = row(&pz, "pole");
+    assert!((number(&pole, 1) + 4000.0 / 3.0).abs() < 1e-2, "{pz}");
+
+    let sens = run_listing("piperine run lowpass.msl --analysis sens");
+    assert!((number(&row(&sens, "Lowpass.r1.r"), 1) + 1.875e-3).abs() < 1e-9, "{sens}");
+    assert!((number(&row(&sens, "Lowpass.r2.r"), 1) - 6.25e-4).abs() < 1e-9, "{sens}");
+
+    let pss = run_listing("piperine run pulse.msl --analysis pss");
+    let orbit: Vec<&str> = pss.lines().skip_while(|l| !l.starts_with("time")).skip(1).collect();
+    let (first, last) = (number(orbit[0], 1), number(orbit[orbit.len() - 1], 1));
+    assert!((first - last).abs() < 1e-3, "the orbit closes: {first} against {last}");
+
+    let info = run_listing("piperine info lowpass.msl");
+    let titles: Vec<&str> = info.lines().filter(|l| ["params", "ports", "streams"].contains(l)).collect();
+    assert_eq!(titles, ["params", "ports", "streams"], "{info}");
+    assert!(info.contains("Lowpass.r1.r") && info.contains("1.000000e3"), "{info}");
+}
+
+#[test]
+fn blinky_runs_to_its_stop_in_the_book() {
+    // HII-17 AC 4 and HII-22 AC 3: the Book's `Blinky`, a design with no analog node, prints its
+    // three records and a table that ends at the stop, 3 us, with the counter at 3, exit 0 (a
+    // listing is only held when the command exits as the listing claims)
+    let out = run_listing("piperine run blinky.msl --analysis transient --stop 3e-6");
+    assert_eq!(out.lines().filter(|l| l.starts_with('@')).count(), 3, "{out}");
+    let last = out.lines().rev().find(|l| !l.trim().is_empty()).expect("a table row");
+    let cells: Vec<&str> = last.split_whitespace().collect();
+    assert_eq!(cells.first(), Some(&"3.000000e-6"), "the table ends at the stop: {last}");
+    assert_eq!(cells.last(), Some(&"3"), "the counter has counted three edges: {last}");
+}

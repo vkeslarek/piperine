@@ -1058,9 +1058,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `book.rs` gains `the_chapter_shows_the_session_options`, `the_chapter_runs_each_new_analysis`, `blinky_runs_to_its_stop_in_the_book`; `every_cli_listing_of_the_book_is_what_the_binary_prints` passes
-- [ ] Gate check passes: Quick (`Run clibook`)
-- [ ] Test count: 3 new tests
+- [x] `book.rs` gains `the_chapter_shows_the_session_options`, `the_chapter_runs_each_new_analysis`, `blinky_runs_to_its_stop_in_the_book`; `every_cli_listing_of_the_book_is_what_the_binary_prints` passes
+- [x] Gate check passes: Quick (`Run clibook`)
+- [x] Test count: 3 new tests
 
 **Tests**: e2e
 **Gate**: quick
