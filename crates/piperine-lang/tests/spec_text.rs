@@ -116,7 +116,7 @@ fn b36_lists_every_removed_form() {
 fn b36_names_the_forms_taken_in() {
     // POL-01 AC 2.
     let sec = b36();
-    let taken = sec.split("Taken from Rust").nth(1).expect("B.3.6 has a `Taken from Rust` list");
+    let taken = sec.split("Two forms that look absent").nth(1).expect("B.3.6 has a `Two forms that look absent` list");
     assert!(taken.contains("function-pointer types"), "{taken}");
     assert!(taken.contains("fn(T, ..) -> U"), "{taken}");
     assert!(taken.contains("negative literal as a const generic argument"), "{taken}");

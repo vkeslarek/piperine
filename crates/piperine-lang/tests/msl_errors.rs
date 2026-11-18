@@ -978,7 +978,7 @@ fn every_b36_row_has_a_fixture() {
     let sec = text.split("### B.3.6").nth(1).and_then(|s| s.split("\n## ").next()).expect("B.3.6");
     let cells: Vec<&str> = sec
         .lines()
-        .filter(|l| l.starts_with("| ") && !l.starts_with("| Removed") && !l.starts_with("| ---"))
+        .filter(|l| l.starts_with("| ") && !l.starts_with("| Form") && !l.starts_with("| ---"))
         .filter_map(|l| l.trim_matches('|').split('|').next())
         .map(str::trim)
         .collect();

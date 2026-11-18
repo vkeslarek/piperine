@@ -1,20 +1,20 @@
 # Appendix B. Reference
 
-This appendix is normative. It lists what the language adds to Rust (B.1), where each addition is allowed (B.2), and the complete grammar of the additions (B.3).
+This appendix is normative. It lists the mixed-signal constructs of the language (B.1), where each is allowed (B.2), and the complete grammar of the language (B.3).
 B.3 is the grammar authority: syntax excerpts in the parts repeat its productions.
 
-Tokens are defined in Appendix A. Everything not listed here is the value grammar of Rust 2024 with the changes of Part I.
+Tokens are defined in Appendix A. B.3.2 holds the productions of the mixed-signal constructs and B.3.7 those of the value language; together they derive every model.
 
-## B.1 Added to Rust
+## B.1 The mixed-signal constructs
 
-Every name and form a model can use that Rust does not have, or uses differently.
-The language adds **65** constructs. Everything else a model uses is the standard library (§22), written in the language.
+Every name and form of the language that is not part of the value language of Part I (§1.1 to §1.8, §3.7 to §3.9) or of the value library (Appendix H): what the language has for hardware, time and analysis.
+The language has **65** such constructs. Everything else a model uses is the standard library (§22), written in the language.
 
 ### B.1.1 Count
 
 | Kind | Items | Count |
 | --- | --- | --- |
-| keywords | `module` `nature` `signal` `on` `out` `flip` `after`; new uses of `in` and `extern` | 9 |
+| keywords | `module` `nature` `signal` `on` `out` `flip` `after`; the second uses of `in` and `extern` (A.1) | 9 |
 | contextual keywords | `analog`, `digital` before `for` or `<`; `potential`, `flow`, `value`, `resolve` in a nature (`potential` and `flow` are also the generic probes of those fields) | 6 |
 | operators | `+>`, `<-` | 2 |
 | calls | optional trailing `Option` parameters, named arguments (§3.2) | 2 |
@@ -25,7 +25,7 @@ The language adds **65** constructs. Everything else a model uses is the standar
 | analog | `ddt` `delay` `ddx` `limit` `noise` `ac_stim` `bound_step` | 7 |
 | environment | `now` `freq` `temperature` `simparam` `analysis` | 5 |
 | built-in `!` forms | `emit!`, `include_str!` | 2 |
-| attributes | `#[derivative]`, `#[derive(Repr)]`; Rust's `#[link]` on an extern module | 3 |
+| attributes | `#[derivative]`, `#[derive(Repr)]`, `#[link]` on an extern module | 3 |
 | names | `gnd`; implicit params `m`, `dtemp`; ABI strings `"osdi"`, `"cosim"`; reserved streams `sim`, `checks` | 7 |
 | forms | carrier fields in a `struct` (bundle); a module's name as a type and `Name { … }` as a value (template); the `Fn(P)` bound on modules; value inputs and a result on a module; `impl` on a nature or bundle, with a handle as `self`; `pub` on body items; `where` over const generics, on a module or a `fn` | 7 |
 | **total** |  | **65** |
@@ -100,7 +100,7 @@ The language adds **65** constructs. Everything else a model uses is the standar
 | 64 | `pub` on body items | form | visible to the parent as `inst.name` | §8.2 |
 | 65 | `where` over const generics | form | a boolean constraint on a module or a `fn` | §8.1, §3 |
 
-> **Resolution.** Names that occur only inside a counted construct are counted with it. The quantity keys `access`, `units` and `abstol` belong to `nature` (2). The variants of `Analysis` belong to `Analysis` (23). `UInt`, `Int` and `Float` belong to row 24. `#[repr(uN)]` and `extern "C" fn` are Rust's.
+> **Resolution.** Names that occur only inside a counted construct are counted with it. The quantity keys `access`, `units` and `abstol` belong to `nature` (2). The variants of `Analysis` belong to `Analysis` (23). `UInt`, `Int` and `Float` belong to row 24. `#[repr(uN)]` (§2) and `extern "C" fn` (§3) are counted with the value language, not here.
 
 > **Resolution.** `where` on a param (§8.1) is counted with the param form of `module` (1). Row 65 covers only the `where` after a module's port list or a `fn`'s signature.
 
@@ -172,15 +172,15 @@ Positions, left to right: a body `let` or a value-input argument; a definition o
 | any loop whose trip count is not a constant | no |
 | under an `if` or `match` in `analog` | yes: the instance exists whatever the branch taken (§8.3.4) |
 
-## B.3 Grammar of the additions
+## B.3 The grammar
 
 ### B.3.1 Conventions
 
 The notation is that of the index (§0). In addition:
 
-1. `stmt`, `expr`, `type`, `pat`, `block`, `generics`, `generic_args`, `path`, `attrs` and `const_item` are Rust's, apart from Part I's changes and the forms B.3.6 removes.
+1. `stmt`, `expr`, `type`, `pat`, `block`, `generics`, `generic_args`, `path`, `attrs` and `const_item` are the productions of the value grammar, B.3.7.
 2. `IDENT` and `STRING` are token classes (Appendix A). The tokens `+>`, `<-`, the SI-suffixed literal and `Unknown` are defined in Appendix A and are not repeated here.
-3. `( X ',' )*` denotes a comma-separated list of `X`. The comma after the last element is optional, as in Rust.
+3. `( X ',' )*` denotes a comma-separated list of `X`. The comma after the last element is optional.
 4. `gen<X>` is a production parameterized by the production `X`.
 
 > **Resolution.** Convention 3 fixes the reading of every list in this grammar. Read literally, the design's productions would require a comma after the last element, which its own examples omit.
@@ -190,7 +190,7 @@ The notation is that of the index (§0). In addition:
 ```
 // ---- items ---------------------------------------------------------------------------------
 
-item           ::= nature_decl | module_decl | behavior_block | rust_item
+item           ::= nature_decl | module_decl | behavior_block | value_item
 
 // ---- natures, bundles, functions ------------------------------------------------------------
 
@@ -254,13 +254,13 @@ attr_link       ::= '#' '[' 'link' '(' STRING ( ',' IDENT '=' STRING )* ')' ']' 
 
 1. `where` and `;` end a param's default without lookahead.
 2. `flip` belongs to the type, so `rx: flip Stream<T>` and `[flip Stream<T>; N]` both parse.
-3. As in Rust, a `{` after the head of `on`, `if`, `match`, `while` or `for` opens the block. An instance with a param block, or a template, is parenthesized there: `on cross(e) { … }` is a reaction.
+3. A `{` after the head of `on`, `if`, `match`, `while` or `for` opens the block. An instance with a param block, or a template, is parenthesized there: `on cross(e) { … }` is a reaction.
 4. A `place` takes no parentheses, in a definition and in a commit alike: `(q) = 1;` and `(q) <- 1;` are parse errors (`E0900`). A tuple index is not a `.IDENT` step: `q.0 = 1;` and `q.0 <- 1;` are parse errors too. A `place` names levels: a commit to `st.n` or `sh[3]` writes those levels of the carrier and no others.
 5. A trailing `expr` in a module body is the module's result (§8.3.2). It is allowed only when the head has `-> type`.
-6. `rust_item` is every Rust item that Part I keeps: `fn`, `struct`, `enum`, `trait`, `impl`, `const`, `mod`, `use`. Their `struct_field`, `impl_block` and `fn_decl` are the productions above.
+6. `value_item` is the item of the value language (B.3.7): `fn`, `struct`, `enum`, `trait`, `impl`, `const`, `mod`, `use`. Their `struct_field`, `impl_block` and `fn_decl` are the productions above.
 7. An `emit` followed by `;` is a statement. `include_str` is allowed only in the initializer of a `const` item (§20).
 
-In the param block of an `instance` and in a `template`, a field written as an `IDENT` with no `:` is the field-init shorthand, as in a Rust struct expression: `{ r }` means `{ r: r }`, so `R(p, n) { r }` and `R { r, c: 1p }` are well formed. The tree keeps the authored form: a field without `:` is a shorthand field, and `r: r` is not.
+In the param block of an `instance` and in a `template`, a field written as an `IDENT` with no `:` is the field-init shorthand of a struct expression (§1.3.3): `{ r }` means `{ r: r }`, so `R(p, n) { r }` and `R { r, c: 1p }` are well formed. The tree keeps the authored form: a field without `:` is a shorthand field, and `r: r` is not.
 
 Classification that the grammar leaves to name resolution:
 
@@ -322,16 +322,18 @@ The productions of B.3.2 differ from the design's listing in the places below. E
 
 > **Resolution.** `emit` takes a string literal as its stream name (§19). A body `let` takes no type annotation: its type is that of its expression.
 
-### B.3.6 Removed from Rust's grammar
+### B.3.6 Forms that are not part of the language
 
-This table, together with §1 rule 2, §3.2 and A.1, is the complete list of what a front end rejects at parse. A Rust form that none of the four removes is part of the language. Each removed form is reported once, with the code of its row.
+The grammar of B.3.2 and B.3.7 is complete: a form it does not derive is a parse error. The forms of this table are those a front end **MUST** report with the code of their row, once each, in place of a plain syntax error. This table, together with §1 rule 2, §3.2 and A.1, is the complete list of what a front end rejects at parse under a code of its own.
 
-| Removed | Reported as | Write instead |
+> **Note (informative).** Each form of the table is part of Rust. A reader who knows Rust will look for them; the third column says what to write.
+
+| Form | Reported as | Write instead |
 | --- | --- | --- |
 | type aliases (`type T = f64;`) | `E0903` | write the type out |
 | associated types (`type X;` in a trait or an `impl`) | `E0903` | name the type where it is used |
 | `static` items | `E0903` | a `const` item (§1 rule 3); state lives in signals (§0) |
-| trait-bound `where` clauses (`where T: Tr`) on a function, struct, enum, trait or `impl` | `E0900` | a bound in the generic list: `<T: Tr>` |
+| trait-bound `where` clauses (`where T: Tr`) on a function, struct, enum, trait or `impl` | `E0900` | a bound in the generic list: `<T: Tr>` (§3.8.8) |
 | `impl Trait` types | `E0900` | a named generic: `<T: Tr>` |
 | qualified paths (`<T as Tr>::X`) | `E0900` | a path through the type: `T::X` |
 | restricted visibility (`pub(crate)`, `pub(super)`) | `E0900` | `pub` or no visibility |
@@ -350,11 +352,147 @@ This table, together with §1 rule 2, §3.2 and A.1, is the complete list of wha
 | `extern` blocks | `E0900` | an `extern "C" fn` item |
 | `extern crate` items | `E0900` | a dependency named under `[dependencies]` of the manifest |
 
-Taken from Rust. Two forms look removed and are part of the language:
+Two forms that look absent are part of the language:
 
 - function-pointer types `fn(T, ..) -> U`, the type §4 rule 8 names;
 - a negative literal as a const generic argument (`Int< -1 >`, `Int<{ -1 }>`; `Int<-1>` is reported at the `<-` token).
 
 A front end cannot reject struct-update syntax in a template (§8.4) or a blocking write, `wait` or `sleep` (§12.2) at parse: the grammar has no production for them, so they are ordinary syntax errors.
 
-> **Resolution.** `static` items are listed as removed because a model keeps state only in signals (§0). The design names `const` as the only constant form and does not mention `static`.
+> **Resolution.** `static` items are in the table because a model keeps state only in signals (§0). The design names `const` as the only constant form and does not mention `static`.
+
+### B.3.7 The value grammar
+
+The productions of the value language. Their meaning is Part I; the tokens are Appendix A. `fn_decl`, `fn_param`, `impl_block`, `impl_item`, `struct_field`, `call`, `method_call`, `emit` and `include_str` are in B.3.2.
+
+```
+// ---- items ----------------------------------------------------------------------------------
+
+value_item     ::= attrs 'pub'? ( fn_decl | struct_decl | enum_decl | trait_decl | impl_block | const_item | use_decl | mod_decl )
+struct_decl    ::= 'struct' IDENT generics? ( '{' ( struct_field ',' )* '}' | '(' ( tuple_field ',' )* ')' ';' | ';' )
+tuple_field    ::= attrs 'pub'? type
+enum_decl      ::= 'enum' IDENT generics? '{' ( variant ',' )* '}'
+variant        ::= attrs IDENT ( '{' ( struct_field ',' )* '}' | '(' ( tuple_field ',' )* ')' )? ( '=' expr )?
+trait_decl     ::= 'trait' IDENT generics? ( ':' path ( '+' path )* )? '{' impl_item* '}'
+const_item     ::= 'const' IDENT ':' type ( '=' expr )? ';'
+mod_decl       ::= 'mod' IDENT ( ';' | '{' item* '}' )
+use_decl       ::= 'use' use_tree ';'
+use_tree       ::= ( use_seg '::' )* ( '*' | '{' ( use_tree ',' )* '}' | use_seg ( 'as' IDENT )? )
+use_seg        ::= IDENT | 'self' | 'super' | 'crate'
+
+// ---- attributes -----------------------------------------------------------------------------
+
+attrs          ::= ( DOC_COMMENT | attr )*                                      // DOC_COMMENT: an outer doc comment (A.4, A.9)
+attr           ::= '#' '[' path ( '(' ( attr_arg ',' )* ')' | '=' expr )? ']'
+attr_arg       ::= literal | IDENT '=' literal | path
+
+// ---- paths and generics ---------------------------------------------------------------------
+
+path           ::= path_seg ( '::' path_seg )*
+path_seg       ::= ( IDENT | 'self' | 'Self' | 'super' | 'crate' ) ( '::'? generic_args )?   // in an expression the '::' is required
+generics       ::= '<' ( generic_param ',' )* '>'
+generic_param  ::= IDENT ( ':' bound ( '+' bound )* )? ( '=' type )?
+                 | 'const' IDENT ':' type ( '=' ( literal | block ) )?
+bound          ::= path | path '(' ( type ',' )* ')' ( '->' type )?             // the second form: Fn(A, B) -> R
+generic_args   ::= '<' ( generic_arg ',' )* '>'
+generic_arg    ::= type | literal | '-' literal | block
+
+// ---- types ----------------------------------------------------------------------------------
+
+type           ::= path
+                 | '(' ')' | '(' type ',' ( type ',' )* ')' | '(' type ')'
+                 | '[' type ';' expr ']' | '[' type ']'
+                 | '&' STATIC_LIFETIME? type                                    // STATIC_LIFETIME: the token 'static
+                 | 'fn' '(' ( type ',' )* ')' ( '->' type )?
+                 | '_'
+
+// ---- patterns -------------------------------------------------------------------------------
+
+pat            ::= '|'? pat1 ( '|' pat1 )*
+pat1           ::= '_'
+                 | '..'                                                         // inside a tuple, tuple-struct or slice pattern
+                 | ( 'ref'? 'mut'? ) IDENT ( '@' pat1 )?
+                 | pat_bound ( '..' pat_bound? | '..=' pat_bound )?            // alone: a literal or a path pattern
+                 | '..=' pat_bound
+                 | path '(' ( pat ',' )* ')'
+                 | path '{' ( IDENT ( ':' pat )? ',' )* '..'? '}'
+                 | '(' ( pat ',' )* ')'
+                 | '[' ( pat ',' )* ']'
+                 | '&' pat1
+pat_bound      ::= '-'? ( INT_LITERAL | FLOAT_LITERAL ) | STRING | 'true' | 'false' | path
+
+// ---- statements -----------------------------------------------------------------------------
+
+block          ::= '{' stmt* expr? '}'
+stmt           ::= ';'
+                 | attrs 'let' pat1 ( ':' type )? ( '=' expr ( 'else' block )? )? ';'
+                 | attrs expr ';'
+                 | attrs block_expr ';'?
+                 | value_item
+
+// ---- expressions, loosest binding first -----------------------------------------------------
+
+expr           ::= range_expr ( assign_op expr )?
+assign_op      ::= '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '&=' | '|=' | '^=' | '<<=' | '>>='
+range_expr     ::= or_expr ( '..' or_expr? | '..=' or_expr )?
+                 | '..' or_expr? | '..=' or_expr
+or_expr        ::= and_expr ( '||' and_expr )*
+and_expr       ::= cmp_expr ( '&&' cmp_expr )*
+cmp_expr       ::= bitor_expr ( cmp_op bitor_expr )?
+cmp_op         ::= '==' | '!=' | '<' | '>' | '<=' | '>='
+bitor_expr     ::= bitxor_expr ( '|' bitxor_expr )*
+bitxor_expr    ::= bitand_expr ( '^' bitand_expr )*
+bitand_expr    ::= shift_expr ( '&' shift_expr )*
+shift_expr     ::= add_expr ( ( '<<' | '>>' ) add_expr )*
+add_expr       ::= mul_expr ( ( '+' | '-' ) mul_expr )*
+mul_expr       ::= cast_expr ( ( '*' | '/' | '%' ) cast_expr )*
+cast_expr      ::= unary_expr ( 'as' type )*
+unary_expr     ::= ( '-' | '!' | '*' | '&' ) unary_expr | postfix_expr
+postfix_expr   ::= primary postfix*
+postfix        ::= '.' IDENT                                                   // a field
+                 | '.' INT_LITERAL                                             // a tuple index
+                 | '.' IDENT generic_args? args                                // method_call (B.3.2); generic_args after '::'
+                 | args ( '{' ( IDENT ( ':' expr )? ',' )* '}' )?               // call; with the braces, an instance (B.3.2)
+                 | '[' expr ']'
+                 | '?'
+args           ::= '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')'
+primary        ::= literal
+                 | path
+                 | struct_expr
+                 | '(' expr ')'
+                 | '(' ')' | '(' expr ',' ( expr ',' )* ')'                     // a tuple
+                 | '[' ( expr ',' )* ']' | '[' expr ';' expr ']'               // an array
+                 | block_expr
+                 | closure
+                 | 'return' expr? | 'break' expr? | 'continue'
+                 | emit | include_str                                          // B.3.2
+literal        ::= INT_LITERAL | FLOAT_LITERAL | STRING | 'true' | 'false' | 'Unknown'
+struct_expr    ::= path generic_args? '{' ( IDENT ( ':' expr )? ',' )* '}'
+closure        ::= 'move'? ( '||' | '|' ( closure_param ',' )* '|' ) ( expr | '->' type block )
+closure_param  ::= pat1 ( ':' type )?
+block_expr     ::= block | if_expr | match_expr | while_expr | loop_expr | for_expr
+if_expr        ::= 'if' cond block ( 'else' ( if_expr | block ) )?
+cond           ::= 'let' pat '=' expr | expr                                   // no struct expression at the top (§1.5.17)
+match_expr     ::= 'match' expr '{' match_arm* '}'                              // no struct expression at the top of expr
+match_arm      ::= attrs pat ( 'if' expr )? '=>' ( block ','? | expr ',' | expr )   // the last form: the final arm only
+while_expr     ::= 'while' cond block
+loop_expr      ::= 'loop' block
+for_expr       ::= 'for' pat1 'in' expr block                                  // no struct expression at the top of expr
+```
+
+Reading the value grammar:
+
+1. The operator productions give the precedence and associativity of §1.5: a production lower in the list binds tighter, `cmp_expr` and `range_expr` do not chain, and `expr` assigns right to left.
+2. In an expression path, generic arguments follow `::` (`idt::<Heat>(x)`); in a type they follow the name directly (`Bit<u8>`). A generic argument that is a single name is read as a `type`; name resolution finds the const parameter or constant it names (§3.8.5).
+3. After `as type`, a `<` or `<<` belongs to the type: `a as u8 < b` is a parse error; write `(a as u8) < b`.
+4. A struct expression, and the param block of an instance, are not allowed at the top level of the expression in the head of `if`, `while`, `match`, `for` and `on`, where the `{` opens the body (B.3.3 item 3).
+5. A `block_expr` at the start of a statement is the whole statement: `{ a } - b;` is a block and then the statement `-b;`. Parenthesize a block that is an operand.
+6. The operand of `return` and `break`, and the body of a closure without `-> type`, extend as far to the right as an `expr` can.
+7. `>=`, `>>` and `>>=` are formed as A.10 rule 2 says. `t.0.1` is two tuple indexes.
+8. At the start of an operand `||` opens a closure without parameters. `&&x` is not two borrows (B.3.6).
+9. `(e)` is a parenthesized expression, `(e,)` a tuple of one field. `(T)` is the type `T`, `(T,)` a tuple type. `(p)` is the pattern `p`.
+10. In a `stmt`, the `;` after an expression may be left out only before the `}` that closes the block: the expression is then the value of the block (§1.7.1).
+11. `signal` and `on` are items of a module body and of a `digital` block (B.3.2), never statements; written in another block they are reported by §10 rule 8.
+12. A `value_item` in a `stmt` carries its own `attrs`.
+
+> **Resolution.** B.3.7 writes out the grammar of every value form the parts use. It adds no construct: each production is a form of Part I.
