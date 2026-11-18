@@ -195,6 +195,16 @@ impl Bound {
         let bytes = encode(layout, value).map_err(|e| bind_error(path, format!("`{param}`: {e}")))?;
         Ok((net, bytes))
     }
+
+    /// The id of the discrete net `name` of the digital plan, and `value` in its layout.
+    pub(crate) fn net_bytes(&self, name: &str, value: &ParamValue) -> Result<(NetId, Vec<u8>)> {
+        let fail = |why: String| Error::simple(SolverDomain::Device, format!("net `{name}`: {why}"));
+        let at = self.digital.plan().nets.iter().position(|n| n.name == name).ok_or_else(|| fail("no discrete net of the design has that name".into()))?;
+        let net = NetId(at as u32);
+        let layout = self.digital.plan().net_layout(net).ok_or_else(|| fail("no device pin reads it, so it has no layout".into()))?;
+        let bytes = encode(layout, value).map_err(fail)?;
+        Ok((net, bytes))
+    }
 }
 
 impl Bound {

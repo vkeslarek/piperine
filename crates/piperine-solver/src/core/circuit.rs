@@ -255,6 +255,40 @@ impl CircuitInstance {
         Ok(())
     }
 
+    /// Writes `value` to the discrete net `net` (its name in the digital plan) between analyses
+    /// (abi.md §10 "Host actions"): the net's shadow checks it first, a refusal or a `RESHAPE`
+    /// changes nothing, and an accepted write is one of the host's initial writes of every later
+    /// analysis, which the analog copy reads at once. The value is encoded in the net's layout,
+    /// its known byte set.
+    pub fn write_net(&mut self, net: &str, value: crate::core::bind::ParamValue) -> crate::core::result::Result<()> {
+        use piperine_digital_solver::engine::Shadow;
+        let bound = self.abi.as_mut().ok_or_else(|| {
+            Error::simple(SolverDomain::Device, "`write_net` addresses device instances; this circuit has none")
+        })?;
+        let (id, bytes) = bound.net_bytes(net, &value)?;
+        let shadow = bound
+            .digital
+            .shadow(id, 0, &bytes)
+            .map_err(|e| Error::simple(SolverDomain::Digital, e.to_string()))?;
+        match shadow {
+            Shadow::Accept => {
+                bound.host_writes.retain(|(n, _)| *n != id);
+                if let Some(slot) = bound.names.slots.get(&id) {
+                    bound.analog.set_discrete(*slot, &bytes);
+                }
+                bound.host_writes.push((id, bytes));
+                Ok(())
+            }
+            Shadow::Refused { check } => {
+                Err(Error::simple(SolverDomain::Device, format!("`{net}`: the write is refused, check {check} is false")))
+            }
+            Shadow::Reshape { instance } => Err(Error::simple(
+                SolverDomain::Device,
+                format!("`{net}`: the write would need instance {instance} in another shape"),
+            )),
+        }
+    }
+
     /// Destroys every device instance and creates and binds them again from
     /// the recipe, over the circuit's own nodes.
     fn rebind(&mut self) -> crate::core::result::Result<()> {

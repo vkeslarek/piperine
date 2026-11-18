@@ -705,9 +705,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-solver/tests/host_writes.rs` (new) holds `write_net_before_a_run_is_an_initial_value`
-- [ ] Gate check passes: Quick (`Run solverhost`, `Run baseline`)
-- [ ] Test count: 1 new test
+- [x] `crates/piperine-solver/tests/host_writes.rs` (new) holds `write_net_before_a_run_is_an_initial_value`
+- [x] Gate check passes: Quick (`Run solverhost`, `Run baseline`)
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: quick
