@@ -106,6 +106,7 @@ fn probe() -> &'static Module {
 fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("EnvProbe", probe());
     partials::verify_every_function("GminLoad", gmin_load());
+    partials::verify_every_function("FlagProbe", flag_probe());
 }
 
 /// A divider (so the circuit has analog unknowns) and the probe, its `go` kicked at 100 ns; the
@@ -235,4 +236,100 @@ fn analog_and_reactions_read_one_gmin_at_the_transient_start() {
         assert!((v - read_at_start * 1.0e12).abs() < 1.0e-9, "v(out) = {v} at t = {:e}: gmin as the analog side read it", s.time());
     }
     assert_eq!(result.iter().next().expect("t = 0").time(), 0.0);
+}
+
+// ─── The analysis flags of an operating point (FIX-11) ──────────────────────
+
+thread_local! {
+    /// `[dc, tran, ac, noise]` as each `START` reaction of `FlagProbe` read its global pins.
+    static FLAGS: RefCell<Vec<[bool; 4]>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Reads the analysis globals in a reaction.
+/// pins: dc=0, tran=1, ac=2, noise=3 (GLOBAL BIT); start=4 (GLOBAL START)
+/// reaction 0 "flags": on [start] reads [dc, tran, ac, noise]
+struct FlagProbe;
+static FLAG_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static FLAG_PROBE: OnceLock<Module> = OnceLock::new();
+
+fn flag_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let flags = [("dc", global::DC), ("tran", global::TRAN), ("ac", global::AC), ("noise", global::NOISE)]
+        .map(|(name, kind)| s.pin(PinSpec { global: kind, ..PinSpec::discrete(name, role::GLOBAL, &piperine_abi::layout::BIT) }));
+    let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
+    let pin = |index| Cell { kind: cell::PIN, index, part: part::VALUE };
+    s.reaction(ReactionSpec { name: "flags", origin: ORIGIN, on: vec![start], reads: flags.map(pin).to_vec(), ..ReactionSpec::default() });
+    s.freeze()
+}
+
+impl Device for FlagProbe {
+    fn prototype() -> &'static Shape<'static> {
+        FLAG_SHAPE.get_or_init(flag_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((FlagProbe, Arc::clone(FLAG_SHAPE.get_or_init(flag_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        let read = [0, 1, 2, 3].map(|i| cx.bytes(i) == [1, 1]);
+        FLAGS.with(|f| f.borrow_mut().push(read));
+        Ok(Flow::Continue)
+    }
+}
+
+fn flag_probe() -> &'static Module {
+    FLAG_PROBE.get_or_init(|| module::<FlagProbe>("FlagProbe"))
+}
+
+/// A divider and the flag probe.
+fn flag_circuit() -> (piperine_solver::prelude::CircuitInstance, piperine_solver::prelude::NodeIdentifier) {
+    let mut b = CircuitBuilder::new("flags");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
+    add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
+    b.device(flag_probe(), "flags", &[], &[]);
+    FLAGS.with(|f| f.borrow_mut().clear());
+    (b.build().expect("build"), abi_devices::node_id(&mid))
+}
+
+#[test]
+fn an_ac_operating_point_carries_the_ac_flag() {
+    // FIX-11 AC 3 (§11.1.1): the operating point of an AC analysis is `analysis(Ac)`, not
+    // `analysis(Dc)`; `START` fires once there
+    let (mut circuit, _) = flag_circuit();
+    circuit.ac(Context::default()).expect("ac");
+    assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[false, false, true, false]]);
+}
+
+#[test]
+fn a_noise_operating_point_carries_the_noise_flag() {
+    // FIX-11 AC 4: the operating point of a noise analysis is `analysis(Noise)`
+    let (mut circuit, mid) = flag_circuit();
+    let options = piperine_solver::prelude::NoiseAnalysisOptions {
+        sweep_options: piperine_solver::prelude::AcSweepAnalysisOptions { start_frequency: 1.0e3, stop_frequency: 1.0e5, steps: 5, logarithmic: true },
+        output_node: mid,
+        reference_node: piperine_solver::prelude::NodeIdentifier::Gnd,
+        input_source_name: None,
+    };
+    circuit.noise(options, Context::default()).expect("noise");
+    assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[false, false, false, true]]);
+}
+
+#[test]
+fn a_transient_operating_point_carries_the_tran_flag() {
+    // FIX-11 AC 2: the operating point of a transient is `analysis(Transient)`; the plain operating
+    // point stays `analysis(Dc)`
+    let (circuit, _) = flag_circuit();
+    let mut solver = Solver::new(circuit).with_tran_opts(TransientAnalysisOptions::new(2.0e-7, 1.0e-8)).build();
+    solver.tran().expect("tran").solve().expect("the transient");
+    assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[false, true, false, false]]);
+    let (circuit, _) = flag_circuit();
+    let mut solver = Solver::new(circuit).build();
+    solver.dc().expect("dc").solve().expect("the operating point");
+    assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[true, false, false, false]]);
 }

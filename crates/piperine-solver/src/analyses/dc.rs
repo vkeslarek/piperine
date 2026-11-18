@@ -160,6 +160,9 @@ pub struct DcSolver<'a> {
     homotopy_strategy: Option<&'static str>,
     /// The host's sink and waiters, for a circuit of devices.
     pub(crate) host: crate::analyses::adapters::HostHooks,
+    /// The analysis global (`global::DC`, `TRAN`, `AC` or `NOISE`) the operating point's
+    /// digital side carries: the analysis the operating point is for.
+    analysis: u32,
 }
 
 impl<'a> DcSolver<'a> {
@@ -190,7 +193,16 @@ impl<'a> DcSolver<'a> {
             assembly_checkpoint: None,
             homotopy_strategy: None,
             host: Default::default(),
+            analysis: piperine_abi::raw::global::DC,
         })
+    }
+
+    /// The operating point of another analysis (`global::AC` or `global::NOISE`): the same solve,
+    /// its digital side carrying the caller's analysis global instead of `DC` (§11.1.1, FIX-11).
+    pub fn under(circuit: &'a mut CircuitInstance, context: Context, analysis: u32) -> crate::core::result::Result<Self> {
+        let mut dc = Self::new(circuit, context)?;
+        dc.analysis = analysis;
+        Ok(dc)
     }
 
     /// Seed the DC Newton initial guess with node-voltage hints (the host
@@ -233,7 +245,7 @@ impl<'a> DcSolver<'a> {
         // Reactions and discrete functions read the continuation values at rest: every
         // instant runs after the last solve of its sequence (abi.md §4.2).
         digital.set_continuation(self.system.context.tolerances.gmin, 1.0);
-        let side = DigitalSide::new(digital, bound, piperine_abi::raw::global::DC);
+        let side = DigitalSide::new(digital, bound, self.analysis);
         let hooks = self.host.clone();
         let nets = hooks.nets(bound);
         let protocol =

@@ -122,7 +122,7 @@ impl<'a> NoiseSolver<'a> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
-        let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
+        let dc_point = DcSolver::under(circuit, context.clone(), piperine_abi::raw::global::NOISE)?.solve()?;
 
         let (out_ref, ref_ref) = Self::resolve_nodes(circuit, &options)?;
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);

@@ -164,7 +164,7 @@ impl<'a> AcSolver<'a> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
-        let mut dc_solver = DcSolver::new(circuit, context.clone())?;
+        let mut dc_solver = DcSolver::under(circuit, context.clone(), piperine_abi::raw::global::AC)?;
         let dc_point = dc_solver.solve()?;
 
         let netlist = circuit.netlist();
