@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
-use piperine_api::{Field, Failure, Overrides, Project, Record, RecordSink, Session, Streams};
+use piperine_api::{Cell, Field, Failure, Overrides, Project, Record, RecordSink, Session, Streams};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind};
 use piperine_transpile::Settings;
 
@@ -281,9 +281,11 @@ fn a_run_ended_by_finish_gives_its_rows_to_the_instant() {
 }
 
 #[test]
-fn a_short_run_without_finish_still_fails() {
-    // FIX-02 AC 5 (CLI-05 AC 11): a digital-only top steps nothing, so the run ends at 0 before
-    // its stop, and no `finish` record excuses it
+fn a_digital_only_run_without_finish_reaches_its_stop() {
+    // FIX-02 AC 5 (CLI-05 AC 11) rested on a digital-only top stepping nothing; HII-17 (L56) closed
+    // that: the same bench now runs to its stop with no `finish` to excuse it, and the record of the
+    // instant at 2 us is delivered. A run that genuinely ends short is the recorder's `reached`
+    // rule, held by `recorder::tests::the_recorder_reports_the_time_of_the_last_step_it_saw`
     let m = "module M() {}\ndigital for M { on at(2u) { emit!(\"s\", a = 1.0); } }\nmodule Top() { let m = M(); }\n";
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
@@ -292,8 +294,9 @@ fn a_short_run_without_finish_still_fails() {
     let overrides = Overrides { analysis: Some("transient".into()), stop: Some(5e-6), top: Some("Top".into()), ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
-    match session.run(Rc::new(RefCell::new(Kept::default()))) {
-        Err(Failure::Backend(message)) => assert!(message.contains("before its stop"), "{message}"),
-        other => panic!("a short run fails: {other:?}"),
-    }
+    let kept = Rc::new(RefCell::new(Kept::default()));
+    let table = session.run(kept.clone()).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.rows.last().expect("rows")[0], Cell::Real(5e-6));
+    let records = kept.borrow().0.clone();
+    assert_eq!(records.iter().filter(|r| r.stream == "s").count(), 1, "{records:?}");
 }

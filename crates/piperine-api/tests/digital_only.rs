@@ -1,8 +1,9 @@
 //! Scope: a transient of a design with no analog unknown runs to its stop (HII-17, L56). The
 //! design is the Book's `Blinky`: an oscillator at 1 MHz (a half period of 0.5 us) and a counter
-//! of its rising edges. A transient that genuinely ends short (HII-17 AC 3) has no source on this
-//! branch: nothing ends a run early until a `finish` ends a transient (lane A); the rule is the
-//! one CLI-05 AC 11 states and `Recorder::reached` carries it.
+//! of its rising edges. A transient that ends at a `finish` is a run ended ok (X4: HII-17 AC 3 restated). A run
+//! that genuinely ends short has no source: since `msl-fixes` the only thing that ends a transient
+//! early is a `finish` or a `fatal`, both of which set the run's end; the short-end rule itself
+//! (CLI-05 AC 11) is held by `Recorder::reached` and its unit test.
 #![cfg(unix)]
 
 use std::cell::RefCell;
@@ -28,12 +29,19 @@ fn settings() -> Settings {
 
 const BLINKY: &str = "module Osc(out clk: Bit = false) {\n    f: f64 = 1M where f > 0.0;\n}\ndigital for Osc {\n    on clk.changed() { clk <- !clk after 0.5 / f; }\n}\n\nmodule Counter(in clk: Bit, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count);\n    }\n}\n\nmodule Blinky() {\n    signal clk: Bit;\n    pub signal count: Bit<u8>;\n    let osc = Osc(clk) { f: 1M };\n    let ctr = Counter(clk, count);\n}\n";
 
+/// `BLINKY` and a module that calls `finish` at 2 us, a run the model ends itself.
+const FINISHING: &str = "module Stopper() {}\ndigital for Stopper { on at(2u) { finish(); } }\n";
+
 fn run(stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
+    run_source(BLINKY, stop, print_step)
+}
+
+fn run_source(source: &str, stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("blinky.msl");
-    std::fs::write(&file, BLINKY).expect("write");
+    std::fs::write(&file, source).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides { backend: Some("rust".into()), analysis: Some("transient".into()), stop: Some(stop), print_step, print: vec!["clk".into(), "count".into()], ..Overrides::default() };
+    let overrides = Overrides { backend: Some("rust".into()), analysis: Some("transient".into()), top: Some("Blinky".into()), stop: Some(stop), print_step, print: vec!["clk".into(), "count".into()], ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
     let kept = Rc::new(RefCell::new(Kept(Vec::new())));
@@ -64,4 +72,18 @@ fn a_digital_only_grid_holds_net_values() {
     let counts: Vec<Cell> = table.rows.iter().map(|r| r[2].clone()).collect();
     assert_eq!(counts, [0, 1, 2, 3].map(Cell::Int));
     assert!(table.rows.iter().all(|r| r[1] == Cell::Bool(false)), "{:?}", table.rows);
+}
+
+#[test]
+fn a_digital_only_run_ended_by_finish_is_ok() {
+    // HII-17 AC 3 restated with X4 (`finish` ends the run, ok): Blinky plus a `Stopper` that calls
+    // `finish` at 2 us, in a run to 5 us, is not "ended before its stop": it gives its table up to
+    // 2 us (the counter has seen the edge at 0.5 us and 1.5 us) and no failure
+    let source = BLINKY.replace("    let ctr = Counter(clk, count);\n", "    let ctr = Counter(clk, count);\n    let stop = Stopper();\n") + FINISHING;
+    let (table, records) = run_source(&source, 5e-6, None).unwrap_or_else(|f| panic!("{f}"));
+    let last = table.rows.last().expect("a table with rows");
+    let Cell::Real(ended) = last[0] else { panic!("a time: {last:?}") };
+    assert!((ended - 2e-6).abs() <= 1e-12, "the table ends at the finish instant: {last:?}");
+    assert_eq!(last[2], Cell::Int(2), "the counter after the edges at 0.5 and 1.5 us: {last:?}");
+    assert_eq!(records.iter().filter(|r| r.stream == "edge").count(), 2, "{records:?}");
 }
