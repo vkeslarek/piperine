@@ -220,7 +220,7 @@ fn appendix_h() -> String {
 fn appendix_h_has_every_group() {
     // POL-02 AC 1: the title, the normative mark, nine groups, ten adaptors.
     let h = appendix_h();
-    assert!(h.starts_with("# Appendix H. Inherited library"), "title");
+    assert!(h.starts_with("# Appendix H. Value library"), "title");
     assert!(h.contains("This appendix is normative."));
     for group in [
         "## H.1 Integer types",
