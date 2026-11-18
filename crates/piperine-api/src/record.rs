@@ -177,6 +177,9 @@ pub(crate) struct Delivery {
     pub(crate) failure: Rc<RefCell<Option<Failure>>>,
     /// The recorder of a transient's rows, which holds the nets as they change.
     pub(crate) recorder: Option<Rc<RefCell<Recorder>>>,
+    /// The instant of the last `sim` record whose `finish` is known true: where the run ended
+    /// by its own model's decision (msl-fixes FIX-02).
+    pub(crate) finished: Rc<RefCell<Option<f64>>>,
 }
 
 impl Sink for Delivery {
@@ -188,7 +191,12 @@ impl Sink for Delivery {
             }
         }
         match self.streams.decode(o) {
-            Some(Ok(record)) => self.sink.borrow_mut().record(&record),
+            Some(Ok(record)) => {
+                if record.stream == "sim" && record.fields.iter().any(|(name, field)| name == "finish" && *field == Field::Bool(true)) {
+                    *self.finished.borrow_mut() = Some(record.time);
+                }
+                self.sink.borrow_mut().record(&record)
+            }
             Some(Err(failure)) => {
                 self.failure.borrow_mut().get_or_insert(failure);
             }

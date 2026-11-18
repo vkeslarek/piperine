@@ -120,6 +120,13 @@ impl Recorder {
         self
     }
 
+    /// The run ended at `end` (a `finish` before its `stop`): the grid has no multiple past it.
+    pub(crate) fn end_at(&mut self, end: f64) {
+        if let Some(grid) = self.grid.as_mut() {
+            grid.kmax = grid.kmax.min((end / grid.h + 1e-9).floor() as u64);
+        }
+    }
+
     /// One accepted step at `time`, its values read by `read`.
     pub(crate) fn step(&mut self, time: f64, read: &Read<'_>) {
         if self.failure.is_some() {

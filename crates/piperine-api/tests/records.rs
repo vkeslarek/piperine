@@ -233,3 +233,67 @@ fn a_filter_entry_that_matches_nothing_is_e0801() {
         }
     }
 }
+
+/// The table of a 5 us transient of `text` (max step 50 ns, `print_step` when given), or the failure.
+fn table_of(text: &str, print_step: Option<f64>) -> Result<piperine_api::Table, Failure> {
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, text).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides {
+        analysis: Some("transient".into()),
+        stop: Some(5e-6),
+        top: Some("Top".into()),
+        max_step: Some(5e-8),
+        print_step,
+        ..Overrides::default()
+    };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &settings())?;
+    session.run(Rc::new(RefCell::new(Kept::default())))
+}
+
+fn time_column(table: &piperine_api::Table) -> Vec<f64> {
+    table
+        .rows
+        .iter()
+        .map(|row| match &row[0] {
+            piperine_api::Cell::Real(t) => *t,
+            other => panic!("the time column holds a real, found {other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn a_run_ended_by_finish_gives_its_rows_to_the_instant() {
+    // FIX-02 AC 1: `finish()` at 2 us in a run to 5 us gives rows up to 2 us and no row past it,
+    // and no short-run failure, with and without a print step (0.5 us: rows 0, 0.5, .., 2.0 us).
+    let m = "module M() {}\ndigital for M { on at(2u) { finish(); } }\n";
+    let text = design(m, "    let m = M();\n");
+    let every_step = table_of(&text, None).unwrap_or_else(|f| panic!("{f}"));
+    let times = time_column(&every_step);
+    let last = *times.last().expect("rows");
+    assert!((last - 2e-6).abs() <= 1e-12, "the last row is at the finish instant, not 5 us: {last}");
+    let gridded = table_of(&text, Some(0.5e-6)).unwrap_or_else(|f| panic!("{f}"));
+    let times = time_column(&gridded);
+    assert_eq!(times.len(), 5, "rows at 0, 0.5, 1.0, 1.5 and 2.0 us: {times:?}");
+    assert!((times[4] - 2e-6).abs() <= 1e-12, "{times:?}");
+}
+
+#[test]
+fn a_short_run_without_finish_still_fails() {
+    // FIX-02 AC 5 (CLI-05 AC 11): a digital-only top steps nothing, so the run ends at 0 before
+    // its stop, and no `finish` record excuses it
+    let m = "module M() {}\ndigital for M { on at(2u) { emit!(\"s\", a = 1.0); } }\nmodule Top() { let m = M(); }\n";
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, m).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { analysis: Some("transient".into()), stop: Some(5e-6), top: Some("Top".into()), ..Overrides::default() };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    match session.run(Rc::new(RefCell::new(Kept::default()))) {
+        Err(Failure::Backend(message)) => assert!(message.contains("before its stop"), "{message}"),
+        other => panic!("a short run fails: {other:?}"),
+    }
+}

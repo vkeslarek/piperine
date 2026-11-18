@@ -205,7 +205,7 @@ impl Session {
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
         let failure = Rc::new(RefCell::new(None));
-        let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone(), recorder: None });
+        let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone(), recorder: None, finished: Rc::new(RefCell::new(None)) });
         let table = self.analysis(circuit, delivery);
         if let (Ok(table), Some(_)) = (&table, &self.spec.plot) {
             self.plotted.get_or_insert_with(|| table.clone());
@@ -237,6 +237,7 @@ impl Session {
                     recorder = recorder.with_grid(*step, *stop);
                 }
                 let recorder = Rc::new(RefCell::new(recorder));
+                let finished = delivery.finished.clone();
                 delivery.recorder = Some(recorder.clone());
                 let options = Session::transient_options(*stop, *max_step);
                 let mut solver = Solver::new(circuit)
@@ -248,11 +249,15 @@ impl Session {
                 // CLI-05 AC 11: a run that stopped short has no table to give; the solver does not
                 // step a design with no analog node, which keeps a single step at 0 holding the
                 // values of the end of the run
+                // a model that wrote `finish` ended the run at that instant: it is the run's end
+                // (FIX-02 AC 1), and the grid stops there
+                let end = finished.borrow().map_or(*stop, |at| at.min(*stop));
+                recorder.borrow_mut().end_at(end);
                 let last = result.iter().last().map(|step| step.time());
-                if last.is_none_or(|last| last < stop * (1.0 - 1e-9)) {
+                if last.is_none_or(|last| last < end * (1.0 - 1e-9)) {
                     let at = last.map_or_else(|| "no step".to_string(), |t| format!("the last step at {t:e}"));
                     return Err(Failure::Backend(format!(
-                        "the transient ended with {at}, before its stop at {stop:e}: the solver does not step a design with no analog node, so a digital-only transient is refused"
+                        "the transient ended with {at}, before its stop at {end:e}: the solver does not step a design with no analog node, so a digital-only transient is refused"
                     )));
                 }
                 // the solver held the observers; with it gone the recorder has one owner
