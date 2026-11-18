@@ -1,0 +1,19 @@
+//! Twin of `tests/ngspice/tran_corner.cir`: a 5 ns tanh corner at 1.03 us across 1 nF, computed
+//! from the time. The smallest step (1 ns) is the host's option on the transient, as `delmin` is
+//! ngspice's.
+mod devices;
+use devices::*;
+
+/// A voltage source that goes from 0 to 1 V around `at` as `(1 + tanh((t - at) / width)) / 2`, spelled
+/// `1 / (1 + exp(-2 (t - at) / width))` (the same function).
+pub module TanhCorner(p: Electrical, n: Electrical) {
+    at: f64 = 1.03e-6;
+    width: f64 = 5e-9;
+}
+analog for TanhCorner { v(p, n) +> 1.0 / (1.0 + (-2.0 * (now() - at) / width).exp()); }
+
+module TranCorner() {
+    signal top: Electrical;
+    let v1 = TanhCorner { at: 1.03e-6, width: 5e-9 }(top, gnd);
+    let c1 = Capacitor { c: 1e-9 }(top, gnd);
+}

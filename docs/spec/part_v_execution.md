@@ -669,7 +669,7 @@ A digital clock that nothing analog depends on costs the solver nothing.
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0508` | A transient step cannot be completed at the smallest step the simulator takes: Newton does not converge there, or the step still fails the truncation error (§17.2 rule 1) when retaken there once. The report names the time and the failing unknowns or `limit` instances. | run |
+| `E0508` | A transient step cannot be completed at the smallest step the simulator takes: Newton does not converge there, an attempt already at that step having failed (a step first cut to it is retaken there once; a step that fails the truncation error (§17.2 rule 1) at it is accepted and counted, as ngspice does, never failed). The report names the time and the failing unknowns or `limit` instances. | run |
 | `E0509` | `bound_step(dt)` evaluated with `dt` not finite or `dt ≤ 0`. | run |
 
 ### 17.3 Locating crossings

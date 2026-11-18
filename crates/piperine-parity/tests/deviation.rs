@@ -1,4 +1,4 @@
-//! Scope: the deviation table (HYG-06): each of the 8 twins is run with the policy of its own
+//! Scope: the deviation table (HYG-06): each of the 11 twins is run with the policy of its own
 //! `parity_*` target and the worst `|golden - actual| / bound` of every compared quantity is
 //! printed (`-- --nocapture`), with the accepted and rejected steps and `dt_min` floor hits of a
 //! transient. It measures; the gate stays the `parity_*` targets under `ToleranceContract`.
@@ -75,12 +75,21 @@ fn ac(golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
 
 /// The transient policy of `parity_tran.rs`: stop at 10 us, a step cap of a tenth of the print step.
 fn tran(fixture: &str, export: &str, node: &str, golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
+    tran_to(fixture, export, node, golden, backend, 10e-6, f64::MIN_POSITIVE)
+}
+
+/// [`tran`] to `stop`, with `dt_min` as the smallest step unless it is not above `f64::MIN_POSITIVE`
+/// (the options' own default).
+fn tran_to(fixture: &str, export: &str, node: &str, golden: &piperine_parity::golden::Golden, backend: Backend, stop: f64, dt_min: f64) -> Measured {
     let mut bench = Bench::load_on(fixture, backend);
     let out = bench.node(node);
     let rows = golden.real(export);
     let print_step = rows[1].0 - rows[0].0;
-    let mut options = TransientAnalysisOptions::new(10e-6, print_step / 10.0);
+    let mut options = TransientAnalysisOptions::new(stop, print_step / 10.0);
     options.dt_max = print_step / 10.0;
+    if dt_min > f64::MIN_POSITIVE {
+        options.dt_min = dt_min;
+    }
     let result = bench.circuit().transient(options, Context::default()).expect("transient").solve().expect("the transient solves");
     let steps: Vec<_> = result.iter().collect();
     let waveform = Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).expect("a node voltage")).collect());
@@ -91,6 +100,16 @@ fn tran(fixture: &str, export: &str, node: &str, golden: &piperine_parity::golde
         steps: Some((stats.steps_accepted, stats.steps_rejected, stats.dt_min_floor_hits)),
     }
 }
+
+/// `tran_floor`: no number to compare. ngspice stops with "Timestep too small"; the run of the twin
+/// must fail (`parity_tran.rs` asserts the code and the time).
+fn floor(golden: &piperine_parity::golden::Golden) -> Measured {
+    assert!(golden.said("Timestep too small"), "ngspice stops at the floor");
+    Measured { deviations: Vec::new(), steps: None }
+}
+
+/// The twins whose source reads the time, which only the compiled backend runs.
+const COMPILED_ONLY: [&str; 3] = ["tran_jump", "tran_corner", "tran_floor"];
 
 /// Every twin, in the order of the `parity_*` targets, measured on `backend`; `None` when ngspice is absent.
 fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
@@ -110,6 +129,14 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
     table.insert("tran_rc", tran("tran_rc", "tran_rc_tran", "out", &golden, backend));
     let Reference::Golden(golden) = ngspice.run("tran_dq") else { return None };
     table.insert("tran_dq", tran("tran_dq", "tran_dq_tran", "a", &golden, backend));
+    if backend == Backend::Rust {
+        let Reference::Golden(golden) = ngspice.run("tran_jump") else { return None };
+        table.insert("tran_jump", tran_to("tran_jump", "tran_jump_tran", "top", &golden, backend, 2e-6, f64::MIN_POSITIVE));
+        let Reference::Golden(golden) = ngspice.run("tran_corner") else { return None };
+        table.insert("tran_corner", tran_to("tran_corner", "tran_corner_tran", "top", &golden, backend, 2e-6, 1e-9));
+        let Reference::Golden(golden) = ngspice.run("tran_floor") else { return None };
+        table.insert("tran_floor", floor(&golden));
+    }
     Some(table)
 }
 
@@ -126,7 +153,8 @@ fn the_table_covers_every_twin() {
     for backend in Backend::selected() {
         let Some(table) = measure(backend) else { return };
         let covered: Vec<&str> = table.keys().copied().collect();
-        assert_eq!(covered, msl.iter().map(String::as_str).collect::<Vec<_>>(), "one row per twin on {}", backend.name());
+        let expected: Vec<&str> = msl.iter().map(String::as_str).filter(|name| backend == Backend::Rust || !COMPILED_ONLY.contains(name)).collect();
+        assert_eq!(covered, expected, "one row per twin on {}", backend.name());
         let deviations: Vec<Deviation> = table.values().flat_map(|m| m.deviations.clone()).collect();
         println!("deviation table on {} (ratio of |golden - actual| to the contract bound; 1 = at the bound)", backend.name());
         print!("{}", Deviation::table(&deviations));

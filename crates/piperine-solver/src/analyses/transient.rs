@@ -67,8 +67,8 @@ pub struct TransientAnalysisOptions {
     /// grinding for hours with unbounded memory growth.
     ///
     /// Without this cap `solve()`'s `while current_time < stop_time` has no
-    /// termination guarantee against a stepper that keeps retrying: a step that
-    /// still fails at the `dt_min` floor fails the run (`E0508`), so this is
+    /// termination guarantee against a stepper that keeps retrying: a Newton failure of
+    /// a step already at the `dt_min` floor fails the run (`E0508`), so this is
     /// the backstop for a controller that never reaches it.
     pub max_steps: usize,
 
@@ -445,7 +445,11 @@ struct TimeLoop {
     dt: f64,
     steps_accepted: usize,
     steps_rejected: usize,
+    /// Steps retaken at `dt_min` after a larger attempt failed (ngspice's `delta = delmin`).
     dt_min_floor_hits: usize,
+    /// Steps accepted at `dt_min` although they fail the truncation test: nothing smaller is
+    /// allowed, and ngspice does not fail those either (see [`TransientSolver::device_attempt`]).
+    floor_accepts: usize,
     /// Predictor gate: extrapolation history is only valid coming off an
     /// accepted step (a rejection leaves rejected rows in the buffer).
     last_step_accepted: bool,
@@ -467,6 +471,7 @@ impl TimeLoop {
             steps_accepted: 0,
             steps_rejected: 0,
             dt_min_floor_hits: 0,
+            floor_accepts: 0,
             last_step_accepted: false,
             sets_just_applied: false,
             dt_min_seen: f64::INFINITY,
@@ -811,6 +816,7 @@ impl<'a> TransientSolver<'a> {
         result.stats.steps_accepted = st.steps_accepted;
         result.stats.steps_rejected = st.steps_rejected;
         result.stats.dt_min_floor_hits = st.dt_min_floor_hits;
+        result.stats.floor_accepts = st.floor_accepts;
         result.stats.dt_min = if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 };
         result.stats.dt_max = st.dt_max_seen;
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
@@ -909,8 +915,6 @@ pub(crate) struct DeviceRun {
     /// A Newton failure at the step floor: reported by the next attempt, after
     /// the protocol restored its checkpoint for the rejection.
     failed: Option<piperine_analog_solver::error::Error>,
-    /// The last truncation rejection retook the step at `dt_min`; cleared when a step is accepted.
-    floor_retried: bool,
     /// The nets whose values the last delivery changed under a restart, until
     /// the step that reads them is accepted: what an `E0504` names.
     delivered: Vec<String>,
@@ -966,6 +970,8 @@ struct PendingStep {
     snapshot: TransientStep,
     milne: f64,
     post_set_step: bool,
+    /// The attempt is at the step floor and fails the truncation test: it is accepted anyway.
+    over_error_at_floor: bool,
 }
 
 /// A checkpoint of the analog side: the Newton history and the assembly's.
@@ -1076,7 +1082,6 @@ impl TransientSolver<'_> {
             attempts: 0,
             op: None,
             failed: None,
-            floor_retried: false,
             delivered: Vec::new(),
             spt,
             cap: f64::INFINITY,
@@ -1468,8 +1473,12 @@ impl TransientSolver<'_> {
         let outcome = self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
         if let Ok(Some(snapshot)) = outcome {
             let assessment = self.assess_step(&prediction, post_set_step);
-            if assessment.accept {
-                run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, post_set_step });
+            // The floor rule, ngspice's (`dctran.c`, "Timestep too small"): nothing smaller than
+            // `dt_min` is tried, so an attempt already at it that only fails the truncation test
+            // is accepted and counted; a Newton failure there ends the run (below).
+            let over_error_at_floor = !assessment.accept && self.is_at_floor(run, prediction.dt_actual);
+            if assessment.accept || over_error_at_floor {
+                run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, post_set_step, over_error_at_floor });
                 // §17.3 rule 8: a step that reads a jump does not locate its crossings.
                 if run.locates && !post_set_step
                     && let Some(landing) = self.device_locate(run, t_next)?
@@ -1478,18 +1487,42 @@ impl TransientSolver<'_> {
                 }
                 return Ok(Attempt::Converged);
             }
-            self.device_reject_lte(run, &prediction, assessment.milne, post_set_step)?;
+            self.trace_rejection(run, &prediction, assessment.milne);
+            self.cut_after_failure(run, &prediction);
             return Ok(Attempt::Rejected);
         }
-        st.steps_rejected += 1;
-        st.last_step_accepted = false;
-        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
-        if st.dt <= self.options.dt_min
-            && let Err(e) = outcome
-        {
+        // A Newton failure: ngspice cuts the step to an eighth; one that would fall to the floor is
+        // retaken there once, and the attempt at the floor that fails again is "Timestep too small".
+        let spent = self.cut_after_failure(run, &prediction);
+        if spent && let Err(e) = outcome {
             run.failed = Some(run.floor_error(e, t_next, post_set_step));
         }
         Ok(Attempt::Rejected)
+    }
+
+    /// Whether a step of `dt_actual` is at the floor: within one tick of `dt_min` (a step on the
+    /// tick grid cannot be told apart from it).
+    fn is_at_floor(&self, run: &DeviceRun, dt_actual: f64) -> bool {
+        dt_actual <= self.options.dt_min + run.spt
+    }
+
+    /// The step after a failed attempt (Newton, or the truncation test above the floor): the
+    /// controller's smaller step. ngspice's `olddelta` rule (`dctran.c`): a smaller step that would
+    /// be at or under `dt_min` is `dt_min` instead, and the attempt retaken there is counted in
+    /// `dt_min_floor_hits`, once; `true` when the failed attempt was itself at the floor, which has
+    /// no retake left.
+    fn cut_after_failure(&mut self, run: &mut DeviceRun, prediction: &StepPrediction) -> bool {
+        let at_floor = self.is_at_floor(run, prediction.dt_actual);
+        let st = &mut run.st;
+        st.steps_rejected += 1;
+        st.last_step_accepted = false;
+        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
+        let falls_to_floor = st.dt <= self.options.dt_min;
+        if falls_to_floor && !at_floor {
+            st.dt = self.options.dt_min;
+            st.dt_min_floor_hits += 1;
+        }
+        falls_to_floor && at_floor
     }
 
     /// The locator of §17.3 at the converged attempt `t1`: each `CROSS` watch that went from
@@ -1538,18 +1571,8 @@ impl TransientSolver<'_> {
         Ok(Some(landing * run.spt))
     }
 
-    /// `reject_lte_step` without the restores (the protocol restores its checkpoint). The step
-    /// failed the truncation error: the next step is smaller. The first time that step would be
-    /// at or under the floor it is retaken at `dt_min` (counted in `dt_min_floor_hits`); an
-    /// attempt that was already at `dt_min` fails the run, `E0508`, or `E0504` when the step
-    /// reads a delivery (§17.2, Appendix C.2), naming the time and the failing states' unknowns.
-    fn device_reject_lte(
-        &mut self,
-        run: &mut DeviceRun,
-        prediction: &StepPrediction,
-        milne: f64,
-        post_set_step: bool,
-    ) -> crate::core::result::Result<()> {
+    /// The `REJECT` trace record of a step that failed the truncation test.
+    fn trace_rejection(&self, run: &DeviceRun, prediction: &StepPrediction, milne: f64) {
         if self.policy.trace.transient {
             eprintln!(
                 "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
@@ -1559,60 +1582,17 @@ impl TransientSolver<'_> {
                 self.system.context.tolerances.trtol
             );
         }
-        // A step on the tick grid is at the floor when within one tick of it.
-        if prediction.dt_actual <= self.options.dt_min + run.spt {
-            return Err(self.lte_floor_error(run, prediction.t_next, post_set_step));
-        }
-        let st = &mut run.st;
-        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
-        if st.dt <= self.options.dt_min {
-            st.dt = self.options.dt_min;
-            st.dt_min_floor_hits += 1;
-            run.floor_retried = true;
-        }
-        st.steps_rejected += 1;
-        st.last_step_accepted = false;
-        Ok(())
-    }
-
-    /// The run error of a step that still fails the truncation error at the floor: the unknowns
-    /// of every `ddt` state whose own error exceeds `trtol`.
-    fn lte_floor_error(
-        &self,
-        run: &DeviceRun,
-        time: f64,
-        reads_a_jump: bool,
-    ) -> piperine_analog_solver::error::Error {
-        use piperine_analog_solver::error::{Error, RunCode, SolverDomain};
-        let tolerances = &self.system.context.tolerances;
-        let h = self.options.dt_min;
-        let mut unknowns = Vec::new();
-        if let Some(bound) = self.system.circuit.abi.as_ref() {
-            for (state, terms) in bound.analog.ddt_states().iter().zip(bound.analog.ddt_unknowns()) {
-                if TrBdf2::state_lte(std::slice::from_ref(state), tolerances, h) > tolerances.trtol {
-                    unknowns.extend(terms);
-                }
-            }
-        }
-        unknowns.sort_unstable();
-        unknowns.dedup();
-        let tried = if run.floor_retried { "after the retry at the floor" } else { "at a floor-sized step with no retry before it" };
-        let (code, what) = if reads_a_jump && !run.delivered.is_empty() {
-            (RunCode::E0504, format!("the step after a jump still fails the truncation error at the smallest step; it reads the delivery of {}", run.delivered.join(", ")))
-        } else {
-            (RunCode::E0508, "the step still fails the truncation error at the smallest step".to_string())
-        };
-        Error::run(code, SolverDomain::Transient, format!("{what}, {tried}")).with_time(time).with_unknowns(unknowns)
     }
 
     /// Accepts the converged attempt: `accept_step`'s bookkeeping without the
     /// old discrete engine; the restart comes with `device_deliver`.
     pub(crate) fn device_accept(&mut self, run: &mut DeviceRun) -> crate::core::result::Result<crate::protocol::Accepted> {
-        let PendingStep { prediction, snapshot, milne, post_set_step } =
+        let PendingStep { prediction, snapshot, milne, post_set_step, over_error_at_floor } =
             run.pending.take().expect("accept follows a converged attempt");
         let StepPrediction { t_next, dt_actual, dt_proposed, .. } = prediction;
         let st = &mut run.st;
         st.steps_accepted += 1;
+        st.floor_accepts += usize::from(over_error_at_floor);
         st.last_step_accepted = true;
         self.system.uic_hold = false;
         st.dt_min_seen = st.dt_min_seen.min(dt_actual);
@@ -1641,7 +1621,6 @@ impl TransientSolver<'_> {
         }
         st.sets_just_applied = false;
         run.delivered.clear();
-        run.floor_retried = false;
         run.last_dt = dt_actual;
         Ok(accepted)
     }

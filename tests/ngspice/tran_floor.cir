@@ -1,0 +1,13 @@
+* tran_floor — a node no step can settle after 1 us: 1 kOhm to ground and a B current that is
+* +1 mA above 0.5 V and -1 mA below it, so v = -1 V above (contradiction) and +1 V below
+* (contradiction), whatever the step. ngspice cuts the step to an eighth until it is under
+* `delmin`, retakes it there once and stops with "Timestep too small" (dctran.c): piperine fails
+* the run with E0508 at the same time (HYG-09). `quit 0` keeps ngspice's exit status 0, so the
+* harness reads its message.
+R1 n 0 1k
+B1 n 0 I=(time>1u) ? (v(n)>0.5 ? 1m : -1m) : 0
+.control
+tran 0.1u 2u uic
+quit 0
+.endc
+.end

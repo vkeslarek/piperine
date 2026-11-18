@@ -22,7 +22,11 @@ pub struct SolverStats {
     // Transient step loop
     pub steps_accepted: usize,
     pub steps_rejected: usize,
+    /// Steps retaken at `dt_min` after a larger attempt failed.
     pub dt_min_floor_hits: usize,
+    /// Steps accepted at `dt_min` although they fail the truncation test (nothing smaller is
+    /// allowed, and ngspice does not fail those either).
+    pub floor_accepts: usize,
     pub dt_min: f64,
     pub dt_max: f64,
     // Homotopy / convergence strategy

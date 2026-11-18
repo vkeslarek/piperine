@@ -1,0 +1,12 @@
+* tran_jump — a 0 to 1 V step at 1.03 us across 1 nF, computed from the time (a B source): no
+* breakpoint announces it, so no solver can land on it. The charge jumps by 1 nC inside whatever
+* step contains 1.03 us, however small the step is. ngspice completes the run; so must piperine
+* (HYG-09, the floor rule of dctran.c). `.options interp` prints on the grid of multiples of tstep.
+B1 top 0 V=u(time-1.03u)
+C1 top 0 1n
+.options interp
+.control
+tran 0.1u 2u uic
+wrdata tran_jump_tran v(top)
+.endc
+.end

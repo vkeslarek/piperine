@@ -1,0 +1,17 @@
+//! Twin of `tests/ngspice/tran_jump.cir`: a 0 to 1 V step at 1.03 us across 1 nF, computed from the
+//! time, so nothing announces it. ngspice starts the node at 0 V with `uic`; the source is 0 V
+//! at the start, so the operating point is the same.
+mod devices;
+use devices::*;
+
+/// A voltage source that is 0 V before `at` and 1 V from it, read from the time of the solve.
+pub module TimedStep(p: Electrical, n: Electrical) {
+    at: f64 = 1.03e-6;
+}
+analog for TimedStep { v(p, n) +> if now() >= at { 1.0 } else { 0.0 }; }
+
+module TranJump() {
+    signal top: Electrical;
+    let v1 = TimedStep { at: 1.03e-6 }(top, gnd);
+    let c1 = Capacitor { c: 1e-9 }(top, gnd);
+}

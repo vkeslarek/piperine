@@ -1,0 +1,12 @@
+* tran_corner — a 5 ns tanh corner at 1.03 us across 1 nF, computed from the time, with ngspice's
+* smallest step set to 1 ns (`delmin`, piperine's `dt_min`). The corner is steeper than the
+* controller can follow at 1 ns, and nothing announces it; ngspice completes, so must piperine
+* (HYG-09, the floor rule of dctran.c).
+B1 top 0 V=0.5*(1+tanh((time-1.03u)/5n))
+C1 top 0 1n
+.options interp delmin=1n
+.control
+tran 0.1u 2u uic
+wrdata tran_corner_tran v(top)
+.endc
+.end

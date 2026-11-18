@@ -19,7 +19,6 @@ use piperine_abi::layout::F64;
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, ambient, cell, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
-use piperine_analog_solver::error::RunCode;
 use piperine_analog_solver::netlist::BranchIdentifier;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, Context, TransientAnalysisOptions};
@@ -227,38 +226,134 @@ fn run_corner(at: f64, width: f64, dt_min: f64, stop: f64) -> Result<piperine_so
 }
 
 #[test]
-fn an_unannounced_corner_fails_e0508_at_the_floor() {
-    // HYG-09 AC 1: a 1 V step at 1.03 us that nothing announces, across 1 nF, leaves a step at the
-    // 1 ns floor whose charge still jumps by 1 nC: the run fails E0508, naming the time (the
-    // step that contains 1.03 us), and accepts no step.
-    let error = run_corner(1.03e-6, 0.0, 1.0e-9, 2.0e-6).map(|_| ()).expect_err("the step at the floor must fail, not be accepted");
-    assert_eq!(error.code(), Some(RunCode::E0508), "{error}");
-    let text = error.to_string();
-    assert!(text.contains("E0508") && text.contains("at t ="), "{text}");
-    let time = text.split("at t = ").nth(1).and_then(|t| t.split(' ').next()).and_then(|t| t.parse::<f64>().ok()).expect("the time");
-    assert!((1.03e-6..=1.03e-6 + 1.5e-9).contains(&time), "the failing step contains 1.03 us: {time:e} ({text})");
+fn an_unannounced_corner_is_accepted_at_the_floor_and_counted() {
+    // HYG-09 AC 1 (amended 2026-11-18, ngspice's floor rule): a 1 V step at 1.03 us that nothing
+    // announces, across 1 nF, leaves a step at the 1 ns floor whose charge still jumps by 1 nC.
+    // Nothing smaller is tried and ngspice completes this circuit, so the run completes: the step
+    // at the floor is accepted, counted in `floor_accepts`, and the run reaches its stop.
+    let result = run_corner(1.03e-6, 0.0, 1.0e-9, 2.0e-6).expect("the corner is accepted at the floor, not failed");
+    assert!(result.stats.floor_accepts >= 1, "the step at the floor was counted: {:?}", result.stats);
+    assert_eq!(result.last().expect("a last step").time(), 2.0e-6, "the run reaches its stop");
 }
 
 #[test]
-fn the_floor_is_retried_once_before_failing() {
-    // HYG-09 AC 2: the step that first falls to the 1 ns floor is retaken there once (counted in
-    // `dt_min_floor_hits`) and only the failure of that retry ends the run: the error of the hard
-    // corner is reported as failing after the retry at the floor, not at a first floor-sized step.
-    let error = run_corner(1.03e-6, 0.0, 1.0e-9, 2.0e-6).map(|_| ()).expect_err("the retry at the floor fails");
-    assert_eq!(error.code(), Some(RunCode::E0508), "{error}");
-    assert!(error.to_string().contains("after the retry at the floor"), "{error}");
+fn the_default_floor_takes_the_same_corner_too() {
+    // The corner of the verifier's evidence: the default `dt_min` (1e-15) and a hard step.
+    let result = run_corner(1.03e-6, 0.0, 1.0e-15, 2.0e-6).expect("the corner completes with the default floor");
+    assert!(result.stats.floor_accepts >= 1, "{:?}", result.stats);
+    assert_eq!(result.last().expect("a last step").time(), 2.0e-6);
 }
 
 #[test]
-fn the_floor_at_the_stop_time_names_that_time() {
-    // Edge case 6: the corner is at the stop time, so the step that fails at the floor is the one
-    // that ends there, and the error names that time.
+fn a_proposal_that_lands_on_the_floor_is_accepted_not_failed() {
+    // HYG-09 AC 2 (amended): a 5 ns `tanh` corner with a 1 ns floor. The controller's proposal
+    // after an accepted step lands on the floor before the corner; that attempt (no larger
+    // attempt failed before it) is taken, not failed: the run completes.
+    let result = run_corner(1.03e-6, 5.0e-9, 1.0e-9, 2.0e-6).expect("the tanh corner completes");
+    assert_eq!(result.last().expect("a last step").time(), 2.0e-6);
+}
+
+#[test]
+fn a_corner_at_the_stop_time_is_accepted_at_the_floor() {
+    // Edge case 6 (amended): the corner is at the stop time, so the step at the floor is the one
+    // that ends there; it is accepted and the run ends at that time.
     let stop = 1.03e-6;
-    let error = run_corner(stop, 0.0, 1.0e-9, stop).map(|_| ()).expect_err("the step at the floor fails");
-    assert_eq!(error.code(), Some(RunCode::E0508), "{error}");
+    let result = run_corner(stop, 0.0, 1.0e-9, stop).expect("the step at the floor is accepted");
+    assert_eq!(result.last().expect("a last step").time(), stop);
+    assert!(result.stats.floor_accepts >= 1, "{:?}", result.stats);
+}
+
+/// A conductance of 1 mS that faults the first time it is evaluated after `FAULT_AFTER`: one
+/// Newton failure, at whatever step reaches it first. `FAULTED` says it happened.
+/// pins: p=0, n=1 (PORT); fn 0: reads [p, n, TIME] writes [T0] partials (0<-0) (0<-1)
+struct FaultOnce;
+static FAULT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static FAULT_MODULE: OnceLock<Module> = OnceLock::new();
+const FAULT_AFTER: f64 = 5.0e-7;
+
+thread_local! {
+    static FAULTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn fault_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(TermSpec { name: "i", origin: "truncation.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+    let time = Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE };
+    s.function(FunctionSpec {
+        name: "i",
+        origin: "truncation.rs",
+        reads: vec![pin(p), pin(n), time],
+        writes: vec![term(t0)],
+        partials: vec![piperine_abi::raw::Partial { write: 0, to: 0, read: 0, at: 0 }, piperine_abi::raw::Partial { write: 0, to: 0, read: 1, at: 0 }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for FaultOnce {
+    fn prototype() -> &'static Shape<'static> {
+        FAULT_SHAPE.get_or_init(fault_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((FaultOnce, Arc::clone(FAULT_SHAPE.get_or_init(fault_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        if cx.f64(2) > FAULT_AFTER && !FAULTED.with(|faulted| faulted.replace(true)) {
+            return Err(Fault::new(7, "once"));
+        }
+        let g = 1.0e-3;
+        cx.set(0, g * (cx.f64(0) - cx.f64(1)));
+        cx.jac().copy_from_slice(&[g, -g]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A 1 kHz sine across 1 nF and the once-faulting conductance, run to 1 us at steps of 100 ns
+/// (the cap and the first step) with the floor at `dt_min`.
+fn run_once_faulting(dt_min: f64) -> Result<piperine_solver::prelude::TransientAnalysisResult, piperine_solver::abi::Error> {
+    FAULTED.with(|faulted| faulted.set(false));
+    let mut b = CircuitBuilder::new("Top");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let nodes = [Port::Node(top), Port::Node(gnd)];
+    b.device(vsine(), "v1", &[("amp", ParamValue::Real(1.0)), ("freq", ParamValue::Real(1.0e3))], &nodes);
+    b.device(abi_devices::capacitor(), "c1", &[("c", ParamValue::Real(1.0e-9))], &nodes);
+    b.device(FAULT_MODULE.get_or_init(|| module::<FaultOnce>("FaultOnce")), "g1", &[], &nodes);
+    let mut options = TransientAnalysisOptions::new(1.0e-6, 1.0e-7);
+    options.dt_min = dt_min;
+    options.dt_max = 1.0e-7;
+    let mut solver = piperine_solver::prelude::Solver::new(b.build().expect("build")).with_tran_opts(options).build();
+    let outcome = solver.tran().and_then(|mut t| t.solve());
+    assert!(FAULTED.with(|faulted| faulted.get()), "the Newton failure happened");
+    outcome
+}
+
+#[test]
+fn a_failed_step_that_falls_to_the_floor_is_retaken_there_once() {
+    // HYG-09 AC 2 (amended, ngspice's `olddelta` rule): the attempt of 100 ns fails Newton once;
+    // an eighth of it is under the 50 ns floor, so the step is retaken at the floor, counted
+    // once, and the retry (which converges) lets the run complete.
+    let result = run_once_faulting(5.0e-8).expect("the retry at the floor converges");
+    assert_eq!(result.stats.dt_min_floor_hits, 1, "one retake at the floor: {:?}", result.stats);
+    assert!(result.stats.steps_rejected >= 1, "{:?}", result.stats);
+    assert_eq!(result.last().expect("a last step").time(), 1.0e-6);
+}
+
+#[test]
+fn a_failure_at_an_attempt_already_at_the_floor_is_not_retried() {
+    // The controller's proposal reaches the floor with no larger attempt before it (the floor is
+    // the 100 ns step itself): the one Newton failure ends the run, as ngspice's "Timestep too
+    // small" does (`olddelta` is not above `delmin`). A retry would have converged, so the failure
+    // is the proof that none was made. The failure keeps its own error (a device fault, which has
+    // no run code); a Newton exhaustion at the floor is `E0508` (failure_rules.rs).
+    let error = run_once_faulting(1.0e-7).map(|_| ()).expect_err("a failure at the floor ends the run");
     let text = error.to_string();
-    let time = text.split("at t = ").nth(1).and_then(|t| t.split(' ').next()).and_then(|t| t.parse::<f64>().ok()).expect("the time");
-    assert!((time - stop).abs() < 1e-12, "the error names the stop time {stop:e}: {time:e} ({text})");
+    assert!(text.contains("once") && text.contains("at t = 6"), "{text}");
 }
 
 #[test]
@@ -270,4 +365,10 @@ fn its_corner_source_passes_the_partials_verifier() {
 #[test]
 fn its_device_passes_the_partials_verifier() {
     partials::verify_every_function("CubicCapacitor", cubic_capacitor());
+}
+
+#[test]
+fn its_once_faulting_device_passes_the_partials_verifier() {
+    // `FaultOnce`'s partials, before it faults (TIME, read 2, held at 0).
+    partials::verify_every_function_with("FaultOnce", FAULT_MODULE.get_or_init(|| module::<FaultOnce>("FaultOnce")), &[(0, 2, 0.0)]);
 }

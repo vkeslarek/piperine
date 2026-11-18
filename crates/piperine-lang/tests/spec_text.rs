@@ -1587,8 +1587,9 @@ fn part_v_states_the_solver_hygiene_rules() {
         // Q1: the basis of rule 1 is the `ddt` states, with the charge tolerance
         "Where rule 1 is measured: on the `ddt` states of §15.2 rule 1",
         "which is at least the session's charge tolerance `chgtol`",
-        // Q3: E0508 also covers a truncation failure at the floor
-        "or the step still fails the truncation error (§17.2 rule 1) when retaken there once",
+        // Q3 (amended 2026-11-18, ngspice's floor rule): E0508 is a Newton failure at the floor
+        "Newton does not converge there, an attempt already at that step having failed",
+        "a step that fails the truncation error (§17.2 rule 1) at it is accepted and counted, as ngspice does, never failed",
     ] {
         assert!(text.contains(fact), "Part V lacks \"{fact}\"");
     }
@@ -1609,9 +1610,10 @@ fn appendix_c_states_the_solver_hygiene_numerics() {
         "`reltol·max(|q|, chgtol)`",
         "with no component skipped for the asymmetry of its two differences",
         // Q3
-        "is retried there once, and the second failure ends the run with `E0508`",
-        "| step at the floor | one retry at `dt_min`, then `E0508` | §17.2 |",
-        "A step that fails the truncation error at `dt_min` is never accepted: it is retried there once and then fails with `E0508`, so §17.2.1 is never relaxed.",
+        "is retaken there once; Newton failing at an attempt already at `dt_min` ends the run with `E0508`",
+        "| step at the floor | one retake at `dt_min` after a larger attempt failed; Newton failing at the floor, `E0508`; the error test failing at the floor, accepted and counted | §17.2 |",
+        "The step floor follows ngspice's `dctran.c` exactly (\"Timestep too small\")",
+        "An attempt at `dt_min` that converges but fails the truncation error is accepted and counted (`floor_accepts`)",
         // Q5
         "at most `0.1·min(last step, gap to the next scheduled time point)`, first order",
         "| restart step after a landing or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point;",

@@ -148,7 +148,13 @@ impl Golden {
         rows
     }
 
-    pub(crate) fn captured(&self) -> String {
+    /// Whether ngspice's output, either stream, contains `text` (a message such as
+    /// "Timestep too small" that a run which stops early leaves behind).
+    pub fn said(&self, text: &str) -> bool {
+        self.stdout.contains(text) || self.stderr.contains(text)
+    }
+
+    pub fn captured(&self) -> String {
         format!("--- ngspice stdout ---\n{}\n--- ngspice stderr ---\n{}", self.stdout, self.stderr)
     }
 }
@@ -202,6 +208,15 @@ mod tests {
             Ok(text) => *text,
             Err(other) => other.downcast::<&str>().map(|text| text.to_string()).expect("a text panic"),
         }
+    }
+
+    #[test]
+    fn a_message_is_found_in_either_stream() {
+        let scratch = ScratchDir::create("unit");
+        let golden = Golden::new("unit", "plain\n".to_string(), "doAnalyses: TRAN:  Timestep too small; time = 1e-06\n".to_string(), "ngspice-test".to_string(), scratch);
+        assert!(golden.said("Timestep too small"), "found on stderr");
+        assert!(golden.said("plain"), "found on stdout");
+        assert!(!golden.said("singular matrix"), "absent");
     }
 
     #[test]
