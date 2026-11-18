@@ -1,5 +1,6 @@
-//! Scope: the deviation table (HYG-06): each of the 11 twins that are waveforms or sweeps (the five of
-//! `host-ii` print their own deviation, `OWN_TARGET`) is run with the policy of its own
+//! Scope: the deviation table (HYG-06): each of the 13 twins that are operating points, waveforms or
+//! sweeps (the three of `host-ii` that give resistances, eigenvalues and derivatives print their own
+//! deviation, `OWN_TARGET`) is run with the policy of its own
 //! `parity_*` target and the worst `|golden - actual| / bound` of every compared quantity is
 //! printed (`-- --nocapture`), with the accepted and rejected steps and `dt_min` floor hits of a
 //! transient, and, beside ngspice's own point count, the steps of the same transient run free (the
@@ -137,13 +138,59 @@ fn floor(golden: &piperine_parity::golden::Golden) -> Measured {
 }
 
 /// The twins whose source reads the time, which only the compiled backend runs.
-const COMPILED_ONLY: [&str; 3] = ["tran_jump", "tran_corner", "tran_floor"];
+const COMPILED_ONLY: [&str; 4] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc"];
 
 /// The twins of `host-ii` whose `parity_*` target measures and prints its own deviation per
-/// quantity (`parity_temp`, `parity_tf`, `parity_pz`, `parity_sens`, `parity_pss`: eigenvalues,
-/// resistances and derivatives, not a waveform or a sweep this table's rows can hold); the gate is
-/// that target under `ToleranceContract`, and the table does not repeat it.
-const OWN_TARGET: [&str; 5] = ["pss_rc", "pz_lowpass", "sens_divider", "temp_res", "tf_divider"];
+/// quantity (`parity_tf`, `parity_pz`, `parity_sens`): resistances, eigenvalues and derivatives
+/// are not an operating-point node, a waveform or a sweep this table's rows can hold; the gate is
+/// that target under `ToleranceContract`, and the table does not repeat it. `temp_res` is an
+/// operating point and `pss_rc` a waveform, so both are rows here.
+const OWN_TARGET: [&str; 3] = ["pz_lowpass", "sens_divider", "tf_divider"];
+
+/// The twin `temp_res` at 75 C (the run key `temp`, ngspice's `.options temp=75`) and at the
+/// default 27 C (what ngspice prints as `cold`), `v(mid)` under `DC_VOLTAGE`.
+fn temp_res(golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
+    let measure = |kelvin: Option<f64>, printed: &str, quantity: &str| {
+        let mut bench = Bench::load_on("temp_res", backend);
+        let mid = bench.node("mid");
+        let mut context = Context::default();
+        if let Some(kelvin) = kelvin {
+            context.tolerances.temperature = kelvin;
+        }
+        let actual = bench.circuit().dc(context).expect("dc").solve().expect("the operating point solves").get_node(&mid).expect("v(mid)");
+        Deviation::of("temp_res", quantity, &ToleranceContract::DC_VOLTAGE, &[(Coordinate::OperatingPoint, golden.printed(printed), actual)])
+    };
+    Measured { deviations: vec![measure(Some(75.0 + 273.15), "v(mid)", "v(mid) at 75 C"), measure(None, "cold", "v(mid) at 27 C")], steps: None, free_running: None }
+}
+
+/// The twin `pss_rc` at the policy of `parity_pss.rs` (period 4 us, `tstab` 8 us, a step cap of
+/// 1 ns): the orbit against the last period of ngspice's transient, with the steps of the capped
+/// orbit beside the steps of a free transient over one period at ngspice's own print step, which
+/// the cap hides: the source has 1 ps edges and no breakpoint, so a free shoot does not close.
+fn pss_rc(golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
+    const PERIOD: f64 = 4e-6;
+    const TSTAB: f64 = 8e-6;
+    const PERIODS: f64 = 10.0;
+    let mut bench = Bench::load_on("pss_rc", backend);
+    let out = bench.node("vout");
+    let mut options = piperine_solver::prelude::PssAnalysisOptions::new(PERIOD).with_tstab(TSTAB);
+    options.dt = Some(1e-9);
+    options.dt_max = Some(1e-9);
+    let orbit = bench.circuit().pss(options, Context::default()).and_then(|solver| solver.solve()).expect("the orbit converges");
+    let steps: Vec<_> = orbit.trace.iter().collect();
+    let waveform = Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).expect("v(vout)")).collect());
+    let rows = golden.real("pss_rc_tran");
+    let last_from = (PERIODS - 1.0) * PERIOD;
+    let last: Vec<&(f64, f64)> = rows.iter().filter(|(time, _)| *time >= last_from - 1e-12).collect();
+    let compared: Vec<_> = last.iter().map(|(time, wanted)| (Coordinate::Time(*time), *wanted, waveform.at(TSTAB + (time - last_from).clamp(0.0, PERIOD)).expect("inside the orbit"))).collect();
+    let print_step = rows[1].0 - rows[0].0;
+    let stats = &orbit.trace.stats;
+    Measured {
+        deviations: vec![Deviation::of("pss_rc", "v(vout)", &ToleranceContract::TRAN_VOLTAGE, &compared)],
+        steps: Some((stats.steps_accepted, stats.steps_rejected, stats.dt_min_floor_hits)),
+        free_running: Some(FreeRunning { ngspice_points: last.len(), steps: free_running_steps("pss_rc", backend, PERIOD, print_step, f64::MIN_POSITIVE) }),
+    }
+}
 
 /// Every twin, in the order of the `parity_*` targets, measured on `backend`; `None` when ngspice is absent.
 fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
@@ -161,6 +208,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
     table.insert("ac_rc", ac(&golden, backend));
     let Reference::Golden(golden) = ngspice.run("tran_rc") else { return None };
     table.insert("tran_rc", tran("tran_rc", "tran_rc_tran", "out", &golden, backend));
+    let Reference::Golden(golden) = ngspice.run("temp_res") else { return None };
+    table.insert("temp_res", temp_res(&golden, backend));
     let Reference::Golden(golden) = ngspice.run("tran_dq") else { return None };
     table.insert("tran_dq", tran("tran_dq", "tran_dq_tran", "a", &golden, backend));
     if backend == Backend::Rust {
@@ -170,6 +219,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
         table.insert("tran_corner", tran_to("tran_corner", "tran_corner_tran", "top", &golden, backend, 2e-6, 1e-9));
         let Reference::Golden(golden) = ngspice.run("tran_floor") else { return None };
         table.insert("tran_floor", floor(&golden));
+        let Reference::Golden(golden) = ngspice.run("pss_rc") else { return None };
+        table.insert("pss_rc", pss_rc(&golden, backend));
     }
     Some(table)
 }

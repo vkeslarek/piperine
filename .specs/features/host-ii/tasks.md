@@ -18,6 +18,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run planlib**: `cargo test -p piperine-plan --lib`
 **Run transpile**: `cargo test -p piperine-transpile --test derive`
 **Run paritylib**: `cargo test -p piperine-parity --lib`
+**Run deviation**: `cargo test -p piperine-parity --test deviation`
 **Run parity**: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_grid --test parity_corpus`
 **Run newparity**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_temp --test parity_tf --test parity_pz --test parity_sens --test parity_pss -- --nocapture`
 **Run apilib**: `cargo test -p piperine-api --lib`
@@ -1490,6 +1491,9 @@ Proof: run newparity | test sens_divider_through_a_session ... ok
 
 **C124** - The twin `pss_rc` run through a `Session` with its run keys agrees with ngspice under the same contract. (HII-07, AC 4; F9) 
 Proof: run newparity | test pss_rc_through_a_session ... ok
+
+**C125** - The deviation table holds `temp_res` and `pss_rc`, and leaves out only `tf_divider`, `pz_lowpass` and `sens_divider`. (HII-21, AC 2; F11) 
+Proof: run deviation | test the_table_covers_every_twin ... ok
 
 ---
 
