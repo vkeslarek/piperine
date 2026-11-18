@@ -76,3 +76,8 @@ None declined. Every question was answered on 2026-11-17.
 
 - The follow-up feature `root-e2e` (spec only, this branch): one integrated test per Book example and claim at the root, and the single root `tests/e2e/` with the ngspice twins moved under it.
 - A follow-up host feature for what needs new solver mechanisms: `force` and `release`, a host wait on an event, continued transients and an analysis at a transient's last instant (H6), operating-point variables, noise (blocked by L45), S-parameters, adjoint gradients.
+
+
+### F8, PSS with a digital drive (user, 2026-11-18)
+
+Verbatim: "Mergear e passar ao periodic (Recommended)". HII-07 AC 4 is amended to an analog `now()` drive; PSS of designs whose digital state grows with time (stdlib `every`'s counter, `transition`'s `ramp.t0`) moves to `periodic-small-signal` (GAPS H15).

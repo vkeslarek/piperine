@@ -169,10 +169,12 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 1. WHEN a run gives `analysis = "pss"` and `period = T` THEN the system SHALL give a table whose first column is `time` and whose rows cover one period of the converged orbit, from its start `t0` to `t0 + T`, one row per accepted step of that period, with one column per printed signal.
 2. WHEN a `pss` run gives `print_step = h` THEN the system SHALL give one row per `t0 + k*h` up to `t0 + T`, by the rules of the transient grid (`long-run` LR-05).
 3. WHEN a `pss` run gives `tstab = s` THEN the system SHALL run a transient over `[0, s]` before the first shot, and `t0` SHALL be `s`.
-4. WHEN the twin `pss_rc` (an RC driven by a square wave of period `T`, made by a reaction of the bench) runs `pss` with `print_step` equal to ngspice's print step THEN each row's output SHALL agree, under `ToleranceContract::TRAN_VOLTAGE`, with the row of ngspice's transient at the same phase of its last period, and with the closed form `1 / (1 + exp(-T / (2RC)))` at the end of the high half-period.
+4. WHEN the twin `pss_rc` (an RC driven by a square wave of period `T`, made by an analog source of the bench that reads `now()`) runs `pss` with `print_step` equal to ngspice's print step THEN each row's output SHALL agree, under `ToleranceContract::TRAN_VOLTAGE`, with the row of ngspice's transient at the same phase of its last period, and with the closed form `1 / (1 + exp(-T / (2RC)))` at the end of the high half-period.
 5. IF a `pss` run lacks `period`, or `period` is not greater than 0, or `tstab` is negative THEN the system SHALL report `P0010` naming the key.
 6. IF the shooting does not converge THEN the system SHALL fail the run with the solver's error naming the residual, and print no table.
 7. WHEN a `pss` run gives `plot` THEN the system SHALL draw the rows of its table, as a transient's plot.
+
+> **Amended 2026-11-18 (verification F8, user):** AC 4 originally drove `pss_rc` from a bench reaction through `D2A`. A digital state that grows with time (the stdlib `every` counter, `transition`'s absolute `ramp.t0`) never repeats, so such a design cannot shoot. The user chose, verbatim: "Mergear e passar ao periodic (Recommended)": `host-ii` proves PSS with an analog drive, and PSS of designs with time-growing digital state (marking time-like state through lang, IR, plan, transpile and solver) moves to `periodic-small-signal`, which owns GAPS H15.
 
 **Independent Test**: in a bench, `[run.steady] analysis = "pss" period = 1e-3 tstab = 5e-3`, then `piperine run steady`.
 
