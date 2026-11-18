@@ -212,4 +212,4 @@ New tables, as `Table` columns of typed cells:
 | PSS table | `Table::transient` / `Table::on_grid` over the one-period trace | the `long-run` oracles; one period is bounded |
 | L56 | judged by the step observer's last time, not the solver's result | the protocol already reaches the stop; no solver change |
 
-A project-level decision is recorded at the end of the feature (T42) as `MD-67`: a host `set` recomputes derived params through functions the compiled backend generates; elaboration and compilation still run once (MD-18 unchanged).
+A project-level decision is recorded at the end of the feature (T42) as `MD-68`: a host `set` recomputes derived params through functions the compiled backend generates; elaboration and compilation still run once (MD-18 unchanged).

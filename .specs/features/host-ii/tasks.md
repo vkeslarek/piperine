@@ -1091,9 +1091,9 @@ T38 → T39 → T40 → T41 → T42
 
 ---
 
-### T42: `MD-67` and the instruction files
+### T42: `MD-68` and the instruction files
 
-**What**: `.specs/STATE.md` gains `MD-67` (a host `set` recomputes derived params through generated functions; MD-18 unchanged); `CLAUDE.md` and `AGENTS.md` crate rows name the new api modules.
+**What**: `.specs/STATE.md` gains `MD-68` (a host `set` recomputes derived params through generated functions; MD-18 unchanged); `CLAUDE.md` and `AGENTS.md` crate rows name the new api modules.
 **Where**: `.specs/STATE.md`
 **Depends on**: T41
 **Reuses**: MD-66's form
@@ -1109,7 +1109,7 @@ T38 → T39 → T40 → T41 → T42
 **Tests**: integration
 **Gate**: build
 
-**Commit**: `docs(specs): MD-67, derived params under a set`
+**Commit**: `docs(specs): MD-68, derived params under a set`
 
 ---
 
