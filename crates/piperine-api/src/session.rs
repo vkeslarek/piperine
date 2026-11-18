@@ -605,14 +605,25 @@ impl Session {
     /// What the design declares (HII-10): every param with its value as the run uses it, the
     /// top's ports and every record stream. No analysis runs, and none is needed.
     pub fn metadata(&self) -> Metadata {
+        Session::metadata_of(&self.ir, &self.spec)
+    }
+
+    /// The top of `spec` and what its design declares, elaborated and nothing else: no backend
+    /// builds it and no analysis runs (`piperine info`). Diagnostics are the `Failure` of a
+    /// design that does not elaborate, as `Session::open` gives them.
+    pub fn describe(project: &Project, spec: &RunSpec) -> Result<(String, Metadata), Failure> {
+        let (ir, top) = Session::elaborate(project, spec)?;
+        Ok((top, Session::metadata_of(&ir, spec)))
+    }
+
+    fn metadata_of(ir: &Ir, spec: &RunSpec) -> Metadata {
         // the request's `params`, each by the full path of its param, the last one given winning
-        let set: Vec<(String, f64)> = self
-            .spec
+        let set: Vec<(String, f64)> = spec
             .params
             .iter()
-            .filter_map(|(entry, value)| ParamPath::resolve(&self.ir, self.ir.top().path(), entry).ok().map(|p| (format!("{}.{}", p.instance, p.param), *value)))
+            .filter_map(|(entry, value)| ParamPath::resolve(ir, ir.top().path(), entry).ok().map(|p| (format!("{}.{}", p.instance, p.param), *value)))
             .collect();
-        Metadata::of(&self.ir, &|path| set.iter().rev().find(|(p, _)| p == path).map(|(_, v)| *v))
+        Metadata::of(ir, &|path| set.iter().rev().find(|(p, _)| p == path).map(|(_, v)| *v))
     }
 
     /// The plot of the run that has completed, drawn from the rows of its table: every accepted

@@ -683,9 +683,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/info.rs` (new) holds `info_prints_params_ports_and_streams`, `info_of_a_broken_design_prints_diagnostics_and_exits_1`
-- [ ] Gate check passes: Quick (`Run cliinfo`, `Run clilib`), then Build (end of phase 5)
-- [ ] Test count: 2 new tests
+- [x] `crates/piperine-cli/tests/info.rs` (new) holds `info_prints_params_ports_and_streams`, `info_of_a_broken_design_prints_diagnostics_and_exits_1`
+- [x] Gate check passes: Quick (`Run cliinfo`, `Run clilib`), then Build (end of phase 5)
+- [x] Test count: 2 new tests
 
 **Tests**: e2e
 **Gate**: build

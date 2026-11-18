@@ -38,13 +38,13 @@ fn commands_listed(help: &str) -> Vec<String> {
 }
 
 #[test]
-fn help_lists_exactly_the_seven_commands() {
-    // CLI-01 AC 5: exactly `check`, `build`, `run`, `test`, `new`, `clean` and `fmt`, exit 0
+fn help_lists_exactly_the_eight_commands() {
+    // CLI-01 AC 5 and HII-11: exactly `check`, `build`, `run`, `test`, `new`, `clean`, `fmt` and `info`, exit 0
     let out = piperine(&["--help"]);
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     let mut listed = commands_listed(&text(&out.stdout));
     listed.sort();
-    let mut want = ["check", "build", "run", "test", "new", "clean", "fmt"].map(str::to_string).to_vec();
+    let mut want = ["check", "build", "run", "test", "new", "clean", "fmt", "info"].map(str::to_string).to_vec();
     want.sort();
     assert_eq!(listed, want, "{}", text(&out.stdout));
 }

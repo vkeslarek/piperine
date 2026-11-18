@@ -16,6 +16,7 @@ use crate::commands::build::BuildCommand;
 use crate::commands::check::CheckCommand;
 use crate::commands::clean::CleanCommand;
 use crate::commands::fmt::FmtCommand;
+use crate::commands::info::InfoCommand;
 use crate::commands::new::NewCommand;
 use crate::commands::run::RunCommand;
 use crate::commands::test::TestCommand;
@@ -83,7 +84,7 @@ struct CommandRow {
     args: &'static [ArgRow],
 }
 
-/// The seven commands (CLI-01 AC 5), in the order `--help` lists them.
+/// The eight commands (CLI-01 AC 5, and `info`), in the order `--help` lists them.
 const COMMANDS: &[CommandRow] = &[
     CommandRow {
         name: "check",
@@ -163,6 +164,11 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "check", kind: ArgKind::Switch, help: "write nothing; fail if a file would change" },
         ],
     },
+    CommandRow {
+        name: "info",
+        about: "List the params, ports and record streams of a run's design, simulating nothing",
+        args: &[ArgRow { id: "target", kind: ArgKind::Positional { required: false, many: false }, help: "the run to describe, or a lone .msl file; the only run when none is named" }],
+    },
 ];
 
 /// The flag every command but `new` takes: the package directory, searched nowhere else.
@@ -179,6 +185,7 @@ pub enum Invocation {
     New { name: String },
     Clean { project: Option<PathBuf>, cache: bool },
     Fmt { project: Option<PathBuf>, files: Vec<PathBuf>, check: bool },
+    Info { project: Option<PathBuf>, target: Option<String> },
 }
 
 impl Invocation {
@@ -192,6 +199,7 @@ impl Invocation {
             Invocation::New { .. } => "new",
             Invocation::Clean { .. } => "clean",
             Invocation::Fmt { .. } => "fmt",
+            Invocation::Info { .. } => "info",
         }
     }
 }
@@ -200,11 +208,11 @@ impl Invocation {
 pub struct Cli;
 
 impl Cli {
-    /// The command tree: `piperine` with the seven commands of [`COMMANDS`].
+    /// The command tree: `piperine` with the eight commands of [`COMMANDS`].
     pub fn command() -> Command {
         let mut root = Command::new("piperine")
             .version(env!("CARGO_PKG_VERSION"))
-            .about("Run MSL projects: check, build, run, test, new, clean and fmt")
+            .about("Run MSL projects: check, build, run, test, new, clean, fmt and info")
             .subcommand_required(true)
             .arg_required_else_help(true)
             .disable_help_subcommand(true);
@@ -308,6 +316,7 @@ impl Cli {
             "new" => Invocation::New { name: text("name").unwrap_or_default() },
             "clean" => Invocation::Clean { project: project(), cache: flag("cache") },
             "fmt" => Invocation::Fmt { project: project(), files: paths("files"), check: flag("check") },
+            "info" => Invocation::Info { project: project(), target: text("target") },
             other => return Err(Cli::command().error(clap::error::ErrorKind::InvalidSubcommand, format!("unknown command `{other}`"))),
         })
     }
@@ -321,6 +330,7 @@ impl Cli {
             Invocation::New { name } => NewCommand { name: name.clone() }.execute(out, err),
             Invocation::Test { project, runs } => TestCommand { project: project.clone(), runs: runs.clone() }.execute(out, err),
             Invocation::Run { project, target, overrides } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone() }.execute(out, err),
+            Invocation::Info { project, target } => InfoCommand { project: project.clone(), target: target.clone() }.execute(out, err),
             Invocation::Fmt { project, files, check } => FmtCommand { project: project.clone(), files: files.clone(), check: *check }.execute(out, err),
         }
     }
@@ -333,14 +343,14 @@ mod tests {
 
     #[test]
     fn every_command_is_built() {
-        // CLI-01 AC 5: each of the seven commands runs its own code. Given a project directory
+        // CLI-01 AC 5: each of the eight commands runs its own code. Given a project directory
         // that does not exist (and `new` a name the manifest rule refuses, so nothing is
         // written), each fails with its own error, exit 1, and none says it is not built.
         let nowhere = std::env::temp_dir().join(format!("piperine-cli-no-such-project-{}", std::process::id()));
         assert!(!nowhere.exists());
         let nowhere = nowhere.to_string_lossy().into_owned();
         let names: Vec<&str> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, ["check", "build", "run", "test", "new", "clean", "fmt"]);
+        assert_eq!(names, ["check", "build", "run", "test", "new", "clean", "fmt", "info"]);
         for name in names {
             let args: Vec<&str> = if name == "new" { vec!["piperine", name, "a/b"] } else { vec!["piperine", name, "--project", &nowhere] };
             let invocation = Cli::parse(&args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
