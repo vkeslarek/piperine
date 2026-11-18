@@ -79,8 +79,9 @@ fn transient_failure(top: &str) -> String {
 
 #[test]
 fn a_non_positive_bound_step_is_e0509() {
-    // FIX-09 AC 3: a cap of 0 or of -1 us fails the run with E0509, naming the watch.
-    for top in ["BadCapBench", "NegativeCapBench"] {
+    // FIX-09 AC 3: a cap of 0, of -1 us, of infinity or of NaN fails the run with E0509, naming
+    // the watch.
+    for top in ["BadCapBench", "NegativeCapBench", "InfCapBench", "NanCapBench"] {
         let err = transient_failure(top);
         assert!(err.contains("E0509") && err.contains("cap"), "{top}: {err:?}");
     }

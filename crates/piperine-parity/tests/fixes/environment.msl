@@ -58,6 +58,32 @@ module TwoCapsBench() {
     let rb = Resistor { r: 1k }(b, gnd);
 }
 
+/// A cap that is infinite (`1 / zero`) or NaN (`zero / zero`): `zero` is a param, so neither is
+/// folded.
+module InfCap(p: Electrical) { zero: f64 = 0.0; }
+analog for InfCap {
+    v(p, gnd) +> (2.0 * 3.141592653589793 * 1k * now()).sin();
+    bound_step(1.0 / zero);
+}
+
+module NanCap(p: Electrical) { zero: f64 = 0.0; }
+analog for NanCap {
+    v(p, gnd) +> (2.0 * 3.141592653589793 * 1k * now()).sin();
+    bound_step(zero / zero);
+}
+
+module InfCapBench() {
+    signal a: Electrical;
+    let s = InfCap(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+module NanCapBench() {
+    signal a: Electrical;
+    let s = NanCap(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
 module BadCapBench() {
     signal a: Electrical;
     let s = Capped { dt: 0.0 }(a);
