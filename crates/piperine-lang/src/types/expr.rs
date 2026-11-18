@@ -109,6 +109,10 @@ impl Checker<'_> {
                     self.check_as(*operand, expected, code);
                     Some(expected.clone())
                 }
+                ExprKind::Call { .. } => {
+                    self.call_expected = Some((expr, expected.clone()));
+                    self.infer(expr)
+                }
                 _ => self.infer(expr),
             };
             if let Some(found) = found

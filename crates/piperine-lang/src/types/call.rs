@@ -68,6 +68,9 @@ impl Checker<'_> {
     /// A call of a function of the reachable set: arguments against the declared parameters,
     /// the declared result as the type.
     fn function_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
+        if let Some(intrinsic) = self.intrinsic_of(function) {
+            return self.intrinsic_call(expr, callee, intrinsic, args);
+        }
         self.reach(function);
         self.emitting_call(expr, function);
         let (params, ret) = self.signature(function)?;

@@ -6,7 +6,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, FileId, LitKind, Reflect, TypeId};
 
 use super::check;
-use super::Ty;
+use super::{Intrinsic, Ty};
 
 /// What a `Deferred` method call of the reachable set resolves to: a row of the Appendix H
 /// catalogue.
@@ -125,6 +125,9 @@ pub enum Callee {
     Function(DeclId),
     Core(BuiltinId),
     Module(DeclId),
+    /// A function of §22.1 typed by its contract at the concrete type (`merge`, `same`, `cast`,
+    /// `logic`, `matches_bits`), until `generics` lets it compile from its stdlib source.
+    Intrinsic(Intrinsic),
 }
 
 /// The types of everything one top module reaches.

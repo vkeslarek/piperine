@@ -62,6 +62,22 @@ impl Ty {
         }
     }
 
+    /// The number of levels of the type's `Repr` (§2): 1 for `bool`, `N` for `uN` and `iN`, 64
+    /// for `f64`, the tag width `ceil(log2(V))` for an enum of `V` unit variants (§2 rule 5).
+    /// `None` for a type without `Repr`.
+    pub fn levels(&self, design: &Design) -> Option<u32> {
+        match self {
+            Ty::Bool => Some(1),
+            Ty::F64 => Some(64),
+            Ty::UInt(n) | Ty::Int(n) => Some(u32::from(*n)),
+            Ty::Enum(decl) => {
+                let variants = design.decl_data(*decl).children.iter().filter(|c| matches!(design.decl_data(**c).kind, crate::pom::DeclKind::Variant(_))).count();
+                Some(usize::BITS - variants.saturating_sub(1).leading_zeros())
+            }
+            _ => None,
+        }
+    }
+
     /// The type as a model author writes it, for messages.
     pub fn name(&self, design: &Design) -> String {
         match self {

@@ -354,6 +354,11 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, span, "a placement used as a value");
                 None
             }
+            // Typed by `types::intrinsic` (T3); lowered by its §22.1 contract in T28 and T29.
+            (_, Some(Callee::Intrinsic(_))) => {
+                self.unsupported(scope.file, span, "a function of §22.1 over `Repr`");
+                None
+            }
             (_, None) => {
                 self.unsupported(scope.file, span, "a call the type checker did not resolve");
                 None

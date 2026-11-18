@@ -96,6 +96,9 @@ pub(super) struct Checker<'d> {
     /// The one expression that may be a function used as a value: an argument written
     /// directly where the parameter has a function type.
     pub(super) fn_value_at: Option<ExprId>,
+    /// The type the context expects of one call, handed down by `check_as` just before the call
+    /// is typed: the result type of a call that is generic over its result (`logic`, `cast`).
+    pub(super) call_expected: Option<(ExprId, Ty)>,
     queued: BTreeSet<DeclId>,
     queue: VecDeque<DeclId>,
     diagnostics: Vec<DesignDiagnostic>,
@@ -131,6 +134,7 @@ impl<'d> Checker<'d> {
             poisoned: BTreeSet::new(),
             fn_where: false,
             fn_value_at: None,
+            call_expected: None,
             queued: BTreeSet::new(),
             queue: VecDeque::new(),
             diagnostics: Vec::new(),

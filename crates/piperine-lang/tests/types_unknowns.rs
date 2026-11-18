@@ -1,10 +1,8 @@
 //! The checker's side of `unknown-semantics` (part I §3.3, §22.1): `x.level(k)` and `T::WIDTH`
 //! typed on `Repr` values, the five stdlib functions of §22.1 typed by their contract at the
 //! concrete type (`E0701`, `E0702`), and the flag-total functions `analog` may read a carrier
-//! through (§3.3.6). One positive and one negative source per rule.
-
-#[path = "support/pom.rs"]
-mod support;
+//! through (§3.3.6). One positive and one negative source per rule, over the embedded standard
+//! library (the five functions are the stdlib's own items).
 
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::{Ty, Types};
@@ -15,8 +13,8 @@ fn source(items: &str, body: &str) -> String {
 }
 
 fn design_of(src: &str) -> Design {
-    let design = support::build(src);
-    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", support::codes(&design));
+    let design = Design::builder().source("top.msl", src).build();
+    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", design.diagnostics().iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
     design
 }
 
@@ -68,3 +66,49 @@ fn width_is_typed_u32_on_a_concrete_type() {
     assert_eq!(t, vec![Ty::UInt(32); 5]);
 }
 
+
+#[test]
+fn the_intrinsics_are_typed_at_the_concrete_type() {
+    // §22.1.2 to §22.1.4: each function is typed at the concrete type of its arguments, its
+    // turbofish or the type the context expects (US-03).
+    let body = "let a = merge(1.0, 2.0); let b = same(3_u8, 4_u8); let c: u2 = cast::<Mode, u2>(Mode::Run); \
+                let d = cast::<u8, i8>(3_u8); let e: u4 = logic(\"10xx\"); let f = logic::<Mode>(\"x1\"); \
+                let g = matches_bits(5_u4, \"01x1\"); let h = merge(Mode::Idle, Mode::Halt);";
+    let t = local_types(MODE, body, &["a", "b", "c", "d", "e", "f", "g", "h"]);
+    let mode = t[5].clone();
+    assert!(matches!(mode, Ty::Enum(_)), "logic::<Mode> is a Mode: {mode:?}");
+    assert_eq!(t[0], Ty::F64);
+    assert_eq!(t[1], Ty::Bool);
+    assert_eq!(t[2], Ty::UInt(2));
+    assert_eq!(t[3], Ty::Int(8));
+    assert_eq!(t[4], Ty::UInt(4));
+    assert_eq!(t[6], Ty::Bool);
+    assert_eq!(t[7], mode);
+}
+
+#[test]
+fn a_project_function_named_like_an_intrinsic_is_an_ordinary_function() {
+    // §22 rule 3: a project's own `merge` is not intercepted; it is typed from its signature.
+    let t = local_types("fn merge(a: f64, b: f64) -> f64 { a + b }", "let a = merge(1.0, 2.0);", &["a"]);
+    assert_eq!(t, [Ty::F64]);
+}
+
+#[test]
+fn cast_between_widths_is_e0701() {
+    // §22.1.3 rule 3: a width mismatch is `E0701`, naming both types (US-03 AC 8).
+    let (src, d) = diagnostics(MODE, "let a: u8 = cast::<Mode, u8>(Mode::Run);");
+    assert_eq!(codes_of(&d), ["E0701"]);
+    let message = &d[0].diagnostic.message;
+    assert!(message.contains("Mode") && message.contains("u8"), "both types are named: {message}\n{src}");
+}
+
+#[test]
+fn a_bad_pattern_is_e0702() {
+    // §22.1.4 rule 3: a character other than `0`, `1`, `x`, or a length other than WIDTH, is
+    // `E0702` at the pattern (US-03 AC 9).
+    for (call, pattern) in [("logic::<u4>(\"10z0\")", "\"10z0\""), ("logic::<u4>(\"101\")", "\"101\""), ("matches_bits(3_u4, \"01x10\")", "\"01x10\"")] {
+        let (src, d) = diagnostics("", &format!("let a = {call};"));
+        assert_eq!(codes_of(&d), ["E0702"], "{call}");
+        assert_eq!(&src[d[0].diagnostic.span().range()], pattern, "the error sits at the pattern");
+    }
+}

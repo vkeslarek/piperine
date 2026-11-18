@@ -18,6 +18,7 @@ mod control;
 mod definition;
 mod event;
 mod expr;
+mod intrinsic;
 mod module;
 mod reaction;
 mod record;
@@ -26,5 +27,6 @@ mod table;
 mod ty;
 mod unsupported;
 
+pub use intrinsic::Intrinsic;
 pub use table::{Builtin, Callee, Continuity, Method, Types};
 pub use ty::Ty;

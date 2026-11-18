@@ -229,9 +229,9 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `the_intrinsics_are_typed_at_the_concrete_type`, `cast_between_widths_is_e0701` and `a_bad_pattern_is_e0702` pass under `**Run typesunknowns**`
-- [ ] `types_values.rs`'s "generic function" test still passes for a project function
-- [ ] Gate check passes: Quick
+- [x] `the_intrinsics_are_typed_at_the_concrete_type`, `cast_between_widths_is_e0701` and `a_bad_pattern_is_e0702` pass under `**Run typesunknowns**`
+- [x] `types_values.rs`'s "generic function" test still passes for a project function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
