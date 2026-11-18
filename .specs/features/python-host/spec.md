@@ -1,5 +1,7 @@
 # Python Host Specification
 
+> **Deferred (2026-11-18).** User, 2026-11-18, verbatim: "Eu acho que podemos fazer tudo em RUST por enquanto e DEPOIS pensamos em integrar python. Senão cada mod da api do host vai tomar mais tempo ainda". Every host feature is built and tested in Rust first (`piperine-api`); this feature starts only after the host features it wraps have landed, and none of them waits on it or carries Python work.
+
 **Size:** L, about 35 tasks (P1 alone about 20). The host-action and analysis stories grow with `host-iii` and its siblings; each is gated on its dependency by a WHERE criterion.
 
 ## Open questions (user decisions, asked 2026-11-17)

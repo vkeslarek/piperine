@@ -353,7 +353,7 @@ Every id of `GAPS.md` (audit of 2026-11-17) has one owning feature. Specs only f
 | `sweeps-montecarlo-optimization` | H2 (multi-axis sweeps), H7 | L (~34) | host-ii |
 | `gradients` | H8, E0807–E0809 | L (~40) | host-ii; solver-hygiene |
 | `cli-packages` | H10 | M (~26) | piperine-project |
-| `python-host` | B4 | L (~35) | piperine-api; host-ii; host-iii |
+| `python-host` | B4 | L (~35), **deferred to after the host features** (user 2026-11-18: "podemos fazer tudo em RUST por enquanto e DEPOIS pensamos em integrar python") | piperine-api; host-ii; host-iii and siblings |
 | `lang-server` | B3 | M (~20), low priority (user) | — |
 
 **Performance and proof:**
