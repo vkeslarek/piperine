@@ -1,11 +1,12 @@
 //! The `analog` block of a body: its statements lowered in source order. Probes, environment
 //! reads and sites are lowered here; the contribution to a branch is `contribute.rs`.
 
-use piperine_ir::{Branch, BranchKind, Env, Expr, ExprId as LoweredExpr, Origin, Site, StmtId as LoweredStmt, Terminal, ValueType};
+use piperine_ir::{AnalysisKind, Branch, BranchKind, Env, Expr, ExprId as LoweredExpr, Origin, Site, StmtId as LoweredStmt, Terminal, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::unlowered::Unlowered;
+use crate::types::Callee;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
 
 impl Elaboration<'_, '_> {
@@ -24,7 +25,9 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             // After a diagnostic the block is empty: no `Ir` is built anyway.
+            scope.analog = true;
             let (mut lowered, value) = self.lower_statements(scope, &behavior.body).unwrap_or_default();
+            scope.analog = false;
             // At the top of the block a trailing expression without `;` is a statement like any other.
             if let Some(value) = value {
                 lowered.push(self.stmt(piperine_ir::Stmt::Expr(value)));
@@ -135,9 +138,22 @@ impl Elaboration<'_, '_> {
             "temperature" => Some(self.emit(Expr::Env(Env::Temperature), ty, origin)),
             "gmin" => Some(self.emit(Expr::Env(Env::Gmin), ty, origin)),
             "source_scale" => Some(self.emit(Expr::Env(Env::SourceScale), ty, origin)),
-            // The checker lets `analysis` take the kind `Static` only.
             "now" => Some(self.emit(Expr::Env(Env::Time), ty, origin)),
-            "analysis" => Some(self.emit(Expr::Env(Env::Static), ty, origin)),
+            // The analog block reads the sweep's frequency; a reaction or a function sees 0 (§14.4.4).
+            "freq" if scope.analog => Some(self.emit(Expr::Env(Env::Freq), ty, origin)),
+            "freq" => Some(self.emit(Expr::Real(piperine_ir::Real::new(0.0)), ty, origin)),
+            // The checker lets `analysis` take `Static` or a kind of analysis.
+            "analysis" => {
+                let kind = args.first().and_then(|a| self.builtin_name(*a));
+                let env = match kind.as_deref() {
+                    Some("Dc") => Env::Analysis(AnalysisKind::Dc),
+                    Some("Transient") => Env::Analysis(AnalysisKind::Transient),
+                    Some("Ac") => Env::Analysis(AnalysisKind::Ac),
+                    Some("Noise") => Env::Analysis(AnalysisKind::Noise),
+                    _ => Env::Static,
+                };
+                Some(self.emit(Expr::Env(env), ty, origin))
+            }
             "limit" if scope.nesting == 0 => {
                 let site = scope.limits.len() as u32;
                 let name = match scope.limit_name.take() {
@@ -181,6 +197,38 @@ impl Elaboration<'_, '_> {
                 None
             }
         }
+    }
+
+    /// The name of the built-in `expr` is a path to (`Static`, `Dc`, ...).
+    fn builtin_name(&self, expr: ExprId) -> Option<String> {
+        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return None };
+        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(Resolution::Builtin(id)) => Some(id.name()),
+            _ => None,
+        }
+    }
+
+    /// When `expr`, a statement of a block, is `bound_step(dt)` (§14.10): a `BoundStep` appended
+    /// to `out`, and `Some(false)` after a diagnostic (a `bound_step` under an `if`, a `match` or
+    /// in a nested block is not lowered). `None` for any other expression.
+    pub(super) fn lower_bound_step(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> Option<bool> {
+        let expr = self.peel_parens(expr);
+        let node = self.design.expr_node(expr).clone();
+        let ExprKind::Call { args, .. } = &node.kind else { return None };
+        match self.types.callee(expr) {
+            Some(Callee::Core(id)) if id.info().name == "bound_step" => {}
+            _ => return None,
+        }
+        if scope.nesting > 0 || scope.block_depth > 0 {
+            self.refuse(scope.file, node.span, Unlowered::ConditionalBoundStep);
+            return Some(false);
+        }
+        let [arg] = &args[..] else { return Some(false) };
+        let value = self.lower_expr(scope, arg.value)?;
+        let site = scope.bounds;
+        scope.bounds += 1;
+        out.push(self.stmt(piperine_ir::Stmt::BoundStep { site, value }));
+        Some(true)
     }
 
     /// A node argument: a port or signal of the body, or ground.

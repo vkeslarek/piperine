@@ -19,6 +19,8 @@ pub(super) enum Unlowered<'a> {
     NestedContribution,
     /// A `limit` under an `if`, in a function or in a closure.
     ConditionalLimit,
+    /// A `bound_step` under an `if`, a `match` or in a nested block.
+    ConditionalBoundStep,
     /// An `ac_stim` under an `if`, in a function or in a closure.
     ConditionalStim,
     /// A `ddt` that is not a whole top-level addend of a contribution.
@@ -38,6 +40,7 @@ impl Unlowered<'_> {
             Unlowered::ConditionalContribution => "a contribution under an `if` or in a closure".to_string(),
             Unlowered::NestedContribution => "a contribution in a nested block".to_string(),
             Unlowered::ConditionalLimit => "a `limit` under an `if` or in a closure".to_string(),
+            Unlowered::ConditionalBoundStep => "a `bound_step` under an `if`, a `match` or in a nested block".to_string(),
             Unlowered::ConditionalStim => "an `ac_stim` under an `if` or in a closure".to_string(),
             Unlowered::DdtOffTop => "a `ddt` that is not a whole addend of a flow contribution or of a potential contribution".to_string(),
             Unlowered::DdtTolerance => "a `ddt` with a tolerance".to_string(),

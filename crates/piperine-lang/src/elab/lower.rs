@@ -48,11 +48,16 @@ pub(super) struct Scope {
     pub(super) texts: BTreeMap<DeclId, String>,
     /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
     pub(super) no_locals: bool,
+    /// Whether the code being lowered is the analog block: the one place `freq()` is read from
+    /// the solve (§14.4.4; in a reaction or a function it is 0).
+    pub(super) analog: bool,
+    /// The `bound_step` statements met so far: the next one's site.
+    pub(super) bounds: u32,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0 }
     }
 }
 
@@ -433,6 +438,8 @@ impl Elaboration<'_, '_> {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
                 // `emit!` and a call of a function that emits are statements (`records.rs`).
                 StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_record_statement(scope, &mut out, *expr) => ok &= lowered,
+                // `bound_step(dt);` is a statement of the analog block (`analog.rs`).
+                StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_bound_step(scope, &mut out, *expr) => ok &= lowered,
                 StmtKind::Expr { expr, semi } => match self.lower_expr(scope, *expr) {
                     Some(lowered) if i + 1 == stmts.len() && !semi => value = Some(lowered),
                     Some(lowered) => out.push(self.stmt(Stmt::Expr(lowered))),

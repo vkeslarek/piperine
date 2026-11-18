@@ -154,8 +154,8 @@ fn a_placement_in_a_const_context_is_e0352() {
 #[test]
 fn now_and_analysis_static_are_typed() {
     // DIG-06 AC 5 (§14.4): `now()` is `f64` and `analysis(Static)` is `bool` in a module body, an
-    // `analog` block and a reaction; each is `E0323` in a param default; another analysis kind is
-    // `P0001` naming `analysis`.
+    // `analog` block and a reaction; each is `E0323` in a param default; the other analysis kinds
+    // are typed `bool` too since FIX-11 (they were `P0001` naming `analysis`).
     let src = "module Top(in clk: Bit, p: Electrical, out t: Bit<f64> = 0.0) {\n    let a = now();\n    let b = analysis(Static);\n}\nanalog for Top { let c = now(); let d = analysis(Static); }\ndigital for Top { on clk.rise() { let e = now(); let f = analysis(Static); t <- e; } }";
     let design = design_of(src);
     let types = checked(&design, src);
@@ -169,9 +169,11 @@ fn now_and_analysis_static_are_typed() {
     }
     for kind in ["Ac", "Dc", "Transient", "Noise"] {
         let src = format!("module Top() {{ let a = analysis({kind}); }}");
-        let d = diagnostics(&src);
-        assert_eq!(codes(&d), ["P0001"], "{kind}");
-        assert!(d[0].diagnostic.message.contains("`analysis`"), "{}", d[0].diagnostic.message);
+        let design = design_of(&src);
+        let types = checked(&design, &src);
+        assert_eq!(types.local(binding(&design, "a")), Some(&Ty::Bool), "{kind}");
+        let src = format!("module Top() {{ d: bool = analysis({kind}); }}");
+        assert_eq!(codes(&diagnostics(&src)), ["E0323"], "{kind} in a param default");
     }
 }
 

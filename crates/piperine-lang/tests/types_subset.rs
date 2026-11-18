@@ -20,11 +20,12 @@ struct Row {
     names: &'static str,
 }
 
+// `analysis` of another kind, `bound_step` and `freq` left this table when FIX-09 to FIX-11 typed
+// them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
 const ROWS: &[Row] = &[
     Row { construct: "index", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = x[0]; }", names: "index expression" },
     Row { construct: "closure that is not a limit function", source: "module Top() { }\nanalog for Top { let f = |x: f64| x; }", names: "closure" },
     Row { construct: "struct as a parameter type", source: "struct S { a: f64 }\nfn f(s: S) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(1.0); }", names: "`struct` item used as a type" },
-    Row { construct: "analysis of a kind other than Static", source: "module Top() { }\nanalog for Top { let x = analysis(Ac); }", names: "`analysis`" },
     Row { construct: "settle", source: "module Top() { }\nanalog for Top { let x = settle; }", names: "`settle`" },
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
@@ -68,12 +69,10 @@ const ROWS: &[Row] = &[
     Row { construct: "named argument of a result module", source: "module M(x: f64, y: Option<f64>) -> f64 { x }\nmodule Top() { let m = M(1.0, y: 2.0); }", names: "named connection" },
     Row { construct: "extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: E) { }\nmodule Top(a: E) { let x = X(a); }", names: "`extern` module" },
     Row { construct: "generation", source: "module Top(a: E) { for i in 0..2 { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
-    Row { construct: "bound_step", source: "module Top() { }\nanalog for Top { bound_step(1.0); }", names: "`bound_step`" },
     Row { construct: "ddx", source: "module Top(a: E) { }\nanalog for Top { let x = ddx(v(a), v(a)); }", names: "`ddx`" },
     Row { construct: "delay", source: "module Top(a: E) { }\nanalog for Top { let x = delay(v(a), 1.0); }", names: "`delay`" },
     Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
     Row { construct: "simparam", source: "module Top() { }\nanalog for Top { let x = simparam(1.0); }", names: "`simparam`" },
-    Row { construct: "freq", source: "module Top() { }\nanalog for Top { let x = freq(); }", names: "`freq`" },
     Row { construct: "inflow", source: "module Top(a: E) { }\nanalog for Top { let x = a.inflow(); }", names: "inflow" },
     Row { construct: "flow probe read as a value", source: "module Top(a: E) { }\nanalog for Top { let x = i(a); }", names: "flow probe" },
     Row { construct: "trait", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top() { }\nanalog for Top { let y = 1.0.get(); }", names: "method `get`" },

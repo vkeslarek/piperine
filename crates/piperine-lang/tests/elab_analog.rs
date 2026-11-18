@@ -348,3 +348,41 @@ fn two_analog_blocks_keep_their_locals_apart() {
     let (first, second) = (text.find("let x = (k + 1.0)").expect("the first block's let"), text.find("let x = (k * 3.0)").expect("the second block's let"));
     assert!(first < second, "source order: {text}");
 }
+
+#[test]
+fn freq_analysis_and_bound_step_lower() {
+    // FIX-09 to FIX-11 (§14.4, §14.10): `freq()` is the environment read `freq()` in the analog
+    // block and the constant 0.0 in a reaction (§14.4.4); each kind of `analysis` is its own read;
+    // each `bound_step(dt);` of the block's top level is a numbered statement.
+    let src = "module A() { }\nanalog for A { let f = freq(); let d = analysis(Dc); let t = analysis(Transient); let a = analysis(Ac); let n = analysis(Noise); let s = analysis(Static); bound_step(1.0e-9); bound_step(f + 2.0e-9); }\n\
+module R(out q: Bit<f64>) { }\ndigital for R { on at(1.0e-9) { q <- freq(); } }\n\
+module Top() { signal q: Bit<f64>; let a = A { }(); let r = R { }(q); }";
+    let ir = Elab::ir(src, "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("let f = freq()"), "{text}");
+    assert!(text.contains("let d = analysis(Dc)"), "{text}");
+    assert!(text.contains("let t = analysis(Transient)"), "{text}");
+    assert!(text.contains("let a = analysis(Ac)"), "{text}");
+    assert!(text.contains("let n = analysis(Noise)"), "{text}");
+    assert!(text.contains("let s = static()"), "{text}");
+    assert!(text.contains("bound_step(1e-9)") && text.contains("bound_step((f + 2e-9))"), "{text}");
+    let body = ir.bodies().find(|b| b.name() == "A").expect("body A");
+    let sites: Vec<u32> = body.analog().expect("an analog block").iter().filter_map(|s| match ir.stmt(*s) {
+        piperine_ir::Stmt::BoundStep { site, .. } => Some(*site),
+        _ => None,
+    }).collect();
+    assert_eq!(sites, [0, 1], "the sites follow the source");
+    assert!(text.contains("q <- 0.0"), "freq() in a reaction is 0: {text}");
+}
+
+#[test]
+fn bound_step_under_an_if_is_p0001() {
+    // FIX-09 AC 4 (Q4): `bound_step` at the top level only; under an `if`, a `match` or in a nested
+    // block it is refused, `P0001` naming it.
+    for body in ["if v(a) > 0.0 { bound_step(1.0e-9); }", "match v(a) > 0.0 { true => { bound_step(1.0e-9); } false => {} }", "{ bound_step(1.0e-9); }"] {
+        let src = format!("module D(a: Electrical) {{ }}\nanalog for D {{ {body} }}\nmodule Top() {{ let d = D {{ }}(gnd); }}");
+        let err = Elab::run(&src, "Top").expect_err("a conditional bound_step is refused");
+        assert_eq!(Elab::codes(&err), ["P0001"], "{body}");
+        assert!(err[0].diagnostic.message.contains("bound_step"), "{body}: {}", err[0].diagnostic.message);
+    }
+}
