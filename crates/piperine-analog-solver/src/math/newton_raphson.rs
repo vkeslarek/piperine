@@ -10,7 +10,7 @@ use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::num::Scalar;
 use crate::convergence::{DampContext, NewtonStrategy};
 use crate::tolerances::{Policy, Tolerances};
-use ndarray::{Array1, ArrayView1, ArrayViewMut1};
+use ndarray::{Array1, ArrayView1};
 use tracing::debug;
 
 pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
@@ -45,7 +45,6 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
         true
     }
 
-    fn apply_limit(&mut self, _state: &CircularArrayBuffer2<E>, _current_guess: ArrayViewMut1<E>) {}
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<E>) {}
     fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<E>, _iteration_number: usize) {
     }
@@ -84,11 +83,6 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     fn limiting_report(&self) -> Vec<LimitState> {
         Vec::new()
     }
-
-    /// Apply structured limiting reports to the Newton guess before the
-    /// convergence test (ABI-10): each report's `limited_value` overwrites its
-    /// `net` so the iteration continues from the clamped point. Default: none.
-    fn apply_limiting_reports(&self, _guess: ArrayViewMut1<E>) {}
 }
 
 pub struct NewtonRaphsonSolver<A, E, L>
@@ -254,7 +248,7 @@ where
 
             self.linear_system.reset();
             self.linear_system.apply_stamps(stamps);
-            let mut current_guess = self
+            let current_guess = self
                 .linear_system
                 .solve_with_backend(&self.symbolic)
                 .map_err(|cause| {
@@ -268,8 +262,6 @@ where
             }
 
             debug!("New guess: {:?}", current_guess);
-
-            system.apply_limit(&self.state, current_guess.view_mut());
 
             if system.converged(&self.state, &current_guess.view())
                 && system.residual_converged(&self.residual, &self.scale)
@@ -432,7 +424,7 @@ where
 
             debug!("New guess: {:?}", current_guess);
 
-            // Damping via strategy (replaces system.apply_limit)
+            // Damping through the strategy.
             if let Some(prev) = self.state.latest() {
                 let context = DampContext {
                     static_solve: system.static_solve(),
@@ -442,11 +434,6 @@ where
                 };
                 strategy.damp_update(prev, current_guess.view_mut(), &context);
             }
-
-            // Structured limiting (ABI-10): devices that know *what* they
-            // clamped steer the guess to the limited value before the
-            // convergence test (CP-12) — instead of only vetoing convergence.
-            system.apply_limiting_reports(current_guess.view_mut());
 
             // Device limiting gate: the strategy checks update+residual;
             // limiting_report is a system-level check done per iteration.

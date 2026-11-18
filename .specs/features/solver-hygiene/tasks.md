@@ -828,8 +828,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_dead_newton_hooks_are_gone` passes under `**Run removed**`
-- [ ] Gate check passes: Quick
+- [x] `the_dead_newton_hooks_are_gone` passes under `**Run removed**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

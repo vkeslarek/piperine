@@ -186,6 +186,13 @@ fn regions_are_gone() {
     assert!(found.is_empty(), "removed Region type still named: {found:#?}");
 }
 
+/// HYG-15 AC 1: the two Newton hooks no system overrode, and the comment that named one.
+#[test]
+fn the_dead_newton_hooks_are_gone() {
+    let found = names_found(&["apply_limit", "apply_limiting_reports"]);
+    assert!(found.is_empty(), "removed Newton hook still named: {found:#?}");
+}
+
 #[test]
 fn simprobe_is_gone() {
     let found = names_found(&["simprobe", "SimprobeError"]);

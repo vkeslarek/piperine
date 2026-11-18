@@ -50,7 +50,7 @@ pub struct StepLimits {
 
 /// Newton iteration policy: damping, convergence test, iteration cap.
 /// The [`ConvergencePlan`] owns one; `NewtonRaphsonSolver` consults it
-/// instead of calling `NonLinearSystem::apply_limit`/`converged`/
+/// instead of calling `NonLinearSystem::converged`/
 /// `residual_converged` directly (MD-05, MD-13 rule 2).
 pub trait NewtonStrategy: Send + Sync {
     /// Damp the Newton update in-place before the convergence test. `context` says what the
