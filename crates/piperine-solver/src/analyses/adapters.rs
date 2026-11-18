@@ -17,7 +17,9 @@ use std::rc::Rc;
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 use piperine_digital_solver::advance::Advance as DigitalAdvance;
-use piperine_digital_solver::engine::{Checkpoint, Digital, Horizon as DigitalHorizon, Mode, Shadow as DigitalShadow};
+use piperine_digital_solver::engine::{
+    Checkpoint, Digital, Horizon as DigitalHorizon, Mark as DigitalMark, Mode, Shadow as DigitalShadow,
+};
 use piperine_digital_solver::net::NetId;
 use piperine_digital_solver::observe::Observation as DigitalObservation;
 use piperine_digital_solver::plan::DigitalPlan;
@@ -132,7 +134,7 @@ impl DigitalSide {
 }
 
 impl DiscreteSide for DigitalSide {
-    type Mark = Checkpoint;
+    type Mark = DigitalMark;
 
     fn start(&mut self, at: Tick) -> Result<()> {
         self.digital.start_at(DigitalTick(at)).map_err(digital_error)?;
@@ -174,17 +176,22 @@ impl DiscreteSide for DigitalSide {
         Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events })
     }
 
-    fn mark(&self) -> Checkpoint {
-        let checkpoint = self.digital.checkpoint();
+    /// The engine's journal mark: no net is copied. The full copy and every net's bytes are
+    /// taken only where a re-entry state is recorded (`settled`).
+    fn mark(&mut self) -> DigitalMark {
         if let Some(settled) = &self.settled {
             let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read(NetId(i as u32)).to_vec()).collect();
-            *settled.borrow_mut() = Some((checkpoint.clone(), nets));
+            *settled.borrow_mut() = Some((self.digital.checkpoint(), nets));
         }
-        checkpoint
+        self.digital.mark()
     }
 
-    fn restore(&mut self, mark: &Checkpoint) {
-        self.digital.restore(mark);
+    fn restore(&mut self, mark: &DigitalMark) {
+        self.digital.rewind(mark);
+    }
+
+    fn release(&mut self, mark: DigitalMark) {
+        self.digital.release(mark);
     }
 
     fn shadow(&self, net: u32, offset: u32, bytes: &[u8]) -> Result<Shadow> {

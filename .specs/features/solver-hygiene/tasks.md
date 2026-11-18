@@ -955,8 +955,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `**Run reentry**`, `**Run protocol**`, `cargo test -p piperine-solver --test checkpoint_restore` and the buck targets of `crates/piperine-parity` pass
-- [ ] Gate check passes: Full
+- [x] `**Run reentry**`, `**Run protocol**`, `cargo test -p piperine-solver --test checkpoint_restore` and the buck targets of `crates/piperine-parity` pass
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

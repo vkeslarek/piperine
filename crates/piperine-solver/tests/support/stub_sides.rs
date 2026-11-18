@@ -119,7 +119,7 @@ impl DiscreteSide for ScriptedDiscrete {
         self.buffer.extend(self.instant_observations.pop_front().unwrap_or_default());
         Ok(self.instants.pop_front().unwrap_or_default())
     }
-    fn mark(&self) -> u32 {
+    fn mark(&mut self) -> u32 {
         let m = self.marks.get();
         self.marks.set(m + 1);
         self.record(Call::DiscreteMark(m));

@@ -67,10 +67,23 @@ struct NetBytes {
 #[derive(Clone, Debug, PartialEq)]
 pub struct NetState(NetBytes);
 
-/// The first previous state of each net written since a mark (HYG-14).
+/// One net's state before its first change under a mark: the stamps and where its bytes sit in
+/// the journal's arena (value, then previous). The buffers keep their size, so a rewind copies
+/// the bytes back in place.
+#[derive(Debug)]
+struct Saved {
+    net: usize,
+    changed_at: u64,
+    fired_at: u64,
+    at: usize,
+}
+
+/// The first previous state of each net written since a mark (HYG-14). The bytes live in one
+/// arena, so journaling a net allocates nothing once the arena has grown.
 #[derive(Debug)]
 struct NetJournal {
-    log: Journal<(usize, NetBytes)>,
+    log: Journal<Saved>,
+    arena: Vec<u8>,
     /// Bumped by every mark and rewind: a net stamped with the current epoch is already in the
     /// log for the innermost mark.
     epoch: u32,
@@ -80,7 +93,7 @@ struct NetJournal {
 impl Clone for NetJournal {
     /// A copy of a store carries no work in progress: an empty, closed log.
     fn clone(&self) -> NetJournal {
-        NetJournal { log: Journal::default(), epoch: 1, stamped: vec![0; self.stamped.len()] }
+        NetJournal { log: Journal::default(), arena: Vec::new(), epoch: 1, stamped: vec![0; self.stamped.len()] }
     }
 }
 
@@ -94,6 +107,7 @@ impl PartialEq for NetJournal {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StoreMark {
     len: usize,
+    arena: usize,
     step: u64,
 }
 
@@ -124,7 +138,7 @@ impl Store {
                 }
             })
             .collect();
-        let journal = NetJournal { log: Journal::default(), epoch: 1, stamped: vec![0; nets.len()] };
+        let journal = NetJournal { log: Journal::default(), arena: Vec::new(), epoch: 1, stamped: vec![0; nets.len()] };
         Store { nets, step: 1, journal }
     }
 
@@ -133,14 +147,21 @@ impl Store {
     /// Marks nest.
     pub fn mark(&mut self) -> StoreMark {
         self.journal.epoch += 1;
-        StoreMark { len: self.journal.log.open(), step: self.step }
+        StoreMark { len: self.journal.log.open(), arena: self.journal.arena.len(), step: self.step }
     }
 
     /// Puts every net written since `mark` back, and the microstep. The mark stays open.
     pub fn rewind(&mut self, mark: &StoreMark) {
-        while let Some((i, bytes)) = self.journal.log.pop_above(mark.len) {
-            self.nets[i] = bytes;
+        while let Some(saved) = self.journal.log.pop_above(mark.len) {
+            let net = &mut self.nets[saved.net];
+            let (value, previous) = (net.value.len, net.previous.len);
+            let bytes = &self.journal.arena[saved.at..saved.at + value + previous];
+            net.value.bytes_mut().copy_from_slice(&bytes[..value]);
+            net.previous.bytes_mut().copy_from_slice(&bytes[value..]);
+            net.changed_at = saved.changed_at;
+            net.fired_at = saved.fired_at;
         }
+        self.journal.arena.truncate(mark.arena);
         self.step = mark.step;
         self.journal.epoch += 1;
     }
@@ -148,6 +169,9 @@ impl Store {
     /// Ends the newest open mark; the log empties with the outermost.
     pub fn release(&mut self, _mark: StoreMark) {
         self.journal.log.close();
+        if !self.journal.log.is_open() {
+            self.journal.arena.clear();
+        }
     }
 
     /// The number of nets the log holds a previous state of (a diagnostic).
@@ -159,7 +183,11 @@ impl Store {
     fn journal_net(&mut self, net: usize) {
         if self.journal.log.is_open() && self.journal.stamped[net] != self.journal.epoch {
             self.journal.stamped[net] = self.journal.epoch;
-            self.journal.log.push((net, self.nets[net].clone()));
+            let n = &self.nets[net];
+            let saved = Saved { net, changed_at: n.changed_at, fired_at: n.fired_at, at: self.journal.arena.len() };
+            self.journal.arena.extend_from_slice(n.value.bytes());
+            self.journal.arena.extend_from_slice(n.previous.bytes());
+            self.journal.log.push(saved);
         }
     }
 

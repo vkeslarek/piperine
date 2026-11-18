@@ -170,7 +170,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         tick as f64 * self.options.seconds_per_tick
     }
 
-    fn checkpoint(&self) -> Checkpoint<D::Mark, A::Mark> {
+    fn checkpoint(&mut self) -> Checkpoint<D::Mark, A::Mark> {
         Checkpoint { discrete: self.discrete.mark(), analog: self.analog.mark(), sink: self.delivery.mark() }
     }
 
@@ -178,6 +178,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         self.discrete.restore(&c.discrete);
         self.analog.restore(&c.analog);
         self.delivery.restore(c.sink);
+    }
+
+    /// Ends a checkpoint: the discrete side's journal closes (the analog side's snapshot is dropped).
+    fn release(&mut self, c: Checkpoint<D::Mark, A::Mark>) {
+        self.discrete.release(c.discrete);
     }
 
     /// Continues from a state both sides were put back to (a transient
@@ -314,6 +319,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 };
                 if let Some(target) = retry {
                     self.restore(&c);
+                    self.release(c);
                     rejections += 1;
                     if rejections >= self.options.max_rejections {
                         return Err(Error::simple(
@@ -353,6 +359,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             self.observe_step(t_c);
             self.now = t_c;
             self.now_tick = tick_c;
+            self.release(c);
             if final_mark || outcome.finish {
                 self.finished = Some(t_c);
                 return Ok(Ended::Finish(t_c));

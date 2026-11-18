@@ -178,8 +178,13 @@ pub trait DiscreteSide {
     /// reach, `limit.stop` otherwise. An `IRREVERSIBLE` reaction never runs its
     /// own clock past its bound.
     fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome>;
-    fn mark(&self) -> Self::Mark;
+    /// A mark to `restore` to. It may journal what changes from here instead of copying the
+    /// state, so it is taken `&mut` and ended with `release` once the step is accepted or undone.
+    fn mark(&mut self) -> Self::Mark;
+    /// Puts the side back as `mark` found it. The mark stays valid until `release`.
     fn restore(&mut self, mark: &Self::Mark);
+    /// Ends a mark. Marks are released newest first; a side that copies its state needs nothing.
+    fn release(&mut self, _mark: Self::Mark) {}
     /// Runs the parameter cone downstream of a host write on a shadow (P6).
     fn shadow(&self, net: u32, offset: u32, bytes: &[u8]) -> Result<Shadow>;
     /// Queues a host commit due at `at` (the next microstep when `at` is the
