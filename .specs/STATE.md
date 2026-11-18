@@ -1503,7 +1503,7 @@ deviation tables of their commits.
 
 ---
 
-### MD-68: a host `set` recomputes the params derived from it, through generated functions
+### MD-69: a host `set` recomputes the params derived from it, through generated functions
 
 `host-ii` (2026-11-18). The host reaches what the solver already does.
 

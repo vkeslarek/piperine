@@ -110,7 +110,7 @@ fn the_roadmap_lists_the_host_follow_ups() {
     // HII-23 AC 2: the roadmap records `host-ii` as delivered and lists the follow-ups: the host
     // follow-up feature (what needs new solver mechanisms) and `root-e2e`
     let roadmap = read("ROADMAP.md");
-    assert!(roadmap.lines().any(|l| l.starts_with("3e. ✅ **Delivered") && l.contains("host-ii") && l.contains("MD-68")), "item 3e records host-ii");
+    assert!(roadmap.lines().any(|l| l.starts_with("3e. ✅ **Delivered") && l.contains("host-ii") && l.contains("MD-69")), "item 3e records host-ii");
     assert!(roadmap.lines().any(|l| l.starts_with("| B | `host-ii`") && l.ends_with("| delivered |")), "the lane table says delivered");
     assert!(roadmap.lines().any(|l| l.starts_with("| B next | host follow-up") && l.contains("`force`") && l.contains("continued transients")), "the host follow-up row");
     assert!(roadmap.lines().any(|l| l.starts_with("| B next | `root-e2e`")), "the root-e2e row");
@@ -118,14 +118,14 @@ fn the_roadmap_lists_the_host_follow_ups() {
 
 #[test]
 fn state_records_the_derived_param_decision() {
-    // HII-23 AC 3: `.specs/STATE.md` holds MD-68 naming the generated derive function, the unchanged
+    // HII-23 AC 3: `.specs/STATE.md` holds MD-69 naming the generated derive function, the unchanged
     // MD-18 and the library surface of the drive and the timed `set`; the instruction files name the
     // new api modules and the new command
     let state = read(".specs/STATE.md");
-    let at = state.find("### MD-68:").expect("STATE.md holds MD-68");
+    let at = state.find("### MD-69:").expect("STATE.md holds MD-69");
     let decision = state[at..].split("\n---").next().expect("a decision");
     for name in ["`piperine_derive_1(", "MD-18", "`Session::drive`", "`Session::set_at`", "S2"] {
-        assert!(decision.contains(name), "MD-68 names {name}");
+        assert!(decision.contains(name), "MD-69 names {name}");
     }
     let claude = read("CLAUDE.md");
     let api = claude.lines().find(|l| l.starts_with("| `piperine-api` |")).expect("a piperine-api row");
