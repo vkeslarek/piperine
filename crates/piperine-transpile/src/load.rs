@@ -18,7 +18,9 @@
 
 use std::path::{Path, PathBuf};
 
-use piperine_abi::raw::{self, Library, Module};
+use piperine_abi::raw::{self, Library, List, Module};
+
+use crate::print::derive::SYMBOL as DERIVE_SYMBOL;
 
 use crate::cache::{Entry, Manifest};
 use crate::error::Error;
@@ -26,12 +28,18 @@ use crate::error::Error;
 /// The type of `piperine_abi_1` (abi.md §2 entry 1).
 type Export = extern "C" fn() -> *const Library;
 
+/// The type of `piperine_derive_1` (the transpiler's contract with its host, `print/derive.rs`):
+/// the function `k` of the design's derive plan over the parent's params.
+type DeriveExport = for<'a> extern "C" fn(u32, List<'a, f64>) -> f64;
+
 /// A loaded, checked library. Dropping a `Loaded` unloads nothing: its modules stay valid to the
 /// end of the process.
 #[derive(Debug)]
 pub struct Loaded {
     file: PathBuf,
     library: &'static Library,
+    /// `piperine_derive_1`, which a design that derives no param does not export.
+    derive: Option<DeriveExport>,
 }
 
 impl Loaded {
@@ -52,7 +60,7 @@ impl Loaded {
             return Err(fail(format!("its bytes changed: sha256 {actual}, recorded {recorded}")));
         }
 
-        let export = Loaded::export(&file).map_err(fail)?;
+        let (export, derive) = Loaded::export(&file).map_err(fail)?;
         let library = export();
         if library.is_null() || !library.is_aligned() {
             return Err(fail(format!("{} returned no library", raw::SYMBOL)));
@@ -74,11 +82,11 @@ impl Loaded {
         if !library.modules.is_readable() {
             return Err(fail("its module list is not readable by this host".to_string()));
         }
-        Ok(Loaded { file, library })
+        Ok(Loaded { file, library, derive })
     }
 
     /// Opens `file`, finds `piperine_abi_1` and leaks the handle.
-    fn export(file: &Path) -> Result<Export, String> {
+    fn export(file: &Path) -> Result<(Export, Option<DeriveExport>), String> {
         // SAFETY: opening a library runs its initializers; this is the contract of loading any
         // device library (abi.md §12: a library is code the user chose to build, and its hash was
         // just checked against the manifest the cache wrote when it built it).
@@ -89,15 +97,32 @@ impl Loaded {
         let export = unsafe { handle.get::<Export>(raw::SYMBOL.as_bytes()) }
             .map(|symbol| *symbol)
             .map_err(|_| format!("has no symbol `{}`", raw::SYMBOL))?;
+        // SAFETY: the export `piperine_derive_1` is printed by this transpiler with the type
+        // `DeriveExport` (`print/derive.rs`), beside `piperine_abi_1` of abi.md §2 entry 1 and
+        // under the same cache key, the hash of the source that prints both; a library with no
+        // such symbol is a design that derives nothing.
+        let derive = unsafe { handle.get::<DeriveExport>(DERIVE_SYMBOL.as_bytes()) }.ok().map(|symbol| *symbol);
         // abi.md §12: the library lives until the process ends; the function pointer and every
         // module read through it would dangle if the handle were closed.
         std::mem::forget(handle);
-        Ok(export)
+        Ok((export, derive))
     }
 
     /// The file this library was loaded from.
     pub fn file(&self) -> &Path {
         &self.file
+    }
+
+    /// Whether the library exports `piperine_derive_1`.
+    pub fn derives(&self) -> bool {
+        self.derive.is_some()
+    }
+
+    /// Derive function `k` over `params`, the parent's params in declaration order; `None` when
+    /// the library exports no derive function. A `k` or a number of params the design has no
+    /// function for gives NaN.
+    pub fn derive(&self, k: u32, params: &[f64]) -> Option<f64> {
+        self.derive.map(|derive| derive(k, List::from_slice(params)))
     }
 
     /// The names of the library's modules, in order.

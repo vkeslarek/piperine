@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use piperine_abi::raw::Module;
 use piperine_ir::{BodyId, Ir};
-use piperine_plan::{BodyPlan, Modules, Netlist};
+use piperine_plan::{BodyPlan, DerivePlan, Modules, Netlist};
 use piperine_solver::prelude::CircuitInstance;
 
 use crate::cache::Entry;
@@ -71,6 +71,12 @@ impl Compiled {
             }
             modules.push(Some(module));
         }
+        if !DerivePlan::of(&ir).is_empty() && !loaded.derives() {
+            return Err(Error::Load {
+                file: loaded.file().to_path_buf(),
+                cause: format!("has no symbol `{}` and the design derives params from others", crate::print::derive::SYMBOL),
+            });
+        }
         Ok(Compiled { ir, entry, loaded, report, modules })
     }
 
@@ -78,6 +84,14 @@ impl Compiled {
     /// (`Netlist::circuit`, the loop the interpreter's circuit runs).
     pub fn circuit(&self) -> piperine_solver::prelude::Result<CircuitInstance> {
         Netlist::new(&self.ir).circuit(self)
+    }
+
+    /// Derived param `k` of the design's `DerivePlan` (a parent before its children) over the
+    /// params of its parent, in declaration order (a `bool` as 0.0 or 1.0): the value the
+    /// placement's expression gives. NaN for a `k` the design has no binding for, or a number of
+    /// params other than its parent's, and for a design that derives nothing.
+    pub fn derive(&self, k: u32, params: &[f64]) -> f64 {
+        self.loaded.derive(k, params).unwrap_or(f64::NAN)
     }
 
     /// What this build cost.

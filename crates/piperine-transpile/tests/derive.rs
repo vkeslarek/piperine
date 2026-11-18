@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use piperine_ir::{BinaryOp, BodyId, BodySpec, Child, ChildValue, Constant, Expr, InstanceSpec, Ir, IrBuilder, Origin, Param, Real, ValueType};
-use piperine_transpile::Transpiler;
+use piperine_transpile::{Settings, Transpiler};
 
 fn origin() -> Origin {
     Origin { file: "derive.msl".into(), line: 1, col: 1 }
@@ -75,4 +75,21 @@ fn the_source_holds_one_derive_function_per_binding() {
     // a design that derives nothing prints none of it (the sources of every other design are unchanged)
     let plain = source(chain(false));
     assert!(!plain.contains("fn derive_") && !plain.contains("piperine_derive_1"), "{plain}");
+}
+
+#[test]
+fn compiled_derive_evaluates_the_placement_expression() {
+    // HII-18 AC 1: the loaded function `k` gives the placement's expression over the parent's
+    // params: `t * 3.0` for the middle instance, `rr * 2.0` for the leaf; a `k` it has no binding
+    // for, or a parent's params of another count, is NaN; a design that derives nothing exports
+    // no function, so its answer is NaN too
+    let cache = tempfile::tempdir().expect("tmp");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let compiled = Transpiler::new(Arc::new(chain(true))).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(compiled.derive(0, &[2.0]), 6.0);
+    assert_eq!(compiled.derive(1, &[6.0]), 12.0);
+    assert!(compiled.derive(0, &[1.0, 2.0]).is_nan(), "a parent of another count of params");
+    assert!(compiled.derive(2, &[1.0]).is_nan(), "no binding 2");
+    let plain = Transpiler::new(Arc::new(chain(false))).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
+    assert!(plain.derive(0, &[2.0]).is_nan());
 }

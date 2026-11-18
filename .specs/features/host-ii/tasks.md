@@ -947,9 +947,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `tests/derive.rs` gains `compiled_derive_evaluates_the_placement_expression`
-- [ ] Gate check passes: Quick (`Run transpile`)
-- [ ] Test count: 1 new test
+- [x] `tests/derive.rs` gains `compiled_derive_evaluates_the_placement_expression`
+- [x] Gate check passes: Quick (`Run transpile`)
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: quick
