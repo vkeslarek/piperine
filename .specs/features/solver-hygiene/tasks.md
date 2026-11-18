@@ -806,9 +806,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_late_start_solves_the_operating_point_at_its_start`, `a_late_start_runs_no_instant_before_it` and `a_start_that_is_not_finite_fails_before_the_operating_point` pass under `**Run reentry**`
-- [ ] `cargo test -p piperine-solver --test pss` passes
-- [ ] Gate check passes: Full
+- [x] `a_late_start_solves_the_operating_point_at_its_start`, `a_late_start_runs_no_instant_before_it` and `a_start_that_is_not_finite_fails_before_the_operating_point` pass under `**Run reentry**`
+- [x] `cargo test -p piperine-solver --test pss` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

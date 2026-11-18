@@ -134,10 +134,10 @@ impl DigitalSide {
 impl DiscreteSide for DigitalSide {
     type Mark = Checkpoint;
 
-    fn start(&mut self) -> Result<()> {
-        self.digital.start().map_err(digital_error)?;
+    fn start(&mut self, at: Tick) -> Result<()> {
+        self.digital.start_at(DigitalTick(at)).map_err(digital_error)?;
         for (net, bytes) in &self.on_start {
-            self.digital.host_commit(*net, 0, bytes, DigitalTick(0)).map_err(digital_error)?;
+            self.digital.host_commit(*net, 0, bytes, DigitalTick(at)).map_err(digital_error)?;
         }
         Ok(())
     }

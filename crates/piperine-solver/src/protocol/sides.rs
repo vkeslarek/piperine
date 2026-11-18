@@ -163,9 +163,9 @@ pub enum ObservationKind {
 pub trait DiscreteSide {
     /// A checkpoint of the discrete store, the queue and the side's buffers.
     type Mark;
-    /// From initial values: zero, commit every `init` and the host's initial
-    /// writes, fire `START`, run the discrete functions (abi.md §10 step 1).
-    fn start(&mut self) -> Result<()>;
+    /// From initial values at tick `at` (0, or a later start time): zero, commit every `init` and
+    /// the host's initial writes, fire `START`, run the discrete functions (abi.md §10 step 1).
+    fn start(&mut self, at: Tick) -> Result<()>;
     /// The tick of the next queued commit, if any.
     fn next_due(&self) -> Option<Tick>;
     /// Runs the due instants strictly before `to`, stopping before a landing (abi.md §5 step 2).

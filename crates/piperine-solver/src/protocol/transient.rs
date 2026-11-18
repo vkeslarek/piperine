@@ -202,6 +202,13 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         self.samples = samples;
     }
 
+    /// Puts the protocol's clock at `now` before the operating point of a run that starts there:
+    /// the operating point's instant is `(tick(now), 0)`.
+    pub fn begin_at(&mut self, now: f64) {
+        self.now = now;
+        self.now_tick = self.tick(now);
+    }
+
     /// Buffers what the discrete side observed.
     pub(super) fn collect(&mut self, analysis: AnalysisKind) {
         let discrete = &mut self.discrete;

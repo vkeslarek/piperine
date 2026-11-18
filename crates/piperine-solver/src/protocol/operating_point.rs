@@ -25,7 +25,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         let at = self.now_tick;
         let analysis = AnalysisKind::OperatingPoint;
         let unknowns = self.analog.has_unknowns();
-        self.discrete.start()?;
+        self.discrete.start(at)?;
         self.started = true;
         self.collect(analysis);
         let mut rounds = 0u32;

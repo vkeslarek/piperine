@@ -134,21 +134,76 @@ fn a_host_write_since_the_capture_applies_at_the_reentry() {
     assert!((v_end - analytic).abs() < 1.0e-2, "discharge from the captured state: v(2T)={v_end} vs {analytic}");
 }
 
-/// A late start needs a captured step, and a step a transient did not record
-/// carries no state of the device instances: both fail loud.
+/// HYG-12 AC 1 (Q6 a): a transient that starts later and has no captured step solves the
+/// operating point at its start time: a ramp source `v = 1e3·t` reads 2 V at t = 2 ms, and the
+/// first recorded step is at 2 ms.
 #[test]
-fn a_late_start_needs_a_step_a_transient_recorded() {
+fn a_late_start_solves_the_operating_point_at_its_start() {
+    let start = 2.0e-3;
+    let mut b = CircuitBuilder::new("ramp");
+    let gnd = b.ground();
+    let src = b.node("src");
+    b.device(abi_devices::vramp(), "ramp", &[], &[Port::Node(src.clone()), Port::Node(gnd.clone())]);
+    add_resistor(&mut b, "r1", 1.0e3, &src, &gnd);
+    let mut circuit = b.build().expect("build");
+    let opts = TransientAnalysisOptions::new(start + 1.0e-3, 1.0e-4).with_start(start);
+    let result = circuit.transient(opts, Context::default()).expect("tran").solve().expect("a late start solves");
+    let first = result.iter().next().expect("steps");
+    assert_eq!(first.time(), start, "the first recorded step is at the start time");
+    let v = first.get_node(&node_id(&src)).expect("v(src)");
+    assert!((v - 2.0).abs() < 1.0e-6, "the operating point reads the time 2 ms: {v}");
+    let v_end = result.last().expect("steps").get_node(&node_id(&src)).expect("v(src)");
+    assert!((v_end - 3.0).abs() < 1.0e-6, "the ramp continues from there: {v_end}");
+}
+
+/// A step the host built carries no state of the device instances, so a re-entry from it fails
+/// loud (the second half of the former `a_late_start_needs_a_step_a_transient_recorded`).
+#[test]
+fn a_step_the_host_built_cannot_be_reentered() {
     let t_half = 1.0e-3;
     let (mut circuit, _info) = build_rc();
     let opts = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0).with_start(t_half);
-    let err = circuit.transient(opts.clone(), Context::default()).expect("tran").solve().expect_err("late start");
-    assert!(err.to_string().contains("only from a captured step"), "{err}");
-
     let foreign = TransientStep::new(t_half, std::collections::HashMap::new());
     let mut solver = circuit.transient(opts, Context::default()).expect("tran");
     solver.with_initial_state(&foreign);
     let err = solver.solve().expect_err("no device state on a step built by the host");
     assert!(err.to_string().contains("carries no state of the device instances"), "{err}");
+}
+
+/// HYG-12 AC 2: the clock of `build_clocked_rc` (first edge `HALF` after its `START`) started at
+/// `S` runs its `init` commits and `START` at `(S, 0)`: no instant before `S`, its first edge at
+/// `S + HALF`.
+#[test]
+fn a_late_start_runs_no_instant_before_it() {
+    let start = 3.0e-4;
+    let (mut circuit, _c) = build_clocked_rc();
+    let opts = TransientAnalysisOptions::new(start + STOP, 1.0e-5).with_start(start);
+    let result = circuit.transient(opts, Context::default()).expect("tran").solve().expect("solve");
+    assert_eq!(result.iter().next().expect("steps").time(), start, "the run starts at S");
+    let mut edges = 0;
+    for step in result.iter() {
+        assert!(step.time() >= start, "a step at {:e} s precedes the start", step.time());
+        let (clk, n) = expected_at(step.time() - start);
+        assert_eq!(step.digital_named("code"), Some(&clk[..]), "code at {:e} s (S + {:e})", step.time(), step.time() - start);
+        assert_eq!(count_of(step.digital_named("n").expect("n")), n, "edges counted by {:e} s", step.time());
+        edges = edges.max(n);
+    }
+    assert!(edges >= 4, "the clock toggled from S + HALF on: {edges} edges");
+}
+
+/// HYG-12 AC 3: a start that is not finite, or is negative, fails before the operating point,
+/// naming the value; the circuit still runs after.
+#[test]
+fn a_start_that_is_not_finite_fails_before_the_operating_point() {
+    let (mut circuit, _c) = build_clocked_rc();
+    for (start, shown) in [(f64::NAN, "NaN"), (f64::INFINITY, "inf"), (-1.0e-3, "-1e-3")] {
+        let opts = TransientAnalysisOptions::new(STOP, 1.0e-5).with_start(start);
+        let err = circuit.transient(opts, Context::default()).expect("tran").solve().expect_err("a bad start");
+        let text = err.to_string();
+        assert!(text.contains("start time") && text.contains(shown), "{text}");
+    }
+    let after = run_clocked(&mut circuit, None);
+    assert!(after.len() > 20, "the circuit still runs: {} steps", after.len());
 }
 
 /// An RC with τ = 1 kOhm x 1.5915494309189535 nF, 0.92 of a 1 fs tick past

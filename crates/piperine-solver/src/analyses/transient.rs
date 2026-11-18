@@ -982,12 +982,12 @@ impl TransientSolver<'_> {
         use piperine_analog_solver::error::{Error, SolverDomain};
         // Re-entry: the captured step and the state of the instances it carries.
         let resume = match self.reentry_state.take() {
-            None if self.options.start_time != 0.0 => {
+            None if !self.options.start_time.is_finite() || self.options.start_time < 0.0 => {
                 return Err(Error::simple(
                     SolverDomain::Transient,
                     format!(
-                        "a transient of devices starts at {:e} s only from a captured step \
-                         (`with_initial_state`); without one it starts at 0",
+                        "the start time {:e} s is not a finite time at or after 0; a transient starts at a \
+                         time `t >= 0` with an operating point there",
                         self.options.start_time
                     ),
                 ));
@@ -1092,7 +1092,10 @@ impl TransientSolver<'_> {
         let mut protocol = hooks.install(protocol, nets.as_deref().unwrap_or(&[]));
         let ran = nets
             .and_then(|_| match &resume {
-                None => protocol.operating_point().and_then(|_| protocol.analog_mut().begin()),
+                None => {
+                    protocol.begin_at(start);
+                    protocol.operating_point().and_then(|_| protocol.analog_mut().begin())
+                }
                 Some((step, state)) => {
                     let samples = protocol.analog_mut().resume(step, state)?;
                     protocol.resume_at_tick(start, state.digital.now().0, samples);
@@ -1200,6 +1203,7 @@ impl TransientSolver<'_> {
             let context = self.system.context.clone();
             let mut dc = DcSolver::new(self.system.circuit, context)?;
             dc.system.uic_clamps = uic_clamps.clone();
+            dc.system.time = self.options.start_time;
             dc.apply_initial_conditions(guess);
             dc.equilibrium(true)?
         };

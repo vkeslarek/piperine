@@ -98,7 +98,7 @@ impl ScriptedDiscrete {
 impl DiscreteSide for ScriptedDiscrete {
     type Mark = u32;
 
-    fn start(&mut self) -> Result<()> {
+    fn start(&mut self, _at: Tick) -> Result<()> {
         self.record(Call::Start);
         Ok(())
     }

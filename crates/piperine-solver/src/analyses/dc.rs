@@ -39,6 +39,9 @@ pub struct DcSystem<'a> {
     /// UIC hold clamps (ngspice `CKTsetIC`): stamped only by the transient
     /// driver's internal t=0 solve — empty for a standalone DC analysis.
     pub uic_clamps: Vec<crate::analyses::transient::UicClamp>,
+    /// The `TIME` ambient input of the solve: 0 for a DC analysis, the start time for the
+    /// operating point of a transient that starts later (HYG-12).
+    pub time: f64,
 }
 
 impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
@@ -114,7 +117,7 @@ impl DcSystem<'_> {
     /// the homotopy's continuation values as `GMIN` and `SOURCE_SCALE`.
     pub(crate) fn ambient(&self) -> Ambient {
         Ambient {
-            time: 0.0,
+            time: self.time,
             freq: 0.0,
             is_static: true,
             gmin: self.context.tolerances.gmin + self.gmin_extra,
@@ -188,6 +191,7 @@ impl<'a> DcSolver<'a> {
             context,
             gmin_extra: 0.0,
             src_scale: 1.0,
+            time: 0.0,
             uic_clamps: Vec::new(),
         };
 
