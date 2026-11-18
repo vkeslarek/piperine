@@ -1,6 +1,6 @@
 # solver-hygiene proofs
 
-**HEAD**: a4544181
+**HEAD**: e09a489a
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 84 pass, 0 fail
@@ -100,8 +100,8 @@
 
    Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-abi)
    Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-ir)
-   Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-analog-solver)
    Compiling piperine-digital-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-digital-solver)
+   Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-analog-solver)
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-lang)
    Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-plan)
@@ -110,8 +110,8 @@
    Compiling piperine-project v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-project)
    Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-api)
    Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-parity)
-    Finished `test` profile [unoptimized] target(s) in 28.73s
-     Running unittests src/lib.rs (/var/tmp/piperine-target-c/debug/deps/piperine_parity-6187a033365891a7)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.52s
+     Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_parity-fbb8a25f7a10f95a)
 ```
 
 `Run deviation` - exit 0
@@ -127,11 +127,11 @@ tran_rc on rust: steps accepted 1000, rejected 0, dt_min floor hits 0
 tran_rc on rust: free-running steps 111 against ngspice's 100 points
 test the_table_covers_every_twin ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.75s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.62s
 
    Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-parity)
-    Finished `test` profile [unoptimized] target(s) in 1.05s
-     Running tests/deviation.rs (/var/tmp/piperine-target-c/debug/deps/deviation-b80e1723150a094e)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.48s
+     Running tests/deviation.rs (/var/tmp/piperine-target/debug/deps/deviation-0bba346ebec96a14)
 ```
 
 `Run analogddt` - exit 0
@@ -149,55 +149,54 @@ test an_rc_step_reads_one_minus_exp ... ok
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
    Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-analog-solver)
-    Finished `test` profile [unoptimized] target(s) in 8.31s
-     Running tests/assembly_ddt.rs (/var/tmp/piperine-target-c/debug/deps/assembly_ddt-6b389f68791f6e03)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.02s
+     Running tests/assembly_ddt.rs (/var/tmp/piperine-target/debug/deps/assembly_ddt-507ba5b17986f318)
 ```
 
 `Run parity` - exit 0
 
 ```
 test tran_jump ... ok
-test tran_floor ... ok
 test tran_corner ... ok
+test tran_floor ... ok
 test tran_rc ... ok
 test tran_dq ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.55s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.66s
 
    Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-parity)
-    Finished `test` profile [unoptimized] target(s) in 0.73s
-     Running tests/parity_ac.rs (/var/tmp/piperine-target-c/debug/deps/parity_ac-55a5dfa8bfad5186)
-     Running tests/parity_corpus.rs (/var/tmp/piperine-target-c/debug/deps/parity_corpus-3c6b0216946f1435)
-     Running tests/parity_dc.rs (/var/tmp/piperine-target-c/debug/deps/parity_dc-e39252c43babc518)
-     Running tests/parity_op.rs (/var/tmp/piperine-target-c/debug/deps/parity_op-89aa68e5e8a64ddb)
-     Running tests/parity_tran.rs (/var/tmp/piperine-target-c/debug/deps/parity_tran-92e4bdddedb6562d)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.17s
+     Running tests/parity_ac.rs (/var/tmp/piperine-target/debug/deps/parity_ac-d6b9b1cec2f0e864)
+     Running tests/parity_corpus.rs (/var/tmp/piperine-target/debug/deps/parity_corpus-1ebffe6723db0cf5)
+     Running tests/parity_dc.rs (/var/tmp/piperine-target/debug/deps/parity_dc-35b4b79f0c30c5ec)
+     Running tests/parity_op.rs (/var/tmp/piperine-target/debug/deps/parity_op-7b0f742ce655e3bf)
+     Running tests/parity_tran.rs (/var/tmp/piperine-target/debug/deps/parity_tran-3b5361e3d29361a3)
 ```
 
 `Run analoglib` - exit 0
 
 ```
-test stamp_validation::tests::a_non_finite_stamp_is_e0507_with_its_row ... ok
 test math::singular::tests::a_singular_system_above_the_dense_bound_says_it_skipped ... ok
+test math::integration::tests::trbdf2_trapezoidal_phase_coeffs_match_formula ... ok
 test math::faer::tests::real_transpose_solve_matches_a_hand_computed_lambda ... ok
 test math::faer::tests::singular_system_fails_loud_through_the_existing_error_family ... ok
 test math::faer::tests::one_symbolic_factorization_serves_both_forward_and_transpose_solves ... ok
-test math::singular::tests::a_node_reached_only_through_capacitors_is_singular_at_dc ... ok
-test math::newton_raphson::tests::a_non_finite_solution_of_finite_stamps_is_e0503 ... ok
 test math::singular::tests::a_loop_of_two_potential_sources_is_singular_in_both_flows ... ok
+test math::newton_raphson::tests::a_non_finite_solution_of_finite_stamps_is_e0503 ... ok
+test math::singular::tests::a_node_reached_only_through_capacitors_is_singular_at_dc ... ok
 test math::newton_raphson::tests::exhaustion_names_the_unknowns_that_failed ... ok
 
 test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-analog-solver)
-    Finished `test` profile [unoptimized] target(s) in 3.86s
-     Running unittests src/lib.rs (/var/tmp/piperine-target-c/debug/deps/piperine_analog_solver-03fa06dcb9685482)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.86s
+     Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_analog_solver-f5a35b1f1d25a114)
 ```
 
 `Run reentry` - exit 0
 
 ```
 test reentry_from_captured_state_matches_continuous_run ... ok
-test a_late_start_runs_no_instant_before_it ... ok
 test a_reentry_with_another_stop_lands_on_the_old_stop ... ok
 test reentry_last_step_attaches_state_to_the_last_step_only ... ok
 test a_reentry_after_a_jump_takes_the_same_restart ... ok
@@ -206,21 +205,22 @@ test reentry_from_any_captured_step_matches_the_continuous_run ... ok
 test a_reentry_from_every_recorded_step_continues_bit_for_bit ... ok
 test the_default_reentry_keeps_every_step_state ... ok
 
-test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
 
+   Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-analog-solver)
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 2.03s
-     Running tests/transient_reentry.rs (/var/tmp/piperine-target-c/debug/deps/transient_reentry-b3380ea61d4187fd)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.10s
+     Running tests/transient_reentry.rs (/var/tmp/piperine-target/debug/deps/transient_reentry-9cccf8fcb2c49349)
 ```
 
 `Run failure` - exit 0
 
 ```
-test section_18_a_non_positive_period_is_an_analysis_error ... ok
 test section_12_unresolvable_noise_output_node_is_an_analysis_error ... ok
-test a_loop_of_sources_names_both_instances ... ok
+test section_15_a_non_finite_stamp_is_a_convergence_failure ... ok
+test section_18_a_negative_pre_roll_is_an_analysis_error ... ok
+test section_18_a_non_positive_period_is_an_analysis_error ... ok
 test an_instance_is_named_once_in_a_singular_report ... ok
-test section_12_unresolvable_noise_reference_node_is_an_analysis_error ... ok
 test a_step_that_fails_newton_at_the_floor_is_e0508_with_its_time ... ok
 test a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier ... ok
 test an_equilibrium_that_never_converges_is_e0505_with_its_unknowns ... ok
@@ -229,8 +229,8 @@ test section_9_exhausting_every_dc_strategy_is_a_convergence_failure ... ok
 test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 2.01s
-     Running tests/failure_rules.rs (/var/tmp/piperine-target-c/debug/deps/failure_rules-109848642e3c883b)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.23s
+     Running tests/failure_rules.rs (/var/tmp/piperine-target/debug/deps/failure_rules-539cf42277f2dea4)
 ```
 
 `Run runerrors` - exit 0
@@ -238,71 +238,71 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 3 tests
 test a_loop_of_two_vsources_from_source_is_e0503 ... ok
-test a_nan_contribution_from_source_is_e0507 ... ok
 test a_floating_node_from_source_is_e0503 ... ok
+test a_nan_contribution_from_source_is_e0507 ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.29s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.35s
 
    Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-parity)
-    Finished `test` profile [unoptimized] target(s) in 0.54s
-     Running tests/run_errors.rs (/var/tmp/piperine-target-c/debug/deps/run_errors-788896b7fa74cc14)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.71s
+     Running tests/run_errors.rs (/var/tmp/piperine-target/debug/deps/run_errors-43df53e9bcc1f31e)
 ```
 
 `Run spectext` - exit 0
 
 ```
-test every_error_code_is_defined_exactly_once ... ok
+test s3_states_the_intrinsic_contract ... ok
 test tran_in_fences_is_the_module ... ok
-test zero_bytes_are_the_unknown_value ... ok
-test e0163_is_defined_in_3_5 ... ok
 test s36_defines_the_package_codes ... ok
+test every_error_code_is_defined_exactly_once ... ok
+test zero_bytes_are_the_unknown_value ... ok
 test no_spec_text_says_stimulus_is_host_only ... ok
 
-test result: ok. 86 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 86 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
    Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-ir)
    Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-plan)
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-lang)
    Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-transpile)
-    Finished `test` profile [unoptimized] target(s) in 22.82s
-     Running tests/spec_text.rs (/var/tmp/piperine-target-c/debug/deps/spec_text-909ae6bbf798e8b5)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.44s
+     Running tests/spec_text.rs (/var/tmp/piperine-target/debug/deps/spec_text-b62cdc0a876d2a27)
 ```
 
 `Run truncation` - exit 0
 
 ```
-test its_device_passes_the_partials_verifier ... ok
-test a_failure_at_an_attempt_already_at_the_floor_is_not_retried ... ok
-test its_once_faulting_device_passes_the_partials_verifier ... ok
 test a_corner_at_the_stop_time_is_accepted_at_the_floor ... ok
-test the_default_floor_takes_the_same_corner_too ... ok
+test a_failed_step_that_falls_to_the_floor_is_retaken_there_once ... ok
+test its_device_passes_the_partials_verifier ... ok
+test its_once_faulting_device_passes_the_partials_verifier ... ok
 test an_unannounced_corner_is_accepted_at_the_floor_and_counted ... ok
 test a_larger_chgtol_takes_fewer_steps ... ok
 test a_proposal_that_lands_on_the_floor_is_accepted_not_failed ... ok
+test the_default_floor_takes_the_same_corner_too ... ok
 test a_source_driven_nonlinear_capacitor_meets_the_current_tolerance ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 1.34s
-     Running tests/truncation.rs (/var/tmp/piperine-target-c/debug/deps/truncation-5ab22096ccc0419d)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.46s
+     Running tests/truncation.rs (/var/tmp/piperine-target/debug/deps/truncation-d15d01026f75e8e1)
 ```
 
 `Run twins` - exit 0
 
 ```
 running 5 tests
-test the_three_op_twins_run_on_both_backends ... ok
-test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
-test the_two_backends_print_the_same_bytes ... ok
 test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
+test the_three_op_twins_run_on_both_backends ... ok
+test the_two_backends_print_the_same_bytes ... ok
 test the_sweep_and_transient_twins_run_on_both_backends ... ok
+test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.96s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.57s
 
    Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-cli)
-    Finished `test` profile [unoptimized] target(s) in 1.04s
-     Running tests/twins.rs (/var/tmp/piperine-target-c/debug/deps/twins-9c63cef8d18c33f2)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.63s
+     Running tests/twins.rs (/var/tmp/piperine-target/debug/deps/twins-2aa9f00922f0fbd5)
 ```
 
 `Run abidc` - exit 0
@@ -310,37 +310,37 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 6 tests
 test its_devices_pass_the_partials_verifier ... ok
-test divider_reads_the_analytic_ratio_on_devices ... ok
-test gmin_stepping_reaches_a_device_through_the_ambient_input ... ok
 test source_stepping_scales_sources_through_the_ambient_input ... ok
-test diode_satisfies_its_own_equation_on_devices ... ok
+test gmin_stepping_reaches_a_device_through_the_ambient_input ... ok
+test divider_reads_the_analytic_ratio_on_devices ... ok
 test the_dc_driver_iterates_with_the_plans_strategy ... ok
+test diode_satisfies_its_own_equation_on_devices ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 1.18s
-     Running tests/abi_dc.rs (/var/tmp/piperine-target-c/debug/deps/abi_dc-61ee0ff6405ae32a)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.33s
+     Running tests/abi_dc.rs (/var/tmp/piperine-target/debug/deps/abi_dc-4a853be07a034a0c)
 ```
 
 `Run abitran` - exit 0
 
 ```
-test a_step_that_would_end_one_tick_short_of_the_stop_ends_at_the_stop ... ok
-test a_stop_off_the_tick_grid_is_reached_once_by_an_integrating_step ... ok
-test rc_step_reads_one_minus_exp_on_devices ... ok
-test two_jumps_in_one_restart_step_restart_from_the_later ... ok
-test a_rejected_stage_restores_the_term_history ... ok
-test the_transient_driver_iterates_with_the_plans_strategy ... ok
 test a_stop_on_the_tick_grid_ends_on_its_own_step ... ok
+test a_rejected_stage_restores_the_term_history ... ok
+test a_continuous_init_starts_newton_and_is_held_through_the_operating_point ... ok
+test rc_step_reads_one_minus_exp_on_devices ... ok
+test a_stop_off_the_tick_grid_is_reached_once_by_an_integrating_step ... ok
 test the_step_after_a_jump_is_capped_at_a_tenth_of_the_last ... ok
+test the_transient_driver_iterates_with_the_plans_strategy ... ok
+test two_jumps_in_one_restart_step_restart_from_the_later ... ok
 test the_stop_is_reached_bit_exactly_and_recorded_once ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 1.92s
-     Running tests/abi_tran.rs (/var/tmp/piperine-target-c/debug/deps/abi_tran-4aeba793e31ffa8a)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.03s
+     Running tests/abi_tran.rs (/var/tmp/piperine-target/debug/deps/abi_tran-de1973e4e07bdb9d)
 ```
 
 `Run protocol` - exit 0
@@ -352,15 +352,15 @@ test an_earlier_landing_restores_and_replays ... ok
 test crossing_retries_count_toward_the_rejection_cap ... ok
 test no_landing_means_one_attempt_to_the_proposed_time ... ok
 test no_unknowns_means_no_attempt ... ok
-test the_proposal_sees_the_next_due_time ... ok
 test settle_runs_at_time_points_and_at_the_stop_time_only ... ok
+test the_proposal_sees_the_next_due_time ... ok
 test consecutive_rejections_beyond_the_cap_fail_loud ... ok
 
 test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 1.42s
-     Running tests/protocol_transient.rs (/var/tmp/piperine-target-c/debug/deps/protocol_transient-d72a4e415285a9b3)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.40s
+     Running tests/protocol_transient.rs (/var/tmp/piperine-target/debug/deps/protocol_transient-5ae26ce4774281e4)
 ```
 
 `Run boundary` - exit 0
@@ -368,14 +368,14 @@ test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 3 tests
 test the_adc_commits_the_rounded_code_after_tconv ... ok
-test the_comparator_trips_at_its_thresholds ... ok
 test a_carrier_change_is_a_time_point_and_starts_the_response ... ok
+test the_comparator_trips_at_its_thresholds ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.43s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.47s
 
    Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-parity)
-    Finished `test` profile [unoptimized] target(s) in 0.74s
-     Running tests/boundary.rs (/var/tmp/piperine-target-c/debug/deps/boundary-8d6961f951687c76)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.06s
+     Running tests/boundary.rs (/var/tmp/piperine-target/debug/deps/boundary-459ff542aee2bff6)
 ```
 
 `Run hostset` - exit 0
@@ -391,84 +391,84 @@ test a_scheduled_host_write_lands_and_restarts_small ... ok
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 1.50s
-     Running tests/host_set.rs (/var/tmp/piperine-target-c/debug/deps/host_set-5701f03124c1a69a)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.58s
+     Running tests/host_set.rs (/var/tmp/piperine-target/debug/deps/host_set-19bc611a775739e8)
 ```
 
 `Run instant` - exit 0
 
 ```
-test a_settle_commit_with_no_delay_is_refused ... ok
-test an_instant_reports_boundary_fired_and_final ... ok
 test a_quiet_commit_does_not_start_a_microstep ... ok
+test an_instant_reports_boundary_fired_and_final ... ok
+test a_settled_change_is_one_observation ... ok
 test previous_is_the_value_before_the_microstep ... ok
 test start_at_commits_init_at_its_tick ... ok
-test two_commits_to_one_net_settle_to_one_write ... ok
 test start_commits_inits_and_fires_start ... ok
+test two_commits_to_one_net_settle_to_one_write ... ok
 test the_traced_instant_of_section_15_1 ... ok
 test an_instant_that_never_goes_quiet_is_e0501_naming_the_nets ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-digital-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-digital-solver)
-    Finished `test` profile [unoptimized] target(s) in 1.52s
-     Running tests/instant.rs (/var/tmp/piperine-target-c/debug/deps/instant-cf6184e72773bc7c)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.65s
+     Running tests/instant.rs (/var/tmp/piperine-target/debug/deps/instant-83dcbd0edb3478f5)
 ```
 
 `Run removed` - exit 0
 
 ```
-test the_dead_newton_hooks_are_gone ... ok
+test simprobe_is_gone ... ok
 test the_phdl_port_text_is_gone ... ok
-test disto_is_gone ... ok
+test the_dead_newton_hooks_are_gone ... ok
 test verification_channels_are_gone ... ok
 test regions_are_gone ... ok
 test text_io_is_gone ... ok
-test the_element_contract_is_gone ... ok
 test the_old_digital_engine_is_gone ... ok
+test the_element_contract_is_gone ... ok
 test removed_tests_are_listed_with_their_item ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 0.66s
-     Running tests/removed_surface.rs (/var/tmp/piperine-target-c/debug/deps/removed_surface-b915945964cdf246)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests/removed_surface.rs (/var/tmp/piperine-target/debug/deps/removed_surface-cde81e2ed00f3113)
 ```
 
 `Run abidevices` - exit 0
 
 ```
 running 5 tests
-test every_device_shape_is_valid ... ok
 test a_check_of_another_module_does_not_count ... ok
+test every_device_shape_is_valid ... ok
 test every_device_function_passes_the_partials_verifier ... ok
 test every_helper_device_passes_at_generic_points ... ok
 test every_hand_written_device_is_in_a_partials_check ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 3.81s
-     Running tests/abi_devices.rs (/var/tmp/piperine-target-c/debug/deps/abi_devices-c8f186128d2c66bd)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.29s
+     Running tests/abi_devices.rs (/var/tmp/piperine-target/debug/deps/abi_devices-752465e20f076c00)
 ```
 
 `Run digital` - exit 0
 
 ```
 running 7 tests
-test every_change_commit_and_record_is_observed_in_order ... ok
-test nested_marks_rewind_in_order ... ok
-test restore_returns_store_queue_and_observations_byte_for_byte ... ok
 test observations_after_a_checkpoint_are_gone_after_restore ... ok
-test a_mark_journals_only_the_nets_that_changed ... ok
+test every_change_commit_and_record_is_observed_in_order ... ok
+test restore_returns_store_queue_and_observations_byte_for_byte ... ok
+test nested_marks_rewind_in_order ... ok
 test two_runs_give_identical_observations ... ok
+test a_mark_journals_only_the_nets_that_changed ... ok
 test a_rewind_equals_the_checkpoint_taken_at_the_mark ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Compiling piperine-digital-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-digital-solver)
-    Finished `test` profile [unoptimized] target(s) in 0.99s
-     Running tests/checkpoint.rs (/var/tmp/piperine-target-c/debug/deps/checkpoint-bffa3fb7b4b6a608)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.14s
+     Running tests/checkpoint.rs (/var/tmp/piperine-target/debug/deps/checkpoint-c000eb7b173051af)
 ```
 
 `Run protocolreal` - exit 0
@@ -477,18 +477,18 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 8 tests
 test its_devices_pass_the_partials_verifier ... ok
 test a_design_without_analog_runs_every_instant_with_no_solve ... ok
-test a_commit_due_after_the_stop_time_stays_pending ... ok
 test a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next ... ok
 test settle_fires_at_the_stop_time ... ok
+test a_commit_due_after_the_stop_time_stays_pending ... ok
 test a_clock_nothing_analog_reads_adds_no_step ... ok
 test the_default_run_copies_the_digital_state_once_per_accepted_step ... ok
 test a_rejected_step_leaves_no_trace ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-solver-hygiene/crates/piperine-solver)
-    Finished `test` profile [unoptimized] target(s) in 1.62s
-     Running tests/protocol_real.rs (/var/tmp/piperine-target-c/debug/deps/protocol_real-6d3d6826fc6cd74f)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.93s
+     Running tests/protocol_real.rs (/var/tmp/piperine-target/debug/deps/protocol_real-43539251b28d4c25)
 ```
 
 `! grep -nE '^\/ V(1/2/3/4/5/6/7/8/9/10/11/14/15) \/' GAPS.md && grep -cE '^\/ V1[236] \/' GAPS.md / grep -qx 3` - exit 0
