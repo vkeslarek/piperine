@@ -186,9 +186,9 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] The branch is rebased onto `main` with no conflict left; `git log --oneline main..HEAD` shows only this feature's commits
-- [ ] Every anchor is confirmed or its difference is written on the Handoff with the task it changes
-- [ ] Gate check passes: Build
+- [x] The branch is rebased onto `main` with no conflict left; `git log --oneline main..HEAD` shows only this feature's commits
+- [x] Every anchor is confirmed or its difference is written on the Handoff with the task it changes
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -1115,7 +1115,7 @@ Proof: run verdict | test verdict::tests::a_maybe_fatal_is_not_fatal ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** T1 (2026-11-18, B1): `origin/main` is `ec4d13b6`, an ancestor of this branch, so the rebase is a no-op (no merge of `host-ii`, `root-e2e`, `analog-structure` since design); `git log main..HEAD` holds only this feature's docs commits. Anchors confirmed at HEAD: `Flagged::decide` (`rt/flag.rs:260`), `ValuePrinter::faults` (`print/value.rs:343`), the refusals (`lower.rs:231` partial `&&`/`||`, `:304` math, `contribute.rs:223` `known_addend`, `known.rs:76` `partial`), `ConstEval` literal `Unknown` refusal (`consts.rs:172`), `Commits` (`rt/flag.rs:422`), `StatementPlan::of_reaction` (`piperine-plan/src/digital.rs:129`), `RecordLayout` (`digital.rs:250`), `Source` (`plan.rs:81`, no `Resolution` yet), `Queue::push` (`queue.rs:83`), `Digital::apply_due` (`instant.rs:44`), `Host` (`raw.rs:628`), `Record` (`piperine-api/src/record.rs:29`), `Verdict` (`verdict.rs:10`), the record line (`piperine-cli/src/render/record.rs`). Differences: (1) `level` is already in `CARRIER_METHODS` (`types/call.rs:14`) as a name that is not `E0161`; T2 types it (`Builtin::Level`) rather than removing a refusal there. (2) The commit sink the owner hands a reaction is `call_reaction`'s closure in `piperine-digital-solver/src/run.rs` (~l.520-602, building `Planned`) and `run_reactions` builds `Pending` at ~l.715, not `instant.rs`: T7 and T8 add `flags` to `Commit`, `Planned` and `Pending` there; `Writer::Host` pendings get flags 0. (3) `piperine-abi/tests/contract.rs:74` pins `assert_eq!(MINOR, 0)`; the spec mandates MINOR 1, so T6 changes that pinned value to 1 (the pin follows the spec, no tolerance or behaviour weakened); `tests/thunks.rs:202` and `caller.rs:242` build `Host` literals and gain the appended field. (4) The thunk's sink (`thunk.rs:362`) and `React::new` (`device.rs:261`, `rt/flag.rs:614`, `device.rs:343`) are the device-side path of `commit`; `React` gains a second sink for `commit_with`. (5) Next free MD number: MD-69 (MD-68 is the last). (6) An `Option`-yielding `if` is lowered as two `If`s over the same arms (`compound.rs:530`): confirmed, so an arm that commits or emits would run twice; T19 handles it as design Risks says. No other difference.
 **Dispatched:** B1 (phases 1-3, T1-T8) - Sonnet worker, 2026-11-18.
 **Walked:** none (no screen)
 
