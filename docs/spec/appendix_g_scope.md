@@ -87,6 +87,8 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.66 | Session parameter names of `simparam` | Open |
 | G.67 | Two blanket traits with one method name | Open |
 | G.68 | `Tran` passed to `analysis` names a module | Open |
+| G.69 | Implementation-defined float results: the bits of a NaN, the last place of the elementary functions | Resolved provisionally |
+| G.70 | The rules of the value language that were formerly taken from Rust | Resolved provisionally |
 
 ## Open items
 
@@ -163,7 +165,7 @@ A stdlib synchronizer whose first stage commits `Unknown` when `since(d) < tw` a
 ### G.14 Field-init shorthand
 
 **Status: Closed.**
-`{ r }` for `{ r: r }` in instances and templates is accepted, as in a Rust struct expression, and the tree keeps the authored form (Appendix B.3).
+`{ r }` for `{ r: r }` in instances and templates is accepted, as in a struct expression (§1.3.3), and the tree keeps the authored form (Appendix B.3).
 
 ### G.15 Keywords as names
 
@@ -302,7 +304,7 @@ What the gates prove is a front end: the library and the galleries are parsed an
 ### G.39 Size of the addition
 
 **Status: Open.** No action is planned.
-The language adds 65 constructs to Rust (Appendix B.1) for 11 concepts (§0). No further construct has been found that can be removed without a model paying for it.
+The language has 65 mixed-signal constructs beside its value language (Appendix B.1), for 11 concepts (§0). No further construct has been found that can be removed without a model paying for it.
 
 ## Flagged resolutions
 
@@ -333,8 +335,8 @@ Each item is in force through the `Resolution` note cited, which refers back her
 | G.58 | §11 rule 3 | the selector rule also binds the flow contributions of a potential-capable branch; a probed short is not merged | extends the rule, with one exception clause |
 | G.59 | §6 rule 5 | `p.inflow()` includes the branches of child instances that end on `p` | the design says "this module's branches" |
 | G.60 | §15 T2, §15 T3 | a half-tick tie rounds to the later tick; a positive delay that rounds to no advance is the next microstep | observable at half-tick delays |
-| G.61 | A.1, A.3, §1 | `Unknown` is a reserved literal; an unlisted attribute is an error; `char` and every lifetime but `'static` are dropped | narrows "close to Rust" |
-| G.62 | §1 | `usize` and `isize` are 64 bits on every platform | differs from Rust; needed for §0.1.1 |
+| G.61 | A.1, A.3, §1 | `Unknown` is a reserved literal; an unlisted attribute is an error; `char` and every lifetime but `'static` are dropped | closes the token classes and the attribute set (A.1, A.8) |
+| G.62 | §1 | `usize` and `isize` are 64 bits on every platform | a fixed width, whatever the machine; needed for §0.1.1 |
 | G.63 | §23.1 | a `force` on a node is a potential source to `gnd`; a host action answering an event is due at `(t, n + 1)` | new host semantics |
 
 ### G.64 Implementation-defined numerics
@@ -358,13 +360,25 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 
 **Status: Open.**
 A method call on a carrier links a trait method through a blanket `impl<T: Repr> Tr for T` of a trait in scope at the call (§22, STD-06). No section gives a code for two traits in scope that both have the method name.
-In force: the first in declaration order links, with no diagnostic. For review: report an ambiguity, as Rust does.
+In force: the first in declaration order links, with no diagnostic. For review: report an ambiguity.
 
 ### G.68 `Tran` passed to `analysis` names a module
 
 **Status: Open.**
 `Transient` is the analysis kind (§22.3.7); `Tran` is the module that places a transmission gate in `std::nets`. Name resolution links `Tran` written as the argument of `analysis` to that module without a diagnostic, because the POM has no type checking: an argument of `analysis` is not required to be an `Analysis` value.
 In force: the specification spells the kind `Transient` everywhere. A later type pass (msl-typeck) should reject a module as the argument of `analysis`.
+
+### G.69 Implementation-defined float results
+
+**Status: Resolved provisionally.** In force: the sign and payload of a NaN that an operation yields are implementation-defined (§1.1.8), and the elementary functions of H.2 rule 6 (`exp`, `ln`, the trigonometric and hyperbolic functions, `powf`, `powi`, `atan2`, `hypot`) are accurate to one unit in the last place and implementation-defined within it.
+A NaN's bits are observable only through `encode` and `cast` (§2). A result that depends on the last place of an elementary function is portable only between implementations that compute it the same way. This is an exception to §0.1.1, beside G.46 and G.64.
+For review: fix a canonical NaN, and require correctly rounded elementary functions or name one reference implementation.
+
+### G.70 The rules of the value language formerly taken from Rust
+
+**Status: Resolved provisionally.** Earlier revisions of this specification stated only what differs from Rust and left every other rule of the value language to Rust's own definition. This revision states them all (§0.4): Appendix A.7 to A.10, §1.1 to §1.8, §3.4.11 to §3.4.16, §3.7 to §3.9, Appendix B.3.7 and the rules under each table of Appendix H.
+In force: the rules as written. Most restate what the earlier text implied. The ones that had to be decided, because the design never chose, are listed in §0.10 with the rule written for each.
+For review: each row of §0.10.
 
 ## Closed items
 
@@ -377,21 +391,21 @@ In force: the specification spells the kind `Transient` everywhere. A later type
 | G.42 | How the solve tables read in a periodic analysis | the small-signal column is taken at each point of the trajectory, with `now()` its time. `zi_nd` is in its `delay` form there, on purpose. | §16.2, §16.3 |
 | G.43 | A hold that agrees with a potential contribution on the same node | always an error: a hold is a potential source, and a loop of potential contributions is singular whether or not the values agree | §16 |
 | G.44 | Host actions between two runs of a continued transient; the old stop time | a host `set` or drive is a commit collected at the resume instant. The old stop time remains a time point. | §16.4.1 |
-| D1 | Which Rust forms are in the language | Appendix B.3.6 is the complete list of what is removed: type aliases, associated types, `static` items, trait-bound `where`, `impl Trait`, qualified paths, restricted `pub(..)`, loop labels, pattern and `mut` parameters, `&self`. In: function-pointer types `fn(T) -> U` and a negative literal as a const generic argument. | B.3.6, §1 rule 2, A.1 |
-| D2 | Which Rust library names exist | a closed catalogue: numeric methods of floats and integers, `Option` combinators, arrays and slices, ranges, ten iterator adaptors, derivable traits. Everything else is `E0161`. | Appendix H, §3.4.2 |
+| D1 | Which forms a reader of Rust would expect are not in the language | Appendix B.3.6 is the complete list of what is removed: type aliases, associated types, `static` items, trait-bound `where`, `impl Trait`, qualified paths, restricted `pub(..)`, loop labels, pattern and `mut` parameters, `&self`. In: function-pointer types `fn(T) -> U` and a negative literal as a const generic argument. | B.3.6, §1 rule 2, A.1 |
+| D2 | Which library names exist without a declaration | a closed catalogue: numeric methods of floats and integers, `Option` combinators, arrays and slices, ranges, ten iterator adaptors, derivable traits. Everything else is `E0161`. | Appendix H, §3.4.2 |
 | D3 | `gnd`, `Nature`, `m`, `dtemp` and `str` | core names, in the built-in table, that no declaration can define. | §6 rule 11, §3.4.2, A.1 rule 8 |
-| D5 | Duplicate names, colliding imports, ambiguous globs | `E0162`, with Rust's rules: one name per table per namespace; an item or an explicit `use` beats a glob; two globs are an error only when the name is used. | §3.4.7, §3.4.8, §3.4.9 |
+| D5 | Duplicate names, colliding imports, ambiguous globs | `E0162`, with these rules: one name per table per namespace; an item or an explicit `use` beats a glob; two globs are an error only when the name is used. | §3.4.7, §3.4.8, §3.4.9 |
 | D6 | Generic names of a behavior block | the block repeats the module's generic names in the same order and introduces none of its own. | §10 rule 6, B.3.3 item 14 |
 | D7 | `&` in argument position | a shared borrow of any value is allowed as a call argument; `E0102` covers the rest. | §1 (`E0102`), §3.2 |
 | D8 | What `E0910` counts | nesting only (delimiters, blocks, unary and type nesting) up to 256 levels; flat chains of binary operators, methods and `else if` arms have a separate bound of 4096 links. | A.6 |
-| D9 | Where docs and attributes may be written | everywhere Rust takes an outer attribute, and before reactions, definitions, generation and nature quantities; the docs of a quantity and of a reaction are metadata, those of a statement are kept and ignored. | A.4, §21 |
-| D10 | Identifier patterns | a plain identifier pattern that resolves to a constant, a unit variant or a unit struct is that path, not a binding, as in Rust. | §1 rule 14 |
+| D9 | Where docs and attributes may be written | before every item, field, variant, `match` arm and statement, and before reactions, definitions, generation and nature quantities; the docs of a quantity and of a reaction are metadata, those of a statement are kept and ignored. | A.4, §21 |
+| D10 | Identifier patterns | a plain identifier pattern that resolves to a constant, a unit variant or a unit struct is that path, not a binding. | §1 rule 14 |
 | D11 | Structural checks the elaborator reports | `E0320`, `E0140`, `E0370`, `E0201` and `E0263` are reported under the specification's codes, at name resolution. | §8.5.7, §3.2.9, §8.4, §4, B.3.3 |
 | D12 | Out-of-range literals | `E0909`, at parse: a float literal whose nearest `f64` is infinite; an integer literal past its suffix type, or past 128 bits without a suffix. | A.2 rule 8, A.6, §1 rule 7 |
 | D13 | Where items may sit | at namespace scope, in a file or an inline `mod`; a hardware module and its blocks are in one file, any namespace of it. | §3.4.3, B.2 |
 | D14 | Codes of misplaced statements | `E0404` for `<-`, `+>`, `on`, `bound_step` and `signal` in any block or body that is not theirs, a module body included; `E0121` for a `fn` body, where it wins. | §10 rule 8, §3 rule 6, A.6 |
 | D15 | Raw identifiers (G.15) | `r#name` is accepted for the seven added keywords and for no other word. | A.1 rule 6, G.15 |
-| D16 | Field-init shorthand (G.14) | `{ r }` is accepted in param blocks and templates as in a Rust struct expression, and the tree keeps the authored form. | B.3.2, G.14 |
+| D16 | Field-init shorthand (G.14) | `{ r }` is accepted in param blocks and templates as in a struct expression (§1.3.3), and the tree keeps the authored form. | B.3.2, G.14 |
 | D17 | `(s)` as a place | a place is a path with indexes and fields; parentheses are rejected in a definition and in a commit (`E0900`). | B.3.2 note 4 |
 | P1 | Where a crate starts and what its files are called | the crate root is `src/lib.msl` and a source file has the extension `.msl`; `mod name;` loads `name.msl` or `name/mod.msl`. | §3.6 rule 2 |
 | P2 | A dependency name against a local name | a dependency name is the first segment of a path below the names of the enclosing namespace; a local type-namespace name wins in an ordinary path and clashes in a `use` (`E0163`); a value item of that name hides nothing; `extern crate` is removed. | §3.5 rules 4, 5, 11 |
