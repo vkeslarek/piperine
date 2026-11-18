@@ -56,7 +56,7 @@ impl Session {
     /// at microstep 0 of `at`, so a reaction on its change fires then. A port never driven stays
     /// unknown. `E0801` for a path that names nothing, `E0804` for a carrier that is not a
     /// discrete `in` port of the top, `E0802` for a value that is not the port's type, `E0806`
-    /// for a negative `at`; each leaves the session as it was.
+    /// for a negative `at` or one past the transient's stop; each leaves the session as it was.
     pub fn drive(&mut self, port: &str, value: ParamValue, at: f64) -> Result<(), Failure> {
         Session::not_before(at, &format!("the drive of `{port}`"))?;
         let (net, ty) = self.top_input(port)?;
@@ -81,7 +81,7 @@ impl Session {
     /// (`at = 0`) as a `set` before the analysis, later after the step to `at` is accepted, so a
     /// node its behavior reads keeps its old value at `at`. `E0801` for a path that names no
     /// param, `E0803` for a structural param at `at > 0`, `E0802` for a value its `where`
-    /// refuses, `E0806` for a negative `at`.
+    /// refuses, `E0806` for a negative `at` or one past the transient's stop.
     pub fn set_at(&mut self, path: &str, value: f64, at: f64) -> Result<(), Failure> {
         let action = format!("the set of `{path}`");
         Session::not_before(at, &action)?;
@@ -157,16 +157,19 @@ impl Session {
         Err(Failure::Host { code: "E0806", message: format!("{action} is scheduled at {at:e} s, a time already past") })
     }
 
-    /// An action at `at > 0` waits for a transient to land on it; any other analysis has no such
-    /// time, and the session has not run.
+    /// An action at `at > 0` waits for a transient to land on it, at a time up to the run's stop
+    /// (`E0806` past it: the run never reaches it); any other analysis has no such time, and the
+    /// session has not run.
     fn ready_for(&self, at: f64, action: &str) -> Result<(), Failure> {
         if self.circuit.is_none() {
             return Err(Session::ran());
         }
-        if at > 0.0 && !matches!(self.spec().analysis, Analysis::Transient { .. }) {
-            return Err(Failure::Host { code: "P0010", message: format!("{action} is scheduled at {at:e} s: only a `transient` run has a time to land on, this run is `{}`", self.spec().analysis.name()) });
+        match &self.spec().analysis {
+            Analysis::Transient { stop, .. } if at > *stop => Err(Failure::Host { code: "E0806", message: format!("{action} is scheduled at {at:e} s, after the run's stop at {stop:e} s: the run never reaches it") }),
+            Analysis::Transient { .. } => Ok(()),
+            other if at > 0.0 => Err(Failure::Host { code: "P0010", message: format!("{action} is scheduled at {at:e} s: only a `transient` run has a time to land on, this run is `{}`", other.name()) }),
+            _ => Ok(()),
         }
-        Ok(())
     }
 
     /// The plan's net and the type of the discrete `in` port of the top `port` names.

@@ -1498,6 +1498,9 @@ Proof: run deviation | test the_table_covers_every_twin ... ok
 **C126** - A timed set whose derived child fails `where` is refused at the call and leaves the run as it was. (HII-18, AC 3 and 4; HII-13, AC 5; F12) 
 Proof: run apiderived | test a_timed_set_whose_derived_child_fails_where_is_refused ... ok
 
+**C127** - A drive or a set after the transient's stop is `E0806` at the call; one at the stop is accepted. (HII-13, AC 4 extended; F13) 
+Proof: run apihost | test an_action_past_the_stop_is_e0806_at_the_call ... ok
+
 ---
 
 ## Handoff

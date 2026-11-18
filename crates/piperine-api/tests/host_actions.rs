@@ -153,6 +153,25 @@ fn a_negative_at_is_e0806() {
     }
 }
 
+#[test]
+fn an_action_past_the_stop_is_e0806_at_the_call() {
+    // HII-13 AC 4, extended (F13): a time the transient never reaches is as unreachable as one
+    // already past, so a drive and a set after the stop (1 us) are refused naming the action and
+    // the stop, where they were accepted and silently never applied; one at the stop is a time
+    // the run reaches and is accepted
+    let mut s = transient(1e-6, &[]);
+    match s.drive("clk", ParamValue::Bool(true), 5e-6).expect_err("past the stop") {
+        Failure::Host { code: "E0806", message } => assert!(message.contains("`clk`") && message.contains("stop"), "{message}"),
+        other => panic!("E0806, found {other}"),
+    }
+    match s.set_at("v1.dc", 2.0, 5e-6).expect_err("past the stop") {
+        Failure::Host { code: "E0806", message } => assert!(message.contains("`v1.dc`") && message.contains("stop"), "{message}"),
+        other => panic!("E0806, found {other}"),
+    }
+    s.drive("clk", ParamValue::Bool(true), 1e-6).expect("a drive at the stop");
+    s.set_at("v1.dc", 2.0, 1e-6).expect("a set at the stop");
+}
+
 /// The values of column `at` of a grid table, one per row.
 fn column(table: &Table, at: usize) -> Vec<f64> {
     table.rows.iter().map(|row| match &row[at] {
