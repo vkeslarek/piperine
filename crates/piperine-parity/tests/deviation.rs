@@ -1,4 +1,5 @@
-//! Scope: the deviation table (HYG-06): each of the 11 twins is run with the policy of its own
+//! Scope: the deviation table (HYG-06): each of the 11 twins that are waveforms or sweeps (the five of
+//! `host-ii` print their own deviation, `OWN_TARGET`) is run with the policy of its own
 //! `parity_*` target and the worst `|golden - actual| / bound` of every compared quantity is
 //! printed (`-- --nocapture`), with the accepted and rejected steps and `dt_min` floor hits of a
 //! transient, and, beside ngspice's own point count, the steps of the same transient run free (the
@@ -138,6 +139,12 @@ fn floor(golden: &piperine_parity::golden::Golden) -> Measured {
 /// The twins whose source reads the time, which only the compiled backend runs.
 const COMPILED_ONLY: [&str; 3] = ["tran_jump", "tran_corner", "tran_floor"];
 
+/// The twins of `host-ii` whose `parity_*` target measures and prints its own deviation per
+/// quantity (`parity_temp`, `parity_tf`, `parity_pz`, `parity_sens`, `parity_pss`: eigenvalues,
+/// resistances and derivatives, not a waveform or a sweep this table's rows can hold); the gate is
+/// that target under `ToleranceContract`, and the table does not repeat it.
+const OWN_TARGET: [&str; 5] = ["pss_rc", "pz_lowpass", "sens_divider", "temp_res", "tf_divider"];
+
 /// Every twin, in the order of the `parity_*` targets, measured on `backend`; `None` when ngspice is absent.
 fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
     let ngspice = Ngspice::from_environment();
@@ -180,7 +187,7 @@ fn the_table_covers_every_twin() {
     for backend in Backend::selected() {
         let Some(table) = measure(backend) else { return };
         let covered: Vec<&str> = table.keys().copied().collect();
-        let expected: Vec<&str> = msl.iter().map(String::as_str).filter(|name| backend == Backend::Rust || !COMPILED_ONLY.contains(name)).collect();
+        let expected: Vec<&str> = msl.iter().map(String::as_str).filter(|name| !OWN_TARGET.contains(name) && (backend == Backend::Rust || !COMPILED_ONLY.contains(name))).collect();
         assert_eq!(covered, expected, "one row per twin on {}", backend.name());
         let deviations: Vec<Deviation> = table.values().flat_map(|m| m.deviations.clone()).collect();
         println!("deviation table on {} (ratio of |golden - actual| to the contract bound; 1 = at the bound)", backend.name());
