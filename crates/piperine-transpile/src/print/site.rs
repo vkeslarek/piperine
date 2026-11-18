@@ -6,7 +6,7 @@
 //! param's `where` over the params it reads, as a generic block run over `f64` returning `bool`,
 //! written as the known `BIT` `HIGH` or `LOW`.
 
-use piperine_ir::{Expr, ExprId};
+use piperine_ir::{EventSource, Expr, ExprId};
 use piperine_plan::{Mode, Source, Target};
 
 use crate::Error;
@@ -117,6 +117,62 @@ impl<'a> AnalogPrinter<'a> {
                 Target::StimRe(_) => body.push(format!("cx_.set({j}, {re});")),
                 Target::StimIm(_) => body.push(format!("cx_.set({j}, {im});")),
                 other => return Err(self.unsupported(&format!("the write {other:?} of stimulus {name}"))),
+            }
+        }
+        body.push("Ok(())".to_string());
+        t.indented(|t| {
+            for l in &body {
+                t.line(l);
+            }
+        });
+        t.line("}");
+        let mut text = t.finish();
+        text.pop();
+        Ok(text)
+    }
+
+    /// `ttol<e>_block` and `ttol<e>` (or `etol`), for function `k` of the plan, which runs
+    /// `Mode::Ttol` or `Mode::Etol`: the tolerance of `cross` event `e`, a block generic over
+    /// `Real` run over `f64`, written to the tolerance pin.
+    pub fn tolerance(&self, k: usize) -> Result<String, Error> {
+        let Some((f, name, e)) = self.plan.functions().get(k).and_then(|f| match f.mode {
+            Mode::Ttol(e) => Some((f, "ttol", e)),
+            Mode::Etol(e) => Some((f, "etol", e)),
+            _ => None,
+        }) else {
+            return Err(self.unsupported(&format!("function {k} as a tolerance function")));
+        };
+        let event = self.body.events().get(e as usize);
+        let value = event.and_then(|ev| match ev.source {
+            EventSource::Cross { ttol, etol, .. } => if name == "ttol" { ttol } else { etol },
+            _ => None,
+        });
+        let (Some(event), Some(value)) = (event, value) else {
+            return Err(self.unsupported(&format!("cross event {e}, which has no {name}")));
+        };
+        let reads: Vec<(usize, Source)> = f.reads.iter().copied().enumerate().collect();
+        let mut t = Text::new();
+        t.comment(&format!("{}.cross {e}: its {name}", self.body.name()), &event.origin);
+        t.line(&format!("fn {name}{e}_block<R: Real>({}) -> R {{", self.block_params(&reads)));
+        let value = self.values.expr(value)?;
+        t.indented(|t| t.line(&value));
+        t.line("}");
+        t.line("");
+        let names: Vec<String> = f.reads.iter().map(|s| self.read_name(*s)).collect();
+        let writes: Vec<String> = f.writes.iter().map(|w| self.write_name(*w)).collect();
+        t.line(&format!(
+            "// function {k} `{name}:{e}`: reads {}; writes {} @ {}",
+            names.join(", "),
+            writes.join(", "),
+            self.function_origin(k)
+        ));
+        t.line(&format!("fn {name}{e}(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
+        let mut body = self.bind_reads(&reads);
+        body.push(format!("let value_ = Self::{name}{e}_block::<f64>({});", self.block_args(&reads)));
+        for (j, w) in f.writes.iter().enumerate() {
+            match w {
+                Target::Ttol(_) | Target::Etol(_) => body.push(format!("cx_.set({j}, value_);")),
+                other => return Err(self.unsupported(&format!("the write {other:?} of the {name} of event {e}"))),
             }
         }
         body.push("Ok(())".to_string());

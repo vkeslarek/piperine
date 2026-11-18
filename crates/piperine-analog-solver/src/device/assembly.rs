@@ -113,6 +113,8 @@ pub struct AssemblySnapshot {
 pub struct Assembly {
     pub(crate) plan: AnalogPlan,
     slots: Vec<Vec<u8>>,
+    /// Whether the discrete side has written each slot since the assembly was made.
+    written: Vec<bool>,
     previous: Vec<Vec<u8>>,
     pub(crate) state: Vec<InstanceState>,
     scratch: Vec<u8>,
@@ -146,7 +148,7 @@ impl Assembly {
                 watched: vec![Watched::default(); inst.watches.len()],
             })
             .collect();
-        Assembly { previous: slots.clone(), slots, plan, state, scratch: Vec::new(), traces: Vec::new(), iteration: 0 }
+        Assembly { written: vec![false; slots.len()], previous: slots.clone(), slots, plan, state, scratch: Vec::new(), traces: Vec::new(), iteration: 0 }
     }
 
     /// The plan this assembly runs.
@@ -160,6 +162,7 @@ impl Assembly {
     pub fn set_discrete(&mut self, slot: u32, bytes: &[u8]) {
         let s = slot as usize;
         assert_eq!(bytes.len(), self.slots[s].len(), "discrete slot {slot} holds {} bytes", self.slots[s].len());
+        self.written[s] = true;
         if self.slots[s] != bytes {
             std::mem::swap(&mut self.slots[s], &mut self.previous[s]);
             self.slots[s].copy_from_slice(bytes);
@@ -230,7 +233,7 @@ impl Assembly {
         self.iteration = 0;
         let mut acc = Accepted { fired: Vec::new(), cap: f64::INFINITY };
         for (index, (inst, st)) in self.plan.instances.iter().zip(self.state.iter_mut()).enumerate() {
-            accept_watches(index, inst, st, &self.slots, &mut acc)?;
+            accept_watches(index, inst, st, &self.slots, &self.written, &mut acc)?;
             advance(inst, st, 1);
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DELAY {
@@ -265,8 +268,8 @@ impl Assembly {
                         watch: wi,
                         before,
                         now,
-                        ttol: tolerance(inst, w, "ttol", w.ttol, &self.slots)?,
-                        etol: tolerance(inst, w, "etol", w.etol, &self.slots)?,
+                        ttol: tolerance(inst, w, "ttol", w.ttol, &self.slots, &self.written)?,
+                        etol: tolerance(inst, w, "etol", w.etol, &self.slots, &self.written)?,
                     });
                 }
             }

@@ -313,3 +313,17 @@ fn an_infinite_cross_watch_fails_the_solve() {
         assert!(err.contains("watch `up`") && err.contains("not finite") && err.contains(&format!("{inf}")), "{err}");
     }
 }
+
+#[test]
+fn a_tolerance_the_discrete_side_has_not_written_is_the_default() {
+    // §17.3 rule 5: at the operating point's first solve the tolerance pins have not run yet, so
+    // they are unknown, not zero: no E0510 and the default tolerances. A pin written with 0 is
+    // still E0510 (`accept_fails_with_e0510_on_an_invalid_tolerance`).
+    let (net, n) = netlist(2, &[]);
+    let c = instance("top.cmp", tol_comparator(), vec![Discrete(0), Discrete(1), at(&n[0]), at(&n[1]), Absent]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    asm.accept(&[0.0, 0.1], at_rest()).expect("unwritten tolerances are unknown, not invalid");
+    let got = asm.rising(&[0.3, 0.1], at_time(1e-6)).expect("rising");
+    assert_eq!(got.len(), 1);
+    assert_eq!((got[0].ttol, got[0].etol), (None, None), "the default tolerances");
+}

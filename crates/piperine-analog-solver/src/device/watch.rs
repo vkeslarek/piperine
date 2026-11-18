@@ -47,15 +47,21 @@ pub(crate) struct Watched {
 }
 
 /// The `ttol` or `etol` of `CROSS` watch `w` (`which` names it) from its pin's slot: `None`
-/// for `DEFAULT`. A value that is not finite and positive is `E0510` (§17.3).
+/// for `DEFAULT`, and for a pin the discrete side has not written yet (the operating point's
+/// first solve comes before the parameter cone's first run: the tolerance is unknown, §17.3
+/// rule 5). A value that is not finite and positive is `E0510` (§17.3).
 pub(crate) fn tolerance(
     inst: &InstancePlan,
     w: &WatchPlan,
     which: &str,
     slot: Option<usize>,
     slots: &[Vec<u8>],
+    written: &[bool],
 ) -> Result<Option<f64>, Error> {
     let Some(s) = slot else { return Ok(None) };
+    if !written[s] {
+        return Ok(None);
+    }
     let v = f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0"));
     if !(v.is_finite() && v > 0.0) {
         return Err(device_error(format!(
@@ -73,6 +79,7 @@ pub(crate) fn accept_watches(
     inst: &InstancePlan,
     st: &mut InstanceState,
     slots: &[Vec<u8>],
+    written: &[bool],
     acc: &mut Accepted,
 ) -> Result<(), Error> {
     for (wi, w) in inst.watches.iter().enumerate() {
@@ -105,8 +112,8 @@ pub(crate) fn accept_watches(
                 inst.path, w.name, w.origin
             )));
         }
-        tolerance(inst, w, "ttol", w.ttol, slots)?;
-        tolerance(inst, w, "etol", w.etol, slots)?;
+        tolerance(inst, w, "ttol", w.ttol, slots, written)?;
+        tolerance(inst, w, "etol", w.etol, slots, written)?;
         if v.is_nan() {
             st.watched[wi].cross = None;
             continue;

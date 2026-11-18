@@ -683,7 +683,9 @@ time points, and whose time the solver finds.
 > time by at most `ttol` plus one tick, or `e < etol` holds there. Rule 4 is stated here.
 
 > **Resolution.** A `ttol` or `etol` argument that is known and not finite and positive is
-> error `E0510`. An unknown one falls under rule 5.
+> error `E0510`. An unknown one falls under rule 5. A tolerance the discrete side has not
+> written yet, as at the operating point's first solve, which comes before the parameter cone's
+> first run, is unknown: that solve uses the default tolerance.
 
 **Errors**
 

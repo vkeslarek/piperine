@@ -156,3 +156,29 @@ fn absdelta_fires_every_two_tenths_of_a_volt() {
         assert!((t - want).abs() <= 1e-12, "a record at {t}, wanted {want} within 1 ps: {times:?}");
     }
 }
+
+#[test]
+fn cross_with_tolerances_runs() {
+    // FIX-12 AC 1: `cross(e, 1p)`, `cross(e, etol: 1u)` and `cross(e, 1p, 1u)` type-check, build
+    // and run: each fires once, at the 0.5 V of a 1 V/µs ramp (0.5 µs), within the solver's default
+    // `ttol` (1 ps).
+    let seen = build(&project("cross_tol.msl"), "SpellingsBench").run(0.8e-6, 0.05e-6);
+    for net in ["one", "two", "three"] {
+        let changes = transient(&seen, &format!("SpellingsBench.{net}"));
+        assert_eq!(changes.len(), 1, "{net} fires once: {changes:?}");
+        let at = changes[0].0 as f64 * 1e-15;
+        assert!((at - 0.5e-6).abs() <= 1e-12, "{net} at {at}, wanted 0.5 µs within 1 ps");
+    }
+}
+
+#[test]
+fn a_cross_with_ttol_fires_within_it() {
+    // FIX-12 AC 2 and 3: R = 1 kΩ, C = 1 nF charged by a 1 V step crosses 0.5 V at RC · ln 2;
+    // with `ttol` = 1 ns the watch fires within 1 ns of it.
+    let seen = build(&project("cross_tol.msl"), "RcBench").run(3e-6, 0.05e-6);
+    let changes = transient(&seen, "RcBench.hit");
+    assert_eq!(changes.len(), 1, "one crossing: {changes:?}");
+    let at = changes[0].0 as f64 * 1e-15;
+    let wanted = 1e3 * 1e-9 * std::f64::consts::LN_2;
+    assert!((at - wanted).abs() <= 1e-9, "fired at {at}, wanted {wanted} within 1 ns");
+}

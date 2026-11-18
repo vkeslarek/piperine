@@ -743,9 +743,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test source_fixes`: `cross_with_tolerances_runs` (the three spellings of FIX-12 AC 1), `a_cross_with_ttol_fires_within_it` (RC charge, `ttol` 1 ns, firing within 1 ns of `RC · ln 2`)
-- [ ] Gate check passes: Full
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test source_fixes`: `cross_with_tolerances_runs` (the three spellings of FIX-12 AC 1), `a_cross_with_ttol_fires_within_it` (RC charge, `ttol` 1 ns, firing within 1 ns of `RC · ln 2`)
+- [x] Gate check passes: Full
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: full

@@ -54,11 +54,13 @@ impl<'a> DigitalPrinter<'a> {
             Mode::DelayedEvent(k) => format!("{}_drive_changed", carrier(k)),
             Mode::Event(k) => format!("event{k}"),
             Mode::Cross(k) => format!("cross{k}"),
+            Mode::Ttol(k) => format!("ttol{k}"),
+            Mode::Etol(k) => format!("etol{k}"),
             Mode::Rearm { event, carrier } => {
                 let name = self.body.carriers().get(carrier as usize).map_or_else(|| format!("carrier{carrier}"), |x| Text::ident(&x.name));
                 format!("at{event}_{name}_changed")
             }
-            Mode::Limit(_) | Mode::Stim(_) | Mode::Terms | Mode::Check(_) | Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) => "terms".to_string(),
+            Mode::Limit(_) | Mode::Stim(_) | Mode::Terms | Mode::Check(_) | Mode::Cap(_) => "terms".to_string(),
         }
     }
 
