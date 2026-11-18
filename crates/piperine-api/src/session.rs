@@ -16,9 +16,9 @@ use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
 use piperine_plan::Netlist;
-use piperine_solver::abi::{InitialValue, Value};
+use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{
-    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, ParamValue, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
+    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
     TransientAnalysisOptions,
 };
 use piperine_transpile::{Compiled, Settings, Transpiler};
@@ -27,6 +27,7 @@ use crate::backend::Backend;
 use crate::failure::Failure;
 use crate::host::HostAction;
 use crate::metadata::Metadata;
+use crate::params::{Changed, Derive, Params};
 use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
@@ -51,7 +52,7 @@ pub enum Built {
 pub struct Session {
     pub(crate) circuit: Option<CircuitInstance>,
     ir: Arc<Ir>,
-    compiled: Option<Compiled>,
+    pub(crate) compiled: Option<Compiled>,
     top: String,
     backend: Backend,
     spec: RunSpec,
@@ -73,6 +74,8 @@ pub struct Session {
     wrt: Vec<ParamPath>,
     /// The host's actions due after the start of the transient, in the order given.
     pub(crate) actions: Vec<HostAction>,
+    /// The value of every param of every instance, which a `set` keeps with what derives from it.
+    pub(crate) params: Params,
 }
 
 /// The input and the output of a `tf` or `pz` run, by what the solver knows them by.
@@ -214,11 +217,34 @@ impl Session {
         };
         // the table's params, then the flags', in the order given: the design's own check may
         // refuse a value, and then no analysis runs
-        for (path, entry, value) in &params {
-            let refused = |error| Failure::Host { code: "E0802", message: format!("`{entry}` refuses the value {value}: {error}") };
-            circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
+        let mut table = Params::of(&ir);
+        for (path, _, value) in &params {
+            Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, path, *value)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset, transfer, wrt, actions: Vec::new() })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset, transfer, wrt, actions: Vec::new(), params: table })
+    }
+
+    /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
+    /// instance order (X9). A param no device pin holds is not written when others derive from
+    /// it, or when it is itself derived: nothing reads it on a device, and what derives from it
+    /// is written. A refusal changes nothing (`E0802`).
+    pub(crate) fn set_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, path: &ParamPath, value: f64) -> Result<(), Failure> {
+        let forwarded = !table.plan().readers(&path.instance, &path.param).is_empty();
+        let mut write = |change: &Changed| {
+            if Session::unwritten(circuit, change, forwarded) {
+                return Ok(());
+            }
+            circuit.set(&change.instance, &change.param, change.param_value()).map_err(|error| error.to_string())
+        };
+        table.set(&path.instance, &path.param, value, derive, &mut write).map(|_| ())
+    }
+
+    /// Whether `change` is left unwritten: no device pin holds the param, and it is itself
+    /// derived or others derive from it (`forwarded`). A pinless param nothing derives from is
+    /// still written, so the circuit's refusal names it.
+    pub(crate) fn unwritten(circuit: &CircuitInstance, change: &Changed, forwarded: bool) -> bool {
+        let pinned = circuit.bound().is_some_and(|bound| bound.names.params.contains_key(&(change.instance.clone(), change.param.clone())));
+        !pinned && (change.derived || forwarded)
     }
 
     /// The context a run's options give: the solver's own default with each given option in its
@@ -474,7 +500,7 @@ impl Session {
                         for action in &timed {
                             match action {
                                 HostAction::Drive { net, value, at } => tran.schedule_write(*at, net.clone(), value.clone()),
-                                HostAction::Set { path, value, at } => tran.schedule_set(*at, path.instance.clone(), path.param.clone(), Value::Real(*value)),
+                                HostAction::Set { path, value, at } => tran.schedule_set(*at, path.instance.clone(), path.param.clone(), value.clone()),
                             }
                         }
                         tran.solve()
@@ -507,8 +533,7 @@ impl Session {
                 let mut points = Vec::with_capacity(count);
                 for k in 0..count {
                     let value = from + k as f64 * step;
-                    let refused = |error| Failure::Host { code: "E0802", message: format!("`{}` refuses {value}: {error}", swept.label()) };
-                    circuit.set(&swept.instance, &swept.param, ParamValue::Real(value)).map_err(refused)?;
+                    Session::set_param(&mut self.params, self.compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, swept, value)?;
                     let result = circuit
                         .dc(self.context.clone())
                         .and_then(|mut dc| {

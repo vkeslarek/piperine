@@ -6,7 +6,10 @@
 //! time (`TransientSolver::schedule_set` and `schedule_write`).
 
 use piperine_ir::{CarrierRole, ValueType};
+use piperine_solver::abi::Value;
 use piperine_solver::prelude::ParamValue;
+
+use crate::params::Derive;
 
 use crate::failure::Failure;
 use crate::request::Analysis;
@@ -18,7 +21,7 @@ pub(crate) enum HostAction {
     /// The discrete net `net` of the plan takes `value`.
     Drive { net: String, value: ParamValue, at: f64 },
     /// The param takes `value`.
-    Set { path: ParamPath, value: f64, at: f64 },
+    Set { path: ParamPath, value: Value, at: f64 },
 }
 
 impl Session {
@@ -61,14 +64,27 @@ impl Session {
             param.refuse_timed(self.ir())?;
         }
         self.ready_for(at, &action)?;
-        let refused = |error| Failure::Host { code: "E0802", message: format!("`{}` refuses the value {value}: {error}", param.label()) };
+        let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
         let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
         if at > 0.0 {
-            circuit.check_set(&param.instance, &param.param, &ParamValue::Real(value)).map_err(refused)?;
-            self.actions.push(HostAction::Set { path: param, value, at });
+            // the derived values are known now: each changed param is checked here and scheduled
+            // at the same instant (HII-18 AC 3)
+            let changes = self.params.changes(&param.instance, &param.param, value, derive)?;
+            let forwarded = !self.params.plan().readers(&param.instance, &param.param).is_empty();
+            let mut scheduled = Vec::new();
+            for change in &changes {
+                if Session::unwritten(circuit, change, forwarded) {
+                    continue;
+                }
+                let refused = |error| Failure::Host { code: "E0802", message: format!("`{}` refuses the value {}: {error}", change.label(), change.value) };
+                circuit.check_set(&change.instance, &change.param, &change.param_value()).map_err(refused)?;
+                scheduled.push(HostAction::Set { path: ParamPath { instance: change.instance.clone(), param: change.param.clone() }, value: change.scheduled(), at });
+            }
+            self.params.apply(&changes);
+            self.actions.extend(scheduled);
             return Ok(());
         }
-        circuit.set(&param.instance, &param.param, ParamValue::Real(value)).map_err(refused)
+        Session::set_param(&mut self.params, derive, circuit, &param, value)
     }
 
     /// Narrows the session's record streams to those `streams` name (a stream's name, or one
