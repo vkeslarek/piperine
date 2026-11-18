@@ -912,8 +912,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_queue_rewind_restores_its_pending_commits` passes under `cargo test -p piperine-digital-solver --test queue`
-- [ ] Gate check passes: Quick
+- [x] `a_queue_rewind_restores_its_pending_commits` passes under `cargo test -p piperine-digital-solver --test queue`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

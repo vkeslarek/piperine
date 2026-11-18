@@ -131,3 +131,37 @@ fn next_due_is_the_earliest_instant() {
     let c = q.clone();
     assert_eq!(c, q, "a queue clones for the checkpoint");
 }
+
+/// HYG-14 AC 2: a rewind undoes pushes, the removals a push or a cancel makes (C3) and the
+/// commits taken, so the queue equals the copy taken at the mark, order and all; marks nest.
+#[test]
+fn a_queue_rewind_restores_its_pending_commits() {
+    let mut q = Queue::new();
+    q.push(commit(0, 0, 1, 0, 5), false);
+    q.push(commit(0, 0, 2, 0, 20), false);
+    q.push(commit(1, 0, 3, 0, 20), false);
+    q.push(Pending { net: M, ..commit(0, 0, 4, 0, 20) }, false);
+    let outer_copy = q.clone();
+    let outer = q.mark();
+    assert_eq!(q.journal_len(), 0);
+    // a push that transports away the later commits of its statement (C3), and inserts
+    q.push(commit(0, 0, 9, 1, 10), false);
+    assert_eq!(values(&q.due_at((Tick(20), 0)).cloned().collect::<Vec<_>>()), [3, 4], "the statement-0 commit at 20 went");
+    let inner_copy = q.clone();
+    let inner = q.mark();
+    // a take, a cancel and a REPLACE push inside the inner mark
+    let taken = q.take_due((Tick(5), 0));
+    assert_eq!(values(&taken), [1]);
+    q.cancel(&commit(1, 0, 0, 0, 0));
+    q.push(commit(0, 0, 7, 2, 30), true);
+    assert_ne!(q, inner_copy);
+    q.rewind(&inner);
+    assert_eq!(q, inner_copy, "the inner rewind equals the copy at the inner mark");
+    q.release(inner);
+    q.rewind(&outer);
+    assert_eq!(q, outer_copy, "the outer rewind equals the copy at the outer mark: the removed commit is back");
+    q.release(outer);
+    assert_eq!(q.journal_len(), 0, "the outermost release empties the log");
+    q.push(commit(0, 0, 8, 3, 40), false);
+    assert_eq!(q.journal_len(), 0, "no mark open: nothing is journaled");
+}
