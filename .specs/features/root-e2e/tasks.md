@@ -1,0 +1,1073 @@
+# Root E2E Tasks
+
+## Execution Protocol (MANDATORY -- do not skip)
+
+Implement these tasks with the `tlc-spec-driven` skill: **activate it by name and follow its Execute flow and Critical Rules.** Do not search for skill files by filesystem path. The skill is the source of truth for the full flow (per-task cycle, sub-agent delegation, the walk, check_proofs, the Verifier and the screens sub-agent).
+
+**If the skill cannot be activated, STOP and tell the user - do not proceed without it.**
+
+---
+
+**Design**: `.specs/features/root-e2e/design.md`
+**Status**: Approved
+**Approved**: 2026-11-18 - user: "Eu gostaria que engatilhasse até o 12"
+**Build**: `cargo build -p piperine -p piperine-parity -p piperine-cli -p piperine-api --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape`
+**Run inventory**: `cargo test --test book_inventory`
+**Run claims**: `cargo test --test book_claims`
+**Run errors**: `cargo test --test book_errors`
+**Run welcome**: `cargo test --test book_welcome`
+**Run scenarios**: `env -u PIPERINE_NGSPICE cargo test --test scenarios -- --nocapture`
+**Run twins**: `cargo test -p piperine-cli --test twins`
+**Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
+**Run paritylib**: `cargo test -p piperine-parity --lib`
+**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
+**Run clibook**: `cargo test -p piperine-cli --test book`
+**Run docs**: `cargo test -p piperine-cli --test docs`
+
+Executors: every task is Sonnet (user rule). A different model verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch src/lib.rs` (and `crates/<crate>/src/lib.rs` of a crate the task edits) before a gate so cargo rebuilds this tree's sources.
+
+**Starts after `host-ii` merges.** The branch is rebased onto `main` holding `host-ii` (queue item 2) before T1; T1 stops when `tests/ngspice/` does not hold the five `host-ii` twins or the Book does not hold `host-ii`'s listings.
+
+**Questions answered** (user, 2026-11-17: "Aceito todas (Recommended)"): a claim is every block, listing and stated value or outcome (Q1 (a)); the tests live in root `tests/book/`, one target per chapter (Q2 (a)); `tests/ngspice/` moves once to `tests/e2e/<scenario>/`, no link (Q3 (a)).
+
+Rules every task follows:
+
+- **Parity is top priority and untouched.** `crates/piperine-parity/src/contract.rs` is not edited; no tolerance is retuned or written outside it; the `parity_*` comparison targets are not edited (only `parity_grid.rs`'s path literal and the guard `parity_corpus.rs` change, in T3 to T5). A twin's `.cir` and `.stdout` move byte for byte. A miss is reported to the orchestrator, never a moved bound.
+- **The Book is read, not edited.** `docs/book/content.html` does not change in this feature; a sentence the binary does not meet is a `diverges` row and a `GAPS.md` §11 line, not a rewrite.
+- **Tests state what the Book says, not what the code does.** A `holds` test asserts the value the sentence states (at the precision it prints, through `PrintedNumber` where it prints a number); a `refused` or `diverges` test asserts today's exact code and message and fails when that changes. Every test opens with a comment citing its inventory ids and, for a claim, the sentence. Test functions have exactly the names `## Checks` cites.
+- **Existing tests that change, and only these:** `piperine-cli/tests/twins.rs` (T2: twelve twins; T3: paths; T5: commands read from the scenario), `parity_corpus.rs` (T3 paths, T4 and T5 the e2e layout), `workspace_shape.rs::root_tests_hold_no_end_to_end_target` (T3 the `.cir` count, T7 the declared root targets), the path literals of the readers T3 lists, and `suite_hygiene.rs`'s walker and `ROOT_TARGET_EXEMPTIONS` (T11, T12, T14). No test is removed, weakened or skipped, but the `SETTLED_CHAPTERS` registry tests T34 replaces with stricter ones (MD-28 rule 3).
+- **The user's cleanliness rules bind test support code** (`.specs/features/code-clarity/spec.md`): no free function in new code (every function a method of a type), one purpose per type, no abbreviated names, no god method, every type and method doc-commented, the data path evident. AGENTS rules: no macro of your own, no `unwrap()`/`expect()` on a path user input reaches. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
+- Zero warnings on every crate of the `**Build**` line. Cargo with `-p <crate>` or the default members: never `--workspace`, never `cargo clean`. ngspice runs for real: `env -u PIPERINE_NGSPICE` on every parity and scenario gate.
+- One atomic commit per task, message as given, with the `Co-Authored-By:` trailer the session gives. No push, no merge.
+- **`lessons.py` is not run**: its `list` rewrites `.specs/lessons.json` and `.specs/LESSONS.md`.
+
+---
+
+## Test Coverage Matrix
+
+> Generated from codebase, project guidelines, and spec - confirm before Execute. Guidelines found: `AGENTS.md`, `CLAUDE.md`, `crates/piperine-lang/tests/suite_hygiene.rs`, `.specs/STATE.md` MD-28, MD-31, MD-38, MD-65.
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| Parity harness library (`piperine-parity/src/corpus.rs`) | unit | all branches: found, missing, two of one name | inline `#[cfg(test)] mod tests` | `cargo test -p piperine-parity --lib` |
+| The e2e layout guard | integration | every rule on the tree and on planted text (L-013) | `crates/piperine-parity/tests/parity_corpus.rs` | `cargo test -p piperine-parity --test parity_corpus` |
+| Twins on the binary | e2e | every twin, both backends, bytes after the header | `crates/piperine-cli/tests/twins.rs` | `cargo test -p piperine-cli --test twins` |
+| Root scenarios | integration | every twin through `piperine::` against ngspice under the contract; skip; own directory | `tests/scenarios.rs` | `env -u PIPERINE_NGSPICE cargo test --test scenarios` |
+| Root Book guards | integration | every rule of `design.md` on the tree and on planted input | `tests/book/{inventory,claims}_guard.rs` | `cargo test --test book_inventory --test book_claims` |
+| Root Book chapters | integration | every `run`, `refused`, `holds`, `diverges` row of the chapter, through `piperine::` | `tests/book/<chapter>.rs` | `cargo test --test book_<chapter>` |
+| Binary-only claims | e2e | each `binary` row with no test today gets one, on the real binary | `crates/piperine-cli/tests/book.rs` | `cargo test -p piperine-cli --test book` |
+| Suite hygiene walker | integration | the manifest predicate on planted text; the real tree | `crates/piperine-lang/tests/suite_hygiene.rs` | `cargo test -p piperine-lang --test suite_hygiene` |
+| `GAPS.md`, `ROADMAP.md`, `STATE.md`, `CLAUDE.md`, `AGENTS.md` | integration | each record claim read as text | `crates/piperine-cli/tests/docs.rs` | `cargo test -p piperine-cli --test docs` |
+| `contract.md`, comments and doc strings | none | - (build gate only) | - | build gate only |
+
+## Gate Check Commands
+
+> Generated from codebase - confirm before Execute.
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | After a task with one target or unit tests | the `Run` line(s) or `cargo test --test <target>` the task's `Done when` names |
+| Full | After a task that moves files or changes what a twin runs | Quick, then `env -u PIPERINE_NGSPICE cargo test` at the repository root (the default members) |
+| Build | After each phase, and after a task with `Tests: none` | the `**Build**` line, then `env -u PIPERINE_NGSPICE cargo test` at the repository root |
+
+---
+
+## Execution Plan
+
+Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in order.
+
+**Batches** (~7 tasks, whole phases): B1 = Phase 1 (T1-T6), B2 = Phases 2-3 (T7-T13), B3 = Phases 4-5 (T14-T21), B4 = Phases 6-7 (T22-T28), B5 = Phases 8-9 (T29-T36).
+
+### Phase 1: The move
+
+The tree is read first, the five new twins get their goldens before anything moves, then one move with every reader.
+
+```
+T1 → T2 → T3 → T4 → T5 → T6
+```
+
+### Phase 2: Scenarios through `piperine::`
+
+```
+T6 → T7 → T8 → T9 → T10
+```
+
+### Phase 3: The block inventory
+
+```
+T10 → T11 → T12 → T13
+```
+
+### Phase 4: Claims and refusals
+
+```
+T13 → T14 → T15 → T16 → T17
+```
+
+### Phase 5: Language chapters I
+
+```
+T17 → T18 → T19 → T20 → T21
+```
+
+### Phase 6: Language chapters II
+
+```
+T21 → T22 → T23 → T24 → T25
+```
+
+### Phase 7: Packages and the library
+
+```
+T25 → T26 → T27 → T28
+```
+
+### Phase 8: Reference chapters
+
+```
+T28 → T29 → T30 → T31 → T32 → T33
+```
+
+### Phase 9: Closure
+
+```
+T33 → T34 → T35 → T36
+```
+
+---
+
+## Task Breakdown
+
+### T1: Contract: the tree against the design
+
+**What**: Read every location `design.md` cites at `HEAD` (after the rebase onto `main` with `host-ii`) and write `contract.md`: each citation `confirmed` or `moved: <where>`; the five `host-ii` twins and the command-line flags of their analyses (from `crates/piperine-cli/tests/analyses.rs` and the Book); whether `piperine::Settings` exists; what `host-ii` did to the root `Cargo.toml`, `tests/host_ii.rs`, `workspace_shape.rs` and `suite_hygiene.rs`; the Book's counts (chapters, blocks by language, listings) and the planner's sentence count (design "Data Models"), recounted; every file that reads `tests/ngspice` (`grep -rn "tests/ngspice\|\"ngspice\"" crates src tests`). A citation that changes a task is reported to the orchestrator before T2.
+**Where**: `.specs/features/root-e2e/contract.md`
+**Depends on**: None
+**Reuses**: `.specs/features/host-ii/contract.md` (the form)
+**Requirement**: RE-01, RE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `contract.md` lists every citation of `design.md` with `confirmed` or `moved: <where>`, and the readers of `tests/ngspice` one per line
+- [ ] `Run twins`, `Run corpus` and every `parity_*` target pass at `HEAD` before any change, their test counts written in `contract.md`
+- [ ] Gate check passes: Build
+
+**Tests**: none
+**Gate**: build
+
+**Commit**: `docs(specs): root-e2e - contract of the tree against the design`
+
+---
+
+### T2: The goldens of the five `host-ii` twins
+
+**What**: `twins.rs` covers all twelve twins: the five `host-ii` twins join `TWINS` with the flags their `.cir` asks for (from T1), and their standard output after the header line, captured from the binary at this commit on each backend, is written to `crates/piperine-cli/tests/goldens/<name>.txt`. A new test holds every twin to its golden, so the move (T3) is proven against bytes captured before it. A twin a backend refuses is reported to the orchestrator, not dropped.
+**Where**: `crates/piperine-cli/tests/twins.rs`
+**Depends on**: T1
+**Reuses**: `every_twin_prints_the_bytes_it_printed_before_the_long_run` (the form)
+**Requirement**: RE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `crates/piperine-cli/tests/goldens/` holds `tf_divider.txt`, `pz_lowpass.txt`, `sens_divider.txt`, `pss_rc.txt`, `temp_res.txt`, each the binary's output
+- [ ] `twins.rs` gains `every_twin_prints_the_bytes_it_printed_before_the_move` (twelve twins, both backends); the existing tests pass with twelve twins
+- [ ] Gate check passes: Quick (`Run twins`)
+- [ ] Test count: 1 new test
+
+**Tests**: e2e
+**Gate**: quick
+
+**Commit**: `test(cli): the twelve twins' bytes before the move`
+
+---
+
+### T3: One move to `tests/e2e/twins/`, every reader with it
+
+**What**: `git mv` every file of `tests/ngspice/` to `tests/e2e/twins/` and every `crates/piperine-cli/tests/goldens/<name>.txt` to `tests/e2e/twins/<name>.stdout`, unchanged. `piperine-parity` gains `Corpus` and `Twin` (`src/corpus.rs`, design "Components"), and `Ngspice::fixture_path` and `Bench::twin_path` read through it. Every reader T1 listed reads the new path in this task: `piperine-parity` (`tests/{parity_grid,parity_corpus,twins}.rs`), `piperine-cli` (`tests/{twins,options,run}.rs`), `piperine-api` (`tests/{analyses,grid,probes,records}.rs`), `piperine-lang` (`tests/{elab_entry,types_entry,elab_digital,msl_format}.rs`), `piperine-solver` (`tests/workspace_shape.rs`: the `.cir` count), and any other T1 found. No symlink.
+**Where**: `tests/e2e/twins/`
+**Depends on**: T2
+**Reuses**: `Ngspice::fixture_path`, `Bench::twin_path`
+**Requirement**: RE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `tests/ngspice/` and `crates/piperine-cli/tests/goldens/` do not exist; `git show --stat -M HEAD` shows every moved file as a rename with no line changed
+- [ ] `corpus.rs` has inline tests `a_twin_is_found_by_name`, `a_missing_twin_names_itself`, `a_name_in_two_scenarios_is_refused`
+- [ ] Every target T1 listed passes with its test count unchanged; `every_twin_prints_the_bytes_it_printed_before_the_move` passes
+- [ ] Gate check passes: Full (`Run paritylib`, `Run twins`, `Run corpus`, then the root `cargo test`)
+- [ ] Test count: 3 new unit tests, none removed
+
+**Tests**: unit
+**Gate**: full
+
+**Commit**: `refactor(tests): the ngspice twins move to tests/e2e/twins`
+
+---
+
+### T4: The e2e layout guard
+
+**What**: `parity_corpus.rs` guards the e2e tree instead of `tests/ngspice/`: every twin has its `.cir`, its `.stdout` and a test function in a `parity_*` target; an `.msl` with no `.cir` is a library a twin of its directory loads with `mod`; a scenario directory holding `benches/` holds `Piperine.toml`; `tests/ngspice/` does not exist. Each rule is a method of `Guard` tested on planted text; the `.cir` byte pins stay.
+**Where**: `crates/piperine-parity/tests/parity_corpus.rs`
+**Depends on**: T3
+**Reuses**: `Guard::unmatched_twins`, `the_guards_report_planted_text`
+**Requirement**: RE-04, RE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `parity_corpus.rs` holds `every_twin_has_its_files_in_one_scenario_directory`, `tests_ngspice_holds_no_twin`, `a_scenario_with_benches_holds_a_manifest` and `the_layout_guards_report_planted_trees`
+- [ ] Each new rule fails on a planted tree that breaks it (asserted in `the_layout_guards_report_planted_trees`)
+- [ ] Gate check passes: Quick (`Run corpus`)
+- [ ] Test count: 4 new tests; the existing tests pass on the new tree
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test(parity): the corpus guard holds the e2e tree`
+
+---
+
+### T5: The command of each scenario
+
+**What**: Each twin gains `tests/e2e/twins/<name>.command`, one line, the command a user types from the scenario directory (`piperine run divider.msl --analysis op`), with the flags `TWINS` holds today. `twins.rs` reads the commands through `Corpus` and runs each from its scenario directory with `--backend` appended; the `TWINS` table goes. `parity_corpus.rs`'s file rule adds `.command`.
+**Where**: `crates/piperine-cli/tests/twins.rs`
+**Depends on**: T4
+**Reuses**: `Corpus::twins`, `Twin::command`
+**Requirement**: RE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Twelve `.command` files exist; `twins.rs` holds no flag of a twin
+- [ ] `every_twin_prints_the_bytes_it_printed_before_the_move` and every other test of `twins.rs` pass unchanged in what they assert
+- [ ] Gate check passes: Quick (`Run twins`, `Run corpus`)
+- [ ] Test count: unchanged
+
+**Tests**: e2e
+**Gate**: quick
+
+**Commit**: `test(cli): each twin's command lives in its scenario`
+
+---
+
+### T6: The old path in comments and doc strings
+
+**What**: Every comment or doc string that names `tests/ngspice` now names `tests/e2e/twins`: the first line of each twin (`//! Twin of ...`), `piperine-parity/src/lib.rs`, `piperine-ir` (`src/lib.rs`, `tests/support/devices.rs`), `piperine-transpile` (`src/print/text.rs` test strings, `tests/differential.rs`), `piperine-parity/tests/buck/divider/devices/lib.msl`, the `//!` headers of the readers T3 changed. No `.cir` changes. A pinned text that changes (an elaboration, a golden) stops the task and is reported.
+**Where**: `tests/e2e/twins/`
+**Depends on**: T5
+**Reuses**: none
+**Requirement**: RE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `grep -rn "tests/ngspice" crates src tests` prints nothing
+- [ ] `Run twins`, `Run corpus`, the `parity_*` targets and `cargo test -p piperine-lang --test elab_entry --test types_entry --test elab_digital` pass unchanged
+- [ ] Gate check passes: Build
+
+**Tests**: none
+**Gate**: build
+
+**Commit**: `docs: the twins' home is tests/e2e/twins`
+
+---
+
+### T7: The root runs the operating-point scenarios
+
+**What**: The root `Cargo.toml` gains the dev-dependencies of design "Integration Points"; `tests/scenarios.rs` (new, `//!` header) holds `Scenario`, `Ran` and `Comparison` (design "Components") and one test per operating-point twin: `divider`, `isrc_r`, `diode_series`, each on every selected backend through `piperine::`, compared with ngspice's printed values under `DC_VOLTAGE`. `workspace_shape.rs::root_tests_hold_no_end_to_end_target` admits Rust under root `tests/` only in the targets the root manifest declares (top-level `tests/*.rs` and `[[test]]` paths) and in `tests/book/support/`.
+**Where**: `tests/scenarios.rs`
+**Depends on**: T6
+**Reuses**: `parity_op.rs` (nodes and contract), `piperine-api/tests/analyses.rs` (`Settings`, the session), `Cli::parse`
+**Requirement**: RE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `tests/scenarios.rs` holds `divider`, `isrc_r`, `diode_series`
+- [ ] `cargo test -p piperine-solver --test workspace_shape` and `Run hygiene` pass
+- [ ] Gate check passes: Quick (`Run scenarios`)
+- [ ] Test count: 3 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the root runs the operating-point scenarios against ngspice`
+
+---
+
+### T8: The sweep, AC and transient scenarios
+
+**What**: `scenarios.rs` gains `diode_iv` and `diode_rev` (each row of ngspice's export under `DC_CURRENT`), `ac_rc` (`mag`/`phase` columns under `AC_MAGNITUDE` and `AC_PHASE`) and `tran_rc` (the print grid of the export, then each row under `TRAN_VOLTAGE`), the quantities of `parity_{dc,ac,tran}.rs`.
+**Where**: `tests/scenarios.rs`
+**Depends on**: T7
+**Reuses**: `parity_dc.rs`, `parity_ac.rs`, `parity_tran.rs`, `Golden::same_grid`
+**Requirement**: RE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `scenarios.rs` holds `diode_iv`, `diode_rev`, `ac_rc`, `tran_rc`
+- [ ] Gate check passes: Quick (`Run scenarios`)
+- [ ] Test count: 4 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the root runs the sweep, AC and transient scenarios`
+
+---
+
+### T9: The `host-ii` scenarios
+
+**What**: `scenarios.rs` gains `tf_divider` (`TF_RATIO`), `pz_lowpass` (`PZ_ROOT`), `sens_divider` (`SENSITIVITY`), `pss_rc` (`TRAN_VOLTAGE`) and `temp_res` (`DC_VOLTAGE`), each comparing what its `parity_*` target compares, from the table `piperine::` gives for its command.
+**Where**: `tests/scenarios.rs`
+**Depends on**: T8
+**Reuses**: `parity_{tf,pz,sens,pss,temp}.rs`, `Table::transfer`/`roots`/`sensitivities` (`host-ii`)
+**Requirement**: RE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `scenarios.rs` holds `tf_divider`, `pz_lowpass`, `sens_divider`, `pss_rc`, `temp_res`
+- [ ] Gate check passes: Quick (`Run scenarios`)
+- [ ] Test count: 5 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the root runs the host II scenarios`
+
+---
+
+### T10: Every scenario, skipped or not, in its own directory
+
+**What**: `scenarios.rs` gains its guards: every twin of `Corpus::twins()` has a test named after it in this file; with ngspice disabled (`Ngspice::new(Lookup::Skip)`) a scenario still runs, gives a table and prints the harness's skip line; two scenarios run in two different build directories, each holding only its own build.
+**Where**: `tests/scenarios.rs`
+**Depends on**: T9
+**Reuses**: `Ngspice::skip_line`, `ScratchDir`
+**Requirement**: RE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `scenarios.rs` holds `every_twin_has_a_scenario_test`, `a_disabled_ngspice_still_runs_the_scenario`, `each_scenario_runs_in_a_directory_of_its_own`
+- [ ] `Run scenarios` prints `SKIP divider: ngspice comparison disabled by PIPERINE_NGSPICE=skip`
+- [ ] Gate check passes: Build
+- [ ] Test count: 3 new tests
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test: every scenario has its test, its own directory and a skip`
+
+---
+
+### T11: The hygiene walker reads the root manifest
+
+**What**: `support/sources.rs` counts a root `tests/<dir>/<file>.rs` as an integration target when the root `Cargo.toml` names its path in a `[[test]]` table, and a helper otherwise. The manifest reading is a named type (`RootManifest::test_paths(text)`) tested on planted text.
+**Where**: `crates/piperine-lang/tests/support/sources.rs`
+**Depends on**: T10
+**Reuses**: `integration_targets`, `root_targets`
+**Requirement**: RE-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `suite_hygiene.rs` gains `the_root_manifest_names_its_test_targets` (planted manifest: two `[[test]]` paths found, a `[dependencies]` path ignored)
+- [ ] Gate check passes: Quick (`Run hygiene`)
+- [ ] Test count: 1 new test
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test(lang): the hygiene walker reads the root test targets`
+
+---
+
+### T12: The Book reader and its guard target
+
+**What**: `tests/book/support/book.rs` holds `Book`, `BlockId`, `Block`, `Sentence` and `Fingerprint` (design "Components"); `tests/book/inventory_guard.rs` (new, `//!` header, target `book_inventory` in the root manifest) reads the Book with it. `suite_hygiene.rs` registers the target in `ROOT_TARGET_EXEMPTIONS` (it links no workspace crate: a repository policy proof).
+**Where**: `tests/book/support/book.rs`
+**Depends on**: T11
+**Reuses**: `piperine-cli/tests/book.rs` (`blocks`, `files_before`, `attributes`, `decode`: the rules, not the code)
+**Requirement**: RE-01
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `inventory_guard.rs` holds `the_book_reads_every_block` (every chapter of T1's count, each block with an id, the `msl` count T1 recorded) and `a_marked_file_joins_its_blocks` (`clipper.msl` is the two marked blocks joined)
+- [ ] `Run hygiene` passes with the exemption
+- [ ] Gate check passes: Quick (`Run inventory`)
+- [ ] Test count: 2 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the root reads the Book`
+
+---
+
+### T13: The block rows and their guard
+
+**What**: `tests/book/inventory.tsv` holds one `block` row per `<pre>` block of the Book, verdict `pending` (listings `held` by `piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints`; `sh`, `toml`, other `text` and `rust` blocks `shown`), each with its fingerprint; `tests/book/support/inventory.rs` holds `Inventory`, `Row`, `Verdict`, `Coverage`. The guard gains the block rules of design "The two guards" and the `SETTLED_CHAPTERS` registry (empty). A failure prints the corrected rows.
+**Where**: `tests/book/inventory_guard.rs`
+**Depends on**: T12
+**Reuses**: `Book`, `Fingerprint`
+**Requirement**: RE-01, RE-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `inventory_guard.rs` holds `every_block_of_the_book_has_one_row`, `every_row_names_an_existing_test`, `a_verdict_fits_its_block`, `run_rows_name_tests_that_run_their_model`, `refused_rows_name_tests_that_expect_their_refusal`, `a_model_across_blocks_names_one_test`, `settled_chapters_have_no_pending_row`, `the_guard_names_a_block_without_a_row_and_a_row_naming_no_test`
+- [ ] The last test feeds planted inventories breaking each rule and asserts each failure names the block
+- [ ] Gate check passes: Quick (`Run inventory`, `Run clibook`)
+- [ ] Test count: 8 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: every Book block has an inventory row`
+
+---
+
+### T14: The claim rows and their guard
+
+**What**: `tests/book/claims_guard.rs` (new, `//!` header, target `book_claims`, registered in `ROOT_TARGET_EXEMPTIONS`) holds `ClaimDetector` (the code, number-with-unit and outcome-verb lists as data) and the claim rules of design "The two guards"; `inventory.tsv` gains one `claim` row per flagged sentence, verdict `pending`.
+**Where**: `tests/book/claims_guard.rs`
+**Depends on**: T13
+**Reuses**: `Book::sentences`, `Inventory`, `Coverage`
+**Requirement**: RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `claims_guard.rs` holds `every_value_sentence_has_a_claim_row`, `every_claim_row_is_a_sentence_of_its_chapter`, `holding_claims_name_root_tests_that_cite_them`, `binary_claims_name_command_line_tests`, `settled_chapters_have_no_pending_claim`, `the_detector_flags_a_value_a_code_and_an_outcome`, `the_claim_guard_names_a_sentence_without_a_row`
+- [ ] The detector test asserts flags on planted sentences (a code, `693.1 ns`, `prints`) and no flag on a planted rule sentence
+- [ ] Gate check passes: Quick (`Run claims`, `Run hygiene`)
+- [ ] Test count: 7 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: every value sentence of the Book has a claim row`
+
+---
+
+### T15: Running a Book model, and the refusal that runs
+
+**What**: `tests/book/support/{model,records,refusal}.rs` hold `Model`, `Ran`, `KeptRecords` and `Refusal` (design "Components"); `tests/book/errors.rs` (new, `//!` header, target `book_errors`) proves `Refusal::expect` fails naming its row when the model runs, and settles the errors chapter's blocks: the worked `SampleHold` (`refused` with the codes the binary gives today) and the two `diag` blocks (`holds` or `diverges`). The chapter joins neither `SETTLED_CHAPTERS` yet (its code tables are T17).
+**Where**: `tests/book/errors.rs`
+**Depends on**: T14
+**Reuses**: `piperine-api/tests/analyses.rs` (session and settings), `Inventory::checked_block`
+**Requirement**: RE-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `errors.rs` holds `a_refusal_that_runs_fails_naming_its_row` (a model that runs, under `catch_unwind`: the panic names the row and says "now runs") and one test per settled block row
+- [ ] Gate check passes: Quick (`Run errors`, `Run inventory`)
+- [ ] Test count: at least 3 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: a Book model runs or is refused through piperine::`
+
+---
+
+### T16: `GAPS.md` §11, held to the inventory
+
+**What**: `GAPS.md` gains "## 11. The Book against the binary" (design "Data Models"), with the rows T15 made `refused` or `diverges`; `inventory_guard.rs` holds the inventory's `refused` and `diverges` rows (blocks and claims) equal to §11's, each under its gap id, the id an entry of `GAPS.md`.
+**Where**: `GAPS.md`
+**Depends on**: T15
+**Reuses**: `Inventory`
+**Requirement**: RE-02
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `inventory_guard.rs` holds `refused_rows_and_gaps_section_11_agree` and `the_gaps_guard_names_a_missing_and_an_extra_row` (planted)
+- [ ] `Run docs` passes (no pinned `GAPS.md` text moved)
+- [ ] Gate check passes: Quick (`Run inventory`, `Run docs`)
+- [ ] Test count: 2 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `docs(gaps): the Book against the binary, held to the inventory`
+
+---
+
+### T17: The errors chapter's code tables
+
+**What**: Every claim row of the chapter `errors` gets its verdict and test in `book_errors`: each code the tables say a mistake gives is provoked by the smallest model that makes that mistake and asserted (`holds`) or asserted as what the binary gives today (`diverges`, with its §11 line); the run-time codes the same way. `errors` joins `SETTLED_CHAPTERS` in both guards.
+**Where**: `tests/book/errors.rs`
+**Depends on**: T16
+**Reuses**: `Model::with_source`, `Refusal::expect`
+**Requirement**: RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `errors` is `pending`; `Run inventory` and `Run claims` pass with `errors` settled
+- [ ] Gate check passes: Quick (`Run errors`, `Run inventory`, `Run claims`)
+- [ ] Test count: one test per code claim, written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the errors chapter's codes, through piperine::`
+
+---
+
+### T18: Chapter 1, Welcome
+
+**What**: `tests/book/welcome.rs` (target `book_welcome`) settles every row of the chapter `welcome`: the resistor, the RC project (`Model::example("rc")`), the monitor, the delayed bench (`Model::marked`), the inverter; each value sentence (the 63 % and 86 % of the charge, the crossing at 693.1 ns against 693.147 ns, the operating point's 1 V) asserted through `piperine::`; `refused`/`diverges` rows in §11; `welcome` joins `SETTLED_CHAPTERS` in both guards.
+**Where**: `tests/book/welcome.rs`
+**Depends on**: T17
+**Reuses**: `Model`, `Refusal`, `PrintedNumber`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `welcome.rs` holds `the_rc_step_charges_as_the_book_says` (the step response at 1 us and 2 us, and the `trip` record's time, at the Book's printed precision)
+- [ ] No row of `welcome` is `pending`
+- [ ] Gate check passes: Quick (`Run welcome`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's chapter 1 through piperine::`
+
+---
+
+### T19: Chapter 2, From Rust
+
+**What**: `tests/book/from_rust.rs` (target `book_from_rust`) settles every row of `from-rust` (the `Blinky` model as `host-ii` made it run, its records and table values; the `emit!` fragment), as T18 does.
+**Where**: `tests/book/from_rust.rs`
+**Depends on**: T18
+**Reuses**: `Model::marked`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `from-rust` is `pending`; `from-rust` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_from_rust`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's chapter 2 through piperine::`
+
+---
+
+### T20: Chapter 3, Values
+
+**What**: `tests/book/values.rs` (target `book_values`) settles every row of `values` (integer wrapping, `diode_current`, optional arguments, `Zone` and the monitor's `zone` records, the adder's `lost` record with `b=x`, the sample-and-hold, `erfcx`), as T18 does.
+**Where**: `tests/book/values.rs`
+**Depends on**: T19
+**Reuses**: `Model`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `values` is `pending`; `values` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_values`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's chapter 3 through piperine::`
+
+---
+
+### T21: Chapter 4, Natures
+
+**What**: `tests/book/natures.rs` (target `book_natures`) settles every row of `natures` (carrier declarations and their initial values, the alarm line, `HotResistor`, `Stream`), as T18 does.
+**Where**: `tests/book/natures.rs`
+**Depends on**: T20
+**Reuses**: `Model`, `Refusal`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `natures` is `pending`; `natures` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Build, with `cargo test --test book_natures`
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test: the Book's chapter 4 through piperine::`
+
+---
+
+### T22: Chapter 5, Modules
+
+**What**: `tests/book/modules.rs` (target `book_modules`) settles every row of `modules` (the ladder, `lowpass` as a module, `idt`, the PI controller, `RSwitch`, the memory bank, `nch`, the `extern "osdi"` module), as T18 does.
+**Where**: `tests/book/modules.rs`
+**Depends on**: T21
+**Reuses**: `Model`, `Refusal`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `modules` is `pending`; `modules` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_modules`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's chapter 5 through piperine::`
+
+---
+
+### T23: Chapter 6, Analog
+
+**What**: `tests/book/analog.rs` (target `book_analog`) settles every row of `analog` (the capacitor, the clipper across its two blocks, the diode, the switch, `Servo`, `noise`), as T18 does.
+**Where**: `tests/book/analog.rs`
+**Depends on**: T22
+**Reuses**: `Model::marked`, `Refusal`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `analog` is `pending`; `analog` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_analog`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's chapter 6 through piperine::`
+
+---
+
+### T24: Chapter 7, Digital
+
+**What**: `tests/book/digital.rs` (target `book_digital`) settles every row of `digital` (the counter and its 257 `state` records with one `full` at 255.5 us, `SrLatch`, `Pfd3`, the debouncer, the PWM and its checker, `IrqSource`, `Dff`, `MacPipe`), as T18 does.
+**Where**: `tests/book/digital.rs`
+**Depends on**: T23
+**Reuses**: `Model`, `KeptRecords`, `Refusal`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `digital` is `pending`; `digital` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_digital`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's chapter 7 through piperine::`
+
+---
+
+### T25: Chapter 8, Mixed
+
+**What**: `tests/book/mixed.rs` (target `book_mixed`) settles every row of `mixed` (the cycle counter's three pulses, the comparator, `D2A`, the chapter's buck across its two blocks, the delta-sigma modulator, the SAR ADC), as T18 does.
+**Where**: `tests/book/mixed.rs`
+**Depends on**: T24
+**Reuses**: `Model::marked`, `KeptRecords`, `Refusal`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `mixed` is `pending`; `mixed` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Build, with `cargo test --test book_mixed`
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test: the Book's chapter 8 through piperine::`
+
+---
+
+### T26: Chapter 9, Packages
+
+**What**: `tests/book/packages.rs` (target `book_packages`) settles every row of `packages` (the `lowpass` project as the Book assembles it, `pub mod`, `include_str!` tables, the `E0163` ambiguity and its `crate::` fix), as T18 does.
+**Where**: `tests/book/packages.rs`
+**Depends on**: T25
+**Reuses**: `Model::marked`, `Refusal`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `packages` is `pending`; `packages` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_packages`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's chapter 9 through piperine::`
+
+---
+
+### T27: Chapter 10, Core and standard library
+
+**What**: `tests/book/core_std.rs` (target `book_core_std`) settles every row of `core-std` (`Tour`, `VT_300K`, `Rc`, `Latch`, `DacRamp`, the resolved line, `Pad`, `Reg`, `Probe`, the watchdog, a crate's own `vt`), as T18 does.
+**Where**: `tests/book/core_std.rs`
+**Depends on**: T26
+**Reuses**: `Model`, `Refusal`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `core-std` is `pending`; `core-std` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_core_std`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's chapter 10 through piperine::`
+
+---
+
+### T28: The cheat sheet
+
+**What**: `tests/book/cheatsheet.rs` (target `book_cheatsheet`) settles every row of `cheatsheet` (most blocks are `fragment`s of a chapter's model or `refused` with the form they show), as T18 does.
+**Where**: `tests/book/cheatsheet.rs`
+**Depends on**: T27
+**Reuses**: `Model`, `Refusal`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `cheatsheet` is `pending`; `cheatsheet` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Build, with `cargo test --test book_cheatsheet`
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test: the Book's cheat sheet through piperine::`
+
+---
+
+### T29: The POM chapter
+
+**What**: `tests/book/pom.rs` (target `book_pom`) settles every row of `pom` (the `Front` model and what the chapter says its POM holds), as T18 does.
+**Where**: `tests/book/pom.rs`
+**Depends on**: T28
+**Reuses**: `Model`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `pom` is `pending`; `pom` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_pom`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's POM chapter through piperine::`
+
+---
+
+### T30: The device ABI chapter
+
+**What**: `tests/book/abi.rs` (target `book_abi`) settles every row of `abi` (the resistor and the flip-flop the chapter compiles, and its value sentences), as T18 does.
+**Where**: `tests/book/abi.rs`
+**Depends on**: T29
+**Reuses**: `Model`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `abi` is `pending`; `abi` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_abi`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's ABI chapter through piperine::`
+
+---
+
+### T31: The compiler chapter
+
+**What**: `tests/book/compiler.rs` (target `book_compiler`) settles every row of `compiler` (the `devices` crate and the diode it compiles), as T18 does.
+**Where**: `tests/book/compiler.rs`
+**Depends on**: T30
+**Reuses**: `Model`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `compiler` is `pending`; `compiler` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Quick (`cargo test --test book_compiler`, `Run inventory`, `Run claims`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's compiler chapter through piperine::`
+
+---
+
+### T32: The solver and structure chapters
+
+**What**: Every claim row of `solver` and `structure` gets its verdict; a `holds` or `diverges` row is a test of `tests/book/solver.rs` or `tests/book/structure.rs` (targets `book_solver`, `book_structure`), created only when such a row exists; both chapters join `SETTLED_CHAPTERS` of both guards.
+**Where**: `tests/book/solver.rs`
+**Depends on**: T31
+**Reuses**: `Model`
+**Requirement**: RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `solver` or `structure` is `pending`
+- [ ] Gate check passes: Quick (`Run inventory`, `Run claims`, and each target created)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: the Book's solver and structure chapters`
+
+---
+
+### T33: The command line chapter
+
+**What**: `tests/book/cli.rs` (target `book_cli`) settles every row of `cli`: a sentence about what a run gives (values, records, a check's verdict, a refusal's code) is `holds` through `piperine::`; a sentence only the binary can make (an exit code, the layout of a line, a file written) is `binary`, naming an existing `piperine-cli` test or a new one in `crates/piperine-cli/tests/book.rs`.
+**Where**: `tests/book/cli.rs`
+**Depends on**: T32
+**Reuses**: `Model::example`, `crates/piperine-cli/tests/book.rs`
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of `cli` is `pending`; `cli` is in `SETTLED_CHAPTERS` of both guards
+- [ ] Gate check passes: Build, with `cargo test --test book_cli` and `Run clibook`
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test: the Book's command line chapter, through piperine:: and the binary`
+
+---
+
+### T34: The guards turn strict
+
+**What**: Both guards hold that no row is `pending`, in any chapter; the `SETTLED_CHAPTERS` registries and their two tests go (redundant, MD-28 rule 3).
+**Where**: `tests/book/inventory_guard.rs`
+**Depends on**: T33
+**Reuses**: `Inventory`
+**Requirement**: RE-01, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `inventory_guard.rs` holds `no_block_row_is_pending`; `claims_guard.rs` holds `no_claim_row_is_pending`; `settled_chapters_have_no_pending_row` and `settled_chapters_have_no_pending_claim` are gone
+- [ ] A planted `pending` row fails each new test (asserted inside it)
+- [ ] Gate check passes: Quick (`Run inventory`, `Run claims`)
+- [ ] Test count: 2 new, 2 removed
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `test: no Book row is left pending`
+
+---
+
+### T35: `GAPS.md` after the root tests
+
+**What**: `GAPS.md` drops H11 and U10 and U5 (the Book is held block by block and sentence by sentence; what it shows refused is in §11); its counts line and U1's path follow; `docs.rs` holds it.
+**Where**: `GAPS.md`
+**Depends on**: T34
+**Reuses**: `gaps_drops_what_msl_fixes_closed` (the form)
+**Requirement**: RE-01, RE-04
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `docs.rs` gains `gaps_drops_what_root_e2e_closed` (no `| H11 |` row, no `U10.` or `U5.` entry, a §11, `tests/e2e/twins` named in U1)
+- [ ] `Run inventory` passes (§11 unchanged by the edit)
+- [ ] Gate check passes: Quick (`Run docs`, `Run inventory`)
+- [ ] Test count: 1 new test
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `docs(gaps): the root tests close H11, U5 and U10`
+
+---
+
+### T36: The decision and the instruction files
+
+**What**: `.specs/STATE.md` gains the next free `MD` number with the project-level decision of `design.md` ("Tech Decisions"); `ROADMAP.md` marks queue items 4 and 4b done and `root-e2e` delivered in "Every gap has a feature"; `AGENTS.md` and `CLAUDE.md` say the root holds `tests/book/`, `tests/scenarios.rs` and `tests/e2e/` (no longer "the root `tests/` holds no Rust target"), and `CLAUDE.md`'s `piperine-parity` row names `tests/e2e/`.
+**Where**: `.specs/STATE.md`
+**Depends on**: T35
+**Reuses**: `MD-66`'s form
+**Requirement**: RE-04, RE-05
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `docs.rs` gains `the_roadmap_and_state_record_root_e2e`
+- [ ] Gate check passes: Build
+- [ ] Test count: 1 new test
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `docs(specs): the root holds the integrated tests`
+
+---
+
+## Checks
+
+**C1** - Every `<pre>` block of the Book has exactly one inventory row with its chapter, its index and a verdict, its fingerprint matching. (RE-01, AC 1; T13)
+Proof: run inventory | test every_block_of_the_book_has_one_row ... ok
+
+**C2** - Every row names the test that covers it, and that test exists in the target it names. (RE-01, AC 2; T13)
+Proof: run inventory | test every_row_names_an_existing_test ... ok
+
+**C3** - A block with no row, or a row naming no test, fails the guard naming the block. (RE-01, AC 3; T13)
+Proof: run inventory | test the_guard_names_a_block_without_a_row_and_a_row_naming_no_test ... ok
+
+**C4** - A `run` row names a root test that cites the row and runs its model. (RE-02, AC 1; T13)
+Proof: run inventory | test run_rows_name_tests_that_run_their_model ... ok
+
+**C5** - The RC of chapter 1, run through `piperine::`, charges as the Book says: its step response at 1 us and 2 us and its `trip` record's time at the printed precision. (RE-02, AC 1; T18)
+Proof: run welcome | test the_rc_step_charges_as_the_book_says ... ok
+
+**C6** - A `refused` row names a root test that expects its refusal with code and message. (RE-02, AC 2; T13)
+Proof: run inventory | test refused_rows_name_tests_that_expect_their_refusal ... ok
+
+**C7** - The inventory's `refused` and `diverges` rows are exactly the rows of `GAPS.md` §11, each under a gap id of `GAPS.md`. (RE-02, AC 2; T16)
+Proof: run inventory | test refused_rows_and_gaps_section_11_agree ... ok
+
+**C8** - A refused block that starts to run fails its test, naming the row and saying it now runs. (RE-02, AC 3; T15)
+Proof: run errors | test a_refusal_that_runs_fails_naming_its_row ... ok
+
+**C9** - Every sentence of the Book stating a value, a code or an outcome has a claim row. (RE-03, AC 1; T14)
+Proof: run claims | test every_value_sentence_has_a_claim_row ... ok
+
+**C10** - A `holds` or `diverges` claim names a root test whose body cites the claim. (RE-03, AC 1; T14)
+Proof: run claims | test holding_claims_name_root_tests_that_cite_them ... ok
+
+**C11** - Every claim row keeps its sentence, and the sentence is still in its chapter. (RE-03, AC 2; T14)
+Proof: run claims | test every_claim_row_is_a_sentence_of_its_chapter ... ok
+
+**C12** - The claim detector flags a code, a number with its unit and an outcome verb, and not a rule sentence. (RE-03, AC 1; T14)
+Proof: run claims | test the_detector_flags_a_value_a_code_and_an_outcome ... ok
+
+**C13** - Every twin sits in one scenario directory under `tests/e2e/` with its `.msl`, `.cir`, `.command` and `.stdout`. (RE-04, AC 1; T4, T5)
+Proof: run corpus | test every_twin_has_its_files_in_one_scenario_directory ... ok
+
+**C14** - `tests/ngspice/` holds no twin. (RE-04, AC 1; T4)
+Proof: run corpus | test tests_ngspice_holds_no_twin ... ok
+
+**C15** - Each of the twelve twins prints, on each backend, the bytes it printed before the move. (RE-04, AC 2; T2, T3)
+Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
+
+**C16** - Every `parity_*` target passes, reading the new paths. (RE-04, AC 3; T3)
+Proof: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test 'parity_*'`
+
+**C17** - `ToleranceContract` and the comparison targets are unedited by the feature. (RE-04, AC 3; T3)
+Proof: `git diff --quiet $(git merge-base HEAD main) -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_tf.rs crates/piperine-parity/tests/parity_pz.rs crates/piperine-parity/tests/parity_sens.rs crates/piperine-parity/tests/parity_pss.rs crates/piperine-parity/tests/parity_temp.rs`
+
+**C18** - Every twin of `tests/e2e/` has a scenario test at the root. (RE-05, AC 1; T10)
+Proof: run scenarios | test every_twin_has_a_scenario_test ... ok
+
+**C19** - The divider, run from its command through `piperine::`, matches ngspice under `DC_VOLTAGE`. (RE-05, AC 1; T7)
+Proof: run scenarios | test divider ... ok
+
+**C20** - The RC transient, run from its command through `piperine::`, matches ngspice on its print grid under `TRAN_VOLTAGE`. (RE-05, AC 1; T8)
+Proof: run scenarios | test tran_rc ... ok
+
+**C21** - With ngspice disabled a scenario still runs and the harness prints its skip line. (RE-05, AC 2; T10)
+Proof: run scenarios | SKIP divider: ngspice comparison disabled by PIPERINE_NGSPICE=skip
+
+**C22** - Two scenarios run in two directories, each holding only its own build. (RE-05, AC 3; T10)
+Proof: run scenarios | test each_scenario_runs_in_a_directory_of_its_own ... ok
+
+**C23** - The blocks one Book file joins name one test. (Edge case 1; T13)
+Proof: run inventory | test a_model_across_blocks_names_one_test ... ok
+
+**C24** - Every Book listing is still what the binary prints, in the command line's own target. (Edge case 2; T13)
+Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
+
+**C25** - A scenario directory holding `benches/` holds `Piperine.toml`. (Edge case 3; T4)
+Proof: run corpus | test a_scenario_with_benches_holds_a_manifest ... ok
+
+**C26** - No block row is left `pending`. (RE-01, AC 2; T34)
+Proof: run inventory | test no_block_row_is_pending ... ok
+
+**C27** - No claim row is left `pending`. (RE-03, AC 2; T34)
+Proof: run claims | test no_claim_row_is_pending ... ok
+
+**C28** - The root's Book targets are integration targets for the hygiene guards, found through the root manifest. (RE-01, AC 3; T11)
+Proof: run hygiene | test the_root_manifest_names_its_test_targets ... ok
+
+**C29** - Every root target follows the root naming rule, the two guards registered with their reason. (RE-01, AC 3; T12, T14)
+Proof: run hygiene | test root_targets_match_the_naming_rule ... ok
+
+**C30** - `GAPS.md` drops H11, U5 and U10 and keeps §11. (RE-04, AC 1; T35)
+Proof: run docs | test gaps_drops_what_root_e2e_closed ... ok
+
+**C31** - `ROADMAP.md` and `STATE.md` record the root's integrated tests. (RE-05, AC 1; T36)
+Proof: run docs | test the_roadmap_and_state_record_root_e2e ... ok
+
+**C32** - `Corpus` finds a twin by name in its scenario directory and refuses a name two scenarios hold. (RE-04, AC 1; T3)
+Proof: run paritylib | test corpus::tests::a_name_in_two_scenarios_is_refused ... ok
+
+---
+
+## Handoff
+
+The feature's live state, written as it happens - a compaction gives no warning.
+
+**Settled mid-build:** none
+**Dispatched:**
+**Walked:** none
+
+---
+
+## Phase Execution Map
+
+```
+Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9
+
+Phase 1:  T1 ------→ T2 ------→ T3 ------→ T4 ------→ T5 ------→ T6
+Phase 2:  T7 ------→ T8 ------→ T9 ------→ T10
+Phase 3:  T11 ------→ T12 ------→ T13
+Phase 4:  T14 ------→ T15 ------→ T16 ------→ T17
+Phase 5:  T18 ------→ T19 ------→ T20 ------→ T21
+Phase 6:  T22 ------→ T23 ------→ T24 ------→ T25
+Phase 7:  T26 ------→ T27 ------→ T28
+Phase 8:  T29 ------→ T30 ------→ T31 ------→ T32 ------→ T33
+Phase 9:  T34 ------→ T35 ------→ T36
+```
+
+Execution is strictly sequential - there is no intra-phase parallelism.
