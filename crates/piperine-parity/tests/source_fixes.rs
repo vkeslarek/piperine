@@ -197,6 +197,39 @@ fn a_cross_with_ttol_fires_within_it() {
     assert!((at - wanted).abs() <= 1e-9, "fired at {at}, wanted {wanted} within 1 ns");
 }
 
+/// The instant (seconds) of the one change of `hit` in `top` of `cross_tol.msl`, run to 3 us.
+fn rc_crossing(top: &str) -> f64 {
+    let seen = build(&project("cross_tol.msl"), top).run(3e-6, 0.05e-6);
+    let changes = transient(&seen, &format!("{top}.hit"));
+    assert_eq!(changes.len(), 1, "{top}: one crossing: {changes:?}");
+    changes[0].0 as f64 * 1e-15
+}
+
+#[test]
+fn the_ttol_given_to_a_cross_reaches_the_solver() {
+    // FIX-12 AC 2 and 3, end to end: the tolerance is written to the watch's pin, so a 300 ns
+    // `ttol` locates the same crossing (RC · ln 2) at a different instant than a 1 ps one, and a
+    // `ttol` that is not positive fails the run with E0510 (§17.3).
+    let tight = rc_crossing("TightBench");
+    let loose = rc_crossing("LooseBench");
+    let exact = 1e3 * 1e-9 * std::f64::consts::LN_2;
+    assert!((tight - exact).abs() <= 1e-9, "the 1 ps ttol locates {tight}, exact {exact}");
+    assert!((loose - tight).abs() > 1e-9, "the 300 ns ttol locates {loose}, no different from {tight}");
+    assert!((loose - exact).abs() <= 300e-9, "the 300 ns ttol locates {loose}, within 300 ns of {exact}");
+}
+
+#[test]
+fn a_cross_ttol_that_is_not_positive_is_e0510() {
+    // FIX-12 AC 4: a `ttol` of -1 ns fails the run with E0510, naming the watch.
+    let built = build(&project("cross_tol.msl"), "NegativeTolBench");
+    let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+    let mut options = piperine_solver::prelude::TransientAnalysisOptions::new(1e-6, 0.1e-6);
+    options.dt_max = 0.1e-6;
+    let mut solver = piperine_solver::prelude::Solver::new(circuit).with_tran_opts(options).build();
+    let err = solver.tran().and_then(|mut t| t.solve()).err().expect("the run fails").to_string();
+    assert!(err.contains("E0510") && err.contains("ttol"), "{err}");
+}
+
 #[test]
 fn above_with_an_emit_writes_one_record_at_its_crossing() {
     // FIX-13 AC 1: `on above(v(a) - 0.5) { emit!("hit", x = 1); }` on a 1 V/µs ramp to 1 µs writes

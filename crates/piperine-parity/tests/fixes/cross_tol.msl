@@ -43,3 +43,34 @@ module RcBench() {
     let c = Capacitor { c: 1n }(a, gnd);
     let w = Watch { tol: 1n }(a, hit);
 }
+
+/// The same circuit with a `ttol` of 1 ps, 300 ns, and one that is not positive.
+module TightBench() {
+    signal x: Electrical;
+    signal a: Electrical;
+    signal hit: Bit;
+    let s = Step(x);
+    let r = Resistor { r: 1k }(x, a);
+    let c = Capacitor { c: 1n }(a, gnd);
+    let w = Watch { tol: 1p }(a, hit);
+}
+
+module LooseBench() {
+    signal x: Electrical;
+    signal a: Electrical;
+    signal hit: Bit;
+    let s = Step(x);
+    let r = Resistor { r: 1k }(x, a);
+    let c = Capacitor { c: 1n }(a, gnd);
+    let w = Watch { tol: 300n }(a, hit);
+}
+
+module NegativeTolBench() {
+    signal x: Electrical;
+    signal a: Electrical;
+    signal hit: Bit;
+    let s = Step(x);
+    let r = Resistor { r: 1k }(x, a);
+    let c = Capacitor { c: 1n }(a, gnd);
+    let w = Watch { tol: -1n }(a, hit);
+}
