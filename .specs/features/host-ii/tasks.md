@@ -639,9 +639,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-api/tests/metadata.rs` (new) holds `a_param_prints_its_value_in_every_row`, `the_flow_of_a_single_flow_contribution_prints`, `a_flow_of_several_contributions_is_e0801`
-- [ ] Gate check passes: Quick (`Run apimeta`, `Run twins`)
-- [ ] Test count: 3 new tests
+- [x] `crates/piperine-api/tests/metadata.rs` (new) holds `a_param_prints_its_value_in_every_row`, `the_flow_of_a_single_flow_contribution_prints`, `a_flow_of_several_contributions_is_e0801`
+- [x] Gate check passes: Quick (`Run apimeta`, `Run twins`)
+- [x] Test count: 3 new tests
 
 **Tests**: integration
 **Gate**: quick

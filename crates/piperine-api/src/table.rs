@@ -32,6 +32,33 @@ pub struct Table {
 }
 
 impl Cell {
+    /// The value of the net of a param: the bytes of the value itself, with no known byte (a
+    /// param is never unknown). A length other than the type's is a `Failure`.
+    pub fn decode_param(ty: &ValueType, bytes: &[u8]) -> Result<Cell, Failure> {
+        let wrong = || Failure::Backend(format!("cannot decode a param of type {ty} from {} bytes", bytes.len()));
+        let width = match ty {
+            ValueType::F64 => 8,
+            ValueType::Bool => 1,
+            ValueType::UInt(n) | ValueType::Int(n) if (1..=64).contains(n) => (*n as usize).div_ceil(8).next_power_of_two(),
+            _ => return Err(wrong()),
+        };
+        if bytes.len() != width {
+            return Err(wrong());
+        }
+        let mut word = [0u8; 8];
+        word[..width].copy_from_slice(bytes);
+        let raw = u64::from_le_bytes(word);
+        Ok(match ty {
+            ValueType::F64 => Cell::Real(f64::from_bits(raw)),
+            ValueType::Bool => Cell::Bool(raw != 0),
+            ValueType::Int(_) => {
+                let shift = 64 - 8 * width as u32;
+                Cell::Int(i128::from(((raw << shift) as i64) >> shift))
+            }
+            _ => Cell::Int(i128::from(raw)),
+        })
+    }
+
     /// The value of `bytes`, laid out as a carrier of `ty`. Bytes of another length than the
     /// layout's are a `Failure`, never a truncated value.
     pub fn decode(ty: &ValueType, bytes: &[u8]) -> Result<Cell, Failure> {
@@ -78,17 +105,18 @@ impl Cell {
 impl Table {
     /// The operating point: columns `signal` and `value`, one row per probe in order. `net`
     /// gives the bytes of a discrete net by its path.
-    pub fn operating_point(probes: &[Probe], result: &DcAnalysisResult, net: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Table, Failure> {
+    pub fn operating_point(probes: &[Probe], result: &DcAnalysisResult, net: &dyn Fn(&str) -> Option<Vec<u8>>, term: &dyn Fn(&str, &str) -> Option<f64>) -> Result<Table, Failure> {
         let rows = probes
             .iter()
-            .zip(Table::point(probes, result, net)?)
+            .zip(Table::point(probes, result, net, term)?)
             .map(|(probe, value)| vec![Cell::Text(probe.label()), value])
             .collect();
         Ok(Table { columns: vec!["signal".into(), "value".into()], rows })
     }
 
-    /// The value of every probe at one operating point, in order.
-    pub fn point(probes: &[Probe], result: &DcAnalysisResult, net: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Vec<Cell>, Failure> {
+    /// The value of every probe at one operating point, in order; `term` gives the value of a
+    /// flow term of an instance at the solution just taken.
+    pub fn point(probes: &[Probe], result: &DcAnalysisResult, net: &dyn Fn(&str) -> Option<Vec<u8>>, term: &dyn Fn(&str, &str) -> Option<f64>) -> Result<Vec<Cell>, Failure> {
         probes
             .iter()
             .map(|probe| {
@@ -96,6 +124,8 @@ impl Table {
                     Probe::Node { id, .. } => result.get_node(id).map(Cell::Real),
                     Probe::Flow { branch, .. } => result.get_branch(branch.clone()).map(Cell::Real),
                     Probe::Net { path, ty } => net(path).map(|bytes| Cell::decode(ty, &bytes)).transpose()?,
+                    Probe::Param { path, ty } => net(path).map(|bytes| Cell::decode_param(ty, &bytes)).transpose()?,
+                    Probe::Term { instance, term: name } => term(instance, name).map(Cell::Real),
                 };
                 value.ok_or_else(|| Failure::Backend(format!("the operating point holds no value for `{}`", probe.label())))
             })
@@ -166,8 +196,12 @@ impl Table {
     pub fn frequency(probes: &[Probe], result: &AcAnalysisResult) -> Result<Table, Failure> {
         let mut columns = vec!["freq".to_string()];
         for probe in probes {
-            if let Probe::Net { path, .. } = probe {
-                let message = format!("`{path}` is a discrete net: an `ac` run prints nodes and flows, which have a phasor");
+            if let Probe::Net { path, .. } | Probe::Param { path, .. } = probe {
+                let message = format!("`{path}` is a discrete net or a param: an `ac` run prints nodes and flows, which have a phasor");
+                return Err(Failure::Host { code: "E0801", message });
+            }
+            if let Probe::Term { instance, .. } = probe {
+                let message = format!("`i({instance})` is a flow term: an `ac` run prints the flow of a potential branch");
                 return Err(Failure::Host { code: "E0801", message });
             }
             columns.push(format!("mag({})", probe.label()));
@@ -181,7 +215,7 @@ impl Table {
                     let phasor = match probe {
                         Probe::Node { id, .. } => step.get_node(id),
                         Probe::Flow { branch, .. } => step.get_branch(branch.clone()),
-                        Probe::Net { .. } => None,
+                        Probe::Net { .. } | Probe::Param { .. } | Probe::Term { .. } => None,
                     };
                     let phasor = phasor.ok_or_else(|| Failure::Backend(format!("the step at {} Hz holds no value for `{}`", step.frequency, probe.label())))?;
                     row.push(Cell::Real(phasor.norm()));
@@ -207,6 +241,8 @@ impl Table {
                         Probe::Node { id, .. } => step.get_node(id).map(Cell::Real),
                         Probe::Flow { branch, .. } => step.get_branch(branch.clone()).map(Cell::Real),
                         Probe::Net { path, ty } => step.digital_named(path).map(|bytes| Cell::decode(ty, bytes)).transpose()?,
+                        Probe::Param { path, ty } => step.digital_named(path).map(|bytes| Cell::decode_param(ty, bytes)).transpose()?,
+                        Probe::Term { instance, .. } => return Err(Failure::Host { code: "E0801", message: format!("`i({instance})` is a flow term: a transient prints the flow of a potential branch") }),
                     };
                     let missing = || Failure::Backend(format!("the step at {} holds no value for `{}`", step.time(), probe.label()));
                     row.push(value.ok_or_else(missing)?);

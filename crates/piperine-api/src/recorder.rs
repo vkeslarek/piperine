@@ -234,7 +234,7 @@ impl Recorder {
                     (Cell::Real(a), Cell::Real(b)) => Cell::Real(a + (b - a) * (at - t0) / (time - t0)),
                     _ => Cell::Unknown,
                 },
-                (Column::Unknown { .. }, _) => b.clone(),
+                (Column::Unknown { .. } | Column::Param { .. }, _) => b.clone(),
             });
             let row = Recorder::row(at, values.collect());
             if at + slack > time {
@@ -288,6 +288,7 @@ impl StepObserver for Tap {
         self.0.borrow_mut().step(step.time(), &|column| match column {
             Column::Unknown { index } => Ok(step.unknown(*index).map(Cell::Real)),
             Column::Net { id, ty } => step.net(*id).map(|bytes| Cell::decode(ty, bytes)).transpose(),
+            Column::Param { id, ty } => step.net(*id).map(|bytes| Cell::decode_param(ty, bytes)).transpose(),
         });
     }
 }
@@ -307,7 +308,7 @@ mod tests {
     fn solution(solution: &[f64]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + '_ {
         move |column| match column {
             Column::Unknown { index } => Ok(solution.get(*index).map(|v| Cell::Real(*v))),
-            Column::Net { .. } => Ok(None),
+            Column::Net { .. } | Column::Param { .. } => Ok(None),
         }
     }
 
@@ -504,7 +505,7 @@ mod tests {
     fn reading<'a>(v: f64, nets: &'a [Cell]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + 'a {
         move |column| match column {
             Column::Unknown { .. } => Ok(Some(Cell::Real(v))),
-            Column::Net { id, .. } => Ok(nets.get(*id as usize).cloned()),
+            Column::Net { id, .. } | Column::Param { id, .. } => Ok(nets.get(*id as usize).cloned()),
         }
     }
 

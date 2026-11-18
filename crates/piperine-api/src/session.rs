@@ -268,8 +268,8 @@ impl Session {
                 Ok((Some(Transfer { input, output: NodeIdentifier::Anonymous(node.id().index()) }), Vec::new()))
             }
             Analysis::Sens { wrt } => {
-                if let Some(path) = probes.iter().find_map(|probe| if let Probe::Net { path, .. } = probe { Some(path) } else { None }) {
-                    let message = format!("`{path}` is a discrete net: a `sens` run differentiates nodes and flows, not a discrete value");
+                if let Some(path) = probes.iter().find_map(|probe| match probe { Probe::Net { path, .. } | Probe::Param { path, .. } => Some(path.clone()), Probe::Term { instance, .. } => Some(format!("i({instance})")), _ => None }) {
+                    let message = format!("`{path}` is a discrete net, a param or a flow term: a `sens` run differentiates nodes and flows, not a discrete value");
                     return Err(Failure::Host { code: "P0010", message });
                 }
                 let params = wrt.iter().map(|entry| ParamPath::resolve(ir, top, entry)).collect::<Result<Vec<_>, Failure>>()?;
@@ -428,7 +428,8 @@ impl Session {
                     .map_err(|error| Failure::Solver { analysis: "op", error })?;
                 let circuit = solver.circuit();
                 let net = |path: &str| Session::discrete(circuit, path);
-                Table::operating_point(&self.probes, &result, &net)
+                let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
+                Table::operating_point(&self.probes, &result, &net, &term)
             }
             Analysis::Transient { stop, max_step, print_step, from } => {
                 // every printed signal finds its place in a step before the first one is taken
@@ -493,7 +494,8 @@ impl Session {
                         })
                         .map_err(|error| Failure::Solver { analysis: "dc", error })?;
                     let net = |path: &str| Session::discrete(&circuit, path);
-                    points.push((value, Table::point(&self.probes, &result, &net)?));
+                    let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
+                    points.push((value, Table::point(&self.probes, &result, &net, &term)?));
                 }
                 Ok(Table::sweep(&swept.label(), &self.probes, points))
             }
@@ -573,7 +575,8 @@ impl Session {
         let variable = match probe {
             Probe::Node { id, .. } => AnalogVariable::Node(id.clone()),
             Probe::Flow { branch, .. } => AnalogVariable::Branch(branch.clone()),
-            Probe::Net { path, .. } => return Err(Failure::Backend(format!("`{path}` is a discrete net: it has no solved analog net"))),
+            Probe::Net { path, .. } | Probe::Param { path, .. } => return Err(Failure::Backend(format!("`{path}` is a discrete net or a param: it has no solved analog net"))),
+            Probe::Term { instance, .. } => return Err(Failure::Backend(format!("`i({instance})` is a flow term: it has no solved analog net"))),
         };
         let found = nets.iter().find(|net| net.analog_variable().is_some_and(|v| **v == variable));
         found.cloned().ok_or_else(|| Failure::Backend(format!("`{}` is no solved net of the circuit", probe.label())))

@@ -17,6 +17,12 @@ pub enum Probe {
     Net { path: String, ty: ValueType },
     /// The flow of the instance at `instance`: its first potential branch's.
     Flow { instance: String, branch: BranchIdentifier },
+    /// The value of the param `path` (`<instance>.<param>`), of type `ty`, as the run uses it:
+    /// the elaborated value, or the one a `set` gave. Every row shows the same value.
+    Param { path: String, ty: ValueType },
+    /// The one flow contribution `term` of the instance `instance`, which has no potential
+    /// branch: its value at each solution.
+    Term { instance: String, term: String },
 }
 
 /// Where a probe's value sits in a run, found before the run starts.
@@ -26,6 +32,8 @@ pub enum Column {
     Unknown { index: usize },
     /// A discrete net, by its id in the digital plan, with its type.
     Net { id: u32, ty: ValueType },
+    /// A param, by the id of its net in the digital plan, with its type: the value with no known byte.
+    Param { id: u32, ty: ValueType },
 }
 
 impl Probe {
@@ -37,7 +45,16 @@ impl Probe {
             let instance = full(inner.trim()).into_iter().find_map(|p| ir.instance_at(&p));
             let Some(instance) = instance else { return Err(Probe::nothing(entry, "no instance of that path")) };
             let Some(branch) = instance.body().branches().iter().position(|b| b.kind == BranchKind::Potential) else {
-                return Err(Probe::nothing(entry, "the instance has no potential branch, so no flow to print"));
+                // no potential contribution: the instance's single flow contribution is the flow
+                let flows: Vec<usize> = instance.body().branches().iter().enumerate().filter(|(_, b)| b.kind == BranchKind::Flow).map(|(i, _)| i).collect();
+                return match flows.as_slice() {
+                    [only] => Ok(Probe::Term { instance: instance.path().to_string(), term: format!("b{only}.flow") }),
+                    [] => Err(Probe::nothing(entry, "the instance has no potential branch and no flow contribution, so no flow to print")),
+                    several => {
+                        let named: Vec<String> = several.iter().map(|i| format!("b{i}.flow")).collect();
+                        Err(Probe::nothing(entry, &format!("the instance `{}` has several flow contributions and no potential one ({}): name one by its own node", instance.path(), named.join(", "))))
+                    }
+                };
             };
             let path = instance.path().to_string();
             return Ok(Probe::Flow { branch: BranchIdentifier::new(path.clone(), format!("b{branch}.flow")), instance: path });
@@ -50,7 +67,15 @@ impl Probe {
                 return Ok(Probe::Net { ty: net.ty().clone(), path });
             }
         }
-        Err(Probe::nothing(entry, "no node, net or `i(<instance>)` of that path"))
+        if let Some((instance, param)) = entry.rsplit_once('.') {
+            for path in full(instance) {
+                let Some(found) = ir.instance_at(&path) else { continue };
+                if let Some(declared) = found.body().params().iter().find(|p| p.name == param) {
+                    return Ok(Probe::Param { path: format!("{}.{param}", found.path()), ty: declared.ty.clone() });
+                }
+            }
+        }
+        Err(Probe::nothing(entry, "no node, net, param or `i(<instance>)` of that path"))
     }
 
     /// The top's own signals and ports, in declaration order: its nodes and its discrete
@@ -67,7 +92,8 @@ impl Probe {
     /// The column's name: the full path, `i(<full instance path>)` for a flow.
     pub fn label(&self) -> String {
         match self {
-            Probe::Node { path, .. } | Probe::Net { path, .. } => path.clone(),
+            Probe::Node { path, .. } | Probe::Net { path, .. } | Probe::Param { path, .. } => path.clone(),
+            Probe::Term { instance, .. } => format!("i({instance})"),
             Probe::Flow { instance, .. } => format!("i({instance})"),
         }
     }
@@ -80,10 +106,14 @@ impl Probe {
         match self {
             Probe::Node { id, .. } => Probe::unknown(circuit, AnalogVariable::Node(id.clone())).ok_or_else(|| none("no unknown of the solution is that node")),
             Probe::Flow { branch, .. } => Probe::unknown(circuit, AnalogVariable::Branch(branch.clone())).ok_or_else(|| none("no unknown of the solution is that branch current")),
-            Probe::Net { path, ty } => {
+            Probe::Term { instance, .. } => Err(Failure::Host {
+                code: "E0801",
+                message: format!("`i({instance})` is a flow term: only an `op` or a `dc` run prints it, at each solution; a step of a transient does not carry it"),
+            }),
+            Probe::Net { path, ty } | Probe::Param { path, ty } => {
                 let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
-                let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))?;
-                Ok(Column::Net { id: at as u32, ty: ty.clone() })
+                let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))? as u32;
+                Ok(if matches!(self, Probe::Param { .. }) { Column::Param { id: at, ty: ty.clone() } } else { Column::Net { id: at, ty: ty.clone() } })
             }
         }
     }
