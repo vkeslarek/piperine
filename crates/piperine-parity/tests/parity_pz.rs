@@ -1,6 +1,6 @@
 //! Scope: pole-zero parity (host-ii HII-05 AC 2): the poles and zeros of the twin `pz_lowpass` (a
-//! voltage source, a series resistor, a shunt resistor and a shunt capacitor) agree, root for
-//! root, with ngspice's `.pz <in> 0 <out> 0 vol pz` under `PZ_ROOT`, on each selected backend.
+//! voltage source, a series resistor with a capacitor across it, a shunt resistor and a shunt
+//! capacitor: one finite pole, one finite zero) agree, root for root, with ngspice's `.pz <in> 0 <out> 0 vol pz` under `PZ_ROOT`, on each selected backend.
 //! ngspice shorts a node a voltage source pins, so its fixture leaves the source out: the
 //! `vol` transfer of the network behind `in` is the transfer the source drives.
 
@@ -46,6 +46,10 @@ fn compare(reference: &Reference, backend: Backend) {
             (kind, roots)
         })
         .collect();
+    // the twin has one pole and one zero: a zero the solver loses is a miss even with no ngspice to compare
+    for (kind, roots) in &found {
+        assert_eq!(roots.len(), 1, "pz_lowpass: one finite {kind} on {}: {roots:?}", backend.name());
+    }
     let Reference::Golden(golden) = reference else { return };
     for (kind, actual) in found {
         let wanted = Roots::printed(golden, kind);

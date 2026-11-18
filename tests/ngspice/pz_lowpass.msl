@@ -1,5 +1,6 @@
-//! Twin of `tests/ngspice/pz_lowpass.cir`: a voltage source, a series resistor, a shunt resistor
-//! and a shunt capacitor. The pole is -(1/R1 + 1/R2)/C.
+//! Twin of `tests/ngspice/pz_lowpass.cir`: a voltage source, a series resistor with a capacitor
+//! across it, a shunt resistor and a shunt capacitor. The zero is -1/(R1 C2) and the pole
+//! -(R1 + R2)/(R1 R2 (C1 + C2)).
 mod devices;
 use devices::*;
 
@@ -9,5 +10,6 @@ module PzLowpass() {
     let v1 = Vsource { dc: 1.0 }(vin, gnd);
     let r1 = Resistor { r: 1k }(vin, r#out);
     let r2 = Resistor { r: 3k }(r#out, gnd);
+    let c2 = Capacitor { c: 0.5u }(vin, r#out);
     let c1 = Capacitor { c: 1u }(r#out, gnd);
 }

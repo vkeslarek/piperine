@@ -102,12 +102,14 @@ impl ToleranceContract {
     };
 
     pub const PZ_ROOT: Self = Self {
-        reltol: 1e-5,
-        abstol: 1e-6,
-        rationale: "a generalized eigenvalue of the (G, C) pencil, compared with ngspice's `.pz`, which prints six \
-                    significant digits (e.g. -1.33333e+03), so half a unit of the last digit is up to 4e-6 of the \
-                    value; the floor (rad/s) stands for an imaginary part ngspice prints as 0 and the eigenvalue \
-                    solver returns as rounding noise",
+        reltol: 1e-9,
+        abstol: 1e-8,
+        rationale: "a generalized eigenvalue of the (G, C) pencil, compared with ngspice's `.pz`, which the twin \
+                    asks for with `set numdgt=10`: it prints ten significant digits (e.g. -8.888888889e+02), so half \
+                    a unit of the last digit is at most 5e-10 of the value and 1e-9 holds every printed root with a \
+                    factor two to spare (the observed deviations are 1e-11 and below); the floor (rad/s) stands for \
+                    an imaginary part ngspice prints as 0 and the eigenvalue solver returns as rounding noise, \
+                    about 1e-10 for roots near 1e4 rad/s",
     };
 
     pub const SENSITIVITY: Self = Self {
@@ -205,7 +207,7 @@ mod tests {
         // HII-21: the three domains of `tf`, `pz` and `sens`, each with a bound, a floor and the reason for both
         for (name, contract, reltol, abstol) in [
             ("TF_RATIO", ToleranceContract::TF_RATIO, 1e-6, 1e-12),
-            ("PZ_ROOT", ToleranceContract::PZ_ROOT, 1e-5, 1e-6),
+            ("PZ_ROOT", ToleranceContract::PZ_ROOT, 1e-9, 1e-8),
             ("SENSITIVITY", ToleranceContract::SENSITIVITY, 1e-5, 1e-12),
         ] {
             assert_eq!(contract.reltol(), reltol, "{name} reltol");
