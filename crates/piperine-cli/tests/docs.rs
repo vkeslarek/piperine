@@ -175,3 +175,23 @@ fn gaps_drops_what_msl_fixes_closed() {
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
     assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 50, "fifty loud rows");
 }
+
+#[test]
+fn the_roadmap_and_state_record_msl_fixes() {
+    // msl-fixes DOC-01 AC 2: the queue marks `msl-fixes` delivered and says what it leaves;
+    // `.specs/STATE.md` holds MD-67 naming the catalogue, `E0161`, the `(is, val)` pair and the
+    // amendment of abi.md A4
+    let roadmap = read("ROADMAP.md");
+    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
+    let item = queue.lines().find(|l| l.starts_with("3d. ")).expect("the queue has an entry for msl-fixes");
+    assert!(item.starts_with("3d. ✅ **Delivered") && item.contains("msl-fixes"), "the entry is delivered and names the feature: {item}");
+    for left in ["S3", "H.5 to H.7", "`simparam`", "`limexp`"] {
+        assert!(item.contains(left), "the entry names what is left: `{left}`");
+    }
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-67:").expect("STATE.md holds MD-67");
+    let decision = state[at..].split("\n---").next().expect("a decision");
+    for name in ["Appendix H", "`E0161`", "`(is, val)`", "`abi.md` A4", "`fatal`"] {
+        assert!(decision.contains(name), "MD-67 names {name}");
+    }
+}

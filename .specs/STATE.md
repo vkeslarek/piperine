@@ -1421,6 +1421,43 @@ It extends MD-65 item 1 and supersedes nothing.
 
 ---
 
+### MD-67: the inherited library is the closed catalogue of Appendix H, as IR `Method` rows
+
+`msl-fixes` (2026-11-18). The correctness fixes and the inherited library.
+
+1. **The inherited library is the closed catalogue of Appendix H**, implemented as IR `Method`
+   rows on the Rust backend with Rust's own semantics (H rule 3: Rust's `f64` and integer methods
+   are the oracle). A method outside the rows of a complete receiver type (`f64`, an integer,
+   `Option`, `bool`) is `E0161` naming the method and the type; the carrier methods of B.1 and the
+   names a project defines stay `P0001`. `exp`, `ln`, `sqrt` and `abs` of `f64` stay `MathFn`, so
+   the twins' generated text does not move.
+2. **An `Option` is the pair `(is, val)` in the IR**, and an `Option` parameter two parameters; a
+   closure argument of an `Option` row is inlined at the call, `checked_*` is a wrapping op plus an
+   overflow test, and `unwrap` is `rt::Unwrap::of`.
+3. **Unknown in a `CROSS` watch is NaN, and NaN is unknown, not a fault** (Q2): the watch's `cross`
+   memory resets, no crossing fires at the next solution, and only infinity fails. This amends
+   `abi.md` A4 ("non-finite") for a `CROSS` watch.
+4. **A run ends on a `sim` record with a known `finish = true`; `fatal` ends it with
+   `failed = true`** (X4): `piperine run` exits 1 and `piperine test` reports `FAIL` with the
+   message. The solver already had the mechanism; the host reads it from the record stream.
+5. **An AC or noise operating point carries its analysis's flag** (Q3): `DcSolver::under` takes
+   the analysis global; `analysis(Dc | Transient | Ac | Noise)` reads it, `freq()` is the `FREQ`
+   ambient in `analog` and 0.0 in a reaction, and `bound_step` is one `CAP` watch per top-level
+   site (a conditional one is `P0001`, Q4, until L40).
+6. **S3 (the type checker reaches only what a run's top reaches) is not part of it** (Q1): it comes
+   with X6, in a feature of its own.
+
+It supersedes nothing and extends MD-64 (the IR's value forms).
+
+**Scope:** `crates/piperine-lang` (`types/`, `elab/`), `crates/piperine-ir`, `crates/piperine-plan`,
+`crates/piperine-transpile` (`rt/`, `print/`), `crates/piperine-interp` (refusals only),
+`crates/piperine-analog-solver` (`device/watch.rs`), `crates/piperine-solver` (`analyses/dc.rs`,
+`ac.rs`, `noise.rs`), `crates/piperine-api` and `crates/piperine-cli` (the run's end and
+`fatal`), `crates/piperine-parity` (`source_*`), `docs/book`.
+**Status:** Accepted (2026-11-17), from the approved `.specs/features/msl-fixes/design.md`.
+
+---
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)
