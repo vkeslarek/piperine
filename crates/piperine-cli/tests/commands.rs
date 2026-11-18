@@ -314,11 +314,11 @@ fn test_prints_no_table_and_no_other_record() {
 
 #[test]
 fn test_prints_fail_fatal_with_the_msg() {
-    // HII-15 AC 2: a run whose bench calls `fatal("brownout")` is `FAIL <run> (fatal: <msg>)` and
+    // HII-15 AC 2: a run whose bench calls `fatal("brownout")` is `FAIL <run> (fatal at <t>: <msg>)` and
     // exit 1; the other run of the project still runs and passes
     let out = piperine_in(&fixture("fatal_and_target"), &["test", "brown"]);
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
-    assert_eq!(text(&out.stdout), "FAIL brown (fatal: brownout)\n1 runs, 0 passed, 1 failed\n");
+    assert_eq!(text(&out.stdout), "FAIL brown (fatal at 1.000000e-6: brownout)\n1 runs, 0 passed, 1 failed\n");
 }
 
 #[test]

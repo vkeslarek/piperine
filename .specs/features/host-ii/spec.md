@@ -261,8 +261,8 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 
 **Acceptance Criteria** (HII-15, `fatal`):
 
-1. WHEN a run delivers a `sim` record with `failed = true` THEN the system SHALL fail the run, print the record's `msg` on standard error, keep the records already printed, and exit 1.
-2. WHEN `piperine test` judges a run that delivered a `sim` record with `failed = true` THEN the system SHALL print `FAIL <name> (fatal: <msg>)`.
+1. WHEN a run delivers a `sim` record with `failed = true` THEN the system SHALL fail the run, print `fatal at <t>: <msg>` on standard error (the format `msl-fixes` settled), keep the records already printed, and exit 1.
+2. WHEN `piperine test` judges a run that delivered a `sim` record with `failed = true` THEN the system SHALL print `FAIL <name> (fatal at <t>: <msg>)` (the format `msl-fixes` settled).
 3. WHEN a run delivers a `sim` record with `finish = true` and no `failed = true` THEN the system SHALL NOT count it as a failure.
 
 **Acceptance Criteria** (HII-16, targets):
@@ -271,7 +271,7 @@ The command line and `piperine-api` run four analyses (`op`, `dc`, `ac`, `transi
 2. WHEN `piperine test` has printed the `PASS` or `FAIL` line of a run that delivered targets THEN the system SHALL print one line per target name, in the order of their first record: `  target <name> margin=<value>`.
 3. The system SHALL NOT fail a run because of a target's margin, whatever its sign.
 
-**Independent Test**: a bench calling `fatal("brownout")` makes `piperine test` print `FAIL <run> (fatal: brownout)` and exit 1.
+**Independent Test**: a bench calling `fatal("brownout")` makes `piperine test` print `FAIL <run> (fatal at <t>: brownout)` and exit 1.
 
 ---
 

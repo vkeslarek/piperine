@@ -2,7 +2,7 @@
 //! named, is executed and judged by its `checks` records: a `PASS` or `FAIL` line each, the
 //! failing records under a `FAIL`, then a line per target margin (which never fails a run), no
 //! table and no other record, then the count line. A run that called `fatal` is
-//! `FAIL <name> (fatal: <msg>)`.
+//! `FAIL <name> (fatal at <t>: <msg>)`.
 
 use std::cell::RefCell;
 use std::io::Write;
@@ -57,14 +57,7 @@ impl TestCommand {
                         let _ = writeln!(text, "PASS {} ({} checks)", spec.name, verdict.checks());
                     } else {
                         failed += 1;
-                        match verdict.fatal() {
-                            Some(msg) => {
-                                let _ = writeln!(text, "FAIL {} (fatal: {msg})", spec.name);
-                            }
-                            None => {
-                                let _ = writeln!(text, "FAIL {} ({} of {} checks failed)", spec.name, verdict.failed().len(), verdict.checks());
-                            }
-                        }
+                        let _ = writeln!(text, "FAIL {} ({} of {} checks failed)", spec.name, verdict.failed().len(), verdict.checks());
                         for record in verdict.failed() {
                             let _ = RecordLine::write(record, &mut text);
                         }

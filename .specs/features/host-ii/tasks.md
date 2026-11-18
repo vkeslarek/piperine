@@ -1304,7 +1304,7 @@ Proof: run apihost | test subscribe_after_the_run_is_e0805 ... ok
 **C62** - A fatal run keeps its records, prints its `msg` and exits 1. (HII-15, AC 1; T30)
 Proof: run clirun | test a_fatal_run_prints_its_msg_and_exits_1 ... ok
 
-**C63** - `piperine test` prints `FAIL <name> (fatal: <msg>)`. (HII-15, AC 2; T31)
+**C63** - `piperine test` prints `FAIL <name> (fatal at <t>: <msg>)`. (HII-15, AC 2; T31)
 Proof: run clicommands | test test_prints_fail_fatal_with_the_msg ... ok
 
 **C64** - `finish` without `failed` is not a failure. (HII-15, AC 3; T29)
