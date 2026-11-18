@@ -36,7 +36,15 @@ piperine-api = { path = "crates/piperine-api" }
 # The suites also reach lang directly (SourceMap setup) — dev-only edges, not part of the shell's public story.
 piperine-lang = { path = "crates/piperine-lang" }
 piperine-solver = { path = "crates/piperine-solver" }
+piperine-transpile = { path = "crates/piperine-transpile" }
+tempfile = { workspace = true }
 num-complex = { workspace = true }
+
+# `workspace_shape` keeps every .rs out of the root `tests/` and `src/`, so the one root host target
+# (HII-24) lives beside the api tests it mirrors, in a subdirectory the api crate does not discover.
+[[test]]
+name = "host_ii"
+path = "crates/piperine-api/tests/root_surface/host_ii.rs"
 
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked

@@ -1028,7 +1028,7 @@ T38 → T39 → T40 → T41 → T42
 ### T39: The root host surface
 
 **What**: A root target opening a session through `piperine::` and running `tf`, a drive and a timed set.
-**Where**: `tests/host_ii.rs`
+**Where**: `crates/piperine-api/tests/root_surface/host_ii.rs` (a `[[test]]` of the root package)
 **Depends on**: T38
 **Reuses**: the root package's re-export
 **Requirement**: HII-24
@@ -1036,9 +1036,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `tests/host_ii.rs` (new, `//!` header) holds `the_root_runs_tf_a_drive_and_a_timed_set`
-- [ ] Gate check passes: Quick (`Run root`)
-- [ ] Test count: 1 new test
+- [x] `crates/piperine-api/tests/root_surface/host_ii.rs` (a `[[test]]` of the root package) (new, `//!` header) holds `the_root_runs_tf_a_drive_and_a_timed_set`
+- [x] Gate check passes: Quick (`Run root`)
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: quick
@@ -1464,6 +1464,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - (B5 worker) T37: `Session::params` (a `Params` seeded at open) carries every `set`: `--param`, the `dc` sweep (`Session::set_param`, one door), `Session::set_at` and the timed set (`Params::changes`, each changed param checked with `check_set` and scheduled at the same `at`, as `HostAction::Set { value: Value }`). A param with no device pin is not written when it is itself derived or others derive from it (`Session::unwritten`): a pass-through param `Mid` never reads now takes a `set` and reaches its children (H5 narrows to a pinless param nothing derives from, still the circuit's loud error). The S2 probe of the contract, in its api form: `Top.m.rr=3000` gives the middle node 0.75, and the dc sweep over 1k, 2k, 3k gives 0.5, 0.666667, 0.75. Gate: piperine-api (all), twins, all of piperine-parity (buck targets included) green.
 - (B5 worker) T38: no change outside the tests. A body `let` (`let g = 1.0 / rr` in `Mid`'s behavior) follows a `set` of `rr` with no recompute (it reads the param's pin on every evaluation): 0.5 then 0.75. A definition (`y = a * k`, a `Bit<f64>` carrier) is recomputed at a timed `set` of `k` at 1.5 us: the 1 us grid holds 8, 8, 20, 20 with `a` driven to 4. Both pass on the Rust backend with no elaboration change (lane A's area untouched). Phase 8 Build gate: the Build line (zero warnings), suite_hygiene, workspace_shape, crate_boundaries green.
 - (B6 worker) After the rebase onto `msl-fixes`: ONE fatal path (main's `Verdict` keeps the first failing `sim` record, `fatal at <t>: <msg>` and `FAIL <name> (fatal at <t>: <msg>)`); `Failure::Fatal` and `Verdict::or_fatal` are dropped, the target margins stay; HII-15 ACs name the new format. C70 restated: a finish-ended digital-only transient is ok (`a_digital_only_run_ended_by_finish_is_ok`; main's `a_run_ended_by_finish_gives_its_rows_to_the_instant` holds it for the analog-free design too); main's `records.rs::a_short_run_without_finish_still_fails` premised the L56 defect (a digital-only top steps nothing) and is rewritten as `a_digital_only_run_without_finish_reaches_its_stop` (HII-17 supersedes FIX-02 AC 5 for that bench). H16 still reproduces on this branch (pss with tstab 2e-5 and max-step 1e-9 fails at t = 2.8e-5), so it stays in GAPS.
+- (B6 worker) T39: the root target is `crates/piperine-api/tests/root_surface/host_ii.rs` with `[[test]] name = "host_ii"` in the root manifest: `workspace_shape` forbids any `.rs` under the root `tests/` and any second source file in the root `src/`, and the guards are not edited; a subdirectory is not discovered as an api test. `Run root` is unchanged.
 
 **Dispatched:** Batch B1 (phases 1-2, T1-T8) - Sonnet worker, 2026-11-17. B1 done (c6c0f64b, + T43 max_steps). B2 (phase 3, T9-T16) - Sonnet worker, 2026-11-17. B2 done except T14 (fc0386fd). Ruling: tf.rs input classification by resolved branch authorized as a host-ii cross-lane touch. B3 (T14, then phases 4-5 T17-T23) - Sonnet worker, 2026-11-17. B3 done (3318f886, 2034/0). Rulings: tf output-resistance fix accepted; flow-term print refused in transient/ac/pss/sens accepted (loud, to GAPS); PSS with transition state (absolute ramp.t0) and the pss end-snap defect go to GAPS (owners: periodic-small-signal / solver-hygiene). B4 (phases 6-7, T24-T32) - Sonnet worker, 2026-11-18. B4 done T24-T31; T32 blocked on lane C (see Settled). B4 done T24-T31 (d25fe92b); T32 blocked. Rulings: T32 one-line adapters.rs step_time fix authorized as cross-lane touch; run.rs test asserting Blinky fails is superseded by HII-17 (L56) and is rewritten to assert it runs to its stop; finish-ended transient acceptance comes after msl-fixes merges. B5 (T32, then phase 8 T33-T38, X9) - Sonnet worker, 2026-11-18. B5 done T32-T38. B5 done (61f96008, 2076/0). msl-fixes merged to main 99d05af2. B6 (rebase onto main, finish-ended transient ok, C70 test, phase 9 T39-T43) - Sonnet worker, 2026-11-18.
 **Walked:** none
