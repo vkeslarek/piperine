@@ -22,16 +22,16 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 4 silent, 2 broken, 50 loud (L1 to L59 less the nine `msl-fixes` closed, in six tables) plus
-7 backend and diagnostic notes, 14 spec holes or disagreements, 3 solver and performance points,
+**Counts.** 3 silent, 2 broken, 49 loud (L1 to L59 less the nine `msl-fixes` and the one `host-ii` closed, in six tables) plus
+7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 16 host gaps, 11 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S2, S3, S4, S6 |
-| §4 Loud | L1–L59 (L11, L14, L15, L17, L41, L46, L48, L54, L55 closed) |
-| §5 Spec holes and disagreements | G1–G6 (the buck's), X1–X9 |
+| §3 Silent (read this first) | S3, S4, S6 |
+| §4 Loud | L1–L59 (L11, L14, L15, L17, L41, L46, L48, L54, L55, L56 closed) |
+| §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X5, X6 (X3, X4, X7, X8, X9 decided by `host-ii`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H16 |
 | §8 Unproven | U1–U11 |
@@ -72,19 +72,6 @@ change of the IR or the ABI.
 ---
 
 ## 3. Silent — accepted, then wrong or ignored
-
-### S2. A child param derived from a parent's param is not re-derived on a host `set`; reachable from the command line today — size M
-
-- **What.** `Mid { rr }` placing `R(p, n) { r: rr }` is evaluated once at elaboration and the
-  instance table holds the constant (§8.1.23 wants it recomputed). `--param Top.m.rr=3000` and
-  `dc --sweep Top.m.rr` change `Mid` only: the child keeps `r = 1k`, with no diagnostic. The
-  previous file said no host could `set`; since `msl-cli` two can.
-- **Evidence.** Probe: `R(a, b)` over `Mid(b, gnd)` whose child is `R { r: rr }`, 1 V at `a`:
-  `--param Top.m.rr=3000` prints `Top.b 4.999999e-1` (0.75 expected); the DC sweep over
-  1k, 2k, 3k prints three rows of 0.5.
-- **Impact.** A sweep or an override of any param that a parent passes down gives the unswept
-  answer. `examples/buck` passes most of its params down this way.
-- Related, loud: a param that no behavior of its own module reads cannot be set at all (H5).
 
 ### S3. The type checker checks only what a run's top reaches — size M
 
@@ -205,7 +192,6 @@ Works, by probe: `ddt` of a flow and of a potential (capacitor, inductor, couple
 | L51 | an event read as a `bool`: `if fref.rise() { .. }` in a reaction, `on d.changed() && en && !en.changed()` | §13 rules 2, 9 | `an event read as a bool` | M |
 | L52 | `settle` | §13 rule 17, §15 S1–S7 | `built-in settle` | M |
 | L53 | a function that returns `Event` (`fn handshake(req: Bit, ack: Bit) -> Event`) | §13 rule 7 | `method rise on this receiver` | with L8 |
-| L56 | A digital-only transient is refused: a design with no analog node keeps one step at time 0, and the run fails naming that cause. CLOSED by host-ii T32 (the run reaches its stop and gives its table); T41 drops the row and its pin in `docs.rs` | §15 ("also in a design with nothing analog") | `the solver does not step a design with no analog node` | M |
 
 Works, by probe: commits with and without `after`, transport per statement (a pulse from two
 commits), `at(0.0)` at `(0, 1)` and a negative `at` never, `every`, `cross` located within 0.1 ps
@@ -266,22 +252,10 @@ G1 to G6 are the buck's (`examples/buck/GAPS.md`). The spec's own open list is A
 - **X2 — Appendix C.2.3 and G.38 say "nothing is executed".** Of the conformance set,
   `transition` runs; `zi_nd`, `inertial` and `Tran` are refused; the §15.1 trace has no test from
   source.
-- **X3 — what a host does with a `target`.** §23.2 leaves the role to the host; `piperine test`
-  counts a `target` as a check that never fails, whatever its margin (`verdict.rs:23`). Nothing
-  says how a run states "this target is a constraint".
-- **X4 — the `failed` field of `sim`.** §19 rule 15 gives it a type and no meaning; `msl-fixes`
-  gave it one in the host: `fatal` ends the run with `failed = true`, `piperine run` exits 1 and
-  `piperine test` prints `FAIL`; the spec still gives it no meaning.
 - **X5 — a type mismatch has no spec code.** The checker uses `P0002`; `E0417`, `E0432`, `E0337`
   and `E0210` cover four positions and the rest is "as in Rust".
 - **X6 — what `check` owes a library.** Is a generic body checked once against its bounds, or per
   instantiation only (§3 rule 9 reads as the latter)? S3 depends on the answer.
-- **X7 — session options have no names.** §23 lists time resolution, `reltol`, `trtol`, `ttol`,
-  the bounds, nodesets and temperature as the host's; `simparam` names are open too (G.66).
-- **X8 — the top's ports.** §23.1 rule 1 has the host drive them; G.17 leaves the choice of top
-  to the host; the implementation takes a module without ports only (L39).
-- **X9 — a derived param under a `set`.** §8.1.23 says recomputed; MD-18 and the instance table
-  of constants say fixed at elaboration. One of the two has to give (S2).
 
 ---
 
@@ -312,15 +286,15 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 
 | # | Missing | Spec | Size |
 | - | ------- | ---- | ---- |
-| H1 | **No host sequences from the command line**, nor from the library. Host actions during a run: `drive` of a top port, `set` at a time, `force` and `release`, wait for an event, read at an instant. The stimulus of a run is an MSL bench only. The buck's scenarios S1 to S9 have no host | §23.1 rules 1–4, 8, 11 | L |
-| H2 | Analyses beyond `op`, `dc`, `ac`, `transient`: `Noise` (also blocked by L45), TF, PZ, S-parameters, sensitivities, PSS, Fourier and distortion, more than one sweep axis | §11.1, §16.3 | M each, on the device ABI |
-| H3 | Session options: time resolution, `reltol`, `trtol`, `ttol`, the microstep and round bounds, nodesets, temperature. A run takes 20 keys (`request.rs:161`), none of these | §23 table | M |
-| H4 | Metadata operations: list params with type, default, `where`, structural or not; list ports, public items, streams and sites; read a param back (`--print Top.r1.r` is `E0801`); read an operating-point variable (`--print Top.g.id` is `E0801`); the flow of a branch that is not a potential source (`i(Top.r1)` is `E0801`) | §21 table, rule 6 | M |
-| H5 | A `set` of a param no behavior of its module reads (`--param Top.r=..` where `r` only feeds children): `E0802: .. no PARAM pin r; the instance declares no writable parameters` | §23.1 rule 6 | with S2 |
-| H6 | Continued transients, and an analysis at a transient's last instant | §16.4 | M |
+| H1 | **No host sequences from the command line**, and from the library only what a Rust host does: `Session::drive` of a top `in` port and `Session::set_at` (a param set at a time) are delivered, and the command line takes neither (decision X8: a bench in MSL is its stimulus), and Python is B4. Left: `force` and `release`, a wait for an event, a read at an instant. The buck's scenarios S1 to S9 have no host yet (`buck-scenarios`) | §23.1 rules 1–4, 8, 11 | L |
+| H2 | Analyses beyond `op`, `dc`, `ac`, `transient`, `tf`, `pz`, `sens`, `pss` (delivered by `host-ii`): `Noise` (also blocked by L45), S-parameters, Fourier and distortion, more than one sweep axis | §11.1, §16.3 | M each, on the device ABI |
+| H3 | Session options: `reltol`, `abstol`, `vntol`, `trtol`, `temp`, `resolution`, `maxrounds`, `maxmicro`, `max_steps` and `nodeset` are run keys (delivered). Left: `ttol` (each `cross` carries its own default), `tnom` (waits for `simparam`, L47) | §23 table | S |
+| H4 | Metadata: `piperine info` and `Session::metadata` list params, ports and streams (delivered), and `--print Top.r1.r` reads a param back. Left: the public items and sites; an operating-point variable (`--print Top.g.id` is `E0801`); the flow of a branch that is not a potential source in `transient`, `ac`, `pss` and `sens` (H14) | §21 table, rule 6 | S |
+| H5 | A `set` of a param that has no device pin and that nothing derives from (`--param Top.r=..` where `r` is read by nobody): `E0802: .. no PARAM pin r; the instance declares no writable parameters`. A param a child derives from is no longer in this case: a `set` recomputes it through the generated function (`host-ii`, MD-68) | §23.1 rule 6 | S |
+| H6 | Continued transients, and an analysis at a transient's last instant: both need a solver mechanism that does not exist (a transient the host can resume) | §16.4 | M |
 | H7 | Monte Carlo, optimization, objectives and constraints from `target`s, bounds from `where` | §23.1 rule 5, §23.2 | L |
 | H8 | Gradients: gradient params, `∂(record)/∂p`, saltation, `E0807` to `E0809`. The solver's `adjoint` and `sens` are not reached from MSL | §21 rule 7, §23.3 | L |
-| H9 | Host error codes `E0803` to `E0806` (structural set, drive without a drive, late subscription, past time) | §23.1 | with H1 |
+| H9 | Host error codes: `E0804` (drive of a carrier that is no top `in` port), `E0805` (late subscription) and `E0806` (past time) are delivered. `E0803` (timed `set` of a structural param) is checked but no MSL design reaches it: the elaborator marks no param structural, and generation in a module body is `P0001` | §23.1 | with L-generation |
 | H10 | Command line: `add`, `remove`, `tree`, `update`, `--locked`, `--offline`, plugin scripts, a REPL, ngspice raw output, a terminal or PNG plot | — | S each |
 | H11 | The root package's integrated tests: one per Book example and claim, through the api or the CLI (queue item 4), and the single root `tests/e2e/` with ngspice parity (4b) | ROADMAP | M |
 | H12 | The stdlib, the galleries and `examples/buck/src` are not reformatted by `piperine fmt` (the formatter is proven on them) | — | S |
@@ -407,26 +381,26 @@ E0803 E0804 E0805 E0806 E0807 E0808 E0809 E0904 E0906`
 **Entries of the previous file that changed.**
 
 - "A derived child param is not re-derived … no host can `set` yet": the second half stopped
-  being true with `msl-cli` (`--param`, `dc --sweep`). Now S2.
+  being true with `msl-cli` (`--param`, `dc --sweep`). It was S2, closed by `host-ii` (a `set` recomputes the derived params, MD-68).
 - "An MSL local named like an MSL function makes the generated Rust fail to compile": the type
   checker stops it first (`types/call.rs:54`, there since `295b5ab8`). Now L20.
 - `examples/buck/GAPS.md` G3 (a method on a carrier left unresolved) was already closed by
   `msl-digital`: it is a `P0001` naming the method (L15, since closed).
-- Every other entry is kept: S4, B3, B4, L19, L37, L56, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
+- Every other entry is kept: S4, B3, B4, L19, L37, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
   U3, U10.
 
 **Clusters one feature would close.** Sizes are rough; the order is the user's.
 
 | Cluster | Closes | Size |
 | ------- | ------ | ---- |
-| `set` and params | S2, H5, L27, L28, L29, L37, H4 | M |
+| `set` and params | H5, L27, L28, L29, L37, H4 | M |
 | Analog structure | L40, L42, L34, L35, L36, L38, L50: `Switch`, `CapIc`, `idt`, `slew`, the `Diode` of §18 | M to L |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
 | Composite values | L1 to L6, L16 (H.5 to H.7), L24, L57 | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L22, L23, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | L18, L19, S6 (ABI), L51, L52, L53, L8 | L |
-| Host II | H1, H3, H6, H9, H11, L39, L56, then B4 (Python) | L |
+| Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, H11, L39, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
 | Language server | B3 | M, deferred |

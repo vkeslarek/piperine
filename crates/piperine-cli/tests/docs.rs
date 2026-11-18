@@ -75,14 +75,45 @@ fn gaps_drops_what_closed_and_lists_what_is_left() {
         assert!(gaps.contains(left), "GAPS.md lists `{left}`");
     }
     // and what this feature's own reading found
-    for found in ["A DC sweep's points deliver no records", "A digital-only transient is refused"] {
+    // (the digital-only transient was listed here too; `host-ii` closed it, L56, and
+    // `gaps_drops_what_host_ii_closed` holds that it is gone)
+    for found in ["A DC sweep's points deliver no records"] {
         assert!(gaps.contains(found), "GAPS.md lists `{found}`");
     }
     // a gap the command line refuses is loud, not silent (verification F1)
     let silent = gaps.split("## 3. Silent").nth(1).and_then(|s| s.split("## 4.").next()).expect("GAPS.md has a section 3");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("GAPS.md has a section 4");
     assert!(!silent.contains("A DC sweep's points deliver no records") && loud.contains("A DC sweep's points deliver no records"), "the dc gap is listed as loud");
-    assert!(!silent.contains("no analog node") && loud.contains("A digital-only transient is refused"), "the digital-only transient is listed as loud (F2)");
+}
+
+#[test]
+fn gaps_drops_what_host_ii_closed() {
+    // HII-23 AC 1: S2, L56, X3, X4, X7, X8 and X9 are gone from `GAPS.md` as entries (their ids may
+    // still be named in prose that says they closed), L39 stays, and what H1 to H4, H6 and H9 say
+    // is what is left, not what the feature delivered
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("### S2."), "S2 is still a section");
+    assert!(!gaps.contains("| L56 |"), "L56 is still a row");
+    for closed in ["X3", "X4", "X7", "X8", "X9"] {
+        assert!(!gaps.contains(&format!("- **{closed} \u{2014}")), "{closed} is still an entry");
+    }
+    assert!(!gaps.contains("A digital-only transient is refused"), "the refusal is still listed");
+    assert!(gaps.contains("| L39 | a top module with a continuous port"), "L39 stays");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
+    assert!(row("H1").contains("`Session::drive`") && row("H1").contains("`force` and `release`"), "H1 says what is delivered and what is left");
+    assert!(row("H3").contains("`ttol`") && row("H3").contains("`tnom`"), "H3 lists what is left of the options");
+    assert!(row("H4").contains("`piperine info`"), "H4 names the delivered metadata");
+}
+
+#[test]
+fn the_roadmap_lists_the_host_follow_ups() {
+    // HII-23 AC 2: the roadmap records `host-ii` as delivered and lists the follow-ups: the host
+    // follow-up feature (what needs new solver mechanisms) and `root-e2e`
+    let roadmap = read("ROADMAP.md");
+    assert!(roadmap.lines().any(|l| l.starts_with("3e. ✅ **Delivered") && l.contains("host-ii") && l.contains("MD-68")), "item 3e records host-ii");
+    assert!(roadmap.lines().any(|l| l.starts_with("| B | `host-ii`") && l.ends_with("| delivered |")), "the lane table says delivered");
+    assert!(roadmap.lines().any(|l| l.starts_with("| B next | host follow-up") && l.contains("`force`") && l.contains("continued transients")), "the host follow-up row");
+    assert!(roadmap.lines().any(|l| l.starts_with("| B next | `root-e2e`")), "the root-e2e row");
 }
 
 #[test]
@@ -164,16 +195,17 @@ fn gaps_drops_what_msl_fixes_closed() {
     assert!(row("L47").contains("`simparam`") && !row("L47").contains("`freq()`, "), "L47 keeps simparam: {}", row("L47"));
     assert!(row("L16").contains("H.5, H.6, H.7") && !row("L16").contains("unwrap expect"), "L16 keeps H.5 to H.7: {}", row("L16"));
     assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && row("L58").contains("`limexp`") && row("L58").contains("`normal`"), "L58: {}", row("L58"));
-    for kept in ["### S3.", "### S2.", "### S4.", "### S6.", "### B3.", "### B4."] {
+    // (`### S2.` was kept here until `host-ii` closed it: `gaps_drops_what_host_ii_closed`)
+    for kept in ["### S3.", "### S4.", "### S6.", "### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
-    // the counts follow: 4 silent, 2 broken
-    assert!(gaps.contains("4 silent, 2 broken, 50 loud"), "the counts of §9 follow");
+    // the counts follow, as `host-ii` moved them: 3 silent, 2 broken
+    assert!(gaps.contains("3 silent, 2 broken, 49 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
-    assert_eq!(rows("## 3. Silent", "## 4."), 4, "four silent entries");
+    assert_eq!(rows("## 3. Silent", "## 4."), 3, "three silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 50, "fifty loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 49, "forty-nine loud rows");
 }
 
 #[test]
