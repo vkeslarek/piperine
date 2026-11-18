@@ -23,7 +23,7 @@ yet"; `P0002` of a plain type mismatch.
 change of the IR or the ABI.
 
 **Counts.** 4 silent, 2 broken, 50 loud (L1 to L59 less the nine `msl-fixes` closed, in six tables) plus
-7 backend and diagnostic notes, 14 spec holes or disagreements, 16 solver and performance points,
+7 backend and diagnostic notes, 14 spec holes or disagreements, 3 solver and performance points,
 13 host gaps, 11 unproven.
 
 | Section | Ids |
@@ -32,7 +32,7 @@ change of the IR or the ABI.
 | §3 Silent (read this first) | S2, S3, S4, S6 |
 | §4 Loud | L1–L59 (L11, L14, L15, L17, L41, L46, L48, L54, L55 closed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1–X9 |
-| §6 Solver, numerics, performance | V1–V16 |
+| §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H13 |
 | §8 Unproven | U1–U11 |
 | §9 Coverage by spec part | — |
@@ -240,11 +240,6 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 ### 4.8 Diagnostics that are loud and say too little
 
-- **Run errors carry no spec code and name nothing.** A loop of potential sources prints
-  `SpaceMatrix: The library threw an error while trying to create the RHS of the sparse matrix`;
-  a floating node prints `Newton: Linear solver returned NaN/Inf`. §15.2 wants `E0503` naming the
-  branches or the node. A NaN contribution is named well, but cites "LRM §7.3.2.1" (Verilog-AMS)
-  where the spec has `E0507`. Size M.
 - **73 of the spec's 180 error codes appear nowhere in the source** (list in §10). Most belong to
   a refused construct; `E0102`, `E0105`, `E0503` to `E0508` and `E0803` to `E0806` do not.
 - `P0001` says "outside the M1 subset" for forms the spec defines.
@@ -293,25 +288,19 @@ G1 to G6 are the buck's (`examples/buck/GAPS.md`). The spec's own open list is A
 ## 6. Solver, numerics and performance
 
 From the solver internals review (artifact `TEV6Hqo6d3QRi1ssZtJTW5`), the `solver-abi-integration`
-verification, and this audit. None breaks the 7 parity fixtures; V1 and V2 are the parity risks.
+verification, and this audit. The hygiene points V1 to V11, V14 and V15 closed in `solver-hygiene`;
+what remains is speed (V12, V13) and the periodic linearization (V16).
+
+The solver's default transient result keeps every accepted step, with its re-entry state (N2):
+about 58 KB a step, which is 25 GB over the buck's whole start. That is the default by design;
+`Reentry::LastStep` is the opt-out. A host run through `piperine-api` does not pay it:
+it records only the signals it prints, on the print grid as the steps arrive, and keeps its last
+step only (60 001 rows peak at about 11 MiB).
 
 | # | Point | Evidence | Size |
 | - | ----- | -------- | ---- |
-| V1 | The step is controlled by LTE on node voltages, not on charge; `chgtol` is unused | `tolerances.rs:36`, read by no controller | M |
-| V2 | The Milne predictor's skip is asymmetric compared with ngspice | review | S |
-| V3 | A step that reaches `dt_min` is accepted with a warning instead of failing (C.2.2 item 4 admits it) | `analyses/transient.rs:59` | S |
-| V4 | Newton damping is one global factor, not per unknown | review | M |
-| V5 | Dead hooks: `apply_limit`, `apply_limiting_reports` | `math/newton_raphson.rs:46`, `:77` | S |
-| V6 | Stale doc: `sp.rs` documents the PHDL `@rfport` | `analyses/sp.rs:7` | S |
-| V7 | The digital checkpoint clones every net on each mark | review | M |
-| V8 | Re-entry is approximate: up to 7.3e-4 relative off the continuous run | verification (N1) | M |
-| V9 | The solver's default transient result keeps every accepted step, with its re-entry state (N2) of the same verification: about 58 KB a step, which is 25 GB over the buck's whole start. A host run through `piperine-api` does not pay it: it records only the signals it prints, on the print grid as the steps arrive, and keeps its last step only (60 001 rows peak at about 11 MiB) | `long-run` | S (an opt-out) |
-| V10 | The partials guard matches devices by label, not by module | verification (N3) | S |
-| V11 | The first step after a digital-to-analog jump is first order: off by more than `TRAN_VOLTAGE` at a 10 ns cap; `boundary.rs` runs at 1 ns to pass | `ir-rust` F-B7 | M |
 | V12 | **A mixed design steps at every digital edge.** The buck takes about 45 000 accepted steps per 40 µs (about 675 000 for the 600 µs start), 130 s in a dev build: the analog side lands near every 200 MHz instant. §17.2.2 says a clock nothing analog depends on costs nothing, which suggests the reachability set is coarser than the rule; not measured here. Multi-rate stepping is the user's next item after `long-run` | `long-run`, ROADMAP 3c | L |
 | V13 | No surrogate or averaged model for runs longer than a start | ROADMAP 3c | L |
-| V14 | A transient with a non-zero start and no captured step fails loud | ROADMAP, P1 backlog | S |
-| V15 | Singular and non-finite solves are not diagnosed by name (§4.8) | probes | M |
 | V16 | The periodic small-signal and periodic noise linearization is not implemented | C.2, G.37 | L |
 
 ---
@@ -437,6 +426,5 @@ E0803 E0804 E0805 E0806 E0807 E0808 E0809 E0904 E0906`
 | Host II | H1, H3, H6, H9, H11, L39, L56, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
-| Solver hygiene | V1 to V11, V14, V15, §4.8 | M |
 | Language server | B3 | M, deferred |
 | Documents | X1, X2, H13 | S |

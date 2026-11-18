@@ -59,7 +59,6 @@ postures).
 | Item | Status |
 |------|--------|
 | `.disto` on MOS2/MOS3 — Cranelift function-count explosion | **open** — kernels are opt-in (`disto(true)`, default off); fix = stop emitting the ordered cross-product (combinations are symmetric → one indexed function, not N) |
-| A device transient with a non-zero start and no captured step | **open** — fails loud (digital init only at tick 0): `TransientAnalysisOptions::with_start` needs `with_initial_state`; found in `solver-abi-integration` (T18), no feature owns it yet |
 | LTRA (lossy tline, convolution) | urc covers the practical case; backlog |
 | Autonomous-oscillator PSS | period detection needs phase conditions; backlog |
 | AC `.sens` | DC ships; AC behind the same API if the optimizer needs it |
@@ -274,12 +273,6 @@ VS Code extension productization, marketplace packaging, release/versioning —
 `editors/vscode/`.
 
 - Refactor `crates/piperine-lang/src/pom/{resolve,reflect,lower}/mod.rs` into named modules after msl-stdlib merges (registered hygiene exemptions in `crates/piperine-lang/tests/suite_hygiene.rs`).
-
-## Solver ABI follow-ups (from solver-abi-integration verification round 2, 2026-11-15)
-
-- **Re-entry is approximate, not a replay (N1, Low).** Re-entering a transient at a captured clock-edge step lands on a different step grid and ends up to 7.3e-4 relative off the continuous run. Make re-entry restore the step controller state so it replays the continuous run bit for bit.
-- **Re-entry state on every step (N2, Low).** Every accepted step stores the full re-entry state and `mark()` copies all net bytes on each attempt; memory and time grow with step count. Add an opt-out (or capture only at host-requested points).
-- **Partials guard matches by label (N3, Low).** The C27 guard ties a device to its check by label string, not by the module verified; tie it to the module.
 
 ## M1 follow-ups
 

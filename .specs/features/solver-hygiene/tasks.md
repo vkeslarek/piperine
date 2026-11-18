@@ -976,19 +976,19 @@ T39 → T40
 
 **Done when**:
 
-- [ ] The lone proof of C49 exits 0; `cargo test -p piperine-cli --test docs` passes
-- [ ] Gate check passes: Build
+- [x] The lone proof of C49 exits 0; `cargo test -p piperine-cli --test docs` passes
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
 
-**Commit**: `docs: GAPS and ROADMAP close the solver hygiene points`
+**Commit**: `docs: close the solver hygiene points in the gaps and the roadmap`
 
 ---
 
-### T40: MD-67 records the feature's decisions
+### T40: MD-68 records the feature's decisions
 
-**What**: `.specs/STATE.md` gains `MD-67`: run codes typed in the solver and named in the owner; re-entry exact and its opt-out; the truncation basis, damping, floor, restart and start as answered, each with the user's answer quoted.
+**What**: `.specs/STATE.md` gains `MD-68` (MD-67 is lane A's; renumber at merge if taken): run codes typed in the solver and named in the owner; re-entry exact and its opt-out; the truncation basis, damping, floor, restart and start as answered, each with the user's answer quoted.
 **Where**: `.specs/STATE.md`
 **Depends on**: T39
 **Reuses**: the MD entry layout
@@ -1003,7 +1003,7 @@ T39 → T40
 **Tests**: none
 **Gate**: build
 
-**Commit**: `docs(specs): MD-67 records the solver hygiene decisions`
+**Commit**: `docs(specs): the decision record for solver hygiene, MD-68`
 
 ---
 
@@ -1156,8 +1156,8 @@ Proof: run protocol | test the_proposal_sees_the_next_due_time ... ok
 **C49** - `GAPS.md` §6 lists none of V1 to V11, V14, V15 and keeps V12, V13, V16. (HYG-17, AC 1; T39)
 Proof: `! grep -nE '^\| V(1|2|3|4|5|6|7|8|9|10|11|14|15) \|' GAPS.md && grep -cE '^\| V1[236] \|' GAPS.md | grep -qx 3`
 
-**C50** - `.specs/STATE.md` records `MD-67`. (HYG-17, AC 3; T40)
-Proof: `grep -q '^### MD-67' .specs/STATE.md`
+**C50** - `.specs/STATE.md` records `MD-68` (MD-67 is lane A's; renumber at merge if taken). (HYG-17, AC 3; T40)
+Proof: `grep -q '^### MD-68' .specs/STATE.md`
 
 **C51** - The step after a jump is at most a tenth of the last step. (HYG-11, AC 1; T29)
 Proof: run abitran | test the_step_after_a_jump_is_capped_at_a_tenth_of_the_last ... ok
