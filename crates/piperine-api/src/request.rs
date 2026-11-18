@@ -1023,9 +1023,19 @@ points = 5
 
     #[test]
     fn option_keys_are_read_for_every_analysis() {
-        // HII-01 AC 1: the nine keys are read by each of the four analyses; a run that gives none
+        // HII-01 AC 1: the nine keys are read by each of the eight analyses; a run that gives none
         // has no option (HII-02 AC 1)
-        for analysis in ["analysis = \"op\"\n", "analysis = \"dc\"\nsweep = \"v1.dc\"\nfrom = 0\nto = 1\nstep = 0.5\n", "analysis = \"ac\"\nfrom = 1\nto = 10\npoints = 3\n", "analysis = \"transient\"\nstop = 1e-3\n"] {
+        let analyses = [
+            "analysis = \"op\"\n",
+            "analysis = \"dc\"\nsweep = \"v1.dc\"\nfrom = 0\nto = 1\nstep = 0.5\n",
+            "analysis = \"ac\"\nfrom = 1\nto = 10\npoints = 3\n",
+            "analysis = \"transient\"\nstop = 1e-3\n",
+            "analysis = \"tf\"\ninput = \"v1\"\noutput = \"out\"\n",
+            "analysis = \"pz\"\ninput = \"v1\"\noutput = \"out\"\n",
+            "analysis = \"sens\"\nwrt = [\"r1.r\"]\n",
+            "analysis = \"pss\"\nperiod = 1e-3\n",
+        ];
+        for analysis in analyses {
             let spec = one(&format!("[run.a]\n{analysis}{ALL_OPTIONS}"));
             assert_eq!(spec.options, options(), "{analysis}");
             assert_eq!(one(&format!("[run.a]\n{analysis}")).options, Options::default(), "{analysis}");

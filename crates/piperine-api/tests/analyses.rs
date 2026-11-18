@@ -469,11 +469,12 @@ fn pss_starts_its_orbit_at_tstab() {
 #[test]
 fn pss_that_does_not_converge_fails() {
     // HII-07 AC 6: a period the drive does not have (4 us drive, period 3 us) has no orbit: the
-    // solver's own error names the period, and there is no table
+    // solver's own error names the residual, and there is no table
     let Err(failure) = pss_run(pss(3e-6, 0.0, None)) else { panic!("a period the drive does not have gives no orbit") };
     assert!(matches!(&failure, Failure::Solver { analysis: "pss", .. }), "{failure:?}");
     let text = format!("{failure}");
-    assert!(text.contains("pss") && (text.contains("residual") || text.contains("period") || text.contains("repeat")), "{text}");
+    // the shot over 3 us of a 4 us drive lands a full volt off the next one: the residual named is 1
+    assert!(text.contains("does not repeat: |x(2T) \u{2212} x(T)| = 1.000e0"), "{text}");
 }
 
 #[test]

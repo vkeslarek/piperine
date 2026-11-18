@@ -322,3 +322,42 @@ fn a_param_no_pin_holds_prints_the_value_the_run_used() {
     timed.set_at("Top.q", 1500.0, 2e-6).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(column(&run(&mut timed).unwrap_or_else(|f| panic!("{f}")), 2), [500.0, 500.0, 500.0, 1500.0], "transient");
 }
+
+/// `Mid` conducts `v / rr` itself, so `rr` is visible at the node: the circuit's `rr` is read back
+/// through the node after a refused set. Its child is `r: rr - 500`, which must be above 0.
+fn observable_source() -> String {
+    format!(
+        "{PARTS}module Mid(p: Electrical, n: Electrical) {{\n    rr: f64 = 1500.0;\n    let res = Resistor(p, n) {{ r: rr - 500.0 }};\n}}\nanalog for Mid {{ i(p, n) +> v(p, n) / rr; }}\n\nmodule Top() {{\n    signal a: Electrical;\n    signal b: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, b) {{ r: 1k }};\n    let m = Mid(b, gnd);\n}}\n"
+    )
+}
+
+#[test]
+fn a_refused_set_leaves_the_param_the_circuit_reads_as_it_was() {
+    // HII-18 AC 4 (F12): `rr = 400` writes `Mid`'s own `rr`, then its child `r = -100` fails
+    // `r > 0`: E0802 naming the child, and the writes already made are undone. The node shows it:
+    // 1 kOhm from 1 V into `1500 || 1000 = 600 Ohm` gives 600 / 1600 = 0.375; with `rr` left at
+    // 400 it would be 400 || 1000 = 285.7 Ohm, 0.222
+    let mut session = open(&observable_source(), op());
+    match session.set_at("Top.m.rr", 400.0, 0.0) {
+        Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("Top.m.res.r"), "{message}"),
+        other => panic!("expected E0802, found {other:?}"),
+    }
+    close(real(&run(&mut session).unwrap_or_else(|f| panic!("{f}")).rows[0][1]), 0.375, "the refused set changed nothing");
+}
+
+#[test]
+fn a_timed_set_whose_derived_child_fails_where_is_refused() {
+    // HII-18 AC 3 and 4 (F12): the same `rr = 400` at 1.5 us: the child's `r = -100` fails its
+    // `where` when the set is given, E0802 naming it, and the run then holds 0.375 at every row
+    let tran = Overrides { analysis: Some("transient".into()), stop: Some(3e-6), max_step: Some(1e-7), print_step: Some(1e-6), ..Overrides::default() };
+    let mut session = open(&observable_source(), tran);
+    match session.set_at("Top.m.rr", 400.0, 1.5e-6) {
+        Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("Top.m.res.r"), "{message}"),
+        other => panic!("expected E0802, found {other:?}"),
+    }
+    let rows = column(&run(&mut session).unwrap_or_else(|f| panic!("{f}")), 1);
+    assert_eq!(rows.len(), 4, "{rows:?}");
+    for got in rows {
+        close(got, 0.375, "a row of the run the refused set did not touch");
+    }
+}

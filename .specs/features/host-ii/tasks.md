@@ -1289,7 +1289,7 @@ Proof: run apihost | test a_set_at_zero_applies_before_the_analysis ... ok
 Proof: run apihost | test a_timed_set_applies_after_the_step_to_its_time ... ok
 
 **C57** - A timed set of a structural param is `E0803` before the run. (HII-13, AC 3; T27)
-Proof: run apihost | test a_timed_set_of_a_structural_param_is_e0803 ... ok
+Proof: run apilib | test session::tests::set_at_refuses_a_structural_param_after_the_start_before_the_run ... ok
 
 **C58** - A negative `at` is `E0806`. (HII-13, AC 4; T26)
 Proof: run apihost | test a_negative_at_is_e0806 ... ok
@@ -1343,7 +1343,7 @@ Proof: run apiderived | test a_sweep_recomputes_the_child_at_each_point ... ok
 Proof: run apiderived | test a_timed_set_recomputes_at_the_same_instant ... ok
 
 **C75** - A recomputed child failing `where` refuses the set, nothing changes. (HII-18, AC 4; T37)
-Proof: run apiderived | test a_child_failing_where_refuses_the_set ... ok
+Proof: run apiderived | test a_refused_set_leaves_the_param_the_circuit_reads_as_it_was ... ok
 
 **C76** - A set neither elaborates nor runs `rustc`. (HII-18, AC 5; T37)
 Proof: run apiderived | test a_set_neither_elaborates_nor_compiles ... ok
@@ -1494,6 +1494,9 @@ Proof: run newparity | test pss_rc_through_a_session ... ok
 
 **C125** - The deviation table holds `temp_res` and `pss_rc`, and leaves out only `tf_divider`, `pz_lowpass` and `sens_divider`. (HII-21, AC 2; F11) 
 Proof: run deviation | test the_table_covers_every_twin ... ok
+
+**C126** - A timed set whose derived child fails `where` is refused at the call and leaves the run as it was. (HII-18, AC 3 and 4; HII-13, AC 5; F12) 
+Proof: run apiderived | test a_timed_set_whose_derived_child_fails_where_is_refused ... ok
 
 ---
 
