@@ -1,0 +1,132 @@
+//! `bound_step`, `freq()` and `analysis(kind)` (FIX-09, FIX-10, FIX-11).
+
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A sine of frequency `f` that caps the step at a fiftieth of its period.
+module Sine(p: Electrical) { f: f64 = 1k; }
+analog for Sine {
+    v(p, gnd) +> (2.0 * 3.141592653589793 * f * now()).sin();
+    bound_step(0.02 / f);
+}
+
+/// A sine that caps the step at `dt`, whatever `dt` is.
+module Capped(p: Electrical) { dt: f64 = 20u; }
+analog for Capped {
+    v(p, gnd) +> (2.0 * 3.141592653589793 * 1k * now()).sin();
+    bound_step(dt);
+}
+
+module SineBench() {
+    signal a: Electrical;
+    let s = Sine(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+/// Two instances capping at 20 us and 5 us.
+module TwoCapsBench() {
+    signal a: Electrical;
+    signal b: Electrical;
+    let s = Capped { dt: 20u }(a);
+    let t = Capped { dt: 5u }(b);
+    let ra = Resistor { r: 1k }(a, gnd);
+    let rb = Resistor { r: 1k }(b, gnd);
+}
+
+module BadCapBench() {
+    signal a: Electrical;
+    let s = Capped { dt: 0.0 }(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+module NegativeCapBench() {
+    signal a: Electrical;
+    let s = Capped { dt: -1u }(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+/// A 1 mA AC source into a conductance of `1m + freq() * 1n`.
+module AcSource(p: Electrical) {}
+analog for AcSource { i(gnd, p) +> ac_stim(1m); }
+
+module FreqLoad(p: Electrical) {}
+analog for FreqLoad { i(p, gnd) +> v(p, gnd) * (1m + freq() * 1n); }
+
+module FreqAcBench() {
+    signal a: Electrical;
+    let s = AcSource(a);
+    let l = FreqLoad(a);
+}
+
+/// `1.0 + freq()` held on a node: 1.0 wherever `freq()` is 0.
+module FreqHold(p: Electrical) {}
+analog for FreqHold { v(p, gnd) +> 1.0 + freq(); }
+
+module FreqHoldBench() {
+    signal a: Electrical;
+    let h = FreqHold(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+/// A reaction that reads `freq()`: 0 at the instant it runs, so the committed value is 7.
+module FreqReaction(out r: Bit<f64> = 0.0) {}
+digital for FreqReaction { on at(1n) { r <- freq() + 7.0; } }
+
+module FreqReactionBench() {
+    signal r: Bit<f64>;
+    let f = FreqReaction(r);
+}
+
+/// One node per analysis kind, held at 1 V where that kind is the analysis in use, else 0 V.
+module Kinds(d: Electrical, t: Electrical, a: Electrical, n: Electrical) {}
+analog for Kinds {
+    v(d, gnd) +> if analysis(Dc) { 1.0 } else { 0.0 };
+    v(t, gnd) +> if analysis(Transient) { 1.0 } else { 0.0 };
+    v(a, gnd) +> if analysis(Ac) { 1.0 } else { 0.0 };
+    v(n, gnd) +> if analysis(Noise) { 1.0 } else { 0.0 };
+}
+
+module KindsBench() {
+    signal d: Electrical;
+    signal t: Electrical;
+    signal a: Electrical;
+    signal n: Electrical;
+    let k = Kinds(d, t, a, n);
+    let rd = Resistor { r: 1k }(d, gnd);
+    let rt = Resistor { r: 1k }(t, gnd);
+    let ra = Resistor { r: 1k }(a, gnd);
+    let rn = Resistor { r: 1k }(n, gnd);
+}
+
+/// A 1 mA source with an AC stimulus into a nonlinear conductance `c v^2 + 1m v`, where `c` is
+/// 3m in a DC operating point, 1m under AC and 2m otherwise.
+module KindLoad(p: Electrical) {}
+analog for KindLoad {
+    let c = if analysis(Dc) { 3.0m } else if analysis(Ac) { 1.0m } else { 2.0m };
+    i(p, gnd) +> c * v(p, gnd) * v(p, gnd) + 1.0m * v(p, gnd);
+}
+
+module AcKindSource(p: Electrical) {}
+analog for AcKindSource { i(gnd, p) +> 1.0m + ac_stim(1.0m); }
+
+module AcKindBench() {
+    signal a: Electrical;
+    let s = AcKindSource(a);
+    let l = KindLoad(a);
+}
+
+/// A reaction that commits the analysis kinds it reads, at the operating point and at 1 ns.
+module KindReaction(out dc: Bit = false, out tr: Bit = false, out ac: Bit = false, out noise: Bit = false) {}
+digital for KindReaction {
+    on at(1n) {
+        dc <- analysis(Dc);
+        tr <- analysis(Transient);
+        ac <- analysis(Ac);
+        noise <- analysis(Noise);
+    }
+}
+
+module KindReactionBench() {
+    signal dc: Bit; signal tr: Bit; signal ac: Bit; signal noise: Bit;
+    let k = KindReaction(dc, tr, ac, noise);
+}

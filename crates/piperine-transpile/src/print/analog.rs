@@ -273,14 +273,19 @@ impl<'a> AnalogPrinter<'a> {
             Env::SourceScale => Source::SourceScale,
             Env::Time => Source::Time,
             Env::Static => Source::Static,
-            // the plan reads them from T10, the printer writes them from T36
-            Env::Freq | Env::Analysis(_) => return None,
+            Env::Freq => Source::Freq,
+            Env::Analysis(kind) => Source::Analysis(kind),
         })
     }
 
-    /// The Rust type a read is bound to in generic code: a `bool` param stays `bool`.
+    /// The Rust type a read is bound to in generic code: a `bool` param, `analysis(Static)` and
+    /// `analysis(kind)` stay `bool`.
     pub(crate) fn is_bool(&self, s: Source) -> bool {
-        matches!(s, Source::Param(p) if self.body.params().get(p as usize).is_some_and(|x| x.ty == ValueType::Bool))
+        match s {
+            Source::Static | Source::Analysis(_) => true,
+            Source::Param(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty == ValueType::Bool),
+            _ => false,
+        }
     }
 
     /// Whether a generic block takes read `s` as it is rather than as a `Real` (so it is no
@@ -288,7 +293,7 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn is_plain(&self, s: Source) -> bool {
         match s {
             Source::Param(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
-            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static => true,
+            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) => true,
             _ => false,
         }
     }
@@ -305,7 +310,7 @@ impl<'a> AnalogPrinter<'a> {
                 Some(carrier) => Ok(format!("rt::Flagged<{}>", self.values.pin_type(&carrier.ty)?)),
                 None => Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
-            Source::Static => Ok("bool".to_string()),
+            Source::Static | Source::Analysis(_) => Ok("bool".to_string()),
             _ => Ok("R".to_string()),
         }
     }
@@ -330,7 +335,7 @@ impl<'a> AnalogPrinter<'a> {
                 None => return Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
             // abi.md §4.2: `STATIC` is one `BOOL` byte, `TIME` an `F64`
-            Source::Static => format!("let {name} = {cx}.bool({i});"),
+            Source::Static | Source::Analysis(_) => format!("let {name} = {cx}.bool({i});"),
             _ => format!("let {name} = {cx}.f64({i});"),
         })
     }

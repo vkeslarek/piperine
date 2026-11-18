@@ -313,7 +313,7 @@ impl<'a> ValuePrinter<'a> {
         }
         let envs = Self::env_reads(ir, function);
         for env in &envs {
-            let ty = if *env == Env::Static { "bool" } else { "R" };
+            let ty = if matches!(env, Env::Static | Env::Analysis(_)) { "bool" } else { "R" };
             params.push(format!("{}: {ty}", Self::env_name(*env)));
         }
         let ret = printer.rust_type(f.ret(), &format!("{} return", printer.path))?;
@@ -330,13 +330,13 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// Whether `function` is generic over `Real`: a real is among its params, its return, its
-    /// locals, or it reads an environment real (every read but `analysis(Static)`, a `bool`).
+    /// locals, or it reads an environment real (every read but `analysis(..)`, a `bool`).
     pub fn is_generic(ir: &Ir, function: FunctionId) -> bool {
         let f = ir.function(function);
         let real = |ty: &ValueType| *ty == ValueType::F64;
         f.params().iter().chain(f.locals()).any(|l| real(&l.ty))
             || real(f.ret())
-            || Self::env_reads(ir, function).iter().any(|e| *e != Env::Static)
+            || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_)))
     }
 
     /// Whether `function` holds an `if` on an unknown condition, directly or through a call.
@@ -643,7 +643,6 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "a param read outside a body")),
             },
-            Expr::Env(Env::Freq | Env::Analysis(_)) => Err(self.unsupported(e, "a read of `freq()` or `analysis(..)` (the printer writes it with T36)")),
             Expr::Env(env) => atom(self.read(Self::env_name(*env))),
             // the event pin's `CHANGED` byte of this microstep, bound as a `bool` (abi.md §4.1)
             Expr::Fired(k) => atom(self.read(&Text::generated(&format!("event{k}_fired")))),
@@ -1029,7 +1028,7 @@ impl<'a> ValuePrinter<'a> {
                 path: format!("{} s{}", self.path, s.index()),
                 origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
             }),
-            Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` (the printer writes it with T36)")),
+            Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after } => {
                 if !self.commits {

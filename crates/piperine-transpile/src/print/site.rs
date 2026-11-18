@@ -6,7 +6,7 @@
 //! param's `where` over the params it reads, as a generic block run over `f64` returning `bool`,
 //! written as the known `BIT` `HIGH` or `LOW`.
 
-use piperine_ir::{EventSource, Expr, ExprId};
+use piperine_ir::{EventSource, Expr, ExprId, Stmt};
 use piperine_plan::{Mode, Source, Target};
 
 use crate::Error;
@@ -173,6 +173,78 @@ impl<'a> AnalogPrinter<'a> {
             match w {
                 Target::Ttol(_) | Target::Etol(_) => body.push(format!("cx_.set({j}, value_);")),
                 other => return Err(self.unsupported(&format!("the write {other:?} of the {name} of event {e}"))),
+            }
+        }
+        body.push("Ok(())".to_string());
+        t.indented(|t| {
+            for l in &body {
+                t.line(l);
+            }
+        });
+        t.line("}");
+        let mut text = t.finish();
+        text.pop();
+        Ok(text)
+    }
+
+    /// The top-level statement of `bound_step` site `k` of the `analog` block, and its value.
+    fn cap_site(&self, k: u32) -> Option<(usize, ExprId)> {
+        let block = self.body.analog().unwrap_or(&[]);
+        block.iter().enumerate().find_map(|(stmt, id)| match self.ir.stmt(*id) {
+            Stmt::BoundStep { site, value } if *site == k => Some((stmt, *value)),
+            _ => None,
+        })
+    }
+
+    /// `cap<k>_block` and `cap<k>`, for function `k` of the plan, which runs `Mode::Cap`: the
+    /// step `bound_step` site `s` asks for, the slice its value reaches as a block generic over
+    /// `Real` run over `f64`, written to the `CAP` watch.
+    pub fn cap(&self, k: usize) -> Result<String, Error> {
+        let Some((f, site)) = self.plan.functions().get(k).and_then(|f| match f.mode {
+            Mode::Cap(s) => Some((f, s)),
+            _ => None,
+        }) else {
+            return Err(self.unsupported(&format!("function {k} as a step-cap function")));
+        };
+        let Some((stmt, value)) = self.cap_site(site) else {
+            return Err(self.unsupported(&format!("bound_step site {site}, found in no top-level statement")));
+        };
+        let origin = self.ir.expr_origin(value);
+        self.refuse_carrier_reads("bound_step", &site.to_string(), origin, &f.reads)?;
+        let slice = self.slice_of(Mode::Cap(site), &[value], stmt);
+        let reads: Vec<(usize, Source)> =
+            f.reads.iter().copied().enumerate().filter(|(_, s)| slice.sources.contains(s)).collect();
+
+        let mut t = Text::new();
+        t.comment(&format!("{}.analog, `bound_step` site {site}: its value", self.body.name()), origin);
+        t.line(&format!("fn cap{site}_block<R: Real>({}) -> R {{", self.block_params(&reads)));
+        let mut lines = Vec::new();
+        for id in &slice.stmts {
+            lines.push(self.values.stmt(*id)?);
+        }
+        lines.push(self.values.expr(value)?);
+        t.indented(|t| {
+            for l in &lines {
+                t.line(l);
+            }
+        });
+        t.line("}");
+        t.line("");
+        let names: Vec<String> = f.reads.iter().map(|s| self.read_name(*s)).collect();
+        let writes: Vec<String> = f.writes.iter().map(|w| self.write_name(*w)).collect();
+        t.line(&format!(
+            "// function {k} `cap:{site}`: reads {}; writes {} @ {}",
+            names.join(", "),
+            writes.join(", "),
+            self.function_origin(k)
+        ));
+        t.line(&format!("fn cap{site}(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
+        let mut body = self.bind_reads(&reads);
+        body.push(format!("let value_ = Self::cap{site}_block::<f64>({});", self.block_args(&reads)));
+        for (j, w) in f.writes.iter().enumerate() {
+            match w {
+                Target::Cap(_) => body.push(format!("cx_.set({j}, value_);")),
+                other => return Err(self.unsupported(&format!("the write {other:?} of the cap of site {site}"))),
             }
         }
         body.push("Ok(())".to_string());

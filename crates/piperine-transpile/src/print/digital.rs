@@ -60,7 +60,8 @@ impl<'a> DigitalPrinter<'a> {
                 let name = self.body.carriers().get(carrier as usize).map_or_else(|| format!("carrier{carrier}"), |x| Text::ident(&x.name));
                 format!("at{event}_{name}_changed")
             }
-            Mode::Limit(_) | Mode::Stim(_) | Mode::Terms | Mode::Check(_) | Mode::Cap(_) => "terms".to_string(),
+            Mode::Cap(site) => format!("cap{site}"),
+            Mode::Limit(_) | Mode::Stim(_) | Mode::Terms | Mode::Check(_) => "terms".to_string(),
         }
     }
 
