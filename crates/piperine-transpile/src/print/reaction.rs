@@ -25,7 +25,7 @@
 //! `Commits::arm` with the instant's `TIME`: one `REPLACE` firing of the timer's pin, `t - now`
 //! later, at the next microstep when `t` is now, never when `t` is unknown or past.
 
-use piperine_ir::{EventSource, ValueType};
+use piperine_ir::{Env, EventSource, ValueType};
 use piperine_plan::{ReactionMode, ReactionPlan, Source, StatementPlan};
 
 use crate::Error;
@@ -111,7 +111,12 @@ impl<'a> DigitalPrinter<'a> {
             ReactionMode::Arm(_) => vec![Source::Time],
             ReactionMode::Reaction(_) => Vec::new(),
         };
-        let binds = self.binds(&values, "cx_", &plan.reads, &forced)?;
+        let mut binds = self.binds(&values, "cx_", &plan.reads, &forced)?;
+        // `freq()` read through a function: no `FREQ` cell in a reaction, the value is 0 (§14.4.4)
+        let freq = ValuePrinter::env_name(Env::Freq);
+        if values.uses(freq) {
+            binds.push(format!("let {freq} = 0.0;"));
+        }
 
         let shape = self.plan.shape().shape();
         let reaction = shape.reactions.get(k);

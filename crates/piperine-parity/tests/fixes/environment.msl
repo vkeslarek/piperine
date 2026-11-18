@@ -58,6 +58,18 @@ module FreqAcBench() {
     let l = FreqLoad(a);
 }
 
+/// The same conductance with `freq()` read by a function the analog block calls.
+fn with_freq(x: f64) -> f64 { x + freq() }
+
+module FreqFnLoad(p: Electrical) {}
+analog for FreqFnLoad { i(p, gnd) +> v(p, gnd) * (1m + with_freq(v(p, gnd) * 0.0) * 1n); }
+
+module FreqFnAcBench() {
+    signal a: Electrical;
+    let s = AcSource(a);
+    let l = FreqFnLoad(a);
+}
+
 /// `1.0 + freq()` held on a node: 1.0 wherever `freq()` is 0.
 module FreqHold(p: Electrical) {}
 analog for FreqHold { v(p, gnd) +> 1.0 + freq(); }
@@ -75,6 +87,15 @@ digital for FreqReaction { on at(1n) { r <- freq() + 7.0; } }
 module FreqReactionBench() {
     signal r: Bit<f64>;
     let f = FreqReaction(r);
+}
+
+/// The same reaction reading `freq()` through a function: still 0.
+module FreqFnReaction(out r: Bit<f64> = 0.0) {}
+digital for FreqFnReaction { on at(1n) { r <- with_freq(7.0); } }
+
+module FreqFnReactionBench() {
+    signal r: Bit<f64>;
+    let f = FreqFnReaction(r);
 }
 
 /// One node per analysis kind, held at 1 V where that kind is the analysis in use, else 0 V.

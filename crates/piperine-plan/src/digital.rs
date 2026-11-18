@@ -571,7 +571,9 @@ impl Digital {
             let plan = ReactionPlan {
                 mode: ReactionMode::Reaction(k as u32),
                 on: r.on.iter().map(|e| pins.events.get(*e as usize).copied().unwrap_or(u32::MAX)).collect(),
-                reads: ReadSet::target(body, Query::Reaction(k as u32)).0.into_iter().collect(),
+                // abi.md §4.2: a reaction reads no `FREQ`; the `freq()` of a function it calls is 0
+                // (§14.4.4), which the printer binds
+                reads: ReadSet::target(body, Query::Reaction(k as u32)).0.into_iter().filter(|s| *s != Source::Freq).collect(),
                 statements: StatementPlan::of_reaction(body, k as u32),
             };
             Self::declare(s, pins, body, &format!("reaction:{k}"), &Self::at(&r.origin), &plan);

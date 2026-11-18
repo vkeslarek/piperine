@@ -139,7 +139,7 @@ impl Elaboration<'_, '_> {
             "gmin" => Some(self.emit(Expr::Env(Env::Gmin), ty, origin)),
             "source_scale" => Some(self.emit(Expr::Env(Env::SourceScale), ty, origin)),
             "now" => Some(self.emit(Expr::Env(Env::Time), ty, origin)),
-            // The analog block reads the sweep's frequency; a reaction or a function sees 0 (§14.4.4).
+            // The analog block reads the sweep's frequency; a function reads its caller's, a reaction sees 0 (§14.4.4).
             "freq" if scope.analog => Some(self.emit(Expr::Env(Env::Freq), ty, origin)),
             "freq" => Some(self.emit(Expr::Real(piperine_ir::Real::new(0.0)), ty, origin)),
             // The checker lets `analysis` take `Static` or a kind of analysis.

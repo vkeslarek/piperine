@@ -19,6 +19,8 @@ impl Elaboration<'_, '_> {
         let DeclKind::Fn(f) = &data.kind else { return None };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut scope = Scope::new(data.file);
+        // `freq()` in a function is the caller's `freq_`: the sweep's in an analog caller, 0 in a reaction.
+        scope.analog = true;
         let mut params = Vec::new();
         let mut ok = true;
         let declared = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));

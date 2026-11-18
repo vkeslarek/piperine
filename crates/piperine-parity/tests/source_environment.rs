@@ -81,18 +81,21 @@ fn a_non_positive_bound_step_is_e0509() {
 
 #[test]
 fn freq_follows_the_ac_sweep() {
-    // FIX-10 AC 1: a 1 mA AC source into `1m + freq() * 1n`: |v(a)| = 1m / (1m + f * 1n).
-    let mut running = project().compile("FreqAcBench").unwrap_or_else(|r| panic!("{r}"));
-    let a = NodeIdentifier::Anonymous(running.ir.node_at("FreqAcBench.a").expect("node a").id().index());
-    let mut ac = running.circuit.ac(Context::default()).expect("ac");
-    let sweep = ac
-        .solve_sweep(AcSweepAnalysisOptions { start_frequency: 1e3, stop_frequency: 1e8, steps: 11, logarithmic: true })
-        .unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
-    assert_eq!(sweep.iter().count(), 11);
-    for step in sweep.iter() {
-        let wanted = 1e-3 / (1e-3 + step.frequency * 1e-9);
-        let actual = step.get_node(&a).expect("v(a)").norm();
-        ToleranceContract::AC_MAGNITUDE.assert(&Point::new("freq ac", "|v(a)|", Coordinate::Frequency(step.frequency)), wanted, actual);
+    // FIX-10 AC 1: a 1 mA AC source into `1m + freq() * 1n`: |v(a)| = 1m / (1m + f * 1n), whether
+    // `freq()` is written in the block or in a function the block calls.
+    for top in ["FreqAcBench", "FreqFnAcBench"] {
+        let mut running = project().compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let a = NodeIdentifier::Anonymous(running.ir.node_at(&format!("{top}.a")).expect("node a").id().index());
+        let mut ac = running.circuit.ac(Context::default()).expect("ac");
+        let sweep = ac
+            .solve_sweep(AcSweepAnalysisOptions { start_frequency: 1e3, stop_frequency: 1e8, steps: 11, logarithmic: true })
+            .unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+        assert_eq!(sweep.iter().count(), 11);
+        for step in sweep.iter() {
+            let wanted = 1e-3 / (1e-3 + step.frequency * 1e-9);
+            let actual = step.get_node(&a).expect("v(a)").norm();
+            ToleranceContract::AC_MAGNITUDE.assert(&Point::new(top, "|v(a)|", Coordinate::Frequency(step.frequency)), wanted, actual);
+        }
     }
 }
 
@@ -115,10 +118,13 @@ fn freq_is_zero_outside_a_sweep() {
 #[test]
 fn freq_in_a_reaction_is_zero() {
     // FIX-10 AC 3: `r <- freq() + 7.0` at 1 ns commits 7.0: `freq()` is 0 in a reaction (§14.4.4).
-    let seen = build(&project(), "FreqReactionBench").run(3e-9, 0.5e-9);
-    let last = series(&seen, "FreqReactionBench.r").pop().expect("a value").1;
-    assert_eq!(&last[..8], &7.0f64.to_le_bytes(), "{last:?}");
-    assert_eq!(last[8], 1, "known");
+    // The same holds when the reaction reads it through a function.
+    for top in ["FreqReactionBench", "FreqFnReactionBench"] {
+        let seen = build(&project(), top).run(3e-9, 0.5e-9);
+        let last = series(&seen, &format!("{top}.r")).pop().expect("a value").1;
+        assert_eq!(&last[..8], &7.0f64.to_le_bytes(), "{top}: {last:?}");
+        assert_eq!(last[8], 1, "known");
+    }
 }
 
 /// The four kind nodes `d`, `t`, `a`, `n` of `KindsBench` in `solved`, as volts.

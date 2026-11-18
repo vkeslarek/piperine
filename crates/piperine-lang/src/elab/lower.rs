@@ -48,8 +48,8 @@ pub(super) struct Scope {
     pub(super) texts: BTreeMap<DeclId, String>,
     /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
     pub(super) no_locals: bool,
-    /// Whether the code being lowered is the analog block: the one place `freq()` is read from
-    /// the solve (§14.4.4; in a reaction or a function it is 0).
+    /// Whether the code being lowered reads `freq()` from the solve (§14.4.4): the analog block
+    /// and the functions it calls (a function's `freq_` is the caller's; a reaction reads 0).
     pub(super) analog: bool,
     /// The `bound_step` statements met so far: the next one's site.
     pub(super) bounds: u32,
