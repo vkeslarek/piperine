@@ -211,6 +211,23 @@ fn a_rejected_step_leaves_no_trace() {
 }
 
 #[test]
+fn the_default_run_copies_the_digital_state_once_per_accepted_step() {
+    // HYG-19 AC 2: with every step keeping its re-entry state (the default), the full copy of the
+    // digital state is taken once per accepted step: a rejected attempt (here a truncation
+    // rejection and a Newton failure) is retried from the state its rewind restored, which the
+    // first attempt's copy already holds. The run is the one `a_rejected_step_leaves_no_trace`
+    // reads: the results are the ones of a run that copied on every attempt.
+    let (mut circuit, _) = flaky_circuit(true);
+    let result = run(&mut circuit, 1.0e-3, 1.0e-3);
+    let rejected = result.stats.steps_rejected;
+    assert!(rejected >= 2, "the run rejects attempts: {:?}", result.stats);
+    // One copy per accepted step, and the two that bracket the run: the start's state and the last
+    // step's, which a later run re-enters from. Before the change each rejected attempt took one more.
+    let copies = circuit.bound().unwrap().digital.checkpoints_taken() as usize;
+    assert_eq!(copies, result.stats.steps_accepted + 2, "{copies} copies for {} accepted steps and {rejected} rejected attempts", result.stats.steps_accepted);
+}
+
+#[test]
 fn a_design_without_analog_runs_every_instant_with_no_solve() {
     let mut b = CircuitBuilder::new("clock only");
     b.device(timer(), "clk", &[("half", ParamValue::Real(1.0e-6))], &[net("clk")]);

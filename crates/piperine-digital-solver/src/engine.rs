@@ -126,6 +126,8 @@ pub struct Digital {
     pub(crate) suspended: Option<(Tick, u32)>,
     /// `GMIN` and `SOURCE_SCALE` as reactions and discrete functions read them.
     pub(crate) continuation: (f64, f64),
+    /// The full copies of the state `checkpoint` has taken (a diagnostic).
+    pub(crate) checkpoints_taken: std::sync::atomic::AtomicU64,
 }
 
 impl Digital {
@@ -145,6 +147,7 @@ impl Digital {
             waited: Vec::new(),
             suspended: None,
             continuation: (0.0, 1.0),
+            checkpoints_taken: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -271,6 +274,7 @@ impl Digital {
 
     /// The state to come back to with `restore`.
     pub fn checkpoint(&self) -> Checkpoint {
+        self.checkpoints_taken.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Checkpoint {
             store: self.store.clone(),
             queue: self.queue.clone(),
@@ -315,6 +319,12 @@ impl Digital {
     pub fn release(&mut self, mark: Mark) {
         self.store.release(mark.store);
         self.queue.release(mark.queue);
+    }
+
+    /// How many full copies of the state `checkpoint` has taken since the engine was built (a
+    /// diagnostic: a journal `mark` copies nothing and is not counted).
+    pub fn checkpoints_taken(&self) -> u64 {
+        self.checkpoints_taken.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// The number of nets a `rewind` would put back: those written since the oldest open mark

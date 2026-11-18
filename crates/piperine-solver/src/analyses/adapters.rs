@@ -67,6 +67,9 @@ pub(crate) struct DigitalSide {
     on_start: Vec<(NetId, Vec<u8>)>,
     /// Where each mark also leaves the settled state (a transient's steps).
     settled: Option<Settled>,
+    /// The engine was rewound since the last mark: the next mark finds the state the last one
+    /// copied, which the step already carries, so it is not copied again.
+    rewound: bool,
 }
 
 impl DigitalSide {
@@ -96,7 +99,7 @@ impl DigitalSide {
             .chain(bound.temperature.iter().cloned())
             .chain(bound.host_writes.iter().cloned())
             .collect();
-        DigitalSide { digital, slots: names.slots.clone(), slot_nets: names.slot_nets.clone(), copy, on_start, settled: None }
+        DigitalSide { digital, slots: names.slots.clone(), slot_nets: names.slot_nets.clone(), copy, on_start, settled: None, rewound: false }
     }
 
     /// Each mark also leaves the settled state in `settled`.
@@ -177,17 +180,23 @@ impl DiscreteSide for DigitalSide {
     }
 
     /// The engine's journal mark: no net is copied. The full copy and every net's bytes are
-    /// taken only where a re-entry state is recorded (`settled`).
+    /// taken only where a re-entry state is recorded (`settled`), once per accepted step: the
+    /// retry of a rejected attempt starts from the state its rewind restored, which the first
+    /// attempt's copy already holds.
     fn mark(&mut self) -> DigitalMark {
-        if let Some(settled) = &self.settled {
+        if let Some(settled) = &self.settled
+            && !self.rewound
+        {
             let nets = (0..self.digital.plan().nets.len()).map(|i| self.digital.read(NetId(i as u32)).to_vec()).collect();
             *settled.borrow_mut() = Some((self.digital.checkpoint(), nets));
         }
+        self.rewound = false;
         self.digital.mark()
     }
 
     fn restore(&mut self, mark: &DigitalMark) {
         self.digital.rewind(mark);
+        self.rewound = true;
     }
 
     fn release(&mut self, mark: DigitalMark) {
