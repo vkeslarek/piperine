@@ -158,3 +158,35 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     }
     found
 }
+
+/// `Mid` is a resistor of `rr` written through a body `let`: `g = 1 / rr` inside its behavior.
+const LET_DESIGN: &str = "module Mid(p: Electrical, n: Electrical) {\n    rr: f64 = 1k;\n}\nanalog for Mid { let g = 1.0 / rr; i(p, n) +> v(p, n) * g; }\n\nmodule Top() {\n    signal a: Electrical;\n    signal b: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, b) { r: 1k };\n    let m = Mid(b, gnd);\n}\n";
+
+#[test]
+fn a_body_let_reads_the_new_param() {
+    // HII-19 AC 1: `g = 1.0 / rr` is a `let` of `Mid`'s behavior reading `rr`; after `rr = 3000`
+    // it reads 3000 on every evaluation, so the node is 3000 / (3000 + 1000) = 0.75 (0.5 before)
+    let text = format!("{PARTS}{LET_DESIGN}");
+    let mut before = open(&text, op());
+    close(real(&run(&mut before).unwrap_or_else(|f| panic!("{f}")).rows[0][1]), 0.5, "rr = 1k");
+    let mut after = open(&text, op());
+    after.set_at("Top.m.rr", 3000.0, 0.0).unwrap_or_else(|f| panic!("{f}"));
+    close(real(&run(&mut after).unwrap_or_else(|f| panic!("{f}")).rows[0][1]), 0.75, "rr = 3000");
+}
+
+/// `Scale` defines `y = a * k`: a definition of a carrier that reads the param `k`; the top's `a`
+/// is driven by the host.
+const DEFINITION_DESIGN: &str = "module Scale(in a: Bit<f64>, out y: Bit<f64>) {\n    k: f64 = 2.0;\n    y = a * k;\n}\n\nmodule Top(in a: Bit<f64>, out y: Bit<f64>) {\n    signal s: Electrical;\n    let v1 = Vsource(s, gnd) { dc: 1.0 };\n    let r1 = Resistor(s, gnd) { r: 1k };\n    let sc = Scale(a, y);\n}\n";
+
+#[test]
+fn a_definition_is_recomputed_at_the_set() {
+    // HII-19 AC 2: `y = a * k` with `a = 4`: 8 while `k = 2`; `k = 5` at 1.5 us recomputes the
+    // definition at that instant: the grid rows at 0 and 1 us hold 8, the rows at 2 and 3 us hold 20
+    let tran = Overrides { analysis: Some("transient".into()), stop: Some(3e-6), max_step: Some(1e-7), print_step: Some(1e-6), print: vec!["y".into()], ..Overrides::default() };
+    let mut session = open(&format!("{PARTS}{DEFINITION_DESIGN}"), tran);
+    session.drive("a", piperine_api::ParamValue::Real(4.0), 0.0).unwrap_or_else(|f| panic!("{f}"));
+    session.set_at("Top.sc.k", 5.0, 1.5e-6).unwrap_or_else(|f| panic!("{f}"));
+    let table = run(&mut session).unwrap_or_else(|f| panic!("{f}"));
+    let rows: Vec<f64> = table.rows.iter().map(|r| real(&r[1])).collect();
+    assert_eq!(rows, [8.0, 8.0, 20.0, 20.0]);
+}
