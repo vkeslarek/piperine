@@ -17,10 +17,10 @@
 use std::collections::BTreeSet;
 
 use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, StmtId};
-use piperine_plan::{BodyPlan, Mode};
+use piperine_plan::{BodyPlan, DerivePlan, Mode};
 
 use crate::Error;
-use crate::print::{AnalogPrinter, DigitalPrinter, ShapePrinter, Text, ValuePrinter};
+use crate::print::{AnalogPrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, ValuePrinter};
 
 /// Prints a design.
 #[derive(Debug)]
@@ -40,7 +40,8 @@ impl LibraryPrinter {
         let mut shapes = ShapePrinter::new();
 
         // The IR functions the running bodies reach, in arena order.
-        let functions = Self::reached(ir, &running);
+        let derived = DerivePlan::of(ir);
+        let functions = Self::reached(ir, &running, &derived);
         let mut printed_names = BTreeSet::new();
         for f in &functions {
             let name = Text::ident(ir.function(*f).name());
@@ -123,6 +124,10 @@ impl LibraryPrinter {
             t.line(&format!("LIBRARY.get_or_init(|| library({design:?}, \"piperine-transpile\", modules))"));
         });
         t.line("}");
+        if let Some(derive) = DerivePrinter::text(ir, &derived)? {
+            t.line("");
+            t.line(&derive);
+        }
         Ok(t.finish())
     }
 
@@ -353,8 +358,9 @@ impl LibraryPrinter {
 
     /// The IR functions the running bodies call, directly or through other functions, in arena
     /// order.
-    fn reached(ir: &Ir, running: &[(piperine_ir::Body<'_>, &BodyPlan)]) -> Vec<FunctionId> {
+    fn reached(ir: &Ir, running: &[(piperine_ir::Body<'_>, &BodyPlan)], derived: &DerivePlan) -> Vec<FunctionId> {
         let mut exprs = Self::roots(ir, running.iter().map(|(b, _)| *b));
+        exprs.extend(derived.bindings().iter().map(|b| b.expr));
         let mut found = BTreeSet::new();
         while let Some(e) = exprs.pop() {
             match ir.expr(e) {

@@ -4,6 +4,7 @@
 
 pub mod analog;
 pub mod cross;
+pub mod derive;
 pub mod digital;
 pub mod library;
 pub mod limit;
@@ -14,6 +15,7 @@ pub mod text;
 pub mod value;
 
 pub use analog::AnalogPrinter;
+pub use derive::DerivePrinter;
 pub use digital::DigitalPrinter;
 pub use library::LibraryPrinter;
 pub use shape::ShapePrinter;

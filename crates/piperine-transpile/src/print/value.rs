@@ -189,6 +189,12 @@ impl<'a> ValuePrinter<'a> {
         ValuePrinter { plain: true, faults: true, ..Self::of_body(ir, body) }
     }
 
+    /// The printer of an expression a placement gives a child's param (`ChildValue::Expr`): over
+    /// the params of `body`, plain reals, no `?` (a call that may fault is refused).
+    pub fn of_placement(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
+        ValuePrinter { faults: false, ..Self::of_digital(ir, body) }
+    }
+
     /// The printer of reaction `k` of `body`: its own locals, plain reals, `?`, and commits.
     pub fn of_reaction(ir: &'a Ir, body: Body<'a>, k: usize) -> ValuePrinter<'a> {
         let base = Self::of_digital(ir, body);
