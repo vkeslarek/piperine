@@ -101,6 +101,7 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | step controller | `kp` 0.7, `ki` 0.4, growth in \[0.2, 1.5\], rejection ÷ 8 | §17.2 |
 | restart step after a landing or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point; after a host `set` also 10⁻³ of the last step, floored at the minimum step | §15.2.6 |
 | charge tolerance `chgtol` | 1e-14 | §17.2 Resolution |
+| step to the stop | a step whose end lies within two ticks short of the stop ends at the stop (the remainder would be a step of a tick or two, integrated as noise); the smallest `CAP` of the last accepted solution still bounds it | §17.2.2 |
 | step at the floor | one retake at `dt_min` after a larger attempt failed; Newton failing at the floor, `E0508`; the error test failing at the floor, accepted and counted | §17.2 |
 | limiting activity | `abs(x̂ − x) > 1e-6 + 1e-4 · abs(x)` | §18 rule 5 |
 | `temperature`, `tnom` | 300.15 K | §14 |

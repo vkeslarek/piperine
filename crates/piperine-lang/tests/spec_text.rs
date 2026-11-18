@@ -1614,6 +1614,9 @@ fn appendix_c_states_the_solver_hygiene_numerics() {
         "| step at the floor | one retake at `dt_min` after a larger attempt failed; Newton failing at the floor, `E0508`; the error test failing at the floor, accepted and counted | §17.2 |",
         "The step floor follows ngspice's `dctran.c` exactly (\"Timestep too small\")",
         "An attempt at `dt_min` that converges but fails the truncation error is accepted and counted (`floor_accepts`)",
+        // F4: the stop snap
+        "| step to the stop | a step whose end lies within two ticks short of the stop ends at the stop",
+        "the smallest `CAP` of the last accepted solution still bounds it",
         // Q5
         "at most `0.1·min(last step, gap to the next scheduled time point)`, first order",
         "| restart step after a landing or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point;",

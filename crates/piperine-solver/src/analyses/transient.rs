@@ -1384,8 +1384,9 @@ impl TransientSolver<'_> {
         // A step that would end within two ticks short of the stop ends at the stop: the
         // remainder would be a step of a few femtoseconds, or less than a tick, which the
         // companion of a charge integrates as noise (a capped step after a jump can end there).
+        // The `CAP` bound still holds after the snap: a step is never stretched past it.
         if self.options.stop_time - end < 2.0 * run.spt {
-            end = self.options.stop_time;
+            end = self.options.stop_time.min(st.current_time + run.cap);
         }
         run.proposed = end;
         run.proposed

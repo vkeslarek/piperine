@@ -18,7 +18,7 @@ mod abi_mixed;
 #[path = "helpers/partials.rs"]
 mod partials;
 
-use abi_mixed::{dac, timer};
+use abi_mixed::{capped, dac, timer};
 use abi_devices::{Counting, add_capacitor, add_diode, add_resistor, add_vsrc, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::F64;
@@ -28,6 +28,9 @@ use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{CircuitBuilder, Context, TransientAnalysisOptions};
+
+/// One tick of the session's default resolution, 1 fs.
+const TICK: f64 = 1.0e-15;
 
 fn pin(index: u32) -> Cell {
     Cell { kind: cell::PIN, index, part: part::VALUE }
@@ -242,6 +245,53 @@ fn a_stop_on_the_tick_grid_ends_on_its_own_step() {
     assert!((t - stop).abs() < 1.0e-12 * stop, "stopped at t = {t:e}");
     let analytic = 1.0 - (-stop / tau).exp();
     assert!((v - analytic).abs() < 1.0e-3, "v(out) at the stop = {v} vs {analytic}");
+}
+
+/// A 1 V source through 1 kohm into 1 nF at `out`, with an optional `CAP` watch of `cap` seconds on
+/// `top`, run to `stop` with the steps at most 100 ns: the accepted times.
+fn capped_rc_times(stop: f64, cap: Option<f64>) -> Vec<f64> {
+    let mut b = CircuitBuilder::new("capped rc");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let out = b.node("out");
+    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 1.0e3, &top, &out);
+    add_capacitor(&mut b, "c1", 1.0e-9, &out, &gnd);
+    if let Some(cap) = cap {
+        b.device(capped(), "cap0", &[("cap", ParamValue::Real(cap))], &[Port::Node(top)]);
+    }
+    let mut circuit = b.build().expect("build");
+    let mut options = TransientAnalysisOptions::new(stop, 1.0e-7);
+    options.dt_max = 1.0e-7;
+    let result = circuit.transient(options, Context::default()).expect("tran").solve().expect("solve");
+    result.iter().map(|step| step.time()).collect()
+}
+
+#[test]
+fn a_step_that_would_end_one_tick_short_of_the_stop_ends_at_the_stop() {
+    // Appendix C.2: a step whose end lies within two ticks short of the stop ends at the stop (the
+    // remainder would be a step of a tick, integrated as noise). The grid of 100 ns steps reaches
+    // 1 us one tick short of this stop: the step to 1 us is not taken, the last step ends at the stop.
+    let stop = 1.0e-6 + TICK;
+    let times = capped_rc_times(stop, None);
+    assert_eq!(*times.last().expect("steps"), stop, "the run ends at the stop");
+    let before = times[times.len() - 2];
+    assert!(stop - before > 0.5e-7, "no step ends within two ticks of the stop: the one before it is at {before:e}");
+}
+
+#[test]
+fn the_cap_still_bounds_a_step_the_stop_snap_would_stretch() {
+    // The snap moves an end to the stop; it must not stretch the step past the `CAP` of the last
+    // accepted solution. The cap is 100 ns and the stop lies 1.5 ticks past the 1 us the capped
+    // grid reaches: no step is wider than the cap, and the run still ends at the stop.
+    let stop = 1.0e-6 + 1.5 * TICK;
+    let cap = 1.0e-7;
+    let times = capped_rc_times(stop, Some(cap));
+    assert_eq!(*times.last().expect("steps"), stop, "the run ends at the stop");
+    for pair in times.windows(2) {
+        let width = pair[1] - pair[0];
+        assert!(width <= cap + 0.1 * TICK, "a step of {width:e} s past the {cap:e} s cap, ending at {:e}", pair[1]);
+    }
 }
 
 /// The step whose target is the stop ends at the stop bit for bit, on the tick grid or off it,
