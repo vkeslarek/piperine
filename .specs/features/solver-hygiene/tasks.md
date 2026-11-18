@@ -631,9 +631,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `grep -n '0.1 \* d1.max(d2)' crates/piperine-analog-solver/src` finds nothing
-- [ ] `**Run analoglib**` and `**Run parity**` pass; the deviation table after is in the commit body
-- [ ] Gate check passes: Full
+- [x] `grep -n '0.1 \* d1.max(d2)' crates/piperine-analog-solver/src` finds nothing
+- [x] `**Run analoglib**` and `**Run parity**` pass; the deviation table after is in the commit body
+- [x] Gate check passes: Full
 
 **Tests**: unit
 **Gate**: full

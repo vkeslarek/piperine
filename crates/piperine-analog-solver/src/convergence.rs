@@ -142,7 +142,7 @@ pub struct StepperMemory {
 /// (the PI controller) carry their own memory across steps.
 pub trait StepperStrategy: Send + Sync {
     /// Propose the next timestep after an accepted step. `lte` is the
-    /// normalized global error from `TrBdf2::milne_lte` (~1.0 = at tolerance);
+    /// normalized global error from `TrBdf2::state_lte` (~1.0 = at tolerance);
     /// `dt_actual` is the dt this step used.
     fn propose_dt(
         &mut self,

@@ -109,28 +109,6 @@ impl TrBdf2 {
         Self::phase_coeffs(phase, h)
     }
 
-    /// Global local-truncation-error estimate via Milne's device. A linear
-    /// extrapolation of `Q_n` and `Q_{n+γ}` to `t_{n+1}` is differenced from
-    /// the BDF2 solution `Q_{n+1}`, normalized per component by
-    /// `reltol·|Q_{n+1}| + tol`; the worst component is returned.
-    ///
-    /// Returns `0.0` for collinear/constant charge (linear extrapolation is
-    /// exact) and positive for curvature. The linear predictor is O(h²), a
-    /// conservative over-estimate of TR-BDF2's true O(h³) LTE — safe for
-    /// timestep control; the residual scale is absorbed by the PI gains
-    /// (`kp`/`ki`).
-    pub fn milne_lte(
-        q_n: &[f64],
-        q_n_gamma: &[f64],
-        q_n1: &[f64],
-        reltol: f64,
-        tol: f64,
-    ) -> f64 {
-        let n = q_n1.len().min(q_n.len()).min(q_n_gamma.len());
-        let indices: Vec<usize> = (0..n).collect();
-        Self::milne_lte_indexed(q_n, q_n_gamma, q_n1, &indices, reltol, tol)
-    }
-
     /// The truncation error of a step over its `ddt` states, normalized as ngspice's `CKTterr`:
     /// per state, Milne's difference `|q_{n+1} − (q_{n+γ} + ((1−γ)/γ)(q_{n+γ} − q_n))|` over the
     /// larger of `h·(abstol + reltol·max(|i_n|, |i_{n+1}|))` and
@@ -149,51 +127,6 @@ impl TrBdf2 {
             let bound = by_current.max(by_charge);
             if bound > 0.0 {
                 worst = worst.max(error / bound);
-            }
-        }
-        worst
-    }
-
-    /// Milne LTE restricted to `indices` — used by the driver to evaluate the
-    /// error only over **node-voltage** components. Branch currents are derived
-    /// from the node voltages (KCL), so their accuracy follows; including them
-    /// in the predictor misbehaves (the `/γ` extrapolation amplifies the
-    /// startup jump of a source's branch current, giving a false huge LTE).
-    pub fn milne_lte_indexed(
-        q_n: &[f64],
-        q_n_gamma: &[f64],
-        q_n1: &[f64],
-        indices: &[usize],
-        reltol: f64,
-        tol: f64,
-    ) -> f64 {
-        let slope_scale = (1.0 - Self::GAMMA) / Self::GAMMA;
-        let mut worst = 0.0_f64;
-        for &i in indices {
-            if i >= q_n1.len() || i >= q_n.len() || i >= q_n_gamma.len() {
-                continue;
-            }
-            // Skip nodes whose history spans a discontinuity — e.g. a
-            // voltage-source-forced node that jumped at a breakpoint edge.
-            // Such a node's predictor residual is the intentional jump, not
-            // truncation error; counting it would reject the step the
-            // integrator deliberately landed on. A discontinuity shows up as
-            // ASYMMETRIC consecutive differences: one side is flat (pre- or
-            // post-jump) while the other is large. Smooth curvature has
-            // comparable differences on both sides, so it is kept.
-            let d1 = (q_n_gamma[i] - q_n[i]).abs();
-            let d2 = (q_n1[i] - q_n_gamma[i]).abs();
-            if d1.max(d2) > 0.0 && d1.min(d2) < 0.1 * d1.max(d2) {
-                continue;
-            }
-            let q_pred = q_n_gamma[i] + slope_scale * (q_n_gamma[i] - q_n[i]);
-            let err = (q_n1[i] - q_pred).abs();
-            let scale = reltol * q_n1[i].abs() + tol;
-            if scale > 0.0 {
-                let normalized = err / scale;
-                if normalized > worst {
-                    worst = normalized;
-                }
             }
         }
         worst
@@ -400,42 +333,5 @@ mod tests {
             TrBdf2::stage_coeffs(TrBdf2Phase::Trapezoidal, h, 2e-4),
             TrBdf2::phase_coeffs(TrBdf2Phase::Trapezoidal, h)
         );
-    }
-
-    #[test]
-    fn milne_lte_is_zero_for_constant_charge() {
-        // Constant charge (no dynamics) → linear extrapolation exact → 0.
-        let q = [1e-9, 1e-9, 1e-9];
-        let e = TrBdf2::milne_lte(&q, &q, &q, 1e-3, 1e-14);
-        assert!(e < 1e-15, "constant charge LTE = {e}");
-    }
-
-    #[test]
-    fn milne_lte_is_zero_for_linear_charge() {
-        // Linearly varying charge: Q_n=0, Q_{n+γ}=γ, Q_{n+1}=1 → predictor
-        // extrapolates linearly and hits Q_{n+1} exactly → 0.
-        let g = TrBdf2::GAMMA;
-        let q_n = [0.0_f64, 0.0];
-        let q_ng = [g, 2.0 * g];
-        let q_n1 = [1.0_f64, 2.0];
-        let e = TrBdf2::milne_lte(&q_n, &q_ng, &q_n1, 1e-3, 1e-14);
-        assert!(e < 1e-9, "linear charge LTE = {e}");
-    }
-
-    #[test]
-    fn milne_lte_is_positive_for_curvature() {
-        // Quadratic charge: Q_n=0, Q_{n+γ}=γ², Q_{n+1}=1. The linear
-        // predictor misses the curvature → positive normalized error.
-        let g = TrBdf2::GAMMA;
-        let q_n = [0.0_f64];
-        let q_ng = [g * g];
-        let q_n1 = [1.0_f64];
-        let e = TrBdf2::milne_lte(&q_n, &q_ng, &q_n1, 1e-3, 1e-14);
-        assert!(e > 0.0, "quadratic charge LTE should be positive, got {e}");
-        // Predictor = γ² + ((1−γ)/γ)·(γ²−0) = γ² + γ(1−γ) = γ. Actual = 1.
-        // err = |1 − γ|, scale = reltol·1 + chgtol.
-        let pred = g * g + ((1.0 - g) / g) * (g * g - 0.0);
-        let expected_err = (1.0 - pred).abs() / (1e-3 * 1.0 + 1e-14);
-        assert!((e - expected_err).abs() < 1e-9 * expected_err.abs(), "e={e} expected={expected_err}");
     }
 }
