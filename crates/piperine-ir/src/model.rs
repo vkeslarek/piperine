@@ -78,6 +78,10 @@ pub struct BodyData {
     /// The record streams the body's `emit!` sites write, by index.
     #[serde(default)]
     pub(crate) streams: Vec<Stream>,
+    /// The derivative sites: each `ddt` that is not a whole addend of an unconditional
+    /// contribution, by index (`Expr::Derivative`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) derivatives: Vec<Derivative>,
     /// The param values of each child (by index into `children`) that `Child::params` does not
     /// hold: set by `IrBuilder::child_param`, empty for a child with none. See `ChildValue`.
     #[serde(default)]
@@ -244,6 +248,23 @@ pub struct Site {
     pub origin: Origin,
 }
 
+/// A derivative site: a `ddt` whose result is read anywhere but as a whole addend of an
+/// unconditional contribution (abi.md A1). Its rate is the private continuous pin `d<k>.rate`,
+/// an unknown that is 0 in an equilibrium solve, the integrator's derivative of `state` in a
+/// transient step and `jω·state` in a sweep; `Expr::Derivative(k)` reads it. Its index in the
+/// body's list is its identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Derivative {
+    pub name: String,
+    /// The differentiated quantity, an `f64`. It is evaluated at every accepted solution whatever
+    /// control flow surrounds the `ddt` (§14 rule 9), so it reads nothing a condition set.
+    pub state: ExprId,
+    /// `ddt(x, abstol)`: the absolute tolerance of the state, an `f64` that reads no probe,
+    /// carrier or clock (a constant or a param expression).
+    pub abstol: Option<ExprId>,
+    pub origin: Origin,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Local {
     pub name: String,
@@ -332,6 +353,9 @@ pub enum Expr {
     /// `c.prev()`: carrier `c`'s value before its most recent change (§3.3). Its type is
     /// `Flagged`, as a read of the carrier: unknown until the carrier has changed once.
     Previous(u32),
+    /// The rate of the derivative site `k` of the body (`Body::derivatives`): an `f64`, read in
+    /// the `analog` block, a body `let`, an event argument or a reaction.
+    Derivative(u32),
     /// `fired(e)` in a reaction: whether the body's event `e` fired in this microstep (the
     /// `CHANGED` byte of its pin), a known `bool`.
     Fired(u32),

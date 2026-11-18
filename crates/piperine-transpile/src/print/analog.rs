@@ -258,6 +258,7 @@ impl<'a> AnalogPrinter<'a> {
                     sources.insert(Source::Carrier(*c));
                 }
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Fired(_) => {}
+                Expr::Derivative(_) => panic!("the rate of a derivative site has no source in the plan yet"),
                 Expr::Flow { branch } => {
                     sources.insert(Source::BranchFlow(*branch));
                 }

@@ -117,7 +117,7 @@ impl<'a> Contributions<'a> {
     fn operands(kind: &Expr) -> Vec<ExprId> {
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => Vec::new(),
-            Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => Vec::new(),
+            Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) => Vec::new(),
             Expr::Closure { .. } | Expr::If { .. } | Expr::Block { .. } => Vec::new(),
             Expr::Unwrap { is, value, .. } => vec![*is, *value],
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],

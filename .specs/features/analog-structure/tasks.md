@@ -246,9 +246,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run irstruct`: `a_derivative_site_prints_and_round_trips`, `a_derivative_read_out_of_range_is_broken`, `a_derivative_abstol_that_reads_a_probe_is_broken`, `a_derivative_state_reads_are_its_dependencies`
-- [ ] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run irstruct`: `a_derivative_site_prints_and_round_trips`, `a_derivative_read_out_of_range_is_broken`, `a_derivative_abstol_that_reads_a_probe_is_broken`, `a_derivative_state_reads_are_its_dependencies`
+- [x] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

@@ -73,6 +73,8 @@ struct Owner {
     streams: Vec<Vec<ValueType>>,
     /// The number of the body's events.
     events: usize,
+    /// The number of the body's derivative sites.
+    derivatives: usize,
     /// The statements of a reaction: `fired` may appear.
     reaction: bool,
     /// A body (probes and params are readable) rather than a function.
@@ -226,6 +228,11 @@ impl<'a> Checker<'a> {
             }
             for &stmt in body.analog.iter().flatten() {
                 self.stmt_id(&item, &origin, stmt);
+            }
+            for site in &body.derivatives {
+                for id in [site.state].into_iter().chain(site.abstol) {
+                    self.expr_id(&item, &site.origin, id);
+                }
             }
             for drive in &body.drives {
                 if drive.carrier as usize >= body.carriers.len() {
@@ -445,7 +452,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) => {}
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
             Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
             Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => exprs.extend([*a, *b]),
@@ -693,7 +700,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {}
+                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
@@ -854,8 +861,20 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            // The `abstol` of a derivative site is a constant or a param expression, as the
+            // tolerances of a `cross` are.
+            for (k, site) in body.derivatives.iter().enumerate() {
+                let Some(abstol) = site.abstol else { continue };
+                for read in self.reach_calls(&[abstol]) {
+                    if matches!(self.ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Probe { .. } | Expr::Carrier(_) | Expr::Env(Env::Time | Env::Freq))) {
+                        let at = self.expr_origin(read);
+                        self.report(format!("{item} derivative {k}"), at, "the `abstol` of a derivative site reads an input: it is a constant or a param expression".to_string());
+                    }
+                }
+            }
             // A commit anywhere but in a reaction: the analog block, a `where`, a drive, an event.
             let mut roots: Vec<ExprId> = body.params.iter().filter_map(|p| p.check).collect();
+            roots.extend(body.derivatives.iter().flat_map(|d| [d.state].into_iter().chain(d.abstol)));
             roots.extend(body.drives.iter().flat_map(|d| [d.value].into_iter().chain(d.after)));
             roots.extend(body.events.iter().flat_map(|e| {
                 let cross = match e.source {
@@ -969,6 +988,7 @@ impl<'a> Checker<'a> {
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
                 events: body.events.len(),
+                derivatives: body.derivatives.len(),
                 reaction: false,
                 in_body: true,
                 analog,
@@ -1027,6 +1047,15 @@ impl<'a> Checker<'a> {
                     self.walk(&mut w, Task::Expr(guard, Ctx::top()));
                 }
             }
+            for (k, site) in body.derivatives.iter().enumerate() {
+                let mut w = Walk::new(owner(false, format!("body {} derivative {k}", body.name)), 0);
+                self.expect(&w, site.state, &ValueType::F64);
+                self.walk(&mut w, Task::Expr(site.state, Ctx::top()));
+                if let Some(abstol) = site.abstol {
+                    self.expect(&w, abstol, &ValueType::F64);
+                    self.walk(&mut w, Task::Expr(abstol, Ctx::top()));
+                }
+            }
             for (k, reaction) in body.reactions.iter().enumerate() {
                 let item = format!("body {} reaction {k}", body.name);
                 let mut owner = owner(false, item);
@@ -1053,6 +1082,7 @@ impl<'a> Checker<'a> {
                 carriers: Vec::new(),
                 streams: Vec::new(),
                 events: 0,
+                derivatives: 0,
                 reaction: false,
                 in_body: false,
                 analog: false,
@@ -1605,6 +1635,16 @@ impl<'a> Checker<'a> {
                     self.typed(w, &origin, ty, want, "`cast`");
                 }
                 next.push(Task::Expr(*expr, ctx));
+            }
+            Expr::Derivative(k) => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a derivative read outside a body".to_string());
+                    } else if *k as usize >= w.owner.derivatives {
+                        self.wrong(w, origin, format!("derivative read of site {k}, out of range ({} sites)", w.owner.derivatives));
+                    }
+                }
             }
             Expr::Fired(e) => {
                 if first {

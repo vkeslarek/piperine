@@ -79,6 +79,10 @@ pub enum Target {
     Ttol(u32),
     /// The `etol` of a `Cross` event; empty when the event has none or is not a `Cross`.
     Etol(u32),
+    /// The state of a derivative site (`Body::derivatives`): the quantity it differentiates.
+    Derivative(u32),
+    /// The `abstol` of a derivative site; empty when the site has none.
+    DerivativeAbstol(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -121,6 +125,12 @@ impl<'a> Body<'a> {
         self.sources_of(target).previous.iter().copied().collect()
     }
 
+    /// The derivative sites whose rate (`Expr::Derivative`) `target` reads, by index
+    /// (`Body::derivatives`), sorted, through locals and function calls.
+    pub fn derivative_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).derivatives.iter().copied().collect()
+    }
+
     /// The events whose `fired` byte `target` reads (`Expr::Fired`), by index (`Body::events`),
     /// sorted, through locals and function calls.
     pub fn fired_reads(&self, target: Target) -> Vec<u32> {
@@ -152,6 +162,8 @@ impl<'a> Body<'a> {
             Target::BoundStep(i) => (&deps.caps, i, "bound_step site"),
             Target::Ttol(i) => (&deps.ttols, i, "event"),
             Target::Etol(i) => (&deps.etols, i, "event"),
+            Target::Derivative(i) => (&deps.derivative_states, i, "derivative site"),
+            Target::DerivativeAbstol(i) => (&deps.derivative_abstols, i, "derivative site"),
         };
         match list.get(i as usize) {
             Some(sources) => sources,
@@ -213,6 +225,8 @@ pub(crate) struct BodyDeps {
     caps: Vec<Sources>,
     ttols: Vec<Sources>,
     etols: Vec<Sources>,
+    derivative_states: Vec<Sources>,
+    derivative_abstols: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -231,6 +245,8 @@ struct Sources {
     fired: BTreeSet<u32>,
     /// Whether an `if` with a `Flagged` condition is evaluated (`Body::decides_on_unknown`).
     unknown_control: bool,
+    /// The derivative sites whose rate is read (`Expr::Derivative`).
+    derivatives: BTreeSet<u32>,
 }
 
 impl Sources {
@@ -245,6 +261,7 @@ impl Sources {
         self.previous.extend(&other.previous);
         self.fired.extend(&other.fired);
         self.unknown_control |= other.unknown_control;
+        self.derivatives.extend(&other.derivatives);
     }
 
     fn to_deps(&self) -> Deps {
@@ -454,6 +471,16 @@ impl<'a> Walk<'a> {
             }));
             guards.push(one(event.guard));
         }
+        let mut one = |root: Option<ExprId>| match root {
+            Some(e) => {
+                walk.scopes = vec![Scope::new(owner.clone(), true, data.locals.len())];
+                walk.run(Task::Expr(e));
+                walk.pop().sources
+            }
+            None => Sources::default(),
+        };
+        let derivative_states: Vec<Sources> = data.derivatives.iter().map(|d| one(Some(d.state))).collect();
+        let derivative_abstols: Vec<Sources> = data.derivatives.iter().map(|d| one(d.abstol)).collect();
         let mut reactions = Vec::with_capacity(data.reactions.len());
         for reaction in &data.reactions {
             walk.scopes = vec![Scope::new(owner.clone(), true, reaction.locals.len())];
@@ -485,6 +512,8 @@ impl<'a> Walk<'a> {
             caps: walk.caps,
             ttols,
             etols,
+            derivative_states,
+            derivative_abstols,
         }
     }
 
@@ -724,6 +753,16 @@ impl<'a> Walk<'a> {
                 sources.flows.insert(*branch);
                 return self.done(id, Value::of(sources, Class::Affine));
             }
+            Expr::Derivative(k) => {
+                if !in_body {
+                    self.refuse(id, "derivative read outside a body");
+                }
+                // The rate of a site is one more unknown of the system, as a flow is: it
+                // reaches a sum affinely.
+                let mut sources = Sources::default();
+                sources.derivatives.insert(*k);
+                return self.done(id, Value::of(sources, Class::Affine));
+            }
             Expr::Probe { plus, minus } => {
                 if !in_body {
                     self.refuse(id, "probe outside a body");
@@ -864,7 +903,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

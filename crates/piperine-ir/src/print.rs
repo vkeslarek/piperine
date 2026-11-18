@@ -305,6 +305,14 @@ impl<'a> Printer<'a> {
             let at = self.at(&site.origin);
             self.line(1, &format!("stim S{i} {:?}{at}", site.name));
         }
+        for (i, site) in body.derivatives.iter().enumerate() {
+            let mut text = format!("derivative D{i} {:?} state {}", site.name, self.render(scope, Piece::Expr(site.state)));
+            if let Some(abstol) = site.abstol {
+                let _ = write!(text, " abstol {}", self.render(scope, Piece::Expr(abstol)));
+            }
+            text.push_str(&self.at(&site.origin));
+            self.line(1, &text);
+        }
         self.locals(1, &body.locals);
         for (ci, child) in body.children.iter().enumerate() {
             let callee = self.ir.bodies.get(child.body.index());
@@ -723,6 +731,7 @@ impl<'a> Printer<'a> {
             Expr::Carrier(i) => next.push(text(Printer::carrier(scope, *i))),
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
+            Expr::Derivative(k) => next.push(text(format!("rate(D{k})"))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
             Expr::Level { value, index, part } => {
                 let name = if *part == LevelPart::Is { "level_is" } else { "level_value" };
@@ -812,7 +821,7 @@ impl<'a> Printer<'a> {
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
             Expr::Env(Env::Static | Env::Analysis(_)) | Expr::Fired(_) => Some(ValueType::Bool),
-            Expr::Real(_) | Expr::Math { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } => {
+            Expr::Real(_) | Expr::Math { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) => {
                 Some(ValueType::F64)
             }
             Expr::Bool(_) => Some(ValueType::Bool),
@@ -1012,6 +1021,7 @@ impl<'a> Printer<'a> {
             Expr::Carrier(i) => format!("carrier {i}"),
             Expr::Flow { branch } => format!("flow b{branch}"),
             Expr::Previous(i) => format!("previous {i}"),
+            Expr::Derivative(k) => format!("derivative D{k}"),
             Expr::Fired(i) => format!("fired {i}"),
             Expr::Level { value, index, part } => format!("{} {} {}", if *part == LevelPart::Is { "level_is" } else { "level_value" }, e(value), e(index)),
             Expr::Merge { a, b } => format!("merge {} {}", e(a), e(b)),

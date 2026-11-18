@@ -3,7 +3,7 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Drive, EmitField, Event, Expr, FunctionData, InstanceData, Ir, Local,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, InstanceData, Ir, Local,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
 use crate::contributions::{Contribution, Contributions};
@@ -184,6 +184,11 @@ impl<'a> Body<'a> {
     /// that enclose it, in source order. Empty for a body with no `analog` block.
     pub fn contributions(&self) -> Vec<Contribution<'a>> {
         Contributions::new(self.ir).of(self.analog().unwrap_or_default())
+    }
+
+    /// The derivative sites, by index (`Expr::Derivative`).
+    pub fn derivatives(&self) -> &'a [Derivative] {
+        &self.data().derivatives
     }
 
     /// The authored placements, in source order.

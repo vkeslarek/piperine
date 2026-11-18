@@ -315,6 +315,7 @@ impl<'a> Walk<'a> {
             Expr::High(_) => "High",
             Expr::Carrier(_) => "Carrier",
             Expr::Flow { .. } => "Flow",
+            Expr::Derivative(_) => "Derivative",
             Expr::Previous(_) => "Previous",
             Expr::Fired(_) => "Fired",
             Expr::Unwrap { .. } => "Unwrap",

@@ -5,7 +5,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Drive, Event, Expr, ExprData, FunctionData, InstanceData, Ir,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, InstanceData, Ir,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
 
@@ -111,6 +111,7 @@ impl IrBuilder {
             events: Vec::new(),
             reactions: Vec::new(),
             streams: Vec::new(),
+            derivatives: Vec::new(),
             child_params: Vec::new(),
             child_carriers: Vec::new(),
             deps: DepsMemo::default(),
@@ -178,6 +179,14 @@ impl IrBuilder {
             lists.resize(child as usize + 1, Vec::new());
         }
         lists[child as usize] = carriers;
+    }
+
+    /// Adds a derivative site to `body`: returns its index, the identity `Expr::Derivative`
+    /// reads it by.
+    pub fn derivative(&mut self, body: BodyId, derivative: Derivative) -> u32 {
+        let derivatives = &mut self.body_data(body).derivatives;
+        derivatives.push(derivative);
+        derivatives.len() as u32 - 1
     }
 
     /// Adds a record stream to `body`: returns its index, the identity `Stmt::Emit` names it by.

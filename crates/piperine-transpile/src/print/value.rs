@@ -490,6 +490,7 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Unknown
             | Expr::Carrier(_)
             | Expr::Flow { .. }
+            | Expr::Derivative(_)
             | Expr::Fired(_)
             | Expr::Previous(_) => {}
         }
@@ -703,6 +704,8 @@ impl<'a> ValuePrinter<'a> {
                 Ok(Piece::new(format!("|{}| {}", names.join(", "), self.expr(*body)?), Prec::Low))
             }
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
+            // The derivative site is printed with the plan that gives it a pin.
+            Expr::Derivative(_) => Err(self.unsupported(e, "the rate of a derivative site")),
             Expr::Flow { branch } => match self.analog.as_ref().and_then(|r| r.flows.get(*branch as usize)) {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the flow of a potential branch")),

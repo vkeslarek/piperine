@@ -8,8 +8,9 @@ mod devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, Condition, Contribution, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
-    IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, QuantityRole, Reaction, Stmt, StmtId, Target, Terminal, ValueType,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, Condition, Constant, Contribution, Derivative, Expr, ExprId, FunctionSpec,
+    InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, QuantityRole, Reaction, Real, Stmt, StmtId, Target, Terminal,
+    ValueType,
 };
 
 /// The small designs every test of this target builds.
@@ -166,14 +167,21 @@ impl Switching {
     /// The design: `kind` is the kind of branch 0; `write` returns the `analog` block (and may add
     /// a function or a reaction through the builder).
     fn ir(kind: BranchKind, write: impl FnOnce(&mut IrBuilder) -> Vec<StmtId>) -> Ir {
+        Self::ir_with_derivatives(kind, |b| (write(b), vec![]))
+    }
+
+    /// `ir`, with the derivative sites `write` returns beside the `analog` block. The body has one
+    /// param `tol: f64` (index 0).
+    fn ir_with_derivatives(kind: BranchKind, write: impl FnOnce(&mut IrBuilder) -> (Vec<StmtId>, Vec<Derivative>)) -> Ir {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
-        let analog = write(&mut b);
+        let (analog, derivatives) = write(&mut b);
+        let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec {
             name: "Sw".into(),
             origin: origin.clone(),
-            params: vec![],
+            params: vec![tolerance],
             nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: origin.clone() }],
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind }],
             limits: vec![],
@@ -183,11 +191,30 @@ impl Switching {
             children: vec![],
         });
         b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone() });
+        for site in derivatives {
+            b.derivative(body, site);
+        }
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Sw.en".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: origin.clone() });
-        let top = b.instance(InstanceSpec { path: "Sw".into(), name: "Sw".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin });
+        let params = vec![Constant::Real(Real::new(1e-9))];
+        let top = b.instance(InstanceSpec { path: "Sw".into(), name: "Sw".into(), body, parent: None, nodes: vec![NodeRef::Ground], params, origin });
         b.bind_nets(top, vec![net]);
         b.finish(top)
+    }
+
+    /// `i(a, gnd) +> 2.0 * rate(D<k>);`
+    fn contribute_twice_the_rate(b: &mut IrBuilder, k: u32) -> StmtId {
+        let origin = Origin { file: Self::FILE.into(), line: 3, col: 5 };
+        let rate = b.expr(Expr::Derivative(k), ValueType::F64, origin);
+        let mut e = Self::ex(b);
+        let two = e.real(2.0);
+        let value = e.binary(BinaryOp::Mul, two, rate);
+        b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] })
+    }
+
+    /// The site `ddt(<state>, <abstol>)` named `q`.
+    fn site(state: ExprId, abstol: Option<ExprId>) -> Derivative {
+        Derivative { name: "q".into(), state, abstol, origin: Origin { file: Self::FILE.into(), line: 3, col: 5 } }
     }
 
     /// Whether any entry of `broken` says `what`.
@@ -329,5 +356,64 @@ fn a_nested_contribution_reads_its_conditions_in_its_branch_dependencies() {
     let body = on_carrier.bodies().next().expect("a body");
     assert_eq!(body.carrier_reads(Target::Flow(0)), vec![0]);
     assert!(body.dependencies(Target::Flow(0)).nodes.is_empty());
+    assert!(body.is_affine(0));
+}
+
+#[test]
+fn a_derivative_site_prints_and_round_trips() {
+    // `i(a, gnd) +> 2.0 * ddt(v(a), tol)`: the `ddt` is off a whole addend, so a site D0.
+    let ir = Switching::ir_with_derivatives(BranchKind::Flow, |b| {
+        let state = Switching::ex(b).probe(Terminal::Node(0), Terminal::Ground);
+        let abstol = b.expr(Expr::Param(0), ValueType::F64, Origin { file: Switching::FILE.into(), line: 3, col: 5 });
+        (vec![Switching::contribute_twice_the_rate(b, 0)], vec![Switching::site(state, Some(abstol))])
+    });
+    assert_eq!(ir.check(), vec![], "{}", ir);
+    let text = ir.to_string();
+    assert!(text.contains("derivative D0 \"q\" state probe(a, gnd) abstol tol"), "{text}");
+    assert!(text.contains("b0.flow +> direct (2.0 * rate(D0))"), "{text}");
+    assert_eq!(ir.bodies().next().expect("a body").derivatives().len(), 1);
+    let back: Ir = serde_json::from_str(&serde_json::to_string(&ir).expect("serialize")).expect("deserialize");
+    assert_eq!(back, ir);
+}
+
+#[test]
+fn a_derivative_read_out_of_range_is_broken() {
+    // `rate(D1)` with one site, and `rate(D0)` in a body with none.
+    let one_site = Switching::ir_with_derivatives(BranchKind::Flow, |b| {
+        let state = Switching::ex(b).probe(Terminal::Node(0), Terminal::Ground);
+        (vec![Switching::contribute_twice_the_rate(b, 1)], vec![Switching::site(state, None)])
+    });
+    assert!(Switching::names(&one_site.check(), "derivative read of site 1, out of range (1 sites)"), "{:?}", one_site.check());
+    let none = Switching::ir(BranchKind::Flow, |b| vec![Switching::contribute_twice_the_rate(b, 0)]);
+    assert!(Switching::names(&none.check(), "derivative read of site 0, out of range (0 sites)"), "{:?}", none.check());
+}
+
+#[test]
+fn a_derivative_abstol_that_reads_a_probe_is_broken() {
+    // `ddt(v(a), v(a))`: a tolerance is a constant or a param expression.
+    let ir = Switching::ir_with_derivatives(BranchKind::Flow, |b| {
+        let state = Switching::ex(b).probe(Terminal::Node(0), Terminal::Ground);
+        let abstol = Switching::ex(b).probe(Terminal::Node(0), Terminal::Ground);
+        (vec![Switching::contribute_twice_the_rate(b, 0)], vec![Switching::site(state, Some(abstol))])
+    });
+    assert!(Switching::names(&ir.check(), "the `abstol` of a derivative site reads an input"), "{:?}", ir.check());
+}
+
+#[test]
+fn a_derivative_state_reads_are_its_dependencies() {
+    // D0: `ddt(v(a), tol)`: the state reads node 0, the tolerance reads param 0, and
+    // the contribution that reads `rate(D0)` lists the site.
+    let ir = Switching::ir_with_derivatives(BranchKind::Flow, |b| {
+        let state = Switching::ex(b).probe(Terminal::Node(0), Terminal::Ground);
+        let abstol = b.expr(Expr::Param(0), ValueType::F64, Origin { file: Switching::FILE.into(), line: 3, col: 5 });
+        (vec![Switching::contribute_twice_the_rate(b, 0)], vec![Switching::site(state, Some(abstol))])
+    });
+    let body = ir.bodies().next().expect("a body");
+    assert_eq!(body.dependencies(Target::Derivative(0)).nodes, vec![0]);
+    assert!(body.dependencies(Target::Derivative(0)).params.is_empty());
+    assert_eq!(body.dependencies(Target::DerivativeAbstol(0)).params, vec![0]);
+    assert!(body.dependencies(Target::DerivativeAbstol(0)).nodes.is_empty());
+    assert_eq!(body.derivative_reads(Target::Flow(0)), vec![0]);
+    // The rate is an unknown like a flow: it reaches the sum affinely.
     assert!(body.is_affine(0));
 }
