@@ -749,9 +749,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-api/tests/host_actions.rs` (new) holds `a_drive_at_zero_is_the_initial_value`, `a_drive_later_fires_a_reaction_at_its_time`, `driving_a_carrier_that_is_not_a_top_input_is_e0804`, `a_drive_of_the_wrong_type_is_e0802`, `an_undriven_top_input_is_unknown`, `a_negative_at_is_e0806`
-- [ ] Gate check passes: Quick (`Run apihost`)
-- [ ] Test count: 6 new tests
+- [x] `crates/piperine-api/tests/host_actions.rs` (new) holds `a_drive_at_zero_is_the_initial_value`, `a_drive_later_fires_a_reaction_at_its_time`, `driving_a_carrier_that_is_not_a_top_input_is_e0804`, `a_drive_of_the_wrong_type_is_e0802`, `an_undriven_top_input_is_unknown`, `a_negative_at_is_e0806`
+- [x] Gate check passes: Quick (`Run apihost`)
+- [x] Test count: 6 new tests
 
 **Tests**: integration
 **Gate**: quick

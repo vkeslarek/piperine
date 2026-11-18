@@ -25,6 +25,7 @@ use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
+use crate::host::HostAction;
 use crate::metadata::Metadata;
 use crate::plot::Plot;
 use crate::probe::Probe;
@@ -48,7 +49,7 @@ pub enum Built {
 /// A design compiled onto a backend, ready to run one request. The fields drop in order: the
 /// circuit, which holds the loaded library's modules, before the library.
 pub struct Session {
-    circuit: Option<CircuitInstance>,
+    pub(crate) circuit: Option<CircuitInstance>,
     ir: Arc<Ir>,
     compiled: Option<Compiled>,
     top: String,
@@ -58,7 +59,7 @@ pub struct Session {
     /// The param a `dc` run sweeps, resolved against the design.
     swept: Option<ParamPath>,
     /// The record streams of the design, filtered by the run's `streams`.
-    streams: Streams,
+    pub(crate) streams: Streams,
     /// The table the run gave, kept when the request has `plot`: the plot draws the rows the
     /// run prints (CLI-22 AC 7 as amended, `long-run` LR-17).
     plotted: Option<Table>,
@@ -70,6 +71,8 @@ pub struct Session {
     transfer: Option<Transfer>,
     /// The params a `sens` run differentiates by, resolved against the design, in the order given.
     wrt: Vec<ParamPath>,
+    /// The host's actions due after the start of the transient, in the order given.
+    pub(crate) actions: Vec<HostAction>,
 }
 
 /// The input and the output of a `tf` or `pz` run, by what the solver knows them by.
@@ -205,7 +208,7 @@ impl Session {
             let refused = |error| Failure::Host { code: "E0802", message: format!("`{entry}` refuses the value {value}: {error}") };
             circuit.set(&path.instance, &path.param, ParamValue::Real(*value)).map_err(refused)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset, transfer, wrt })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset, transfer, wrt, actions: Vec::new() })
     }
 
     /// The context a run's options give: the solver's own default with each given option in its
@@ -416,6 +419,7 @@ impl Session {
 
     /// The request's analysis on `circuit`, every observation of the solver to `delivery`.
     fn analysis(&mut self, circuit: CircuitInstance, mut delivery: Box<Delivery>) -> Result<Table, Failure> {
+        let timed = std::mem::take(&mut self.actions);
         match &self.spec.analysis {
             Analysis::Op => {
                 let seeds = self.seeds(&circuit)?;
@@ -454,7 +458,17 @@ impl Session {
                     .with_sink(delivery)
                     .with_step_observer(Box::new(Tap(recorder.clone())))
                     .build();
-                let result = solver.tran().and_then(|mut tran| tran.solve()).map_err(|error| Failure::Solver { analysis: "transient", error })?;
+                let result = solver
+                    .tran()
+                    .and_then(|mut tran| {
+                        for action in &timed {
+                            match action {
+                                HostAction::Drive { net, value, at } => tran.schedule_write(*at, net.clone(), value.clone()),
+                            }
+                        }
+                        tran.solve()
+                    })
+                    .map_err(|error| Failure::Solver { analysis: "transient", error })?;
                 // CLI-05 AC 11: a run that stopped short has no table to give; the solver does not
                 // step a design with no analog node, which keeps a single step at 0 holding the
                 // values of the end of the run

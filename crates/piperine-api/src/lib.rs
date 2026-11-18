@@ -17,6 +17,7 @@
 
 pub mod backend;
 pub mod failure;
+mod host;
 pub mod prelude;
 pub mod metadata;
 pub mod plot;
@@ -38,5 +39,6 @@ pub use project::{Checked, Project};
 pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
 pub use session::{Built, Session};
+pub use piperine_solver::prelude::ParamValue;
 pub use table::{Cell, Table};
 pub use verdict::Verdict;
