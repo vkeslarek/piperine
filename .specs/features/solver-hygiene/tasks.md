@@ -997,8 +997,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] The lone proof of C50 exits 0
-- [ ] Gate check passes: Build
+- [x] The lone proof of C50 exits 0
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build

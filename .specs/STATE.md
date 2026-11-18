@@ -1455,6 +1455,48 @@ It supersedes nothing and extends MD-64 (the IR's value forms).
 `ac.rs`, `noise.rs`), `crates/piperine-api` and `crates/piperine-cli` (the run's end and
 `fatal`), `crates/piperine-parity` (`source_*`), `docs/book`.
 **Status:** Accepted (2026-11-17), from the approved `.specs/features/msl-fixes/design.md`.
+---
+
+### MD-68: run errors are typed in the solver and named in the owner; re-entry is exact; the numerics follow ngspice
+
+`solver-hygiene` (2026-11-18). Lane C of the 2026-11-17 plan; the user's answers, all "Aceito todas
+(Recommended)" (Q0 to Q7), bind this entry. (Numbered MD-68: lane A's `msl-fixes` holds MD-67.)
+
+1. **A run error is typed in the solver and named in the owner.** `piperine-analog-solver` raises
+   `E0503` (singular, non-finite solution), `E0505` (an equilibrium that never converges), `E0507`
+   (a non-finite contribution or stamp), `E0508` and `E0504` (a step that fails at the floor, or
+   reads a jump), each with the unknowns it concerns; the owner (`CircuitInstance::name_error`)
+   turns unknowns into `node of path.pin` and `flow of path (pin)`. No error cites an LRM section
+   for a spec code. A singular diagnosis is skipped, and says so, above 2 000 unknowns.
+2. **Re-entry is exact.** A transient re-entered from a recorded step continues the run bit for
+   bit: the re-entry state carries the Newton history, the step controller's memory (`prev_error`),
+   `prev_h` and the pending restart. `Reentry::LastStep` is the opt-out (N2): only the last step
+   carries a state. User: "Aceito todas (Recommended)" (HYG-04, HYG-13).
+3. **The truncation test measures the `ddt` states with ngspice's `CKTterr` tolerance.** Q1(a):
+   `chgtol` is read, the PI target 1 and the gate `trtol` 7 are unchanged. Q2(a): the asymmetric
+   Milne skip is removed. Q0(a): a `ddt` whose argument is nonlinear in a `limit`ed value no
+   longer jumps from its operating point (HYG-05).
+4. **The step floor.** Q3(a): a step that fails the error at `dt_min` is retried once at the floor,
+   then fails `E0508`.
+5. **Newton damping.** Q4(a): no damping by default; `NodeDamping` (ngspice `niiter.c`) is opt-in;
+   the DC and transient drivers iterate with the plan's `NewtonStrategy`.
+6. **The step after a jump.** Q5(a): at most `0.1·min(last step, gap to the next scheduled time
+   point)`, first order, exempt from the truncation test; a host `set` keeps its 10^-3 restart.
+7. **A later start.** Q6(a): a transient with `start_time` ≠ 0 and no captured step solves the
+   operating point at `(t_start, 0)` (the digital engine starts at that tick); a non-finite or
+   negative start fails first. Q7(a): `failure_rules.rs` asserts `E0507`; `boundary.rs` runs at
+   the 10 ns cap.
+8. **The digital checkpoint is a journal.** `Store` and `Queue` record what changes under a mark
+   and `rewind` undoes it; the protocol marks the digital side that way and copies the state only
+   where a re-entry state is recorded.
+
+Tolerances did not move: `crates/piperine-parity/src/contract.rs` is unchanged, and the goldens
+that moved (`diode_series`, `parity_rc_transient`, `parity_diode_dc_point`) did so under the
+deviation tables of their commits.
+
+**Scope:** `crates/piperine-analog-solver`, `crates/piperine-digital-solver`,
+`crates/piperine-solver`, `crates/piperine-parity`, `docs/spec` (Part V, Appendix C).
+**Status:** Accepted (2026-11-18), from the approved `.specs/features/solver-hygiene/design.md`.
 
 ---
 
