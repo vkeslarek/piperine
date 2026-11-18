@@ -815,7 +815,7 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [x] Inline tests `verdict::tests::a_failed_sim_record_is_fatal_with_its_msg`, `finish_alone_is_not_a_failure`, `the_last_record_of_each_target_is_kept_in_first_seen_order`, `a_negative_margin_does_not_fail`
+- [x] Inline tests `verdict::tests::a_fatal_record_fails_the_verdict_with_its_message`, `a_finish_record_does_not_fail_the_verdict` (msl-fixes' tests, which absorbed host-ii's two duplicates of the same assertions), `the_last_record_of_each_target_is_kept_in_first_seen_order`, `a_negative_margin_does_not_fail`
 - [x] Gate check passes: Quick (`Run apilib`)
 - [x] Test count: 4 new tests
 
@@ -1308,7 +1308,7 @@ Proof: run clirun | test a_fatal_run_prints_its_msg_and_exits_1 ... ok
 Proof: run clicommands | test test_prints_fail_fatal_with_the_msg ... ok
 
 **C64** - `finish` without `failed` is not a failure. (HII-15, AC 3; T29)
-Proof: run apilib | test verdict::tests::finish_alone_is_not_a_failure ... ok
+Proof: run apilib | test verdict::tests::a_finish_record_does_not_fail_the_verdict ... ok
 
 **C65** - The last record per target name is kept in first-seen order. (HII-16, AC 1; T29)
 Proof: run apilib | test verdict::tests::the_last_record_of_each_target_is_kept_in_first_seen_order ... ok
