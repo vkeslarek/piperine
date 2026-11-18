@@ -38,6 +38,11 @@ fn source(derived: &str, rr: &str) -> String {
 }
 
 fn open(text: &str, overrides: Overrides) -> Session {
+    open_with(text, overrides, &settings())
+}
+
+/// [`open`] building into `settings`' cache.
+fn open_with(text: &str, overrides: Overrides, settings: &Settings) -> Session {
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
     std::fs::write(&file, text).expect("write");
@@ -46,7 +51,7 @@ fn open(text: &str, overrides: Overrides) -> Session {
     let backend = overrides.backend.clone().or(Some("rust".into()));
     let overrides = Overrides { backend, top: Some("Top".into()), print, ..overrides };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
+    Session::open(&project, &spec, settings).unwrap_or_else(|f| panic!("{f}"))
 }
 
 fn op() -> Overrides {
@@ -131,13 +136,15 @@ fn a_child_failing_where_refuses_the_set() {
 #[test]
 fn a_set_neither_elaborates_nor_compiles() {
     // HII-18 AC 5: the cache holds the same entries after a `set` and a run as before them: no
-    // second `rustc` build and no new design
+    // second `rustc` build and no new design (a cache of its own: the other tests of this target
+    // build into the shared one while this runs)
+    let private = tempfile::tempdir().expect("tmp");
     let entries = || {
-        let mut names: Vec<_> = walk(cache().path());
+        let mut names: Vec<_> = walk(private.path());
         names.sort();
         names
     };
-    let mut session = open(&source("rr", "1k"), op());
+    let mut session = open_with(&source("rr", "1k"), op(), &Settings { rustc: None, cache: private.path().to_path_buf() });
     let before = entries();
     assert!(!before.is_empty(), "the open compiled the design into the cache");
     session.set_at("Top.m.rr", 2000.0, 0.0).unwrap_or_else(|f| panic!("{f}"));
