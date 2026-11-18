@@ -26,6 +26,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run abitran**: `cargo test -p piperine-solver --test abi_tran`
 **Run abidc**: `cargo test -p piperine-solver --test abi_dc`
 **Run protocol**: `cargo test -p piperine-solver --test protocol_transient`
+**Run protocolreal**: `cargo test -p piperine-solver --test protocol_real`
 **Run hostset**: `cargo test -p piperine-solver --test host_set`
 **Run boundary**: `cargo test -p piperine-parity --test boundary`
 **Run removed**: `cargo test -p piperine-solver --test removed_surface`
@@ -1126,11 +1127,11 @@ Proof: run truncation | test a_larger_chgtol_takes_fewer_steps ... ok
 **C39** - `tran_rc` stays within `TRAN_VOLTAGE`. (HYG-07, AC 5; T22)
 Proof: run parity | test tran_rc ... ok
 
-**C40** - An unannounced corner fails `E0508` at the floor. (HYG-09, AC 1; T24)
-Proof: run truncation | test an_unannounced_corner_fails_e0508_at_the_floor ... ok
+**C40** - An unannounced corner is accepted at the floor and counted (amended 2026-11-18, Q3: ngspice's floor rule). (HYG-09, AC 2; T24)
+Proof: run truncation | test an_unannounced_corner_is_accepted_at_the_floor_and_counted ... ok
 
-**C41** - The floor is retried once before failing. (HYG-09, AC 2; T24)
-Proof: run truncation | test the_floor_is_retried_once_before_failing ... ok
+**C41** - A failed step that falls to the floor is retaken there once, counted in `dt_min_floor_hits` (amended 2026-11-18). (HYG-09, AC 2; T24)
+Proof: run truncation | test a_failed_step_that_falls_to_the_floor_is_retaken_there_once ... ok
 
 **C42** - The twins print the same bytes (the floor rule moves nothing that never reaches it). (HYG-09, AC 3; T24)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
@@ -1213,11 +1214,46 @@ Proof: run reentry | test a_middle_step_under_last_step_cannot_be_reentered ... 
 **C68** - An instance is named once in a singular report. (HYG-01, edge case 2; T12)
 Proof: run failure | test an_instance_is_named_once_in_a_singular_report ... ok
 
-**C69** - The floor reached at the stop time names that time. (HYG-09, edge case 6; T24)
-Proof: run truncation | test the_floor_at_the_stop_time_names_that_time ... ok
+**C69** - A corner at the stop time is accepted at the floor and the run ends at the stop (amended 2026-11-18, Q3; a Newton failure there stays `E0508` with the time, C26). (HYG-09, edge case 6; T24)
+Proof: run truncation | test a_corner_at_the_stop_time_is_accepted_at_the_floor ... ok
 
 **C70** - Two jumps within one restart step restart from the later. (HYG-11, edge case 5; T29)
 Proof: run abitran | test two_jumps_in_one_restart_step_restart_from_the_later ... ok
+
+### Fix round (2026-11-18): the Verifier's findings F1 to F8
+
+**C71** - The twin `tran_jump` (a hard 0 to 1 V step at 1.03 us across 1 nF, computed from the time) completes and agrees with ngspice under `TRAN_VOLTAGE`. (HYG-09, AC 2; F2)
+Proof: run parity | test tran_jump ... ok
+
+**C72** - The twin `tran_corner` (a 5 ns tanh corner, `dt_min` 1 ns against ngspice `delmin=1n`) completes and agrees under `TRAN_VOLTAGE`. (HYG-09, AC 2; F2)
+Proof: run parity | test tran_corner ... ok
+
+**C73** - The twin `tran_floor` (a node no step settles): ngspice says "Timestep too small", piperine fails `E0508` at the same time. (HYG-09, AC 1; F2)
+Proof: run parity | test tran_floor ... ok
+
+**C74** - A Newton failure at an attempt already at the floor is not retried. (HYG-09, AC 1; F3)
+Proof: run truncation | test a_failure_at_an_attempt_already_at_the_floor_is_not_retried ... ok
+
+**C75** - A proposal that lands on the floor before a corner is accepted, not failed. (HYG-09, AC 2; F3)
+Proof: run truncation | test a_proposal_that_lands_on_the_floor_is_accepted_not_failed ... ok
+
+**C76** - The default floor takes the hard corner too. (HYG-09, AC 2; F2)
+Proof: run truncation | test the_default_floor_takes_the_same_corner_too ... ok
+
+**C77** - A step that would end one tick short of the stop ends at the stop. (HYG-18, AC 1; F4)
+Proof: run abitran | test a_step_that_would_end_one_tick_short_of_the_stop_ends_at_the_stop ... ok
+
+**C78** - The cap still bounds a step the stop snap would stretch. (HYG-18, AC 1; F4)
+Proof: run abitran | test the_cap_still_bounds_a_step_the_stop_snap_would_stretch ... ok
+
+**C79** - The default run copies the digital state once per accepted step, rejected attempts copy none (results unchanged: C9, C13, C42). (HYG-19, AC 2; F5)
+Proof: run protocolreal | test the_default_run_copies_the_digital_state_once_per_accepted_step ... ok
+
+**C80** - A singular transient step is `E0503` at its time, naming both sources. (HYG-01, AC 1; F8)
+Proof: run failure | test a_singular_transient_step_is_e0503_naming_both_sources ... ok
+
+**C81** - A singular AC point is `E0503` naming the node by its pin. (HYG-01, AC 1; F8)
+Proof: run failure | test a_singular_ac_point_is_e0503_naming_the_node ... ok
 
 ---
 

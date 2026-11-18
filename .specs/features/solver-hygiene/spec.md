@@ -20,7 +20,7 @@ The user's answer to all eight: "Aceito todas (Recommended)". Each question is d
 | Q0 | Scope: a silent defect found while planning. A `ddt` whose argument is nonlinear in a `limit`ed value is wrong from the first transient step: a diode with diffusion charge `ddt(tt * id)` jumps from its operating point 0.629 V to -32.47 V at the first step, on both backends; the same charge written on the unlimited `v(a, k)` stays at 0.629 V, and a linear `ddt(cj0 * vd)` through the same `limit` is right. It is not in `GAPS.md`. | (a) fix it here as HYG-05, P1: the nonlinear-charge twin of V1 cannot pass without it; (b) record it in `GAPS.md` §3 as a silent entry and leave it | (a). Results: none of the 7 twins places a nonlinear charge |
 | Q1 | V1, the basis of the truncation-error test | (a) the `ddt` states, as ngspice `CKTterr`: each `DDT` term's Milne difference against `max(h·(abstol + reltol·max(|i_n|, |i_n+1|)), reltol·max(|q_n|, |q_n+1|, chgtol))`; node potentials are no longer measured; `chgtol` is read; the PI target (1) and the gate (`trtol` 7) do not change. (b) states and node potentials both (today's §17.2 Resolution). (c) node potentials only, as today; `chgtol` is deleted and the spec says so | (a). It is ngspice's basis and the one §15.2 rule 1 names as the state. Results: the grid of every circuit with a `ddt`; `tran_rc` runs at the harness's 10 ns cap with no rejection (1 000 accepted steps, probe), so `goldens/tran_rc.txt` is not expected to move but may; `parity_baseline.rs` `parity_rc_transient` (161 steps, `v_last`) is re-pinned with converged-grid evidence |
 | Q2 | V2, the Milne skip of a component whose two differences are asymmetric (`math/integration.rs:148`) | (a) remove it: ngspice has none; landings and the step after a jump are already exempt by the protocol. (b) keep it. (c) keep it only for the first step after the operating point | (a). The skip also hides the start of a fast rise from flat. Results: `goldens/tran_rc.txt` may move; `parity_baseline.rs` `parity_rc_transient` re-pinned with Q1 |
-| Q3 | V3, a step that still fails the truncation test at `dt_min` | (a) fail with `E0508` naming the time, as ngspice `dctran.c:896-910` ("Timestep too small": the first time the step reaches the floor it retries there, the second time it fails); Appendix C.2.2 item 4 and the `E0508` row are amended. (b) keep accepting, but report it: a warning observation at the sink and the count in the result. (c) an option, default (b) | (a). Results: none of the 7 twins touches the floor (probe: 0 floor hits); a buck target that touches it would fail: T2 measures this before any change, and a hit stops the task |
+| Q3 | V3, a step that still fails the truncation test at `dt_min` | **Amended 2026-11-18 (user: "Seguir o ngspice exato (Recommended)"): ngspice's exact floor rule.** ngspice `dctran.c:896-910` ("Timestep too small"): a failed attempt (Newton, or a truncation rejection) whose smaller step is at or under `delmin` is retaken at `delmin` once, because the attempt just made (`olddelta`) was larger; an attempt already at `delmin` that fails again ends the run, with no retry when the controller's proposal reached the floor by itself. Piperine: a Newton failure at the floor is `E0508` (`E0504` when the step reads a delivery); a step at the floor that converges but fails the truncation test is accepted and counted (`floor_accepts`, the sink side being the stats), because ngspice completes the circuits where that happens (its estimator does not rise as the step falls) and Piperine's cannot lower the error of a discontinuity by shrinking; Appendix C.2.2 item 4 and the `E0508` row are amended. Originally chosen, now superseded: (a) fail with `E0508` on a second truncation failure at the floor. | The amended text above. Evidence (the Verifier's F2/F3): a hard 0 to 1 V step at 1.03 us across 1 nF, and a 5 ns tanh corner with `dt_min` = 1 ns, both complete in ngspice-47 and failed `E0508` under the original (a); they are the twins `tran_jump` and `tran_corner`, and `tran_floor` is a case ngspice itself stops on |
 | Q4 | V4, Newton damping | (a) as ngspice: no damping by default (`CKTnodeDamping` is 0 in `cktinit.c:91`); an opt-in `NodeDamping` strategy with ngspice's rule (operating-point solves only, voltage unknowns only, while a `limit` is active, when the largest step exceeds 10 V: factor `max(10 / maxΔv, 0.1)`, `niiter.c:297-323`); the drivers use the plan's `NewtonStrategy`, which they ignore today. (b) per-unknown damping (no reference implementation to be faithful to). (c) keep the midpoint damping on the L2 norm of the whole update (volts and amperes mixed), documented | (a). Probe with damping off: `diode_iv` and `diode_rev` converge at every point, worst deviation 0.3685 to 0.3686 of the `DC_CURRENT` bound and 0.0000 unchanged, Newton iterations 154 to 134 and 149 to 87; `tran_rc` identical. Results: DC values move inside `reltol`; `goldens/{divider,isrc_r,diode_series,diode_iv,diode_rev,ac_rc}.txt` may change in the last printed digit; `parity_baseline.rs` DC pins (`parity_diode_dc_point`, `parity_divider_op_dc`) re-pinned |
 | Q5 | V11, the first step after a digital-to-analog jump (F-B7) | (a) ngspice's breakpoint rule (`dctran.c:487-524`): the step after a `Restart::Integrator` is at most `0.1·min(last accepted step, time to the next scheduled time point)`, first order, still exempt. (b) (a), and the step is tested for truncation (once Q1(a) measures states, which a jump carries unless a constraint forces them, §15.2 rule 2). (c) keep today's controller proposal | (a). Results: no twin has a discrete part; the buck takes a few more steps after each analog-read edge; `boundary.rs` passes at the harness's 10 ns cap instead of 1 ns |
 | Q6 | V14, a transient with a non-zero start and no captured step (fails loud today) | (a) it starts from an operating point at instant `(t_start, 0)`: the digital engine starts at `tick(t_start)`, `now()` reads `t_start`. (b) ngspice `tstart`: the run integrates from 0 and keeps from the start, `with_start` alone becomes `record_from`. (c) keep the refusal, give it a spec sentence, close V14 as a limit | (a). It is what `with_start` claims and the shooting of PSS (lane B) can start from it. Results: `transient_reentry.rs` `a_late_start_needs_a_step_a_transient_recorded` changes its expectation |
@@ -163,11 +163,11 @@ to prove it").
 
 **Acceptance Criteria**:
 
-1. HYG-09: WHEN a step at `dt_min` fails the truncation test for the second consecutive attempt THEN the transient SHALL fail with `E0508` naming the time, and SHALL NOT accept the step.
-2. HYG-09: WHEN a step first reaches `dt_min` after a larger step THEN the solver SHALL retry once at `dt_min` before failing.
+1. HYG-09 (amended 2026-11-18, Q3): WHEN an attempt already at `dt_min` fails Newton THEN the transient SHALL fail with `E0508` naming the time (`E0504` when the step reads a delivery), and SHALL NOT accept the step; the controller's proposal reaching the floor is such an attempt, with no retry before it.
+2. HYG-09 (amended 2026-11-18, Q3): WHEN a failed attempt (Newton or the truncation test) larger than `dt_min` leaves a smaller step at or under `dt_min` THEN the solver SHALL retake it at `dt_min` once, counted in `dt_min_floor_hits`; WHEN an attempt at `dt_min` converges but fails the truncation test THEN the solver SHALL accept it and count it in `floor_accepts`, and the run completes as ngspice's does.
 3. HYG-09: A run that never reaches the floor SHALL print the same bytes as before.
 
-**Independent Test**: A hand-written source with a corner it does not announce, across a capacitor, with `dt_min` = 1 ns: the run fails with `E0508` at the corner's time.
+**Independent Test**: A hand-written source with a corner it does not announce, across a capacitor, with `dt_min` = 1 ns: the run completes, the step at the floor counted (amended 2026-11-18; the twins `tran_jump`, `tran_corner` agree with ngspice under `TRAN_VOLTAGE`, and `tran_floor` fails `E0508` where ngspice says "Timestep too small").
 
 ---
 
@@ -251,6 +251,21 @@ to prove it").
 
 ---
 
+### P3: Fix round: the stop snap and the digital state copy
+
+**User Story**: As a circuit author, I want the stop snap stated and bounded by a step cap, and the default run not to copy the digital state on every attempt.
+
+**Why P3**: the Verifier's F4 (a rule in no criterion, no test) and F5 (the default still copied every net per attempt), 2026-11-18.
+
+**Acceptance Criteria**:
+
+1. HYG-18: WHEN a step's end lies within two ticks short of the stop THEN the step SHALL end at the stop, unless the `CAP` bound of the last accepted solution is nearer, in which case it SHALL end at that bound; Appendix C states it.
+2. HYG-19: WHEN the run keeps every step's re-entry state (the default) THEN the protocol SHALL copy the digital state in full once per accepted step, not on a rejected attempt of it, and the results SHALL be byte-identical to a run that copies on every attempt.
+
+**Independent Test**: `cargo test -p piperine-solver --test abi_tran --test protocol_real`.
+
+---
+
 ## Edge Cases
 
 - IF a singular Jacobian has more than 2 000 unknowns THEN the `E0503` report SHALL say the diagnosis was skipped and give the unknown count.
@@ -258,7 +273,7 @@ to prove it").
 - WHEN a re-entry is made with a stop time other than the captured run's THEN the continuation SHALL follow §16.4 (the old stop is a time point) and is not required to equal the continuous run.
 - IF a run re-entered under `Reentry::LastStep` is asked to re-enter from a middle step THEN it SHALL fail as today ("carries no state of the device instances").
 - WHEN two jumps fall within one restart step THEN the restart rule SHALL apply from the later one.
-- WHEN the step floor is reached at the stop time THEN `E0508` SHALL still name that time.
+- WHEN the step floor is reached at the stop time THEN a Newton failure there SHALL still be `E0508` naming that time, and a truncation failure there SHALL be accepted and end the run at the stop (amended 2026-11-18, Q3).
 
 ---
 
@@ -283,8 +298,10 @@ to prove it").
 | HYG-15 | P3: Dead hooks and stale text (V5, V6) | Tasks | Pending |
 | HYG-16 | P3: The partials guard by module (V10) | Tasks | Pending |
 | HYG-17 | P3: The records | Tasks | Pending |
+| HYG-18 | P3: Fix round: the stop snap | Tasks | Pending |
+| HYG-19 | P3: Fix round: the digital state copy | Tasks | Pending |
 
-**Coverage:** 17 total, 17 mapped to tasks, 0 unmapped.
+**Coverage:** 19 total, 19 mapped to tasks, 0 unmapped.
 
 ---
 

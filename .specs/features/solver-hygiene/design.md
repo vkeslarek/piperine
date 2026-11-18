@@ -390,7 +390,7 @@ If the root cause of HYG-05 lies in `piperine-plan`, `piperine-interp` or `piper
 | Singular, more than 2 000 unknowns | `E0503`, diagnosis skipped, count given | the code and the reason, no names |
 | Non-finite stamp | `E0507` naming instance, cell, origin | as today, with the spec's code |
 | Equilibrium exhausts Newton and homotopies | `E0505` with failing unknowns or limits | names what did not settle |
-| Transient step fails at `dt_min` (Newton or truncation) | `E0508` with time and unknowns | the time and what failed |
+| Transient step fails Newton at `dt_min` (amended 2026-11-18: a truncation failure there is accepted and counted, Q3) | `E0508` with time and unknowns | the time and what failed |
 | The failing step reads a jump | `E0504` with time and the delivered carriers or params | names the change that caused it |
 | `start_time` not finite or negative | refusal before the operating point | names the value |
 

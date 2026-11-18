@@ -15,7 +15,7 @@ Decisions the user made for this feature. They bind the design and the tasks.
 | Q0 | The silent defect of a nonlinear `ddt` through a `limit` | (a) fixed here as HYG-05, P1 |
 | Q1 | Basis of the truncation-error test (V1) | (a) the `ddt` states with ngspice's `CKTterr` tolerance; `chgtol` read; PI target 1 and gate `trtol` 7 unchanged |
 | Q2 | The asymmetric Milne skip (V2) | (a) removed |
-| Q3 | A step that fails the error at `dt_min` (V3) | (a) one retry at the floor, then `E0508`; C.2.2 item 4 and the `E0508` row amended |
+| Q3 | A step that fails the error at `dt_min` (V3) | **ngspice's exact floor rule** (amended 2026-11-18, user: "Seguir o ngspice exato (Recommended)", after the Verifier's F2/F3): `dctran.c`'s `olddelta` rule: a failed attempt whose smaller step is at or under `delmin` is retaken at `delmin` once; an attempt already at it that fails Newton is `E0508` (`E0504` after a delivery), with no retry when the proposal reached the floor by itself; a step at the floor that fails only the truncation test is accepted and counted, as ngspice completes those circuits. Was: one retry at the floor, then `E0508` for a truncation failure too. C.2.2 item 4 and the `E0508` row amended |
 | Q4 | Newton damping (V4) | (a) no damping by default, `NodeDamping` (ngspice `niiter.c`) opt-in, the drivers use the plan's `NewtonStrategy` |
 | Q5 | The step after a jump (V11) | (a) at most `0.1·min(last step, gap to the next scheduled time point)`, first order, exempt |
 | Q6 | A non-zero start without a captured step (V14) | (a) an operating point at `(t_start, 0)` |

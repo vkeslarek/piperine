@@ -1476,8 +1476,11 @@ It supersedes nothing and extends MD-64 (the IR's value forms).
    `chgtol` is read, the PI target 1 and the gate `trtol` 7 are unchanged. Q2(a): the asymmetric
    Milne skip is removed. Q0(a): a `ddt` whose argument is nonlinear in a `limit`ed value no
    longer jumps from its operating point (HYG-05).
-4. **The step floor.** Q3(a): a step that fails the error at `dt_min` is retried once at the floor,
-   then fails `E0508`.
+4. **The step floor.** Q3, amended 2026-11-18 by the user ("Seguir o ngspice exato"): ngspice's
+   own rule (`dctran.c`, `olddelta`). A failed attempt whose smaller step is at or under `dt_min`
+   is retaken at `dt_min` once; Newton failing at an attempt already at the floor is `E0508`
+   (`E0504` after a delivery); a step at the floor that fails only the truncation test is accepted
+   and counted (`floor_accepts`), as ngspice completes those circuits. Was: a retry, then `E0508`.
 5. **Newton damping.** Q4(a): no damping by default; `NodeDamping` (ngspice `niiter.c`) is opt-in;
    the DC and transient drivers iterate with the plan's `NewtonStrategy`.
 6. **The step after a jump.** Q5(a): at most `0.1·min(last step, gap to the next scheduled time
