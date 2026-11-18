@@ -859,9 +859,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/commands.rs` gains `test_prints_fail_fatal_with_the_msg`, `test_prints_target_margins_after_the_run_line`
-- [ ] Gate check passes: Quick (`Run clicommands`)
-- [ ] Test count: 2 new tests
+- [x] `crates/piperine-cli/tests/commands.rs` gains `test_prints_fail_fatal_with_the_msg`, `test_prints_target_margins_after_the_run_line`
+- [x] Gate check passes: Quick (`Run clicommands`)
+- [x] Test count: 2 new tests
 
 **Tests**: e2e
 **Gate**: quick

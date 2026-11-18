@@ -313,6 +313,28 @@ fn test_prints_no_table_and_no_other_record() {
 }
 
 #[test]
+fn test_prints_fail_fatal_with_the_msg() {
+    // HII-15 AC 2: a run whose bench calls `fatal("brownout")` is `FAIL <run> (fatal: <msg>)` and
+    // exit 1; the other run of the project still runs and passes
+    let out = piperine_in(&fixture("fatal_and_target"), &["test", "brown"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "FAIL brown (fatal: brownout)\n1 runs, 0 passed, 1 failed\n");
+}
+
+#[test]
+fn test_prints_target_margins_after_the_run_line() {
+    // HII-16 AC 1 to 3 (decision X3): `margins` writes `gain` twice (0.5, then -0.25) and `power`
+    // twice (2, then 1.5); the last of each is printed in the order of the first, after the
+    // PASS line, and the negative margin does not fail the run
+    let out = piperine_in(&fixture("fatal_and_target"), &["test", "margins"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(
+        text(&out.stdout),
+        "PASS margins (4 checks)\n  target gain margin=-2.500000e-1\n  target power margin=1.500000e0\n1 runs, 1 passed, 0 failed\n"
+    );
+}
+
+#[test]
 fn a_run_that_does_not_complete_is_a_fail() {
     // CLI-16 AC 5: `FAIL <name> (did not run)` on standard output, the error on standard error.
     // `fails_after_emit` meets an infinity in its solve; `type_error` fails before any solve.

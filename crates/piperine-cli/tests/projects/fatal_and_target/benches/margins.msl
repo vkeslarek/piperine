@@ -1,0 +1,14 @@
+use fatal_and_target::{Resistor, Vsource};
+
+module Mon() {}
+digital for Mon {
+    on at(0.5u) { target("gain", 0.5); target("power", 2.0); }
+    on at(1u) { target("gain", -0.25); target("power", 1.5); }
+}
+
+module Margins() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let r1 = Resistor(a, gnd) { r: 1k };
+    let m = Mon();
+}

@@ -1,0 +1,13 @@
+use fatal_and_target::{Resistor, Vsource};
+
+module Mon() {}
+digital for Mon {
+    on at(1u) { fatal("brownout"); }
+}
+
+module Brown() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let r1 = Resistor(a, gnd) { r: 1k };
+    let m = Mon();
+}

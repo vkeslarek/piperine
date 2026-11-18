@@ -1,13 +1,15 @@
 //! `TestCommand`: `piperine test` (CLI-08, CLI-16). Every run of the project, or the runs
 //! named, is executed and judged by its `checks` records: a `PASS` or `FAIL` line each, the
-//! failing records under a `FAIL`, no table and no other record, then the count line.
+//! failing records under a `FAIL`, then a line per target margin (which never fails a run), no
+//! table and no other record, then the count line. A run that called `fatal` is
+//! `FAIL <name> (fatal: <msg>)`.
 
 use std::cell::RefCell;
 use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use piperine_api::{Failure, Project, RunSpec, Session, Verdict};
+use piperine_api::{Cell, Failure, Project, RunSpec, Session, Verdict};
 use piperine_transpile::Settings;
 
 use crate::cli::Out;
@@ -15,6 +17,7 @@ use crate::commands::run::{RunCommand, Stop};
 use crate::commands::{Locate, Select};
 use crate::exit::Exit;
 use crate::render::diagnostic::Report;
+use crate::render::number::Number;
 use crate::render::record::RecordLine;
 
 /// `piperine test`: the project and the runs named (all when none).
@@ -54,10 +57,21 @@ impl TestCommand {
                         let _ = writeln!(text, "PASS {} ({} checks)", spec.name, verdict.checks());
                     } else {
                         failed += 1;
-                        let _ = writeln!(text, "FAIL {} ({} of {} checks failed)", spec.name, verdict.failed().len(), verdict.checks());
+                        match verdict.fatal() {
+                            Some(msg) => {
+                                let _ = writeln!(text, "FAIL {} (fatal: {msg})", spec.name);
+                            }
+                            None => {
+                                let _ = writeln!(text, "FAIL {} ({} of {} checks failed)", spec.name, verdict.failed().len(), verdict.checks());
+                            }
+                        }
                         for record in verdict.failed() {
                             let _ = RecordLine::write(record, &mut text);
                         }
+                    }
+                    // HII-16 AC 2: a target only informs, whatever its sign (decision X3)
+                    for (name, margin) in verdict.targets() {
+                        let _ = writeln!(text, "  target {name} margin={}", Number::text(&Cell::Real(*margin)));
                     }
                     text
                 }
@@ -102,8 +116,12 @@ impl TestCommand {
         spec.backend = Some(backend.name().into());
         let mut session = Session::open_announced(project, &spec, settings, &mut |top| RunCommand::announce(err, &spec.name, top))?;
         let verdict = Rc::new(RefCell::new(Verdict::new()));
-        session.run(verdict.clone())?;
+        let ran = session.run(verdict.clone());
         let verdict = verdict.borrow().clone();
+        // a `fatal` ends the run with a verdict of its own; any other failure is a run that did not run
+        if verdict.fatal().is_none() {
+            ran?;
+        }
         Ok(verdict)
     }
 }

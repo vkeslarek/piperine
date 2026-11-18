@@ -1,0 +1,15 @@
+[package]
+name = "fatal_and_target"
+version = "0.1.0"
+
+[run.brown]
+bench = "benches/brown.msl"
+top = "Brown"
+analysis = "transient"
+stop = 2e-6
+
+[run.margins]
+bench = "benches/margins.msl"
+top = "Margins"
+analysis = "transient"
+stop = 2e-6
