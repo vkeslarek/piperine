@@ -366,3 +366,22 @@ Every id of `GAPS.md` (audit of 2026-11-17) has one owning feature. Specs only f
 | `conformance` | U1, U2, U4, U6, U8, U9 | L (~55, 6 phases; 1–5 can start now) | per phase: generics, composite-values, resolved-nets, analog-*, host-analyses (Fourier) |
 
 Ownership notes: Fourier and distortion belong to `host-analyses` (conformance's `four_diode`/`disto_diode` wait on it); V6 stays with `solver-hygiene`; `E0361` is raised first by `params-and-io`.
+
+## Execution order (user, 2026-11-18)
+
+User, verbatim: "Eu gostaria que engatilhasse até o 12. Depois do 12 insere um refinamento no meio somente para refactor de visibilidade de código e estrutura interna. O refinamento tem que ser feito depois do fechamento da 12 pois vamos ter código novo entrando sempre e aí depois do refactor entra o 13 com a verificação de cosure da spec usando o Fable e desenvolvimento dos gaps finais."
+
+Dispatched without asking, up to three lanes at a time (implementation Sonnet, verification Opus, merge to main and upstream on close):
+
+1. `msl-fixes` close · 2. `host-ii` close (rebased on msl-fixes) · 3. `solver-hygiene` close
+4. MD-number renumbering at merge where lanes collide
+5. `root-e2e` · 6. `buck-scenarios`
+7. `analog-structure` · 8. `unknown-semantics`
+9. `composite-values` phases A–B, then `generics` phases A–B
+10. `analog-operators`, `unknown-semantics-events`, `params-and-io`
+11. `composite-values` phase C, `generics` phases C–E, `unknown-semantics-per-level`
+12. `resolved-nets`, `resolved-nets-bundles`
+
+**Then, after item 12 closes and before anything else lands code:** `code-clarity` — a refactor for readability and internal structure under the user's seven cleanliness rules (`.specs/features/code-clarity/spec.md`). Its full findings inventory is written first by a Fable reading the whole codebase.
+
+**Then item 13:** `spec-closure` with a Fable verification of spec closure (spec ↔ implementation), and the development of the final gaps (`host-iii`, `host-analyses`, `sweeps-montecarlo-optimization`, `gradients`, `cli-packages`, `conformance`, `multi-rate`, `surrogate-models`, `periodic-small-signal`, `foreign-models`; `python-host` and `lang-server` last). These wait for the user's go.
