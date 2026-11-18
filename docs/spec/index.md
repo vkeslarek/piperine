@@ -8,8 +8,11 @@ glossary index.
 
 ### 0.1 Scope
 
-MSL is a language for mixed-signal models. It is similar to Rust and based on it, but it is not
-Rust. It describes digital, analog and mixed circuits for simulation and optimization.
+MSL is a language for mixed-signal models. It describes digital, analog and mixed circuits for
+simulation and optimization. MSL is a language based on Rust: its value language (types,
+expressions, patterns, items, generics) takes Rust's design, and Rust's designers are credited
+for it. MSL is not Rust, and this specification is complete by itself: every construct of the
+language is defined here ([§0.4](#04-a-complete-specification)).
 
 1. Every outcome of a simulation is a function of the source and of the host's actions alone.
    There are no races ([§12.1](part_iv_behavior.md#121-reactions)).
@@ -28,7 +31,7 @@ language: it sets params, drives the top ports and reads everything.
 ### 0.2 Notation
 
 **Section numbers.** Sections are numbered §1 … §23 across Parts I–VIII. Numbers are stable
-across files. Appendices are lettered A–G; their items are cited as `A.2`, `B.3`, `G.6`.
+across files. Appendices are lettered A–H; their items are cited as `A.2`, `B.3`, `G.6`.
 
 **Rule numbers.** One convention holds in every file.
 
@@ -50,7 +53,7 @@ grammar symbols. An example block is MSL source unless it is labelled otherwise.
 **Defined terms.** A term is set in **bold** at its single defining occurrence. Every other
 use refers to that definition. [§0.9](#09-glossary-index) lists where each term is defined.
 
-**Grammar.** Syntax is given in EBNF. The complete grammar of the additions to Rust is
+**Grammar.** Syntax is given in EBNF. The complete grammar of the language is
 [Appendix B.3](appendix_b_grammar.md); excerpts in the parts repeat it verbatim.
 
 | Notation | Meaning |
@@ -67,7 +70,8 @@ use refers to that definition. [§0.9](#09-glossary-index) lists where each term
 | `// …` | a comment, not part of the grammar |
 
 The nonterminals `stmt`, `expr`, `type`, `pat`, `block`, `generics`, `generic_args`, `path` and
-`attrs` belong to the value grammar. They are Rust's, with the changes of
+`attrs` belong to the value grammar. Their productions are
+[Appendix B.3.7](appendix_b_grammar.md#b37-the-value-grammar), and their meaning is
 [Part I](part_i_values.md).
 
 **Notes.** A block that starts with `> **Resolution.**` marks a place where this specification
@@ -124,22 +128,57 @@ An error is raised in one of five phases.
 > belong to the elaboration phase. A check that needs param values runs again on every host
 > `set` it depends on ([§8.1](part_iii_structure.md#81-ports-and-params)).
 
-### 0.4 Inheritance from Rust
+### 0.4 A complete specification
 
-**Everything this specification does not state is Rust, edition 2024, value semantics.** This
-covers expressions, statements, patterns, types, traits, generics, name resolution, visibility,
-integer and floating-point arithmetic, and the standard methods of the value types.
+**This specification defines the whole language.** A form, a type, a name or a method that it
+does not define is not part of the language.
 
-1. The specification states deltas only. A delta either adds a form
-   ([Appendix B.1](appendix_b_grammar.md)) or removes one ([§1](part_i_values.md#1-value-types) rule 2).
-   [Appendix B.3.6](appendix_b_grammar.md#b36-removed-from-rusts-grammar) lists every removed form.
-2. Where a delta and Rust disagree, the delta holds.
+1. The value language is defined here in full: the lexical structure
+   ([Appendix A](appendix_a_lexical.md)), the types, expressions, patterns, statements and
+   control flow ([§1.1](part_i_values.md#11-scalar-types) to
+   [§1.8](part_i_values.md#18-control-flow)), the items, traits, generics and names
+   ([§3](part_i_values.md#3-functions) to [§3.8](part_i_values.md#38-generics-and-bounds)), and
+   the grammar ([Appendix B.3](appendix_b_grammar.md)). The mixed-signal constructs are defined
+   in Parts II to VIII.
+2. The grammar of [Appendix B.3](appendix_b_grammar.md) is complete. Source text that no
+   production derives is a parse error.
+   [Appendix B.3.6](appendix_b_grammar.md#b36-forms-that-are-not-part-of-the-language) names
+   the forms a front end reports with a code of their own.
 3. The lexer and the grammar are the language's own ([Appendix A](appendix_a_lexical.md)). A
-   conforming implementation need not accept any Rust program.
-4. The library is the exception: the names a model takes from Rust's standard library are the
-   closed catalogue of [Appendix H](appendix_h_library.md). A method, trait or type it does not
-   list does not resolve (`E0161`).
-5. "Rust's" in this specification means the behavior of *The Rust Reference* for edition 2024.
+   conforming implementation need not accept a program of any other language.
+4. The library is closed too: the names a model may use without declaring them are the catalogue
+   of [Appendix H](appendix_h_library.md), the core names
+   ([§3.4.2](part_i_values.md#34-files-and-imports)) and the standard library
+   ([§22](part_vii_stdlib.md#22-standard-library)). A method, trait or type that none of them
+   defines does not resolve (`E0161`).
+5. No rule of this specification takes its meaning from the definition of another language. A
+   mention of Rust is informative: it tells a reader who knows Rust what to expect.
+
+> **Note (informative): relationship to Rust.** MSL is based on Rust. The value language keeps
+> Rust's syntax and its design for types, expressions, patterns, items, traits and generics,
+> so most value code reads the same in both. The table lists where MSL deliberately differs.
+> It is a reading aid; the rules are those of the sections it cites.
+
+| Topic | Rust | MSL | Stated in |
+| --- | --- | --- | --- |
+| integer types | widths 8, 16, 32, 64, 128 and the pointer width | any width `N >= 1` (`UInt<N>`, `Int<N>`, `u1` … `u128`); `usize` and `isize` are 64 bits everywhere | [§1.1](part_i_values.md#11-scalar-types) |
+| integer overflow | a panic in a debug build, a wrap in a release build | wraps modulo `2^N` in every build | [§1](part_i_values.md#1-value-types) rule 6 |
+| shift by the width or more | a panic or a masked amount | the mathematical result, truncated to the width | [§1.5](part_i_values.md#15-expressions) |
+| unary `-` on an unsigned integer | rejected | accepted, wraps | [§1.5](part_i_values.md#15-expressions) |
+| `char`, byte literals, byte strings | part of the language | not in the language; a string is `&'static str` and exists only at elaboration | [§1.2](part_i_values.md#12-composite-types), [A.8](appendix_a_lexical.md#a8-literals) |
+| references | shared and mutable, with lifetimes | a shared borrow only, in a parameter type or of a call argument; the one lifetime is `'static` | [§1](part_i_values.md#1-value-types) rule 2 |
+| heap, `unsafe`, threads, `async`, `dyn` | part of the language | not in the language | [§1](part_i_values.md#1-value-types) rule 2 |
+| macros | definitions and invocations | none; `emit!` and `include_str!` are grammar forms | [A.1](appendix_a_lexical.md#a1-source-text-and-tokens) rule 4 |
+| attributes | an open set | a closed set of five | [A.1](appendix_a_lexical.md#a1-source-text-and-tokens) |
+| calls | positional | positional, plus optional trailing `Option` parameters and named arguments | [§3.2](part_i_values.md#32-parameters-and-calls) |
+| implicit conversions | several coercions | one: `T` to `Option<T>` in an argument | [§3.2.3](part_i_values.md#32-parameters-and-calls) |
+| `where` | trait bounds | a boolean const expression; bounds are written in the generic list | [§3](part_i_values.md#3-functions) rule 8 |
+| receivers | `self`, `&self`, `&mut self` | `self` | [§3.1](part_i_values.md#31-impl) |
+| type aliases, associated types, `static`, `union`, `impl Trait`, qualified paths, restricted `pub`, loop labels | part of the language | not in the language | [B.3.6](appendix_b_grammar.md#b36-forms-that-are-not-part-of-the-language) |
+| values | known | every level is known or unknown | [§3.3](part_i_values.md#33-unknown-values) |
+| numeric literals | type suffixes | type suffixes and SI suffixes (`1k`, `2.2u`) | [A.2](appendix_a_lexical.md#a2-si-suffixed-reals) |
+| library | `core`, `alloc`, `std` | the closed catalogue of Appendix H and the MSL standard library | [Appendix H](appendix_h_library.md), [§22](part_vii_stdlib.md#22-standard-library) |
+| packages | Cargo, registries | `Piperine.toml`, `path` and `git` dependencies only | [§3.6](part_i_values.md#36-packages) |
 
 ### 0.5 The eleven concepts
 
@@ -218,8 +257,8 @@ traced in [§15.1](part_v_execution.md#151-an-instant-traced).
 
 | File | Content | Sections | Error codes |
 | --- | --- | --- | --- |
-| [`index.md`](index.md) | scope, notation, conformance terms, the concept table, who writes what, reading guide, file map, glossary index | §0 | — |
-| [`part_i_values.md`](part_i_values.md) | value types, `Repr`, functions, `impl`, calls, unknown values, files, crates and packages | §1–3 | `E01xx` |
+| [`index.md`](index.md) | scope, notation, conformance terms, the concept table, who writes what, reading guide, file map, glossary index, the rules formerly inherited | §0 | — |
+| [`part_i_values.md`](part_i_values.md) | the value language: types, expressions, patterns, statements, control flow, `Repr`, functions, `impl`, calls, unknown values, files, crates, packages, traits and generics | §1–3 | `E01xx` |
 | [`part_ii_carriers.md`](part_ii_carriers.md) | natures, discrete carriers, drives, history, continuous carriers, bundles | §4–7 | `E02xx` |
 | [`part_iii_structure.md`](part_iii_structure.md) | modules, ports, params, the body, instances in expressions, templates, `extern` modules, quantities | §8–9 | `E03xx` |
 | [`part_iv_behavior.md`](part_iv_behavior.md) | behavior blocks, `analog`, `digital`, events, core primitives | §10–14 | `E04xx` |
@@ -227,14 +266,14 @@ traced in [§15.1](part_v_execution.md#151-an-instant-traced).
 | [`part_vi_io.md`](part_vi_io.md) | streams and checks, input data, metadata | §19–21 | `E06xx` |
 | [`part_vii_stdlib.md`](part_vii_stdlib.md) | the standard library | §22 | `E07xx` |
 | [`part_viii_host.md`](part_viii_host.md) | testbenches, optimization, gradients across events | §23 | `E08xx` |
-| [`appendix_a_lexical.md`](appendix_a_lexical.md) | lexical structure | App. A | `E09xx` |
-| [`appendix_b_grammar.md`](appendix_b_grammar.md) | B.1 added to Rust, B.2 placement matrix, B.3 complete EBNF of the additions | App. B | — |
+| [`appendix_a_lexical.md`](appendix_a_lexical.md) | lexical structure: source text, identifiers, keywords, literals, comments, punctuation | App. A | `E09xx` |
+| [`appendix_b_grammar.md`](appendix_b_grammar.md) | B.1 the mixed-signal constructs, B.2 placement matrix, B.3 the complete grammar | App. B | — |
 | [`appendix_c_implementation.md`](appendix_c_implementation.md) | lowering to AIR, the reference implementation | App. C | — |
 | [`appendix_d_gallery_analog.md`](appendix_d_gallery_analog.md) | gallery: sources, clocks and continuous time | App. D | — |
 | [`appendix_e_gallery_digital.md`](appendix_e_gallery_digital.md) | gallery: digital | App. E | — |
 | [`appendix_f_gallery_mixed.md`](appendix_f_gallery_mixed.md) | gallery: mixed-signal systems | App. F | — |
 | [`appendix_g_scope.md`](appendix_g_scope.md) | out of scope, and every open item `G.n` | App. G | — |
-| [`appendix_h_library.md`](appendix_h_library.md) | the closed catalogue of the inherited library | App. H | — |
+| [`appendix_h_library.md`](appendix_h_library.md) | the closed catalogue of the value library, each entry with its semantics | App. H | — |
 
 ### 0.9 Glossary index
 
