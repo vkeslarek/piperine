@@ -1,15 +1,20 @@
 # Part I. Values
 
 A **value** is data with no time. Everything a model computes with is a value; what it connects
-to is a carrier ([Part II](part_ii_carriers.md)). The value world follows Rust's
-([§0.4](index.md#04-inheritance-from-rust)), with the differences stated here.
+to is a carrier ([Part II](part_ii_carriers.md)). This part defines the value language in
+full: the types ([§1](#1-value-types) to [§1.4](#14-typing-inference-and-conversion)), the
+expressions, patterns, statements and control flow ([§1.5](#15-expressions) to
+[§1.8](#18-control-flow)), the layout on levels ([§2](#2-repr)), and the items: functions,
+`impl`, calls, names, crates, traits, generics and constants ([§3](#3-functions) to
+[§3.9](#39-constants)). Its design is that of Rust's value language
+([§0.4](index.md#04-a-complete-specification)); its rules are stated here.
 
 Error codes of this part: `E01xx`.
 
 **Terms defined here:** value, value type, level, `Repr`, function class, closure, handle,
 known, unknown, known flag, merge, flag-total function, panic, optional parameters, namespace
 module, prelude, crate, crate root, dependency name, package, manifest, dependency,
-lockfile.
+lockfile, move, place, irrefutable pattern, refutable pattern, const expression.
 
 ## 1. Value types
 
@@ -21,13 +26,15 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 | boolean | `bool` |  |
 | integer | `UInt<N>`, `Int<N>` (`u1` … `u128`, `i1` … `i128`) | any width, a const expression (`UInt<{A + 1}>`); arithmetic wraps |
 | float | `Float<N>`, `N` in {16, 32, 64, 128} (`f16` … `f128`) | IEEE 754; analog code computes in `f64` |
-| string | `&'static str` | literals only; never carried |
-| composite | `[T; N]`, tuples, `struct`, `enum`, `Option<T>` | as in Rust |
+| string | `&'static str` | literals only; never carried ([§1.2.9](#12-composite-types)) |
+| composite | `()`, tuples, `[T; N]`, `struct`, `enum`, `Option<T>` | [§1.2](#12-composite-types), [§1.3](#13-structs-and-enums) |
 
 **Static semantics**
 
-- **§1 rule 1.** `as` truncates or extends, as in Rust. `checked_*` and `saturating_*` work as
-  in Rust. The methods a model may call are those of [Appendix H](appendix_h_library.md).
+- **§1 rule 1.** `as` converts between numeric types: among integers it truncates or extends
+  ([§1.4.5](#14-typing-inference-and-conversion)). `checked_*` reports an overflow and
+  `saturating_*` clamps it. The methods a model may call are those of
+  [Appendix H](appendix_h_library.md), each with its meaning stated there.
 - **§1 rule 2.** These are left out, because a model is fixed at elaboration: mutable
   references, heap types, `unsafe`, threads, `async`, `dyn`. `&` appears only as a shared,
   read-only borrow: of an array, slice or string in a function parameter, and of any value as
@@ -42,8 +49,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
   `N >= 1`.
 - **§1 rule 6.** Integer arithmetic wraps modulo `2^N` in every build. `Int<N>` is two's
   complement. There is no overflow error.
-- **§1 rule 7.** An integer literal has an integer type and a float literal a float type, as
-  in Rust. Neither converts implicitly ([§3.2.3](#32-parameters-and-calls)). A literal out of
+- **§1 rule 7.** An integer literal has an integer type and a float literal a float type
+  ([§1.4.2](#14-typing-inference-and-conversion)). Neither converts implicitly ([§3.2.3](#32-parameters-and-calls)). A literal out of
   its type's range is `E0909` ([A.2](appendix_a_lexical.md#a2-si-suffixed-reals) rule 8).
 - **§1 rule 8.** A string exists only as a literal, a `const`, or an argument. It has no
   `Repr`.
@@ -57,9 +64,9 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 > platform. A result may not depend on the machine that computes it
 > ([§0.1.1](index.md#01-scope); [G.62](appendix_g_scope.md)).
 
-> **Resolution.** `char` is not a value type: the table above is closed
-> ([G.61](appendix_g_scope.md)). `String`, `Vec`, `Box` and every other heap type are covered
-> by rule 2.
+> **Resolution.** There is no character type: the table above is closed
+> ([G.61](appendix_g_scope.md)). There is no growable string, no growable array and no heap
+> allocation of any kind (rule 2); a name such as `String`, `Vec` or `Box` does not resolve.
 
 **Prelude constants**
 
@@ -70,8 +77,8 @@ The six constants are `pub const` items of `std::constants` ([§22](part_vii_std
 | `Q` | `f64` | `1.602176634e-19` | elementary charge, C |
 | `K_B` | `f64` | `1.380649e-23` | Boltzmann constant, J/K |
 | `EPS0` | `f64` | `8.8541878128e-12` | vacuum permittivity, F/m |
-| `PI` | `f64` | Rust's `f64::consts::PI` | π |
-| `E` | `f64` | Rust's `f64::consts::E` | Euler's number |
+| `PI` | `f64` | `3.141592653589793` | π, to the nearest `f64` |
+| `E` | `f64` | `2.718281828459045` | Euler's number, to the nearest `f64` |
 | `inf` | `f64` | `1.0 / 0.0` | positive infinity |
 
 ```rust
@@ -103,9 +110,9 @@ pub const inf: f64 = 1.0 / 0.0;
   is not an error. Every effect of that merge becomes unknown.
 - **§1 rule 14.** A plain identifier pattern, with no `mut`, `ref` or `@`, whose name resolves
   to a constant, a unit variant or a unit struct is a path to that item and binds nothing.
-  Any other identifier pattern binds a new name, as in Rust.
+  Any other identifier pattern binds a new name ([§1.6.2](#16-patterns)).
 
-> **Resolution.** Rule 14 is Rust's rule. `match o { None => 0, Some(x) => x }` tests for
+> **Resolution.** Rule 14 decides by resolution, not by spelling. `match o { None => 0, Some(x) => x }` tests for
 > `None`; it does not bind a name `None`. A name that resolves to a local or a `fn` is a
 > binding that shadows it.
 
@@ -123,6 +130,649 @@ pub const inf: f64 = 1.0 / 0.0;
 | `E0103` | an integer width that is not a const expression `>= 1`, or a float width outside {16, 32, 64, 128} | elaboration |
 | `E0104` | a panic while evaluating a const expression, a param default, a `where` or generation | elaboration |
 | `E0105` | a panic under known control during a run | run |
+
+### 1.1 Scalar types
+
+The scalar types are `bool`, the integer types and the float types.
+
+**Static semantics**
+
+- **§1.1.1** `bool` has two values, `true` and `false`.
+- **§1.1.2** `UInt<N>` holds the integers `0` to `2^N - 1`. `Int<N>` holds the integers
+  `-2^(N-1)` to `2^(N-1) - 1`, in two's complement. `N` is a const expression `>= 1`
+  ([§1](#1-value-types) rule 5); it has no upper limit.
+- **§1.1.3** Two integer types are the same type when they have the same signedness and the
+  same width: `u8`, `UInt<8>` and `UInt<{4 + 4}>` are one type. `usize` is `UInt<64>` and
+  `isize` is `Int<64>`. Integer types of different width or signedness are different types.
+- **§1.1.4** `Float<N>` is the IEEE 754 binary interchange format of `N` bits, for `N` in
+  {16, 32, 64, 128}. Its values are the finite numbers of that format, the two zeros, the two
+  infinities and NaN.
+- **§1.1.5** A scalar type has no associated item other than the methods of
+  [Appendix H](appendix_h_library.md). The largest value of a type is written as a literal;
+  positive infinity is the prelude constant `inf`.
+- **§1.1.6** The operators of each scalar type are those of [§1.5](#15-expressions). No scalar
+  type converts to another implicitly ([§1.4.3](#14-typing-inference-and-conversion)).
+
+**Dynamic semantics**
+
+- **§1.1.7** A float operation (`+`, `-`, `*`, `/`, a conversion, `sqrt`) yields the IEEE 754
+  result, rounded to nearest with ties to even. No operation traps and there is no rounding
+  mode to select.
+- **§1.1.8** An operation with no numeric result yields NaN: `0.0 / 0.0`, `inf - inf`,
+  `0.0 * inf`, an operation with a NaN operand. The sign and payload of a NaN result are
+  implementation-defined; every NaN behaves alike under the operators and methods of this
+  specification, except through `encode` ([§2](#2-repr)).
+
+> **Resolution.** Rule 1.1.5 closes the scalar types: `u8::MAX` and `f64::EPSILON` are paths
+> that do not resolve (`E0161`). Rule 1.1.8 leaves one implementation-defined result, the bit
+> pattern of a NaN ([G.69](appendix_g_scope.md)).
+
+### 1.2 Composite types
+
+**Syntax**
+
+```
+type           ::= path
+                 | '(' ')' | '(' type ',' ( type ',' )* ')' | '(' type ')'
+                 | '[' type ';' expr ']' | '[' type ']'
+                 | '&' STATIC_LIFETIME? type                                    // STATIC_LIFETIME: the token 'static
+                 | 'fn' '(' ( type ',' )* ')' ( '->' type )?
+                 | '_'
+```
+
+**Static semantics**
+
+- **§1.2.1** The unit type `()` has one value, `()`. It is the type of a block with no final
+  expression, of a function with no `-> type`, and of an assignment.
+- **§1.2.2** A tuple type `(T1, T2, …)` has two or more fields; `(T,)` is the tuple of one
+  field and `(T)` is `T`. The fields are read as `.0`, `.1`, …, and the tuple expression
+  `(a, b)` builds one. Two tuple types are the same type when their fields are, in order.
+- **§1.2.3** An array type `[T; N]` has `N` elements of type `T`. `N` is a const expression of
+  an integer type, known and not negative. The length is part of the type: `[f64; 2]` and
+  `[f64; 3]` are different types.
+- **§1.2.4** An array expression is a list `[a, b, c]`, whose elements have one type, or a
+  repetition `[x; N]`, which evaluates `x` once and holds `N` copies of it. In `[x; N]` the
+  type of `x` implements `Copy` and `N` is a const expression.
+- **§1.2.5** A slice type `[T]` is a run of elements of type `T` whose length is not part of
+  the type. A slice exists only behind a borrow, as `&[T]`. A borrow of an array, `&[T; N]`,
+  is accepted where a `&[T]` is required and views all `N` elements.
+- **§1.2.6** A borrow type `&T` is a read-only view of a value of type `T`. Borrows are written
+  only where [§1](#1-value-types) rule 2 allows; the library also yields them (`iter`,
+  `first`, `get`, the parameter of a `filter` closure). A borrow is read through in four
+  places, without any operator: a field access or tuple index, an index, the receiver of a
+  method call, and an operand of an arithmetic, bitwise, shift or comparison operator whose
+  type behind the borrow is scalar. Anywhere else `*r` reads the value of the borrow `r`.
+- **§1.2.7** `*r` requires the type behind the borrow to implement `Copy`, and yields a copy.
+  A borrow implements `Copy`. No borrow is stored in a field, a constant or a carrier, with
+  the one exception of `&'static str` in a `const`.
+- **§1.2.8** `Option<T>` is the enum with the variants `None` and `Some(T)`
+  ([§1.3](#13-structs-and-enums)). `Option`, `Some` and `None` are prelude names.
+- **§1.2.9** `str` is the type of a string: a sequence of Unicode scalar values. It exists
+  only behind a borrow. Every string is a literal or a `const`, so `&str` and `&'static str`
+  are the same type; `'static` is the only lifetime and has no other use. Two strings are
+  compared with `==` and `!=`, which compare their scalar values in order
+  ([§1](#1-value-types) rule 8).
+- **§1.2.10** A function-pointer type `fn(T1, T2) -> U` is the type of a value that names a
+  function. The name of a `fn` item used as a value has this type, and so does a closure that
+  captures nothing. The parameter types are written without names. A call through such a
+  value is positional ([§3.2.11](#32-parameters-and-calls)).
+- **§1.2.11** A closure expression has a type of its own, which no source text can name. A
+  closure is passed to a parameter whose type is a generic bound by `Fn(T1, T2) -> U`
+  ([§3.8](#38-generics-and-bounds)), or, when it captures nothing, to a function-pointer
+  parameter.
+- **§1.2.12** `_` in a type asks for the type to be inferred
+  ([§1.4.4](#14-typing-inference-and-conversion)). It is allowed in the annotation of a `let`
+  or of a closure parameter and in the generic arguments of an expression, and nowhere in the
+  signature of an item.
+- **§1.2.13** `Self` names the type an `impl` or a `trait` is about
+  ([§3.7](#37-traits)).
+
+> **Resolution.** Rule 1.2.6 names the four places where a borrow is transparent, so that
+> `x.s > a.s` and `roots[n]` read through `&Logic` and `&[(f64, f64); N]` as the examples of
+> [§22](part_vii_stdlib.md#22-standard-library) do. Rule 1.2.5 is a view of the same elements,
+> not a conversion of a value, so [§3.2.3](#32-parameters-and-calls) stays the only implicit
+> conversion.
+
+**Dynamic semantics**
+
+- **§1.2.14** The elements of an array expression and the fields of a tuple expression are
+  evaluated left to right.
+
+**Examples**
+
+```rust,fragment
+let pair = (1.0, true);
+let x = pair.0;
+let taps = [0.25, 0.5, 0.25];
+let zeros = [0u8; 16];
+let unit = ();
+```
+
+### 1.3 Structs and enums
+
+A `struct` and an `enum` declare a new value type. A `struct` with a carrier field is a bundle
+([§7](part_ii_carriers.md#7-bundles)), not a value type.
+
+**Syntax**
+
+```
+struct_decl    ::= 'struct' IDENT generics? ( '{' ( struct_field ',' )* '}' | '(' ( tuple_field ',' )* ')' ';' | ';' )
+tuple_field    ::= attrs 'pub'? type
+enum_decl      ::= 'enum' IDENT generics? '{' ( variant ',' )* '}'
+variant        ::= attrs IDENT ( '{' ( struct_field ',' )* '}' | '(' ( tuple_field ',' )* ')' )? ( '=' expr )?
+struct_expr    ::= path generic_args? '{' ( IDENT ( ':' expr )? ',' )* '}'
+```
+
+**Static semantics**
+
+- **§1.3.1** A `struct` has named fields (`struct P { x: f64, y: f64 }`), positional fields
+  (`struct P(f64, f64);`, a tuple struct) or no field (`struct Marker;`, a unit struct). Each
+  declaration is a type of its own: two structs with the same fields are different types.
+- **§1.3.2** The field names of a struct, and the variant names of an enum, are distinct.
+- **§1.3.3** A struct expression `P { x: 1.0, y }` names every field exactly once, in any
+  order. `y` alone stands for `y: y`. There is no form that copies the remaining fields from
+  another value. A tuple struct is built by calling its name, `P(1.0, 2.0)`, and a unit struct
+  by its name.
+- **§1.3.4** `s.x` reads the field `x` of a struct, and `s.0` a positional field. A field is
+  read only where it is visible ([§3.4.13](#34-files-and-imports)).
+- **§1.3.5** An `enum` has variants. A variant has no field (`Idle`), positional fields
+  (`Data(u8)`) or named fields (`Data { n: u3 }`). A value of the enum is exactly one variant
+  with its fields.
+- **§1.3.6** A variant is named through its enum, `Tx::Idle`. It is in scope by its bare name
+  only where a `use` imports it (`use Tx::Idle;`, `use Tx::*;`). A variant with positional
+  fields is built by a call, `Tx::Data(3)`; one with named fields by a struct expression,
+  `Tx::Data { n: 3 }`; one without fields by its name.
+- **§1.3.7** A variant may carry a discriminant, `Add = 0b00`, when no variant of the enum has
+  a field. The discriminant is a const expression of an integer type. A variant without one
+  has the discriminant of the variant before it plus one, and the first has 0. Two variants
+  **MUST NOT** have the same discriminant (`E0111`, [§2](#2-repr)).
+- **§1.3.8** A type **MUST NOT** contain itself, directly or through other structs, enums,
+  tuples and arrays: a value has a fixed size and there is no indirection.
+- **§1.3.9** A struct or an enum may be generic ([§3.8](#38-generics-and-bounds)) and may
+  carry `#[derive(…)]` ([Appendix H](appendix_h_library.md), H.8) and, on an enum,
+  `#[repr(uN)]` ([§2](#2-repr)).
+- **§1.3.10** The operators `==`, `!=`, `<`, `<=`, `>` and `>=` apply to a struct or an enum
+  only when it implements `PartialEq` or `PartialOrd`, derived or written
+  ([Appendix H](appendix_h_library.md), H.8).
+
+**Dynamic semantics**
+
+- **§1.3.11** The field expressions of a struct expression are evaluated in the order they are
+  written, not in the order of the declaration.
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0186` | a field or a variant declared twice; a struct expression that leaves a field out, names one twice or names one the type does not have; a field access or tuple index the type does not have; a type that contains itself (§1.3.8); a discriminant on an enum that has a variant with fields | elaboration |
+
+**Examples**
+
+```rust
+#[derive(Clone, Copy, PartialEq)]
+struct Point { x: f64, y: f64 }
+
+#[derive(Clone, Copy, PartialEq)]
+enum Shape { Dot, Circle(f64), Rect { w: f64, h: f64 } }
+
+fn area(s: Shape) -> f64 {
+    match s {
+        Shape::Dot => 0.0,
+        Shape::Circle(r) => PI * r * r,
+        Shape::Rect { w, h } => w * h,
+    }
+}
+
+fn origin() -> Point { Point { x: 0.0, y: 0.0 } }
+```
+
+### 1.4 Typing, inference and conversion
+
+**Static semantics**
+
+- **§1.4.1** Every expression has one type, fixed at elaboration. The types of items are
+  written: the parameters and the result of a function, a `const`, a field, a param. The type
+  of a local, of a closure parameter and of a generic argument of an expression may be left
+  out and is then inferred.
+- **§1.4.2** An integer literal with a suffix has the type of the suffix
+  ([A.8](appendix_a_lexical.md#a8-literals)). Without a suffix it takes the integer type its
+  position requires, and `i32` when the position requires none. A float literal with a suffix
+  has that type; without one it takes the float type its position requires, and `f64` when the
+  position requires none. An SI-suffixed literal is always an `f64`
+  ([A.2](appendix_a_lexical.md#a2-si-suffixed-reals) rule 1).
+- **§1.4.3** There is no implicit conversion between types: an expression of type `T` is
+  accepted only where a `T` is required. An integer literal is not a float, and an integer of
+  one width is not an integer of another. The single exception is
+  [§3.2.3](#32-parameters-and-calls).
+- **§1.4.4** Inference is local to one body: a function body, the initializer of a `const`, or
+  one expression of a module body. A `let` without a type takes the type of its initializer.
+  Where the initializer does not fix its own type (a literal without a suffix, `None`,
+  `Unknown`, an empty array `[]`, a closure parameter), the uses of the binding in the same
+  body fix it. A type that the body does not fix, other than by the defaults of rule 2, is
+  `E0181`.
+- **§1.4.5** `expr as T` converts between the types of the table. Any other pair is `E0182`.
+
+| From | To | Result |
+| --- | --- | --- |
+| an integer type | an integer type of `N` bits | the value modulo `2^N`: a narrower target truncates, a wider one extends by the sign of the source type (zeros for `UInt`, the sign bit for `Int`) |
+| an integer type | a float type | the nearest value of the float type, ties to even; a magnitude beyond the largest finite value gives an infinity |
+| a float type | an integer type | the value truncated toward zero, then clamped to the range of the target; NaN gives 0 |
+| a float type | a float type | the nearest value of the target, ties to even; a magnitude beyond the largest finite value gives an infinity; NaN gives NaN |
+| `bool` | an integer type | 0 for `false`, 1 for `true` |
+| an enum without fields | an integer type | the discriminant of the variant (§1.3.7), modulo `2^N` for a target of `N` bits |
+| a type | the same type | the value |
+
+- **§1.4.6** A value type implements `Copy` when it is `bool`, an integer type, a float type,
+  `()`, a borrow, a function pointer, a tuple or an array of `Copy` types, an `Option` of a
+  `Copy` type, a struct or an enum that derives or implements `Copy`
+  ([Appendix H](appendix_h_library.md), H.8), or a closure whose captures are all `Copy`.
+- **§1.4.7** Reading a variable, a field or an element of a `Copy` type copies the value.
+  Reading a variable of another type **moves** it: the variable **MUST NOT** be read again
+  (`E0183`). A field or an element of a type that is not `Copy` cannot be moved out of its
+  struct, tuple or array; destructure the whole value with a pattern
+  ([§1.6](#16-patterns)).
+- **§1.4.8** A type is checked against a required type by equality. Two types are equal when
+  they are the same scalar type, the same struct, enum, nature or module with equal generic
+  arguments, or the same composite form with equal parts. Const arguments and array lengths
+  are compared by value, at each instantiation ([§3.8.9](#38-generics-and-bounds)).
+
+> **Resolution.** The enum row of the table makes `Op::Sub as u8` the discriminant.
+> The float-to-integer row is total: no conversion panics. Rules 1.4.6 and 1.4.7 give every
+> carried type the property `Repr` requires ([§2](#2-repr)), and make a value without `Copy`
+> usable once.
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0180` | an expression whose type is not the type its position requires, or operands whose types an operator does not accept ([§1.5](#15-expressions)) | elaboration |
+| `E0181` | a type that cannot be inferred: a local, a closure parameter or a generic argument that its body does not fix (§1.4.4), or `_` in the signature of an item (§1.2.12) | elaboration |
+| `E0182` | an `as` between two types that are not a row of §1.4.5 | elaboration |
+| `E0183` | a variable read after it was moved (§1.4.7) or before it was assigned ([§1.7.5](#17-statements-and-blocks)); an assignment to something that is not a mutable place ([§1.5.12](#15-expressions)) | elaboration |
+
+**Examples**
+
+```rust,fragment
+let a = 300 as u8;            // 44
+let b = -1i8 as u16;          // 65535
+let c = 300.7 as u8;          // 255
+let d = 7u3 as f64;           // 7.0
+let e: u9 = 400;              // the literal is a u9
+let f = 1;                    // i32
+let g = 1.5;                  // f64
+```
+
+### 1.5 Expressions
+
+An expression produces a value. Evaluating it may also assign a local, and, where the
+placement matrix allows ([Appendix B.2](appendix_b_grammar.md)), emit a record or place an
+instance.
+
+**Syntax**
+
+The productions of `expr` are [Appendix B.3.7](appendix_b_grammar.md#b37-the-value-grammar).
+The table gives the operators from the tightest binding to the loosest.
+
+| Level | Operators | Associativity |
+| --- | --- | --- |
+| 1 | a literal, a path, `( )`, `[ ]`, a block, `if`, `match`, a loop, a struct expression, `emit!`, `include_str!` | — |
+| 2 | postfix: `.name`, `.0`, `.name(args)`, `(args)`, `[index]`, `?` | left to right |
+| 3 | prefix: `-`, `!`, `*`, `&` | — |
+| 4 | `as` | left to right |
+| 5 | `*`, `/`, `%` | left to right |
+| 6 | `+`, `-` | left to right |
+| 7 | `<<`, `>>` | left to right |
+| 8 | `&` | left to right |
+| 9 | `^` | left to right |
+| 10 | `\|` | left to right |
+| 11 | `==`, `!=`, `<`, `>`, `<=`, `>=` | none: `a < b < c` is a parse error |
+| 12 | `&&` | left to right |
+| 13 | `\|\|` | left to right |
+| 14 | `..`, `..=` | none |
+| 15 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `\|=`, `^=`, `<<=`, `>>=` | right to left |
+| 16 | `return`, `break`, a closure | the operand extends as far to the right as it can |
+
+**Static semantics**
+
+- **§1.5.1** The arithmetic operators `+`, `-`, `*`, `/` and `%` take two operands of one
+  integer type or of one float type and yield that type.
+- **§1.5.2** Prefix `-` takes an integer or a float and yields its type. Prefix `!` takes a
+  `bool` or an integer and yields its type.
+- **§1.5.3** `&`, `|` and `^` take two operands of one integer type, or two `bool`, and yield
+  that type. Both operands are always evaluated.
+- **§1.5.4** `<<` and `>>` take an integer on the left and an integer of any integer type on
+  the right, and yield the type of the left operand.
+- **§1.5.5** `==` and `!=` take two operands of one type that implements `PartialEq`; `<`,
+  `<=`, `>` and `>=` take two operands of one type that implements `PartialOrd`. Each yields a
+  `bool`. The scalar types, `()`, strings, and the tuples, arrays and `Option`s of comparable
+  types are comparable; a struct or an enum is when it derives or implements the trait
+  (§1.3.10). A comparison does not chain.
+- **§1.5.6** `&&` and `||` take two `bool` and yield a `bool`.
+- **§1.5.7** `expr as T` is the conversion of [§1.4.5](#14-typing-inference-and-conversion).
+  After `as T`, a `<` is read as the start of generic arguments of `T`: write `(a as u8) < b`.
+- **§1.5.8** A path expression names a local, a function parameter, a `const`, a function (a
+  function pointer, §1.2.10), a unit struct, a variant, a param, a carrier (a read,
+  [§5.1](part_ii_carriers.md#51-declaring-and-reading)) or an associated constant `T::C`.
+- **§1.5.9** A field access `e.name`, a tuple index `e.0` and an index `e[i]` read one part of
+  a value. In `e[i]`, `e` is an array or a slice and `i` has any integer type. `e[a..b]`, with
+  a range as the index, is the slice of those elements; it is used only as a borrowed call
+  argument or as the receiver of a method.
+- **§1.5.10** A call and a method call follow [§3.2](#32-parameters-and-calls). A method
+  `e.f(args)` is looked up on the type of `e`: first the functions of the `impl` blocks of
+  that type that take `self`, then the methods of [Appendix H](appendix_h_library.md) for
+  that type, then the functions of the traits in scope that the type implements
+  ([§3.7.8](#37-traits)). On a carrier the order is that of [§3.1.7](#31-impl). A name none
+  of them has does not resolve (`E0161`).
+- **§1.5.11** A range expression is `a..b` (from `a`, below `b`), `a..=b` (from `a` through
+  `b`), `a..`, `..b`, `..=b` or `..`. Both bounds have one integer or float type. A range is a
+  value of a range type, which no source text can name; its methods are those of
+  [Appendix H](appendix_h_library.md), H.6, and `a..b` and `a..=b` over an integer type are
+  iterators (H.7).
+- **§1.5.12** An assignment `place = value` has the type `()`. A **place** is a local declared
+  with `mut`, a field of a place, or an element of a place. A carrier, a param, a `const`, a
+  function parameter and a local without `mut` are not places. `place op= value` is
+  `place = place op value` for the operators of level 15, with `place` evaluated once.
+- **§1.5.13** A block `{ … }` is an expression ([§1.7](#17-statements-and-blocks)); so are
+  `if`, `match` and the loops ([§1.8](#18-control-flow)).
+- **§1.5.14** A closure is `|a, b| expr` or `|a: T, b: U| -> R { … }`
+  ([§3](#3-functions) rule 3). A parameter is an irrefutable pattern with an optional type; a
+  return type, when written, is followed by a block. A closure may read the locals, the
+  parameters and the `self` of the body that contains it: each is captured by value where the
+  closure is written. The keyword `move` may precede a closure and changes nothing. A closure
+  **MUST NOT** call itself.
+- **§1.5.15** `e?` takes an `Option<T>` and is allowed only in a function or a closure whose
+  result type is an `Option`. It yields the `T` of a `Some`.
+- **§1.5.16** `return`, `break` and `continue` are expressions that never produce a value:
+  each fits any required type. So does a `loop` with no `break`.
+- **§1.5.17** In the head of `if`, `while`, `match`, `for` and `on`, a struct expression is
+  written in parentheses ([Appendix B.3.3](appendix_b_grammar.md) item 3).
+
+**Dynamic semantics**
+
+- **§1.5.18** Operands are evaluated left to right: the left operand of a binary operator
+  before the right, the receiver before the arguments, the indexed value before the index.
+  An assignment is the exception: its right operand is evaluated before its place.
+- **§1.5.19** Integer `+`, `-` and `*` yield the mathematical result modulo `2^N`
+  ([§1](#1-value-types) rule 6). Integer `/` truncates toward zero, and `%` is the remainder
+  of that division, so `a == (a / b) * b + a % b` and the remainder has the sign of `a`. A
+  zero divisor is a panic ([§1](#1-value-types) rule 11). For `Int<N>`, the least value
+  divided by `-1` wraps to the least value, and its remainder is 0.
+- **§1.5.20** Prefix `-` on an integer is `0 - x` modulo `2^N`, for `UInt<N>` as for `Int<N>`:
+  `-1u4` is 15. Prefix `!` on an integer inverts every bit; on a `bool` it negates.
+- **§1.5.21** `a << n` is `a · 2^n` modulo `2^N`, and 0 when `n >= N`. `a >> n` is the floor
+  of `a / 2^n`: zeros enter from the top for `UInt<N>`, copies of the sign bit for `Int<N>`;
+  when `n >= N` the result is 0, or `-1` for a negative `Int<N>`. A negative `n` is a panic.
+- **§1.5.22** Float `+`, `-`, `*` and `/` follow §1.1.7. Float `%` is the remainder of the
+  division truncated toward zero: exact, with the sign of the dividend. Prefix `-` on a float
+  flips its sign.
+- **§1.5.23** Integers compare by value and `false < true`. Floats compare as IEEE 754
+  defines: `-0.0 == 0.0`, and NaN is neither equal to, less than nor greater than any value,
+  itself included, so `x != x` is true exactly for NaN. Tuples and arrays compare field by
+  field in order, and order lexicographically. `None` is less than every `Some`, and two
+  `Some` compare by their payloads. Strings order by their scalar values.
+- **§1.5.24** `a && b` evaluates `b` only when `a` is `true`; `a || b` evaluates `b` only when
+  `a` is `false`. With an unknown operand the rule is [§3.3.12](#33-unknown-values).
+- **§1.5.25** An index outside `0 .. len`, a negative index included, is a panic. So is a
+  range index that ends beyond the length or whose start exceeds its end.
+- **§1.5.26** `e?` evaluates `e`. On `Some(v)` its value is `v`. On `None` the enclosing
+  function or closure returns `None` at once.
+- **§1.5.27** Operators on values with unknown levels follow
+  [§3.3.2](#33-unknown-values).
+
+> **Resolution.** Rules 1.5.20 and 1.5.21 complete [§1](#1-value-types) rule 6: no integer
+> operator has an overflow error, and a shift by the width or more gives the mathematical
+> result. A shift by a negative amount has no mathematical reading and panics. Rule 1.5.18
+> fixes the one place where evaluation is not left to right.
+
+**Examples**
+
+```rust,fragment
+let q = -7i8 / 2;             // -3
+let r = -7i8 % 2;             // -1
+let w = 255u8 + 1;            // 0
+let s = 1u8 << 9;             // 0
+let t = -1i8 >> 9;            // -1
+let m = !0u4;                 // 15
+let ok = 1 < 2 && 2.0 <= 2.0;
+```
+
+### 1.6 Patterns
+
+A pattern is matched against a value. It matches or it does not, and when it matches it binds
+names to parts of the value.
+
+**Syntax**
+
+```
+pat            ::= '|'? pat1 ( '|' pat1 )*
+pat1           ::= '_'
+                 | '..'                                                         // inside a tuple, tuple-struct or slice pattern
+                 | ( 'ref'? 'mut'? ) IDENT ( '@' pat1 )?
+                 | pat_bound ( '..' pat_bound? | '..=' pat_bound )?            // alone: a literal or a path pattern
+                 | '..=' pat_bound
+                 | path '(' ( pat ',' )* ')'
+                 | path '{' ( IDENT ( ':' pat )? ',' )* '..'? '}'
+                 | '(' ( pat ',' )* ')'
+                 | '[' ( pat ',' )* ']'
+                 | '&' pat1
+pat_bound      ::= '-'? ( INT_LITERAL | FLOAT_LITERAL ) | STRING | 'true' | 'false' | path
+```
+
+**Static semantics**
+
+- **§1.6.1** `_` matches any value and binds nothing.
+- **§1.6.2** An identifier pattern `x` matches any value and binds `x` to it, unless
+  [§1](#1-value-types) rule 14 makes it a path. `mut x` binds a local that may be assigned.
+  `ref x` binds a borrow of the value in place of the value. `x @ p` matches when `p` matches
+  and binds `x` to the whole value.
+- **§1.6.3** A literal pattern is an integer, a float, a string, `true` or `false`; a number
+  may carry a `-`. It matches the value that `==` finds equal to it. `Unknown` is not a
+  pattern.
+- **§1.6.4** A range pattern is `lo..=hi` (through `hi`), `lo..hi` (below `hi`), `lo..` or
+  `..=hi`. A bound is a literal or a path to a `const`, of an integer or a float type. The
+  range **MUST NOT** be empty. There is no form `..hi`
+  ([Appendix B.3.6](appendix_b_grammar.md#b36-forms-that-are-not-part-of-the-language)).
+- **§1.6.5** A path pattern names a `const`, a unit struct or a variant without fields, and
+  matches the value equal to it.
+- **§1.6.6** A tuple pattern `(p, q)`, a tuple-struct pattern `Some(p)`, `Tx::Data(n)` and a
+  struct pattern `Point { x, y: p }` match when every sub-pattern matches its field. In a
+  struct pattern `x` alone stands for `x: x`; the pattern names every field or ends with `..`.
+  In a tuple or tuple-struct pattern one `..` stands for the fields not written.
+- **§1.6.7** A slice pattern `[p, q]`, `[first, .., last]` or `[first, rest @ ..]` matches an
+  array or a slice. Without `..` it matches a value of exactly that many elements. With `..`,
+  written at most once, it matches a value of at least the elements written, and `name @ ..`
+  binds the slice of the others.
+- **§1.6.8** An or-pattern `p | q` matches when one alternative matches. Every alternative
+  binds the same names, each with one type.
+- **§1.6.9** `&p` matches a borrow whose value `p` matches. A pattern other than `&p`, `_` and
+  a binding, when it meets a borrow, matches the value behind it, and the names it binds are
+  borrows.
+- **§1.6.10** A pattern binds a name at most once.
+- **§1.6.11** A pattern is **irrefutable** when it matches every value of its type, and
+  **refutable** otherwise. `_`, a binding, a tuple or struct pattern of irrefutable parts, and
+  a slice pattern of irrefutable parts whose length is the array's are irrefutable. A `let`
+  without `else`, a `for`, a closure parameter and a `let` of a module body take an
+  irrefutable pattern.
+- **§1.6.12** The type of every pattern is fixed by the value it is matched against; a
+  pattern of another type is `E0180`.
+
+**Dynamic semantics**
+
+- **§1.6.13** Matching reads the value and has no other effect. Sub-patterns are tried left to
+  right. A float pattern never matches NaN.
+- **§1.6.14** A value with unknown levels is matched under
+  [§3.3.3](#33-unknown-values): the match is control.
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0184` | a `match` that is not exhaustive ([§1.8.6](#18-control-flow)); a refutable pattern where §1.6.11 requires an irrefutable one; a name bound twice in one pattern; alternatives of an or-pattern that bind different names or types; an empty range pattern; a struct pattern that leaves a field out without `..` | elaboration |
+
+**Examples**
+
+```rust,fragment
+let (lo, hi) = (0.0, 1.0);
+let Point { x, .. } = p;
+let [a, b, c] = taps;
+match code {
+    0 => idle(),
+    1..=9 => digit(code),
+    10 | 11 => sign(code),
+    n @ 12..=15 => other(n),
+    _ => fault(),
+}
+```
+
+### 1.7 Statements and blocks
+
+**Syntax**
+
+```
+block          ::= '{' stmt* expr? '}'
+stmt           ::= ';'
+                 | attrs 'let' pat1 ( ':' type )? ( '=' expr ( 'else' block )? )? ';'
+                 | attrs expr ';'
+                 | attrs block_expr ';'?
+                 | value_item
+```
+
+`block_expr` is an `if`, a `match`, a `while`, a `loop`, a `for` or a block.
+
+**Static semantics**
+
+- **§1.7.1** A block holds statements and, optionally, a final expression without `;`. Its
+  type and its value are those of the final expression, and `()` when there is none.
+- **§1.7.2** A block is a scope. A name declared in it is visible to its end and not after
+  it. Scopes nest: a name of an inner scope hides the same name of an outer one.
+- **§1.7.3** `let pat = expr;` matches the value of `expr` against the pattern and binds its
+  names for the rest of the block. A later `let` of the same name declares a new variable,
+  which may have another type, and hides the earlier one.
+- **§1.7.4** `let pat: T = expr;` requires `expr` to have the type `T`.
+- **§1.7.5** `let x;` and `let x: T;` declare a variable without a value. It **MUST** be
+  assigned on every path before it is read (`E0183`). Without `mut` it is assigned at most
+  once on any path.
+- **§1.7.6** `let pat = expr else { … };` takes a refutable pattern. When the pattern does not
+  match, the `else` block runs; that block **MUST NOT** complete: it ends in `return`,
+  `break`, `continue` or a `loop` without `break`.
+- **§1.7.7** A local is immutable unless its pattern binds it with `mut`
+  ([§1.5.12](#15-expressions)).
+- **§1.7.8** `expr;` evaluates the expression and drops its value. An `if`, a `match`, a loop
+  or a block written as a statement needs no `;`; its type is then `()`, unless it is the
+  final expression of its block.
+- **§1.7.9** A block may hold items: `fn`, `const`, `struct`, `enum`, `trait`, `impl` and
+  `use`. They are visible in the whole block, before their declaration too
+  ([§3.4.10](#34-files-and-imports)). An item of a block does not see the locals of that
+  block; a closure does (§1.5.14).
+- **§1.7.10** Inside a behavior block the statements also include the contribution and the
+  commit ([Appendix B.3.4](appendix_b_grammar.md)). A module body is not a block: its items
+  are those of [§8.2](part_iii_structure.md#82-the-body).
+
+**Dynamic semantics**
+
+- **§1.7.11** The statements of a block run in order. The initializer of a `let` is evaluated
+  before the pattern is matched.
+
+**Examples**
+
+```rust,fragment
+let mut acc = 0.0;
+let n = 3;
+let n = n as f64;             // a new `n`, of type f64
+let Some(first) = taps.first() else { return 0.0; };
+acc += *first * n;
+```
+
+### 1.8 Control flow
+
+**Syntax**
+
+```
+if_expr        ::= 'if' cond block ( 'else' ( if_expr | block ) )?
+cond           ::= 'let' pat '=' expr | expr                                   // no struct expression at the top (§1.5.17)
+match_expr     ::= 'match' expr '{' match_arm* '}'                              // no struct expression at the top of expr
+match_arm      ::= attrs pat ( 'if' expr )? '=>' ( block ','? | expr ',' | expr )   // the last form: the final arm only
+while_expr     ::= 'while' cond block
+loop_expr      ::= 'loop' block
+for_expr       ::= 'for' pat1 'in' expr block                                  // no struct expression at the top of expr
+```
+
+**Static semantics**
+
+- **§1.8.1** `if c { a } else { b }`: `c` is a `bool`, and the two blocks have one type, which
+  is the type of the `if`. Without `else` the block has the type `()`.
+- **§1.8.2** `if let pat = expr { … }` runs the block when the pattern matches, with its names
+  bound in the block. `while let pat = expr { … }` repeats while it matches. The `let` is the
+  whole condition: it is not an operand of `&&`.
+- **§1.8.3** `match e { … }` evaluates `e` once and runs the first arm, top to bottom, whose
+  pattern matches and whose guard, when it has one, is `true`. The names of the pattern are
+  bound in the guard and in the body.
+- **§1.8.4** The arms of a `match` have one type, which is the type of the `match`. An arm
+  that never completes (§1.5.16) fits any.
+- **§1.8.5** An arm whose body is a block needs no comma. Any other arm ends with a comma,
+  which the last arm may omit.
+- **§1.8.6** A `match` **MUST** be exhaustive: every value of the type of `e` matches the
+  pattern of some arm without a guard. For an enum that means every variant; for `bool`, both
+  values; for an integer type, every value of its range, by literals and ranges; for a float,
+  a string, an array of unknown length or any type whose values the patterns cannot list, a
+  final `_` or a binding. An arm no value can reach is not an error.
+- **§1.8.7** `while c { … }` has the type `()`. `c` is a `bool`.
+- **§1.8.8** `loop { … }` repeats until a `break`. Its type is the type of the values its
+  `break`s give, and `()` when they give none.
+- **§1.8.9** `for pat in e { … }` runs the block once for each element of `e`, in order, and
+  has the type `()`. `e` is a range `a..b` or `a..=b` over an integer type (its elements
+  ascend from `a`), an array (its elements, by value), or an iterator of
+  [Appendix H](appendix_h_library.md), H.7 (`xs.iter()`, `(0..N).rev()`, …).
+- **§1.8.10** `break` leaves the innermost enclosing loop and `continue` starts its next
+  iteration. `break value` is allowed in a `loop` only. There are no loop labels.
+- **§1.8.11** `return` and `return value` leave the innermost enclosing function or closure
+  with that value; the value has the result type, and `return` alone gives `()`. The value of
+  the body block is the result when no `return` runs.
+- **§1.8.12** `break` and `continue` do not cross the body of a closure or of a function.
+- **§1.8.13** Where a loop may be written, and whether its trip count must be a constant, is
+  decided by the block that contains it ([§3](#3-functions) rule 12,
+  [§8.3.4](part_iii_structure.md#83-instances-inside-expressions),
+  [§11](part_iv_behavior.md#11-analog) rule 12,
+  [§12.1.11](part_iv_behavior.md#121-reactions)).
+
+**Dynamic semantics**
+
+- **§1.8.14** Exactly one branch of an `if` and one arm of a `match` runs. With an unknown
+  condition or scrutinee the rule is [§3.3.3](#33-unknown-values).
+- **§1.8.15** A `for` evaluates `e` once, before the first iteration. An empty range or array
+  runs the block zero times; `a..b` is empty when `a >= b`.
+- **§1.8.16** A `while` evaluates its condition before each iteration.
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0185` | `break` or `continue` outside a loop; `break` with a value outside a `loop`; `return` outside a function and a closure; `?` in a function or closure whose result type is not an `Option`; the `else` block of a `let … else` that can complete | elaboration |
+| §1.6 | a `match` that is not exhaustive, or a refutable pattern in a `for` (`E0184`) | elaboration |
+| [§1.4](#14-typing-inference-and-conversion) | a condition that is not a `bool`, or branches or arms of different types (`E0180`) | elaboration |
+
+**Examples**
+
+```rust
+fn classify(x: f64) -> i32 {
+    if x < 0.0 { -1 } else if x == 0.0 { 0 } else { 1 }
+}
+
+fn first_set(bits: [bool; 8]) -> Option<u8> {
+    let mut k = 0u8;
+    while k < 8 {
+        if bits[k] { return Some(k); }
+        k += 1;
+    }
+    None
+}
+
+fn sum_to(n: u32) -> u32 {
+    let mut acc = 0;
+    for k in 0..=n { acc += k; }
+    acc
+}
+```
 
 ## 2. `Repr`
 
@@ -270,8 +920,8 @@ of the functions it calls. A function may belong to several classes; the restric
 > values across the C ABI is defined. How the symbol is located is the toolchain's business.
 
 > **Resolution.** `"intrinsic"` names an item the language cannot express and the engine
-> implements, such as a function that reads the characters of a `str`. Rust spells the same
-> idea `extern "rust-intrinsic"`. A user crate that needs native code writes `extern "C"`.
+> implements, such as a function that reads the characters of a `str`. A user crate that
+> needs native code writes `extern "C"`.
 
 > **Resolution.** Rule 12 mirrors the rule for a module that places itself
 > ([§8.2](part_iii_structure.md#82-the-body)): `analog` code is straight-line after
@@ -279,7 +929,7 @@ of the functions it calls. A function may belong to several classes; the restric
 
 **Dynamic semantics**
 
-- **§3 rule 13.** A call evaluates its arguments left to right, then the body, as in Rust.
+- **§3 rule 13.** A call evaluates its arguments left to right, then the body.
   A value input of a module is not an argument in this sense: it is a `let`
   ([§8.3.1](part_iii_structure.md#83-instances-inside-expressions)).
 - **§3 rule 14.** A function has the same meaning in every analysis. What differs between
@@ -355,7 +1005,8 @@ the `self` of an `impl` on a nature or bundle, and any function parameter of suc
 > **Resolution.** `level` is added to the names of rule 3: it is a method of every `Repr`
 > value, and so of every carrier read ([Appendix B.1](appendix_b_grammar.md)).
 
-> **Resolution.** The associated `const` items of a value type are Rust's (`Logic::Z`,
+> **Resolution.** An `impl` on a value type may hold associated `const` items
+> ([§3.9](#39-constants)), read as `Type::NAME` (`Logic::Z`,
 > [§22.3](part_vii_stdlib.md#223-resolved-nets)). On a nature or bundle an `impl` holds
 > functions only (`E0132`).
 
@@ -575,9 +1226,22 @@ One file is one module of the namespace. `mod` declares submodules, `use` brings
 scope, `pub` controls visibility, a package of models is a crate ([§3.5](#35-crates)), and
 the package holds it ([§3.6](#36-packages)).
 
+**Syntax**
+
+```
+mod_decl       ::= 'mod' IDENT ( ';' | '{' item* '}' )
+use_decl       ::= 'use' use_tree ';'
+use_tree       ::= ( use_seg '::' )* ( '*' | '{' ( use_tree ',' )* '}' | use_seg ( 'as' IDENT )? )
+use_seg        ::= IDENT | 'self' | 'super' | 'crate'
+path           ::= path_seg ( '::' path_seg )*
+path_seg       ::= ( IDENT | 'self' | 'Self' | 'super' | 'crate' ) ( '::'? generic_args )?   // in an expression the '::' is required
+```
+
 **Static semantics**
 
-- **§3.4.1** A **namespace module** is a `mod` item or a file, as in Rust. "Module" without
+- **§3.4.1** A **namespace module** is a `mod` item or a file: `mod name { … }` declares one
+  in place, and `mod name;` one whose items are in a file of its own
+  ([§3.6](#36-packages) rule 2). "Module" without
   qualification always means a hardware module
   ([§8](part_iii_structure.md#8-modules)).
 - **§3.4.2** The **prelude** is the set of names imported implicitly into every file: the
@@ -589,13 +1253,13 @@ the package holds it ([§3.6](#36-packages)).
   item at namespace scope, a file or an inline `mod`; a block may sit in any namespace of its
   module's file and names the module by a path (`a::M`, `super::a::M`).
 - **§3.4.4** Natures, bundles, hardware modules, functions, constants and value types are
-  items. They follow Rust's rules for paths, `use` and `pub`.
+  items. Paths, `use` and `pub` apply to all of them alike (rules 11 to 16).
 - **§3.4.5** A hardware module's name is in the type namespace, as the type of its templates,
   and in the value namespace, as a callable
   ([§8.4](part_iii_structure.md#84-templates-and-swappable-modules)).
 - **§3.4.6** `pub` on an item of a module body has its own meaning: visibility to the parent
   instance ([§8.2](part_iii_structure.md#82-the-body)).
-- **§3.4.7** A namespace has two tables, one of types and one of values, as in Rust. A name is
+- **§3.4.7** A namespace has two tables, one of types and one of values. A name is
   declared once in each table. A hardware module and a unit struct occupy both tables. A
   `struct` with fields and a `fn` of one name occupy different tables and do not collide.
 - **§3.4.8** An item or an explicit `use` shadows a glob import of the same name without a
@@ -608,12 +1272,41 @@ the package holds it ([§3.6](#36-packages)).
   form one scope with the same two tables. A name declared twice in one table of one block is
   `E0162` at the later name; this includes two `fn` of one name, since `E0143` is the overload rule
   of namespaces. A block's items shadow the items of the scopes around it without a diagnostic.
+- **§3.4.11** A path is one or more segments joined by `::`. The first segment is looked up by
+  [§3.5](#35-crates) rules 4 and 5. Each later segment is looked up in what the segment before
+  it names: an item of a namespace, a variant of an enum, or an associated function or constant
+  of a type or a trait. `self` is the enclosing namespace, `super` its parent and `crate` the
+  crate root ([§3.5](#35-crates) rule 7); `Self` is the type of the enclosing `impl` or trait.
+- **§3.4.12** `use path;` brings the item the path names into the enclosing namespace or block
+  under its last segment, and `use path as name;` under `name`. `use path::*;` imports every
+  visible name of a namespace, or every variant of an enum. `use a::{b, c::d, self};` is the
+  three imports `use a::b;`, `use a::c::d;` and `use a;`. A `use` path is resolved as any other
+  path is. The name an import binds is private unless the `use` is `pub`.
+- **§3.4.13** An item is visible in the namespace that declares it and in every namespace
+  nested in that one. With `pub` it is visible wherever its namespace is. A field of a struct
+  follows the same rule, field by field; the variants of an enum and their fields, and the
+  items of a trait, are as visible as the enum or the trait. There is no other visibility:
+  `pub` takes no argument.
+- **§3.4.14** The items of a namespace are visible in all of it: an item may be used before
+  its declaration, and the order of items has no meaning.
+- **§3.4.15** Inside an item, names are looked up from the innermost scope outwards: the
+  locals and items of each enclosing block, the parameters of the function or closure, the
+  generic parameters of the item and of the `impl` or trait around it, then the namespace.
+  A local is in scope from the end of its `let` to the end of its block
+  ([§1.7](#17-statements-and-blocks)). A `fn` item does not see the locals or the generic
+  parameters of a function that contains it; a closure sees both.
+- **§3.4.16** A method name is not looked up in these tables. It is found from the type of its
+  receiver ([§1.5.10](#15-expressions)).
 
-> **Resolution.** Rules 7 to 9 are Rust's rules for names, stated because the design is
+> **Resolution.** Rules 7 to 9 are stated because the design is
 > silent on duplicates. `E0162` is the one code for a collision; `E0143` keeps the overload.
 
-> **Resolution.** Rule 5 places module names as Rust places a tuple struct's. Rule 1 fixes the
+> **Resolution.** Rule 5 places a module's name in both tables, as a tuple struct's name is
+> (rule 7): it is a type and it is callable. Rule 1 fixes the
 > vocabulary, since the design uses "module" for both.
+
+> **Resolution.** Rules 11 to 16 state how names are found and who may see them. They add no
+> error code: a name that is not found, or not visible, is `E0161`.
 
 **Errors**
 
@@ -646,7 +1339,7 @@ through a dependency.
     4. the prelude ([§3.4.2](#34-files-and-imports));
     5. the core names.
 - **§3.5.5** The first segment of a path of several segments is looked up in the type
-  namespace, as in Rust 2018. A `mod`, `struct`, `enum`, `nature`, `module` or `trait`, or an
+  namespace. A `mod`, `struct`, `enum`, `nature`, `module` or `trait`, or an
   import of one, is in it. A `fn`, a `const` or a local binding is in the value namespace and
   hides no dependency: `util::K` and `use util::K` reach the dependency `util` beside a local
   `fn util`. Where an item or an import of the type namespace of the enclosing namespace has
@@ -661,13 +1354,14 @@ through a dependency.
   are relative to the namespace that contains them. `super` at a crate root does not resolve
   (`E0161`).
 - **§3.5.8** From another crate an item is visible only when it is `pub` and every namespace on
-  the path from its crate root to it is `pub`. `pub use` re-exports, as in Rust.
+  the path from its crate root to it is `pub`. `pub use` re-exports: the name it binds is an
+  item of the namespace that holds the `use`, visible as `pub` makes it.
 - **§3.5.9** The prelude is implied in every file of every crate, the files of `std` included.
 - **§3.5.10** The dependencies of the crates form no cycle ([§3.6](#36-packages), `E0174`).
 - **§3.5.11** `extern crate` is not part of the language
   ([Appendix B.3.6](appendix_b_grammar.md)).
 
-> **Resolution.** Rules 4 and 5 are Rust 2018's: dependency names sit below a namespace's own
+> **Resolution.** Rules 4 and 5 in short: dependency names sit below a namespace's own
 > type-namespace names in a path, and an import that could mean either is an error, never a
 > silent choice. A value item of the same name is not a clash.
 > They are stated because no `::` exists to disambiguate. A dependency name against a prelude
@@ -700,8 +1394,10 @@ A **package** is a directory with a manifest. It holds one crate.
 - **§3.6.1** The **manifest** is the file `Piperine.toml` in the package directory, written in
   TOML.
 - **§3.6.2** The crate root is `src/lib.msl`. A source file has the extension `.msl`.
-  `mod name;` loads `name.msl` or `name/mod.msl` below the declaring file, as Rust places
-  `name.rs` and `name/mod.rs`; neither or both is `E0161`.
+  `mod name;` loads `name.msl` or `name/mod.msl` below the declaring file; neither or both is `E0161`.
+  "Below" means: beside the declaring file when that file is the crate root or is itself named
+  `mod.msl`, and otherwise in the directory named after the declaring file, without its
+  extension.
 - **§3.6.3** The manifest holds the tables and keys of the table below and no other (`E0171`).
   The `[run]` table is allowed: its content belongs to the host and is not defined by the
   language, and the `[run]` table of a dependency's manifest is not read.
@@ -756,7 +1452,7 @@ Tables the language allows and does not define (rule 3):
 | --- | --- | --- |
 | `[run]` | a table, defined by the host | no; not read in a dependency |
 
-Requirement table (Cargo's caret rule):
+Requirement table (a requirement admits the versions that keep its leftmost non-zero number):
 
 | Requirement | Admits |
 | --- | --- |
@@ -790,4 +1486,218 @@ version = "0.1.0"
 
 [dependencies]
 util = { path = "../util" }
+```
+
+### 3.7 Traits
+
+A trait names a set of functions and constants that a type provides. Traits are used as
+bounds on generic parameters and in no other way: there is no trait object.
+
+**Syntax**
+
+```
+trait_decl     ::= 'trait' IDENT generics? ( ':' path ( '+' path )* )? '{' impl_item* '}'
+impl_block     ::= 'impl' generics? path generic_args? ( 'for' path generic_args? )? '{' impl_item* '}'
+impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
+```
+
+**Static semantics**
+
+- **§3.7.1** A trait holds functions and constants. A function may have a body, its default,
+  or end in `;`. A constant may have a value, its default, or none. A trait holds no type.
+- **§3.7.2** Inside a trait and inside an `impl`, `Self` is the type the trait is implemented
+  for, and `Self::NAME` one of its associated items.
+- **§3.7.3** `trait A: B + C` makes `B` and `C` supertraits of `A`: a type that implements `A`
+  **MUST** implement `B` and `C`, and the items of `B` and `C` may be used on `Self` inside
+  `A`.
+- **§3.7.4** `impl Tr for T { … }` implements the trait `Tr` for the value type `T`
+  ([§3.1.9](#31-impl)). It defines every item of the trait that has no default and may define
+  the others; it defines no item the trait does not have. Each item has the signature the
+  trait gives, with `Self` standing for `T`.
+- **§3.7.5** An `impl` may be generic, and its type may be a generic parameter:
+  `impl<T: Repr> Known for T {}` implements `Known` for every type that implements `Repr`.
+- **§3.7.6** For one trait and one type at most one `impl` applies. Two `impl`s of a trait
+  that both apply to some type are an error, whether or not that type is used.
+- **§3.7.7** `impl Tr for T` is written in the crate that declares `Tr` or in the crate that
+  declares `T`. `impl T { … }`, without a trait, is written in the crate that declares `T`;
+  the built-in types of [§1](#1-value-types) take no such `impl`.
+- **§3.7.8** A function of a trait is called as a method, `x.f()`, where the trait is in scope:
+  declared in, imported into, or reached through the prelude from the namespace of the call.
+  It is also called by a path, `Tr::f(x)` or `T::f(x)`, where the trait need not be in scope.
+  A function of the type's own `impl` is found before a trait's
+  ([§1.5.10](#15-expressions)). Two traits in scope that both give the method are
+  [G.67](appendix_g_scope.md).
+- **§3.7.9** A function whose first parameter is `self` is a method. One without `self` is an
+  associated function and is called by a path, `Logic::wired(d)`. `self` is written first and
+  only in an `impl` or a trait.
+- **§3.7.10** A trait is named in three places: after a generic parameter as a bound
+  ([§3.8](#38-generics-and-bounds)), after `impl` in `impl Tr for T`, and inside
+  `#[derive(…)]`. It is not a type.
+- **§3.7.11** The items of a trait are visible wherever the trait is. The items of an `impl`
+  of a trait take no `pub`.
+- **§3.7.12** The traits of the language itself are `Repr` ([§2](#2-repr)), `Nature`
+  ([§4](part_ii_carriers.md#4-natures)), the `Fn` bounds
+  ([§3.8.6](#38-generics-and-bounds), [§8.4](part_iii_structure.md#84-templates-and-swappable-modules))
+  and those of [Appendix H](appendix_h_library.md), H.8. `Nature` and `Fn` take no `impl`.
+
+> **Resolution.** Rules 6 and 7 keep the set of `impl`s that apply to a type the same in every
+> crate that sees it, so a model means the same wherever it is compiled.
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0187` | an `impl Tr for T` that leaves out an item without a default, defines an item the trait does not have, or gives an item another signature; a type that does not implement a supertrait; two `impl`s that overlap (§3.7.6); an `impl` in a crate that §3.7.7 does not allow; `self` outside an `impl` or a trait, or not first; a generic argument that does not satisfy its bound, or a wrong number of generic arguments ([§3.8](#38-generics-and-bounds)); a `pub` on an item of an `impl Tr for T` | elaboration |
+| [§3.1](#31-impl) | `impl Tr for` a nature or a bundle (`E0134`) | elaboration |
+
+**Examples**
+
+```rust
+trait Area {
+    const SIDES: u32;
+    fn area(self) -> f64;
+    fn is_empty(self) -> bool { self.area() == 0.0 }
+}
+
+#[derive(Clone, Copy)]
+struct Square { side: f64 }
+
+impl Area for Square {
+    const SIDES: u32 = 4;
+    fn area(self) -> f64 { self.side * self.side }
+}
+
+fn total<T: Area + Copy, const N: usize>(shapes: &[T; N]) -> f64 {
+    shapes.iter().map(|s| s.area()).sum()
+}
+```
+
+### 3.8 Generics and bounds
+
+An item is generic when it has parameters that stand for types, natures or constants. A
+generic item is a recipe: elaboration makes one copy for each list of arguments it is used
+with.
+
+**Syntax**
+
+```
+generics       ::= '<' ( generic_param ',' )* '>'
+generic_param  ::= IDENT ( ':' bound ( '+' bound )* )? ( '=' type )?
+                 | 'const' IDENT ':' type ( '=' ( literal | block ) )?
+bound          ::= path | path '(' ( type ',' )* ')' ( '->' type )?             // the second form: Fn(A, B) -> R
+generic_args   ::= '<' ( generic_arg ',' )* '>'
+generic_arg    ::= type | literal | '-' literal | block
+```
+
+**Static semantics**
+
+- **§3.8.1** A `fn`, a `struct`, an `enum`, a `trait`, an `impl`, a `nature` and a `module` may
+  have a generic parameter list. A parameter is a type parameter, `T`, or a const parameter,
+  `const N: u32`. There are no lifetime parameters.
+- **§3.8.2** A type parameter may have bounds, `T: Repr + Copy`, and a default, `T = bool`. It
+  stands for a value type, or for a nature when it is bound by `Nature`
+  ([§4](part_ii_carriers.md#4-natures) rule 11), or for a module when it is bound by `Fn(P)`
+  ([§8.4](part_iii_structure.md#84-templates-and-swappable-modules)).
+- **§3.8.3** A const parameter has an integer type or `bool`, and may have a default: a
+  literal or a block. It is a const expression wherever it is in scope.
+- **§3.8.4** Parameters with a default come after those without. The names of one list are
+  distinct, and each is in scope in the whole item, the list itself included.
+- **§3.8.5** Generic arguments are written after the name, `Bit<u8>`, `Delay<u8, 4>`, in the
+  order of the parameters. In an expression they follow `::`, as in `idt::<Heat>(x)`, so that
+  `<` is not read as a comparison. A const argument is a literal, a literal with `-`, a single
+  name, or a block `{ N + 1 }` for any other const expression.
+- **§3.8.6** A bound is a trait ([§3.7](#37-traits)), or the form `Fn(T1, T2) -> U`, which
+  holds for every function and closure that can be called with arguments of those types and
+  yields a `U`. On a module parameter the form is `Fn(P)`
+  ([§8.4.5](part_iii_structure.md#84-templates-and-swappable-modules)).
+- **§3.8.7** An argument **MUST** satisfy every bound of its parameter. An argument that is
+  left out takes the parameter's default; in an expression, one with no default is inferred
+  from the arguments and the required type of the call
+  ([§1.4.4](#14-typing-inference-and-conversion)).
+- **§3.8.8** Bounds are written in the parameter list. `where` holds a boolean const
+  expression ([§3](#3-functions) rule 8), not a bound.
+- **§3.8.9** A generic item is checked at each instantiation, with its parameters replaced by
+  the arguments ([§3](#3-functions) rule 9): a type built from a const parameter, such as
+  `[f64; N + 1]`, is compared by value there. Inside the item, a value of a type parameter
+  offers what the bounds of the parameter offer.
+- **§3.8.10** Two uses of a generic item with equal arguments are the same instance, and a
+  generic type with equal arguments is the same type.
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| [§3.7](#37-traits) | a generic argument that does not satisfy its bound, or a wrong number of arguments (`E0187`) | elaboration |
+| [§1.4](#14-typing-inference-and-conversion) | a generic argument that cannot be inferred (`E0181`) | elaboration |
+| [§3](#3-functions) | an error inside an instantiation, reported at elaboration; a false `where` (`E0127`) | elaboration |
+
+**Examples**
+
+```rust
+#[derive(Clone, Copy)]
+struct Pair<T: Copy> { a: T, b: T }
+
+fn swap<T: Copy>(p: Pair<T>) -> Pair<T> { Pair { a: p.b, b: p.a } }
+
+fn apply<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 { f(x) }
+
+fn widen<const N: usize>(xs: [f64; N]) -> [f64; N + 1] {
+    let mut wide = [0.0; N + 1];
+    for k in 0..N { wide[k] = xs[k]; }
+    wide
+}
+```
+
+### 3.9 Constants
+
+**Syntax**
+
+```
+const_item     ::= 'const' IDENT ':' type ( '=' expr )? ';'
+```
+
+**Static semantics**
+
+- **§3.9.1** `const NAME: T = expr;` names a value fixed at elaboration. The type is written
+  and the value is a const expression of that type. Only a constant of a trait may leave the
+  value out ([§3.7.1](#37-traits)).
+- **§3.9.2** A **const expression** is an expression that elaboration can evaluate. It is
+  built from literals, `Unknown`, constants, const parameters, params where the position
+  allows them ([§8.1](part_iii_structure.md#81-ports-and-params)), the operators and
+  conversions of [§1.5](#15-expressions), tuple, array and struct expressions, field accesses
+  and indexes, blocks, `if`, `match` and loops, closures, the methods of
+  [Appendix H](appendix_h_library.md), and calls of `const fn` functions.
+- **§3.9.3** A const expression **MUST NOT** read a carrier, a probe or the environment
+  ([§8.1.21](part_iii_structure.md#81-ports-and-params)), place an instance, call a function
+  that is not `const fn`, or contain `emit!`. `include_str!` is a const expression and is
+  allowed only as the initializer of a `const`
+  ([§20](part_vi_io.md#20-input-data)).
+- **§3.9.4** A `const fn` is a function that may be called in a const expression. Its body
+  holds only what rule 2 allows. It may also be called outside a const context, with the same
+  result.
+- **§3.9.5** A constant may refer to constants declared after it. A constant **MUST NOT**
+  depend on itself.
+- **§3.9.6** A use of a constant is a copy of its value. A constant has no storage and is not
+  a place ([§1.5.12](#15-expressions)).
+
+**Dynamic semantics**
+
+- **§3.9.7** A const expression is evaluated at elaboration, by the rules that evaluate it at
+  a run: the same wrapping, the same rounding, the same panics. A panic is `E0104`
+  ([§1](#1-value-types) rule 11).
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0188` | the initializer of a `const`, an array length or a const argument that is not a const expression (§3.9.2, §3.9.3); a `const fn` whose body holds a form rule 3 forbids; a `const` without a value outside a trait; a constant that depends on itself | elaboration |
+| [§1](#1-value-types) | a panic while a const expression is evaluated (`E0104`) | elaboration |
+
+**Examples**
+
+```rust
+const N_TAPS: usize = 4;
+const GAIN: f64 = 2.0 * PI;
+const fn square(x: f64) -> f64 { x * x }
+const AREA: f64 = square(GAIN);
 ```
