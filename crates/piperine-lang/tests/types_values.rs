@@ -385,9 +385,17 @@ fn a_named_optional_argument_types() {
 #[test]
 fn a_named_argument_that_is_not_optional_or_bound_is_e0140() {
     // FIX-06 AC 5: a name that is no optional parameter, or that an earlier argument bound.
-    for call in ["f(x: 1.0)", "f(1.0, w: 2.0)", "f(1.0, 2.0, y: 3.0)", "f(1.0, z: 2.0, z: 3.0)"] {
+    // The message names the parameter the argument names.
+    for (call, name, reason) in [
+        ("f(x: 1.0)", "x", "no optional parameter"),
+        ("f(1.0, w: 2.0)", "w", "no optional parameter"),
+        ("f(1.0, 2.0, y: 3.0)", "y", "already bound"),
+        ("f(1.0, z: 2.0, z: 3.0)", "z", "already bound"),
+    ] {
         let design = support::build(&source(OPTIONALS, &format!("let r = {call};")));
         assert_eq!(support::codes(&design), ["E0140"], "{call}");
+        let message = &design.diagnostics()[0].diagnostic.message;
+        assert!(message.contains(&format!("`{name}`")) && message.contains(reason), "{call}: {message}");
     }
 }
 

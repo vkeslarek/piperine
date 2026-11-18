@@ -237,7 +237,7 @@ fn a_where_that_reads_a_later_param_is_e0318() {
         let (src, d) = diagnostics(&body);
         assert_eq!(codes_of(&d), ["E0318"], "d = {d_value}");
         assert_eq!(snippet(&src, &d[0]), "d", "d = {d_value}");
-        assert!(d[0].diagnostic.message.contains('d'), "names the later param");
+        assert!(d[0].diagnostic.message.contains("the param `d`"), "names the later param: {}", d[0].diagnostic.message);
     }
 }
 
