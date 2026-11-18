@@ -47,6 +47,13 @@ fn bound_step_caps_every_step() {
     let capped = widest_after_the_first(&step_times("SineBench", 2e-3));
     assert!(capped <= 20e-6 * (1.0 + 1e-9), "a step of {capped:e} s past the 20 us cap");
     assert!(capped > 0.5 * 20e-6, "the steps reach the cap, widest {capped:e} s");
+    // The cap is what holds the steps: a 1 nV ripple of the same 1 kHz on 1 V, whose own error
+    // control takes steps far wider, is held to 20 us by `bound_step(0.02 / f)` and no other.
+    let held = widest_after_the_first(&step_times("QuietBench", 2e-3));
+    let free = step_times("QuietFreeBench", 2e-3).windows(2).map(|pair| pair[1] - pair[0]).fold(0.0, f64::max);
+    assert!(free > 3.0 * 20e-6, "without a cap the ripple steps {free:e} s, wider than 20 us");
+    assert!(held <= 20e-6 * (1.0 + 1e-9), "a step of {held:e} s past the 20 us cap");
+    assert!(held > 0.5 * 20e-6, "the steps reach the cap, widest {held:e} s");
 }
 
 #[test]

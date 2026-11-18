@@ -10,6 +10,31 @@ analog for Sine {
     bound_step(0.02 / f);
 }
 
+/// A 1 kHz ripple of 1 nV on 1 V, which the error control takes in steps far wider than a
+/// fiftieth of its period unless a cap holds it, and the same ripple with no cap.
+module QuietSine(p: Electrical) { f: f64 = 1k; }
+analog for QuietSine {
+    v(p, gnd) +> 1.0 + 1.0e-9 * (2.0 * 3.141592653589793 * f * now()).sin();
+    bound_step(0.02 / f);
+}
+
+module QuietSineFree(p: Electrical) { f: f64 = 1k; }
+analog for QuietSineFree {
+    v(p, gnd) +> 1.0 + 1.0e-9 * (2.0 * 3.141592653589793 * f * now()).sin();
+}
+
+module QuietBench() {
+    signal a: Electrical;
+    let s = QuietSine(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+module QuietFreeBench() {
+    signal a: Electrical;
+    let s = QuietSineFree(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
 /// A sine that caps the step at `dt`, whatever `dt` is.
 module Capped(p: Electrical) { dt: f64 = 20u; }
 analog for Capped {
