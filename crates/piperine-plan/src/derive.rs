@@ -47,8 +47,7 @@ impl DerivePlan {
             for (index, value) in parent_body.child_params(placed) {
                 let ChildValue::Expr(expr) = value else { continue };
                 let Some(param) = child.body().params().get(*index as usize) else { continue };
-                let mut read = Vec::new();
-                Self::params_read(ir, *expr, &mut read);
+                let read = ParamReads::of(ir, *expr);
                 let reads = parent_body.params().iter().enumerate().filter(|(i, _)| read.contains(&(*i as u32))).map(|(_, p)| p.name.clone()).collect();
                 bindings.push(Binding {
                     k: bindings.len() as u32,
@@ -84,28 +83,58 @@ impl DerivePlan {
     pub fn giving(&self, instance: &str, param: &str) -> Option<&Binding> {
         self.bindings.iter().find(|b| b.child == instance && b.param == param)
     }
+}
 
-    /// The indices of the params `e` reads: the forms a placement's expression holds (literals,
-    /// params, operators, casts, math functions, calls).
-    fn params_read(ir: &Ir, e: ExprId, out: &mut Vec<u32>) {
-        match ir.expr(e) {
-            Expr::Param(i) => out.push(*i),
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => Self::params_read(ir, *expr, out),
-            Expr::Binary { lhs, rhs, .. } => {
-                Self::params_read(ir, *lhs, out);
-                Self::params_read(ir, *rhs, out);
+/// The params an expression reads: one walk over every form of `Expr`, shared by the derive plan
+/// (which bindings a `set` must recompute) and by the host's refusals (which params others derive
+/// from). A form that is added to `Expr` fails to compile here until the walk says what it reads.
+pub struct ParamReads;
+
+impl ParamReads {
+    /// The indices of the params of the body that `expr` reads, in the order the walk meets them
+    /// (a param read twice appears twice).
+    pub fn of(ir: &Ir, expr: ExprId) -> Vec<u32> {
+        let mut found = Vec::new();
+        ParamReads::walk(ir, expr, &mut found);
+        found
+    }
+
+    /// Whether `expr` reads the param at `index`.
+    pub fn reads(ir: &Ir, expr: ExprId, index: u32) -> bool {
+        ParamReads::of(ir, expr).contains(&index)
+    }
+
+    /// Adds to `out` every param index `expr` reads.
+    fn walk(ir: &Ir, expr: ExprId, out: &mut Vec<u32>) {
+        match ir.expr(expr) {
+            Expr::Param(index) => out.push(*index),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {}
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => ParamReads::walk(ir, *expr, out),
+            Expr::Closure { body, .. } => ParamReads::walk(ir, *body, out),
+            Expr::Binary { lhs: first, rhs: second, .. } | Expr::KnownOr { value: first, default: second } | Expr::Unwrap { is: first, value: second, .. } => ParamReads::walk_all(ir, &[*first, *second], out),
+            Expr::If { cond, then, otherwise } => ParamReads::walk_all(ir, &[*cond, *then, *otherwise], out),
+            Expr::Call { args, .. } | Expr::Math { args, .. } => ParamReads::walk_all(ir, args, out),
+            Expr::Method { receiver, args, .. } => {
+                ParamReads::walk(ir, *receiver, out);
+                ParamReads::walk_all(ir, args, out);
             }
-            Expr::If { cond, then, otherwise } => {
-                for x in [cond, then, otherwise] {
-                    Self::params_read(ir, *x, out);
+            Expr::Block { stmts, value } => {
+                for stmt in stmts {
+                    ParamReads::walk_all(ir, &ir.stmt(*stmt).operands(), out);
+                }
+                if let Some(value) = value {
+                    ParamReads::walk(ir, *value, out);
                 }
             }
-            Expr::Math { args, .. } | Expr::Call { args, .. } => {
-                for a in args {
-                    Self::params_read(ir, *a, out);
-                }
-            }
-            _ => {}
+            Expr::Limit { x, f, seed, .. } => ParamReads::walk_all(ir, &[*x, *f].into_iter().chain(*seed).collect::<Vec<_>>(), out),
+            Expr::Stim { mag, phase, .. } => ParamReads::walk_all(ir, &[*mag].into_iter().chain(*phase).collect::<Vec<_>>(), out),
+        }
+    }
+
+    /// Adds to `out` every param index each of `exprs` reads.
+    fn walk_all(ir: &Ir, exprs: &[ExprId], out: &mut Vec<u32>) {
+        for expr in exprs {
+            ParamReads::walk(ir, *expr, out);
         }
     }
 }
@@ -192,5 +221,33 @@ mod tests {
         let plan = DerivePlan::of(&chain());
         assert!(plan.giving("Top.m", "other").is_none());
         assert_eq!(plan.bindings().len(), 2);
+    }
+
+    /// A body with one param `a` (index 0): the expressions the walk must see through.
+    fn read_by(build: impl FnOnce(&mut IrBuilder, ExprId) -> Expr) -> Vec<u32> {
+        let mut b = IrBuilder::new();
+        let body = b.body(spec("Body", vec![param("a")], Vec::new()));
+        let a = b.expr(Expr::Param(0), ValueType::F64, origin());
+        let form = build(&mut b, a);
+        let root = b.expr(form, ValueType::F64, origin());
+        let instance = b.instance(instance("Body", "Body", body, None, vec![real(1.0)]));
+        let ir = b.finish(instance);
+        ParamReads::of(&ir, root)
+    }
+
+    #[test]
+    fn every_form_that_holds_an_operand_reports_the_params_it_reads() {
+        // F1: the forms the walk once skipped (a method call, `known_or`, `is_known`, `high`)
+        // and the ones it kept, each over `a`
+        let unknown = |b: &mut IrBuilder| b.expr(Expr::Unknown, ValueType::F64, origin());
+        assert_eq!(read_by(|_, a| Expr::Method { method: piperine_ir::Method::Max, receiver: a, args: Vec::new() }), [0]);
+        assert_eq!(read_by(|b, a| Expr::Method { method: piperine_ir::Method::Max, receiver: unknown(b), args: vec![a] }), [0]);
+        assert_eq!(read_by(|b, a| Expr::KnownOr { value: a, default: unknown(b) }), [0]);
+        assert_eq!(read_by(|b, a| Expr::KnownOr { value: unknown(b), default: a }), [0]);
+        assert_eq!(read_by(|_, a| Expr::IsKnown(a)), [0]);
+        assert_eq!(read_by(|_, a| Expr::High(a)), [0]);
+        assert_eq!(read_by(|_, a| Expr::Cast { expr: a, to: ValueType::F64 }), [0]);
+        assert_eq!(read_by(|_, a| Expr::Block { stmts: Vec::new(), value: Some(a) }), [0]);
+        assert_eq!(read_by(|_, _| Expr::Real(Real::new(1.0))), Vec::<u32>::new());
     }
 }

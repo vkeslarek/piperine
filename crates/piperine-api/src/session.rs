@@ -11,11 +11,11 @@ use std::sync::Arc;
 
 use piperine_digital_solver::net::NetId;
 use piperine_interp::Interpreter;
-use piperine_ir::{BranchKind, ChildValue, Expr, ExprId, Ir};
+use piperine_ir::{BranchKind, ChildValue, Ir};
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
-use piperine_plan::Netlist;
+use piperine_plan::{Netlist, ParamReads};
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{
     AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
@@ -131,29 +131,13 @@ impl ParamPath {
         for (at, child) in body.children().iter().enumerate() {
             for (param, value) in body.child_params(at) {
                 let ChildValue::Expr(expr) = value else { continue };
-                if ParamPath::reads(ir, *expr, index as u32) {
+                if ParamReads::reads(ir, *expr, index as u32) {
                     let name = ir.body(child.body).params().get(*param as usize).map_or("?", |p| p.name.as_str()).to_string();
                     derived.push(format!("{}.{name}", child.name));
                 }
             }
         }
         derived
-    }
-
-    /// Whether the expression `expr` reads param `index` of its body, through the operators a
-    /// placement's value is built from.
-    fn reads(ir: &Ir, expr: ExprId, index: u32) -> bool {
-        let reads = |e: &ExprId| ParamPath::reads(ir, *e, index);
-        match ir.expr(expr) {
-            Expr::Param(p) => *p == index,
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => reads(expr),
-            Expr::Binary { lhs, rhs, .. } => reads(lhs) || reads(rhs),
-            Expr::If { cond, then, otherwise } => reads(cond) || reads(then) || reads(otherwise),
-            Expr::KnownOr { value, default } => reads(value) || reads(default),
-            Expr::Math { args, .. } | Expr::Call { args, .. } => args.iter().any(reads),
-            Expr::Method { receiver, args, .. } => reads(receiver) || args.iter().any(reads),
-            _ => false,
-        }
     }
 }
 

@@ -9,7 +9,7 @@ mod digital;
 mod netlist;
 mod plan;
 
-pub use derive::{Binding, DerivePlan};
+pub use derive::{Binding, DerivePlan, ParamReads};
 pub use digital::{CarrierLayout, ReactionMode, ReactionPlan, RecordLayout, StatementPlan};
 pub use netlist::{Modules, Netlist};
 pub use plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, Source, Target, Term};

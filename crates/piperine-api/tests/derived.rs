@@ -43,7 +43,8 @@ fn open(text: &str, overrides: Overrides) -> Session {
     std::fs::write(&file, text).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let print = if overrides.print.is_empty() { vec!["b".into()] } else { overrides.print.clone() };
-    let overrides = Overrides { backend: Some("rust".into()), top: Some("Top".into()), print, ..overrides };
+    let backend = overrides.backend.clone().or(Some("rust".into()));
+    let overrides = Overrides { backend, top: Some("Top".into()), print, ..overrides };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
 }
@@ -189,4 +190,52 @@ fn a_definition_is_recomputed_at_the_set() {
     let table = run(&mut session).unwrap_or_else(|f| panic!("{f}"));
     let rows: Vec<f64> = table.rows.iter().map(|r| real(&r[1])).collect();
     assert_eq!(rows, [8.0, 8.0, 20.0, 20.0]);
+}
+
+/// The child's `r` written with a method call over `rr`: the form the walk over a placement's
+/// expression once skipped, which left the binding with no reads and the child at its folded 1k.
+const METHOD_PLACEMENT: &str = "rr.max(10.0)";
+
+#[test]
+fn a_method_call_placement_derives_through_a_param_flag() {
+    // HII-18 AC 1 and 6 (F1): `r: rr.max(10.0)` with `--param Top.m.rr=3000` is 3000, so the
+    // middle node is 0.75 (it printed 0.5 while the walk skipped the method)
+    let mut session = open(&source(METHOD_PLACEMENT, "1k"), Overrides { params: vec![("Top.m.rr".into(), 3000.0)], ..op() });
+    close(real(&run(&mut session).unwrap_or_else(|f| panic!("{f}")).rows[0][1]), 0.75, "rr = 3000");
+}
+
+#[test]
+fn a_method_call_placement_derives_at_each_sweep_point() {
+    // HII-18 AC 2 (F1): three points, three different rows 1k, 2k, 3k: r / (r + 1k)
+    let sweep = Overrides { analysis: Some("dc".into()), sweep: Some("Top.m.rr".into()), from: Some(1000.0), to: Some(3000.0), step: Some(1000.0), ..Overrides::default() };
+    let mut session = open(&source(METHOD_PLACEMENT, "1k"), sweep);
+    let rows: Vec<f64> = run(&mut session).unwrap_or_else(|f| panic!("{f}")).rows.iter().map(|r| real(&r[1])).collect();
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    for (got, wanted) in rows.iter().zip([0.5, 2.0 / 3.0, 0.75]) {
+        close(*got, wanted, "a sweep point");
+    }
+}
+
+#[test]
+fn a_method_call_placement_derives_in_a_timed_set() {
+    // HII-18 AC 3 (F1): `rr = 3000` at 1.5 us moves the child at that instant
+    let tran = Overrides { analysis: Some("transient".into()), stop: Some(3e-6), max_step: Some(1e-7), print_step: Some(1e-6), ..Overrides::default() };
+    let mut session = open(&source(METHOD_PLACEMENT, "1k"), tran);
+    session.set_at("Top.m.rr", 3000.0, 1.5e-6).unwrap_or_else(|f| panic!("{f}"));
+    let rows: Vec<f64> = run(&mut session).unwrap_or_else(|f| panic!("{f}")).rows.iter().map(|r| real(&r[1])).collect();
+    assert_eq!(rows.len(), 4, "{rows:?}");
+    for (got, wanted) in rows.iter().zip([0.5, 0.5, 0.75, 0.75]) {
+        close(*got, wanted, "a grid row");
+    }
+}
+
+#[test]
+fn the_interpreter_refuses_a_set_a_method_call_placement_derives_from() {
+    // HII-20 AC 2 (F1): the interpreter does not recompute, so it refuses and names the child
+    // param and `--backend rust` (it accepted the set and printed the stale 0.5)
+    let mut session = open(&source(METHOD_PLACEMENT, "1k"), Overrides { backend: Some("interp".into()), ..op() });
+    match session.set_at("Top.m.rr", 3000.0, 0.0) {
+        Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("Top.m.res.r") && message.contains("--backend rust"), "{message}"),
+        other => panic!("expected E0802, found {other:?}"),
+    }
 }

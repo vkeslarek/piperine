@@ -1421,6 +1421,21 @@ Proof: run paritylib | test ngspice::tests::print_lines_parse_to_named_values ..
 **C101** - The new tolerance domains carry a rationale and the old ones are unchanged. (HII-21, AC 2; T10)
 Proof: run paritylib | test contract::tests::new_domains_carry_a_rationale ... ok
 
+**C102** - A placement written with a method call derives through `--param`. (HII-18, AC 1 and 6; F1) 
+Proof: run apiderived | test a_method_call_placement_derives_through_a_param_flag ... ok
+
+**C103** - A placement written with a method call is recomputed at each `dc` sweep point. (HII-18, AC 2; F1) 
+Proof: run apiderived | test a_method_call_placement_derives_at_each_sweep_point ... ok
+
+**C104** - A placement written with a method call is recomputed at a timed set. (HII-18, AC 3; F1) 
+Proof: run apiderived | test a_method_call_placement_derives_in_a_timed_set ... ok
+
+**C105** - The interpreter refuses a set a method-call placement derives from. (HII-20, AC 2; F1) 
+Proof: run apiderived | test the_interpreter_refuses_a_set_a_method_call_placement_derives_from ... ok
+
+**C106** - The param walk reads every form of `Expr`, method calls, `known_or`, `is_known` and `high` included. (HII-18, AC 1; F1) 
+Proof: run planlib | test derive::tests::every_form_that_holds_an_operand_reports_the_params_it_reads ... ok
+
 ---
 
 ## Handoff
