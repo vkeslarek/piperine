@@ -18,6 +18,7 @@
 pub mod backend;
 pub mod failure;
 pub mod prelude;
+pub mod metadata;
 pub mod plot;
 pub mod probe;
 pub mod project;
@@ -30,6 +31,7 @@ pub mod verdict;
 
 pub use backend::Backend;
 pub use failure::Failure;
+pub use metadata::{Metadata, ParamInfo, PortInfo, StreamInfo};
 pub use plot::Plot;
 pub use probe::{Column, Probe};
 pub use project::{Checked, Project};

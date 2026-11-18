@@ -84,3 +84,70 @@ fn a_flow_of_several_contributions_is_e0801() {
     assert_eq!(code, "E0801");
     assert!(message.contains("Top.pr") && message.contains("b0.flow") && message.contains("b1.flow"), "{message}");
 }
+
+/// A design with a discrete port and a stream: a counter with a bounded param.
+const PORTS: &str = "module Counter(in clk: Bit, out q: Bit<u8> = 0) { limit: f64 = 9.0 where limit > 0.0; wide: bool = true; }\ndigital for Counter { on clk.rise() { q <- q.known_or(0) + 1; emit!(\"tick\", n = q.known_or(0)); } }\nmodule Top() {\n    signal clk: Bit = false;\n    signal q: Bit<u8>;\n    let c = Counter(clk, q) { limit: 7.0 };\n}\n";
+
+fn opened(text: &str, overrides: Overrides) -> Session {
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, text).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let spec = project.request(None, &Overrides { backend: Some("rust".into()), top: Some("Top".into()), ..overrides }).unwrap_or_else(|f| panic!("{f}"));
+    Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
+}
+
+#[test]
+fn metadata_lists_every_param_with_type_value_where_and_structural() {
+    // HII-10 AC 1: full path, type, value (a set one shows), `where` text or none, structural, in instance order
+    let set = Overrides { params: vec![("r1.r".into(), 2000.0)], ..op(&[]) };
+    let session = opened(DESIGN, set);
+    let params = session.metadata().params;
+    let find = |path: &str| params.iter().find(|p| p.path == path).unwrap_or_else(|| panic!("no {path} in {params:?}"));
+    let r1 = find("Top.r1.r");
+    assert_eq!((r1.name.as_str(), r1.ty.as_str(), r1.structural), ("r", "f64", false));
+    assert_eq!(r1.value, Cell::Real(2000.0), "a set value shows");
+    assert!(r1.check.as_deref().is_some_and(|c| c.contains('r') && c.contains("0.0")), "{:?}", r1.check);
+    assert_eq!(find("Top.r2.r").value, Cell::Real(3000.0));
+    assert_eq!(find("Top.v1.dc").check, None, "no `where` is none");
+    assert_eq!(find("Top.v1.dc").value, Cell::Real(10.0));
+    let order: Vec<&str> = params.iter().map(|p| p.path.as_str()).collect();
+    assert!(order.iter().position(|p| *p == "Top.v1.dc") < order.iter().position(|p| *p == "Top.r1.r"), "instance order: {order:?}");
+}
+
+#[test]
+fn metadata_lists_ports_and_streams() {
+    // HII-10 AC 2: the top's ports with direction and type in declaration order, and every stream
+    // with its fields and types
+    let session = opened(PORTS, op(&[]));
+    let metadata = session.metadata();
+    let counter: Vec<&str> = metadata.params.iter().filter(|p| p.path.starts_with("Top.c.")).map(|p| p.path.as_str()).collect();
+    assert_eq!(counter, ["Top.c.limit", "Top.c.wide"]);
+    assert_eq!(metadata.params[0].value, Cell::Real(7.0));
+    assert_eq!((metadata.params[1].ty.as_str(), &metadata.params[1].value), ("bool", &Cell::Bool(true)));
+    assert!(metadata.params[0].check.is_some());
+    assert_eq!(metadata.streams.len(), 1, "{:?}", metadata.streams);
+    assert_eq!(metadata.streams[0].path, "Top.c.tick");
+    assert_eq!(metadata.streams[0].fields, [("n".to_string(), "u8".to_string())]);
+    // the top of this design declares no port: its list is empty; a port is listed for `Counter` as a top
+    assert!(metadata.ports.is_empty(), "{:?}", metadata.ports);
+    let as_top = Overrides { top: Some("Counter".into()), ..op(&[]) };
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, PORTS).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let spec = project.request(None, &Overrides { backend: Some("rust".into()), ..as_top }).unwrap_or_else(|f| panic!("{f}"));
+    let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let ports = session.metadata().ports;
+    assert_eq!(ports.iter().map(|p| (p.name.as_str(), p.direction, p.ty.as_str())).collect::<Vec<_>>(), [("clk", "in", "bool"), ("q", "out", "u8")]);
+}
+
+#[test]
+fn metadata_runs_no_analysis() {
+    // HII-10 AC 3: the session answers before `run`, and a run afterwards still gives its table
+    let mut session = opened(DESIGN, op(&["mid"]));
+    let before = session.metadata();
+    assert!(!before.params.is_empty());
+    let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.rows.len(), 1);
+}

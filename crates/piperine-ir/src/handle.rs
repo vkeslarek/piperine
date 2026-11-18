@@ -147,6 +147,12 @@ impl<'a> Body<'a> {
         &self.data().params
     }
 
+    /// The `where` text of param `param` (its index in `params`), as the printer writes it;
+    /// `None` for a param with no `where`.
+    pub fn param_check_text(&self, param: usize) -> Option<String> {
+        self.ir.param_check_text(self.data(), param)
+    }
+
     /// Ports first, then signals.
     pub fn nodes(&self) -> &'a [BodyNode] {
         &self.data().nodes

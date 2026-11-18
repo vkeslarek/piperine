@@ -54,6 +54,16 @@ impl Ir {
     }
 }
 
+impl Ir {
+    /// The `where` expression of param `param` of `body`, as the printer writes it after the
+    /// word `where`; `None` for a param with no check or an index out of range.
+    pub(crate) fn param_check_text(&self, body: &BodyData, param: usize) -> Option<String> {
+        let check = body.params.get(param)?.check?;
+        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers, streams: &body.streams };
+        Some(Printer::new(self, false).render(scope, Piece::Expr(check)))
+    }
+}
+
 impl Display for Origin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}:{}", Printer::name(&self.file), self.line, self.col)

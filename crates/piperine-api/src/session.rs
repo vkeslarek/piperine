@@ -25,6 +25,7 @@ use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
+use crate::metadata::Metadata;
 use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
@@ -599,6 +600,19 @@ impl Session {
         let b = circuit.bound()?;
         let at = b.digital.plan().nets.iter().position(|n| n.name == path)?;
         Some(b.digital.read(NetId(at as u32)).to_vec())
+    }
+
+    /// What the design declares (HII-10): every param with its value as the run uses it, the
+    /// top's ports and every record stream. No analysis runs, and none is needed.
+    pub fn metadata(&self) -> Metadata {
+        // the request's `params`, each by the full path of its param, the last one given winning
+        let set: Vec<(String, f64)> = self
+            .spec
+            .params
+            .iter()
+            .filter_map(|(entry, value)| ParamPath::resolve(&self.ir, self.ir.top().path(), entry).ok().map(|p| (format!("{}.{}", p.instance, p.param), *value)))
+            .collect();
+        Metadata::of(&self.ir, &|path| set.iter().rev().find(|(p, _)| p == path).map(|(_, v)| *v))
     }
 
     /// The plot of the run that has completed, drawn from the rows of its table: every accepted

@@ -661,9 +661,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `tests/metadata.rs` gains `metadata_lists_every_param_with_type_value_where_and_structural`, `metadata_lists_ports_and_streams`, `metadata_runs_no_analysis`
-- [ ] Gate check passes: Quick (`Run apimeta`)
-- [ ] Test count: 3 new tests
+- [x] `tests/metadata.rs` gains `metadata_lists_every_param_with_type_value_where_and_structural`, `metadata_lists_ports_and_streams`, `metadata_runs_no_analysis`
+- [x] Gate check passes: Quick (`Run apimeta`)
+- [x] Test count: 3 new tests
 
 **Tests**: integration
 **Gate**: quick
