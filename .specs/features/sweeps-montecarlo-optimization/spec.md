@@ -1,8 +1,10 @@
 # Sweeps, Monte Carlo and Optimization Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 **Size:** L, about 34 tasks. Part of the host-iii group (`.specs/features/host-iii/spec.md` holds the group's "Gaps closed" table).
 
-## Open questions (user decisions, asked 2026-11-17)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -51,7 +53,7 @@ A run sweeps one param of a `dc` analysis (`sweep`, `from`, `to`, `step`) and no
 | Bounds from `where` | a `where` that is a conjunction of comparisons of the param with constants gives a box; any other `where` is a feasibility check evaluated before each candidate | §23.2 rule 5 | n - planner |
 | A record with `maybe = true` | not counted as a pass, hit or margin; the draw or candidate is reported as unknown | §23.2 rule 4 | y - spec |
 
-**Open questions:** Q1 to Q4 at the top of this file, awaiting the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: SMO-02, SMO-05, SMO-11. Failure and partial-failure states: SMO-07 AC 3 (one draw fails, the others go on), SMO-12 AC 4 (no feasible start). Idempotency and retry: SMO-06 AC 1 (same seed, same results). Auth and rate limits: N/A, a local tool. Concurrency and ordering: SMO-07 AC 2 (parallel draws, ordered results). Data lifecycle: SMO-08 (what each draw keeps: last target record, require verdicts). Observability: SMO-08, SMO-13 (each iteration reported). External-dependency failure: N/A, no external service. State-transition integrity: SMO-12 AC 5 (a candidate failing `where` is never simulated).
 

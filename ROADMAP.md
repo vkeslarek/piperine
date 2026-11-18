@@ -315,7 +315,7 @@ User, verbatim: "Depois desses desenvolvimentos do ir -> transpilation -> abi eu
 
 User, verbatim: "gostaria que abrisse feature e escrevesse a spec para todos esses gaps, pode dividir da maneira que achar legal pois eles todos são super importantes. Não precisa avançar para o design mas deixa aqui as features abertas e coloca no roadmap. Preciso que TODOS os gaps estejam endereçados ok? Principalmente esses que tu listou que limitam a expressividade da linguagem ok?"
 
-Every id of `GAPS.md` (audit of 2026-11-17) has one owning feature. Specs only for the open ones (`.specs/features/<name>/spec.md`); each carries its open questions for the user and a "Gaps closed" table. Design and tasks come when a feature is picked.
+Every id of `GAPS.md` (audit of 2026-11-17) has one owning feature. Specs only for the open ones (`.specs/features/<name>/spec.md`), each with a "Gaps closed" table. All 77 open questions were answered with their recommended option (user, 2026-11-18: "Sobre as open questions, vou de aceito todas ok?"); the specs are approved. Design and tasks come when a feature is picked.
 
 **In flight (three lanes, user 2026-11-17 "Topo"):**
 

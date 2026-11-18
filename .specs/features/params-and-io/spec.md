@@ -1,5 +1,7 @@
 # Params and I/O Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 Opened 2026-11-17 from `GAPS.md` (audit of 2026-11-17) at the user's request: "gostaria que
 abrisse feature e escrevesse a spec para todos esses gaps [...] Preciso que TODOS os gaps estejam
 endereçados ok? Principalmente esses que tu listou que limitam a expressividade da linguagem ok?"
@@ -10,7 +12,7 @@ every value type (L28), the top's continuous ports (L39), input files and tables
 of type errors (X5, L20), the formatting of the shipped sources (H12), and every error code of the
 spec that no source raises and no other feature claims (`GAPS.md` §10).
 
-## Questions for the user (open)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -73,7 +75,7 @@ source file (`GAPS.md` §10); 17 of them belong to no other feature and belong h
 | The guard of codes | A test target `spec_codes` in `crates/piperine-lang/tests/` reads every error table of `docs/spec/` and every non-test `.rs` file under `crates/` | Mechanical closure: a code is either in the source or listed with its owner | n - planner |
 | Formatting the galleries | The fences of Appendices D, E and F are rewritten in the formatter's output in `docs/spec/`; `spec_text.rs` and `std_galleries` must stay green (MD-57) | H12 names the galleries | n - planner |
 
-**Open questions:** Q1 and Q2 at the top of this file wait for the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: PI-01 AC 4, PI-02 AC 4, PI-08, PI-09,
 PI-10 (every malformed file, value or control string is refused with its code). Failure states:

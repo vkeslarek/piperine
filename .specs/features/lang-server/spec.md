@@ -1,10 +1,12 @@
 # Language Server Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 **Priority: low.** User, 2026-11-16: "O lang-server é o menos importante, vai ficar para bem depois." This spec is written so that `GAPS.md` B3 has an owner; it is scheduled after every other open feature unless the user moves it.
 
 **Size:** M, about 20 tasks.
 
-## Open questions (user decisions, asked 2026-11-17)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -46,7 +48,7 @@
 | Unsaved buffers | the open buffer's text wins over the file on disk for every check | an editor shows the buffer | n - planner |
 | Position encoding | UTF-16 code units, the LSP default, converted from the front end's byte spans | the LSP specification | y - LSP |
 
-**Open questions:** Q1 to Q4 at the top of this file, awaiting the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: LSV-02 AC 3 (a file outside a package). Failure and partial-failure states: LSV-02 AC 4 (a front-end panic does not kill the server), LSV-06 AC 2 (a source that does not parse is not formatted). Idempotency and retry: LSV-06 AC 3 (formatting a formatted file changes nothing). Auth and rate limits: N/A, a local process. Concurrency and ordering: LSV-02 AC 2 (a newer change cancels an older check). Data lifecycle: N/A, nothing is stored. Observability: LSV-01 AC 3 (the server logs to the client's log). External-dependency failure: N/A, no external service. State-transition integrity: LSV-01 AC 2 (shutdown then exit).
 

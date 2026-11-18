@@ -1,8 +1,10 @@
 # Conformance Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 What runs today is proven on seven small analog circuits and on the buck's own SPEC. This feature gives every other claim an oracle that can falsify it: ngspice twins for every device and domain, an external oracle for digital and mixed behaviour, the galleries run against their traces, a test for every rule of Part V, AC and DC of mixed designs, and a stated meaning for backend agreement past the interpreter's subset.
 
-## Open questions for the user
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 Nothing below is decided. Each question has options and the planner's recommendation.
 
@@ -68,7 +70,7 @@ A claim nothing can falsify is not a property of the product (MD-38).
 | Rule ids of Part V | Q6 A | MD-51's shape, proven on the LRM | n - planner; awaiting Q6 |
 | External tools absent | each external comparison prints the harness's skip line and still runs the Piperine side, as the ngspice harness does | `piperine-parity` rule | n - planner |
 
-**Open questions:** Q1 to Q6 at the top of this file are open; the rows above follow the recommendations until the user answers.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: CONF-08 AC 3 (a gallery's refusal must name its construct). Failure states: CONF-04 AC 2 (a failing twin is a finding, never a moved bound). Idempotency: N/A because tests are deterministic runs. Auth and rate limits: N/A, local tools. Concurrency: N/A. Data lifecycle: CONF-02 AC 4 (fixture hashes recorded, the corpus frozen). Observability: CONF-04 AC 1 (margins printed). External dependency: CONF-05 AC 3, CONF-06 AC 3 (tool absent: skip line). State transitions: CONF-10 (each Part V rule).
 

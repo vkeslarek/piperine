@@ -1,6 +1,8 @@
 # Analog Operators Specification
 
-## Open questions for the user
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 None of these is decided. Each has a recommendation; the spec is written to the recommendation and marks where an answer changes it.
 
@@ -59,7 +61,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 | `inoise` | the output density divided by the magnitude of the transfer from `input` to `output` at each frequency, as ngspice | ngspice's definition; the twin compares it | n - planner |
 | Q1 to Q6 | the recommendation of each | see the top of this file | n - open |
 
-**Open questions:** Q1 to Q6 at the top of this file are open; the spec is written to each recommendation.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: AO-01 AC 7 and 8 (`E0451`, `E0450`), AO-02 AC 5 and 6 (`E0452`, `E0453`), AO-03 AC 6 (`E0454`), AO-05 AC 4 to 6 (`P0010`, `E0801`), AO-07 AC 3 (`E0456`), AO-08 AC 2, AO-09 AC 5 (`E0603`). Failure states: AO-03 AC 6 and AO-07 AC 3 fail the analysis before or at the point named. Idempotency and retry: N/A because a session runs once. Auth and rate limits: N/A because the tool is local. Concurrency and ordering: AO-09 AC 2 (trace records of rejected steps stay, in evaluation order). Data lifecycle: AO-09 AC 6 (traces recorded only when subscribed, Q5). Observability: AO-09 (traces are the debugging surface of non-convergence). External-dependency failure: AO-06 AC 4 (ngspice absent, the harness's skip rule). State-transition integrity: AO-02 AC 2 (the history before `td` is the operating point's value).
 

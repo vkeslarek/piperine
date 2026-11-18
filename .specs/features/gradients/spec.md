@@ -1,8 +1,10 @@
 # Gradients Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 **Size:** L, about 40 tasks (at the split limit: if design finds more, the event rules GRD-07 to GRD-10 become a feature of their own). Part of the host-iii group (`.specs/features/host-iii/spec.md` holds the group's "Gaps closed" table).
 
-## Open questions (user decisions, asked 2026-11-17)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -48,7 +50,7 @@
 | Grazing threshold | `de/dt` at `t*` smaller in magnitude than the crossing's own `ttol`-scaled slope bound | a crossing whose time cannot be located within `ttol` has no defined `dt*/dp` | n - planner |
 | Which record a diagnostic replaces | every record whose value depends, through the dependency analysis of §21, on the named event | §23.3: "`E0807` and `E0808` replace the number for the records that depend on the named event" | y - spec |
 
-**Open questions:** Q1 to Q3 at the top of this file, awaiting the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: GRD-03, GRD-10 AC 3. Failure and partial-failure states: GRD-10 (no gradient for some records, numbers for the rest). Idempotency and retry: GRD-11 (the run with and without gradients is the same). Auth and rate limits: N/A, a local tool. Concurrency and ordering: GRD-07 AC 3 (events at one instant in microstep order). Data lifecycle: GRD-12 AC 3 (sensitivities kept as rows, not steps, MD-66). Observability: GRD-02 (why a param has no gradient). External-dependency failure: GRD-13 AC 3 (ngspice absent). State-transition integrity: GRD-11.
 

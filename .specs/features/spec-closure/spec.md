@@ -1,5 +1,7 @@
 # Spec Closure Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 Opened 2026-11-17 from `GAPS.md` (audit of 2026-11-17) at the user's request: "gostaria que
 abrisse feature e escrevesse a spec para todos esses gaps [...] Preciso que TODOS os gaps estejam
 endereçados ok? Principalmente esses que tu listou que limitam a expressividade da linguagem ok?"
@@ -10,7 +12,7 @@ that MD-62 replaced (X1) and a conformance state that has moved (X2), and the bu
 language additions nobody has ruled on (G1, G2). The repository still carries documents of the
 Verilog-AMS and PHDL eras (H13). This feature closes all seven.
 
-## Questions for the user (open)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -74,7 +76,7 @@ lines of `ROADMAP.md`, the `STATE.md` handoffs older than `solver-restructure`, 
 | STATE handoffs | Every handoff below `solver-restructure` (from `lrm-conformance-wave3` down) is removed; `.specs/features/<name>/` keeps each feature's record | They describe the deleted VAMS front end; the feature folders and git hold the history | n - planner |
 | `README.md` and `docs/index.md` | Rewritten for MSL: what the language is, how to run `examples/rc` and `examples/buck`, where the spec, the Book and `GAPS.md` are | "VAMS-era docs" of H13; both open on Verilog-AMS today | n - planner |
 
-**Open questions:** Q1 to Q4 at the top of this file wait for the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Medium scope: input validation (SC-01, SC-02: the edge
 values NaN, infinities, amounts `>= N` and negative) and state-transition integrity (SC-07,

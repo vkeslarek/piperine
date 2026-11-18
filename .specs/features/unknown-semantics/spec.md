@@ -1,5 +1,7 @@
 # Unknown Semantics Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 The unknown-value rules of part I §3.3 and §22.1, as the spec writes them. This is the first of
 three specs for one area. It covers the values and the merge. The other two are
 `unknown-semantics-per-level` (S6, G6: per-level flags on integers, which changes the ABI) and
@@ -8,7 +10,7 @@ three specs for one area. It covers the values and the merge. The other two are
 flags. They use `bool`, enums, whole integers and struct fields, where one flag per value and
 one flag per level give the same answer.
 
-## Open questions (the user's, before approval)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -66,7 +68,7 @@ monitor need them.
 | A panic under unknown control (§1 rule 13) | The panicking path contributes unknown to every effect of that merge: each value it would have yielded or committed is `Unknown` | §1 rule 13 says "Every effect of that merge becomes unknown" | n - planner |
 | The `analog` refusal of a value that may be unknown | `E0150` naming the carrier, as §3.3.5 and §14 say, in place of today's `P0001` | The spec gives the code; the check already exists | n - planner |
 
-**Open questions:** Q1, at the top of this file. No criterion depends on its answer.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: US-01 AC 4, US-03 AC 8 and 9 (`E0151`, `E0701`, `E0702`). Failure states: US-04 AC 7 (a panic under unknown control is not a fault), US-02 AC 4 (a panic on a known out-of-range index). Idempotency and retry: N/A because elaboration and a run are deterministic (§15 I1). Auth and rate limits: N/A because the tool is local. Concurrency and ordering: US-04 AC 2 and the snapshot rule I2, which this feature does not change. Data lifecycle: N/A because nothing is stored. Observability: US-05 (`maybe`). External dependencies: N/A because `rustc` is the build's own concern (MD-63). State transitions: US-01 AC 2 (unknown to unknown is no change)
 

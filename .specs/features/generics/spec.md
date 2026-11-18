@@ -1,6 +1,8 @@
 # Generics Specification
 
-## Questions for the user (open, 2026-11-17)
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -79,7 +81,7 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 | Structural params | a param read by generation, a const generic argument, an array length or a template is structural (§8.1.2): an override before a run is an elaboration input; a `set` or a sweep of it during a run is refused | §8.1.2, MD-18 | y - spec |
 | `m` on a host `set` | effective multiplicity follows the rule `host-ii` sets for derived params (X9) | `m` is inherited down the path (§8.5.3); a child's effective `m` is a derived value | n - planner |
 
-**Open questions:** Q1 (X6), at the top of this file.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: GN-01 AC 4 (`where` per instantiation, `E0127`), GN-13 AC 4 (`E0304`), GN-17 AC 3 (`E0340`), GN-18 AC 3 (`E0341`). Failure states: refusal by name while a dependency is open (GN-27 AC 2, GN-29). Idempotency and retry: N/A, elaboration is a deterministic function of the source and the overrides. Auth and rate limits: N/A, a local tool. Concurrency and ordering: GN-19 AC 2 (generated reactions keep source order, §12.1.14). Data lifecycle: N/A, no state outlives a session. Observability: GN-15 AC 2 (variant names in the IR and generated Rust); GN-08 (diagnostics for unreached items). External-dependency failure: N/A. State-transition integrity: GN-20 (a structural param cannot change during a run).
 

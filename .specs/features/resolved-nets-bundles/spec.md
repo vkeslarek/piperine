@@ -1,5 +1,7 @@
 # Resolved Nets: Bundles Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 Bundles (§7, L25): a `struct` whose fields are carriers, its views (`flip`, observer `in`),
 bundle literals and functions on a bundle. The companion of `resolved-nets`: a bundle field of a
 resolved nature has no direction, and a bundle field of a discrete or continuous nature follows
@@ -45,7 +47,7 @@ blocked.
 | How a bundle reaches the IR | Each field becomes the carrier it is, named by its dotted path (`tx.valid`); a connection of a bundle is a connection of each field of the same name (§7 rule 14). The bundle itself exists in the POM only | §7 rule 14 ("no semantics of its own") and the navigability rule (MD-25, MD-54) | n - planner |
 | How the host names a bundle field | By its dotted path under the instance: `Top.s.tx.valid` in `--print`, tables, records and metadata | §7 rule 12 reaches fields with `.`; the host already names nets by path | n - planner |
 
-**Open questions:** none of this spec's own; delivery order follows `resolved-nets` Q1.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: BN-01 AC 3 to 6, BN-03 AC 3, BN-04 (`E0260` to `E0264`). Failure states: N/A because every failure is an elaboration error, listed under input validation. Idempotency and retry: N/A because elaboration is deterministic. Auth and rate limits: N/A because the tool is local. Concurrency and ordering: BN-02 AC 4 (the one-driver check after views). Data lifecycle: N/A because nothing is stored. Observability: BN-07 (host names). External dependencies: N/A. State transitions: N/A because a bundle has no behaviour with time (§7).
 

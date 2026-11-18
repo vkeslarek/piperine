@@ -1,8 +1,10 @@
 # Host Analyses Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 **Size:** M, about 24 tasks. Part of the host-iii group (`.specs/features/host-iii/spec.md` holds the group's "Gaps closed" table).
 
-## Open questions (user decisions, asked 2026-11-17)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -48,7 +50,7 @@
 | An operating-point variable in a transient | one value per row, interpolated like an analog signal | a named `let` of `analog` is a function of the solution at each step; printing it per row is what a user expects of `print` | n - planner |
 | An operating-point variable's path | `<instance>.<let name>`; a name shared by a param and a `let` cannot occur (one namespace in a body) | §21 rule 1 | y - spec |
 
-**Open questions:** Q1 to Q3 at the top of this file, awaiting the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: HAN-02, HAN-06, HAN-11. Failure states: HAN-02 AC 4 (a singular port matrix), HAN-06 AC 3 (a run shorter than one period). Idempotency and retry: N/A because a session runs once (CLI-04). Auth and rate limits: N/A, a local tool. Concurrency and ordering: N/A, no concurrent access. Data lifecycle: N/A, results live in the run's table. Observability: HAN-10 (metadata lists the variables). External-dependency failure: HAN-04 AC 2 (ngspice absent, the harness's skip rule). State-transition integrity: N/A, no state machine added.
 

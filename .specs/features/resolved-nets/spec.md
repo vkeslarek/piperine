@@ -1,5 +1,7 @@
 # Resolved Nets Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 Natures other than `Bit` and the continuous ones with a flow: discrete natures a project
 declares (L22), natures with `resolve` (L21: `Wire`, `Tri`, `SumNet`, `others()`, relaxation of
 loops), and signal-flow natures (L23, `VSignal`). With them come the stdlib of §22.3 (`Logic`,
@@ -7,7 +9,7 @@ loops), and signal-flow natures (L23, `VSignal`). With them come the stdlib of �
 `Bidir` of §22.4.3, and the Book's alarm line. Bundles (L25) are the companion spec
 `resolved-nets-bundles`.
 
-## Open questions (the user's, before approval)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -70,7 +72,7 @@ elaborator, the IR and the generated Rust.
 | Where the record of a loop that does not settle goes | The `log` stream of the instance of the loop's first drive in instance-path order, once per loop and analysis, naming every drive of the loop (§8.2.3 step 4, §19 rule 2) | The spec fixes it | n - planner |
 | A signal-flow node that meets a nature with `flow` at one net | Conservative, with KCL (§4 rule 13 Resolution, §6 rule 2 Resolution) | The spec fixes it | n - planner |
 
-**Open questions:** Q1, at the top of this file.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: RN-01 AC 4 and 5, RN-02 AC 3 to 5, RN-04 AC 3, RN-08 AC 3 and 4 (the error codes of §4 to §6). Failure states: RN-05 AC 4 (a loop that does not settle is not an error; it is unknown and logged). Idempotency and retry: N/A because a run is deterministic (§15 I1). Auth and rate limits: N/A because the tool is local. Concurrency and ordering: RN-03 AC 3 (drives in instance-path order, independent of evaluation order). Data lifecycle: N/A because nothing is stored. Observability: RN-05 AC 4 (the `log` record), RN-09 (the alarm's stream). External dependencies: N/A. State transitions: RN-03 AC 5 (`changed()` follows the resolved value, not the drives).
 

@@ -1,8 +1,10 @@
 # Periodic Small-Signal Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 Periodic small-signal (PAC), periodic transfer function (PXF) and periodic noise (PNoise), linearized around the periodic steady state that `host-ii` brings.
 
-## Open questions for the user
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 Nothing below is decided. Each question has options and the planner's recommendation.
 
@@ -53,7 +55,7 @@ Part V §16.3 defines periodic small-signal and periodic noise as host analyses:
 | Sideband count | `sidebands = K`, default 0 when absent; IF negative or not an integer THEN `P0010` | sideband 0 alone is a valid PAC | n - planner |
 | Spec text | G.36 amended (Q5 A), G.37 closed with a traced example of `SampleHold` under PAC | awaiting Q5 | n - planner |
 
-**Open questions:** Q1 to Q5 at the top of this file are open; the rows above follow the recommendations until the user answers.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: PER-08 AC 1 to 3 (keys). Failure states: PER-08 AC 4 to 6 (the orbit did not converge, a grazing event, an irreversible reaction). Idempotency: N/A because a run is one run. Auth and rate limits: N/A, local tool. Concurrency: N/A, no new concurrency. Data lifecycle: N/A because results are a table, as `ac`'s. Observability: PER-01 AC 4 (the orbit's statistics printed). External dependency: PER-03 AC 3 (ngspice absent: the harness's skip line). State transitions: PER-07 (the flags a model reads in each phase).
 

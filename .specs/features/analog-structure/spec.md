@@ -1,6 +1,8 @@
 # Analog Structure Specification
 
-## Open questions for the user
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 None of these is decided. Each has a recommendation; the spec is written to the recommendation and marks where an answer changes it.
 
@@ -59,7 +61,7 @@ One silent defect sits on the same path: the authored `Child` record of the IR p
 | Q2 spec models needing other features | local copies here; the spec's models as `WHERE` criteria | recommendation; see the top of this file | n - open |
 | Q3 `slew` | run here | recommendation; see the top of this file | n - open |
 
-**Open questions:** Q1, Q2 and Q3 at the top of this file are open; the spec is written to each recommendation.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: AS-02 AC 1, 2, 5 (`E0414`, `E0415`), AS-08 AC 4 (`E0336`), AS-10 AC 2 (`E0353`), AS-11 AC 5 and 6, AS-12 AC 3 (`E0321`), AS-13 AC 4 and 5, AS-15 AC 3. Failure states: AS-03 AC 3 (`E0418` at run). Idempotency and retry: N/A because elaboration and a run are deterministic and a session runs once. Auth and rate limits: N/A because the tool is local. Concurrency and ordering: AS-03 AC 2 (a kind changes only between solves, at a jump). Data lifecycle: AS-09 AC 4 (state of a placement under an untaken branch advances). Observability: AS-16 (the IR shows a child's own nodes). External-dependency failure: AS-18 AC 3 (the twins follow the harness's skip rule when ngspice is absent). State-transition integrity: AS-03 AC 2, AS-04 AC 1 and 2 (jumps keep the `ddt` state, §15.2.1).
 

@@ -1,5 +1,7 @@
 # Unknown Semantics: Events Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 The third spec of the unknown-value area (see `unknown-semantics`). It closes the event gaps of
 §13 that remain: an event read as a `bool` (L51), `settle` (L52) and functions that return
 `Event` (L53). It also delivers what they unblock: `limexp`, the Book's diode clipper and the
@@ -51,7 +53,7 @@ the IR and the generated Rust.
 | A guard read with an unknown `bool` | Runs under the merge of `unknown-semantics` (US-04 AC 9) | §13 rule 1 | n - planner |
 | The clipper's and the buck's expected output | What the Book prints for them: the clipper's `clip` stream (two lines per period, `vin` near 0.72) and `wave` records, the buck's `regulated` check passing after 10 ms | The Book is the source; its listings are held to the binary (`piperine-cli/tests/book.rs`) | n - planner |
 
-**Open questions:** none - all resolved or logged above.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: UE-02 AC 3 and 4 (`E0440`, `E0441`). Failure states: UE-03 AC 6 (a rejected step moves the settle commit). Idempotency and retry: N/A because a run is deterministic (§15 I1). Auth and rate limits: N/A because the tool is local. Concurrency and ordering: UE-03 AC 2, 4 and 8 (order of the settle phase, its commits and its records). Data lifecycle: UE-03 AC 7 (a settle commit at the stop time is dropped). Observability: UE-03 AC 8 (records of the settle phase). External dependencies: N/A. State transitions: UE-03 AC 3 (settle commits are due at the next time point, never in the same one).
 

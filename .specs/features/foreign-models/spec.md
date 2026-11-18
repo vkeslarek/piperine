@@ -1,11 +1,13 @@
 # Foreign Models Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 Opened 2026-11-17 from `GAPS.md` (audit of 2026-11-17) at the user's request: "gostaria que
 abrisse feature e escrevesse a spec para todos esses gaps [...] Preciso que TODOS os gaps estejam
 endereçados ok? Principalmente esses que tu listou que limitam a expressividade da linguagem ok?"
 Spec only: no design, no tasks yet.
 
-## Questions for the user (open)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 Each blocks approval. The recommendation is the planner's; nothing below is decided until the
 user answers.
@@ -72,7 +74,7 @@ against the foreign artifact, placing the instance, and the per-ABI contracts of
 | The derivative functions | Any function of the right signature, MSL or `extern "C"` | §3 rule 11 says "names one function", not an `extern` one | y - spec |
 | How a derivative is used | The chain rule: the partial of `f(g1, …, gk)` against an unknown is `Σ f_i(g) · ∂g_i`; `f_i` is the `i`-th named function | §3 rule 1: calls inside `analog` are differentiated through | y - spec |
 
-**Open questions:** Q1, Q2 and Q3 at the top of this file wait for the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: FM-04, FM-07, FM-08 (every refusal of
 §3 and §8.5 with its code). Failure states: FM-03 AC 3 (a missing symbol), FM-07 AC 3 (an

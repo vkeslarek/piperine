@@ -1,8 +1,10 @@
 # Host III Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 **Size:** L, about 32 tasks (this spec). The whole host-iii group (this spec and the four sibling specs below) is several features: about 150 tasks.
 
-## Open questions (user decisions, asked 2026-11-17)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 None of these is decided. Each lists the options and the planner's recommendation; the criteria below are written for the recommended option and name what changes otherwise.
 
@@ -92,7 +94,7 @@ Every id the coverage map gives host-iii, with the requirement that closes it. N
 | How a continued transient keeps its state | the session keeps the live solver suspended; when a session was closed, it re-enters from the last step's re-entry state (`solver-hygiene` HYG-13 `Reentry::LastStep`) | a live solver is exact by construction; re-entry is exact once HYG-04 lands | n - planner |
 | The forced value of a node | a voltage, `f64`, through an ideal source to `gnd` | §23.1's second resolution | y - spec |
 
-**Open questions:** Q1 to Q4 at the top of this file, awaiting the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: HIII-04, HIII-06 AC 4, HIII-10 AC 3. Failure and partial-failure states: HIII-07 AC 3 (a wait never fires), HIII-02 AC 4 (a singular force). Idempotency and retry: HIII-01 AC 4 (a second force of the same carrier replaces the first). Auth boundaries and rate limits: N/A because the host is a local library. Concurrency and ordering: HIII-07 (several waits, the first wins; ties by the order given), HIII-09 AC 1. Data lifecycle: HIII-11 AC 2 (the rows of a continuation append). Observability: HIII-03 (force on `log`). External-dependency failure: N/A because no external service is called. State-transition integrity: HIII-10 AC 3 and AC 4 (no continuation after a failure or a `finish`), HIII-13 (the state is restored after an analysis at the last instant).
 

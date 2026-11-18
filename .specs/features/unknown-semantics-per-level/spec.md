@@ -1,12 +1,14 @@
 # Unknown Semantics: Per-Level Flags Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 The second spec of the unknown-value area (see `unknown-semantics`). It closes S6 and G6: an
 integer's unknown levels are tracked one by one, as §3.3.2 says, or the spec is amended to admit
 one flag per value. Which of the two is the user's decision (Q1). On 2026-11-15 the orchestrator
 ruled one flag per value as provisional (`ir-rust` F-B4), and noted that the user may revisit it.
 This spec puts that ruling back in front of the user, with the cost of each option.
 
-## Open questions (the user's, before approval)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -54,7 +56,7 @@ why: a pin's field has one known byte per element. G6 records this as a provisio
 | Arithmetic and comparisons | All-or-nothing under every option (§3.3.2, §3.3.10) | The spec says so; per-level flags change only the operators that move levels | n - planner |
 | Width of the mask under C | One bit per level of the leaf, so a mask the size of the value bytes, at the offset `known` names | Same alignment and size rules as the value; P3 (all zero is no value) still holds: mask 0 is every level unknown | n - planner |
 
-**Open questions:** Q1 and Q2, at the top of this file.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: UL-05 AC 3 (a malformed mask field fails bind validation). Failure states: UL-05 AC 4 (a relaxation that does not settle). Idempotency and retry: N/A because a run is deterministic (§15 I1). Auth and rate limits: N/A because the tool is local. Concurrency and ordering: N/A because flags travel with values and change no ordering rule. Data lifecycle: N/A because nothing is stored. Observability: UL-06 (printing). External dependencies: UL-05 AC 2 (devices built against today's ABI keep working, under C). State transitions: UL-07 AC 2 (a level that goes between known and unknown is a change).
 

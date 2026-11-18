@@ -1,10 +1,12 @@
 # Python Host Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 > **Deferred (2026-11-18).** User, 2026-11-18, verbatim: "Eu acho que podemos fazer tudo em RUST por enquanto e DEPOIS pensamos em integrar python. Senão cada mod da api do host vai tomar mais tempo ainda". Every host feature is built and tested in Rust first (`piperine-api`); this feature starts only after the host features it wraps have landed, and none of them waits on it or carries Python work.
 
 **Size:** L, about 35 tasks (P1 alone about 20). The host-action and analysis stories grow with `host-iii` and its siblings; each is gated on its dependency by a WHERE criterion.
 
-## Open questions (user decisions, asked 2026-11-17)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 The shape of the Python host is the user's. In the Verilog-AMS era the user said "Python is the host surface"; the crate `piperine-python` was then removed with the old front end (user, `solver-restructure` decision 5: "Vamos remover o IR, cranelift e Python por agora"). The spec (Part VIII) sketches its host in Python and `examples/buck/README.md` writes the buck's scenarios as Python with no implementation (`GAPS.md` B4). Every criterion below is written for the recommended options.
 
@@ -59,7 +61,7 @@ There is no Python host (`GAPS.md` B4). The spec's host sketches (§23.1, §23.2
 | Long runs | the native call releases the GIL while the solver runs; `Ctrl-C` cancels the run at the next accepted step and raises `KeyboardInterrupt` | a 130 s buck start must not freeze the interpreter | n - planner |
 | Names | the facade's names are Python's spelling of the Rust names (`Session.set_at`, `Table.columns`); the sketch's verbs (`drive`, `wait`, `rise`, `read`, `probe`) map to `host-ii` and `host-iii` calls | MD-22 | n - planner |
 
-**Open questions:** Q1 to Q7 at the top of this file, awaiting the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: PYH-03 AC 3, PYH-06. Failure and partial-failure states: PYH-06 (every failure an exception), PYH-13 AC 2 (cancel). Idempotency and retry: PYH-03 AC 4 (a second `run` on one session is refused as in Rust). Auth and rate limits: N/A, a local library. Concurrency and ordering: PYH-10 AC 3 (one session per event loop), PYH-13 AC 1 (GIL released). Data lifecycle: PYH-04 AC 2 (a table owns its arrays after the session is closed). Observability: PYH-05 (records), PYH-06 AC 2 (diagnostics rendered). External-dependency failure: PYH-14 (`rustc` missing), PYH-12 AC 2 (`matplotlib` missing). State-transition integrity: PYH-10 AC 4 (actions on a closed or failed session refused).
 

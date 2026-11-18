@@ -1,6 +1,8 @@
 # Composite Values Specification
 
-## Questions for the user (open, 2026-11-17)
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 These block design. Each has options and a recommendation; none is decided.
 
@@ -84,7 +86,7 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 | Exhaustiveness | a non-exhaustive `match` or a refutable `let` without `else` is an elaboration error naming a missing pattern, as Rust; its code is the one `params-and-io` gives type errors (X5), `P0002` meanwhile | Rust's rule; X5 is not this feature's | n - planner |
 | Enum variant names on the host | carried as metadata of the shape (CV-22), which also closes the `GAPS.md` §4.7 note "Enum variant names are not carried" | Q2 cannot print `Tx::Data` without them; no other feature owns the note | n - planner |
 
-**Open questions:** Q1 to Q5, at the top of this file.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: CV-13 AC 3 (index out of range), CV-32 AC 3 (literal range), Q5 (loop and recursion bounds). Failure states: every phase's refusal by name (CV-34) and panics (CV-13, CV-07). Idempotency and retry: N/A because elaboration and a run are deterministic functions of the source. Auth and rate limits: N/A, a local tool. Concurrency and ordering: CV-25 AC 4 (last write wins per level among element and field commits, §12.1.2). Data lifecycle: CV-27 (storage of carrier arrays from the first commit). Observability: CV-21, CV-22 (the host sees composites and variant names). External-dependency failure: N/A, no external service; `rustc` absence is handled by the existing build path. State-transition integrity: CV-25 (an element commit changes that element only; `changed()` per element).
 

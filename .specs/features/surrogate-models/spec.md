@@ -1,8 +1,10 @@
 # Surrogate Models Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 Priority: **later** (user, 2026-11-17: surrogate models are a "melhoria futura… bem depois"). It is specified now so that the gap has an owner; it is queued after `multi-rate` and `generics`.
 
-## Open questions for the user
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 Nothing below is decided. Each question has options and the planner's recommendation.
 
@@ -54,7 +56,7 @@ The buck's 600 µs start is the longest run that exists: about 675 000 accepted 
 | The long run | a new run `long_averaged` in `examples/buck/Piperine.toml`: the `Startup` bench, `averaged = true`, 6 ms, no `max_step`, `print_step = 5e-6` | ten starts' length; `max_step = 1e-8` of `startup` would cap it at 600 000 steps | n - planner |
 | Mid-run `set` of the selector | refused with `E0803` (§8.1.24, §23.1 rule 7) | the spec's rule; awaiting Q4 | n - planner |
 
-**Open questions:** Q1 to Q6 at the top of this file are open; the rows above follow the recommendations until the user answers.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: SUR-02 AC 2 (a stage whose ports differ is refused), SUR-06 AC 2 (`E0803`). Failure states: SUR-05 (a run outside the valid region reports it). Idempotency: N/A because a run is one run. Auth and rate limits: N/A, local tool. Concurrency: N/A, no new concurrency. Data lifecycle: SUR-04 AC 3 (memory bounded as `long-run` bounds it). Observability: SUR-03 AC 3 (steps and wall time printed). External dependency: N/A, no external tool. State transitions: SUR-06 (the selector cannot change during a run).
 

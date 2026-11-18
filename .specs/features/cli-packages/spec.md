@@ -1,8 +1,10 @@
 # CLI Packages and Outputs Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 **Size:** M, about 26 tasks (`GAPS.md` sizes each item S). Part of the host-iii group (`.specs/features/host-iii/spec.md` holds the group's "Gaps closed" table).
 
-## Open questions (user decisions, asked 2026-11-17)
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
@@ -49,7 +51,7 @@
 | Raw format | ngspice's binary raw by default; `raw_format = "ascii"` for the text form; the run key `raw` with the flag `--raw` | ngspice writes binary by default; both are documented by ngspice | n - planner |
 | A discrete signal in a raw file | a `bool` or integer carrier written as a real vector of its value, unknown as NaN; a carrier of another type refused naming it | the raw format has no digital type; a silent drop would lose a printed signal | n - planner |
 
-**Open questions:** Q1 to Q3 at the top of this file, awaiting the user.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation and bounds: CLP-01 AC 3 to 5, CLP-02 AC 2, CLP-07 AC 4. Failure and partial-failure states: CLP-01 AC 6 (a failed resolve leaves the manifest unchanged). Idempotency and retry: CLP-03 AC 2 (`update` with nothing new changes nothing). Auth and rate limits: N/A, git auth is the user's git configuration. Concurrency and ordering: N/A, one command at a time. Data lifecycle: CLP-04 (the lockfile). Observability: CLP-03 AC 1 (each updated dependency printed). External-dependency failure: CLP-05 (network down, `--offline`), CLP-07 AC 5 (ngspice absent in the oracle). State-transition integrity: CLP-01 AC 6.
 

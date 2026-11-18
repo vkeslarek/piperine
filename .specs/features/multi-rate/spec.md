@@ -1,8 +1,10 @@
 # Multi-Rate Stepping Specification
 
+**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+
 Priority: **later** (user, 2026-11-17: multi-rate is a "melhoria futura… bem depois"). It is specified now so that the gap has an owner; it is queued after `solver-hygiene` and `host-ii`.
 
-## Open questions for the user
+## Questions answered (user, 2026-11-18: every recommendation accepted - "Sobre as open questions, vou de aceito todas ok?")
 
 Nothing below is decided. Each question has options and the planner's recommendation.
 
@@ -55,7 +57,7 @@ A mixed design lands the analog solver near every digital edge. The buck takes a
 | Open-loop fixture | a 200 MHz `Osc`, a counter that commits every edge and a `D2A` whose input changes once per 400 edges, into an RC; no reaction probes | Its digital side reads no analog value, so its records are independent of the step grid and can be compared bit for bit | n - planner |
 | Tolerance | the existing `ToleranceContract::TRAN_VOLTAGE`; no new constant | MD-38: a new domain gets a constant, this is not one | n - planner |
 
-**Open questions:** Q1 to Q4 at the top of this file are open; the rows above follow the recommendations until the user answers.
+**Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
 **Implicit-requirement dimensions.** Input validation: N/A because no new input exists (Q4 A). Failure states: MR-05 AC 3 (a speculated instant that turns out to touch analog is undone and landed on). Idempotency: N/A because a transient runs once. Auth and rate limits: N/A, local tool. Concurrency and ordering: MR-05 (instants still run in `(t, n)` order, I3). Data lifecycle: N/A because nothing new is stored. Observability: MR-01 (landings counted by reason). External dependency: MR-08 AC 2 (ngspice absent: the parity harness's skip line). State transitions: MR-05 AC 4 (a rejected step undoes every speculated instant, I8).
 
