@@ -1160,7 +1160,7 @@ fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
     let nodes = Design::ports(&mut b, F);
     let mut x = Dx::new(&mut b, F, 2, 20);
     let step = x.real(2.0);
-    let bound = b.stmt(Stmt::BoundStep { site: 0, value: step });
+    let bound = b.stmt(Stmt::BoundStep { site: 0, value: step, when: None });
     let mut x = Dx::new(&mut b, F, 3, 20);
     let v = x.probe(Terminal::Node(0), Terminal::Node(1));
     let ac = x.b.expr(Expr::Env(Env::Analysis(AnalysisKind::Ac)), ValueType::Bool, x.origin());
@@ -1237,7 +1237,7 @@ fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
     let nodes = Design::ports(&mut b, F);
     let mut x = Dx::new(&mut b, F, 2, 5);
     let yes = x.boolean(true);
-    let bad_step = b.stmt(Stmt::BoundStep { site: 0, value: yes });
+    let bad_step = b.stmt(Stmt::BoundStep { site: 0, value: yes, when: None });
     let x = Dx::new(&mut b, F, 4, 5);
     let in_analog = x.b.expr(Expr::Fired(0), ValueType::Bool, x.origin());
     let fired_stmt = b.stmt(Stmt::Expr(in_analog));
@@ -1255,7 +1255,7 @@ fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
     b.carrier(body, Buck::carrier("r", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 30));
     let mut x = Dx::new(&mut b, F, 6, 5);
     let late = x.real(1.0);
-    let late_step_in_reaction = x.b.stmt(Stmt::BoundStep { site: 2, value: late });
+    let late_step_in_reaction = x.b.stmt(Stmt::BoundStep { site: 2, value: late, when: None });
     let out_of_range = x.b.expr(Expr::Fired(7), ValueType::Bool, x.origin());
     let flag_f64 = x.real(1.0);
     let value = x.boolean(true);

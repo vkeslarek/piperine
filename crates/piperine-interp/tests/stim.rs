@@ -37,7 +37,7 @@ impl Lab {
             nodes: vec![port("p"), port("n")],
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
             limits: vec![],
-            stims: vec![Site { name: "ac".into(), origin: at(2) }],
+            stims: vec![Site { name: "ac".into(), origin: at(2), enabled: None }],
             locals: vec![],
             analog: Some(vec![contribute]),
             children: vec![],

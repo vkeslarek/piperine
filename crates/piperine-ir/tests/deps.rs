@@ -123,7 +123,7 @@ impl Row {
         };
         let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: Self::origin() };
         let local = |name: &str| Local { name: name.into(), ty: ValueType::F64 };
-        let site = |name: &str| Site { name: name.into(), origin: Self::origin() };
+        let site = |name: &str| Site { name: name.into(), origin: Self::origin(), enabled: None };
         let body = b.body(BodySpec {
             name: "Row".into(),
             origin: Self::origin(),

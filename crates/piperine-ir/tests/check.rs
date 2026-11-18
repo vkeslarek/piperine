@@ -278,9 +278,10 @@ fn a_misplaced_or_duplicated_site_is_named() {
     let then = Json::field(&v, iff, "If", "then");
     Json::set_kind(&mut v, then, json!({"Stim": {"site": 0, "mag": reals[1], "phase": null}}));
     let broken = Json::broken(v);
-    let hits = Entries::with(&broken, "under an `if`");
-    assert_eq!(hits.len(), 1, "{broken:?}");
-    assert_eq!(hits[0].origin, Origin { file: "all.msl".into(), line: 6, col: 1 });
+    // An `ac_stim` under an `if` is placed correctly (analog-structure, AS-06): the entry this test
+    // used to read is gone. What remains is the second use of site 0.
+    assert_eq!(Entries::with(&broken, "under an `if`").len(), 0, "{broken:?}");
+    assert_eq!(Entries::with(&broken, "ac_stim site 0 is used by 2").len(), 1, "{broken:?}");
 
     // A site in a closure.
     let mut v = Corpus::value();

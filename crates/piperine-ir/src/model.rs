@@ -246,6 +246,12 @@ pub enum EmitField {
 pub struct Site {
     pub name: String,
     pub origin: Origin,
+    /// A `limit` read under a condition: the conjunction of the enclosing conditions, a `bool`
+    /// lowered standalone (outside every condition). When it is false the limiter does not run
+    /// and the held value stays (abi.md A3, §14.7.4). `None` for a `limit` at the top of the
+    /// `analog` block and for every `ac_stim` site, which needs none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<ExprId>,
 }
 
 /// A derivative site: a `ddt` whose result is read anywhere but as a whole addend of an
@@ -401,8 +407,11 @@ pub enum Stmt {
     /// in the body's streams). Counted with the commits in the reaction's statement numbering.
     Emit { stream: u32, fields: Vec<EmitField> },
     /// `bound_step(value);` at the top level of the `analog` block: the solver's next step is no
-    /// longer than `value`, an `f64`. `site` numbers the statements of the body.
-    BoundStep { site: u32, value: ExprId },
+    /// longer than `value`, an `f64`. `site` numbers the statements of the body. `when` is the
+    /// conjunction of the conditions the source wrote it under, a `bool` lowered standalone: a
+    /// step whose solution did not execute the call (`when` false) is capped by nothing
+    /// (§14.10.2). `None` for an unconditional call.
+    BoundStep { site: u32, value: ExprId, when: Option<ExprId> },
 }
 
 impl Stmt {
@@ -414,7 +423,7 @@ impl Stmt {
             Stmt::Expr(e) => vec![*e],
             Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
             Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
-            Stmt::BoundStep { value, .. } => vec![*value],
+            Stmt::BoundStep { value, when, .. } => [*value].into_iter().chain(*when).collect(),
             Stmt::Emit { fields, .. } => fields
                 .iter()
                 .filter_map(|f| match f {

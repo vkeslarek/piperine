@@ -9,6 +9,8 @@
 //! - a `limit` read is the site alone, `Affine` (IR-10): the backend holds the limited iterate as an
 //!   input that stands in for its input `x` (abi.md A2), so `x`, the function and the seed are
 //!   the site's own dependencies (`Target::Limit`), not its readers';
+//! - a `limit` under a condition also reads what its `enabled` reads, and a `bound_step` what its
+//!   `when` reads (`Target::Limit`, `Target::BoundStep`);
 //! - an `ac_stim` read is the site plus its magnitude and phase, which are evaluated where the
 //!   stimulus appears; it is `Constant` when they are;
 //! - `+`, `-` and unary `-` join; `*` by a `Constant` operand and `/` by a `Constant` divisor
@@ -490,6 +492,14 @@ impl<'a> Walk<'a> {
             }
             reactions.push(walk.reads.take().unwrap_or_default());
         }
+        // What enables a `limit` under a condition is read by its site, as its input is.
+        for (i, site) in data.limits.iter().enumerate() {
+            let Some(enabled) = site.enabled else { continue };
+            walk.scopes = vec![Scope::new(owner.clone(), true, data.locals.len())];
+            walk.run(Task::Expr(enabled));
+            let value = walk.pop();
+            walk.limits[i].join(&value.sources);
+        }
         if let Some(analog) = &data.analog {
             walk.scopes = vec![Scope::new(owner, true, data.locals.len())];
             for &stmt in analog {
@@ -643,7 +653,13 @@ impl<'a> Walk<'a> {
         match &ir.stmts[id.index()] {
             Stmt::Let { local, init } => next.extend([Task::Expr(*init), Task::Bind(*local, *init)]),
             Stmt::Expr(e) => next.extend([Task::Expr(*e), Task::Discard]),
-            Stmt::BoundStep { site, value } => next.extend([Task::Expr(*value), Task::Cap(*site)]),
+            Stmt::BoundStep { site, value, when } => {
+                next.extend([Task::Expr(*value), Task::Cap(*site)]);
+                // What decides whether the call runs is read by the same site.
+                if let Some(when) = when {
+                    next.extend([Task::Expr(*when), Task::Cap(*site)]);
+                }
+            }
             Stmt::Contribute { branch, addends, .. } => {
                 for addend in addends {
                     next.push(Task::Expr(addend.value));

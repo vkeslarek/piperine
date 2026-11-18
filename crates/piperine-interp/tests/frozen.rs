@@ -357,7 +357,7 @@ fn the_interpreter_refuses_each_new_form_by_name() {
         Added::refused(|b| {
             let mut x = Dx::new(b, Amended::F, 2, 10);
             let step = x.real(1e-9);
-            let cap = b.stmt(Stmt::BoundStep { site: 0, value: step });
+            let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: None });
             let value = Dx::new(b, Amended::F, 3, 10).real(0.0);
             Added::contribution(b, "Cap", value, vec![cap]);
         }),

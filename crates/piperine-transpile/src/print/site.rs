@@ -191,7 +191,7 @@ impl<'a> AnalogPrinter<'a> {
     fn cap_site(&self, k: u32) -> Option<(usize, ExprId)> {
         let block = self.body.analog().unwrap_or(&[]);
         block.iter().enumerate().find_map(|(stmt, id)| match self.ir.stmt(*id) {
-            Stmt::BoundStep { site, value } if *site == k => Some((stmt, *value)),
+            Stmt::BoundStep { site, value, .. } if *site == k => Some((stmt, *value)),
             _ => None,
         })
     }
@@ -363,7 +363,7 @@ mod tests {
             nodes: vec![port("p"), port("n")],
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
             limits: vec![],
-            stims: vec![Site { name: "s".into(), origin: at(4) }],
+            stims: vec![Site { name: "s".into(), origin: at(4), enabled: None }],
             locals: vec![],
             analog: Some(vec![contribute]),
             children: vec![],

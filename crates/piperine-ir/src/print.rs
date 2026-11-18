@@ -298,8 +298,9 @@ impl<'a> Printer<'a> {
             self.line(1, &format!("branch b{i} ({plus}, {minus}) {kind}"));
         }
         for (i, site) in body.limits.iter().enumerate() {
+            let enabled = site.enabled.map_or(String::new(), |e| format!(" enabled {}", self.render(scope, Piece::Expr(e))));
             let at = self.at(&site.origin);
-            self.line(1, &format!("limit L{i} {:?}{at}", site.name));
+            self.line(1, &format!("limit L{i} {:?}{enabled}{at}", site.name));
         }
         for (i, site) in body.stims.iter().enumerate() {
             let at = self.at(&site.origin);
@@ -562,7 +563,12 @@ impl<'a> Printer<'a> {
                 next.push(Piece::Expr(*init));
             }
             Stmt::Expr(e) => next.push(Piece::Expr(*e)),
-            Stmt::BoundStep { value, .. } => next.extend([Piece::Text("bound_step(".into()), Piece::Expr(*value), Piece::Text(")".into())]),
+            Stmt::BoundStep { value, when, .. } => {
+                next.extend([Piece::Text("bound_step(".into()), Piece::Expr(*value), Piece::Text(")".into())]);
+                if let Some(when) = when {
+                    next.extend([Piece::Text(" when ".into()), Piece::Expr(*when)]);
+                }
+            }
             Stmt::Contribute { branch, quantity, addends } => {
                 let q = if *quantity == QuantityRole::Flow { "flow" } else { "potential" };
                 next.push(Piece::Text(format!("b{branch}.{q} +> ")));
@@ -1042,7 +1048,10 @@ impl<'a> Printer<'a> {
         match stmt {
             Stmt::Let { local, init } => format!("let {local} e{}", init.0),
             Stmt::Expr(e) => format!("expr e{}", e.0),
-            Stmt::BoundStep { site, value } => format!("bound_step B{site} e{}", value.0),
+            Stmt::BoundStep { site, value, when } => match when {
+                Some(when) => format!("bound_step B{site} e{} when e{}", value.0, when.0),
+                None => format!("bound_step B{site} e{}", value.0),
+            },
             Stmt::Contribute { branch, quantity, addends } => {
                 let q = if *quantity == QuantityRole::Flow { "flow" } else { "potential" };
                 let parts: Vec<String> = addends

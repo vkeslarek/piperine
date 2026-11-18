@@ -160,7 +160,7 @@ impl Elaboration<'_, '_> {
                     Some((at, name)) if at == expr => name,
                     _ => format!("limit{site}"),
                 };
-                scope.limits.push(Site { name, origin: origin.clone() });
+                scope.limits.push(Site { name, origin: origin.clone(), enabled: None });
                 let mut lowered = Vec::new();
                 for arg in args {
                     lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `limit`")));
@@ -171,7 +171,7 @@ impl Elaboration<'_, '_> {
             }
             "ac_stim" if scope.nesting == 0 => {
                 let site = scope.stims.len() as u32;
-                scope.stims.push(Site { name: "ac".to_string(), origin: origin.clone() });
+                scope.stims.push(Site { name: "ac".to_string(), origin: origin.clone(), enabled: None });
                 let mut lowered = Vec::new();
                 for arg in args {
                     lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `ac_stim`")));
@@ -227,7 +227,7 @@ impl Elaboration<'_, '_> {
         let value = self.lower_expr(scope, arg.value)?;
         let site = scope.bounds;
         scope.bounds += 1;
-        out.push(self.stmt(piperine_ir::Stmt::BoundStep { site, value }));
+        out.push(self.stmt(piperine_ir::Stmt::BoundStep { site, value, when: None }));
         Some(true)
     }
 

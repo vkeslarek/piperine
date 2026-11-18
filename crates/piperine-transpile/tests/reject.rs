@@ -123,7 +123,7 @@ fn a_limit_or_stim_function_reading_a_carrier_is_refused_by_name() {
             );
             b.expr(Expr::Limit { site: 0, x: level, f, seed: None }, ValueType::F64, at(3, 13))
         };
-        sampled(b, vec![Site { name: "lim".into(), origin: at(3, 13) }], vec![], limit)
+        sampled(b, vec![Site { name: "lim".into(), origin: at(3, 13), enabled: None }], vec![], limit)
     });
     assert_eq!(form, "a `limit` function reading the carrier `en`");
     assert_eq!(path, "body Sampled limit lim");
@@ -132,7 +132,7 @@ fn a_limit_or_stim_function_reading_a_carrier_is_refused_by_name() {
     // `let x = ac_stim(<en.high() as a real>);` at sampled.msl:3:13: the same for a stimulus
     let (form, path, origin) = refusal(|b| {
         let stim = |b: &mut IrBuilder, level| b.expr(Expr::Stim { site: 0, mag: level, phase: None }, ValueType::F64, at(3, 13));
-        sampled(b, vec![], vec![Site { name: "ac".into(), origin: at(3, 13) }], stim)
+        sampled(b, vec![], vec![Site { name: "ac".into(), origin: at(3, 13), enabled: None }], stim)
     });
     assert_eq!(form, "a `ac_stim` function reading the carrier `en`");
     assert_eq!(path, "body Sampled ac_stim ac");

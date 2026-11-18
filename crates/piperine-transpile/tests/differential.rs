@@ -479,7 +479,7 @@ impl Names {
             params: vec![Self::param("limit_vd_last", 1e-14, 20), Self::param("vd_last_", 1.0, 21), Self::param("is_static", 0.0, 22)],
             nodes: vec![Self::port("cx", el), Self::port("old", el)],
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
-            limits: vec![Site { name: "vd".into(), origin: Self::at(23) }],
+            limits: vec![Site { name: "vd".into(), origin: Self::at(23), enabled: None }],
             stims: vec![],
             locals: ["f", "seed", "vd", "limited", "proposed", "from_seed"].into_iter().map(Self::local).collect(),
             analog: Some(vec![let_nvt, let_vcrit, let_vd, let_id, contribute]),

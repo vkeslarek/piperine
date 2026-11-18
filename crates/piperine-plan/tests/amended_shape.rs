@@ -542,7 +542,7 @@ fn bound_step_is_a_cap_watch_and_cross_tolerances_are_pins() {
         let (one, base) = (x.real(1.0), x.real(1e-9));
         let sum = x.bin(piperine_ir::BinaryOp::Add, one, v, ValueType::F64);
         let step = x.bin(piperine_ir::BinaryOp::Mul, base, sum, ValueType::F64);
-        let cap = b.stmt(Stmt::BoundStep { site: 0, value: step });
+        let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: None });
         let body = b.body(BodySpec {
             nodes,
             params: vec![Buck::param("tt", F, 1, Some(1e-12), None), Buck::param("et", F, 1, Some(1e-6), None)],

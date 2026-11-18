@@ -165,7 +165,7 @@ impl Lists {
             init: init.map(Real::new),
             origin: Lists::origin(line),
         };
-        let site = |name: &str, line: u32| Site { name: name.into(), origin: Lists::origin(line) };
+        let site = |name: &str, line: u32| Site { name: name.into(), origin: Lists::origin(line), enabled: None };
         let (x, y, gnd) = (Terminal::Node(0), Terminal::Node(1), Terminal::Ground);
         let body = b.body(BodySpec {
             name: "Lists".into(),

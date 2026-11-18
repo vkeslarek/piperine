@@ -85,7 +85,7 @@ impl Models {
             params: vec![],
             nodes: vec![port("p"), port("n")],
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
-            limits: vec![Site { name: "y".into(), origin: at(3) }],
+            limits: vec![Site { name: "y".into(), origin: at(3), enabled: None }],
             stims: vec![],
             locals: vec![local("new"), local("old")],
             analog: Some(vec![contribute]),

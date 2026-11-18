@@ -268,9 +268,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run irstruct`: `a_limit_under_a_condition_needs_enabled`, `a_top_level_limit_has_no_enabled`, `an_ac_stim_under_a_condition_passes_check`, `a_bound_step_with_when_reads_its_condition`
-- [ ] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run irstruct`: `a_limit_under_a_condition_needs_enabled`, `a_top_level_limit_has_no_enabled`, `an_ac_stim_under_a_condition_passes_check`, `a_bound_step_with_when_reads_its_condition`
+- [x] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full
@@ -492,9 +492,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run frozen`: `the_interpreter_refuses_each_analog_structure_form_by_name`, `an_analog_body_without_new_forms_still_runs_on_the_interpreter`
-- [ ] Gate check passes: Build
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run frozen`: `the_interpreter_refuses_each_analog_structure_form_by_name`, `an_analog_body_without_new_forms_still_runs_on_the_interpreter`
+- [x] Gate check passes: Build
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build

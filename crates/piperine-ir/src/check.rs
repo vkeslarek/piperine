@@ -66,6 +66,8 @@ struct Owner {
     /// The branches the body's `analog` block contributes a potential to.
     driven: BTreeSet<u32>,
     limits: usize,
+    /// For each `limit` site: whether it has an `enabled` (it is read under a condition).
+    limit_guards: Vec<bool>,
     stims: usize,
     /// The carried types of the body's carriers.
     carriers: Vec<ValueType>,
@@ -234,6 +236,11 @@ impl<'a> Checker<'a> {
                     self.expr_id(&item, &site.origin, id);
                 }
             }
+            for site in &body.limits {
+                if let Some(enabled) = site.enabled {
+                    self.expr_id(&item, &site.origin, enabled);
+                }
+            }
             for drive in &body.drives {
                 if drive.carrier as usize >= body.carriers.len() {
                     self.report(item.clone(), drive.origin.clone(), format!("drive of carrier {}, out of range ({} carriers)", drive.carrier, body.carriers.len()));
@@ -305,7 +312,11 @@ impl<'a> Checker<'a> {
             match stmt {
                 Stmt::Let { init, .. } => self.expr_id(&item, &origin, *init),
                 Stmt::Expr(e) => self.expr_id(&item, &origin, *e),
-                Stmt::BoundStep { value, .. } => self.expr_id(&item, &origin, *value),
+                Stmt::BoundStep { value, when, .. } => {
+                    for id in [*value].into_iter().chain(*when) {
+                        self.expr_id(&item, &origin, id);
+                    }
+                }
                 Stmt::Contribute { addends, .. } => {
                     for a in addends {
                         self.expr_id(&item, &origin, a.value);
@@ -684,7 +695,7 @@ impl<'a> Checker<'a> {
                     Stmt::Expr(e) => stack_e.push(*e),
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
                     Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
-                    Stmt::BoundStep { value, .. } => stack_e.push(*value),
+                    Stmt::BoundStep { value, when, .. } => stack_e.extend([*value].into_iter().chain(*when)),
                     Stmt::Emit { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
                         EmitField::Value { value, .. } => Some(*value),
                         EmitField::Text { .. } => None,
@@ -984,6 +995,7 @@ impl<'a> Checker<'a> {
                 branches: body.branches.iter().map(|b| b.kind).collect(),
                 driven: Checker::potentials(ir, body),
                 limits: body.limits.len(),
+                limit_guards: body.limits.iter().map(|s| s.enabled.is_some()).collect(),
                 stims: body.stims.len(),
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
@@ -1047,6 +1059,12 @@ impl<'a> Checker<'a> {
                     self.walk(&mut w, Task::Expr(guard, Ctx::top()));
                 }
             }
+            for (k, site) in body.limits.iter().enumerate() {
+                let Some(enabled) = site.enabled else { continue };
+                let mut w = Walk::new(owner(false, format!("body {} limit {k}", body.name)), 0);
+                self.expect(&w, enabled, &ValueType::Bool);
+                self.walk(&mut w, Task::Expr(enabled, Ctx::top()));
+            }
             for (k, site) in body.derivatives.iter().enumerate() {
                 let mut w = Walk::new(owner(false, format!("body {} derivative {k}", body.name)), 0);
                 self.expect(&w, site.state, &ValueType::F64);
@@ -1078,6 +1096,7 @@ impl<'a> Checker<'a> {
                 branches: Vec::new(),
                 driven: BTreeSet::new(),
                 limits: 0,
+                limit_guards: Vec::new(),
                 stims: 0,
                 carriers: Vec::new(),
                 streams: Vec::new(),
@@ -1169,12 +1188,16 @@ impl<'a> Checker<'a> {
                 next.push(Task::Bind(*local));
             }
             Stmt::Expr(e) => next.push(Task::Expr(*e, ctx)),
-            Stmt::BoundStep { value, .. } => {
+            Stmt::BoundStep { value, when, .. } => {
                 if !top || !w.owner.analog {
                     self.report(w.owner.item.clone(), origin.clone(), "`bound_step` outside the top level of an analog block".to_string());
                 }
                 self.want(w, *value, &ValueType::F64, "the step of a `bound_step`");
                 next.push(Task::Expr(*value, ctx));
+                if let Some(when) = when {
+                    self.want(w, *when, &ValueType::Bool, "the `when` of a `bound_step`");
+                    next.push(Task::Expr(*when, ctx));
+                }
             }
             Stmt::Contribute { branch, quantity, addends } => {
                 // A contribution may stand under an `if` or in a nested block, anywhere inside
@@ -1724,14 +1747,22 @@ impl<'a> Checker<'a> {
         let count = if kind == "limit" { w.owner.limits } else { w.owner.stims };
         if !w.owner.analog {
             self.wrong(w, origin.clone(), format!("{kind} outside the analog block of a body"));
-        } else if ctx.conditional {
-            self.wrong(w, origin.clone(), format!("{kind} under an `if` or a short-circuit operator"));
         } else if ctx.closure {
             self.wrong(w, origin.clone(), format!("{kind} inside a closure"));
         }
         if site as usize >= count {
             self.wrong(w, origin.clone(), format!("{kind} site {site} out of range ({count} sites)"));
             return;
+        }
+        // An `ac_stim` may stand under a condition: its terms in an arm not taken read no
+        // stimulus. A `limit` under a condition says when it runs, through `enabled`; one at the
+        // top has none (analog-structure, "Guarded core sites").
+        if kind == "limit" && w.owner.analog && !ctx.closure {
+            match (ctx.conditional, w.owner.limit_guards[site as usize]) {
+                (true, false) => self.wrong(w, origin.clone(), format!("limit site {site} under an `if` or a short-circuit operator has no `enabled`")),
+                (false, true) => self.wrong(w, origin.clone(), format!("limit site {site} has an `enabled` but is read outside every condition")),
+                (true, true) | (false, false) => {}
+            }
         }
         let users = if kind == "limit" { &mut w.limit_users } else { &mut w.stim_users };
         if users.len() < count {

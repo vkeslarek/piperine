@@ -9,7 +9,7 @@ mod devices;
 use devices::{Devices, Ex};
 use piperine_ir::{
     Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, Condition, Constant, Contribution, Derivative, Expr, ExprId, FunctionSpec,
-    InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, QuantityRole, Reaction, Real, Stmt, StmtId, Target, Terminal,
+    InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, QuantityRole, Reaction, Real, Site, Stmt, StmtId, Target, Terminal,
     ValueType,
 };
 
@@ -118,6 +118,15 @@ fn an_own_terminal_that_names_a_port_is_broken() {
     assert!(misplaced.iter().any(|b| b.what.contains("names its own slot")), "{misplaced:?}");
 }
 
+/// What a test writes into the body `Switching` builds.
+#[derive(Default)]
+struct Written {
+    analog: Vec<StmtId>,
+    derivatives: Vec<Derivative>,
+    limits: Vec<Site>,
+    stims: Vec<Site>,
+}
+
 /// One body `Sw(a)` with the branch `(a, gnd)` of a given kind, a `Bool` carrier `en` when asked,
 /// and an `analog` block the test writes; placed alone as the design.
 struct Switching;
@@ -173,10 +182,19 @@ impl Switching {
     /// `ir`, with the derivative sites `write` returns beside the `analog` block. The body has one
     /// param `tol: f64` (index 0).
     fn ir_with_derivatives(kind: BranchKind, write: impl FnOnce(&mut IrBuilder) -> (Vec<StmtId>, Vec<Derivative>)) -> Ir {
+        Self::ir_with_sites(kind, |b| {
+            let (analog, derivatives) = write(b);
+            Written { analog, derivatives, ..Written::default() }
+        })
+    }
+
+    /// `ir`, with everything `write` returns: the `analog` block, the derivative sites and the
+    /// `limit` and `ac_stim` sites.
+    fn ir_with_sites(kind: BranchKind, write: impl FnOnce(&mut IrBuilder) -> Written) -> Ir {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
-        let (analog, derivatives) = write(&mut b);
+        let Written { analog, derivatives, limits, stims } = write(&mut b);
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec {
             name: "Sw".into(),
@@ -184,8 +202,8 @@ impl Switching {
             params: vec![tolerance],
             nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: origin.clone() }],
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind }],
-            limits: vec![],
-            stims: vec![],
+            limits,
+            stims,
             locals: vec![],
             analog: Some(analog),
             children: vec![],
@@ -416,4 +434,102 @@ fn a_derivative_state_reads_are_its_dependencies() {
     assert_eq!(body.derivative_reads(Target::Flow(0)), vec![0]);
     // The rate is an unknown like a flow: it reaches the sum affinely.
     assert!(body.is_affine(0));
+}
+
+/// Guarded `limit`, `ac_stim` and `bound_step` sites.
+impl Switching {
+    fn at() -> Origin {
+        Origin { file: Self::FILE.into(), line: 3, col: 5 }
+    }
+
+    fn named(name: &str, enabled: Option<ExprId>) -> Site {
+        Site { name: name.into(), origin: Self::at(), enabled }
+    }
+
+    /// `limit(v(a), |..| 0.0)` of site 0.
+    fn limit_read(b: &mut IrBuilder) -> ExprId {
+        let x = Self::ex(b).probe(Terminal::Node(0), Terminal::Ground);
+        let function = Self::ex(b).real(0.0);
+        let closure = b.expr(Expr::Closure { params: vec![], body: function }, ValueType::Fn(vec![], Box::new(ValueType::F64)), Self::at());
+        b.expr(Expr::Limit { site: 0, x, f: closure, seed: None }, ValueType::F64, Self::at())
+    }
+
+    /// `ac_stim(1.0)` of site 0.
+    fn stim_read(b: &mut IrBuilder) -> ExprId {
+        let magnitude = Self::ex(b).real(1.0);
+        b.expr(Expr::Stim { site: 0, mag: magnitude, phase: None }, ValueType::F64, Self::at())
+    }
+
+    /// `i(a, gnd) +> <value>;`
+    fn contribute_expr(b: &mut IrBuilder, value: ExprId) -> StmtId {
+        b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] })
+    }
+
+    /// `if en.high() { i(a, gnd) +> <read>; }` where `read` builds the contributed value.
+    fn read_under_a_condition(b: &mut IrBuilder, read: ExprId) -> StmtId {
+        let (cond, taken) = (Self::carrier_high(b), Self::contribute_expr(b, read));
+        Self::branch_on(b, cond, vec![taken], vec![])
+    }
+}
+
+#[test]
+fn a_limit_under_a_condition_needs_enabled() {
+    // `if en.high() { i(a, gnd) +> limit(..); }`: without `enabled` the site is broken, with
+    // `enabled = en.high()` the same body passes and the site reads the carrier.
+    let unguarded = Switching::ir_with_sites(BranchKind::Flow, |b| {
+        let read = Switching::limit_read(b);
+        Written { analog: vec![Switching::read_under_a_condition(b, read)], limits: vec![Switching::named("lim", None)], ..Written::default() }
+    });
+    assert!(Switching::names(&unguarded.check(), "limit site 0 under an `if` or a short-circuit operator has no `enabled`"), "{:?}", unguarded.check());
+
+    let guarded = Switching::ir_with_sites(BranchKind::Flow, |b| {
+        let (read, enabled) = (Switching::limit_read(b), Switching::carrier_high(b));
+        Written { analog: vec![Switching::read_under_a_condition(b, read)], limits: vec![Switching::named("lim", Some(enabled))], ..Written::default() }
+    });
+    assert_eq!(guarded.check(), vec![], "{}", guarded);
+    let body = guarded.bodies().next().expect("a body");
+    assert_eq!(body.carrier_reads(Target::Limit(0)), vec![0], "the site reads what enables it");
+    assert!(guarded.to_string().contains("limit L0 \"lim\" enabled en.high()"), "{}", guarded);
+}
+
+#[test]
+fn a_top_level_limit_has_no_enabled() {
+    // `i(a, gnd) +> limit(..)` at the top of the block, on a site that claims an `enabled`.
+    let ir = Switching::ir_with_sites(BranchKind::Flow, |b| {
+        let (read, enabled) = (Switching::limit_read(b), Switching::carrier_high(b));
+        Written { analog: vec![Switching::contribute_expr(b, read)], limits: vec![Switching::named("lim", Some(enabled))], ..Written::default() }
+    });
+    assert!(Switching::names(&ir.check(), "limit site 0 has an `enabled` but is read outside every condition"), "{:?}", ir.check());
+}
+
+#[test]
+fn an_ac_stim_under_a_condition_passes_check() {
+    // `if en.high() { i(a, gnd) +> ac_stim(1.0); }` (AS-06 AC 4): no `enabled` is needed.
+    let ir = Switching::ir_with_sites(BranchKind::Flow, |b| {
+        let read = Switching::stim_read(b);
+        Written { analog: vec![Switching::read_under_a_condition(b, read)], stims: vec![Switching::named("ac", None)], ..Written::default() }
+    });
+    assert_eq!(ir.check(), vec![], "{}", ir);
+}
+
+#[test]
+fn a_bound_step_with_when_reads_its_condition() {
+    // `bound_step(1n) when en.high()` at the top of the block: the cap site reads the carrier.
+    let capped = Switching::ir_with_sites(BranchKind::Flow, |b| {
+        let (step, when) = (Switching::ex(b).real(1e-9), Switching::carrier_high(b));
+        let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
+        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+    });
+    assert_eq!(capped.check(), vec![], "{}", capped);
+    let body = capped.bodies().next().expect("a body");
+    assert_eq!(body.carrier_reads(Target::BoundStep(0)), vec![0]);
+    assert!(capped.to_string().contains("bound_step(1e-9) when en.high()"), "{}", capped);
+
+    // A `when` that is not a `bool` is broken.
+    let wrong = Switching::ir_with_sites(BranchKind::Flow, |b| {
+        let (step, when) = (Switching::ex(b).real(1e-9), Switching::ex(b).real(1.0));
+        let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
+        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+    });
+    assert!(Switching::names(&wrong.check(), "the `when` of a `bound_step`"), "{:?}", wrong.check());
 }
