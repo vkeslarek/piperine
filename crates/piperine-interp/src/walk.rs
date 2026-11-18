@@ -59,6 +59,7 @@ impl Frame {
         match t {
             Terminal::Node(i) => Self::read(self.nodes.get(i as usize)),
             Terminal::Ground => Some(Dual::constant(0.0)),
+            Terminal::Own(_) => panic!("Ir::check: an own terminal belongs in a child's node slot only"),
         }
     }
 

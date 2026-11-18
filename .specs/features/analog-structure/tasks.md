@@ -201,10 +201,10 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Creates the target `crates/piperine-ir/tests/structure.rs` (`//!` header: the IR forms of `analog-structure`: built, checked, printed, round-tripped)
-- [ ] Tests with exactly these names pass in `Run irstruct`: `an_own_terminal_prints_and_round_trips`, `an_own_terminal_outside_a_child_is_broken`, `an_own_terminal_that_names_a_port_is_broken`
-- [ ] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 3 tests named above, and no existing test removed or edited
+- [x] Creates the target `crates/piperine-ir/tests/structure.rs` (`//!` header: the IR forms of `analog-structure`: built, checked, printed, round-tripped)
+- [x] Tests with exactly these names pass in `Run irstruct`: `an_own_terminal_prints_and_round_trips`, `an_own_terminal_outside_a_child_is_broken`, `an_own_terminal_that_names_a_port_is_broken`
+- [x] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 3 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

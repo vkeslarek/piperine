@@ -349,6 +349,7 @@ impl<'a> AnalogPrinter<'a> {
         let node = |t: Terminal| match t {
             Terminal::Node(i) => self.body.nodes().get(i as usize),
             Terminal::Ground => None,
+            Terminal::Own(_) => panic!("Ir::check: an own terminal belongs in a child's node slot only"),
         };
         let nature = node(b.plus).or_else(|| node(b.minus)).map(|n| self.ir.nature(n.nature));
         let access = nature.map_or_else(

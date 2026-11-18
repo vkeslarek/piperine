@@ -123,6 +123,10 @@ pub enum NodeRole {
 pub enum Terminal {
     Node(u32),
     Ground,
+    /// The child's own node `k` (a `signal` of the child's body): valid only in a slot of
+    /// `Child::nodes`, where it keeps the authored placement a full view of the source
+    /// (analog-structure Q1, S4). `Ir::check` names any other use.
+    Own(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

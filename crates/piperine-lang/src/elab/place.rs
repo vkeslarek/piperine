@@ -123,6 +123,7 @@ impl Elaboration<'_, '_> {
             .map(|t| match t {
                 Terminal::Node(i) => parent.nodes.get(*i as usize).copied().unwrap_or(NodeRef::Ground),
                 Terminal::Ground => NodeRef::Ground,
+                Terminal::Own(_) => panic!("Ir::check: an own terminal belongs in a child's node slot only"),
             })
             .collect();
         let carrier_ports = child.carriers.iter().map(|c| c.and_then(|i| parent.nets.get(i as usize).copied())).collect();

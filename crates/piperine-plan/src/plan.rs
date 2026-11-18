@@ -351,6 +351,7 @@ impl Pins {
         match t {
             Terminal::Node(i) => self.node(i),
             Terminal::Ground => GROUND,
+            Terminal::Own(_) => panic!("Ir::check: an own terminal belongs in a child's node slot only"),
         }
     }
 }

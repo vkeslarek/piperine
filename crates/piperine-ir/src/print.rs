@@ -305,7 +305,12 @@ impl<'a> Printer<'a> {
         for (ci, child) in body.children.iter().enumerate() {
             let callee = self.ir.bodies.get(child.body.index());
             let name = callee.map_or("<bad body>".to_string(), |b| Printer::name(&b.name));
-            let nodes: Vec<String> = child.nodes.iter().map(|t| Printer::terminal(scope, *t)).collect();
+            // A child's own node reads as the callee names it: `own:<name>` (Q1).
+            let own = |k: u32| callee.and_then(|b| b.nodes.get(k as usize)).map_or(format!("own:<bad node {k}>"), |n| format!("own:{}", Printer::name(&n.name)));
+            let nodes: Vec<String> = child.nodes.iter().map(|t| match t {
+                Terminal::Own(k) => own(*k),
+                other => Printer::terminal(scope, *other),
+            }).collect();
             let pname = |i: u32| callee.and_then(|b| b.params.get(i as usize)).map_or("<bad param>".to_string(), |p| Printer::name(&p.name));
             // A value set beside the child (`ChildValue`) shows in place of the constant of the
             // same param; one with no constant follows the constants.
@@ -486,6 +491,7 @@ impl<'a> Printer<'a> {
         match t {
             Terminal::Ground => "gnd".to_string(),
             Terminal::Node(i) => scope.nodes.get(i as usize).map_or(format!("<bad node {i}>"), |n| Printer::name(&n.name)),
+            Terminal::Own(k) => format!("own{k}"),
         }
     }
 
@@ -837,6 +843,7 @@ impl<'a> Printer<'a> {
         let terminal = |t: &Terminal| match t {
             Terminal::Node(i) => i.to_string(),
             Terminal::Ground => "gnd".to_string(),
+            Terminal::Own(k) => format!("own{k}"),
         };
         for (i, body) in ir.bodies.iter().enumerate() {
             let checks: Vec<String> = body.params.iter().map(|p| p.check.map_or("-".to_string(), |e| format!("e{}", e.0))).collect();
@@ -965,6 +972,7 @@ impl<'a> Printer<'a> {
         let terminal = |t: &Terminal| match t {
             Terminal::Node(i) => format!("n{i}"),
             Terminal::Ground => "gnd".to_string(),
+            Terminal::Own(k) => format!("own{k}"),
         };
         match kind {
             Expr::Real(r) => format!("real {}", Printer::real(*r)),

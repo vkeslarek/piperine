@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRole, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
     ValueType,
 };
 use crate::typing::Typing;
@@ -215,10 +215,12 @@ impl<'a> Checker<'a> {
             }
             for branch in &body.branches {
                 for t in [branch.plus, branch.minus] {
-                    if let Terminal::Node(i) = t {
-                        if i as usize >= body.nodes.len() {
+                    match t {
+                        Terminal::Node(i) if i as usize >= body.nodes.len() => {
                             self.report(item.clone(), origin.clone(), format!("branch terminal node {i} out of range ({} nodes)", body.nodes.len()));
                         }
+                        Terminal::Own(i) => self.report(item.clone(), origin.clone(), format!("branch terminal own{i}: an own terminal belongs in a child's node slot only")),
+                        Terminal::Node(_) | Terminal::Ground => {}
                     }
                 }
             }
@@ -266,11 +268,13 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
-                for t in &child.nodes {
-                    if let Terminal::Node(i) = t {
-                        if *i as usize >= body.nodes.len() {
+                for (slot, t) in child.nodes.iter().enumerate() {
+                    match t {
+                        Terminal::Node(i) if *i as usize >= body.nodes.len() => {
                             self.report(item.clone(), child.origin.clone(), format!("child {}: terminal node {i} out of range", child.name));
                         }
+                        Terminal::Own(k) => self.own_slot(&item, child, slot, *k, ir.bodies.get(child.body.index())),
+                        Terminal::Node(_) | Terminal::Ground => {}
                     }
                 }
             }
@@ -352,6 +356,19 @@ impl<'a> Checker<'a> {
             if node.declared_by.index() >= ir.instances.len() {
                 self.report(item, node.origin.clone(), format!("declaring instance id {} out of range", node.declared_by.0));
             }
+        }
+    }
+
+    /// A child's own terminal `Own(k)` at `slot`: it must name its own slot, and that node of the
+    /// child's body must be a `signal` (a port is bound to the parent, never owned).
+    fn own_slot(&mut self, item: &str, child: &Child, slot: usize, k: u32, callee: Option<&BodyData>) {
+        if k as usize != slot {
+            self.report(item.to_string(), child.origin.clone(), format!("child {}: slot {slot} holds own{k}, an own terminal names its own slot", child.name));
+            return;
+        }
+        let Some(node) = callee.and_then(|b| b.nodes.get(slot)) else { return };
+        if node.role != NodeRole::Signal {
+            self.report(item.to_string(), child.origin.clone(), format!("child {}: slot {slot} holds own{k}, but node {} of the child's body is a port", child.name, node.name));
         }
     }
 
@@ -1435,10 +1452,12 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin.clone(), "probe outside a body".to_string());
                     }
                     for t in [plus, minus] {
-                        if let Terminal::Node(i) = t {
-                            if w.owner.in_body && *i as usize >= w.owner.nodes {
+                        match t {
+                            Terminal::Node(i) if w.owner.in_body && *i as usize >= w.owner.nodes => {
                                 self.wrong(w, origin.clone(), format!("probe terminal node {i} out of range ({} nodes)", w.owner.nodes));
                             }
+                            Terminal::Own(i) => self.wrong(w, origin.clone(), format!("probe terminal own{i}: an own terminal belongs in a child's node slot only")),
+                            Terminal::Node(_) | Terminal::Ground => {}
                         }
                     }
                 }
