@@ -67,10 +67,9 @@ pub struct TransientAnalysisOptions {
     /// grinding for hours with unbounded memory growth.
     ///
     /// Without this cap `solve()`'s `while current_time < stop_time` has no
-    /// termination guarantee: an LTE rejection at the `dt_min` floor is
-    /// *accepted* (Part VII §16 §10), so a circuit that pins the floor keeps
-    /// advancing by `dt_min` per iteration — 1e-15 s at a time — recording a
-    /// snapshot for each. That is a hang, not an analysis.
+    /// termination guarantee against a stepper that keeps retrying: a step that
+    /// still fails at the `dt_min` floor fails the run (`E0508`), so this is
+    /// the backstop for a controller that never reaches it.
     pub max_steps: usize,
 
     /// Maximum allowed timestep (default: stop_time / 100)
@@ -911,6 +910,8 @@ pub(crate) struct DeviceRun {
     /// A Newton failure at the step floor: reported by the next attempt, after
     /// the protocol restored its checkpoint for the rejection.
     failed: Option<piperine_analog_solver::error::Error>,
+    /// The last truncation rejection retook the step at `dt_min`; cleared when a step is accepted.
+    floor_retried: bool,
     /// The nets whose values the last delivery changed under a restart, until
     /// the step that reads them is accepted: what an `E0504` names.
     delivered: Vec<String>,
@@ -1076,6 +1077,7 @@ impl TransientSolver<'_> {
             attempts: 0,
             op: None,
             failed: None,
+            floor_retried: false,
             delivered: Vec::new(),
             spt,
             cap: f64::INFINITY,
@@ -1440,7 +1442,7 @@ impl TransientSolver<'_> {
         let outcome = self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
         if let Ok(Some(snapshot)) = outcome {
             let assessment = self.assess_step(&prediction, post_set_step);
-            if assessment.accept || self.device_reject_lte(st, &prediction, assessment.milne) {
+            if assessment.accept {
                 run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, post_set_step });
                 // §17.3 rule 8: a step that reads a jump does not locate its crossings.
                 if run.locates && !post_set_step
@@ -1450,6 +1452,7 @@ impl TransientSolver<'_> {
                 }
                 return Ok(Attempt::Converged);
             }
+            self.device_reject_lte(run, &prediction, assessment.milne, post_set_step)?;
             return Ok(Attempt::Rejected);
         }
         st.steps_rejected += 1;
@@ -1509,31 +1512,71 @@ impl TransientSolver<'_> {
         Ok(Some(landing * run.spt))
     }
 
-    /// `reject_lte_step` without the restores (the protocol restores its
-    /// checkpoint): true when the step is accepted at the step floor.
-    fn device_reject_lte(&mut self, st: &mut TimeLoop, prediction: &StepPrediction, milne: f64) -> bool {
+    /// `reject_lte_step` without the restores (the protocol restores its checkpoint). The step
+    /// failed the truncation error: the next step is smaller. The first time that step would be
+    /// at or under the floor it is retaken at `dt_min` (counted in `dt_min_floor_hits`); an
+    /// attempt that was already at `dt_min` fails the run, `E0508`, or `E0504` when the step
+    /// reads a delivery (§17.2, Appendix C.2), naming the time and the failing states' unknowns.
+    fn device_reject_lte(
+        &mut self,
+        run: &mut DeviceRun,
+        prediction: &StepPrediction,
+        milne: f64,
+        post_set_step: bool,
+    ) -> crate::core::result::Result<()> {
         if self.policy.trace.transient {
             eprintln!(
                 "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
-                st.current_time,
+                run.st.current_time,
                 prediction.dt_actual,
                 milne,
                 self.system.context.tolerances.trtol
             );
         }
+        // A step on the tick grid is at the floor when within one tick of it.
+        if prediction.dt_actual <= self.options.dt_min + run.spt {
+            return Err(self.lte_floor_error(run, prediction.t_next, post_set_step));
+        }
+        let st = &mut run.st;
         st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
         if st.dt <= self.options.dt_min {
+            st.dt = self.options.dt_min;
             st.dt_min_floor_hits += 1;
-            tracing::warn!(
-                "transient LTE exceeded trtol at dt_min ({:.3e}); \
-                 accepting step at t={:.3e} with reduced accuracy",
-                st.dt, st.current_time
-            );
-            return true;
+            run.floor_retried = true;
         }
         st.steps_rejected += 1;
         st.last_step_accepted = false;
-        false
+        Ok(())
+    }
+
+    /// The run error of a step that still fails the truncation error at the floor: the unknowns
+    /// of every `ddt` state whose own error exceeds `trtol`.
+    fn lte_floor_error(
+        &self,
+        run: &DeviceRun,
+        time: f64,
+        reads_a_jump: bool,
+    ) -> piperine_analog_solver::error::Error {
+        use piperine_analog_solver::error::{Error, RunCode, SolverDomain};
+        let tolerances = &self.system.context.tolerances;
+        let h = self.options.dt_min;
+        let mut unknowns = Vec::new();
+        if let Some(bound) = self.system.circuit.abi.as_ref() {
+            for (state, terms) in bound.analog.ddt_states().iter().zip(bound.analog.ddt_unknowns()) {
+                if TrBdf2::state_lte(std::slice::from_ref(state), tolerances, h) > tolerances.trtol {
+                    unknowns.extend(terms);
+                }
+            }
+        }
+        unknowns.sort_unstable();
+        unknowns.dedup();
+        let tried = if run.floor_retried { "after the retry at the floor" } else { "at a floor-sized step with no retry before it" };
+        let (code, what) = if reads_a_jump && !run.delivered.is_empty() {
+            (RunCode::E0504, format!("the step after a jump still fails the truncation error at the smallest step; it reads the delivery of {}", run.delivered.join(", ")))
+        } else {
+            (RunCode::E0508, "the step still fails the truncation error at the smallest step".to_string())
+        };
+        Error::run(code, SolverDomain::Transient, format!("{what}, {tried}")).with_time(time).with_unknowns(unknowns)
     }
 
     /// Accepts the converged attempt: `accept_step`'s bookkeeping without the
@@ -1572,6 +1615,7 @@ impl TransientSolver<'_> {
         }
         st.sets_just_applied = false;
         run.delivered.clear();
+        run.floor_retried = false;
         run.last_dt = dt_actual;
         Ok(accepted)
     }

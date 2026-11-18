@@ -653,9 +653,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `an_unannounced_corner_fails_e0508_at_the_floor` (a hand-written source stepping 0 to 1 V at 1.03 µs computed from `TIME`, across 1 nF, `dt_min` = 1 ns) `the_floor_is_retried_once_before_failing` and `the_floor_at_the_stop_time_names_that_time` (edge case 6) pass under `**Run truncation**`
-- [ ] `every_twin_prints_the_bytes_it_printed_before_the_long_run` passes under `**Run twins**`; T2's buck floor-hit numbers were 0 (else this task stopped)
-- [ ] Gate check passes: Full
+- [x] `an_unannounced_corner_fails_e0508_at_the_floor` (a hand-written source stepping 0 to 1 V at 1.03 µs computed from `TIME`, across 1 nF, `dt_min` = 1 ns) `the_floor_is_retried_once_before_failing` and `the_floor_at_the_stop_time_names_that_time` (edge case 6) pass under `**Run truncation**`
+- [x] `every_twin_prints_the_bytes_it_printed_before_the_long_run` passes under `**Run twins**`; T2's buck floor-hit numbers were 0 (else this task stopped)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -431,6 +431,17 @@ impl Assembly {
         Ok(())
     }
 
+    /// The unknowns each `DDT` term of `ddt_states` contributes to, in the same order.
+    pub fn ddt_unknowns(&self) -> Vec<Vec<usize>> {
+        let mut out = Vec::new();
+        for inst in &self.plan.instances {
+            for t in inst.terms.iter().filter(|t| t.op == op::DDT) {
+                out.push([&t.plus, &t.minus].into_iter().flatten().filter_map(|r| r.idx()).collect());
+            }
+        }
+        out
+    }
+
     /// The `DDT` states of the step the last two stages completed: per term, its value at `t_n`,
     /// `t_{n+γ}` and `t_{n+1}` (the three newest history rows), its companion current at `t_n`
     /// and `t_{n+1}`, and its own `abstol` when the instance gave a finite positive one. What the
