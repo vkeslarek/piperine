@@ -60,6 +60,23 @@ fn start_commits_inits_and_fires_start() {
 }
 
 #[test]
+fn start_at_commits_init_at_its_tick() {
+    // HYG-12 AC 2: the inits and START are due at the start tick, not at 0; the timer's reaction
+    // (half = 10 ns) lands at the start plus its delay.
+    let start = Tick(5 * NS);
+    let mut d = engine(vec![
+        ("clock", timer(), vec![("out", "clk")]),
+        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+    ]);
+    d.start_at(start).unwrap();
+    assert_eq!(d.next_due(), Some(start), "inits and START are due at the start tick");
+    let out = instant(&mut d, start);
+    assert_eq!(d.read(net(&d, "q")), LOW, "q's init");
+    assert!(out.fired.contains(&net(&d, "global:7")), "START fired");
+    assert_eq!(d.next_due(), Some(Tick(15 * NS)), "the timer commits at start plus its half period");
+}
+
+#[test]
 fn a_plan_with_no_code_applies_host_commits_only() {
     let plan = piperine_digital_solver::plan::DigitalPlan::bind(
         vec![NetSpec::discrete("n", 2, 1)],

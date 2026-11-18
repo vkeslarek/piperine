@@ -785,8 +785,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `start_at_commits_init_at_its_tick` passes under `**Run instant**`
-- [ ] Gate check passes: Quick
+- [x] `start_at_commits_init_at_its_tick` passes under `**Run instant**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

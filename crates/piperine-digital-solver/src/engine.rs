@@ -149,11 +149,17 @@ impl Digital {
     /// An analysis from initial values (abi.md §9): zero the store, drop the queue, commit every
     /// `init` at (0, 0) and fire `START`. No device is called; the first instant applies them.
     pub fn start(&mut self) -> Result<(), DigitalError> {
+        self.start_at(Tick(0))
+    }
+
+    /// `start`, with the inits committed and `START` fired at `(tick, 0)`: a run that begins later
+    /// than time zero (a transient whose start time is not 0).
+    pub fn start_at(&mut self, tick: Tick) -> Result<(), DigitalError> {
         self.store = Store::new(&self.plan.nets);
         self.queue = Queue::new();
         self.obs = Obs::new();
         self.dirty = DirtySet::all(&self.plan);
-        self.now = Tick(0);
+        self.now = tick;
         self.call = 0;
         self.running = true;
         self.suspended = None;
@@ -168,14 +174,14 @@ impl Digital {
                 bytes: net.init.clone(),
                 writer: Writer::Host,
                 statement: 0,
-                made: (Tick(0), 0),
+                made: (tick, 0),
                 call: self.call,
-                due: (Tick(0), 0),
+                due: (tick, 0),
             };
             self.queue.push(pending, false);
         }
         for net in self.plan.analysis().start_nets().to_vec() {
-            self.fire(net, Tick(0))?;
+            self.fire(net, tick)?;
         }
         Ok(())
     }
