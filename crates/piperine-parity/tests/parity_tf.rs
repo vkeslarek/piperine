@@ -5,6 +5,7 @@
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
+use piperine_parity::host::HostRun;
 use piperine_parity::ngspice::{Ngspice, Reference};
 use piperine_solver::prelude::{AnalogVariable, Context, TransferFunctionAnalysisOptions};
 
@@ -35,5 +36,27 @@ fn tf_divider() {
     let reference = Ngspice::from_environment().run("tf_divider");
     for backend in Backend::selected() {
         compare(&reference, backend);
+    }
+}
+
+#[test]
+fn tf_divider_through_a_session() {
+    // HII-04 AC 2: the run keys `input = "v1"` and `output = "vout"`, the three rows of the table
+    // against what ngspice prints
+    let reference = Ngspice::from_environment().run("tf_divider");
+    let Reference::Golden(golden) = &reference else { return };
+    for backend in Backend::selected() {
+        let table = HostRun::new("tf_divider", "tf", backend)
+            .keys(|keys| {
+                keys.input = Some("v1".into());
+                keys.output = Some("vout".into());
+            })
+            .table();
+        for (printed, quantity) in [("transfer_function", "gain"), ("output_impedance_at_v(out)", "output_impedance"), ("v1#input_impedance", "input_impedance")] {
+            let actual = HostRun::real(&HostRun::row(&table, quantity)[1]);
+            let label = format!("{quantity} through a session");
+            let at = Point::new("tf_divider", &label, Coordinate::OperatingPoint).with_ngspice(golden.version()).with_backend(backend.name());
+            ToleranceContract::TF_RATIO.assert(&at, golden.printed(printed), actual);
+        }
     }
 }

@@ -7,6 +7,7 @@
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
+use piperine_parity::host::HostRun;
 use piperine_parity::ngspice::{Ngspice, Reference};
 use piperine_parity::waveform::Waveform;
 use piperine_solver::prelude::{Context, PssAnalysisOptions};
@@ -85,5 +86,40 @@ fn pss_rc() {
     // Rust backend is the one that runs the twin
     for backend in Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust) {
         compare(&reference, backend);
+    }
+}
+
+#[test]
+fn pss_rc_through_a_session() {
+    // HII-07 AC 4: `analysis = "pss"` with `period`, `tstab` and `print_step` equal to ngspice's
+    // grid (0.04 us), the table's 101 rows against the last period of ngspice's transient at the
+    // same phase, and the end of the high half against the closed form
+    let reference = Ngspice::from_environment().run("pss_rc");
+    let backend = Backend::Rust;
+    if !Backend::selected().contains(&backend) {
+        return;
+    }
+    let table = HostRun::new("pss_rc", "pss", backend)
+        .keys(|keys| {
+            keys.period = Some(PssRun::PERIOD);
+            keys.tstab = Some(PssRun::TSTAB);
+            keys.print_step = Some(PssRun::PERIOD / 100.0);
+            keys.max_step = Some(PssRun::STEP);
+            keys.print = vec!["vout".into()];
+        })
+        .table();
+    assert_eq!(table.rows.len(), 101, "pss_rc: the grid of 0.04 us holds 101 rows over one period");
+    let closed = 1.0 / (1.0 + (-PssRun::PERIOD / (2.0 * PssRun::TAU)).exp());
+    let half = HostRun::real(&table.rows[50][1]);
+    let at = Point::new("pss_rc", "v(vout), end of the high half, through a session", Coordinate::Time(PssRun::TSTAB + PssRun::PERIOD / 2.0)).with_backend(backend.name());
+    ToleranceContract::TRAN_VOLTAGE.assert(&at, closed, half);
+    if let Reference::Golden(golden) = &reference {
+        let rows = golden.real("pss_rc_tran");
+        let last: Vec<&(f64, f64)> = rows.iter().filter(|(time, _)| *time >= (PssRun::PERIODS - 1.0) * PssRun::PERIOD - 1e-12).collect();
+        assert_eq!(last.len(), table.rows.len(), "pss_rc: ngspice's last period holds one row per row of the table");
+        for (row, (time, wanted)) in table.rows.iter().zip(last) {
+            let at = Point::new("pss_rc", "v(vout) through a session", Coordinate::Time(*time)).with_ngspice(golden.version()).with_backend(backend.name());
+            ToleranceContract::TRAN_VOLTAGE.assert(&at, *wanted, HostRun::real(&row[1]));
+        }
     }
 }

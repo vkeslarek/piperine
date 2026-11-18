@@ -5,6 +5,7 @@
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
+use piperine_parity::host::HostRun;
 use piperine_parity::ngspice::{Ngspice, Reference};
 use piperine_solver::prelude::{AnalogVariable, Context, SensAnalysisOptions};
 
@@ -38,5 +39,27 @@ fn sens_divider() {
     let reference = Ngspice::from_environment().run("sens_divider");
     for backend in Backend::selected() {
         compare(&reference, backend);
+    }
+}
+
+#[test]
+fn sens_divider_through_a_session() {
+    // HII-06 AC 2: the run key `wrt` with the three params, `mid` printed, each derivative of the
+    // table against ngspice's `.sens`
+    let reference = Ngspice::from_environment().run("sens_divider");
+    let Reference::Golden(golden) = &reference else { return };
+    for backend in Backend::selected() {
+        let table = HostRun::new("sens_divider", "sens", backend)
+            .keys(|keys| {
+                keys.wrt = WRT.iter().map(|(_, instance, param)| format!("{instance}.{param}")).collect();
+                keys.print = vec!["mid".into()];
+            })
+            .table();
+        for (printed, instance, param) in WRT {
+            let actual = HostRun::real(&HostRun::row(&table, &format!("SensDivider.{instance}.{param}"))[1]);
+            let quantity = format!("d v(mid) / d {instance}.{param} through a session");
+            let at = Point::new("sens_divider", &quantity, Coordinate::OperatingPoint).with_ngspice(golden.version()).with_backend(backend.name());
+            ToleranceContract::SENSITIVITY.assert(&at, golden.printed(printed), actual);
+        }
     }
 }

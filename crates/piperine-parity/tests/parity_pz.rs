@@ -7,6 +7,7 @@
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
+use piperine_parity::host::HostRun;
 use piperine_parity::golden::{Complex, Golden};
 use piperine_parity::ngspice::{Ngspice, Reference};
 use piperine_solver::prelude::{AnalogVariable, Context, PoleZeroOptions};
@@ -70,5 +71,34 @@ fn pz_lowpass() {
     let reference = Ngspice::from_environment().run("pz_lowpass");
     for backend in Backend::selected() {
         compare(&reference, backend);
+    }
+}
+
+#[test]
+fn pz_lowpass_through_a_session() {
+    // HII-05 AC 2: the run keys `input = "v1"` and `output = "out"`, the table's poles and zeros
+    // against ngspice's, root for root
+    let reference = Ngspice::from_environment().run("pz_lowpass");
+    let Reference::Golden(golden) = &reference else { return };
+    for backend in Backend::selected() {
+        let table = HostRun::new("pz_lowpass", "pz", backend)
+            .keys(|keys| {
+                keys.input = Some("v1".into());
+                keys.output = Some("out".into());
+            })
+            .table();
+        for kind in ["pole", "zero"] {
+            let mut actual: Vec<Complex> = table.rows.iter().filter(|row| row[0] == piperine_api::Cell::Text(kind.into())).map(|row| Complex { re: HostRun::real(&row[1]), im: HostRun::real(&row[2]) }).collect();
+            Roots::sort(&mut actual);
+            let wanted = Roots::printed(golden, kind);
+            assert_eq!(wanted.len(), actual.len(), "pz_lowpass: ngspice lists {} {kind}s, the session gives {} on {}: {actual:?}", wanted.len(), actual.len(), backend.name());
+            for (k, (wanted, actual)) in wanted.iter().zip(&actual).enumerate() {
+                for (part, golden_value, actual_value) in [("re", wanted.re, actual.re), ("im", wanted.im, actual.im)] {
+                    let quantity = format!("{kind}({}) {part} through a session", k + 1);
+                    let at = Point::new("pz_lowpass", &quantity, Coordinate::OperatingPoint).with_ngspice(golden.version()).with_backend(backend.name());
+                    ToleranceContract::PZ_ROOT.assert(&at, golden_value, actual_value);
+                }
+            }
+        }
     }
 }

@@ -9,10 +9,10 @@ piperine-lang = { path = "../piperine-lang" }
 piperine-interp = { path = "../piperine-interp" }
 piperine-ir = { path = "../piperine-ir" }
 piperine-transpile = { path = "../piperine-transpile" }
+piperine-api = { path = "../piperine-api" }
 piperine-solver = { path = "../piperine-solver" }
 tempfile.workspace = true
 
 [dev-dependencies]
 piperine-abi = { path = "../piperine-abi" }
 piperine-plan = { path = "../piperine-plan" }
-piperine-api = { path = "../piperine-api" }

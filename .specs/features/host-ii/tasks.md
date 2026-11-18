@@ -1476,6 +1476,21 @@ Proof: run apireach | test a_periodic_steady_state_moves_with_temp_and_nodeset .
 **C119** - A pss orbit that does not repeat names the step as a possible cause, not only the drive. (HII-07, AC 6; F8) 
 Proof: run apianalyses | test a_pss_orbit_that_does_not_close_at_the_step_says_so ... ok
 
+**C120** - The twin `temp_res` run through a `Session` with its run keys agrees with ngspice under the same contract. (HII-03, AC 1 and 2; F9) 
+Proof: run newparity | test temp_res_through_a_session ... ok
+
+**C121** - The twin `tf_divider` run through a `Session` with its run keys agrees with ngspice under the same contract. (HII-04, AC 2; F9) 
+Proof: run newparity | test tf_divider_through_a_session ... ok
+
+**C122** - The twin `pz_lowpass` run through a `Session` with its run keys agrees with ngspice under the same contract. (HII-05, AC 2; F9) 
+Proof: run newparity | test pz_lowpass_through_a_session ... ok
+
+**C123** - The twin `sens_divider` run through a `Session` with its run keys agrees with ngspice under the same contract. (HII-06, AC 2; F9) 
+Proof: run newparity | test sens_divider_through_a_session ... ok
+
+**C124** - The twin `pss_rc` run through a `Session` with its run keys agrees with ngspice under the same contract. (HII-07, AC 4; F9) 
+Proof: run newparity | test pss_rc_through_a_session ... ok
+
 ---
 
 ## Handoff

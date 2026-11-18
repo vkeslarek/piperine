@@ -7,6 +7,7 @@
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
+use piperine_parity::host::HostRun;
 use piperine_parity::ngspice::{Ngspice, Reference};
 use piperine_solver::prelude::Context;
 
@@ -45,5 +46,30 @@ fn temp_res_at_the_default_temperature() {
     let reference = Ngspice::from_environment().run("temp_res");
     for backend in Backend::selected() {
         compare(&reference, "cold", None, backend);
+    }
+}
+
+/// Runs `temp_res` through a session (`op` printing `mid`, the run key `temp` in Celsius when
+/// given) and compares `v(mid)` with what ngspice printed as `printed`, when ngspice ran.
+fn compare_session(reference: &Reference, printed: &str, celsius: Option<f64>, backend: Backend) {
+    let table = HostRun::new("temp_res", "op", backend)
+        .keys(|keys| {
+            keys.print = vec!["mid".into()];
+            keys.temp = celsius;
+        })
+        .table();
+    let actual = HostRun::real(&HostRun::row(&table, "TempRes.mid")[1]);
+    let Reference::Golden(golden) = reference else { return };
+    let at = Point::new("temp_res", "v(mid) through a session", Coordinate::OperatingPoint).with_ngspice(golden.version()).with_backend(backend.name());
+    ToleranceContract::DC_VOLTAGE.assert(&at, golden.printed(printed), actual);
+}
+
+#[test]
+fn temp_res_through_a_session() {
+    // HII-03 AC 1 and 2: the run key `temp = 75` and no key at all, each against ngspice
+    let reference = Ngspice::from_environment().run("temp_res");
+    for backend in Backend::selected() {
+        compare_session(&reference, "v(mid)", Some(75.0), backend);
+        compare_session(&reference, "cold", None, backend);
     }
 }
