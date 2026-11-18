@@ -662,3 +662,50 @@ fn the_m1_goldens_are_unchanged() {
         assert!(ir.check().is_empty(), "{file}");
     }
 }
+
+#[test]
+fn cross_tolerances_lower_to_the_event() {
+    // FIX-12 AC 1 and 2: `cross(e, 1p)`, `cross(e, etol: 1u)`, `cross(e, 1p, 1u)` and a param
+    // tolerance lower onto the event; a tolerance left out stays absent (the solver's default).
+    let src = "module M(a: Electrical, out q: Bit) { tt: f64 = 2p; }\n\
+               digital for M {\n\
+                 on cross(v(a) - 0.5) { q <- true; }\n\
+                 on cross(v(a) - 0.5, 1p) { q <- true; }\n\
+                 on cross(v(a) - 0.5, etol: 1u) { q <- true; }\n\
+                 on cross(v(a) - 0.5, 1p, 1u) { q <- true; }\n\
+                 on cross(v(a) - 0.5, tt, None) { q <- true; }\n\
+               }\n\
+               module Top() { signal n: Electrical; signal q: Bit; let m = M(n, q); }";
+    let ir = Elab::ir(src, "Top");
+    let m = Read { ir: &ir }.body("M");
+    use piperine_ir::{EventSource, Expr, Real};
+    let tolerances: Vec<(Option<&Expr>, Option<&Expr>)> = m
+        .events()
+        .iter()
+        .map(|e| match e.source {
+            EventSource::Cross { ttol, etol, .. } => (ttol.map(|t| ir.expr(t)), etol.map(|t| ir.expr(t))),
+            ref other => panic!("a cross: {other:?}"),
+        })
+        .collect();
+    let (p, u) = (Expr::Real(Real::new(1e-12)), Expr::Real(Real::new(1e-6)));
+    assert_eq!(tolerances[0], (None, None), "left out: no tolerance");
+    assert_eq!(tolerances[1], (Some(&p), None), "positional ttol");
+    assert_eq!(tolerances[2], (None, Some(&u)), "named etol");
+    assert_eq!(tolerances[3], (Some(&p), Some(&u)), "both");
+    assert!(matches!(tolerances[4], (Some(Expr::Param(_)), None)), "a param, with None: {:?}", tolerances[4]);
+}
+
+#[test]
+fn a_cross_tolerance_that_is_not_constant_is_p0001() {
+    // FIX-12 AC 4: a tolerance that reads a carrier, a probe or a local.
+    for tolerance in ["v(a)", "c.known_or(1.0)", "{ let t = 1.0; t }"] {
+        let src = format!(
+            "module M(a: Electrical, in c: Bit<f64>, out q: Bit) {{ }}\n\
+             digital for M {{ on cross(v(a) - 0.5, {tolerance}) {{ q <- true; }} }}\n\
+             module Top() {{ signal n: Electrical; signal c: Bit<f64>; signal q: Bit; let m = M(n, c, q); }}"
+        );
+        let err = Elab::run(&src, "Top").expect_err(tolerance);
+        assert_eq!(Elab::codes(&err), ["P0001"], "{tolerance}");
+        assert!(err[0].diagnostic.message.contains("a `cross` tolerance that is not a constant or a param"), "{tolerance}: {}", err[0].diagnostic.message);
+    }
+}

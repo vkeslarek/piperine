@@ -721,9 +721,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `cross_tolerances_lower_to_the_event`, `a_cross_tolerance_that_is_not_constant_is_p0001`
-- [ ] Gate check passes: Quick (`Run edig`), then `cargo test -p piperine-lang`
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-lang --test elab_digital`: `cross_tolerances_lower_to_the_event`, `a_cross_tolerance_that_is_not_constant_is_p0001`
+- [x] Gate check passes: Quick (`Run edig`), then `cargo test -p piperine-lang`
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

@@ -22,6 +22,9 @@
 //! | one disjunct, with continuous conjuncts | one, its body under `if` |
 //! | several disjuncts, one with continuous conjuncts | one per disjunct, in source order; `P0001` when the body emits a record |
 //!
+//! A `ttol` or `etol` of `cross` (positional or by name) is `None`, a constant or a param, lowered
+//! onto the event; one that reads a carrier, a probe or a local is `P0001`.
+//!
 //! Continuity is read off the lowered IR (an expression is continuous when it reads a probe, a
 //! branch flow, `time()`, `static()`, `gmin()` or `source_scale()`, directly or through an operand
 //! or a function), so a value input of a hoisted module is judged by what its caller gave.
@@ -220,12 +223,27 @@ impl Elaboration<'_, '_> {
             },
             ExprKind::Call { args, .. } => match self.types.callee(expr) {
                 Some(Callee::Core(id)) if id.info().name == "cross" => {
-                    let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-                    let watched = self.event_argument(scope, args[0])?;
-                    for tolerance in &args[1..] {
-                        self.no_tolerance(scope, *tolerance)?;
+                    // `cross(e, ttol, etol)`: positionally or by name (§3.2)
+                    let (mut watched, mut ttol, mut etol) = (None, None, None);
+                    for (i, a) in args.iter().enumerate() {
+                        let slot = match a.name.as_ref().map(|n| n.text.as_str()) {
+                            Some("e") => 0,
+                            Some("ttol") => 1,
+                            Some("etol") => 2,
+                            Some(_) => continue,
+                            None => i,
+                        };
+                        match slot {
+                            0 => watched = Some(a.value),
+                            1 => ttol = Some(a.value),
+                            2 => etol = Some(a.value),
+                            _ => {}
+                        }
                     }
-                    Some(vec![Disjunct { source: EventSource::Cross { e: watched, ttol: None, etol: None }, discrete: Vec::new(), continuous: Vec::new(), origin }])
+                    let watched = self.event_argument(scope, watched?)?;
+                    let ttol = self.tolerance(scope, ttol)?;
+                    let etol = self.tolerance(scope, etol)?;
+                    Some(vec![Disjunct { source: EventSource::Cross { e: watched, ttol, etol }, discrete: Vec::new(), continuous: Vec::new(), origin }])
                 }
                 Some(Callee::Core(id)) if id.info().name == "at" => {
                     let time = self.event_argument(scope, args[0].value)?;
@@ -304,24 +322,57 @@ impl Elaboration<'_, '_> {
         Some(lowered)
     }
 
-    /// A `ttol` or `etol` argument of `cross`: only `None` is accepted (the `Cross` event carries
-    /// no tolerance), written as such or reached through a value input of a hoisted module
-    /// (`above`'s `cross(e, ttol, etol)`) left out or given `None`.
-    fn no_tolerance(&mut self, scope: &mut Scope, arg: ExprId) -> Option<()> {
+    /// The `ttol` or `etol` argument `arg` of `cross`, lowered: `Some(None)` for one left out or
+    /// given `None` (the watch keeps the solver's default), `Some(Some(value))` for a constant or
+    /// a param, `None` after a diagnostic. A value reaching a hoisted module's input (`above`'s
+    /// `cross(e, ttol, etol)`) is read in the caller's frame.
+    fn tolerance(&mut self, scope: &mut Scope, arg: Option<ExprId>) -> Option<Option<LoweredExpr>> {
+        let Some(arg) = arg else { return Some(None) };
         let node = self.design.expr_node(arg).clone();
-        if let ExprKind::Path(path) = &node.kind {
-            match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(()),
+        match &node.kind {
+            ExprKind::Paren(inner) => return self.tolerance(scope, Some(*inner)),
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
-                    Some(None) => return Some(()),
-                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.no_tolerance(scope, given)),
+                    Some(None) => return Some(None),
+                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.tolerance(scope, Some(given))),
                     None => {}
                 },
                 _ => {}
+            },
+            ExprKind::Call { args, .. } if self.is_some_call(arg) => {
+                let payload = args.first().map(|a| a.value);
+                return self.tolerance(scope, payload);
             }
+            _ => {}
         }
-        self.unsupported(scope.file, node.span, "a `ttol` or `etol` given to `cross`");
-        None
+        if !self.constant_or_param(scope, arg) {
+            self.unsupported(scope.file, node.span, "a `cross` tolerance that is not a constant or a param");
+            return None;
+        }
+        Some(Some(self.event_argument(scope, arg)?))
+    }
+
+    /// Whether the source expression `expr` reads only literals, constants and params (so no
+    /// carrier, probe or local), through operators; an input of a hoisted module is judged by
+    /// what its caller gave.
+    fn constant_or_param(&mut self, scope: &mut Scope, expr: ExprId) -> bool {
+        let node = self.design.expr_node(expr).clone();
+        match &node.kind {
+            ExprKind::Lit(_) => true,
+            ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } | ExprKind::Cast { expr: inner, .. } => self.constant_or_param(scope, *inner),
+            ExprKind::Binary { lhs, rhs, .. } => self.constant_or_param(scope, *lhs) && self.constant_or_param(scope, *rhs),
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Builtin(_)) => true,
+                Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
+                    Some(None) => false,
+                    Some(Some(given)) => self.in_caller(scope, |this, scope| Some(this.constant_or_param(scope, given))).unwrap_or(false),
+                    None => matches!(self.design.decl_data(decl).kind, DeclKind::Param(_) | DeclKind::Const(_)),
+                },
+                _ => false,
+            },
+            _ => false,
+        }
     }
 
     /// The carrier of the body a receiver names, in the frame of `scope`.

@@ -554,7 +554,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Whether `expr` is a call of the built-in `Some`.
-    fn is_some_call(&self, expr: ExprId) -> bool {
+    pub(super) fn is_some_call(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Call { callee, .. } => matches!(&self.design.expr_node(*callee).kind, ExprKind::Path(path) if matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some")),
             _ => false,
