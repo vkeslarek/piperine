@@ -33,6 +33,7 @@ Code has entered fast, in many features and lanes. Each feature kept its own tes
 - [ ] Names say what things do, with no abbreviations except an explicit glossary of domain terms (rule 5).
 - [ ] No god methods and no abstraction without a second use or a clear simplification (rules 6, 7).
 - [ ] The data path is evident: each crate documents the path its data takes through it, and the code reads in that order (rule 7).
+- [ ] Every struct, enum, trait, method and function carries a comment saying what it is for, and code whose why is not obvious carries a comment saying why (user addition, 2026-11-18).
 - [ ] Behaviour is unchanged: every test, golden, twin and Book listing is byte-identical; no tolerance moves.
 
 ## Out of Scope
@@ -112,6 +113,23 @@ Code has entered fast, in many features and lanes. Each feature kept its own tes
 
 ---
 
+### P1: The code is commented ⭐ MVP
+
+User, 2026-11-18, verbatim: "Coloca na feature do code-clarity também para comentar os códigos, métodos e structs".
+
+**User Story**: As a reader, I want every type and method to say what it is for, so I understand the code without reading every body.
+
+**Acceptance Criteria** (CC-10):
+
+1. WHEN the feature closes THEN every struct, enum, trait, type alias, method and function of every crate, public or private, SHALL carry a doc comment (`///`) stating what it is for and, for a method, what it returns or changes; every struct and enum field and variant whose meaning is not evident from its name and type SHALL carry one too (CC-10)
+2. WHEN a crate is built THEN `#![deny(missing_docs)]` SHALL hold for its public items, and a guard test SHALL fail on a private struct, enum, trait or fn without a doc comment, outside test code (CC-10)
+3. WHEN a block's reason is not evident (an ordering constraint, a spec rule it implements, a numeric guard, a workaround) THEN it SHALL carry a comment saying why and citing the spec rule or decision (§n, MD-n) where one applies; comments SHALL say what and why, never restate the code line by line (CC-10)
+4. WHEN a comment and the code disagree after a refactor commit THEN the commit SHALL fix the comment; stale names in comments are found by the naming guard of CC-05 (CC-10)
+
+**Independent Test**: `missing_docs` per crate plus the private-item doc guard; reviewer reading for what/why quality.
+
+---
+
 ### P1: Nothing changes behaviour ⭐ MVP
 
 **User Story**: As the user, I want the refactor to change nothing a run produces.
@@ -144,8 +162,9 @@ Code has entered fast, in many features and lanes. Each feature kept its own tes
 | CC-07 | P2: abstractions | Design | Pending |
 | CC-08 | P2: data path | Design | Pending |
 | CC-09 | P1: no behaviour change | Design | Pending |
+| CC-10 | P1: commented code | Design | Pending |
 
-**Coverage:** 9 total, 0 mapped to tasks, 9 unmapped (tasks come after the Fable inventory).
+**Coverage:** 10 total, 0 mapped to tasks, 10 unmapped (tasks come after the Fable inventory).
 
 ## Assumptions & Open Questions
 
@@ -160,4 +179,5 @@ Code has entered fast, in many features and lanes. Each feature kept its own tes
 ## Success Criteria
 
 - [ ] The seven rules hold over every crate, checked by the guards CC-01, CC-04, CC-05, CC-06 and by the inventory closed.
+- [ ] Every type and method is commented (CC-10).
 - [ ] Every test, golden and Book listing is byte-identical before and after.
