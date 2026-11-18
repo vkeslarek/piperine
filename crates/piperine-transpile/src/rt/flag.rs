@@ -1,5 +1,5 @@
-//! `Flagged<T>` and `Commits`: the values of digital code (spec RS-11, MSL §3.3) and the commits
-//! of one reaction.
+//! `Flagged<T>`: the values of digital code (spec RS-11, MSL §3.3). The commits of a reaction
+//! are `rt/commits.rs`.
 //!
 //! A `Flagged<T>` is a value with one known flag, the flag of a carrier's pin (abi.md P3: one
 //! known byte per field). An unknown value holds `T::default()`, so its bytes are the canonical
@@ -14,13 +14,10 @@
 //! `Merge` combines two values level by level, as the merge of unknown control does (§3.3.3,
 //! §22.1.2); `same`, `level`, `recast` and `known_or_flagged` are the rest of §22.1 on one value.
 //!
-//! `Commits` collects the commits of one reaction and hands them to `React` in the order they
-//! were made, after the body ran, so a fault makes none (design "Phase B: generated digital
-//! code"). A commit whose delay is unknown commits `Unknown` at the next microstep (§3.3.3).
 
 use core::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
-use piperine_abi::device::{Fault, React};
+use piperine_abi::device::Fault;
 
 use super::control::Panic;
 use super::int::{Int, UInt};
@@ -345,6 +342,12 @@ impl<T: Carried> Flagged<T> {
         }
     }
 
+    /// `a.merge(b)` on the bytes of two pins of type `T`: how `Commits` merges two committed
+    /// values without knowing their type.
+    pub fn merge_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
+        Flagged::<T>::decode(a).merge(Flagged::<T>::decode(b)).encode()
+    }
+
     /// `x.level(k)` as the pair `(is, value)` of the `Option<bool>` it yields (§3.3.4): `is`
     /// says the level is known, `value` is its value (`false` when it is not, the form `None`
     /// takes). With a known `k` both are known (§3.3.14) and a `k` outside the type's levels
@@ -543,61 +546,12 @@ where
     }
 }
 
-/// The commits of one reaction, in the order they were made.
-#[derive(Debug, Default)]
-pub struct Commits {
-    pending: Vec<(u32, Vec<u8>, f64)>,
-}
-
-impl Commits {
-    pub fn new() -> Commits {
-        Commits::default()
-    }
-
-    /// `carrier <- value after delay` through statement `statement`. An unknown delay commits
-    /// `Unknown` at the next microstep (§3.3.3, RS-11 AC 6).
-    pub fn commit<T: Carried>(&mut self, statement: u32, value: Flagged<T>, after: Flagged<f64>) {
-        let (value, after) = if after.is_known() { (value, after.known_or(0.0)) } else { (Flagged::unknown(), 0.0) };
-        self.pending.push((statement, value.encode(), after));
-    }
-
-    /// A record through statement `statement`: `bytes`, the whole layout of its stream's
-    /// `RECORD` pin, due at the next microstep (abi.md C5: a record is a commit to that pin).
-    pub fn record(&mut self, statement: u32, bytes: &[u8]) {
-        self.pending.push((statement, bytes.to_vec(), 0.0));
-    }
-
-    /// Arms a timer through statement `statement`, a `REPLACE` statement on an event pin (abi.md
-    /// R1, C3), for the time `at` seen at the instant `now`: a later time is due `at - now`
-    /// from now, the time of the instant itself at the next microstep (a delay of 0, C1), and an
-    /// unknown or past time never (`+inf`, C1). Since the statement is `REPLACE`, each arming
-    /// removes the firing an earlier one left pending, so a timer never fires for a time it no
-    /// longer holds.
-    pub fn arm(&mut self, statement: u32, at: Flagged<f64>, now: f64) {
-        let after = match at.is_known() {
-            true if at.value > now => at.value - now,
-            true if at.value == now => 0.0,
-            _ => f64::INFINITY,
-        };
-        self.pending.push((statement, Vec::new(), after));
-    }
-
-    /// Hands every commit to `cx`, in order; the first refusal is the fault.
-    pub fn flush(self, cx: &mut React<'_>) -> Result<(), Fault> {
-        for (statement, bytes, after) in &self.pending {
-            cx.commit(*statement, bytes, *after)?;
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Commits, Flagged, Merge};
+    use super::{Flagged, Merge};
+    use crate::rt::commits::{Commits, tests::react_with};
     use crate::rt::int::{Int, UInt};
-    use piperine_abi::device::React;
     use piperine_abi::layout::{HIGH, LOW};
-    use piperine_abi::raw::status;
     use piperine_ir::{Constant, Real, ValueType};
     use piperine_plan::CarrierLayout;
 
@@ -836,20 +790,6 @@ mod tests {
         assert_eq!(u::<f64>().known_or_flagged(u()), u());
     }
 
-    /// A reaction frame whose commits are recorded.
-    fn react_with(f: impl FnOnce(&mut React<'_>)) -> Vec<(u32, Vec<u8>, f64)> {
-        let mut made = Vec::new();
-        {
-            let mut sink = |statement: u32, bytes: &[u8], after: f64| {
-                made.push((statement, bytes.to_vec(), after));
-                status::OK
-            };
-            let mut cx = React::new(vec![], &mut sink);
-            f(&mut cx);
-        }
-        made
-    }
-
     #[test]
     fn an_unknown_value_is_written_as_zero_bytes() {
         // RS-11 AC 4: an unknown value is written with its known byte 0 and its value bytes 0,
@@ -899,21 +839,5 @@ mod tests {
             drop(commits);
         });
         assert_eq!(made, [], "a dropped `Commits`, as after a fault, commits nothing");
-    }
-
-    #[test]
-    fn a_timer_is_armed_for_a_later_time_only() {
-        // msl-digital A3 on abi.md C1, C4: an arming fires its event pin (no bytes) `t - now`
-        // later, at the next microstep for `t == now`, and never (`+inf`) for a past or unknown
-        // time
-        let made = react_with(|cx| {
-            let mut commits = Commits::new();
-            commits.arm(0, k(15e-9), 5e-9);
-            commits.arm(1, k(5e-9), 5e-9);
-            commits.arm(2, k(0.0), 5e-9);
-            commits.arm(3, u::<f64>(), 5e-9);
-            commits.flush(cx).expect("every arming accepted");
-        });
-        assert_eq!(made, [(0, vec![], 15e-9 - 5e-9), (1, vec![], 0.0), (2, vec![], f64::INFINITY), (3, vec![], f64::INFINITY)]);
     }
 }
