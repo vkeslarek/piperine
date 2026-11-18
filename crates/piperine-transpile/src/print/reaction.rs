@@ -138,11 +138,14 @@ impl<'a> DigitalPrinter<'a> {
             }
             t.comment(&format!("{} of body {}: the commits are made here and flushed after the last statement", name, self.body.name()), &origin);
             t.line(&format!("let {}commits_ = rt::Commits::new();", if committed.is_empty() { "" } else { "mut " }));
+            if values.finishes() {
+                t.line("let mut finish_ = false;");
+            }
             for line in &lines {
                 t.line(line);
             }
             t.line("commits_.flush(cx_)?;");
-            t.line("Ok(Flow::Continue)");
+            t.line(if values.finishes() { "Ok(if finish_ { Flow::Finish } else { Flow::Continue })" } else { "Ok(Flow::Continue)" });
         });
         t.line("}");
         let mut text = t.finish();

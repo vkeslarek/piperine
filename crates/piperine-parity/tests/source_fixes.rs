@@ -21,6 +21,7 @@ mod mixed;
 #[path = "buck/support.rs"]
 mod support;
 
+use mixed::Seen;
 use support::{HIGH, LOW, build, transient};
 
 /// One nanosecond in ticks.
@@ -205,4 +206,52 @@ fn two_disjuncts_of_one_microstep_run_the_body_once() {
     // in the first microstep and the body runs once.
     let times = record_times("fired.msl", "TwiceBench", 1e-7, 0.05e-6);
     assert_eq!(times, vec![0.0], "one record");
+}
+
+/// The instant of the last step of the transient of `top` of `finish.msl`, run to 4 ns.
+fn last_step(top: &str) -> (Seen, f64) {
+    let (seen, result) = build(&project("finish.msl"), top).run_with(4e-9, 0.5e-9);
+    let last = result.iter().last().expect("a time point").time();
+    (seen, last)
+}
+
+/// The instants of every record the run observed.
+fn all_record_instants(seen: &Seen) -> Vec<f64> {
+    seen.all().iter().filter(|o| matches!(o.kind, ObservationKind::Record { .. })).map(|o| o.time).collect()
+}
+
+#[test]
+fn finish_ends_the_transient_at_its_instant() {
+    // FIX-01 AC 1: `on at(1n) { finish(); } on at(3n) { k <- 9; emit!("late", x = 1); }` run to
+    // 4 ns: the last step is at 1 ns, there is no `late` record and `k` is still 0.
+    let (seen, last) = last_step("FinishBench");
+    assert!((last - 1e-9).abs() <= 1e-15, "last step at {last}, wanted 1 ns");
+    assert!(all_record_instants(&seen).iter().all(|t| *t <= 1e-9 + 1e-15), "no record after 1 ns (`late` is at 3 ns)");
+    assert!(transient(&seen, "FinishBench.k").iter().all(|(_, b)| b[..8] != 9f64.to_le_bytes()), "k stays 0");
+}
+
+#[test]
+fn fatal_ends_the_transient_at_its_instant() {
+    // FIX-01 AC 2: `fatal("boom")` ends the transient at 1 ns as `finish` does.
+    let (seen, last) = last_step("FatalBench");
+    assert!((last - 1e-9).abs() <= 1e-15, "last step at {last}, wanted 1 ns");
+    assert!(all_record_instants(&seen).iter().all(|t| *t <= 1e-9 + 1e-15), "no record after 1 ns (`late` is at 3 ns)");
+}
+
+#[test]
+fn a_finish_field_false_or_unknown_runs_to_stop() {
+    // FIX-01 AC 3: a `sim` record with `finish` false leaves the run to its `stop` (4 ns), and
+    // the reaction at 3 ns still writes `k`.
+    let (seen, last) = last_step("IdleBench");
+    assert!((last - 4e-9).abs() <= 1e-15, "last step at {last}, wanted 4 ns");
+    assert!(transient(&seen, "IdleBench.k").iter().any(|(_, b)| b[..8] == 9f64.to_le_bytes()), "k reaches 9");
+}
+
+#[test]
+fn finish_ends_an_operating_point() {
+    // FIX-01 AC 4: `finish()` on the first instant (`init()`) ends the analysis at 0 and the
+    // reaction of 3 ns never runs.
+    let (seen, last) = last_step("EarlyBench");
+    assert!(last <= 1e-15, "last step at {last}, wanted 0");
+    assert!(transient(&seen, "EarlyBench.k").iter().all(|(_, b)| b[..8] != 9f64.to_le_bytes()), "k stays 0");
 }

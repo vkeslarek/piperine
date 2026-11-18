@@ -22,7 +22,7 @@
 //! such an `if`. In the digital printers a real is a plain `f64`; in an `analog` block and in an
 //! IR function it is `R`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
 use piperine_ir::{AnalysisKind, 
@@ -104,6 +104,10 @@ pub struct ValuePrinter<'a> {
     /// The carrier and `min_after` of each commit printed so far, in printing order: the order
     /// of the reaction's statements in the shape.
     committed: RefCell<Vec<StatementPlan>>,
+    /// Whether the code printed so far holds an `emit!` on the stream `sim` that sets `finish`:
+    /// the reaction then keeps a `finish_` flag and returns `Flow::Finish` when it is set
+    /// (msl-fixes FIX-01).
+    finishes: Cell<bool>,
     /// The names of the reads (params, nodes, carriers, the environment) printed so far: the
     /// variables the code uses, so a function binds no read it leaves alone.
     used: RefCell<BTreeSet<String>>,
@@ -148,6 +152,7 @@ impl<'a> ValuePrinter<'a> {
             faults: true,
             commits: false,
             committed: RefCell::new(Vec::new()),
+            finishes: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
         }
     }
@@ -173,6 +178,7 @@ impl<'a> ValuePrinter<'a> {
             faults: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
+            finishes: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
         }
     }
@@ -223,6 +229,11 @@ impl<'a> ValuePrinter<'a> {
     /// The carrier and `min_after` of each commit printed so far, in printing order.
     pub fn committed(&self) -> Vec<StatementPlan> {
         self.committed.borrow().clone()
+    }
+
+    /// Whether the code printed so far ends the analysis: an `emit!` on `sim` with a `finish` field.
+    pub fn finishes(&self) -> bool {
+        self.finishes.get()
     }
 
     /// Whether the code printed so far reads the variable `name` (a param, node, carrier or
@@ -1070,6 +1081,7 @@ impl<'a> ValuePrinter<'a> {
         let Some(layout) = RecordLayout::of(declared) else {
             return Err(unsupported(&format!("emit! to stream `{}`, whose fields no pin holds", declared.name)));
         };
+        let stream_name = declared.name.as_str();
         let mut writes = Vec::new();
         let mut texts = Vec::new();
         for f in fields {
@@ -1080,6 +1092,11 @@ impl<'a> ValuePrinter<'a> {
                     };
                     let value = self.typed(*value, &ValueType::Flagged(Box::new(declared.ty.clone())))?.at(Prec::Atom);
                     writes.push(format!("{value}.write(&mut record_[{offset}..]); // {}", declared.name));
+                    if declared.name == "finish" && stream_name == "sim" {
+                        // an unknown `finish` never ends a run (FIX-01 AC 3)
+                        writes.push(format!("finish_ |= {value}.known_or(false);"));
+                        self.finishes.set(true);
+                    }
                 }
                 EmitField::Text { name, text } => texts.push(format!("{name} = {text:?}")),
             }

@@ -1,0 +1,62 @@
+//! `finish()` and `fatal(msg)` end the analysis (FIX-01).
+
+/// A node held at 1 V, so the run has an analog side.
+module Held(p: Electrical) {}
+analog for Held { v(p, gnd) +> 1.0; }
+
+/// `finish()` at 1 ns; the second reaction would write `k` and a `late` record at 3 ns.
+module Finisher(a: Electrical, out k: Bit<f64> = 0.0) {}
+digital for Finisher {
+    on at(1n) { finish(); }
+    on at(3n) { k <- 9.0; emit!("late", x = 1); }
+}
+
+module FinishBench() {
+    signal a: Electrical;
+    signal k: Bit<f64>;
+    let h = Held(a);
+    let f = Finisher(a, k);
+}
+
+/// The same with `fatal`.
+module Fataler(a: Electrical, out k: Bit<f64> = 0.0) {}
+digital for Fataler {
+    on at(1n) { fatal("boom"); }
+    on at(3n) { k <- 9.0; emit!("late", x = 1); }
+}
+
+module FatalBench() {
+    signal a: Electrical;
+    signal k: Bit<f64>;
+    let h = Held(a);
+    let f = Fataler(a, k);
+}
+
+/// `finish` written with a false field at 1 ns, and a `sim` record whose `finish` is unknown:
+/// neither ends the run.
+module Idle(a: Electrical, out k: Bit<f64> = 0.0) {}
+digital for Idle {
+    on at(1n) { emit!("sim", finish = false); }
+    on at(3n) { k <- 9.0; }
+}
+
+module IdleBench() {
+    signal a: Electrical;
+    signal k: Bit<f64>;
+    let h = Held(a);
+    let f = Idle(a, k);
+}
+
+/// `finish()` at time 0: the operating point's instant.
+module Early(a: Electrical, out k: Bit<f64> = 0.0) {}
+digital for Early {
+    on init() { finish(); }
+    on at(3n) { k <- 9.0; }
+}
+
+module EarlyBench() {
+    signal a: Electrical;
+    signal k: Bit<f64>;
+    let h = Held(a);
+    let f = Early(a, k);
+}
