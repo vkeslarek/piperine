@@ -331,6 +331,10 @@ fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function_with("LateOscillator", LATE.get_or_init(|| module::<LateOscillator>("LateOscillator")), &[(0, 2, 0.0)]);
     // (checked at time 0, where the jump fixture is a plain resistor)
     partials::verify_every_function_with("JumpOscillator", JUMP.get_or_init(|| module::<JumpOscillator>("JumpOscillator")), &[(0, 3, 0.0)]);
+    // (checked at time 0, where the late source holds its branch at zero)
+    partials::verify_every_function_with("LateSource", LATE_SOURCE.get_or_init(|| module::<LateSource>("LateSource")), &[(0, 3, 0.0)]);
+    // (checked at frequency 0, where it is a plain conductance)
+    partials::verify_every_function_with("OpenAboveDc", OPEN.get_or_init(|| module::<OpenAboveDc>("OpenAboveDc")), &[(0, 2, 0.0)]);
 }
 
 // ─── §17.1 E0503 — a singular solve names the unknowns of the singular part ───
@@ -488,6 +492,107 @@ impl Device for JumpOscillator {
     }
 }
 
+/// A potential source that exists only from `LATE_SOURCE_AT` on: before it the branch carries no
+/// current (`f = 0`), after it `V(p, n) = 1 V` is imposed, so a second source across the same nodes
+/// makes the Jacobian singular at a transient step while the operating point is fine.
+/// pins: p=0, n=1 (PORT); f=2 (PRIVATE branch current)
+/// terms: T0 FLOW{p, n} "i" = f, T1 FLOW{f, ground} "eq"
+/// fn 0 "v": reads [p, n, f, TIME] writes [T0, T1] partials (0<-f) (1<-p) (1<-n) (1<-f)
+struct LateSource;
+static LATE_SOURCE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static LATE_SOURCE: OnceLock<Module> = OnceLock::new();
+const LATE_SOURCE_AT: f64 = 2.0e-7;
+
+fn late_source_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
+    let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+    let t1 = s.term(TermSpec { name: "eq", origin: ORIGIN, op: op::FLOW, plus: f, minus: piperine_abi::raw::GROUND, abstol: DEFAULT, max: DEFAULT });
+    let time = Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE };
+    s.function(FunctionSpec {
+        name: "v",
+        origin: ORIGIN,
+        reads: vec![cell_of(cell::PIN, p), cell_of(cell::PIN, n), cell_of(cell::PIN, f), time],
+        writes: vec![cell_of(cell::TERM, t0), cell_of(cell::TERM, t1)],
+        partials: vec![
+            Partial { write: 0, to: 0, read: 2, at: 0 },
+            Partial { write: 1, to: 0, read: 0, at: 0 },
+            Partial { write: 1, to: 0, read: 1, at: 0 },
+            Partial { write: 1, to: 0, read: 2, at: 0 },
+        ],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for LateSource {
+    fn prototype() -> &'static Shape<'static> {
+        LATE_SOURCE_SHAPE.get_or_init(late_source_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((LateSource, Arc::clone(LATE_SOURCE_SHAPE.get_or_init(late_source_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let (vp, vn, f, t) = (cx.f64(0), cx.f64(1), cx.f64(2), cx.f64(3));
+        cx.set(0, f);
+        if t > LATE_SOURCE_AT {
+            cx.set(1, vp - vn - 1.0);
+            cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, 0.0]);
+        } else {
+            cx.set(1, f);
+            cx.jac().copy_from_slice(&[1.0, 0.0, 0.0, 1.0]);
+        }
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// A 1 mS conductance at DC that is open at any frequency: a node it alone holds is fine at the
+/// operating point and has a zero row in the small-signal system.
+/// pins: p=0, n=1 (PORT); fn 0 "i": reads [p, n, FREQ] writes [T0] partials (0<-p) (0<-n)
+struct OpenAboveDc;
+static OPEN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static OPEN: OnceLock<Module> = OnceLock::new();
+
+fn open_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let p = s.pin(PinSpec::continuous("p", role::PORT));
+    let n = s.pin(PinSpec::continuous("n", role::PORT));
+    let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+    let frequency = Cell { kind: cell::AMBIENT, index: ambient::FREQ, part: part::VALUE };
+    s.function(FunctionSpec {
+        name: "i",
+        origin: ORIGIN,
+        reads: vec![cell_of(cell::PIN, p), cell_of(cell::PIN, n), frequency],
+        writes: vec![cell_of(cell::TERM, t0)],
+        partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
+        ..FunctionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for OpenAboveDc {
+    fn prototype() -> &'static Shape<'static> {
+        OPEN_SHAPE.get_or_init(open_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((OpenAboveDc, Arc::clone(OPEN_SHAPE.get_or_init(open_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let g = if cx.f64(2) > 0.0 { 0.0 } else { 1.0e-3 };
+        cx.set(0, g * (cx.f64(0) - cx.f64(1)));
+        cx.jac().copy_from_slice(&[g, -g]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
 /// The error of a transient to 1 µs that starts at 100 ns and may shrink to 10 ns.
 fn tran_error(circuit: &mut CircuitInstance) -> Error {
     let options = TransientAnalysisOptions::new(1.0e-6, 1.0e-7).with_dt_min(1.0e-8);
@@ -515,6 +620,46 @@ fn a_step_that_fails_newton_at_the_floor_is_e0508_with_its_time() {
     let t = run.time.expect("the time of the failing step");
     assert!(t > 2.0e-7 && t <= 1.0e-6, "the failing step lies after the trip time: {t:e}");
     assert_eq!(run.names, vec!["node of r.p, late.p".to_string()], "{err}");
+}
+
+/// HYG-01 AC 1, the transient step: a second potential source appears across the nodes of the first
+/// at 200 ns; the operating point and the steps before it solve, the step that reads it is singular.
+/// The error is `E0503` at that time and names both branch flows.
+#[test]
+fn a_singular_transient_step_is_e0503_naming_both_sources() {
+    let mut b = CircuitBuilder::new("late loop");
+    let gnd = b.ground();
+    let a = b.node("a");
+    add_vsrc(&mut b, "v1", 1.0, &a, &gnd);
+    b.device(LATE_SOURCE.get_or_init(|| module::<LateSource>("LateSource")), "late", &[], &[Port::Node(a), Port::Node(gnd)]);
+    let mut circuit = b.build().expect("build");
+
+    let err = tran_error(&mut circuit);
+    assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
+    let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+    let t = run.time.expect("the time of the singular step");
+    assert!(t > LATE_SOURCE_AT && t <= 1.0e-6, "the singular step lies after the second source appears: {t:e}");
+    assert_eq!(run.names, vec!["flow of v1 (f)".to_string(), "flow of late (f)".to_string()], "both sources, each once: {err}");
+}
+
+/// HYG-01 AC 1, the AC point: a node held only by a conductance that is open above DC solves at the
+/// operating point and is singular at the first frequency. The error is `E0503` and names the pin.
+#[test]
+fn a_singular_ac_point_is_e0503_naming_the_node() {
+    let mut b = CircuitBuilder::new("open at ac");
+    let gnd = b.ground();
+    let a = b.node("a");
+    b.device(OPEN.get_or_init(|| module::<OpenAboveDc>("OpenAboveDc")), "g1", &[], &[Port::Node(a), Port::Node(gnd)]);
+    let mut circuit = b.build().expect("build");
+
+    let err = circuit
+        .ac(Context::default())
+        .and_then(|mut ac| ac.solve_sweep(sweep()))
+        .map(|_| ())
+        .expect_err("a node with no small-signal path must be singular");
+    assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
+    let Error::Run(run) = &err else { panic!("a run error, got {err}") };
+    assert_eq!(run.names, vec!["node of g1.p".to_string()], "{err}");
 }
 
 /// HYG-03 AC 6: the step that reads a jump (the first after a `Restart::Integrator`
