@@ -1473,6 +1473,9 @@ Proof: run apireach | test a_sensitivity_moves_with_temp_and_nodeset ... ok
 **C118** - `temp` and `nodeset` reach a `pss` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
 Proof: run apireach | test a_periodic_steady_state_moves_with_temp_and_nodeset ... ok
 
+**C119** - A pss orbit that does not repeat names the step as a possible cause, not only the drive. (HII-07, AC 6; F8) 
+Proof: run apianalyses | test a_pss_orbit_that_does_not_close_at_the_step_says_so ... ok
+
 ---
 
 ## Handoff

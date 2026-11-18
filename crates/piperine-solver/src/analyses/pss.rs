@@ -241,8 +241,9 @@ impl<'a> PssSolver<'a> {
                             SolverDomain::Pss,
                             format!(
                                 "shooting found a fixed point, but the orbit does not repeat: \
-                                 |x(2T) − x(T)| = {:.3e} on `{:?}` — the drive is not periodic \
-                                 at T={period:.3e}",
+                                 |x(2T) − x(T)| = {:.3e} on `{:?}` — either the drive is not \
+                                 periodic at T={period:.3e}, or a step of the integration misplaces \
+                                 one of its edges (a smaller maximum step may close the orbit)",
                                 (a - b).abs(),
                                 vars[i].1
                             ),

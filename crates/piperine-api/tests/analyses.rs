@@ -477,6 +477,16 @@ fn pss_that_does_not_converge_fails() {
 }
 
 #[test]
+fn a_pss_orbit_that_does_not_close_at_the_step_says_so() {
+    // HII-07 AC 6 (F8): the drive is periodic, but with no step cap a step misplaces its 1 ps
+    // edges and the orbit does not repeat; the error says the step is a possible cause instead
+    // of blaming the drive alone, and there is no table
+    let Err(failure) = pss_run(Overrides { max_step: None, ..pss(4e-6, 8e-6, None) }) else { panic!("an uncapped step misplaces the edges of the twin's source") };
+    let text = format!("{failure}");
+    assert!(text.contains("does not repeat") && text.contains("misplaces") && text.contains("maximum step"), "{text}");
+}
+
+#[test]
 fn a_pss_plot_draws_its_rows() {
     // HII-07 AC 7: the plot of a pss run is drawn from its table, as a transient's
     let (_dir, file) = pss_file();
