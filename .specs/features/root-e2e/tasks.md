@@ -1229,7 +1229,7 @@ Proof: run paritylib | test corpus::tests::a_name_in_two_scenarios_is_refused ..
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:**
+**Dispatched:** B1 - Sonnet worker, 2026-11-18 (host-ii merged 1a3d69dc).
 **Walked:** none
 
 ---
