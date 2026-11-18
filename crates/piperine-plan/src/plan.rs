@@ -437,6 +437,8 @@ impl BodyPlan {
                     let at = branch_origin(b);
                     Some(s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("b{b}.flow"), role::PRIVATE) }))
                 }
+                // The elaborator emits no switch branch yet: the plan of one is the next step.
+                BranchKind::Switch => panic!("a switch branch has no plan yet"),
             });
         }
 

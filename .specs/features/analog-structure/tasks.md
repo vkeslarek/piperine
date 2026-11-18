@@ -224,9 +224,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run irstruct`: `a_contribution_in_an_if_arm_passes_check`, `a_contribution_in_a_function_or_a_reaction_is_broken`, `a_switch_branch_takes_both_quantities`, `a_flow_branch_refuses_a_potential_contribution`, `contributions_lists_each_with_its_enclosing_conditions`, `a_nested_contribution_reads_its_conditions_in_its_branch_dependencies`
-- [ ] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 6 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run irstruct`: `a_contribution_in_an_if_arm_passes_check`, `a_contribution_in_a_function_or_a_reaction_is_broken`, `a_switch_branch_takes_both_quantities`, `a_flow_branch_refuses_a_potential_contribution`, `contributions_lists_each_with_its_enclosing_conditions`, `a_nested_contribution_reads_its_conditions_in_its_branch_dependencies`
+- [x] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 6 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

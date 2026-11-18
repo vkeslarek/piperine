@@ -3,7 +3,9 @@
 //! port), a carrier has a drive or commits, never both, `analog` reads a carrier only through
 //! `known_or`, `is_known` and `high` (§3.3.5), a reaction waits on events of its body, a commit
 //! sits in a reaction, a `cross` watches a real, and a carrier's initial value is a value of its
-//! type (an integer within its `N`-bit range).
+//! type (an integer within its `N`-bit range). A contribution may stand anywhere inside the
+//! `analog` block (under an `if`, in a nested block) but in a closure, a function or a
+//! reaction; a flow or potential branch takes its one quantity, a switch branch both.
 //! Every id is in range, instances agree with their bodies, paths are unique, `limit` and
 //! `ac_stim` sites sit unconditionally at the top of the `analog` block and are used once, and
 //! every expression has the type its position requires, every local is bound before it is read,
@@ -23,6 +25,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use crate::contributions::Contributions;
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
     BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRole, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
@@ -151,16 +154,13 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The branches `body`'s `analog` block contributes a potential to.
+    /// The branches with a private flow unknown a flow probe may read: those `body`'s `analog`
+    /// block contributes a potential to, wherever the contribution stands, and every switch
+    /// branch (it has the unknown whichever kind a solve enables).
     fn potentials(ir: &Ir, body: &BodyData) -> BTreeSet<u32> {
-        body.analog
-            .iter()
-            .flatten()
-            .filter_map(|s| match ir.stmts.get(s.index()) {
-                Some(Stmt::Contribute { branch, quantity: QuantityRole::Potential, .. }) => Some(*branch),
-                _ => None,
-            })
-            .collect()
+        let potential = Contributions::new(ir).of(body.analog.as_deref().unwrap_or_default()).into_iter().filter(|c| c.quantity == QuantityRole::Potential).map(|c| c.branch);
+        let switches = body.branches.iter().enumerate().filter(|(_, b)| b.kind == BranchKind::Switch).map(|(i, _)| i as u32);
+        potential.chain(switches).collect()
     }
 
     fn expr_origin(&self, id: ExprId) -> Origin {
@@ -1147,8 +1147,12 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*value, ctx));
             }
             Stmt::Contribute { branch, quantity, addends } => {
-                if !top || !w.owner.analog {
-                    self.report(w.owner.item.clone(), origin.clone(), "contribution outside the top level of an analog block".to_string());
+                // A contribution may stand under an `if` or in a nested block, anywhere inside
+                // the analog block but a closure (analog-structure, mechanism 1).
+                if !w.owner.analog {
+                    self.report(w.owner.item.clone(), origin.clone(), "contribution outside the analog block of a body".to_string());
+                } else if ctx.closure {
+                    self.report(w.owner.item.clone(), origin.clone(), "contribution inside a closure".to_string());
                 }
                 let kind = w.owner.branches.get(*branch as usize).copied();
                 match kind {
@@ -1157,7 +1161,12 @@ impl<'a> Checker<'a> {
                     }
                     Some(kind) => {
                         let flow = *quantity == QuantityRole::Flow;
-                        if flow != (kind == BranchKind::Flow) {
+                        let matches = match kind {
+                            BranchKind::Flow => flow,
+                            BranchKind::Potential => !flow,
+                            BranchKind::Switch => true,
+                        };
+                        if !matches {
                             self.report(w.owner.item.clone(), origin.clone(), format!("contribution quantity does not match the kind of branch {branch}"));
                         }
                     }

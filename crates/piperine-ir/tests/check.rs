@@ -311,7 +311,11 @@ fn a_misplaced_or_duplicated_site_is_named() {
     let contribution = v["bodies"][capacitor]["analog"][0].as_u64().expect("stmt");
     Json::set_kind(&mut v, then, json!({"Block": {"stmts": [contribution], "value": null}}));
     let broken = Json::broken(v);
-    assert_eq!(Entries::with(&broken, "contribution outside the top level").len(), 1, "{broken:?}");
+    // A contribution under an `if` is placed correctly (analog-structure, mechanism 1): the one
+    // placement entry this test used to read is gone. What remains is the contribution's own
+    // fault here, the capacitor's flow addend on a branch of another kind.
+    assert_eq!(Entries::with(&broken, "contribution outside").len(), 0, "{broken:?}");
+    assert_eq!(Entries::with(&broken, "does not match the kind of branch 0").len(), 1, "{broken:?}");
 }
 
 #[test]

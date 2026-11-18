@@ -6,6 +6,7 @@ use crate::model::{
     BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Drive, EmitField, Event, Expr, FunctionData, InstanceData, Ir, Local,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
+use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
 
 impl Ir {
@@ -177,6 +178,12 @@ impl<'a> Body<'a> {
     /// The statements of the `analog` block; `None` when the body has none.
     pub fn analog(&self) -> Option<&'a [StmtId]> {
         self.data().analog.as_deref()
+    }
+
+    /// Every contribution of the `analog` block, nested ones included, each with the conditions
+    /// that enclose it, in source order. Empty for a body with no `analog` block.
+    pub fn contributions(&self) -> Vec<Contribution<'a>> {
+        Contributions::new(self.ir).of(self.analog().unwrap_or_default())
     }
 
     /// The authored placements, in source order.

@@ -138,8 +138,14 @@ pub struct Branch {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BranchKind {
+    /// Only flow contributions: the sum is the branch's current.
     Flow,
+    /// Only potential contributions: the branch has a private flow unknown.
     Potential,
+    /// Both quantities may contribute, each under its own conditions (§11 rule 2): in a solve
+    /// the enabled kind decides the branch's equation. Its private flow unknown is shaped like a
+    /// potential branch's.
+    Switch,
 }
 
 /// A discrete carrier of a body: `in clk: Bit`, `out hs: Bit = false`, `signal count: Bit<u9> = 0`.

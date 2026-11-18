@@ -5,6 +5,7 @@
 
 mod build;
 mod check;
+mod contributions;
 mod deps;
 mod handle;
 mod ids;
@@ -15,6 +16,7 @@ mod statements;
 mod typing;
 
 pub use check::Broken;
+pub use contributions::{Condition, Contribution};
 pub use deps::{BranchIndex, Deps, ParamIndex, SiteIndex, Target};
 pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NetSpec, NodeSpec};
 pub use handle::{Body, Function, Instance, Nature, Net, Node, RecordSite};

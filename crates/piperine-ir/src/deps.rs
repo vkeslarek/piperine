@@ -18,7 +18,9 @@
 //!   bound to the arguments, once per distinct function and argument values); it is `Constant`
 //!   when every argument is, `Nonlinear` otherwise;
 //! - an `if` reads its condition and both arms; it joins the arms when the condition is
-//!   `Constant`, and is `Nonlinear` otherwise (IR-10).
+//!   `Constant`, and is `Nonlinear` otherwise (IR-10);
+//! - a contribution under an `if` also reads what the conditions of its enclosing arms read, and
+//!   a condition that is not `Constant` makes its branch non-affine (a switch).
 //!
 //! - a carrier read is `Constant` in the node potentials and reads the carrier: a discrete value
 //!   holds between events (`Body::carrier_reads` lists them; `Deps` keeps its M1 fields).
@@ -329,6 +331,12 @@ enum Task {
     Addend { branch: u32, operator: Operator, at: ExprId },
     /// The step of a `bound_step` site (its value on the stack).
     Cap(u32),
+    /// The condition of the `if` `0` is on the value stack: keep it for its arms.
+    Hold(ExprId),
+    /// The walk enters an arm of the `if` `0`: its condition encloses what the arm contributes.
+    Enter(ExprId),
+    /// The walk leaves the arm it entered last.
+    Leave,
     /// A closure's parameters are bound before its body is walked.
     BindParams(ExprId),
     /// A block or a closure ends: the locals it bound go out of scope.
@@ -360,6 +368,11 @@ struct Walk<'a> {
     reads: Option<Sources>,
     /// The step of each `bound_step` site, grown as sites are met.
     caps: Vec<Sources>,
+    /// The condition of each `if` whose arms are being walked, by the `if`'s expression id.
+    held: HashMap<ExprId, Value>,
+    /// The conditions of the arms enclosing the statement being walked, outermost first: what a
+    /// nested contribution reads beyond its own addends (analog-structure, mechanism 1).
+    enclosing: Vec<Value>,
 }
 
 impl<'a> Walk<'a> {
@@ -378,6 +391,8 @@ impl<'a> Walk<'a> {
             stims: vec![Sources::default(); data.stims.len()],
             reads: None,
             caps: Vec::new(),
+            held: HashMap::new(),
+            enclosing: Vec::new(),
         };
         let owner = format!("body {}", data.name);
         let checks = data
@@ -517,11 +532,36 @@ impl<'a> Walk<'a> {
                 Task::Discard => {
                     self.pop();
                 }
+                Task::Hold(at) => {
+                    let condition = self.values.last().cloned();
+                    match condition {
+                        Some(condition) => {
+                            self.held.insert(at, condition);
+                        }
+                        None => self.refuse(at, "an `if` lost its condition"),
+                    }
+                }
+                Task::Enter(at) => match self.held.get(&at).cloned() {
+                    Some(condition) => self.enclosing.push(condition),
+                    None => self.refuse(at, "an arm of an `if` entered before its condition"),
+                },
+                Task::Leave => {
+                    self.enclosing.pop();
+                }
                 Task::Addend { branch, operator, at } => {
-                    let value = self.pop();
+                    let mut value = self.pop();
                     let b = branch as usize;
                     if b >= self.flow.len() {
                         self.refuse(at, &format!("contribution to branch {branch}, out of range"));
+                    }
+                    // A contribution under a condition depends on what the condition reads; a
+                    // condition that is not `Constant` in the potentials makes the sum piecewise,
+                    // so no longer affine (a switch branch).
+                    for condition in &self.enclosing {
+                        value.sources.join(&condition.sources);
+                        if condition.class != Class::Constant {
+                            value.class = Class::Nonlinear;
+                        }
                     }
                     match operator {
                         Operator::Direct => {
@@ -707,7 +747,11 @@ impl<'a> Walk<'a> {
             }
             Expr::Binary { lhs, rhs, .. } => next.extend([Task::Expr(*lhs), Task::Expr(*rhs)]),
             Expr::If { cond, then, otherwise } => {
-                next.extend([Task::Expr(*cond), Task::Expr(*then), Task::Expr(*otherwise)]);
+                // Each arm is walked inside its condition, which a contribution there reads.
+                next.extend([Task::Expr(*cond), Task::Hold(id)]);
+                for arm in [*then, *otherwise] {
+                    next.extend([Task::Enter(id), Task::Expr(arm), Task::Leave]);
+                }
             }
             Expr::Block { stmts, value } => {
                 next.extend(stmts.iter().map(|&s| Task::Stmt(s)));

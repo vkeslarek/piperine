@@ -288,7 +288,11 @@ impl<'a> Printer<'a> {
             self.line(1, &format!("stream {} ({})", Printer::name(&stream.name), fields.join(", ")));
         }
         for (i, branch) in body.branches.iter().enumerate() {
-            let kind = if branch.kind == BranchKind::Flow { "flow" } else { "potential" };
+            let kind = match branch.kind {
+                BranchKind::Flow => "flow",
+                BranchKind::Potential => "potential",
+                BranchKind::Switch => "switch",
+            };
             let plus = Printer::terminal(scope, branch.plus);
             let minus = Printer::terminal(scope, branch.minus);
             self.line(1, &format!("branch b{i} ({plus}, {minus}) {kind}"));
