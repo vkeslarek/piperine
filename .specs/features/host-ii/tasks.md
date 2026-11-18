@@ -616,10 +616,10 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/analyses.rs` (new) holds `each_new_analysis_prints_header_records_and_table`, `each_new_analysis_writes_csv`
-- [ ] `cli::tests::every_run_key_has_its_flag` passes with the five flags added
-- [ ] Gate check passes: Quick (`Run clianalyses`, `Run clilib`, `Run twins`), then Build (end of phase 4)
-- [ ] Test count: 2 new tests
+- [x] `crates/piperine-cli/tests/analyses.rs` (new) holds `each_new_analysis_prints_header_records_and_table`, `each_new_analysis_writes_csv`
+- [x] `cli::tests::every_run_key_has_its_flag` passes with the five flags added
+- [x] Gate check passes: Quick (`Run clianalyses`, `Run clilib`, `Run twins`), then Build (end of phase 4)
+- [x] Test count: 2 new tests
 
 **Tests**: e2e
 **Gate**: build

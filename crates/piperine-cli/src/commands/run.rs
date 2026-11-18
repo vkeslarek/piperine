@@ -155,7 +155,7 @@ impl RunCommand {
     fn attempt(&self, out: &Out, err: &mut dyn Write) -> Result<Option<Record>, Stop> {
         if self.lone().is_some() && self.overrides.analysis.is_none() {
             // CLI-03 AC 12: a lone file has no run table, so the flags must say what to run
-            let message = "a lone file has no run table: name the analysis with --analysis (op, dc, ac or transient)".to_string();
+            let message = "a lone file has no run table: name the analysis with --analysis (op, dc, ac, transient, tf, pz, sens or pss)".to_string();
             return Err(Stop::Usage(Failure::Host { code: "P0010", message }));
         }
         let project = self.discover()?;
