@@ -278,3 +278,38 @@ fn rising_reports_a_sign_change_without_accepting() {
     let r = instance("r1", m.resistor, vec![Discrete(0), at(&n[0]), Ground]);
     assert!(!Assembly::new(AnalogPlan::bind(vec![r], &net).expect("bind")).has_crossings());
 }
+
+#[test]
+fn a_nan_cross_watch_is_unknown_and_never_fires() {
+    // FIX-05 AC 3 (abi.md A4): an unknown value fires neither at its solution nor at the next.
+    let m = modules();
+    let (net, n) = netlist(2, &[]);
+    let c = instance("cmp", m.comparator, vec![at(&n[0]), at(&n[1]), Discrete(0), Absent, Absent]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    // NaN first, then a positive value: nothing before, so nothing fires.
+    let acc = asm.accept(&[f64::NAN, 0.0], at_time(0.0)).expect("a NaN watch is accepted");
+    assert_eq!(acc.fired, vec![], "NaN fires nothing");
+    let acc = asm.accept(&[0.2, 0.0], at_time(1e-6)).expect("accept");
+    assert_eq!(acc.fired, vec![], "NaN then positive: the next solution does not fire either");
+    // negative, NaN, positive: the unknown between them fires at neither step.
+    let c = instance("cmp", m.comparator, vec![at(&n[0]), at(&n[1]), Discrete(0), Absent, Absent]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    assert_eq!(asm.accept(&[-0.1, 0.0], at_time(0.0)).expect("accept").fired, vec![]);
+    assert_eq!(asm.accept(&[f64::NAN, 0.0], at_time(1e-6)).expect("accept").fired, vec![], "at the NaN");
+    assert_eq!(asm.accept(&[0.3, 0.0], at_time(2e-6)).expect("accept").fired, vec![], "and at the next");
+    // known again: the other watch (W1 = -W0) rises as usual, from -0.3 to 0.1.
+    assert_eq!(asm.accept(&[-0.1, 0.0], at_time(3e-6)).expect("accept").fired, vec![(0, 4)]);
+}
+
+#[test]
+fn an_infinite_cross_watch_fails_the_solve() {
+    // FIX-05 AC 4: plus or minus infinity fails the solve naming the watch (abi.md A4).
+    let m = modules();
+    let (net, n) = netlist(2, &[]);
+    for inf in [f64::INFINITY, f64::NEG_INFINITY] {
+        let c = instance("cmp", m.comparator, vec![at(&n[0]), at(&n[1]), Discrete(0), Absent, Absent]);
+        let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+        let err = asm.accept(&[inf, 0.0], at_time(0.0)).expect_err("an infinite watch fails").to_string();
+        assert!(err.contains("watch `up`") && err.contains("not finite") && err.contains(&format!("{inf}")), "{err}");
+    }
+}

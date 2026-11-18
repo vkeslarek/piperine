@@ -676,10 +676,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-analog-solver --test assembly_watch`: `a_nan_cross_watch_is_unknown_and_never_fires` (NaN then positive does not fire; negative then NaN then positive does not fire at either step), `an_infinite_cross_watch_fails_the_solve`
-- [ ] `cargo test -p piperine-solver --test parity_baseline --test crossing_rules` passes unedited
-- [ ] Gate check passes: Quick (`Run watch`), then `cargo test -p piperine-analog-solver`
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-analog-solver --test assembly_watch`: `a_nan_cross_watch_is_unknown_and_never_fires` (NaN then positive does not fire; negative then NaN then positive does not fire at either step), `an_infinite_cross_watch_fails_the_solve`
+- [x] `cargo test -p piperine-solver --test parity_baseline --test crossing_rules` passes unedited
+- [x] Gate check passes: Quick (`Run watch`), then `cargo test -p piperine-analog-solver`
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

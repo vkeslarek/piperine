@@ -97,7 +97,9 @@ pub(crate) fn accept_watches(
             acc.cap = acc.cap.min(v);
             continue;
         }
-        if !v.is_finite() {
+        // abi.md A4: NaN is an unknown value, not a failure; it fires nothing at this solution
+        // and, with no previous value kept, nothing at the next one. Only an infinity fails.
+        if v.is_infinite() {
             return Err(device_error(format!(
                 "instance `{}`: watch `{}` ({}) is not finite: {v} (abi.md A4)",
                 inst.path, w.name, w.origin
@@ -105,6 +107,10 @@ pub(crate) fn accept_watches(
         }
         tolerance(inst, w, "ttol", w.ttol, slots)?;
         tolerance(inst, w, "etol", w.etol, slots)?;
+        if v.is_nan() {
+            st.watched[wi].cross = None;
+            continue;
+        }
         let before = st.watched[wi].cross.replace(v);
         if before.is_some_and(|b| b <= 0.0) && v > 0.0 {
             acc.fired.push((index, w.event));

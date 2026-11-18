@@ -403,7 +403,9 @@ Watches, by who reads them and when:
   one form silently into the other.
 - **A4. Non-finite.** A non-finite value in a cell the current solve reads fails the solve,
   naming instance, cell and `origin`. Strengths are needed only by the sweep that reads them,
-  so `k / freq` is never evaluated at `freq = 0`.
+  so `k / freq` is never evaluated at `freq = 0`. The one exception is a `CROSS` watch: a NaN
+  value is unknown (a `Flagged` carrier whose value is not known), so it fires neither at its
+  solution nor at the next one, and only plus or minus infinity fails the solve.
 - **A5. Trace.** A `TRACE` watch has a record layout. "Not written in this evaluation" is the
   canonical empty value of P3: every known byte 0. A site inside a loop is an array field
   with a declared maximum `count` and a count field; exceeding the maximum is a `FAULT`. The
