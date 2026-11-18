@@ -198,6 +198,8 @@ pub(super) enum CoreResult {
     F64,
     Bool,
     Event,
+    /// `bound_step`: a statement, no value.
+    Unit,
 }
 
 impl CoreResult {
@@ -206,6 +208,7 @@ impl CoreResult {
             CoreResult::F64 => Ty::F64,
             CoreResult::Bool => Ty::Bool,
             CoreResult::Event => Ty::Event,
+            CoreResult::Unit => Ty::Unit,
         }
     }
 }
@@ -232,7 +235,7 @@ pub(super) struct CoreSig {
 }
 
 /// The §14 rows the subset types, by their spelling in `pom/builtin.rs`. A built-in with no row
-/// here (`delay`, `noise`, `ddx`, `cross`, `at`, `now`, `freq`, `analysis`, `simparam`, ...) is
+/// here (`delay`, `noise`, `ddx`, `simparam`, ...) is
 /// `P0001`, which is how it stays refused without a line of code each.
 const CORE_ROWS: &[(&str, CoreSig)] = &[
     ("ddt", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Instances, result: CoreResult::F64 }),
@@ -246,7 +249,10 @@ const CORE_ROWS: &[(&str, CoreSig)] = &[
     // (`core_call` judges the position, `Checker::event_arguments` the tolerances and the time).
     ("cross", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::OptionF64, CoreParam::OptionF64], allowed: Allowed::Everywhere, result: CoreResult::Event }),
     ("at", CoreSig { required: &[CoreParam::F64], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::Event }),
-    // `analysis(Static)`: its one argument is a kind of analysis, checked by name in `core_call`.
+    // `freq()` is continuous (§14.4.2, `continuity.rs`); `bound_step(dt)` is a statement of `analog` (§14.10).
+    ("freq", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
+    ("bound_step", CoreSig { required: &[CoreParam::F64], optional: &[], allowed: Allowed::Analog, result: CoreResult::Unit }),
+    // `analysis(kind)`: its one argument is a kind of analysis, checked by name in `core_call`.
     ("analysis", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::Bool }),
 ];
 

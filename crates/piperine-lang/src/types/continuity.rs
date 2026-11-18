@@ -109,9 +109,12 @@ impl Checker<'_> {
                     _ => false,
                 };
             }
-            ExprKind::Call { callee, class, .. } => {
+            ExprKind::Call { callee, class, args, .. } => {
                 if let ExprKind::Path(path) = &self.design.expr_node(*callee).kind {
                     match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                        // `analysis(Dc)` and the other kinds are constant during an analysis
+                        // (§14.4.1): only `analysis(Static)` is continuous
+                        Some(Resolution::Builtin(id)) if id.info().name == "analysis" && !self.names_static(args) => {}
                         Some(Resolution::Builtin(id)) if CONTINUOUS_BUILTINS.contains(&id.info().name) => return true,
                         Some(Resolution::Decl(f)) if matches!(self.design.decl_data(f).kind, DeclKind::Fn(_)) && self.function_continuous(f) => return true,
                         _ => {}
@@ -126,6 +129,18 @@ impl Checker<'_> {
             _ => {}
         }
         crate::pom::expr_children(&node.kind, self.design).into_iter().any(|c| self.continuous(c))
+    }
+
+    /// Whether the argument of an `analysis` call is the kind `Static`.
+    fn names_static(&self, args: &[crate::pom::Arg]) -> bool {
+        let [arg] = args else { return true };
+        match &self.design.expr_node(arg.value).kind {
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Builtin(id)) => id.info().name == "Static",
+                _ => true,
+            },
+            _ => true,
+        }
     }
 
     /// Whether a function reads a continuous value in its own body.

@@ -215,8 +215,9 @@ impl Checker<'_> {
         }
     }
 
-    /// `analysis(Static)` (§14.4): a `bool`, true in an equilibrium solve. The one kind of
-    /// analysis the subset has is `Static`; any other is `P0001` naming `analysis`.
+    /// `analysis(kind)` (§14.4): a `bool`. `Static` is true in an equilibrium solve; `Dc`,
+    /// `Transient`, `Ac` and `Noise` tell which analysis runs. Any other argument is `P0001`
+    /// naming `analysis`.
     fn analysis_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
@@ -232,8 +233,8 @@ impl Checker<'_> {
             },
             _ => None,
         };
-        if kind.as_deref() != Some("Static") {
-            self.unsupported(file, span, "`analysis` of a kind other than `Static`");
+        if !matches!(kind.as_deref(), Some("Static" | "Dc" | "Transient" | "Ac" | "Noise")) {
+            self.unsupported(file, span, "`analysis` of a kind other than `Static`, `Dc`, `Transient`, `Ac` or `Noise`");
             return None;
         }
         Some(Ty::Bool)

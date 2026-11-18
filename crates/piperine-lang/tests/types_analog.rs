@@ -119,7 +119,9 @@ fn ddt_ac_stim_and_environment_are_f64() {
     assert_eq!(codes_of(&d), ["P0002"]);
 
     // A core primitive with no row of the subset is refused by name, one `P0001` each.
-    for call in ["delay(1.0, 1.0)", "noise(1.0)", "ddx(1.0, v(a))", "analysis(Dc)", "analysis(Transient)", "bound_step(1.0)", "freq()", "analysis(Ac)", "simparam(\"x\")"] {
+    // (`analysis(Dc)`, `analysis(Transient)`, `analysis(Ac)`, `bound_step` and `freq` left this
+    // list when FIX-09 to FIX-11 gave them rows: `freq_analysis_kinds_and_bound_step_type`.)
+    for call in ["delay(1.0, 1.0)", "noise(1.0)", "ddx(1.0, v(a))", "simparam(\"x\")"] {
         let (src, d) = diagnostics("", &format!("let x = {call};"));
         assert_eq!(codes_of(&d), ["P0001"], "{call}: {d:?}");
         let name = call.split('(').next().unwrap_or(call);
@@ -180,4 +182,47 @@ fn the_std_vt_checks_clean() {
     for name in ["vt", "K_B", "Q"] {
         assert!(reached.contains(&name), "`{name}` is reached: {reached:?}");
     }
+}
+
+#[test]
+fn freq_analysis_kinds_and_bound_step_type() {
+    // FIX-09 to FIX-11 (§14.4, §14.10): `freq()` is an `f64`, `analysis(kind)` a `bool` for each
+    // of `Dc`, `Transient`, `Ac` and `Noise` (and `Static`), and `bound_step(dt)` a statement
+    // of `analog` that takes one `f64`.
+    let t = local_types("", "let f = freq(); let d = analysis(Dc); let tr = analysis(Transient); let ac = analysis(Ac); let n = analysis(Noise); bound_step(1.0e-9);", &["f", "d", "tr", "ac", "n"]);
+    assert_eq!(t, [Ty::F64, Ty::Bool, Ty::Bool, Ty::Bool, Ty::Bool]);
+
+    let (src, d) = diagnostics("", "bound_step(true);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "true");
+    let (_, d) = diagnostics("", "bound_step();");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    let (_, d) = diagnostics("", "let f = freq(1.0);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    // an argument that is no kind of analysis is still refused by name
+    let (_, d) = diagnostics("", "let x = analysis(Some);");
+    assert_eq!(codes_of(&d), ["P0001"]);
+    assert!(d[0].diagnostic.message.contains("analysis"), "{}", d[0].diagnostic.message);
+
+    // §8.2.5: `freq()` is continuous, so a definition may not read it (`E0336`); `analysis(Dc)` is
+    // constant during an analysis (§14.4.1), so it may be read there.
+    let allowed = "module Top(out b: Bit) { b = analysis(Dc); }";
+    let with_prelude = |src: &str| {
+        let design = Design::builder().source("top.msl", src).build();
+        assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+        design
+    };
+    assert!(Types::check(&with_prelude(allowed), "Top").is_ok(), "analysis(Dc) is discrete");
+    let refused = "module Top(out f: Bit<f64>) { f = freq(); }";
+    let codes: Vec<String> = Types::check(&with_prelude(refused), "Top").expect_err("freq() is continuous").iter().map(|d| d.diagnostic.code.to_string()).collect();
+    assert_eq!(codes, ["E0336"]);
+}
+
+#[test]
+fn simparam_stays_p0001() {
+    // FIX-10 AC 4: `simparam` is not in this feature: refused by name, one `P0001`.
+    let (src, d) = diagnostics("", "let x = simparam(\"x\");");
+    assert_eq!(codes_of(&d), ["P0001"]);
+    assert!(d[0].diagnostic.message.contains("simparam"), "{}", d[0].diagnostic.message);
+    assert!(snippet(&src, &d[0]).starts_with("simparam"), "{}", snippet(&src, &d[0]));
 }
