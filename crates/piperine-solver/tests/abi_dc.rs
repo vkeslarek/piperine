@@ -20,7 +20,7 @@ use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, ambient, cell, op, part, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
-use piperine_analog_solver::convergence::HomotopyDriver;
+use piperine_analog_solver::convergence::{ConvergencePlan, DampContext, HomotopyDriver, NewtonStrategy, NoDamping};
 use piperine_solver::abi::Port;
 use piperine_solver::prelude::{AnalogReference, CircuitBuilder, CircuitInstance, Context};
 
@@ -161,4 +161,49 @@ fn gmin_stepping_reaches_a_device_through_the_ambient_input() {
 #[test]
 fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("GminProbe", GMIN_PROBE.get_or_init(|| module::<GminProbe>("GminProbe")));
+}
+
+/// A Newton strategy that counts its `damp_update` calls (one per iteration) and otherwise
+/// behaves as [`NoDamping`].
+struct Counting(Arc<std::sync::atomic::AtomicUsize>);
+
+impl NewtonStrategy for Counting {
+    fn damp_update(&self, prev: ndarray::ArrayView1<f64>, update: ndarray::ArrayViewMut1<f64>, context: &DampContext) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        NoDamping.damp_update(prev, update, context);
+    }
+    fn is_converged(
+        &self,
+        state: &piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64>,
+        guess: &ndarray::ArrayView1<f64>,
+        residual: &[f64],
+        scale: &[f64],
+        netlist: &piperine_analog_solver::netlist::Netlist,
+        tolerances: &piperine_analog_solver::tolerances::Tolerances,
+    ) -> bool {
+        NoDamping.is_converged(state, guess, residual, scale, netlist, tolerances)
+    }
+    fn max_iter(&self, policy: &piperine_analog_solver::tolerances::Policy) -> usize {
+        NoDamping.max_iter(policy)
+    }
+}
+
+#[test]
+fn the_dc_driver_iterates_with_the_plans_strategy() {
+    // Newton of the first equilibrium (a diode needs several iterations) goes through the
+    // strategy of the plan the driver was given: it is called once per iteration.
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut b = CircuitBuilder::new("diode");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let mid = b.node("mid");
+    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
+    add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
+    add_diode(&mut b, "d1", 1.0e-14, &mid, &gnd);
+    let mut circuit = b.build().expect("build");
+    let plan = ConvergencePlan::default().with_newton(Box::new(Counting(Arc::clone(&calls))));
+    let result = circuit.dc(Context::default()).expect("dc").with_plan(plan).solve().expect("solve");
+    let seen = calls.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(result.stats.newton_iterations > 1, "a diode takes several iterations");
+    assert_eq!(seen, result.stats.newton_iterations as usize, "one damp_update per iteration of the plan's strategy");
 }

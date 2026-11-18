@@ -160,6 +160,10 @@ pub struct DcSolver<'a> {
     /// restored on strategy fallthrough: the assembly's term histories and
     /// limit states start clean on the next retry.
     assembly_checkpoint: Option<AssemblySnapshot>,
+    /// The convergence plan: its Newton strategy iterates every solve of this driver, and its
+    /// homotopies escalate the first equilibrium. Shared so the plan can run with the driver as
+    /// its [`HomotopyDriver`].
+    plan: std::sync::Arc<ConvergencePlan>,
     /// The homotopy that converged the first equilibrium of a circuit of devices.
     homotopy_strategy: Option<&'static str>,
     /// The host's sink and waiters, for a circuit of devices.
@@ -198,6 +202,7 @@ impl<'a> DcSolver<'a> {
             policy: Policy::default(),
             newton_calls: 0,
             assembly_checkpoint: None,
+            plan: std::sync::Arc::new(ConvergencePlan::default()),
             homotopy_strategy: None,
             host: Default::default(),
             analysis: piperine_abi::raw::global::DC,
@@ -212,6 +217,12 @@ impl<'a> DcSolver<'a> {
         Ok(dc)
     }
 
+    /// Replace the convergence plan: its Newton strategy and homotopies drive every solve.
+    pub fn with_plan(mut self, plan: ConvergencePlan) -> Self {
+        self.plan = std::sync::Arc::new(plan);
+        self
+    }
+
     /// Seed the DC Newton initial guess with node-voltage hints (the host
     /// §5.1 `OpConfig.nodeset`). Applied before [`solve`](Self::solve); the
     /// solver still converges to the operating point — this only changes the
@@ -224,18 +235,18 @@ impl<'a> DcSolver<'a> {
 
     /// One equilibrium solve of a circuit of devices: the first runs the
     /// convergence plan (plain Newton, then the homotopies), a later round
-    /// re-solves from the last solution with damped Newton.
+    /// re-solves from the last solution with the plan's Newton strategy.
     pub(crate) fn equilibrium(&mut self, first: bool) -> crate::core::result::Result<ndarray::Array1<f64>> {
         if first {
-            let plan = ConvergencePlan::default().with_trace(self.policy.trace);
-            let outcome = plan.solve(self)?;
+            let plan = std::sync::Arc::clone(&self.plan);
+            let trace = self.policy.trace;
+            let outcome = plan.solve_traced(self, trace)?;
             self.homotopy_strategy = outcome.strategy;
             return Ok(outcome.solution);
         }
-        let strategy = piperine_analog_solver::convergence::NoDamping;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
-        self.solver.solve_with_strategy(&mut self.system, &strategy, &tolerances, &policy)
+        self.solver.solve_with_strategy(&mut self.system, self.plan.newton(), &tolerances, &policy)
     }
 
     /// The operating point of a circuit of devices, through the protocol
@@ -289,12 +300,11 @@ impl<'a> DcSolver<'a> {
 impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::core::result::Result<ndarray::Array1<f64>> {
         self.newton_calls += 1;
-        let strategy = piperine_analog_solver::convergence::NoDamping;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         self.solver.solve_with_strategy(
             &mut self.system,
-            &strategy,
+            self.plan.newton(),
             &tolerances,
             &policy,
         )

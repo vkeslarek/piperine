@@ -473,6 +473,12 @@ impl ConvergencePlan {
     /// (ABI-07): a failed attempt restores device-internal state (limiter)
     /// before the next strategy retries from the last accepted point.
     pub fn solve(&self, driver: &mut dyn HomotopyDriver) -> Result<PlanOutcome> {
+        self.solve_traced(driver, self.trace)
+    }
+
+    /// [`solve`](Self::solve) with the diagnostic trace toggles of the moment (a driver seeds them
+    /// from its [`Policy::trace`](crate::tolerances::Policy), which a host sets after the plan).
+    pub fn solve_traced(&self, driver: &mut dyn HomotopyDriver, trace: TraceFlags) -> Result<PlanOutcome> {
         driver.checkpoint_devices();
         let mut last = match driver.newton() {
             Ok(solution) => return Ok(PlanOutcome { solution, strategy: None }),
@@ -481,7 +487,7 @@ impl ConvergencePlan {
         driver.restore_devices();
         for strategy in &self.strategies {
             driver.checkpoint_devices();
-            match strategy.converge(driver, &self.schedules, self.trace) {
+            match strategy.converge(driver, &self.schedules, trace) {
                 Ok(solution) => {
                     return Ok(PlanOutcome { solution, strategy: Some(strategy.name()) });
                 }

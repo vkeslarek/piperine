@@ -696,9 +696,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_dc_driver_iterates_with_the_plans_strategy` (a plan with a counting strategy is called) passes under `**Run abidc**`
-- [ ] `diode_iv`, `diode_rev`, `diode_series` pass under `**Run parity**`; `**Run twins**` passes; the deviation table before and after is in the commit body
-- [ ] Gate check passes: Full
+- [x] `the_dc_driver_iterates_with_the_plans_strategy` (a plan with a counting strategy is called) passes under `**Run abidc**`
+- [x] `diode_iv`, `diode_rev`, `diode_series` pass under `**Run parity**`; `**Run twins**` passes; the deviation table before and after is in the commit body
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
