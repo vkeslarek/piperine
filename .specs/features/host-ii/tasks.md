@@ -903,9 +903,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline tests `derive::tests::a_derived_child_param_is_a_binding_of_its_parent`, `a_chain_derives_top_down`, `a_constant_placement_is_no_binding`
-- [ ] Gate check passes: Quick (`Run planlib`)
-- [ ] Test count: 3 new tests
+- [x] Inline tests `derive::tests::a_derived_child_param_is_a_binding_of_its_parent`, `a_chain_derives_top_down`, `a_constant_placement_is_no_binding`
+- [x] Gate check passes: Quick (`Run planlib`)
+- [x] Test count: 3 new tests
 
 **Tests**: unit
 **Gate**: quick

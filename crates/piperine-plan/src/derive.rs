@@ -1,0 +1,196 @@
+//! `DerivePlan`: the param values a design derives from other params (feature `host-ii`, X9).
+//! A placement `Child(..) { r: r_top }` gives its child a param that is an expression over the
+//! parent's params (`ChildValue::Expr`, kept beside the child by the IR); the instance table holds
+//! only the constant that expression folds to. A host `set` of a parent's param must recompute
+//! what derives from it, so the plan lists every such binding, a parent before its children (a
+//! chain derives top-down), with the parent's params each one reads.
+
+use piperine_ir::{ChildValue, Expr, ExprId, Ir, ValueType};
+
+/// One derived param: `child`'s `param` is `expr` over the params of `parent`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Binding {
+    /// The index of the generated function that computes it: the binding's place in the plan.
+    pub k: u32,
+    /// The path of the instance whose params the expression reads.
+    pub parent: String,
+    /// The path of the instance whose param it gives.
+    pub child: String,
+    /// The child's param name.
+    pub param: String,
+    /// The index of that param in the child's body.
+    pub param_index: u32,
+    /// The type of that param.
+    pub ty: ValueType,
+    /// The names of the parent's params the expression reads, in the parent's param order.
+    pub reads: Vec<String>,
+    /// The expression, over the parent body's params.
+    pub expr: ExprId,
+}
+
+/// Every derived param of a design, in instance order.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DerivePlan {
+    bindings: Vec<Binding>,
+}
+
+impl DerivePlan {
+    /// The derived bindings of `ir`: one per `ChildValue::Expr` of each instance's placement, the
+    /// instances in the IR's order (a parent before its children), a placement's params in the
+    /// order they were set.
+    pub fn of(ir: &Ir) -> DerivePlan {
+        let mut bindings = Vec::new();
+        for child in ir.instances() {
+            let Some(parent) = child.parent() else { continue };
+            let parent_body = parent.body();
+            let Some(placed) = parent_body.children().iter().position(|c| c.name == child.name()) else { continue };
+            for (index, value) in parent_body.child_params(placed) {
+                let ChildValue::Expr(expr) = value else { continue };
+                let Some(param) = child.body().params().get(*index as usize) else { continue };
+                let mut read = Vec::new();
+                Self::params_read(ir, *expr, &mut read);
+                let reads = parent_body.params().iter().enumerate().filter(|(i, _)| read.contains(&(*i as u32))).map(|(_, p)| p.name.clone()).collect();
+                bindings.push(Binding {
+                    k: bindings.len() as u32,
+                    parent: parent.path().to_string(),
+                    child: child.path().to_string(),
+                    param: param.name.clone(),
+                    param_index: *index,
+                    ty: param.ty.clone(),
+                    reads,
+                    expr: *expr,
+                });
+            }
+        }
+        DerivePlan { bindings }
+    }
+
+    /// The bindings, `k` the index of each.
+    pub fn bindings(&self) -> &[Binding] {
+        &self.bindings
+    }
+
+    /// Whether the design derives nothing.
+    pub fn is_empty(&self) -> bool {
+        self.bindings.is_empty()
+    }
+
+    /// The bindings (by `k`) that read `param` of `instance`, in plan order.
+    pub fn readers(&self, instance: &str, param: &str) -> Vec<u32> {
+        self.bindings.iter().filter(|b| b.parent == instance && b.reads.iter().any(|r| r == param)).map(|b| b.k).collect()
+    }
+
+    /// The binding that gives `param` of `instance`, if the design derives it.
+    pub fn giving(&self, instance: &str, param: &str) -> Option<&Binding> {
+        self.bindings.iter().find(|b| b.child == instance && b.param == param)
+    }
+
+    /// The indices of the params `e` reads: the forms a placement's expression holds (literals,
+    /// params, operators, casts, math functions, calls).
+    fn params_read(ir: &Ir, e: ExprId, out: &mut Vec<u32>) {
+        match ir.expr(e) {
+            Expr::Param(i) => out.push(*i),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => Self::params_read(ir, *expr, out),
+            Expr::Binary { lhs, rhs, .. } => {
+                Self::params_read(ir, *lhs, out);
+                Self::params_read(ir, *rhs, out);
+            }
+            Expr::If { cond, then, otherwise } => {
+                for x in [cond, then, otherwise] {
+                    Self::params_read(ir, *x, out);
+                }
+            }
+            Expr::Math { args, .. } | Expr::Call { args, .. } => {
+                for a in args {
+                    Self::params_read(ir, *a, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use piperine_ir::{BodySpec, Child, Constant, InstanceSpec, IrBuilder, Origin, Param, Real};
+
+    use super::*;
+
+    fn origin() -> Origin {
+        Origin { file: "derive.rs".into(), line: 1, col: 1 }
+    }
+
+    fn param(name: &str) -> Param {
+        Param { name: name.into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1.0))), check: None, structural: false, origin: origin() }
+    }
+
+    fn spec(name: &str, params: Vec<Param>, children: Vec<Child>) -> BodySpec {
+        BodySpec { name: name.into(), origin: origin(), params, nodes: Vec::new(), branches: Vec::new(), limits: Vec::new(), stims: Vec::new(), locals: Vec::new(), analog: None, children }
+    }
+
+    fn placed(name: &str, body: piperine_ir::BodyId) -> Child {
+        Child { name: name.into(), body, nodes: Vec::new(), params: Vec::new(), origin: origin() }
+    }
+
+    fn instance(path: &str, name: &str, body: piperine_ir::BodyId, parent: Option<piperine_ir::InstanceId>, params: Vec<Constant>) -> InstanceSpec {
+        InstanceSpec { path: path.into(), name: name.into(), body, parent, nodes: Vec::new(), params, origin: origin() }
+    }
+
+    fn real(v: f64) -> Constant {
+        Constant::Real(Real::new(v))
+    }
+
+    /// `Leaf { r }`, `Mid { rr } { m: Leaf { r: rr * 2.0 } }`, `Top { rr } { m: Mid { rr: top * 3.0, other: 7.0 } }`:
+    /// the leaf derives from Mid and Mid derives from Top.
+    fn chain() -> Ir {
+        let mut b = IrBuilder::new();
+        let leaf = b.body(spec("Leaf", vec![param("r")], Vec::new()));
+        let mid = b.body(spec("Mid", vec![param("rr"), param("other")], vec![placed("l", leaf)]));
+        let top = b.body(spec("Top", vec![param("t")], vec![placed("m", mid)]));
+        let two = b.expr(Expr::Real(Real::new(2.0)), ValueType::F64, origin());
+        let rr = b.expr(Expr::Param(0), ValueType::F64, origin());
+        let doubled = b.expr(Expr::Binary { op: piperine_ir::BinaryOp::Mul, lhs: rr, rhs: two }, ValueType::F64, origin());
+        b.child_param(mid, 0, 0, ChildValue::Expr(doubled));
+        let three = b.expr(Expr::Real(Real::new(3.0)), ValueType::F64, origin());
+        let t = b.expr(Expr::Param(0), ValueType::F64, origin());
+        let tripled = b.expr(Expr::Binary { op: piperine_ir::BinaryOp::Mul, lhs: t, rhs: three }, ValueType::F64, origin());
+        b.child_param(top, 0, 0, ChildValue::Expr(tripled));
+        b.child_param(top, 0, 1, ChildValue::Const(Constant::Real(Real::new(7.0))));
+        let t_i = b.instance(instance("Top", "Top", top, None, vec![real(1.0)]));
+        let m_i = b.instance(instance("Top.m", "m", mid, Some(t_i), vec![real(3.0), real(7.0)]));
+        b.instance(instance("Top.m.l", "l", leaf, Some(m_i), vec![real(6.0)]));
+        b.finish(t_i)
+    }
+
+    #[test]
+    fn a_derived_child_param_is_a_binding_of_its_parent() {
+        // HII-18 AC 1: `rr` of `Top.m` is `t * 3.0` over the params of `Top`, and reads `t`
+        let plan = DerivePlan::of(&chain());
+        let first = &plan.bindings()[0];
+        assert_eq!((first.parent.as_str(), first.child.as_str(), first.param.as_str()), ("Top", "Top.m", "rr"));
+        assert_eq!(first.reads, ["t"]);
+        assert_eq!(plan.readers("Top", "t"), [0]);
+        assert!(plan.readers("Top", "other").is_empty());
+        assert_eq!(plan.giving("Top.m", "rr").map(|b| b.k), Some(0));
+        assert!(plan.giving("Top", "t").is_none(), "a param no placement gives is not derived");
+    }
+
+    #[test]
+    fn a_chain_derives_top_down() {
+        // HII-18 AC 1: a parent's binding comes before its children's, so applying them in plan
+        // order gives the grandchild its value from the already recomputed middle param
+        let plan = DerivePlan::of(&chain());
+        let order: Vec<(&str, &str)> = plan.bindings().iter().map(|b| (b.child.as_str(), b.param.as_str())).collect();
+        assert_eq!(order, [("Top.m", "rr"), ("Top.m.l", "r")]);
+        assert_eq!(plan.bindings().iter().map(|b| b.k).collect::<Vec<_>>(), [0, 1]);
+        assert_eq!(plan.readers("Top.m", "rr"), [1]);
+    }
+
+    #[test]
+    fn a_constant_placement_is_no_binding() {
+        // `other: 7.0` is a `ChildValue::Const`: the instance table holds it, nothing derives it
+        let plan = DerivePlan::of(&chain());
+        assert!(plan.giving("Top.m", "other").is_none());
+        assert_eq!(plan.bindings().len(), 2);
+    }
+}
