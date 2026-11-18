@@ -468,7 +468,7 @@ impl Session {
                     .with_sink(delivery)
                     .with_step_observer(Box::new(Tap(recorder.clone())))
                     .build();
-                let result = solver
+                solver
                     .tran()
                     .and_then(|mut tran| {
                         for action in &timed {
@@ -480,19 +480,16 @@ impl Session {
                         tran.solve()
                     })
                     .map_err(|error| Failure::Solver { analysis: "transient", error })?;
-                // CLI-05 AC 11: a run that stopped short has no table to give; the solver does not
-                // step a design with no analog node, which keeps a single step at 0 holding the
-                // values of the end of the run
-                // a model that wrote `finish` ended the run at that instant: it is the run's end
-                // (FIX-02 AC 1), and the grid stops there
+                // CLI-05 AC 11: a run that stopped short has no table to give. How far it got is the
+                // last step the observer saw, which a design with no analog unknown reaches too (its
+                // result holds no analog accept, HII-17). A model that wrote `finish` ended the run at
+                // that instant: it is the run's end (FIX-02 AC 1), and the grid stops there
                 let end = finished.borrow().map_or(*stop, |at| at.min(*stop));
                 recorder.borrow_mut().end_at(end);
-                let last = result.iter().last().map(|step| step.time());
-                if last.is_none_or(|last| last < end * (1.0 - 1e-9)) {
-                    let at = last.map_or_else(|| "no step".to_string(), |t| format!("the last step at {t:e}"));
-                    return Err(Failure::Backend(format!(
-                        "the transient ended with {at}, before its stop at {end:e}: the solver does not step a design with no analog node, so a digital-only transient is refused"
-                    )));
+                let reached = recorder.borrow().reached();
+                if reached.is_none_or(|last| last < end * (1.0 - 1e-9)) {
+                    let at = reached.map_or_else(|| "no step".to_string(), |t| format!("the last step at {t:e}"));
+                    return Err(Failure::Backend(format!("the transient ended with {at}, before its stop at {end:e}")));
                 }
                 // the solver held the observers; with it gone the recorder has one owner
                 drop(solver);

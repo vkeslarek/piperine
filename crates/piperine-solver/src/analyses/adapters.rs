@@ -434,7 +434,7 @@ impl AnalogSide for TransientSide<'_, '_> {
     }
 
     fn step_time(&self) -> Option<f64> {
-        Some(self.run.accepted_time())
+        self.has_unknowns().then(|| self.run.accepted_time())
     }
 }
 

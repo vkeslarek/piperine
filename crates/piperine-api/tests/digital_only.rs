@@ -1,0 +1,67 @@
+//! Scope: a transient of a design with no analog unknown runs to its stop (HII-17, L56). The
+//! design is the Book's `Blinky`: an oscillator at 1 MHz (a half period of 0.5 us) and a counter
+//! of its rising edges. A transient that genuinely ends short (HII-17 AC 3) has no source on this
+//! branch: nothing ends a run early until a `finish` ends a transient (lane A); the rule is the
+//! one CLI-05 AC 11 states and `Recorder::reached` carries it.
+#![cfg(unix)]
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::OnceLock;
+
+use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_transpile::Settings;
+
+struct Kept(Vec<Record>);
+
+impl RecordSink for Kept {
+    fn record(&mut self, record: &Record) {
+        self.0.push(record.clone());
+    }
+}
+
+fn settings() -> Settings {
+    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
+    let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+    Settings { rustc: None, cache: dir.path().to_path_buf() }
+}
+
+const BLINKY: &str = "module Osc(out clk: Bit = false) {\n    f: f64 = 1M where f > 0.0;\n}\ndigital for Osc {\n    on clk.changed() { clk <- !clk after 0.5 / f; }\n}\n\nmodule Counter(in clk: Bit, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count);\n    }\n}\n\nmodule Blinky() {\n    signal clk: Bit;\n    pub signal count: Bit<u8>;\n    let osc = Osc(clk) { f: 1M };\n    let ctr = Counter(clk, count);\n}\n";
+
+fn run(stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("blinky.msl");
+    std::fs::write(&file, BLINKY).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { backend: Some("rust".into()), analysis: Some("transient".into()), stop: Some(stop), print_step, print: vec!["clk".into(), "count".into()], ..Overrides::default() };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let kept = Rc::new(RefCell::new(Kept(Vec::new())));
+    let table = session.run(kept.clone())?;
+    let records = kept.borrow().0.clone();
+    Ok((table, records))
+}
+
+#[test]
+fn a_digital_only_transient_reaches_its_stop() {
+    // HII-17 AC 1 and 4: three rising edges by 3 us (at 0.5, 1.5 and 2.5 us, the Book's listing),
+    // a table whose last row is the stop
+    let (table, records) = run(3e-6, None).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(records.iter().filter(|r| r.stream == "edge").count(), 3, "{records:?}");
+    let last = table.rows.last().expect("a table with rows");
+    assert_eq!(last[0], Cell::Real(3e-6));
+    assert_eq!(last[2], Cell::Int(3), "the counter after three edges: {last:?}");
+}
+
+#[test]
+fn a_digital_only_grid_holds_net_values() {
+    // HII-17 AC 2 (LR-05 AC 4): each row holds the value after the last instant at or before it.
+    // The clock rises at 0.5, 1.5, 2.5 us and falls at 1, 2, 3 us, so on the 1 us grid it is low;
+    // the counter reads 0, 1, 2, 3
+    let (table, _) = run(3e-6, Some(1e-6)).unwrap_or_else(|f| panic!("{f}"));
+    let times: Vec<Cell> = table.rows.iter().map(|r| r[0].clone()).collect();
+    assert_eq!(times, [0.0, 1e-6, 2e-6, 3e-6].map(Cell::Real));
+    let counts: Vec<Cell> = table.rows.iter().map(|r| r[2].clone()).collect();
+    assert_eq!(counts, [0, 1, 2, 3].map(Cell::Int));
+    assert!(table.rows.iter().all(|r| r[1] == Cell::Bool(false)), "{:?}", table.rows);
+}

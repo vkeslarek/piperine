@@ -205,7 +205,7 @@ Works, by probe: `ddt` of a flow and of a potential (capacitor, inductor, couple
 | L51 | an event read as a `bool`: `if fref.rise() { .. }` in a reaction, `on d.changed() && en && !en.changed()` | §13 rules 2, 9 | `an event read as a bool` | M |
 | L52 | `settle` | §13 rule 17, §15 S1–S7 | `built-in settle` | M |
 | L53 | a function that returns `Event` (`fn handshake(req: Bit, ack: Bit) -> Event`) | §13 rule 7 | `method rise on this receiver` | with L8 |
-| L56 | A digital-only transient is refused: a design with no analog node keeps one step at time 0, and the run fails naming that cause | §15 ("also in a design with nothing analog") | `the solver does not step a design with no analog node` | M |
+| L56 | A digital-only transient is refused: a design with no analog node keeps one step at time 0, and the run fails naming that cause. CLOSED by host-ii T32 (the run reaches its stop and gives its table); T41 drops the row and its pin in `docs.rs` | §15 ("also in a design with nothing analog") | `the solver does not step a design with no analog node` | M |
 
 Works, by probe: commits with and without `after`, transport per statement (a pulse from two
 commits), `at(0.0)` at `(0, 1)` and a negative `at` never, `every`, `cross` located within 0.1 ps

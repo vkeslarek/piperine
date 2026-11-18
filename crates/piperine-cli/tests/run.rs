@@ -414,24 +414,34 @@ fn a_closed_stdout_ends_with_exit_1_and_no_panic() {
 const BLINKY: &str = "module Osc(out clk: Bit = false) {\n    f: f64 = 1M where f > 0.0;\n}\ndigital for Osc {\n    on clk.changed() { clk <- !clk after 0.5 / f; }\n}\n\nmodule Counter(in clk: Bit, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count);\n    }\n}\n\nmodule Blinky() {\n    signal clk: Bit;\n    pub signal count: Bit<u8>;\n    let osc = Osc(clk) { f: 1M };\n    let ctr = Counter(clk, count);\n}\n";
 
 #[test]
-fn a_transient_that_ends_before_its_stop_fails_for_table_csv_and_plot() {
-    // CLI-05 AC 11 (verification F2): the solver does not step a design with no analog node, so
-    // its transient keeps one step at 0 holding the end of the run. A transient whose last step
-    // is before `stop` is a failure naming the cause: no table, no file, exit 1, for the table,
-    // `--csv` and `--plot` alike; the records already printed stay (CLI-07 AC 5).
+fn a_digital_only_transient_runs_to_its_stop_for_table_csv_and_plot() {
+    // HII-17 (L56; supersedes CLI-05 AC 11's refusal of this design): a design with no analog node
+    // runs to its stop. Three `edge` records, then the table on the 1 us grid with the counter at
+    // 0, 1, 2, 3, exit 0, for the table, `--csv` and `--plot` alike. A transient that genuinely
+    // ends short has no source on this branch (nothing ends a run early before a `finish` ends a
+    // transient), so CLI-05 AC 11 keeps its unit test in `piperine-api`'s recorder.
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("blinky.msl"), BLINKY).expect("blinky.msl");
-    let base = ["run", "blinky.msl", "--analysis", "transient", "--stop", "3e-6"];
+    let base = ["run", "blinky.msl", "--analysis", "transient", "--stop", "3e-6", "--print-step", "1e-6", "--print", "count"];
     for extra in [&[][..], &["--csv", "out.csv"][..], &["--plot", "out.svg"][..]] {
         let args: Vec<&str> = base.iter().chain(extra).copied().collect();
         let out = piperine_in(dir.path(), shared_cache(), &args);
         let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
-        assert_eq!(out.status.code(), Some(1), "{args:?}: {stdout}\n{stderr}");
-        assert!(stderr.contains("before its stop") && stderr.contains("no analog node"), "{args:?}: the cause is named:\n{stderr}");
-        assert_eq!(stdout.lines().filter(|l| l.starts_with('@')).count(), 3, "{args:?}: the records stay:\n{stdout}");
-        assert!(!stdout.contains("time") && !stdout.contains("wrote"), "{args:?}: no table and no file:\n{stdout}");
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {stdout}\n{stderr}");
+        assert_eq!(stdout.lines().filter(|l| l.starts_with('@')).count(), 3, "{args:?}: the records:\n{stdout}");
+        match extra.first() {
+            None => {
+                let rows: Vec<Vec<&str>> = stdout.lines().skip_while(|l| !l.starts_with("time")).skip(1).map(|l| l.split_whitespace().collect()).collect();
+                assert_eq!(rows, [["0.000000e0", "0"], ["1.000000e-6", "1"], ["2.000000e-6", "2"], ["3.000000e-6", "3"]], "{stdout}");
+            }
+            Some(&"--csv") => {
+                let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
+                let counts: Vec<&str> = csv.lines().skip(1).filter_map(|l| l.rsplit(',').next()).collect();
+                assert_eq!(counts, ["0", "1", "2", "3"], "{csv}");
+            }
+            Some(_) => assert!(dir.path().join("out.svg").exists(), "the plot is written"),
+        }
     }
-    assert!(!dir.path().join("out.csv").exists() && !dir.path().join("out.svg").exists(), "no file is written");
 }
 
 #[test]

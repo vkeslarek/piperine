@@ -61,6 +61,9 @@ pub(crate) struct Recorder {
     pending: Vec<(usize, f64)>,
     /// The first failure of the run: the recorder makes no row after it and `finish` reports it.
     failure: Option<Failure>,
+    /// The time of the last step the observer saw: how far the run got, with or without an
+    /// analog unknown to step (HII-17).
+    reached: Option<f64>,
 }
 
 impl Recorder {
@@ -74,7 +77,7 @@ impl Recorder {
             }
         }
         let held = vec![Cell::Unknown; columns.len()];
-        Recorder { columns, labels, from, grid: None, rows: Vec::new(), by_path, held, changes: Vec::new(), applied: 0, started: false, pending: Vec::new(), failure: None }
+        Recorder { columns, labels, from, grid: None, rows: Vec::new(), by_path, held, changes: Vec::new(), applied: 0, started: false, pending: Vec::new(), failure: None, reached: None }
     }
 
     /// A change of the net at `path` to `bytes` at `time`, as the solver commits it. A path no
@@ -127,8 +130,14 @@ impl Recorder {
         }
     }
 
+    /// The time of the last step the observer saw; `None` before the first.
+    pub(crate) fn reached(&self) -> Option<f64> {
+        self.reached
+    }
+
     /// One accepted step at `time`, its values read by `read`.
     pub(crate) fn step(&mut self, time: f64, read: &Read<'_>) {
+        self.reached = Some(time);
         if self.failure.is_some() {
             return;
         }
@@ -314,6 +323,16 @@ mod tests {
 
     fn times(table: &Table) -> Vec<f64> {
         table.rows.iter().map(|r| if let Cell::Real(t) = r[0] { t } else { panic!("a time") }).collect()
+    }
+
+    #[test]
+    fn the_recorder_reports_the_time_of_the_last_step_it_saw() {
+        // HII-17 AC 3 (CLI-05 AC 11): how far a run got is its last observed step, `None` before one
+        let mut recorder = Recorder::new(vec![unknown(0)], vec!["a".into()], 0.0);
+        assert_eq!(recorder.reached(), None);
+        recorder.step(0.0, &solution(&[1.0]));
+        recorder.step(2e-6, &solution(&[1.0]));
+        assert_eq!(recorder.reached(), Some(2e-6));
     }
 
     #[test]
