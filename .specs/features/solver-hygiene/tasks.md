@@ -891,8 +891,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `a_store_rewind_restores_every_written_net` passes under `cargo test -p piperine-digital-solver --test store`
-- [ ] Gate check passes: Quick
+- [x] `a_store_rewind_restores_every_written_net` passes under `cargo test -p piperine-digital-solver --test store`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

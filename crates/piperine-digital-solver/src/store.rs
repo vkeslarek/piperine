@@ -5,6 +5,7 @@
 //! buffer, so each net is stored over-aligned to 16 bytes. The alignment is
 //! found, not assumed, so the store needs no `unsafe`.
 
+use crate::journal::Journal;
 use crate::net::{NetId, NetKind, NetSpec};
 
 /// The over-alignment of every buffer (the largest leaf is 8 bytes).
@@ -66,18 +67,49 @@ struct NetBytes {
 #[derive(Clone, Debug, PartialEq)]
 pub struct NetState(NetBytes);
 
+/// The first previous state of each net written since a mark (HYG-14).
+#[derive(Debug)]
+struct NetJournal {
+    log: Journal<(usize, NetBytes)>,
+    /// Bumped by every mark and rewind: a net stamped with the current epoch is already in the
+    /// log for the innermost mark.
+    epoch: u32,
+    stamped: Vec<u32>,
+}
+
+impl Clone for NetJournal {
+    /// A copy of a store carries no work in progress: an empty, closed log.
+    fn clone(&self) -> NetJournal {
+        NetJournal { log: Journal::default(), epoch: 1, stamped: vec![0; self.stamped.len()] }
+    }
+}
+
+impl PartialEq for NetJournal {
+    fn eq(&self, _: &NetJournal) -> bool {
+        true
+    }
+}
+
+/// Where a store stood when it was marked: the length of its log and its microstep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StoreMark {
+    len: usize,
+    step: u64,
+}
+
 /// Every net's bytes at one point of a run.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Store {
     nets: Vec<NetBytes>,
     /// The current microstep; starts at 1 so a stamp of 0 means "never".
     step: u64,
+    journal: NetJournal,
 }
 
 impl Store {
     /// A store with every net at zero bytes.
     pub fn new(specs: &[NetSpec]) -> Store {
-        let nets = specs
+        let nets: Vec<NetBytes> = specs
             .iter()
             .map(|s| {
                 let quiet = s.is_quiet();
@@ -92,7 +124,43 @@ impl Store {
                 }
             })
             .collect();
-        Store { nets, step: 1 }
+        let journal = NetJournal { log: Journal::default(), epoch: 1, stamped: vec![0; nets.len()] };
+        Store { nets, step: 1, journal }
+    }
+
+    /// Starts journaling: from here to the matching `release`, the first previous state of each
+    /// net written is kept, so `rewind` can put the store back without a copy of every net.
+    /// Marks nest.
+    pub fn mark(&mut self) -> StoreMark {
+        self.journal.epoch += 1;
+        StoreMark { len: self.journal.log.open(), step: self.step }
+    }
+
+    /// Puts every net written since `mark` back, and the microstep. The mark stays open.
+    pub fn rewind(&mut self, mark: &StoreMark) {
+        while let Some((i, bytes)) = self.journal.log.pop_above(mark.len) {
+            self.nets[i] = bytes;
+        }
+        self.step = mark.step;
+        self.journal.epoch += 1;
+    }
+
+    /// Ends the newest open mark; the log empties with the outermost.
+    pub fn release(&mut self, _mark: StoreMark) {
+        self.journal.log.close();
+    }
+
+    /// The number of nets the log holds a previous state of (a diagnostic).
+    pub fn journal_len(&self) -> usize {
+        self.journal.log.len()
+    }
+
+    /// Keeps `net`'s state before its first change under the innermost mark.
+    fn journal_net(&mut self, net: usize) {
+        if self.journal.log.is_open() && self.journal.stamped[net] != self.journal.epoch {
+            self.journal.stamped[net] = self.journal.epoch;
+            self.journal.log.push((net, self.nets[net].clone()));
+        }
     }
 
     fn net(&self, net: NetId) -> &NetBytes {
@@ -130,11 +198,12 @@ impl Store {
     /// and stamps the current microstep. Panics when the range leaves the net.
     pub fn write(&mut self, net: NetId, offset: u32, bytes: &[u8]) -> bool {
         let step = self.step;
-        let n = &mut self.nets[net.0 as usize];
         let at = offset as usize;
-        if n.value.bytes()[at..at + bytes.len()] == *bytes {
+        if self.nets[net.0 as usize].value.bytes()[at..at + bytes.len()] == *bytes {
             return false;
         }
+        self.journal_net(net.0 as usize);
+        let n = &mut self.nets[net.0 as usize];
         if !n.quiet {
             n.previous.bytes_mut().copy_from_slice(n.value.bytes());
             n.changed_at = step;
@@ -150,11 +219,13 @@ impl Store {
 
     /// Puts `net` back as `state` saved it.
     pub fn restore_net(&mut self, net: NetId, state: &NetState) {
+        self.journal_net(net.0 as usize);
         self.nets[net.0 as usize] = state.0.clone();
     }
 
     /// Fires an event net in this microstep.
     pub fn fire(&mut self, net: NetId) {
+        self.journal_net(net.0 as usize);
         let step = self.step;
         self.nets[net.0 as usize].fired_at = step;
     }

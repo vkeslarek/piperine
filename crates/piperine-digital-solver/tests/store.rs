@@ -130,3 +130,41 @@ fn a_clone_compares_equal_byte_for_byte() {
     assert_eq!(c.value(REAL), [0u8; 16], "a clone is independent");
     assert_eq!(c.value(REAL).as_ptr() as usize % 8, 0, "a clone is aligned too");
 }
+
+/// HYG-14 AC 1: a rewind puts back every net written since the mark, the microstep and the
+/// stamps behind `CHANGED`, so the store equals the copy taken at the mark; a net written twice
+/// is journaled once, and marks nest.
+#[test]
+fn a_store_rewind_restores_every_written_net() {
+    let mut s = store();
+    s.write(BIT, 0, &HIGH);
+    s.begin_microstep();
+    let outer_copy = s.clone();
+    let outer = s.mark();
+    s.write(BIT, 0, &LOW);
+    s.write(BIT, 0, &HIGH); // the second write of a net adds no entry
+    s.write(REAL, 8, &[1]);
+    s.begin_microstep();
+    s.fire(EVENT);
+    assert_eq!(s.journal_len(), 3, "the bit, the real and the event: one entry each");
+    let inner_copy = s.clone();
+    let inner = s.mark();
+    s.write(REAL, 0, &real(2.5, 1)); // the real again: journaled for the inner mark
+    s.write(STATE, 0, &[9, 9, 9, 9]);
+    s.begin_microstep();
+    assert_eq!(s.journal_len(), 5);
+    s.rewind(&inner);
+    assert_eq!(s, inner_copy, "the inner rewind equals the copy at the inner mark");
+    s.release(inner);
+    s.rewind(&outer);
+    assert_eq!(s, outer_copy, "the outer rewind equals the copy at the outer mark");
+    assert!(!s.fired(EVENT) && !s.changed(REAL));
+    // the mark is still open: a second rewind after more writes works too
+    s.write(STATE, 0, &[1, 2, 3, 4]);
+    s.rewind(&outer);
+    assert_eq!(s, outer_copy);
+    s.release(outer);
+    assert_eq!(s.journal_len(), 0, "the outermost release empties the log");
+    s.write(BIT, 0, &LOW);
+    assert_eq!(s.journal_len(), 0, "no mark open: nothing is journaled");
+}
