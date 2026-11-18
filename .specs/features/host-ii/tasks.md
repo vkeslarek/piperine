@@ -793,9 +793,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `tests/host_actions.rs` gains `subscribe_before_the_run_narrows_the_streams`, `subscribe_after_the_run_is_e0805`
-- [ ] Gate check passes: Quick (`Run apihost`), then Build (end of phase 6)
-- [ ] Test count: 2 new tests
+- [x] `tests/host_actions.rs` gains `subscribe_before_the_run_narrows_the_streams`, `subscribe_after_the_run_is_e0805`
+- [x] Gate check passes: Quick (`Run apihost`), then Build (end of phase 6)
+- [x] Test count: 2 new tests
 
 **Tests**: integration
 **Gate**: build

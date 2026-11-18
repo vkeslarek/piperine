@@ -29,7 +29,7 @@ fn settings() -> Settings {
 
 /// A source, a resistor, a module whose structure a param selects, and a counter that reads two
 /// of the top's inputs; `Top` holds the analog part and the counter.
-const DESIGN: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Counter(in clk: Bit, in level: Bit<u8>, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count, level = level);\n    }\n}\nmodule Top(in clk: Bit, in level: Bit<u8>, out count: Bit<u8>) {\n    signal a: Electrical;\n    signal armed: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let ctr = Counter(clk, level, count);\n}\n";
+const DESIGN: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Counter(in clk: Bit, in level: Bit<u8>, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count, level = level);\n        emit!(\"tick\", n = count);\n    }\n}\nmodule Top(in clk: Bit, in level: Bit<u8>, out count: Bit<u8>) {\n    signal a: Electrical;\n    signal armed: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let ctr = Counter(clk, level, count);\n}\n";
 
 fn session(analysis: &str, extra: Overrides) -> Session {
     let dir = tempfile::tempdir().expect("tmp");
@@ -221,4 +221,43 @@ fn a_timed_set_failing_where_is_e0802() {
     s.set_at("r1.r", 2000.0, 5e-7).expect("a value that passes the where");
     assert!(s.circuit().is_some(), "no analysis ran");
     assert_eq!(code(s.set_at("r1.nothing", 1.0, 5e-7).expect_err("no such param")), "E0801");
+}
+
+/// A run whose clock rises once, at 1 us, so each of the counter's two streams holds one record.
+fn clocked(session: &mut Session) {
+    session.drive("clk", ParamValue::Bool(false), 0.0).expect("clk low");
+    session.drive("level", ParamValue::Int(1), 0.0).expect("level");
+    session.drive("clk", ParamValue::Bool(true), 1e-6).expect("clk high");
+}
+
+#[test]
+fn subscribe_before_the_run_narrows_the_streams() {
+    // HII-14 AC 1: with no subscription both streams of the counter deliver; subscribed to
+    // `tick`, only its records reach the sink; a name that matches no stream is E0801
+    let mut all = transient(2e-6, &[]);
+    clocked(&mut all);
+    let (_, records) = run(&mut all).unwrap_or_else(|f| panic!("{f}"));
+    let mut streams: Vec<&str> = records.iter().map(|r| r.stream.as_str()).collect();
+    streams.sort_unstable();
+    assert_eq!(streams, ["edge", "tick"], "{records:?}");
+
+    let mut narrowed = transient(2e-6, &[]);
+    clocked(&mut narrowed);
+    narrowed.subscribe(&["tick"]).expect("subscribe");
+    let (_, records) = run(&mut narrowed).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(records.iter().map(|r| r.stream.as_str()).collect::<Vec<_>>(), ["tick"], "{records:?}");
+
+    assert_eq!(code(transient(1e-6, &[]).subscribe(&["nothing"]).expect_err("no such stream")), "E0801");
+}
+
+#[test]
+fn subscribe_after_the_run_is_e0805() {
+    // HII-14 AC 2 (§23.1 error table): a subscription once the session has run is refused,
+    // naming the stream
+    let mut s = transient(1e-6, &[]);
+    run(&mut s).unwrap_or_else(|f| panic!("{f}"));
+    match s.subscribe(&["tick"]).expect_err("after the run") {
+        Failure::Host { code: "E0805", message } => assert!(message.contains("tick"), "{message}"),
+        other => panic!("E0805, found {other}"),
+    }
 }
