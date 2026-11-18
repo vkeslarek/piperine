@@ -30,7 +30,8 @@ three looser-than-claimed points.
   6.884155e-1 to 6.884153e-1; ngspice-47 at `numdgt=10` gives 6.8841508e-1, so the new digit is closer.
 - Whole suites green: `cargo test -p piperine-solver -p piperine-analog-solver -p piperine-digital-solver`
   (526 passed), `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --no-fail-fast` (97 passed, all
-  buck targets included), `cargo test -p piperine-solver --test pss` (3 passed: the shooting map still
+  buck targets included), `cargo test -p piperine-cli -p piperine-api --no-fail-fast` (220 passed),
+  `cargo test -p piperine-solver --test pss` (3 passed: the shooting map still
   converges through the restart path of `device_resume`).
 - Own examples (throwaway, removed): re-entry of `tran_dq` (diode, `limit`, nonlinear `ddt`) at steps
   1, 2, 3, 5, n/4, n/2, n-3, n-2, both at the 10 ns cap (1047 steps) and free-running (238 steps, the
