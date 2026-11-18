@@ -220,12 +220,16 @@ fn parity_rc_transient() {
     // difference is 60x smaller than the error they share. The change is
     // accuracy-neutral here; the old number was the captured one, never the
     // accurate one.
-    assert!((v_last - (-0.450_485_695_268_389)).abs() < 1e-9, "v_last = {v_last}");
+    // Re-pinned again (HYG-07): the truncation test now measures the `ddt` states with ngspice's
+    // tolerance instead of the node potentials. On the converged grid above (-0.450_456_791_8)
+    // the previous pin was off by 2.89e-5 and this one is by 2.95e-5; the 161-step grid became
+    // 259 steps. The twin `tran_rc` against ngspice is unmoved (0.5123 of its bound).
+    assert!((v_last - (-0.450_486_166_452_110_26)).abs() < 1e-9, "v_last = {v_last}");
     // Adaptive stepper landed a stable, reproducible number of recorded steps.
     // 386 -> 161 with the monotone controller: the old law shrank `dt` whenever
     // the error improved sharply, so it paid for the same accuracy with 2.4x
     // the steps.
-    assert_eq!(res.len(), 161, "step count = {}", res.len());
+    assert_eq!(res.len(), 259, "step count = {}", res.len());
 }
 
 /// Parallel RLC resonator (current-driven) — complex AC assembly; pins the

@@ -733,31 +733,16 @@ impl<'a> TransientSolver<'a> {
         Ok(Some(self.snapshot(t_next)))
     }
 
-    /// Phase 3 — assess: the global Milne-LTE accept gate (TRB-05/06). The
-    /// two-phase buffer holds x_{n+1} (view 0), x_{n+γ} (view 1), x_n
-    /// (view 2). The Milne predictor is evaluated only over
-    /// **node-voltage** unknowns — branch currents are KCL-derived (their
-    /// accuracy follows the node voltages) and the `/γ` extrapolation
-    /// falsely amplifies a source branch's startup jump. Steps landing on
-    /// a declared discontinuity (breakpoint or live-set edge) are exempt.
-    fn assess_step(
-        &self,
-        prediction: &StepPrediction,
-        post_set_step: bool,
-        node_indices: &[usize],
-    ) -> StepAssessment {
-        let tolerances = self.system.context.tolerances.clone();
-        let milne = match (self.solver.state().view(0), self.solver.state().view(1), self.solver.state().view(2)) {
-            (Some(a), Some(b), Some(c)) => TrBdf2::milne_lte_indexed(
-                c.as_slice().unwrap(),
-                b.as_slice().unwrap(),
-                a.as_slice().unwrap(),
-                node_indices,
-                tolerances.reltol,
-                tolerances.vntol,
-            ),
-            _ => 0.0,
-        };
+    /// Phase 3 — assess: the accept gate (TRB-05/06) over the truncation error of the step's
+    /// `ddt` states (§15.2 rule 1, §17.2 Resolution), each normalized as ngspice's `CKTterr`
+    /// does (`TrBdf2::state_lte`): Milne's difference of the state's three values over the two
+    /// stages, against `max(h·(abstol + reltol·|i|), reltol·max(|q|, chgtol))`. A circuit with
+    /// no `ddt` state has no truncation error, so the controller grows the step. Steps landing
+    /// on a declared discontinuity (breakpoint or live-set edge) are exempt.
+    fn assess_step(&self, prediction: &StepPrediction, post_set_step: bool) -> StepAssessment {
+        let tolerances = &self.system.context.tolerances;
+        let states = self.system.circuit.abi.as_ref().map(|bound| bound.analog.ddt_states()).unwrap_or_default();
+        let milne = TrBdf2::state_lte(&states, tolerances, prediction.dt_actual);
         let reject =
             !prediction.landed_on_breakpoint && !post_set_step && milne > tolerances.trtol;
         StepAssessment { milne, accept: !reject }
@@ -912,7 +897,6 @@ impl<'a> TransientSolver<'a> {
 pub(crate) struct DeviceRun {
     st: TimeLoop,
     steps: Vec<TransientStep>,
-    node_indices: Vec<usize>,
     pending: Option<PendingStep>,
     /// The end of the step this side proposed last, on its own clock.
     proposed: f64,
@@ -1085,7 +1069,6 @@ impl TransientSolver<'_> {
         let run = DeviceRun {
             st: TimeLoop::new(self.options.start_time, self.options.dt),
             steps: Vec::new(),
-            node_indices: Vec::new(),
             pending: None,
             proposed: self.options.start_time,
             attempted: self.options.start_time,
@@ -1258,23 +1241,13 @@ impl TransientSolver<'_> {
         Ok(())
     }
 
-    /// The start is recorded, and the run takes the node unknowns the
-    /// truncation test reads.
+    /// The start is recorded.
     fn device_record_start(&mut self, run: &mut DeviceRun) {
         let start_time = self.options.start_time;
         if self.options.keep == Keep::Every && start_time >= self.options.record_from {
             run.steps.push(self.snapshot(start_time));
         }
         self.solver.reset_iteration_counter();
-        run.node_indices = self
-            .system
-            .circuit
-            .netlist()
-            .all_references()
-            .iter()
-            .filter(|r| !r.is_branch())
-            .filter_map(|r| r.idx())
-            .collect();
     }
 
     /// Re-entry from a captured step instead of an operating point (the PSS
@@ -1466,7 +1439,7 @@ impl TransientSolver<'_> {
         let post_set_step = st.sets_just_applied;
         let outcome = self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
         if let Ok(Some(snapshot)) = outcome {
-            let assessment = self.assess_step(&prediction, post_set_step, &run.node_indices);
+            let assessment = self.assess_step(&prediction, post_set_step);
             if assessment.accept || self.device_reject_lte(st, &prediction, assessment.milne) {
                 run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, post_set_step });
                 // §17.3 rule 8: a step that reads a jump does not locate its crossings.
