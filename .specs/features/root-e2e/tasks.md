@@ -33,10 +33,11 @@ Executors: every task is Sonnet (user rule). A different model verifies the feat
 Rules every task follows:
 
 - **Parity is top priority and untouched.** `crates/piperine-parity/src/contract.rs` is not edited; no tolerance is retuned or written outside it; the `parity_*` comparison targets are not edited (only `parity_grid.rs`'s path literal and the guard `parity_corpus.rs` change, in T3 to T5). A twin's `.cir` and `.stdout` move byte for byte. A miss is reported to the orchestrator, never a moved bound.
-- **The Book is read, not edited.** `docs/book/content.html` does not change in this feature; a sentence the binary does not meet is a `diverges` row and a `GAPS.md` §11 line, not a rewrite.
-- **Tests state what the Book says, not what the code does.** A `holds` test asserts the value the sentence states (at the precision it prints, through `PrintedNumber` where it prints a number); a `refused` or `diverges` test asserts today's exact code and message and fails when that changes. Every test opens with a comment citing its inventory ids and, for a claim, the sentence. Test functions have exactly the names `## Checks` cites.
-- **Existing tests that change, and only these:** `piperine-cli/tests/twins.rs` (T2: twelve twins; T3: paths; T5: commands read from the scenario), `parity_corpus.rs` (T3 paths, T4 and T5 the e2e layout), `workspace_shape.rs::root_tests_hold_no_end_to_end_target` (T3 the `.cir` count, T7 the declared root targets), the path literals of the readers T3 lists, and `suite_hygiene.rs`'s walker and `ROOT_TARGET_EXEMPTIONS` (T11, T12, T14). No test is removed, weakened or skipped, but the `SETTLED_CHAPTERS` registry tests T34 replaces with stricter ones (MD-28 rule 3).
+- **The code follows the spec** (user, 2026-11-18: "O código que diverge da spec tem que ser ajustado"). Where the binary or the library disagrees with the Book or the spec, the code is fixed; the Book does not move. A divergence has one of three causes (design "Divergences"): (1) an implemented construct gives another output, number, message, code, name or exit code: a `diverges` row while the chapters are written, fixed by Phase 9 and then `holds`; (2) a construct not implemented, refused by name, owned by an approved feature: a `refused` row naming its owner in §11, not a divergence; (3) an error code the spec names that no source raises: an `unraised` row naming `params-and-io` (PI-13) or the feature of `GAPS.md` §10, listed, not fixed here. A sentence where the spec itself looks wrong is `disputed`, listed in `divergences.md` for the user; no task decides it. The Book changes only by the user's answer to a `disputed` row.
+- **Tests state what the Book says, not what the code does.** A `holds` test asserts the value the sentence states (at the precision it prints, through `PrintedNumber` where it prints a number); a `refused`, `unraised`, `disputed` or (until Phase 9 fixes it) `diverges` test asserts today's exact code and message and fails when that changes; Phase 9 rewrites each `diverges` test to assert the Book's value, the only planned edit of a test's expectation in this feature. Every test opens with a comment citing its inventory ids and, for a claim, the sentence. Test functions have exactly the names `## Checks` cites.
+- **Existing tests that change, and only these:** `piperine-cli/tests/twins.rs` (T2: twelve twins; T3: paths; T5: commands read from the scenario), `parity_corpus.rs` (T3 paths, T4 and T5 the e2e layout), `workspace_shape.rs::root_tests_hold_no_end_to_end_target` (T3 the `.cir` count, T7 the declared root targets), the path literals of the readers T3 lists, `suite_hygiene.rs`'s walker and `ROOT_TARGET_EXEMPTIONS` (T11, T12, T14), and an existing test that asserted a divergent output a Phase 9 fix corrects (named in the fix's commit body, its new expectation cited from the Book or the spec). No test is removed, weakened or skipped, but the `SETTLED_CHAPTERS` registry tests T41 replaces with stricter ones (MD-28 rule 3).
 - **The user's cleanliness rules bind test support code** (`.specs/features/code-clarity/spec.md`): no free function in new code (every function a method of a type), one purpose per type, no abbreviated names, no god method, every type and method doc-commented, the data path evident. AGENTS rules: no macro of your own, no `unwrap()`/`expect()` on a path user input reaches. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
+- **A fix in another lane's area** (a crate an in-flight feature is editing) is reported to the orchestrator before it is made; a fix never moves a tolerance, a golden or a twin's bytes; a fix that would is reported.
 - Zero warnings on every crate of the `**Build**` line. Cargo with `-p <crate>` or the default members: never `--workspace`, never `cargo clean`. ngspice runs for real: `env -u PIPERINE_NGSPICE` on every parity and scenario gate.
 - One atomic commit per task, message as given, with the `Co-Authored-By:` trailer the session gives. No push, no merge.
 - **`lessons.py` is not run**: its `list` rewrites `.specs/lessons.json` and `.specs/LESSONS.md`.
@@ -54,7 +55,8 @@ Rules every task follows:
 | Twins on the binary | e2e | every twin, both backends, bytes after the header | `crates/piperine-cli/tests/twins.rs` | `cargo test -p piperine-cli --test twins` |
 | Root scenarios | integration | every twin through `piperine::` against ngspice under the contract; skip; own directory | `tests/scenarios.rs` | `env -u PIPERINE_NGSPICE cargo test --test scenarios` |
 | Root Book guards | integration | every rule of `design.md` on the tree and on planted input | `tests/book/{inventory,claims}_guard.rs` | `cargo test --test book_inventory --test book_claims` |
-| Root Book chapters | integration | every `run`, `refused`, `holds`, `diverges` row of the chapter, through `piperine::` | `tests/book/<chapter>.rs` | `cargo test --test book_<chapter>` |
+| Root Book chapters | integration | every `run`, `refused`, `holds`, `diverges`, `unraised`, `disputed` row of the chapter, through `piperine::` | `tests/book/<chapter>.rs` | `cargo test --test book_<chapter>` |
+| Code fixes (Phase 9, the crate each fix names) | unit or integration, by the crate's matrix row of earlier features | the fix's own test in its crate, plus the Book test flipped to the Book's value | the crate's `tests/` or inline | the crate's target and `cargo test --test book_<chapter>` |
 | Binary-only claims | e2e | each `binary` row with no test today gets one, on the real binary | `crates/piperine-cli/tests/book.rs` | `cargo test -p piperine-cli --test book` |
 | Suite hygiene walker | integration | the manifest predicate on planted text; the real tree | `crates/piperine-lang/tests/suite_hygiene.rs` | `cargo test -p piperine-lang --test suite_hygiene` |
 | `GAPS.md`, `ROADMAP.md`, `STATE.md`, `CLAUDE.md`, `AGENTS.md` | integration | each record claim read as text | `crates/piperine-cli/tests/docs.rs` | `cargo test -p piperine-cli --test docs` |
@@ -76,7 +78,7 @@ Rules every task follows:
 
 Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in order.
 
-**Batches** (~7 tasks, whole phases): B1 = Phase 1 (T1-T6), B2 = Phases 2-3 (T7-T13), B3 = Phases 4-5 (T14-T21), B4 = Phases 6-7 (T22-T28), B5 = Phases 8-9 (T29-T36).
+**Batches** (~7 tasks, whole phases): B1 = Phase 1 (T1-T6), B2 = Phases 2-3 (T7-T13), B3 = Phases 4-5 (T14-T21), B4 = Phases 6-7 (T22-T28), B5 = Phase 8 (T29-T33), B6 = Phase 9 (T34-T40), B7 = Phase 10 (T41-T43).
 
 ### Phase 1: The move
 
@@ -128,10 +130,18 @@ T25 → T26 → T27 → T28
 T28 → T29 → T30 → T31 → T32 → T33
 ```
 
-### Phase 9: Closure
+### Phase 9: Code follows the spec
+
+The triage first, then one fix task per area; each fix flips its Book tests to the Book's value.
 
 ```
-T33 → T34 → T35 → T36
+T33 → T34 → T35 → T36 → T37 → T38 → T39 → T40
+```
+
+### Phase 10: Closure
+
+```
+T40 → T41 → T42 → T43
 ```
 
 ---
@@ -876,34 +886,195 @@ T33 → T34 → T35 → T36
 
 ---
 
-### T34: The guards turn strict
+### T34: Triage of the divergences
 
-**What**: Both guards hold that no row is `pending`, in any chapter; the `SETTLED_CHAPTERS` registries and their two tests go (redundant, MD-28 rule 3).
-**Where**: `tests/book/inventory_guard.rs`
+**What**: Every `diverges` row the chapters left is classified in `.specs/features/root-e2e/divergences.md` (one line per row: id, sentence, what the code gives, cause (1), (2), (3) or disputed, area, owner): (2) rows become `refused` naming their owner feature in §11; (3) rows become `unraised` naming `params-and-io` (PI-13) or the feature of `GAPS.md` §10; disputed rows become `disputed` and are listed for the user, undecided; (1) rows stay `diverges` with an area of T35 to T40. The inventory guard gains the rules: a `refused` or `unraised` row's §11 line names an owner feature that has a spec under `.specs/features/`; a `disputed` row is in `divergences.md`. When the (1) rows exceed what T35 to T40 can carry (more than about 6 rows in one area, or about 30 in all), the overflow is written as the spec of a follow-up feature `book-conformance` (queued next, the fixes not optional) and reported to the orchestrator before T35.
+**Where**: `.specs/features/root-e2e/divergences.md`
 **Depends on**: T33
+**Reuses**: `GAPS.md` §10 (codes and owners), `ROADMAP.md` "Every gap has a feature"
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] Every `diverges` row of the inventory has one line in `divergences.md` with its cause and area or owner
+- [ ] `inventory_guard.rs` holds `every_gaps_row_names_its_owner` and `disputed_rows_are_listed_for_the_user`
+- [ ] Gate check passes: Quick (`Run inventory`, `Run claims`)
+- [ ] Test count: 2 new tests
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `docs(specs): root-e2e - the divergences, by cause`
+
+---
+
+### T35: Diagnostics say what the spec says
+
+**What**: Every kind (1) row of `divergences.md` in the area "diagnostics" (a diagnostic's code number, message, labelled name or help where the rule is implemented) is fixed in the code so the binary and the library give what the Book and the spec state: the fix carries its own test in the crate it changes, the row's Book test is rewritten to assert the Book's value, the row becomes `holds` and its §11 line goes. An area with no kind (1) row records "none" in `divergences.md` and commits that alone. A fix found to need a construct that is not implemented is reclassified (2) with its owner, reported in the commit body.
+**Where**: the crate `divergences.md` names for the area (`crates/piperine-lang/src/` mostly)
+**Depends on**: T34
+**Reuses**: the Book's sentence and `docs/spec/` as the expected value; the crate's existing tests
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of the area is `diverges`; `divergences.md` marks each fixed with its commit
+- [ ] Each fix has a test in its crate that fails with the fix reverted
+- [ ] Gate check passes: Full (the crate's targets, the Book targets of the rows, `Run inventory`, `Run claims`, then the root `cargo test`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `fix(lang): diagnostics follow the spec`
+
+---
+
+### T36: Values and records follow the spec
+
+**What**: Every kind (1) row of `divergences.md` in the area "values and records" (a number, a record's fields or their order, a table's value) is fixed in the code so the binary and the library give what the Book and the spec state: the fix carries its own test in the crate it changes, the row's Book test is rewritten to assert the Book's value, the row becomes `holds` and its §11 line goes. An area with no kind (1) row records "none" in `divergences.md` and commits that alone. A fix found to need a construct that is not implemented is reclassified (2) with its owner, reported in the commit body.
+**Where**: the crate `divergences.md` names for the area
+**Depends on**: T35
+**Reuses**: the Book's sentence and `docs/spec/` as the expected value; the crate's existing tests
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of the area is `diverges`; `divergences.md` marks each fixed with its commit
+- [ ] Each fix has a test in its crate that fails with the fix reverted
+- [ ] Gate check passes: Full (the crate's targets, the Book targets of the rows, `Run inventory`, `Run claims`, then the root `cargo test`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `fix: values and records follow the spec`
+
+---
+
+### T37: Analog behavior follows the spec
+
+**What**: Every kind (1) row of `divergences.md` in the area "analog" (an analog run's result where the construct is implemented) is fixed in the code so the binary and the library give what the Book and the spec state: the fix carries its own test in the crate it changes, the row's Book test is rewritten to assert the Book's value, the row becomes `holds` and its §11 line goes. An area with no kind (1) row records "none" in `divergences.md` and commits that alone. A fix found to need a construct that is not implemented is reclassified (2) with its owner, reported in the commit body.
+**Where**: the crate `divergences.md` names for the area
+**Depends on**: T36
+**Reuses**: the Book's sentence and `docs/spec/` as the expected value; the crate's existing tests
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of the area is `diverges`; `divergences.md` marks each fixed with its commit
+- [ ] Each fix has a test in its crate that fails with the fix reverted
+- [ ] Gate check passes: Full (the crate's targets, the Book targets of the rows, `Run inventory`, `Run claims`, then the root `cargo test`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `fix: analog behavior follows the spec`
+
+---
+
+### T38: Digital and mixed behavior follow the spec
+
+**What**: Every kind (1) row of `divergences.md` in the area "digital and mixed" (a reaction, a commit, an event or a boundary crossing where the construct is implemented) is fixed in the code so the binary and the library give what the Book and the spec state: the fix carries its own test in the crate it changes, the row's Book test is rewritten to assert the Book's value, the row becomes `holds` and its §11 line goes. An area with no kind (1) row records "none" in `divergences.md` and commits that alone. A fix found to need a construct that is not implemented is reclassified (2) with its owner, reported in the commit body.
+**Where**: the crate `divergences.md` names for the area
+**Depends on**: T37
+**Reuses**: the Book's sentence and `docs/spec/` as the expected value; the crate's existing tests
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of the area is `diverges`; `divergences.md` marks each fixed with its commit
+- [ ] Each fix has a test in its crate that fails with the fix reverted
+- [ ] Gate check passes: Full (the crate's targets, the Book targets of the rows, `Run inventory`, `Run claims`, then the root `cargo test`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `fix: digital and mixed behavior follow the spec`
+
+---
+
+### T39: Packages and the standard library follow the spec
+
+**What**: Every kind (1) row of `divergences.md` in the area "packages and the library" (a package rule, a module path, a stdlib item's behavior) is fixed in the code so the binary and the library give what the Book and the spec state: the fix carries its own test in the crate it changes, the row's Book test is rewritten to assert the Book's value, the row becomes `holds` and its §11 line goes. An area with no kind (1) row records "none" in `divergences.md` and commits that alone. A fix found to need a construct that is not implemented is reclassified (2) with its owner, reported in the commit body.
+**Where**: the crate `divergences.md` names for the area
+**Depends on**: T38
+**Reuses**: the Book's sentence and `docs/spec/` as the expected value; the crate's existing tests
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of the area is `diverges`; `divergences.md` marks each fixed with its commit
+- [ ] Each fix has a test in its crate that fails with the fix reverted
+- [ ] Gate check passes: Full (the crate's targets, the Book targets of the rows, `Run inventory`, `Run claims`, then the root `cargo test`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `fix: packages and the library follow the spec`
+
+---
+
+### T40: The host and the command line follow the spec
+
+**What**: Every kind (1) row of `divergences.md` in the area "host and command line" (an exit code, a line's layout, a host failure's code or message (MD-65: the rule in `piperine-api`)) is fixed in the code so the binary and the library give what the Book and the spec state: the fix carries its own test in the crate it changes, the row's Book test is rewritten to assert the Book's value, the row becomes `holds` and its §11 line goes. An area with no kind (1) row records "none" in `divergences.md` and commits that alone. A fix found to need a construct that is not implemented is reclassified (2) with its owner, reported in the commit body.
+**Where**: `crates/piperine-api/src/` or `crates/piperine-cli/src/`, as `divergences.md` names
+**Depends on**: T39
+**Reuses**: the Book's sentence and `docs/spec/` as the expected value; the crate's existing tests
+**Requirement**: RE-02, RE-03
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] No row of the area is `diverges`; `divergences.md` marks each fixed with its commit
+- [ ] Each fix has a test in its crate that fails with the fix reverted
+- [ ] Gate check passes: Full (the crate's targets, the Book targets of the rows, `Run inventory`, `Run claims`, then the root `cargo test`)
+- [ ] Test count: written in the commit body
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `fix(api,cli): the host and the command line follow the spec`
+
+---
+
+### T41: The guards turn strict
+
+**What**: Both guards hold that no row is `pending`, `diverges` or `disputed`, in any chapter: at close every row holds, or is `refused`/`unraised` naming an owner feature; a `disputed` row the user has not answered stops this task. The `SETTLED_CHAPTERS` registries and their two tests go (redundant, MD-28 rule 3).
+**Where**: `tests/book/inventory_guard.rs`
+**Depends on**: T40
 **Reuses**: `Inventory`
 **Requirement**: RE-01, RE-03
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `inventory_guard.rs` holds `no_block_row_is_pending`; `claims_guard.rs` holds `no_claim_row_is_pending`; `settled_chapters_have_no_pending_row` and `settled_chapters_have_no_pending_claim` are gone
-- [ ] A planted `pending` row fails each new test (asserted inside it)
+- [ ] `inventory_guard.rs` holds `no_block_row_is_pending` and `no_row_diverges`; `claims_guard.rs` holds `no_claim_row_is_pending`; `settled_chapters_have_no_pending_row` and `settled_chapters_have_no_pending_claim` are gone
+- [ ] A planted `pending`, `diverges` or `disputed` row fails the new tests (asserted inside them)
 - [ ] Gate check passes: Quick (`Run inventory`, `Run claims`)
-- [ ] Test count: 2 new, 2 removed
+- [ ] Test count: 3 new, 2 removed
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `test: no Book row is left pending`
+**Commit**: `test: no Book row is left pending or divergent`
 
 ---
 
-### T35: `GAPS.md` after the root tests
+### T42: `GAPS.md` after the root tests
 
 **What**: `GAPS.md` drops H11 and U10 and U5 (the Book is held block by block and sentence by sentence; what it shows refused is in §11); its counts line and U1's path follow; `docs.rs` holds it.
 **Where**: `GAPS.md`
-**Depends on**: T34
+**Depends on**: T41
 **Reuses**: `gaps_drops_what_msl_fixes_closed` (the form)
 **Requirement**: RE-01, RE-04
 **Executor**: Sonnet
@@ -922,11 +1093,11 @@ T33 → T34 → T35 → T36
 
 ---
 
-### T36: The decision and the instruction files
+### T43: The decision and the instruction files
 
 **What**: `.specs/STATE.md` gains the next free `MD` number with the project-level decision of `design.md` ("Tech Decisions"); `ROADMAP.md` marks queue items 4 and 4b done and `root-e2e` delivered in "Every gap has a feature"; `AGENTS.md` and `CLAUDE.md` say the root holds `tests/book/`, `tests/scenarios.rs` and `tests/e2e/` (no longer "the root `tests/` holds no Rust target"), and `CLAUDE.md`'s `piperine-parity` row names `tests/e2e/`.
 **Where**: `.specs/STATE.md`
-**Depends on**: T35
+**Depends on**: T42
 **Reuses**: `MD-66`'s form
 **Requirement**: RE-04, RE-05
 **Executor**: Sonnet
@@ -964,7 +1135,7 @@ Proof: run welcome | test the_rc_step_charges_as_the_book_says ... ok
 **C6** - A `refused` row names a root test that expects its refusal with code and message. (RE-02, AC 2; T13)
 Proof: run inventory | test refused_rows_name_tests_that_expect_their_refusal ... ok
 
-**C7** - The inventory's `refused` and `diverges` rows are exactly the rows of `GAPS.md` §11, each under a gap id of `GAPS.md`. (RE-02, AC 2; T16)
+**C7** - The inventory's `refused`, `unraised`, `disputed` and `diverges` rows are exactly the rows of `GAPS.md` §11, each under a gap id of `GAPS.md`. (RE-02, AC 2; T16)
 Proof: run inventory | test refused_rows_and_gaps_section_11_agree ... ok
 
 **C8** - A refused block that starts to run fails its test, naming the row and saying it now runs. (RE-02, AC 3; T15)
@@ -1021,10 +1192,10 @@ Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_print
 **C25** - A scenario directory holding `benches/` holds `Piperine.toml`. (Edge case 3; T4)
 Proof: run corpus | test a_scenario_with_benches_holds_a_manifest ... ok
 
-**C26** - No block row is left `pending`. (RE-01, AC 2; T34)
+**C26** - No block row is left `pending`. (RE-01, AC 2; T41)
 Proof: run inventory | test no_block_row_is_pending ... ok
 
-**C27** - No claim row is left `pending`. (RE-03, AC 2; T34)
+**C27** - No claim row is left `pending`. (RE-03, AC 2; T41)
 Proof: run claims | test no_claim_row_is_pending ... ok
 
 **C28** - The root's Book targets are integration targets for the hygiene guards, found through the root manifest. (RE-01, AC 3; T11)
@@ -1033,11 +1204,20 @@ Proof: run hygiene | test the_root_manifest_names_its_test_targets ... ok
 **C29** - Every root target follows the root naming rule, the two guards registered with their reason. (RE-01, AC 3; T12, T14)
 Proof: run hygiene | test root_targets_match_the_naming_rule ... ok
 
-**C30** - `GAPS.md` drops H11, U5 and U10 and keeps §11. (RE-04, AC 1; T35)
+**C30** - `GAPS.md` drops H11, U5 and U10 and keeps §11. (RE-04, AC 1; T42)
 Proof: run docs | test gaps_drops_what_root_e2e_closed ... ok
 
-**C31** - `ROADMAP.md` and `STATE.md` record the root's integrated tests. (RE-05, AC 1; T36)
+**C31** - `ROADMAP.md` and `STATE.md` record the root's integrated tests. (RE-05, AC 1; T43)
 Proof: run docs | test the_roadmap_and_state_record_root_e2e ... ok
+
+**C33** - Every divergence is classified: a `refused` or `unraised` row's §11 line names an owner feature with a spec. (RE-02, AC 2; T34)
+Proof: run inventory | test every_gaps_row_names_its_owner ... ok
+
+**C34** - A sentence the spec may have wrong is listed for the user, not decided. (RE-03, AC 1; T34)
+Proof: run inventory | test disputed_rows_are_listed_for_the_user ... ok
+
+**C35** - At close no row diverges or is disputed: the code gives what the Book states, or the construct is refused or unraised with its owner. (RE-02, AC 1; T41)
+Proof: run inventory | test no_row_diverges ... ok
 
 **C32** - `Corpus` finds a twin by name in its scenario directory and refuses a name two scenarios hold. (RE-04, AC 1; T3)
 Proof: run paritylib | test corpus::tests::a_name_in_two_scenarios_is_refused ... ok
@@ -1057,7 +1237,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 ## Phase Execution Map
 
 ```
-Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9
+Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9 → Phase 10
 
 Phase 1:  T1 ------→ T2 ------→ T3 ------→ T4 ------→ T5 ------→ T6
 Phase 2:  T7 ------→ T8 ------→ T9 ------→ T10
@@ -1067,7 +1247,8 @@ Phase 5:  T18 ------→ T19 ------→ T20 ------→ T21
 Phase 6:  T22 ------→ T23 ------→ T24 ------→ T25
 Phase 7:  T26 ------→ T27 ------→ T28
 Phase 8:  T29 ------→ T30 ------→ T31 ------→ T32 ------→ T33
-Phase 9:  T34 ------→ T35 ------→ T36
+Phase 9:  T34 ------→ T35 ------→ T36 ------→ T37 ------→ T38 ------→ T39 ------→ T40
+Phase 10: T41 ------→ T42 ------→ T43
 ```
 
 Execution is strictly sequential - there is no intra-phase parallelism.

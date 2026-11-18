@@ -8,6 +8,8 @@ The root package gets its integrated tests, and the ngspice twins get one home. 
 - **The twins** move from `tests/ngspice/` to `tests/e2e/twins/` in one task, every reader with them. Each twin gains the command a user types (`<name>.command`) and keeps its expected standard output beside it (`<name>.stdout`, today's CLI goldens). A root target, `tests/scenarios.rs`, runs each command through `piperine::` and compares the table with ngspice under `ToleranceContract`. `piperine-parity` stays the harness; the `parity_*` targets keep their comparisons.
 - **The Book** gets an inventory, `tests/book/inventory.tsv`: one row per block and one per sentence that states a value or an outcome. Two guard targets keep it whole against the Book. One root target per chapter runs every block and asserts every claim through `piperine::`; a refused block is asserted refused, with its code and message, and listed in `GAPS.md` §11.
 
+**The code follows the spec** (user, 2026-11-18: "O código que diverge da spec tem que ser ajustado"). Where the binary or the library disagrees with the Book or the spec, the code is fixed in this feature (Phase 9), never the Book; see "Divergences".
+
 Starts on `main` with `host-ii` merged (it adds five twins, the Book's new listings and the root target `tests/host_ii.rs`). T1 confirms that state and stops when it does not hold.
 
 ---
@@ -154,7 +156,7 @@ flowchart LR
 - **Interfaces**:
   - `Inventory::read() -> Inventory`; `Inventory::blocks()`, `Inventory::claims()`, `Inventory::row(id)`.
   - `Inventory::checked_block(&self, book: &Book, id: &str) -> Block` - the block, after its fingerprint is checked against its row (chapter tests call this, never `Book::block` directly).
-  - `Verdict` - `Run`, `Refused`, `Fragment`, `Held`, `Shown`, `Holds`, `Diverges`, `Binary`, `Prose`, `Pending`; which verdicts fit which row kind and language.
+  - `Verdict` - `Run`, `Refused`, `Fragment`, `Held`, `Shown`, `Holds`, `Diverges`, `Unraised`, `Disputed`, `Binary`, `Prose`, `Pending`; which verdicts fit which row kind and language.
   - `Coverage::resolve(covered_by: &str) -> Result<CoveringTest, String>` - `piperine/<target>::<fn>` to the root target's file (read from the root `Cargo.toml`'s `[[test]]` paths, else `tests/<target>.rs`), `piperine-cli/<target>::<fn>` to `crates/piperine-cli/tests/<target>.rs`, a block id for a fragment; `CoveringTest::body()` is the text of the function.
 - **Dependencies**: `book.rs`, `std`.
 
@@ -176,12 +178,12 @@ flowchart LR
 
 - **`book_inventory`** (`tests/book/inventory_guard.rs`): every `<pre>` block has exactly one block row with its fingerprint; each verdict fits the block's language; every `covered_by` resolves; a `run` row's test body names the row id and calls `.run(`; a `refused` row's test body calls `Refusal::expect(` with the row id; a `fragment` names a `run` or `refused` block; the blocks one `cli-file` path joins name one test (spec edge 1); the `refused` and `diverges` rows equal the rows of `GAPS.md` §11, each under its gap id, and the gap id is an entry of `GAPS.md`. A failure prints the corrected inventory lines.
 - **`book_claims`** (`tests/book/claims_guard.rs`): `ClaimDetector` flags a sentence holding an error code (`E`/`P`/`W` and four digits), a number with a unit or a count word, or an outcome verb (data lists in the target); every flagged sentence has a claim row with its fingerprint; every claim row is still a sentence of its chapter; a `holds` or `diverges` row names a root test whose body cites the claim id; a `binary` row names a `piperine-cli` test; a `refused` claim names a `refused` block row.
-- Both: until T34, a chapter listed in `SETTLED_CHAPTERS` has no `pending` row; T34 replaces the registry with `no_block_row_is_pending` and `no_claim_row_is_pending`.
+- Both: until T41, a chapter listed in `SETTLED_CHAPTERS` has no `pending` row; T34 adds `every_gaps_row_names_its_owner` and `disputed_rows_are_listed_for_the_user`; T41 replaces the registry with `no_block_row_is_pending`, `no_row_diverges` and `no_claim_row_is_pending`.
 - Both link no workspace crate: `suite_hygiene`'s `ROOT_TARGET_EXEMPTIONS` registers them with that reason (the shape the registry was made for).
 
 ### The chapter targets
 
-- **Purpose**: One root target per Book chapter (Q2): every block and claim row of the chapter whose verdict is `run`, `refused`, `holds` or `diverges` is a test here.
+- **Purpose**: One root target per Book chapter (Q2): every block and claim row of the chapter whose verdict is `run`, `refused`, `holds`, `diverges`, `unraised` or `disputed` is a test here.
 - **Location**: `tests/book/<chapter>.rs`, target `book_<chapter>` (dashes as underscores: `book_from_rust`, `book_core_std`); `book_errors` also holds `a_refusal_that_runs_fails_naming_its_row`. A chapter with no such row (possibly `solver`, `structure`) has no target.
 - **Shape**: each target declares the support modules it uses inline (`#[path = "support"] mod support { pub mod book; .. }`, item-scoped `#[allow(dead_code)]` with its reason, as `piperine-lang/tests/book.rs` does); each test opens with a comment citing its row ids and, for a claim, the sentence.
 
@@ -198,9 +200,9 @@ Tab-separated, one row per line, `#` starts a comment. Columns:
 | `kind` | `block` | `claim` |
 | `id` | `<chapter>#<n>` | `<chapter>~<first 8 hex of the fingerprint>` |
 | `fingerprint` | of the decoded block text | of the sentence |
-| `verdict` | `msl`: `run`, `refused`, `fragment`; a listing (`data-cli-output`): `held`; `diag`: `holds`, `diverges`; `sh`, `toml`, other `text`, `rust`: `shown`; any: `pending` (until T34) | `holds`, `diverges`, `binary`, `refused`, `prose`, `pending` (until T34) |
-| `covered_by` | `piperine/<target>::<fn>` for `run`, `refused`, `holds`, `diverges`; `piperine-cli/<target>::<fn>` for `held`; a block id for `fragment`; `-` for `shown` | `piperine/<target>::<fn>` for `holds`, `diverges`; `piperine-cli/<target>::<fn>` for `binary`; a block id for `refused`; `-` for `prose` |
-| `gap` | the `GAPS.md` id for `refused`, `diverges`; else `-` | the same |
+| `verdict` | `msl`: `run`, `refused`, `fragment`; a listing (`data-cli-output`): `held`; `diag`: `holds`, `diverges`, `unraised`, `disputed`; `sh`, `toml`, other `text`, `rust`: `shown`; any: `pending` (until T41) | `holds`, `diverges`, `unraised`, `disputed`, `binary`, `refused`, `prose`, `pending` (until T41); `diverges` and `disputed` only until T41 |
+| `covered_by` | `piperine/<target>::<fn>` for `run`, `refused`, `holds`, `diverges`, `unraised`, `disputed`; `piperine-cli/<target>::<fn>` for `held`; a block id for `fragment`; `-` for `shown` | `piperine/<target>::<fn>` for `holds`, `diverges`; `piperine-cli/<target>::<fn>` for `binary`; a block id for `refused`; `-` for `prose` |
+| `gap` | the `GAPS.md` id for `refused`, `unraised`, `diverges`, `disputed`; else `-` | the same |
 | `text` | the listing's command, else `-` | the sentence |
 
 Sizes at `99d05af2` (before `host-ii`'s Book edits; T1 recounts): 199 blocks (97 `msl`, 29 listings, 2 `diag`, 71 `sh`/`text`/`toml`/`rust`), 18 chapters; the planner's detector flags about 400 sentences (163 with a code, 82 with a number and unit, 161 with an outcome verb), of which some 150 to 250 are expected to be claims.
@@ -210,12 +212,27 @@ Sizes at `99d05af2` (before `host-ii`'s Book edits; T1 recounts): 199 blocks (97
 ```markdown
 ## 11. The Book against the binary
 
-| Book | Gap | Today |
-| ---- | --- | ----- |
-| modules#1 | L7 | `P0001`: a generic module |
+| Book | Gap | Owner | Today |
+| ---- | --- | ----- | ----- |
+| modules#1 | L7 | `generics` | `P0001`: a generic module |
 ```
 
-One row per `refused` or `diverges` row, `Book` its inventory id, `Gap` an id of this file (a new one when no entry covers it), `Today` what the binary does, as the test asserts it.
+One row per `refused`, `unraised`, `diverges` or `disputed` row, `Book` its inventory id, `Gap` an id of this file (a new one when no entry covers it), `Owner` the feature that closes it (`root-e2e` for a `diverges` row until Phase 9 fixes it, `user` for `disputed`), `Today` what the binary does, as the test asserts it. At close only `refused` and `unraised` rows remain, each with an owner other than `root-e2e`.
+
+### Divergences (user decision, 2026-11-18)
+
+A row whose sentence or listing the binary or the library does not meet is classified by T34 in `.specs/features/root-e2e/divergences.md`:
+
+| Cause | Example | Verdict | Who fixes |
+| ----- | ------- | ------- | --------- |
+| (1) An implemented construct gives another result: output, number, message, code number, a name missing from a diagnostic, exit code | the Book says `E0430` names `clk`, the binary gives `E0430` without the name | `diverges`, then `holds` | **this feature**, Phase 9 (T35 to T40, one task per area), each fix with its own test and the Book test flipped to the Book's value |
+| (2) The construct is not implemented and an approved feature owns it, refused by name today | a generic module, `P0001` | `refused`, owner in §11 | the owner feature; not a divergence |
+| (3) An error code the spec names that no source raises | `E0317` (`GAPS.md` §10) | `unraised`, owner `params-and-io` (PI-13) or the feature §10 names | the owner; listed here, not fixed |
+| The spec itself looks wrong | a sentence contradicting `docs/spec/` | `disputed`, listed for the user | the user decides; the Book or the code follows the answer |
+
+Areas of Phase 9: diagnostics (T35), values and records (T36), analog (T37), digital and mixed (T38), packages and the library (T39), host and command line (T40, rules in `piperine-api` per MD-65).
+
+**Size estimate.** The chapters cannot be classified before they are run; the planner's estimate from the Book and `GAPS.md`: of ~160 code sentences, most of the 73 codes no source mentions are (3), the forms `GAPS.md` §4 lists are (2), and a residue of wrong wording, missing names and wrong code numbers on implemented rules is (1), with a few value or record mismatches: about 15 to 30 kind (1) rows, which six area tasks carry at about 3 to 5 fixes each. T34 counts them; above about 6 in one area or 30 in all, the overflow becomes the spec of a follow-up feature `book-conformance`, queued next, its fixes not optional.
 
 ---
 
@@ -243,7 +260,9 @@ One row per `refused` or `diverges` row, `Book` its inventory id, `Gap` an id of
 | Every later Book edit must touch the inventory | `tests/book/inventory.tsv` | friction for every feature that edits the Book | the guard prints the corrected rows; `MD` decision says so; that friction is the drift detection the user asked for |
 | The claim detector is a heuristic | `tests/book/claims_guard.rs` | it misses a claim or flags prose | every flag needs a row (`prose` is an explicit verdict the Verifier samples); the detector's predicate is tested on planted sentences (L-013); a missed claim can be added by hand (rows need not be flagged) |
 | The Book reader exists three times | `piperine-cli/tests/book.rs`, `piperine-lang/tests/book.rs`, root support | three copies of the block rules | targets of different packages share no module; the root copy is typed and documented; consolidation is `code-clarity`'s |
-| Many error codes the Book names are not raised (73 of 180 codes have no source mention, `GAPS.md` §10) | errors chapter, every "mistake" callout | many `diverges` rows | that is the truth `GAPS.md` §11 records; the test asserts today's exact outcome and fails when the code arrives |
+| Many error codes the Book names are not raised (73 of 180 codes have no source mention, `GAPS.md` §10) | errors chapter, every "mistake" callout | many rows | kind (3): `unraised`, owned by `params-and-io` or the §10 feature; the test asserts today's exact outcome and fails when the code arrives |
+| Phase 9 fixes code in crates other lanes edit (`piperine-lang`, `piperine-api`, `piperine-cli`, solver crates) | the crate a fix names | merge conflicts, a fix that moves a golden | a fix in an in-flight lane's area is reported before it is made; a fix that would move a tolerance, golden or twin's bytes is reported, never made |
+| Kind (1) rows may exceed six area tasks | `divergences.md` | an oversized phase | T34's threshold writes the overflow as `book-conformance`, queued next |
 | `Settings` is not re-exported by `piperine-api` | `crates/piperine-api/src/lib.rs` | a root session needs `piperine_transpile::Settings` | a dev-dependency of the root (test-only edge); `piperine::Settings` instead if `host-ii`'s T39 re-exported it (T1 records which) |
 | The twins' first comment line names `tests/ngspice/<name>.cir` | `tests/ngspice/*.msl:1` | a stale path after the move | T3 moves the twins byte for byte; T6 rewrites that line only, with the goldens, the parity targets and the pinned elaborations as the gate; a pinned text that changes stops T6 |
 | A `host-ii` twin a backend refuses on the command line | `tests/ngspice/{tf_divider,pz_lowpass,sens_divider,pss_rc,temp_res}.msl` | `twins.rs` compares both backends | T2 reports to the orchestrator instead of dropping a backend |
@@ -275,8 +294,8 @@ One row per `refused` or `diverges` row, `Book` its inventory id, `Gap` an id of
 | A scenario's command | one file per twin, read by the binary test and the root test | one source for what a user types |
 | The inventory | `tests/book/inventory.tsv`, every `<pre>` block and every flagged sentence | registry + exhaustiveness (MD-31); no macro |
 | Blocks in tests | by id, through `Inventory::checked_block` | the test runs exactly the Book's text, and only that |
-| A claim the binary does not meet | `diverges`: the test asserts today's outcome, `GAPS.md` §11 lists it | the same rule as a refused block (RE-02 AC 2 and 3), applied to sentences |
+| A claim the binary does not meet | classified by cause (see "Divergences"): kind (1) fixed in the code by Phase 9; (2) `refused` with its owner; (3) `unraised` with its owner; a wrong spec `disputed`, for the user | the user's decision of 2026-11-18; no `diverges` row survives T41 |
 | A claim about a refused block's run | `refused`, covered by that block's row | the claim gets its own test when the block runs |
-| Pending rows | allowed per chapter until T34 | each chapter task settles its own rows; T34 makes the guards strict |
+| Pending rows | allowed per chapter until T41 | each chapter task settles its own rows; T41 makes the guards strict |
 
-**Project-level decision** (recorded by T36 as the next free `MD` number, `MD-69` if `host-ii`'s `MD-68` is the last): the root package holds the integrated tests. `tests/book/` has one target per Book chapter through `piperine::`, and `tests/book/inventory.tsv` is the registry of every Book block and value sentence, held to the Book by two guards; a Book edit updates its rows. `tests/e2e/<scenario>/` is the one home of the ngspice scenarios, each twin with its command and expected output; `tests/scenarios.rs` runs them through `piperine::` against ngspice and `piperine-parity` stays the harness. The binary's own output stays held in `piperine-cli`, where cargo builds it. It amends MD-28's "root `tests/` holds no Rust target" (`AGENTS.md`).
+**Project-level decision** (recorded by T43 as the next free `MD` number, `MD-69` if `host-ii`'s `MD-68` is the last): the root package holds the integrated tests. `tests/book/` has one target per Book chapter through `piperine::`, and `tests/book/inventory.tsv` is the registry of every Book block and value sentence, held to the Book by two guards; a Book edit updates its rows. `tests/e2e/<scenario>/` is the one home of the ngspice scenarios, each twin with its command and expected output; `tests/scenarios.rs` runs them through `piperine::` against ngspice and `piperine-parity` stays the harness. The binary's own output stays held in `piperine-cli`, where cargo builds it. It amends MD-28's "root `tests/` holds no Rust target" (`AGENTS.md`).
