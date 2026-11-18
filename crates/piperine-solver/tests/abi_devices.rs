@@ -183,39 +183,153 @@ fn device_impls(text: &str) -> Vec<String> {
     names
 }
 
+/// The comma-separated arguments of the parenthesis `text` opens at its start (`text` begins
+/// right after the `(`), split at depth 0.
+fn split_args(text: &str) -> Vec<&str> {
+    let (mut depth, mut start, mut args) = (0i32, 0, Vec::new());
+    for (i, c) in text.char_indices() {
+        match c {
+            '(' | '[' | '{' | '<' => depth += 1,
+            ')' | ']' | '}' | '>' if depth == 0 => {
+                args.push(&text[start..i]);
+                return args;
+            }
+            ')' | ']' | '}' | '>' => depth -= 1,
+            ',' if depth == 0 => {
+                args.push(&text[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    args.push(&text[start..]);
+    args
+}
+
+/// The device a `module::<X>(` or `module_of::<X>(` expression builds: `X`, without generics.
+fn built_device(expr: &str) -> Option<String> {
+    let first = ["module::<", "module_of::<"]
+        .iter()
+        .filter_map(|pat| expr.find(pat).map(|i| i + pat.len()))
+        .min()?;
+    Some(expr[first..].chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect())
+}
+
+/// `(helper fn, device)` for every `fn f() -> &'static Module { .. module::<X> .. }` of `text`.
+fn module_helpers(text: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for (at, _) in text.match_indices("fn ") {
+        let rest = &text[at + 3..];
+        let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        let after = &rest[name.len()..];
+        if !after.starts_with("() -> &'static Module") {
+            continue;
+        }
+        // The body runs to the next function of the file.
+        let body = after.split_once("fn ").map_or(after, |(b, _)| b);
+        if let Some(device) = built_device(body) {
+            found.push((name, device));
+        }
+    }
+    found
+}
+
+/// The devices whose own module a check of `text` verifies. A check is a call of a
+/// `verify_every_function*` with a label and a module, or, when `rows` is set, a
+/// `("label", module, ..)` row of a table; the device is the one its module argument builds
+/// (`module::<X>(..)`) or the one a helper it calls (`helper()`) builds, never the label.
+fn checked_devices(text: &str, helpers: &str, rows: bool) -> std::collections::BTreeSet<String> {
+    let helper_fns = module_helpers(helpers);
+    let mut checks: Vec<&str> = text
+        .match_indices("verify_every_function")
+        .filter_map(|(at, _)| text[at..].split_once('(').map(|(_, args)| args))
+        .collect();
+    if rows {
+        checks.extend(text.match_indices('(').filter_map(|(at, _)| {
+            let args = &text[at + 1..];
+            args.trim_start().starts_with('"').then_some(args)
+        }));
+    }
+    let mut named = std::collections::BTreeSet::new();
+    for args in checks {
+        let args = split_args(args);
+        if !args.first().is_some_and(|label| label.trim_start().starts_with('"')) {
+            continue;
+        }
+        let Some(module) = args.get(1) else { continue };
+        if let Some(device) = built_device(module) {
+            named.insert(device);
+        }
+        for (helper, device) in &helper_fns {
+            if module.trim().strip_prefix(helper.as_str()).is_some_and(|r| r.starts_with("()")) {
+                named.insert(device.clone());
+            }
+        }
+    }
+    named
+}
+
 #[test]
 fn every_hand_written_device_is_in_a_partials_check() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
-    let this = std::fs::read_to_string(dir.join("abi_devices.rs")).expect("read abi_devices.rs");
-    // A check names its device as the first argument of a `verify_every_function*`
-    // call (the helpers' devices may also be a row of `table()`).
-    let checked = |text: &str, name: &str| {
-        let called = text.match_indices("verify_every_function").any(|(at, _)| {
-            let rest = &text[at..];
-            let args = rest.split_once('(').map_or("", |(_, a)| a).trim_start();
-            args.strip_prefix('"').and_then(|a| a.split_once('"')).is_some_and(|(n, _)| n == name)
-        });
-        called || (std::ptr::eq(text, this.as_str()) && text.contains(&format!("(\"{name}\", ")))
+    let read = |sub: &str| -> Vec<(std::path::PathBuf, String)> {
+        std::fs::read_dir(dir.join(sub))
+            .expect("read tests")
+            .map(|e| e.expect("entry").path())
+            .filter(|p| p.extension().is_some_and(|e| e == "rs"))
+            .map(|p| {
+                let text = std::fs::read_to_string(&p).expect("read target");
+                (p, text)
+            })
+            .collect()
     };
+    let (targets, helper_files) = (read(""), read("helpers"));
+    let helper_text: String = helper_files.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n");
+    let this = std::fs::read_to_string(dir.join("abi_devices.rs")).expect("read abi_devices.rs");
+    // A helper's devices are checked here, through the helpers' own module fns; a target's, in the
+    // target, through its own.
+    let in_this = checked_devices(&this, &helper_text, true);
     let mut missing = Vec::new();
     let mut seen = 0;
-    for sub in ["", "helpers"] {
-        for entry in std::fs::read_dir(dir.join(sub)).expect("read tests") {
-            let path = entry.expect("entry").path();
-            if path.extension().is_none_or(|e| e != "rs") {
-                continue;
-            }
-            let text = std::fs::read_to_string(&path).expect("read target");
-            // A helper's devices are checked here; a target's, in the target.
-            let home = if sub == "helpers" { &this } else { &text };
-            for name in device_impls(&text) {
-                seen += 1;
-                if !checked(home, &name) {
-                    missing.push(format!("{}: {name}", path.display()));
-                }
+    for (path, text) in helper_files.iter().chain(targets.iter()) {
+        let in_helpers = helper_files.iter().any(|(p, _)| p == path);
+        let own = if in_helpers { std::collections::BTreeSet::new() } else { checked_devices(text, text, false) };
+        for name in device_impls(text) {
+            seen += 1;
+            if !(if in_helpers { &in_this } else { &own }).contains(&name) {
+                missing.push(format!("{}: {name}", path.display()));
             }
         }
     }
     assert!(seen > 50, "the scan found the suite's devices ({seen})");
     assert!(missing.is_empty(), "devices no partials check names:\n{}", missing.join("\n"));
+}
+
+/// HYG-16 AC 3: a check counts for the device its module argument builds, not for its label:
+/// a label that names `Foo` over `Bar`'s module (directly, or through a helper) leaves `Foo`
+/// unchecked and checks `Bar`.
+#[test]
+fn a_check_of_another_module_does_not_count() {
+    let planted = r#"
+        fn bar() -> &'static Module {
+            module_of::<Bar>(&BAR, "Bar")
+        }
+        fn foo() -> &'static Module {
+            module::<Foo>("Foo")
+        }
+        fn direct() {
+            partials::verify_every_function("Foo", MODULE.get_or_init(|| module::<Bar>("Bar")));
+        }
+        fn through_a_helper() {
+            partials::verify_every_function("Foo", bar());
+        }
+    "#;
+    let named = checked_devices(planted, planted, false);
+    assert!(!named.contains("Foo"), "a label is not a module: {named:?}");
+    assert!(named.contains("Bar"), "the module argument is what counts: {named:?}");
+    let honest = r#"
+        fn foo() -> &'static Module { module::<Foo>("Foo") }
+        fn ok() { partials::verify_every_function("Anything", foo()); }
+    "#;
+    assert!(checked_devices(honest, honest, false).contains("Foo"), "a helper that returns the device counts");
 }

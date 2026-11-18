@@ -870,8 +870,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `every_hand_written_device_is_in_a_partials_check` and `a_check_of_another_module_does_not_count` pass under `**Run abidevices**`
-- [ ] Gate check passes: Quick
+- [x] `every_hand_written_device_is_in_a_partials_check` and `a_check_of_another_module_does_not_count` pass under `**Run abidevices**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
