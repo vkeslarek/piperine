@@ -282,6 +282,7 @@ Each term has one defining occurrence. The table points at it.
 | Term | Defined in |
 | --- | --- |
 | accepted step, rejected step | [§17.2](part_v_execution.md#172-steps) |
+| added keywords | [A.1](appendix_a_lexical.md#a1-source-text-and-tokens) |
 | active (of a `limit` instance) | [§18](part_v_execution.md#18-limiting) rule 5 |
 | `analog` block | [§11](part_iv_behavior.md#11-analog) |
 | analysis, `Analysis` | [§11.1](part_iv_behavior.md#111-one-block-every-analysis) |
@@ -298,6 +299,7 @@ Each term has one defining occurrence. The table points at it.
 | compatible natures | [§4](part_ii_carriers.md#4-natures) rule 13 |
 | conforming implementation, conforming model | [§0.3](#03-conformance) |
 | const context | [§8.1](part_iii_structure.md#81-ports-and-params) |
+| const expression | [§3.9.2](part_i_values.md#39-constants) |
 | continued transient | [§16.4.1](part_v_execution.md#164-from-one-analysis-to-the-next) |
 | contribution | [§11](part_iv_behavior.md#11-analog) |
 | converged | [§17.1](part_v_execution.md#171-convergence) |
@@ -335,6 +337,7 @@ Each term has one defining occurrence. The table points at it.
 | inertial delay | [§22.5.8](part_vii_stdlib.md#2258-inertial) |
 | instance, placement | [§8.3](part_iii_structure.md#83-instances-inside-expressions) |
 | instant, microstep | [§15](part_v_execution.md#15-time-and-the-instant) |
+| irrefutable pattern, refutable pattern | [§1.6.11](part_i_values.md#16-patterns) |
 | jump, right value | [§15.2](part_v_execution.md#152-the-jump) |
 | known, unknown, known flag | [§3.3](part_i_values.md#33-unknown-values) |
 | left value | [§15.2](part_v_execution.md#152-the-jump) |
@@ -348,6 +351,7 @@ Each term has one defining occurrence. The table points at it.
 | metadata, path | [§21](part_vi_io.md#21-metadata) |
 | module | [§8](part_iii_structure.md#8-modules) |
 | monitor | [§22.5](part_vii_stdlib.md#225-monitors) |
+| move | [§1.4.7](part_i_values.md#14-typing-inference-and-conversion) |
 | named expression | [§8.2](part_iii_structure.md#82-the-body) |
 | namespace module, prelude | [§3.4](part_i_values.md#34-files-and-imports) |
 | nature quantity | [§4](part_ii_carriers.md#4-natures) rule 9 |
@@ -362,6 +366,7 @@ Each term has one defining occurrence. The table points at it.
 | optional parameters | [§3.2.7](part_i_values.md#32-parameters-and-calls) |
 | package | [§3.6](part_i_values.md#36-packages) |
 | panic | [§1](part_i_values.md#1-value-types) rule 11 |
+| place | [§1.5.12](part_i_values.md#15-expressions) |
 | param, structural param | [§8.1](part_iii_structure.md#81-ports-and-params) |
 | package, parse, elaboration, run, host (phases) | [§0.3](#03-conformance) |
 | port, value input | [§8.1](part_iii_structure.md#81-ports-and-params) |
@@ -386,3 +391,52 @@ Each term has one defining occurrence. The table points at it.
 | transport delay | [§12.1.4](part_iv_behavior.md#121-reactions) |
 | value, value type | [Part I](part_i_values.md) introduction, [§1](part_i_values.md#1-value-types) |
 | view (of a bundle) | [§7](part_ii_carriers.md#7-bundles) |
+
+### 0.10 Rules formerly inherited, now stated
+
+This table is informative. Earlier revisions left the value language to Rust's definition
+([G.70](appendix_g_scope.md)). The rules below are those where writing the rule down meant
+choosing it: the design never decided them, or the examples and the reference implementation
+had settled them without a rule. Each row gives the rule now in force and where it stands. A
+row marked *same* writes down what Rust does; a row marked *differs* does not, and says why.
+
+| # | Question | Rule written | Stated in | Against Rust |
+| --- | --- | --- | --- | --- |
+| 1 | Type of a literal without a suffix | the type its position requires; otherwise `i32` for an integer and `f64` for a float | [§1.4.2](part_i_values.md#14-typing-inference-and-conversion) | same |
+| 2 | Shift by the width or more, or by a negative amount | the mathematical result truncated to the width (0, or `-1` for a negative `Int`); a negative amount panics | [§1.5.21](part_i_values.md#15-expressions) | differs: no overflow error, following §1 rule 6 |
+| 3 | `as` from a float to an integer | truncates toward zero, clamps to the range, NaN gives 0 | [§1.4.5](part_i_values.md#14-typing-inference-and-conversion) | same, extended to every width |
+| 4 | Unary `-` on `UInt<N>` | accepted; `0 - x` modulo `2^N` | [§1.5.20](part_i_values.md#15-expressions) | differs: every integer operator wraps |
+| 5 | Integer `/` and `%` | truncate toward zero; the remainder has the sign of the dividend; a zero divisor panics; the least value by `-1` wraps | [§1.5.19](part_i_values.md#15-expressions) | same, but the last case wraps where Rust panics |
+| 6 | Type of an index | any integer type; out of range, a negative index included, panics | [§1.5.9](part_i_values.md#15-expressions), [§1.5.25](part_i_values.md#15-expressions) | differs: `mem[addr]` indexes with a `u8` ([E.5](appendix_e_gallery_digital.md)) |
+| 7 | Order of evaluation | left to right; an assignment evaluates its right operand first | [§1.5.18](part_i_values.md#15-expressions) | same |
+| 8 | Using a value twice | a `Copy` type is copied; any other value is moved and cannot be read again | [§1.4.6](part_i_values.md#14-typing-inference-and-conversion), [§1.4.7](part_i_values.md#14-typing-inference-and-conversion) | same; the alternative is to make every value type `Copy` |
+| 9 | Reading through a borrow | transparent in a field access, an index, a method receiver and a scalar operand; `*r` elsewhere | [§1.2.6](part_i_values.md#12-composite-types) | simpler: four places in place of auto-dereference and operator implementations on borrows |
+| 10 | `&[T; N]` where `&[T]` is required | accepted, as a view of all elements | [§1.2.5](part_i_values.md#12-composite-types) | same |
+| 11 | Float arithmetic | IEEE 754, round to nearest even, no traps; the bits of a NaN are implementation-defined | [§1.1.7](part_i_values.md#11-scalar-types), [§1.1.8](part_i_values.md#11-scalar-types), [G.69](appendix_g_scope.md) | same |
+| 12 | Accuracy of `exp`, `sin`, `powf` and the other elementary functions | within one unit in the last place, implementation-defined within it, one result per argument in a session | [H.2](appendix_h_library.md) rule 6, [G.69](appendix_g_scope.md) | stricter: Rust gives no bound |
+| 13 | Float corner cases of the library | `round` ties away from zero; `min` and `max` ignore one NaN; float `%` is the truncated remainder; `clamp` panics on crossed or NaN bounds | [H.2](appendix_h_library.md), [§1.5.22](part_i_values.md#15-expressions) | same |
+| 14 | Comparison | does not chain; floats by IEEE 754; tuples and arrays lexicographic; `None` below `Some` | [§1.5.5](part_i_values.md#15-expressions), [§1.5.23](part_i_values.md#15-expressions) | same |
+| 15 | Scalar types have associated constants (`u8::MAX`) | no; a bound is written as a literal | [§1.1.5](part_i_values.md#11-scalar-types) | differs: follows from the closed catalogue |
+| 16 | Which pattern forms exist | wildcard, binding (`mut`, `ref`, `@`), literal, range, path, tuple, tuple struct, struct, slice, or-pattern, `&p`; `Unknown` is not a pattern | [§1.6](part_i_values.md#16-patterns) | same forms, less `..hi` (B.3.6) |
+| 17 | Exhaustiveness of `match` | required; an arm with a guard does not count; an unreachable arm is not an error | [§1.8.6](part_i_values.md#18-control-flow) | same; there are no lints |
+| 18 | `let … else`, `if let`, `while let` | kept; a `let` condition is the whole condition, never an operand of `&&` | [§1.7.6](part_i_values.md#17-statements-and-blocks), [§1.8.2](part_i_values.md#18-control-flow) | differs: no `let` chains |
+| 19 | `break`, `continue`, `return` | innermost loop, no labels; `break value` in `loop` only; `return` in a function or closure only | [§1.8.10](part_i_values.md#18-control-flow), [§1.8.11](part_i_values.md#18-control-flow) | same, less labels (B.3.6) |
+| 20 | The `?` operator | on `Option` only, in a function or closure that returns an `Option` | [§1.5.15](part_i_values.md#15-expressions) | narrower: there is no `Result` |
+| 21 | Closures | capture by value where written; `move` is accepted and changes nothing; no recursion | [§1.5.14](part_i_values.md#15-expressions) | differs: no capture by reference |
+| 22 | Type inference | local to one body; `_` only in a `let`, a closure parameter and the generic arguments of an expression | [§1.4.4](part_i_values.md#14-typing-inference-and-conversion), [§1.2.12](part_i_values.md#12-composite-types) | same |
+| 23 | Enum discriminants | on enums without fields only; a missing one is the previous plus one; `as` yields it | [§1.3.7](part_i_values.md#13-structs-and-enums), [§1.4.5](part_i_values.md#14-typing-inference-and-conversion) | same |
+| 24 | A type that contains itself | an error: there is no indirection | [§1.3.8](part_i_values.md#13-structs-and-enums) | same, with no `Box` to escape through |
+| 25 | `for` over what | an integer range, an array by value, an iterator of H.7 | [§1.8.9](part_i_values.md#18-control-flow) | narrower: `for x in &a` is `E0102`; write `a.iter()` |
+| 26 | Strings | `&str` is `&'static str`; compared with `==` and `!=`; no other operation outside intrinsics | [§1.2.9](part_i_values.md#12-composite-types) | narrower |
+| 27 | Traits | functions and constants, defaults, supertraits; no associated type; one `impl` per trait and type; an `impl` lives in the crate of the trait or of the type | [§3.7](part_i_values.md#37-traits) | same rules of coherence, stated without the exceptions Rust has |
+| 28 | Method lookup on a value | the type's own `impl`s, then Appendix H, then the traits in scope | [§1.5.10](part_i_values.md#15-expressions), [§3.7.8](part_i_values.md#37-traits) | same; two traits with one method stay [G.67](appendix_g_scope.md) |
+| 29 | When a generic body is checked | at each instantiation; a bound is checked against each argument | [§3.8.7](part_i_values.md#38-generics-and-bounds), [§3.8.9](part_i_values.md#38-generics-and-bounds) | differs: Rust checks the body once, against the bounds; follows §3 rule 9 and §4 rule 11 |
+| 30 | What a const expression is | defined; only a `const fn` is callable in one | [§3.9.2](part_i_values.md#39-constants) to [§3.9.4](part_i_values.md#39-constants) | same, with a wider set of forms (loops, closures, floats) |
+| 31 | Visibility | private to the declaring namespace and those nested in it, or `pub`; fields one by one; items visible whatever their order | [§3.4.13](part_i_values.md#34-files-and-imports), [§3.4.14](part_i_values.md#34-files-and-imports) | same, less `pub(…)` |
+| 32 | Where `mod name;` finds its file | beside the root or a `mod.msl`; otherwise in the directory named after the declaring file | [§3.6.2](part_i_values.md#36-packages) | same |
+| 33 | Identifiers | Unicode `XID_START`/`XID_CONTINUE`; compared by code points, no normalization | [A.7](appendix_a_lexical.md#a7-identifiers) rule 4 | differs: Rust normalizes to NFC |
+| 34 | Literal forms | lower-case `0x`, `0o`, `0b`; float suffixes `f32` and `f64` only; the escapes of A.8 rule 11; raw strings | [A.8](appendix_a_lexical.md#a8-literals) | same, less `char` and byte forms |
+| 35 | Reserved words | the 20 words of the last row of the keyword table | [A.1](appendix_a_lexical.md#a1-source-text-and-tokens) | same set as Rust's unused and reserved keywords, plus `static`, `type`, `unsafe`, `async`, `await`, `dyn` |
+| 36 | What the library traits provide | `Clone` gives `clone()`, `Default` gives `T::default()`; `Eq`, `Ord`, `Debug` and `Hash` give nothing a model calls; an enum does not derive `Default` | [H.8](appendix_h_library.md) | narrower. `clone` and `default` have no row of their own in H.1 to H.7: confirm that they are callable |
+| 37 | Iterators | adaptors are lazy; `rev` on arrays, integer ranges and `map`/`enumerate`/`zip`/`rev` of them; `sum` wraps for integers | [H.7](appendix_h_library.md) | same |
+| 38 | Codes for the conditions that had none | `E0180` type mismatch, `E0181` inference, `E0182` `as`, `E0183` move and assignment, `E0184` patterns, `E0185` control flow, `E0186` structs and enums, `E0187` traits and generic arguments, `E0188` const expressions; all of phase elaboration | Part I | new codes; the reference implementation reports some of these under provisional codes |
