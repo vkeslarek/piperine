@@ -486,6 +486,8 @@ impl<'a> ValuePrinter<'a> {
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => out.push(*expr),
             Expr::KnownOr { value, default } => out.extend([*value, *default]),
             Expr::Unwrap { is, value, .. } => out.extend([*is, *value]),
+            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => out.extend([*a, *b]),
+            Expr::LevelCast { expr, .. } => out.push(*expr),
             Expr::Method { receiver, args, .. } => out.extend([*receiver].into_iter().chain(args.iter().copied())),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
             Expr::If { cond, then, otherwise } => out.extend([*cond, *then, *otherwise]),
@@ -652,6 +654,12 @@ impl<'a> ValuePrinter<'a> {
             Expr::Env(env) => atom(self.read(Self::env_name(*env))),
             // the event pin's `CHANGED` byte of this microstep, bound as a `bool` (abi.md §4.1)
             Expr::Fired(k) => atom(self.read(&Text::generated(&format!("event{k}_fired")))),
+            // `level`, `merge`, `same` and `cast` have a runtime (`rt::Flagged`) but no lowering yet:
+            // refused by name, never printed as something else (the generated code comes with T20)
+            Expr::Level { .. } => Err(self.unsupported(e, "`level`")),
+            Expr::Merge { .. } => Err(self.unsupported(e, "`merge`")),
+            Expr::Same { .. } => Err(self.unsupported(e, "`same`")),
+            Expr::LevelCast { .. } => Err(self.unsupported(e, "`cast`")),
             Expr::Unwrap { is, value, message } => {
                 let message = message.as_ref().map_or_else(|| "None".to_string(), |m| format!("Some({m:?})"));
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))

@@ -54,6 +54,8 @@ impl Statements {
                         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Step::Expr(*expr)),
                         Expr::Binary { lhs, rhs, .. } => next.extend([Step::Expr(*lhs), Step::Expr(*rhs)]),
                         Expr::KnownOr { value, default } => next.extend([Step::Expr(*value), Step::Expr(*default)]),
+                        Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => next.extend([Step::Expr(*a), Step::Expr(*b)]),
+                        Expr::LevelCast { expr, .. } => next.push(Step::Expr(*expr)),
                         Expr::If { cond, then, otherwise } => next.extend([Step::Expr(*cond), Step::Expr(*then), Step::Expr(*otherwise)]),
                         Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|a| Step::Expr(*a))),
                         Expr::Closure { body, .. } => next.push(Step::Expr(*body)),

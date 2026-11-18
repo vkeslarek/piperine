@@ -431,6 +431,8 @@ impl<'a> Checker<'a> {
             Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {}
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
             Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
+            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => exprs.extend([*a, *b]),
+            Expr::LevelCast { expr, .. } => exprs.push(*expr),
             Expr::IsKnown(value) | Expr::High(value) => exprs.push(*value),
             Expr::Cast { expr, .. } => exprs.push(*expr),
             Expr::Method { receiver, args, .. } => {
@@ -679,6 +681,8 @@ impl<'a> Checker<'a> {
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
                 Expr::KnownOr { value, default } => stack_e.extend([*value, *default]),
+                Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => stack_e.extend([*a, *b]),
+                Expr::LevelCast { expr, .. } => stack_e.push(*expr),
                 Expr::If { cond, then, otherwise } => stack_e.extend([*cond, *then, *otherwise]),
                 Expr::Block { stmts, value } => {
                     stack_s.extend(stmts);
@@ -903,9 +907,16 @@ impl<'a> Checker<'a> {
         let ir = self.ir;
         let mut allowed: HashSet<ExprId> = HashSet::new();
         for e in &exprs {
-            if let Expr::KnownOr { value: read, .. } | Expr::IsKnown(read) | Expr::High(read) = &ir.exprs[e.index()].kind {
+            // `level` and `same` read the flag and give a known result for a known index (§3.3.14,
+            // §22.1.4), as `known_or`, `is_known` and `high` do (§3.3.5, §3.3.6)
+            let reads: Vec<ExprId> = match &ir.exprs[e.index()].kind {
+                Expr::KnownOr { value: read, .. } | Expr::IsKnown(read) | Expr::High(read) | Expr::Level { value: read, .. } => vec![*read],
+                Expr::Same { a, b } => vec![*a, *b],
+                _ => Vec::new(),
+            };
+            for read in reads {
                 if matches!(ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Carrier(_) | Expr::Previous(_))) {
-                    allowed.insert(*read);
+                    allowed.insert(read);
                 }
             }
         }
@@ -1372,6 +1383,14 @@ impl<'a> Checker<'a> {
                 }
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
+            Expr::Math { args, .. } if args.iter().any(|a| self.ty(*a).is_some_and(|t| matches!(t, ValueType::Flagged(_)))) => {
+                if first {
+                    let arg_types: Option<Vec<&ValueType>> = args.iter().map(|a| self.ty(*a)).collect();
+                    let want = arg_types.and_then(|t| Typing::math(&t));
+                    self.typed(w, &origin, ty, want, "a math function");
+                }
+                next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
+            }
             Expr::Math { args, .. } => {
                 if first {
                     self.own(w, &origin, ty, &ValueType::F64);
@@ -1518,6 +1537,46 @@ impl<'a> Checker<'a> {
                 }
                 next.push(Task::Expr(*value, ctx));
                 next.push(Task::Expr(*default, ctx));
+            }
+            Expr::Level { value, index, .. } => {
+                if first {
+                    let want = match (self.ty(*value), self.ty(*index)) {
+                        (Some(v), Some(i)) => Typing::level(v, i),
+                        _ => None,
+                    };
+                    self.typed(w, &origin, ty, want, "`level`");
+                }
+                next.push(Task::Expr(*value, ctx));
+                next.push(Task::Expr(*index, ctx));
+            }
+            Expr::Merge { a, b } => {
+                if first {
+                    let want = match (self.ty(*a), self.ty(*b)) {
+                        (Some(a), Some(b)) => Typing::merge(a, b),
+                        _ => None,
+                    };
+                    self.typed(w, &origin, ty, want, "`merge`");
+                }
+                next.push(Task::Expr(*a, ctx));
+                next.push(Task::Expr(*b, ctx));
+            }
+            Expr::Same { a, b } => {
+                if first {
+                    let want = match (self.ty(*a), self.ty(*b)) {
+                        (Some(a), Some(b)) => Typing::same(a, b),
+                        _ => None,
+                    };
+                    self.typed(w, &origin, ty, want, "`same`");
+                }
+                next.push(Task::Expr(*a, ctx));
+                next.push(Task::Expr(*b, ctx));
+            }
+            Expr::LevelCast { expr, to, tags } => {
+                if first {
+                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, tags.is_some()));
+                    self.typed(w, &origin, ty, want, "`cast`");
+                }
+                next.push(Task::Expr(*expr, ctx));
             }
             Expr::Fired(e) => {
                 if first {

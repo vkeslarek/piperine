@@ -93,10 +93,56 @@ impl Typing {
         fits.then(|| Typing::flag(Typing::base(then).clone(), flagged))
     }
 
-    /// `value.known_or(default)`: a known `default` of the value's base type; the result is known.
+    /// `value.known_or(default)`: a `default` of the value's base type; the result is `default`'s
+    /// type, so it is known when `default` is and flagged when it is (§22.1.1 rule 4).
     pub(crate) fn known_or(value: &ValueType, default: &ValueType) -> Option<ValueType> {
-        let fits = Typing::scalar(default) && Typing::base(value) == default;
+        let fits = Typing::scalar(Typing::base(default)) && Typing::base(value) == Typing::base(default);
         fits.then(|| default.clone())
+    }
+
+    /// A math function of its one `f64` argument: flagged when the argument is (§3.3.2).
+    pub(crate) fn math(args: &[&ValueType]) -> Option<ValueType> {
+        match args {
+            [arg] if *Typing::base(arg) == ValueType::F64 => Some(Typing::flag(ValueType::F64, Typing::flagged(arg))),
+            _ => None,
+        }
+    }
+
+    /// How many levels a value of this type has (§2): 1 for `bool`, `N` for `uN` and `iN`, 64
+    /// for `f64`; `None` for a type with no levels.
+    pub(crate) fn levels(t: &ValueType) -> Option<u32> {
+        match Typing::base(t) {
+            ValueType::Bool => Some(1),
+            ValueType::F64 => Some(64),
+            ValueType::UInt(n) | ValueType::Int(n) => Some(*n),
+            _ => None,
+        }
+    }
+
+    /// One half of `value.level(index)`: a `bool` of a `u32` index, known when the index is and
+    /// flagged when it is not (§3.3.14, §3.3.13).
+    pub(crate) fn level(value: &ValueType, index: &ValueType) -> Option<ValueType> {
+        let fits = Typing::scalar(Typing::base(value)) && *Typing::base(index) == ValueType::UInt(32);
+        fits.then(|| Typing::flag(ValueType::Bool, Typing::flagged(index)))
+    }
+
+    /// `merge(a, b)`: two values of one base type; the result is `Flagged` of it (§22.1.2).
+    pub(crate) fn merge(a: &ValueType, b: &ValueType) -> Option<ValueType> {
+        let fits = Typing::scalar(Typing::base(a)) && Typing::base(a) == Typing::base(b);
+        fits.then(|| ValueType::Flagged(Box::new(Typing::base(a).clone())))
+    }
+
+    /// `same(a, b)`: two values of one base type; a plain `bool` (§22.1.4).
+    pub(crate) fn same(a: &ValueType, b: &ValueType) -> Option<ValueType> {
+        let fits = Typing::scalar(Typing::base(a)) && Typing::base(a) == Typing::base(b);
+        fits.then_some(ValueType::Bool)
+    }
+
+    /// `cast::<A, B>(value)`: `to`, when it has the level count of the value's type (§22.1.3
+    /// rule 3); flagged when the value is, or when `tags` may leave the result without a variant.
+    pub(crate) fn level_cast(value: &ValueType, to: &ValueType, tags: bool) -> Option<ValueType> {
+        let fits = Typing::scalar(to) && Typing::levels(value).is_some() && Typing::levels(value) == Typing::levels(to);
+        fits.then(|| Typing::flag(to.clone(), tags || Typing::flagged(value)))
     }
 
     /// `value.is_known()` of any carried value, `value.high()` of a `bool`: a known `bool`.

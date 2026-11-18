@@ -63,6 +63,8 @@ impl Elaboration<'_, '_> {
             Expr::Binary { lhs, rhs, .. } => any(&[*lhs, *rhs]),
             Expr::KnownOr { value, default } => any(&[*value, *default]),
             Expr::Unwrap { is, value, .. } => any(&[*is, *value]),
+            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => any(&[*a, *b]),
+            Expr::LevelCast { expr, .. } => self.continuous(*expr),
             Expr::If { cond, then, otherwise } => any(&[*cond, *then, *otherwise]),
             Expr::Block { stmts, value } => stmts.iter().any(|s| self.stmt_continuous.get(s.index()).copied().unwrap_or(false)) || value.is_some_and(|v| self.continuous(v)),
             Expr::Call { function, args } => self.variants.continuous(*function) || any(args),

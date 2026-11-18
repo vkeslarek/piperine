@@ -251,6 +251,11 @@ impl Reach {
                 Reach::expr(ir, *is, out);
                 Reach::expr(ir, *value, out);
             }
+            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => {
+                Reach::expr(ir, *a, out);
+                Reach::expr(ir, *b, out);
+            }
+            Expr::LevelCast { expr, .. } => Reach::expr(ir, *expr, out),
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => Reach::expr(ir, *expr, out),
             Expr::KnownOr { value, default } => {
                 Reach::expr(ir, *value, out);

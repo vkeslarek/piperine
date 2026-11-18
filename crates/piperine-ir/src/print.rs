@@ -33,7 +33,7 @@ use std::fmt::{self, Display, Write};
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
-    Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Stream, Terminal,
+    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Stream, Terminal,
     UnaryOp, ValueType,
 };
 use crate::real::Real;
@@ -714,6 +714,16 @@ impl<'a> Printer<'a> {
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
+            Expr::Level { value, index, part } => {
+                let name = if *part == LevelPart::Is { "level_is" } else { "level_value" };
+                next.extend([text(format!("{name}(")), Piece::Expr(*value), text(", ".into()), Piece::Expr(*index), text(")".into())]);
+            }
+            Expr::Merge { a, b } => next.extend([text("merge(".into()), Piece::Expr(*a), text(", ".into()), Piece::Expr(*b), text(")".into())]),
+            Expr::Same { a, b } => next.extend([text("same(".into()), Piece::Expr(*a), text(", ".into()), Piece::Expr(*b), text(")".into())]),
+            Expr::LevelCast { expr, to, tags } => {
+                let tags = tags.as_ref().map(|t| format!(" in {t:?}")).unwrap_or_default();
+                next.extend([text(format!("cast::<{to}{tags}>(")), Piece::Expr(*expr), text(")".into())]);
+            }
             Expr::Unwrap { is, value, message } => {
                 let name = if message.is_some() { "expect" } else { "unwrap" };
                 next.extend([text(format!("{name}(")), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value)]);
@@ -761,6 +771,14 @@ impl<'a> Printer<'a> {
                 Typing::method(*method, &ty(receiver)?, &args.iter().collect::<Vec<_>>())
             }
             Expr::Unknown => None,
+            Expr::Level { value, index, .. } => Typing::level(&ty(value)?, &ty(index)?),
+            Expr::Merge { a, b } => Typing::merge(&ty(a)?, &ty(b)?),
+            Expr::Same { a, b } => Typing::same(&ty(a)?, &ty(b)?),
+            Expr::LevelCast { expr, to, tags } => Typing::level_cast(&ty(expr)?, to, tags.is_some()),
+            Expr::Math { args, .. } if args.iter().any(|a| ty(a).is_some_and(|t| Typing::flagged(&t))) => {
+                let args: Option<Vec<ValueType>> = args.iter().map(ty).collect();
+                Typing::math(&args?.iter().collect::<Vec<_>>())
+            }
             Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| ValueType::Flagged(Box::new(c.ty.clone()))),
             Expr::KnownOr { value, default } => Typing::known_or(&ty(value)?, &ty(default)?),
             Expr::IsKnown(value) => Typing::flag_read(false, &ty(value)?),
@@ -804,6 +822,7 @@ impl<'a> Printer<'a> {
             }
             Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
             Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::Carrier(_) | Expr::Previous(_) => None,
+            Expr::Level { .. } | Expr::Merge { .. } | Expr::Same { .. } | Expr::LevelCast { .. } => None,
             Expr::Unwrap { value, .. } => ty(value),
         }
     }
@@ -982,6 +1001,13 @@ impl<'a> Printer<'a> {
             Expr::Flow { branch } => format!("flow b{branch}"),
             Expr::Previous(i) => format!("previous {i}"),
             Expr::Fired(i) => format!("fired {i}"),
+            Expr::Level { value, index, part } => format!("{} {} {}", if *part == LevelPart::Is { "level_is" } else { "level_value" }, e(value), e(index)),
+            Expr::Merge { a, b } => format!("merge {} {}", e(a), e(b)),
+            Expr::Same { a, b } => format!("same {} {}", e(a), e(b)),
+            Expr::LevelCast { expr, to, tags } => match tags {
+                Some(tags) => format!("level_cast {} to {to} tags {tags:?}", e(expr)),
+                None => format!("level_cast {} to {to}", e(expr)),
+            },
             Expr::Unwrap { is, value, message } => match message {
                 Some(message) => format!("expect {} {} {message:?}", e(is), e(value)),
                 None => format!("unwrap {} {}", e(is), e(value)),

@@ -278,6 +278,10 @@ impl<'a> Walk<'a> {
             Expr::Fired(_) => "form `fired`".to_string(),
             Expr::Unwrap { message: Some(_), .. } => "form `expect`".to_string(),
             Expr::Unwrap { message: None, .. } => "form `unwrap`".to_string(),
+            Expr::Level { .. } => "form `level`".to_string(),
+            Expr::Merge { .. } => "form `merge`".to_string(),
+            Expr::Same { .. } => "form `same`".to_string(),
+            Expr::LevelCast { .. } => "form `cast`".to_string(),
             other => format!("form `{}`", Self::form_name(other)),
         }
     }
@@ -313,6 +317,10 @@ impl<'a> Walk<'a> {
             Expr::Previous(_) => "Previous",
             Expr::Fired(_) => "Fired",
             Expr::Unwrap { .. } => "Unwrap",
+            Expr::Level { .. } => "Level",
+            Expr::Merge { .. } => "Merge",
+            Expr::Same { .. } => "Same",
+            Expr::LevelCast { .. } => "LevelCast",
         }
     }
 

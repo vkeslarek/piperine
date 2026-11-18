@@ -288,6 +288,9 @@ pub enum Expr {
     Param(u32),
     Unary { op: UnaryOp, expr: ExprId },
     Binary { op: BinaryOp, lhs: ExprId, rhs: ExprId },
+    /// `if cond { then } else { otherwise }`. When `cond` is `Flagged` this is the merge of
+    /// §3.3.3: an unknown condition takes both arms and the value (and every commit and record
+    /// of the arms) is the merge of what they give, level by level.
     If { cond: ExprId, then: ExprId, otherwise: ExprId },
     Block { stmts: Vec<StmtId>, value: Option<ExprId> },
     Call { function: FunctionId, args: Vec<ExprId> },
@@ -326,6 +329,31 @@ pub enum Expr {
     /// holds, else a fault of the run naming `message` (Rust's `unwrap` text when absent). Its
     /// type is the value's.
     Unwrap { is: ExprId, value: ExprId, message: Option<String> },
+    /// One half of `value.level(index)` (§3.3.4), the `Option<bool>` carried as the pair
+    /// `(is, value)` that `Unwrap` reads: `part` says which. `value` is any `Repr` value (a
+    /// `bool`, an `f64` or an integer type, flagged or not); `index` is a `u32`. The result is
+    /// a `bool`, known when `index` is (§3.3.14) and flagged when it is not (§3.3.13).
+    Level { value: ExprId, index: ExprId, part: LevelPart },
+    /// `merge(a, b)` (§22.1.2): level by level, equal known levels kept and the rest unknown.
+    /// `a` and `b` have one base type; the result is that type, `Flagged`.
+    Merge { a: ExprId, b: ExprId },
+    /// `same(a, b)` (§22.1.4): every level has the same flag and, where known, the same value.
+    /// `a` and `b` have one base type; the result is a `bool`, always known.
+    Same { a: ExprId, b: ExprId },
+    /// `cast::<A, B>(expr)` (§22.1.3): the levels of `expr` under type `to`, which has the same
+    /// number of levels. `tags` lists the tags `to` decodes when it is an enum: a pattern outside
+    /// them is `Unknown`, so the result is `Flagged`; with no `tags` it is flagged only when
+    /// `expr` is.
+    LevelCast { expr: ExprId, to: ValueType, tags: Option<Vec<i128>> },
+}
+
+/// Which half of the `Option<bool>` of `x.level(k)` an `Expr::Level` reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LevelPart {
+    /// Whether the level is known: `true` for `Some`, `false` for `None`.
+    Is,
+    /// The level's value when it is known (`false` when it is not, the form `None` takes).
+    Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

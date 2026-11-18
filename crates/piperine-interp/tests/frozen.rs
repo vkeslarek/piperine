@@ -9,7 +9,7 @@ use std::sync::Arc;
 use piperine_interp::Interpreter;
 use piperine_ir::{
     Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, EmitField, Env, Event, EventSource, Expr, InstanceSpec, IrBuilder,
-    NodeRole, Operator, Origin, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
+    LevelPart, NodeRole, Operator, Origin, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
 };
 use piperine_ir::Method as M;
 
@@ -436,5 +436,39 @@ fn the_interpreter_refuses_each_new_form_by_name() {
         let top = Devices::alone(&mut b, body, "H", 1, vec![]);
         let got = Added::terms(Models::of(b.finish(top)));
         assert!(got.contains(&format!("the IR form `{name}` is not executed by this walk")), "{name}: {got}");
+    }
+}
+
+#[test]
+fn the_unknown_nodes_are_refused_by_name() {
+    // The walk names `level`, `merge`, `same` and `cast` when it meets one, as the source spells
+    // them (R1, the interpreter is frozen at the M1 analog subset): `x.level(k)` of a value read
+    // from a probe, in a statement of the block that gives the contribution its value.
+    type Node = fn(&mut Dx<'_>, piperine_ir::ExprId) -> piperine_ir::ExprId;
+    let nodes: [(&str, Node); 5] = [
+        ("level", |x, v| {
+            let k = x.int(0, Ty::u(32));
+            x.level(v, k, LevelPart::Is, ValueType::Bool)
+        }),
+        ("level", |x, v| {
+            let k = x.int(0, Ty::u(32));
+            x.level(v, k, LevelPart::Value, ValueType::Bool)
+        }),
+        ("merge", |x, v| x.merge(v, v, Ty::flagged(ValueType::F64))),
+        ("same", |x, v| x.same(v, v)),
+        ("cast", |x, v| x.level_cast(v, Ty::u(64), None, Ty::u(64))),
+    ];
+    for (name, node) in nodes {
+        let mut b = IrBuilder::new();
+        let mut x = Dx::new(&mut b, Amended::F, 2, 10);
+        let v = x.probe(Terminal::Node(0), Terminal::Node(1));
+        let form = node(&mut x, v);
+        let held = x.stmt(form);
+        let value = x.block(vec![held], Some(v), ValueType::F64);
+        let body = Added::contribution(&mut b, "Row", value, vec![]);
+        let top = Devices::alone(&mut b, body, "H", 1, vec![]);
+        let got = Added::terms(Models::of(b.finish(top)));
+        assert!(got.contains(&format!("the IR form `{name}` is not executed by this walk")), "{name}: {got}");
+        assert!(got.contains("amended.msl:2:10"), "the origin of the form: {got}");
     }
 }

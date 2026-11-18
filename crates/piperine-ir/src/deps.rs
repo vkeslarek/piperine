@@ -687,6 +687,8 @@ impl<'a> Walk<'a> {
             }
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => next.push(Task::Expr(*expr)),
             Expr::KnownOr { value, default } => next.extend([Task::Expr(*value), Task::Expr(*default)]),
+            Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => next.extend([Task::Expr(*a), Task::Expr(*b)]),
+            Expr::LevelCast { expr, .. } => next.push(Task::Expr(*expr)),
             Expr::Unwrap { is, value, .. } => next.extend([Task::Expr(*is), Task::Expr(*value)]),
             Expr::Method { receiver, args, .. } => {
                 next.push(Task::Expr(*receiver));
@@ -767,11 +769,11 @@ impl<'a> Walk<'a> {
                 let values = self.pop_n(args.len());
                 Value::nonlinear(&values)
             }
-            Expr::Cast { .. } | Expr::IsKnown(_) | Expr::High(_) => {
+            Expr::Cast { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::LevelCast { .. } => {
                 let value = self.pop();
                 Value::nonlinear([&value])
             }
-            Expr::KnownOr { .. } | Expr::Unwrap { .. } => {
+            Expr::KnownOr { .. } | Expr::Unwrap { .. } | Expr::Level { .. } | Expr::Merge { .. } | Expr::Same { .. } => {
                 let values = self.pop_n(2);
                 Value::nonlinear(&values)
             }

@@ -6,7 +6,7 @@
 
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Drive, Event,
-    EventSource, Expr, ExprId, FunctionId, IrBuilder, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity,
+    EventSource, Expr, ExprId, FunctionId, IrBuilder, LevelPart, MathFn, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity,
     QuantityRole, Reaction, Real, Stmt, StmtId, Terminal, UnaryOp, ValueType,
 };
 
@@ -135,6 +135,31 @@ impl<'b> Dx<'b> {
 
     pub fn high(&mut self, value: ExprId) -> ExprId {
         self.emit(Expr::High(value), ValueType::Bool)
+    }
+
+    /// One half of `value.level(index)`; `ty` is the type of the half.
+    pub fn level(&mut self, value: ExprId, index: ExprId, part: LevelPart, ty: ValueType) -> ExprId {
+        self.emit(Expr::Level { value, index, part }, ty)
+    }
+
+    /// `merge(a, b)`.
+    pub fn merge(&mut self, a: ExprId, b: ExprId, ty: ValueType) -> ExprId {
+        self.emit(Expr::Merge { a, b }, ty)
+    }
+
+    /// `same(a, b)`.
+    pub fn same(&mut self, a: ExprId, b: ExprId) -> ExprId {
+        self.emit(Expr::Same { a, b }, ValueType::Bool)
+    }
+
+    /// `cast::<_, to>(expr)`, with the tags `to` decodes when it is an enum; `ty` is the result.
+    pub fn level_cast(&mut self, expr: ExprId, to: ValueType, tags: Option<Vec<i128>>, ty: ValueType) -> ExprId {
+        self.emit(Expr::LevelCast { expr, to, tags }, ty)
+    }
+
+    /// A math function of one argument.
+    pub fn math(&mut self, f: MathFn, arg: ExprId, ty: ValueType) -> ExprId {
+        self.emit(Expr::Math { f, args: vec![arg] }, ty)
     }
 
     /// A read of carrier `i`, which holds `ty`: unknown until first written.
