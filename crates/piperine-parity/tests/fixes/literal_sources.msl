@@ -1,0 +1,50 @@
+//! Sources that read no param and no probe (FIX-04, B1): the literal `1m` and `2.0`, and a current
+//! driven only by a carrier.
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module FlowSource(p: Electrical) {}
+analog for FlowSource { i(gnd, p) +> 1m; }
+
+module PotentialSource(p: Electrical) {}
+analog for PotentialSource { v(p, gnd) +> 2.0; }
+
+module FlowBench() {
+    signal a: Electrical;
+    let s = FlowSource(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+module PotentialBench() {
+    signal a: Electrical;
+    let s = PotentialSource(a);
+    let r = Resistor { r: 1k }(a, gnd);
+}
+
+/// A free-running oscillator, its first change at half a period (1 ns at 500 MHz).
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 500M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Commits 2.0 into `lv` at the first rising edge.
+module Drive(in clk: Bit, out lv: Bit<f64>) {}
+digital for Drive { on clk.rise() { lv <- 2.0; } }
+
+/// A current of `lv` mA, from the carrier alone.
+module CarrierSource(p: Electrical, in lv: Bit<f64>) {}
+analog for CarrierSource { i(gnd, p) +> lv.known_or(0.0) * 1m; }
+
+module CarrierBench() {
+    signal a: Electrical;
+    signal clk: Bit;
+    signal lv: Bit<f64>;
+    let osc = Osc(clk);
+    let d = Drive(clk, lv);
+    let s = CarrierSource(a, lv);
+    let r = Resistor { r: 1k }(a, gnd);
+}

@@ -653,10 +653,10 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `cargo test -p piperine-parity --test source_fixes`: `a_literal_flow_source_builds_and_runs` (1.0 V on both backends), `a_literal_potential_source_builds_and_runs` (2.0 V), `a_carrier_driven_current_builds_and_runs` (2.0 V after 1 ns)
-- [ ] `cargo test -p piperine-transpile --test golden` and the `Run twins` line pass unedited
-- [ ] Gate check passes: Full
-- [ ] Test count: the 3 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `cargo test -p piperine-parity --test source_fixes`: `a_literal_flow_source_builds_and_runs` (1.0 V on both backends), `a_literal_potential_source_builds_and_runs` (2.0 V), `a_carrier_driven_current_builds_and_runs` (2.0 V after 1 ns)
+- [x] `cargo test -p piperine-transpile --test golden` and the `Run twins` line pass unedited
+- [x] Gate check passes: Full
+- [x] Test count: the 3 tests named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: full

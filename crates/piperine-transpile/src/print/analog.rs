@@ -515,7 +515,12 @@ impl<'a> AnalogPrinter<'a> {
                         }
                     })
                     .collect();
-                format!("Self::terms_block({})", args.join(", "))
+                if !args.iter().any(|a| a.starts_with("Dual::")) {
+                    // no argument carries the block's number type: name it
+                    format!("Self::terms_block::<Dual<{}>>({})", f.slots, args.join(", "))
+                } else {
+                    format!("Self::terms_block({})", args.join(", "))
+                }
             };
             if at_iterate {
                 t.line("// the evaluation at the iterate");

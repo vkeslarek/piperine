@@ -91,3 +91,35 @@ fn none_and_some_pass_positionally() {
     // FIX-06 AC 4: `f(1.0, None, Some(3.0))` is 1 + 10 + 3.
     assert_eq!(first_commit("optional_args.msl", "PositionalBench", "PositionalBench.r"), vec![(5 * NS / 2, real_bytes(14.0))]);
 }
+
+/// The operating point of `top` of `literal_sources.msl`: `v(a)`.
+fn literal_source_op(top: &str) -> f64 {
+    let mut running = project("literal_sources.msl").compile(top).unwrap_or_else(|r| panic!("{r}"));
+    let a = running.ir.node_at(&format!("{top}.a")).expect("node a");
+    let id = NodeIdentifier::Anonymous(a.id().index());
+    let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
+    solved.get_node(&id).expect("v(a)")
+}
+
+#[test]
+fn a_literal_flow_source_builds_and_runs() {
+    // FIX-04 AC 1: `i(gnd, a) +> 1m;` into 1 kΩ is 1.0 V on the Rust backend.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("literal flow source", "v(a)", Coordinate::OperatingPoint), 1.0, literal_source_op("FlowBench"));
+}
+
+#[test]
+fn a_literal_potential_source_builds_and_runs() {
+    // FIX-04 AC 2: `v(a, gnd) +> 2.0;` is 2.0 V.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("literal potential source", "v(a)", Coordinate::OperatingPoint), 2.0, literal_source_op("PotentialBench"));
+}
+
+#[test]
+fn a_carrier_driven_current_builds_and_runs() {
+    // FIX-04 AC 3: `lv` committed to 2.0 at 1 ns gives 2 mA into 1 kΩ: 2.0 V after 1 ns.
+    let built = build(&project("literal_sources.msl"), "CarrierBench");
+    let a = NodeIdentifier::Anonymous(built.ir.node_at("CarrierBench.a").expect("node a").id().index());
+    let (_, result) = built.run_with(3e-9, 0.1e-9);
+    let last = result.iter().last().expect("a time point");
+    assert!(last.time() > 1.5e-9, "the run passes 1 ns: {}", last.time());
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("carrier driven current", "v(a)", Coordinate::OperatingPoint), 2.0, last.get_node(&a).expect("v(a)"));
+}
