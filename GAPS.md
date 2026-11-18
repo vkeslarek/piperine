@@ -229,6 +229,12 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
   64 bits.
 - **Enum variant names are not carried.** A `Bit<Mode>` is its tag in the IR, on the ABI and in
   every observation: a host reads `2`, not `Regulate`. Size M (metadata on the shape).
+- **A param whose value is a constant NaN** (`lo: f64 = 0.0 / 0.0`) fails the compiled row with "pin ... unlike its
+  plan (a transpiler defect)": the plan folds NaN as `0xfff8…`, the library as `0x7ff8…`. Found by the
+  `msl-fixes` fix round. Size S (canonicalize NaN bits at the plan/library boundary; owner `params-and-io`).
+- **A drive, an event guard or an `at` argument that calls a function reading `freq()`** is refused loud by the
+  IR's ambient-reads check (it read 0 silently before `msl-fixes` F1). §14.4 gives such a context 0; size S
+  (owner `analog-operators`).
 - **A DC sweep's points deliver no records**, so a `dc` run of a design with a record stream is `P0010`
   before anything compiles; `piperine test` counts it `FAIL <name> (did not run)`.
 
