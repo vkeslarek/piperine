@@ -855,9 +855,9 @@ T37 → T38 → T39
 
 **Done when**:
 
-- [ ] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `verdict::tests::a_fatal_record_fails_the_verdict_with_its_message`, `verdict::tests::a_finish_record_does_not_fail_the_verdict`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Unit tests with exactly these names pass in `cargo test -p piperine-api --lib`: `verdict::tests::a_fatal_record_fails_the_verdict_with_its_message`, `verdict::tests::a_finish_record_does_not_fail_the_verdict`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: unit
 **Gate**: quick

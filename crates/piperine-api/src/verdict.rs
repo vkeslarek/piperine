@@ -10,12 +10,14 @@ use crate::record::{Field, Record, RecordSink};
 pub struct Verdict {
     checks: usize,
     failed: Vec<Record>,
+    /// The first `sim` record whose `failed` is known true: a `fatal` the model called.
+    fatal: Option<Record>,
 }
 
 impl Verdict {
     /// An empty verdict: no check seen, none failed. Hand it to a run as a `RecordSink`.
     pub fn new() -> Verdict {
-        Verdict { checks: 0, failed: Vec::new() }
+        Verdict { checks: 0, failed: Vec::new(), fatal: None }
     }
 
     /// Judges `records`, the whole record stream of a run, through the sink: counts those of
@@ -29,9 +31,15 @@ impl Verdict {
         verdict
     }
 
-    /// Whether no check failed.
+    /// Whether no check failed and no `fatal` was called.
     pub fn passed(&self) -> bool {
-        self.failed.is_empty()
+        self.failed.is_empty() && self.fatal.is_none()
+    }
+
+    /// The first `sim` record whose `failed` is known true (a `fatal(msg)` of the model), with
+    /// its `msg` among its fields.
+    pub fn fatal(&self) -> Option<&Record> {
+        self.fatal.as_ref()
     }
 
     /// How many checks the run wrote, passing ones included.
@@ -52,9 +60,13 @@ impl Default for Verdict {
 }
 
 impl RecordSink for Verdict {
-    /// A record of the `checks` stream is counted, and kept when its `pass` is not true; every
-    /// other record is dropped, so a run's memory holds the failures only.
+    /// A record of the `checks` stream is counted, and kept when its `pass` is not true; the
+    /// first `sim` record whose `failed` is known true is kept as the fatal one; every other
+    /// record is dropped, so a run's memory holds the failures only.
     fn record(&mut self, record: &Record) {
+        if record.stream == "sim" && self.fatal.is_none() && record.fields.iter().any(|(name, field)| name == "failed" && *field == Field::Bool(true)) {
+            self.fatal = Some(record.clone());
+        }
         if record.stream != "checks" {
             return;
         }
@@ -140,5 +152,36 @@ mod tests {
         assert!(verdict.passed());
         assert_eq!(verdict.checks(), 0);
         assert!(verdict.failed().is_empty());
+    }
+
+    fn sim(fields: Vec<(String, Field)>) -> Record {
+        Record { time: 2e-9, instance: "Top.m".into(), stream: "sim".into(), fields }
+    }
+
+    #[test]
+    fn a_fatal_record_fails_the_verdict_with_its_message() {
+        // FIX-02 AC 2 and 3: a `sim` record whose `failed` is known true fails the run and
+        // `fatal()` returns it with its `msg`; the first one is kept
+        let boom = sim(vec![("finish".into(), Field::Bool(true)), ("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("boom".into()))]);
+        let later = sim(vec![("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("second".into()))]);
+        let verdict = Verdict::judge(&[check("a", Field::Bool(true)), boom.clone(), later]);
+        assert!(!verdict.passed());
+        assert_eq!(verdict.fatal(), Some(&boom));
+        assert_eq!(verdict.checks(), 1);
+        assert!(verdict.failed().is_empty(), "no check failed");
+        // an unknown `failed` is not a fatal
+        let unknown = sim(vec![("failed".into(), Field::Unknown)]);
+        assert!(Verdict::judge(&[unknown]).passed());
+    }
+
+    #[test]
+    fn a_finish_record_does_not_fail_the_verdict() {
+        // FIX-02 AC 4: `finish()` writes `sim` with `finish = true` and no `failed`
+        let finish = sim(vec![("finish".into(), Field::Bool(true))]);
+        let verdict = Verdict::judge(&[check("a", Field::Bool(true)), finish]);
+        assert!(verdict.passed());
+        assert_eq!(verdict.fatal(), None);
+        // a `failed` that is false is no fatal either
+        assert!(Verdict::judge(&[sim(vec![("failed".into(), Field::Bool(false))])]).passed());
     }
 }
