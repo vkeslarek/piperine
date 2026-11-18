@@ -15,7 +15,7 @@ mod abi_devices;
 #[path = "helpers/partials.rs"]
 mod partials;
 
-use abi_devices::{add_capacitor, add_resistor, add_vsrc, node_id};
+use abi_devices::{Counting, add_capacitor, add_resistor, add_vsrc, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::F64;
 use piperine_abi::raw::{Cell, DEFAULT, Module, Shape, ambient, cell, op, part, pin_flag, role};
@@ -351,4 +351,31 @@ fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("ChargedC", CHARGED_MODULE.get_or_init(|| module::<ChargedC>("ChargedC")));
     // TIME (read 3) before FLAKY_AFTER, where the fixture does not fault.
     partials::verify_every_function_with("FlakyC", FLAKY_MODULE.get_or_init(|| module::<FlakyC>("FlakyC")), &[(0, 3, 0.0)]);
+}
+
+#[test]
+fn the_transient_driver_iterates_with_the_plans_strategy() {
+    // Every Newton solve of a step goes through the strategy of the plan the driver was given:
+    // one damp_update per iteration, so the count equals the run's iterations.
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (r, c) = (1.0e3, 1.0e-6);
+    let mut b = CircuitBuilder::new("rc");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let out = b.node("out");
+    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
+    add_resistor(&mut b, "r1", r, &top, &out);
+    add_capacitor(&mut b, "c1", c, &out, &gnd);
+    let mut circuit = b.build().expect("build");
+    let plan = piperine_analog_solver::convergence::ConvergencePlan::default().with_newton(Box::new(Counting(Arc::clone(&calls))));
+    let mut solver = circuit
+        .transient(TransientAnalysisOptions::new(r * c, r * c / 100.0), Context::default())
+        .expect("tran")
+        ;
+    solver.set_plan(plan);
+    solver.apply_initial_conditions(vec![InitialValue { reference: out.clone(), value: 0.0 }]);
+    let result = solver.solve().expect("solve");
+    let seen = calls.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(result.len() > 10, "the run took steps");
+    assert!(seen >= 2 * (result.len() - 1), "two Newton solves per accepted step went through the strategy: {seen} calls");
 }

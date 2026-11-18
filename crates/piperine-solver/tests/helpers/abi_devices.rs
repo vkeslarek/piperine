@@ -866,3 +866,29 @@ impl Device for Pair {
 pub fn noise_pair() -> &'static Module {
     module_of::<Pair>(&PAIR_MODULE, "Pair")
 }
+
+/// A Newton strategy that counts its `damp_update` calls (one per iteration) and otherwise
+/// behaves as [`NoDamping`].
+pub struct Counting(pub std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl piperine_analog_solver::convergence::NewtonStrategy for Counting {
+    fn damp_update(&self, prev: ndarray::ArrayView1<f64>, update: ndarray::ArrayViewMut1<f64>, context: &piperine_analog_solver::convergence::DampContext) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        piperine_analog_solver::convergence::NoDamping.damp_update(prev, update, context);
+    }
+    fn is_converged(
+        &self,
+        state: &piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64>,
+        guess: &ndarray::ArrayView1<f64>,
+        residual: &[f64],
+        scale: &[f64],
+        netlist: &piperine_analog_solver::netlist::Netlist,
+        tolerances: &piperine_analog_solver::tolerances::Tolerances,
+    ) -> bool {
+        piperine_analog_solver::convergence::NoDamping.is_converged(state, guess, residual, scale, netlist, tolerances)
+    }
+    fn max_iter(&self, policy: &piperine_analog_solver::tolerances::Policy) -> usize {
+        piperine_analog_solver::convergence::NoDamping.max_iter(policy)
+    }
+}
+

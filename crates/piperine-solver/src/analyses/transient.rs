@@ -696,7 +696,6 @@ impl<'a> TransientSolver<'a> {
         dt: f64,
         use_predictor: bool,
     ) -> crate::core::result::Result<Option<TransientStep>> {
-        let strategy = piperine_analog_solver::convergence::NoDamping;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         let t_next = t_n + dt;
@@ -715,7 +714,7 @@ impl<'a> TransientSolver<'a> {
             self.solver.set_predictor_ratio(r);
         }
         self.solver.solve_with_strategy(
-            &mut self.system, &strategy, &tolerances, &policy,
+            &mut self.system, self.plan.newton(), &tolerances, &policy,
         )?;
         self.system.take_callback_error()?;
 
@@ -724,7 +723,7 @@ impl<'a> TransientSolver<'a> {
         self.system.h = dt;
         self.system.time = t_next;
         self.solver.solve_with_strategy(
-            &mut self.system, &strategy, &tolerances, &policy,
+            &mut self.system, self.plan.newton(), &tolerances, &policy,
         )?;
         self.system.take_callback_error()?;
 

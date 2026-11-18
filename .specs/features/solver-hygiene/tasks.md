@@ -718,9 +718,9 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_transient_driver_iterates_with_the_plans_strategy` passes under `**Run abitran**`
-- [ ] `**Run parity**` and `**Run twins**` pass; the deviation table after is in the commit body
-- [ ] Gate check passes: Full
+- [x] `the_transient_driver_iterates_with_the_plans_strategy` passes under `**Run abitran**`
+- [x] `**Run parity**` and `**Run twins**` pass; the deviation table after is in the commit body
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
