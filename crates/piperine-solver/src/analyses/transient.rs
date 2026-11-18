@@ -412,6 +412,14 @@ pub struct ScheduledSet {
     pub value: crate::core::introspect::Value,
 }
 
+/// One host-scheduled write of a value to a discrete net at simulation time `t`.
+#[derive(Debug, Clone)]
+struct ScheduledWrite {
+    t: f64,
+    net: String,
+    value: crate::core::bind::ParamValue,
+}
+
 /// Phase 1 output — the candidate landing point chosen over the unified
 /// breakpoint table from the PI-proposed step size.
 struct StepPrediction {
@@ -500,6 +508,8 @@ pub struct TransientSolver<'a> {
     /// Host-scheduled live parameter writes (LIVE-06/09), in scheduling order:
     /// last write wins per param.
     sets: Vec<ScheduledSet>,
+    /// Host-scheduled writes of a value to a discrete net, in scheduling order.
+    net_writes: Vec<ScheduledWrite>,
     /// Full-state re-entry point (PSS shooting enabler): when set, the run
     /// starts from this captured step instead of a DC operating point.
     reentry_state: Option<TransientStep>,
@@ -569,6 +579,7 @@ impl<'a> TransientSolver<'a> {
             plan,
             policy: piperine_analog_solver::tolerances::Policy::default(),
             sets: Vec::new(),
+            net_writes: Vec::new(),
             reentry_state: None,
             host: Default::default(),
         })
@@ -637,6 +648,14 @@ impl<'a> TransientSolver<'a> {
         value: crate::core::introspect::Value,
     ) {
         self.sets.push(ScheduledSet { t, label: label.into(), param: param.into(), value });
+    }
+
+    /// Schedule a host write of `value` to the discrete net `net` (its name in the digital plan)
+    /// for simulation time `t` (HII-12): a write at or before the start is one made before the
+    /// run (`CircuitInstance::write_net`); a later one is a host commit the protocol enters at
+    /// microstep 0 of `t`, so a reaction on the net's change fires at that instant.
+    pub fn schedule_write(&mut self, t: f64, net: impl Into<String>, value: crate::core::bind::ParamValue) {
+        self.net_writes.push(ScheduledWrite { t, net: net.into(), value });
     }
 
     /// Seed the transient's t=0 state with user initial node voltages
@@ -1034,11 +1053,23 @@ impl TransientSolver<'_> {
                 later.push((set.t, set.label, set.param, value));
             }
         }
+        let mut later_nets = Vec::new();
+        for write in std::mem::take(&mut self.net_writes) {
+            if write.t <= self.options.start_time {
+                self.system.circuit.write_net(&write.net, write.value)?;
+            } else {
+                later_nets.push(write);
+            }
+        }
         let bound = self.system.circuit.abi.as_mut().expect("a circuit of devices");
-        let mut writes = Vec::with_capacity(later.len());
+        let mut writes = Vec::with_capacity(later.len() + later_nets.len());
         for (t, path, param, value) in &later {
             let (net, bytes) = bound.param_bytes(path, param, value)?;
             writes.push((*t, format!("{path}.{param}"), net.0, bytes));
+        }
+        for write in &later_nets {
+            let (net, bytes) = bound.net_bytes(&write.net, &write.value)?;
+            writes.push((write.t, write.net.clone(), net.0, bytes));
         }
         if let Some((_, state)) = &resume
             && state.nets.names() != bound.digital.plan().nets.iter().map(|n| n.name.clone()).collect::<Vec<_>>()

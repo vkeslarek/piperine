@@ -727,9 +727,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `host_writes.rs` gains `a_scheduled_write_commits_at_its_time`
-- [ ] Gate check passes: Quick (`Run solverhost`, `Run baseline`)
-- [ ] Test count: 1 new test
+- [x] `host_writes.rs` gains `a_scheduled_write_commits_at_its_time`
+- [x] Gate check passes: Quick (`Run solverhost`, `Run baseline`)
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: quick
