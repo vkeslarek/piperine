@@ -740,8 +740,8 @@ T39 → T40
 
 **Done when**:
 
-- [ ] `the_proposal_sees_the_next_due_time` passes under `**Run protocol**`; the other tests of the target pass unchanged
-- [ ] Gate check passes: Quick
+- [x] `the_proposal_sees_the_next_due_time` passes under `**Run protocol**`; the other tests of the target pass unchanged
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

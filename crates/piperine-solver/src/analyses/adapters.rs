@@ -286,7 +286,7 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
         self.dc.system.circuit.netlist().max_index().is_some()
     }
 
-    fn propose(&mut self, _now: f64, _stop: f64) -> f64 {
+    fn propose(&mut self, _now: f64, _stop: f64, _next_due: Option<f64>) -> f64 {
         unreachable!("an operating point takes no step")
     }
 
@@ -359,7 +359,7 @@ impl AnalogSide for TransientSide<'_, '_> {
         self.tran.device_has_unknowns()
     }
 
-    fn propose(&mut self, _now: f64, _stop: f64) -> f64 {
+    fn propose(&mut self, _now: f64, _stop: f64, _next_due: Option<f64>) -> f64 {
         self.tran.device_propose(&mut self.run)
     }
 

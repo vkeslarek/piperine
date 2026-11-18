@@ -253,7 +253,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let mut tick_c = match forced.take() {
                 Some(t) => t,
                 None if unknowns => {
-                    let proposed = self.analog.propose(self.now, stop);
+                    let next_due = self.discrete.next_due().map(|tick| self.time(tick));
+                    let proposed = self.analog.propose(self.now, stop, next_due);
                     self.floor_tick(proposed).clamp(now_tick + 1, stop_tick)
                 }
                 None => stop_tick,

@@ -208,8 +208,9 @@ pub trait AnalogSide {
     type Mark;
     /// Whether any continuous unknown exists.
     fn has_unknowns(&self) -> bool;
-    /// The next step's end (step control, `CAP` watches), at most `stop`.
-    fn propose(&mut self, now: f64, stop: f64) -> f64;
+    /// The next step's end (step control, `CAP` watches), at most `stop`. `next_due` is the next
+    /// scheduled time point in seconds (the discrete side's next queued commit), when there is one.
+    fn propose(&mut self, now: f64, stop: f64, next_due: Option<f64>) -> f64;
     /// Updates the analog copy of discrete values after the accepted solution
     /// at the instant that changed them; `restart` says how the next step starts.
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart);

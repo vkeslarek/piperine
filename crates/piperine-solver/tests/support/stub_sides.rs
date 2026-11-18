@@ -154,6 +154,8 @@ pub struct ScriptedAnalog {
     pub log: Log,
     pub unknowns: bool,
     pub proposals: VecDeque<f64>,
+    /// The `next_due` each `propose` was given, in order.
+    pub next_dues: Vec<Option<f64>>,
     pub attempts: VecDeque<Attempt>,
     pub accepts: VecDeque<Accepted>,
     pub equilibria: VecDeque<Accepted>,
@@ -169,6 +171,7 @@ impl ScriptedAnalog {
             log: Rc::clone(log),
             unknowns: true,
             proposals: VecDeque::new(),
+            next_dues: Vec::new(),
             attempts: VecDeque::new(),
             accepts: VecDeque::new(),
             equilibria: VecDeque::new(),
@@ -189,8 +192,9 @@ impl AnalogSide for ScriptedAnalog {
     fn has_unknowns(&self) -> bool {
         self.unknowns
     }
-    fn propose(&mut self, now: f64, stop: f64) -> f64 {
+    fn propose(&mut self, now: f64, stop: f64, next_due: Option<f64>) -> f64 {
         self.record(Call::Propose(now, stop));
+        self.next_dues.push(next_due);
         self.proposals.pop_front().unwrap_or(stop)
     }
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart) {

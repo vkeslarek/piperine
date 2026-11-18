@@ -521,3 +521,23 @@ fn a_resume_off_the_grid_steps_on_from_its_tick() {
     assert!(err.to_string().contains("no step reaches it"), "{err}");
     assert!(attempts(&log).is_empty());
 }
+
+#[test]
+fn the_proposal_sees_the_next_due_time() {
+    // The discrete side's next queued commit is at tick 3, 1.5 s at half a second per tick: the
+    // proposal is handed that time in seconds. With nothing queued it is handed none.
+    let (_, mut d, mut a) = sides();
+    d.next = Some(3);
+    a.proposals.extend([2.0, 5.0]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(5.0).unwrap(), Ended::StopTime);
+    let (_, a) = p.into_sides();
+    assert_eq!(a.next_dues, [Some(1.5), Some(1.5)]);
+
+    let (_, d, mut a) = sides();
+    a.proposals.extend([2.0, 5.0]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(5.0).unwrap();
+    let (_, a) = p.into_sides();
+    assert_eq!(a.next_dues, [None, None], "nothing queued: no next time point");
+}

@@ -75,8 +75,8 @@ fn the_stubs_replay_their_script_and_record_calls() {
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Accept);
     let m = d.mark();
     d.restore(&m);
-    assert_eq!(a.propose(0.0, 5.0), 3.0);
-    assert_eq!(a.propose(3.0, 5.0), 5.0, "an exhausted script proposes the stop time");
+    assert_eq!(a.propose(0.0, 5.0, None), 3.0);
+    assert_eq!(a.propose(3.0, 5.0, None), 5.0, "an exhausted script proposes the stop time");
     assert_eq!(a.attempt(3.0, false).unwrap(), Attempt::Rejected);
     assert_eq!(a.attempt(3.0, false).unwrap(), Attempt::Converged);
     assert_eq!(a.accept().unwrap(), Accepted { fired: vec![4], samples: vec![0.5] });
