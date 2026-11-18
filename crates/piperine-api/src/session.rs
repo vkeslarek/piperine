@@ -67,8 +67,6 @@ pub struct Session {
     plotted: Option<Table>,
     /// The context every analysis of the run takes, built from the run's options (HII-02).
     context: Context,
-    /// The `nodeset` entries, each node by what the solver knows it by, with the entry as written.
-    nodeset: Vec<(NodeIdentifier, f64, String)>,
     /// The source and the node of a `tf` or `pz` run, resolved against the design.
     transfer: Option<Transfer>,
     /// The params a `sens` run differentiates by, resolved against the design, in the order given.
@@ -176,7 +174,7 @@ impl Session {
         };
         // every param path resolves before anything compiles: a typo costs no `rustc`
         let params = spec.params.iter().map(|(entry, value)| Ok((ParamPath::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
-        let context = Session::context_of(&spec.options);
+        let mut context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
         let (transfer, wrt) = Session::small_signal_of(&ir, spec, &probes)?;
         let netlist = Session::netlist_of(&ir, &spec.options);
@@ -203,13 +201,16 @@ impl Session {
                 (circuit, Some(compiled))
             }
         };
+        // the nodeset is the first iterate of every operating point the run takes, whichever analysis
+        // takes it: it rides in the context, which the solver hands each of them
+        context.nodeset = Session::seeds(&circuit, &nodeset)?;
         // the table's params, then the flags', in the order given: the design's own check may
         // refuse a value, and then no analysis runs
         let mut table = Params::of(&ir);
         for (path, _, value) in &params {
             Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, path, *value)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), params: table })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), params: table })
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
@@ -319,13 +320,10 @@ impl Session {
     }
 
     /// The `nodeset` entries of `spec`, each resolved to a node of `ir` (`E0801` for one that
-    /// names none). A nodeset seeds an operating point the session takes itself, so the analyses
-    /// that take theirs inside the solver (`ac`, `transient`) refuse it (`P0010`) rather than
-    /// ignore it.
+    /// names none).
     fn nodeset_of(ir: &Ir, spec: &RunSpec) -> Result<Vec<(NodeIdentifier, f64, String)>, Failure> {
         let top = ir.top().path();
-        let seeds = spec
-            .options
+        spec.options
             .nodeset
             .iter()
             .map(|(entry, value)| {
@@ -333,21 +331,12 @@ impl Session {
                 let node = node.ok_or_else(|| Failure::Host { code: "E0801", message: format!("the nodeset entry `{entry}` names no node of the design") })?;
                 Ok((NodeIdentifier::Anonymous(node.id().index()), *value, entry.clone()))
             })
-            .collect::<Result<Vec<_>, Failure>>()?;
-        if !seeds.is_empty() && matches!(spec.analysis, Analysis::Ac { .. } | Analysis::Transient { .. } | Analysis::Tf { .. } | Analysis::Pz { .. } | Analysis::Sens { .. } | Analysis::Pss { .. }) {
-            let message = format!(
-                "run `{}`: `nodeset` seeds an operating point, and a `{}` run takes its own inside the solver, where the host cannot seed it; use `op` or `dc`",
-                spec.name,
-                spec.analysis.name()
-            );
-            return Err(Failure::Host { code: "P0010", message });
-        }
-        Ok(seeds)
+            .collect()
     }
 
-    /// The nodeset as the first Newton iterate of `circuit`'s operating point.
-    fn seeds(&self, circuit: &CircuitInstance) -> Result<Vec<InitialValue<piperine_solver::prelude::AnalogReference, f64>>, Failure> {
-        self.nodeset
+    /// The nodeset as the first Newton iterate of `circuit`'s operating points.
+    fn seeds(circuit: &CircuitInstance, nodeset: &[(NodeIdentifier, f64, String)]) -> Result<Vec<InitialValue<piperine_solver::prelude::AnalogReference, f64>>, Failure> {
+        nodeset
             .iter()
             .map(|(id, value, entry)| {
                 let reference = circuit.netlist().reference_for(&AnalogVariable::Node(id.clone()));
@@ -450,14 +439,10 @@ impl Session {
         timed.extend(changes.iter().filter(|c| c.written).map(TimedChange::action));
         match &self.spec.analysis {
             Analysis::Op => {
-                let seeds = self.seeds(&circuit)?;
                 let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
                 let result = solver
                     .dc()
-                    .and_then(|mut dc| {
-                        dc.apply_initial_conditions(seeds);
-                        dc.solve()
-                    })
+                    .and_then(|mut dc| dc.solve())
                     .map_err(|error| Failure::Solver { analysis: "op", error })?;
                 let circuit = solver.circuit();
                 let net = |path: &str| Session::discrete(circuit, path).or_else(|| Session::held_bytes(&held, path));
@@ -516,7 +501,6 @@ impl Session {
             }
             Analysis::Dc { from, to, step, .. } => {
                 let mut circuit = circuit;
-                let seeds = self.seeds(&circuit)?;
                 let swept = self.swept.as_ref().ok_or_else(|| Failure::Backend("a dc run resolved no param to sweep".into()))?;
                 // `from + k*step` for every k while the point is not past `to`; the tolerance on
                 // k absorbs the rounding of `(to - from) / step` (a whole number of steps that
@@ -528,10 +512,7 @@ impl Session {
                     Session::set_param(&mut self.params, self.compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, swept, value)?;
                     let result = circuit
                         .dc(self.context.clone())
-                        .and_then(|mut dc| {
-                            dc.apply_initial_conditions(seeds.clone());
-                            dc.solve()
-                        })
+                        .and_then(|mut dc| dc.solve())
                         .map_err(|error| Failure::Solver { analysis: "dc", error })?;
                     let held = self.held_params(&circuit, &[]);
                     let net = |path: &str| Session::discrete(&circuit, path).or_else(|| Session::held_bytes(&held, path));

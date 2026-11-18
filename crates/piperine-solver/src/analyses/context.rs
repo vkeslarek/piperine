@@ -4,6 +4,8 @@
 //! shared immutable bundle handed to every analysis, and the owner of the
 //! one-time process init, MD-06).
 
+use piperine_analog_solver::math::iv::InitialValue;
+use piperine_analog_solver::netlist::AnalogReference;
 use piperine_analog_solver::tolerances::Tolerances;
 use faer::{Par, set_global_parallelism};
 use std::num::NonZeroUsize;
@@ -50,6 +52,10 @@ pub struct Context {
     pub tolerances: Tolerances,
     /// The bound on the rounds of an operating point (`E0506`); 20 unless the host says otherwise.
     pub max_rounds: u32,
+    /// The first Newton iterate of every operating point the analysis takes: node values the
+    /// host's `nodeset` gives (ngspice `.nodeset`). Empty leaves the solver's own start. The
+    /// solution still converges to the circuit's own equation; only the start moves.
+    pub nodeset: Vec<InitialValue<AnalogReference, f64>>,
 }
 
 impl std::fmt::Debug for Context {
@@ -57,6 +63,7 @@ impl std::fmt::Debug for Context {
         f.debug_struct("Context")
             .field("tolerances", &self.tolerances)
             .field("max_rounds", &self.max_rounds)
+            .field("nodeset", &self.nodeset.len())
             .finish()
     }
 }
@@ -66,6 +73,7 @@ impl Default for Context {
         Self {
             tolerances: Tolerances::default(),
             max_rounds: Self::DEFAULT_MAX_ROUNDS,
+            nodeset: Vec::new(),
         }
     }
 }

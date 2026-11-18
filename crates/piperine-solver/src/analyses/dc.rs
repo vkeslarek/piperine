@@ -186,6 +186,7 @@ impl<'a> DcSolver<'a> {
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
 
+        let nodeset = context.nodeset.clone();
         let mut system = DcSystem {
             circuit,
             context,
@@ -200,7 +201,7 @@ impl<'a> DcSolver<'a> {
             Err(error) => return Err(system.circuit.name_error(error)),
         };
 
-        Ok(Self {
+        let mut dc = Self {
             system,
             solver,
             policy: Policy::default(),
@@ -210,7 +211,11 @@ impl<'a> DcSolver<'a> {
             homotopy_strategy: None,
             host: Default::default(),
             analysis: piperine_abi::raw::global::DC,
-        })
+        };
+        // every analysis that takes an operating point of its own builds this solver, so the
+        // context's nodeset reaches them all (ac, transient, tf, pz, sens, pss)
+        dc.apply_initial_conditions(nodeset);
+        Ok(dc)
     }
 
     /// The operating point of another analysis (`global::AC` or `global::NOISE`): the same solve,

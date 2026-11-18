@@ -1448,6 +1448,30 @@ Proof: run apiderived | test metadata_lists_a_derived_param_at_the_value_the_run
 **C110** - `print` of a param no device pin holds reads the session's table, at each time. (HII-09, AC 1; F4) 
 Proof: run apiderived | test a_param_no_pin_holds_prints_the_value_the_run_used ... ok
 
+**C111** - `temp` and `nodeset` reach a `op` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
+Proof: run apireach | test an_operating_point_moves_with_temp_and_nodeset ... ok
+
+**C112** - `temp` and `nodeset` reach a `dc` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
+Proof: run apireach | test a_dc_sweep_moves_with_temp_and_nodeset ... ok
+
+**C113** - `temp` and `nodeset` reach a `ac` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
+Proof: run apireach | test an_ac_sweep_moves_with_temp_and_nodeset ... ok
+
+**C114** - `temp` and `nodeset` reach a `transient` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
+Proof: run apireach | test a_transient_moves_with_temp_and_nodeset ... ok
+
+**C115** - `temp` and `nodeset` reach a `tf` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
+Proof: run apireach | test a_transfer_function_moves_with_temp_and_nodeset ... ok
+
+**C116** - `temp` and `nodeset` reach a `pz` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
+Proof: run apireach | test the_poles_move_with_temp_and_nodeset ... ok
+
+**C117** - `temp` and `nodeset` reach a `sens` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
+Proof: run apireach | test a_sensitivity_moves_with_temp_and_nodeset ... ok
+
+**C118** - `temp` and `nodeset` reach a `pss` run: its result moves with each, against a closed form. (HII-01, AC 1; HII-02, AC 2 to 4; F5, F6) 
+Proof: run apireach | test a_periodic_steady_state_moves_with_temp_and_nodeset ... ok
+
 ---
 
 ## Handoff

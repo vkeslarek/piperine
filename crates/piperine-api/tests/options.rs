@@ -219,18 +219,6 @@ fn maxmicro_bounds_an_instant() {
 }
 
 #[test]
-fn a_nodeset_on_a_run_that_takes_its_own_operating_point_is_p0010() {
-    // not in the spec's list, a rule of this task: `ac` and `transient` take their operating
-    // point inside the solver, where the host has no door to seed it, so `nodeset` is refused
-    // there (fail loud) instead of ignored; `op` and `dc` accept it
-    for analysis in [Overrides { analysis: Some("transient".into()), stop: Some(1e-6), ..Overrides::default() }, Overrides { analysis: Some("ac".into()), from: Some(1.0), to: Some(10.0), points: Some(3), ..Overrides::default() }] {
-        let overrides = Overrides { nodeset: vec![("a".into(), 1.0)], backend: Some("interp".into()), ..analysis };
-        let error = open(&with_parts(CUBIC), overrides).err().expect("the analysis cannot seed its operating point");
-        assert!(matches!(&error, Failure::Host { code: "P0010", message } if message.contains("`nodeset`")), "{error:?}");
-    }
-}
-
-#[test]
 fn a_smaller_trtol_takes_more_steps() {
     // HII-02 AC 8 (amended): `trtol` reaches the solver's step assessment; the RC charging curve of
     // `tran_rc` to 10 us with `trtol = 0.001` rejects steps the default (7) accepts, and the
