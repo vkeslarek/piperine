@@ -5,6 +5,7 @@
 
 use piperine_ir::{CarrierRole, Constant, Ir, NodeRole};
 
+use crate::params::Params;
 use crate::table::Cell;
 
 /// A param of an instance of the design.
@@ -15,7 +16,8 @@ pub struct ParamInfo {
     pub name: String,
     /// The type as the language writes it: `f64`, `bool`, `u8`.
     pub ty: String,
-    /// The value the run uses: the elaborated one, or the one a `set` of the request gave.
+    /// The value the run uses: the elaborated one, the one a `set` of the request gave, or the one
+    /// a placement derives from it.
     pub value: Cell,
     /// The text of the `where` clause; `None` for a param with none.
     pub check: Option<String>,
@@ -49,24 +51,25 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    /// The metadata of `ir`; `set` gives the value the request set a param to, by its path, so
-    /// the value shown is the one the run uses.
-    pub(crate) fn of(ir: &Ir, set: &dyn Fn(&str) -> Option<f64>) -> Metadata {
+    /// The metadata of `ir`, each param shown with its value in `held`, the table a run starts
+    /// from: the elaborated value, a `set`'s, or what a placement derives from a `set` param.
+    pub(crate) fn of(ir: &Ir, held: &Params) -> Metadata {
         let mut params = Vec::new();
         for instance in ir.instances() {
             let body = instance.body();
             for (i, param) in body.params().iter().enumerate() {
                 let path = format!("{}.{}", instance.path(), param.name);
-                let elaborated = instance.param(i).map_or(Cell::Unknown, |constant| match constant {
-                    Constant::Real(real) => Cell::Real(real.get()),
-                    Constant::Bool(flag) => Cell::Bool(*flag),
-                    Constant::Int(n) => Cell::Int(*n),
-                });
-                let held = set(&path).map(Cell::Real);
+                let current = held.get(instance.path(), &param.name);
+                let value = match (instance.param(i), current) {
+                    (Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
+                    (Some(Constant::Int(_)), Some(now)) => Cell::Int(now as i128),
+                    (Some(_), Some(now)) => Cell::Real(now),
+                    _ => Cell::Unknown,
+                };
                 params.push(ParamInfo {
                     name: param.name.clone(),
                     ty: param.ty.to_string(),
-                    value: held.unwrap_or(elaborated),
+                    value,
                     check: body.param_check_text(i),
                     structural: param.structural,
                     path,

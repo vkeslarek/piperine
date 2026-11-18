@@ -239,3 +239,86 @@ fn the_interpreter_refuses_a_set_a_method_call_placement_derives_from() {
         other => panic!("expected E0802, found {other:?}"),
     }
 }
+
+/// `Top` holds the params `q` and `k`, which no device pin reads, and places `Mid` with `rr: q * k`;
+/// `Mid` places the resistor with `r: rr`. Two levels derive from two inputs: 1 V over `R1 = 1 kOhm`
+/// into `q * k` to ground gives `q * k / (q * k + 1k)`.
+fn product_source() -> String {
+    format!(
+        "{PARTS}module Mid(p: Electrical, n: Electrical) {{\n    rr: f64 = 1k;\n    let res = Resistor(p, n) {{ r: rr }};\n}}\nanalog for Mid {{ i(p, n) +> 0.0 * rr; }}\n\nmodule Top() {{\n    q: f64 = 500.0;\n    k: f64 = 1.0;\n    signal a: Electrical;\n    signal b: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, b) {{ r: 1k }};\n    let m = Mid(b, gnd) {{ rr: q * k }};\n}}\n"
+    )
+}
+
+/// A transient to 3 us with a row each microsecond, printing `b` and the param `q`.
+fn product_run() -> Overrides {
+    Overrides { analysis: Some("transient".into()), stop: Some(3e-6), max_step: Some(1e-7), print_step: Some(1e-6), print: vec!["b".into(), "Top.q".into()], ..Overrides::default() }
+}
+
+fn column(table: &Table, at: usize) -> Vec<f64> {
+    table.rows.iter().map(|r| real(&r[at])).collect()
+}
+
+#[test]
+fn a_timed_set_derives_against_the_sets_due_before_it() {
+    // HII-18 AC 3 and HII-13 (F2): `q = 1500` at 2 us given BEFORE `k = 3` at 0. At the time of `q`
+    // the table holds k = 3, so rr = 1500 * 3 = 4500 after 2 us: 0.6 (q * k = 500 * 3) at the rows
+    // of 0, 1 and 2 us (the row at 2 us holds the old value), 4500 / 5500 = 0.818 at 3 us
+    let mut session = open(&product_source(), product_run());
+    session.set_at("Top.q", 1500.0, 2e-6).unwrap_or_else(|f| panic!("{f}"));
+    session.set_at("Top.k", 3.0, 0.0).unwrap_or_else(|f| panic!("{f}"));
+    let table = run(&mut session).unwrap_or_else(|f| panic!("{f}"));
+    for (got, wanted) in column(&table, 1).iter().zip([0.6, 0.6, 0.6, 4500.0 / 5500.0]) {
+        close(*got, wanted, "a grid row of b");
+    }
+    assert_eq!(column(&table, 2), [500.0, 500.0, 500.0, 1500.0], "the param q, in force at each row");
+}
+
+#[test]
+fn a_timed_set_given_out_of_time_order_derives_in_time_order() {
+    // HII-18 AC 3 (F2): `q = 1500` at 2 us given first, `k = 3` at 1 us after it. In time order k
+    // changes after 1 us (rr = 500 * 3 = 1500) and q after 2 us (rr = 4500): the rows of 0 and 1 us
+    // hold 500 / 1500, the row of 2 us 1500 / 2500 = 0.6, the row of 3 us 4500 / 5500
+    let mut session = open(&product_source(), product_run());
+    session.set_at("Top.q", 1500.0, 2e-6).unwrap_or_else(|f| panic!("{f}"));
+    session.set_at("Top.k", 3.0, 1e-6).unwrap_or_else(|f| panic!("{f}"));
+    let table = run(&mut session).unwrap_or_else(|f| panic!("{f}"));
+    for (got, wanted) in column(&table, 1).iter().zip([1.0 / 3.0, 1.0 / 3.0, 0.6, 4500.0 / 5500.0]) {
+        close(*got, wanted, "a grid row of b");
+    }
+}
+
+#[test]
+fn metadata_lists_a_derived_param_at_the_value_the_run_uses() {
+    // HII-10 AC 1 and HII-11 (F3): `q = 1500` of the run reaches `Top.m.rr` (q * k = 1500) and
+    // `Top.m.res.r`, both of which the metadata listed at their elaborated 500
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, product_source()).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { analysis: Some("op".into()), top: Some("Top".into()), backend: Some("rust".into()), params: vec![("Top.q".into(), 1500.0)], ..Overrides::default() };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let described = Session::describe(&project, &spec).unwrap_or_else(|f| panic!("{f}")).1;
+    let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    for metadata in [described, session.metadata()] {
+        let value = |path: &str| metadata.params.iter().find(|p| p.path == path).map(|p| p.value.clone());
+        assert_eq!(value("Top.q"), Some(Cell::Real(1500.0)));
+        assert_eq!(value("Top.m.rr"), Some(Cell::Real(1500.0)));
+        assert_eq!(value("Top.m.res.r"), Some(Cell::Real(1500.0)));
+    }
+}
+
+#[test]
+fn a_param_no_pin_holds_prints_the_value_the_run_used() {
+    // HII-09 AC 1 (F4): `Top.q` is read by a placement only, so no net holds it: an `op` with
+    // `q = 1500` prints 1500, a `dc` sweep prints each point, and the transient's timed set shows
+    // 500 until the step after 2 us (the print failed with "no net of the digital plan has that path")
+    let print = || vec!["b".to_string(), "Top.q".to_string()];
+    let mut set = open(&product_source(), Overrides { print: print(), params: vec![("Top.q".into(), 1500.0)], ..op() });
+    close(real(&run(&mut set).unwrap_or_else(|f| panic!("{f}")).rows[1][1]), 1500.0, "op");
+    let sweep = Overrides { analysis: Some("dc".into()), sweep: Some("Top.q".into()), from: Some(1000.0), to: Some(3000.0), step: Some(1000.0), print: print(), ..Overrides::default() };
+    let table = run(&mut open(&product_source(), sweep)).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(column(&table, 2), [1000.0, 2000.0, 3000.0], "dc");
+    let mut timed = open(&product_source(), product_run());
+    timed.set_at("Top.q", 1500.0, 2e-6).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(column(&run(&mut timed).unwrap_or_else(|f| panic!("{f}")), 2), [500.0, 500.0, 500.0, 1500.0], "transient");
+}

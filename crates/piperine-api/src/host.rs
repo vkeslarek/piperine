@@ -9,11 +9,37 @@ use piperine_ir::{CarrierRole, ValueType};
 use piperine_solver::abi::Value;
 use piperine_solver::prelude::ParamValue;
 
-use crate::params::Derive;
+use piperine_solver::prelude::CircuitInstance;
+
+use crate::params::{Changed, Derive, Params};
 
 use crate::failure::Failure;
 use crate::request::Analysis;
 use crate::session::{ParamPath, Session};
+
+/// A `set` the host scheduled at `at > 0`, as it gave it.
+#[derive(Debug, Clone)]
+pub(crate) struct TimedSet {
+    pub path: ParamPath,
+    pub value: f64,
+    pub at: f64,
+}
+
+/// One param a timed `set` changes at `at`: the set's own, or one derived from it. `written` is
+/// whether a device pin holds the param (a pass-through param only the table knows is not).
+#[derive(Debug, Clone)]
+pub(crate) struct TimedChange {
+    pub change: Changed,
+    pub at: f64,
+    pub written: bool,
+}
+
+impl TimedChange {
+    /// The write the transient performs after the step to `at`.
+    pub fn action(&self) -> HostAction {
+        HostAction::Set { path: ParamPath { instance: self.change.instance.clone(), param: self.change.param.clone() }, value: self.change.scheduled(), at: self.at }
+    }
+}
 
 /// A host action due after the start of a transient.
 #[derive(Debug, Clone)]
@@ -64,27 +90,48 @@ impl Session {
             param.refuse_timed(self.ir())?;
         }
         self.ready_for(at, &action)?;
-        let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
-        let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
         if at > 0.0 {
-            // the derived values are known now: each changed param is checked here and scheduled
-            // at the same instant (HII-18 AC 3)
-            let changes = self.params.changes(&param.instance, &param.param, value, derive)?;
-            let forwarded = !self.params.plan().readers(&param.instance, &param.param).is_empty();
-            let mut scheduled = Vec::new();
-            for change in &changes {
-                if Session::unwritten(circuit, change, forwarded) {
-                    continue;
-                }
-                let refused = |error| Failure::Host { code: "E0802", message: format!("`{}` refuses the value {}: {error}", change.label(), change.value) };
-                circuit.check_set(&change.instance, &change.param, &change.param_value()).map_err(refused)?;
-                scheduled.push(HostAction::Set { path: ParamPath { instance: change.instance.clone(), param: change.param.clone() }, value: change.scheduled(), at });
+            // the values a timed set derives depend on every other set due before it, whatever the
+            // order the host gave them: the whole schedule is derived again with this one in it,
+            // and the call is refused when any of it is
+            self.timed_sets.push(TimedSet { path: param, value, at });
+            let circuit = self.circuit.as_ref().ok_or_else(Session::ran)?;
+            let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
+            let checked = Session::timed_changes(&self.params, derive, circuit, &self.timed_sets);
+            if let Err(refused) = checked {
+                self.timed_sets.pop();
+                return Err(refused);
             }
-            self.params.apply(&changes);
-            self.actions.extend(scheduled);
             return Ok(());
         }
+        let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
+        let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
         Session::set_param(&mut self.params, derive, circuit, &param, value)
+    }
+
+    /// What every timed `set` of `sets` changes, in time order (the order given between equal
+    /// times): each is derived against `table` as it is at its time, the sets due before it
+    /// applied, and each changed param is checked against the param's `where` on `circuit`
+    /// (`E0802`). The first set's own param comes first among its changes.
+    pub(crate) fn timed_changes(table: &Params, derive: Option<&dyn Derive>, circuit: &CircuitInstance, sets: &[TimedSet]) -> Result<Vec<TimedChange>, Failure> {
+        let mut ordered: Vec<&TimedSet> = sets.iter().collect();
+        ordered.sort_by(|a, b| a.at.total_cmp(&b.at));
+        let mut working = table.clone();
+        let mut scheduled = Vec::new();
+        for set in ordered {
+            let changes = working.changes(&set.path.instance, &set.path.param, set.value, derive)?;
+            let forwarded = !working.plan().readers(&set.path.instance, &set.path.param).is_empty();
+            for change in &changes {
+                let written = !Session::unwritten(circuit, change, forwarded);
+                if written {
+                    let refused = |error| Failure::Host { code: "E0802", message: format!("`{}` refuses the value {}: {error}", change.label(), change.value) };
+                    circuit.check_set(&change.instance, &change.param, &change.param_value()).map_err(refused)?;
+                }
+                scheduled.push(TimedChange { change: change.clone(), at: set.at, written });
+            }
+            working.apply(&changes);
+        }
+        Ok(scheduled)
     }
 
     /// Narrows the session's record streams to those `streams` name (a stream's name, or one

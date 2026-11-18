@@ -10,6 +10,7 @@ use piperine_solver::prelude::{AcAnalysisResult, DcAnalysisResult, Net, PoleZero
 
 use crate::failure::Failure;
 use crate::probe::Probe;
+use crate::held::Held;
 use crate::session::ParamPath;
 
 /// One value of a table.
@@ -230,6 +231,11 @@ impl Table {
     /// A transient: the column `time`, then one column per probe; one row per step the result
     /// keeps, in time order.
     pub fn transient(probes: &[Probe], result: &TransientAnalysisResult) -> Result<Table, Failure> {
+        Table::transient_with(probes, result, &[])
+    }
+
+    /// [`Table::transient`], a param no net holds read from `held` at each step's time.
+    pub fn transient_with(probes: &[Probe], result: &TransientAnalysisResult, held: &[Held]) -> Result<Table, Failure> {
         let mut columns = vec!["time".to_string()];
         columns.extend(probes.iter().map(Probe::label));
         let rows = result
@@ -241,7 +247,10 @@ impl Table {
                         Probe::Node { id, .. } => step.get_node(id).map(Cell::Real),
                         Probe::Flow { branch, .. } => step.get_branch(branch.clone()).map(Cell::Real),
                         Probe::Net { path, ty } => step.digital_named(path).map(|bytes| Cell::decode(ty, bytes)).transpose()?,
-                        Probe::Param { path, ty } => step.digital_named(path).map(|bytes| Cell::decode_param(ty, bytes)).transpose()?,
+                        Probe::Param { path, ty } => match step.digital_named(path) {
+                            Some(bytes) => Some(Cell::decode_param(ty, bytes)?),
+                            None => held.iter().find(|h| h.path == *path).map(|h| h.cell_at(step.time())),
+                        },
                         Probe::Term { instance, .. } => return Err(Failure::Host { code: "E0801", message: format!("`i({instance})` is a flow term: a transient prints the flow of a potential branch") }),
                     };
                     let missing = || Failure::Backend(format!("the step at {} holds no value for `{}`", step.time(), probe.label()));

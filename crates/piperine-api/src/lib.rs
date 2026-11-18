@@ -17,6 +17,7 @@
 
 pub mod backend;
 pub mod failure;
+mod held;
 mod host;
 pub mod prelude;
 pub mod metadata;
@@ -33,6 +34,7 @@ pub mod verdict;
 
 pub use backend::Backend;
 pub use failure::Failure;
+pub use held::Held;
 pub use metadata::{Metadata, ParamInfo, PortInfo, StreamInfo};
 pub use plot::Plot;
 pub use probe::{Column, Probe};

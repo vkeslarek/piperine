@@ -7,6 +7,7 @@
 //! and writes every changed param through the caller's writer, in instance order. A writer that
 //! refuses one write undoes the writes already made: the set changes nothing.
 
+use piperine_interp::{Dual, Value as Walked, Walk};
 use piperine_ir::{Constant, Ir, ValueType};
 use piperine_plan::{Binding, DerivePlan};
 use piperine_solver::abi::Value;
@@ -24,6 +25,40 @@ pub trait Derive {
 impl Derive for Compiled {
     fn derive(&self, k: u32, params: &[f64]) -> f64 {
         Compiled::derive(self, k, params)
+    }
+}
+
+/// A `Derive` that evaluates each placement expression with the reference interpreter's walk, so
+/// a design that no backend has built (`piperine info`) still shows the values a `set` gives its
+/// derived params: no `rustc`, the same expressions the generated functions compile.
+pub struct Evaluated<'ir> {
+    ir: &'ir Ir,
+    bindings: Vec<Binding>,
+}
+
+impl<'ir> Evaluated<'ir> {
+    /// The evaluator of `plan`'s bindings over `ir`.
+    pub fn new(ir: &'ir Ir, plan: &DerivePlan) -> Evaluated<'ir> {
+        Evaluated { ir, bindings: plan.bindings().to_vec() }
+    }
+}
+
+impl Derive for Evaluated<'_> {
+    /// NaN for a `k` the plan has no binding for, a count of params other than the parent's, or an
+    /// expression the walk cannot evaluate: the caller reports it as a plan that does not match.
+    fn derive(&self, k: u32, params: &[f64]) -> f64 {
+        let Some(binding) = self.bindings.get(k as usize) else { return f64::NAN };
+        let Some(parent) = self.ir.instance_at(&binding.parent) else { return f64::NAN };
+        let declared = parent.body().params();
+        if declared.len() != params.len() {
+            return f64::NAN;
+        }
+        let values = declared.iter().zip(params).map(|(param, value)| if matches!(param.ty, ValueType::Bool) { Walked::Bool(*value != 0.0) } else { Walked::Real(Dual::constant(*value)) }).collect();
+        match Walk::new(self.ir, values, 0).eval(binding.expr) {
+            Ok(Walked::Real(real)) => real.v,
+            Ok(Walked::Bool(flag)) => f64::from(u8::from(flag)),
+            _ => f64::NAN,
+        }
     }
 }
 

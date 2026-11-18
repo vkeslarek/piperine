@@ -7,6 +7,7 @@ use piperine_ir::{BranchKind, Ir, ValueType};
 use piperine_solver::prelude::{AnalogVariable, BranchIdentifier, CircuitInstance, NodeIdentifier};
 
 use crate::failure::Failure;
+use crate::held::Held;
 
 /// A column's signal, with its full path and what the solver knows it by.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +35,8 @@ pub enum Column {
     Net { id: u32, ty: ValueType },
     /// A param, by the id of its net in the digital plan, with its type: the value with no known byte.
     Param { id: u32, ty: ValueType },
+    /// A param no net holds, read from the host's table over the run.
+    Held { held: Held },
 }
 
 impl Probe {
@@ -115,6 +118,17 @@ impl Probe {
                 let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))? as u32;
                 Ok(if matches!(self, Probe::Param { .. }) { Column::Param { id: at, ty: ty.clone() } } else { Column::Net { id: at, ty: ty.clone() } })
             }
+        }
+    }
+
+    /// [`Probe::column`], a param the circuit has no net for read from `held` (HII-09 AC 1).
+    pub fn column_with(&self, circuit: &CircuitInstance, held: &[Held]) -> Result<Column, Failure> {
+        match self {
+            Probe::Param { path, .. } => match held.iter().find(|h| h.path == *path) {
+                Some(found) => Ok(Column::Held { held: found.clone() }),
+                None => self.column(circuit),
+            },
+            _ => self.column(circuit),
         }
     }
 

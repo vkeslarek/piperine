@@ -25,9 +25,10 @@ use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
-use crate::host::HostAction;
+use crate::held::Held;
+use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
-use crate::params::{Changed, Derive, Params};
+use crate::params::{Changed, Derive, Evaluated, Params};
 use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
@@ -72,8 +73,11 @@ pub struct Session {
     transfer: Option<Transfer>,
     /// The params a `sens` run differentiates by, resolved against the design, in the order given.
     wrt: Vec<ParamPath>,
-    /// The host's actions due after the start of the transient, in the order given.
+    /// The host's drives due after the start of the transient, in the order given.
     pub(crate) actions: Vec<HostAction>,
+    /// The `set`s the host scheduled after the start, as given: their changes are derived in time
+    /// order, against the table as of each one's time, when a call adds one and when the run starts.
+    pub(crate) timed_sets: Vec<TimedSet>,
     /// The value of every param of every instance, which a `set` keeps with what derives from it.
     pub(crate) params: Params,
 }
@@ -205,7 +209,7 @@ impl Session {
         for (path, _, value) in &params {
             Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, path, *value)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset, transfer, wrt, actions: Vec::new(), params: table })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, nodeset, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), params: table })
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
@@ -439,7 +443,11 @@ impl Session {
 
     /// The request's analysis on `circuit`, every observation of the solver to `delivery`.
     fn analysis(&mut self, circuit: CircuitInstance, mut delivery: Box<Delivery>) -> Result<Table, Failure> {
-        let timed = std::mem::take(&mut self.actions);
+        let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
+        let changes = Session::timed_changes(&self.params, derive, &circuit, &self.timed_sets)?;
+        let held = self.held_params(&circuit, &changes);
+        let mut timed = std::mem::take(&mut self.actions);
+        timed.extend(changes.iter().filter(|c| c.written).map(TimedChange::action));
         match &self.spec.analysis {
             Analysis::Op => {
                 let seeds = self.seeds(&circuit)?;
@@ -452,13 +460,13 @@ impl Session {
                     })
                     .map_err(|error| Failure::Solver { analysis: "op", error })?;
                 let circuit = solver.circuit();
-                let net = |path: &str| Session::discrete(circuit, path);
+                let net = |path: &str| Session::discrete(circuit, path).or_else(|| Session::held_bytes(&held, path));
                 let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
                 Table::operating_point(&self.probes, &result, &net, &term)
             }
             Analysis::Transient { stop, max_step, print_step, from } => {
                 // every printed signal finds its place in a step before the first one is taken
-                let columns = self.probes.iter().map(|probe| probe.column(&circuit)).collect::<Result<Vec<_>, Failure>>()?;
+                let columns = self.probes.iter().map(|probe| probe.column_with(&circuit, &held)).collect::<Result<Vec<_>, Failure>>()?;
                 let labels = self.probes.iter().map(Probe::label).collect();
                 let mut recorder = Recorder::new(columns, labels, from.unwrap_or(0.0));
                 if let Some(step) = print_step {
@@ -525,7 +533,8 @@ impl Session {
                             dc.solve()
                         })
                         .map_err(|error| Failure::Solver { analysis: "dc", error })?;
-                    let net = |path: &str| Session::discrete(&circuit, path);
+                    let held = self.held_params(&circuit, &[]);
+                    let net = |path: &str| Session::discrete(&circuit, path).or_else(|| Session::held_bytes(&held, path));
                     let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
                     points.push((value, Table::point(&self.probes, &result, &net, &term)?));
                 }
@@ -577,7 +586,7 @@ impl Session {
                     .and_then(|pss| pss.solve())
                     .map_err(|error| Failure::Solver { analysis: "pss", error })?;
                 // the orbit starts at `tstab` and holds one period
-                let table = Table::transient(&self.probes, &orbit.trace)?;
+                let table = Table::transient_with(&self.probes, &orbit.trace, &held)?;
                 match print_step {
                     Some(step) => table.on_grid(*step, *tstab, tstab + period),
                     None => Ok(table),
@@ -595,6 +604,28 @@ impl Session {
                 Table::sensitivities(&self.probes, &outputs, &self.wrt, &result)
             }
         }
+    }
+
+    /// The params `print` names that no net of the circuit holds, each with the value the table
+    /// gives it and the changes of `timed`: a row reads them from here (HII-09 AC 1).
+    fn held_params(&self, circuit: &CircuitInstance, timed: &[TimedChange]) -> Vec<Held> {
+        let nets = circuit.bound().map(|bound| bound.digital.plan().nets.iter().map(|n| n.name.as_str()).collect::<Vec<_>>()).unwrap_or_default();
+        self.probes
+            .iter()
+            .filter_map(|probe| match probe {
+                Probe::Param { path, ty } if !nets.contains(&path.as_str()) => {
+                    let (instance, param) = path.rsplit_once('.')?;
+                    let changes = timed.iter().filter(|t| t.change.instance == instance && t.change.param == param).map(|t| (t.at, t.change.value)).collect();
+                    Some(Held::new(path.clone(), ty.clone(), self.params.get(instance, param)?, changes))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The bytes of the held param at `path` at the start of a run, as a param's net holds them.
+    fn held_bytes(held: &[Held], path: &str) -> Option<Vec<u8>> {
+        held.iter().find(|h| h.path == path).map(|h| h.bytes_at(0.0))
     }
 
     /// The source and the node a `tf` or `pz` run resolved at open.
@@ -633,28 +664,27 @@ impl Session {
         Some(b.digital.read(NetId(at as u32)).to_vec())
     }
 
-    /// What the design declares (HII-10): every param with its value as the run uses it, the
-    /// top's ports and every record stream. No analysis runs, and none is needed.
+    /// What the design declares (HII-10): every param with its value as the run uses it (the
+    /// session's own table, `set`s and what they derive included), the top's ports and every
+    /// record stream. No analysis runs, and none is needed.
     pub fn metadata(&self) -> Metadata {
-        Session::metadata_of(&self.ir, &self.spec)
+        Metadata::of(&self.ir, &self.params)
     }
 
     /// The top of `spec` and what its design declares, elaborated and nothing else: no backend
-    /// builds it and no analysis runs (`piperine info`). Diagnostics are the `Failure` of a
-    /// design that does not elaborate, as `Session::open` gives them.
+    /// builds it and no analysis runs (`piperine info`). The request's `params` are applied to the
+    /// table, and what a placement derives from them is evaluated by the interpreter's walk, so
+    /// the values shown are the ones a run uses. Diagnostics are the `Failure` of a design that
+    /// does not elaborate, as `Session::open` gives them.
     pub fn describe(project: &Project, spec: &RunSpec) -> Result<(String, Metadata), Failure> {
         let (ir, top) = Session::elaborate(project, spec)?;
-        Ok((top, Session::metadata_of(&ir, spec)))
-    }
-
-    fn metadata_of(ir: &Ir, spec: &RunSpec) -> Metadata {
-        // the request's `params`, each by the full path of its param, the last one given winning
-        let set: Vec<(String, f64)> = spec
-            .params
-            .iter()
-            .filter_map(|(entry, value)| ParamPath::resolve(ir, ir.top().path(), entry).ok().map(|p| (format!("{}.{}", p.instance, p.param), *value)))
-            .collect();
-        Metadata::of(ir, &|path| set.iter().rev().find(|(p, _)| p == path).map(|(_, v)| *v))
+        let mut table = Params::of(&ir);
+        let derive = Evaluated::new(&ir, table.plan());
+        for (entry, value) in &spec.params {
+            let path = ParamPath::resolve(&ir, ir.top().path(), entry)?;
+            table.set(&path.instance, &path.param, *value, Some(&derive), &mut |_| Ok(()))?;
+        }
+        Ok((top, Metadata::of(&ir, &table)))
     }
 
     /// The plot of the run that has completed, drawn from the rows of its table: every accepted

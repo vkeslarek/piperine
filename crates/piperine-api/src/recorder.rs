@@ -243,6 +243,7 @@ impl Recorder {
                     (Cell::Real(a), Cell::Real(b)) => Cell::Real(a + (b - a) * (at - t0) / (time - t0)),
                     _ => Cell::Unknown,
                 },
+                (Column::Held { held }, _) => held.cell_at(at),
                 (Column::Unknown { .. } | Column::Param { .. }, _) => b.clone(),
             });
             let row = Recorder::row(at, values.collect());
@@ -298,6 +299,7 @@ impl StepObserver for Tap {
             Column::Unknown { index } => Ok(step.unknown(*index).map(Cell::Real)),
             Column::Net { id, ty } => step.net(*id).map(|bytes| Cell::decode(ty, bytes)).transpose(),
             Column::Param { id, ty } => step.net(*id).map(|bytes| Cell::decode_param(ty, bytes)).transpose(),
+            Column::Held { held } => Ok(Some(held.cell_at(step.time()))),
         });
     }
 }
@@ -317,7 +319,7 @@ mod tests {
     fn solution(solution: &[f64]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + '_ {
         move |column| match column {
             Column::Unknown { index } => Ok(solution.get(*index).map(|v| Cell::Real(*v))),
-            Column::Net { .. } | Column::Param { .. } => Ok(None),
+            Column::Net { .. } | Column::Param { .. } | Column::Held { .. } => Ok(None),
         }
     }
 
@@ -525,6 +527,7 @@ mod tests {
         move |column| match column {
             Column::Unknown { .. } => Ok(Some(Cell::Real(v))),
             Column::Net { id, .. } | Column::Param { id, .. } => Ok(nets.get(*id as usize).cloned()),
+            Column::Held { held } => Ok(Some(held.cell_at(0.0))),
         }
     }
 

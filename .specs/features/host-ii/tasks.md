@@ -1436,6 +1436,18 @@ Proof: run apiderived | test the_interpreter_refuses_a_set_a_method_call_placeme
 **C106** - The param walk reads every form of `Expr`, method calls, `known_or`, `is_known` and `high` included. (HII-18, AC 1; F1) 
 Proof: run planlib | test derive::tests::every_form_that_holds_an_operand_reports_the_params_it_reads ... ok
 
+**C107** - A timed set derives against the sets due before it, a set given later but at 0 included. (HII-18, AC 3; HII-13; F2) 
+Proof: run apiderived | test a_timed_set_derives_against_the_sets_due_before_it ... ok
+
+**C108** - Timed sets given out of time order derive in time order. (HII-18, AC 3; HII-13; F2) 
+Proof: run apiderived | test a_timed_set_given_out_of_time_order_derives_in_time_order ... ok
+
+**C109** - Metadata lists a derived param at the value the run uses, through `Session::metadata` and `Session::describe`. (HII-10, AC 1; HII-11; F3) 
+Proof: run apiderived | test metadata_lists_a_derived_param_at_the_value_the_run_uses ... ok
+
+**C110** - `print` of a param no device pin holds reads the session's table, at each time. (HII-09, AC 1; F4) 
+Proof: run apiderived | test a_param_no_pin_holds_prints_the_value_the_run_used ... ok
+
 ---
 
 ## Handoff
