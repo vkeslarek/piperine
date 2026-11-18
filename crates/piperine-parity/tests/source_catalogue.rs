@@ -254,6 +254,33 @@ fn f64_rows_equal_rusts_bit_for_bit_in_analog_and_in_a_reaction() {
 }
 
 #[test]
+fn a_crossed_or_nan_clamp_in_analog_faults_naming_it() {
+    // CAT-01 AC 2 (H.2: `clamp` panics when `lo > hi` or a bound is NaN, as Rust's does, and as a
+    // reaction does): in an `analog` block the operating point fails and the fault names `clamp`;
+    // an ordered pair of bounds solves.
+    let bench = |name: &str, lo: &str, hi: &str| {
+        let source = format!(
+            "module Load(p: Electrical, n: Electrical) {{}}\nanalog for Load {{ i(p, n) +> v(p, n); }}\n\
+             module Row(p: Electrical) {{ x: f64 = 0.5; lo: f64 = 0.0; hi: f64 = 1.0; zero: f64 = 0.0; }}\n\
+             analog for Row {{ let not_a_number = zero / zero; i(gnd, p) +> x.clamp({lo}, {hi}); }}\n\
+             module Bench() {{ signal a: Electrical; let r = Row(a); let l = Load(a, gnd); }}\n"
+        );
+        project(name, &source).compile("Bench").unwrap_or_else(|r| panic!("{r}"))
+    };
+    for (name, lo, hi) in [("clamp_crossed", "hi + 1.0", "hi"), ("clamp_nan_lo", "not_a_number", "hi"), ("clamp_nan_hi", "lo", "not_a_number")] {
+        let mut running = bench(name, lo, hi);
+        // the fault surfaces where the operating point is first evaluated
+        let err = match running.circuit.dc(Context::default()) {
+            Err(e) => e.to_string(),
+            Ok(mut dc) => dc.solve().err().unwrap_or_else(|| panic!("{name}: the operating point solved")).to_string(),
+        };
+        assert!(err.contains("clamp"), "{name}: the fault names `clamp`: {err}");
+    }
+    let mut running = bench("clamp_ordered", "lo", "hi");
+    running.circuit.dc(Context::default()).expect("dc").solve().expect("an ordered clamp solves");
+}
+
+#[test]
 fn a_row_over_an_unknown_value_is_unknown() {
     // CAT-01 AC 5 (§3.3): a row over a value that may be unknown is unknown exactly when an
     // operand is. Unknown operands give an unknown result in the unary, the binary (either

@@ -22,7 +22,8 @@ pub trait Real:
     fn min(self, other: Self) -> Self;
     /// The larger of the two; the tangent is that of the one chosen, `self` on a tie.
     fn max(self, other: Self) -> Self;
-    /// `self` held in `lo..=hi`, as `self.max(lo).min(hi)`: the tangent is that of the bound
+    /// `self` held in `lo..=hi`, as `self.max(lo).min(hi)`; panics when `lo > hi` or a bound is NaN,
+    /// as Rust's `clamp` does. The tangent is that of the bound
     /// when the value is held at it, and of `self` inside.
     fn clamp(self, lo: Self, hi: Self) -> Self;
     /// The largest integer not above the value; its tangent is zero.
@@ -100,6 +101,10 @@ impl Real for f64 {
     }
 
     fn clamp(self, lo: f64, hi: f64) -> f64 {
+        // as Rust's `clamp` and H.2: a crossed pair of bounds, or a NaN bound, panics
+        if !(lo <= hi) {
+            panic!("`clamp` with a lower bound {lo:?} above the upper bound {hi:?}, or a NaN bound");
+        }
         f64::min(f64::max(self, lo), hi)
     }
 
@@ -300,6 +305,9 @@ impl<const N: usize> Real for Dual<N> {
     }
 
     fn clamp(self, lo: Dual<N>, hi: Dual<N>) -> Dual<N> {
+        if !(lo.v <= hi.v) {
+            panic!("`clamp` with a lower bound {:?} above the upper bound {:?}, or a NaN bound", lo.v, hi.v);
+        }
         Real::min(Real::max(self, lo), hi)
     }
 
