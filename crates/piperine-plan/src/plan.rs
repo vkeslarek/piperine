@@ -120,6 +120,10 @@ pub enum Source {
     /// The `CHANGED` byte of the event pin of event `k`: whether the event fired in this
     /// microstep (`Expr::Fired`, abi.md §4.1).
     Fired(u32),
+    /// The `GLOBAL` `RESOLUTION` pin: the session's tick length in seconds. A reaction that
+    /// decides on a value that may be unknown reads it, to key its commits by the instant they
+    /// come due (§3.3.3, abi.md C1).
+    Resolution,
 }
 
 impl Source {
@@ -213,7 +217,7 @@ impl ReadSet {
         }));
     }
 
-    fn union(&mut self, other: &ReadSet) {
+    pub(crate) fn union(&mut self, other: &ReadSet) {
         self.0.extend(other.0.iter().copied());
     }
 
@@ -280,6 +284,9 @@ pub struct Pins {
     pub tolerances: Vec<(Option<u32>, Option<u32>)>,
     /// The `CAP` watch of each `bound_step` site, as `(site, watch)`, after the `CROSS` watches.
     pub caps: Vec<(u32, u32)>,
+    /// The `GLOBAL` `RESOLUTION` pin, after the tolerance pins, when a reaction of the body
+    /// decides on a value that may be unknown.
+    pub resolution: Option<u32>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -467,6 +474,7 @@ impl BodyPlan {
         let rearms = Digital::rearm_pins(&mut s, body);
         let records = Digital::record_pins(&mut s, body);
         let tolerances = Digital::tolerance_pins(&mut s, body);
+        let resolution = Digital::resolution_pin(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
         let pins = Pins {
@@ -486,6 +494,7 @@ impl BodyPlan {
             records,
             tolerances,
             caps,
+            resolution,
         };
 
         // Terms, branch by branch.
@@ -692,6 +701,7 @@ impl BodyPlan {
             Source::Freq => value(cell::AMBIENT, ambient::FREQ),
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
+            Source::Resolution => value(cell::PIN, pins.resolution.unwrap_or(GROUND)),
         }
     }
 

@@ -36,7 +36,7 @@ use std::sync::OnceLock;
 
 use crate::handle::Body;
 use crate::ids::{ExprId, FunctionId, StmtId};
-use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp};
+use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp, ValueType};
 
 /// The index of a branch in its body (`Body::branches`).
 pub type BranchIndex = u32;
@@ -123,6 +123,14 @@ impl<'a> Body<'a> {
     /// sorted, through locals and function calls.
     pub fn fired_reads(&self, target: Target) -> Vec<u32> {
         self.sources_of(target).fired.iter().copied().collect()
+    }
+
+    /// Whether `target` takes a decision on a value that may be unknown, through locals and
+    /// function calls: an `if` whose condition is `Flagged`, which is also what a `match` and a
+    /// short-circuit operand over such a value lower to (§3.3.3). The commits and records of a
+    /// reaction that does are joined across the paths the decision opens.
+    pub fn decides_on_unknown(&self, target: Target) -> bool {
+        self.sources_of(target).unknown_control
     }
 
     fn sources_of(&self, target: Target) -> &'a Sources {
@@ -219,6 +227,8 @@ struct Sources {
     previous: BTreeSet<u32>,
     /// The events whose `CHANGED` byte this microstep is read (`Expr::Fired`).
     fired: BTreeSet<u32>,
+    /// Whether an `if` with a `Flagged` condition is evaluated (`Body::decides_on_unknown`).
+    unknown_control: bool,
 }
 
 impl Sources {
@@ -232,6 +242,7 @@ impl Sources {
         self.flows.extend(&other.flows);
         self.previous.extend(&other.previous);
         self.fired.extend(&other.fired);
+        self.unknown_control |= other.unknown_control;
     }
 
     fn to_deps(&self) -> Deps {
@@ -746,7 +757,7 @@ impl<'a> Walk<'a> {
                 let l = self.pop();
                 Walk::binary(*op, l, r)
             }
-            Expr::If { .. } => {
+            Expr::If { cond, .. } => {
                 let o = self.pop();
                 let t = self.pop();
                 let c = self.pop();
@@ -754,6 +765,7 @@ impl<'a> Walk<'a> {
                 let mut sources = c.sources;
                 sources.join(&t.sources);
                 sources.join(&o.sources);
+                sources.unknown_control |= matches!(ir.exprs[cond.index()].ty, ValueType::Flagged(_));
                 Value::of(sources, class)
             }
             Expr::Block { value, .. } => match value {

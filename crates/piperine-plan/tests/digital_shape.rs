@@ -5,9 +5,9 @@
 //! hand-built buck slice of `piperine-ir/tests/support/digital.rs`.
 
 use piperine_abi::layout::{BIT, BYTE, LOW, NONE, REAL, is_canonical};
-use piperine_abi::raw::{Cell, Layout, Pin, Shape, cell, field_flag, kind, leaf, part, pin_flag, role};
+use piperine_abi::raw::{Cell, Layout, Pin, Shape, cell, field_flag, global, kind, leaf, part, pin_flag, role};
 use piperine_ir::{
-    BodyId, BodySpec, CarrierRole, Constant, Event, EventSource, InstanceSpec, Ir, IrBuilder, Origin, Real, Stream, StreamField, ValueType,
+    BodyId, BodySpec, CarrierRole, Constant, Event, EventSource, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, Origin, Real, Stream, StreamField, ValueType,
 };
 use piperine_plan::{BodyPlan, Mode, RecordLayout, Source, Target};
 
@@ -236,7 +236,11 @@ fn carriers_are_discrete_pins_with_a_known_byte() {
     let (ir, body) = Alone::design(Buck::dpwm);
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
-    let carrier_pins: Vec<PinView> = shape.pins.iter().filter(|p| p.kind == kind::DISCRETE && p.role != role::PARAM).map(PinView::of).collect();
+    // (the `if` of its reaction decides on a value that may be unknown, so the body also has the
+    // `GLOBAL` `RESOLUTION` pin, after every other pin: it is no carrier)
+    let carrier_pins: Vec<PinView> =
+        shape.pins.iter().filter(|p| p.kind == kind::DISCRETE && p.role != role::PARAM && p.role != role::GLOBAL).map(PinView::of).collect();
+    assert_eq!(shape.pins.iter().last().map(|p| (p.name.as_str(), p.role, p.global)), Some(("resolution", role::GLOBAL, global::RESOLUTION)));
     let summary: Vec<(&str, u32, Vec<u8>)> = carrier_pins.iter().map(|p| (p.name.as_str(), p.role, p.init.clone())).collect();
     let (port, private) = (role::PORT, role::PRIVATE);
     assert_eq!(
@@ -433,7 +437,9 @@ fn a_reaction_lists_its_events_reads_and_statements() {
         })
         .collect();
     read.sort_unstable();
-    let mut named = ["count", "run", "duty", "frame", "width", "hs_cut", "hs", "oc", "ls_cut", "ls", "sink_oc", "hs_off"];
+    // and, last of all, the `RESOLUTION` pin: the reaction's `if wrap` decides on a value that
+    // may be unknown (§3.3.3), so its commits are keyed by the instant they come due
+    let mut named = ["count", "run", "duty", "frame", "width", "hs_cut", "hs", "oc", "ls_cut", "ls", "sink_oc", "hs_off", "resolution"];
     named.sort_unstable();
     assert_eq!(read, named);
     let committed: Vec<&str> = statements.iter().map(|st| shape.pins.get(st.0 as usize).map_or("?", |p| p.name.as_str())).collect();
@@ -451,7 +457,12 @@ fn a_reaction_lists_its_events_reads_and_statements() {
     let shape = plan.shape().shape();
     let reference = Find::pin(shape, "reference");
     let (_, reads, statements) = Find::reaction(shape, "reaction:0");
-    assert_eq!(reads, [pin(Find::pin(shape, "run"), part::VALUE), pin(Find::pin(shape, "target"), part::VALUE), pin(reference, part::VALUE)]);
+    // the chain decides on values that may be unknown (§3.3.3), so the reaction also reads the
+    // `RESOLUTION` pin, last
+    assert_eq!(
+        reads,
+        [pin(Find::pin(shape, "run"), part::VALUE), pin(Find::pin(shape, "target"), part::VALUE), pin(reference, part::VALUE), pin(Find::pin(shape, "resolution"), part::VALUE)]
+    );
     assert_eq!(statements, [(reference, 0, 4, 0, 0.0); 3]);
 }
 
@@ -767,4 +778,146 @@ fn every_record_layout_ends_with_maybe() {
         assert_eq!((layout.maybe_offset(), layout.size), (maybe_at, size), "{}", stream.name);
         assert_eq!(layout.fields.len(), stream.fields.len(), "{}: `maybe` is no field of the stream", stream.name);
     }
+}
+
+/// Bodies for the reads of the merge of unknown control: an `in go`, an `in en`, an `out q`, all
+/// `Bit`, and one reaction on `go.changed()` that commits to `q`.
+struct Merging;
+
+impl Merging {
+    const F: &'static str = "merging.msl";
+
+    /// `module <name>(in go: Bit, in en: Bit, out q: Bit)`.
+    fn body(b: &mut IrBuilder, name: &str) -> BodyId {
+        let body = b.body(Buck::spec(name, Merging::F, 1));
+        for (carrier, role, col) in [("go", CarrierRole::In, 14), ("en", CarrierRole::In, 28), ("q", CarrierRole::Out, 42)] {
+            b.carrier(body, Buck::carrier(carrier, ValueType::Bool, role, None, Merging::F, 1, col));
+        }
+        body
+    }
+
+    /// `on go.changed() && <guard> { q <- <value>; }`.
+    fn react(b: &mut IrBuilder, body: BodyId, guard: Option<piperine_ir::ExprId>, value: piperine_ir::ExprId) {
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard, origin: Buck::origin(Merging::F, 2, 8) });
+        let commit = Dx::new(b, Merging::F, 3, 9).commit(2, value, None);
+        Buck::reaction(b, body, vec![changed], vec![commit], vec![], Merging::F, 2);
+    }
+
+    /// `on go.changed() && <guard> { q <- true; }` with the guard `en` (a value that may be
+    /// unknown), `en.high()` (a known `bool`) or none.
+    fn guarded(b: &mut IrBuilder, name: &str, guard: Option<bool>) -> BodyId {
+        let body = Merging::body(b, name);
+        let mut x = Dx::new(b, Merging::F, 2, 20);
+        let en = x.carrier(1, ValueType::Bool);
+        let guard = guard.map(|may_be_unknown| if may_be_unknown { en } else { x.high(en) });
+        let yes = Dx::new(b, Merging::F, 3, 14).boolean(true);
+        Merging::react(b, body, guard, yes);
+        body
+    }
+
+    /// `on go.changed() { q <- if <en> { true } else { false }; }`, the condition `en` (which may
+    /// be unknown) or `en.high()` (a known `bool`).
+    fn deciding(b: &mut IrBuilder, name: &str, may_be_unknown: bool) -> BodyId {
+        let body = Merging::body(b, name);
+        let mut x = Dx::new(b, Merging::F, 3, 14);
+        let en = x.carrier(1, ValueType::Bool);
+        let cond = if may_be_unknown { en } else { x.high(en) };
+        let (yes, no) = (x.boolean(true), x.boolean(false));
+        let ty = if may_be_unknown { Ty::flagged(ValueType::Bool) } else { ValueType::Bool };
+        let value = x.if_(cond, yes, no, ty);
+        Merging::react(b, body, None, value);
+        body
+    }
+
+    /// `fn pick(en: Bit) -> Bit { if en { true } else { false } }` and
+    /// `on go.changed() { q <- pick(en); }`: the decision is in a function the reaction calls.
+    fn deciding_in_a_call(b: &mut IrBuilder, name: &str) -> BodyId {
+        let flagged = Ty::flagged(ValueType::Bool);
+        let mut x = Dx::new(b, Merging::F, 5, 5);
+        let en = x.local(0, flagged.clone());
+        let (yes, no) = (x.boolean(true), x.boolean(false));
+        let decision = x.if_(en, yes, no, flagged.clone());
+        let local = Local { name: "en".into(), ty: flagged.clone() };
+        let pick = b.function(FunctionSpec {
+            name: "pick".into(),
+            origin: Buck::origin(Merging::F, 5, 1),
+            params: vec![local.clone()],
+            ret: flagged.clone(),
+            locals: vec![local],
+            body: decision,
+        });
+        let body = Merging::body(b, name);
+        let mut x = Dx::new(b, Merging::F, 3, 14);
+        let en = x.carrier(1, ValueType::Bool);
+        let value = x.call(pick, vec![en], flagged);
+        Merging::react(b, body, None, value);
+        body
+    }
+}
+
+/// Whether the shape has a pin called `name`.
+fn has_pin(shape: &Shape<'_>, name: &str) -> bool {
+    shape.pins.iter().any(|p| p.name.as_str() == name)
+}
+
+#[test]
+fn a_reaction_on_a_flagged_guard_reads_the_guard_and_fired() {
+    // §13 rule 1: a guard that may be unknown makes the reaction a maybe, so it recomputes the
+    // guard from the guard's own reads (`en`) and reads whether the event of its head fired
+    // (`Source::Fired`, the `CHANGED` byte of the event pin) to know it ran for sure
+    let (ir, body) = Alone::design(|b| Merging::guarded(b, "Maybe", Some(true)));
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1), Source::Fired(0)]);
+    let (en, event) = (Find::pin(shape, "en"), Find::pin(shape, "event:0"));
+    let (on, reads, _) = Find::reaction(shape, "reaction:0");
+    assert_eq!((on, reads), (vec![event], vec![pin(en, part::VALUE), pin(event, part::CHANGED)]));
+    assert!(!has_pin(shape, "resolution"), "a guard needs no `RESOLUTION` pin");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+
+    // a guard that is a known `bool`, and no guard, leave the reads the reaction had: it reads
+    // what its body reads (here nothing) and nothing of the guard
+    for (name, guard) in [("Sure", Some(false)), ("Plain", None)] {
+        let (ir, body) = Alone::design(match guard {
+            Some(_) => |b| Merging::guarded(b, "Sure", Some(false)),
+            None => |b| Merging::guarded(b, "Plain", None),
+        });
+        let plan = BodyPlan::new(ir.body(body));
+        let shape = plan.shape().shape();
+        assert_eq!(plan.reactions()[0].reads, [], "{name}");
+        assert_eq!(Find::reaction(shape, "reaction:0").1, [], "{name}");
+        assert!(!has_pin(shape, "resolution"), "{name}");
+    }
+}
+
+#[test]
+fn a_reaction_with_an_unknown_decision_reads_the_resolution() {
+    // §3.3.3, abi.md C1: a reaction that decides on a value that may be unknown keys its commits
+    // by the instant they come due, which the session's tick (the `GLOBAL` `RESOLUTION` pin)
+    // decides; so it reads that pin, after what its body reads (`Source::Resolution` is
+    // appended last), and the body has the pin, after every other pin
+    let decisions: [(&str, fn(&mut IrBuilder) -> BodyId); 2] = [
+        ("direct", |b| Merging::deciding(b, "Direct", true)),
+        ("through a call", |b| Merging::deciding_in_a_call(b, "Called")),
+    ];
+    for (name, make) in decisions {
+        let (ir, body) = Alone::design(make);
+        let plan = BodyPlan::new(ir.body(body));
+        let shape = plan.shape().shape();
+        assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1), Source::Resolution], "{name}");
+        let resolution = Find::pin(shape, "resolution");
+        let p = shape.pins.get(resolution as usize).expect("the `RESOLUTION` pin");
+        assert_eq!((p.kind, p.role, p.global), (kind::DISCRETE, role::GLOBAL, global::RESOLUTION), "{name}");
+        assert_eq!(resolution as usize, shape.pins.len() - 1, "{name}: the pin follows every other pin");
+        let (_, reads, _) = Find::reaction(shape, "reaction:0");
+        assert_eq!(reads, [pin(Find::pin(shape, "en"), part::VALUE), pin(resolution, part::VALUE)], "{name}");
+        assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "{name}");
+    }
+    // a decision on a known `bool` needs neither: the reads and the pins are what they were
+    let (ir, body) = Alone::design(|b| Merging::deciding(b, "Known", false));
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1)]);
+    assert!(!has_pin(shape, "resolution"));
+    assert_eq!(shape.pins.len(), 4, "go, en, q and the event pin");
 }

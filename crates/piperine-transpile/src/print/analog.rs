@@ -97,6 +97,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::Static => Text::generated("is_static"),
             Source::Time => Text::generated("time"),
             Source::Fired(k) => Text::generated(&format!("event{k}_fired")),
+            Source::Resolution => Text::generated("resolution"),
             Source::Freq => ValuePrinter::env_name(Env::Freq).to_string(),
             Source::Analysis(kind) => ValuePrinter::env_name(Env::Analysis(kind)).to_string(),
         }

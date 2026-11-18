@@ -297,7 +297,9 @@ fn an_unknown_condition_faults_and_commits_nothing() {
     // RS-11 AC 5: `if d { … }` with `d` unwritten faults, naming the `if` (react.msl:12:9), and
     // the commit `r <- 9` made before it is not flushed: the host receives none
     let mut h = instance("Guarded");
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("d", unknown(2))]);
+    // (the reaction decides on a value that may be unknown, so it reads the session's tick too)
+    let tick = known_real(1e-15);
+    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("d", unknown(2)), ("resolution", tick.clone())]);
     let error = result.expect_err("an unknown condition is a fault");
     assert_eq!(error.status, status::FAULT);
     assert!(error.message.contains("react.msl:12:9"), "the fault names the `if`: {}", error.message);
@@ -305,7 +307,7 @@ fn an_unknown_condition_faults_and_commits_nothing() {
 
     // the instance answers the next call: `d` known true commits `r <- 9` (statement 0) and
     // `q <- true` (statement 1)
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("d", known(&[1]))]);
+    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("d", known(&[1])), ("resolution", tick)]);
     result.expect("a known condition runs");
     assert_eq!(made, [(0, known(&[9]), 0.0), (1, known(&[1]), 0.0)]);
 }

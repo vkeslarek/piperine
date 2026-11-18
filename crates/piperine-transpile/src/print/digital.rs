@@ -100,7 +100,7 @@ impl<'a> DigitalPrinter<'a> {
             Source::CarrierChanged(_) | Source::DelayedChanged(_) | Source::Crossed(_) | Source::Timer(_) | Source::Fired(_) => {
                 format!("let {name} = {cx}.bool({i});")
             }
-            Source::Node(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq => {
+            Source::Node(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq | Source::Resolution => {
                 format!("let {name} = {cx}.f64({i});")
             }
             // abi.md §4.2: `STATIC` is one `BOOL` byte

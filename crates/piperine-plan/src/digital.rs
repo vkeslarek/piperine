@@ -465,6 +465,13 @@ impl Digital {
             .collect()
     }
 
+    /// Adds the `GLOBAL` `RESOLUTION` pin when a reaction of `body` decides on a value that may
+    /// be unknown (`Body::decides_on_unknown`): its commits are keyed by when they come due.
+    pub(crate) fn resolution_pin(s: &mut ShapeBuf, body: Body<'_>) -> Option<u32> {
+        let decides = (0..body.reactions().len() as u32).any(|k| body.decides_on_unknown(Query::Reaction(k)));
+        decides.then(|| s.pin(PinSpec { origin: &Self::at(body.origin()), global: global::RESOLUTION, ..PinSpec::discrete("resolution", role::GLOBAL, &F64) }))
+    }
+
     /// Adds the `GLOBAL` `START` pin when `body` has an `at` event.
     pub(crate) fn start_pin(s: &mut ShapeBuf, body: Body<'_>) -> Option<u32> {
         body.events().iter().any(|e| matches!(e.source, EventSource::At(_))).then(|| {
@@ -579,6 +586,31 @@ impl Digital {
         functions
     }
 
+    /// What reaction `k` of `body` reads: its own dependency set, and what the merge of unknown
+    /// control needs on top of it. A guard that may be unknown (§13 rule 1) makes the reaction
+    /// run as a maybe, so it reads the guard's sources, to recompute it, and whether each event
+    /// of its head fired, to know whether it ran for sure. A decision on a value that may be
+    /// unknown (§3.3.3) reads the `RESOLUTION` pin, to key its commits by due instant.
+    fn reaction_reads(body: Body<'_>, k: u32) -> ReadSet {
+        let mut set = ReadSet::target(body, Query::Reaction(k));
+        let head = &body.reactions()[k as usize].on;
+        let flagged = |e: u32| {
+            body.events().get(e as usize).and_then(|event| event.guard).is_some_and(|g| matches!(body.ir().expr_type(g), ValueType::Flagged(_)))
+        };
+        if head.iter().any(|e| flagged(*e)) {
+            for e in head {
+                if flagged(*e) {
+                    set.union(&ReadSet::target(body, Query::Guard(*e)));
+                }
+                set.0.insert(Source::Fired(*e));
+            }
+        }
+        if body.decides_on_unknown(Query::Reaction(k)) {
+            set.0.insert(Source::Resolution);
+        }
+        set
+    }
+
     /// Declares the reactions of `body`: its own, then one per drive with `after`.
     pub(crate) fn reactions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>) -> Vec<ReactionPlan> {
         let ir = body.ir();
@@ -589,7 +621,7 @@ impl Digital {
                 on: r.on.iter().map(|e| pins.events.get(*e as usize).copied().unwrap_or(u32::MAX)).collect(),
                 // abi.md §4.2: a reaction reads no `FREQ`; the `freq()` of a function it calls is 0
                 // (§14.4.4), which the printer binds
-                reads: ReadSet::target(body, Query::Reaction(k as u32)).0.into_iter().filter(|s| *s != Source::Freq).collect(),
+                reads: Self::reaction_reads(body, k as u32).0.into_iter().filter(|s| *s != Source::Freq).collect(),
                 statements: StatementPlan::of_reaction(body, k as u32),
             };
             Self::declare(s, pins, body, &format!("reaction:{k}"), &Self::at(&r.origin), &plan);

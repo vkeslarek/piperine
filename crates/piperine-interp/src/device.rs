@@ -89,6 +89,9 @@ impl Interpreted {
                 Source::Time => None,
                 // `freq()` and `analysis(..)`: not a frame cell; the walk refuses the read by name.
                 Source::Freq | Source::Analysis(_) | Source::Fired(_) => None,
+                // the tick length of a reaction that decides on an unknown: no body with a
+                // reaction runs here (R1)
+                Source::Resolution => None,
                 // A carrier read: `Interpreter::new` refuses every body with a carrier (R1).
                 Source::Carrier(_) | Source::CarrierChanged(_) | Source::Delayed(_) | Source::DelayedChanged(_) | Source::Crossed(_) => None,
                 // a timer's pin, a previous value: `Interpreter::new` refuses every body with an
