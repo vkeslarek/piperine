@@ -837,9 +837,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/run.rs` gains `a_fatal_run_prints_its_msg_and_exits_1`
-- [ ] Gate check passes: Quick (`Run clirun`)
-- [ ] Test count: 1 new test
+- [x] `crates/piperine-cli/tests/run.rs` gains `a_fatal_run_prints_its_msg_and_exits_1`
+- [x] Gate check passes: Quick (`Run clirun`)
+- [x] Test count: 1 new test
 
 **Tests**: e2e
 **Gate**: quick

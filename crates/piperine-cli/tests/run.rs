@@ -446,3 +446,23 @@ fn run_prints_the_fatal_line_and_exits_1() {
     let last = cells(rows.last().expect("table rows"));
     assert!((last[0].parse::<f64>().expect("a time") - 2e-6).abs() <= 1e-12, "the table ends at the fatal instant: {stdout}");
 }
+
+#[test]
+fn a_fatal_run_prints_its_msg_and_exits_1() {
+    // HII-15 AC 1 (`std/io.msl`: `fatal` writes `sim` with `failed = true` and its `msg`): the
+    // records already printed stay, the fatal line is the last of standard error, exit 1; the
+    // same bench with `finish` instead is no failure and prints its table
+    let design = |end: &str| format!("pub module Resistor(p: Electrical, n: Electrical) {{ r: f64 where r > 0.0; }}\nanalog for Resistor {{ i(p, n) +> v(p, n) / r; }}\npub module Vsource(p: Electrical, n: Electrical) {{ dc: f64 = 1.0; }}\nanalog for Vsource {{ v(p, n) +> dc; }}\n\nmodule M() {{}}\ndigital for M {{ on at(1u) {{ emit!(\"note\", n = 1); {end} }} }}\n\nmodule Top() {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n    let m = M();\n}}\n");
+    let dir = tempfile::tempdir().expect("tmp");
+    std::fs::write(dir.path().join("brown.msl"), design("fatal(\"brownout\");")).expect("brown.msl");
+    let args = ["run", "brown.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"];
+    let out = piperine_in(dir.path(), shared_cache(), &args);
+    let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+    assert_eq!(out.status.code(), Some(1), "{stdout}\n{stderr}");
+    assert_eq!(stderr.lines().last(), Some("fatal at 1.000000e-6: brownout"), "the fatal line is the last of standard error:\n{stderr}");
+    assert!(stdout.lines().any(|l| l.contains("note")), "the records already printed stay:\n{stdout}");
+
+    std::fs::write(dir.path().join("fine.msl"), design("finish();")).expect("fine.msl");
+    let out = piperine_in(dir.path(), shared_cache(), &["run", "fine.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"]);
+    assert_eq!(out.status.code(), Some(0), "finish is no failure: {}\n{}", text(&out.stdout), text(&out.stderr));
+}
