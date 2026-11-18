@@ -181,10 +181,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/goldens/` holds `tf_divider.txt`, `pz_lowpass.txt`, `sens_divider.txt`, `pss_rc.txt`, `temp_res.txt`, each the binary's output
-- [ ] `twins.rs` gains `every_twin_prints_the_bytes_it_printed_before_the_move` (sixteen twins, every backend that runs each); the existing tests pass with sixteen twins
-- [ ] Gate check passes: Quick (`Run twins`)
-- [ ] Test count: 1 new test
+- [x] `crates/piperine-cli/tests/goldens/` holds `tf_divider.txt`, `pz_lowpass.txt`, `sens_divider.txt`, `pss_rc.txt`, `temp_res.txt`, each the binary's output
+- [x] `twins.rs` gains `every_twin_prints_the_bytes_it_printed_before_the_move` (sixteen twins, every backend that runs each); the existing tests pass with sixteen twins
+- [x] Gate check passes: Quick (`Run twins`)
+- [x] Test count: 1 new test
 
 **Tests**: e2e
 **Gate**: quick
@@ -1228,7 +1228,7 @@ Proof: run paritylib | test corpus::tests::a_name_in_two_scenarios_is_refused ..
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** T1 (2026-11-18, B1): main holds `host-ii` and `solver-hygiene`, so the corpus is sixteen twins, not twelve: the original seven, `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` and the five of `host-ii` (`parity_corpus` already counts 16; `tf` rows read `*_impedance`; `HostRun` is in `piperine-parity`; root `[[test]] host_ii` is `crates/piperine-api/tests/root_surface/host_ii.rs`). Nine twins have no golden (T2), not five. The scenario list is sixteen: T8 also carries `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` (8 tests); T9 keeps the five of `host-ii`. `piperine::Settings` does not exist: the root takes `piperine-transpile` as it already does.
+**Settled mid-build:** T1 (2026-11-18, B1): main holds `host-ii` and `solver-hygiene`, so the corpus is sixteen twins, not twelve: the original seven, `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` and the five of `host-ii` (`parity_corpus` already counts 16; `tf` rows read `*_impedance`; `HostRun` is in `piperine-parity`; root `[[test]] host_ii` is `crates/piperine-api/tests/root_surface/host_ii.rs`). Nine twins have no golden (T2), not five. The scenario list is sixteen: T8 also carries `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` (8 tests); T9 keeps the five of `host-ii`. `piperine::Settings` does not exist: the root takes `piperine-transpile` as it already does. T2: four twins (`pss_rc`, `tran_jump`, `tran_corner`, `tran_floor`) read `now()`, which the interpreter refuses ("use --backend rust"), so `twins.rs` gives each `Twin` a `backends` list and holds those four on the Rust backend only (as `parity_tran.rs` and `deviation.rs` already do); `tran_floor` fails `E0508` by design, its golden is empty; the old `...before_the_long_run` test keeps its seven twins through `BEFORE_THE_LONG_RUN`. The goldens of the nine are captured from the binary at `6d479e3b`, both backends equal where both run. The CLI has no flag for `delmin`, so `tran_corner`'s command runs the default floor.
 **Dispatched:** B1 - Sonnet worker, 2026-11-18 (host-ii merged 1a3d69dc).
 **Walked:** none
 

@@ -1,0 +1,5 @@
+
+param              d(SensDivider.mid)
+SensDivider.r1.r   -1.875000e-3
+SensDivider.r2.r   6.250000e-4
+SensDivider.v1.dc  7.500000e-1

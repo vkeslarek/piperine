@@ -1,0 +1,5 @@
+
+quantity          value
+gain              7.500000e-1
+input_impedance   4.000000e3
+output_impedance  7.500000e2

@@ -1,0 +1,4 @@
+
+kind  real         imag
+pole  -8.888889e2  0.000000e0
+zero  -2.000000e3  0.000000e0

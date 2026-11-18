@@ -1,0 +1,4 @@
+
+signal       value
+TempRes.vin  1.000000e1
+TempRes.mid  7.667910e0
