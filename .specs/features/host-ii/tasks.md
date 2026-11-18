@@ -815,9 +815,9 @@ T38 → T39 → T40 → T41 → T42
 
 **Done when**:
 
-- [ ] Inline tests `verdict::tests::a_failed_sim_record_is_fatal_with_its_msg`, `finish_alone_is_not_a_failure`, `the_last_record_of_each_target_is_kept_in_first_seen_order`, `a_negative_margin_does_not_fail`
-- [ ] Gate check passes: Quick (`Run apilib`)
-- [ ] Test count: 4 new tests
+- [x] Inline tests `verdict::tests::a_failed_sim_record_is_fatal_with_its_msg`, `finish_alone_is_not_a_failure`, `the_last_record_of_each_target_is_kept_in_first_seen_order`, `a_negative_margin_does_not_fail`
+- [x] Gate check passes: Quick (`Run apilib`)
+- [x] Test count: 4 new tests
 
 **Tests**: unit
 **Gate**: quick

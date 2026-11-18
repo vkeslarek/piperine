@@ -1,7 +1,9 @@
 //! `Verdict`: pass or fail of one run under `piperine test` (CLI-16). The records of the
 //! reserved `checks` stream are the checks; a check whose `pass` is false, or unknown, fails
 //! the run. Every check record counts, a passing one too: what a terminal hides never reaches
-//! this type's input as a filter.
+//! this type's input as a filter. A `sim` record with `failed = true` (what `fatal` writes) fails
+//! the run with its `msg` (HII-15); the last margin of each `target` is kept and never fails it
+//! (HII-16, the user's decision X3: a target informs, `require` is the constraint).
 
 use crate::record::{Field, Record, RecordSink};
 
@@ -12,12 +14,14 @@ pub struct Verdict {
     failed: Vec<Record>,
     /// The first `sim` record whose `failed` is known true: a `fatal` the model called.
     fatal: Option<Record>,
+    /// The last margin of each target name, in the order of its first record.
+    targets: Vec<(String, f64)>,
 }
 
 impl Verdict {
     /// An empty verdict: no check seen, none failed. Hand it to a run as a `RecordSink`.
     pub fn new() -> Verdict {
-        Verdict { checks: 0, failed: Vec::new(), fatal: None }
+        Verdict { checks: 0, failed: Vec::new(), fatal: None, targets: Vec::new() }
     }
 
     /// Judges `records`, the whole record stream of a run, through the sink: counts those of
@@ -42,6 +46,12 @@ impl Verdict {
         self.fatal.as_ref()
     }
 
+    /// The margin of each target, the last record of each name, in the order of the first record
+    /// of each name. A margin that is unknown is NaN, so it shows and never reads as met.
+    pub fn targets(&self) -> &[(String, f64)] {
+        &self.targets
+    }
+
     /// How many checks the run wrote, passing ones included.
     pub fn checks(&self) -> usize {
         self.checks
@@ -60,9 +70,10 @@ impl Default for Verdict {
 }
 
 impl RecordSink for Verdict {
-    /// A record of the `checks` stream is counted, and kept when its `pass` is not true; the
-    /// first `sim` record whose `failed` is known true is kept as the fatal one; every other
-    /// record is dropped, so a run's memory holds the failures only.
+    /// A record of the `checks` stream is counted, and kept when its `pass` is not true (a
+    /// `target` keeps its margin instead); the first `sim` record whose `failed` is known true is
+    /// kept as the fatal one; every other record is dropped, so a run's memory holds the failures
+    /// only.
     fn record(&mut self, record: &Record) {
         if record.stream == "sim" && self.fatal.is_none() && record.fields.iter().any(|(name, field)| name == "failed" && *field == Field::Bool(true)) {
             self.fatal = Some(record.clone());
@@ -71,7 +82,19 @@ impl RecordSink for Verdict {
             return;
         }
         self.checks += 1;
-        if record.fields.iter().any(|(name, field)| name == "pass" && *field != Field::Bool(true)) {
+        let field = |name: &str| record.fields.iter().find(|(n, _)| n == name).map(|(_, f)| f);
+        if field("kind") == Some(&Field::Text("target".into())) {
+            let Some(Field::Text(name)) = field("name") else { return };
+            let margin = match field("margin") {
+                Some(Field::Real(margin)) => *margin,
+                _ => f64::NAN,
+            };
+            match self.targets.iter_mut().find(|(n, _)| n == name) {
+                Some(kept) => kept.1 = margin,
+                None => self.targets.push((name.clone(), margin)),
+            }
+        }
+        if field("pass").is_some_and(|pass| *pass != Field::Bool(true)) {
             self.failed.push(record.clone());
         }
     }
@@ -183,5 +206,33 @@ mod tests {
         assert_eq!(verdict.fatal(), None);
         // a `failed` that is false is no fatal either
         assert!(Verdict::judge(&[sim(vec![("failed".into(), Field::Bool(false))])]).passed());
+    }
+
+    fn target(name: &str, margin: Field) -> Record {
+        Record {
+            time: 1e-6,
+            instance: "Top.mon".into(),
+            stream: "checks".into(),
+            fields: vec![("kind".into(), Field::Text("target".into())), ("name".into(), Field::Text(name.into())), ("margin".into(), margin)],
+        }
+    }
+
+    #[test]
+    fn the_last_record_of_each_target_is_kept_in_first_seen_order() {
+        // HII-16 AC 1: the last margin of each name, in the order of each name's first record
+        let records = [target("gain", Field::Real(0.5)), target("power", Field::Real(2.0)), target("gain", Field::Real(0.25)), target("power", Field::Real(1.0)), target("gain", Field::Real(0.125))];
+        let verdict = Verdict::judge(&records);
+        assert_eq!(verdict.targets(), [("gain".to_string(), 0.125), ("power".to_string(), 1.0)]);
+        // an unknown margin shows as NaN
+        assert!(Verdict::judge(&[target("x", Field::Unknown)]).targets()[0].1.is_nan());
+    }
+
+    #[test]
+    fn a_negative_margin_does_not_fail() {
+        // HII-16 AC 3 (decision X3): a target never fails a run, whatever its sign
+        let verdict = Verdict::judge(&[target("gain", Field::Real(-3.0))]);
+        assert!(verdict.passed());
+        assert_eq!(verdict.targets(), [("gain".to_string(), -3.0)]);
+        assert_eq!(verdict.checks(), 1);
     }
 }
