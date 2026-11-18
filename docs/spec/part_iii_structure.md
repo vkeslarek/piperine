@@ -514,7 +514,7 @@ value (§8.4), called with connections.
   written there: a continuous argument read by a definition of the callee is `E0336` at the call.
 - **§8.3.10** A result is read where its expression could be written: a continuous result where
   probes are allowed (§3), an `Event` result in event positions (§13).
-- **§8.3.11** As in Rust, a `{` after the head of `on`, `if`, `match`, `while` or `for` opens the
+- **§8.3.11** A `{` after the head of `on`, `if`, `match`, `while` or `for` opens the
   block. A placement with a param block is parenthesized there.
 
 > **Resolution.** §8.3.5 states the feedback rule over cycles of any length, with "direct

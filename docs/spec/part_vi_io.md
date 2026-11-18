@@ -171,7 +171,7 @@ include_str    ::= 'include_str' '!' '(' STRING ')'                            /
 **Dynamic semantics.** None. No file is opened in any analysis, and no primitive reads one
 during a run. Data that changes between runs is a param, set by the host (§23).
 
-> **Resolution.** Rules 3, 4 and 6 are stated here. An absolute path is accepted as in Rust.
+> **Resolution.** Rules 3, 4 and 6 are stated here. An absolute path is accepted and is read as it is, not relative to the source file.
 
 **Errors**
 
