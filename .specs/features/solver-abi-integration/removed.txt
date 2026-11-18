@@ -158,3 +158,6 @@ external_model_emits_through_the_sink	the DigitalDevice seq/comb contract, Event
 abi_compiles_an_element	the Element surface (renamed: abi_compiles_a_device proves the same DC solve on a Device)
 owner_depends_on_both_sub_solvers_only	the owner's dependency set before it gained piperine-abi (renamed: owner_depends_on_the_abi_and_both_sub_solvers_only)
 _context_default_compiles_for_later_tests	a compile stub for the recording Element double of checkpoint_restore (Context::default is exercised by every driver test)
+milne_lte_is_positive_for_curvature	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller: the state estimate skips nothing (solver-hygiene T23)
+milne_lte_is_zero_for_constant_charge	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller (solver-hygiene T23)
+milne_lte_is_zero_for_linear_charge	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller (solver-hygiene T23)
