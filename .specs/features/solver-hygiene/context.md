@@ -26,3 +26,7 @@ Decisions the user made for this feature. They bind the design and the tasks.
 The golden and pin changes listed under each answer in `spec.md` and in design.md "Goldens, pins
 and twins that may move" are authorized ONLY with the before/after deviation table vs ngspice in
 the commit and the unchanged tolerance contract (`crates/piperine-parity/src/contract.rs`).
+
+### Floor acceptance (user, 2026-11-18)
+
+Verbatim answer: "Aceitar como está (Recommended)". A step already at `dt_min` that converges but fails only the truncation test is accepted and counted in `floor_accepts`; a Newton failure at the floor is E0508. The results match ngspice on `tran_jump`, `tran_corner` and `tran_floor`. Adopting ngspice's own estimator (cktterr.c) stays a possible future item if a divergence appears.
