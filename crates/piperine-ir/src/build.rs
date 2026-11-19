@@ -300,6 +300,13 @@ impl IrBuilder {
         ExprId(self.exprs.len() as u32 - 1)
     }
 
+    /// The form of expression `id` added before, for a pass that classifies what it just built
+    /// (the elaborator reads the conditions of a contribution this way); `None` for an id this
+    /// builder never handed out.
+    pub fn expr_kind(&self, id: ExprId) -> Option<&Expr> {
+        self.exprs.get(id.index()).map(|e| &e.kind)
+    }
+
     pub fn stmt(&mut self, stmt: Stmt) -> StmtId {
         self.stmts.push(stmt);
         StmtId(self.stmts.len() as u32 - 1)

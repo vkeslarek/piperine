@@ -14,8 +14,14 @@
 //! | potential only, one of them under no condition | `Potential` |
 //! | a potential and a flow contribution, both under no condition | `E0415` |
 //! | any other mix, or potential only and all of it under a condition | `Switch` |
+//!
+//! `check_selector_rule` then applies §11 rule 3 to the lowered conditions: a branch that has a
+//! potential contribution anywhere in the module has a kind that is constant during a solve, so no
+//! condition enclosing a contribution to it, potential or flow, may read a probe (`E0414`).
 
-use piperine_ir::{BranchKind, Condition, ExprId as LoweredExpr, QuantityRole, Terminal};
+use std::collections::HashSet;
+
+use piperine_ir::{BranchKind, Condition, Expr, ExprId as LoweredExpr, QuantityRole, Terminal};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
@@ -31,6 +37,14 @@ pub(super) struct ContributionRecord {
     pub(super) conditions: Vec<Condition>,
     pub(super) file: FileId,
     pub(super) span: Span,
+}
+
+/// What the value of a condition depends on, read off its lowered expression.
+#[derive(Default)]
+pub(super) struct SelectorReads {
+    /// The first probe, branch flow, derivative or `limit` value it reads, as the diagnostic
+    /// names it: what no selector of a potential-capable branch may read.
+    pub(super) probe: Option<String>,
 }
 
 impl ContributionRecord {
@@ -102,12 +116,75 @@ impl Elaboration<'_, '_> {
     }
 
     /// The name of the node `terminal` of the body being lowered.
-    fn terminal_name(&self, scope: &Scope, terminal: Terminal) -> String {
+    pub(super) fn terminal_name(&self, scope: &Scope, terminal: Terminal) -> String {
         let Terminal::Node(index) = terminal else { return "gnd".to_string() };
         let decl = scope.nodes.iter().find(|(_, i)| **i == index).map(|(d, _)| *d);
         match decl.map(|d| self.design.decl_data(d)) {
             Some(data) if matches!(data.kind, DeclKind::Port(_) | DeclKind::Signal(_)) => data.name.as_ref().map_or_else(|| format!("#{index}"), |n| n.text.clone()),
             _ => format!("#{index}"),
+        }
+    }
+}
+
+impl Elaboration<'_, '_> {
+    /// `E0414` for every contribution, to a branch that has a potential contribution, whose
+    /// enclosing conditions read a probe (§11 rule 3). Run after `decide_branch_kinds`; a branch
+    /// of kind `Flow` has no potential contribution, so a probe may select between its flows.
+    pub(super) fn check_selector_rule(&mut self, scope: &Scope) {
+        for record in &scope.contributions {
+            if scope.branches[record.branch as usize].kind == BranchKind::Flow {
+                continue;
+            }
+            let read = record.conditions.iter().find_map(|c| self.selector_reads(scope, c.expr).probe);
+            let Some(probe) = read else { continue };
+            let name = self.branch_name(scope, record.branch as usize);
+            let message = format!("a condition enclosing a contribution to the branch {name} reads {probe}: the kind of a branch with a potential contribution is constant during a solve (§11 rule 3)");
+            self.report(record.file, Diagnostic::new("E0414", message, record.span, "this contribution is selected by a probe"));
+        }
+    }
+
+    /// What the lowered condition `condition` reads: a probe, a branch flow, a derivative or a
+    /// `limit` value through any operator, through the initializer of a local it names, and
+    /// through the arguments of a call.
+    fn selector_reads(&self, scope: &Scope, condition: LoweredExpr) -> SelectorReads {
+        let mut reads = SelectorReads::default();
+        let mut seen: HashSet<LoweredExpr> = HashSet::new();
+        let mut open = vec![condition];
+        while let Some(id) = open.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(kind) = self.ir.expr_kind(id) else { continue };
+            let found = match kind {
+                Expr::Probe { plus, minus } => Some(format!("the probe of ({}, {})", self.terminal_name(scope, *plus), self.terminal_name(scope, *minus))),
+                Expr::Flow { branch } => Some(format!("the flow of the branch {}", self.branch_name(scope, *branch as usize))),
+                Expr::Derivative(_) => Some("a `ddt` result".to_string()),
+                Expr::Limit { .. } => Some("a `limit` value".to_string()),
+                _ => None,
+            };
+            if found.is_some() {
+                reads.probe = found;
+                return reads;
+            }
+            open.extend(Self::operands_of(kind));
+            if let Expr::Local(local) = kind {
+                open.extend(scope.local_inits.get(local).copied());
+            }
+        }
+        reads
+    }
+
+    /// The operand expressions of the condition forms `selector_reads` follows.
+    fn operands_of(kind: &Expr) -> Vec<LoweredExpr> {
+        match kind {
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
+            Expr::Binary { lhs, rhs, .. } => vec![*lhs, *rhs],
+            Expr::KnownOr { value, default } => vec![*value, *default],
+            Expr::Unwrap { is, value, .. } => vec![*is, *value],
+            Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],
+            Expr::Call { args, .. } | Expr::Math { args, .. } => args.clone(),
+            Expr::Method { receiver, args, .. } => [*receiver].into_iter().chain(args.iter().copied()).collect(),
+            _ => Vec::new(),
         }
     }
 }

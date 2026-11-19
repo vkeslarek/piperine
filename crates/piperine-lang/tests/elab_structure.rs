@@ -88,3 +88,45 @@ fn a_contribution_to_a_branch_from_a_node_to_itself_under_an_if_is_e0241() {
     let span = err[0].diagnostic.primary.0;
     assert_eq!(&src[span.start..span.end], "i(p, p)");
 }
+
+/// What elaboration says of `analog` as the body of `Device`: the codes, and the text the first
+/// diagnostic's span covers.
+fn refusal(analog: &str) -> (Vec<String>, String, String) {
+    let src = Device::source(analog);
+    let err = Elab::run(&src, "Top").expect_err("the selector rule refuses it");
+    let span = err[0].diagnostic.primary.0;
+    (Elab::codes(&err), src[span.start..span.end].to_string(), err[0].diagnostic.message.clone())
+}
+
+#[test]
+fn a_probe_in_the_selector_of_a_potential_capable_branch_is_e0414() {
+    // AS-02 AC 1 (§11 rule 3): a probe selecting a contribution to a branch that has a potential
+    // contribution is E0414, naming the branch and the probe, at the selected contribution: on the
+    // potential side, on the flow side of the same branch (the G.58 resolution), and through a
+    // local the condition reads.
+    for analog in [
+        "if v(p) > 0.5 { v(p, n) +> 1.0; }",
+        "v(p, n) +> 1.0; if v(p) > 0.5 { i(p, n) +> 1.0; }",
+        "let hot = v(p) > 0.5; if hot { v(p, n) +> 1.0; }",
+        "if en.known_or(false) { v(p, n) +> 1.0; } else if v(p) > 0.5 { i(p, n) +> 1.0; }",
+    ] {
+        let (codes, at, message) = refusal(analog);
+        assert_eq!(codes, ["E0414"], "{analog}");
+        assert!(at.trim_end_matches(';').ends_with("+> 1.0"), "{analog}: at the contribution, got `{at}`");
+        assert!(message.contains("(p, n)") && message.contains("the probe of (p, gnd)"), "{analog}: {message}");
+    }
+}
+
+#[test]
+fn a_probe_selecting_between_flow_contributions_is_accepted() {
+    // §11 rule 3 binds a branch that has a potential contribution: a probe may choose between the
+    // flow contributions of a branch that has none, and between the expressions of a potential
+    // contribution (§11 rule 5: an `if` on a probe chooses between expressions, never kinds).
+    for analog in [
+        "if v(p) > 0.5 { i(p, n) +> v(p, n) / 1k; } else { i(p, n) +> v(p, n) / 2k; }",
+        "v(p, n) +> if v(p) > 0.5 { 1.0 } else { 2.0 };",
+    ] {
+        let ir = Device::ir(analog);
+        assert!(Device::kinds(&ir).len() == 1, "{analog}");
+    }
+}

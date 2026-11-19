@@ -70,6 +70,7 @@ impl Elaboration<'_, '_> {
         self.hoist_placements(&scope);
         let analog = self.lower_analog(&mut scope, module);
         self.decide_branch_kinds(&mut scope);
+        self.check_selector_rule(&scope);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
         self.lower_digital(&scope, module);
         let carriers = self.structure.carriers.clone();
