@@ -431,9 +431,11 @@ fn an_emit_commits_one_record_and_adds_no_microstep() {
     // the layout of `trace` (msl-digital A4): `code` a `BYTE` at 0, `level` a `REAL` at 8, then
     // the `maybe` of §19 rule 1 at 24, 32 bytes; the site writes `code = 7` (known), and `level`,
     // which it leaves out, stays all zero, its known byte 0 (C5: "a field absent from a site is
-    // a field with its known byte 0"); `maybe` stays zero as well until the printer writes it
+    // a field with its known byte 0"); `maybe` is written known and false: the reaction runs
+    // under known control (§19 rule 1)
     let mut bytes = vec![0u8; 32];
     bytes[..2].copy_from_slice(&[7, 1]);
+    bytes[24..26].copy_from_slice(&[0, 1]);
     assert_eq!(records, [(5 * NS / 2, bytes)]);
     // the commit beside it applies as before: n counts the rise (the clock's initial `false` at the
     // operating point is no rise), 0 to 1

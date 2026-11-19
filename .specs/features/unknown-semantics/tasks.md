@@ -618,9 +618,9 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `a_record_under_unknown_control_is_maybe`, `a_record_field_keeps_its_flag` and `a_maybe_check_is_judged_as_unknown` (a `require` under an unknown `if`, judged by `Verdict::judge`) pass under `**Run sourceunknowns**`
-- [ ] `buck_records` passes
-- [ ] Gate check passes: Full
+- [x] `a_record_under_unknown_control_is_maybe`, `a_record_field_keeps_its_flag` and `a_maybe_check_is_judged_as_unknown` (a `require` under an unknown `if`, judged by `Verdict::judge`) pass under `**Run sourceunknowns**`
+- [x] `buck_records` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

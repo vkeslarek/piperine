@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+use piperine_api::{Field, Record, Streams, Verdict};
 use piperine_parity::project::Project;
 
 #[allow(dead_code)]
@@ -194,4 +195,57 @@ fn a_maybe_finish_does_not_end_the_run() {
     // ends it at the first rising edge (0.5 ns)
     assert!((last_step("MaybeFinishBench") - 4e-9).abs() <= 1e-15, "a maybe finish runs to stop");
     assert!((last_step("SureFinishBench") - 0.5e-9).abs() <= 1e-15, "a sure finish ends at the edge");
+}
+
+/// Every record of the 4 ns transient of `RecordBench` (rising edges at 0.5, 1.5, 2.5, 3.5 ns),
+/// decoded as the host decodes it.
+fn recorded() -> Vec<Record> {
+    let built = build(&project("records.msl"), "RecordBench");
+    let streams = Streams::of(built.ir.clone());
+    let seen = built.run(4e-9, 0.5e-9);
+    seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect()
+}
+
+/// The records of the stream `name`.
+fn stream<'a>(records: &'a [Record], name: &str) -> Vec<&'a Record> {
+    records.iter().filter(|r| r.stream == name).collect()
+}
+
+#[test]
+fn a_record_under_unknown_control_is_maybe() {
+    // US-05 AC 1, 2: `if d { emit!("unsure", ..) }` with `d` unknown is reached under unknown
+    // control, so its record says `maybe`; the `emit!` under known control does not. One of each
+    // per rising edge (0.5, 1.5, 2.5, 3.5 ns)
+    let records = recorded();
+    let (unsure, sure) = (stream(&records, "unsure"), stream(&records, "sure"));
+    assert_eq!((unsure.len(), sure.len()), (4, 4));
+    assert!(unsure.iter().all(|r| r.maybe), "reached under unknown control");
+    assert!(sure.iter().all(|r| !r.maybe), "reached under known control");
+}
+
+#[test]
+fn a_record_field_keeps_its_flag() {
+    // US-05 AC 5: `v` is unknown and `k` is known 3, in a record that is `maybe` and in one that
+    // is not; `maybe` is no field
+    let records = recorded();
+    let expected = [("v".to_string(), Field::Unknown), ("k".to_string(), Field::Int(3))];
+    for name in ["unsure", "sure"] {
+        for record in stream(&records, name) {
+            assert_eq!(record.fields, expected, "{name}");
+        }
+    }
+}
+
+#[test]
+fn a_maybe_check_is_judged_as_unknown() {
+    // US-05 AC 4, §23.2: `if d { require("held", true) }` writes its `checks` record with
+    // `maybe = true`, and the verdict fails it as it fails an unknown check, though its `pass` is
+    // known true
+    let records = recorded();
+    let checks = stream(&records, "checks");
+    assert_eq!(checks.len(), 4);
+    assert!(checks.iter().all(|r| r.maybe && r.fields.iter().any(|(n, f)| n == "pass" && *f == Field::Bool(true))));
+    let verdict = Verdict::judge(&records);
+    assert!(!verdict.passed());
+    assert_eq!((verdict.checks(), verdict.failed().len()), (4, 4));
 }

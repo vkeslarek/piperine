@@ -74,8 +74,8 @@ enum What {
     /// A commit of a value of a carried type, merged by this function.
     Value(ByteMerge),
     /// A record: the whole layout of its stream's `RECORD` pin. `maybe_at` is the offset of the
-    /// stream's `maybe` field, when its layout has one.
-    Record { maybe_at: Option<usize> },
+    /// stream's `maybe` field (§19 rule 1).
+    Record { maybe_at: usize },
     /// An arming of a timer through a `REPLACE` statement on an event pin (no bytes).
     Arm,
 }
@@ -201,11 +201,9 @@ impl Paths {
 
     /// A record with every field unknown (all-zero bytes, abi.md P3) except `maybe`, which is
     /// known and true (§1 rule 13, §19 rule 1).
-    fn unknown_record(bytes: &[u8], maybe_at: Option<usize>) -> Vec<u8> {
+    fn unknown_record(bytes: &[u8], maybe_at: usize) -> Vec<u8> {
         let mut unknown = vec![0; bytes.len()];
-        if let Some(at) = maybe_at {
-            Flagged::known(true).write(&mut unknown[at..]);
-        }
+        Flagged::known(true).write(&mut unknown[maybe_at..]);
         unknown
     }
 }
@@ -273,18 +271,12 @@ impl Commits {
         self.entries.push(Entry { statement, bytes: value.encode(), after, flags: 0, what: What::Value(Flagged::<T>::merge_bytes) });
     }
 
-    /// A record through statement `statement`: `bytes`, the whole layout of its stream's
-    /// `RECORD` pin, due at the next microstep (abi.md C5: a record is a commit to that pin). The
-    /// layout has no `maybe` field.
-    pub fn record(&mut self, statement: u32, bytes: &[u8]) {
-        self.entries.push(Entry { statement, bytes: bytes.to_vec(), after: 0.0, flags: 0, what: What::Record { maybe_at: None } });
-    }
-
-    /// A record as `record` is, whose layout has the `maybe` field of §19 rule 1 at `maybe_at`:
-    /// a merge with a panicked path keeps that field known and true and makes the others
-    /// unknown (§1 rule 13).
+    /// A record through statement `statement`: `bytes`, the whole layout of its stream's `RECORD`
+    /// pin, due at the next microstep (abi.md C5: a record is a commit to that pin). `maybe_at` is
+    /// the offset of the layout's `maybe` field (§19 rule 1): a merge with a panicked path keeps
+    /// that field known and true and makes the others unknown (§1 rule 13).
     pub fn record_with_maybe(&mut self, statement: u32, bytes: &[u8], maybe_at: usize) {
-        self.entries.push(Entry { statement, bytes: bytes.to_vec(), after: 0.0, flags: 0, what: What::Record { maybe_at: Some(maybe_at) } });
+        self.entries.push(Entry { statement, bytes: bytes.to_vec(), after: 0.0, flags: 0, what: What::Record { maybe_at } });
     }
 
     /// Arms a timer through statement `statement`, a `REPLACE` statement on an event pin (abi.md
@@ -578,10 +570,6 @@ pub(crate) mod tests {
             flushed(c),
             [(0, vec![0, 0], 0.0, MAYBE), (2, vec![0, 0], 0.0, MAYBE), (4, vec![0, 0, 1, 1], 0.0, 0)]
         );
-        // a record whose layout has no `maybe` is unknown whole
-        let mut c = controlled();
-        c.branch(u(), |c| { c.record(4, &[7, 1]); Panic::raise(String::new()) }, |_| ());
-        assert_eq!(flushed(c), [(4, vec![0, 0], 0.0, 0)]);
         // the panic is the other arm's too, and a panic of a reaction that may not have run
         let mut c = controlled();
         c.branch(u(), |c| c.commit(0, byte(5), k(0.0)), |c| { c.commit(1, byte(5), k(0.0)); Panic::raise("x".to_string()) });
