@@ -6,6 +6,7 @@
 //! their own comparisons. One test per twin, named after it; ngspice runs once per twin.
 
 use std::cell::{Cell as Counter, RefCell};
+use std::path::Path;
 use std::rc::Rc;
 
 use piperine::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
@@ -14,7 +15,7 @@ use piperine_parity::backend::Backend;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::corpus::{Corpus, Twin};
 use piperine_parity::golden::{Complex, Golden};
-use piperine_parity::ngspice::{Ngspice, Reference};
+use piperine_parity::ngspice::{Lookup, Ngspice, Reference};
 use piperine_parity::waveform::Waveform;
 use piperine_solver::prelude::{Context, NodeIdentifier, TransientAnalysisOptions};
 use piperine_transpile::Settings;
@@ -40,7 +41,7 @@ struct Scenario {
 /// this value is dropped.
 struct Ran {
     table: Table,
-    _build: tempfile::TempDir,
+    build: tempfile::TempDir,
 }
 
 impl Scenario {
@@ -75,7 +76,7 @@ impl Scenario {
     fn try_run(&self, backend: Backend) -> Result<Ran, Failure> {
         let (mut session, build) = self.open(backend)?;
         let table = session.run(Rc::new(RefCell::new(Ignore)))?;
-        Ok(Ran { table, _build: build })
+        Ok(Ran { table, build })
     }
 
     /// The run on `backend`; a failure panics naming the scenario, the backend and the failure.
@@ -96,6 +97,11 @@ impl Scenario {
 }
 
 impl Ran {
+    /// The directory the run built into.
+    fn build_directory(&self) -> &Path {
+        self.build.path()
+    }
+
     /// The real number of `row`, `column`.
     fn real(&self, row: usize, column: usize) -> f64 {
         match &self.table.rows[row][column] {
@@ -395,12 +401,16 @@ impl Comparison {
 
 impl Scenario {
     /// Runs the scenario on every backend that runs it and holds each run to `comparison`
-    /// against ngspice. With the comparison disabled the run is still made (the harness prints
-    /// its skip line) and nothing is compared.
+    /// against ngspice.
     fn hold(&self, comparison: &Comparison) {
-        let reference = Ngspice::from_environment().run(self.name());
+        self.hold_against(comparison, &Ngspice::from_environment().run(self.name()));
+    }
+
+    /// [`hold`](Self::hold) against an ngspice run already made. With the comparison disabled
+    /// (`Reference::Skipped`) the run is still made and nothing is compared.
+    fn hold_against(&self, comparison: &Comparison, reference: &Reference) {
         for backend in self.backends() {
-            let check = Check::new(self.name(), &reference, backend);
+            let check = Check::new(self.name(), reference, backend);
             comparison.hold(self, &check);
             check.report();
         }
@@ -490,4 +500,45 @@ fn pss_rc() {
 fn temp_res() {
     // 75 C: ngspice's `.options temp=75`, the command's `--temp 75`; the same rows as an operating point
     Scenario::of("temp_res").hold(&Comparison::OperatingPoint { nodes: &["mid"] });
+}
+
+#[test]
+fn every_twin_has_a_scenario_test() {
+    let source = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios.rs")).expect("this file is readable");
+    let missing: Vec<String> = Corpus::of_repository().twins().iter().map(|twin| twin.name().to_string()).filter(|name| !source.contains(&format!("\nfn {name}() {{"))).collect();
+    assert!(missing.is_empty(), "twins with no scenario test in tests/scenarios.rs: {missing:?}");
+}
+
+#[test]
+fn a_disabled_ngspice_still_runs_the_scenario() {
+    // the harness's skip line is printed and the scenario still gives its table on every backend
+    let reference = Ngspice::new(Lookup::Skip).run("divider");
+    assert!(matches!(reference, Reference::Skipped), "a disabled ngspice gives no golden");
+    assert_eq!(Ngspice::skip_line("divider"), "SKIP divider: ngspice comparison disabled by PIPERINE_NGSPICE=skip");
+    let scenario = Scenario::of("divider");
+    scenario.hold_against(&Comparison::OperatingPoint { nodes: &["vin", "mid"] }, &reference);
+    for backend in scenario.backends() {
+        let ran = scenario.run(backend);
+        assert_eq!(ran.table.rows.len(), 2, "the divider's table holds vin and mid on {}", backend.name());
+        assert_eq!(ran.signal_ending(".mid"), 7.5, "the divider's mid on {} with nothing to compare against", backend.name());
+    }
+}
+
+#[test]
+fn each_scenario_runs_in_a_directory_of_its_own() {
+    // two scenarios on the compiled backend: each builds only its own design, in a directory of its own
+    let first = Scenario::of("divider").run(Backend::Rust);
+    let second = Scenario::of("isrc_r").run(Backend::Rust);
+    // the compiled backend keeps `rust/abi-<hash>` (the shared runtime) and one `rust/<hash>` per design
+    let designs = |ran: &Ran| -> Vec<String> {
+        let found = std::fs::read_dir(ran.build_directory().join("rust")).expect("a compiled run builds into its directory");
+        let mut names: Vec<String> = found.map(|entry| entry.expect("an entry").file_name().to_string_lossy().into_owned()).filter(|name| !name.starts_with("abi-")).collect();
+        names.sort();
+        names
+    };
+    assert_ne!(first.build_directory(), second.build_directory(), "two runs share no build directory");
+    let (first_designs, second_designs) = (designs(&first), designs(&second));
+    assert_eq!(first_designs.len(), 1, "the first directory holds its own design only: {first_designs:?}");
+    assert_eq!(second_designs.len(), 1, "the second directory holds its own design only: {second_designs:?}");
+    assert_ne!(first_designs, second_designs, "the two scenarios are two designs");
 }
