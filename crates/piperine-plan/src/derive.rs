@@ -109,9 +109,9 @@ impl ParamReads {
         match ir.expr(expr) {
             Expr::Param(index) => out.push(*index),
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) => {}
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => ParamReads::walk(ir, *expr, out),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => ParamReads::walk(ir, *expr, out),
             Expr::Closure { body, .. } => ParamReads::walk(ir, *body, out),
-            Expr::Binary { lhs: first, rhs: second, .. } | Expr::KnownOr { value: first, default: second } | Expr::Unwrap { is: first, value: second, .. } => ParamReads::walk_all(ir, &[*first, *second], out),
+            Expr::Binary { lhs: first, rhs: second, .. } | Expr::KnownOr { value: first, default: second } | Expr::Unwrap { is: first, value: second, .. } | Expr::Level { value: first, index: second, .. } | Expr::Merge { a: first, b: second } | Expr::Same { a: first, b: second } => ParamReads::walk_all(ir, &[*first, *second], out),
             Expr::If { cond, then, otherwise } => ParamReads::walk_all(ir, &[*cond, *then, *otherwise], out),
             Expr::Call { args, .. } | Expr::Math { args, .. } => ParamReads::walk_all(ir, args, out),
             Expr::Method { receiver, args, .. } => {
