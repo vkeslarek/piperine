@@ -25,7 +25,8 @@ use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 
 use crate::Error;
 use crate::print::value::Reads;
-use crate::print::{ContributionSums, Text, ValuePrinter};
+use crate::print::derivative::States;
+use crate::print::{ContributionSums, DerivativePrinter, Text, ValuePrinter};
 
 /// Prints the analog functions of one body from its plan.
 #[derive(Debug)]
@@ -55,6 +56,7 @@ impl<'a> AnalogPrinter<'a> {
             stims: body.stims().iter().map(|s| Text::generated(&format!("{}_stim", s.name))).collect(),
             carriers: body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
             flows: (0..body.branches().len() as u32).map(|b| Self::flow_name(b)).collect(),
+            derivatives: (0..body.derivatives().len() as u32).map(Self::derivative_pin).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
         };
         let sums = ContributionSums::needed(body).then(|| ContributionSums::of(body));
@@ -84,7 +86,7 @@ impl<'a> AnalogPrinter<'a> {
                 self.body.nodes().get(i as usize).map_or_else(|| Text::generated(&format!("node{i}")), |n| Text::ident(&n.name))
             }
             Source::BranchFlow(b) => Self::flow_name(b),
-            Source::Derivative(k) => Text::generated(&format!("d{k}_rate")),
+            Source::Derivative(k) => Self::derivative_pin(k),
             Source::LimitValue(k) => site(self.body.limits(), k, "limit"),
             Source::StimValue(k) => site(self.body.stims(), k, "stim"),
             Source::Param(p) => {
@@ -125,6 +127,11 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn carrier_part(body: Body<'_>, c: u32, part: &str) -> String {
         let name = body.carriers().get(c as usize).map_or_else(|| format!("carrier{c}"), |x| x.name.clone());
         Text::generated(&format!("{name}_{part}"))
+    }
+
+    /// The variable of derivative site `k`'s rate pin: `d0_rate_`.
+    pub(crate) fn derivative_pin(k: u32) -> String {
+        Text::generated(&format!("d{k}_rate"))
     }
 
     /// The variable of branch `b`'s flow pin: `b0_flow_`.
@@ -223,7 +230,7 @@ impl<'a> AnalogPrinter<'a> {
     }
 
     /// The locals and the reads `e` uses in `mode`.
-    fn reads(&self, e: ExprId, mode: Mode, locals: &mut BTreeSet<u32>, sources: &mut BTreeSet<Source>) {
+    pub(crate) fn reads(&self, e: ExprId, mode: Mode, locals: &mut BTreeSet<u32>, sources: &mut BTreeSet<Source>) {
         let mut stack = vec![e];
         while let Some(e) = stack.pop() {
             match self.ir.expr(e) {
@@ -279,8 +286,12 @@ impl<'a> AnalogPrinter<'a> {
                     sources.insert(Source::Carrier(*c));
                 }
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Fired(_) => {}
-                Expr::Derivative(_) => panic!("the rate of a derivative site has no source in the plan yet"),
-                Expr::ParamPrevious(_) => panic!("the previous value of a param has no source in the plan yet"),
+                Expr::Derivative(k) => {
+                    sources.insert(Source::Derivative(*k));
+                }
+                Expr::ParamPrevious(p) => {
+                    sources.insert(Source::ParamPrevious(*p));
+                }
                 Expr::Flow { branch } => {
                     sources.insert(Source::BranchFlow(*branch));
                 }
@@ -387,11 +398,16 @@ impl<'a> AnalogPrinter<'a> {
         };
         let holders = ContributionSums::holders(self.body);
         let slice = self.slice(Mode::Terms, |id| holders.contains(&id));
+        let states = DerivativePrinter::new(self).states()?;
         let mut used = slice.sources.clone();
+        used.extend(states.sources.iter().copied());
         for w in &f.writes {
             match w {
                 Target::Term(Term::Current(b)) => {
                     used.insert(Source::BranchFlow(*b));
+                }
+                Target::Term(Term::DerivativeRate(k)) => {
+                    used.insert(Source::Derivative(*k));
                 }
                 Target::Term(Term::Eq(b)) => {
                     if let Some(branch) = self.body.branches().get(*b as usize) {
@@ -412,7 +428,7 @@ impl<'a> AnalogPrinter<'a> {
         // The reads the slice uses, in the plan's order, each with its index in the plan.
         let reads: Vec<(usize, Source)> = f.reads.iter().copied().enumerate().filter(|(_, s)| used.contains(s)).collect();
         let mut t = Text::new();
-        self.terms_block(&mut t, f, &slice, &reads)?;
+        self.terms_block(&mut t, f, &slice, &states, &reads)?;
         t.line("");
         self.terms_function(&mut t, k, f, &reads)?;
         let mut text = t.finish();
@@ -426,7 +442,7 @@ impl<'a> AnalogPrinter<'a> {
         self.sums.as_ref().is_some_and(ContributionSums::faults)
     }
 
-    fn terms_block(&self, t: &mut Text, f: &FunctionPlan, slice: &Slice, reads: &[(usize, Source)]) -> Result<(), Error> {
+    fn terms_block(&self, t: &mut Text, f: &FunctionPlan, slice: &Slice, states: &States, reads: &[(usize, Source)]) -> Result<(), Error> {
         let mut params: Vec<String> = Vec::with_capacity(reads.len());
         for (_, s) in reads {
             params.push(format!("{}: {}", self.read_name(*s), self.block_type(*s)?));
@@ -439,10 +455,13 @@ impl<'a> AnalogPrinter<'a> {
         t.comment(&format!("{}.analog", self.body.name()), self.body.origin());
         let returns = if self.block_faults() { format!("Result<[R; {}], Fault>", f.writes.len()) } else { format!("[R; {}]", f.writes.len()) };
         t.line(&format!("fn terms_block<R: Real>({}) -> {returns} {{", params.join(", ")));
-        let (mut lines, defined) = match &self.sums {
+        // the states of the derivative sites come first, outside every condition (§14 rule 9)
+        let mut lines = states.lines.clone();
+        let (block, defined) = match &self.sums {
             Some(sums) => (self.structured_lines(sums, slice)?, BTreeSet::new()),
             None => self.shadowed_lines(slice)?,
         };
+        lines.extend(block);
         let outputs = self.outputs(f, &defined, &mut lines)?;
         lines.push(if self.block_faults() { format!("Ok([{}])", outputs.join(", ")) } else { format!("[{}]", outputs.join(", ")) });
         t.indented(|t| {
@@ -529,8 +548,8 @@ impl<'a> AnalogPrinter<'a> {
                     if negated { format!("-{}", Self::charge_sum(b)) } else { Self::charge_sum(b) }
                 }
                 Term::Current(b) => self.read_name(Source::BranchFlow(b)),
-                // T12 prints the derivative sites
-                Term::DerivativeRate(_) | Term::DerivativeState(_) => return Err(self.unsupported("a derivative site")),
+                Term::DerivativeRate(k) => Self::derivative_pin(k),
+                Term::DerivativeState(k) => format!("-{}", DerivativePrinter::state_name(k)),
                 Term::Eq(b) => {
                     let Some(branch) = self.body.branches().get(b as usize) else {
                         return Err(self.unsupported(&format!("the equation term of branch {b}")));

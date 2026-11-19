@@ -46,6 +46,11 @@ impl Device {
     /// Runs function `name` on `reads`, one byte string per read cell, and returns each write as
     /// an `f64` (the first eight bytes of its cell).
     fn run(&self, name: &str, reads: &[&[u8]]) -> Result<Vec<f64>, CallError> {
+        self.run_with_partials(name, reads).map(|(values, _)| values)
+    }
+
+    /// `run`, and the partials the function declares, in the shape's order.
+    fn run_with_partials(&self, name: &str, reads: &[&[u8]]) -> Result<(Vec<f64>, Vec<f64>), CallError> {
         let shape = self.handle.shape();
         let k = shape.functions.iter().position(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no function `{name}`"));
         let f = shape.functions.get(k).expect("the function");
@@ -55,7 +60,7 @@ impl Device {
         let seed = vec![1u8; f.partials.len()];
         let mut jac = vec![0.0; f.partials.len()];
         self.handle.eval(k as u32, reads, &mut writes, &seed, &mut jac)?;
-        Ok(cells.iter().map(|c| f64::from_le_bytes(c[..8].try_into().expect("an f64 cell"))).collect())
+        Ok((cells.iter().map(|c| f64::from_le_bytes(c[..8].try_into().expect("an f64 cell"))).collect(), jac))
     }
 }
 
@@ -149,4 +154,57 @@ fn both_kinds_enabled_return_e0418_naming_the_branch() {
     });
     let device = Device::of(at_zero);
     assert_eq!(device.run("terms", &[&Bytes::real(0.75), &Bytes::real(0.25)]).expect("only the flow is enabled"), [0.25, -1.75]);
+}
+
+/// `i(a, gnd) +> 2.0 * rate(D0)` under a condition when asked, on a flow branch, with the site
+/// `ddt(v(a, gnd))`.
+fn rate_in_a_flow(under_a_condition: bool, abstol: bool) -> Ir {
+    Switching::ir(BranchKind::Flow, |b| {
+        let tolerance = abstol.then(|| {
+            let (tol, two) = (Switching::ex(b).param(0), Switching::ex(b).real(2.0));
+            Switching::ex(b).binary(BinaryOp::Mul, tol, two)
+        });
+        let site = Switching::site(b, tolerance);
+        let contribution = Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0);
+        let analog = if under_a_condition {
+            let cond = Switching::carrier_high(b);
+            vec![Switching::branch_on(b, cond, vec![contribution], vec![])]
+        } else {
+            vec![contribution]
+        };
+        Written { analog, derivatives: vec![site], ..Written::default() }
+    })
+}
+
+#[test]
+fn a_derivative_state_is_written_outside_every_condition() {
+    // `if en.high() { i(a, gnd) +> 2.0 * rate(D0); }` with the site `ddt(v(a, gnd))` (§14 rule 9: the
+    // state is evaluated at every accepted solution whatever control flow surrounds the `ddt`).
+    // `terms` reads `a`, the rate pin `u` and `en` and writes `b0.flow`, `d0.rate` (`u`) and
+    // `d0.state` (`-a`). With `a = 0.5`, `u = 0.125`: `en` high gives flow `2u = 0.25`, `en` low gives
+    // flow 0 (the arm does not run); the rate and state terms are the same in both: `0.125`, `-0.5`.
+    let device = Device::of(rate_in_a_flow(true, false));
+    let (a, u) = (Bytes::real(0.5), Bytes::real(0.125));
+    assert_eq!(device.run("terms", &[&a, &u, &Bytes::bit(true)]).expect("terms"), [0.25, 0.125, -0.5]);
+    assert_eq!(device.run("terms", &[&a, &u, &Bytes::bit(false)]).expect("terms"), [0.0, 0.125, -0.5]);
+}
+
+#[test]
+fn a_derivative_read_is_its_rate_pin() {
+    // `i(a, gnd) +> 2.0 * rate(D0)`: the contribution is `2u` with `u` the pin `d0.rate`, so its
+    // partial against the pin is 2; the rate term `u` has partial 1 against it; the state term
+    // `-a` has partial -1 against `a`. The plan declares them as (b0.flow, u), (d0.rate, u),
+    // (d0.state, a), in that order.
+    let device = Device::of(rate_in_a_flow(false, false));
+    let (values, partials) = device.run_with_partials("terms", &[&Bytes::real(0.5), &Bytes::real(0.125)]).expect("terms");
+    assert_eq!(values, [0.25, 0.125, -0.5]);
+    assert_eq!(partials, [2.0, 1.0, -1.0]);
+}
+
+#[test]
+fn a_derivative_abstol_function_writes_its_pin() {
+    // `ddt(v(a, gnd), 2.0 * tol)` with `tol = 0.25`: the function `d0.abstol` reads the param alone
+    // and writes `0.5` to the site's `abstol` pin.
+    let device = Device::of(rate_in_a_flow(false, true));
+    assert_eq!(device.run("d0.abstol", &[&Bytes::real(0.25)]).expect("d0.abstol"), [0.5]);
 }

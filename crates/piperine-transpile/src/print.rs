@@ -6,6 +6,7 @@ pub mod analog;
 pub mod contribution;
 pub mod cross;
 pub mod derive;
+pub mod derivative;
 pub mod digital;
 pub mod library;
 pub mod limit;
@@ -17,6 +18,7 @@ pub mod value;
 
 pub use analog::AnalogPrinter;
 pub use contribution::ContributionSums;
+pub use derivative::DerivativePrinter;
 pub use derive::DerivePrinter;
 pub use digital::DigitalPrinter;
 pub use library::LibraryPrinter;

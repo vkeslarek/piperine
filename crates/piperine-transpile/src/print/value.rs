@@ -134,6 +134,8 @@ pub struct Reads {
     pub carriers: Vec<String>,
     /// By body branch: the variable of a potential branch's flow pin (`i(a, b)`, msl-digital A5).
     pub flows: Vec<String>,
+    /// By derivative site: the variable of its rate pin (`rate(D<k>)`, analog-structure AS-07).
+    pub derivatives: Vec<String>,
     /// By body carrier: the variable its pin's `PREVIOUS` was decoded into (`c.prev()`, A7).
     pub previous: Vec<String>,
 }
@@ -715,8 +717,10 @@ impl<'a> ValuePrinter<'a> {
                 Ok(Piece::new(format!("|{}| {}", names.join(", "), self.expr(*body)?), Prec::Low))
             }
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
-            // The derivative site is printed with the plan that gives it a pin.
-            Expr::Derivative(_) => Err(self.unsupported(e, "the rate of a derivative site")),
+            Expr::Derivative(k) => match self.analog.as_ref().and_then(|r| r.derivatives.get(*k as usize)) {
+                Some(name) => atom(self.read(name)),
+                None => Err(self.unsupported(e, "the rate of a derivative site")),
+            },
             Expr::ParamPrevious(_) => Err(self.unsupported(e, "the previous value of a param")),
             Expr::Flow { branch } => match self.analog.as_ref().and_then(|r| r.flows.get(*branch as usize)) {
                 Some(name) => atom(self.read(name)),

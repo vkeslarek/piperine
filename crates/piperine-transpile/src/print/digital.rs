@@ -40,6 +40,7 @@ impl<'a> DigitalPrinter<'a> {
             stims: Vec::new(),
             carriers: self.body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
             flows: Vec::new(),
+            derivatives: (0..self.body.derivatives().len() as u32).map(AnalogPrinter::derivative_pin).collect(),
             previous: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "previous")).collect(),
         }
     }

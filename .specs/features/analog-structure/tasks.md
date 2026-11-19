@@ -425,9 +425,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run tstruct`: `a_derivative_state_is_written_outside_every_condition`, `a_derivative_read_is_its_rate_pin`, `a_derivative_abstol_function_writes_its_pin`
-- [ ] Gate check passes: Full (`Run tstruct`, `cargo test -p piperine-transpile`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 3 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run tstruct`: `a_derivative_state_is_written_outside_every_condition`, `a_derivative_read_is_its_rate_pin`, `a_derivative_abstol_function_writes_its_pin`
+- [x] Gate check passes: Full (`Run tstruct`, `cargo test -p piperine-transpile`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 3 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

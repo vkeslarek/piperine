@@ -29,7 +29,7 @@ impl<'a> AnalogPrinter<'a> {
     }
 
     /// `let x = cx_.f64(i);` for each read, `cx_.bool` for a `bool` param.
-    fn bind_reads(&self, reads: &[(usize, Source)]) -> Vec<String> {
+    pub(crate) fn bind_reads(&self, reads: &[(usize, Source)]) -> Vec<String> {
         reads
             .iter()
             .map(|(i, s)| {
@@ -39,7 +39,7 @@ impl<'a> AnalogPrinter<'a> {
             .collect()
     }
 
-    fn block_params(&self, reads: &[(usize, Source)]) -> String {
+    pub(crate) fn block_params(&self, reads: &[(usize, Source)]) -> String {
         let params: Vec<String> = reads
             .iter()
             .map(|(_, s)| format!("{}: {}", self.read_name(*s), if self.is_bool(*s) { "bool" } else { "R" }))
@@ -47,7 +47,7 @@ impl<'a> AnalogPrinter<'a> {
         params.join(", ")
     }
 
-    fn block_args(&self, reads: &[(usize, Source)]) -> String {
+    pub(crate) fn block_args(&self, reads: &[(usize, Source)]) -> String {
         reads.iter().map(|(_, s)| self.read_name(*s)).collect::<Vec<_>>().join(", ")
     }
 
