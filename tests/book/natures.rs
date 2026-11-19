@@ -15,15 +15,16 @@ mod support {
     pub mod model;
     pub mod records;
     pub mod refusal;
+    pub mod standard_library;
 }
 
 use piperine::{Field, Overrides};
 use piperine_parity::golden::PrintedNumber;
-use std::path::Path;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::Model;
 use support::refusal::Refusal;
+use support::standard_library::StandardLibrary;
 
 /// A number as the Book prints it: the printed digits are the resolution of the comparison.
 struct Printed;
@@ -46,25 +47,6 @@ impl OperatingPoint {
     }
 }
 
-/// The text of the standard library's carrier files, which the chapter says it shows.
-struct StandardLibrary;
-
-impl StandardLibrary {
-    /// The text of `crates/piperine-lang/std/carriers.msl` and `nets.msl`, comments and `pub` removed
-    /// and blanks collapsed, so a declaration compares with the Book's however it is laid out.
-    fn normalized() -> String {
-        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/piperine-lang/std");
-        let text: String = ["carriers.msl", "nets.msl"].iter().map(|file| std::fs::read_to_string(directory.join(file)).unwrap_or_else(|error| panic!("{file}: {error}"))).collect();
-        StandardLibrary::normalize(&text)
-    }
-
-    /// `text` without its line comments and its `pub` keywords, whitespace collapsed to single blanks.
-    fn normalize(text: &str) -> String {
-        let without_comments: Vec<&str> = text.lines().map(|line| line.split("//").next().unwrap_or("")).collect();
-        without_comments.join(" ").replace("pub ", "").split_whitespace().collect::<Vec<_>>().join(" ")
-    }
-}
-
 #[test]
 fn the_book_shows_the_natures_the_standard_library_gives() {
     // natures#1 (run: the declarations, which nothing reaches, are accepted next to the prelude's);
@@ -73,7 +55,7 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
     let chapter = Chapter::read();
     let model = chapter.wrapped("natures.msl", "", "natures#1", "module Top() {}\n");
     model.run(OperatingPoint::of_top()).unwrap_or_else(|failure| panic!("the block is refused: {failure}"));
-    let library = StandardLibrary::normalized();
+    let library = StandardLibrary::normalized(&["carriers.msl", "nets.msl"]);
     let block = StandardLibrary::normalize(&chapter.text("natures#1"));
     let declarations: Vec<&str> = block.split("nature ").skip(1).collect();
     assert_eq!(declarations.len(), 5, "Bit, Wire, Electrical, Thermal and VSignal: {block}");

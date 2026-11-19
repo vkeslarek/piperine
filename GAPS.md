@@ -235,6 +235,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 | -- | --- | ----- | ---- |
 | D1 | A diagnostic differs from what the Book shows: a part it leaves out (the help line of `E0150`, the secondary label of `E0163`) or another code (`E0900` for an `emit!` in a module body, where the Book says `E0601`) | `docs/book/content.html` chapters 2 and 11, §11 below | S |
 | D2 | A sentence of the Book that the code outran: the code does more than the Book says, so the Book is stale and the user decides (a `disputed` row of §11) | `docs/book/content.html`, §11 below | S |
+| D3 | An error code the spec names that no source raises, for a construct the compiler does implement: the checker stops the model with another code (`E0333` is `P0002`, a type mismatch), `params-and-io`'s PI-13 keeps the code listed | `docs/spec/part_iii_structure.md`, §10 | S |
 
 ---
 
@@ -440,3 +441,18 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 |
 | natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
 | natures~6a449552 | L21 | `resolved-nets` | the `Pulldown` variant of the alarm needs the same `Wire`: refused with natures#3 |
+| modules#1 | L30 | `generics` | `ladder.msl` is `P0001`, a generic module, on `Ladder::<3>`, for an operating point and for the DC sweep |
+| modules#2 | L31 | `generics` | next to the generic ladder, generation `for` in a `digital` block is `P0001` |
+| modules#6 | L30 | `generics` | `lowpass` is `P0001`: its `idt` is a generic module; the module that returns a value with feedback through an instance is behind it (L38) |
+| modules#8 | L23 | `resolved-nets` | `PiAw` is `P0001`: the `VSignal` ports are a signal-flow nature, and the `idt` of the integral is a generic module |
+| modules#10 | L32 | `generics` | `Cell` as a type, the arrays of carriers of `MemoryBank` and the generic module are `P0001` |
+| modules#12 | L32 | `generics` | `nch(0.13u, 2u)(d, g, s, b)`: placement through a template value or a function is `P0001` |
+| modules#14 | L33 | `foreign-models` | `extern "osdi" module Bsim4` is `P0001`: `extern` module is not supported yet |
+| modules~b53307eb | L30 | `generics` | the const generic and its `where N >= 1` are refused with modules#1 |
+| modules~87ce6f6e | L31 | `generics` | the `half` block over the ladder is refused with modules#2 |
+| modules~3f8e84ba | L31 | `generics` | the `half` stream is refused with modules#2 |
+| modules~8b927a42 | L30 | `generics` | the value inputs of `lowpass` are refused with modules#6 |
+| modules~1faf8c12 | L29 | `root-e2e` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run (Phase 9 triage: `params-and-io` implements them) |
+| modules~4bcf201d | D3 | `params-and-io` | `E0333` is not raised: an instance used as a value is `P0002`, mismatched types |
+| modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
+| modules~4bcb9f1d | L30 | `generics` | `E0304` is not raised: `Ladder::<0>` is `P0001`, the generic module is refused |
