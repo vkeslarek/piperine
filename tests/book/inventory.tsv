@@ -29,14 +29,14 @@ block	welcome#18	dddafa2050e950cd	shown	-	-	-
 block	welcome#19	21913b57ecc70534	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6
 block	welcome#20	5a43010c6903b85d	shown	-	-	-
 block	welcome#21	40aed5bddc1b9b01	run	piperine/book_welcome::the_inverter_drives_its_output_a_propagation_delay_after_its_input	-	-
-block	from-rust#1	3484b3537670c234	pending	-	-	-
-block	from-rust#2	f05a8aa7a07546d8	pending	-	-	-
+block	from-rust#1	3484b3537670c234	refused	piperine/book_from_rust::the_rust_that_carries_over_is_refused_where_the_solver_reaches_it	L6	-
+block	from-rust#2	f05a8aa7a07546d8	run	piperine/book_from_rust::blinky_counts_three_rising_edges_in_three_microseconds	-	-
 block	from-rust#3	01a6b1a07512449e	shown	-	-	-
 block	from-rust#4	e719e6647aab42d6	shown	-	-	-
 block	from-rust#5	765499a926d8b83d	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run blinky.msl --analysis transient --stop 3e-6
 block	from-rust#6	cef4b6240f4d6713	shown	-	-	-
 block	from-rust#7	99d13973553af432	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run blinky.msl --analysis transient --stop 3e-6 --print-step 1e-6 --print count
-block	from-rust#8	35ff65aaf710211a	pending	-	-	-
+block	from-rust#8	35ff65aaf710211a	run	piperine/book_from_rust::a_message_with_values_is_a_record_with_a_text_field	-	-
 block	values#1	7174a756ba13fc3a	pending	-	-	-
 block	values#2	775ff75685a16476	pending	-	-	-
 block	values#3	12b765caa91c5cbd	pending	-	-	-
@@ -242,21 +242,21 @@ claim	welcome~81d65119	81d6511923b86767	holds	piperine/book_welcome::e0312_a_por
 claim	welcome~4bc81c1d	4bc81c1dc680eabd	holds	piperine/book_welcome::e0317_a_where_that_is_false_is_refused	-	E0317
 claim	welcome~80317c1d	80317c1de450c090	holds	piperine/book_welcome::e0901_there_is_no_println	-	E0901
 claim	welcome~54e1b21d	54e1b21dcbc81f00	holds	piperine/book_welcome::e0404_a_commit_belongs_in_a_reaction	-	E0404
-claim	from-rust~065a9173	065a9173300b1b4d	pending	-	-	A param looks like a struct field. f: f64 = 1M where f > 0.0; has a default and a check.
-claim	from-rust~272b0be7	272b0be7fda6c787	pending	-	-	There is no assignment to it anywhere: the placement Osc(clk) { f: 1M } binds it, like a struct literal.
-claim	from-rust~8414e064	8414e064b32e2bbf	pending	-	-	With after d the new value arrives d seconds later: the oscillator toggles itself every half period, and each toggle is the change that fires the reaction again.
-claim	from-rust~82576d99	82576d998faba1e1	pending	-	-	A let in a module body places hardware. let ctr = Counter(clk, count); is an instance named ctr, not a call that returns.
-claim	from-rust~4938c15f	4938c15f88e053f2	pending	-	-	The first three lines after the header are the three records of the table above, as the command prints them: one line each, live.
-claim	from-rust~e572a4bf	e572a4bf4e1fc800	pending	-	-	when control reaches it
-claim	from-rust~edc69903	edc69903381c28ec	pending	-	-	A step the solver rejects
-claim	from-rust~95095180	950951807bc5b336	pending	-	-	Only two built-in ! forms: emit! for output and include_str! for data (E0901).
-claim	from-rust~80317c1d	80317c1de450c090	pending	-	-	E0901
-claim	from-rust~64ee8a1d	64ee8a1dd48326bc	pending	-	-	E0602
-claim	from-rust~64ee881d	64ee881dd4832356	pending	-	-	E0604
-claim	from-rust~64ee8d1d	64ee8d1dd4832bd5	pending	-	-	E0601
-claim	from-rust~399f441d	399f441dbbfb6578	pending	-	-	E0101
-claim	from-rust~39acbe1d	39acbe1dbc06bf22	pending	-	-	E0143
-claim	from-rust~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
+claim	from-rust~065a9173	065a9173300b1b4d	holds	piperine/book_from_rust::a_param_has_a_default_a_check_and_a_binding_but_no_assignment	-	A param looks like a struct field. f: f64 = 1M where f > 0.0; has a default and a check.
+claim	from-rust~272b0be7	272b0be7fda6c787	holds	piperine/book_from_rust::a_param_has_a_default_a_check_and_a_binding_but_no_assignment	-	There is no assignment to it anywhere: the placement Osc(clk) { f: 1M } binds it, like a struct literal.
+claim	from-rust~8414e064	8414e064b32e2bbf	holds	piperine/book_from_rust::after_schedules_the_new_value_a_delay_later_and_each_toggle_fires_the_reaction_again	-	With after d the new value arrives d seconds later: the oscillator toggles itself every half period, and each toggle is the change that fires the reaction again.
+claim	from-rust~82576d99	82576d998faba1e1	holds	piperine/book_from_rust::blinky_counts_three_rising_edges_in_three_microseconds	-	A let in a module body places hardware. let ctr = Counter(clk, count); is an instance named ctr, not a call that returns.
+claim	from-rust~4938c15f	4938c15f88e053f2	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The first three lines after the header are the three records of the table above, as the command prints them: one line each, live.
+claim	from-rust~e572a4bf	e572a4bf4e1fc800	prose	-	-	when control reaches it
+claim	from-rust~edc69903	edc69903381c28ec	prose	-	-	A step the solver rejects
+claim	from-rust~95095180	950951807bc5b336	holds	piperine/book_from_rust::only_two_built_in_bang_forms_exist	-	Only two built-in ! forms: emit! for output and include_str! for data (E0901).
+claim	from-rust~80317c1d	80317c1de450c090	holds	piperine/book_from_rust::e0901_there_is_no_println	-	E0901
+claim	from-rust~64ee8a1d	64ee8a1dd48326bc	holds	piperine/book_from_rust::e0602_an_emit_has_no_format_string	-	E0602
+claim	from-rust~64ee881d	64ee881dd4832356	holds	piperine/book_from_rust::e0604_a_field_name_is_used_twice	-	E0604
+claim	from-rust~64ee8d1d	64ee8d1dd4832bd5	diverges	piperine/book_from_rust::e0601_an_emit_in_a_module_body_is_a_syntax_error_today	D1	E0601
+claim	from-rust~399f441d	399f441dbbfb6578	holds	piperine/book_from_rust::e0101_there_are_no_mutable_references	-	E0101
+claim	from-rust~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_from_rust::e0143_there_are_no_default_arguments	-	E0143
+claim	from-rust~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_from_rust::e0161_there_are_no_heap_types	-	E0161
 claim	values~423a2a9a	423a2a9a07b5faca	pending	-	-	This part of the language is Rust, so the chapter moves fast and stops only where MSL differs.
 claim	values~ec65c268	ec65c2683d76cae7	pending	-	-	Arithmetic always wraps.
 claim	values~d5f52d81	d5f52d81d3e7d912	pending	-	-	First, integers come in any width, because hardware does: a 3-bit duty word is a u3, and a 10-bit ADC code a u10.

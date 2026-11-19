@@ -23,6 +23,11 @@ impl Chapter {
         Model::lone(&self.book, &self.inventory, file_name, ids)
     }
 
+    /// A lone-file model of `before`, the block `id` and `after`.
+    pub fn wrapped(&self, file_name: &str, before: &str, id: &str, after: &str) -> Model {
+        Model::wrapped(&self.book, &self.inventory, file_name, before, id, after)
+    }
+
     /// The file the Book assembles at `path` as it stands at the block `upto`.
     pub fn marked(&self, path: &str, upto: &str) -> Model {
         Model::marked(&self.book, &self.inventory, path, upto)

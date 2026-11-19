@@ -50,6 +50,13 @@ impl Model {
         Model { directory, opening, named: None }
     }
 
+    /// A lone file made of `before`, the block `id` and `after`: a block that is a piece of a file (a
+    /// statement, a few items) set inside the text a test writes around it, so the piece itself runs.
+    pub fn wrapped(book: &Book, inventory: &Inventory, file_name: &str, before: &str, id: &str, after: &str) -> Model {
+        let text = format!("{before}{}\n{after}", inventory.checked_block(book, id).text());
+        Model::written(file_name, &text)
+    }
+
     /// The file the Book assembles at the path `path` as it stands at the block `upto`, opened as a
     /// lone file as `piperine run <file>` opens it: a path with no directory stands alone;
     /// `rc/benches/delayed.msl` is that file added to a copy of `examples/rc`.

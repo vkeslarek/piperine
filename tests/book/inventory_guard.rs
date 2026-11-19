@@ -20,7 +20,7 @@ use support::inventory::{Coverage, Inventory, Row, Verdict};
 
 /// The chapters whose rows a chapter task has settled: none of their rows may be `pending`. A chapter
 /// task adds its chapter here; the closing task replaces the registry with the strict rules.
-const SETTLED_CHAPTERS: [&str; 2] = ["errors", "welcome"];
+const SETTLED_CHAPTERS: [&str; 3] = ["errors", "welcome", "from-rust"];
 
 /// The inventory rules, each a method that returns what breaks it, one line per offence, so a
 /// failure names the block and a test can hold the rule on planted input.
