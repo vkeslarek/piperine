@@ -98,6 +98,11 @@ pub enum Source {
     /// An `ac_stim` site's input `VALUE`.
     StimValue(u32),
     Param(u32),
+    /// The `PREVIOUS` of a param's pin: its bytes before the host's most recent `set` of it
+    /// (`p.prev()`, §5.3.1). Between `Param` and `ParamChanged`, as a carrier's three reads are.
+    ParamPrevious(u32),
+    /// The `CHANGED` byte of a param's pin: the event function of `p.changed()` reads it.
+    ParamChanged(u32),
     /// The `VALUE` of a carrier's pin.
     Carrier(u32),
     /// The `PREVIOUS` of a carrier's pin: its bytes before its most recent change (abi.md §4.1,
@@ -244,6 +249,7 @@ impl ReadSet {
         set.0.extend(body.previous_reads(target).into_iter().map(Source::CarrierPrevious));
         set.0.extend(body.fired_reads(target).into_iter().map(Source::Fired));
         set.0.extend(body.derivative_reads(target).into_iter().map(Source::Derivative));
+        set.0.extend(body.param_previous_reads(target).into_iter().map(Source::ParamPrevious));
         set
     }
 }
@@ -759,6 +765,8 @@ impl BodyPlan {
             Source::LimitValue(k) => value(cell::INPUT, k),
             Source::StimValue(k) => value(cell::INPUT, limits + k),
             Source::Param(i) => value(cell::PIN, i),
+            Source::ParamPrevious(i) => at(cell::PIN, i, part::PREVIOUS),
+            Source::ParamChanged(i) => at(cell::PIN, i, part::CHANGED),
             Source::Carrier(c) => value(cell::PIN, pins.carrier(c)),
             Source::CarrierPrevious(c) => at(cell::PIN, pins.carrier(c), part::PREVIOUS),
             Source::CarrierChanged(c) => at(cell::PIN, pins.carrier(c), part::CHANGED),

@@ -100,6 +100,8 @@ impl Interpreted {
                 // a derivative site's rate: no body that has one reaches the interpreter, which
                 // refuses it by name (analog-structure R1, AS-17).
                 Source::Derivative(_) => None,
+                // a param's previous value or changed byte: refused by name likewise (T15)
+                Source::ParamPrevious(_) | Source::ParamChanged(_) => None,
             };
             if let Some(cell) = cell {
                 *cell = Some(read());

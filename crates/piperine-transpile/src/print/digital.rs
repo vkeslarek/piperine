@@ -115,6 +115,8 @@ impl<'a> DigitalPrinter<'a> {
                 }
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
+            // T13 decodes a param's previous bytes and changed byte
+            Source::ParamPrevious(_) | Source::ParamChanged(_) => return Err(self.unsupported("a param's previous value or changed byte")),
             Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
                 return Ok(None);
             }

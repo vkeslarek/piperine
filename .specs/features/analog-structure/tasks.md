@@ -379,9 +379,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run plan`: `a_guarded_limit_reads_its_enabled_sources`, `a_guarded_cap_reads_its_when_sources`, `a_param_changed_event_reads_the_params_changed_byte`, `a_param_previous_reads_its_previous_part`, `a_reached_carrier_is_a_port_pin`
-- [ ] Gate check passes: Full (`Run plan`, `cargo test -p piperine-plan`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 5 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run plan`: `a_guarded_limit_reads_its_enabled_sources`, `a_guarded_cap_reads_its_when_sources`, `a_param_changed_event_reads_the_params_changed_byte`, `a_param_previous_reads_its_previous_part`, `a_reached_carrier_is_a_port_pin`
+- [x] Gate check passes: Full (`Run plan`, `cargo test -p piperine-plan`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 5 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

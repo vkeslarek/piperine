@@ -578,8 +578,8 @@ impl Digital {
             let mut set = ReadSet::target(body, Query::Guard(k));
             match e.source {
                 EventSource::Changed(c) => set.0.extend([Source::Carrier(c), Source::CarrierChanged(c)]),
-                // The elaborator emits no param event yet: its pin read is the next step of the plan.
-                EventSource::ParamChanged(_) => panic!("a param's changed event has no plan yet"),
+                // `p.changed()`: the param pin's value and the byte the host's `set` stamps
+                EventSource::ParamChanged(p) => set.0.extend([Source::Param(p), Source::ParamChanged(p)]),
                 EventSource::Cross { .. } if e.guard.is_some() => {
                     set.0.insert(Source::Crossed(k));
                 }
