@@ -13,7 +13,7 @@ use piperine_cli::{Cli, Invocation};
 use piperine_parity::backend::Backend;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::corpus::{Corpus, Twin};
-use piperine_parity::golden::Golden;
+use piperine_parity::golden::{Complex, Golden};
 use piperine_parity::ngspice::{Ngspice, Reference};
 use piperine_parity::waveform::Waveform;
 use piperine_solver::prelude::{Context, NodeIdentifier, TransientAnalysisOptions};
@@ -110,6 +110,17 @@ impl Ran {
         (0..self.table.rows.len()).find(|row| (self.real(*row, 0) - at).abs() <= 1e-9 * step)
     }
 
+    /// The `(real, imaginary)` parts of the rows of a `kind | real | imag` table whose kind is
+    /// `kind`, sorted by real then imaginary part.
+    fn roots_of(&self, kind: &str) -> Vec<Complex> {
+        let mut roots: Vec<Complex> = (0..self.table.rows.len())
+            .filter(|row| self.table.rows[*row][0] == Cell::Text(kind.to_string()))
+            .map(|row| Complex { re: self.real(row, 1), im: self.real(row, 2) })
+            .collect();
+        Roots::sort(&mut roots);
+        roots
+    }
+
     /// The value (second cell) of the one row of a `signal | value` table whose first cell ends
     /// with `ending`.
     fn signal_ending(&self, ending: &str) -> f64 {
@@ -164,6 +175,24 @@ impl<'a> Check<'a> {
     }
 }
 
+/// The roots ngspice printed: `pole(k)` and `zero(k)` lines, listed under `<kind>(k) : ...`.
+struct Roots;
+
+impl Roots {
+    /// The roots ngspice printed as `<kind>(1)`, `<kind>(2)`, ..., sorted by real then imaginary part.
+    fn printed(golden: &Golden, kind: &str) -> Vec<Complex> {
+        let listed = golden.stdout().lines().filter(|line| line.trim_start().starts_with(&format!("{kind}(")) && line.contains(" : ")).count();
+        let mut roots: Vec<Complex> = (1..=listed).map(|k| golden.printed_complex(&format!("{kind}({k})"))).collect();
+        Roots::sort(&mut roots);
+        roots
+    }
+
+    /// `roots` ordered by real part, then imaginary part, so two lists compare root for root.
+    fn sort(roots: &mut [Complex]) {
+        roots.sort_by(|a, b| a.re.total_cmp(&b.re).then(a.im.total_cmp(&b.im)));
+    }
+}
+
 /// One analysis family's comparison of a run with ngspice's output.
 enum Comparison {
     /// The node voltages of an operating point: the table's `signal | value` rows against
@@ -183,6 +212,18 @@ enum Comparison {
     /// step `dt_min`, which the command line has no flag for (ngspice's `delmin`): the waveform
     /// is read at the export's times, as `parity_tran.rs` does.
     FlooredTransient { export: &'static str, rows: usize, node: &'static str, dt_min: f64 },
+    /// A transfer function: each `(ngspice's printed name, the table's row)` pair under `TF_RATIO`.
+    Transfer { rows: &'static [(&'static str, &'static str)] },
+    /// Poles and zeros: the table's `kind | real | imag` rows against ngspice's printed
+    /// `pole(k)` and `zero(k)`, root for root after sorting, under `PZ_ROOT`.
+    PoleZero,
+    /// DC sensitivities of one printed node: each `(ngspice's printed name, the end of the table's
+    /// param row)` pair under `SENSITIVITY`.
+    Sensitivity { derivatives: &'static [(&'static str, &'static str)] },
+    /// A periodic steady state of one printed node: the orbit's rows against the last period of
+    /// ngspice's long transient `export` (`rows` rows, `periods` periods) at the same phase, and
+    /// the end of the high half against the closed form of the twin's RC of time constant `tau`.
+    PeriodicOrbit { export: &'static str, rows: usize, node: &'static str, tau: f64, periods: f64 },
     /// A transient no step can settle: the run fails `E0508` at ngspice's 1 us, where ngspice
     /// stops with "Timestep too small".
     StepFloor,
@@ -197,6 +238,10 @@ impl Comparison {
             Comparison::AcResponse { export, rows } => Self::hold_ac_response(export, *rows, &scenario.run(check.backend), check),
             Comparison::Transient { export, rows, node } => Self::hold_transient(export, *rows, node, scenario, &scenario.run(check.backend), check),
             Comparison::FlooredTransient { export, rows, node, dt_min } => Self::hold_floored_transient(export, *rows, node, *dt_min, scenario, check),
+            Comparison::Transfer { rows } => Self::hold_transfer(rows, &scenario.run(check.backend), check),
+            Comparison::PoleZero => Self::hold_pole_zero(&scenario.run(check.backend), check),
+            Comparison::Sensitivity { derivatives } => Self::hold_sensitivity(derivatives, &scenario.run(check.backend), check),
+            Comparison::PeriodicOrbit { export, rows, node, tau, periods } => Self::hold_periodic_orbit(export, *rows, node, *tau, *periods, scenario, &scenario.run(check.backend), check),
             Comparison::StepFloor => Self::hold_step_floor(scenario, check),
         }
     }
@@ -275,6 +320,64 @@ impl Comparison {
             let actual = waveform.at(time).unwrap_or_else(|| panic!("{}: {time:e} s lies outside the result on {}", scenario.name(), check.backend.name()));
             check.assert(&ToleranceContract::TRAN_VOLTAGE, &format!("v({node})"), Coordinate::Time(time), voltage, actual);
         }
+    }
+
+    /// Each row of the table against what ngspice's `.tf` printed.
+    fn hold_transfer(rows: &[(&str, &str)], ran: &Ran, check: &Check) {
+        let Some(golden) = check.golden else { return };
+        for (printed, row) in rows {
+            check.assert(&ToleranceContract::TF_RATIO, row, Coordinate::OperatingPoint, golden.printed(printed), ran.signal_ending(row));
+        }
+    }
+
+    /// The twin has one finite pole and one finite zero, so a root the run loses is a miss; each
+    /// root is ngspice's, real and imaginary part, under `PZ_ROOT`.
+    fn hold_pole_zero(ran: &Ran, check: &Check) {
+        let Some(golden) = check.golden else { return };
+        for kind in ["pole", "zero"] {
+            let actual = ran.roots_of(kind);
+            let wanted = Roots::printed(golden, kind);
+            assert_eq!(wanted.len(), actual.len(), "{}: ngspice lists {} {kind}s, the table gives {} on {}: {actual:?}", check.scenario, wanted.len(), actual.len(), check.backend.name());
+            for (index, (wanted, actual)) in wanted.iter().zip(&actual).enumerate() {
+                for (part, wanted, actual) in [("re", wanted.re, actual.re), ("im", wanted.im, actual.im)] {
+                    check.assert(&ToleranceContract::PZ_ROOT, &format!("{kind}({}) {part}", index + 1), Coordinate::OperatingPoint, wanted, actual);
+                }
+            }
+        }
+    }
+
+    /// Each derivative of the table against what ngspice's `.sens` printed.
+    fn hold_sensitivity(derivatives: &[(&str, &str)], ran: &Ran, check: &Check) {
+        let Some(golden) = check.golden else { return };
+        for (printed, param) in derivatives {
+            check.assert(&ToleranceContract::SENSITIVITY, &format!("d v(mid) / d {param}"), Coordinate::OperatingPoint, golden.printed(printed), ran.signal_ending(param));
+        }
+    }
+
+    /// The closed form at the end of the high half, then every row of the orbit whose phase is
+    /// also a row of ngspice's grid (the command's print step is 0.1 us and ngspice's 0.04 us, so
+    /// every fifth of the orbit's rows meets one).
+    fn hold_periodic_orbit(export: &str, rows: usize, node: &str, tau: f64, periods: f64, scenario: &Scenario, ran: &Ran, check: &Check) {
+        let period = scenario.overrides.period.expect("a pss command names its period");
+        let stabilize = scenario.overrides.tstab.expect("a pss command names its stabilizing time");
+        let step = scenario.overrides.print_step.expect("a pss command names its print step");
+        let half = stabilize + period / 2.0;
+        let closed = 1.0 / (1.0 + (-period / (2.0 * tau)).exp());
+        let at_half = ran.row_at(half, step).unwrap_or_else(|| panic!("{}: the orbit holds no row at the end of the high half", scenario.name()));
+        let point = Point::new(scenario.name(), "v(vout), end of the high half", Coordinate::Time(half)).with_backend(check.backend.name());
+        ToleranceContract::TRAN_VOLTAGE.assert(&point, closed, ran.real(at_half, 1));
+        let Some(golden) = check.golden else { return };
+        let wanted = golden.real(export);
+        golden.expect_rows(export, &wanted, rows);
+        let grid = wanted[1].0 - wanted[0].0;
+        // ngspice's last period is [(N - 1) T, N T], at the phase of the orbit's [tstab, tstab + T]
+        let last_from = (periods - 1.0) * period;
+        for row in 0..ran.table.rows.len() {
+            let phase = ran.real(row, 0) - stabilize;
+            let Some((time, voltage)) = wanted.iter().find(|(time, _)| (time - (last_from + phase)).abs() <= 1e-9 * grid) else { continue };
+            check.assert(&ToleranceContract::TRAN_VOLTAGE, &format!("v({node})"), Coordinate::Time(*time), *voltage, ran.real(row, 1));
+        }
+        assert!(check.compared.get() >= 21, "{}: the orbit meets ngspice's grid at 21 phases, {} were compared", scenario.name(), check.compared.get());
     }
 
     /// The run fails `E0508` at the step after 1 us, and ngspice said it stopped at its floor.
@@ -361,4 +464,30 @@ fn tran_corner() {
 fn tran_floor() {
     // a node no step can settle after 1 us: ngspice stops with "Timestep too small", piperine fails E0508
     Scenario::of("tran_floor").hold(&Comparison::StepFloor);
+}
+
+#[test]
+fn tf_divider() {
+    Scenario::of("tf_divider").hold(&Comparison::Transfer { rows: &[("transfer_function", "gain"), ("output_impedance_at_v(out)", "output_impedance"), ("v1#input_impedance", "input_impedance")] });
+}
+
+#[test]
+fn pz_lowpass() {
+    Scenario::of("pz_lowpass").hold(&Comparison::PoleZero);
+}
+
+#[test]
+fn sens_divider() {
+    Scenario::of("sens_divider").hold(&Comparison::Sensitivity { derivatives: &[("r1", ".r1.r"), ("r2", ".r2.r"), ("v1", ".v1.dc")] });
+}
+
+#[test]
+fn pss_rc() {
+    Scenario::of("pss_rc").hold(&Comparison::PeriodicOrbit { export: "pss_rc_tran", rows: 1001, node: "vout", tau: 1e-6, periods: 10.0 });
+}
+
+#[test]
+fn temp_res() {
+    // 75 C: ngspice's `.options temp=75`, the command's `--temp 75`; the same rows as an operating point
+    Scenario::of("temp_res").hold(&Comparison::OperatingPoint { nodes: &["mid"] });
 }
