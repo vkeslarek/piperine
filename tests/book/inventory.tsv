@@ -406,54 +406,54 @@ claim	core-std~64ee8b1d	64ee8b1dd483286f	pending	-	-	E0603
 claim	core-std~64ee891d	64ee891dd4832509	pending	-	-	E0605
 claim	core-std~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
 claim	core-std~6e04c51d	6e04c51dd9c78a87	pending	-	-	E0702
-claim	errors~ed0997b0	ed0997b0b111f69a	pending	-	-	An error belongs to one of five phases: package (reading manifests and dependencies), parse, elaboration (names, types, params, the netlist), run (an analysis fails, naming the instance and the instant) and host (a host request is refused, and the analysis goes on).
-claim	errors~1f3eeee4	1f3eeee41c6df4bc	pending	-	-	E0310 on clk: Bit.
-claim	errors~d6787e9a	d6787e9a56d74451	pending	-	-	E0430 on on clk.
-claim	errors~4cc71bd2	4cc71bd23fee939d	pending	-	-	E0150 on + held. analog reads a digital carrier without saying what unknown means: held.known_or(0.0).
-claim	errors~a1afa480	a1afa480e9edfee0	pending	-	-	The diagnostics come on the error output, each with its code, the file, the line and the source excerpt, as in the two renderings at the top of this chapter, and the command exits with status 1.
-claim	errors~2db98d22	2db98d22c5ef3135	pending	-	-	Fix the three lines and the same command prints one ok line and exits with 0.
-claim	errors~3a745a24	3a745a2447904edf	pending	-	-	It cannot tell you that your counter wraps one edge late.
-claim	errors~473f7809	473f7809eac13282	pending	-	-	A reaction on q.changed() && !q.is_known() that emits the inputs of q.
-claim	errors~a1c70149	a1c7014935bd251b	pending	-	-	The solver fails to converge, or crawls.
-claim	errors~aa280b8e	aa280b8e1a6fe182	pending	-	-	When the surprise is gone, keep the useful prints and turn the expectation into a require, so the next change that breaks it is caught without anyone reading a stream.
-claim	errors~80317d1d	80317d1de450c243	pending	-	-	E0900
-claim	errors~80317c1d	80317c1de450c090	pending	-	-	E0901
-claim	errors~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
-claim	errors~39a5cf1d	39a5cf1dbc00bd57	pending	-	-	E0162
-claim	errors~39a5ce1d	39a5ce1dbc00bba4	pending	-	-	E0163
-claim	errors~39acbe1d	39acbe1dbc06bf22	pending	-	-	E0143
-claim	errors~39a9371d	39a9371dbc03a3e6	pending	-	-	E0150
-claim	errors~42ae741d	42ae741dc13997e4	pending	-	-	E0220
-claim	errors~42ae751d	42ae751dc1399997	pending	-	-	E0221
-claim	errors~42ae761d	42ae761dc1399b4a	pending	-	-	E0222
-claim	errors~4bc8171d	4bc8171dc680e23e	pending	-	-	E0312
-claim	errors~4bc80e1d	4bc80e1dc680d2f3	pending	-	-	E0319
-claim	errors~4bcf1b1d	4bcf1b1dc68707b8	pending	-	-	E0336
-claim	errors~4bcf1a1d	4bcf1a1dc6870605	pending	-	-	E0339
-claim	errors~4bd60d1d	4bd60d1dc68d0e9c	pending	-	-	E0350
-claim	errors~54e1b21d	54e1b21dcbc81f00	pending	-	-	E0404
-claim	errors~54e5381d	54e5381dcbcb3889	pending	-	-	E0414
-claim	errors~54ec481d	54ec481dcbd17267	pending	-	-	E0430
-claim	errors~39a2cc1d	39a2cc1dbbfe8267	pending	-	-	E0171
-claim	errors~39a2c81d	39a2c81dbbfe7b9b	pending	-	-	E0175
-claim	errors~42ab6e1d	42ab6e1dc13757db	pending	-	-	E0250
-claim	errors~4bc8151d	4bc8151dc680ded8	pending	-	-	E0310
-claim	errors~4bc81c1d	4bc81c1dc680eabd	pending	-	-	E0317
-claim	errors~4263fe89	4263fe894ba90969	pending	-	-	A param value that fails its where.
-claim	errors~4bcf191d	4bcf191dc6870452	pending	-	-	E0338
-claim	errors~4bd9101d	4bd9101dc68f498c	pending	-	-	E0343
-claim	errors~e692f0c1	e692f0c139004c64	pending	-	-	inst.name reaches an item that is not pub.
-claim	errors~54e53c1d	54e53c1dcbcb3f55	pending	-	-	E0410
-claim	errors~54ec4a1d	54ec4a1dcbd175cd	pending	-	-	E0432
-claim	errors~64ee8d1d	64ee8d1dd4832bd5	pending	-	-	E0601
-claim	errors~64ee8a1d	64ee8a1dd48326bc	pending	-	-	E0602
-claim	errors~64ee8b1d	64ee8b1dd483286f	pending	-	-	E0603
-claim	errors~5c44f01d	5c44f01dcf9af364	pending	-	-	E0501
-claim	errors~5c44f21d	5c44f21dcf9af6ca	pending	-	-	E0503
-claim	errors~5c44ed1d	5c44ed1dcf9aee4b	pending	-	-	E0504
-claim	errors~5c44ec1d	5c44ec1dcf9aec98	pending	-	-	E0505
-claim	errors~5c44ee1d	5c44ee1dcf9aeffe	pending	-	-	E0507
-claim	errors~5c44e91d	5c44e91dcf9ae77f	pending	-	-	E0508
+claim	errors~ed0997b0	ed0997b0b111f69a	prose	-	-	An error belongs to one of five phases: package (reading manifests and dependencies), parse, elaboration (names, types, params, the netlist), run (an analysis fails, naming the instance and the instant) and host (a host request is refused, and the analysis goes on).
+claim	errors~1f3eeee4	1f3eeee41c6df4bc	holds	piperine/book_errors::e0310_is_found_on_the_bare_port_of_the_worked_example	-	E0310 on clk: Bit.
+claim	errors~d6787e9a	d6787e9a56d74451	holds	piperine/book_errors::e0430_is_found_on_the_head_of_the_worked_example_s_reaction	-	E0430 on on clk.
+claim	errors~4cc71bd2	4cc71bd23fee939d	holds	piperine/book_errors::e0150_is_found_on_the_read_of_the_carrier_in_the_worked_example	-	E0150 on + held. analog reads a digital carrier without saying what unknown means: held.known_or(0.0).
+claim	errors~a1afa480	a1afa480e9edfee0	binary	piperine-cli/commands::check_renders_every_diagnostic_and_exits_1	-	The diagnostics come on the error output, each with its code, the file, the line and the source excerpt, as in the two renderings at the top of this chapter, and the command exits with status 1.
+claim	errors~2db98d22	2db98d22c5ef3135	holds	piperine/book_errors::the_three_fixes_make_the_worked_example_elaborate	-	Fix the three lines and the same command prints one ok line and exits with 0.
+claim	errors~3a745a24	3a745a2447904edf	prose	-	-	It cannot tell you that your counter wraps one edge late.
+claim	errors~473f7809	473f7809eac13282	holds	piperine/book_errors::a_reaction_on_a_changed_unknown_emits_the_inputs	-	A reaction on q.changed() && !q.is_known() that emits the inputs of q.
+claim	errors~a1c70149	a1c7014935bd251b	prose	-	-	The solver fails to converge, or crawls.
+claim	errors~aa280b8e	aa280b8e1a6fe182	prose	-	-	When the surprise is gone, keep the useful prints and turn the expectation into a require, so the next change that breaks it is caught without anyone reading a stream.
+claim	errors~80317d1d	80317d1de450c243	holds	piperine/book_errors::e0900_is_a_syntax_error_that_names_the_token	-	E0900
+claim	errors~80317c1d	80317c1de450c090	holds	piperine/book_errors::e0901_is_a_macro_other_than_emit	-	E0901
+claim	errors~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_errors::e0161_is_a_name_that_does_not_resolve	-	E0161
+claim	errors~39a5cf1d	39a5cf1dbc00bd57	holds	piperine/book_errors::e0162_is_a_name_declared_twice	-	E0162
+claim	errors~39a5ce1d	39a5ce1dbc00bba4	holds	piperine/book_errors::e0163_is_a_name_that_is_a_dependency_and_a_local_item	-	E0163
+claim	errors~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_errors::e0143_is_a_default_in_a_signature_or_an_overload	-	E0143
+claim	errors~39a9371d	39a9371dbc03a3e6	holds	piperine/book_errors::e0150_is_an_analog_read_of_a_digital_carrier	-	E0150
+claim	errors~42ae741d	42ae741dc13997e4	holds	piperine/book_errors::e0220_is_a_second_drive_of_a_one_driver_carrier	-	E0220
+claim	errors~42ae751d	42ae751dc1399997	holds	piperine/book_errors::e0221_is_a_definition_and_a_commit_to_one_carrier	-	E0221
+claim	errors~42ae761d	42ae761dc1399b4a	holds	piperine/book_errors::e0222_is_a_write_to_what_the_module_may_not_drive	-	E0222
+claim	errors~4bc8171d	4bc8171dc680e23e	holds	piperine/book_errors::e0312_is_a_port_left_unconnected_or_too_many_connections	-	E0312
+claim	errors~4bc80e1d	4bc80e1dc680d2f3	holds	piperine/book_errors::e0319_is_a_required_param_not_bound	-	E0319
+claim	errors~4bcf1b1d	4bcf1b1dc68707b8	holds	piperine/book_errors::e0336_is_a_definition_that_reads_a_probe	-	E0336
+claim	errors~4bcf1a1d	4bcf1a1dc6870605	holds	piperine/book_errors::e0339_is_a_combinational_loop_through_one_driver_carriers	-	E0339
+claim	errors~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_errors::e0350_is_an_instance_placed_where_none_is_placed	-	E0350
+claim	errors~54e1b21d	54e1b21dcbc81f00	holds	piperine/book_errors::e0404_is_a_statement_in_the_wrong_kind_of_block	-	E0404
+claim	errors~54e5381d	54e5381dcbcb3889	unraised	piperine/book_errors::e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001	L40	E0414
+claim	errors~54ec481d	54ec481dcbd17267	holds	piperine/book_errors::e0430_is_a_head_of_on_that_is_not_an_event	-	E0430
+claim	errors~39a2cc1d	39a2cc1dbbfe8267	holds	piperine/book_errors::e0171_is_a_manifest_key_the_format_does_not_allow	-	E0171
+claim	errors~39a2c81d	39a2c81dbbfe7b9b	holds	piperine/book_errors::e0175_is_a_package_without_a_crate_root	-	E0175
+claim	errors~42ab6e1d	42ab6e1dc13757db	holds	piperine/book_errors::e0250_is_a_carrier_at_a_node_port_or_the_reverse	-	E0250
+claim	errors~4bc8151d	4bc8151dc680ded8	holds	piperine/book_errors::e0310_is_a_bit_port_with_no_direction_or_a_direction_where_none_belongs	-	E0310
+claim	errors~4bc81c1d	4bc81c1dc680eabd	holds	piperine/book_errors::e0317_is_a_param_value_that_fails_its_where	-	E0317
+claim	errors~4263fe89	4263fe894ba90969	holds	piperine/book_errors::e0317_is_a_param_value_that_fails_its_where	-	A param value that fails its where.
+claim	errors~4bcf191d	4bcf191dc6870452	holds	piperine/book_errors::e0338_is_an_initial_value_under_an_undelayed_definition	-	E0338
+claim	errors~4bd9101d	4bd9101dc68f498c	holds	piperine/book_errors::e0343_is_an_item_of_a_child_that_is_not_pub	-	E0343
+claim	errors~e692f0c1	e692f0c139004c64	holds	piperine/book_errors::e0343_is_an_item_of_a_child_that_is_not_pub	-	inst.name reaches an item that is not pub.
+claim	errors~54e53c1d	54e53c1dcbcb3f55	holds	piperine/book_errors::e0410_is_a_left_side_of_a_contribution_that_is_not_a_probe	-	E0410
+claim	errors~54ec4a1d	54ec4a1dcbd175cd	holds	piperine/book_errors::e0432_is_a_commit_of_the_wrong_type	-	E0432
+claim	errors~64ee8d1d	64ee8d1dd4832bd5	holds	piperine/book_errors::e0601_is_an_emit_outside_a_reaction_analog_or_fn	-	E0601
+claim	errors~64ee8a1d	64ee8a1dd48326bc	holds	piperine/book_errors::e0602_is_an_emit_without_a_literal_stream_name	-	E0602
+claim	errors~64ee8b1d	64ee8b1dd483286f	holds	piperine/book_errors::e0603_is_a_check_reached_from_analog	-	E0603
+claim	errors~5c44f01d	5c44f01dcf9af364	holds	piperine/book_errors::e0501_is_microsteps_that_never_go_quiet	-	E0501
+claim	errors~5c44f21d	5c44f21dcf9af6ca	holds	piperine/book_errors::e0503_is_a_singular_solve_that_names_the_node_or_the_branches	-	E0503
+claim	errors~5c44ed1d	5c44ed1dcf9aee4b	holds	piperine/book_errors::e0504_is_a_step_after_a_digital_change_that_does_not_converge	-	E0504
+claim	errors~5c44ec1d	5c44ec1dcf9aec98	holds	piperine/book_errors::e0505_is_an_operating_point_that_does_not_converge	-	E0505
+claim	errors~5c44ee1d	5c44ee1dcf9aeffe	holds	piperine/book_errors::e0507_is_a_non_finite_value_in_a_solve	-	E0507
+claim	errors~5c44e91d	5c44e91dcf9ae77f	holds	piperine/book_errors::e0508_is_a_transient_step_that_cannot_be_completed_at_the_smallest_step	-	E0508
 claim	pom~d65bb809	d65bb809f4a91366	pending	-	-	Always builds. build() returns a Design however broken the input.
 claim	pom~3bce7c96	3bce7c96fa16a3f6	pending	-	-	A generation for over 8 cells gives 8 instances to walk.
 claim	pom~f5af2797	f5af2797cce9fc1b	pending	-	-	It gives one for with one placement inside, as written.

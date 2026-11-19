@@ -51,8 +51,17 @@ impl Refusal {
             Failure::Diagnostics { found, .. } => found.iter().map(|found| Reported::of(&found.diagnostic)).collect(),
             Failure::Request { diagnostic, .. } => vec![Reported::of(diagnostic)],
             Failure::Host { code, message } => vec![spanless((*code).to_string(), message.clone())],
-            other => vec![spanless("-".to_string(), other.to_string())],
+            other => {
+                let message = other.to_string();
+                vec![spanless(Self::code_in(&message).unwrap_or("-").to_string(), message)]
+            }
         }
+    }
+
+    /// The first error code (`E` and four digits) written in `message`: a run failure carries its code
+    /// in the text the solver gives.
+    fn code_in(message: &str) -> Option<&str> {
+        message.split(|character: char| !character.is_ascii_alphanumeric()).find(|word| word.len() == 5 && word.starts_with('E') && word[1..].chars().all(|digit| digit.is_ascii_digit()))
     }
 
     /// The diagnostics of `result` as `(code, message)`; `result` must have failed: panics naming

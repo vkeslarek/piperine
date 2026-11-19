@@ -522,9 +522,9 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] No row of `errors` is `pending`; `Run inventory` and `Run claims` pass with `errors` settled
-- [ ] Gate check passes: Quick (`Run errors`, `Run inventory`, `Run claims`)
-- [ ] Test count: one test per code claim, written in the commit body
+- [x] No row of `errors` is `pending`; `Run inventory` and `Run claims` pass with `errors` settled
+- [x] Gate check passes: Quick (`Run errors`, `Run inventory`, `Run claims`)
+- [x] Test count: one test per code claim, written in the commit body
 
 **Tests**: integration
 **Gate**: quick

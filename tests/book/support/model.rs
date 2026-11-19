@@ -69,6 +69,24 @@ impl Model {
         }
     }
 
+    /// A lone file `file_name` holding exactly `text`: the smallest model a test writes to make one
+    /// mistake the Book names.
+    pub fn written(file_name: &str, text: &str) -> Model {
+        let directory = Self::directory();
+        Self::write(directory.path(), file_name, text);
+        let opening = Opening::File(directory.path().join(file_name));
+        Model { directory, opening }
+    }
+
+    /// A package whose `Piperine.toml` is `manifest`, opened as a package; the rest of its files are
+    /// added with [`Model::with_source`].
+    pub fn package(manifest: &str) -> Model {
+        let directory = Self::directory();
+        let root = directory.path().join("package");
+        Self::write(&root, "Piperine.toml", manifest);
+        Model { directory, opening: Opening::Package(root) }
+    }
+
     /// A copy of the package `examples/<name>`, opened as a package.
     pub fn example(name: &str) -> Model {
         let directory = Self::directory();

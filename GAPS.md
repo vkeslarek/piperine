@@ -425,3 +425,4 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | ---- | --- | ----- | ----- |
 | errors#1 | D1 | `root-e2e` | `E0150` gives no help line |
 | errors#2 | D1 | `root-e2e` | `E0163` gives no secondary label on `mod util;` |
+| errors~54e5381d | L40 | `analog-structure` | `E0414` is not raised: a contribution under an `if` is `P0001` on both branches |
