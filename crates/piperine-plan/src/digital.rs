@@ -415,6 +415,18 @@ impl Digital {
             .collect()
     }
 
+    /// Adds the private `F64` pin `d<k>.abstol` of each derivative site that gives an `abstol`,
+    /// written by a function of the parameter cone and named by the site's `DDT` term.
+    pub(crate) fn derivative_abstol_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<u32>> {
+        body.derivatives()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| {
+                site.abstol.map(|_| s.pin(PinSpec { origin: &Self::at(&site.origin), ..PinSpec::discrete(&format!("d{k}.abstol"), role::PRIVATE, &F64) }))
+            })
+            .collect()
+    }
+
     /// Adds one `CAP` watch per `bound_step` site of the `analog` block, `cap:<site>`; returns
     /// `(site, watch)`.
     pub(crate) fn cap_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<(u32, u32)> {

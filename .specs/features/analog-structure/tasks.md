@@ -357,9 +357,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run plan`: `a_derivative_site_has_a_rate_pin_and_two_terms`, `a_derivative_abstol_names_its_pin`, `a_derivative_read_is_a_differentiable_pin_read`
-- [ ] Gate check passes: Full (`Run plan`, `cargo test -p piperine-plan`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 3 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run plan`: `a_derivative_site_has_a_rate_pin_and_two_terms`, `a_derivative_abstol_names_its_pin`, `a_derivative_read_is_a_differentiable_pin_read`
+- [x] Gate check passes: Full (`Run plan`, `cargo test -p piperine-plan`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 3 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

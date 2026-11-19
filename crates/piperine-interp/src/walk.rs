@@ -192,7 +192,8 @@ impl<'a> Walk<'a> {
             | Mode::Rearm { .. }
             | Mode::Cap(_)
             | Mode::Ttol(_)
-            | Mode::Etol(_) => {
+            | Mode::Etol(_)
+            | Mode::DerivativeAbstol(_) => {
                 Err(Fault::new(Self::UNEXECUTED, format!("{}: the walk of {mode:?} ended without reaching its site", body.name())))
             }
         }

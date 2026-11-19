@@ -4,9 +4,9 @@
 //! a small body by hand and reads its shape entry by entry; every expected entry is written from
 //! the design (mechanisms 1 to 3) and abi.md, and every shape passes `piperine_abi::validate`.
 
-use piperine_abi::raw::{GROUND, Shape, kind, op, role};
+use piperine_abi::raw::{Cell, DEFAULT, GROUND, Shape, cell, kind, op, part, role};
 use piperine_ir::{
-    Addend, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Derivative, Expr, ExprId, InstanceSpec, Ir,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Derivative, Expr, ExprId, InstanceSpec, Ir,
     IrBuilder, NetSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Real, Site, Stmt, StmtId, Terminal, ValueType,
 };
 use piperine_plan::{BodyPlan, Mode, Source, Target, Term};
@@ -67,6 +67,21 @@ impl Switching {
         b.expr(Expr::High(read), ValueType::Bool, Self::at())
     }
 
+    /// `<quantity>(a, gnd) +> 2.0 * rate(D<k>);`
+    fn contribute_twice_the_rate(b: &mut IrBuilder, quantity: QuantityRole, k: u32) -> StmtId {
+        let rate = b.expr(Expr::Derivative(k), ValueType::F64, Self::at());
+        let mut e = Self::ex(b);
+        let two = e.real(2.0);
+        let value = e.binary(BinaryOp::Mul, two, rate);
+        Self::contribute_expr(b, quantity, Operator::Direct, value)
+    }
+
+    /// The derivative site `ddt(v(a, gnd), <abstol>)` named `q`.
+    fn site(b: &mut IrBuilder, abstol: Option<ExprId>) -> Derivative {
+        let state = Self::probe(b);
+        Derivative { name: "q".into(), state, abstol, origin: Self::at() }
+    }
+
     /// `v(a, gnd)`.
     fn probe(b: &mut IrBuilder) -> ExprId {
         Self::ex(b).probe(Terminal::Node(0), Terminal::Ground)
@@ -122,6 +137,17 @@ impl Find {
     /// The terms of a shape as `(name, op, plus, minus)`.
     fn terms(shape: &Shape<'_>) -> Vec<(String, u32, u32, u32)> {
         shape.terms.iter().map(|t| (t.name.as_str().to_string(), t.op, t.plus, t.minus)).collect()
+    }
+
+    /// Function `name`: its reads, its writes and its partials as `(write, read)`.
+    fn function(shape: &Shape<'_>, name: &str) -> (Vec<Cell>, Vec<Cell>, Vec<(u32, u32)>) {
+        let f = shape.functions.iter().find(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no function `{name}`"));
+        (f.reads.iter().copied().collect(), f.writes.iter().copied().collect(), f.partials.iter().map(|p| (p.write, p.read)).collect())
+    }
+
+    /// The names of the pins of a shape, in order.
+    fn pin_names<'s>(shape: &'s Shape<'_>) -> Vec<&'s str> {
+        shape.pins.iter().map(|p| p.name.as_str()).collect()
     }
 
     /// The plan of the `terms` function.
@@ -201,5 +227,90 @@ fn a_body_without_new_forms_keeps_its_shape() {
         [("b0.flow".into(), op::FLOW, a, GROUND), ("b0.eq".into(), op::FLOW, flow, GROUND), ("b0.charge".into(), op::DDT, flow, GROUND)]
     );
     assert_eq!(Find::terms_plan(&plan).affine, [true, true, false]);
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+/// The cell of a pin's value.
+fn value(pin: u32) -> Cell {
+    Cell { kind: cell::PIN, index: pin, part: part::VALUE }
+}
+
+#[test]
+fn a_derivative_site_has_a_rate_pin_and_two_terms() {
+    // `v(a, gnd) +> 2.0 * ddt(v(a, gnd))` on a potential branch (design mechanism 3): the pin
+    // `d0.rate` follows the branch flow pin, and its two terms follow the branch terms.
+    let ir = Switching::ir(BranchKind::Potential, |b| {
+        let site = Switching::site(b, None);
+        Written { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Potential, 0)], derivatives: vec![site], ..Written::default() }
+    });
+    let plan = Switching::plan(&ir);
+    let shape = plan.shape().shape();
+    assert_eq!(Find::pin_names(shape), ["tol", "a", "b0.flow", "d0.rate", "en"]);
+    let (a, flow, rate) = (Find::pin(shape, "a"), Find::pin(shape, "b0.flow"), Find::pin(shape, "d0.rate"));
+    let pin = shape.pins.get(rate as usize).expect("the rate pin");
+    assert_eq!((pin.kind, pin.role), (kind::CONTINUOUS, role::PRIVATE));
+    assert_eq!(
+        Find::terms(shape),
+        [
+            ("b0.flow".into(), op::FLOW, a, GROUND),
+            ("b0.eq".into(), op::FLOW, flow, GROUND),
+            ("d0.rate".into(), op::FLOW, rate, GROUND),
+            ("d0.state".into(), op::DDT, rate, GROUND),
+        ]
+    );
+    assert_eq!(shape.terms.iter().map(|t| t.abstol).collect::<Vec<_>>(), [DEFAULT; 4], "no site tolerance: every term has the default");
+    let terms = Find::terms_plan(&plan);
+    assert_eq!(terms.writes[2..], [Target::Term(Term::DerivativeRate(0)), Target::Term(Term::DerivativeState(0))]);
+    assert_eq!(terms.affine, [true, true, true, false], "the rate term is linear in its pin, the state term is a charge");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn a_derivative_abstol_names_its_pin() {
+    // `ddt(v(a, gnd), tol)`: a private discrete `F64` pin `d0.abstol` after the event pins, written
+    // by the function `d0.abstol` from the param cone, and named by the `d0.state` term.
+    let ir = Switching::ir(BranchKind::Flow, |b| {
+        let tolerance = b.expr(Expr::Param(0), ValueType::F64, Switching::at());
+        let site = Switching::site(b, Some(tolerance));
+        Written { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..Written::default() }
+    });
+    let plan = Switching::plan(&ir);
+    let shape = plan.shape().shape();
+    assert_eq!(Find::pin_names(shape), ["tol", "a", "d0.rate", "en", "d0.abstol"]);
+    let abstol = Find::pin(shape, "d0.abstol");
+    let pin = shape.pins.get(abstol as usize).expect("the abstol pin");
+    assert_eq!((pin.kind, pin.role), (kind::DISCRETE, role::PRIVATE));
+    let state = shape.terms.iter().find(|t| t.name.as_str() == "d0.state").expect("the state term");
+    assert_eq!(state.abstol, abstol, "the DDT term names the pin");
+    let rate = shape.terms.iter().find(|t| t.name.as_str() == "d0.rate").expect("the rate term");
+    assert_eq!(rate.abstol, DEFAULT, "only the DDT term has a tolerance");
+    let (reads, writes, partials) = Find::function(shape, "d0.abstol");
+    assert_eq!((reads, writes, partials), (vec![value(0)], vec![value(abstol)], vec![]), "it reads the param `tol` alone and has no partial");
+    let function = plan.functions().iter().find(|f| f.mode == Mode::DerivativeAbstol(0)).expect("the abstol function");
+    assert_eq!((function.reads.clone(), function.writes.clone()), (vec![Source::Param(0)], vec![Target::DerivativeAbstol(0)]));
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn a_derivative_read_is_a_differentiable_pin_read() {
+    // `i(a, gnd) +> 2.0 * rate(D0)`: `terms` reads the node `a` (the state's) and the rate pin; both
+    // are tangent slots, and the contribution has a partial against the rate (abi.md A1: the
+    // rate is an unknown like a flow).
+    let ir = Switching::ir(BranchKind::Flow, |b| {
+        let site = Switching::site(b, None);
+        Written { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..Written::default() }
+    });
+    let plan = Switching::plan(&ir);
+    let shape = plan.shape().shape();
+    assert!(Source::Derivative(0).is_differentiable() && Source::Derivative(0).is_pin());
+    let terms = Find::terms_plan(&plan);
+    assert_eq!(terms.reads, [Source::Node(0), Source::Derivative(0)]);
+    assert_eq!(terms.slots, 2);
+    // Writes: b0.flow, d0.rate, d0.state. Partials as (write, slot): the flow reads the rate, the
+    // rate term is the rate itself, the state term reads the node the site differentiates.
+    assert_eq!(terms.partials, [(0, 1), (1, 1), (2, 0)]);
+    let (reads, _, partials) = Find::function(shape, "terms");
+    assert_eq!(reads, [value(Find::pin(shape, "a")), value(Find::pin(shape, "d0.rate"))]);
+    assert_eq!(partials, [(0, 1), (1, 1), (2, 0)]);
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }

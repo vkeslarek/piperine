@@ -71,6 +71,7 @@ impl<'a> AnalogPrinter<'a> {
                 self.body.nodes().get(i as usize).map_or_else(|| Text::generated(&format!("node{i}")), |n| Text::ident(&n.name))
             }
             Source::BranchFlow(b) => Self::flow_name(b),
+            Source::Derivative(k) => Text::generated(&format!("d{k}_rate")),
             Source::LimitValue(k) => site(self.body.limits(), k, "limit"),
             Source::StimValue(k) => site(self.body.stims(), k, "stim"),
             Source::Param(p) => {
@@ -125,6 +126,8 @@ impl<'a> AnalogPrinter<'a> {
             Term::Flow(b) | Term::Current(b) => format!("b{b}.flow"),
             Term::Eq(b) => format!("b{b}.eq"),
             Term::Charge(b) => format!("b{b}.charge"),
+            Term::DerivativeRate(k) => format!("d{k}.rate"),
+            Term::DerivativeState(k) => format!("d{k}.state"),
         }
     }
 
@@ -157,6 +160,7 @@ impl<'a> AnalogPrinter<'a> {
             Target::Cap(site) => format!("cap:{site}"),
             Target::Ttol(k) => format!("ttol:{k}"),
             Target::Etol(k) => format!("etol:{k}"),
+            Target::DerivativeAbstol(k) => format!("d{k}.abstol"),
         }
     }
 
@@ -468,6 +472,8 @@ impl<'a> AnalogPrinter<'a> {
                     if potential { format!("-{}", Self::charge_sum(b)) } else { Self::charge_sum(b) }
                 }
                 Term::Current(b) => self.read_name(Source::BranchFlow(b)),
+                // T12 prints the derivative sites
+                Term::DerivativeRate(_) | Term::DerivativeState(_) => return Err(self.unsupported("a derivative site")),
                 Term::Eq(b) => {
                     let Some(branch) = self.body.branches().get(b as usize) else {
                         return Err(self.unsupported(&format!("the equation term of branch {b}")));

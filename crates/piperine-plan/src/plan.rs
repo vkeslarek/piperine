@@ -42,6 +42,12 @@ pub enum Term {
     /// its direct addends. A switch branch's takes, per solve, the equation of the kind enabled
     /// in it (a potential source, the flow sum, or zero flow, §11 rule 2).
     Eq(u32),
+    /// A derivative site's `FLOW {u, GROUND}` term, `u` being its rate pin `d<k>.rate` (abi.md A1:
+    /// the row `u - op(x) = 0`).
+    DerivativeRate(u32),
+    /// A derivative site's `DDT {u, GROUND}` term of value `-x`, `x` being the site's state; it
+    /// names the site's `abstol` pin when the site has one.
+    DerivativeState(u32),
 }
 
 /// What a function computes: one walk of the `analog` block in one mode.
@@ -64,6 +70,8 @@ pub enum Mode {
     Cross(u32),
     /// `bound_step` site `k`: the value of its `CAP` watch.
     Cap(u32),
+    /// The `abstol` of derivative site `k`: its tolerance pin.
+    DerivativeAbstol(u32),
     /// The `ttol` of `cross` event `k`: its tolerance pin.
     Ttol(u32),
     /// The `etol` of `cross` event `k`: its tolerance pin.
@@ -82,6 +90,9 @@ pub enum Source {
     Node(u32),
     /// A potential branch's private flow pin.
     BranchFlow(u32),
+    /// A derivative site's rate pin `d<k>.rate` (abi.md A1's private pin `u`): a continuous
+    /// unknown that is 0 in an equilibrium solve.
+    Derivative(u32),
     /// A `limit` site's input `VALUE`.
     LimitValue(u32),
     /// An `ac_stim` site's input `VALUE`.
@@ -128,12 +139,12 @@ pub enum Source {
 impl Source {
     /// A continuous pin: read as 0 by the affine rule (INT-12).
     pub fn is_pin(self) -> bool {
-        matches!(self, Source::Node(_) | Source::BranchFlow(_))
+        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_))
     }
 
     /// A read the walk carries a tangent for.
     pub fn is_differentiable(self) -> bool {
-        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_))
+        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::LimitValue(_) | Source::StimValue(_))
     }
 }
 
@@ -167,6 +178,8 @@ pub enum Target {
     Ttol(u32),
     /// The `etol` pin of `cross` event `k`.
     Etol(u32),
+    /// The `abstol` pin of derivative site `k`.
+    DerivativeAbstol(u32),
     /// The `RECORD` pin of stream `s` (a statement of a reaction that emits).
     Record(u32),
 }
@@ -230,6 +243,7 @@ impl ReadSet {
         set.0.extend(body.flow_reads(target).into_iter().map(Source::BranchFlow));
         set.0.extend(body.previous_reads(target).into_iter().map(Source::CarrierPrevious));
         set.0.extend(body.fired_reads(target).into_iter().map(Source::Fired));
+        set.0.extend(body.derivative_reads(target).into_iter().map(Source::Derivative));
         set
     }
 }
@@ -249,6 +263,8 @@ pub struct Pins {
     pub nodes: u32,
     /// The private flow pin of each branch; `None` for a flow branch.
     pub branches: Vec<Option<u32>>,
+    /// The rate pin `d<k>.rate` of each derivative site, after the branch flow pins.
+    pub derivatives: Vec<u32>,
     pub temperature: Option<u32>,
     /// The `GLOBAL` pin of each analysis kind the body reads, in `AnalysisKind` order, after the
     /// temperature pin.
@@ -287,6 +303,9 @@ pub struct Pins {
     /// The `GLOBAL` `RESOLUTION` pin, after the tolerance pins, when a reaction of the body
     /// decides on a value that may be unknown.
     pub resolution: Option<u32>,
+    /// The private `abstol` pin `d<k>.abstol` of each derivative site that gives one, after the
+    /// tolerance pins; `None` for a site with the default tolerance.
+    pub derivative_abstols: Vec<Option<u32>>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -328,6 +347,16 @@ impl Pins {
     /// The `CAP` watch of `bound_step` site `k`; `GROUND` for a site the body does not have.
     pub fn cap(&self, k: u32) -> u32 {
         self.caps.iter().find(|(site, _)| *site == k).map_or(GROUND, |(_, watch)| *watch)
+    }
+
+    /// The rate pin of derivative site `k`; `GROUND` for a site the body does not have.
+    pub fn derivative(&self, k: u32) -> u32 {
+        self.derivatives.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The `abstol` pin of derivative site `k`; `DEFAULT` when it has none.
+    pub fn derivative_abstol(&self, k: u32) -> u32 {
+        self.derivative_abstols.get(k as usize).copied().flatten().unwrap_or(DEFAULT)
     }
 
     /// The `ttol` pin of `cross` event `k`; `GROUND` when it has none.
@@ -390,6 +419,7 @@ impl BodyPlan {
         let pin_count = body.params().len()
             + body.nodes().len()
             + body.branches().iter().filter(|b| b.kind != BranchKind::Flow).count()
+            + body.derivatives().len()
             + usize::from(Self::reads_temperature(body))
             + Self::reads_analysis(body).len();
         let mut next_check = pin_count as u32;
@@ -440,6 +470,17 @@ impl BodyPlan {
             });
         }
 
+        // One private rate pin per derivative site, after the branch flow pins (abi.md A1).
+        let derivatives: Vec<u32> = body
+            .derivatives()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| {
+                let at = origin(&site.origin);
+                s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("d{k}.rate"), role::PRIVATE) })
+            })
+            .collect();
+
         let temperature = Self::reads_temperature(body).then(|| {
             let at = origin(body.origin());
             s.pin(PinSpec {
@@ -477,11 +518,13 @@ impl BodyPlan {
         let records = Digital::record_pins(&mut s, body);
         let tolerances = Digital::tolerance_pins(&mut s, body);
         let resolution = Digital::resolution_pin(&mut s, body);
+        let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
         let pins = Pins {
             nodes,
             branches,
+            derivatives,
             temperature,
             analysis,
             checks,
@@ -497,6 +540,7 @@ impl BodyPlan {
             tolerances,
             caps,
             resolution,
+            derivative_abstols,
         };
 
         // Terms, branch by branch.
@@ -526,6 +570,18 @@ impl BodyPlan {
                     }
                 }
             }
+        }
+
+        // Derivative sites: the rate term `u` and the state term `-x`, after the branch terms.
+        for (k, site) in body.derivatives().iter().enumerate() {
+            let (k, at) = (k as u32, origin(&site.origin));
+            let rate = pins.derivative(k);
+            let mut term = |name: &str, operator: u32, abstol: u32, what: Term| {
+                s.term(TermSpec { name, origin: &at, op: operator, plus: rate, minus: GROUND, abstol, max: DEFAULT });
+                terms.push(what);
+            };
+            term(&format!("d{k}.rate"), op::FLOW, DEFAULT, Term::DerivativeRate(k));
+            term(&format!("d{k}.state"), op::DDT, pins.derivative_abstol(k), Term::DerivativeState(k));
         }
 
         // Inputs: limits, then stimuli, each named after its site.
@@ -574,8 +630,8 @@ impl BodyPlan {
                     Term::Flow(b) => body.is_affine(*b),
                     // which kind a switch branch's equation takes is decided per solve (§11 rule 2)
                     Term::Eq(b) => body.branches()[*b as usize].kind != BranchKind::Switch && body.is_affine(*b),
-                    Term::Current(_) => true,
-                    Term::Charge(_) => false,
+                    Term::Current(_) | Term::DerivativeRate(_) => true,
+                    Term::Charge(_) | Term::DerivativeState(_) => false,
                 })
                 .collect();
             Self::declare(&mut s, &pins, &terms, body, "terms", &origin(body.origin()), &plan);
@@ -600,6 +656,13 @@ impl BodyPlan {
             functions.push(plan);
         }
         functions.extend(Digital::functions(&mut s, &pins, body));
+        for (k, site) in body.derivatives().iter().enumerate().filter(|(_, site)| site.abstol.is_some()) {
+            let k = k as u32;
+            let set = ReadSet::target(body, Query::DerivativeAbstol(k));
+            let plan = Self::function(Mode::DerivativeAbstol(k), &set, vec![(Target::DerivativeAbstol(k), None)]);
+            Self::declare(&mut s, &pins, &terms, body, &format!("d{k}.abstol"), &origin(&site.origin), &plan);
+            functions.push(plan);
+        }
         let reactions = Digital::reactions(&mut s, &pins, body);
 
         BodyPlan { shape: s.freeze(), functions, reactions }
@@ -611,6 +674,8 @@ impl BodyPlan {
             Term::Flow(b) => ReadSet::target(body, Query::Flow(b)),
             Term::Charge(b) => ReadSet::target(body, Query::Charge(b)),
             Term::Current(b) => ReadSet([Source::BranchFlow(b)].into_iter().collect()),
+            Term::DerivativeRate(k) => ReadSet([Source::Derivative(k)].into_iter().collect()),
+            Term::DerivativeState(k) => ReadSet::target(body, Query::Derivative(k)),
             Term::Eq(b) => {
                 let mut set = ReadSet::target(body, Query::Flow(b));
                 let branch = &body.branches()[b as usize];
@@ -674,6 +739,7 @@ impl BodyPlan {
                 Target::Cap(site) => value(cell::WATCH, pins.cap(site)),
                 Target::Ttol(k) => value(cell::PIN, pins.ttol(k)),
                 Target::Etol(k) => value(cell::PIN, pins.etol(k)),
+                Target::DerivativeAbstol(k) => value(cell::PIN, pins.derivative_abstol(k)),
             })
             .collect();
         let partials =
@@ -689,6 +755,7 @@ impl BodyPlan {
         match r {
             Source::Node(i) => value(cell::PIN, pins.node(i)),
             Source::BranchFlow(b) => value(cell::PIN, pins.branches[b as usize].unwrap_or(GROUND)),
+            Source::Derivative(k) => value(cell::PIN, pins.derivative(k)),
             Source::LimitValue(k) => value(cell::INPUT, k),
             Source::StimValue(k) => value(cell::INPUT, limits + k),
             Source::Param(i) => value(cell::PIN, i),
@@ -790,6 +857,7 @@ impl BodyPlan {
             .chain(n(body.events().len()).flat_map(|k| [Query::Guard(k), Query::Cross(k), Query::Ttol(k), Query::Etol(k)]))
             .chain(n(body.reactions().len()).map(Query::Reaction))
             .chain(Self::bound_steps(body).into_iter().map(Query::BoundStep))
+            .chain(n(body.derivatives().len()).flat_map(|k| [Query::Derivative(k), Query::DerivativeAbstol(k)]))
             .collect()
     }
 

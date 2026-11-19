@@ -168,6 +168,8 @@ impl LibraryPrinter {
                 Mode::Cross { .. } => (digital.cross(k)?, digital.function_name(f)),
                 Mode::Ttol(_) | Mode::Etol(_) => (analog.tolerance(k)?, digital.function_name(f)),
                 Mode::Cap(_) => (analog.cap(k)?, digital.function_name(f)),
+                // T12 prints the derivative sites
+                Mode::DerivativeAbstol(_) => return Err(analog.unsupported("a derivative site")),
             };
             if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Cross { .. }) {
                 uses.insert("rt::Dual");

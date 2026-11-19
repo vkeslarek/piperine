@@ -97,6 +97,9 @@ impl Interpreted {
                 // a timer's pin, a previous value: `Interpreter::new` refuses every body with an
                 // `at` or a carrier (msl-digital T22).
                 Source::Timer(_) | Source::CarrierPrevious(_) => None,
+                // a derivative site's rate: no body that has one reaches the interpreter, which
+                // refuses it by name (analog-structure R1, AS-17).
+                Source::Derivative(_) => None,
             };
             if let Some(cell) = cell {
                 *cell = Some(read());
@@ -123,6 +126,10 @@ impl Interpreted {
                 if potential { -q } else { q }
             }
             Term::Current(b) => frame.flow(b).ok_or_else(|| unread("flow pin", b))?,
+            // the interpreter refuses a body with a derivative site by name (R1, AS-17)
+            Term::DerivativeRate(k) | Term::DerivativeState(k) => {
+                return Err(Fault::new(Walk::UNEXECUTED, format!("{}: derivative site {k} is not run by the interpreter", body.name())));
+            }
             Term::Eq(b) => {
                 let branch = &body.branches()[b as usize];
                 let v = frame.probe(branch.plus, branch.minus).ok_or_else(|| unread("probe", b))?;
@@ -286,7 +293,7 @@ impl Factory for BodyFactory {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
             }
             // `bound_step` and a `cross` tolerance: refused by name (T12).
-            Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) => {
+            Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) | Mode::DerivativeAbstol(_) => {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
             }
         }
