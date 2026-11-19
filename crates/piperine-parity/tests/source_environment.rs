@@ -79,12 +79,14 @@ fn transient_failure(top: &str) -> String {
 
 #[test]
 fn a_non_positive_bound_step_is_e0509() {
-    // FIX-09 AC 3: a cap of 0, of -1 us, of infinity or of NaN fails the run with E0509, naming
-    // the watch.
-    for top in ["BadCapBench", "NegativeCapBench", "InfCapBench", "NanCapBench"] {
+    // FIX-09 AC 3: a cap of 0, of -1 us or of NaN fails the run with E0509, naming the watch. A
+    // cap of `+∞` is a `bound_step` not executed at this solution: it caps nothing and the run
+    // goes on (abi.md, the `CAP` row; analog-structure AS-01 AC 5).
+    for top in ["BadCapBench", "NegativeCapBench", "NanCapBench"] {
         let err = transient_failure(top);
         assert!(err.contains("E0509") && err.contains("cap"), "{top}: {err:?}");
     }
+    assert_eq!(transient_failure("InfCapBench"), "", "+∞ caps nothing");
 }
 
 #[test]

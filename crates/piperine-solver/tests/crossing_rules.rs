@@ -270,8 +270,10 @@ fn an_invalid_ttol_or_etol_fails_the_analysis_with_e0510() {
 
 #[test]
 fn an_invalid_step_cap_fails_the_analysis_with_e0509() {
-    // SCX-03 AC 9 (§17.2 rule 5 and its resolution): a step cap not finite and positive
-    for bad in [0.0, -1.0e-9, f64::NAN, f64::INFINITY] {
+    // SCX-03 AC 9 (§17.2 rule 5 and its resolution): a step cap not finite and positive, and not
+    // `+∞`: `+∞` is a `bound_step` not executed at this solution and caps nothing (abi.md, the
+    // `CAP` row; analog-structure AS-01 AC 5)
+    for bad in [0.0, -1.0e-9, f64::NAN, f64::NEG_INFINITY] {
         let err = failing(|b, top| {
             b.device(capped(), "cc", &[("cap", ParamValue::Real(bad))], &[Port::Node(top)]);
         });
@@ -281,4 +283,8 @@ fn an_invalid_step_cap_fails_the_analysis_with_e0509() {
         b.device(capped(), "cc", &[("cap", ParamValue::Real(1.0e-6))], &[Port::Node(top)]);
     });
     assert_eq!(ok, "", "1 µs is valid");
+    let infinite = failing(|b, top| {
+        b.device(capped(), "cc", &[("cap", ParamValue::Real(f64::INFINITY))], &[Port::Node(top)]);
+    });
+    assert_eq!(infinite, "", "+∞ caps nothing");
 }
