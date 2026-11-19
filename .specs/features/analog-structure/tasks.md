@@ -401,11 +401,11 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Creates the target `crates/piperine-transpile/tests/structure.rs` (`//!` header: each `analog-structure` form printed, built with `rustc` and evaluated against a hand-derived value)
-- [ ] Tests with exactly these names pass in `Run tstruct`: `a_conditional_flow_contribution_adds_only_when_its_arm_runs`, `a_switch_equation_follows_its_enabled_kind`, `a_switch_with_neither_kind_has_zero_flow`, `both_kinds_enabled_return_e0418_naming_the_branch`
-- [ ] `Run tgolden` passes unedited
-- [ ] Gate check passes: Full (`Run tstruct`, `cargo test -p piperine-transpile`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Creates the target `crates/piperine-transpile/tests/structure.rs` (`//!` header: each `analog-structure` form printed, built with `rustc` and evaluated against a hand-derived value)
+- [x] Tests with exactly these names pass in `Run tstruct`: `a_conditional_flow_contribution_adds_only_when_its_arm_runs`, `a_switch_equation_follows_its_enabled_kind`, `a_switch_with_neither_kind_has_zero_flow`, `both_kinds_enabled_return_e0418_naming_the_branch`
+- [x] `Run tgolden` passes unedited
+- [x] Gate check passes: Full (`Run tstruct`, `cargo test -p piperine-transpile`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

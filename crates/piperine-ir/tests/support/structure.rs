@@ -1,0 +1,157 @@
+//! The small bodies the `analog-structure` tests of the plan and the printer share: one body
+//! `Sw(a)` with one branch of a chosen kind, a param, an input carrier and an `analog` block the
+//! test writes (`Switching`), and one body `Lag` with a param event and a reaction
+//! (`ParamEvents`). The includer declares `mod devices` for the expression helper.
+
+use crate::devices::{Devices, Ex};
+use piperine_ir::{
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Derivative, Event, EventSource, Expr, ExprId, InstanceSpec,
+    Ir, IrBuilder, NetSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Reaction, Real, Site, Stmt, StmtId, Terminal, ValueType,
+};
+
+/// What a test writes into the body `Sw` that `Switching` builds.
+#[derive(Default)]
+pub struct Written {
+    pub analog: Vec<StmtId>,
+    pub derivatives: Vec<Derivative>,
+    pub limits: Vec<Site>,
+    pub stims: Vec<Site>,
+}
+
+/// One body `Sw(a)` with the branch `(a, gnd)` of a given kind, one param `tol: f64`, a `Bool`
+/// input carrier `en`, and an `analog` block the test writes; placed alone as the design.
+pub struct Switching;
+
+impl Switching {
+    pub const FILE: &'static str = "structure_shape.msl";
+
+    pub fn at() -> Origin {
+        Origin { file: Self::FILE.into(), line: 3, col: 5 }
+    }
+
+    /// The expression helper at a fixed position.
+    pub fn ex(b: &mut IrBuilder) -> Ex<'_> {
+        Ex::new(b, Self::FILE, 3, 5)
+    }
+
+    /// `i(a, gnd) +> value;` or `v(a, gnd) +> value;`.
+    pub fn contribute(b: &mut IrBuilder, quantity: QuantityRole, value: f64) -> StmtId {
+        let value = Self::ex(b).real(value);
+        Self::contribute_expr(b, quantity, Operator::Direct, value)
+    }
+
+    /// A contribution of `value` with the given operator.
+    pub fn contribute_expr(b: &mut IrBuilder, quantity: QuantityRole, operator: Operator, value: ExprId) -> StmtId {
+        b.stmt(Stmt::Contribute { branch: 0, quantity, addends: vec![Addend { operator, negated: false, value }] })
+    }
+
+    /// `if cond { then } else { otherwise }` as a statement.
+    pub fn branch_on(b: &mut IrBuilder, cond: ExprId, then: Vec<StmtId>, otherwise: Vec<StmtId>) -> StmtId {
+        let then = Self::ex(b).block(then, None, ValueType::Unit);
+        let otherwise = Self::ex(b).block(otherwise, None, ValueType::Unit);
+        let expr = b.expr(Expr::If { cond, then, otherwise }, ValueType::Unit, Self::at());
+        b.stmt(Stmt::Expr(expr))
+    }
+
+    /// `en.high()` of the carrier `en`.
+    pub fn carrier_high(b: &mut IrBuilder) -> ExprId {
+        let read = b.expr(Expr::Carrier(0), ValueType::Flagged(Box::new(ValueType::Bool)), Self::at());
+        b.expr(Expr::High(read), ValueType::Bool, Self::at())
+    }
+
+    /// `<quantity>(a, gnd) +> 2.0 * rate(D<k>);`
+    pub fn contribute_twice_the_rate(b: &mut IrBuilder, quantity: QuantityRole, k: u32) -> StmtId {
+        let rate = b.expr(Expr::Derivative(k), ValueType::F64, Self::at());
+        let mut e = Self::ex(b);
+        let two = e.real(2.0);
+        let value = e.binary(BinaryOp::Mul, two, rate);
+        Self::contribute_expr(b, quantity, Operator::Direct, value)
+    }
+
+    /// The derivative site `ddt(v(a, gnd), <abstol>)` named `q`.
+    pub fn site(b: &mut IrBuilder, abstol: Option<ExprId>) -> Derivative {
+        let state = Self::probe(b);
+        Derivative { name: "q".into(), state, abstol, origin: Self::at() }
+    }
+
+    /// `v(a, gnd)`.
+    pub fn probe(b: &mut IrBuilder) -> ExprId {
+        Self::ex(b).probe(Terminal::Node(0), Terminal::Ground)
+    }
+
+    /// The design: `kind` is the kind of branch 0; `write` returns what the body holds.
+    pub fn ir(kind: BranchKind, write: impl FnOnce(&mut IrBuilder) -> Written) -> Ir {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
+        let Written { analog, derivatives, limits, stims } = write(&mut b);
+        let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
+        let body = b.body(BodySpec {
+            name: "Sw".into(),
+            origin: origin.clone(),
+            params: vec![tolerance],
+            nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: origin.clone() }],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind }],
+            limits,
+            stims,
+            locals: vec![],
+            analog: Some(analog),
+            children: vec![],
+        });
+        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone() });
+        for site in derivatives {
+            b.derivative(body, site);
+        }
+        let top = b.next_instance_id();
+        let net = b.net(NetSpec { path: "Sw.en".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: origin.clone() });
+        let params = vec![Constant::Real(Real::new(1e-9))];
+        let top = b.instance(InstanceSpec { path: "Sw".into(), name: "Sw".into(), body, parent: None, nodes: vec![NodeRef::Ground], params, origin });
+        b.bind_nets(top, vec![net]);
+        let ir = b.finish(top);
+        assert_eq!(ir.check(), vec![], "the fixture passes check(): {ir}");
+        ir
+    }
+
+    /// `if en.high() { v(a, gnd) +> 1.0; } else { i(a, gnd) +> 2.0; }`: a switch branch.
+    pub fn on_the_carrier(b: &mut IrBuilder) -> Written {
+        let (cond, potential, flow) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
+        Written { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![flow])], ..Written::default() }
+    }
+
+    /// `limit(v(a, gnd), |..| 0.0)` as site 0.
+    pub fn limit_read(b: &mut IrBuilder) -> ExprId {
+        let x = Self::probe(b);
+        let function = Self::ex(b).real(0.0);
+        let closure = b.expr(Expr::Closure { params: vec![], body: function }, ValueType::Fn(vec![], Box::new(ValueType::F64)), Self::at());
+        b.expr(Expr::Limit { site: 0, x, f: closure, seed: None }, ValueType::F64, Self::at())
+    }
+}
+
+/// A body `Lag` with one param `tol: f64`, an `out` carrier `seen`, the event `param_changed tol`
+/// and one reaction on it that commits what a test builds to `seen`.
+pub struct ParamEvents;
+
+impl ParamEvents {
+    pub fn at() -> Origin {
+        Origin { file: "param_events.msl".into(), line: 2, col: 3 }
+    }
+
+    pub fn ir(seen_ty: ValueType, value: impl FnOnce(&mut IrBuilder) -> ExprId) -> Ir {
+        let mut b = IrBuilder::new();
+        let origin = Origin { file: "param_events.msl".into(), line: 1, col: 1 };
+        let value = value(&mut b);
+        let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None });
+        let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
+        let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone() });
+        let event = b.event(body, Event { source: EventSource::ParamChanged(0), guard: None, origin: Self::at() });
+        b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() });
+        let top = b.next_instance_id();
+        let net = b.net(NetSpec { path: "Lag.seen".into(), ty: seen_ty, declared_by: top, init: None, origin: origin.clone() });
+        let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });
+        b.bind_nets(top, vec![net]);
+        let ir = b.finish(top);
+        assert_eq!(ir.check(), vec![], "the fixture passes check(): {ir}");
+        ir
+    }
+}

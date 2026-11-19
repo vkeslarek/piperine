@@ -12,6 +12,11 @@
 //! folded from `0.0` over its pin partials in declared order, the fold the assembly subtracts
 //! (INT-12). A partial of an affine term against a pin comes from the evaluation at 0; every
 //! other partial from the evaluation at the iterate.
+//!
+//! A body with a contribution under an `if` or in a nested block, or with a switch branch, prints
+//! `terms_block` in the structured form of `ContributionSums` (`contribution.rs`): the block as
+//! written over mutable sums, and for a switch branch that can receive both quantities a
+//! `Result` that returns `E0418` (checked at the iterate only, by the `exclusive_` argument).
 
 use std::collections::BTreeSet;
 
@@ -20,7 +25,7 @@ use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 
 use crate::Error;
 use crate::print::value::Reads;
-use crate::print::{Text, ValuePrinter};
+use crate::print::{ContributionSums, Text, ValuePrinter};
 
 /// Prints the analog functions of one body from its plan.
 #[derive(Debug)]
@@ -29,6 +34,9 @@ pub struct AnalogPrinter<'a> {
     pub(crate) body: Body<'a>,
     pub(crate) plan: &'a BodyPlan,
     pub(crate) values: ValuePrinter<'a>,
+    /// The accumulators of the structured form of `terms_block`; `None` for a body whose
+    /// contributions are all top-level statements and that has no switch branch.
+    pub(crate) sums: Option<ContributionSums>,
 }
 
 /// What a slice of the `analog` block holds: its top-level statements in source order, and the
@@ -49,8 +57,13 @@ impl<'a> AnalogPrinter<'a> {
             flows: (0..body.branches().len() as u32).map(|b| Self::flow_name(b)).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
         };
+        let sums = ContributionSums::needed(body).then(|| ContributionSums::of(body));
         let values = ValuePrinter::of_body(body.ir(), body).with_reads(reads);
-        AnalogPrinter { ir: body.ir(), body, plan, values }
+        let values = match &sums {
+            Some(sums) => values.with_contribution_sums(sums.clone()),
+            None => values,
+        };
+        AnalogPrinter { ir: body.ir(), body, plan, values, sums }
     }
 
     /// The value printer of the body, its analog reads named.
@@ -172,7 +185,7 @@ impl<'a> AnalogPrinter<'a> {
     /// those statements and every top-level `let` they reach, in source order. In `mode`, the
     /// arguments of the mode's own site are evaluated (`Limit(k)`, `Stim(k)`); every other site
     /// reads its held value and evaluates nothing.
-    pub fn slice(&self, mode: Mode, roots: impl Fn(&Stmt) -> bool) -> Slice {
+    pub fn slice(&self, mode: Mode, roots: impl Fn(StmtId) -> bool) -> Slice {
         let block = self.body.analog().unwrap_or(&[]);
         self.slice_before(mode, &[], block.len(), roots)
     }
@@ -183,7 +196,7 @@ impl<'a> AnalogPrinter<'a> {
         self.slice_before(mode, exprs, before, |_| false)
     }
 
-    fn slice_before(&self, mode: Mode, exprs: &[ExprId], before: usize, roots: impl Fn(&Stmt) -> bool) -> Slice {
+    fn slice_before(&self, mode: Mode, exprs: &[ExprId], before: usize, roots: impl Fn(StmtId) -> bool) -> Slice {
         let block = self.body.analog().unwrap_or(&[]);
         let mut needed = BTreeSet::new();
         let mut kept = Vec::new();
@@ -195,7 +208,7 @@ impl<'a> AnalogPrinter<'a> {
             let stmt = self.ir.stmt(*id);
             let keep = match stmt {
                 Stmt::Let { local, .. } => needed.contains(local),
-                _ => roots(stmt),
+                _ => roots(*id),
             };
             if !keep {
                 continue;
@@ -353,31 +366,8 @@ impl<'a> AnalogPrinter<'a> {
         })
     }
 
-    /// `i(a, k)` or `v(p, n)`: what a contribution to `branch` writes, with its nature's access.
-    fn branch_text(&self, branch: u32, quantity: QuantityRole) -> String {
-        let Some(b) = self.body.branches().get(branch as usize) else { return format!("branch {branch}") };
-        let node = |t: Terminal| match t {
-            Terminal::Node(i) => self.body.nodes().get(i as usize),
-            Terminal::Ground => None,
-            Terminal::Own(_) => panic!("Ir::check: an own terminal belongs in a child's node slot only"),
-        };
-        let nature = node(b.plus).or_else(|| node(b.minus)).map(|n| self.ir.nature(n.nature));
-        let access = nature.map_or_else(
-            || if quantity == QuantityRole::Flow { "i".to_string() } else { "v".to_string() },
-            |n| match quantity {
-                QuantityRole::Flow => n.flow().map_or_else(|| "flow".to_string(), |q| q.access.clone()),
-                QuantityRole::Potential => n.potential().access.clone(),
-            },
-        );
-        let name = |t: Terminal| node(t).map_or_else(|| "gnd".to_string(), |n| n.name.clone());
-        match b.minus {
-            Terminal::Ground => format!("{access}({})", name(b.plus)),
-            _ => format!("{access}({}, {})", name(b.plus), name(b.minus)),
-        }
-    }
-
-    /// The variable of a branch's direct sum: `b0_flow_` on a flow branch, `b0_potential_` on a
-    /// potential branch (whose `b0_flow_` is its flow pin).
+    /// The variable of a branch's direct sum in the shadowed form: `b0_flow_` on a flow branch,
+    /// `b0_potential_` on a potential branch (whose `b0_flow_` is its flow pin).
     fn direct_sum(&self, branch: u32) -> String {
         match self.body.branches().get(branch as usize).map(|b| b.kind) {
             Some(BranchKind::Potential) => Text::generated(&format!("b{branch}_potential")),
@@ -395,7 +385,8 @@ impl<'a> AnalogPrinter<'a> {
         let Some(f) = self.plan.functions().get(k).filter(|f| f.mode == Mode::Terms) else {
             return Err(self.unsupported(&format!("function {k} as the terms function")));
         };
-        let slice = self.slice(Mode::Terms, |s| matches!(s, Stmt::Contribute { .. }));
+        let holders = ContributionSums::holders(self.body);
+        let slice = self.slice(Mode::Terms, |id| holders.contains(&id));
         let mut used = slice.sources.clone();
         for w in &f.writes {
             match w {
@@ -408,6 +399,10 @@ impl<'a> AnalogPrinter<'a> {
                             if let Terminal::Node(i) = t {
                                 used.insert(Source::Node(i));
                             }
+                        }
+                        // a switch branch's equations read its own flow pin (design mechanism 2)
+                        if branch.kind == BranchKind::Switch {
+                            used.insert(Source::BranchFlow(*b));
                         }
                     }
                 }
@@ -425,13 +420,49 @@ impl<'a> AnalogPrinter<'a> {
         Ok(text)
     }
 
+    /// Whether `terms_block` returns a `Result`: a switch branch that receives both quantities
+    /// can fault with `E0418`.
+    fn block_faults(&self) -> bool {
+        self.sums.as_ref().is_some_and(ContributionSums::faults)
+    }
+
     fn terms_block(&self, t: &mut Text, f: &FunctionPlan, slice: &Slice, reads: &[(usize, Source)]) -> Result<(), Error> {
         let mut params: Vec<String> = Vec::with_capacity(reads.len());
         for (_, s) in reads {
             params.push(format!("{}: {}", self.read_name(*s), self.block_type(*s)?));
         }
+        // E0418 is a fault of the solve at the iterate: the evaluation at 0 that gives an affine
+        // term its constant and slopes reads every pin as 0 and must not raise it
+        if self.block_faults() {
+            params.push(format!("{}: bool", Self::exclusive()));
+        }
         t.comment(&format!("{}.analog", self.body.name()), self.body.origin());
-        t.line(&format!("fn terms_block<R: Real>({}) -> [R; {}] {{", params.join(", "), f.writes.len()));
+        let returns = if self.block_faults() { format!("Result<[R; {}], Fault>", f.writes.len()) } else { format!("[R; {}]", f.writes.len()) };
+        t.line(&format!("fn terms_block<R: Real>({}) -> {returns} {{", params.join(", ")));
+        let (mut lines, defined) = match &self.sums {
+            Some(sums) => (self.structured_lines(sums, slice)?, BTreeSet::new()),
+            None => self.shadowed_lines(slice)?,
+        };
+        let outputs = self.outputs(f, &defined, &mut lines)?;
+        lines.push(if self.block_faults() { format!("Ok([{}])", outputs.join(", ")) } else { format!("[{}]", outputs.join(", ")) });
+        t.indented(|t| {
+            for l in &lines {
+                t.line(l);
+            }
+        });
+        t.line("}");
+        Ok(())
+    }
+
+    /// The name of the parameter that says whether `terms_block` checks `E0418`.
+    fn exclusive() -> String {
+        Text::generated("exclusive")
+    }
+
+    /// The lines of a block whose contributions are all top-level statements: the slice in
+    /// source order, each branch's first contribution defining its sum and each later one
+    /// shadowing it with the sum plus its value. Returns the sums defined.
+    fn shadowed_lines(&self, slice: &Slice) -> Result<(Vec<String>, BTreeSet<String>), Error> {
         let mut lines = Vec::new();
         let mut defined: BTreeSet<String> = BTreeSet::new();
         for id in &slice.stmts {
@@ -441,7 +472,7 @@ impl<'a> AnalogPrinter<'a> {
                         let at = self.ir.expr_origin(first.value);
                         lines.push(format!(
                             "// contribution to {}, branch b{branch} @ {}:{}:{}",
-                            self.branch_text(*branch, *quantity),
+                            ContributionSums::branch_text(self.body, *branch, *quantity),
                             at.file,
                             at.line,
                             at.col
@@ -464,16 +495,38 @@ impl<'a> AnalogPrinter<'a> {
                 _ => lines.push(self.values.stmt(*id)?),
             }
         }
+        Ok((lines, defined))
+    }
+
+    /// The lines of a block with a nested contribution or a switch branch (`ContributionSums`):
+    /// the accumulators, the slice as written (every contribution an addition to its sum where it
+    /// stands), and the `E0418` checks.
+    fn structured_lines(&self, sums: &ContributionSums, slice: &Slice) -> Result<Vec<String>, Error> {
+        let mut lines = sums.declarations();
+        for id in &slice.stmts {
+            lines.push(self.values.stmt(*id)?);
+        }
+        lines.extend(sums.exclusivity_checks(&Self::exclusive()));
+        Ok(lines)
+    }
+
+    /// The value of each term `f` writes, in the plan's write order. `defined` holds the sums the
+    /// shadowed form defined; the structured form defines every sum its branch receives. The
+    /// equation of a branch of the structured form is bound first, as `b0_eq_`, in `lines`.
+    fn outputs(&self, f: &FunctionPlan, defined: &BTreeSet<String>, lines: &mut Vec<String>) -> Result<Vec<String>, Error> {
         let mut outputs = Vec::with_capacity(f.writes.len());
         for w in &f.writes {
             let Target::Term(term) = *w else {
                 return Err(self.unsupported(&format!("the write {w:?} of the terms function")));
             };
             outputs.push(match term {
-                Term::Flow(b) => self.direct_sum(b),
+                Term::Flow(b) => match &self.sums {
+                    Some(sums) => sums.sum(b, QuantityRole::Flow, Operator::Direct),
+                    None => self.direct_sum(b),
+                },
                 Term::Charge(b) => {
-                    let potential = self.body.branches().get(b as usize).is_some_and(|x| x.kind == BranchKind::Potential);
-                    if potential { format!("-{}", Self::charge_sum(b)) } else { Self::charge_sum(b) }
+                    let negated = self.body.branches().get(b as usize).is_some_and(|x| x.kind != BranchKind::Flow);
+                    if negated { format!("-{}", Self::charge_sum(b)) } else { Self::charge_sum(b) }
                 }
                 Term::Current(b) => self.read_name(Source::BranchFlow(b)),
                 // T12 prints the derivative sites
@@ -485,18 +538,19 @@ impl<'a> AnalogPrinter<'a> {
                     let Some(probe) = self.values.probe(branch.plus, branch.minus) else {
                         return Err(self.unsupported(&format!("the probe of branch {b}")));
                     };
-                    if defined.contains(&self.direct_sum(b)) { format!("{probe} - {}", self.direct_sum(b)) } else { probe }
+                    match &self.sums {
+                        Some(sums) => {
+                            let equation = Text::generated(&format!("b{b}_eq"));
+                            lines.push(format!("let {equation} = {};", sums.equation(b, &probe, &self.read_name(Source::BranchFlow(b)))));
+                            equation
+                        }
+                        None if defined.contains(&self.direct_sum(b)) => format!("{probe} - {}", self.direct_sum(b)),
+                        None => probe,
+                    }
                 }
             });
         }
-        lines.push(format!("[{}]", outputs.join(", ")));
-        t.indented(|t| {
-            for l in &lines {
-                t.line(l);
-            }
-        });
-        t.line("}");
-        Ok(())
+        Ok(outputs)
     }
 
     fn terms_function(&self, t: &mut Text, k: usize, f: &FunctionPlan, reads: &[(usize, Source)]) -> Result<(), Error> {
@@ -522,7 +576,7 @@ impl<'a> AnalogPrinter<'a> {
                 t.line(line);
             }
             let call = |zero: bool| {
-                let args: Vec<String> = reads
+                let mut args: Vec<String> = reads
                     .iter()
                     .map(|(i, s)| {
                         let name = &names[*i];
@@ -536,12 +590,19 @@ impl<'a> AnalogPrinter<'a> {
                         }
                     })
                     .collect();
-                if !args.iter().any(|a| a.starts_with("Dual::")) {
+                let named = !args.iter().any(|a| a.starts_with("Dual::"));
+                // E0418 is checked at the iterate, not in the evaluation at 0 (see `terms_block`)
+                let fallible = self.block_faults();
+                if fallible {
+                    args.push((!zero).to_string());
+                }
+                let call = if named {
                     // no argument carries the block's number type: name it
                     format!("Self::terms_block::<Dual<{}>>({})", f.slots, args.join(", "))
                 } else {
                     format!("Self::terms_block({})", args.join(", "))
-                }
+                };
+                if fallible { format!("{call}?") } else { call }
             };
             if at_iterate {
                 t.line("// the evaluation at the iterate");

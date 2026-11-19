@@ -3,6 +3,7 @@
 //! origin) so the text reads the same on every build (RS-02).
 
 pub mod analog;
+pub mod contribution;
 pub mod cross;
 pub mod derive;
 pub mod digital;
@@ -15,6 +16,7 @@ pub mod text;
 pub mod value;
 
 pub use analog::AnalogPrinter;
+pub use contribution::ContributionSums;
 pub use derive::DerivePrinter;
 pub use digital::DigitalPrinter;
 pub use library::LibraryPrinter;

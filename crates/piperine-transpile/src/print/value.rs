@@ -27,15 +27,15 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
-use piperine_ir::{AnalysisKind, LevelPart,
+use piperine_ir::{Addend, AnalysisKind, LevelPart,
     BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream,
-    Terminal, UnaryOp, ValueType,
+    QuantityRole, Terminal, UnaryOp, ValueType,
 };
 
 use piperine_plan::{RecordLayout, StatementPlan};
 
 use crate::Error;
-use crate::print::Text;
+use crate::print::{ContributionSums, Text};
 
 /// Binding strength of a printed expression: an operand weaker than its place is parenthesized.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -93,6 +93,9 @@ pub struct ValuePrinter<'a> {
     origin: Origin,
     /// How the analog read forms print; `None` outside an `analog` block.
     analog: Option<Reads>,
+    /// The accumulators a contribution adds to, in the structured form of an `analog` block
+    /// (`ContributionSums`); `None` where a contribution has no lowering.
+    sums: Option<ContributionSums>,
     /// A real is a plain `f64` (the digital printers) rather than `R` (an `analog` block, an IR
     /// function).
     plain: bool,
@@ -150,6 +153,7 @@ impl<'a> ValuePrinter<'a> {
             streams: Vec::new(),
             origin,
             analog: None,
+            sums: None,
             plain: false,
             flagged_reals: false,
             commits: false,
@@ -176,6 +180,7 @@ impl<'a> ValuePrinter<'a> {
             streams: body.streams().to_vec(),
             origin,
             analog: None,
+            sums: None,
             plain: false,
             flagged_reals: false,
             commits: false,
@@ -233,6 +238,11 @@ impl<'a> ValuePrinter<'a> {
     /// This printer with the analog read forms printing as `reads` names them.
     pub fn with_reads(self, reads: Reads) -> ValuePrinter<'a> {
         ValuePrinter { analog: Some(reads), ..self }
+    }
+
+    /// This printer with a contribution printing as an addition to the accumulators `sums` names.
+    pub fn with_contribution_sums(self, sums: ContributionSums) -> ValuePrinter<'a> {
+        ValuePrinter { sums: Some(sums), ..self }
     }
 
     /// The carrier and `min_after` of each commit printed so far, in printing order.
@@ -992,16 +1002,18 @@ impl<'a> ValuePrinter<'a> {
         } else {
             self.piece(cond)?.at(Prec::Or)
         };
-        let mut text = format!("if {condition} {{\n{}\n}}", Self::indent(&self.arm(then, ty)?));
+        let mut text = format!("if {condition} {}", Self::braced(&self.arm(then, ty)?));
         match self.ir.expr(otherwise) {
             Expr::Unit if *ty == ValueType::Unit => {}
+            // an arm that does nothing (a `match` arm with no contribution) prints no `else`
+            Expr::Block { stmts, value: None } if stmts.is_empty() && *ty == ValueType::Unit => {}
             // an `else if` chains only while its own condition is known: a merge is an
             // expression, so it goes inside the `else` block
             Expr::If { cond, then, otherwise: next } if !Self::is_flagged(self.ir.expr_type(*cond)) => {
                 text.push_str(" else ");
                 text.push_str(&self.if_else(otherwise, *cond, *then, *next)?.text);
             }
-            _ => text.push_str(&format!(" else {{\n{}\n}}", Self::indent(&self.arm(otherwise, ty)?))),
+            _ => text.push_str(&format!(" else {}", Self::braced(&self.arm(otherwise, ty)?))),
         }
         Ok(Piece::new(text, Prec::Low))
     }
@@ -1046,6 +1058,11 @@ impl<'a> ValuePrinter<'a> {
         false
     }
 
+    /// `lines` in a pair of braces, indented; `{}` when there is nothing inside.
+    fn braced(lines: &str) -> String {
+        if lines.is_empty() { "{}".to_string() } else { format!("{{\n{}\n}}", Self::indent(lines)) }
+    }
+
     /// The inside of a pair of braces: a block's lines without its braces, any other expression
     /// as it is, its value lifted to `want`.
     fn arm(&self, e: ExprId, want: &ValueType) -> Result<String, Error> {
@@ -1086,11 +1103,14 @@ impl<'a> ValuePrinter<'a> {
                 let block = matches!(self.ir.expr(*e), Expr::If { .. }) && *self.ir.expr_type(*e) == ValueType::Unit && piece.prec == Prec::Low;
                 Ok(if block { piece.text } else { format!("{};", piece.text) })
             }
-            Stmt::Contribute { addends, .. } => Err(Error::Unsupported {
-                form: "contribution".into(),
-                path: format!("{} s{}", self.path, s.index()),
-                origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
-            }),
+            Stmt::Contribute { branch, quantity, addends } => match &self.sums {
+                Some(sums) => self.contribution(sums, *branch, *quantity, addends),
+                None => Err(Error::Unsupported {
+                    form: "contribution".into(),
+                    path: format!("{} s{}", self.path, s.index()),
+                    origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
+                }),
+            },
             Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after } => {
@@ -1127,6 +1147,23 @@ impl<'a> ValuePrinter<'a> {
                 Ok(format!("commits_.commit({index}, {value}, {after});"))
             }
         }
+    }
+
+    /// A contribution of the structured form (`ContributionSums`): each addend added to its
+    /// branch's sum, then the flag of its quantity set when the branch has one. An arm not taken
+    /// never runs this, so it adds nothing (§11 rule 4).
+    fn contribution(&self, sums: &ContributionSums, branch: u32, quantity: QuantityRole, addends: &[Addend]) -> Result<String, Error> {
+        let mut lines = Vec::with_capacity(addends.len() + 2);
+        if let Some(first) = addends.first() {
+            lines.push(sums.comment(branch, quantity, self.ir.expr_origin(first.value)));
+        }
+        for addend in addends {
+            let sum = sums.sum(branch, quantity, addend.operator);
+            let value = if addend.negated { self.negated(addend.value)? } else { self.right_of_add(addend.value)? };
+            lines.push(format!("{sum} = {sum} + {value};"));
+        }
+        lines.extend(sums.flag(branch, quantity).map(|flag| format!("{flag} = true;")));
+        Ok(lines.join("\n"))
     }
 
     /// An emit site (msl-digital A4): the record's bytes in its stream's layout (`RecordLayout`),
