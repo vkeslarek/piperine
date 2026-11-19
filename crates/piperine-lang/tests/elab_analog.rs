@@ -285,7 +285,7 @@ module Top() { signal s: Electrical; let m = M { }(s, gnd); }";
 fn the_device_bodies_equal_the_structural_goldens() {
     // The five devices of the M1 library, placed once each, printed in structural form: each
     // body (and each function the diode calls) is the block `piperine-ir` pins byte for byte.
-    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "ngspice", "devices.msl"].iter().collect();
+    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "e2e", "twins", "devices.msl"].iter().collect();
     let devices = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let top = "mod devices;\nuse devices::*;\nmodule Top() {\n    signal a: Electrical;\n    let r = Resistor { r: 1k }(a, gnd);\n    let c = Capacitor { c: 1e-12 }(a, gnd);\n    let v = Vsource { dc: 1.0 }(a, gnd);\n    let i = Isource { }(a, gnd);\n    let d = Diode { }(a, gnd);\n}\n";
     let design = piperine_lang::pom::Design::builder().source("top.msl", top).source("devices.msl", devices).build();

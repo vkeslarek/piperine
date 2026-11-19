@@ -137,9 +137,9 @@ fn root_tests_hold_no_end_to_end_target() {
     assert!(vams.is_empty(), ".vams files remain under tests/: {vams:?}");
     let cir = files
         .iter()
-        .filter(|p| ext(p, "cir") && p.starts_with(tests.join("ngspice")))
+        .filter(|p| ext(p, "cir") && p.starts_with(tests.join("e2e")))
         .count();
-    assert!(cir > 0, "tests/ngspice/ lost its .cir fixtures");
+    assert!(cir > 0, "tests/e2e/ lost its .cir fixtures");
     let rs: Vec<_> = files.iter().filter(|p| ext(p, "rs")).collect();
     assert!(rs.is_empty(), ".rs files remain under the root tests/: {rs:?}");
 }

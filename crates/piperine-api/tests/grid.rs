@@ -23,7 +23,7 @@ impl RecordSink for Ignore {
 }
 
 fn twin(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins").join(name)
 }
 
 fn settings() -> Settings {

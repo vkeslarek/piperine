@@ -144,7 +144,7 @@ fn a_failed_require_is_one_checks_record_with_pass_false() {
 #[test]
 fn a_design_without_emit_gives_no_record() {
     // CLI-06 AC 8: the divider twin has no `emit!` site
-    let divider: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/divider.msl");
+    let divider: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/divider.msl");
     let all = records_of(&divider, "Divider", "op", None).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(all, []);
 }

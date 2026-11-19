@@ -29,7 +29,7 @@ impl RecordSink for Ignore {
 /// The rows of `tran_rc` to 10 us on a `print_step` grid, a step cap of a tenth of it, on `backend`.
 fn grid(backend: Backend, print_step: f64) -> Table {
     let cache = tempfile::tempdir().expect("tmp");
-    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/tran_rc.msl");
+    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/tran_rc.msl");
     let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides {
         analysis: Some("transient".into()),

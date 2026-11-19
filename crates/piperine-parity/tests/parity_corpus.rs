@@ -15,11 +15,11 @@ impl Guard {
         let mut failures = Vec::new();
         for twin in twins.iter().filter(|name| name.as_str() != "devices") {
             if !cirs.contains(twin) {
-                failures.push(format!("tests/ngspice/{twin}.msl has no tests/ngspice/{twin}.cir"));
+                failures.push(format!("tests/e2e/twins/{twin}.msl has no tests/e2e/twins/{twin}.cir"));
             }
             let signature = format!("fn {twin}()");
             if !targets.iter().any(|(_, text)| text.contains(&signature)) {
-                failures.push(format!("tests/ngspice/{twin}.msl has no test function `{twin}` in a parity_* target"));
+                failures.push(format!("tests/e2e/twins/{twin}.msl has no test function `{twin}` in a parity_* target"));
             }
         }
         failures
@@ -63,12 +63,12 @@ struct Tree;
 
 impl Tree {
     fn ngspice() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins")
     }
 
     fn stems(extension: &str) -> Vec<String> {
         let mut names: Vec<String> = std::fs::read_dir(Self::ngspice())
-            .expect("tests/ngspice exists")
+            .expect("tests/e2e/twins exists")
             .map(|entry| entry.expect("a directory entry").path())
             .filter(|path| path.extension().is_some_and(|e| e == extension))
             .filter_map(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()))
@@ -139,7 +139,7 @@ fn the_guards_report_planted_text() {
     let targets = vec![("parity_op.rs".to_string(), "#[test]\nfn alpha() {}\n".to_string())];
     let failures = Guard::unmatched_twins(&twins, &cirs, &targets);
     assert_eq!(failures.len(), 2, "{failures:?}");
-    assert!(failures.iter().any(|f| f.contains("beta.msl has no tests/ngspice/beta.cir")), "{failures:?}");
+    assert!(failures.iter().any(|f| f.contains("beta.msl has no tests/e2e/twins/beta.cir")), "{failures:?}");
     assert!(failures.iter().any(|f| f.contains("beta.msl has no test function `beta`")), "{failures:?}");
     assert!(Guard::unmatched_twins(&twins[..1], &cirs, &targets).is_empty());
 }

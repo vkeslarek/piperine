@@ -1,7 +1,7 @@
 //! A twin loaded through the whole chain: `.msl` source, type check, elaboration to an `Ir`, the
 //! interpreter and the solver circuit. A failing stage panics with its name and every diagnostic.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use piperine_interp::Interpreter;
@@ -13,6 +13,7 @@ use piperine_solver::prelude::{BranchIdentifier, CircuitInstance, NodeIdentifier
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
+use crate::corpus::Corpus;
 
 /// A twin as a bound circuit that answers to the `.cir` names.
 ///
@@ -29,9 +30,9 @@ pub struct Bench {
 }
 
 impl Bench {
-    /// The twin of `tests/ngspice/<fixture>.msl`.
+    /// The twin of `tests/e2e/<scenario>/<fixture>.msl`.
     pub fn twin_path(fixture: &str) -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice").join(format!("{fixture}.msl"))
+        Corpus::of_repository().twin(fixture).model()
     }
 
     /// Loads `tests/ngspice/<fixture>.msl` on the interpreter.

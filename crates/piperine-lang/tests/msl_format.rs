@@ -533,7 +533,7 @@ fn book_blocks() -> Vec<String> {
 fn sources() -> Vec<(String, String)> {
     let repo = repo();
     let mut out = Vec::new();
-    for dir in ["crates/piperine-lang/std", "crates/piperine-lang/tests/fixtures/gallery", "examples/buck", "examples/rc", "tests/ngspice"] {
+    for dir in ["crates/piperine-lang/std", "crates/piperine-lang/tests/fixtures/gallery", "examples/buck", "examples/rc", "tests/e2e/twins"] {
         let files = msl_files(&repo.join(dir));
         assert!(!files.is_empty(), "{dir} holds MSL files");
         for path in files {

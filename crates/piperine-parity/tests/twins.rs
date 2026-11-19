@@ -28,7 +28,7 @@ impl Fixture {
     ];
 
     fn directory() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins")
     }
 
     fn cir(&self) -> PathBuf {
@@ -51,7 +51,7 @@ impl Fixture {
 #[test]
 fn the_corpus_holds_the_library_and_the_twins() {
     let library = Fixture::directory().join("devices.msl");
-    let text = std::fs::read_to_string(&library).expect("tests/ngspice/devices.msl exists");
+    let text = std::fs::read_to_string(&library).expect("tests/e2e/twins/devices.msl exists");
     for module in ["Resistor", "Capacitor", "Vsource", "Isource", "Diode"] {
         assert!(text.contains(&format!("module {module}")), "devices.msl lacks module {module}");
     }

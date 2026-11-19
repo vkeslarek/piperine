@@ -204,7 +204,7 @@ fn a_lone_file_run_is_named_by_its_stem() {
     // alone and its header names the file's stem, here `divider`; the flags make the request.
     // CLI-05 AC 7: the divider of `tests/ngspice/divider.msl` (10 V across 1k and 3k) gives
     // 7.5 for `Divider.mid`, the spec's independent test (`Divider.mid  7.500000e0`)
-    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/divider.msl");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/divider.msl");
     let nowhere = tempfile::tempdir().expect("tmp");
     let out = piperine_in(nowhere.path(), shared_cache(), &["run", &file.to_string_lossy(), "--analysis", "op"]);
     let out = stdout_of(&out);
@@ -287,7 +287,7 @@ fn an_unknown_run_name_lists_the_runs_and_exits_2() {
 #[test]
 fn a_lone_file_without_analysis_exits_2() {
     // CLI-03 AC 12: a run asked from flags alone with no --analysis exits 2 naming the flag
-    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/divider.msl");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/divider.msl");
     let out = piperine_in(&rc(), shared_cache(), &["run", &file.to_string_lossy()]);
     let err = failed(&out, 2);
     assert!(err.contains("--analysis"), "{err}");

@@ -76,7 +76,7 @@ use piperine_lang::pom::{CallClass, DeclId, ExprId, ExprKind};
 const TWINS: &[(&str, &str)] = &[("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
 
 fn twin(file: &str) -> Design {
-    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "ngspice", &format!("{file}.msl")].iter().collect();
+    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "e2e", "twins", &format!("{file}.msl")].iter().collect();
     Design::builder().root_file(path).build()
 }
 

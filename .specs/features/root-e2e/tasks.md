@@ -204,11 +204,11 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `tests/ngspice/` and `crates/piperine-cli/tests/goldens/` do not exist; `git show --stat -M HEAD` shows every moved file as a rename with no line changed
-- [ ] `corpus.rs` has inline tests `a_twin_is_found_by_name`, `a_missing_twin_names_itself`, `a_name_in_two_scenarios_is_refused`
-- [ ] Every target T1 listed passes with its test count unchanged; `every_twin_prints_the_bytes_it_printed_before_the_move` passes
-- [ ] Gate check passes: Full (`Run paritylib`, `Run twins`, `Run corpus`, then the root `cargo test`)
-- [ ] Test count: 3 new unit tests, none removed
+- [x] `tests/ngspice/` and `crates/piperine-cli/tests/goldens/` do not exist; `git show --stat -M HEAD` shows every moved file as a rename with no line changed
+- [x] `corpus.rs` has inline tests `a_twin_is_found_by_name`, `a_missing_twin_names_itself`, `a_name_in_two_scenarios_is_refused`
+- [x] Every target T1 listed passes with its test count unchanged; `every_twin_prints_the_bytes_it_printed_before_the_move` passes
+- [x] Gate check passes: Full (`Run paritylib`, `Run twins`, `Run corpus`, then the root `cargo test`)
+- [x] Test count: 3 new unit tests, none removed
 
 **Tests**: unit
 **Gate**: full
@@ -1228,7 +1228,7 @@ Proof: run paritylib | test corpus::tests::a_name_in_two_scenarios_is_refused ..
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** T1 (2026-11-18, B1): main holds `host-ii` and `solver-hygiene`, so the corpus is sixteen twins, not twelve: the original seven, `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` and the five of `host-ii` (`parity_corpus` already counts 16; `tf` rows read `*_impedance`; `HostRun` is in `piperine-parity`; root `[[test]] host_ii` is `crates/piperine-api/tests/root_surface/host_ii.rs`). Nine twins have no golden (T2), not five. The scenario list is sixteen: T8 also carries `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` (8 tests); T9 keeps the five of `host-ii`. `piperine::Settings` does not exist: the root takes `piperine-transpile` as it already does. T2: four twins (`pss_rc`, `tran_jump`, `tran_corner`, `tran_floor`) read `now()`, which the interpreter refuses ("use --backend rust"), so `twins.rs` gives each `Twin` a `backends` list and holds those four on the Rust backend only (as `parity_tran.rs` and `deviation.rs` already do); `tran_floor` fails `E0508` by design, its golden is empty; the old `...before_the_long_run` test keeps its seven twins through `BEFORE_THE_LONG_RUN`. The goldens of the nine are captured from the binary at `6d479e3b`, both backends equal where both run. The CLI has no flag for `delmin`, so `tran_corner`'s command runs the default floor.
+**Settled mid-build:** T1 (2026-11-18, B1): main holds `host-ii` and `solver-hygiene`, so the corpus is sixteen twins, not twelve: the original seven, `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` and the five of `host-ii` (`parity_corpus` already counts 16; `tf` rows read `*_impedance`; `HostRun` is in `piperine-parity`; root `[[test]] host_ii` is `crates/piperine-api/tests/root_surface/host_ii.rs`). Nine twins have no golden (T2), not five. The scenario list is sixteen: T8 also carries `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor` (8 tests); T9 keeps the five of `host-ii`. `piperine::Settings` does not exist: the root takes `piperine-transpile` as it already does. T2: four twins (`pss_rc`, `tran_jump`, `tran_corner`, `tran_floor`) read `now()`, which the interpreter refuses ("use --backend rust"), so `twins.rs` gives each `Twin` a `backends` list and holds those four on the Rust backend only (as `parity_tran.rs` and `deviation.rs` already do); `tran_floor` fails `E0508` by design, its golden is empty; the old `...before_the_long_run` test keeps its seven twins through `BEFORE_THE_LONG_RUN`. The goldens of the nine are captured from the binary at `6d479e3b`, both backends equal where both run. The CLI has no flag for `delmin`, so `tran_corner`'s command runs the default floor. T3: `Corpus` also has `netlist(name)` (an ngspice-only `.cir` has no twin, and `Ngspice::fixture_path` reads those); the twins' `.cir`, `.msl` and `.stdout` moved byte for byte (sha256 of all 76 files and 16 goldens equal before and after); only code lines were rewritten to the new path, comment lines wait for T6.
 **Dispatched:** B1 - Sonnet worker, 2026-11-18 (host-ii merged 1a3d69dc).
 **Walked:** none
 

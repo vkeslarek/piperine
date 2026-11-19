@@ -21,7 +21,7 @@ fn rc() -> PathBuf {
 
 /// A parity twin of `tests/ngspice/`.
 fn twin(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins").join(name)
 }
 
 /// One cache directory for every child of this target.

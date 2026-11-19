@@ -223,7 +223,7 @@ fn a_smaller_trtol_takes_more_steps() {
     // HII-02 AC 8 (amended): `trtol` reaches the solver's step assessment; the RC charging curve of
     // `tran_rc` to 10 us with `trtol = 0.001` rejects steps the default (7) accepts, and the
     // retries make the accepted grid finer: more accepted steps than with no `trtol`
-    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/tran_rc.msl");
+    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/tran_rc.msl");
     let steps = |trtol: Option<f64>| {
         let overrides = Overrides { analysis: Some("transient".into()), stop: Some(10e-6), trtol, backend: Some("interp".into()), top: Some("TranRc".into()), ..Overrides::default() };
         let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
@@ -238,7 +238,7 @@ fn a_smaller_trtol_takes_more_steps() {
 /// The transient of `tran_rc` to 10 us at `trtol = 0.001` (3241 steps, `a_smaller_trtol_takes_more_steps`)
 /// with the budget `max_steps`.
 fn tran_rc_with_budget(max_steps: Option<u32>) -> Result<Table, Failure> {
-    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/tran_rc.msl");
+    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/tran_rc.msl");
     let overrides = Overrides { analysis: Some("transient".into()), stop: Some(10e-6), trtol: Some(0.001), max_steps, backend: Some("interp".into()), top: Some("TranRc".into()), ..Overrides::default() };
     let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));

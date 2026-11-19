@@ -20,7 +20,7 @@ impl RecordSink for Ignore {
 }
 
 fn twin(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins").join(name)
 }
 
 /// One cache directory for every Rust-backend session of this target.

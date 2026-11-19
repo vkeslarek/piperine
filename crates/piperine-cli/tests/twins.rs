@@ -53,7 +53,7 @@ const BOTH: &[&str] = &["interp", "rust"];
 const COMPILED_ONLY: &[&str] = &["rust"];
 
 /// The twins whose standard output was captured before the long run (`a5f23ea4`), each held to
-/// `goldens/<name>.txt` by `every_twin_prints_the_bytes_it_printed_before_the_long_run`.
+/// `<name>.stdout` by `every_twin_prints_the_bytes_it_printed_before_the_long_run`.
 const BEFORE_THE_LONG_RUN: [&str; 7] = ["divider", "isrc_r", "diode_series", "diode_iv", "diode_rev", "ac_rc", "tran_rc"];
 /// What one command printed.
 struct Ran {
@@ -63,7 +63,7 @@ struct Ran {
 }
 
 fn ngspice_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins")
 }
 
 /// `piperine run <twin>.msl <flags> --backend <backend>`.
@@ -128,7 +128,7 @@ fn the_two_backends_print_the_same_bytes() {
 fn tran_rc_prints_the_bytes_it_printed_before_the_long_run() {
     // LR-14 AC 1: `tran_rc`'s standard output after the header line, on each backend, is the file
     // captured from the binary before the long run changed any code
-    let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/tran_rc.txt")).expect("the golden file");
+    let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/tran_rc.stdout")).expect("the golden file");
     for backend in BOTH.iter().copied() {
         let (.., ran) = all().iter().find(|(t, b, _)| *t == "tran_rc" && *b == backend).expect("tran_rc ran on both backends");
         let after_header = ran.stdout.split_once('\n').map(|(_, rest)| rest).unwrap_or_default();
@@ -142,7 +142,7 @@ fn every_twin_prints_the_bytes_it_printed_before_the_long_run() {
     // backend, is the file captured from the binary of `a5f23ea4` (the commit before the long
     // run), through the same flags
     for twin in TWINS.iter().filter(|twin| BEFORE_THE_LONG_RUN.contains(&twin.name)) {
-        let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/goldens/{}.txt", twin.name))).expect("the golden file");
+        let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/e2e/twins/{}.stdout", twin.name))).expect("the golden file");
         for backend in BOTH.iter().copied() {
             let (.., ran) = all().iter().find(|(t, b, _)| *t == twin.name && *b == backend).expect("every twin ran on both backends");
             let after_header = ran.stdout.split_once('\n').map(|(_, rest)| rest).unwrap_or_default();
@@ -158,7 +158,7 @@ fn every_twin_prints_the_bytes_it_printed_before_the_move() {
     // commit before `tests/ngspice/` moved, through the same flags (`tran_floor` fails `E0508`
     // by design, so its golden is empty)
     for twin in &TWINS {
-        let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/goldens/{}.txt", twin.name))).expect("the golden file");
+        let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/e2e/twins/{}.stdout", twin.name))).expect("the golden file");
         for backend in twin.backends {
             let (.., ran) = all().iter().find(|(t, b, _)| *t == twin.name && b == backend).expect("every twin ran on each of its backends");
             let after_header = ran.stdout.split_once('\n').map(|(_, rest)| rest).unwrap_or_default();

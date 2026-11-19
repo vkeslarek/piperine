@@ -12,7 +12,7 @@ use piperine_lang::pom::Design;
 use piperine_transpile::Settings;
 
 fn divider() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice/divider.msl")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/divider.msl")
 }
 
 /// `top` of the file `path`, elaborated.

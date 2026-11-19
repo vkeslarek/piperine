@@ -227,8 +227,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
 
 #[test]
 fn the_table_covers_every_twin() {
-    let mut msl: Vec<String> = std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice"))
-        .expect("tests/ngspice exists")
+    let mut msl: Vec<String> = std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins"))
+        .expect("tests/e2e/twins exists")
         .map(|entry| entry.expect("a directory entry").path())
         .filter(|path| path.extension().is_some_and(|e| e == "msl"))
         .filter_map(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()))

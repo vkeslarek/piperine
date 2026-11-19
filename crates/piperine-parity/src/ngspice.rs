@@ -5,6 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::corpus::Corpus;
 use crate::golden::{Complex, Golden};
 use crate::scratch::ScratchDir;
 
@@ -106,9 +107,7 @@ impl Ngspice {
 
     /// The `.cir` of a fixture, as an absolute path.
     pub fn fixture_path(fixture: &str) -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/ngspice").join(format!("{fixture}.cir")).canonicalize().unwrap_or_else(|error| {
-            panic!("{fixture}: no tests/ngspice/{fixture}.cir ({error})");
-        })
+        Corpus::of_repository().netlist(fixture)
     }
 
     /// Runs `ngspice -b <fixture>.cir` in a new scratch directory. Panics, naming the fixture and

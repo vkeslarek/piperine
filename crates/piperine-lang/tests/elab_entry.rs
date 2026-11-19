@@ -23,7 +23,7 @@ struct Disk;
 
 impl Disk {
     fn twin(file: &str) -> Design {
-        let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "ngspice", &format!("{file}.msl")].iter().collect();
+        let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "e2e", "twins", &format!("{file}.msl")].iter().collect();
         Design::builder().root_file(path).build()
     }
 
@@ -126,7 +126,7 @@ fn elaborating_twice_prints_the_same_text() {
 
 #[test]
 fn device_bodies_match_the_ir_goldens() {
-    let devices = Disk::read(&["..", "..", "tests", "ngspice", "devices.msl"]);
+    let devices = Disk::read(&["..", "..", "tests", "e2e", "twins", "devices.msl"]);
     let top = "mod devices;\nuse devices::*;\nmodule Top() {\n    signal a: Electrical;\n    let r = Resistor { r: 1k }(a, gnd);\n    let c = Capacitor { c: 1e-12 }(a, gnd);\n    let v = Vsource { dc: 1.0 }(a, gnd);\n    let i = Isource { }(a, gnd);\n    let d = Diode { }(a, gnd);\n}\n";
     let design = Design::builder().source("top.msl", top).source("devices.msl", devices).build();
     assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
