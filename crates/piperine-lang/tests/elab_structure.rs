@@ -132,7 +132,7 @@ fn a_probe_selecting_between_flow_contributions_is_accepted() {
 }
 
 /// A switch `Sw(a, b)` whose kind its param `short` fixes: the params-only selector of §11 rule 3.
-const SWITCH: &str = "module Sw(a: Electrical, b: Electrical) { short: f64 = 1.0; }\nanalog for Sw { if short > 0.5 { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; } }\n";
+const SWITCH: &str = "module Sw(a: Electrical, b: Electrical) { short: f64 = 1.0; }\nanalog for Sw { if short > 0.5 { v(a, b) +> 1.0; } else { i(a, b) +> 0.0; } }\n";
 
 /// The names of the bodies of `ir`, in id order.
 fn body_names(ir: &Ir) -> Vec<String> {
@@ -196,4 +196,58 @@ fn a_design_without_key_params_keeps_its_body_ids() {
     let ir = Device::ir("i(p, n) +> v(p, n) / 1k;");
     assert_eq!(body_names(&ir), ["Top", "M"]);
     assert!(ir.bodies().all(|b| b.params().iter().all(|p| !p.structural)));
+}
+
+/// A source whose module `Short(a, b, c)` writes `analog`, placed between `s` and `t` (and a third
+/// node `u` for `c`), in `Top`.
+fn shorted(analog: &str, ends: &str) -> String {
+    format!("module Short(a: Electrical, b: Electrical, c: Electrical) {{ k: f64 = 1.0; }}\nanalog for Short {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal t: Electrical; signal u: Electrical; let m = Short {{ }}({ends}); }}")
+}
+
+#[test]
+fn a_fixed_zero_potential_branch_merges_its_nodes() {
+    // AS-02 AC 4 (§11 rule 3): `v(a, b) +> 0.0` is a fixed potential branch of the constant zero
+    // with no flow read: its nodes merge, so the bound circuit has one node fewer than with
+    // `v(a, b) +> 1.0`. A param selector that folds to the zero contribution merges too.
+    let merged = Elab::ir(&shorted("v(a, b) +> 0.0;", "s, t, u"), "Top");
+    let driven = Elab::ir(&shorted("v(a, b) +> 1.0;", "s, t, u"), "Top");
+    assert_eq!(merged.nodes().count() + 1, driven.nodes().count());
+    let body = body(&merged, "Short");
+    assert_eq!(body.merges().len(), 1);
+    assert!(body.branches().is_empty(), "the merged branch is no branch");
+    let folded = Elab::ir(&shorted("if k > 0.5 { v(a, b) +> 0.0; } else { v(a, b) +> 1.0; }", "s, t, u"), "Top");
+    assert_eq!(folded.nodes().count() + 1, driven.nodes().count(), "the folded arm is the zero");
+}
+
+#[test]
+fn params_only_selectors_enabling_both_kinds_are_e0415() {
+    // §11 rule 2: the selectors depend on `k` only and both are true for `k` = 1, so a potential and
+    // a flow contribution are enabled together: E0415 at elaboration, naming the branch.
+    let src = shorted("if k > 0.5 { v(a, b) +> 1.0; } if k > 0.5 { i(a, b) +> 1.0; }", "s, t, u");
+    let err = Elab::run(&src, "Top").expect_err("both kinds enabled");
+    assert_eq!(Elab::codes(&err), ["E0415"]);
+    assert!(err[0].diagnostic.message.contains("(a, b)"), "{}", err[0].diagnostic.message);
+    // With `k` = 0 neither is enabled in the variant: no contribution, no error.
+    let none = src.replace("let m = Short { }", "let m = Short { k: 0.0 }");
+    Elab::ir(&none, "Top");
+}
+
+#[test]
+fn a_zero_potential_branch_whose_flow_is_read_is_not_merged() {
+    // §11 rule 3, last bullet: a probed short keeps its flow unknown like any potential source: `i(c)`
+    // is driven by the flow of `(a, b)`, so the branch stays and the nodes do not merge.
+    let ir = Elab::ir(&shorted("v(a, b) +> 0.0; i(c, gnd) +> i(a, b);", "s, t, u"), "Top");
+    assert!(body(&ir, "Short").merges().is_empty());
+    assert_eq!(body(&ir, "Short").branches().len(), 2);
+    assert_eq!(ir.nodes().count(), 3);
+}
+
+#[test]
+fn a_merge_with_ground_binds_the_node_to_ground() {
+    // `Short(s, gnd, u)`: merging a node with ground removes the node and binds the instance's port
+    // to ground.
+    let ir = Elab::ir(&shorted("v(a, b) +> 0.0;", "s, gnd, u"), "Top");
+    assert_eq!(ir.nodes().count(), 2, "`s` is gone, `t` and `u` are left");
+    assert!(ir.node_at("Top.s").is_none());
+    assert_eq!(ir.instance_at("Top.m").expect("m").binding(0), Some(piperine_ir::NodeRef::Ground));
 }

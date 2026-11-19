@@ -24,6 +24,7 @@ use super::consts::Bindings;
 use super::body::ModulePlan;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use piperine_ir::Terminal;
 use crate::pom::{DeclId, DeclKind, Design, ExprId, ExprKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::Types;
 
@@ -144,11 +145,15 @@ struct WrittenContribution {
     ends: [Option<DeclId>; 2],
     quantity: crate::pom::QuantityRole,
     conditions: Vec<ExprId>,
+    /// The right side of the contribution.
+    rhs: ExprId,
 }
 
 /// The walk that lists the contributions of statements with the conditions around them.
 struct ContributionWalk<'e, 'd, 't> {
-    elaboration: &'e Elaboration<'d, 't>,
+    elaboration: &'e mut Elaboration<'d, 't>,
+    /// The key params the walk folds conditions over; none folds nothing.
+    keys: Bindings,
     conditions: Vec<ExprId>,
     found: Vec<WrittenContribution>,
 }
@@ -158,7 +163,7 @@ impl ContributionWalk<'_, '_, '_> {
     fn statements(&mut self, stmts: &[StmtId]) {
         for stmt in stmts {
             match self.elaboration.design.stmt_node(*stmt).kind.clone() {
-                StmtKind::Contribution { lhs, .. } => self.contribution(lhs),
+                StmtKind::Contribution { lhs, rhs } => self.contribution(lhs, rhs),
                 StmtKind::Expr { expr, .. } => self.expression(expr),
                 StmtKind::Let { init: Some(init), .. } => self.expression(init),
                 _ => {}
@@ -171,14 +176,23 @@ impl ContributionWalk<'_, '_, '_> {
         crate::stack::deep(|| match self.elaboration.design.expr_node(expr).kind.clone() {
             ExprKind::Paren(inner) => self.expression(inner),
             ExprKind::Block(block) => self.statements(&block.stmts),
-            ExprKind::If { cond, then, else_ } => {
-                self.conditions.push(cond);
-                self.statements(&then.stmts);
-                if let Some(otherwise) = else_ {
-                    self.expression(otherwise);
+            // A condition over the key params folds: only the arm it selects is written (`lower.rs`).
+            ExprKind::If { cond, then, else_ } => match self.elaboration.folded_condition(&self.keys, cond) {
+                Some(true) => self.statements(&then.stmts),
+                Some(false) => {
+                    if let Some(otherwise) = else_ {
+                        self.expression(otherwise);
+                    }
                 }
-                self.conditions.pop();
-            }
+                None => {
+                    self.conditions.push(cond);
+                    self.statements(&then.stmts);
+                    if let Some(otherwise) = else_ {
+                        self.expression(otherwise);
+                    }
+                    self.conditions.pop();
+                }
+            },
             ExprKind::Match { scrutinee, arms } => {
                 self.conditions.push(scrutinee);
                 for arm in arms {
@@ -191,7 +205,7 @@ impl ContributionWalk<'_, '_, '_> {
     }
 
     /// Records the contribution whose left side is `lhs`, when it names a probe of one or two nodes.
-    fn contribution(&mut self, lhs: ExprId) {
+    fn contribution(&mut self, lhs: ExprId, rhs: ExprId) {
         let design = self.elaboration.design;
         let ExprKind::Call { callee, args, .. } = &design.expr_node(lhs).kind else { return };
         let Some(quantity) = self.elaboration.quantity_role(*callee) else { return };
@@ -206,7 +220,7 @@ impl ContributionWalk<'_, '_, '_> {
             _ => return,
         };
         ends.sort();
-        self.found.push(WrittenContribution { ends, quantity, conditions: self.conditions.clone() });
+        self.found.push(WrittenContribution { ends, quantity, conditions: self.conditions.clone(), rhs });
     }
 }
 
@@ -227,19 +241,25 @@ impl Elaboration<'_, '_> {
         self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect()
     }
 
-    /// The contributions `module` writes in its `analog` blocks to a branch that has a potential
-    /// contribution among them, with the conditions that enclose each.
-    fn potential_capable_contributions(&self, module: DeclId) -> Vec<WrittenContribution> {
+    /// The contributions `module` writes in its `analog` blocks, with the conditions that enclose
+    /// each; a condition over the key params `keys` folds and is not one of them.
+    fn written_contributions(&mut self, module: DeclId, keys: &Bindings) -> Vec<WrittenContribution> {
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
-        let mut walk = ContributionWalk { elaboration: self, conditions: Vec::new(), found: Vec::new() };
-        for block in &data.behaviors {
-            if let DeclKind::Behavior(behavior) = &self.design.decl_data(*block).kind
+        let blocks = data.behaviors.clone();
+        let mut walk = ContributionWalk { elaboration: self, keys: keys.clone(), conditions: Vec::new(), found: Vec::new() };
+        for block in blocks {
+            if let DeclKind::Behavior(behavior) = &walk.elaboration.design.decl_data(block).kind.clone()
                 && behavior.kind == crate::pom::BehaviorKind::Analog
             {
                 walk.statements(&behavior.body);
             }
         }
-        let found = walk.found;
+        walk.found
+    }
+
+    /// The contributions of `module` to a branch that has a potential contribution among them.
+    fn potential_capable_contributions(&mut self, module: DeclId) -> Vec<WrittenContribution> {
+        let found = self.written_contributions(module, &Bindings::new());
         let potential: Vec<[Option<DeclId>; 2]> = found.iter().filter(|c| c.quantity == crate::pom::QuantityRole::Potential).map(|c| c.ends).collect();
         found.into_iter().filter(|c| potential.contains(&c.ends)).collect()
     }
@@ -354,17 +374,86 @@ impl Elaboration<'_, '_> {
 impl Elaboration<'_, '_> {
     /// The value of the condition `cond` when it reads only the key params `scope.keys` binds and
     /// constants; `None` for any other condition, which is lowered as written.
-    pub(super) fn folded_condition(&mut self, scope: &Scope, cond: ExprId) -> Option<bool> {
-        if scope.keys.is_empty() {
+    pub(super) fn folded_condition(&mut self, keys: &Bindings, cond: ExprId) -> Option<bool> {
+        if keys.is_empty() {
             return None;
         }
         let reads = ParamReads::new(self.design, self.types).of(cond)?;
-        if !reads.iter().all(|param| scope.keys.get(*param).is_some()) {
+        if !reads.iter().all(|param| keys.get(*param).is_some()) {
             return None;
         }
-        match self.consts.value(cond, &scope.keys) {
+        match self.consts.value(cond, keys) {
             Ok(Constant::Bool(holds)) => Some(holds),
             _ => None,
         }
+    }
+}
+
+impl Elaboration<'_, '_> {
+    /// The branches the body of `module`, lowered with the key params `scope.keys`, merges: a branch
+    /// whose every contribution is a potential contribution of the constant zero that no condition
+    /// selects (after the folds), and whose flow no expression reads (§11 rule 3). Their
+    /// contributions are not lowered and their two ends are one node in every instance.
+    pub(super) fn merged_branches(&mut self, scope: &Scope, module: DeclId) -> Vec<(Terminal, Terminal)> {
+        let found = self.written_contributions(module, &scope.keys);
+        let read = self.flow_reads_in(module);
+        let mut ends: Vec<[Option<DeclId>; 2]> = Vec::new();
+        for contribution in &found {
+            if !ends.contains(&contribution.ends) {
+                ends.push(contribution.ends);
+            }
+        }
+        let mut merged = Vec::new();
+        for pair in ends {
+            let all_zero = found.iter().filter(|c| c.ends == pair).all(|c| c.quantity == crate::pom::QuantityRole::Potential && c.conditions.is_empty() && self.is_constant_zero(c.rhs));
+            if all_zero && !read.contains(&pair) {
+                let terminal = |end: Option<DeclId>| end.and_then(|d| scope.nodes.get(&d).copied()).map_or(Terminal::Ground, Terminal::Node);
+                merged.push((terminal(pair[0]), terminal(pair[1])));
+            }
+        }
+        merged
+    }
+
+    /// Whether `expr` folds to the real zero.
+    fn is_constant_zero(&mut self, expr: ExprId) -> bool {
+        matches!(self.consts.value(expr, &Bindings::new()), Ok(Constant::Real(value)) if value.get() == 0.0)
+    }
+
+    /// The branches (sorted pairs of ends) whose flow an expression of `module` reads: a call of
+    /// the flow quantity that is not the left side of a contribution.
+    fn flow_reads_in(&self, module: DeclId) -> Vec<[Option<DeclId>; 2]> {
+        let written: BTreeSet<ExprId> = (0..self.design.stmt_count() as u32).filter_map(|k| match &self.design.stmt_node(StmtId(k)).kind {
+            StmtKind::Contribution { lhs, .. } => Some(*lhs),
+            _ => None,
+        }).collect();
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let behaviors = data.behaviors.clone();
+        let inside = |mut owner: DeclId| loop {
+            if owner == module || behaviors.contains(&owner) {
+                return true;
+            }
+            match self.design.decl_data(owner).parent {
+                Some(parent) => owner = parent,
+                None => return false,
+            }
+        };
+        let mut reads = Vec::new();
+        for k in 0..self.design.expr_count() as u32 {
+            let id = ExprId(k);
+            let node = self.design.expr_node(id);
+            let ExprKind::Call { callee, args, .. } = &node.kind else { continue };
+            if written.contains(&id) || self.quantity_role(*callee) != Some(crate::pom::QuantityRole::Flow) || !inside(node.owner) {
+                continue;
+            }
+            let ends: Option<Vec<Option<DeclId>>> = args.iter().map(|a| self.terminal_decl(a.value)).collect();
+            let mut pair = match ends.as_deref() {
+                Some([a]) => [*a, None],
+                Some([a, b]) => [*a, *b],
+                _ => continue,
+            };
+            pair.sort();
+            reads.push(pair);
+        }
+        reads
     }
 }

@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BinaryOp, Branch, Condition, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Branch, Condition, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, Terminal, UnaryOp, ValueType};
 
 use super::compound::EnumLayout;
 use super::consts::{Bindings, Folded};
@@ -60,6 +60,8 @@ pub(super) struct Scope {
     /// The values of the key params of the body being lowered (`structural.rs`): a condition that
     /// reads only these and constants is folded.
     pub(super) keys: Bindings,
+    /// The branches the body merges (`structural.rs`): contributions to them are not lowered.
+    pub(super) merged: Vec<(Terminal, Terminal)>,
     /// Every contribution lowered so far, for `selectors.rs` to decide the branch kinds.
     pub(super) contributions: Vec<ContributionRecord>,
     /// The initializer of each local a plain `let` bound: a condition that reads the local reads
@@ -69,7 +71,7 @@ pub(super) struct Scope {
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, keys: Bindings::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
     }
 }
 
@@ -252,7 +254,7 @@ impl Elaboration<'_, '_> {
             ExprKind::If { cond, then, else_ } if matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, origin),
             // A condition that reads only key params and constants is folded: only the arm it
             // selects is lowered (`structural.rs`, §11 rule 3).
-            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_condition(scope, *cond) => {
+            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_condition(&scope.keys.clone(), *cond) => {
                 if holds {
                     return self.lower_block(scope, file, &then.stmts, node.span);
                 }

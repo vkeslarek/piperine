@@ -35,6 +35,10 @@ impl Elaboration<'_, '_> {
             self.report(scope.file, Diagnostic::new("E0241", "a contribution to a branch from a node to itself", at, "both nodes are the same node"));
             return false;
         }
+        // A merged branch is no branch: its two nodes are one (`structural.rs`).
+        if scope.merged.iter().any(|(a, b)| (*a, *b) == (plus, minus) || (*a, *b) == (minus, plus)) {
+            return true;
+        }
         // The branch's kind is decided once every contribution is lowered (`selectors.rs`); until
         // then it is the kind of the first contribution.
         let kind = match role {

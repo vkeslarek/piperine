@@ -2,7 +2,7 @@
 //! over the body's own params), its nodes (ports first, then signals, with nature and initial
 //! potential). A body is a function of its module alone: one variant per module in M1.
 
-use piperine_ir::{BodyId, BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Param, Real};
+use piperine_ir::{BodyId, BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Merge, Param, Real, Terminal};
 
 use super::carriers::{Frame, Structure};
 use super::children::ChildPlan;
@@ -38,6 +38,8 @@ pub(super) struct NodePlan {
 pub(super) struct ModulePlan {
     pub(super) body: piperine_ir::BodyId,
     pub(super) nodes: Vec<NodePlan>,
+    /// The branches the body merges: in every instance their two ends are one node.
+    pub(super) merges: Vec<(Terminal, Terminal)>,
     /// Every carrier of the body, in its order: each is bound to one net per instance.
     pub(super) carriers: Vec<Carrier>,
     pub(super) children: Vec<ChildPlan>,
@@ -88,6 +90,7 @@ impl Elaboration<'_, '_> {
         }
         let nodes = self.lower_nodes(&mut scope, module);
         let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = nodes.into_iter().unzip();
+        scope.merged = self.merged_branches(&scope, module);
         self.structure = Structure::default();
         self.frames = vec![Frame::root(module)];
         self.lower_carriers(0, module);
@@ -99,6 +102,7 @@ impl Elaboration<'_, '_> {
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
         self.lower_digital(&scope, module);
         let carriers = self.structure.carriers.clone();
+        let merged = scope.merged.clone();
         let body = self.ir.body(BodySpec {
             name,
             origin: self.locator.decl(module),
@@ -113,7 +117,10 @@ impl Elaboration<'_, '_> {
         });
         debug_assert_eq!(body, expected, "bodies are built in the order of their ids");
         self.finish_structure(body);
-        self.plans.insert(key, ModulePlan { body, nodes: node_plans, carriers, children: child_plans });
+        for (plus, minus) in &merged {
+            self.ir.merge(body, Merge { plus: *plus, minus: *minus });
+        }
+        self.plans.insert(key, ModulePlan { body, nodes: node_plans, merges: merged, carriers, children: child_plans });
     }
 
     /// The param `param` of `module` as the body has it: its type, its `where` lowered over the

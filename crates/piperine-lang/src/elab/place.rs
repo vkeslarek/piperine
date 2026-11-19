@@ -8,7 +8,7 @@
 
 use piperine_ir::{CarrierRole, Constant, InstanceId, InstanceSpec, NetId, NetSpec, NodeRef, NodeSpec, Origin, Terminal};
 
-use super::body::ParamPlan;
+use super::body::{ModulePlan, ParamPlan};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use crate::msl::{Diagnostic, Span};
@@ -79,6 +79,7 @@ impl Elaboration<'_, '_> {
                 NodeRole::Reached => nodes.push(NodeRef::Ground),
             }
         }
+        self.merge_instance_nodes(&plan, &nodes);
         let nets = self.nets(&placing, &plan.carriers, declared_by);
         let instance = self.ir.instance(InstanceSpec { path: placing.path.clone(), name: placing.name, body: plan.body, parent: placing.parent, nodes: nodes.clone(), params, origin: placing.origin });
         if !nets.is_empty() {
@@ -91,6 +92,22 @@ impl Elaboration<'_, '_> {
         }
         stack.pop();
         Some(instance)
+    }
+
+    /// Makes the two ends of each branch the body merges one node in the instance whose nodes are
+    /// `nodes` (`IrBuilder::merge_nodes`): ground absorbs the node it meets.
+    fn merge_instance_nodes(&mut self, plan: &ModulePlan, nodes: &[NodeRef]) {
+        let end = |terminal: &Terminal| match terminal {
+            Terminal::Node(i) => nodes.get(*i as usize).copied().unwrap_or(NodeRef::Ground),
+            _ => NodeRef::Ground,
+        };
+        for (plus, minus) in &plan.merges {
+            match (end(plus), end(minus)) {
+                (kept, NodeRef::Node(merged)) => self.ir.merge_nodes(kept, merged),
+                (NodeRef::Node(merged), kept @ NodeRef::Ground) => self.ir.merge_nodes(kept, merged),
+                _ => {}
+            }
+        }
     }
 
     /// The net of each carrier of the instance being placed, in the body's carrier order: a carrier
