@@ -4,6 +4,7 @@
 //! `<pre data-lang="..">` (a mermaid diagram is not one), its other attributes follow the language,
 //! and an HTML comment `<!-- cli-file: <path> -->` right before it marks the file it belongs to.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
@@ -62,6 +63,7 @@ pub struct Block {
     id: BlockId,
     offset: usize,
     language: String,
+    attributes: BTreeMap<String, String>,
     text: String,
     file: Option<String>,
 }
@@ -75,6 +77,11 @@ impl Block {
     /// The language the Book gives the block (`msl`, `text`, `sh`, ...).
     pub fn language(&self) -> &str {
         &self.language
+    }
+
+    /// The value of the attribute `name` of the block's opening tag (`data-cli-output`), decoded.
+    pub fn attribute(&self, name: &str) -> Option<&str> {
+        self.attributes.get(name).map(String::as_str)
     }
 
     /// The block's text, decoded.
@@ -128,11 +135,11 @@ impl Book {
     pub fn read() -> Book {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/book/content.html");
         let html = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: the Book is unreadable: {error}", path.display()));
-        Book::of(html)
+        Book::from_html(html)
     }
 
-    /// The Book whose HTML is `html`.
-    fn of(html: String) -> Book {
+    /// The Book whose HTML is `html` (a guard test plants one).
+    pub fn from_html(html: String) -> Book {
         let chapters = Self::chapters_of(&html);
         let blocks = Self::blocks_of(&html, &chapters);
         Book { html, chapters, blocks }
@@ -162,16 +169,28 @@ impl Book {
             let offset = from + found;
             let after = &html[offset + Self::BLOCK_OPEN.len()..];
             let (language, rest) = after.split_once('"').expect("a block's language closes");
-            let (_attributes, body) = rest.split_once('>').expect("a block's opening tag closes");
+            let (tail, body) = rest.split_once('>').expect("a block's opening tag closes");
             let (text, _) = body.split_once("</pre>").expect("a block closes");
             let chapter = chapters.iter().rev().find(|(_, start)| *start < offset).map(|(id, _)| id.clone()).unwrap_or_else(|| panic!("a block at offset {offset} lies in no chapter"));
             let index = blocks.iter().filter(|block| block.id.chapter == chapter).count() + 1;
             let before = html[..offset].trim_end();
             let file = before.strip_suffix("-->").and_then(|head| head.rsplit_once("<!--")).and_then(|(_, comment)| comment.strip_prefix(" cli-file: ")).map(|path| path.trim().to_string());
-            blocks.push(Block { id: BlockId { chapter, index }, offset, language: language.to_string(), text: Self::decode(text), file });
+            blocks.push(Block { id: BlockId { chapter, index }, offset, language: language.to_string(), attributes: Self::attributes(tail), text: Self::decode(text), file });
             from = offset + 1;
         }
         blocks
+    }
+
+    /// The attributes `name="value"` of an opening tag's tail, decoded, by name.
+    fn attributes(tail: &str) -> BTreeMap<String, String> {
+        let mut attributes = BTreeMap::new();
+        let mut rest = tail;
+        while let Some((name, after)) = rest.split_once("=\"") {
+            let (value, next) = after.split_once('"').expect("an attribute value closes");
+            attributes.insert(name.trim().to_string(), Self::decode(value));
+            rest = next;
+        }
+        attributes
     }
 
     /// `text` with the five entities the Book's source uses decoded.
