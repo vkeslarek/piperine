@@ -28,7 +28,7 @@ pub struct HostRun {
 }
 
 impl HostRun {
-    /// A run of `tests/ngspice/<twin>.msl` that takes `analysis`, on `backend`.
+    /// A run of `tests/e2e/twins/<twin>.msl` that takes `analysis`, on `backend`.
     pub fn new(twin: &str, analysis: &str, backend: Backend) -> HostRun {
         HostRun { twin: twin.to_string(), backend, overrides: Overrides { analysis: Some(analysis.to_string()), ..Overrides::default() } }
     }

@@ -527,7 +527,7 @@ fn book_blocks() -> Vec<String> {
 
 /// Every source of the corpus with its label: the standard library, the
 /// gallery fixtures, `examples/buck`, `examples/rc` and the MSL twins of
-/// `tests/ngspice/` (each must parse), the MSL files of the test projects and
+/// `tests/e2e/twins/` (each must parse), the MSL files of the test projects and
 /// fixtures of the other crates that parse (some are broken on purpose), the
 /// specification's blocks and the Book's `msl` blocks wrapped as fragments.
 fn sources() -> Vec<(String, String)> {

@@ -2,7 +2,7 @@
 //! a session's transient keeps no step and records the signals it prints, with the print grid
 //! applied as the steps arrive. Each table is compared with what the run it replaces gave: the
 //! table of a `Keep::Every` run (`Table::transient`), and that table on the grid
-//! (`Table::on_grid`), by bits. The RC is the twin `tests/ngspice/tran_rc.msl`; the counter is
+//! (`Table::on_grid`), by bits. The RC is the twin `tests/e2e/twins/tran_rc.msl`; the counter is
 //! written by the test. Rust-backend sessions build into a cache directory of this target.
 #![cfg(unix)]
 

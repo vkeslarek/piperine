@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/diode_series.cir`: operating point of two series diodes.
+//! Twin of `tests/e2e/twins/diode_series.cir`: operating point of two series diodes.
 mod devices;
 use devices::*;
 

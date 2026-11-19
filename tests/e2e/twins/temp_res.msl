@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/temp_res.cir`: a divider whose lower resistor has a first-order
+//! Twin of `tests/e2e/twins/temp_res.cir`: a divider whose lower resistor has a first-order
 //! temperature coefficient, `r * (1 + tc1 * (T - Tnom))`, against ngspice's `tnom` of 27 C.
 mod devices;
 use devices::*;

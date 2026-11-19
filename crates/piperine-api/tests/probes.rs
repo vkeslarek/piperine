@@ -1,7 +1,7 @@
 //! `Probe` over elaborated MSL (CLI-05 AC 3 to 6; spec edge 3): the default columns, the three
 //! kinds of entry in full or relative spelling, the column names, and an entry that names
 //! nothing, refused by `Session::open` before any analysis. The divider is the twin
-//! `tests/ngspice/divider.msl`; the mixed top is written by the test.
+//! `tests/e2e/twins/divider.msl`; the mixed top is written by the test.
 
 use std::path::{Path, PathBuf};
 

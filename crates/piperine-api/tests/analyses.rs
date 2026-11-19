@@ -1,6 +1,6 @@
 //! `Session::run` and the tables it gives (CLI-05 AC 1, 2, 7 and 8): the operating point as
-//! signal and value in print order, the divider of `tests/ngspice/divider.msl` and the RC of
-//! `tests/ngspice/tran_rc.msl` on both backends. Expected values are computed here from the
+//! signal and value in print order, the divider of `tests/e2e/twins/divider.msl` and the RC of
+//! `tests/e2e/twins/tran_rc.msl` on both backends. Expected values are computed here from the
 //! circuit each source writes; the tolerances are the spec's (1e-9 for exact arithmetic, 1e-3
 //! for the RC step). Rust-backend sessions build into a cache directory of this target.
 

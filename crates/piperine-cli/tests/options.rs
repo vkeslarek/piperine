@@ -19,7 +19,7 @@ fn rc() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc")
 }
 
-/// A parity twin of `tests/ngspice/`.
+/// A parity twin of `tests/e2e/twins/`.
 fn twin(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins").join(name)
 }

@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/tran_floor.cir`: a node whose current is +1 mA above 0.5 V and -1 mA
+//! Twin of `tests/e2e/twins/tran_floor.cir`: a node whose current is +1 mA above 0.5 V and -1 mA
 //! below it, behind 1 kOhm, from 1 us on: no solution at any step. The run must fail, as ngspice's.
 mod devices;
 use devices::*;

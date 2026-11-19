@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/isrc_r.cir`: operating point of a current source into a resistor.
+//! Twin of `tests/e2e/twins/isrc_r.cir`: operating point of a current source into a resistor.
 //! `I1 0 a` drives its current from ground through the source into `a`.
 mod devices;
 use devices::*;

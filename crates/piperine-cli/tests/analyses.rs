@@ -28,7 +28,7 @@ fn lowpass() -> String {
     format!("{PARTS}module Top() {{\n    signal vin: Electrical;\n    signal vout: Electrical;\n    let v1 = Vsource(vin, gnd) {{ dc: 10.0 }};\n    let r1 = Resistor(vin, vout) {{ r: 1k }};\n    let r2 = Resistor(vout, gnd) {{ r: 3k }};\n    let c1 = Capacitor(vout, gnd) {{ c: 1u }};\n}}\n")
 }
 
-/// The square-wave RC of `tests/ngspice/pss_rc.msl`, period 4 us.
+/// The square-wave RC of `tests/e2e/twins/pss_rc.msl`, period 4 us.
 fn pulsed() -> String {
     format!("{PARTS}module Pulse(p: Electrical) {{ amp: f64 = 1.0; width: f64 = 2u; period: f64 = 4u; edge: f64 = 1p; }}\nanalog for Pulse {{\n    let ph = now() - period * (now() / period).floor();\n    let level = if ph < edge {{ ph / edge }} else if ph < width {{ 1.0 }} else if ph < width + edge {{ 1.0 - (ph - width) / edge }} else {{ 0.0 }};\n    v(p) +> amp * level;\n}}\nmodule Steady() {{\n    signal vin: Electrical;\n    signal vout: Electrical;\n    let src = Pulse(vin);\n    let r1 = Resistor(vin, vout) {{ r: 1k }};\n    let c1 = Capacitor(vout, gnd) {{ c: 1n }};\n}}\n")
 }

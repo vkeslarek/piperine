@@ -1,7 +1,7 @@
 //! Scope: the entry point of `piperine_lang::elab` (ELAB-01): `Elaborator::run` returns the
 //! front-end and type-check diagnostics unchanged and no `Ir`, refuses an unknown or ported top
 //! with one diagnostic naming it, and returns a checked `Ir` for a clean top. The M1 corpus (the
-//! six twins of `tests/ngspice/`) elaborates with no diagnostic to the IR pinned in
+//! six twins of `tests/e2e/twins/`) elaborates with no diagnostic to the IR pinned in
 //! `tests/fixtures/elab/*.txt`; elaboration is deterministic, leaves the design unchanged, and
 //! every diagnostic carries a code, a span inside its source and, about an instance, its path.
 
@@ -15,7 +15,7 @@ use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::Design;
 use support::Elab;
 
-/// The six twins of `tests/ngspice/` and the module each places.
+/// The six twins of `tests/e2e/twins/` and the module each places.
 const TWINS: &[(&str, &str)] = &[("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
 
 /// Files read from disk by the tests of this target.

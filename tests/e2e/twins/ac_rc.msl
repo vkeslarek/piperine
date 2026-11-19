@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/ac_rc.cir`: RC low-pass, corner at exactly 100 kHz.
+//! Twin of `tests/e2e/twins/ac_rc.cir`: RC low-pass, corner at exactly 100 kHz.
 mod devices;
 use devices::*;
 

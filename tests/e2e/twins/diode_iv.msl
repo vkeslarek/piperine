@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/diode_iv.cir`: the harness sweeps `v1.dc` from -1 V to 0.8 V.
+//! Twin of `tests/e2e/twins/diode_iv.cir`: the harness sweeps `v1.dc` from -1 V to 0.8 V.
 mod devices;
 use devices::*;
 

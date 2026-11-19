@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/divider.cir`: operating point of a resistive divider.
+//! Twin of `tests/e2e/twins/divider.cir`: operating point of a resistive divider.
 mod devices;
 use devices::*;
 

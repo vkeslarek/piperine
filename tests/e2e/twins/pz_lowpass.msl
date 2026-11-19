@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/pz_lowpass.cir`: a voltage source, a series resistor with a capacitor
+//! Twin of `tests/e2e/twins/pz_lowpass.cir`: a voltage source, a series resistor with a capacitor
 //! across it, a shunt resistor and a shunt capacitor. The zero is -1/(R1 C2) and the pole
 //! -(R1 + R2)/(R1 R2 (C1 + C2)).
 mod devices;

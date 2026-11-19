@@ -72,7 +72,7 @@ use std::path::PathBuf;
 
 use piperine_lang::pom::{CallClass, DeclId, ExprId, ExprKind};
 
-/// The six twins of `tests/ngspice/` and the module each places.
+/// The six twins of `tests/e2e/twins/` and the module each places.
 const TWINS: &[(&str, &str)] = &[("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
 
 fn twin(file: &str) -> Design {

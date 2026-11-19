@@ -636,7 +636,7 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// Three entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
 /// coverage registry (NGP-15/MD-31): a repo-policy proof in the
 /// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
-/// `tests/ngspice/` and the golden targets — so it links no workspace crate,
+/// `tests/e2e/twins/` and the golden targets — so it links no workspace crate,
 /// the same standing this file has (skipped as [`SELF`]).
 /// `lrm_conformance_matrix.rs` is the lrm-conformance-closure LRMC-ID
 /// registry (MD-31, T9): a data table plus `include_str!`-parsing of

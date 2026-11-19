@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/tran_dq.cir`: an RC charging curve through a diode whose transit-time
+//! Twin of `tests/e2e/twins/tran_dq.cir`: an RC charging curve through a diode whose transit-time
 //! charge `tt * id` is nonlinear in the junction voltage. ngspice starts the node at 0 V with
 //! `uic`; MSL has no `uic` (§16 H6), so `a` is a held node (§16 H1).
 mod devices;

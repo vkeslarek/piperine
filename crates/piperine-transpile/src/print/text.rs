@@ -284,9 +284,9 @@ mod tests {
 
     #[test]
     fn lines_are_indented_by_four_one_statement_each() {
-        let at = Origin { file: "tests/ngspice/devices.msl".into(), line: 8, col: 23 };
+        let at = Origin { file: "tests/e2e/twins/devices.msl".into(), line: 8, col: 23 };
         let mut t = Text::new();
-        t.comment("body Resistor", &Origin { file: "tests/ngspice/devices.msl".into(), line: 5, col: 1 });
+        t.comment("body Resistor", &Origin { file: "tests/e2e/twins/devices.msl".into(), line: 5, col: 1 });
         t.line("pub mod resistor {");
         t.indented(|t| {
             t.line("use super::*;");
@@ -301,12 +301,12 @@ mod tests {
         });
         t.line("}");
         let expected = "\
-// body Resistor @ tests/ngspice/devices.msl:5:1
+// body Resistor @ tests/e2e/twins/devices.msl:5:1
 pub mod resistor {
     use super::*;
 
     fn terms_block<R: Real>(p: R, n: R, r: R) -> [R; 1] {
-        // b0.flow @ tests/ngspice/devices.msl:8:23
+        // b0.flow @ tests/e2e/twins/devices.msl:8:23
         let b0_flow = (p - n) / r;
         [b0_flow]
     }

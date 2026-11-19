@@ -1,5 +1,5 @@
 //! The five M1 device bodies, the functions they call and the divider design, built by hand
-//! through `IrBuilder` exactly as `tests/ngspice/devices.msl` and `divider.msl` read, in source
+//! through `IrBuilder` exactly as `tests/e2e/twins/devices.msl` and `divider.msl` read, in source
 //! order. Shared by `piperine-interp`'s tests through `#[path]`.
 
 use piperine_ir::{
@@ -601,7 +601,7 @@ impl Devices {
         }
     }
 
-    /// Twin of `tests/ngspice/divider.msl`: the top `Divider` with signals `vin` and `mid`, and
+    /// Twin of `tests/e2e/twins/divider.msl`: the top `Divider` with signals `vin` and `mid`, and
     /// `v1`, `r1`, `r2`. Paths `Divider`, `Divider.v1`, `Divider.r1`, `Divider.r2`, `Divider.vin`,
     /// `Divider.mid`.
     pub fn divider(b: &mut IrBuilder) -> InstanceId {

@@ -652,7 +652,7 @@ fn every_ir_passes_check() {
 
 #[test]
 fn the_m1_goldens_are_unchanged() {
-    // DIG-07 AC 2, C62: the seven M1 twins of `tests/ngspice/` elaborate to the text pinned in
+    // DIG-07 AC 2, C62: the seven M1 twins of `tests/e2e/twins/` elaborate to the text pinned in
     // `tests/fixtures/elab/*.txt`, which this feature never edits. `diode_rev` came after the
     // other six were pinned: its fixture is its print at the feature's base (`9aa03fe8`, the
     // `ir-rust` merge), added by the fix round (verification F10).

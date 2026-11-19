@@ -146,7 +146,7 @@ fn every_twin_prints_the_bytes_it_printed_before_the_long_run() {
 fn every_twin_prints_the_bytes_it_printed_before_the_move() {
     // RE-04 AC 1 (feature `root-e2e`, T2): each of the sixteen twins' standard output after the
     // header line, on every backend that runs it, is the file captured from the binary at the
-    // commit before `tests/ngspice/` moved, through the same flags (`tran_floor` fails `E0508`
+    // commit before `tests/e2e/twins/` moved, through the same flags (`tran_floor` fails `E0508`
     // by design, so its golden is empty)
     for twin in Twin::all() {
         let golden = std::fs::read_to_string(Corpus::of_repository().twin(&twin.name).expected_stdout()).expect("the golden file");

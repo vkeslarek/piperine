@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/pss_rc.cir`: an RC (1 kOhm, 1 nF) driven by a square wave of period
+//! Twin of `tests/e2e/twins/pss_rc.cir`: an RC (1 kOhm, 1 nF) driven by a square wave of period
 //! 4 us, high for the first half, with 1 ps edges (ngspice's `PULSE(0 1 0 1p 1p 2u 4u)`). The
 //! source reads `now()` and a param, so no discrete state carries an absolute time into the
 //! orbit (a discrete clock's `transition` keeps the time of its last edge, which a periodic

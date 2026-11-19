@@ -1,5 +1,5 @@
 //! A dependency crate of the two-crate project fixture (`tests/project.rs`): the two devices a
-//! resistor divider places, as `tests/ngspice/devices.msl` writes them.
+//! resistor divider places, as `tests/e2e/twins/devices.msl` writes them.
 
 /// Ideal resistor.
 pub module Resistor(p: Electrical, n: Electrical) {

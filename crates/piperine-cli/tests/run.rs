@@ -202,7 +202,7 @@ fn the_project_flag_uses_that_directory_and_never_searches() {
 fn a_lone_file_run_is_named_by_its_stem() {
     // CLI-07 AC 7 and CLI-02 AC 9: `piperine run <file>.msl` with no manifest upward is a crate
     // alone and its header names the file's stem, here `divider`; the flags make the request.
-    // CLI-05 AC 7: the divider of `tests/ngspice/divider.msl` (10 V across 1k and 3k) gives
+    // CLI-05 AC 7: the divider of `tests/e2e/twins/divider.msl` (10 V across 1k and 3k) gives
     // 7.5 for `Divider.mid`, the spec's independent test (`Divider.mid  7.500000e0`)
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/divider.msl");
     let nowhere = tempfile::tempdir().expect("tmp");

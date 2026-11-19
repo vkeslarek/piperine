@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/tran_rc.cir`: RC charging curve. ngspice starts the capacitor
+//! Twin of `tests/e2e/twins/tran_rc.cir`: RC charging curve. ngspice starts the capacitor
 //! discharged with `uic`; MSL has no `uic` (§16 H6), so `out` is a held node (§16 H1).
 mod devices;
 use devices::*;

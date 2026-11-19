@@ -35,12 +35,12 @@ impl Bench {
         Corpus::of_repository().twin(fixture).model()
     }
 
-    /// Loads `tests/ngspice/<fixture>.msl` on the interpreter.
+    /// Loads `tests/e2e/twins/<fixture>.msl` on the interpreter.
     pub fn load(fixture: &str) -> Bench {
         Self::load_on(fixture, Backend::Interp)
     }
 
-    /// Loads `tests/ngspice/<fixture>.msl` on `backend`.
+    /// Loads `tests/e2e/twins/<fixture>.msl` on `backend`.
     pub fn load_on(fixture: &str, backend: Backend) -> Bench {
         Self::load_file_on(fixture, Self::twin_path(fixture), backend)
     }

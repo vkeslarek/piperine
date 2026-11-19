@@ -1,7 +1,7 @@
 //! The Piperine IR: an elaborated design as an object model.
 //!
 //! Arenas owned by one [`Ir`], addressed by typed `u32` ids. A leaf crate: nothing in-tree
-//! is imported. The M1 node set covers the analog subset of `tests/ngspice/*.msl`.
+//! is imported. The M1 node set covers the analog subset of `tests/e2e/twins/*.msl`.
 
 mod build;
 mod check;

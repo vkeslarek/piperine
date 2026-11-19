@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/tran_corner.cir`: a 5 ns tanh corner at 1.03 us across 1 nF, computed
+//! Twin of `tests/e2e/twins/tran_corner.cir`: a 5 ns tanh corner at 1.03 us across 1 nF, computed
 //! from the time. The smallest step (1 ns) is the host's option on the transient, as `delmin` is
 //! ngspice's.
 mod devices;

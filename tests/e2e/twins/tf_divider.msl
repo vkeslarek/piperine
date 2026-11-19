@@ -1,4 +1,4 @@
-//! Twin of `tests/ngspice/tf_divider.cir`: a 10 V source over 1 kOhm then 3 kOhm, whose transfer
+//! Twin of `tests/e2e/twins/tf_divider.cir`: a 10 V source over 1 kOhm then 3 kOhm, whose transfer
 //! from the source to `vout` is taken.
 mod devices;
 use devices::*;

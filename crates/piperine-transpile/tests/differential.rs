@@ -424,7 +424,7 @@ impl Names {
         })
     }
 
-    /// The diode of `tests/ngspice/devices.msl:31-42`, renamed: params `limit_vd_last` (is),
+    /// The diode of `tests/e2e/twins/devices.msl:31-42`, renamed: params `limit_vd_last` (is),
     /// `vd_last_` (n), `is_static` (cj0); nodes `cx` (a), `old` (k); locals `f` (nvt), `seed`
     /// (vcrit), `vd`, `limited` (id), and the closure's `proposed` (new) and `from_seed` (old).
     fn limiter(b: &mut IrBuilder) -> BodyId {

@@ -2,7 +2,7 @@
 //! RE-04 and RE-05): every twin under `tests/e2e/` has a `.cir`, a `.command`, its expected
 //! `.stdout` and a test function named after it in a `parity_*` target; a library `.msl` is
 //! loaded by a twin of its scenario directory; a scenario that holds `benches/` holds
-//! `Piperine.toml`; `tests/ngspice/` does not exist; and no `parity_*` target compares an
+//! `Piperine.toml`; `tests/e2e/twins/` does not exist; and no `parity_*` target compares an
 //! absolute difference with a numeric literal. Each check is a method returning its failures:
 //! empty on the tree, non-empty on text or a tree planted by a test.
 
@@ -61,10 +61,10 @@ impl Guard {
         Vec::new()
     }
 
-    /// `tests/ngspice` under `tests_directory`, when it exists: the twins have one home.
+    /// `tests/e2e/twins` under `tests_directory`, when it exists: the twins have one home.
     fn the_old_home_exists(tests_directory: &Path) -> Vec<String> {
         if tests_directory.join("ngspice").exists() {
-            return vec!["tests/ngspice exists: the twins live under tests/e2e/".to_string()];
+            return vec!["tests/e2e/twins exists: the twins live under tests/e2e/".to_string()];
         }
         Vec::new()
     }
