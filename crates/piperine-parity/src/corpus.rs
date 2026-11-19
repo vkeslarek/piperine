@@ -114,6 +114,41 @@ impl Twin {
     pub fn expected_stdout(&self) -> PathBuf {
         self.directory.join(format!("{}.stdout", self.name))
     }
+
+    /// The arguments of [`command`](Self::command) after the program name `piperine`, split the
+    /// way a shell splits a line: at blanks, except inside single quotes. Panics naming the file
+    /// when it cannot be read or does not start with `piperine`.
+    pub fn command_arguments(&self) -> Vec<String> {
+        let path = self.command();
+        let line = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: cannot read the command ({error})", path.display()));
+        let mut words = Self::split_line(line.trim());
+        if words.is_empty() || words.remove(0) != "piperine" {
+            panic!("{}: a command starts with `piperine`", path.display());
+        }
+        words
+    }
+
+    /// `line` split at blanks outside single quotes; the quotes themselves are dropped.
+    fn split_line(line: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut word = String::new();
+        let mut quoted = false;
+        for character in line.chars() {
+            match character {
+                '\'' => quoted = !quoted,
+                blank if blank.is_whitespace() && !quoted => {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                }
+                other => word.push(other),
+            }
+        }
+        if !word.is_empty() {
+            words.push(word);
+        }
+        words
+    }
 }
 
 #[cfg(test)]
@@ -147,6 +182,14 @@ mod tests {
         let names: Vec<String> = corpus.twins().iter().map(|twin| twin.name().to_string()).collect();
         assert_eq!(names, vec!["alpha".to_string()], "a library and a netlist with no model are no twins");
         assert!(corpus.netlist("lonely").ends_with("twins/lonely.cir"), "a netlist with no model is still found");
+    }
+
+    #[test]
+    fn a_command_is_read_as_the_arguments_after_piperine() {
+        let (_root, corpus) = planted(&[("twins", &["alpha.msl", "alpha.cir"])]);
+        let twin = corpus.twin("alpha");
+        std::fs::write(twin.command(), "piperine run alpha.msl --from -1 --print 'i(v1)'\n").expect("a planted command");
+        assert_eq!(twin.command_arguments(), vec!["run", "alpha.msl", "--from", "-1", "--print", "i(v1)"]);
     }
 
     #[test]

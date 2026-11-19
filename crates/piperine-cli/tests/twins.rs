@@ -1,4 +1,4 @@
-//! The sixteen parity twins of `tests/ngspice/` from the command line (feature `msl-cli`, T29;
+//! The sixteen parity twins of `tests/e2e/twins/` from the command line (feature `msl-cli`, T29;
 //! CLI-13; feature `root-e2e`, T2): each runs through the real binary with flags on the
 //! interpreter and on the Rust backend (the Rust backend only for the four twins that read
 //! `now()`, which the interpreter refuses), with the analysis and the grid its `.cir` names (the
@@ -9,52 +9,49 @@
 //! Every child process gets `PIPERINE_CACHE_DIR` set to a temporary directory shared by this
 //! target. No test sets a variable of its own process.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
 
-/// One twin: its file, the flags its `.cir` asks for, and the backends that run it.
+use piperine_parity::corpus::Corpus;
+
+/// One twin through the binary: the arguments of its `<name>.command`, the scenario directory it
+/// runs from and the backends that run it.
 struct Twin {
-    name: &'static str,
-    flags: &'static [&'static str],
+    name: String,
+    arguments: Vec<String>,
+    directory: PathBuf,
     backends: &'static [&'static str],
 }
 
-/// The three operating points, the two DC sweeps (`diode_iv`: -1 V to 0.8 V, 37 rows;
-/// `diode_rev`: -1 V to -20 V, 20 rows), the AC sweep (1 kHz to 10 MHz, 41 rows) and the
-/// transient (10 us, ngspice's print step of 0.1 us, a step cap of a tenth of it); then the nine
-/// twins of the later features: transfer function, pole-zero and sensitivity of the divider
-/// and the low-pass, the temperature, the diffusion-charge transient, the periodic orbit, and the
-/// three step-floor transients (2 us), whose `now()` sources only the Rust backend runs.
-const TWINS: [Twin; 16] = [
-    Twin { name: "divider", flags: &["--analysis", "op"], backends: BOTH },
-    Twin { name: "isrc_r", flags: &["--analysis", "op"], backends: BOTH },
-    Twin { name: "diode_series", flags: &["--analysis", "op"], backends: BOTH },
-    Twin { name: "diode_iv", flags: &["--analysis", "dc", "--sweep", "v1.dc", "--from", "-1", "--to", "0.8", "--step", "0.05", "--print", "i(v1)"], backends: BOTH },
-    Twin { name: "diode_rev", flags: &["--analysis", "dc", "--sweep", "v1.dc", "--from", "-1", "--to", "-20", "--step", "-1", "--print", "i(v1)"], backends: BOTH },
-    Twin { name: "ac_rc", flags: &["--analysis", "ac", "--from", "1e3", "--to", "10e6", "--per-decade", "10", "--print", "out"], backends: BOTH },
-    Twin { name: "tran_rc", flags: &["--analysis", "transient", "--stop", "10e-6", "--max-step", "1e-8", "--print-step", "1e-7", "--print", "out"], backends: BOTH },
-    Twin { name: "tf_divider", flags: &["--analysis", "tf", "--input", "v1", "--output", "vout"], backends: BOTH },
-    Twin { name: "pz_lowpass", flags: &["--analysis", "pz", "--input", "v1", "--output", "out"], backends: BOTH },
-    Twin { name: "sens_divider", flags: &["--analysis", "sens", "--wrt", "r1.r", "--wrt", "r2.r", "--wrt", "v1.dc", "--print", "mid"], backends: BOTH },
-    Twin { name: "temp_res", flags: &["--analysis", "op", "--temp", "75"], backends: BOTH },
-    Twin { name: "tran_dq", flags: &["--analysis", "transient", "--stop", "10e-6", "--max-step", "1e-8", "--print-step", "1e-7", "--print", "a"], backends: BOTH },
-    Twin { name: "pss_rc", flags: &["--analysis", "pss", "--period", "4e-6", "--tstab", "8e-6", "--max-step", "1e-9", "--print-step", "1e-7", "--print", "vout"], backends: COMPILED_ONLY },
-    Twin { name: "tran_jump", flags: &["--analysis", "transient", "--stop", "2e-6", "--max-step", "1e-8", "--print-step", "1e-7", "--print", "top"], backends: COMPILED_ONLY },
-    Twin { name: "tran_corner", flags: &["--analysis", "transient", "--stop", "2e-6", "--max-step", "1e-8", "--print-step", "1e-7", "--print", "top"], backends: COMPILED_ONLY },
-    Twin { name: "tran_floor", flags: &["--analysis", "transient", "--stop", "2e-6", "--max-step", "1e-8", "--print-step", "1e-7", "--print", "n"], backends: COMPILED_ONLY },
-];
+impl Twin {
+    /// Every twin of the corpus with the command its `.command` file holds, by name.
+    fn all() -> &'static Vec<Twin> {
+        static TWINS: OnceLock<Vec<Twin>> = OnceLock::new();
+        TWINS.get_or_init(|| {
+            Corpus::of_repository()
+                .twins()
+                .into_iter()
+                .map(|twin| {
+                    let backends = if COMPILED_ONLY.contains(&twin.name()) { &["rust"][..] } else { BOTH };
+                    Twin { name: twin.name().to_string(), arguments: twin.command_arguments(), directory: twin.directory().to_path_buf(), backends }
+                })
+                .collect()
+        })
+    }
+}
 
 /// Both backends run the twin.
 const BOTH: &[&str] = &["interp", "rust"];
 
-/// Only the Rust backend runs the twin: its source reads `now()`, which the interpreter (the M1
-/// analog subset) refuses.
-const COMPILED_ONLY: &[&str] = &["rust"];
+/// The twins only the Rust backend runs: their source reads `now()`, which the interpreter (the
+/// M1 analog subset) refuses.
+const COMPILED_ONLY: [&str; 4] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor"];
 
 /// The twins whose standard output was captured before the long run (`a5f23ea4`), each held to
 /// `<name>.stdout` by `every_twin_prints_the_bytes_it_printed_before_the_long_run`.
 const BEFORE_THE_LONG_RUN: [&str; 7] = ["divider", "isrc_r", "diode_series", "diode_iv", "diode_rev", "ac_rc", "tran_rc"];
+
 /// What one command printed.
 struct Ran {
     code: Option<i32>,
@@ -62,20 +59,14 @@ struct Ran {
     stderr: String,
 }
 
-fn ngspice_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins")
-}
-
-/// `piperine run <twin>.msl <flags> --backend <backend>`.
+/// `piperine <the twin's command arguments> --backend <backend>`, run from the twin's scenario directory.
 fn run(twin: &Twin, backend: &str) -> Ran {
     static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
     let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
-    let file = ngspice_dir().join(format!("{}.msl", twin.name));
     let out = Command::new(env!("CARGO_BIN_EXE_piperine"))
-        .arg("run")
-        .arg(&file)
-        .args(twin.flags)
+        .args(&twin.arguments)
         .args(["--backend", backend])
+        .current_dir(&twin.directory)
         .env("PIPERINE_CACHE_DIR", cache.path())
         .env_remove("PIPERINE_BACKEND")
         .output()
@@ -86,7 +77,7 @@ fn run(twin: &Twin, backend: &str) -> Ran {
 /// Every twin on every backend that runs it, run once for the whole target.
 fn all() -> &'static Vec<(&'static str, &'static str, Ran)> {
     static ALL: OnceLock<Vec<(&'static str, &'static str, Ran)>> = OnceLock::new();
-    ALL.get_or_init(|| TWINS.iter().flat_map(|twin| twin.backends.iter().map(move |backend| (twin.name, *backend, run(twin, backend)))).collect())
+    ALL.get_or_init(|| Twin::all().iter().flat_map(|twin| twin.backends.iter().map(move |backend| (twin.name.as_str(), *backend, run(twin, backend)))).collect())
 }
 
 /// The runs of `names`, on both backends, each exited 0 and printed its header and a table.
@@ -116,7 +107,7 @@ fn the_two_backends_print_the_same_bytes() {
     // CLI-13 AC 3: for each twin both backends run, the standard output on the interpreter and on
     // the Rust backend is the same bytes, the header line (it names the backend) aside
     let after_header = |ran: &Ran| ran.stdout.split_once('\n').map(|(_, rest)| rest.to_string()).unwrap_or_default();
-    for twin in TWINS.iter().filter(|twin| twin.backends == BOTH) {
+    for twin in Twin::all().iter().filter(|twin| twin.backends == BOTH) {
         let on = |backend: &str| all().iter().find(|(t, b, _)| *t == twin.name && *b == backend).map(|(.., ran)| after_header(ran)).expect("both backends ran");
         let (interp, rust) = (on("interp"), on("rust"));
         assert!(!interp.is_empty(), "{}: nothing after the header", twin.name);
@@ -128,7 +119,7 @@ fn the_two_backends_print_the_same_bytes() {
 fn tran_rc_prints_the_bytes_it_printed_before_the_long_run() {
     // LR-14 AC 1: `tran_rc`'s standard output after the header line, on each backend, is the file
     // captured from the binary before the long run changed any code
-    let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/tran_rc.stdout")).expect("the golden file");
+    let golden = std::fs::read_to_string(Corpus::of_repository().twin("tran_rc").expected_stdout()).expect("the golden file");
     for backend in BOTH.iter().copied() {
         let (.., ran) = all().iter().find(|(t, b, _)| *t == "tran_rc" && *b == backend).expect("tran_rc ran on both backends");
         let after_header = ran.stdout.split_once('\n').map(|(_, rest)| rest).unwrap_or_default();
@@ -141,8 +132,8 @@ fn every_twin_prints_the_bytes_it_printed_before_the_long_run() {
     // LR-14 AC 1: each of the seven twins' standard output after the header line, on each
     // backend, is the file captured from the binary of `a5f23ea4` (the commit before the long
     // run), through the same flags
-    for twin in TWINS.iter().filter(|twin| BEFORE_THE_LONG_RUN.contains(&twin.name)) {
-        let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/e2e/twins/{}.stdout", twin.name))).expect("the golden file");
+    for twin in Twin::all().iter().filter(|twin| BEFORE_THE_LONG_RUN.contains(&twin.name.as_str())) {
+        let golden = std::fs::read_to_string(Corpus::of_repository().twin(&twin.name).expected_stdout()).expect("the golden file");
         for backend in BOTH.iter().copied() {
             let (.., ran) = all().iter().find(|(t, b, _)| *t == twin.name && *b == backend).expect("every twin ran on both backends");
             let after_header = ran.stdout.split_once('\n').map(|(_, rest)| rest).unwrap_or_default();
@@ -157,8 +148,8 @@ fn every_twin_prints_the_bytes_it_printed_before_the_move() {
     // header line, on every backend that runs it, is the file captured from the binary at the
     // commit before `tests/ngspice/` moved, through the same flags (`tran_floor` fails `E0508`
     // by design, so its golden is empty)
-    for twin in &TWINS {
-        let golden = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/e2e/twins/{}.stdout", twin.name))).expect("the golden file");
+    for twin in Twin::all() {
+        let golden = std::fs::read_to_string(Corpus::of_repository().twin(&twin.name).expected_stdout()).expect("the golden file");
         for backend in twin.backends {
             let (.., ran) = all().iter().find(|(t, b, _)| *t == twin.name && b == backend).expect("every twin ran on each of its backends");
             let after_header = ran.stdout.split_once('\n').map(|(_, rest)| rest).unwrap_or_default();

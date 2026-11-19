@@ -16,4 +16,6 @@ piperine-lang = { path = "../piperine-lang" }
 piperine-transpile = { path = "../piperine-transpile" }
 
 [dev-dependencies]
+# The twins' corpus layout (`Corpus`), read by the twins target.
+piperine-parity = { path = "../piperine-parity" }
 tempfile.workspace = true

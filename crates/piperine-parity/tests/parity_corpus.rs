@@ -1,7 +1,10 @@
-//! Scope: the guard of the parity corpus (requirements PAR-07 and PAR-05 AC 5): every twin under
-//! `tests/ngspice/` has a `.cir` and a test function named after it in a `parity_*` target, and no
-//! `parity_*` target compares an absolute difference with a numeric literal. Each check is a
-//! method returning its failures: empty on the tree, non-empty on text planted by a test.
+//! Scope: the guard of the parity corpus (requirements PAR-07 and PAR-05 AC 5; feature `root-e2e`,
+//! RE-04 and RE-05): every twin under `tests/e2e/` has a `.cir`, a `.command`, its expected
+//! `.stdout` and a test function named after it in a `parity_*` target; a library `.msl` is
+//! loaded by a twin of its scenario directory; a scenario that holds `benches/` holds
+//! `Piperine.toml`; `tests/ngspice/` does not exist; and no `parity_*` target compares an
+//! absolute difference with a numeric literal. Each check is a method returning its failures:
+//! empty on the tree, non-empty on text or a tree planted by a test.
 
 use std::path::{Path, PathBuf};
 
@@ -28,6 +31,11 @@ impl Guard {
     /// The twins of `scenario` (an `.msl` beside a `.cir`) that have no `<name>.stdout`.
     fn twins_without_expected_output(scenario: &Scenario) -> Vec<String> {
         scenario.twin_names().into_iter().filter(|name| !scenario.has_file(&format!("{name}.stdout"))).map(|name| format!("{}/{name}.stdout is missing: the twin has no expected output", scenario.name)).collect()
+    }
+
+    /// The twins of `scenario` that have no `<name>.command`.
+    fn twins_without_command(scenario: &Scenario) -> Vec<String> {
+        scenario.twin_names().into_iter().filter(|name| !scenario.has_file(&format!("{name}.command"))).map(|name| format!("{}/{name}.command is missing: the twin has no command", scenario.name)).collect()
     }
 
     /// The libraries of `scenario` (an `.msl` with no `.cir`) that no twin of it loads with
@@ -246,11 +254,11 @@ fn the_guards_report_planted_text() {
 
 #[test]
 fn every_twin_has_its_files_in_one_scenario_directory() {
-    // RE-04, RE-05: a twin's `.cir`, expected `.stdout` and library sit in one scenario
+    // RE-04, RE-05: a twin's `.cir`, `.command`, expected `.stdout` and library sit in one scenario
     // directory, and no twin name is in two of them
     let scenarios = Tree::scenarios();
     assert!(!scenarios.is_empty(), "tests/e2e/ holds a scenario directory");
-    let failures: Vec<String> = scenarios.iter().flat_map(|scenario| Guard::twins_without_expected_output(scenario).into_iter().chain(Guard::libraries_no_twin_loads(scenario))).collect();
+    let failures: Vec<String> = scenarios.iter().flat_map(|scenario| [Guard::twins_without_expected_output(scenario), Guard::twins_without_command(scenario), Guard::libraries_no_twin_loads(scenario)].concat()).collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     let mut names: Vec<String> = scenarios.iter().flat_map(Scenario::twin_names).collect();
     names.sort();
@@ -285,6 +293,7 @@ fn the_layout_guards_report_planted_trees() {
 
     let scenario = Scenario::read(&scenario_directory);
     assert_eq!(Guard::twins_without_expected_output(&scenario), vec!["planted/alpha.stdout is missing: the twin has no expected output".to_string()]);
+    assert_eq!(Guard::twins_without_command(&scenario), vec!["planted/alpha.command is missing: the twin has no command".to_string()]);
     let unloaded = Guard::libraries_no_twin_loads(&scenario);
     assert_eq!(unloaded.len(), 1, "{unloaded:?}");
     assert!(unloaded[0].contains("planted/orphan.msl") && unloaded[0].contains("mod orphan;"), "{unloaded:?}");
@@ -293,10 +302,11 @@ fn the_layout_guards_report_planted_trees() {
 
     // the same tree, repaired, is clean
     std::fs::write(scenario_directory.join("alpha.stdout"), "").expect("the expected output");
+    std::fs::write(scenario_directory.join("alpha.command"), "piperine run alpha.msl\n").expect("the command");
     std::fs::write(scenario_directory.join("Piperine.toml"), "").expect("the manifest");
     std::fs::write(scenario_directory.join("alpha.msl"), "mod devices;\nmod orphan;\n").expect("a model that loads both libraries");
     std::fs::remove_dir(root.path().join("ngspice")).expect("the old home removed");
     let repaired = Scenario::read(&scenario_directory);
-    let failures: Vec<String> = [Guard::twins_without_expected_output(&repaired), Guard::libraries_no_twin_loads(&repaired), Guard::benches_without_manifest(&repaired), Guard::the_old_home_exists(root.path())].concat();
+    let failures: Vec<String> = [Guard::twins_without_expected_output(&repaired), Guard::twins_without_command(&repaired), Guard::libraries_no_twin_loads(&repaired), Guard::benches_without_manifest(&repaired), Guard::the_old_home_exists(root.path())].concat();
     assert!(failures.is_empty(), "{failures:?}");
 }
