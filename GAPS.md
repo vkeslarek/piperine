@@ -466,3 +466,16 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
 | analog~c91537fe | L40 | `analog-structure` | `E0414` is not raised: a contribution under an `if` on a probe is `P0001` on both branches |
 | analog~54e5381d | L40 | `analog-structure` | `E0414` is not raised: the same refusal as analog~c91537fe |
+| digital#6 | L51 | `unknown-semantics-events` | `Pfd3` is `P0001`: `let mut`, assignment, an event read as a `bool` (`fref.rise() && s < 1`) and the names whose type follows from them |
+| digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8`; with the param written as a literal, `known_or(clean)` is `P0001` too (a `known_or` default that may be unknown, L59) |
+| digital#11 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `period: u8` |
+| digital#14 | L28 | `params-and-io` | `PwmCheck` is `P0001` twice: `limit: u8` and `cycles: u32` |
+| digital#16 | L21 | `resolved-nets` | `IrqSource`, `IrqController` and `Board` are `P0001`: the resolved nature `Wire`, `.v` on it, the `Logic` struct |
+| digital#17 | L30 | `generics` | `Dff<T: Repr>` placed as `Dff::<u8>` is `P0001`: generic module |
+| digital~688ab093 | L28 | `params-and-io` | the debouncer is refused at `n: u8` and, past it, at the `known_or` default: both forms as the sentence says |
+| digital~bdd2508f | L28 | `params-and-io` | the PWM is refused at `period: u8`, as the sentence says: held with digital#11 |
+| digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
+| digital~e35078c8 | L28 | `params-and-io` | the two forms are refused as the sentence says (digital#7) |
+| digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
+| digital~ce04e7a4 | D1 | `root-e2e` | the latch without `after` is two `E0338` (an initial value and an undelayed definition), not `E0339`: the loop is not reported |
+| digital~54ec4a1d | D1 | `root-e2e` | `count <- count + 1.0` is `P0002` (a `u8` plus an `f64`), not `E0432`; `count <- 1.0` is `E0432` |

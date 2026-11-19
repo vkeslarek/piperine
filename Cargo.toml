@@ -90,6 +90,10 @@ path = "tests/book/modules.rs"
 name = "book_analog"
 path = "tests/book/analog.rs"
 
+[[test]]
+name = "book_digital"
+path = "tests/book/digital.rs"
+
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked
 # at ~1.1 GB and several run in parallel, so a one-crate change relinking the

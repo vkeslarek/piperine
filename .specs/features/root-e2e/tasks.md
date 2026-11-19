@@ -677,9 +677,9 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] No row of `digital` is `pending`; `digital` is in `SETTLED_CHAPTERS` of both guards
-- [ ] Gate check passes: Quick (`cargo test --test book_digital`, `Run inventory`, `Run claims`)
-- [ ] Test count: written in the commit body
+- [x] No row of `digital` is `pending`; `digital` is in `SETTLED_CHAPTERS` of both guards
+- [x] Gate check passes: Quick (`cargo test --test book_digital`, `Run inventory`, `Run claims`)
+- [x] Test count: written in the commit body
 
 **Tests**: integration
 **Gate**: quick
