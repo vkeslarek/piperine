@@ -15,6 +15,8 @@ use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::corpus::{Corpus, Twin};
 use piperine_parity::golden::Golden;
 use piperine_parity::ngspice::{Ngspice, Reference};
+use piperine_parity::waveform::Waveform;
+use piperine_solver::prelude::{Context, NodeIdentifier, TransientAnalysisOptions};
 use piperine_transpile::Settings;
 
 /// The twins only the Rust backend runs: their source reads `now()`, which the interpreter refuses
@@ -94,6 +96,20 @@ impl Scenario {
 }
 
 impl Ran {
+    /// The real number of `row`, `column`.
+    fn real(&self, row: usize, column: usize) -> f64 {
+        match &self.table.rows[row][column] {
+            Cell::Real(value) => *value,
+            other => panic!("row {row}, column {column}: a real number, found {other:?}"),
+        }
+    }
+
+    /// The row of a table whose first column is a grid whose abscissa is within `1e-9 * step` of
+    /// `at`, if the table has one.
+    fn row_at(&self, at: f64, step: f64) -> Option<usize> {
+        (0..self.table.rows.len()).find(|row| (self.real(*row, 0) - at).abs() <= 1e-9 * step)
+    }
+
     /// The value (second cell) of the one row of a `signal | value` table whose first cell ends
     /// with `ending`.
     fn signal_ending(&self, ending: &str) -> f64 {
@@ -108,74 +124,182 @@ impl Ran {
     }
 }
 
-/// The comparisons of one scenario against one ngspice run, on one backend: it builds each
-/// [`Point`], asserts under a contract and keeps what the run did for its report.
+/// The comparisons of one scenario on one backend against the ngspice run, when there is one: it
+/// builds each [`Point`], asserts under a contract and keeps what the run did for its report. With
+/// the comparison disabled it holds no golden and compares nothing.
 struct Check<'a> {
     scenario: &'a str,
-    golden: &'a Golden,
+    golden: Option<&'a Golden>,
     backend: Backend,
     compared: Counter<usize>,
     worst: Counter<f64>,
 }
 
 impl<'a> Check<'a> {
-    fn new(scenario: &'a str, golden: &'a Golden, backend: Backend) -> Check<'a> {
+    fn new(scenario: &'a str, reference: &'a Reference, backend: Backend) -> Check<'a> {
+        let golden = match reference {
+            Reference::Golden(golden) => Some(golden),
+            Reference::Skipped => None,
+        };
         Check { scenario, golden, backend, compared: Counter::new(0), worst: Counter::new(0.0) }
     }
 
     /// Holds `actual` to ngspice's `wanted` of `quantity` at `at` under `contract`.
     fn assert(&self, contract: &ToleranceContract, quantity: &str, at: Coordinate, wanted: f64, actual: f64) {
-        let point = Point::new(self.scenario, quantity, at).with_ngspice(self.golden.version()).with_backend(self.backend.name());
+        let Some(golden) = self.golden else { return };
+        let point = Point::new(self.scenario, quantity, at).with_ngspice(golden.version()).with_backend(self.backend.name());
         contract.assert(&point, wanted, actual);
         self.compared.set(self.compared.get() + 1);
         self.worst.set(self.worst.get().max((wanted - actual).abs()));
     }
 
-    /// Prints what the comparison did, and fails when it compared nothing: a scenario that
-    /// compares no point proves nothing.
+    /// Prints what the comparison did, and fails when ngspice ran and nothing was compared: a
+    /// scenario that compares no point proves nothing.
     fn report(&self) {
+        if self.golden.is_none() {
+            return;
+        }
         assert!(self.compared.get() > 0, "{}: nothing was compared on {}", self.scenario, self.backend.name());
         println!("{} on {}: {} points through piperine::, largest deviation from ngspice {:e}", self.scenario, self.backend.name(), self.compared.get(), self.worst.get());
     }
 }
 
-/// One analysis family's comparison of a table with ngspice's output.
+/// One analysis family's comparison of a run with ngspice's output.
 enum Comparison {
     /// The node voltages of an operating point: the table's `signal | value` rows against
     /// ngspice's printed `v(<node>)`, under `DC_VOLTAGE`.
     OperatingPoint { nodes: &'static [&'static str] },
+    /// A DC sweep of one printed current: each row of ngspice's `export` (`rows` of them, on the
+    /// sweep's own grid) against the table's second column, under `DC_CURRENT`.
+    DcSweep { export: &'static str, rows: usize },
+    /// An AC sweep of one printed node: each row of ngspice's `export` against the table's
+    /// magnitude and phase columns (phase in degrees there, radians in ngspice), under
+    /// `AC_MAGNITUDE` and `AC_PHASE`.
+    AcResponse { export: &'static str, rows: usize },
+    /// A transient of one printed node on the print grid: each row of ngspice's `export` against
+    /// the table row at its time, under `TRAN_VOLTAGE`.
+    Transient { export: &'static str, rows: usize, node: &'static str },
+    /// [`Transient`](Self::Transient) run on the compiled circuit of the session with the smallest
+    /// step `dt_min`, which the command line has no flag for (ngspice's `delmin`): the waveform
+    /// is read at the export's times, as `parity_tran.rs` does.
+    FlooredTransient { export: &'static str, rows: usize, node: &'static str, dt_min: f64 },
+    /// A transient no step can settle: the run fails `E0508` at ngspice's 1 us, where ngspice
+    /// stops with "Timestep too small".
+    StepFloor,
 }
 
 impl Comparison {
-    /// Holds `ran`, the table of `scenario` on `check`'s backend, to `check`'s ngspice run.
-    fn hold(&self, ran: &Ran, check: &Check) {
+    /// Runs `scenario` on `check`'s backend and holds what it gives to `check`'s ngspice run.
+    fn hold(&self, scenario: &Scenario, check: &Check) {
         match self {
-            Comparison::OperatingPoint { nodes } => Self::hold_operating_point(nodes, ran, check),
+            Comparison::OperatingPoint { nodes } => Self::hold_operating_point(nodes, &scenario.run(check.backend), check),
+            Comparison::DcSweep { export, rows } => Self::hold_dc_sweep(export, *rows, scenario, &scenario.run(check.backend), check),
+            Comparison::AcResponse { export, rows } => Self::hold_ac_response(export, *rows, &scenario.run(check.backend), check),
+            Comparison::Transient { export, rows, node } => Self::hold_transient(export, *rows, node, scenario, &scenario.run(check.backend), check),
+            Comparison::FlooredTransient { export, rows, node, dt_min } => Self::hold_floored_transient(export, *rows, node, *dt_min, scenario, check),
+            Comparison::StepFloor => Self::hold_step_floor(scenario, check),
         }
     }
 
     /// Each node's row against ngspice's printed voltage.
     fn hold_operating_point(nodes: &[&str], ran: &Ran, check: &Check) {
+        let Some(golden) = check.golden else { return };
         for node in nodes {
-            let wanted = check.golden.printed(&format!("v({node})"));
+            let wanted = golden.printed(&format!("v({node})"));
             check.assert(&ToleranceContract::DC_VOLTAGE, &format!("v({node})"), Coordinate::OperatingPoint, wanted, ran.signal_ending(&format!(".{node}")));
         }
+    }
+
+    /// The sweep's grid is ngspice's, and each current is ngspice's under `DC_CURRENT`.
+    fn hold_dc_sweep(export: &str, rows: usize, scenario: &Scenario, ran: &Ran, check: &Check) {
+        let Some(golden) = check.golden else { return };
+        let wanted = golden.real(export);
+        golden.expect_rows(export, &wanted, rows);
+        assert_eq!(ran.table.rows.len(), wanted.len(), "{}: one table row per sweep value of ngspice's {export}", check.scenario);
+        // a grid row matches ngspice's sweep value to a billionth of the step: ngspice accumulates the
+        // step, so its value at zero is 3e-16, not 0 (the grid is aligned here, no contract bound)
+        let step = scenario.overrides.step.expect("a sweep command names its step").abs();
+        for (row, (sweep, current)) in wanted.iter().enumerate() {
+            assert!((ran.real(row, 0) - sweep).abs() <= 1e-9 * step, "{}: row {row} is at {:e}, ngspice's at {sweep:e}", check.scenario, ran.real(row, 0));
+            check.assert(&ToleranceContract::DC_CURRENT, "i(v1)", Coordinate::Sweep(*sweep), *current, ran.real(row, 1));
+        }
+    }
+
+    /// The frequency grid is ngspice's; magnitude and phase agree where the phase carries
+    /// information (the magnitude clears its floor).
+    fn hold_ac_response(export: &str, rows: usize, ran: &Ran, check: &Check) {
+        let Some(golden) = check.golden else { return };
+        let wanted = golden.complex(export);
+        golden.expect_rows(export, &wanted, rows);
+        let grid: Vec<f64> = (0..ran.table.rows.len()).map(|row| ran.real(row, 0)).collect();
+        golden.same_grid(export, &grid);
+        for (row, (frequency, value)) in wanted.iter().enumerate() {
+            check.assert(&ToleranceContract::AC_MAGNITUDE, "|v(out)|", Coordinate::Frequency(*frequency), value.magnitude(), ran.real(row, 1));
+            if ToleranceContract::phase_applies(value.magnitude()) {
+                check.assert(&ToleranceContract::AC_PHASE, "arg v(out)", Coordinate::Frequency(*frequency), value.phase(), ran.real(row, 2).to_radians());
+            }
+        }
+    }
+
+    /// Every export row has a table row at its time, and the voltages agree.
+    fn hold_transient(export: &str, rows: usize, node: &str, scenario: &Scenario, ran: &Ran, check: &Check) {
+        let Some(golden) = check.golden else { return };
+        let wanted = golden.real(export);
+        golden.expect_rows(export, &wanted, rows);
+        let step = scenario.overrides.print_step.expect("a transient command names its print step");
+        for (time, voltage) in wanted {
+            let row = ran.row_at(time, step).unwrap_or_else(|| panic!("{}: no table row at {time:e} s on {}", check.scenario, check.backend.name()));
+            check.assert(&ToleranceContract::TRAN_VOLTAGE, &format!("v({node})"), Coordinate::Time(time), voltage, ran.real(row, 1));
+        }
+    }
+
+    /// The compiled circuit of the scenario's session, run with the floor `dt_min`, read at the
+    /// export's times.
+    fn hold_floored_transient(export: &str, rows: usize, node: &str, dt_min: f64, scenario: &Scenario, check: &Check) {
+        let (mut session, _build) = scenario.open(check.backend).unwrap_or_else(|failure| panic!("{}: the session does not open on {}: {failure}", scenario.name(), check.backend.name()));
+        let path = format!("{}.{node}", session.top());
+        let id = NodeIdentifier::Anonymous(session.ir().node_at(&path).unwrap_or_else(|| panic!("{}: no node `{path}`", scenario.name())).id().index());
+        let context: Context = session.context().clone();
+        let stop = scenario.overrides.stop.expect("a transient command names its stop time");
+        let mut options = TransientAnalysisOptions::new(stop, scenario.overrides.max_step.expect("a transient command names its step cap"));
+        options.dt_max = options.dt;
+        options.dt_min = dt_min;
+        let circuit = session.circuit().expect("a session holds its circuit until it runs");
+        let result = circuit.transient(options, context).and_then(|mut solver| solver.solve()).unwrap_or_else(|error| panic!("{}: the transient does not solve on {}: {error}", scenario.name(), check.backend.name()));
+        let steps: Vec<_> = result.iter().collect();
+        let waveform = Waveform::new(steps.iter().map(|step| step.time()).collect(), steps.iter().map(|step| step.get_node(&id).unwrap_or_else(|| panic!("{}: no v({node})", scenario.name()))).collect());
+        let Some(golden) = check.golden else { return };
+        let wanted = golden.real(export);
+        golden.expect_rows(export, &wanted, rows);
+        for (time, voltage) in wanted {
+            let actual = waveform.at(time).unwrap_or_else(|| panic!("{}: {time:e} s lies outside the result on {}", scenario.name(), check.backend.name()));
+            check.assert(&ToleranceContract::TRAN_VOLTAGE, &format!("v({node})"), Coordinate::Time(time), voltage, actual);
+        }
+    }
+
+    /// The run fails `E0508` at the step after 1 us, and ngspice said it stopped at its floor.
+    fn hold_step_floor(scenario: &Scenario, check: &Check) {
+        let failure = scenario.try_run(check.backend).err().unwrap_or_else(|| panic!("{}: the step no Newton iteration settles must fail on {}", scenario.name(), check.backend.name()));
+        let text = failure.to_string();
+        assert!(text.contains("E0508"), "{}: {text}", check.backend.name());
+        let time = text.split("at t = ").nth(1).and_then(|rest| rest.split(' ').next()).and_then(|time| time.parse::<f64>().ok()).unwrap_or_else(|| panic!("{}: the time of the failing step is in `{text}`", scenario.name()));
+        assert!((1e-6..1e-6 + 1e-8).contains(&time), "{}: the failing step follows ngspice's 1 us: {text}", check.backend.name());
+        let Some(golden) = check.golden else { return };
+        assert!(golden.said("Timestep too small"), "ngspice stops at the floor:\n{}", golden.captured());
+        check.compared.set(check.compared.get() + 1);
     }
 }
 
 impl Scenario {
-    /// Runs the scenario on every backend that runs it and holds each table to `comparison`
-    /// against ngspice. With the comparison disabled the table is still produced, and the harness
-    /// prints its skip line.
+    /// Runs the scenario on every backend that runs it and holds each run to `comparison`
+    /// against ngspice. With the comparison disabled the run is still made (the harness prints
+    /// its skip line) and nothing is compared.
     fn hold(&self, comparison: &Comparison) {
         let reference = Ngspice::from_environment().run(self.name());
         for backend in self.backends() {
-            let ran = self.run(backend);
-            if let Reference::Golden(golden) = &reference {
-                let check = Check::new(self.name(), golden, backend);
-                comparison.hold(&ran, &check);
-                check.report();
-            }
+            let check = Check::new(self.name(), &reference, backend);
+            comparison.hold(self, &check);
+            check.report();
         }
     }
 }
@@ -193,4 +317,48 @@ fn isrc_r() {
 #[test]
 fn diode_series() {
     Scenario::of("diode_series").hold(&Comparison::OperatingPoint { nodes: &["a", "b"] });
+}
+
+#[test]
+fn diode_iv() {
+    Scenario::of("diode_iv").hold(&Comparison::DcSweep { export: "diode_iv_sweep", rows: 37 });
+}
+
+#[test]
+fn diode_rev() {
+    Scenario::of("diode_rev").hold(&Comparison::DcSweep { export: "diode_rev_sweep", rows: 20 });
+}
+
+#[test]
+fn ac_rc() {
+    Scenario::of("ac_rc").hold(&Comparison::AcResponse { export: "ac_rc_ac", rows: 41 });
+}
+
+#[test]
+fn tran_rc() {
+    Scenario::of("tran_rc").hold(&Comparison::Transient { export: "tran_rc_tran", rows: 100, node: "out" });
+}
+
+#[test]
+fn tran_dq() {
+    Scenario::of("tran_dq").hold(&Comparison::Transient { export: "tran_dq_tran", rows: 100, node: "a" });
+}
+
+#[test]
+fn tran_jump() {
+    // a hard 0 to 1 V step at 1.03 us across 1 nF with the default floor: both complete the run
+    Scenario::of("tran_jump").hold(&Comparison::Transient { export: "tran_jump_tran", rows: 20, node: "top" });
+}
+
+#[test]
+fn tran_corner() {
+    // a 5 ns tanh corner at 1.03 us with a 1 ns floor (ngspice's `delmin=1n`): the command line has
+    // no flag for the floor, so the scenario takes the session's circuit to the library
+    Scenario::of("tran_corner").hold(&Comparison::FlooredTransient { export: "tran_corner_tran", rows: 20, node: "top", dt_min: 1e-9 });
+}
+
+#[test]
+fn tran_floor() {
+    // a node no step can settle after 1 us: ngspice stops with "Timestep too small", piperine fails E0508
+    Scenario::of("tran_floor").hold(&Comparison::StepFloor);
 }
