@@ -8,8 +8,8 @@ mod devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, Condition, Constant, Contribution, Derivative, Drive, Expr, ExprId, FunctionSpec, Hoisted, Inflow, Merge, Reach, ReachedItem,
-    InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, QuantityRole, Reaction, Real, Site, Stmt, StmtId, Target, Terminal,
+    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, Condition, Constant, Contribution, Derivative, Drive, EventSource, Expr, ExprId, FunctionSpec, Hoisted, Inflow, Merge, Reach, ReachedItem,
+    InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, QuantityRole, Event, Reaction, Real, Site, Stmt, StmtId, Target, Terminal,
     ValueType,
 };
 
@@ -692,4 +692,78 @@ fn the_structure_records_print_and_round_trip() {
     let back: Ir = serde_json::from_str(&serde_json::to_string(&ir).expect("serialize")).expect("deserialize");
     assert_eq!(back, ir);
     assert_eq!(back.bodies().next().expect("a body").inflows().len(), 1);
+}
+
+/// A body `Lag` with one param `tol: f64`, an `out` carrier `seen`, and one reaction that commits
+/// what the test builds.
+struct ParamEvents;
+
+impl ParamEvents {
+    fn at() -> Origin {
+        Origin { file: "param_events.msl".into(), line: 2, col: 3 }
+    }
+
+    /// `source` is the event E0 the reaction waits on; `value` builds what it commits to `seen`
+    /// (a carrier of type `seen_ty`).
+    fn ir(source: EventSource, seen_ty: ValueType, value: impl FnOnce(&mut IrBuilder) -> ExprId) -> Ir {
+        let mut b = IrBuilder::new();
+        let origin = Origin { file: "param_events.msl".into(), line: 1, col: 1 };
+        let value = value(&mut b);
+        let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None });
+        let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
+        let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone() });
+        let event = b.event(body, Event { source, guard: None, origin: Self::at() });
+        b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() });
+        let top = b.next_instance_id();
+        let net = b.net(NetSpec { path: "Lag.seen".into(), ty: seen_ty, declared_by: top, init: None, origin: origin.clone() });
+        let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });
+        b.bind_nets(top, vec![net]);
+        b.finish(top)
+    }
+
+    fn fired(b: &mut IrBuilder) -> ExprId {
+        b.expr(Expr::Fired(0), ValueType::Bool, Self::at())
+    }
+
+    fn previous(b: &mut IrBuilder, ty: ValueType) -> ExprId {
+        b.expr(Expr::ParamPrevious(0), ty, Self::at())
+    }
+}
+
+#[test]
+fn a_param_changed_event_prints_and_round_trips() {
+    // `on tol.changed() { seen <- fired(E0); }`
+    let ir = ParamEvents::ir(EventSource::ParamChanged(0), ValueType::Bool, ParamEvents::fired);
+    assert_eq!(ir.check(), vec![], "{}", ir);
+    assert!(ir.to_string().contains("event E0 param_changed tol"), "{}", ir);
+    let body = ir.bodies().next().expect("a body");
+    assert_eq!(body.param_changes(Target::Reaction(0)), vec![0], "the reaction reads the changed byte of `tol`");
+    assert!(body.param_previous_reads(Target::Reaction(0)).is_empty());
+    let back: Ir = serde_json::from_str(&serde_json::to_string(&ir).expect("serialize")).expect("deserialize");
+    assert_eq!(back, ir);
+}
+
+#[test]
+fn a_param_previous_read_is_typed_as_the_param() {
+    // `seen <- tol.prev();` is an `f64`, the param's own type, and the target lists the param.
+    let ir = ParamEvents::ir(EventSource::ParamChanged(0), ValueType::F64, |b| ParamEvents::previous(b, ValueType::F64));
+    assert_eq!(ir.check(), vec![], "{}", ir);
+    assert!(ir.to_string().contains("seen <- tol.prev()"), "{}", ir);
+    let body = ir.bodies().next().expect("a body");
+    assert_eq!(body.param_previous_reads(Target::Reaction(0)), vec![0]);
+    assert!(body.param_changes(Target::Reaction(0)).is_empty());
+    // A param is known: a flagged `prev()` is not what the form gives.
+    let flagged = ParamEvents::ir(EventSource::ParamChanged(0), ValueType::F64, |b| ParamEvents::previous(b, ValueType::Flagged(Box::new(ValueType::F64))));
+    assert!(Switching::names(&flagged.check(), "expression is typed flagged<f64>, its form gives f64"), "{:?}", flagged.check());
+}
+
+#[test]
+fn a_param_event_out_of_range_is_broken() {
+    let event = ParamEvents::ir(EventSource::ParamChanged(3), ValueType::Bool, ParamEvents::fired);
+    assert!(Switching::names(&event.check(), "`changed` of param 3, out of range (1 params)"), "{:?}", event.check());
+    let read = ParamEvents::ir(EventSource::ParamChanged(0), ValueType::F64, |b| {
+        b.expr(Expr::ParamPrevious(2), ValueType::F64, ParamEvents::at())
+    });
+    assert!(Switching::names(&read.check(), "previous value of param 2, out of range (1 params)"), "{:?}", read.check());
 }

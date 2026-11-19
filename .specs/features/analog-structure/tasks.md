@@ -312,9 +312,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run irstruct`: `a_param_changed_event_prints_and_round_trips`, `a_param_previous_read_is_typed_as_the_param`, `a_param_event_out_of_range_is_broken`
-- [ ] Gate check passes: Build
-- [ ] Test count: the 3 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run irstruct`: `a_param_changed_event_prints_and_round_trips`, `a_param_previous_read_is_typed_as_the_param`, `a_param_event_out_of_range_is_broken`
+- [x] Gate check passes: Build
+- [x] Test count: the 3 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: build
@@ -1251,7 +1251,8 @@ Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_print
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** (B1, IR phase; implementation choices the design left open) `Terminal::Own(k)` sits at slot `k` of a `Child::nodes` and names a `Signal` node of the callee; it prints `own:<name>` in the tree and `own<k>` in the arenas. `Body::contributions()` is `contributions.rs` (`Contribution`, `Condition { expr, holds }`); each shared expression or statement is walked once. A contribution under a non-`Constant` condition makes its branch non-affine; the condition's sources join the branch's `Flow`/`Charge` targets. `Ir::check` treats every `Switch` branch as driven (a flow probe reads its private flow). `Site::enabled` is required exactly when a `limit` is read under a condition (`ctx.conditional`); an `ac_stim` needs none. `Target::Limit(k)` also reads `enabled`, `Target::BoundStep(k)` also reads `when`. `Body::param_changes(target)` lists the params whose `ParamChanged` event `target` reads through `Expr::Fired` (the IR query, sorted); `param_previous_reads(target)` lists `Expr::ParamPrevious`. `Reach::child` indexes `instance.children` in the same order as `BodyData::children`; `Ir::check` requires a reached node or net to equal the child instance's. `IrBuilder::bind_reached_net` replaces a net `bind_nets` already put at that slot. `NodeRole::Reached`/`CarrierRole::Reached` bodies get a placeholder (`Ground`, a fresh net) from `place.rs` until T30. Plan, printer and interpreter arms for the new forms fail loud (`panic!` in `piperine-plan` and `print/analog.rs`, `Error::Unsupported` in the value printer) until T8 to T15 give them meaning: no elaborator emits a new form yet. Cross-lane note for T30: `piperine-api/src/metadata.rs:85` lists every non-`Signal` carrier as a port, so a `Reached` carrier would read as `out`.
+
 **Contract (T1):** `contract.md`. Anchors moved by 1-2 lines only; `Frame` is in `carriers.rs`, `no_locals` in `compound.rs`/`drives.rs`. host-ii added `piperine-api/src/params.rs` (`Params`, `Derive`), `piperine-plan/src/derive.rs` (`DerivePlan`), `Context.nodeset`; solver-hygiene V1 (`TermPlan::abstol`) is merged. **Facts 1 and 2 do not hold**: a param pin's `init` and a before-run binding are committed at `(0, 0)` from a zeroed store, so `CHANGED` reads true at `(0, 0)` and `PREVIOUS` reads 0.0 until a later write; T33 must guard the start microstep (reported to the orchestrator before phase 5). Fact 8: the `limit`/`ac_stim` carrier refusal is in `piperine-transpile/src/print/analog.rs:583`, asserted by `tests/reject.rs`; T21 rewrites it.
 **Dispatched:** B1 - Sonnet worker, 2026-11-18 (host-ii merged 1a3d69dc).
 **Walked:** not applicable: no screen; every story's Independent Test is a run from source or a test target named in `## Checks`.

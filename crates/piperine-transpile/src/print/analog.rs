@@ -259,6 +259,7 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Fired(_) => {}
                 Expr::Derivative(_) => panic!("the rate of a derivative site has no source in the plan yet"),
+                Expr::ParamPrevious(_) => panic!("the previous value of a param has no source in the plan yet"),
                 Expr::Flow { branch } => {
                     sources.insert(Source::BranchFlow(*branch));
                 }

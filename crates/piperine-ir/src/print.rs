@@ -402,6 +402,10 @@ impl<'a> Printer<'a> {
             let mut text = format!("event E{k} ");
             match &event.source {
                 EventSource::Changed(c) => text.push_str(&format!("changed {}", Printer::carrier(scope, *c))),
+                EventSource::ParamChanged(p) => {
+                    let name = scope.params.get(*p as usize).map_or(format!("<bad param {p}>"), |param| Printer::name(&param.name));
+                    text.push_str(&format!("param_changed {name}"));
+                }
                 EventSource::Cross { e, ttol, etol } => {
                     text.push_str("cross ");
                     text.push_str(&self.render(scope, Piece::Expr(*e)));
@@ -772,6 +776,7 @@ impl<'a> Printer<'a> {
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
             Expr::Derivative(k) => next.push(text(format!("rate(D{k})"))),
+            Expr::ParamPrevious(i) => next.push(text(format!("{}.prev()", scope.params.get(*i as usize).map_or(format!("<bad param {i}>"), |p| Printer::name(&p.name))))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
             Expr::Level { value, index, part } => {
                 let name = if *part == LevelPart::Is { "level_is" } else { "level_value" };
@@ -867,7 +872,7 @@ impl<'a> Printer<'a> {
             Expr::Bool(_) => Some(ValueType::Bool),
             Expr::Unit => Some(ValueType::Unit),
             Expr::Local(i) => scope.locals.get(*i as usize).map(|l| l.ty.clone()),
-            Expr::Param(i) => scope.params.get(*i as usize).map(|p| p.ty.clone()),
+            Expr::Param(i) | Expr::ParamPrevious(i) => scope.params.get(*i as usize).map(|p| p.ty.clone()),
             Expr::Unary { op: UnaryOp::Neg, .. } => Some(ValueType::F64),
             Expr::Unary { op: UnaryOp::Not, .. } => Some(ValueType::Bool),
             Expr::Binary { op: BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div, .. } => Some(ValueType::F64),
@@ -952,6 +957,7 @@ impl<'a> Printer<'a> {
                     .iter()
                     .map(|ev| match &ev.source {
                         EventSource::Changed(c) => format!("(changed c{c} {})", opt(ev.guard)),
+                        EventSource::ParamChanged(p) => format!("(param_changed p{p} {})", opt(ev.guard)),
                         EventSource::Cross { e, ttol: None, etol: None } => format!("(cross e{} {})", e.0, opt(ev.guard)),
                         EventSource::Cross { e, ttol, etol } => format!("(cross e{} {} ttol {} etol {})", e.0, opt(ev.guard), opt(*ttol), opt(*etol)),
                         EventSource::At(e) => format!("(at e{} {})", e.0, opt(ev.guard)),
@@ -1062,6 +1068,7 @@ impl<'a> Printer<'a> {
             Expr::Flow { branch } => format!("flow b{branch}"),
             Expr::Previous(i) => format!("previous {i}"),
             Expr::Derivative(k) => format!("derivative D{k}"),
+            Expr::ParamPrevious(i) => format!("param_previous {i}"),
             Expr::Fired(i) => format!("fired {i}"),
             Expr::Level { value, index, part } => format!("{} {} {}", if *part == LevelPart::Is { "level_is" } else { "level_value" }, e(value), e(index)),
             Expr::Merge { a, b } => format!("merge {} {}", e(a), e(b)),

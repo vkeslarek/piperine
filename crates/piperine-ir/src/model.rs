@@ -222,6 +222,9 @@ pub enum EventSource {
     /// `at(t)`: simulation time `t`, an `f64` that may be unknown and reads no probe. The event
     /// fires once, when the clock reaches `t`; a later change of what `t` reads re-arms it.
     At(ExprId),
+    /// `p.changed()` of a param `p` of the body (§5.3.1): fires when the param's pin changes, a
+    /// host `set` during the run (a binding before the run is not a change).
+    ParamChanged(u32),
 }
 
 /// `on <events> { … }`: statements run when any of the events fires. Its `let`s bind `locals`,
@@ -423,6 +426,9 @@ pub enum Expr {
     /// `c.prev()`: carrier `c`'s value before its most recent change (§3.3). Its type is
     /// `Flagged`, as a read of the carrier: unknown until the carrier has changed once.
     Previous(u32),
+    /// `p.prev()` of a param `p` of the body (§5.3.1): the value `p` held before its most recent
+    /// change, of the param's own type; a param is known, so it is never flagged.
+    ParamPrevious(u32),
     /// The rate of the derivative site `k` of the body (`Body::derivatives`): an `f64`, read in
     /// the `analog` block, a body `let`, an event argument or a reaction.
     Derivative(u32),

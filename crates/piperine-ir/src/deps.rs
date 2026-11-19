@@ -127,6 +127,27 @@ impl<'a> Body<'a> {
         self.sources_of(target).previous.iter().copied().collect()
     }
 
+    /// The params whose previous value (`Expr::ParamPrevious`) `target` reads, by index
+    /// (`Body::params`), sorted, through locals and function calls.
+    pub fn param_previous_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).param_previous.iter().copied().collect()
+    }
+
+    /// The params whose `changed` event (`EventSource::ParamChanged`) `target` reads through
+    /// `Expr::Fired`, by index (`Body::params`), sorted and without repeats.
+    pub fn param_changes(&self, target: Target) -> Vec<u32> {
+        let events = self.events();
+        let params: BTreeSet<u32> = self
+            .fired_reads(target)
+            .into_iter()
+            .filter_map(|e| match events.get(e as usize).map(|event| &event.source) {
+                Some(EventSource::ParamChanged(p)) => Some(*p),
+                _ => None,
+            })
+            .collect();
+        params.into_iter().collect()
+    }
+
     /// The derivative sites whose rate (`Expr::Derivative`) `target` reads, by index
     /// (`Body::derivatives`), sorted, through locals and function calls.
     pub fn derivative_reads(&self, target: Target) -> Vec<u32> {
@@ -249,6 +270,8 @@ struct Sources {
     unknown_control: bool,
     /// The derivative sites whose rate is read (`Expr::Derivative`).
     derivatives: BTreeSet<u32>,
+    /// The params whose previous value is read (`Expr::ParamPrevious`).
+    param_previous: BTreeSet<u32>,
 }
 
 impl Sources {
@@ -264,6 +287,7 @@ impl Sources {
         self.fired.extend(&other.fired);
         self.unknown_control |= other.unknown_control;
         self.derivatives.extend(&other.derivatives);
+        self.param_previous.extend(&other.param_previous);
     }
 
     fn to_deps(&self) -> Deps {
@@ -457,19 +481,19 @@ impl<'a> Walk<'a> {
             };
             crosses.push(one(match event.source {
                 EventSource::Cross { e, .. } => Some(e),
-                EventSource::Changed(_) | EventSource::At(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
             }));
             ttols.push(one(match event.source {
                 EventSource::Cross { ttol, .. } => ttol,
-                EventSource::Changed(_) | EventSource::At(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
             }));
             etols.push(one(match event.source {
                 EventSource::Cross { etol, .. } => etol,
-                EventSource::Changed(_) | EventSource::At(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
             }));
             ats.push(one(match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) => None,
             }));
             guards.push(one(event.guard));
         }
@@ -769,6 +793,14 @@ impl<'a> Walk<'a> {
                 sources.flows.insert(*branch);
                 return self.done(id, Value::of(sources, Class::Affine));
             }
+            Expr::ParamPrevious(p) => {
+                if !in_body {
+                    self.refuse(id, "previous-value read of a param outside a body");
+                }
+                let mut sources = Sources::default();
+                sources.param_previous.insert(*p);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
             Expr::Derivative(k) => {
                 if !in_body {
                     self.refuse(id, "derivative read outside a body");
@@ -919,7 +951,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

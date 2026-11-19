@@ -464,7 +464,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
             Expr::KnownOr { value, default } => exprs.extend([*value, *default]),
             Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => exprs.extend([*a, *b]),
@@ -835,7 +835,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) => {}
+                Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
@@ -894,7 +894,7 @@ impl<'a> Checker<'a> {
         for (k, event) in body.events.iter().enumerate() {
             let at = match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) => None,
             };
             for e in event.guard.into_iter().chain(at) {
                 positions.push((format!("{item} event {k}"), event.origin.clone(), e));
@@ -984,6 +984,11 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
+                if let EventSource::ParamChanged(p) = event.source {
+                    if p as usize >= body.params.len() {
+                        self.report(format!("{item} event {k}"), event.origin.clone(), format!("`changed` of param {p}, out of range ({} params)", body.params.len()));
+                    }
+                }
                 if let EventSource::At(e) = event.source {
                     if let Some(ty) = self.ty(e).filter(|t| *Typing::base(t) != ValueType::F64) {
                         self.report(format!("{item} event {k}"), event.origin.clone(), format!("an `at` waits for a time, an `f64`, found {ty}"));
@@ -1015,7 +1020,7 @@ impl<'a> Checker<'a> {
                 let cross = match e.source {
                     EventSource::Cross { e: x, ttol, etol } => [Some(x), ttol, etol],
                     EventSource::At(x) => [Some(x), None, None],
-                    EventSource::Changed(_) => [None; 3],
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) => [None; 3],
                 };
                 cross.into_iter().flatten().chain(e.guard)
             }));
@@ -1184,7 +1189,7 @@ impl<'a> Checker<'a> {
                         }
                     }
                     EventSource::At(e) => self.walk(&mut w, Task::Expr(e, Ctx::top())),
-                    EventSource::Changed(_) => {}
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) => {}
                 }
                 if let Some(guard) = event.guard {
                     self.carried(&w, guard, &ValueType::Bool, "the guard of an event");
@@ -1790,6 +1795,19 @@ impl<'a> Checker<'a> {
                     self.typed(w, &origin, ty, want, "`cast`");
                 }
                 next.push(Task::Expr(*expr, ctx));
+            }
+            Expr::ParamPrevious(p) => {
+                if first {
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "the previous value of a param outside a body".to_string());
+                    } else {
+                        match w.owner.params.get(*p as usize) {
+                            // A param is known: its previous value has its type, never flagged.
+                            Some(param) => self.own(w, &origin, ty, &param.clone()),
+                            None => self.wrong(w, origin, format!("previous value of param {p}, out of range ({} params)", w.owner.params.len())),
+                        }
+                    }
+                }
             }
             Expr::Derivative(k) => {
                 if first {
