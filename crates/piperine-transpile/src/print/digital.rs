@@ -41,6 +41,7 @@ impl<'a> DigitalPrinter<'a> {
             carriers: self.body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
             flows: Vec::new(),
             derivatives: (0..self.body.derivatives().len() as u32).map(AnalogPrinter::derivative_pin).collect(),
+            param_previous: (0..self.body.params().len() as u32).map(|p| self.names.read_name(Source::ParamPrevious(p))).collect(),
             previous: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "previous")).collect(),
         }
     }
@@ -100,15 +101,19 @@ impl<'a> DigitalPrinter<'a> {
                 Some(carrier) => pin(&carrier.ty)?,
                 None => return Ok(None),
             },
-            Source::CarrierChanged(_) | Source::DelayedChanged(_) | Source::Crossed(_) | Source::Timer(_) | Source::Fired(_) => {
-                format!("let {name} = {cx}.bool({i});")
-            }
+            Source::CarrierChanged(_)
+            | Source::DelayedChanged(_)
+            | Source::Crossed(_)
+            | Source::Timer(_)
+            | Source::Fired(_)
+            | Source::ParamChanged(_) => format!("let {name} = {cx}.bool({i});"),
             Source::Node(_) | Source::Derivative(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq | Source::Resolution => {
                 format!("let {name} = {cx}.f64({i});")
             }
             // abi.md §4.2: `STATIC` is one `BOOL` byte
             Source::Static | Source::Analysis(_) => format!("let {name} = {cx}.bool({i});"),
-            Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
+            // a param's previous bytes are in the param's own layout (abi.md §4.1)
+            Source::Param(p) | Source::ParamPrevious(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => {
                     let (rust, zero) = (values.type_of(ty)?, ValuePrinter::zero(ty));
@@ -116,8 +121,6 @@ impl<'a> DigitalPrinter<'a> {
                 }
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
-            // T13 decodes a param's previous bytes and changed byte
-            Source::ParamPrevious(_) | Source::ParamChanged(_) => return Err(self.unsupported("a param's previous value or changed byte")),
             Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
                 return Ok(None);
             }
@@ -201,7 +204,10 @@ impl<'a> DigitalPrinter<'a> {
                     EventSource::Changed(c) => {
                         (self.names.read_name(Source::CarrierChanged(c)), format!("carrier {} changed", self.carrier_name(c)))
                     }
-                    EventSource::ParamChanged(_) => return Err(self.unsupported(&format!("the changed event {e} of a param"))),
+                    EventSource::ParamChanged(p) => {
+                        let name = self.body.params().get(p as usize).map_or_else(|| format!("param{p}"), |x| x.name.clone());
+                        (self.names.read_name(Source::ParamChanged(p)), format!("param {name} changed"))
+                    }
                     EventSource::Cross { .. } => (self.names.read_name(Source::Crossed(e)), format!("its crossing fired (event {e})")),
                     // only a guarded timer has an event function: it gates the timer's own pin
                     EventSource::At(_) => (self.names.read_name(Source::Timer(e)), format!("its timer fired (event {e})")),

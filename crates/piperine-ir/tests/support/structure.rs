@@ -5,8 +5,8 @@
 
 use crate::devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Derivative, Event, EventSource, Expr, ExprId, InstanceSpec,
-    Ir, IrBuilder, NetSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Reaction, Real, Site, Stmt, StmtId, Terminal, ValueType,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Derivative, Drive, Event, EventSource, Expr, ExprId, InstanceSpec,
+    Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Reaction, Real, Site, Stmt, StmtId, Terminal, ValueType,
 };
 
 /// What a test writes into the body `Sw` that `Switching` builds.
@@ -16,6 +16,8 @@ pub struct Written {
     pub derivatives: Vec<Derivative>,
     pub limits: Vec<Site>,
     pub stims: Vec<Site>,
+    /// The body's locals: the parameters of a `limit` closure.
+    pub locals: Vec<Local>,
 }
 
 /// One body `Sw(a)` with the branch `(a, gnd)` of a given kind, one param `tol: f64`, a `Bool`
@@ -74,6 +76,12 @@ impl Switching {
         Derivative { name: "q".into(), state, abstol, origin: Self::at() }
     }
 
+    /// `v(a, gnd) <op> edge`, a `bool`.
+    pub fn compare(b: &mut IrBuilder, op: BinaryOp, edge: f64) -> ExprId {
+        let (probe, edge) = (Self::probe(b), Self::ex(b).real(edge));
+        Self::ex(b).binary(op, probe, edge)
+    }
+
     /// `v(a, gnd)`.
     pub fn probe(b: &mut IrBuilder) -> ExprId {
         Self::ex(b).probe(Terminal::Node(0), Terminal::Ground)
@@ -84,7 +92,7 @@ impl Switching {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
-        let Written { analog, derivatives, limits, stims } = write(&mut b);
+        let Written { analog, derivatives, limits, stims, locals } = write(&mut b);
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec {
             name: "Sw".into(),
@@ -94,7 +102,7 @@ impl Switching {
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind }],
             limits,
             stims,
-            locals: vec![],
+            locals,
             analog: Some(analog),
             children: vec![],
         });
@@ -116,6 +124,24 @@ impl Switching {
     pub fn on_the_carrier(b: &mut IrBuilder) -> Written {
         let (cond, potential, flow) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
         Written { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![flow])], ..Written::default() }
+    }
+
+    /// The two `f64` locals `new` and `old` that `halving_limit` closes over.
+    pub fn limit_locals() -> Vec<Local> {
+        ["new", "old"].iter().map(|name| Local { name: (*name).into(), ty: ValueType::F64 }).collect()
+    }
+
+    /// `limit(v(a, gnd), |new, old| old + (new - old) * 0.5)` as site 0, over the locals of
+    /// `limit_locals`: it moves half way from the held value to the proposed one.
+    pub fn halving_limit(b: &mut IrBuilder) -> ExprId {
+        let x = Self::probe(b);
+        let mut e = Self::ex(b);
+        let (new, old, held, half) = (e.local(0), e.local(1), e.local(1), e.real(0.5));
+        let step = e.binary(BinaryOp::Sub, new, old);
+        let scaled = e.binary(BinaryOp::Mul, step, half);
+        let moved = e.binary(BinaryOp::Add, held, scaled);
+        let closure = e.closure(vec![0, 1], moved);
+        b.expr(Expr::Limit { site: 0, x, f: closure, seed: None }, ValueType::F64, Self::at())
     }
 
     /// `limit(v(a, gnd), |..| 0.0)` as site 0.
@@ -148,6 +174,25 @@ impl ParamEvents {
         b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() });
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: seen_ty, declared_by: top, init: None, origin: origin.clone() });
+        let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });
+        b.bind_nets(top, vec![net]);
+        let ir = b.finish(top);
+        assert_eq!(ir.check(), vec![], "the fixture passes check(): {ir}");
+        ir
+    }
+
+    /// `Lag` with the drive `seen = tol.prev();` and no event: the value a drive writes is the
+    /// previous value of the param `tol`.
+    pub fn previous_drive() -> Ir {
+        let mut b = IrBuilder::new();
+        let origin = Origin { file: "param_events.msl".into(), line: 1, col: 1 };
+        let value = b.expr(Expr::ParamPrevious(0), ValueType::F64, Self::at());
+        let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
+        let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::F64, role: CarrierRole::Out, init: None, origin: origin.clone() });
+        b.drive(body, Drive { carrier: 0, value, after: None, origin: Self::at() });
+        let top = b.next_instance_id();
+        let net = b.net(NetSpec { path: "Lag.seen".into(), ty: ValueType::F64, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });
         b.bind_nets(top, vec![net]);
         let ir = b.finish(top);

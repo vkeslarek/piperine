@@ -447,9 +447,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run tstruct`: `a_disabled_limit_writes_its_last_value`, `a_disabled_cap_writes_infinity`, `a_param_change_fires_its_event`, `a_param_previous_decodes_its_previous_bytes`
-- [ ] Gate check passes: Full (`Run tstruct`, `cargo test -p piperine-transpile`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run tstruct`: `a_disabled_limit_writes_its_last_value`, `a_disabled_cap_writes_infinity`, `a_param_change_fires_its_event`, `a_param_previous_decodes_its_previous_bytes`
+- [x] Gate check passes: Full (`Run tstruct`, `cargo test -p piperine-transpile`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

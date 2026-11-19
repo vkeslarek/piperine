@@ -10,11 +10,17 @@
 //! from the seed and falls below it is raised to the seed. `LIMITED = f(x, old)`, with `x` the
 //! value of `PROPOSED`. The values of `Dual` arithmetic are the `f64` operations themselves, so
 //! the two runs agree on every value they share.
+//!
+//! A `limit` under a condition has the site's `enabled` (§14.7.4, analog-structure AS-06): a third
+//! block, `<site>_limit_enabled_block`, evaluates it over `f64`, and when it is false the limiter
+//! does not run: `PROPOSED = LIMITED = LAST` and every partial is 0, so the solver's veto sees no
+//! gap and the held value stays (abi.md A3, a `limit` not evaluated).
 
 use piperine_ir::{Expr, ExprId};
 use piperine_plan::{Mode, Source, Target};
 
 use crate::Error;
+use crate::print::site::Guard;
 use crate::print::{AnalogPrinter, Text, ValuePrinter};
 
 /// Where a `limit` site sits: its top-level statement and its three arguments.
@@ -26,6 +32,24 @@ struct Site {
 }
 
 impl<'a> AnalogPrinter<'a> {
+    /// The lines of a `limit` that does not run: both writes take `last`, every partial is 0, and
+    /// the function returns.
+    fn disabled_limit(&self, f: &piperine_plan::FunctionPlan, last: &str, names: &[String]) -> Result<Vec<String>, Error> {
+        let mut lines = Vec::new();
+        for (j, w) in f.writes.iter().enumerate() {
+            match w {
+                Target::Proposed(_) | Target::Limited(_) => lines.push(format!("cx_.set({j}, {last});")),
+                other => return Err(self.unsupported(&format!("the write {other:?} of a disabled limit"))),
+            }
+        }
+        for (p, (w, slot)) in f.partials.iter().enumerate() {
+            lines.push(format!("// partial {p}: d {} / d {}, 0 for a limit that did not run", self.write_name(f.writes[*w]), names[*slot]));
+            lines.push(format!("if cx_.wanted({p}) {{\n    cx_.jac()[{p}] = 0.0;\n}}"));
+        }
+        lines.push("return Ok(());".to_string());
+        Ok(lines)
+    }
+
     /// The site of `limit` `k`: the first top-level statement that holds it.
     fn limit_site(&self, k: u32) -> Option<Site> {
         let block = self.body.analog().unwrap_or(&[]);
@@ -79,14 +103,11 @@ impl<'a> AnalogPrinter<'a> {
 
         let mut t = Text::new();
         // <site>_limit_block
-        let params: Vec<String> = reads
-            .iter()
-            .map(|(_, s)| format!("{}: {}", self.read_name(*s), if self.is_bool(*s) { "bool" } else { "R" }))
-            .collect();
+        let params = self.block_params(&reads);
         let site_origin = self.body.limits().get(site_index as usize).map_or_else(|| self.body.origin(), |s| &s.origin);
         let returns = if site.seed.is_some() { "(R, impl Fn(R, R) -> R, R)" } else { "(R, impl Fn(R, R) -> R)" };
         t.comment(&format!("{}.analog, `limit` site `{name}`: its input, its function and its seed", self.body.name()), site_origin);
-        t.line(&format!("fn {name}_limit_block<R: Real>({}) -> {returns} {{", params.join(", ")));
+        t.line(&format!("fn {name}_limit_block<R: Real>({}) -> {returns} {{", params));
         let mut lines = Vec::new();
         for id in &slice.stmts {
             lines.push(self.values.stmt(*id)?);
@@ -104,6 +125,14 @@ impl<'a> AnalogPrinter<'a> {
         t.line("}");
         t.line("");
 
+        // <site>_limit_enabled_block, when the site is read under a condition
+        let enabled = self.body.limits().get(site_index as usize).and_then(|s| s.enabled);
+        let guard = enabled.map(|condition| Guard { function: f, mode, stmt: site.stmt, condition });
+        let enabled_reads = match &guard {
+            Some(guard) => self.guard_block(&mut t, &format!("{name}_limit_enabled"), site_origin, guard)?,
+            None => Vec::new(),
+        };
+
         // <site>_limit
         let writes: Vec<String> = f.writes.iter().map(|w| self.write_name(*w)).collect();
         t.line(&format!(
@@ -114,7 +143,11 @@ impl<'a> AnalogPrinter<'a> {
         ));
         t.line(&format!("fn {name}_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
         let mut body = Vec::new();
-        for (i, s) in &reads {
+        // every read either block uses, in the plan's order
+        let mut bound: Vec<(usize, Source)> = reads.iter().chain(&enabled_reads).copied().collect();
+        bound.sort_by_key(|(i, _)| *i);
+        bound.dedup_by_key(|(i, _)| *i);
+        for (i, s) in &bound {
             let get = if self.is_bool(*s) { "bool" } else { "f64" };
             body.push(format!("let {} = cx_.{get}({i});", names[*i]));
         }
@@ -122,6 +155,13 @@ impl<'a> AnalogPrinter<'a> {
         body.push(format!("let {last} = cx_.f64({});", at(Source::LimitLast(site_index)).unwrap_or_default()));
         body.push(format!("let {age} = cx_.u8({});", at(Source::LimitAge(site_index)).unwrap_or_default()));
         body.push(format!("let {is_static} = cx_.bool({});", at(Source::Static).unwrap_or_default()));
+        if enabled.is_some() {
+            let args: Vec<String> = enabled_reads.iter().map(|(i, _)| names[*i].clone()).collect();
+            body.push("// §14.7.4: a `limit` whose condition does not hold does not run: PROPOSED = LIMITED = LAST".to_string());
+            body.push(format!("if !Self::{name}_limit_enabled_block::<f64>({}) {{", args.join(", ")));
+            body.extend(self.disabled_limit(f, last, &names)?.into_iter().map(|line| format!("    {line}")));
+            body.push("}".to_string());
+        }
         let dual: Vec<String> = reads
             .iter()
             .map(|(i, s)| {

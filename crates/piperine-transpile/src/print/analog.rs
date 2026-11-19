@@ -57,6 +57,7 @@ impl<'a> AnalogPrinter<'a> {
             carriers: body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
             flows: (0..body.branches().len() as u32).map(|b| Self::flow_name(b)).collect(),
             derivatives: (0..body.derivatives().len() as u32).map(Self::derivative_pin).collect(),
+            param_previous: (0..body.params().len() as u32).map(|p| Self::param_part(body, p, "previous")).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
         };
         let sums = ContributionSums::needed(body).then(|| ContributionSums::of(body));
@@ -95,10 +96,8 @@ impl<'a> AnalogPrinter<'a> {
             Source::Carrier(c) => {
                 self.body.carriers().get(c as usize).map_or_else(|| Text::generated(&format!("carrier{c}")), |x| Text::ident(&x.name))
             }
-            Source::ParamPrevious(p) | Source::ParamChanged(p) => {
-                let name = self.body.params().get(p as usize).map_or_else(|| format!("param{p}"), |x| x.name.clone());
-                Text::generated(&format!("{name}_{}", if matches!(s, Source::ParamChanged(_)) { "changed" } else { "previous" }))
-            }
+            Source::ParamPrevious(p) => Self::param_part(self.body, p, "previous"),
+            Source::ParamChanged(p) => Self::param_part(self.body, p, "changed"),
             Source::CarrierChanged(c) => Self::carrier_part(self.body, c, "changed"),
             Source::CarrierPrevious(c) => Self::carrier_part(self.body, c, "previous"),
             Source::Delayed(k) | Source::DelayedChanged(k) => {
@@ -132,6 +131,12 @@ impl<'a> AnalogPrinter<'a> {
     /// The variable of derivative site `k`'s rate pin: `d0_rate_`.
     pub(crate) fn derivative_pin(k: u32) -> String {
         Text::generated(&format!("d{k}_rate"))
+    }
+
+    /// The variable of a part of param `p`'s pin: `tol_previous_`, `tol_changed_`.
+    pub(crate) fn param_part(body: Body<'_>, p: u32, part: &str) -> String {
+        let name = body.params().get(p as usize).map_or_else(|| format!("param{p}"), |x| x.name.clone());
+        Text::generated(&format!("{name}_{part}"))
     }
 
     /// The variable of branch `b`'s flow pin: `b0_flow_`.
@@ -320,7 +325,7 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn is_bool(&self, s: Source) -> bool {
         match s {
             Source::Static | Source::Analysis(_) => true,
-            Source::Param(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty == ValueType::Bool),
+            Source::Param(p) | Source::ParamPrevious(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty == ValueType::Bool),
             _ => false,
         }
     }
@@ -329,7 +334,7 @@ impl<'a> AnalogPrinter<'a> {
     /// `Dual`): a bool or integer param, a carrier, `analysis(Static)`.
     pub(crate) fn is_plain(&self, s: Source) -> bool {
         match s {
-            Source::Param(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
+            Source::Param(p) | Source::ParamPrevious(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
             Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) => true,
             _ => false,
         }
@@ -339,7 +344,7 @@ impl<'a> AnalogPrinter<'a> {
     /// an integer, or for a carrier the `rt::Flagged<T>` its pin decodes to.
     pub(crate) fn block_type(&self, s: Source) -> Result<String, Error> {
         match s {
-            Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
+            Source::Param(p) | Source::ParamPrevious(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ty) if *ty != ValueType::F64 => self.values.type_of(ty),
                 _ => Ok("R".to_string()),
             },
@@ -358,7 +363,7 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn decode(&self, cx: &str, i: usize, s: Source) -> Result<String, Error> {
         let name = self.read_name(s);
         Ok(match s {
-            Source::Param(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
+            Source::Param(p) | Source::ParamPrevious(p) => match self.body.params().get(p as usize).map(|x| &x.ty) {
                 Some(ValueType::Bool) => format!("let {name} = {cx}.bool({i});"),
                 Some(ty @ (ValueType::UInt(_) | ValueType::Int(_))) => format!(
                     "let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or({});",

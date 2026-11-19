@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use piperine_abi::caller::{CallError, Handle};
 use piperine_abi::device::{Access, cell_lens};
-use piperine_ir::{BinaryOp, BodyId, BranchKind, Ir, IrBuilder, QuantityRole};
+use piperine_ir::{BinaryOp, BodyId, BranchKind, Ir, IrBuilder, Operator, QuantityRole, Site, Stmt, ValueType};
 use piperine_plan::Modules;
 use piperine_transpile::{Settings, Transpiler};
 
@@ -21,7 +21,7 @@ mod devices;
 #[path = "../../piperine-ir/tests/support/structure.rs"]
 mod structure;
 
-use structure::{Switching, Written};
+use structure::{ParamEvents, Switching, Written};
 
 /// One body of a design compiled with `rustc` and instantiated at its defaults. The cache
 /// directory lives as long as this does.
@@ -33,12 +33,17 @@ struct Device {
 impl Device {
     /// The body `Sw` of `ir`, compiled.
     fn of(ir: Ir) -> Device {
+        Device::of_body(ir, "Sw")
+    }
+
+    /// The body `name` of `ir`, compiled.
+    fn of_body(ir: Ir, name: &str) -> Device {
         let cache = tempfile::tempdir().expect("a temp dir");
         let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
         let ir = Arc::new(ir);
-        let body: BodyId = ir.bodies().find(|b| b.name() == "Sw").expect("the body Sw").id();
+        let body: BodyId = ir.bodies().find(|b| b.name() == name).unwrap_or_else(|| panic!("no body {name}")).id();
         let compiled = Transpiler::new(ir).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
-        let module = Modules::module(&compiled, body).expect("Sw has a module");
+        let module = Modules::module(&compiled, body).unwrap_or_else(|| panic!("{name} has a module"));
         let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create: {e}"));
         Device { handle, _cache: cache }
     }
@@ -51,6 +56,12 @@ impl Device {
 
     /// `run`, and the partials the function declares, in the shape's order.
     fn run_with_partials(&self, name: &str, reads: &[&[u8]]) -> Result<(Vec<f64>, Vec<f64>), CallError> {
+        let (cells, jac) = self.run_cells(name, reads)?;
+        Ok((cells.iter().map(|c| f64::from_le_bytes(c[..8].try_into().expect("an f64 cell"))).collect(), jac))
+    }
+
+    /// `run`, with each write as the bytes of its cell, and the partials.
+    fn run_cells(&self, name: &str, reads: &[&[u8]]) -> Result<(Vec<Vec<u8>>, Vec<f64>), CallError> {
         let shape = self.handle.shape();
         let k = shape.functions.iter().position(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no function `{name}`"));
         let f = shape.functions.get(k).expect("the function");
@@ -60,7 +71,7 @@ impl Device {
         let seed = vec![1u8; f.partials.len()];
         let mut jac = vec![0.0; f.partials.len()];
         self.handle.eval(k as u32, reads, &mut writes, &seed, &mut jac)?;
-        Ok((cells.iter().map(|c| f64::from_le_bytes(c[..8].try_into().expect("an f64 cell"))).collect(), jac))
+        Ok((cells, jac))
     }
 }
 
@@ -207,4 +218,66 @@ fn a_derivative_abstol_function_writes_its_pin() {
     // and writes `0.5` to the site's `abstol` pin.
     let device = Device::of(rate_in_a_flow(false, true));
     assert_eq!(device.run("d0.abstol", &[&Bytes::real(0.25)]).expect("d0.abstol"), [0.5]);
+}
+
+#[test]
+fn a_disabled_limit_writes_its_last_value() {
+    // `if v(a, gnd) > 0.5 { i(a, gnd) +> limit(v(a, gnd), |new, old| old + (new - old) * 0.5); }`
+    // with the site's `enabled` the same condition (§14.7.4). `limit:lim` reads `a`, `LAST`, `AGE`
+    // and `STATIC` and writes `PROPOSED` and `LIMITED`. With `LAST = 0.75`, `AGE = 1`, not static:
+    //   `a = 1.0`, enabled: `PROPOSED = 1.0`, `LIMITED = 0.75 + (1.0 - 0.75) * 0.5 = 0.875`, and the
+    //   partial of `PROPOSED` against `a` is 1;
+    //   `a = 0.25`, not enabled: the limiter does not run, both writes are `LAST = 0.75`, the
+    //   partial is 0 (the held value stays, abi.md A3).
+    let ir = Switching::ir(BranchKind::Flow, |b| {
+        let read = Switching::halving_limit(b);
+        let (cond, enabled) = (Switching::compare(b, BinaryOp::Gt, 0.5), Switching::compare(b, BinaryOp::Gt, 0.5));
+        let taken = Switching::contribute_expr(b, QuantityRole::Flow, Operator::Direct, read);
+        let site = Site { name: "lim".into(), origin: Switching::at(), enabled: Some(enabled) };
+        Written { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], locals: Switching::limit_locals(), ..Written::default() }
+    });
+    let device = Device::of(ir);
+    let (last, age, held) = (Bytes::real(0.75), [1u8], [0u8]);
+    let enabled = device.run_with_partials("limit:lim", &[&Bytes::real(1.0), &last, &age, &held]).expect("limit");
+    assert_eq!(enabled, (vec![1.0, 0.875], vec![1.0]));
+    let disabled = device.run_with_partials("limit:lim", &[&Bytes::real(0.25), &last, &age, &held]).expect("limit");
+    assert_eq!(disabled, (vec![0.75, 0.75], vec![0.0]));
+}
+
+#[test]
+fn a_disabled_cap_writes_infinity() {
+    // `bound_step(0.5) when v(a, gnd) > 0.5;` (§14.10.2): `cap:0` reads `a`. With `a = 1.0` the
+    // step is asked for and the watch is 0.5; with `a = 0.25` the call is not executed at this
+    // solution, so it caps nothing: `+∞` (abi.md, the `CAP` watch).
+    let ir = Switching::ir(BranchKind::Flow, |b| {
+        let (step, when) = (Switching::ex(b).real(0.5), Switching::compare(b, BinaryOp::Gt, 0.5));
+        let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
+        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+    });
+    let device = Device::of(ir);
+    assert_eq!(device.run("cap:0", &[&Bytes::real(1.0)]).expect("cap"), [0.5]);
+    assert_eq!(device.run("cap:0", &[&Bytes::real(0.25)]).expect("cap"), [f64::INFINITY]);
+}
+
+#[test]
+fn a_param_change_fires_its_event() {
+    // `on tol.changed() { .. }`: the event function `event:0` reads the param `tol` and its
+    // `CHANGED` byte and writes the event pin's `CHANGED` byte: nonzero exactly when the param's
+    // pin changed (abi.md §4.1, §5.3.1).
+    let ir = ParamEvents::ir(ValueType::Bool, |b| b.expr(piperine_ir::Expr::Fired(0), ValueType::Bool, ParamEvents::at()));
+    let device = Device::of_body(ir, "Lag");
+    let tol = Bytes::real(1e-9);
+    assert_eq!(device.run_cells("event:0", &[&tol, &[1u8]]).expect("event").0, [vec![1u8]]);
+    assert_eq!(device.run_cells("event:0", &[&tol, &[0u8]]).expect("event").0, [vec![0u8]]);
+}
+
+#[test]
+fn a_param_previous_decodes_its_previous_bytes() {
+    // `seen = tol.prev();` as a drive of an `out seen: f64` carrier: `drive:seen` reads the
+    // `PREVIOUS` part of the param pin, in the param's own layout (an `F64`), and writes the known
+    // value `0.375` into the carrier's pin (the value at 0, the known byte at 8, abi.md P3).
+    let device = Device::of_body(ParamEvents::previous_drive(), "Lag");
+    let (cells, _) = device.run_cells("drive:seen", &[&Bytes::real(0.375)]).expect("drive");
+    assert_eq!(f64::from_le_bytes(cells[0][..8].try_into().expect("the value")), 0.375);
+    assert_eq!(cells[0][8], 1, "the previous value of a param is known");
 }

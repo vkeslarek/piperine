@@ -136,6 +136,8 @@ pub struct Reads {
     pub flows: Vec<String>,
     /// By derivative site: the variable of its rate pin (`rate(D<k>)`, analog-structure AS-07).
     pub derivatives: Vec<String>,
+    /// By body param: the variable its pin's `PREVIOUS` was decoded into (`p.prev()`, §5.3.1).
+    pub param_previous: Vec<String>,
     /// By body carrier: the variable its pin's `PREVIOUS` was decoded into (`c.prev()`, A7).
     pub previous: Vec<String>,
 }
@@ -721,7 +723,10 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the rate of a derivative site")),
             },
-            Expr::ParamPrevious(_) => Err(self.unsupported(e, "the previous value of a param")),
+            Expr::ParamPrevious(p) => match self.analog.as_ref().and_then(|r| r.param_previous.get(*p as usize)) {
+                Some(name) => atom(self.read(name)),
+                None => Err(self.unsupported(e, "the previous value of a param")),
+            },
             Expr::Flow { branch } => match self.analog.as_ref().and_then(|r| r.flows.get(*branch as usize)) {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the flow of a potential branch")),

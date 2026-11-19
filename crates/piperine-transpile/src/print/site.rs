@@ -6,13 +6,49 @@
 //! param's `where` over the params it reads, as a generic block run over `f64` returning `bool`,
 //! written as the known `BIT` `HIGH` or `LOW`.
 
-use piperine_ir::{EventSource, Expr, ExprId, Stmt};
-use piperine_plan::{Mode, Source, Target};
+use piperine_ir::{EventSource, Expr, ExprId, Origin, Stmt};
+use piperine_plan::{FunctionPlan, Mode, Source, Target};
 
 use crate::Error;
 use crate::print::{AnalogPrinter, Text, ValuePrinter};
 
+/// The condition under which a `limit` or `bound_step` site runs (analog-structure AS-06): the
+/// site's `enabled` or `when`, lowered standalone, which the site's function evaluates first.
+pub(crate) struct Guard<'f> {
+    /// The plan of the site's function: its reads.
+    pub function: &'f FunctionPlan,
+    /// The mode of that function.
+    pub mode: Mode,
+    /// The top-level statement the site is read in.
+    pub stmt: usize,
+    /// The `bool` expression.
+    pub condition: ExprId,
+}
+
 impl<'a> AnalogPrinter<'a> {
+    /// `fn <name>_block<R: Real>(reads) -> bool`: the condition of `guard`, a block generic over
+    /// `Real` run over `f64`. Returns the reads the block uses, with their plan indices.
+    pub(crate) fn guard_block(&self, t: &mut Text, name: &str, origin: &Origin, guard: &Guard<'_>) -> Result<Vec<(usize, Source)>, Error> {
+        let slice = self.slice_of(guard.mode, &[guard.condition], guard.stmt);
+        let reads: Vec<(usize, Source)> =
+            guard.function.reads.iter().copied().enumerate().filter(|(_, s)| slice.sources.contains(s)).collect();
+        t.comment(&format!("{}.analog, the condition of `{name}`", self.body.name()), origin);
+        t.line(&format!("fn {name}_block<R: Real>({}) -> bool {{", self.block_params(&reads)));
+        let mut lines = Vec::new();
+        for id in &slice.stmts {
+            lines.push(self.values.stmt(*id)?);
+        }
+        lines.push(self.values.expr(guard.condition)?);
+        t.indented(|t| {
+            for line in &lines {
+                t.line(line);
+            }
+        });
+        t.line("}");
+        t.line("");
+        Ok(reads)
+    }
+
     /// The site of `ac_stim` `k`: its top-level statement, its magnitude and its phase.
     fn stim_site(&self, k: u32) -> Option<(usize, ExprId, Option<ExprId>)> {
         let block = self.body.analog().unwrap_or(&[]);
@@ -188,10 +224,10 @@ impl<'a> AnalogPrinter<'a> {
     }
 
     /// The top-level statement of `bound_step` site `k` of the `analog` block, and its value.
-    fn cap_site(&self, k: u32) -> Option<(usize, ExprId)> {
+    fn cap_site(&self, k: u32) -> Option<(usize, ExprId, Option<ExprId>)> {
         let block = self.body.analog().unwrap_or(&[]);
         block.iter().enumerate().find_map(|(stmt, id)| match self.ir.stmt(*id) {
-            Stmt::BoundStep { site, value, .. } if *site == k => Some((stmt, *value)),
+            Stmt::BoundStep { site, value, when } if *site == k => Some((stmt, *value, *when)),
             _ => None,
         })
     }
@@ -206,7 +242,7 @@ impl<'a> AnalogPrinter<'a> {
         }) else {
             return Err(self.unsupported(&format!("function {k} as a step-cap function")));
         };
-        let Some((stmt, value)) = self.cap_site(site) else {
+        let Some((stmt, value, when)) = self.cap_site(site) else {
             return Err(self.unsupported(&format!("bound_step site {site}, found in no top-level statement")));
         };
         let origin = self.ir.expr_origin(value);
@@ -230,6 +266,12 @@ impl<'a> AnalogPrinter<'a> {
         });
         t.line("}");
         t.line("");
+        // `when`: the block that says whether the step is asked for at this solution
+        let guard = when.map(|condition| Guard { function: f, mode: Mode::Cap(site), stmt, condition });
+        let when_reads = match &guard {
+            Some(guard) => self.guard_block(&mut t, &format!("cap{site}_when"), origin, guard)?,
+            None => Vec::new(),
+        };
         let names: Vec<String> = f.reads.iter().map(|s| self.read_name(*s)).collect();
         let writes: Vec<String> = f.writes.iter().map(|w| self.write_name(*w)).collect();
         t.line(&format!(
@@ -239,8 +281,21 @@ impl<'a> AnalogPrinter<'a> {
             self.function_origin(k)
         ));
         t.line(&format!("fn cap{site}(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
-        let mut body = self.bind_reads(&reads);
-        body.push(format!("let value_ = Self::cap{site}_block::<f64>({});", self.block_args(&reads)));
+        // every read either block uses, in the plan's order
+        let mut bound: Vec<(usize, Source)> = reads.iter().chain(&when_reads).copied().collect();
+        bound.sort_by_key(|(i, _)| *i);
+        bound.dedup_by_key(|(i, _)| *i);
+        let mut body = self.bind_reads(&bound);
+        let call = format!("Self::cap{site}_block::<f64>({})", self.block_args(&reads));
+        if guard.is_some() {
+            body.push("// §14.10.2: a `bound_step` not executed at this solution caps nothing: +∞ (abi.md, the `CAP` watch)".to_string());
+            body.push(format!(
+                "let value_ = if Self::cap{site}_when_block::<f64>({}) {{ {call} }} else {{ f64::INFINITY }};",
+                self.block_args(&when_reads)
+            ));
+        } else {
+            body.push(format!("let value_ = {call};"));
+        }
         for (j, w) in f.writes.iter().enumerate() {
             match w {
                 Target::Cap(_) => body.push(format!("cx_.set({j}, value_);")),
