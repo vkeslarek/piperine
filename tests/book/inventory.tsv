@@ -133,17 +133,17 @@ block	packages#12	ce45ac0976f71d1f	refused	piperine/book_packages::the_include_s
 block	packages#13	b2997ca3b9ad5e0a	refused	piperine/book_packages::a_local_namespace_and_a_dependency_of_one_name_make_the_use_ambiguous	-	-
 block	packages#14	022839d3af99d3a3	shown	-	-	-
 block	packages#15	5f60f0eac75c1c77	fragment	packages#13	-	-
-block	core-std#1	3585f494024ab2b2	pending	-	-	-
-block	core-std#2	ffbc2ff18dccbb7f	pending	-	-	-
-block	core-std#3	9de7bc92b15444b7	pending	-	-	-
-block	core-std#4	6924d752174dcd02	pending	-	-	-
-block	core-std#5	7dfd7bc254fb3c54	pending	-	-	-
-block	core-std#6	11531a1ac478846e	pending	-	-	-
-block	core-std#7	73e0cf5006f6d85d	pending	-	-	-
-block	core-std#8	6994862452a71c4a	pending	-	-	-
-block	core-std#9	8df4b148eabfdf77	pending	-	-	-
-block	core-std#10	631aa175ce2fb38e	pending	-	-	-
-block	core-std#11	8e7f72e7c63ab65b	pending	-	-	-
+block	core-std#1	3585f494024ab2b2	run	piperine/book_core_std::the_tour_module_runs_its_analog_and_digital_blocks	-	-
+block	core-std#2	ffbc2ff18dccbb7f	run	piperine/book_core_std::a_constant_of_std_constants_is_the_thermal_voltage_at_300_kelvin	-	-
+block	core-std#3	9de7bc92b15444b7	run	piperine/book_core_std::the_rc_module_of_the_carriers_part_runs	-	-
+block	core-std#4	6924d752174dcd02	run	piperine/book_core_std::the_latch_takes_its_input_at_the_rising_edge_or_zero_when_unknown	-	-
+block	core-std#5	7dfd7bc254fb3c54	run	piperine/book_core_std::the_dac_ramp_scales_its_code_by_the_reference	-	-
+block	core-std#6	11531a1ac478846e	refused	piperine/book_core_std::the_resolved_line_is_refused_for_its_wire	L21	-
+block	core-std#7	73e0cf5006f6d85d	run	piperine/book_core_std::the_pad_drives_its_node_and_reads_it_back	-	-
+block	core-std#8	6994862452a71c4a	refused	piperine/book_core_std::the_register_with_a_setup_check_is_refused_for_the_generic_monitor	L30	-
+block	core-std#9	8df4b148eabfdf77	run	piperine/book_core_std::the_probe_writes_a_check_and_a_log_record	-	-
+block	core-std#10	631aa175ce2fb38e	refused	piperine/book_core_std::the_watchdog_is_refused_for_its_integer_param	L28	-
+block	core-std#11	8e7f72e7c63ab65b	run	piperine/book_core_std::a_crates_own_vt_replaces_the_library_one	-	-
 block	errors#1	02c79bb77a2f9f83	diverges	piperine/book_errors::the_discrete_read_diagnostic_has_the_parts_the_book_shows	D1	-
 block	errors#2	290db49dc81491b3	diverges	piperine/book_errors::the_ambiguous_name_diagnostic_has_the_parts_the_book_shows	D1	-
 block	errors#3	d48482453090553f	refused	piperine/book_errors::the_worked_sample_hold_is_refused_with_its_three_codes	-	-
@@ -389,17 +389,17 @@ claim	packages~39a5ce1d	39a5ce1dbc00bba4	holds	piperine/book_packages::a_local_n
 claim	packages~39a2cc1d	39a2cc1dbbfe8267	holds	piperine/book_packages::e0171_a_manifest_has_only_package_and_dependencies	-	E0171
 claim	packages~39a2c81d	39a2c81dbbfe7b9b	holds	piperine/book_packages::e0175_the_crate_root_is_always_src_lib_msl	-	E0175
 claim	packages~64f2121d	64f2121dd48643ab	unraised	piperine/book_packages::e0610_is_not_raised_include_str_in_a_module_is_refused_as_p0001	L57	E0610
-claim	core-std~ece4c57c	ece4c57c55119b14	pending	-	-	A core name needs no import and cannot be redefined: a namespace item with the same name is error E0457.
-claim	core-std~c59252de	c59252de190bd867	pending	-	-	Your nature gives them their short names, v and i.
-claim	core-std~e4393c2d	e4393c2d3f5c1cb5	pending	-	-	Noise sources with a flat, a 1/f and a tabulated spectrum.
-claim	core-std~96074bac	96074bac5dd68cf8	pending	-	-	Monitors only report: each is a module that calls require when the property it watches fails.
-claim	core-std~2d426657	2d426657368ed543	pending	-	-	Only std may declare one; the same line in your crate is error E0125.
-claim	core-std~54d7c51d	54d7c51dcbbfeac4	pending	-	-	E0457
-claim	core-std~39983c1d	39983c1dbbf53932	pending	-	-	E0125
-claim	core-std~64ee8b1d	64ee8b1dd483286f	pending	-	-	E0603
-claim	core-std~64ee891d	64ee891dd4832509	pending	-	-	E0605
-claim	core-std~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
-claim	core-std~6e04c51d	6e04c51dd9c78a87	pending	-	-	E0702
+claim	core-std~ece4c57c	ece4c57c55119b14	holds	piperine/book_core_std::e0457_a_core_name_cannot_be_redefined	-	A core name needs no import and cannot be redefined: a namespace item with the same name is error E0457.
+claim	core-std~c59252de	c59252de190bd867	holds	piperine/book_core_std::the_probes_have_the_short_names_the_nature_gives	-	Your nature gives them their short names, v and i.
+claim	core-std~e4393c2d	e4393c2d3f5c1cb5	holds	piperine/book_core_std::the_library_declares_the_noise_sources_and_the_monitors_only_report	-	Noise sources with a flat, a 1/f and a tabulated spectrum.
+claim	core-std~96074bac	96074bac5dd68cf8	holds	piperine/book_core_std::the_library_declares_the_noise_sources_and_the_monitors_only_report	-	Monitors only report: each is a module that calls require when the property it watches fails.
+claim	core-std~2d426657	2d426657368ed543	holds	piperine/book_core_std::e0125_only_std_declares_an_engine_item	-	Only std may declare one; the same line in your crate is error E0125.
+claim	core-std~54d7c51d	54d7c51dcbbfeac4	holds	piperine/book_core_std::e0457_a_core_name_cannot_be_redefined	-	E0457
+claim	core-std~39983c1d	39983c1dbbf53932	holds	piperine/book_core_std::e0125_only_std_declares_an_engine_item	-	E0125
+claim	core-std~64ee8b1d	64ee8b1dd483286f	holds	piperine/book_core_std::e0603_the_reserved_streams_take_records_from_reactions_only	-	E0603
+claim	core-std~64ee891d	64ee891dd4832509	holds	piperine/book_core_std::e0605_a_reserved_stream_field_has_a_fixed_type	-	E0605
+claim	core-std~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_core_std::e0161_the_inherited_library_is_a_closed_list	-	E0161
+claim	core-std~6e04c51d	6e04c51dd9c78a87	unraised	piperine/book_core_std::e0702_is_not_raised_logic_is_refused_as_a_generic_function	L18	E0702
 claim	errors~ed0997b0	ed0997b0b111f69a	prose	-	-	An error belongs to one of five phases: package (reading manifests and dependencies), parse, elaboration (names, types, params, the netlist), run (an analysis fails, naming the instance and the instant) and host (a host request is refused, and the analysis goes on).
 claim	errors~1f3eeee4	1f3eeee41c6df4bc	holds	piperine/book_errors::e0310_is_found_on_the_bare_port_of_the_worked_example	-	E0310 on clk: Bit.
 claim	errors~d6787e9a	d6787e9a56d74451	holds	piperine/book_errors::e0430_is_found_on_the_head_of_the_worked_example_s_reaction	-	E0430 on on clk.
