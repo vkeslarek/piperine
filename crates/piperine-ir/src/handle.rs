@@ -3,7 +3,7 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, InstanceData, Ir, Local,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
 use crate::contributions::{Contribution, Contributions};
@@ -184,6 +184,26 @@ impl<'a> Body<'a> {
     /// that enclose it, in source order. Empty for a body with no `analog` block.
     pub fn contributions(&self) -> Vec<Contribution<'a>> {
         Contributions::new(self.ir).of(self.analog().unwrap_or_default())
+    }
+
+    /// The modules placed in an expression whose nodes or `analog` statements joined this body.
+    pub fn hoisted(&self) -> &'a [Hoisted] {
+        &self.data().hoisted
+    }
+
+    /// The branches dropped as a node merge: each is one node in every instance.
+    pub fn merges(&self) -> &'a [Merge] {
+        &self.data().merges
+    }
+
+    /// The `pub` nodes and carriers of children this body reads (`inst.name`).
+    pub fn reaches(&self) -> &'a [Reach] {
+        &self.data().reaches
+    }
+
+    /// The `p.inflow()` ammeters, one per port.
+    pub fn inflows(&self) -> &'a [Inflow] {
+        &self.data().inflows
     }
 
     /// The derivative sites, by index (`Expr::Derivative`).
@@ -520,7 +540,7 @@ impl<'a> Net<'a> {
             .filter(|inst| {
                 let body = inst.body();
                 inst.nets().iter().enumerate().any(|(i, net)| {
-                    *net == self.id && body.carriers().get(i).is_some_and(|c| c.role != CarrierRole::Signal)
+                    *net == self.id && body.carriers().get(i).is_some_and(|c| matches!(c.role, CarrierRole::In | CarrierRole::Out))
                 })
             })
             .collect()

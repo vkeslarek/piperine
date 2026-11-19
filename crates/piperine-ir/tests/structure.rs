@@ -8,7 +8,7 @@ mod devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, Condition, Constant, Contribution, Derivative, Expr, ExprId, FunctionSpec,
+    Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, Condition, Constant, Contribution, Derivative, Drive, Expr, ExprId, FunctionSpec, Hoisted, Inflow, Merge, Reach, ReachedItem,
     InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, QuantityRole, Reaction, Real, Site, Stmt, StmtId, Target, Terminal,
     ValueType,
 };
@@ -532,4 +532,164 @@ fn a_bound_step_with_when_reads_its_condition() {
         Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
     });
     assert!(Switching::names(&wrong.check(), "the `when` of a `bound_step`"), "{:?}", wrong.check());
+}
+
+/// Designs that place children, to merge their nodes or reach into them.
+struct Placements;
+
+impl Placements {
+    fn at(line: u32) -> Origin {
+        Origin { file: "placements.msl".into(), line, col: 1 }
+    }
+
+    fn node(name: &str, role: NodeRole, nature: piperine_ir::NatureId) -> BodyNode {
+        BodyNode { name: name.into(), nature, role, init: None, origin: Self::at(1) }
+    }
+
+    fn body(name: &str, nodes: Vec<BodyNode>, children: Vec<Child>) -> BodySpec {
+        BodySpec { name: name.into(), origin: Self::at(1), params: vec![], nodes, branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children }
+    }
+
+    fn child(name: &str, body: BodyId, nodes: Vec<Terminal>) -> Child {
+        Child { name: name.into(), body, nodes, params: vec![], origin: Self::at(5) }
+    }
+
+    /// `Lone(p, n)` whose branch `(p, n)` was dropped as a merge, placed by `Top` as `p1(x, y)` and
+    /// `p2(y, z)`. `merge` says which `merge_nodes` calls placement makes: it receives the builder
+    /// and the node ids of `x`, `y`, `z`. The two `Lone` instances are the last two instances.
+    fn lones(merge: impl FnOnce(&mut IrBuilder, [piperine_ir::NodeId; 3])) -> Ir {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let lone = b.body(Self::body("Lone", vec![Self::node("p", NodeRole::Port, el), Self::node("n", NodeRole::Port, el)], vec![]));
+        b.merge(lone, Merge { plus: Terminal::Node(0), minus: Terminal::Node(1) });
+        let top_body = b.body(Self::body(
+            "Top",
+            vec![Self::node("x", NodeRole::Signal, el), Self::node("y", NodeRole::Signal, el), Self::node("z", NodeRole::Signal, el)],
+            vec![Self::child("p1", lone, vec![Terminal::Node(0), Terminal::Node(1)]), Self::child("p2", lone, vec![Terminal::Node(1), Terminal::Node(2)])],
+        ));
+        let top = b.next_instance_id();
+        let nodes: Vec<piperine_ir::NodeId> = ["x", "y", "z"].iter().map(|n| b.node(NodeSpec { path: format!("Top.{n}"), nature: el, declared_by: top, init: None, origin: Self::at(1) })).collect();
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: nodes.iter().map(|n| NodeRef::Node(*n)).collect(), params: vec![], origin: Self::at(4) });
+        for (name, ends) in [("p1", [nodes[0], nodes[1]]), ("p2", [nodes[1], nodes[2]])] {
+            b.instance(InstanceSpec { path: format!("Top.{name}"), name: name.into(), body: lone, parent: Some(top), nodes: ends.iter().map(|n| NodeRef::Node(*n)).collect(), params: vec![], origin: Self::at(5) });
+        }
+        merge(&mut b, [nodes[0], nodes[1], nodes[2]]);
+        b.finish(top)
+    }
+
+    /// `Top` reads `mid`, the `signal s` of its child `leaf`; `bind` says whether placement binds the
+    /// reached node. With `drive` the body also defines a reached carrier, which is broken.
+    fn reaching(bind: bool, drive: bool) -> Ir {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let leaf = b.body(Self::body("Leaf", vec![Self::node("p", NodeRole::Port, el), Self::node("s", NodeRole::Signal, el)], vec![]));
+        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Self::at(2) });
+        let top_body = b.body(Self::body(
+            "Top",
+            vec![Self::node("a", NodeRole::Signal, el), Self::node("mid", NodeRole::Reached, el)],
+            vec![Self::child("leaf", leaf, vec![Terminal::Node(0), Terminal::Own(1)])],
+        ));
+        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: Self::at(4) });
+        b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } });
+        b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
+        if drive {
+            let value = Ex::new(&mut b, "placements.msl", 6, 1).boolean(true);
+            b.drive(top_body, Drive { carrier: seen, value, after: None, origin: Self::at(6) });
+        }
+        let top = b.next_instance_id();
+        let a = b.node(NodeSpec { path: "Top.a".into(), nature: el, declared_by: top, init: None, origin: Self::at(4) });
+        let top_net = b.net(NetSpec { path: "Top.seen".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: Self::at(4) });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![NodeRef::Node(a), NodeRef::Ground], params: vec![], origin: Self::at(4) });
+        b.bind_nets(top, vec![top_net]);
+        let leaf_id = b.next_instance_id();
+        let s = b.node(NodeSpec { path: "Top.leaf.s".into(), nature: el, declared_by: leaf_id, init: None, origin: Self::at(2) });
+        let q = b.net(NetSpec { path: "Top.leaf.q".into(), ty: ValueType::Bool, declared_by: leaf_id, init: None, origin: Self::at(2) });
+        let leaf_instance = b.instance(InstanceSpec { path: "Top.leaf".into(), name: "leaf".into(), body: leaf, parent: Some(top), nodes: vec![NodeRef::Node(a), NodeRef::Node(s)], params: vec![], origin: Self::at(5) });
+        b.bind_nets(leaf_instance, vec![q]);
+        if bind {
+            b.bind_reached_node(top, 1, NodeRef::Node(s));
+            b.bind_reached_net(top, seen, q);
+        }
+        b.finish(top)
+    }
+}
+
+#[test]
+fn merging_two_nodes_leaves_one_and_rewrites_every_instance() {
+    // p1 merges x and y, p2 merges y and z: the three nodes are one, and the arena holds it only.
+    let ir = Placements::lones(|b, [x, y, z]| {
+        b.merge_nodes(NodeRef::Node(x), y);
+        b.merge_nodes(NodeRef::Node(y), z);
+    });
+    assert_eq!(ir.check(), vec![], "{}", ir);
+    assert_eq!(ir.nodes().count(), 1, "one node left");
+    let kept = ir.nodes().next().expect("a node").id();
+    for instance in ir.instances() {
+        assert!(instance.bindings().iter().all(|n| *n == NodeRef::Node(kept)), "{}: {:?}", instance.path(), instance.bindings());
+    }
+}
+
+#[test]
+fn merging_a_node_into_ground_removes_it() {
+    // Every node merged into ground (each `Lone` then binds both ends to ground): the nodes are
+    // gone from the arena, and every ref reads ground.
+    let all = Placements::lones(|b, [x, y, z]| {
+        for node in [x, y, z] {
+            b.merge_nodes(NodeRef::Ground, node);
+        }
+    });
+    assert_eq!(all.check(), vec![], "{}", all);
+    assert_eq!(all.nodes().count(), 0, "every node merged into ground is gone");
+    assert!(all.instances().all(|i| i.bindings().iter().all(|n| *n == NodeRef::Ground)));
+}
+
+#[test]
+fn an_instance_that_binds_a_merge_to_two_nodes_is_broken() {
+    // No `merge_nodes` call: p1 binds the ends of its merged branch to x and y.
+    let ir = Placements::lones(|_, _| {});
+    let broken = ir.check();
+    assert_eq!(broken.iter().filter(|b| b.what.contains("binds the two ends of a merged branch to different nodes")).count(), 2, "{broken:?}");
+}
+
+#[test]
+fn a_reached_node_is_bound_to_the_childs_node() {
+    let bound = Placements::reaching(true, false);
+    assert_eq!(bound.check(), vec![], "{}", bound);
+    let top = bound.instances().next().expect("the top");
+    let leaf = top.children().next().expect("the child");
+    assert_eq!(top.bindings()[1], leaf.bindings()[1], "`mid` is the child's `s`");
+    assert!(bound.to_string().contains("reach node mid = leaf.s"), "{}", bound);
+    // Left unbound, `mid` is a placeholder: the check names it.
+    let unbound = Placements::reaching(false, false).check();
+    assert!(Switching::names(&unbound, "reached node 1 is not bound to node 1 of child Top.leaf"), "{unbound:?}");
+    assert!(Switching::names(&unbound, "reached carrier 0 is not bound to carrier 0 of child Top.leaf"), "{unbound:?}");
+}
+
+#[test]
+fn a_write_to_a_reached_carrier_is_broken() {
+    let broken = Placements::reaching(true, true).check();
+    assert!(Switching::names(&broken, "drives the reached carrier seen: a child's carrier is read only"), "{broken:?}");
+}
+
+#[test]
+fn the_structure_records_print_and_round_trip() {
+    // A body with an inflow ammeter `(p, p.inflow)`, a hoisted module and a merge.
+    let mut b = IrBuilder::new();
+    let el = Devices::electrical(&mut b);
+    let mut spec = Placements::body("Rec", vec![Placements::node("p", NodeRole::Port, el), Placements::node("p.inflow", NodeRole::Signal, el)], vec![]);
+    spec.branches = vec![Branch { plus: Terminal::Node(1), minus: Terminal::Node(0), kind: BranchKind::Potential }];
+    let body = b.body(spec);
+    b.inflow(body, Inflow { port: 0, branch: 0 });
+    b.hoisted(body, Hoisted { name: "lag".into(), module: "Lag".into(), origin: Placements::at(7) });
+    b.merge(body, Merge { plus: Terminal::Node(0), minus: Terminal::Node(1) });
+    let top = b.instance(InstanceSpec { path: "Rec".into(), name: "Rec".into(), body, parent: None, nodes: vec![NodeRef::Ground, NodeRef::Ground], params: vec![], origin: Placements::at(1) });
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "{}", ir);
+    let text = ir.to_string();
+    for line in ["hoisted lag: Lag", "merge (p, p.inflow)", "inflow p measured by b0"] {
+        assert!(text.contains(line), "{line} in {text}");
+    }
+    let back: Ir = serde_json::from_str(&serde_json::to_string(&ir).expect("serialize")).expect("deserialize");
+    assert_eq!(back, ir);
+    assert_eq!(back.bodies().next().expect("a body").inflows().len(), 1);
 }

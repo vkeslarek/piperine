@@ -74,6 +74,8 @@ impl Elaboration<'_, '_> {
                     let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
                     nodes.push(NodeRef::Node(id));
                 }
+                // Bound to the child's node once the child is placed (`IrBuilder::bind_reached_node`).
+                NodeRole::Reached => nodes.push(NodeRef::Ground),
             }
         }
         let nets = self.nets(&placing, &plan.carriers, declared_by);
@@ -100,7 +102,7 @@ impl Elaboration<'_, '_> {
         for carrier in carriers {
             let given = match carrier.role {
                 CarrierRole::In | CarrierRole::Out => bound.next().flatten(),
-                CarrierRole::Signal => None,
+                CarrierRole::Signal | CarrierRole::Reached => None,
             };
             let net = match given {
                 Some(net) => net,

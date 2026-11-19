@@ -1,11 +1,13 @@
 //! `IrBuilder`: the only writer of an [`Ir`]. Ids are handed out in call order, which makes
 //! equal call sequences give equal IRs.
 
+use std::collections::BTreeMap;
+
 use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, InstanceData, Ir,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
 
@@ -66,6 +68,48 @@ pub struct InstanceSpec {
     pub origin: Origin,
 }
 
+/// The nodes merged into others so far: a merged node and the node (or ground) it became.
+/// Merging is a union of two classes of nodes; the class's one survivor is the root `resolve`
+/// returns.
+#[derive(Debug, Default)]
+struct NodeUnion {
+    merged_into: BTreeMap<NodeId, NodeRef>,
+}
+
+impl NodeUnion {
+    /// The survivor of `node`'s class: `node` itself while nothing merged it away.
+    fn resolve(&self, node: NodeRef) -> NodeRef {
+        let mut at = node;
+        while let NodeRef::Node(id) = at {
+            match self.merged_into.get(&id) {
+                Some(next) => at = *next,
+                None => break,
+            }
+        }
+        at
+    }
+
+    /// Makes `kept` and `merged` one node. `kept`'s survivor stays unless it is the node
+    /// `merged` stands for, and ground always survives a node (a node merged into ground is
+    /// gone).
+    fn join(&mut self, kept: NodeRef, merged: NodeId) {
+        let (kept, merged) = (self.resolve(kept), self.resolve(NodeRef::Node(merged)));
+        match (kept, merged) {
+            (kept, merged) if kept == merged => {}
+            (NodeRef::Node(a), NodeRef::Node(b)) => {
+                self.merged_into.insert(b, NodeRef::Node(a));
+            }
+            (NodeRef::Node(a), NodeRef::Ground) => {
+                self.merged_into.insert(a, NodeRef::Ground);
+            }
+            (NodeRef::Ground, NodeRef::Node(b)) => {
+                self.merged_into.insert(b, NodeRef::Ground);
+            }
+            (NodeRef::Ground, NodeRef::Ground) => {}
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct IrBuilder {
     natures: Vec<NatureData>,
@@ -76,6 +120,8 @@ pub struct IrBuilder {
     instances: Vec<InstanceData>,
     nodes: Vec<NodeData>,
     nets: Vec<NetData>,
+    /// The merges `merge_nodes` asked for, applied by `finish`.
+    union: NodeUnion,
 }
 
 impl IrBuilder {
@@ -112,6 +158,10 @@ impl IrBuilder {
             reactions: Vec::new(),
             streams: Vec::new(),
             derivatives: Vec::new(),
+            hoisted: Vec::new(),
+            merges: Vec::new(),
+            reaches: Vec::new(),
+            inflows: Vec::new(),
             child_params: Vec::new(),
             child_carriers: Vec::new(),
             deps: DepsMemo::default(),
@@ -187,6 +237,37 @@ impl IrBuilder {
         let derivatives = &mut self.body_data(body).derivatives;
         derivatives.push(derivative);
         derivatives.len() as u32 - 1
+    }
+
+    /// Records that `body` placed a module in an expression whose node or `analog` statements
+    /// joined it: returns its index.
+    pub fn hoisted(&mut self, body: BodyId, hoisted: Hoisted) -> u32 {
+        let list = &mut self.body_data(body).hoisted;
+        list.push(hoisted);
+        list.len() as u32 - 1
+    }
+
+    /// Records that `body` dropped a fixed zero-potential branch as a node merge: returns its
+    /// index. Placement then calls `merge_nodes` for each instance of the body.
+    pub fn merge(&mut self, body: BodyId, merge: Merge) -> u32 {
+        let list = &mut self.body_data(body).merges;
+        list.push(merge);
+        list.len() as u32 - 1
+    }
+
+    /// Records that `body` reads a `pub` node or carrier of one of its children (`inst.name`):
+    /// returns its index.
+    pub fn reach(&mut self, body: BodyId, reach: Reach) -> u32 {
+        let list = &mut self.body_data(body).reaches;
+        list.push(reach);
+        list.len() as u32 - 1
+    }
+
+    /// Records the ammeter of a `p.inflow()` of `body`: returns its index.
+    pub fn inflow(&mut self, body: BodyId, inflow: Inflow) -> u32 {
+        let list = &mut self.body_data(body).inflows;
+        list.push(inflow);
+        list.len() as u32 - 1
     }
 
     /// Adds a record stream to `body`: returns its index, the identity `Stmt::Emit` names it by.
@@ -277,8 +358,68 @@ impl IrBuilder {
         }
     }
 
+    /// Makes `merged` the same node as `kept`, in every instance (a fixed zero-potential branch
+    /// between them: `Body::merges`). `kept` may be ground, and then `merged` is gone. Nothing
+    /// changes until `finish`, which rewrites every instance's node refs and compacts the node
+    /// arena, so ids handed out before stay valid while the builder is in use.
+    pub fn merge_nodes(&mut self, kept: NodeRef, merged: NodeId) {
+        self.union.join(kept, merged);
+    }
+
+    /// Binds slot `slot` (a node of role `Reached`) of `instance` to `node`, once the child it
+    /// reaches into has been placed and has its own nodes. An id this builder never handed out
+    /// panics.
+    pub fn bind_reached_node(&mut self, instance: InstanceId, slot: u32, node: NodeRef) {
+        let count = self.instances.len();
+        let Some(data) = self.instances.get_mut(instance.index()) else { panic!("instance id {} out of range ({count} instances)", instance.0) };
+        match data.nodes.get_mut(slot as usize) {
+            Some(bound) => *bound = node,
+            None => panic!("instance {}: node slot {slot} out of range ({} nodes)", data.path, data.nodes.len()),
+        }
+    }
+
+    /// Binds carrier `carrier` (of role `Reached`) of `instance` to `net`, once the child it reads
+    /// is placed. The instance's nets are bound first (`bind_nets`), with any net at this slot; it
+    /// is replaced here. An id this builder never handed out panics.
+    pub fn bind_reached_net(&mut self, instance: InstanceId, carrier: u32, net: NetId) {
+        let count = self.instances.len();
+        let Some(data) = self.instances.get_mut(instance.index()) else { panic!("instance id {} out of range ({count} instances)", instance.0) };
+        match data.nets.get_mut(carrier as usize) {
+            Some(bound) => *bound = net,
+            None => panic!("instance {}: carrier {carrier} out of range ({} nets bound)", data.path, data.nets.len()),
+        }
+    }
+
+    /// Applies the node merges: drops every merged node from the arena, renumbers the survivors
+    /// in order and rewrites every instance's refs through the union.
+    fn apply_merges(&mut self) {
+        if self.union.merged_into.is_empty() {
+            return;
+        }
+        let mut renumbered: Vec<Option<NodeId>> = Vec::with_capacity(self.nodes.len());
+        let mut kept: Vec<NodeData> = Vec::new();
+        for (at, node) in std::mem::take(&mut self.nodes).into_iter().enumerate() {
+            if self.union.merged_into.contains_key(&NodeId(at as u32)) {
+                renumbered.push(None);
+            } else {
+                renumbered.push(Some(NodeId(kept.len() as u32)));
+                kept.push(node);
+            }
+        }
+        self.nodes = kept;
+        for instance in &mut self.instances {
+            for slot in &mut instance.nodes {
+                *slot = match self.union.resolve(*slot) {
+                    NodeRef::Node(id) => renumbered.get(id.index()).copied().flatten().map_or(NodeRef::Ground, NodeRef::Node),
+                    NodeRef::Ground => NodeRef::Ground,
+                };
+            }
+        }
+    }
+
     /// Consumes the builder: the `Ir` has no writer left.
-    pub fn finish(self, top: InstanceId) -> Ir {
+    pub fn finish(mut self, top: InstanceId) -> Ir {
+        self.apply_merges();
         Ir {
             natures: self.natures,
             bodies: self.bodies,

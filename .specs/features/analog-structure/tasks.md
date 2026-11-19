@@ -290,9 +290,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run irstruct`: `merging_two_nodes_leaves_one_and_rewrites_every_instance`, `merging_a_node_into_ground_removes_it`, `an_instance_that_binds_a_merge_to_two_nodes_is_broken`, `a_reached_node_is_bound_to_the_childs_node`, `a_write_to_a_reached_carrier_is_broken`, `the_structure_records_print_and_round_trip`
-- [ ] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 6 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run irstruct`: `merging_two_nodes_leaves_one_and_rewrites_every_instance`, `merging_a_node_into_ground_removes_it`, `an_instance_that_binds_a_merge_to_two_nodes_is_broken`, `a_reached_node_is_bound_to_the_childs_node`, `a_write_to_a_reached_carrier_is_broken`, `the_structure_records_print_and_round_trip`
+- [x] Gate check passes: Full (`Run irstruct`, `cargo test -p piperine-ir`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 6 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

@@ -268,7 +268,11 @@ impl<'a> Printer<'a> {
         }
         for node in &body.nodes {
             let nature = self.nature_name(node.nature.index());
-            let role = if node.role == crate::model::NodeRole::Port { "port" } else { "signal" };
+            let role = match node.role {
+                crate::model::NodeRole::Port => "port",
+                crate::model::NodeRole::Signal => "signal",
+                crate::model::NodeRole::Reached => "reached",
+            };
             let init = node.init.map_or(String::new(), |r| format!(" init {}", Printer::real(r)));
             let at = self.at(&node.origin);
             self.line(1, &format!("node {}: {nature} {role}{init}{at}", Printer::name(&node.name)));
@@ -278,6 +282,7 @@ impl<'a> Printer<'a> {
                 CarrierRole::In => "in",
                 CarrierRole::Out => "out",
                 CarrierRole::Signal => "signal",
+                CarrierRole::Reached => "reached",
             };
             let init = carrier.init.map_or(String::new(), |c| format!(" init {c}"));
             let at = self.at(&carrier.origin);
@@ -313,6 +318,35 @@ impl<'a> Printer<'a> {
             }
             text.push_str(&self.at(&site.origin));
             self.line(1, &text);
+        }
+        for hoisted in &body.hoisted {
+            let at = self.at(&hoisted.origin);
+            self.line(1, &format!("hoisted {}: {}{at}", Printer::name(&hoisted.name), Printer::name(&hoisted.module)));
+        }
+        for merge in &body.merges {
+            self.line(1, &format!("merge ({}, {})", Printer::terminal(scope, merge.plus), Printer::terminal(scope, merge.minus)));
+        }
+        for reach in &body.reaches {
+            let child = body.children.get(reach.child as usize);
+            let callee = child.and_then(|c| self.ir.bodies.get(c.body.index()));
+            let child_name = child.map_or("<bad child>".to_string(), |c| Printer::name(&c.name));
+            let text = match reach.item {
+                crate::model::ReachedItem::Node { node, child_node } => {
+                    let own = scope.nodes.get(node as usize).map_or(format!("<bad node {node}>"), |n| Printer::name(&n.name));
+                    let theirs = callee.and_then(|b| b.nodes.get(child_node as usize)).map_or(format!("<bad node {child_node}>"), |n| Printer::name(&n.name));
+                    format!("reach node {own} = {child_name}.{theirs}")
+                }
+                crate::model::ReachedItem::Carrier { carrier, child_carrier } => {
+                    let own = Printer::carrier(scope, carrier);
+                    let theirs = callee.and_then(|b| b.carriers.get(child_carrier as usize)).map_or(format!("<bad carrier {child_carrier}>"), |c| Printer::name(&c.name));
+                    format!("reach carrier {own} = {child_name}.{theirs}")
+                }
+            };
+            self.line(1, &text);
+        }
+        for inflow in &body.inflows {
+            let port = scope.nodes.get(inflow.port as usize).map_or(format!("<bad node {}>", inflow.port), |n| Printer::name(&n.name));
+            self.line(1, &format!("inflow {port} measured by b{}", inflow.branch));
         }
         self.locals(1, &body.locals);
         for (ci, child) in body.children.iter().enumerate() {

@@ -82,6 +82,19 @@ pub struct BodyData {
     /// contribution, by index (`Expr::Derivative`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) derivatives: Vec<Derivative>,
+    /// The modules placed in an expression whose nodes or `analog` statements joined this body.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) hoisted: Vec<Hoisted>,
+    /// The fixed zero-potential branches dropped from this body: each is one node in every
+    /// instance.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) merges: Vec<Merge>,
+    /// The `pub` nodes and carriers of children this body reads (`inst.name`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) reaches: Vec<Reach>,
+    /// The ammeters `p.inflow()` adds, one per port read so.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) inflows: Vec<Inflow>,
     /// The param values of each child (by index into `children`) that `Child::params` does not
     /// hold: set by `IrBuilder::child_param`, empty for a child with none. See `ChildValue`.
     #[serde(default)]
@@ -120,6 +133,10 @@ pub struct BodyNode {
 pub enum NodeRole {
     Port,
     Signal,
+    /// A node of a child the body reaches into (`inst.name`, §8.2.8): the placement binds it to
+    /// the child instance's node once the child is placed (`IrBuilder::bind_reached_node`), and
+    /// the body's `reaches` list names which one.
+    Reached,
 }
 
 /// An end of a probe or a branch: a node of the body (by index) or ground.
@@ -170,6 +187,9 @@ pub enum CarrierRole {
     In,
     Out,
     Signal,
+    /// A carrier of a child the body reads (`inst.name`): read only, like an `in` port, bound to
+    /// the child instance's net (`IrBuilder::bind_reached_net`).
+    Reached,
 }
 
 /// A definition of a carrier: `sample = count == 0;` or, delayed, `g = x after tpd;`.
@@ -269,6 +289,50 @@ pub struct Derivative {
     /// carrier or clock (a constant or a param expression).
     pub abstol: Option<ExprId>,
     pub origin: Origin,
+}
+
+/// A module placed in an expression whose node or `analog` statements joined this body (Appendix
+/// C.1.1): `name` is the placement's name in the body (`lag`, `Lag$1`), `module` the placed
+/// module. The IR keeps the walkable record so a reader sees what was placed where.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Hoisted {
+    pub name: String,
+    pub module: String,
+    pub origin: Origin,
+}
+
+/// A branch dropped from a body because its kind is fixed to potential and every contribution to
+/// it is a zero no condition selects, and nothing reads its flow (§11 rule 3): its two ends are
+/// one node in every instance. The ends are terminals of the body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Merge {
+    pub plus: Terminal,
+    pub minus: Terminal,
+}
+
+/// A `pub` item of the child placement `child` (an index into `BodyData::children`) that this
+/// body reads as `inst.name` (§8.2.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reach {
+    pub child: u32,
+    pub item: ReachedItem,
+}
+
+/// What a `Reach` names: the body's own node or carrier of role `Reached` (`node`, `carrier`),
+/// and the child's node or carrier it stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReachedItem {
+    Node { node: u32, child_node: u32 },
+    Carrier { carrier: u32, child_carrier: u32 },
+}
+
+/// `p.inflow()` (§6 rule 5): the flow entering the module at port `port` (a node index) is
+/// measured by the zero-potential branch `branch` (an index into `branches`) between the port's
+/// inside node and the port.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Inflow {
+    pub port: u32,
+    pub branch: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

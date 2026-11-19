@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::contributions::Contributions;
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRole, Origin, QuantityRole, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
     ValueType,
 };
 use crate::typing::Typing;
@@ -47,6 +47,7 @@ impl Ir {
         let mut checker = Checker { ir: self, out: Vec::new(), cycles: BTreeSet::new() };
         checker.ids();
         checker.instances();
+        checker.structure();
         checker.paths();
         checker.types();
         checker.code();
@@ -553,6 +554,129 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// The records of structure a body keeps (analog-structure): its merges, its reaches and its
+    /// inflows, each in range and kept by every instance of the body.
+    fn structure(&mut self) {
+        let ir = self.ir;
+        for body in &ir.bodies {
+            let item = format!("body {}", body.name);
+            self.merges_in_range(&item, body);
+            self.reaches_in_range(&item, body);
+            for inflow in &body.inflows {
+                let port = body.nodes.get(inflow.port as usize);
+                if port.is_none_or(|n| n.role != NodeRole::Port) {
+                    self.report(item.clone(), body.origin.clone(), format!("inflow of node {}: not a port of the body", inflow.port));
+                }
+                match body.branches.get(inflow.branch as usize) {
+                    Some(branch) if branch.kind == BranchKind::Potential => {}
+                    Some(_) => self.report(item.clone(), body.origin.clone(), format!("inflow measured by branch {}, which is not a potential branch", inflow.branch)),
+                    None => self.report(item.clone(), body.origin.clone(), format!("inflow measured by branch {}, out of range ({} branches)", inflow.branch, body.branches.len())),
+                }
+            }
+            for (i, node) in body.nodes.iter().enumerate() {
+                let listed = body.reaches.iter().any(|r| matches!(r.item, ReachedItem::Node { node, .. } if node as usize == i));
+                if node.role == NodeRole::Reached && !listed {
+                    self.report(item.clone(), node.origin.clone(), format!("reached node {} names no child node in `reaches`", node.name));
+                }
+            }
+            for (i, carrier) in body.carriers.iter().enumerate() {
+                let listed = body.reaches.iter().any(|r| matches!(r.item, ReachedItem::Carrier { carrier, .. } if carrier as usize == i));
+                if carrier.role == CarrierRole::Reached && !listed {
+                    self.report(item.clone(), carrier.origin.clone(), format!("reached carrier {} names no child carrier in `reaches`", carrier.name));
+                }
+            }
+        }
+        self.instances_keep_structure();
+    }
+
+    /// Each merge of `body` names nodes of the body, and two different ones.
+    fn merges_in_range(&mut self, item: &str, body: &BodyData) {
+        for merge in &body.merges {
+            for end in [merge.plus, merge.minus] {
+                match end {
+                    Terminal::Node(i) if i as usize >= body.nodes.len() => {
+                        self.report(item.to_string(), body.origin.clone(), format!("merge terminal node {i} out of range ({} nodes)", body.nodes.len()));
+                    }
+                    Terminal::Own(i) => self.report(item.to_string(), body.origin.clone(), format!("merge terminal own{i}: an own terminal belongs in a child's node slot only")),
+                    Terminal::Node(_) | Terminal::Ground => {}
+                }
+            }
+            if merge.plus == merge.minus {
+                self.report(item.to_string(), body.origin.clone(), "a merge of a node with itself".to_string());
+            }
+        }
+    }
+
+    /// Each reach names a child of the body, a reached node or carrier of the body and the
+    /// child's own.
+    fn reaches_in_range(&mut self, item: &str, body: &BodyData) {
+        let ir = self.ir;
+        for reach in &body.reaches {
+            let Some(child) = body.children.get(reach.child as usize) else {
+                self.report(item.to_string(), body.origin.clone(), format!("reach into child {}, out of range ({} children)", reach.child, body.children.len()));
+                continue;
+            };
+            let Some(callee) = ir.bodies.get(child.body.index()) else { continue };
+            match reach.item {
+                ReachedItem::Node { node, child_node } => {
+                    if body.nodes.get(node as usize).is_none_or(|n| n.role != NodeRole::Reached) {
+                        self.report(item.to_string(), child.origin.clone(), format!("reach of node {node}: not a node of role `reached`"));
+                    }
+                    if child_node as usize >= callee.nodes.len() {
+                        self.report(item.to_string(), child.origin.clone(), format!("reach of node {child_node} of child {}, out of range ({} nodes)", child.name, callee.nodes.len()));
+                    }
+                }
+                ReachedItem::Carrier { carrier, child_carrier } => {
+                    if body.carriers.get(carrier as usize).is_none_or(|c| c.role != CarrierRole::Reached) {
+                        self.report(item.to_string(), child.origin.clone(), format!("reach of carrier {carrier}: not a carrier of role `reached`"));
+                    }
+                    if child_carrier as usize >= callee.carriers.len() {
+                        self.report(item.to_string(), child.origin.clone(), format!("reach of carrier {child_carrier} of child {}, out of range ({} carriers)", child.name, callee.carriers.len()));
+                    }
+                }
+            }
+        }
+    }
+
+    /// What every instance of a body does with the body's structure records: a merged branch's two
+    /// ends are one ref, and a reached node or carrier is the child instance's own.
+    fn instances_keep_structure(&mut self) {
+        let ir = self.ir;
+        for instance in &ir.instances {
+            let Some(body) = ir.bodies.get(instance.body.index()) else { continue };
+            let item = format!("instance {}", instance.path);
+            let end = |t: Terminal| match t {
+                Terminal::Node(i) => instance.nodes.get(i as usize).copied(),
+                Terminal::Ground => Some(NodeRef::Ground),
+                Terminal::Own(_) => None,
+            };
+            for merge in &body.merges {
+                if let (Some(plus), Some(minus)) = (end(merge.plus), end(merge.minus)) {
+                    if plus != minus {
+                        self.report(item.clone(), instance.origin.clone(), "binds the two ends of a merged branch to different nodes".to_string());
+                    }
+                }
+            }
+            for reach in &body.reaches {
+                let Some(child) = instance.children.get(reach.child as usize).and_then(|c| ir.instances.get(c.index())) else { continue };
+                match reach.item {
+                    ReachedItem::Node { node, child_node } => {
+                        let (own, theirs) = (instance.nodes.get(node as usize), child.nodes.get(child_node as usize));
+                        if own.is_some() && theirs.is_some() && own != theirs {
+                            self.report(item.clone(), instance.origin.clone(), format!("reached node {node} is not bound to node {child_node} of child {}", child.path));
+                        }
+                    }
+                    ReachedItem::Carrier { carrier, child_carrier } => {
+                        let (own, theirs) = (instance.nets.get(carrier as usize), child.nets.get(child_carrier as usize));
+                        if own.is_some() && theirs.is_some() && own != theirs {
+                            self.report(item.clone(), instance.origin.clone(), format!("reached carrier {carrier} is not bound to carrier {child_carrier} of child {}", child.path));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn paths(&mut self) {
         let ir = self.ir;
         let mut instances: BTreeMap<&str, (u32, &Origin)> = BTreeMap::new();
@@ -923,9 +1047,13 @@ impl<'a> Checker<'a> {
     fn writes(&mut self, body: &BodyData) {
         let item = format!("body {}", body.name);
         let input = |c: u32| body.carriers.get(c as usize).filter(|c| c.role == CarrierRole::In);
+        let reached = |c: u32| body.carriers.get(c as usize).filter(|c| c.role == CarrierRole::Reached);
         for drive in &body.drives {
             if let Some(c) = input(drive.carrier) {
                 self.report(format!("{item} drive {}", c.name), drive.origin.clone(), format!("drives the `in` port {}: an input is written outside the body", c.name));
+            }
+            if let Some(c) = reached(drive.carrier) {
+                self.report(format!("{item} drive {}", c.name), drive.origin.clone(), format!("drives the reached carrier {}: a child's carrier is read only", c.name));
             }
         }
         let mut committed: BTreeSet<u32> = BTreeSet::new();
@@ -936,6 +1064,10 @@ impl<'a> Checker<'a> {
                 if let Some(c) = input(carrier) {
                     let origin = self.stmt_origin(&self.ir.stmts[s.index()]);
                     self.report(format!("{item} reaction {k}"), origin, format!("commits to the `in` port {}: an input is written outside the body", c.name));
+                }
+                if let Some(c) = reached(carrier) {
+                    let origin = self.stmt_origin(&self.ir.stmts[s.index()]);
+                    self.report(format!("{item} reaction {k}"), origin, format!("commits to the reached carrier {}: a child's carrier is read only", c.name));
                 }
             }
         }
