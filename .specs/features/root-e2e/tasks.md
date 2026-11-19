@@ -228,10 +228,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `parity_corpus.rs` holds `every_twin_has_its_files_in_one_scenario_directory`, `tests_ngspice_holds_no_twin`, `a_scenario_with_benches_holds_a_manifest` and `the_layout_guards_report_planted_trees`
-- [ ] Each new rule fails on a planted tree that breaks it (asserted in `the_layout_guards_report_planted_trees`)
-- [ ] Gate check passes: Quick (`Run corpus`)
-- [ ] Test count: 4 new tests; the existing tests pass on the new tree
+- [x] `parity_corpus.rs` holds `every_twin_has_its_files_in_one_scenario_directory`, `tests_ngspice_holds_no_twin`, `a_scenario_with_benches_holds_a_manifest` and `the_layout_guards_report_planted_trees`
+- [x] Each new rule fails on a planted tree that breaks it (asserted in `the_layout_guards_report_planted_trees`)
+- [x] Gate check passes: Quick (`Run corpus`)
+- [x] Test count: 4 new tests; the existing tests pass on the new tree
 
 **Tests**: integration
 **Gate**: quick
