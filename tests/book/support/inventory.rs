@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::book::{Block, Sentence};
+use super::book::{Block, BlockId, Book, Sentence};
 
 /// What a row is about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -199,6 +199,17 @@ impl Inventory {
     /// The block rows.
     pub fn blocks(&self) -> Vec<&Row> {
         self.rows.iter().filter(|row| row.kind == Kind::Block).collect()
+    }
+
+    /// The block `id` of `book`, after its text is checked against its row's fingerprint: a chapter
+    /// test reads a block through this, so a block that changed or moved fails by name instead of
+    /// running another text. Panics naming `id` when the inventory has no row for it, or the row's
+    /// fingerprint is another one.
+    pub fn checked_block<'a>(&self, book: &'a Book, id: &str) -> &'a Block {
+        let row = self.row(id).unwrap_or_else(|| panic!("{id}: the inventory has no row"));
+        let block = book.block(&BlockId::parse(id).unwrap_or_else(|| panic!("{id}: not a block id")));
+        assert_eq!(row.fingerprint, block.fingerprint().to_string(), "{id}: the block changed or moved since its row was written");
+        block
     }
 
     /// The claim rows.

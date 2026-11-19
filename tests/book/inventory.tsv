@@ -144,9 +144,9 @@ block	core-std#8	6994862452a71c4a	pending	-	-	-
 block	core-std#9	8df4b148eabfdf77	pending	-	-	-
 block	core-std#10	631aa175ce2fb38e	pending	-	-	-
 block	core-std#11	8e7f72e7c63ab65b	pending	-	-	-
-block	errors#1	02c79bb77a2f9f83	pending	-	-	-
-block	errors#2	290db49dc81491b3	pending	-	-	-
-block	errors#3	d48482453090553f	pending	-	-	-
+block	errors#1	02c79bb77a2f9f83	diverges	piperine/book_errors::the_discrete_read_diagnostic_has_the_parts_the_book_shows	D1	-
+block	errors#2	290db49dc81491b3	diverges	piperine/book_errors::the_ambiguous_name_diagnostic_has_the_parts_the_book_shows	D1	-
+block	errors#3	d48482453090553f	refused	piperine/book_errors::the_worked_sample_hold_is_refused_with_its_three_codes	-	-
 block	errors#4	d6f143186449ee41	shown	-	-	-
 block	pom#1	e6a2cd05f83340b4	shown	-	-	-
 block	pom#2	14322fa939347053	pending	-	-	-

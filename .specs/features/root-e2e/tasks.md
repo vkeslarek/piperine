@@ -477,9 +477,9 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `errors.rs` holds `a_refusal_that_runs_fails_naming_its_row` (a model that runs, under `catch_unwind`: the panic names the row and says "now runs") and one test per settled block row
-- [ ] Gate check passes: Quick (`Run errors`, `Run inventory`)
-- [ ] Test count: at least 3 new tests
+- [x] `errors.rs` holds `a_refusal_that_runs_fails_naming_its_row` (a model that runs, under `catch_unwind`: the panic names the row and says "now runs") and one test per settled block row
+- [x] Gate check passes: Quick (`Run errors`, `Run inventory`)
+- [x] Test count: at least 3 new tests
 
 **Tests**: integration
 **Gate**: quick

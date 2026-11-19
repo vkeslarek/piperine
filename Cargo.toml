@@ -61,6 +61,11 @@ path = "tests/book/inventory_guard.rs"
 name = "book_claims"
 path = "tests/book/claims_guard.rs"
 
+# One target per Book chapter (`feature root-e2e`), each running the chapter's models through `piperine::`.
+[[test]]
+name = "book_errors"
+path = "tests/book/errors.rs"
+
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked
 # at ~1.1 GB and several run in parallel, so a one-crate change relinking the
