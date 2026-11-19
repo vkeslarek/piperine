@@ -487,3 +487,5 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | mixed~68328637 | D4 | `root-e2e` | the run starts from an operating point where the first `hs <- true` is already applied: the output is 11.8 V, the second record has vout 11.6 V, err -8.3 and duty 0, not 0.0066; the end (3.3 V, duty 0.28) is the Book's |
 | mixed~98e4dc1b | D1 | `root-e2e` | an `on every(..)` inside a reaction is `E0404` (`on` in a reaction), not `E0350`; `every` in a `fn` is `E0350` |
 | mixed~9d07c4b9 | L52 | `unknown-semantics-events` | the check on `settle` is refused with mixed#10 |
+| packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
+| packages~64f2121d | L57 | `composite-values` | `E0610` is not raised: `include_str!` in a module body is `P0001`, `include_str!` is not supported yet |

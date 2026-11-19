@@ -17,7 +17,7 @@ use support::inventory::{Coverage, Inventory, Kind, Row, Verdict};
 
 /// The chapters whose claim rows a chapter task has settled: none of their rows may be `pending`. A
 /// chapter task adds its chapter here; the closing task replaces the registry with the strict rules.
-const SETTLED_CHAPTERS: [&str; 9] = ["errors", "welcome", "from-rust", "values", "natures", "modules", "analog", "digital", "mixed"];
+const SETTLED_CHAPTERS: [&str; 10] = ["errors", "welcome", "from-rust", "values", "natures", "modules", "analog", "digital", "mixed", "packages"];
 
 /// Decides whether a sentence of the Book states a value, a record or an outcome. The three lists
 /// are data: a sentence is flagged when it holds an error code, a number with a unit or a count,

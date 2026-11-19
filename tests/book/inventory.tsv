@@ -119,20 +119,20 @@ block	mixed#13	0e299217e2c4d640	held	piperine-cli/book::every_cli_listing_of_the
 block	mixed#14	f7cd53dd5486e87b	run	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	-
 block	mixed#15	ea28fe2bc18e8e9d	refused	piperine/book_mixed::the_sar_adc_is_refused_for_the_field_access_on_its_converter	L36	-
 block	packages#1	4d5e7db8c23bc8e3	shown	-	-	-
-block	packages#2	3ec48f5cf74f6fa3	pending	-	-	-
-block	packages#3	57d2aaeee2a2ed05	pending	-	-	-
-block	packages#4	e4df121ca88deb2a	pending	-	-	-
+block	packages#2	3ec48f5cf74f6fa3	run	piperine/book_packages::the_lowpass_project_runs_as_the_book_assembles_it	-	-
+block	packages#3	57d2aaeee2a2ed05	run	piperine/book_packages::the_lowpass_project_runs_as_the_book_assembles_it	-	-
+block	packages#4	e4df121ca88deb2a	run	piperine/book_packages::the_lowpass_project_runs_as_the_book_assembles_it	-	-
 block	packages#5	3fe3f3c8e69a6052	shown	-	-	-
 block	packages#6	9d9b4ab1f3401f1c	shown	-	-	-
 block	packages#7	c6828a372335504f	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run
 block	packages#8	a6e033b06cef59d2	shown	-	-	-
-block	packages#9	73c3eda598d0bacf	pending	-	-	-
+block	packages#9	73c3eda598d0bacf	run	piperine/book_packages::the_crate_root_of_the_bigger_project_loads_its_files_and_reaches_its_dependency	-	-
 block	packages#10	a97e75886fee3431	shown	-	-	-
 block	packages#11	f01cdf951bdfcbc8	shown	-	-	-
-block	packages#12	ce45ac0976f71d1f	pending	-	-	-
-block	packages#13	b2997ca3b9ad5e0a	pending	-	-	-
+block	packages#12	ce45ac0976f71d1f	refused	piperine/book_packages::the_include_str_table_is_refused_for_its_generic_function_and_its_reference	L57	-
+block	packages#13	b2997ca3b9ad5e0a	refused	piperine/book_packages::a_local_namespace_and_a_dependency_of_one_name_make_the_use_ambiguous	-	-
 block	packages#14	022839d3af99d3a3	shown	-	-	-
-block	packages#15	5f60f0eac75c1c77	pending	-	-	-
+block	packages#15	5f60f0eac75c1c77	fragment	packages#13	-	-
 block	core-std#1	3585f494024ab2b2	pending	-	-	-
 block	core-std#2	ffbc2ff18dccbb7f	pending	-	-	-
 block	core-std#3	9de7bc92b15444b7	pending	-	-	-
@@ -378,17 +378,17 @@ claim	mixed~6430a6c6	6430a6c6b34f7e9e	holds	piperine/book_mixed::e0350_every_is_
 claim	mixed~5c44ed1d	5c44ed1dcf9aee4b	holds	piperine/book_mixed::e0504_the_step_after_a_jump_that_does_not_converge_names_the_carrier	-	E0504
 claim	mixed~90621efb	90621efb95052987	prose	-	-	Predict what the pulse stream does near each zero crossing, then restore the hysteresis and choose the smallest value that gives one pulse per cycle.
 claim	mixed~41a87153	41a87153c3517456	holds	piperine/book_mixed::a_faster_integral_gain_makes_the_buck_loop_swing	-	In the buck, raise ki to 20m and look at the loop stream: does duty still settle, or does it swing around 0.28? (It swings: the loop now reacts faster than the LC filter can follow.)
-claim	packages~5018120b	5018120b8c105ac6	pending	-	-	Having neither, or both, is E0161.
-claim	packages~77a1260e	77a1260eccb8ed3d	pending	-	-	Any other table or key is E0171.
-claim	packages~62e1271f	62e1271f5b6318b0	pending	-	-	A crate reaches another crate only through a dependency named in its manifest.
-claim	packages~31625632	31625632c81306ac	pending	-	-	A local fn util or const util lives in the value namespace, so util::cells::Cell still reaches the crate.
-claim	packages~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
-claim	packages~54e1b71d	54e1b71dcbc8277f	pending	-	-	E0401
-claim	packages~39a5cf1d	39a5cf1dbc00bd57	pending	-	-	E0162
-claim	packages~39a5ce1d	39a5ce1dbc00bba4	pending	-	-	E0163
-claim	packages~39a2cc1d	39a2cc1dbbfe8267	pending	-	-	E0171
-claim	packages~39a2c81d	39a2c81dbbfe7b9b	pending	-	-	E0175
-claim	packages~64f2121d	64f2121dd48643ab	pending	-	-	E0610
+claim	packages~5018120b	5018120b8c105ac6	holds	piperine/book_packages::e0161_a_private_item_and_a_module_file_that_is_not_there_or_is_there_twice	-	Having neither, or both, is E0161.
+claim	packages~77a1260e	77a1260eccb8ed3d	holds	piperine/book_packages::e0171_a_manifest_has_only_package_and_dependencies	-	Any other table or key is E0171.
+claim	packages~62e1271f	62e1271f5b6318b0	holds	piperine/book_packages::a_crate_reaches_another_only_through_its_manifest	-	A crate reaches another crate only through a dependency named in its manifest.
+claim	packages~31625632	31625632c81306ac	holds	piperine/book_packages::a_function_named_like_a_dependency_does_not_clash_with_it	-	A local fn util or const util lives in the value namespace, so util::cells::Cell still reaches the crate.
+claim	packages~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_packages::e0161_a_private_item_and_a_module_file_that_is_not_there_or_is_there_twice	-	E0161
+claim	packages~54e1b71d	54e1b71dcbc8277f	holds	piperine/book_packages::e0401_a_behavior_block_lives_in_the_file_of_its_module	-	E0401
+claim	packages~39a5cf1d	39a5cf1dbc00bd57	holds	piperine/book_packages::e0162_one_name_in_one_namespace_is_declared_once	-	E0162
+claim	packages~39a5ce1d	39a5ce1dbc00bba4	holds	piperine/book_packages::a_local_namespace_and_a_dependency_of_one_name_make_the_use_ambiguous	-	E0163
+claim	packages~39a2cc1d	39a2cc1dbbfe8267	holds	piperine/book_packages::e0171_a_manifest_has_only_package_and_dependencies	-	E0171
+claim	packages~39a2c81d	39a2c81dbbfe7b9b	holds	piperine/book_packages::e0175_the_crate_root_is_always_src_lib_msl	-	E0175
+claim	packages~64f2121d	64f2121dd48643ab	unraised	piperine/book_packages::e0610_is_not_raised_include_str_in_a_module_is_refused_as_p0001	L57	E0610
 claim	core-std~ece4c57c	ece4c57c55119b14	pending	-	-	A core name needs no import and cannot be redefined: a namespace item with the same name is error E0457.
 claim	core-std~c59252de	c59252de190bd867	pending	-	-	Your nature gives them their short names, v and i.
 claim	core-std~e4393c2d	e4393c2d3f5c1cb5	pending	-	-	Noise sources with a flat, a 1/f and a tabulated spectrum.
