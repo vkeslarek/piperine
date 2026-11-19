@@ -2,8 +2,10 @@
 //! reserved `checks` stream are the checks; a check whose `pass` is false, or unknown, fails
 //! the run. Every check record counts, a passing one too: what a terminal hides never reaches
 //! this type's input as a filter. A `sim` record with `failed = true` (what `fatal` writes) fails
-//! the run with its `msg` (HII-15); the last margin of each `target` is kept and never fails it
-//! (HII-16, the user's decision X3: a target informs, `require` is the constraint).
+//! the run with its `msg` (HII-15), unless that record is a `maybe` one (§19 Resolution). A
+//! `maybe` check record is an unknown check (§23.2: it may not have run) and fails. The last
+//! margin of each `target` is kept and never fails it (HII-16, the user's decision X3: a target
+//! informs, `require` is the constraint).
 
 use crate::record::{Field, Record, RecordSink};
 
@@ -70,12 +72,14 @@ impl Default for Verdict {
 }
 
 impl RecordSink for Verdict {
-    /// A record of the `checks` stream is counted, and kept when its `pass` is not true (a
-    /// `target` keeps its margin instead); the first `sim` record whose `failed` is known true is
-    /// kept as the fatal one; every other record is dropped, so a run's memory holds the failures
-    /// only.
+    /// A record of the `checks` stream is counted, and kept when its `pass` is not true, or when
+    /// it is a `maybe` record, whose check may not have run: an unknown check (a `target` keeps
+    /// its margin instead); the first `sim` record whose `failed` is known true and that is no
+    /// `maybe` record is kept as the fatal one; every other record is dropped, so a run's memory
+    /// holds the failures only.
     fn record(&mut self, record: &Record) {
-        if record.stream == "sim" && self.fatal.is_none() && record.fields.iter().any(|(name, field)| name == "failed" && *field == Field::Bool(true)) {
+        // a `fatal` on a path that may not have run ends nothing and fails nothing (§19 Resolution)
+        if record.stream == "sim" && self.fatal.is_none() && record.surely("failed") {
             self.fatal = Some(record.clone());
         }
         if record.stream != "checks" {
@@ -94,7 +98,7 @@ impl RecordSink for Verdict {
                 None => self.targets.push((name.clone(), margin)),
             }
         }
-        if field("pass").is_some_and(|pass| *pass != Field::Bool(true)) {
+        if record.maybe || field("pass").is_some_and(|pass| *pass != Field::Bool(true)) {
             self.failed.push(record.clone());
         }
     }
@@ -207,6 +211,30 @@ mod tests {
         assert_eq!(verdict.fatal(), None);
         // a `failed` that is false is no fatal either
         assert!(Verdict::judge(&[sim(vec![("failed".into(), Field::Bool(false))])]).passed());
+    }
+
+    #[test]
+    fn a_maybe_check_fails_as_unknown() {
+        // US-05 AC 4, §23.2: a `require` reached under unknown control is judged as an unknown
+        // check, even when its `pass` is known true on the path that ran
+        let reached = Record { maybe: true, ..check("held", Field::Bool(true)) };
+        let verdict = Verdict::judge(&[check("a", Field::Bool(true)), reached.clone()]);
+        assert!(!verdict.passed());
+        assert_eq!(verdict.checks(), 2);
+        assert_eq!(verdict.failed(), [reached]);
+        // the same check on a path that surely ran passes
+        assert!(Verdict::judge(&[check("held", Field::Bool(true))]).passed());
+    }
+
+    #[test]
+    fn a_maybe_fatal_is_not_fatal() {
+        // US-05 AC 3, §19 Resolution: a `fatal` that may not have happened fails nothing; the
+        // same record on a path that surely ran is the fatal one
+        let boom = sim(vec![("finish".into(), Field::Bool(true)), ("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("boom".into()))]);
+        let verdict = Verdict::judge(&[Record { maybe: true, ..boom.clone() }]);
+        assert!(verdict.passed());
+        assert_eq!(verdict.fatal(), None);
+        assert_eq!(Verdict::judge(&[boom.clone()]).fatal(), Some(&boom));
     }
 
     fn target(name: &str, margin: Field) -> Record {

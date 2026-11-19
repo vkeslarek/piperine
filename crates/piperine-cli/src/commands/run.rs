@@ -74,7 +74,7 @@ struct LiveRecords {
 
 impl RecordSink for LiveRecords {
     fn record(&mut self, record: &Record) {
-        if self.fatal.is_none() && record.stream == "sim" && record.fields.iter().any(|(name, field)| name == "failed" && *field == Field::Bool(true)) {
+        if self.fatal.is_none() && record.stream == "sim" && record.surely("failed") {
             self.fatal = Some(record.clone());
         }
         if self.closed.is_some() {

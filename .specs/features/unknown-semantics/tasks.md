@@ -530,8 +530,8 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `verdict::tests::a_maybe_check_fails_as_unknown` and `verdict::tests::a_maybe_fatal_is_not_fatal` pass under `**Run verdict**`
-- [ ] Gate check passes: Quick
+- [x] `verdict::tests::a_maybe_check_fails_as_unknown` and `verdict::tests::a_maybe_fatal_is_not_fatal` pass under `**Run verdict**`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick
