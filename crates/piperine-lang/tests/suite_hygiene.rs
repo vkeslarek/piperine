@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 // this target's test count, breaking the "behavior byte-identical" rule.
 #[path = "support/sources.rs"]
 mod sources;
-use sources::{integration_targets, repo_root, root_targets, rust_sources};
+use sources::{integration_targets, repo_root, root_targets, rust_sources, RootManifest};
 
 /// Every library source: each crate's `src` tree plus the root package's.
 /// Integration targets are excluded — a lint suppression in a test file hides
@@ -335,6 +335,19 @@ fn every_integration_target_declares_its_scope() {
         "integration targets with no `//!` scope header (say what the file covers):\n  {}",
         headerless.join("\n  ")
     );
+}
+
+/// The root manifest's `[[test]]` paths are what makes a `tests/<dir>/<file>.rs` a target (the Book
+/// targets of `feature root-e2e`): the reading finds each declared path and ignores a `path` of any
+/// other table.
+#[test]
+fn the_root_manifest_names_its_test_targets() {
+    let manifest = "[package]\nname = \"piperine\"\n\n[dependencies]\npiperine-api = { path = \"crates/piperine-api\" }\n\n\
+                    [[test]]\nname = \"book_welcome\"\npath = \"tests/book/welcome.rs\"\n\n\
+                    [[bin]]\nname = \"tool\"\npath = \"src/tool.rs\"\n\n\
+                    [[test]]\nname = \"book_values\"\npath = \"tests/book/values.rs\"\n";
+    assert_eq!(RootManifest::test_paths(manifest), vec!["tests/book/welcome.rs", "tests/book/values.rs"]);
+    assert!(RootManifest::test_paths("[dependencies]\nx = { path = \"a/b\" }\n").is_empty());
 }
 
 // ─── 4a. LRM-COVERS declarations are well-formed (T6, lrm-conformance-wave2) ──

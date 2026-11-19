@@ -56,20 +56,50 @@ fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
     }
 }
 
-/// Every integration-test target: `crates/*/tests/*.rs` and root `tests/*.rs`
-/// (top level only — a `tests/<dir>/` module file is a helper, not a target).
+/// The root `Cargo.toml`, read for the test targets it declares.
+pub struct RootManifest;
+
+impl RootManifest {
+    /// The `path` of every `[[test]]` table of manifest `text`, in order. A `path` in any other
+    /// table (a dependency, a `[[bin]]`) is not a test target.
+    pub fn test_paths(text: &str) -> Vec<String> {
+        let mut paths = Vec::new();
+        let mut in_test_table = false;
+        for line in text.lines().map(str::trim) {
+            if line.starts_with('[') {
+                in_test_table = line == "[[test]]";
+            } else if in_test_table
+                && let Some(value) = line.strip_prefix("path").map(str::trim_start).and_then(|rest| rest.strip_prefix('='))
+            {
+                paths.push(value.trim().trim_matches('"').to_string());
+            }
+        }
+        paths
+    }
+
+    /// The test paths the repository's own root manifest declares.
+    pub fn declared_test_paths() -> Vec<String> {
+        let text = fs::read_to_string(repo_root().join("Cargo.toml")).expect("the root manifest is readable");
+        Self::test_paths(&text)
+    }
+}
+
+/// Every integration-test target: `crates/*/tests/*.rs`, root `tests/*.rs` and a root
+/// `tests/<dir>/<file>.rs` that the root manifest names in a `[[test]]` table (any other file
+/// of a `tests/<dir>/` is a helper, not a target).
 pub fn integration_targets() -> Vec<(String, String)> {
+    let declared = RootManifest::declared_test_paths();
     rust_sources()
         .into_iter()
         .filter(|(path, _)| {
             let parts: Vec<&str> = path.split('/').collect();
-            matches!(parts.as_slice(), ["tests", _file] | ["crates", _, "tests", _file])
+            matches!(parts.as_slice(), ["tests", _file] | ["crates", _, "tests", _file]) || declared.contains(path)
         })
         .collect()
 }
 
-/// Every root `tests/*.rs` target, as `(file name, contents)` — top level only,
-/// so a `tests/<dir>/` helper module is not mistaken for a target.
+/// Every root `tests/` target, as `(path under tests/, contents)` — top level and the
+/// `[[test]]` paths of `tests/<dir>/`, so a helper module is not mistaken for a target.
 pub fn root_targets() -> Vec<(String, String)> {
     let targets: Vec<(String, String)> = integration_targets()
         .into_iter()
