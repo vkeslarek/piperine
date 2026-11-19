@@ -1,0 +1,162 @@
+//! Reactions whose decisions may be unknown (MSL §3.3.3, US-04): `d`, `sel` and `t` are never
+//! driven, so they stay unknown for the whole run. A 200 MHz oscillator gives the rising edges
+//! (the first at 2.5 ns) on which every reaction runs once per edge.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Both arms commit: different values merge to unknown, equal known values stay known.
+module Arms(in clk: Bit, in d: Bit, out differ: Bit<u8> = 1, out equal: Bit<u8> = 1, out before: Bit<u8>) {}
+digital for Arms {
+    on clk.rise() {
+        before <- 9;
+        if d { differ <- 5; } else { differ <- 6; }
+        if d { equal <- 5; } else { equal <- 5; }
+    }
+}
+
+/// One arm commits: its value is merged with the value the carrier would hold then. `changes`
+/// holds 3 and is committed 7 (they differ); `keeps` holds 7 and is committed 7 (they agree).
+module OneArm(in clk: Bit, in d: Bit, out changes: Bit<u8> = 3, out keeps: Bit<u8> = 7) {}
+digital for OneArm { on clk.rise() { if d { changes <- 7; keeps <- 7; } } }
+
+/// Neither arm does anything: no commit, no record.
+module Neither(in clk: Bit, in d: Bit, out idle: Bit<u8> = 1) {}
+digital for Neither { on clk.rise() { if d { } else { } } }
+
+/// An `if` statement and an `if` expression commit the same merge.
+module Forms(in clk: Bit, in d: Bit, out statement_equal: Bit<u8> = 0, out expression_equal: Bit<u8> = 0,
+             out statement_differ: Bit<u8> = 0, out expression_differ: Bit<u8> = 0) {}
+digital for Forms {
+    on clk.rise() {
+        if d { statement_equal <- 1; } else { statement_equal <- 1; }
+        expression_equal <- if d { 1 } else { 1 };
+        if d { statement_differ <- 1; } else { statement_differ <- 2; }
+        expression_differ <- if d { 1 } else { 2 };
+    }
+}
+
+/// A `match` on an unknown scrutinee takes every arm, the wildcard included.
+module Matching(in clk: Bit, in sel: Bit<u8>, out differ: Bit<u8> = 0, out equal: Bit<u8> = 0) {}
+digital for Matching {
+    on clk.rise() {
+        match sel {
+            0 => { differ <- 1; equal <- 4; }
+            1 => { differ <- 2; equal <- 4; }
+            _ => { differ <- 3; equal <- 4; }
+        }
+    }
+}
+
+/// An arm that divides by zero panics: under an unknown condition that is no fault, and the
+/// merge of that `if` is unknown.
+module Panics(in clk: Bit, in d: Bit, out q: Bit<u8> = 5, out before: Bit<u8>) {
+    signal zero: Bit<u8> = 0;
+}
+digital for Panics {
+    on clk.rise() {
+        before <- 9;
+        if d { q <- 1 / zero.known_or(0); } else { q <- 5; }
+    }
+}
+
+fn pick(c: bool, a: u8, b: u8) -> u8 { if c { a } else { b } }
+
+/// A definition, a body `let` and a function decide alike; the arms agree (3 and 3).
+module AlikeEqual(in clk: Bit, in d: Bit, out by_let: Bit<u8> = 0, out by_function: Bit<u8> = 0, out by_definition: Bit<u8>) {
+    by_definition = if d { 3 } else { 3 };
+}
+digital for AlikeEqual {
+    on clk.rise() {
+        let t: u8 = if d { 3 } else { 3 };
+        by_let <- t;
+        by_function <- pick(d, 3, 3);
+    }
+}
+
+/// The same with arms that differ (3 and 4).
+module AlikeDiffer(in clk: Bit, in d: Bit, out by_let: Bit<u8> = 0, out by_function: Bit<u8> = 0, out by_definition: Bit<u8>) {
+    by_definition = if d { 3 } else { 4 };
+}
+digital for AlikeDiffer {
+    on clk.rise() {
+        let t: u8 = if d { 3 } else { 4 };
+        by_let <- t;
+        by_function <- pick(d, 3, 4);
+    }
+}
+
+/// An unknown delay commits `Unknown` at the next microstep, under unknown control too.
+module Late(in clk: Bit, in d: Bit, in t: Bit<f64>, out q: Bit<u8> = 1) {}
+digital for Late { on clk.rise() { if d { q <- 2 after t; } else { q <- 2 after t; } } }
+
+/// Delays one tick (1 fs) apart are one instant: the two arms commit one key, 1 ns after the
+/// edge. If they were two keys, each would merge with the value then (0) and `q` would go unknown.
+module Ticks(in clk: Bit, in d: Bit, out q: Bit<u8> = 0) {}
+digital for Ticks { on clk.rise() { if d { q <- 1 after 1n; } else { q <- 1 after 1.0000004n; } } }
+
+/// §3.3's three-state phase detector in the `if`-expression form: `state` is never reset. The
+/// third edge commits 0 (a known commit), the fourth steps it to 1.
+module Pfd3(in clk: Bit, out edges: Bit<u8> = 0, out state: Bit<i2>) {}
+digital for Pfd3 {
+    on clk.rise() {
+        edges <- edges + 1;
+        state <- if edges == 2 { 0 } else { if state < 1 { state + 1 } else { state } };
+    }
+}
+
+module Merges() {
+    signal clk: Bit; signal d: Bit; signal sel: Bit<u8>; signal t: Bit<f64>;
+    signal differ: Bit<u8>; signal equal: Bit<u8>; signal before: Bit<u8>;
+    signal changes: Bit<u8>; signal keeps: Bit<u8>;
+    signal idle: Bit<u8>;
+    signal statement_equal: Bit<u8>; signal expression_equal: Bit<u8>;
+    signal statement_differ: Bit<u8>; signal expression_differ: Bit<u8>;
+    signal match_differ: Bit<u8>; signal match_equal: Bit<u8>;
+    signal panic_q: Bit<u8>; signal panic_before: Bit<u8>;
+    signal equal_let: Bit<u8>; signal equal_function: Bit<u8>; signal equal_definition: Bit<u8>;
+    signal differ_let: Bit<u8>; signal differ_function: Bit<u8>; signal differ_definition: Bit<u8>;
+    signal late_q: Bit<u8>; signal ticks_q: Bit<u8>;
+    signal edges: Bit<u8>; signal state: Bit<i2>;
+    let osc = Osc(clk) { f: 1G };
+    let arms = Arms(clk, d, differ, equal, before);
+    let one_arm = OneArm(clk, d, changes, keeps);
+    let neither = Neither(clk, d, idle);
+    let forms = Forms(clk, d, statement_equal, expression_equal, statement_differ, expression_differ);
+    let matching = Matching(clk, sel, match_differ, match_equal);
+    let panics = Panics(clk, d, panic_q, panic_before);
+    let alike_equal = AlikeEqual(clk, d, equal_let, equal_function, equal_definition);
+    let alike_differ = AlikeDiffer(clk, d, differ_let, differ_function, differ_definition);
+    let late = Late(clk, d, t, late_q);
+    let ticks = Ticks(clk, d, ticks_q);
+    let pfd3 = Pfd3(clk, edges, state);
+}
+
+/// A node held at 1 V, so the run has an analog side.
+module Held(p: Electrical) {}
+analog for Held { v(p, gnd) +> 1.0; }
+
+/// `finish()` under an unknown condition: it may not have happened, so the run goes on.
+module MaybeFinish(in clk: Bit, in d: Bit) {}
+digital for MaybeFinish { on clk.rise() { if d { finish(); } } }
+
+module MaybeFinishBench() {
+    signal clk: Bit; signal d: Bit; signal a: Electrical;
+    let h = Held(a);
+    let osc = Osc(clk) { f: 1G };
+    let m = MaybeFinish(clk, d);
+}
+
+/// `finish()` under known control, for contrast: it ends the run at the first rising edge.
+module SureFinish(in clk: Bit) {}
+digital for SureFinish { on clk.rise() { finish(); } }
+
+module SureFinishBench() {
+    signal clk: Bit; signal a: Electrical;
+    let h = Held(a);
+    let osc = Osc(clk) { f: 1G };
+    let m = SureFinish(clk);
+}

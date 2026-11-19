@@ -130,8 +130,11 @@ impl Table {
 /// The commits of one key across both paths of a merge.
 struct Group {
     key: Key,
-    /// Every statement either path used for the key, so transport sees each of them.
-    statements: Vec<u32>,
+    /// Every statement either path used for the key, so transport sees each of them, each with
+    /// the delay it was made with: two delays that round to one tick are one key, but a statement
+    /// that is `LATER` by a bound refuses a commit through it that is any sooner than that bound
+    /// (abi.md C3).
+    statements: Vec<(u32, f64)>,
     /// The last commit of the key in the first and in the second path.
     last: [Option<Entry>; 2],
 }
@@ -158,8 +161,8 @@ impl Paths {
                     groups.push(Group { key, statements: Vec::new(), last: [None, None] });
                     groups.len() - 1
                 });
-                if !groups[at].statements.contains(&entry.statement) {
-                    groups[at].statements.push(entry.statement);
+                if !groups[at].statements.iter().any(|(statement, _)| *statement == entry.statement) {
+                    groups[at].statements.push((entry.statement, entry.after));
                 }
                 groups[at].last[side] = Some(entry);
             }
@@ -233,7 +236,7 @@ impl Group {
             // one path commits: the other leaves the carrier as it then is (§3.3.3)
             (false, ..) => (template.bytes.clone(), commit_flag::MAYBE | commit_flag::MERGE | template.flags),
         };
-        self.statements.into_iter().map(|statement| Entry { statement, bytes: bytes.clone(), flags, ..template.clone() }).collect()
+        self.statements.into_iter().map(|(statement, after)| Entry { statement, after, bytes: bytes.clone(), flags, ..template.clone() }).collect()
     }
 }
 
@@ -482,13 +485,14 @@ pub(crate) mod tests {
         // below half a tick are the next microstep
         let mut c = controlled();
         c.branch(u(), |c| c.commit(0, byte(5), k(1.0 * TICK)), |c| c.commit(1, byte(6), k(1.2 * TICK)));
-        assert_eq!(flushed(c), [(0, vec![0, 0], TICK, MAYBE), (1, vec![0, 0], TICK, MAYBE)]);
+        // each statement keeps the delay it was made with (1.2 ticks for statement 1)
+        assert_eq!(flushed(c), [(0, vec![0, 0], TICK, MAYBE), (1, vec![0, 0], 1.2 * TICK, MAYBE)]);
         let mut c = controlled();
         c.branch(u(), |c| c.commit(0, byte(5), k(1.0 * TICK)), |c| c.commit(1, byte(5), k(3.0 * TICK)));
         assert_eq!(flushed(c), [(0, vec![5, 1], TICK, MAYBE | MERGE), (1, vec![5, 1], 3.0 * TICK, MAYBE | MERGE)]);
         let mut c = controlled();
         c.branch(u(), |c| c.commit(0, byte(5), k(-1.0)), |c| c.commit(1, byte(5), k(0.4 * TICK)));
-        assert_eq!(flushed(c), [(0, vec![5, 1], -1.0, MAYBE), (1, vec![5, 1], -1.0, MAYBE)]);
+        assert_eq!(flushed(c), [(0, vec![5, 1], -1.0, MAYBE), (1, vec![5, 1], 0.4 * TICK, MAYBE)]);
         // two carriers are two keys
         let mut c = controlled();
         c.branch(u(), |c| c.commit(0, byte(5), k(0.0)), |c| c.commit(2, byte(5), k(0.0)));
@@ -608,6 +612,15 @@ pub(crate) mod tests {
         assert_eq!(flow(&|c| c.run(true, |c| c.finish(k(true)))), Flow::Finish);
         assert_eq!(flow(&|c| c.branch(k(true), |c| c.finish(k(true)), |_| ())), Flow::Finish);
         assert_eq!(flow(&|c| { c.branch(u(), |c| c.finish(k(true)), |_| ()); c.finish(k(true)) }), Flow::Finish);
+    }
+
+    #[test]
+    fn a_joined_key_keeps_the_delay_of_each_statement() {
+        // two delays one tick apart are one key (abi.md C1), yet each statement that made one
+        // commits with its own delay: a `LATER` statement refuses any sooner than its bound
+        let mut c = controlled();
+        c.branch(u(), |c| c.commit(0, byte(5), k(1e-9)), |c| c.commit(1, byte(5), k(1e-9 + 4e-16)));
+        assert_eq!(flushed(c), [(0, vec![5, 1], 1e-9, MAYBE), (1, vec![5, 1], 1e-9 + 4e-16, MAYBE)]);
     }
 
     #[test]

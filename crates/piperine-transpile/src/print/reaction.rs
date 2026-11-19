@@ -13,10 +13,14 @@
 //! them, which is the same walk, and refuses the reaction when the carriers it numbered are
 //! not the plan's (a transpiler defect, never a commit through the wrong statement).
 //!
-//! **Unknown control.** An `if` on a condition that may be unknown is `c.decide("<origin>")?`:
-//! a `Fault` naming the `if` when the condition is unknown (§3.3.3 is out of scope here, RS-11
-//! AC 5), returned before anything is flushed. A commit's delay that is unknown commits
-//! `Unknown` at the next microstep (`Commits::commit`, RS-11 AC 6).
+//! **Unknown control.** An `if` on a condition that may be unknown is the merge of §3.3.3: when
+//! its arms commit or emit it is `commits_.branch(c, |commits_| { A }, |commits_| { B })`, which
+//! runs both arms as paths of the reaction's `Commits` and joins what they committed, and a
+//! reaction holding one builds `rt::Commits::controlled(&CARRIERS_, resolution_)`, `CARRIERS_`
+//! being the carrier each statement commits to and `resolution_` the session's tick, so that two
+//! delays that round to one tick are one key of the join. A commit's delay that is unknown
+//! commits `Unknown` at the next microstep (`Commits::commit`, RS-11 AC 6). A `finish` is told to
+//! `Commits::finish`, and the reaction returns `Commits::flow`.
 //!
 //! The reaction of a drive with an `after` (RS-12 AC 5) commits the undelayed value its `.now`
 //! pin holds to the carrier after the delay.
@@ -26,7 +30,7 @@
 //! later, at the next microstep when `t` is now, never when `t` is unknown or past.
 
 use piperine_ir::{Env, EventSource, ValueType};
-use piperine_plan::{ReactionMode, ReactionPlan, Source, StatementPlan};
+use piperine_plan::{ReactionMode, ReactionPlan, Source, StatementPlan, Target};
 
 use crate::Error;
 use crate::print::{DigitalPrinter, Text, ValuePrinter};
@@ -111,6 +115,17 @@ impl<'a> DigitalPrinter<'a> {
             ReactionMode::Arm(_) => vec![Source::Time],
             ReactionMode::Reaction(_) => Vec::new(),
         };
+        // a reaction that joins paths keys its commits by due instant: it reads the session's tick,
+        // and the carrier each of its statements commits to
+        let resolution = self.names.read_name(Source::Resolution);
+        let carriers = values.branches().then(|| {
+            values.read(&resolution);
+            let table: Vec<String> = committed.iter().map(|s| match s.target {
+                Target::Carrier(c) => format!("Some({c})"),
+                _ => "None".to_string(),
+            }).collect();
+            format!("const CARRIERS_: &[Option<u32>] = &[{}];", table.join(", "))
+        });
         let mut binds = self.binds(&values, "cx_", &plan.reads, &forced)?;
         // `freq()` read through a function: no `FREQ` cell in a reaction, the value is 0 (§14.4.4)
         let freq = ValuePrinter::env_name(Env::Freq);
@@ -142,15 +157,21 @@ impl<'a> DigitalPrinter<'a> {
                 t.line(line);
             }
             t.comment(&format!("{} of body {}: the commits are made here and flushed after the last statement", name, self.body.name()), &origin);
-            t.line(&format!("let {}commits_ = rt::Commits::new();", if committed.is_empty() { "" } else { "mut " }));
-            if values.finishes() {
-                t.line("let mut finish_ = false;");
+            if let Some(table) = &carriers {
+                t.line(table);
             }
+            let make = if carriers.is_some() { format!("rt::Commits::controlled(&CARRIERS_, {resolution})") } else { "rt::Commits::new()".to_string() };
+            // every use of `Commits` but a bare `flush` takes `&mut self`
+            let mutable = !committed.is_empty() || carriers.is_some() || values.finishes();
+            t.line(&format!("let {}commits_ = {make};", if mutable { "mut " } else { "" }));
             for line in &lines {
                 t.line(line);
             }
+            if values.finishes() {
+                t.line("let flow_ = commits_.flow();");
+            }
             t.line("commits_.flush(cx_)?;");
-            t.line(if values.finishes() { "Ok(if finish_ { Flow::Finish } else { Flow::Continue })" } else { "Ok(Flow::Continue)" });
+            t.line(if values.finishes() { "Ok(flow_)" } else { "Ok(Flow::Continue)" });
         });
         t.line("}");
         let mut text = t.finish();

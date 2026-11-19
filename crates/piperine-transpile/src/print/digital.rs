@@ -7,9 +7,10 @@
 //! uses, and writes its cells: a drive writes the pin's bytes (`Flagged::write`; an unknown value
 //! is all zero bytes, RS-11 AC 4); an event writes its `CHANGED` byte, nonzero when it fires
 //! (abi.md §4.1). An event fires when its source fired and its guard holds; the guard is
-//! evaluated only then, so an unknown guard faults only when the event could have fired.
+//! evaluated only then, and a guard that may be unknown stops the event only when it is known
+//! false.
 
-use piperine_ir::{Body, EventSource, ExprId, Ir, ValueType};
+use piperine_ir::{Body, EventSource, Ir, ValueType};
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source};
 
 use crate::Error;
@@ -218,8 +219,12 @@ impl<'a> DigitalPrinter<'a> {
             }
             _ => return Err(self.unsupported(&format!("function {k} as an event"))),
         };
+        // a guard that may be unknown does not stop the event: it fires unless the guard is known
+        // false, and its reaction then runs as a maybe (§13 rule 1)
+        let guard_flagged = guard.is_some_and(|g| matches!(self.ir.expr_type(g), ValueType::Flagged(_)));
         let condition = match guard {
-            Some(g) => Some(self.guard(&values, g)?),
+            Some(g) if guard_flagged => Some(values.expr(g)?),
+            Some(g) => Some(values.known_condition(g)?),
             None => None,
         };
         let forced: Vec<Source> = f.reads.iter().copied().filter(|s| self.names.read_name(*s) == fired).collect();
@@ -232,6 +237,11 @@ impl<'a> DigitalPrinter<'a> {
                 t.line(line);
             }
             match &condition {
+                Some(guard) if guard_flagged => {
+                    t.comment(&format!("event of {}: it fires when {what} and its guard is not known false", self.body.name()), &origin);
+                    t.line(&format!("let guard_ = {guard};"));
+                    t.line(&format!("let fired_ = {fired} && (!guard_.is_known() || guard_.high());"));
+                }
                 Some(guard) => {
                     t.comment(&format!("event of {}: it fires when {what} and its guard holds", self.body.name()), &origin);
                     t.line(&format!("let fired_ = {fired} && {guard};"));
@@ -248,12 +258,6 @@ impl<'a> DigitalPrinter<'a> {
         let mut text = t.finish();
         text.pop();
         Ok(text)
-    }
-
-    /// A guard as a Rust condition: a `bool` as it is, a value that may be unknown decided
-    /// (an unknown guard is a fault naming it, RS-11 AC 5).
-    fn guard(&self, values: &ValuePrinter<'_>, g: ExprId) -> Result<String, Error> {
-        values.condition(g)
     }
 }
 

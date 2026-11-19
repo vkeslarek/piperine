@@ -19,9 +19,9 @@
 //! lifted (`rt::Flagged::known(x)`) where the other operand, or the place it flows to, may be.
 //! An `if` on an unknown condition is the merge of §3.3.3: `c.choose(|| { A }, || { B })` in code
 //! that commits nothing (a function, a drive, an event, an arming), so a function holding one
-//! returns its value and a call to it is a plain call; a reaction still decides it with
-//! `c.decide("<origin>")?` until it merges its commits (`Commits::branch`). Analog code has no
-//! merge of duals and refuses such an `if`. In the digital printers a real is a plain `f64`; in an `analog` block and in an
+//! returns its value and a call to it is a plain call; in a reaction, an `if` whose arms commit or
+//! emit is `commits_.branch(c, |commits_| { A }, |commits_| { B })`, which also joins what the two
+//! paths committed. Analog code has no merge of duals and refuses such an `if`. In the digital printers a real is a plain `f64`; in an `analog` block and in an
 //! IR function it is `R`.
 
 use std::cell::{Cell, RefCell};
@@ -99,8 +99,6 @@ pub struct ValuePrinter<'a> {
     /// A real inside `rt::Flagged` is the code's own real `R` rather than a plain `f64`: the
     /// value of a `cross` that may be unknown, whose probe tangents must survive (design C8).
     flagged_reals: bool,
-    /// Whether the code may use `?`: it runs in a function returning `Result<_, Fault>`.
-    faults: bool,
     /// Whether an `if` on a condition that may be unknown has a lowering here (§3.3.3): every
     /// owner but an `analog` block, whose reals are duals that `Flagged` cannot merge.
     merges: bool,
@@ -110,9 +108,12 @@ pub struct ValuePrinter<'a> {
     /// of the reaction's statements in the shape.
     committed: RefCell<Vec<StatementPlan>>,
     /// Whether the code printed so far holds an `emit!` on the stream `sim` that sets `finish`:
-    /// the reaction then keeps a `finish_` flag and returns `Flow::Finish` when it is set
-    /// (msl-fixes FIX-01).
+    /// the reaction then asks its `Commits` for the flow (`Commits::finish`, `Commits::flow`;
+    /// msl-fixes FIX-01, §19 Resolution).
     finishes: Cell<bool>,
+    /// Whether the code printed so far holds an `if` that joins the commits of its arms
+    /// (`Commits::branch`): the reaction then builds its `Commits` with the carriers table.
+    branches: Cell<bool>,
     /// The names of the reads (params, nodes, carriers, the environment) printed so far: the
     /// variables the code uses, so a function binds no read it leaves alone.
     used: RefCell<BTreeSet<String>>,
@@ -154,11 +155,11 @@ impl<'a> ValuePrinter<'a> {
             analog: None,
             plain: false,
             flagged_reals: false,
-            faults: false,
             merges: true,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
+            branches: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
         }
     }
@@ -181,11 +182,11 @@ impl<'a> ValuePrinter<'a> {
             analog: None,
             plain: false,
             flagged_reals: false,
-            faults: false,
             merges: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
+            branches: Cell::new(false),
             used: RefCell::new(BTreeSet::new()),
         }
     }
@@ -193,16 +194,16 @@ impl<'a> ValuePrinter<'a> {
     /// The printer of the code of a drive or an event of `body`: its locals are the body's, a
     /// real is a plain `f64`, and an unknown `if` merges.
     pub fn of_digital(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
-        ValuePrinter { plain: true, faults: true, merges: true, ..Self::of_body(ir, body) }
+        ValuePrinter { plain: true, merges: true, ..Self::of_body(ir, body) }
     }
 
     /// The printer of an expression a placement gives a child's param (`ChildValue::Expr`): over
-    /// the params of `body`, plain reals, no `?` (a call that may fault is refused).
+    /// the params of `body`, plain reals.
     pub fn of_placement(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
-        ValuePrinter { faults: false, ..Self::of_digital(ir, body) }
+        Self::of_digital(ir, body)
     }
 
-    /// The printer of reaction `k` of `body`: its own locals, plain reals, `?`, and commits.
+    /// The printer of reaction `k` of `body`: its own locals, plain reals, and commits.
     pub fn of_reaction(ir: &'a Ir, body: Body<'a>, k: usize) -> ValuePrinter<'a> {
         let base = Self::of_digital(ir, body);
         let Some(reaction) = body.reactions().get(k) else { return base };
@@ -249,6 +250,12 @@ impl<'a> ValuePrinter<'a> {
         self.finishes.get()
     }
 
+    /// Whether the code printed so far joins the commits of an `if` on a value that may be
+    /// unknown.
+    pub fn branches(&self) -> bool {
+        self.branches.get()
+    }
+
     /// Whether the code printed so far reads the variable `name` (a param, node, carrier or
     /// environment read).
     pub fn uses(&self, name: &str) -> bool {
@@ -281,7 +288,7 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// Notes that the code reads the variable `name`, and gives it back.
-    fn read(&self, name: &str) -> String {
+    pub(crate) fn read(&self, name: &str) -> String {
         self.used.borrow_mut().insert(name.to_string());
         name.to_string()
     }
@@ -378,16 +385,9 @@ impl<'a> ValuePrinter<'a> {
         Ok(self.typed(e, want)?.text)
     }
 
-    /// `e`, a `bool`, as an operand of `&&`: a value that may be unknown is decided
-    /// (`e.decide("<origin of e>")?`, a fault naming `e` when unknown, RS-11 AC 5).
-    pub fn condition(&self, e: ExprId) -> Result<String, Error> {
-        if !Self::is_flagged(self.ir.expr_type(e)) {
-            return Ok(self.piece(e)?.at(Prec::Compare));
-        }
-        if !self.faults {
-            return Err(self.unsupported(e, "a condition on a value that may be unknown in analog code"));
-        }
-        Ok(format!("{}.decide({:?})?", self.piece(e)?.at(Prec::Atom), self.at(e)))
+    /// `e`, a `bool` that is never unknown, as an operand of `&&`.
+    pub fn known_condition(&self, e: ExprId) -> Result<String, Error> {
+        Ok(self.piece(e)?.at(Prec::Compare))
     }
 
     /// `-e`, `e` parenthesized unless it is an atom.
@@ -579,12 +579,6 @@ impl<'a> ValuePrinter<'a> {
             path: format!("{} e{}", self.path, e.index()),
             origin: self.ir.expr_origin(e).clone(),
         }
-    }
-
-    /// `file:line:col` of `e`.
-    fn at(&self, e: ExprId) -> String {
-        let o = self.ir.expr_origin(e);
-        format!("{}:{}:{}", o.file, o.line, o.col)
     }
 
     /// `e` lifted to `want`: `rt::Flagged::known(e)` when `want` may be unknown and `e` is not.
@@ -944,19 +938,13 @@ impl<'a> ValuePrinter<'a> {
 
     /// `if c {` arm `} else {` arm `}`; an `else` arm that is itself an `if` chains as `else if`,
     /// and a unit `if` with no `else` to speak of has none. An `if` on a condition that may be
-    /// unknown is the merge of §3.3.3: `choose` where nothing is committed; a reaction decides
-    /// it with `c.decide("<origin>")?`.
+    /// unknown is the merge of §3.3.3 (`merged`).
     fn if_else(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
-        if self.merges_on(cond) {
-            return self.choose(e, cond, then, otherwise);
+        if Self::is_flagged(self.ir.expr_type(cond)) {
+            return self.merged(e, cond, then, otherwise);
         }
         let ty = self.ir.expr_type(e);
-        let condition = if Self::is_flagged(self.ir.expr_type(cond)) {
-            if !self.faults {
-                return Err(self.unsupported(e, "an `if` on an unknown condition in analog code"));
-            }
-            format!("{}.decide({:?})?", self.piece(cond)?.at(Prec::Atom), self.at(e))
-        } else if matches!(self.ir.expr(cond), Expr::If { .. }) {
+        let condition = if matches!(self.ir.expr(cond), Expr::If { .. }) {
             // `if if a { b } else { c } { .. }` is valid Rust; parentheses around it are a warning.
             self.piece(cond)?.text
         } else {
@@ -965,9 +953,9 @@ impl<'a> ValuePrinter<'a> {
         let mut text = format!("if {condition} {{\n{}\n}}", Self::indent(&self.arm(then, ty)?));
         match self.ir.expr(otherwise) {
             Expr::Unit if *ty == ValueType::Unit => {}
-            // an `else if` chains only while its own condition is no merge: `choose` is an
+            // an `else if` chains only while its own condition is known: a merge is an
             // expression, so it goes inside the `else` block
-            Expr::If { cond, then, otherwise: next } if !self.merges_on(*cond) => {
+            Expr::If { cond, then, otherwise: next } if !Self::is_flagged(self.ir.expr_type(*cond)) => {
                 text.push_str(" else ");
                 text.push_str(&self.if_else(otherwise, *cond, *then, *next)?.text);
             }
@@ -976,27 +964,45 @@ impl<'a> ValuePrinter<'a> {
         Ok(Piece::new(text, Prec::Low))
     }
 
-    /// Whether an `if` on `cond` is printed as a merge by `choose`: its condition may be unknown
-    /// and the code commits nothing, so it has no `Commits` to join.
-    fn merges_on(&self, cond: ExprId) -> bool {
-        Self::is_flagged(self.ir.expr_type(cond)) && !self.commits
-    }
-
-    /// `c.choose(|| { A }, || { B })`, the merge of §3.3.3 in code that commits nothing: a known
-    /// condition runs one arm, an unknown one runs both and merges their values. Analog code has
-    /// no merge of duals and refuses it.
-    fn choose(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
+    /// An `if` on a condition that may be unknown, the merge of §3.3.3: a known condition runs
+    /// one arm, an unknown one runs both and merges what they yield and, in a reaction, what they
+    /// commit. `c.choose(|| { A }, || { B })` when the arms commit and emit nothing, and
+    /// `commits_.branch(c, |commits_| { A }, |commits_| { B })` when they do, so each arm's
+    /// commits and records are a path of the reaction's `Commits`. Analog code has no merge of
+    /// duals and refuses it.
+    fn merged(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
         if !self.merges {
             return Err(self.unsupported(e, "an `if` on an unknown condition in analog code"));
         }
         let ty = self.ir.expr_type(e);
-        let text = format!(
-            "{}.choose(|| {{\n{}\n}}, || {{\n{}\n}})",
-            self.piece(cond)?.at(Prec::Atom),
-            Self::indent(&self.arm(then, ty)?),
-            Self::indent(&self.arm(otherwise, ty)?)
-        );
+        let piece = self.piece(cond)?;
+        let joins = self.commits && (self.holds_effect(then) || self.holds_effect(otherwise));
+        // the arms print in source order, which is the order their commits are numbered
+        let (first, second) = (Self::indent(&self.arm(then, ty)?), Self::indent(&self.arm(otherwise, ty)?));
+        let text = if joins {
+            self.branches.set(true);
+            // an arm that makes no commit of its own leaves its `Commits` unnamed
+            let named = |arm: &str| if arm.contains("commits_") { "commits_" } else { "_" };
+            format!("commits_.branch({}, |{}| {{\n{first}\n}}, |{}| {{\n{second}\n}})", piece.text, named(&first), named(&second))
+        } else {
+            format!("{}.choose(|| {{\n{first}\n}}, || {{\n{second}\n}})", piece.at(Prec::Atom))
+        };
         Ok(Piece::new(text, Prec::Atom))
+    }
+
+    /// Whether `e` holds a commit or an `emit!`: the arm of an `if` that does is a path of the
+    /// reaction's `Commits`, not a pure value.
+    fn holds_effect(&self, e: ExprId) -> bool {
+        let mut exprs = vec![e];
+        while let Some(e) = exprs.pop() {
+            if let Expr::Block { stmts, .. } = self.ir.expr(e) {
+                if stmts.iter().any(|s| matches!(self.ir.stmt(*s), Stmt::Commit { .. } | Stmt::Emit { .. })) {
+                    return true;
+                }
+            }
+            Self::children(self.ir, self.ir.expr(e), &mut exprs);
+        }
+        false
     }
 
     /// The inside of a pair of braces: a block's lines without its braces, any other expression
@@ -1034,9 +1040,10 @@ impl<'a> ValuePrinter<'a> {
                 Ok(format!("let {name} = {init};"))
             }
             Stmt::Expr(e) => {
-                let text = self.expr(*e)?;
-                let block = matches!(self.ir.expr(*e), Expr::If { .. }) && *self.ir.expr_type(*e) == ValueType::Unit;
-                Ok(if block { text } else { format!("{text};") })
+                let piece = self.piece(*e)?;
+                // an `if` statement closes with its brace; a merge is a call and takes a `;`
+                let block = matches!(self.ir.expr(*e), Expr::If { .. }) && *self.ir.expr_type(*e) == ValueType::Unit && piece.prec == Prec::Low;
+                Ok(if block { piece.text } else { format!("{};", piece.text) })
             }
             Stmt::Contribute { addends, .. } => Err(Error::Unsupported {
                 form: "contribution".into(),
@@ -1107,8 +1114,9 @@ impl<'a> ValuePrinter<'a> {
                     let value = self.typed(*value, &ValueType::Flagged(Box::new(declared.ty.clone())))?.at(Prec::Atom);
                     writes.push(format!("{value}.write(&mut record_[{offset}..]); // {}", declared.name));
                     if declared.name == "finish" && stream_name == "sim" {
-                        // an unknown `finish` never ends a run (FIX-01 AC 3)
-                        writes.push(format!("finish_ |= {value}.known_or(false);"));
+                        // a `finish` that is unknown, or reached under unknown control, never ends
+                        // a run (§19 Resolution)
+                        writes.push(format!("commits_.finish({value});"));
                         self.finishes.set(true);
                     }
                 }

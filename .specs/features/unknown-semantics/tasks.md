@@ -573,11 +573,11 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `an_unknown_condition_merges_both_arms` passes under `**Run reaction**`
-- [ ] Under `**Run sourceunknowns**`: `an_unknown_if_runs_both_arms_without_a_fault`, `both_arms_committing_commit_their_merge`, `one_arm_committing_merges_with_the_value_then`, `equal_known_commits_stay_known`, `an_if_expression_and_an_if_statement_commit_the_same`, `an_unknown_match_merges_every_arm`, `a_panic_under_unknown_control_makes_the_merge_unknown`, `definitions_lets_and_functions_merge_alike`, `an_unknown_delay_under_unknown_control_commits_unknown_next`, `a_maybe_finish_does_not_end_the_run`, `neither_arm_committing_commits_nothing`, `delays_one_tick_apart_are_one_key`, `the_pfd3_reaction_keeps_state_unknown_until_a_known_commit` pass
-- [ ] `grep -rn "decide(" crates/piperine-transpile/src` finds nothing
-- [ ] Every buck target passes
-- [ ] Gate check passes: Full
+- [x] `an_unknown_condition_merges_both_arms` passes under `**Run reaction**`
+- [x] Under `**Run sourceunknowns**`: `an_unknown_if_runs_both_arms_without_a_fault`, `both_arms_committing_commit_their_merge`, `one_arm_committing_merges_with_the_value_then`, `equal_known_commits_stay_known`, `an_if_expression_and_an_if_statement_commit_the_same`, `an_unknown_match_merges_every_arm`, `a_panic_under_unknown_control_makes_the_merge_unknown`, `definitions_lets_and_functions_merge_alike`, `an_unknown_delay_under_unknown_control_commits_unknown_next`, `a_maybe_finish_does_not_end_the_run`, `neither_arm_committing_commits_nothing`, `delays_one_tick_apart_are_one_key`, `the_pfd3_reaction_keeps_state_unknown_until_a_known_commit` pass
+- [x] `grep -rn "decide(" crates/piperine-transpile/src` finds nothing
+- [x] Every buck target passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

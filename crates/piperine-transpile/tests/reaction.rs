@@ -10,7 +10,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use piperine_abi::caller::{CallError, Commit, Handle};
-use piperine_abi::raw::{Cell, List, Module, Statement, cell, status, statement_flag};
+use piperine_abi::raw::{Cell, List, Module, Statement, cell, commit_flag, status, statement_flag};
 use piperine_abi::raw::{ambient, part};
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, Ir, IrBuilder, Origin, ValueType};
 use piperine_plan::{Mode, Modules, Source};
@@ -238,6 +238,16 @@ fn unknown(size: usize) -> Vec<u8> {
 /// it committed in order, or the call's error. The reads a reaction declares are found in the
 /// shape, so the test does not depend on their order.
 fn react(handle: &mut Handle, k: u32, given: &[(&str, Vec<u8>)]) -> (Result<(), CallError>, Vec<Made>) {
+    let (result, made) = react_flagged(handle, k, given);
+    (result, made.into_iter().map(|(statement, bytes, after, _)| (statement, bytes, after)).collect())
+}
+
+/// What the reaction was asked to commit with the `commit_flag` bits it was made with (abi.md C7):
+/// statement, bytes, delay, flags.
+type MadeFlagged = (u32, Vec<u8>, f64, u32);
+
+/// `react`, each commit with its flags.
+fn react_flagged(handle: &mut Handle, k: u32, given: &[(&str, Vec<u8>)]) -> (Result<(), CallError>, Vec<MadeFlagged>) {
     let shape = handle.shape();
     let reaction = items(&shape.reactions)[k as usize];
     let mut input: Vec<Vec<u8>> = Vec::new();
@@ -248,10 +258,10 @@ fn react(handle: &mut Handle, k: u32, given: &[(&str, Vec<u8>)]) -> (Result<(), 
         input.push(bytes.1.clone());
     }
     let reads: Vec<&[u8]> = input.iter().map(Vec::as_slice).collect();
-    let mut made: Vec<Made> = Vec::new();
+    let mut made: Vec<MadeFlagged> = Vec::new();
     let result = handle
         .react(k, &reads, &mut |c: Commit<'_>| {
-            made.push((c.statement, c.bytes.to_vec(), c.after));
+            made.push((c.statement, c.bytes.to_vec(), c.after, c.flags));
             status::OK
         })
         .map(|_| ());
@@ -293,23 +303,23 @@ fn a_reaction_commits_in_source_order() {
 }
 
 #[test]
-fn an_unknown_condition_faults_and_commits_nothing() {
-    // RS-11 AC 5: `if d { … }` with `d` unwritten faults, naming the `if` (react.msl:12:9), and
-    // the commit `r <- 9` made before it is not flushed: the host receives none
+fn an_unknown_condition_merges_both_arms() {
+    // US-04 AC 1, §3.3.3 (this replaces RS-11 AC 5, the fault of an unknown `if`, which the spec
+    // removes): `if d { q <- true } else { q <- false }` with `d` unwritten runs both arms. Both
+    // paths commit `q` at the next microstep, so the join is one key: `merge(true, false)`,
+    // which is unknown, committed through each statement an arm used (1 and 2, so transport sees
+    // both) flagged `MAYBE`; `r <- 9`, made before the `if`, is a plain commit
+    let maybe = commit_flag::MAYBE;
     let mut h = instance("Guarded");
-    // (the reaction decides on a value that may be unknown, so it reads the session's tick too)
     let tick = known_real(1e-15);
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("d", unknown(2)), ("resolution", tick.clone())]);
-    let error = result.expect_err("an unknown condition is a fault");
-    assert_eq!(error.status, status::FAULT);
-    assert!(error.message.contains("react.msl:12:9"), "the fault names the `if`: {}", error.message);
-    assert_eq!(made, Vec::<Made>::new(), "a fault makes no commit");
+    let (result, made) = react_flagged(&mut h, 0, &[("clk", known(&[1])), ("d", unknown(2)), ("resolution", tick.clone())]);
+    result.expect("an unknown condition is no fault");
+    assert_eq!(made, [(0, known(&[9]), 0.0, 0), (1, unknown(2), 0.0, maybe), (2, unknown(2), 0.0, maybe)]);
 
-    // the instance answers the next call: `d` known true commits `r <- 9` (statement 0) and
-    // `q <- true` (statement 1)
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("d", known(&[1])), ("resolution", tick)]);
+    // `d` known true commits `r <- 9` (statement 0) and `q <- true` (statement 1), no flag
+    let (result, made) = react_flagged(&mut h, 0, &[("clk", known(&[1])), ("d", known(&[1])), ("resolution", tick)]);
     result.expect("a known condition runs");
-    assert_eq!(made, [(0, known(&[9]), 0.0), (1, known(&[1]), 0.0)]);
+    assert_eq!(made, [(0, known(&[9]), 0.0, 0), (1, known(&[1]), 0.0, 0)]);
 }
 
 #[test]

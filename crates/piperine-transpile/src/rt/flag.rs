@@ -10,14 +10,11 @@
 //! (`unknown & false == false`, `unknown | true == true`). A shift by a known amount fills with
 //! known levels (§3.3.11): an unknown value shifted out entirely is known 0, except by a signed
 //! `>>`, which fills with the sign. `known_or`, `is_known` and `high` read the flag (§3.3.4);
-//! `decide` is the condition of an `if`, a `Fault` naming its origin when unknown (RS-11 AC 5).
 //! `Merge` combines two values level by level, as the merge of unknown control does (§3.3.3,
 //! §22.1.2); `same`, `level`, `recast` and `known_or_flagged` are the rest of §22.1 on one value.
 //!
 
 use core::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
-
-use piperine_abi::device::Fault;
 
 use super::control::Panic;
 use super::int::{Int, UInt};
@@ -176,9 +173,6 @@ pub struct Flagged<T> {
 }
 
 impl<T: Copy + Default> Flagged<T> {
-    /// The fault code of an unknown `if` condition (RS-11 AC 5).
-    pub const UNKNOWN_CONTROL: u32 = 3;
-
     /// A known value.
     pub fn known(value: T) -> Flagged<T> {
         Flagged { value, known: true }
@@ -289,16 +283,6 @@ impl Flagged<bool> {
     /// `x.high()`: known and true.
     pub fn high(self) -> bool {
         self.known && self.value
-    }
-
-    /// The condition of an `if` at `origin`: its value, or a `Fault` naming the origin when it
-    /// is unknown (RS-11 AC 5; the merge of §3.3.3 is out of scope).
-    pub fn decide(self, origin: &str) -> Result<bool, Fault> {
-        if self.known {
-            Ok(self.value)
-        } else {
-            Err(Fault::new(Self::UNKNOWN_CONTROL, format!("{origin}: the condition of an `if` is unknown")))
-        }
     }
 }
 
@@ -674,13 +658,6 @@ mod tests {
         assert!(k(true).high());
         assert!(!k(false).high());
         assert!(!u::<bool>().high());
-        // the condition of an `if`: its value when known; unknown, a fault naming the origin
-        // (RS-11 AC 5)
-        assert_eq!(k(true).decide("control.msl:28:12"), Ok(true));
-        assert_eq!(k(false).decide("control.msl:28:12"), Ok(false));
-        let fault = u::<bool>().decide("control.msl:28:12").expect_err("an unknown condition is a fault");
-        assert!(fault.message.contains("control.msl:28:12"), "{}", fault.message);
-        assert!(!fault.reshape);
     }
 
     /// The message of the panic `f` raises, `None` when it does not panic.
