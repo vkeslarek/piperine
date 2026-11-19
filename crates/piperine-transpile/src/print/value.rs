@@ -385,6 +385,11 @@ impl<'a> ValuePrinter<'a> {
         Ok(self.typed(e, want)?.text)
     }
 
+    /// `e` as the receiver of a method call: parenthesized unless it is an atom.
+    pub fn operand(&self, e: ExprId) -> Result<String, Error> {
+        Ok(self.piece(e)?.at(Prec::Atom))
+    }
+
     /// `e`, a `bool` that is never unknown, as an operand of `&&`.
     pub fn known_condition(&self, e: ExprId) -> Result<String, Error> {
         Ok(self.piece(e)?.at(Prec::Compare))

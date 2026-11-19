@@ -115,6 +115,10 @@ impl<'a> DigitalPrinter<'a> {
             ReactionMode::Arm(_) => vec![Source::Time],
             ReactionMode::Reaction(_) => Vec::new(),
         };
+        // a reaction on an event whose guard may be unknown may not have run at all (§13 rule 1):
+        // it knows it ran for sure when an event of its head fired with a guard that is known (or
+        // none), and otherwise runs its body as a path joined with not running it
+        let definite = self.definite(&values, plan)?;
         // a reaction that joins paths keys its commits by due instant: it reads the session's tick,
         // and the carrier each of its statements commits to
         let resolution = self.names.read_name(Source::Resolution);
@@ -162,10 +166,26 @@ impl<'a> DigitalPrinter<'a> {
             }
             let make = if carriers.is_some() { format!("rt::Commits::controlled(&CARRIERS_, {resolution})") } else { "rt::Commits::new()".to_string() };
             // every use of `Commits` but a bare `flush` takes `&mut self`
-            let mutable = !committed.is_empty() || carriers.is_some() || values.finishes();
+            let mutable = !committed.is_empty() || carriers.is_some() || values.finishes() || definite.is_some();
             t.line(&format!("let {}commits_ = {make};", if mutable { "mut " } else { "" }));
-            for line in &lines {
-                t.line(line);
+            match &definite {
+                Some(definite) => {
+                    t.line(&format!("let definite_ = {definite};"));
+                    let body = lines.join("\n");
+                    let named = if body.contains("commits_") { "commits_" } else { "_" };
+                    t.line(&format!("commits_.run(definite_, |{named}| {{"));
+                    t.indented(|t| {
+                        for line in &lines {
+                            t.line(line);
+                        }
+                    });
+                    t.line("});");
+                }
+                None => {
+                    for line in &lines {
+                        t.line(line);
+                    }
+                }
             }
             if values.finishes() {
                 t.line("let flow_ = commits_.flow();");
@@ -177,6 +197,28 @@ impl<'a> DigitalPrinter<'a> {
         let mut text = t.finish();
         text.pop();
         Ok(text)
+    }
+
+    /// The condition under which reaction `plan` surely ran, when one of the events of its head has
+    /// a guard that may be unknown: some event of the head fired and its guard is known (a known
+    /// or absent guard is known). `None` when no guard may be unknown, so the body is not a path.
+    fn definite(&self, values: &ValuePrinter<'_>, plan: &ReactionPlan) -> Result<Option<String>, Error> {
+        let ReactionMode::Reaction(r) = plan.mode else { return Ok(None) };
+        let Some(reaction) = self.body.reactions().get(r as usize) else { return Ok(None) };
+        let flagged = |e: u32| self.body.events().get(e as usize).and_then(|event| event.guard).filter(|g| matches!(self.ir.expr_type(*g), ValueType::Flagged(_)));
+        if !reaction.on.iter().any(|e| flagged(*e).is_some()) {
+            return Ok(None);
+        }
+        let mut terms = Vec::with_capacity(reaction.on.len());
+        for e in &reaction.on {
+            let fired = values.read(&self.names.read_name(Source::Fired(*e)));
+            terms.push(match flagged(*e) {
+                // the reaction recomputes the guard from the reads it holds (§13 rule 1)
+                Some(guard) => format!("{fired} && {}.is_known()", values.operand(guard)?),
+                None => fired,
+            });
+        }
+        Ok(Some(terms.join(" || ")))
     }
 
     fn reaction_unsupported(&self, form: &str) -> Error {

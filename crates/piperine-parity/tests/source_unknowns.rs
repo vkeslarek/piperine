@@ -249,3 +249,26 @@ fn a_maybe_check_is_judged_as_unknown() {
     assert!(!verdict.passed());
     assert_eq!((verdict.checks(), verdict.failed().len()), (4, 4));
 }
+
+/// The changes of the net `name` of `GuardBench` in a 4 ns transient.
+fn guarded(name: &str) -> Vec<(i64, Vec<u8>)> {
+    let seen = build(&project("guards.msl"), "GuardBench").run(4e-9, 0.5e-9);
+    transient(&seen, &format!("GuardBench.{name}"))
+}
+
+#[test]
+fn an_unknown_guard_runs_the_reaction_as_a_maybe() {
+    // US-04 AC 9, §13 rule 1: `on clk.rise() && en` with `en` unknown fires, and each effect of
+    // the reaction is merged with not running it: `changes` held 1 and is committed 5, merge(5,
+    // 1) is unknown at the first edge (0.5 ns); `keeps` held 5 and is committed 5, merge(5, 5) is
+    // 5, no change at all
+    assert_eq!(guarded("changes"), vec![(NS / 2, UNKNOWN.to_vec())]);
+    assert_eq!(guarded("keeps"), Vec::<(i64, Vec<u8>)>::new());
+}
+
+#[test]
+fn a_known_false_guard_does_not_run() {
+    // §13 rule 1: a guard that is known false stops the event, so the reaction does not run and
+    // `blocked`, which held 1, never changes
+    assert_eq!(guarded("blocked"), Vec::<(i64, Vec<u8>)>::new());
+}

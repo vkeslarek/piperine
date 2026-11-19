@@ -640,9 +640,9 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `an_unknown_guard_runs_the_reaction_as_a_maybe` and `a_known_false_guard_does_not_run` pass under `**Run sourceunknowns**`
-- [ ] Every buck target passes
-- [ ] Gate check passes: Full
+- [x] `an_unknown_guard_runs_the_reaction_as_a_maybe` and `a_known_false_guard_does_not_run` pass under `**Run sourceunknowns**`
+- [x] Every buck target passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
