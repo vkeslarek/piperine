@@ -456,3 +456,13 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules~4bcf201d | D3 | `params-and-io` | `E0333` is not raised: an instance used as a value is `P0002`, mismatched types |
 | modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
 | modules~4bcb9f1d | L30 | `generics` | `E0304` is not raised: `Ladder::<0>` is `P0001`, the generic module is refused |
+| analog#2 | L9 | `composite-values` | the devices are `P0001` twice: `limexp` is written with a closure, `limit(x, \|new, old\| ..)`, and its two parameters are a binding inside a module |
+| analog#3 | L52 | `unknown-semantics-events` | `on settle` is `P0001`: built-in `settle`; with the `limexp` closure the command gives the three diagnostics of the listing and runs nothing |
+| analog#7 | L49 | `analog-operators` | `emit!("newton", ..)` in an `analog` block is `P0001`, next to the `limexp` closure |
+| analog#9 | L40 | `analog-structure` | the switch's contribution under an `if` is `P0001` on both branches |
+| analog#11 | L45 | `analog-operators` | `noise(..)` is `P0001`: core primitive `noise` |
+| analog~773a3851 | L52 | `unknown-semantics-events` | the command stops at the source with the three diagnostics, as the sentence says: held with analog#3 |
+| analog~139c67b5 | L49 | `analog-operators` | a trace from `analog` is refused with analog#7: no record per Newton iteration exists |
+| analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
+| analog~c91537fe | L40 | `analog-structure` | `E0414` is not raised: a contribution under an `if` on a probe is `P0001` on both branches |
+| analog~54e5381d | L40 | `analog-structure` | `E0414` is not raised: the same refusal as analog~c91537fe |

@@ -74,17 +74,17 @@ block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-
 block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that_returns_a_template_is_refused_where_it_is_placed	L32	-
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
 block	modules#14	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
-block	analog#1	86764b71680a9fd9	pending	-	-	-
-block	analog#2	bf3cc4ac19e90181	pending	-	-	-
-block	analog#3	6395ae5e780ffca4	pending	-	-	-
+block	analog#1	86764b71680a9fd9	run	piperine/book_analog::a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point	-	-
+block	analog#2	bf3cc4ac19e90181	refused	piperine/book_analog::the_clipper_is_refused_for_limexp_and_settle	L9	-
+block	analog#3	6395ae5e780ffca4	refused	piperine/book_analog::the_clipper_is_refused_for_limexp_and_settle	L52	-
 block	analog#4	f44e0e6d9f174a31	shown	-	-	-
 block	analog#5	f0d9aa24342fc413	shown	-	-	-
 block	analog#6	ac0f7586ee6e5a16	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
-block	analog#7	2dcf8ccdabaf5fbf	pending	-	-	-
+block	analog#7	2dcf8ccdabaf5fbf	refused	piperine/book_analog::the_diode_with_a_trace_is_refused	L49	-
 block	analog#8	c75a64c2f73e0062	shown	-	-	-
-block	analog#9	618d2c0b12b5a698	pending	-	-	-
-block	analog#10	680ede3e2ac2fe51	pending	-	-	-
-block	analog#11	35b144b2c97d9575	pending	-	-	-
+block	analog#9	618d2c0b12b5a698	refused	piperine/book_analog::the_switch_is_refused_for_the_contribution_under_an_if	L40	-
+block	analog#10	680ede3e2ac2fe51	run	piperine/book_analog::the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple	-	-
+block	analog#11	35b144b2c97d9575	refused	piperine/book_analog::the_noise_source_is_refused	L45	-
 block	digital#1	b6a2c3d854639e4c	pending	-	-	-
 block	digital#2	a15e186f7ce2d093	shown	-	-	-
 block	digital#3	a594897648f9a3c9	pending	-	-	-
@@ -317,21 +317,21 @@ claim	modules~4bd9131d	4bd9131dc68f4ea5	unraised	piperine/book_modules::e0340_is
 claim	modules~4bcf211d	4bcf211dc68711ea	holds	piperine/book_modules::e0330_one_name_is_declared_once_in_a_module	-	E0330
 claim	modules~54e1b71d	54e1b71dcbc8277f	holds	piperine/book_modules::e0401_a_module_and_its_behavior_live_in_one_file	-	E0401
 claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	unraised	piperine/book_modules::e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked	L30	E0304
-claim	analog~8f90421c	8f90421cf10f758d	pending	-	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
-claim	analog~773a3851	773a3851ccd5ff87	pending	-	-	Today the command stops at the source, with those three diagnostics, and runs nothing:
-claim	analog~139c67b5	139c67b5de8bbf3a	pending	-	-	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
-claim	analog~b103eeb0	b103eeb07178680c	pending	-	-	The piperine command prints the records of reactions; a trace from analog is not among the lines it shows.
-claim	analog~c91537fe	c91537fe5beade7a	pending	-	-	A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them.
-claim	analog~54e53c1d	54e53c1dcbcb3f55	pending	-	-	E0410
-claim	analog~54e5351d	54e5351dcbcb3370	pending	-	-	E0417
-claim	analog~ecb4300e	ecb4300e3bafde8f	pending	-	-	Write 1.0, or an SI literal such as 1m.
-claim	analog~54e1b21d	54e1b21dcbc81f00	pending	-	-	E0404
-claim	analog~39a9371d	39a9371dbc03a3e6	pending	-	-	E0150
-claim	analog~54e5381d	54e5381dcbcb3889	pending	-	-	E0414
-claim	analog~42a7e91d	42a7e91dc1344005	pending	-	-	E0241
-claim	analog~64ee8b1d	64ee8b1dd483286f	pending	-	-	E0603
-claim	analog~5c44f21d	5c44f21dcf9af6ca	pending	-	-	E0503
-claim	analog~5c44ee1d	5c44ee1dcf9aeffe	pending	-	-	E0507
+claim	analog~8f90421c	8f90421cf10f758d	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
+claim	analog~773a3851	773a3851ccd5ff87	refused	analog#3	L52	Today the command stops at the source, with those three diagnostics, and runs nothing:
+claim	analog~139c67b5	139c67b5de8bbf3a	refused	analog#7	L49	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
+claim	analog~b103eeb0	b103eeb07178680c	refused	analog#7	L49	The piperine command prints the records of reactions; a trace from analog is not among the lines it shows.
+claim	analog~c91537fe	c91537fe5beade7a	unraised	piperine/book_analog::e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001	L40	A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them.
+claim	analog~54e53c1d	54e53c1dcbcb3f55	holds	piperine/book_analog::e0410_a_contribution_writes_a_probe_of_a_branch	-	E0410
+claim	analog~54e5351d	54e5351dcbcb3370	holds	piperine/book_analog::e0417_a_contribution_is_an_f64_and_the_fix_runs	-	E0417
+claim	analog~ecb4300e	ecb4300e3bafde8f	holds	piperine/book_analog::e0417_a_contribution_is_an_f64_and_the_fix_runs	-	Write 1.0, or an SI literal such as 1m.
+claim	analog~54e1b21d	54e1b21dcbc81f00	holds	piperine/book_analog::e0404_a_commit_belongs_in_a_reaction	-	E0404
+claim	analog~39a9371d	39a9371dbc03a3e6	holds	piperine/book_analog::e0150_an_unknown_carrier_is_read_with_high	-	E0150
+claim	analog~54e5381d	54e5381dcbcb3889	unraised	piperine/book_analog::e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001	L40	E0414
+claim	analog~42a7e91d	42a7e91dc1344005	holds	piperine/book_analog::e0241_a_branch_joins_two_different_nodes	-	E0241
+claim	analog~64ee8b1d	64ee8b1dd483286f	holds	piperine/book_analog::e0603_checks_are_decided_by_reactions	-	E0603
+claim	analog~5c44f21d	5c44f21dcf9af6ca	holds	piperine/book_analog::e0503_a_node_only_capacitors_touch_is_singular_at_dc	-	E0503
+claim	analog~5c44ee1d	5c44ee1dcf9aeffe	holds	piperine/book_analog::e0507_a_non_finite_contribution_is_a_run_error_naming_it	-	E0507
 claim	digital~cc20763d	cc20763dd236a652	pending	-	-	Put the emit! first, last or in the middle: it prints the same thing, because nothing changes while a reaction runs.
 claim	digital~d8ecede0	d8ecede05cd0aedc	pending	-	-	This is the habit to build: one emit!("state", …) at the top of a clocked reaction gives you the whole history of the block, one row per edge.
 claim	digital~ce04e7a4	ce04e7a4b3292c54	pending	-	-	Without the after, the two definitions would form a loop with no delay in it, which is an elaboration error (E0339).
@@ -560,14 +560,14 @@ claim	values~6ecca079	6ecca0792312a11d	holds	piperine/book_values::the_monitor_f
 claim	natures~6a449552	6a4495522518bc52	refused	natures#3	L21	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
 claim	modules~d3ff187c	d3ff187cb9877521	prose	-	-	For the ladder with a 1 V step, estimate when each tap passes 0.5 V before you look at the half stream.
 claim	modules~1a89f2ad	1a89f2adc283d8ec	holds	piperine/book_modules::the_rule_of_thumb_for_the_ladder_gives_the_three_times_the_book_lists	-	A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times r · c for the three taps: about 2.1, 3.5 and 4.1 µs after the step.
-claim	analog~53c7822c	53c7822caf5c0ae7	pending	-	-	A 2 V sine drives a resistor into two diodes back to back.
-claim	analog~a6eeb69c	a6eeb69ccb6689d9	pending	-	-	The output follows the input while it is small and is clipped near ±0.65 V.
-claim	analog~72e8923f	72e8923fe9f980b4	pending	-	-	In an operating-point solve now() is 0 and the source sits at 0 V.
-claim	analog~36d33f2a	36d33f2a6c2ad8c3	pending	-	-	let nvt = n * vt(); A let inside analog is a local of this iteration. vt() is the thermal voltage kT/q at the simulation temperature, about 25.9 mV at the default 300.15 K.
-claim	analog~9e74b878	9e74b8782d40c6b2	pending	-	-	At 0.6 V the diode carries about 0.12 mA, which drops 0.12 V over the resistor, so the input is at 0.72 V: the record confirms the hand calculation.
-claim	analog~239192ff	239192ff7bf8d964	pending	-	-	To drive an AC sweep, a source adds ac_stim to its contribution: v(p, n) + dc + ac_stim(1.0, 0.0); is a DC source that becomes a 1 V phasor in the sweep and stays at dc everywhere else.
-claim	analog~7b3efc50	7b3efc5053dd56d6	pending	-	-	Sampling, phi1 high. x follows vin and y is grounded, so cs charges to v(vin), with a time constant of ron · cs = 0.1 ns per switch.
-claim	analog~e79bf782	e79bf782a27195f2	pending	-	-	Which half of the output wave is clipped higher now, and at roughly what voltage? (The negative half: an ideality factor of 2 doubles the voltage for the same current, to about 1.3 V.) Add a second crossing reaction on above(-v(vout) - 1.2) to confirm it with a record.
+claim	analog~53c7822c	53c7822caf5c0ae7	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	A 2 V sine drives a resistor into two diodes back to back.
+claim	analog~a6eeb69c	a6eeb69ccb6689d9	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	The output follows the input while it is small and is clipped near ±0.65 V.
+claim	analog~72e8923f	72e8923fe9f980b4	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	In an operating-point solve now() is 0 and the source sits at 0 V.
+claim	analog~36d33f2a	36d33f2a6c2ad8c3	holds	piperine/book_analog::the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature	-	let nvt = n * vt(); A let inside analog is a local of this iteration. vt() is the thermal voltage kT/q at the simulation temperature, about 25.9 mV at the default 300.15 K.
+claim	analog~9e74b878	9e74b8782d40c6b2	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	At 0.6 V the diode carries about 0.12 mA, which drops 0.12 V over the resistor, so the input is at 0.72 V: the record confirms the hand calculation.
+claim	analog~239192ff	239192ff7bf8d964	holds	piperine/book_analog::a_source_with_ac_stim_is_its_dc_value_and_a_one_volt_phasor_in_the_sweep	-	To drive an AC sweep, a source adds ac_stim to its contribution: v(p, n) + dc + ac_stim(1.0, 0.0); is a DC source that becomes a 1 V phasor in the sweep and stays at dc everywhere else.
+claim	analog~7b3efc50	7b3efc5053dd56d6	holds	piperine/book_analog::the_sampling_time_constant_of_a_switch_is_a_tenth_of_a_nanosecond	-	Sampling, phi1 high. x follows vin and y is grounded, so cs charges to v(vin), with a time constant of ron · cs = 0.1 ns per switch.
+claim	analog~e79bf782	e79bf782a27195f2	holds	piperine/book_analog::a_louder_second_diode_clips_the_negative_half_higher	-	Which half of the output wave is clipped higher now, and at roughly what voltage? (The negative half: an ideality factor of 2 doubles the voltage for the same current, to about 1.3 V.) Add a second crossing reaction on above(-v(vout) - 1.2) to confirm it with a record.
 claim	digital~9d7f8cfe	9d7f8cfed31e32e0	pending	-	-	Its three timed reactions are the stimulus: the button starts low, bounces high at 2.0 ms, low at 2.2 ms, and high for good at 2.4 ms.
 claim	digital~7f3906df	7f3906df50f3b177	pending	-	-	The clock is 1 kHz, so it samples at 0.5, 1.5, 2.5 ms and so on, and never sees the bounce:
 claim	digital~0727161d	0727161d5312720a	pending	-	-	With a 1 MHz clock the PWM runs at 10 kHz, and the cycle stream has one record per period carrying the duty word that period will use.

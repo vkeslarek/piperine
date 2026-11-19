@@ -1,0 +1,353 @@
+//! Scope: chapter 6 of the Book, "Analog behavior" (feature `root-e2e`, RE-02 and RE-03): the capacitor
+//! and the inductor, the Nullor and the coupled inductors, the clipper (its `limexp` and its `settle`
+//! are refused today, asserted refused with their diagnostics, and its numbers are held on the same
+//! circuit written with a bare `exp`), the traced diode, the switch and the noise source (refused),
+//! the `ac_stim` source, and each mistake of the chapter's table, run through `piperine::`. Each test
+//! opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
+
+#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
+#[path = "support"]
+mod support {
+    pub mod book;
+    pub mod chapter;
+    pub mod faulty;
+    pub mod inventory;
+    pub mod model;
+    pub mod printed;
+    pub mod records;
+    pub mod refusal;
+}
+
+use piperine::{Cell, Overrides};
+use support::chapter::Chapter;
+use support::faulty::Faulty;
+use support::model::{Model, Ran};
+use support::printed::Printed;
+use support::records::Fields;
+use support::refusal::Refusal;
+
+/// The source and the resistor most models of the chapter hang their device on.
+struct Bench;
+
+impl Bench {
+    /// A DC source `Vdc` and a resistor `R` (each with its behavior block).
+    const PARTS: &'static str = "module Vdc(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vdc { v(p) +> dc + ac_stim(1.0, 0.0); }\nmodule R(p: Electrical, n: Electrical) { r: f64 = 1k; }\nanalog for R { i(p, n) +> v(p, n) / r; }\n";
+
+    /// A top `Top` with the two signals `a` and `b` and no body, which a behavior block of the test
+    /// fills.
+    const EMPTY_TOP: &'static str = "module Top() { signal a: Electrical; signal b: Electrical; }\n";
+}
+
+/// The runs the chapter's commands make.
+struct Commands;
+
+impl Commands {
+    /// An operating point of the top `Top`.
+    fn operating_point() -> Overrides {
+        Faulty::operating_point_of("Top")
+    }
+
+    /// `--analysis transient --stop <stop>` of the top `Top`.
+    fn transient(stop: f64) -> Overrides {
+        Faulty::transient_of_top(stop, None)
+    }
+
+    /// `piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip`,
+    /// the run of the Run it box (its `--plot` is a file the library does not write).
+    fn clipper() -> Overrides {
+        Overrides { analysis: Some("transient".to_string()), stop: Some(2e-3), print: vec!["vin".to_string(), "vout".to_string()], streams: vec!["clip".to_string()], ..Overrides::default() }
+    }
+
+    /// An AC sweep over one decade, from 1 kHz to 10 kHz, of the top `Top`.
+    fn small_signal() -> Overrides {
+        Overrides { analysis: Some("ac".to_string()), top: Some("Top".to_string()), from: Some(1e3), to: Some(1e4), per_decade: Some(1), ..Overrides::default() }
+    }
+}
+
+/// The clipper of the chapter's two listings, and the same circuit written without the two forms the
+/// compiler refuses.
+struct Clipper;
+
+impl Clipper {
+    /// The `settle` reaction of the second listing, which the substitute leaves out.
+    const SETTLE_REACTION: &'static str = "    on settle {\n        emit!(\"wave\", t = now(), vin = v(vin), vout = v(vout));\n    }\n";
+
+    /// The clipper as the Book assembles it in `clipper.msl`.
+    fn book(chapter: &Chapter) -> Model {
+        chapter.marked("clipper.msl", "analog#3")
+    }
+
+    /// The same circuit with a bare `exp` in place of `limexp` (they are equal once the solver has
+    /// converged, and `limexp` is a closure the compiler does not take) and without the `settle`
+    /// reaction (an event it does not take); `second_diode` is how `d2` is written.
+    fn with_exp(chapter: &Chapter, second_diode: &str) -> Model {
+        let device = chapter.text("analog#2").replace("limexp(v(a, k) / nvt)", "(v(a, k) / nvt).exp()").replace("Diode(gnd, vout);", second_diode);
+        let reactions = chapter.text("analog#3").replace(Self::SETTLE_REACTION, "");
+        assert!(device.contains(".exp()") && !reactions.contains("settle"), "the substitutes apply to the Book's text");
+        Model::written("clipper.msl", &format!("{device}\n{reactions}\n"))
+    }
+
+    /// The run of the substitute with the second diode as the Book writes it.
+    fn ran_with_exp(chapter: &Chapter) -> Ran {
+        Self::with_exp(chapter, "Diode(gnd, vout);").run(Commands::clipper()).unwrap_or_else(|failure| panic!("{failure}"))
+    }
+
+    /// The least and the greatest value of the column `column` of `ran`.
+    fn extremes(ran: &Ran, column: &str) -> (f64, f64) {
+        let values: Vec<f64> = (0..ran.table.rows.len()).map(|row| ran.real(row, column)).collect();
+        (values.iter().copied().fold(f64::INFINITY, f64::min), values.iter().copied().fold(f64::NEG_INFINITY, f64::max))
+    }
+}
+
+#[test]
+fn a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point() {
+    // analog#1 (run): the Capacitor and the Inductor of the first listing: "ddt is zero, so a capacitor is
+    // open and an inductor is a short, with nothing written by you". A source into a resistor, the
+    // inductor to ground (a short: 0 V) and the capacitor to ground (open: the source's 1 V)
+    let chapter = Chapter::read();
+    let after = format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; let s = Vdc(a); let r = R(a, b); let l = Inductor(b, gnd) {{ l: 1m }}; let c = Capacitor(a, gnd) {{ c: 1n }}; }}\n", Bench::PARTS);
+    let ran = chapter.wrapped("reactive.msl", "", "analog#1", &after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    assert!(ran.signal("Top.b").abs() < 1e-9, "the inductor shorts b to ground: {:e}", ran.signal("Top.b"));
+    assert!((ran.signal("Top.a") - 1.0).abs() < 1e-9, "the capacitor draws nothing: a stays at the source's 1 V");
+}
+
+#[test]
+fn the_clipper_is_refused_for_limexp_and_settle() {
+    // analog#2 and analog#3 (refused): the clipper's devices and its two reactions, one file
+    // (`clipper.msl`); analog~773a3851 "Today the command stops at the source, with those three
+    // diagnostics, and runs nothing" (refused with it). The
+    // `settle` event is `P0001` (L52), and `limexp`, written with a closure, is two `P0001` (L9)
+    let chapter = Chapter::read();
+    let model = Clipper::book(&chapter);
+    let given = Refusal::of(model.run(Commands::clipper()), "analog#3");
+    assert_eq!(given.len(), 3, "the three diagnostics of the listing: {given:?}");
+    assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
+    assert_eq!(given.iter().filter(|(_, message)| message == "binding inside a module is not supported yet").count(), 2, "the two closure parameters of `limexp`");
+    Refusal::expect(model.run(Commands::clipper()), "analog#3", "P0001", "built-in `settle` is not supported yet");
+    let devices = Refusal::of(chapter.marked("clipper.msl", "analog#2").run(Faulty::operating_point_of("Clipper")), "analog#2");
+    assert_eq!(devices.len(), 2, "the devices alone: the two parameters of the `limexp` closure: {devices:?}");
+    Refusal::expect(chapter.marked("clipper.msl", "analog#2").run(Faulty::operating_point_of("Clipper")), "analog#2", "P0001", "binding inside a module is not supported yet");
+}
+
+#[test]
+fn the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation() {
+    // On the clipper written with `exp` for `limexp` and without `settle` (analog#2 and analog#3 refuse the
+    // Book's text): analog~53c7822c "A 2 V sine drives a resistor into two diodes back to back"; analog~a6eeb69c "The output follows the input while it is small and is clipped near
+    // +-0.65 V"; analog~72e8923f "In an operating-point solve now() is 0 and the source sits at 0 V";
+    // analog~8f90421c "The clip stream answers a sharper question ... when does the clipping start, and how
+    // high is the input then?"; analog~9e74b878 "At 0.6 V the diode carries about 0.12 mA, which drops 0.12
+    // V over the resistor, so the input is at 0.72 V: the record confirms the hand calculation"
+    let chapter = Chapter::read();
+    let ran = Clipper::ran_with_exp(&chapter);
+    let (least, greatest) = Clipper::extremes(&ran, "Clipper.vout");
+    assert!((greatest - 0.65).abs() < 0.05 && (least + 0.65).abs() < 0.05, "clipped near +-0.65 V: {least} to {greatest}");
+    let (input_least, input_greatest) = Clipper::extremes(&ran, "Clipper.vin");
+    assert!(input_greatest > 1.9 && input_least < -1.9, "the 2 V sine itself: {input_least} to {input_greatest}");
+    let point = Clipper::with_exp(&chapter, "Diode(gnd, vout);").run(Faulty::operating_point_of("Clipper")).unwrap_or_else(|failure| panic!("{failure}"));
+    assert_eq!(point.signal("Clipper.vin"), 0.0, "now() is 0 in the operating point and the source sits at 0 V");
+    let clips = ran.stream("clip");
+    assert_eq!(clips.len(), 2, "one clip record per period over two periods");
+    Printed::holds("5.850282e-5", Fields::real(clips[0], "t"), "the first crossing, about 59 us");
+    for clip in &clips {
+        assert!((Fields::real(clip, "vin") - 0.72).abs() < 0.005, "the input at 0.6 V of output is about 0.72 V: {:?}", clip.fields);
+    }
+    assert!((clips[1].time - clips[0].time - 1e-3).abs() < 1e-6, "once per period of 1 kHz");
+    let diode_current: f64 = (0.72 - 0.6) / 1e3;
+    assert!((diode_current - 0.12e-3).abs() < 1e-9, "0.12 V over 1 k is 0.12 mA");
+}
+
+#[test]
+fn a_louder_second_diode_clips_the_negative_half_higher() {
+    // analog~e79bf782: "Give d2 a different diode: Diode(gnd, vout) { n: 2.0 }. Which half of the output
+    // wave is clipped higher now, and at roughly what voltage? (The negative half: an ideality factor of 2
+    // doubles the voltage for the same current, to about 1.3 V.)" On the clipper of the test above
+    let chapter = Chapter::read();
+    let ran = Clipper::with_exp(&chapter, "Diode(gnd, vout) { n: 2.0 };").run(Commands::clipper()).unwrap_or_else(|failure| panic!("{failure}"));
+    let (least, greatest) = Clipper::extremes(&ran, "Clipper.vout");
+    assert!((least + 1.3).abs() < 0.05, "the negative half is clipped near -1.3 V: {least}");
+    assert!(greatest < 0.7, "the positive half is still clipped near 0.65 V: {greatest}");
+}
+
+#[test]
+fn the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature() {
+    // analog~36d33f2a: "let nvt = n * vt(); A let inside analog is a local of this iteration. vt() is the
+    // thermal voltage kT/q at the simulation temperature, about 25.9 mV at the default 300.15 K": a node
+    // driven to `1.0 * vt()` reads 25.86 mV
+    let source = "module Top() { signal a: Electrical; }\nanalog for Top { let nvt = 1.0 * vt(); v(a) +> nvt; }\n";
+    let ran = Model::written("vt.msl", source).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    Printed::holds("2.586493e-2", ran.signal("Top.a"), "kT/q at 300.15 K");
+    assert!((ran.signal("Top.a") - 25.9e-3).abs() < 0.1e-3, "about 25.9 mV");
+}
+
+#[test]
+fn the_diode_with_a_trace_is_refused() {
+    // analog#7 (refused): the Diode with `emit!("newton", ..)` in its `analog` block; analog~139c67b5 "This
+    // emit! runs when the code around it runs, and analog runs at every evaluation" and analog~b103eeb0
+    // "The piperine command prints the records of reactions; a trace from analog is not among the lines it
+    // shows" (refused with it). An `emit!` in `analog` is `P0001` (L49), next to the `limexp` closure
+    let chapter = Chapter::read();
+    let before = "module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\nmodule Diode(a: Electrical, k: Electrical) { is: f64 = 1e-14 where is > 0.0; n: f64 = 1.0 where n > 0.0; }\n";
+    let after = format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; let s = Vdc(a); let r = Resistor(a, b) {{ r: 1k }}; let d = Diode(b, gnd); }}\n", Bench::PARTS);
+    let model = chapter.wrapped("traced.msl", before, "analog#7", &after);
+    let given = Refusal::of(model.run(Commands::operating_point()), "analog#7");
+    assert!(given.contains(&("P0001".to_string(), "an `emit!` in an `analog` block is not supported yet".to_string())), "{given:?}");
+    Refusal::expect(model.run(Commands::operating_point()), "analog#7", "P0001", "an `emit!` in an `analog` block is not supported yet");
+}
+
+#[test]
+fn the_switch_is_refused_for_the_contribution_under_an_if() {
+    // analog#9 (refused): the ideal switch, `if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }`: a
+    // contribution under an `if` is `P0001` on both branches (L40)
+    let chapter = Chapter::read();
+    let model = chapter.wrapped("switch.msl", "", "analog#9", "module Top(in c: Bit) { signal a: Electrical; signal b: Electrical; let s = Switch(a, b, c); }\n");
+    Refusal::expect(model.run(Commands::operating_point()), "analog#9", "P0001", "a contribution under an `if` or in a closure is not supported yet");
+}
+
+#[test]
+fn the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple() {
+    // analog#10 (run): the Servo nature, the Nullor and the Coupled inductors. As a non-inverting amplifier of
+    // gain 2 the Nullor holds v(inp, inn) at zero: a 0.5 V input gives 1 V at the output. Two inductors
+    // with k = 0.5 pass a small signal to the secondary, and with k = 0 none
+    let chapter = Chapter::read();
+    let top = |k: &str| format!("module Top() {{\n    signal vin: Electrical; signal fb: Electrical; signal vout: Electrical;\n    signal src2: Electrical; signal p1: Electrical; signal p2: Electrical;\n    let s = Vdc(vin) {{ dc: 0.5 }};\n    let amp = Nullor(vin, fb, vout);\n    let r1 = R(vout, fb) {{ r: 1k }};\n    let r2 = R(fb, gnd) {{ r: 1k }};\n    let v2 = Vdc(src2) {{ dc: 1.0 }};\n    let r3 = R(src2, p1) {{ r: 1k }};\n    let l = Coupled(p1, gnd, p2, gnd) {{ l1: 1m, l2: 1m, k: {k} }};\n    let r4 = R(p2, gnd) {{ r: 1k }};\n}}\n");
+    let coupled = chapter.wrapped("nullor.msl", Bench::PARTS, "analog#10", &top("0.5"));
+    let ran = coupled.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    assert!((ran.signal("Top.vout") - 1.0).abs() < 1e-9, "the Nullor's gain of 2 on 0.5 V: {:e}", ran.signal("Top.vout"));
+    assert!((ran.signal("Top.fb") - 0.5).abs() < 1e-9, "the nullor holds v(inp, inn) at zero");
+    let secondary = |model: &Model| {
+        let sweep = Overrides { print: vec!["p2".to_string()], from: Some(1e5), to: Some(1e6), ..Commands::small_signal() };
+        let ran = model.run(sweep).unwrap_or_else(|failure| panic!("{failure}"));
+        match ran.cell(0, "mag(Top.p2)") {
+            Cell::Real(magnitude) => *magnitude,
+            other => panic!("a magnitude: {other:?}"),
+        }
+    };
+    assert!(secondary(&coupled) > 0.1, "k = 0.5 couples the secondary");
+    let uncoupled = chapter.wrapped("nullor.msl", Bench::PARTS, "analog#10", &top("0.0"));
+    assert_eq!(secondary(&uncoupled), 0.0, "k = 0 couples nothing");
+}
+
+#[test]
+fn the_noise_source_is_refused() {
+    // analog#11 (refused): `let n = noise(4.0 * K_B * temperature() / r, "thermal");` and its two uses in a
+    // behavior block: the core primitive `noise` is `P0001` (L45)
+    let chapter = Chapter::read();
+    let model = chapter.wrapped("noise.msl", "module R(a: Electrical, b: Electrical) { r: f64 = 1k; signal mid: Electrical; }\nanalog for R {\n", "analog#11", "}\nmodule Top() { signal a: Electrical; signal b: Electrical; let x = R(a, b); }\n");
+    Refusal::expect(model.run(Commands::operating_point()), "analog#11", "P0001", "core primitive `noise` is not supported yet");
+}
+
+#[test]
+fn a_source_with_ac_stim_is_its_dc_value_and_a_one_volt_phasor_in_the_sweep() {
+    // analog~239192ff: "v(p, n) +> dc + ac_stim(1.0, 0.0); is a DC source that becomes a 1 V phasor in the
+    // sweep and stays at dc everywhere else": a 2 V source into two equal resistors reads 2 V and 1 V at
+    // the operating point and in a transient, and a magnitude of 1 and 0.5 with phase 0 in the AC sweep
+    let source = format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; let s = Vdc(a) {{ dc: 2.0 }}; let r1 = R(a, b); let r2 = R(b, gnd); }}\n", Bench::PARTS);
+    let model = Model::written("stimulus.msl", &source);
+    let point = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    assert_eq!((point.signal("Top.a"), point.signal("Top.b")), (2.0, 1.0), "dc everywhere else");
+    let transient = model.run(Commands::transient(1e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    assert_eq!(transient.real(transient.table.rows.len() - 1, "Top.a"), 2.0, "dc in a transient");
+    let sweep = model.run(Commands::small_signal()).unwrap_or_else(|failure| panic!("{failure}"));
+    assert_eq!(sweep.table.rows.len(), 2, "the two ends of one decade");
+    for row in 0..2 {
+        assert!((sweep.real(row, "mag(Top.a)") - 1.0).abs() < 1e-9, "a 1 V phasor");
+        assert!((sweep.real(row, "mag(Top.b)") - 0.5).abs() < 1e-9, "half of it across the divider");
+        assert_eq!(sweep.real(row, "phase(Top.a)"), 0.0, "phase 0.0");
+    }
+}
+
+#[test]
+fn the_sampling_time_constant_of_a_switch_is_a_tenth_of_a_nanosecond() {
+    // analog~7b3efc50: "Sampling, phi1 high. x follows vin and y is grounded, so cs charges to v(vin), with a
+    // time constant of ron . cs = 0.1 ns per switch": the integrator's switch `ron` is 100 and `cs` 1 pF
+    let chapter = Chapter::read();
+    let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
+    let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
+    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    let param = |path: &str| match ran.metadata.params.iter().find(|param| param.path == path).unwrap_or_else(|| panic!("no param {path}")).value {
+        Cell::Real(value) => value,
+        ref other => panic!("{path}: a real number, found {other:?}"),
+    };
+    let tau = param("Top.s.s1.ron") * param("Top.s.cs");
+    Printed::holds("1.000000e-10", tau, "ron * cs, in seconds");
+}
+
+#[test]
+fn e0410_a_contribution_writes_a_probe_of_a_branch() {
+    // analog~54e53c1d: "E0410 vout +> 1.0;": the left side must be a probe: v(vout) +> 1.0
+    let faulty = Faulty::elaborating("analog~54e53c1d", "module Top(vout: Electrical) { }\nanalog for Top { vout +> 1.0; }\n", "Top");
+    assert_eq!(faulty.first("E0410").message, "the left side of `+>` is not a potential or flow probe of a branch");
+}
+
+#[test]
+fn e0417_a_contribution_is_an_f64_and_the_fix_runs() {
+    // analog~54e5351d and analog~ecb4300e: "E0417 i(p, n) +> 1;": write 1.0, or an SI literal such as 1m
+    let faulty = Faulty::elaborating("analog~54e5351d", &format!("{}analog for Top {{ i(a, b) +> 1; }}\n", Bench::EMPTY_TOP), "Top");
+    assert_eq!(faulty.first("E0417").message, "mismatched types: expected `f64`, found `an integer literal`");
+    for literal in ["1.0", "1m"] {
+        let source = format!("module Top() {{ signal a: Electrical; }}\nanalog for Top {{ i(a, gnd) +> v(a, gnd) / 1k - {literal}; }}\n");
+        Model::written("fixed.msl", &source).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("`{literal}` is an f64: {failure}"));
+    }
+}
+
+#[test]
+fn e0404_a_commit_belongs_in_a_reaction() {
+    // analog~54e1b21d: "E0404 held <- v(vin); in analog": analog writes only with +>
+    let faulty = Faulty::elaborating("analog~54e1b21d", "module Top(vin: Electrical) { signal held: Bit<f64> = 0.0; }\nanalog for Top { held <- v(vin); }\n", "Top");
+    assert_eq!(faulty.first("E0404").message, "a commit (`<-`) in an `analog` block");
+    assert_eq!(faulty.first("E0404").help.as_deref(), Some("a commit belongs in a reaction (`on event { .. }`) of a `digital` block; an `analog` block contributes with `+>`"));
+}
+
+#[test]
+fn e0150_an_unknown_carrier_is_read_with_high() {
+    // analog~39a9371d: "E0150 if ctl { ... } in analog, ctl a Bit": say what unknown means: ctl.high()
+    let faulty = Faulty::elaborating("analog~39a9371d", "module Top(in ctl: Bit) { signal a: Electrical; }\nanalog for Top { if ctl { v(a) +> 1.0; } }\n", "Top");
+    assert_eq!(faulty.first("E0150").message, "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+}
+
+#[test]
+fn e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001() {
+    // analog~54e5381d and analog~c91537fe: "E0414 if v(a, b) > 0.0 { v(a, b) +> 0.0; } else { i(a, b) +> 0.0;
+    // }": "A choice of kind that depends on a probe is an error (E0414)". `E0414` is named by the spec and
+    // no source raises it (GAPS.md section 10, L40): a contribution under an `if` is `P0001` on both
+    // branches
+    let source = format!("{}analog for Top {{ if v(a, b) > 0.0 {{ v(a, b) +> 0.0; }} else {{ i(a, b) +> 0.0; }} }}\n", Bench::EMPTY_TOP);
+    let faulty = Faulty::elaborating("analog~54e5381d", &source, "Top");
+    assert_eq!(faulty.given.len(), 2, "one `P0001` per branch");
+    assert!(faulty.given.iter().all(|reported| reported.code == "P0001" && reported.message == "a contribution under an `if` or in a closure is not supported yet"), "{:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+}
+
+#[test]
+fn e0241_a_branch_joins_two_different_nodes() {
+    // analog~42a7e91d: "E0241 i(a, a) +> x;"
+    let faulty = Faulty::elaborating("analog~42a7e91d", "module Top() { signal a: Electrical; }\nanalog for Top { i(a, a) +> 1.0; }\n", "Top");
+    assert_eq!(faulty.first("E0241").message, "a contribution to a branch from a node to itself");
+}
+
+#[test]
+fn e0603_checks_are_decided_by_reactions() {
+    // analog~64ee8b1d: "E0603 require("ok", v(a) < 1.0); in analog": move it into a reaction
+    let faulty = Faulty::elaborating("analog~64ee8b1d", "module Top() { signal a: Electrical; }\nanalog for Top { require(\"ok\", v(a) < 1.0); }\n", "Top");
+    assert_eq!(faulty.first("E0603").message, "a site reached from `analog` writes the stream `checks`: only a reaction decides what the host reads there (§19 rules 4 and 14)");
+}
+
+#[test]
+fn e0503_a_node_only_capacitors_touch_is_singular_at_dc() {
+    // analog~5c44f21d: "E0503 a run error naming a node": a node that only a capacitor touches, in a DC
+    // solve, is singular and the error names the node
+    let source = "module C(p: Electrical, n: Electrical) { c: f64 = 1n; }\nanalog for C { i(p, n) +> ddt(c * v(p, n)); }\nmodule Top() { signal a: Electrical; let x = C(a, gnd); }\n";
+    let given = Refusal::of(Model::written("floating.msl", source).run(Commands::operating_point()), "analog~5c44f21d");
+    assert_eq!(given.len(), 1, "{given:?}");
+    assert_eq!(given[0].0, "E0503");
+    assert!(given[0].1.contains("node of Top.x.p"), "the run error names the node: {}", given[0].1);
+}
+
+#[test]
+fn e0507_a_non_finite_contribution_is_a_run_error_naming_it() {
+    // analog~5c44ee1d: "E0507 a run error naming a contribution": a division by a voltage that is zero
+    let source = "module Top() { signal a: Electrical; signal b: Electrical; }\nanalog for Top { v(a) +> 1.0; i(b, gnd) +> 1.0 / (v(a) - 1.0); }\n";
+    let given = Refusal::of(Model::written("nan.msl", source).run(Commands::operating_point()), "analog~5c44ee1d");
+    assert_eq!(given.len(), 1, "{given:?}");
+    assert_eq!(given[0].0, "E0507");
+    assert!(given[0].1.contains("term `b1.flow`") && given[0].1.contains("is not finite"), "the error names the contribution: {}", given[0].1);
+}
