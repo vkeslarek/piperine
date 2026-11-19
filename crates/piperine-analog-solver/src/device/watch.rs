@@ -94,10 +94,16 @@ pub(crate) fn accept_watches(
         }
         let v = fs.f64(slot);
         if w.kind == watch::CAP {
-            // docs/spec §17.2 rule 5 and its resolution: a cap that is not finite and positive.
+            // A `bound_step` not executed at this solution writes +∞: it caps nothing (abi.md, the
+            // `CAP` row; analog-structure AS-01 AC 5).
+            if v == f64::INFINITY {
+                continue;
+            }
+            // docs/spec §17.2 rule 5 and its resolution: any other cap that is not finite and
+            // positive.
             if !(v.is_finite() && v > 0.0) {
                 return Err(device_error(format!(
-                    "E0509: instance `{}`: step cap watch `{}` ({}) is {v}, not finite and positive (§17.2)",
+                    "E0509: instance `{}`: step cap watch `{}` ({}) is {v}, neither finite and positive nor +inf (§17.2)",
                     inst.path, w.name, w.origin
                 )));
             }

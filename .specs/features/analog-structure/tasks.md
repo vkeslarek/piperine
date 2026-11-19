@@ -469,10 +469,10 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run watch`: `a_cap_of_infinity_caps_nothing`, `a_cap_of_minus_infinity_or_nan_is_e0509`
-- [ ] `cargo test -p piperine-solver --test parity_baseline` passes unedited
-- [ ] Gate check passes: Quick (`Run watch`), then `cargo test -p piperine-analog-solver`
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run watch`: `a_cap_of_infinity_caps_nothing`, `a_cap_of_minus_infinity_or_nan_is_e0509`
+- [x] `cargo test -p piperine-solver --test parity_baseline` passes unedited
+- [x] Gate check passes: Quick (`Run watch`), then `cargo test -p piperine-analog-solver`
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: quick

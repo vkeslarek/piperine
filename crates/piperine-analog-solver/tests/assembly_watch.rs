@@ -153,7 +153,8 @@ fn accept_fails_with_e0509_on_an_invalid_cap() {
     // fails the accept with E0509, naming the instance and the watch. W1 "b" = c2.
     let m = modules();
     let (net, n) = netlist(1, &[]);
-    for bad in [0.0, -1e-9, f64::NAN, f64::INFINITY] {
+    // (`+∞` is no longer one of them: it caps nothing, see `a_cap_of_infinity_caps_nothing`)
+    for bad in [0.0, -1e-9, f64::NAN] {
         let c = instance("top.cap", m.capper, vec![Discrete(0), Discrete(1), at(&n[0])]);
         let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
         asm.set_discrete(0, &f64_bytes(2e-6));
@@ -167,6 +168,39 @@ fn accept_fails_with_e0509_on_an_invalid_cap() {
     asm.set_discrete(0, &f64_bytes(2e-6));
     asm.set_discrete(1, &f64_bytes(1e-12));
     assert_eq!(asm.accept(&[0.5], at_rest()).expect("a positive cap").cap, 1e-12);
+}
+
+#[test]
+fn a_cap_of_infinity_caps_nothing() {
+    // abi.md, the `CAP` row: a watch of `+∞` is a `bound_step` not executed at this solution, so it
+    // caps nothing and fails nothing. The capper's watches are W0 = a·(1 + v) and W1 = b (pins 0
+    // and 1): with `a = 2e-6`, `b = +∞` and `v = 0.5` only W0 binds, 2e-6·1.5 = 3e-6; with both
+    // infinite no watch binds and the cap stays the identity of the minimum, `+∞`.
+    let m = modules();
+    let (net, n) = netlist(1, &[]);
+    let c = instance("top.cap", m.capper, vec![Discrete(0), Discrete(1), at(&n[0])]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+    asm.set_discrete(0, &f64_bytes(2e-6));
+    asm.set_discrete(1, &f64_bytes(f64::INFINITY));
+    assert_eq!(asm.accept(&[0.5], at_rest()).expect("an infinite cap fails nothing").cap, 3e-6, "min(2e-6·1.5, +∞)");
+    asm.set_discrete(0, &f64_bytes(f64::INFINITY));
+    assert_eq!(asm.accept(&[0.5], at_rest()).expect("no watch binds").cap, f64::INFINITY, "min(+∞·1.5, +∞)");
+}
+
+#[test]
+fn a_cap_of_minus_infinity_or_nan_is_e0509() {
+    // Only `+∞` caps nothing: `-∞`, NaN, zero and a negative value stay `E0509` (§17.2 rule 5),
+    // naming the instance and the watch.
+    let m = modules();
+    let (net, n) = netlist(1, &[]);
+    for bad in [f64::NEG_INFINITY, f64::NAN, 0.0, -1e-9] {
+        let c = instance("top.cap", m.capper, vec![Discrete(0), Discrete(1), at(&n[0])]);
+        let mut asm = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
+        asm.set_discrete(0, &f64_bytes(2e-6));
+        asm.set_discrete(1, &f64_bytes(bad));
+        let err = asm.accept(&[0.5], at_rest()).expect_err("an invalid cap").to_string();
+        assert!(err.contains("E0509") && err.contains("top.cap") && err.contains("`b`"), "cap {bad}: {err}");
+    }
 }
 
 /// A comparator whose crossing tolerances are its own params.

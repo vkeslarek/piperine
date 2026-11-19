@@ -381,7 +381,7 @@ Watches, by who reads them and when:
 | --- | --- | --- | --- | --- |
 | watch `VAR` | — | — | — | read; the host gets it by name |
 | watch `CROSS` | compared between rounds and sweep points | located in the step | — | fires `event` when the value went from `≤ 0` to `> 0` |
-| watch `CAP` | — | — | — | the next step is at most the smallest value |
+| watch `CAP` | — | — | — | the next step is at most the smallest value; a value of `+∞` caps nothing: a `bound_step` not executed at the accepted solution |
 | watch `TRACE` | read at every evaluation of its function | same | not read | — |
 
 - **A1. Row.** The row of a continuous pin is `Σ FLOW + d/dt Σ DDT + Σ DELAY = 0` over every
