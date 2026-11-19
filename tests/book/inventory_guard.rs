@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
 #[path = "support"]
 mod support {
     pub mod book;

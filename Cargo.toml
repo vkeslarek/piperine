@@ -56,6 +56,11 @@ path = "crates/piperine-api/tests/root_surface/host_ii.rs"
 name = "book_inventory"
 path = "tests/book/inventory_guard.rs"
 
+# The Book's claim guard (`feature root-e2e`): every sentence that states a value or an outcome has a row.
+[[test]]
+name = "book_claims"
+path = "tests/book/claims_guard.rs"
+
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked
 # at ~1.1 GB and several run in parallel, so a one-crate change relinking the

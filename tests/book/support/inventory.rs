@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::book::Block;
+use super::book::{Block, Sentence};
 
 /// What a row is about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,6 +144,19 @@ impl Row {
     }
 }
 
+impl Row {
+    /// The id of the claim row of `sentence` of `chapter`: the chapter, `~`, and the first eight hex
+    /// digits of the sentence's fingerprint.
+    pub fn claim_id(chapter: &str, sentence: &Sentence) -> String {
+        format!("{chapter}~{}", &sentence.fingerprint().to_string()[..8])
+    }
+
+    /// The row a flagged sentence gets before any chapter task settles it: pending.
+    pub fn first_of_sentence(chapter: &str, sentence: &Sentence) -> Row {
+        Row { kind: Kind::Claim, id: Row::claim_id(chapter, sentence), fingerprint: sentence.fingerprint().to_string(), verdict: Verdict::Pending, covered_by: "-".to_string(), gap: "-".to_string(), text: sentence.text().to_string() }
+    }
+}
+
 /// The rows of the inventory, in file order.
 #[derive(Debug)]
 pub struct Inventory {
@@ -186,6 +199,11 @@ impl Inventory {
     /// The block rows.
     pub fn blocks(&self) -> Vec<&Row> {
         self.rows.iter().filter(|row| row.kind == Kind::Block).collect()
+    }
+
+    /// The claim rows.
+    pub fn claims(&self) -> Vec<&Row> {
+        self.rows.iter().filter(|row| row.kind == Kind::Claim).collect()
     }
 
     /// The row named `id`, if any.

@@ -454,10 +454,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `claims_guard.rs` holds `every_value_sentence_has_a_claim_row`, `every_claim_row_is_a_sentence_of_its_chapter`, `holding_claims_name_root_tests_that_cite_them`, `binary_claims_name_command_line_tests`, `settled_chapters_have_no_pending_claim`, `the_detector_flags_a_value_a_code_and_an_outcome`, `the_claim_guard_names_a_sentence_without_a_row`
-- [ ] The detector test asserts flags on planted sentences (a code, `693.1 ns`, `prints`) and no flag on a planted rule sentence
-- [ ] Gate check passes: Quick (`Run claims`, `Run hygiene`)
-- [ ] Test count: 7 new tests
+- [x] `claims_guard.rs` holds `every_value_sentence_has_a_claim_row`, `every_claim_row_is_a_sentence_of_its_chapter`, `holding_claims_name_root_tests_that_cite_them`, `binary_claims_name_command_line_tests`, `settled_chapters_have_no_pending_claim`, `the_detector_flags_a_value_a_code_and_an_outcome`, `the_claim_guard_names_a_sentence_without_a_row`
+- [x] The detector test asserts flags on planted sentences (a code, `693.1 ns`, `prints`) and no flag on a planted rule sentence
+- [x] Gate check passes: Quick (`Run claims`, `Run hygiene`)
+- [x] Test count: 7 new tests
 
 **Tests**: integration
 **Gate**: quick

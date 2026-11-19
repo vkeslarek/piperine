@@ -222,3 +222,336 @@ block	cheatsheet#11	6aa7d49559ddcad2	shown	-	-	-
 block	cheatsheet#12	7b3f0b719a47144e	shown	-	-	-
 block	cheatsheet#13	1fbd01e9a89541fd	shown	-	-	-
 block	cheatsheet#14	8a42da6d8e9cc4f1	shown	-	-	-
+claim	welcome~95e7b0be	95e7b0be8470c379	pending	-	-	The second run is a transient of 5&nbsp;µs, printed every microsecond:
+claim	welcome~58ff8428	58ff8428acc3b471	pending	-	-	1k is 103 and 1n is 10−9.
+claim	welcome~bc2a836b	bc2a836b135b01f9	pending	-	-	Step has no ports and no behavior of its own. signal vin: Electrical; declares a node. let r1 = Resistor(vin, vout) { r: 1k }; places a resistor: the call connects the ports in order, and the braces bind params by name. gnd is the reference node, available everywhere.
+claim	welcome~3af088ae	3af088ae6236dbfd	pending	-	-	An operating point holds nothing, which is why op printed 1&nbsp;V for the same node.
+claim	welcome~72129ad3	72129ad3e0b569f8	pending	-	-	A check that passes is not printed unless you ask for it, which is why the run above shows only the trip record.
+claim	welcome~a4895da4	a4895da417ec9324	pending	-	-	Each record is printed as one line, the moment it is written:
+claim	welcome~b1f1d1ff	b1f1d1ff7a181572	pending	-	-	A design full of checks would bury its own prints under passing checks: a monitor that checks every clock edge writes one record per edge.
+claim	welcome~b7e6723a	b7e6723a40948c15	pending	-	-	So the terminal shows a checks record only when it fails, or when its pass is unknown.
+claim	welcome~df325c6f	df325c6fbb31bf0f	pending	-	-	When a design prints more than you want to read, keep one stream:
+claim	welcome~aa92bd2f	aa92bd2f743ce598	pending	-	-	Adding or removing an emit! gives the same waveforms.
+claim	welcome~e9269920	e9269920165af6c3	pending	-	-	A solver often tries a time step, rejects it and tries a shorter one.
+claim	welcome~3afc3430	3afc34303f9d001f	pending	-	-	Its reaction, on at(t0) { fired <- true; }, means "when time reaches t0, set fired".
+claim	welcome~cd0a6683	cd0a6683d2118361	pending	-	-	Everything else writes nothing. let x = expr; only gives an expression a name.
+claim	welcome~6e662db9	6e662db9ee7d0481	pending	-	-	The piperine command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself.
+claim	welcome~5b11a01a	5b11a01aeff1f0af	pending	-	-	Parts of the language beyond that are still refused by name with P0001: in analog, noise, idt, delay and math methods such as sin; elsewhere, generic modules, params of an integer type, resolved natures such as Wire and the settle event.
+claim	welcome~4bc80e1d	4bc80e1dc680d2f3	pending	-	-	E0319
+claim	welcome~0808ef8f	0808ef8f1e6f4968	pending	-	-	Bind it: Resistor(vin, vout) { r: 1k }.
+claim	welcome~4bc8171d	4bc8171dc680e23e	pending	-	-	E0312
+claim	welcome~81d65119	81d6511923b86767	pending	-	-	let c1 = Capacitor(vout) { c: 1n };
+claim	welcome~4bc81c1d	4bc81c1dc680eabd	pending	-	-	E0317
+claim	welcome~80317c1d	80317c1de450c090	pending	-	-	E0901
+claim	welcome~54e1b21d	54e1b21dcbc81f00	pending	-	-	E0404
+claim	from-rust~065a9173	065a9173300b1b4d	pending	-	-	A param looks like a struct field. f: f64 = 1M where f > 0.0; has a default and a check.
+claim	from-rust~272b0be7	272b0be7fda6c787	pending	-	-	There is no assignment to it anywhere: the placement Osc(clk) { f: 1M } binds it, like a struct literal.
+claim	from-rust~8414e064	8414e064b32e2bbf	pending	-	-	With after d the new value arrives d seconds later: the oscillator toggles itself every half period, and each toggle is the change that fires the reaction again.
+claim	from-rust~82576d99	82576d998faba1e1	pending	-	-	A let in a module body places hardware. let ctr = Counter(clk, count); is an instance named ctr, not a call that returns.
+claim	from-rust~4938c15f	4938c15f88e053f2	pending	-	-	The first three lines after the header are the three records of the table above, as the command prints them: one line each, live.
+claim	from-rust~e572a4bf	e572a4bf4e1fc800	pending	-	-	when control reaches it
+claim	from-rust~edc69903	edc69903381c28ec	pending	-	-	A step the solver rejects
+claim	from-rust~95095180	950951807bc5b336	pending	-	-	Only two built-in ! forms: emit! for output and include_str! for data (E0901).
+claim	from-rust~80317c1d	80317c1de450c090	pending	-	-	E0901
+claim	from-rust~64ee8a1d	64ee8a1dd48326bc	pending	-	-	E0602
+claim	from-rust~64ee881d	64ee881dd4832356	pending	-	-	E0604
+claim	from-rust~64ee8d1d	64ee8d1dd4832bd5	pending	-	-	E0601
+claim	from-rust~399f441d	399f441dbbfb6578	pending	-	-	E0101
+claim	from-rust~39acbe1d	39acbe1dbc06bf22	pending	-	-	E0143
+claim	from-rust~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
+claim	values~423a2a9a	423a2a9a07b5faca	pending	-	-	This part of the language is Rust, so the chapter moves fast and stops only where MSL differs.
+claim	values~ec65c268	ec65c2683d76cae7	pending	-	-	Arithmetic always wraps.
+claim	values~d5f52d81	d5f52d81d3e7d912	pending	-	-	First, integers come in any width, because hardware does: a 3-bit duty word is a u3, and a 10-bit ADC code a u10.
+claim	values~df08bac4	df08bac412fa5f61	pending	-	-	Second, integer arithmetic wraps the way a register does, in every build; there is no overflow panic to hide a bug in release mode.
+claim	values~9273ae3d	9273ae3d2225da3b	pending	-	-	The prelude gives you the constants Q, K_B, EPS0, PI, E and inf.
+claim	values~c389077a	c389077a09d64172	pending	-	-	The compiler infers a class from the body: a pure function, like diode_current, works anywhere; one that probes a voltage or reads now() works where the solver is running; one that returns Event, like handshake, works where events go; and one that calls emit! works where emit! does.
+claim	values~4b156a2d	4b156a2da44bc9e4	pending	-	-	Passing a plain T wraps it in Some, the one implicit conversion in the language:
+claim	values~d0e86096	d0e860965d39c65b	pending	-	-	This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window.
+claim	values~3c87d509	3c87d5093c5ad414	pending	-	-	if z != zone { emit!(…) } prints only when the zone changes. zone on the right still reads the old value (the commit one line up has not applied yet), which is exactly what makes from = zone, to = z correct.
+claim	values~2931bd2e	2931bd2eba6a730c	pending	-	-	The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration: Under is 0, Ok 1 and Over 2, so from=1 to=0 is Ok to Under.
+claim	values~1aeb5afb	1aeb5afb04fc42e5	pending	-	-	You read the flag with three methods every Repr value has: x.known() gives an Option (None when any level is unknown), x.known_or(d) gives the value or a default, and x.is_known() a bool.
+claim	values~362f6b51	362f6b51760d2ad6	pending	-	-	This adder is placed in a top that gives a the constant 3 and takes b from an in port of its own, which nothing drives. (Osc is the clock from the file above.)
+claim	values~9a0ece05	9a0ece05b8e8447d	pending	-	-	An unknown value prints as x.
+claim	values~267f8cfe	267f8cfefd86bbf2	pending	-	-	Writing v(vout) + held; instead is error E0150, and the diagnostic names the carrier.
+claim	values~39a9371d	39a9371dbc03a3e6	pending	-	-	E0150
+claim	values~399bbd1d	399bbd1dbbf84a3c	pending	-	-	E0112
+claim	values~4bd60d1d	4bd60d1dc68d0e9c	pending	-	-	E0350
+claim	values~39acbe1d	39acbe1dbc06bf22	pending	-	-	E0143
+claim	values~39acbd1d	39acbd1dbc06bd6f	pending	-	-	E0140
+claim	values~39acbf1d	39acbf1dbc06c0d5	pending	-	-	E0142
+claim	values~3998361d	3998361dbbf52f00	pending	-	-	E0123
+claim	natures~b91f6505	b91f650573b09f15	pending	-	-	By the end of this chapter you can pick the right kind of wire for a job, declare signals and ports of every kind, and build a shared open-drain line that several modules drive, with a monitor that prints every change of it.
+claim	natures~cd4205d5	cd4205d55ed90e62	pending	-	-	Every carrier has a nature, and the nature answers two questions: what does it hold, and what happens when several modules drive it.
+claim	natures~c82d9d81	c82d9d814a2989c0	pending	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.
+claim	natures~66574051	66574051a10c52fa	pending	-	-	These are the ones the standard library gives you:
+claim	natures~eb8db94c	eb8db94ced8b3207	pending	-	-	That module also gives the initial value.
+claim	natures~8ebfe866	8ebfe866aadcea4e	pending	-	-	It is not a global net you can abuse: a module reaches any other node only through its ports.
+claim	natures~e99c1920	e99c1920bfe79d2e	pending	-	-	Today the command refuses the file and runs nothing:
+claim	natures~52790298	5279029848b66589	pending	-	-	Directions are written once, from the producer's side, and flip gives the consumer's view.
+claim	natures~5c7f5269	5c7f5269612c5fc2	pending	-	-	Inside one module, behavior crosses freely: analog reads digital carriers, and reactions probe voltages, as Step and WindowMonitor already did.
+claim	natures~42ae741d	42ae741dc13997e4	pending	-	-	E0220
+claim	natures~42ae761d	42ae761dc1399b4a	pending	-	-	E0222
+claim	natures~4bc8151d	4bc8151dc680ded8	pending	-	-	E0310
+claim	natures~42ab6e1d	42ab6e1dc13757db	pending	-	-	E0250
+claim	natures~b038d791	b038d791d9f119a7	pending	-	-	Resistor(clk, gnd) { r: 1k } with clk: Bit
+claim	natures~42b5621d	42b5621dc13f97fc	pending	-	-	E0206
+claim	natures~42a7e81d	42a7e81dc1343e52	pending	-	-	E0240
+claim	natures~42b8e61d	42b8e61dc142ae1f	pending	-	-	E0210
+claim	natures~36c1a3a6	36c1a3a63e502004	pending	-	-	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1&nbsp;µs the strength becomes Strong with the level still low, and at 3&nbsp;µs it returns to Pull.
+claim	modules~e1c9cfba	e1c9cfbaca0c7ca0	pending	-	-	By the end of this chapter you can build a design out of smaller modules: place instances, bind params, generate a row of stages with a loop, look inside a child from its parent, and write a module that returns a value, such as a filter you can call inside an expression.
+claim	modules~9df7d4b2	9df7d4b27dc00585	pending	-	-	c: f64 = 1p where c 0.0;
+claim	modules~fbe506f7	fbe506f7f13abb2c	pending	-	-	let r1 = Resistor(a, b) { r: 1k };
+claim	modules~b53307eb	b53307eb7b1a3b15	pending	-	-	Ladder<const N: usize> takes the number of sections as a generic argument, and where N >= 1 refuses an empty ladder.
+claim	modules~87ce6f6e	87ce6f6e612d4c68	pending	-	-	Swap the DC source for the Step of chapter 1 and add a block that reports when each tap passes half of the step:
+claim	modules~3f8e84ba	3f8e84ba1992d29f	pending	-	-	The stream gets one record per stage, in order, because the edge reaches the taps one after another:
+claim	modules~f355ab23	f355ab23250e139e	pending	-	-	The times are left for you; the exercise at the end of the chapter gives an estimate to check them against.
+claim	modules~85f8dd48	85f8dd48131db07e	pending	-	-	An operating point prints the top's own signals; a DC sweep steps a param, named by its path below the top, and prints one row per point.
+claim	modules~8b927a42	8b927a42685fb21f	pending	-	-	At each instance they stand for the expressions the caller wrote, here v(a) and 1u.
+claim	modules~ca384a57	ca384a570243c413	pending	-	-	idt(e) is the time integral of e, itself a library module that returns a value.
+claim	modules~1faf8c12	1faf8c12cb1fa180	pending	-	-	Every instance has these two implicit params, and you bind them like any other: Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel. m multiplies down the hierarchy; dtemp offsets the temperature and adds up.
+claim	modules~4bd2871d	4bd2871dc689f513	pending	-	-	E0320
+claim	modules~0d2be82e	0d2be82e6d92b89d	pending	-	-	RcSection(a, b) { res: 1k }
+claim	modules~4bc8171d	4bc8171dc680e23e	pending	-	-	E0312
+claim	modules~0d5cece8	0d5cece8da26ecc3	pending	-	-	RcSection(a) { r: 1k }
+claim	modules~4bd9101d	4bd9101dc68f498c	pending	-	-	E0343
+claim	modules~4bcf201d	4bcf201dc6871037	pending	-	-	E0333
+claim	modules~4bcf221d	4bcf221dc687139d	pending	-	-	E0331
+claim	modules~4bd9131d	4bd9131dc68f4ea5	pending	-	-	E0340
+claim	modules~4bcf211d	4bcf211dc68711ea	pending	-	-	E0330
+claim	modules~54e1b71d	54e1b71dcbc8277f	pending	-	-	E0401
+claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	pending	-	-	E0304
+claim	modules~93aff2ba	93aff2ba5f6a4f4c	pending	-	-	A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times r · c for the three taps: about 2.1, 3.5 and 4.1&nbsp;µs after the step.
+claim	analog~8f90421c	8f90421cf10f758d	pending	-	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
+claim	analog~773a3851	773a3851ccd5ff87	pending	-	-	Today the command stops at the source, with those three diagnostics, and runs nothing:
+claim	analog~139c67b5	139c67b5de8bbf3a	pending	-	-	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
+claim	analog~b103eeb0	b103eeb07178680c	pending	-	-	The piperine command prints the records of reactions; a trace from analog is not among the lines it shows.
+claim	analog~c91537fe	c91537fe5beade7a	pending	-	-	A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them.
+claim	analog~54e53c1d	54e53c1dcbcb3f55	pending	-	-	E0410
+claim	analog~54e5351d	54e5351dcbcb3370	pending	-	-	E0417
+claim	analog~ecb4300e	ecb4300e3bafde8f	pending	-	-	Write 1.0, or an SI literal such as 1m.
+claim	analog~54e1b21d	54e1b21dcbc81f00	pending	-	-	E0404
+claim	analog~39a9371d	39a9371dbc03a3e6	pending	-	-	E0150
+claim	analog~54e5381d	54e5381dcbcb3889	pending	-	-	E0414
+claim	analog~42a7e91d	42a7e91dc1344005	pending	-	-	E0241
+claim	analog~64ee8b1d	64ee8b1dd483286f	pending	-	-	E0603
+claim	analog~5c44f21d	5c44f21dcf9af6ca	pending	-	-	E0503
+claim	analog~5c44ee1d	5c44ee1dcf9aeffe	pending	-	-	E0507
+claim	digital~cc20763d	cc20763dd236a652	pending	-	-	Put the emit! first, last or in the middle: it prints the same thing, because nothing changes while a reaction runs.
+claim	digital~d8ecede0	d8ecede05cd0aedc	pending	-	-	This is the habit to build: one emit!("state", …) at the top of a clocked reaction gives you the whole history of the block, one row per edge.
+claim	digital~ce04e7a4	ce04e7a4b3292c54	pending	-	-	Without the after, the two definitions would form a loop with no delay in it, which is an elaboration error (E0339).
+claim	digital~27b7fac4	27b7fac4902807bb	pending	-	-	time reaches t
+claim	digital~4f9a5b9e	4f9a5b9e1d856b11	pending	-	-	A plain bool alone is not an event (E0430): on enable { … } has no "when".
+claim	digital~688ab093	688ab0930720ecc0	pending	-	-	Two things in it are not compiled yet, a param of an integer type (n: u8) and a known_or whose default may itself be unknown, so today the command refuses the file at the first one and runs nothing:
+claim	digital~6733ba9f	6733ba9f0625bee0	pending	-	-	Once it runs, it prints one record line: the output flipped once, at the fourth clean sample, @5.500000e-3 Press.db flip t=5.500000e-3 to=true.
+claim	digital~107c5906	107c59067f2d20c4	pending	-	-	A counter that wraps every period clocks, and an output that is high while the count is below a duty word.
+claim	digital~bdd2508f	bdd2508ffe81a52d	pending	-	-	Its period is a param of an integer type, which the compiler does not take yet, so today the command refuses the file and runs nothing:
+claim	digital~aa0c04f9	aa0c04f9964a57d6	pending	-	-	The library's require(name, pass) is a function over emit! that writes a record to the reserved checks stream; the host reports each one as a pass or a failure, and an unknown pass is reported as unknown, never as a pass. finish() writes to the reserved sim stream and ends the analysis at that instant.
+claim	digital~cbe38eff	cbe38efffaa5194f	pending	-	-	The library also has ready-made monitors built this way, such as Never(clk, bad) and Setup(clk, d) { ts: 100p }; chapter 10 lists them.
+claim	digital~a0ca3f9d	a0ca3f9d281ae3ad	pending	-	-	With the check placed in the bench, piperine run pwm.msl --analysis transient --stop 3e-3 prints each failing checks record as it is written (add --all-checks to see the passing ones too) and stops by itself at the twentieth cycle.
+claim	digital~4830dc9c	4830dc9cb816631d	pending	-	-	It runs every run of the project and prints one PASS or FAIL line each, with the failing check records under a FAIL.
+claim	digital~e35078c8	e35078c8dc5ec619	pending	-	-	Two forms of this chapter are not compiled yet and are refused with P0001: a param of an integer type, such as n: u8, and a known_or whose default may itself be unknown.
+claim	digital~d1d69398	d1d693985725b6c2	pending	-	-	That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs.
+claim	digital~6406776a	6406776ac0039900	pending	-	-	A transient of a design with no analog node runs to its stop like any other and gives its table.
+claim	digital~54ec481d	54ec481dcbd17267	pending	-	-	E0430
+claim	digital~42ae751d	42ae751dc1399997	pending	-	-	E0221
+claim	digital~4bcf191d	4bcf191dc6870452	pending	-	-	E0338
+claim	digital~4bcf1a1d	4bcf1a1dc6870605	pending	-	-	E0339
+claim	digital~54ec4a1d	54ec4a1dcbd175cd	pending	-	-	E0432
+claim	digital~54ec441d	54ec441dcbd16b9b	pending	-	-	E0434
+claim	digital~4bd60d1d	4bd60d1dc68d0e9c	pending	-	-	E0350
+claim	digital~5c44f01d	5c44f01dcf9af364	pending	-	-	E0501
+claim	digital~6b910006	6b9100060e366b8e	pending	-	-	Add after 0.5 / f.
+claim	mixed~4e66972c	4e66972ce7494860	pending	-	-	It prints three record lines from CycleCounter.ctr, with n=1, n=2 and n=3, about 15.9&nbsp;µs into each millisecond. --print-step 1e-3 keeps the table to one row per millisecond, and --print count to the one signal that matters, so its last row shows CycleCounter.count at 3.
+claim	mixed~ba1dc599	ba1dc599f52173f5	pending	-	-	EdgeCounter's reaction runs, emits the record and commits count.
+claim	mixed~e784c042	e784c042961833ba	pending	-	-	Look at how it treats an unknown input: d.known() gives three cases, and the model drives half the supply for "don't know".
+claim	mixed~f53cc3cb	f53cc3cbe6006a49	pending	-	-	That is the choice E0150 forces every analog reader to make. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.
+claim	mixed~8c829ed8	8c829ed8189c54e0	pending	-	-	A buck converter steps 12&nbsp;V down to 3.3&nbsp;V by switching: a high-side switch connects an inductor to the input for a fraction d of each period, and the output settles near d&nbsp;·&nbsp;12&nbsp;V.
+claim	mixed~a32dcb77	a32dcb774c3fa3fa	pending	-	-	emit!("loop", …) is the window into the loop: one record per period with the sample, the error and the duty just decided. duty = d prints the new value; duty = duty would print the old one.
+claim	mixed~827e671b	827e671b8ff913ea	pending	-	-	What happens in between, how fast the loop settles and whether it rings, is what the stream is for.
+claim	mixed~68328637	68328637ec256860	pending	-	-	Read the duty field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3.
+claim	mixed~8ab17f2d	8ab17f2de7c73869	pending	-	-	The equation. x has one branch, so KCL gives c · dv(x)/dt = (v(vin) − fb) / r.
+claim	mixed~22d4126e	22d4126e2fe09366	pending	-	-	Two things the examples here use are not compiled yet and are refused with P0001: the math methods of f64 such as sin (the sine sources) and the settle event (the converter's check).
+claim	mixed~42ab6e1d	42ab6e1dc13757db	pending	-	-	E0250
+claim	mixed~54ec481d	54ec481dcbd17267	pending	-	-	E0430
+claim	mixed~4bcf1b1d	4bcf1b1dc68707b8	pending	-	-	E0336
+claim	mixed~4bc81b1d	4bc81b1dc680e90a	pending	-	-	E0316
+claim	mixed~39a9371d	39a9371dbc03a3e6	pending	-	-	E0150
+claim	mixed~54d4401d	54d4401dcbbcd2ee	pending	-	-	E0442
+claim	mixed~fa428686	fa4286868655967a	pending	-	-	For "when the voltage reaches…" use above.
+claim	mixed~4bd60d1d	4bd60d1dc68d0e9c	pending	-	-	E0350
+claim	mixed~98e4dc1b	98e4dc1b05705b28	pending	-	-	on every(0.0, 10u) { … } written inside another reaction, or every called in a fn
+claim	mixed~6430a6c6	6430a6c6b34f7e9e	pending	-	-	Name them in the module body: let tick = every(0.0, 10u);
+claim	mixed~5c44ed1d	5c44ed1dcf9aee4b	pending	-	-	E0504
+claim	mixed~90621efb	90621efb95052987	pending	-	-	Predict what the pulse stream does near each zero crossing, then restore the hysteresis and choose the smallest value that gives one pulse per cycle.
+claim	mixed~41a87153	41a87153c3517456	pending	-	-	In the buck, raise ki to 20m and look at the loop stream: does duty still settle, or does it swing around 0.28? (It swings: the loop now reacts faster than the LC filter can follow.)
+claim	packages~5018120b	5018120b8c105ac6	pending	-	-	Having neither, or both, is E0161.
+claim	packages~77a1260e	77a1260eccb8ed3d	pending	-	-	Any other table or key is E0171.
+claim	packages~62e1271f	62e1271f5b6318b0	pending	-	-	A crate reaches another crate only through a dependency named in its manifest.
+claim	packages~31625632	31625632c81306ac	pending	-	-	A local fn util or const util lives in the value namespace, so util::cells::Cell still reaches the crate.
+claim	packages~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
+claim	packages~54e1b71d	54e1b71dcbc8277f	pending	-	-	E0401
+claim	packages~39a5cf1d	39a5cf1dbc00bd57	pending	-	-	E0162
+claim	packages~39a5ce1d	39a5ce1dbc00bba4	pending	-	-	E0163
+claim	packages~39a2cc1d	39a2cc1dbbfe8267	pending	-	-	E0171
+claim	packages~39a2c81d	39a2c81dbbfe7b9b	pending	-	-	E0175
+claim	packages~64f2121d	64f2121dd48643ab	pending	-	-	E0610
+claim	core-std~ece4c57c	ece4c57c55119b14	pending	-	-	A core name needs no import and cannot be redefined: a namespace item with the same name is error E0457.
+claim	core-std~c59252de	c59252de190bd867	pending	-	-	Your nature gives them their short names, v and i.
+claim	core-std~e4393c2d	e4393c2d3f5c1cb5	pending	-	-	Noise sources with a flat, a 1/f and a tabulated spectrum.
+claim	core-std~96074bac	96074bac5dd68cf8	pending	-	-	Monitors only report: each is a module that calls require when the property it watches fails.
+claim	core-std~2d426657	2d426657368ed543	pending	-	-	Only std may declare one; the same line in your crate is error E0125.
+claim	core-std~54d7c51d	54d7c51dcbbfeac4	pending	-	-	E0457
+claim	core-std~39983c1d	39983c1dbbf53932	pending	-	-	E0125
+claim	core-std~64ee8b1d	64ee8b1dd483286f	pending	-	-	E0603
+claim	core-std~64ee891d	64ee891dd4832509	pending	-	-	E0605
+claim	core-std~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
+claim	core-std~6e04c51d	6e04c51dd9c78a87	pending	-	-	E0702
+claim	errors~ed0997b0	ed0997b0b111f69a	pending	-	-	An error belongs to one of five phases: package (reading manifests and dependencies), parse, elaboration (names, types, params, the netlist), run (an analysis fails, naming the instance and the instant) and host (a host request is refused, and the analysis goes on).
+claim	errors~1f3eeee4	1f3eeee41c6df4bc	pending	-	-	E0310 on clk: Bit.
+claim	errors~d6787e9a	d6787e9a56d74451	pending	-	-	E0430 on on clk.
+claim	errors~4cc71bd2	4cc71bd23fee939d	pending	-	-	E0150 on + held. analog reads a digital carrier without saying what unknown means: held.known_or(0.0).
+claim	errors~a1afa480	a1afa480e9edfee0	pending	-	-	The diagnostics come on the error output, each with its code, the file, the line and the source excerpt, as in the two renderings at the top of this chapter, and the command exits with status 1.
+claim	errors~2db98d22	2db98d22c5ef3135	pending	-	-	Fix the three lines and the same command prints one ok line and exits with 0.
+claim	errors~3a745a24	3a745a2447904edf	pending	-	-	It cannot tell you that your counter wraps one edge late.
+claim	errors~473f7809	473f7809eac13282	pending	-	-	A reaction on q.changed() && !q.is_known() that emits the inputs of q.
+claim	errors~a1c70149	a1c7014935bd251b	pending	-	-	The solver fails to converge, or crawls.
+claim	errors~aa280b8e	aa280b8e1a6fe182	pending	-	-	When the surprise is gone, keep the useful prints and turn the expectation into a require, so the next change that breaks it is caught without anyone reading a stream.
+claim	errors~80317d1d	80317d1de450c243	pending	-	-	E0900
+claim	errors~80317c1d	80317c1de450c090	pending	-	-	E0901
+claim	errors~39a5d01d	39a5d01dbc00bf0a	pending	-	-	E0161
+claim	errors~39a5cf1d	39a5cf1dbc00bd57	pending	-	-	E0162
+claim	errors~39a5ce1d	39a5ce1dbc00bba4	pending	-	-	E0163
+claim	errors~39acbe1d	39acbe1dbc06bf22	pending	-	-	E0143
+claim	errors~39a9371d	39a9371dbc03a3e6	pending	-	-	E0150
+claim	errors~42ae741d	42ae741dc13997e4	pending	-	-	E0220
+claim	errors~42ae751d	42ae751dc1399997	pending	-	-	E0221
+claim	errors~42ae761d	42ae761dc1399b4a	pending	-	-	E0222
+claim	errors~4bc8171d	4bc8171dc680e23e	pending	-	-	E0312
+claim	errors~4bc80e1d	4bc80e1dc680d2f3	pending	-	-	E0319
+claim	errors~4bcf1b1d	4bcf1b1dc68707b8	pending	-	-	E0336
+claim	errors~4bcf1a1d	4bcf1a1dc6870605	pending	-	-	E0339
+claim	errors~4bd60d1d	4bd60d1dc68d0e9c	pending	-	-	E0350
+claim	errors~54e1b21d	54e1b21dcbc81f00	pending	-	-	E0404
+claim	errors~54e5381d	54e5381dcbcb3889	pending	-	-	E0414
+claim	errors~54ec481d	54ec481dcbd17267	pending	-	-	E0430
+claim	errors~39a2cc1d	39a2cc1dbbfe8267	pending	-	-	E0171
+claim	errors~39a2c81d	39a2c81dbbfe7b9b	pending	-	-	E0175
+claim	errors~42ab6e1d	42ab6e1dc13757db	pending	-	-	E0250
+claim	errors~4bc8151d	4bc8151dc680ded8	pending	-	-	E0310
+claim	errors~4bc81c1d	4bc81c1dc680eabd	pending	-	-	E0317
+claim	errors~4263fe89	4263fe894ba90969	pending	-	-	A param value that fails its where.
+claim	errors~4bcf191d	4bcf191dc6870452	pending	-	-	E0338
+claim	errors~4bd9101d	4bd9101dc68f498c	pending	-	-	E0343
+claim	errors~e692f0c1	e692f0c139004c64	pending	-	-	inst.name reaches an item that is not pub.
+claim	errors~54e53c1d	54e53c1dcbcb3f55	pending	-	-	E0410
+claim	errors~54ec4a1d	54ec4a1dcbd175cd	pending	-	-	E0432
+claim	errors~64ee8d1d	64ee8d1dd4832bd5	pending	-	-	E0601
+claim	errors~64ee8a1d	64ee8a1dd48326bc	pending	-	-	E0602
+claim	errors~64ee8b1d	64ee8b1dd483286f	pending	-	-	E0603
+claim	errors~5c44f01d	5c44f01dcf9af364	pending	-	-	E0501
+claim	errors~5c44f21d	5c44f21dcf9af6ca	pending	-	-	E0503
+claim	errors~5c44ed1d	5c44ed1dcf9aee4b	pending	-	-	E0504
+claim	errors~5c44ec1d	5c44ec1dcf9aec98	pending	-	-	E0505
+claim	errors~5c44ee1d	5c44ee1dcf9aeffe	pending	-	-	E0507
+claim	errors~5c44e91d	5c44e91dcf9ae77f	pending	-	-	E0508
+claim	pom~d65bb809	d65bb809f4a91366	pending	-	-	Always builds. build() returns a Design however broken the input.
+claim	pom~3bce7c96	3bce7c96fa16a3f6	pending	-	-	A generation for over 8 cells gives 8 instances to walk.
+claim	pom~f5af2797	f5af2797cce9fc1b	pending	-	-	It gives one for with one placement inside, as written.
+claim	pom~27751c3c	27751c3c3fa969ac	pending	-	-	build() fails on a syntax error.
+claim	pom~806e9e4f	806e9e4f3ddce5e9	pending	-	-	It always returns a Design.
+claim	pom~dfd54aa0	dfd54aa057b9f194	pending	-	-	Check diagnostics() before you trust the answers.
+claim	pom~20d38737	20d38737f0fea9cc	pending	-	-	An E0432 or E0417 comes from a later stage.
+claim	abi~5856e308	5856e308decfdc14	pending	-	-	A call returns OK, FAULT (with a message), RESHAPE (these param values need a different shape) or FINISH (a reaction ends the analysis at its instant).
+claim	abi~978c8986	978c8986b77bf2f9	pending	-	-	No macro is involved: a generic function produces the C thunks.
+claim	abi~e42ad9e5	e42ad9e55b310b40	pending	-	-	It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.
+claim	abi~09170599	09170599d8835780	pending	-	-	A time at which the analog solver produces an accepted solution and runs the time-point procedure.
+claim	solver~fe59ce49	fe59ce49a19424cb	pending	-	-	This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.
+claim	solver~83cb975b	83cb975b79c20f2c	pending	-	-	The analog and digital solvers never call each other: everything that crosses between them is an event the owner carries.
+claim	solver~73d81a62	73d81a62e1d21515	pending	-	-	When plain Newton fails, the solver makes the problem easier and walks back.
+claim	solver~81105bea	81105bea4589431f	pending	-	-	If that fails, it turns all sources off and ramps them back up (source stepping).
+claim	solver~53123473	53123473c254e4be	pending	-	-	After 20 rounds that still change something the solver stops with E0506 and names the nets that kept moving, rather than return a wrong answer.
+claim	solver~ce518374	ce518374bc9e9752	pending	-	-	It stops at the first instant that touches the analog side, and the step is shortened to land exactly there.
+claim	solver~4d1bc10b	4d1bc10b58a44d4a	pending	-	-	If Newton failed or the error estimate is too big, everything returns to the checkpoint taken at the start, and the step is retried smaller.
+claim	solver~c2aa698e	c2aa698ebf814cfc	pending	-	-	What the instant changed reaches the analog side.
+claim	solver~4642dd47	4642dd47b67015c0	pending	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing.
+claim	solver~dbaf149d	dbaf149df95de26e	pending	-	-	After 1000 microsteps the solver stops with E0501 and names the nets that keep changing.
+claim	compiler~696ad77d	696ad77df2130b34	pending	-	-	It is an object model, not a text format, but it prints in a stable form for reading and for tests.
+claim	compiler~8f485ea3	8f485ea3a30bf197	pending	-	-	Its operating point puts mid at 7.5&nbsp;V, the same number ngspice prints for the same circuit.
+claim	compiler~0f9a1fec	0f9a1fec1e2a5725	pending	-	-	Every circuit the path runs has a twin written for ngspice, and a test runs both and compares every printed number.
+claim	compiler~a16be3e7	a16be3e7c5d562a6	pending	-	-	Diode under reverse bias to −20 V
+claim	compiler~e9ad112c	e9ad112ccaebd130	pending	-	-	5.9 × 10−21 A
+claim	compiler~79f44db1	79f44db163622a6c	pending	-	-	P0001
+claim	compiler~79f450b1	79f450b163622f85	pending	-	-	P0002
+claim	compiler~79f44fb1	79f44fb163622dd2	pending	-	-	P0003
+claim	compiler~79f44ab1	79f44ab163622553	pending	-	-	P0004
+claim	compiler~931761f9	931761f9a0e69952	pending	-	-	The Rust backend prints the whole design as one Rust source file, compiles it with the rustc it finds on the machine, and loads the library through the device ABI.
+claim	compiler~13572839	13572839026b148b	pending	-	-	The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian.
+claim	compiler~b03dc2fa	b03dc2faaa022c6b	pending	-	-	Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an if on a value that may be unknown stops with a fault naming that if in your source.
+claim	cli~3da257ec	3da257ec8712dccb	pending	-	-	By the end of this chapter you know every command of piperine, every key of a run table and the flag that overrides it, how results and emit! records are printed and saved, and what each exit code and each of the tool's own error codes means.
+claim	cli~31fc7600	31fc76008c425d67	pending	-	-	Runs one run of the project, or a lone file, and prints records and results.
+claim	cli~3cd92481	3cd92481b801b639	pending	-	-	piperine --help lists them, and piperine --version prints the version.
+claim	cli~4142e137	4142e137421d7b9b	pending	-	-	With no manifest, a command that needs a project fails with E0170.
+claim	cli~a1e67f93	a1e67f93c24c5973	pending	-	-	If there is no such module, or more than one, the run fails with P0011 and the candidates are listed.
+claim	cli~381401c6	381401c6dcb8cdfa	pending	-	-	Numbers are TOML numbers: write 10e-6, not 10u.
+claim	cli~4b2ad568	4b2ad568f362a83e	pending	-	-	The solver still runs from 0; steps before it are computed and not kept.
+claim	cli~1f56976d	1f56976d6a623433	pending	-	-	A failing check always prints.
+claim	cli~253dec67	253dec671e5d8ab7	pending	-	-	The most rounds an operating point may take before it fails, 20 by default.
+claim	cli~b9333d20	b9333d20287d051e	pending	-	-	The most microsteps one instant of the digital engine may take before it fails.
+claim	cli~7e41462d	7e41462ddbbc4446	pending	-	-	The budget of attempts a transient may make before it fails naming it, 2000000 by default.
+claim	cli~07125ec2	07125ec2469557fb	pending	-	-	With none or several, or a name that is no run, the command lists the run names and exits with status 2.
+claim	cli~e7ed5598	e7ed5598320294e0	pending	-	-	Always in this order: a header line, run <name>: <analysis>, top <Top>, backend <backend>; the record lines, each printed as its record is written; one empty line; the table.
+claim	cli~57fa9eec	57fa9eecbe35f7a4	pending	-	-	If anything fails before the analysis starts, nothing is printed here at all, only the error.
+claim	cli~5037c701	5037c701b7f81875	pending	-	-	If the analysis fails midway, the records already printed stay and no table follows.
+claim	cli~24bdf414	24bdf414e5f014de	pending	-	-	one per printed signal
+claim	cli~d26b56cd	d26b56cdd3e3862b	pending	-	-	A point of a sweep has no time to stamp a record with, so a dc run of a design that writes records is refused with P0010; run op at each value instead
+claim	cli~868f4e5f	868f4e5fbf23b874	pending	-	-	A long run with many unknowns would hold a great deal if it kept every step, so it does not: a run writes each row of its table as the solver reaches it and keeps none of the steps, which makes the memory of a run the size of its table, however long the run is. from trims the start of that table: the solver integrates from 0 as always, and the table starts at from.
+claim	cli~5f073732	5f073732127f44de	pending	-	-	Records are not affected; every one prints.
+claim	cli~418fd42b	418fd42bace6e7c2	pending	-	-	The buck converter at the end of this chapter prints its whole start on a grid, with no from at all.
+claim	cli~22d81a5c	22d81a5ce853a7be	pending	-	-	A node gives its voltage, a digital signal its value, and i(<instance>) the current through an instance such as a source.
+claim	cli~59441d1b	59441d1b334f69bb	pending	-	-	The same input gives the same characters every time: nothing on this output depends on the clock, on your directories or on what was cached.
+claim	cli~54e71d59	54e71d594a8b199c	pending	-	-	Every emit! executed by a reaction prints one line, the moment the record is written:
+claim	cli~21724a6d	21724a6d333e646c	pending	-	-	The two reserved streams, sim and checks, print like any other, with one exception: a checks record whose pass is true is not printed unless you give --all-checks (or all_checks = true in the run table), because a monitor that checks every clock edge would bury everything else.
+claim	cli~8c30079b	8c30079b67304417	pending	-	-	A failing check, or one whose pass is unknown, always prints.
+claim	cli~37f6ca25	37f6ca2522c00d39	pending	-	-	A design with no emit! prints no record line.
+claim	cli~18bf4b5d	18bf4b5dd9fa2dee	pending	-	-	At one instant the records come in the order the solver delivers them, not necessarily the order of the statements: here the check, written second, prints first.
+claim	cli~c1b61958	c1b6195819b959a2	pending	-	-	In place of the table the command prints wrote <file> (<n> rows).
+claim	cli~cee54a4e	cee54a4e944f8b0d	pending	-	-	--plot file.svg writes one SVG picture and prints wrote <file> after the table.
+claim	cli~1369f2e0	1369f2e09ffb5fcd	pending	-	-	Every printed real signal is a curve on one shared axis, with a legend; every digital signal is a step trace in a lane of its own below.
+claim	cli~67917c72	67917c72ad43e0eb	pending	-	-	The plot draws the rows of the run's table: its six printed points, one per row.
+claim	cli~fe2da74d	fe2da74da596992b	pending	-	-	A path that names nothing is E0801.
+claim	cli~9685ce4d	9685ce4dd6dc4b31	pending	-	-	A value the design refuses, such as one that fails the param's where, is E0802: no analysis runs.
+claim	cli~d3235913	d3235913bd437f0b	pending	-	-	Tolerances, the temperature and the bounds the solver gives up at are keys of a run too, each with its flag (table above).
+claim	cli~44b8ab83	44b8ab83717ab274	pending	-	-	They carry the names ngspice gives its .options, in lowercase.
+claim	cli~0549bfb1	0549bfb1723239f9	pending	-	-	An analysis that takes its own operating point inside the solver, ac and transient, has no door for a seed, and a nodeset on it is a P0010 error rather than a silent no-op.
+claim	cli~bdc8428b	bdc8428b7c761681	pending	-	-	A transient that needs more attempts than max_steps fails naming the budget; raise it and the same run succeeds.
+claim	cli~fc253bca	fc253bca1a1515a3	pending	-	-	The source is named by its instance, v1 or in full, Lowpass.v1; a source that is not a voltage source is a P0010 error.
+claim	cli~1c685364	1c6853643ba9f52d	pending	-	-	sens gives the derivative of each printed signal with respect to each param named by wrt, at the operating point:
+claim	cli~21c5d5e3	21c5d5e3675cf082	pending	-	-	piperine info [<run>] elaborates the top of a run and prints what a host can read of it, simulating and compiling nothing: the params with their type, value, where condition and whether they are structural; the ports; and the record streams.
+claim	cli~e4cb970e	e4cb970ee526f394	pending	-	-	A design that does not elaborate gets the diagnostics piperine check prints, and exit 1.
+claim	cli~bc9ef575	bc9ef5755c6ae5ca	pending	-	-	piperine new <name> creates the directory <name> with Piperine.toml, src/lib.msl, benches/step.msl and .gitignore, and prints created <name>.
+claim	cli~00319f47	00319f47e195c786	pending	-	-	It prints one line per run:
+claim	cli~3c91ac79	3c91ac7934517bca	pending	-	-	It prints no table and no other record.
+claim	cli~906cefdd	906cefdd790b38f5	pending	-	-	The model called fatal: the run ended at that instant and fails with the message.
+claim	cli~3bb4a4a0	3bb4a4a09bb88bb3	pending	-	-	A target is an objective that reports and never fails.
+claim	cli~f6eae41a	f6eae41adfb0e423	pending	-	-	After the line of a run, piperine test prints one line per target, target <name> margin=<value>, holding the last margin the run wrote, in the order the targets first wrote one; a negative margin is shown and does not turn the run red.
+claim	cli~9ed0890c	9ed0890c5c21c733	pending	-	-	A require is the constraint that fails.
+claim	cli~e088bcbe	e088bcbe98a367f4	pending	-	-	piperine fmt rewrites in place every .msl file under src/ and benches/ whose layout differs from the standard one, and prints formatted <path> for each; given file names, it formats those only.
+claim	cli~41e380a0	41e380a08f6e1a12	pending	-	-	Every comment you wrote is kept, in its place. piperine fmt --check writes nothing, prints would format <path> for each file that differs and fails if there is one, which is the line for a CI job.
+claim	cli~8ba7a6de	8ba7a6de4a6d1eac	pending	-	-	piperine clean removes the project's target directory and prints removed target, or nothing to remove.
+claim	cli~00f6bb32	00f6bb321c17dd38	pending	-	-	It can, because the run writes each row of the table as the solver reaches it and keeps none of the converter's steps (each one would hold every unknown of the circuit), so the memory stays constant however long the start.
+claim	cli~dc02c129	dc02c129cc399b3f	pending	-	-	The table has 1&nbsp;201 rows, one per 0.5&nbsp;µs from time 0 to 600&nbsp;µs; the listing shows the first five, where the supervisor is still off, the reference is 0 and the output is at its initial rest.
+claim	cli~79f0c8b1	79f0c8b1635f1296	pending	-	-	P0010
+claim	cli~5d988a44	5d988a442289cdf4	pending	-	-	stop = "5u"
+claim	cli~79f0c9b1	79f0c9b1635f1449	pending	-	-	P0011
+claim	cli~771ae31d	771ae31ddf0bbd0b	pending	-	-	E0801
+claim	cli~b47893cf	b47893cf294b3cf6	pending	-	-	--print vuot, --stream tripp, --param r9.r=1k
+claim	cli~771ae41d	771ae41ddf0bbebe	pending	-	-	E0802
+claim	cli~a6b80de0	a6b80de009e7ed71	pending	-	-	The design refuses the value: the param's where r > 0.0 fails.
+claim	cli~39a2cb1d	39a2cb1dbbfe80b4	pending	-	-	E0170
+claim	cli~3dbcf911	3dbcf911ff72d93a	pending	-	-	In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1&nbsp;kHz to 10&nbsp;MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: v(p, n) + dc + ac_stim(1.0, 0.0);, chapter 6.
+claim	structure~e6791845	e679184513f3ee4f	pending	-	-	It reads the command line, calls piperine-api and lays out the text; every rule of what a run prints and judges lives in the library.
+claim	structure~b45cc292	b45cc292b6849768	pending	-	-	It knows neither the language nor the solver, and prints in a stable form for reading.
+claim	structure~f9cbf76a	f9cbf76a7374932d	pending	-	-	It prints the design as Rust, compiles it once with rustc, keeps the result in a cache and loads it.
+claim	structure~58f974e3	58f974e3566763f4	pending	-	-	Until it is, piperine check gives the same diagnostics on the command line.
+claim	structure~00d9ae38	00d9ae382cd12fca	pending	-	-	Everything that crosses between analog and digital is an event the owner of time carries.
+claim	cheatsheet~a9561024	a956102475bf9f2b	pending	-	-	Yours hides both, except a core name (E0457).

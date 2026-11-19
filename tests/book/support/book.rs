@@ -107,6 +107,11 @@ pub struct Sentence {
 }
 
 impl Sentence {
+    /// The sentence whose text is `text`.
+    pub fn new(text: &str) -> Sentence {
+        Sentence { text: text.to_string() }
+    }
+
     /// The sentence as the reader sees it.
     pub fn text(&self) -> &str {
         &self.text
@@ -232,7 +237,7 @@ impl Book {
         let prose = self.prose_of(chapter);
         let mut sentences = Vec::new();
         for element in Self::elements(&prose) {
-            sentences.extend(Self::split(&Self::plain(&element)).into_iter().map(|text| Sentence { text }));
+            sentences.extend(Self::split(&Self::plain(&element)).iter().map(|text| Sentence::new(text)));
         }
         sentences
     }
