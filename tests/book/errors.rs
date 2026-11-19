@@ -93,7 +93,7 @@ const SAMPLE_HOLD_BENCH: &str = "module Top() {\n    signal a: Electrical;\n    
 fn a_refusal_that_runs_fails_naming_its_row() {
     // RE-02 AC 3: a block asserted refused that starts to run fails the test, naming its row, so the
     // row moves to `run` with the Book. `examples/rc` runs; asserting it refused panics.
-    let runs = Model::example("rc").run_named("op", Overrides::default());
+    let runs = Model::example("rc").of_run("op").run(Overrides::default());
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Refusal::expect(runs, "errors#3", "E0310", "any message")));
     let payload = caught.expect_err("a model that runs is not a refusal");
     let message = payload.downcast_ref::<String>().cloned().or_else(|| payload.downcast_ref::<&str>().map(|text| text.to_string())).expect("the panic carries a message");
@@ -136,7 +136,7 @@ fn the_ambiguous_name_diagnostic_has_the_parts_the_book_shows() {
     // missing part, listed in GAPS.md section 11 (Phase 9 adds it)
     let model = ambiguous_package();
     let source = model.text_of("src/lib.msl");
-    let given = Refusal::reported_by(model.run_named("op", Overrides::default()), "errors#2");
+    let given = Refusal::reported_by(model.of_run("op").run(Overrides::default()), "errors#2");
     let ambiguous = given.iter().find(|reported| reported.code == "E0163").expect("E0163 is given");
     assert_eq!(ambiguous.message, "`util` names both a dependency and an item of this namespace");
     assert_eq!(ambiguous.primary_text(&source), "util::cells::Cell", "the label points at the path, not at its first segment");
@@ -191,6 +191,17 @@ fn the_three_fixes_make_the_worked_example_elaborate() {
 }
 
 #[test]
+fn without_an_initial_value_the_output_sits_at_zero_volts() {
+    // errors~2b0048e8 ("Try it"): declare `held` without `= 0.0`; it still compiles and `vout` sits at
+    // 0 V before the first clock edge: `held` is unknown and `known_or(0.0)` said what unknown means
+    let source = SAMPLE_HOLD_FIXED.replace("signal held: Bit<f64> = 0.0;", "signal held: Bit<f64>;");
+    assert_ne!(source, SAMPLE_HOLD_FIXED, "the initial value is gone");
+    let ran = Model::written("sample_hold.msl", &source).run(operating_point_of("Top")).unwrap_or_else(|failure| panic!("it still compiles and runs: {failure}"));
+    let row = ran.table.rows.iter().position(|row| row[0] == piperine::Cell::Text("Top.b".to_string())).expect("the table has `vout`");
+    assert_eq!(ran.real(row, "value"), 0.0, "vout sits at 0 V");
+}
+
+#[test]
 fn a_reaction_on_a_changed_unknown_emits_the_inputs() {
     // errors~473f7809: "A reaction on `q.changed() && !q.is_known()` that emits the inputs of `q`":
     // `sum` becomes unknown when `b` is, and the reaction emits `a = 3` and `b` unknown
@@ -239,7 +250,7 @@ fn e0162_is_a_name_declared_twice() {
 fn e0163_is_a_name_that_is_a_dependency_and_a_local_item() {
     // errors~39a5ce1d: "E0163: A `use` whose first segment is both a dependency and a local item"
     let model = ambiguous_package();
-    let given = Refusal::of(model.run_named("op", Overrides::default()), "errors~39a5ce1d");
+    let given = Refusal::of(model.of_run("op").run(Overrides::default()), "errors~39a5ce1d");
     assert!(given.iter().any(|(code, message)| code == "E0163" && message.contains("`util` names both a dependency and an item")), "{given:?}");
 }
 

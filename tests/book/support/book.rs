@@ -283,7 +283,8 @@ impl Book {
         None
     }
 
-    /// `html` with its tags removed, entities decoded and whitespace collapsed.
+    /// `html` with its tags removed, entities decoded (a non-breaking space is a space) and whitespace
+    /// collapsed.
     fn plain(html: &str) -> String {
         let mut text = String::new();
         let mut in_tag = false;
@@ -295,7 +296,7 @@ impl Book {
                 _ => {}
             }
         }
-        Self::decode(&text).split_whitespace().collect::<Vec<_>>().join(" ")
+        Self::decode(&text.replace("&nbsp;", " ")).split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
     /// `text` cut after each sentence end: `.`, `?` or `!` and a blank, when what follows starts

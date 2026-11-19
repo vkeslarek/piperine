@@ -222,10 +222,8 @@ block	cheatsheet#11	6aa7d49559ddcad2	shown	-	-	-
 block	cheatsheet#12	7b3f0b719a47144e	shown	-	-	-
 block	cheatsheet#13	1fbd01e9a89541fd	shown	-	-	-
 block	cheatsheet#14	8a42da6d8e9cc4f1	shown	-	-	-
-claim	welcome~95e7b0be	95e7b0be8470c379	pending	-	-	The second run is a transient of 5&nbsp;µs, printed every microsecond:
 claim	welcome~58ff8428	58ff8428acc3b471	pending	-	-	1k is 103 and 1n is 10−9.
 claim	welcome~bc2a836b	bc2a836b135b01f9	pending	-	-	Step has no ports and no behavior of its own. signal vin: Electrical; declares a node. let r1 = Resistor(vin, vout) { r: 1k }; places a resistor: the call connects the ports in order, and the braces bind params by name. gnd is the reference node, available everywhere.
-claim	welcome~3af088ae	3af088ae6236dbfd	pending	-	-	An operating point holds nothing, which is why op printed 1&nbsp;V for the same node.
 claim	welcome~72129ad3	72129ad3e0b569f8	pending	-	-	A check that passes is not printed unless you ask for it, which is why the run above shows only the trip record.
 claim	welcome~a4895da4	a4895da417ec9324	pending	-	-	Each record is printed as one line, the moment it is written:
 claim	welcome~b1f1d1ff	b1f1d1ff7a181572	pending	-	-	A design full of checks would bury its own prints under passing checks: a monitor that checks every clock edge writes one record per edge.
@@ -297,7 +295,6 @@ claim	natures~b038d791	b038d791d9f119a7	pending	-	-	Resistor(clk, gnd) { r: 1k }
 claim	natures~42b5621d	42b5621dc13f97fc	pending	-	-	E0206
 claim	natures~42a7e81d	42a7e81dc1343e52	pending	-	-	E0240
 claim	natures~42b8e61d	42b8e61dc142ae1f	pending	-	-	E0210
-claim	natures~36c1a3a6	36c1a3a63e502004	pending	-	-	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1&nbsp;µs the strength becomes Strong with the level still low, and at 3&nbsp;µs it returns to Pull.
 claim	modules~e1c9cfba	e1c9cfbaca0c7ca0	pending	-	-	By the end of this chapter you can build a design out of smaller modules: place instances, bind params, generate a row of stages with a loop, look inside a child from its parent, and write a module that returns a value, such as a filter you can call inside an expression.
 claim	modules~9df7d4b2	9df7d4b27dc00585	pending	-	-	c: f64 = 1p where c 0.0;
 claim	modules~fbe506f7	fbe506f7f13abb2c	pending	-	-	let r1 = Resistor(a, b) { r: 1k };
@@ -320,7 +317,6 @@ claim	modules~4bd9131d	4bd9131dc68f4ea5	pending	-	-	E0340
 claim	modules~4bcf211d	4bcf211dc68711ea	pending	-	-	E0330
 claim	modules~54e1b71d	54e1b71dcbc8277f	pending	-	-	E0401
 claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	pending	-	-	E0304
-claim	modules~93aff2ba	93aff2ba5f6a4f4c	pending	-	-	A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times r · c for the three taps: about 2.1, 3.5 and 4.1&nbsp;µs after the step.
 claim	analog~8f90421c	8f90421cf10f758d	pending	-	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
 claim	analog~773a3851	773a3851ccd5ff87	pending	-	-	Today the command stops at the source, with those three diagnostics, and runs nothing:
 claim	analog~139c67b5	139c67b5de8bbf3a	pending	-	-	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
@@ -361,11 +357,9 @@ claim	digital~54ec441d	54ec441dcbd16b9b	pending	-	-	E0434
 claim	digital~4bd60d1d	4bd60d1dc68d0e9c	pending	-	-	E0350
 claim	digital~5c44f01d	5c44f01dcf9af364	pending	-	-	E0501
 claim	digital~6b910006	6b9100060e366b8e	pending	-	-	Add after 0.5 / f.
-claim	mixed~4e66972c	4e66972ce7494860	pending	-	-	It prints three record lines from CycleCounter.ctr, with n=1, n=2 and n=3, about 15.9&nbsp;µs into each millisecond. --print-step 1e-3 keeps the table to one row per millisecond, and --print count to the one signal that matters, so its last row shows CycleCounter.count at 3.
 claim	mixed~ba1dc599	ba1dc599f52173f5	pending	-	-	EdgeCounter's reaction runs, emits the record and commits count.
 claim	mixed~e784c042	e784c042961833ba	pending	-	-	Look at how it treats an unknown input: d.known() gives three cases, and the model drives half the supply for "don't know".
 claim	mixed~f53cc3cb	f53cc3cbe6006a49	pending	-	-	That is the choice E0150 forces every analog reader to make. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.
-claim	mixed~8c829ed8	8c829ed8189c54e0	pending	-	-	A buck converter steps 12&nbsp;V down to 3.3&nbsp;V by switching: a high-side switch connects an inductor to the input for a fraction d of each period, and the output settles near d&nbsp;·&nbsp;12&nbsp;V.
 claim	mixed~a32dcb77	a32dcb774c3fa3fa	pending	-	-	emit!("loop", …) is the window into the loop: one record per period with the sample, the error and the duty just decided. duty = d prints the new value; duty = duty would print the old one.
 claim	mixed~827e671b	827e671b8ff913ea	pending	-	-	What happens in between, how fast the loop settles and whether it rings, is what the stream is for.
 claim	mixed~68328637	68328637ec256860	pending	-	-	Read the duty field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3.
@@ -476,7 +470,6 @@ claim	solver~c2aa698e	c2aa698ebf814cfc	pending	-	-	What the instant changed reac
 claim	solver~4642dd47	4642dd47b67015c0	pending	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing.
 claim	solver~dbaf149d	dbaf149df95de26e	pending	-	-	After 1000 microsteps the solver stops with E0501 and names the nets that keep changing.
 claim	compiler~696ad77d	696ad77df2130b34	pending	-	-	It is an object model, not a text format, but it prints in a stable form for reading and for tests.
-claim	compiler~8f485ea3	8f485ea3a30bf197	pending	-	-	Its operating point puts mid at 7.5&nbsp;V, the same number ngspice prints for the same circuit.
 claim	compiler~0f9a1fec	0f9a1fec1e2a5725	pending	-	-	Every circuit the path runs has a twin written for ngspice, and a test runs both and compares every printed number.
 claim	compiler~a16be3e7	a16be3e7c5d562a6	pending	-	-	Diode under reverse bias to −20 V
 claim	compiler~e9ad112c	e9ad112ccaebd130	pending	-	-	5.9 × 10−21 A
@@ -539,7 +532,6 @@ claim	cli~e088bcbe	e088bcbe98a367f4	pending	-	-	piperine fmt rewrites in place e
 claim	cli~41e380a0	41e380a08f6e1a12	pending	-	-	Every comment you wrote is kept, in its place. piperine fmt --check writes nothing, prints would format <path> for each file that differs and fails if there is one, which is the line for a CI job.
 claim	cli~8ba7a6de	8ba7a6de4a6d1eac	pending	-	-	piperine clean removes the project's target directory and prints removed target, or nothing to remove.
 claim	cli~00f6bb32	00f6bb321c17dd38	pending	-	-	It can, because the run writes each row of the table as the solver reaches it and keeps none of the converter's steps (each one would hold every unknown of the circuit), so the memory stays constant however long the start.
-claim	cli~dc02c129	dc02c129cc399b3f	pending	-	-	The table has 1&nbsp;201 rows, one per 0.5&nbsp;µs from time 0 to 600&nbsp;µs; the listing shows the first five, where the supervisor is still off, the reference is 0 and the output is at its initial rest.
 claim	cli~79f0c8b1	79f0c8b1635f1296	pending	-	-	P0010
 claim	cli~5d988a44	5d988a442289cdf4	pending	-	-	stop = "5u"
 claim	cli~79f0c9b1	79f0c9b1635f1449	pending	-	-	P0011
@@ -548,10 +540,55 @@ claim	cli~b47893cf	b47893cf294b3cf6	pending	-	-	--print vuot, --stream tripp, --
 claim	cli~771ae41d	771ae41ddf0bbebe	pending	-	-	E0802
 claim	cli~a6b80de0	a6b80de009e7ed71	pending	-	-	The design refuses the value: the param's where r > 0.0 fails.
 claim	cli~39a2cb1d	39a2cb1dbbfe80b4	pending	-	-	E0170
-claim	cli~3dbcf911	3dbcf911ff72d93a	pending	-	-	In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1&nbsp;kHz to 10&nbsp;MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: v(p, n) + dc + ac_stim(1.0, 0.0);, chapter 6.
 claim	structure~e6791845	e679184513f3ee4f	pending	-	-	It reads the command line, calls piperine-api and lays out the text; every rule of what a run prints and judges lives in the library.
 claim	structure~b45cc292	b45cc292b6849768	pending	-	-	It knows neither the language nor the solver, and prints in a stable form for reading.
 claim	structure~f9cbf76a	f9cbf76a7374932d	pending	-	-	It prints the design as Rust, compiles it once with rustc, keeps the result in a cache and loads it.
 claim	structure~58f974e3	58f974e3566763f4	pending	-	-	Until it is, piperine check gives the same diagnostics on the command line.
 claim	structure~00d9ae38	00d9ae382cd12fca	pending	-	-	Everything that crosses between analog and digital is an event the owner of time carries.
 claim	cheatsheet~a9561024	a956102475bf9f2b	pending	-	-	Yours hides both, except a core name (E0457).
+claim	welcome~37aa8247	37aa824721bf86c4	pending	-	-	At rest no current flows, so the output sits at the source's 1 V.
+claim	welcome~937d7801	937d7801efa02527	pending	-	-	The second run is a transient of 5 µs, printed every microsecond:
+claim	welcome~566f4f37	566f4f373e49124b	pending	-	-	That is a capacitor charging through a resistor: 63 % after one time constant r · c = 1 µs, 86 % after two.
+claim	welcome~7238752c	7238752c36c36821	pending	-	-	The line that starts with @ is the bench talking: its monitor saw the output pass 0.5 V at 693.1 ns.
+claim	welcome~e7b611bc	e7b611bc87f50e5a	pending	-	-	The theory puts it at 1 µs · ln 2 = 693.147 ns; the solver locates the crossing to within its time tolerance, here 0.04 ns early.
+claim	welcome~f510779c	f510779cbb1f6161	pending	-	-	The initial value. signal vout: Electrical = 0.0; makes a transient start with the output at 0 V, a discharged capacitor.
+claim	welcome~4ecc9f35	4ecc9f3574b7bae5	pending	-	-	An operating point holds nothing, which is why op printed 1 V for the same node.
+claim	welcome~6c6cac8d	6c6cac8dc767660a	pending	-	-	The bench has a reaction of its own this time, on a crossing again, and E is the constant e: the record is written when vout rises through 63.2 % of the step.
+claim	welcome~ca1522ff	ca1522ffac1e1026	pending	-	-	One time constant after the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
+claim	values~8ad56d03	8ad56d032086a4c3	pending	-	-	The source is a ramp of 1 V/µs, so the node walks through all three zones.
+claim	values~6ecca079	6ecca0792312a11d	pending	-	-	The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is near 0.5, 1.5 and 2.5 V:
+claim	natures~6a449552	6a4495522518bc52	pending	-	-	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
+claim	modules~d3ff187c	d3ff187cb9877521	pending	-	-	For the ladder with a 1 V step, estimate when each tap passes 0.5 V before you look at the half stream.
+claim	modules~1a89f2ad	1a89f2adc283d8ec	pending	-	-	A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times r · c for the three taps: about 2.1, 3.5 and 4.1 µs after the step.
+claim	analog~53c7822c	53c7822caf5c0ae7	pending	-	-	A 2 V sine drives a resistor into two diodes back to back.
+claim	analog~a6eeb69c	a6eeb69ccb6689d9	pending	-	-	The output follows the input while it is small and is clipped near ±0.65 V.
+claim	analog~72e8923f	72e8923fe9f980b4	pending	-	-	In an operating-point solve now() is 0 and the source sits at 0 V.
+claim	analog~36d33f2a	36d33f2a6c2ad8c3	pending	-	-	let nvt = n * vt(); A let inside analog is a local of this iteration. vt() is the thermal voltage kT/q at the simulation temperature, about 25.9 mV at the default 300.15 K.
+claim	analog~9e74b878	9e74b8782d40c6b2	pending	-	-	At 0.6 V the diode carries about 0.12 mA, which drops 0.12 V over the resistor, so the input is at 0.72 V: the record confirms the hand calculation.
+claim	analog~239192ff	239192ff7bf8d964	pending	-	-	To drive an AC sweep, a source adds ac_stim to its contribution: v(p, n) + dc + ac_stim(1.0, 0.0); is a DC source that becomes a 1 V phasor in the sweep and stays at dc everywhere else.
+claim	analog~7b3efc50	7b3efc5053dd56d6	pending	-	-	Sampling, phi1 high. x follows vin and y is grounded, so cs charges to v(vin), with a time constant of ron · cs = 0.1 ns per switch.
+claim	analog~e79bf782	e79bf782a27195f2	pending	-	-	Which half of the output wave is clipped higher now, and at roughly what voltage? (The negative half: an ideality factor of 2 doubles the voltage for the same current, to about 1.3 V.) Add a second crossing reaction on above(-v(vout) - 1.2) to confirm it with a record.
+claim	digital~9d7f8cfe	9d7f8cfed31e32e0	pending	-	-	Its three timed reactions are the stimulus: the button starts low, bounces high at 2.0 ms, low at 2.2 ms, and high for good at 2.4 ms.
+claim	digital~7f3906df	7f3906df50f3b177	pending	-	-	The clock is 1 kHz, so it samples at 0.5, 1.5, 2.5 ms and so on, and never sees the bounce:
+claim	digital~0727161d	0727161d5312720a	pending	-	-	With a 1 MHz clock the PWM runs at 10 kHz, and the cycle stream has one record per period carrying the duty word that period will use.
+claim	digital~5351d4c4	5351d4c47aab4109	pending	-	-	Change the bench of the debouncer so that button goes high at 2.0 ms and low again at 4.0 ms.
+claim	digital~28c24505	28c245050d08caea	pending	-	-	Write down the run column of the state stream up to 6.5 ms, and say whether a flip record appears. (run reads 0, 0, 0, 1, 2, 0, 0: the samples at 2.5 and 3.5 ms extend the run, the low sample at 4.5 ms resets it.
+claim	mixed~b52d3509	b52d3509740fe8a8	pending	-	-	With a threshold of 0 V and 0.2 V of hysteresis, the comparator goes high when the sine rises through +0.1 V, which first happens 15.9 µs into each period:
+claim	mixed~306eca43	306eca43738de5b0	pending	-	-	It prints three record lines from CycleCounter.ctr, with n=1, n=2 and n=3, about 15.9 µs into each millisecond. --print-step 1e-3 keeps the table to one row per millisecond, and --print count to the one signal that matters, so its last row shows CycleCounter.count at 3.
+claim	mixed~758eca03	758eca03356a7662	pending	-	-	A buck converter steps 12 V down to 3.3 V by switching: a high-side switch connects an inductor to the input for a fraction d of each period, and the output settles near d · 12 V.
+claim	mixed~3bce4014	3bce401452e45841	pending	-	-	At the end the error is zero and the duty sits where 12 V times the duty, less the small drop in the switch, equals 3.3 V: about 0.28.
+claim	mixed~9d07c4b9	9d07c4b9576fd829	pending	-	-	It checks, at every time point after start-up, that the output stays within 50 mV of the target:
+claim	mixed~ac0aefe3	ac0aefe3b2ca4ca9	pending	-	-	Its = 0.0 holds it at 0 V through the transient's operating point.
+claim	mixed~fef5c97a	fef5c97a04840342	pending	-	-	A full-size digitally controlled buck converter (12 V in, 200 MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its .msl and regulates at 0.8 V within 3 mV with its loop closed, and the piperine command runs it (chapter 16).
+claim	mixed~a879bf2a	a879bf2aa5b759ac	pending	-	-	In the cycle counter, set hyst: 0.0 and add a small 50 kHz ripple to the source (a second Vsin in series).
+claim	errors~2b0048e8	2b0048e8bba634bb	holds	piperine/book_errors::without_an_initial_value_the_output_sits_at_zero_volts	-	What does vout do before the first clock edge, and which line decided that? (It sits at 0 V: held is unknown, and known_or(0.0) said what unknown means.)
+claim	compiler~05f756b4	05f756b4750e40ff	pending	-	-	Its operating point puts mid at 7.5 V, the same number ngspice prints for the same circuit.
+claim	cli~a717f995	a717f9954de38412	pending	-	-	This is the file it wrote, as it is: Step.vin flat at 1 V, Step.vout rising towards it with the time constant of 1 µs.
+claim	cli~662c11ca	662c11cac0eb42a8	pending	-	-	Raising r1 by one ohm lowers the output by 1.875 mV, and raising r2 by one ohm raises it by 0.625 mV: the output is 10·R2/(R1+R2), and the numbers are its two partial derivatives.
+claim	cli~3d1453da	3d1453dac50df26b	pending	-	-	The same commands run a full-size design: a digitally controlled buck converter that steps 12 V down to 0.8 V, with an analog power stage, a 200 MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL.
+claim	cli~6acf516c	6acf516c01fb6a39	pending	-	-	Then it simulates 600 µs of a circuit switching at 500 kHz with a 200 MHz clock, a couple of minutes on a laptop.
+claim	cli~9c4b6fcf	9c4b6fcf8e2fe12f	pending	-	-	The table has 1 201 rows, one per 0.5 µs from time 0 to 600 µs; the listing shows the first five, where the supervisor is still off, the reference is 0 and the output is at its initial rest.
+claim	cli~6153ef01	6153ef017a7d0cbd	pending	-	-	The last row, at 600 µs, reads reference 128, the code of 0.8 V; mode 2, regulation, after off and soft start; and an output within 3 mV of 0.8 V (0.8025).
+claim	cli~5010f432	5010f43297534039	pending	-	-	There are no record lines, yet the converter checks itself at every clock: its PWM carries a monitor that writes a checks record at every edge of the 200 MHz clock, saying the two power switches are never on together.
+claim	cli~7656eb9c	7656eb9c4b8bde20	pending	-	-	In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to 10 MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: v(p, n) + dc + ac_stim(1.0, 0.0);, chapter 6.
+claim	cli~e1afdf04	e1afdf0449b3645f	pending	-	-	The table needs analysis = "ac", from = 1e3, to = 1e7, per_decade = 10, print = ["vout"] and plot = "bode.svg".) At which frequency should mag(Step.vout) read 0.707 and phase(Step.vout) read −45? (At 1 / (2π · r · c) = 159 kHz.)

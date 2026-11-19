@@ -27,6 +27,8 @@ enum Opening {
 pub struct Model {
     directory: tempfile::TempDir,
     opening: Opening,
+    /// The run of the package that `run` runs; `None` for the only run, or for a lone file.
+    named: Option<String>,
 }
 
 /// What a run gave: the table of its analysis and the records its streams emitted.
@@ -43,7 +45,7 @@ impl Model {
         let directory = Self::directory();
         Self::write(directory.path(), file_name, &text);
         let opening = Opening::File(directory.path().join(file_name));
-        Model { directory, opening }
+        Model { directory, opening, named: None }
     }
 
     /// The file the Book assembles at the path `path` as it stands at the block `upto`, opened as a
@@ -57,14 +59,14 @@ impl Model {
             None => {
                 Self::write(directory.path(), path, &text);
                 let opening = Opening::File(directory.path().join(path));
-                Model { directory, opening }
+                Model { directory, opening, named: None }
             }
             Some((package, inside)) => {
                 let root = directory.path().join(package);
                 Self::copy_tree(&Self::repository().join("examples").join(package), &root);
                 Self::write(&root, inside, &text);
                 let opening = Opening::File(root.join(inside));
-                Model { directory, opening }
+                Model { directory, opening, named: None }
             }
         }
     }
@@ -75,7 +77,7 @@ impl Model {
         let directory = Self::directory();
         Self::write(directory.path(), file_name, text);
         let opening = Opening::File(directory.path().join(file_name));
-        Model { directory, opening }
+        Model { directory, opening, named: None }
     }
 
     /// A package whose `Piperine.toml` is `manifest`, opened as a package; the rest of its files are
@@ -84,7 +86,7 @@ impl Model {
         let directory = Self::directory();
         let root = directory.path().join("package");
         Self::write(&root, "Piperine.toml", manifest);
-        Model { directory, opening: Opening::Package(root) }
+        Model { directory, opening: Opening::Package(root), named: None }
     }
 
     /// A copy of the package `examples/<name>`, opened as a package.
@@ -92,7 +94,7 @@ impl Model {
         let directory = Self::directory();
         let root = directory.path().join(name);
         Self::copy_tree(&Self::repository().join("examples").join(name), &root);
-        Model { directory, opening: Opening::Package(root) }
+        Model { directory, opening: Opening::Package(root), named: None }
     }
 
     /// The text of the file `file` of the model, as the run reads it (a diagnostic's span is a byte
@@ -121,24 +123,20 @@ impl Model {
         self
     }
 
+    /// The model whose `run` runs the run `name` of its package, as `piperine run <name>` does.
+    pub fn of_run(mut self, name: &str) -> Model {
+        self.named = Some(name.to_string());
+        self
+    }
+
     /// The model run as `overrides` ask, on the default backend, in a build directory shared by the
     /// target: the table and the records, or the failure.
     pub fn run(&self, overrides: Overrides) -> Result<Ran, Failure> {
-        self.run_of(None, overrides)
-    }
-
-    /// The run `name` of the model's package, with `overrides` over its keys, as `piperine run <name>`.
-    pub fn run_named(&self, name: &str, overrides: Overrides) -> Result<Ran, Failure> {
-        self.run_of(Some(name), overrides)
-    }
-
-    /// The run `name` (the only run when `None`) of the model, with `overrides`.
-    fn run_of(&self, name: Option<&str>, overrides: Overrides) -> Result<Ran, Failure> {
         let project = match &self.opening {
             Opening::File(path) => Project::file(path)?,
             Opening::Package(root) => Project::at(root)?,
         };
-        let spec = project.request(name, &overrides)?;
+        let spec = project.request(self.named.as_deref(), &overrides)?;
         let mut session = Session::open(&project, &spec, &Self::settings())?;
         let kept = Rc::new(RefCell::new(KeptRecords::default()));
         let table = session.run(kept.clone())?;
