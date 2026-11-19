@@ -52,14 +52,14 @@ block	values#12	2a136951b87674b7	shown	-	-	-
 block	values#13	8add454648a8f9d1	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost
 block	values#14	c53149988f4a97fe	run	piperine/book_values::analog_reads_a_digital_carrier_through_known_or	-	-
 block	values#15	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
-block	natures#1	67bc373d6833923e	pending	-	-	-
-block	natures#2	6b0d8fdbd0ef2ae9	pending	-	-	-
-block	natures#3	e27df4c2a9cfd359	pending	-	-	-
+block	natures#1	67bc373d6833923e	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
+block	natures#2	6b0d8fdbd0ef2ae9	refused	piperine/book_natures::signals_of_every_family_are_refused_for_the_arrays_and_the_wire	L24	-
+block	natures#3	e27df4c2a9cfd359	refused	piperine/book_natures::the_open_drain_line_is_refused_while_resolved_natures_are_not_compiled	L21	-
 block	natures#4	1d7a141cf1811928	shown	-	-	-
 block	natures#5	c62d8033ca3aff49	shown	-	-	-
 block	natures#6	9aaf90266da55ef2	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
-block	natures#7	954b1af85cb67042	pending	-	-	-
-block	natures#8	ee25d1f515652d04	pending	-	-	-
+block	natures#7	954b1af85cb67042	run	piperine/book_natures::a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out	-	-
+block	natures#8	ee25d1f515652d04	refused	piperine/book_natures::a_bundle_is_refused_where_the_solver_reaches_it	L25	-
 block	modules#1	b8d5395ceea2ea36	pending	-	-	-
 block	modules#2	88069ff453a25020	pending	-	-	-
 block	modules#3	fd35830b4553e5ac	shown	-	-	-
@@ -278,23 +278,23 @@ claim	values~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_values::e0143_there_a
 claim	values~39acbd1d	39acbd1dbc06bd6f	holds	piperine/book_values::e0140_a_named_argument_must_name_an_optional_parameter	-	E0140
 claim	values~39acbf1d	39acbf1dbc06c0d5	holds	piperine/book_values::e0142_a_positional_argument_cannot_follow_a_named_one	-	E0142
 claim	values~3998361d	3998361dbbf52f00	unraised	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	E0123
-claim	natures~b91f6505	b91f650573b09f15	pending	-	-	By the end of this chapter you can pick the right kind of wire for a job, declare signals and ports of every kind, and build a shared open-drain line that several modules drive, with a monitor that prints every change of it.
-claim	natures~cd4205d5	cd4205d55ed90e62	pending	-	-	Every carrier has a nature, and the nature answers two questions: what does it hold, and what happens when several modules drive it.
-claim	natures~c82d9d81	c82d9d814a2989c0	pending	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.
-claim	natures~66574051	66574051a10c52fa	pending	-	-	These are the ones the standard library gives you:
-claim	natures~eb8db94c	eb8db94ced8b3207	pending	-	-	That module also gives the initial value.
-claim	natures~8ebfe866	8ebfe866aadcea4e	pending	-	-	It is not a global net you can abuse: a module reaches any other node only through its ports.
-claim	natures~e99c1920	e99c1920bfe79d2e	pending	-	-	Today the command refuses the file and runs nothing:
-claim	natures~52790298	5279029848b66589	pending	-	-	Directions are written once, from the producer's side, and flip gives the consumer's view.
-claim	natures~5c7f5269	5c7f5269612c5fc2	pending	-	-	Inside one module, behavior crosses freely: analog reads digital carriers, and reactions probe voltages, as Step and WindowMonitor already did.
-claim	natures~42ae741d	42ae741dc13997e4	pending	-	-	E0220
-claim	natures~42ae761d	42ae761dc1399b4a	pending	-	-	E0222
-claim	natures~4bc8151d	4bc8151dc680ded8	pending	-	-	E0310
-claim	natures~42ab6e1d	42ab6e1dc13757db	pending	-	-	E0250
-claim	natures~b038d791	b038d791d9f119a7	pending	-	-	Resistor(clk, gnd) { r: 1k } with clk: Bit
-claim	natures~42b5621d	42b5621dc13f97fc	pending	-	-	E0206
-claim	natures~42a7e81d	42a7e81dc1343e52	pending	-	-	E0240
-claim	natures~42b8e61d	42b8e61dc142ae1f	pending	-	-	E0210
+claim	natures~b91f6505	b91f650573b09f15	prose	-	-	By the end of this chapter you can pick the right kind of wire for a job, declare signals and ports of every kind, and build a shared open-drain line that several modules drive, with a monitor that prints every change of it.
+claim	natures~cd4205d5	cd4205d55ed90e62	prose	-	-	Every carrier has a nature, and the nature answers two questions: what does it hold, and what happens when several modules drive it.
+claim	natures~c82d9d81	c82d9d814a2989c0	prose	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.
+claim	natures~66574051	66574051a10c52fa	holds	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	These are the ones the standard library gives you:
+claim	natures~eb8db94c	eb8db94ced8b3207	holds	piperine/book_natures::an_out_port_gives_the_initial_value	-	That module also gives the initial value.
+claim	natures~8ebfe866	8ebfe866aadcea4e	holds	piperine/book_natures::a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere	-	It is not a global net you can abuse: a module reaches any other node only through its ports.
+claim	natures~e99c1920	e99c1920bfe79d2e	refused	natures#3	L21	Today the command refuses the file and runs nothing:
+claim	natures~52790298	5279029848b66589	refused	natures#8	L25	Directions are written once, from the producer's side, and flip gives the consumer's view.
+claim	natures~5c7f5269	5c7f5269612c5fc2	holds	piperine/book_natures::behavior_crosses_freely_inside_one_module	-	Inside one module, behavior crosses freely: analog reads digital carriers, and reactions probe voltages, as Step and WindowMonitor already did.
+claim	natures~42ae741d	42ae741dc13997e4	holds	piperine/book_natures::e0220_a_bit_has_one_driver	-	E0220
+claim	natures~42ae761d	42ae761dc1399b4a	holds	piperine/book_natures::e0222_a_module_cannot_drive_its_own_input	-	E0222
+claim	natures~4bc8151d	4bc8151dc680ded8	holds	piperine/book_natures::e0310_a_one_driver_port_needs_a_direction	-	E0310
+claim	natures~42ab6e1d	42ab6e1dc13757db	holds	piperine/book_natures::e0250_discrete_and_continuous_never_connect	-	E0250
+claim	natures~b038d791	b038d791d9f119a7	holds	piperine/book_natures::e0250_discrete_and_continuous_never_connect	-	Resistor(clk, gnd) { r: 1k } with clk: Bit
+claim	natures~42b5621d	42b5621dc13f97fc	holds	piperine/book_natures::e0206_a_probe_must_be_one_the_nature_declares	-	E0206
+claim	natures~42a7e81d	42a7e81dc1343e52	holds	piperine/book_natures::e0240_a_branch_joins_two_nodes_of_one_nature	-	E0240
+claim	natures~42b8e61d	42b8e61dc142ae1f	holds	piperine/book_natures::e0210_an_initial_value_cannot_read_a_carrier	-	E0210
 claim	modules~e1c9cfba	e1c9cfbaca0c7ca0	pending	-	-	By the end of this chapter you can build a design out of smaller modules: place instances, bind params, generate a row of stages with a loop, look inside a child from its parent, and write a module that returns a value, such as a filter you can call inside an expression.
 claim	modules~9df7d4b2	9df7d4b27dc00585	pending	-	-	c: f64 = 1p where c 0.0;
 claim	modules~fbe506f7	fbe506f7f13abb2c	pending	-	-	let r1 = Resistor(a, b) { r: 1k };
@@ -557,7 +557,7 @@ claim	welcome~6c6cac8d	6c6cac8dc767660a	holds	piperine/book_welcome::the_delayed
 claim	welcome~ca1522ff	ca1522ffac1e1026	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	One time constant after the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
 claim	values~8ad56d03	8ad56d032086a4c3	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	The source is a ramp of 1 V/µs, so the node walks through all three zones.
 claim	values~6ecca079	6ecca0792312a11d	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is near 0.5, 1.5 and 2.5 V:
-claim	natures~6a449552	6a4495522518bc52	pending	-	-	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
+claim	natures~6a449552	6a4495522518bc52	refused	natures#3	L21	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
 claim	modules~d3ff187c	d3ff187cb9877521	pending	-	-	For the ladder with a 1 V step, estimate when each tap passes 0.5 V before you look at the half stream.
 claim	modules~1a89f2ad	1a89f2adc283d8ec	pending	-	-	A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times r · c for the three taps: about 2.1, 3.5 and 4.1 µs after the step.
 claim	analog~53c7822c	53c7822caf5c0ae7	pending	-	-	A 2 V sine drives a resistor into two diodes back to back.

@@ -611,9 +611,9 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] No row of `natures` is `pending`; `natures` is in `SETTLED_CHAPTERS` of both guards
-- [ ] Gate check passes: Build, with `cargo test --test book_natures`
-- [ ] Test count: written in the commit body
+- [x] No row of `natures` is `pending`; `natures` is in `SETTLED_CHAPTERS` of both guards
+- [x] Gate check passes: Build, with `cargo test --test book_natures`
+- [x] Test count: written in the commit body
 
 **Tests**: integration
 **Gate**: build

@@ -434,3 +434,9 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#15 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
+| natures#2 | L24 | `composite-values` | `[Bit; 8]` is `P0001` (array type), `signal sda: Wire` is `P0001` (resolved nature `Wire`) and `logic("10xx")` reaches a generic function of the standard library (`P0001`); the other lines are accepted |
+| natures#3 | L21 | `resolved-nets` | `alarm.msl` is twelve `P0001`: the `Wire` ports, `changed()` and field access on a `Wire`, the `struct` of `Logic` in `nets.msl` |
+| natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type) and `Slice` is `P0001` (generic module) |
+| natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 |
+| natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
+| natures~6a449552 | L21 | `resolved-nets` | the `Pulldown` variant of the alarm needs the same `Wire`: refused with natures#3 |
