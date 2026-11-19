@@ -12,6 +12,7 @@ use piperine_ir::{Addend, BinaryOp, Branch, BranchKind, Expr, ExprId as LoweredE
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::selectors::ContributionRecord;
 use super::unlowered::Unlowered;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{self, BinOp, DeclKind, ExprId, ExprKind, Resolution, UnOp};
@@ -28,37 +29,27 @@ struct Leaf {
 impl Elaboration<'_, '_> {
     /// A contribution statement `lhs +> rhs`, appended to `out`; `false` after a diagnostic.
     pub(super) fn lower_contribution(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, lhs: ExprId, rhs: ExprId, span: Span) -> bool {
-        if scope.nesting > 0 {
-            self.refuse(scope.file, span, Unlowered::ConditionalContribution);
-            return false;
-        }
-        if scope.block_depth > 0 {
-            self.refuse(scope.file, span, Unlowered::NestedContribution);
-            return false;
-        }
         let Some((role, plus, minus)) = self.contribution_target(scope, lhs) else { return false };
         if plus == minus {
             let at = self.design.expr_node(lhs).span;
             self.report(scope.file, Diagnostic::new("E0241", "a contribution to a branch from a node to itself", at, "both nodes are the same node"));
             return false;
         }
+        // The branch's kind is decided once every contribution is lowered (`selectors.rs`); until
+        // then it is the kind of the first contribution.
         let kind = match role {
             QuantityRole::Flow => BranchKind::Flow,
             QuantityRole::Potential => BranchKind::Potential,
         };
         let existing = scope.branches.iter().position(|b| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus));
         let (branch, reversed) = match existing {
-            Some(index) if scope.branches[index].kind != kind => {
-                let message = "a branch receives both potential and flow contributions";
-                self.report(scope.file, Diagnostic::new("E0415", message, span, "a contribution of the other kind to this branch"));
-                return false;
-            }
             Some(index) => (index as u32, scope.branches[index].plus != plus),
             None => {
                 scope.branches.push(Branch { plus, minus, kind });
                 (scope.branches.len() as u32 - 1, false)
             }
         };
+        scope.contributions.push(ContributionRecord { branch, quantity: role, conditions: scope.conditions.clone(), file: scope.file, span });
         // A potential contribution is split like a flow one: its `ddt` leaves are `Ddt` addends
         // (amendment A5; abi.md A1 hoists them onto the branch's equation row).
         let mut leaves = Vec::new();

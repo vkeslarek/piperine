@@ -17,6 +17,7 @@ use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
 
 pub use crates::Crate;
+pub(crate) use body::nested_stmts;
 pub use body::{Argument, Block, FieldBinding, Commit, Contribution, Expr, Path, Pat, SourceFile, Stmt, Type};
 pub use hardware::{Behavior, Binding, Definition, GenArm, Generation, Instance, Let, Module, Nature, Param, Port, Quantity, Reaction, Signal};
 pub use index::{Reference, Writer};

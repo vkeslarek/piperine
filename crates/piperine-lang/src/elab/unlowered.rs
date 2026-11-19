@@ -13,10 +13,6 @@ use crate::pom::{DeclId, DeclKind, FileId};
 
 /// One form M1 elaboration refuses.
 pub(super) enum Unlowered<'a> {
-    /// A contribution under an `if` or in a closure.
-    ConditionalContribution,
-    /// A contribution in a plain block nested in the analog block.
-    NestedContribution,
     /// A `limit` under an `if`, in a function or in a closure.
     ConditionalLimit,
     /// A `bound_step` under an `if`, a `match` or in a nested block.
@@ -37,8 +33,6 @@ impl Unlowered<'_> {
     /// The form as the diagnostic names it.
     fn name(&self) -> String {
         match self {
-            Unlowered::ConditionalContribution => "a contribution under an `if` or in a closure".to_string(),
-            Unlowered::NestedContribution => "a contribution in a nested block".to_string(),
             Unlowered::ConditionalLimit => "a `limit` under an `if` or in a closure".to_string(),
             Unlowered::ConditionalBoundStep => "a `bound_step` under an `if`, a `match` or in a nested block".to_string(),
             Unlowered::ConditionalStim => "an `ac_stim` under an `if` or in a closure".to_string(),

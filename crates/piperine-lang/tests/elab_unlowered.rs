@@ -31,14 +31,10 @@ impl Row {
 #[test]
 fn a_site_or_contribution_under_if_is_p0001() {
     // A `limit` or `ac_stim` in a `fn` or a closure is `E0450` from the front end (spec rule),
-    // before elaboration; under an `if` of the analog block it reaches this table.
+    // before elaboration; under an `if` of the analog block it reaches this table. (A contribution
+    // under an `if` or in a nested block lowers since analog-structure T16: see
+    // `a_contribution_under_control_flow_lowers_where_it_was_written`.)
     for row in [
-        Row {
-            form: "contribution under if",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { if v(p) > 0.0 { i(p, n) +> 1.0; } }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "a contribution under an `if` or in a closure",
-            at: "i(p, n) +> 1.0;",
-        },
         Row {
             form: "limit under if",
             src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let x = if v(p) > 0.0 { limit(v(p), |a, b| a) } else { 0.0 }; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
@@ -74,18 +70,6 @@ fn a_site_or_contribution_under_if_is_p0001() {
             src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 || ac_stim(1.0) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
             names: "an `ac_stim` under an `if` or in a closure",
             at: "ac_stim(1.0)",
-        },
-        Row {
-            form: "contribution in a bare block",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { { i(p, n) +> 1.0; } }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "a contribution in a nested block",
-            at: "i(p, n) +> 1.0;",
-        },
-        Row {
-            form: "contribution in a let block",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let x = { i(p, n) +> 1.0; 2.0 }; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "a contribution in a nested block",
-            at: "i(p, n) +> 1.0;",
         },
     ] {
         row.check();
@@ -161,7 +145,7 @@ fn a_for_loop_in_a_digital_block_is_p0001() {
 #[test]
 fn a_diagnostic_means_no_ir() {
     // Two refusals in one design: still `Err`, every diagnostic a `P0001`, never a partial `Ir`.
-    let src = "module M(p: Electrical, n: Electrical) { }\nanalog for M { i(p, n) +> 2.0 * ddt(v(p, n)); if v(p) > 0.0 { i(p, n) +> 1.0; } }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }";
+    let src = "module M(p: Electrical, n: Electrical) { }\nanalog for M { let x = if v(p) > 0.0 { limit(v(p), |a, b| a) } else { 0.0 }; let y = if v(p) > 0.0 { ac_stim(1.0) } else { 0.0 }; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }";
     let err = Elab::run(src, "Top").expect_err("refused");
     assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));
@@ -212,5 +196,22 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
         for name in names {
             assert!(err.iter().any(|d| d.diagnostic.message.contains(name)), "{form}: no diagnostic names `{name}`: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         }
+    }
+}
+
+#[test]
+fn a_contribution_under_control_flow_lowers_where_it_was_written() {
+    // analog-structure T16 (AS-01 AC 1, AC 3): a contribution under an `if` or in a plain block
+    // nested in the `analog` block lowers, in place, as a `Contribute` inside the arm or the
+    // block; the old refusals of these three forms were rows of `a_site_or_contribution_under_if_is_p0001`.
+    for (form, body) in [
+        ("contribution under if", "if v(p) > 0.0 { i(p, n) +> 1.0; }"),
+        ("contribution in a bare block", "{ i(p, n) +> 1.0; }"),
+        ("contribution in a let block", "let x = { i(p, n) +> 1.0; 2.0 };"),
+    ] {
+        let src = format!("module M(p: Electrical, n: Electrical) {{ }}\nanalog for M {{ {body} }}\nmodule Top() {{ signal s: Electrical; let m = M {{ }}(s, gnd); }}");
+        let ir = Elab::ir(&src, "Top");
+        let body = ir.bodies().find(|b| b.name() == "M").expect("the body M");
+        assert_eq!(body.contributions().len(), 1, "{form}");
     }
 }

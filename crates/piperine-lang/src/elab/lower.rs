@@ -8,12 +8,13 @@
 
 use std::collections::BTreeMap;
 
-use piperine_ir::{BinaryOp, Branch, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Branch, Condition, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::compound::EnumLayout;
 use super::consts::{Bindings, Folded};
 use super::known::Flag;
 use super::elaborator::Elaboration;
+use super::selectors::ContributionRecord;
 use crate::msl::Span;
 use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::{Callee, Method, Ty};
@@ -53,11 +54,19 @@ pub(super) struct Scope {
     pub(super) analog: bool,
     /// The `bound_step` statements met so far: the next one's site.
     pub(super) bounds: u32,
+    /// The conditions of the arms the code being lowered sits in, outermost first: the selector
+    /// of a contribution (§11), read off the same structure `Body::contributions` reads.
+    pub(super) conditions: Vec<Condition>,
+    /// Every contribution lowered so far, for `selectors.rs` to decide the branch kinds.
+    pub(super) contributions: Vec<ContributionRecord>,
+    /// The initializer of each local a plain `let` bound: a condition that reads the local reads
+    /// what it holds (`selectors.rs`).
+    pub(super) local_inits: BTreeMap<u32, LoweredExpr>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0 }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
     }
 }
 
@@ -241,11 +250,15 @@ impl Elaboration<'_, '_> {
             ExprKind::If { cond, then, else_ } => {
                 let cond = self.lower_expr(scope, *cond);
                 scope.nesting += 1;
+                let arm = Self::enter_arm(scope, cond, true);
                 let then = self.lower_block(scope, file, &then.stmts, node.span);
+                Self::leave_arm(scope, arm);
+                let arm = Self::enter_arm(scope, cond, false);
                 let otherwise = match else_ {
                     Some(else_) => self.lower_expr(scope, *else_),
                     None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
                 };
+                Self::leave_arm(scope, arm);
                 scope.nesting -= 1;
                 let (cond, then, otherwise) = (cond?, then?, otherwise?);
                 // A condition that may be unknown is kept: the generated code decides it.
@@ -472,6 +485,7 @@ impl Elaboration<'_, '_> {
                     (Some(local), Some(init)) => {
                         // A local is what its initializer is: flagged when that may be unknown.
                         scope.locals[local as usize].ty = self.type_of(init);
+                        scope.local_inits.insert(local, init);
                         out.push(self.stmt(Stmt::Let { local, init }));
                         true
                     }

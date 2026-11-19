@@ -254,6 +254,9 @@ impl Elaboration<'_, '_> {
         let mut tests = Vec::new();
         let mut bodies = Vec::new();
         let mut ok = true;
+        // The body of arm `k` runs when no test before it held and its own does: the conditions
+        // of the `if` chain this lowers to (§11, `Body::contributions`).
+        let enclosing = scope.conditions.len();
         for (k, arm) in arms.iter().enumerate() {
             let last = k + 1 == arms.len();
             let test = if last { None } else { self.pattern_test(scope, subject, arm.pat) };
@@ -261,15 +264,19 @@ impl Elaboration<'_, '_> {
             if !last && test.is_none() && !everything {
                 ok = false;
             }
+            let own = Self::enter_arm(scope, test, true);
             match self.arm_body(scope, subject, arm) {
                 Some(body) => bodies.push(body),
                 None => ok = false,
             }
+            Self::leave_arm(scope, own);
+            Self::enter_arm(scope, test, false);
             tests.push(test);
             if everything {
                 break;
             }
         }
+        scope.conditions.truncate(enclosing);
         if !ok {
             return None;
         }
@@ -838,11 +845,15 @@ impl Elaboration<'_, '_> {
         let pair = self.lower_option(scope, expr)?;
         let binding = self.some_binding(scope.file, pat)?;
         scope.nesting += 1;
+        let arm = Self::enter_arm(scope, Some(pair.is), true);
         let then = self.bound_block(scope, binding, pair.val, &then.stmts, then.span);
+        Self::leave_arm(scope, arm);
+        let arm = Self::enter_arm(scope, Some(pair.is), false);
         let otherwise = match else_ {
             Some(else_) => self.lower_expr(scope, else_),
             None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
         };
+        Self::leave_arm(scope, arm);
         scope.nesting -= 1;
         let (then, otherwise) = (then?, otherwise?);
         let ty = self.flags(&[pair.is, then, otherwise]).wrap(base);

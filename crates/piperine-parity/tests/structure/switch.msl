@@ -1,0 +1,144 @@
+//! Contributions under `if` and `match`, and switch branches (analog-structure AS-01, AS-03),
+//! each a few lines with the value its spec rule gives.
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A source of `amps` into `p`.
+module Pump(p: Electrical) { amps: f64 = 1m; }
+analog for Pump { i(gnd, p) +> amps; }
+
+/// A source of `volts` at `p`, with a unit AC stimulus on top (it adds nothing outside a sweep).
+module Battery(p: Electrical) { volts: f64 = 1.0; }
+analog for Battery { v(p, gnd) +> volts + ac_stim(1.0); }
+
+/// A free-running oscillator, its first change at half a period: a rise at 1 us for `f` = 500 kHz.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 500k where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+// -- AS-01 AC 1: a flow contribution in each arm of an `if` on a probe
+
+module Halved(a: Electrical) {}
+analog for Halved {
+    if v(a) > 0.5 { i(a, gnd) +> v(a) / 1k; } else { i(a, gnd) +> v(a) / 2k; }
+}
+
+module HalvedBench() {
+    signal a: Electrical;
+    let load = Halved(a);
+    let source = Pump { amps: 1m }(a);
+}
+
+// -- AS-01 AC 2: a `match` on a `Bit<Mode>` carrier
+
+#[derive(Repr, Clone, Copy, PartialEq)]
+enum Mode { Fast, Slow }
+
+module Moded(a: Electrical, in mode: Bit<Mode>) {}
+analog for Moded {
+    match mode.known_or(Mode::Fast) {
+        Mode::Fast => { i(a, gnd) +> v(a) / 1k; }
+        Mode::Slow => { i(a, gnd) +> v(a) / 2k; }
+    }
+}
+
+module FastBench() {
+    signal a: Electrical;
+    signal mode: Bit<Mode> = Mode::Fast;
+    let load = Moded(a, mode);
+    let source = Pump { amps: 1m }(a);
+}
+
+module SlowBench() {
+    signal a: Electrical;
+    signal mode: Bit<Mode> = Mode::Slow;
+    let load = Moded(a, mode);
+    let source = Pump { amps: 1m }(a);
+}
+
+// -- AS-01 AC 4: no enabled contribution is zero flow
+
+module Gated(a: Electrical, in en: Bit) {}
+analog for Gated { if en.high() { i(a, gnd) +> v(a) / 1k; } }
+
+module GatedLowBench() {
+    signal a: Electrical;
+    signal en: Bit = false;
+    let gate = Gated(a, en);
+    let leak = Resistor { r: 1M }(a, gnd);
+    let source = Pump { amps: 1m }(a);
+}
+
+module GatedHighBench() {
+    signal a: Electrical;
+    signal en: Bit = true;
+    let gate = Gated(a, en);
+    let leak = Resistor { r: 1M }(a, gnd);
+    let source = Pump { amps: 1m }(a);
+}
+
+// -- Edge case: two enabled flow arms sum (§11 rule 1)
+
+module Twice(a: Electrical, in en: Bit) {}
+analog for Twice {
+    if en.high() { i(a, gnd) +> v(a) / 1k; }
+    if en.high() { i(a, gnd) +> v(a) / 1k; }
+}
+
+module TwiceBench() {
+    signal a: Electrical;
+    signal en: Bit = true;
+    let gate = Twice(a, en);
+    let source = Pump { amps: 1m }(a);
+}
+
+// -- AS-03: the ideal switch of §11, behind 1 kOhm from 1 V
+
+module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}
+analog for Switch {
+    if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }
+}
+
+module SwitchBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    signal ctl: Bit;
+    let osc = Osc(ctl) { f: 500k };
+    let source = Battery { volts: 1.0 }(s);
+    let series = Resistor { r: 1k }(s, a);
+    let sw = Switch(a, gnd, ctl);
+}
+
+// -- AS-03 AC 3: both kinds enabled in one solve
+
+module Both(a: Electrical, in en: Bit) {}
+analog for Both {
+    if en.high() { v(a, gnd) +> 1.0; i(a, gnd) +> 1m; }
+}
+
+module BothBench() {
+    signal a: Electrical;
+    signal en: Bit = true;
+    let both = Both(a, en);
+    let leak = Resistor { r: 1k }(a, gnd);
+}
+
+// -- AS-03 AC 4: an AC sweep takes the kind `analysis(Static)` false gives
+
+module Linearized(a: Electrical) {}
+analog for Linearized {
+    if analysis(Static) { i(a, gnd) +> 0.0; } else { v(a, gnd) +> 0.0; }
+}
+
+module SweepBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    let source = Battery { volts: 1.0 }(s);
+    let series = Resistor { r: 1k }(s, a);
+    let sw = Linearized(a);
+}

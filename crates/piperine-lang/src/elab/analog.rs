@@ -6,6 +6,7 @@ use piperine_ir::{AnalysisKind, Branch, BranchKind, Env, Expr, ExprId as Lowered
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::unlowered::Unlowered;
+use crate::pom::nested_stmts;
 use crate::types::Callee;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
 
@@ -87,13 +88,29 @@ impl Elaboration<'_, '_> {
 
     /// The potential branch between `plus` and `minus`, and whether it is named the other way
     /// round. A branch is numbered at its first contribution; a flow read written before that
-    /// contribution numbers it from the contribution the module's `analog` block writes.
+    /// contribution numbers it from the potential contribution the module's `analog` block
+    /// writes, wherever it sits in it (under an `if`, in a nested block).
     fn potential_branch(&mut self, scope: &mut Scope, plus: Terminal, minus: Terminal) -> Option<(u32, bool)> {
         let same = |b: &Branch| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus);
-        if let Some(at) = scope.branches.iter().position(same) {
-            let branch = &scope.branches[at];
-            return (branch.kind == BranchKind::Potential).then_some((at as u32, branch.plus != plus));
+        let existing = scope.branches.iter().position(same);
+        if let Some(at) = existing
+            && scope.branches[at].kind == BranchKind::Potential
+        {
+            return Some((at as u32, scope.branches[at].plus != plus));
         }
+        let (p, m) = self.written_potential(scope, plus, minus)?;
+        match existing {
+            Some(at) => Some((at as u32, scope.branches[at].plus != plus)),
+            None => {
+                scope.branches.push(Branch { plus: p, minus: m, kind: BranchKind::Potential });
+                Some((scope.branches.len() as u32 - 1, p != plus))
+            }
+        }
+    }
+
+    /// The ends, as the module's `analog` block writes them, of a potential contribution to the
+    /// branch between `plus` and `minus`; `None` when the block has none.
+    fn written_potential(&mut self, scope: &Scope, plus: Terminal, minus: Terminal) -> Option<(Terminal, Terminal)> {
         let module = self.frames.get(scope.frame)?.module;
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return None };
         for block in data.behaviors.clone() {
@@ -101,8 +118,8 @@ impl Elaboration<'_, '_> {
             if behavior.kind != BehaviorKind::Analog {
                 continue;
             }
-            for stmt in &behavior.body {
-                let StmtKind::Contribution { lhs, .. } = self.design.stmt_node(*stmt).kind.clone() else { continue };
+            for stmt in nested_stmts(self.design, &behavior.body) {
+                let StmtKind::Contribution { lhs, .. } = self.design.stmt_node(stmt).kind.clone() else { continue };
                 let ExprKind::Call { callee, args, .. } = self.design.expr_node(lhs).kind.clone() else { continue };
                 let potential = match &self.design.expr_node(callee).kind {
                     ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
@@ -122,8 +139,7 @@ impl Elaboration<'_, '_> {
                     _ => continue,
                 };
                 if (p, m) == (plus, minus) || (p, m) == (minus, plus) {
-                    scope.branches.push(Branch { plus: p, minus: m, kind: BranchKind::Potential });
-                    return Some((scope.branches.len() as u32 - 1, p != plus));
+                    return Some((p, m));
                 }
             }
         }

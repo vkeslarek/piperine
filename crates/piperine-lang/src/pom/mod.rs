@@ -55,5 +55,6 @@ pub use crates::{CrateData, CrateGraph, CrateNode, DependencyData, GraphError, i
 pub use ids::{CrateId, DeclId, ExprId, FileId, PathId, PatId, StmtId, TypeId};
 pub use meta::{AttrArgNode, AttrInputNode, AttrNode, Doc, Meta};
 pub use reflect::{Crate, Argument, Attr, Block, FieldBinding, Behavior, Binding, Commit, Const, Contribution, Definition, GenArm, Generation, Instance, Let, Reference, Writer, Module, Nature, Param, Port, Quantity, Reaction, Signal, Decl, Enum, Expr, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Path, Pat, Reflect, SourceFile, Stmt, Struct, Trait, Type, Use, Variant};
+pub(crate) use reflect::nested_stmts;
 pub use resolution::*;
 pub use source::{DiskSources, MemorySources, SourceProvider};
