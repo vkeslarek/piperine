@@ -37,6 +37,7 @@ change of the IR or the ABI.
 | §8 Unproven | U1–U11 |
 | §9 Coverage by spec part | — |
 | §10 Reference lists, changed entries, clusters | — |
+| §11 The Book against the binary | one row per Book block or claim the binary refuses, does not meet, never raises or the spec disputes |
 
 ---
 
@@ -230,6 +231,10 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
   a refused construct; `E0102`, `E0105`, `E0503` to `E0508` and `E0803` to `E0806` do not.
 - `P0001` says "outside the M1 subset" for forms the spec defines.
 
+| ID | Gap | Where | Size |
+| -- | --- | ----- | ---- |
+| D1 | A diagnostic leaves out a part the Book's chapter 11 shows: the help line of `E0150`, the secondary label of `E0163` | `docs/book/content.html` chapter 11, §11 below | S |
+
 ---
 
 ## 5. Spec holes and disagreements
@@ -404,3 +409,19 @@ E0803 E0804 E0805 E0806 E0807 E0808 E0809 E0904 E0906`
 | Foreign models | L12, L33 | L |
 | Language server | B3 | M, deferred |
 | Documents | X1, X2, H13 | S |
+
+---
+
+## 11. The Book against the binary
+
+One row per block or sentence of the Book that the binary refuses (`refused`), does not meet
+(`diverges`), never raises (`unraised`) or that the spec contradicts (`disputed`), under the id of the
+gap above that explains it. `Book` is the row's id in `tests/book/inventory.tsv`; `tests/book/inventory_guard.rs`
+holds this section equal to the inventory. A faulty model the Book teaches (the worked `SampleHold` of
+chapter 11) is refused by design and has no row. `Owner` is the feature that closes the row: `root-e2e`
+for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
+
+| Book | Gap | Owner | Today |
+| ---- | --- | ----- | ----- |
+| errors#1 | D1 | `root-e2e` | `E0150` gives no help line |
+| errors#2 | D1 | `root-e2e` | `E0163` gives no secondary label on `mod util;` |

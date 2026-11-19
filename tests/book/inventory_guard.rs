@@ -10,10 +10,12 @@ use std::collections::BTreeMap;
 #[path = "support"]
 mod support {
     pub mod book;
+    pub mod gaps;
     pub mod inventory;
 }
 
 use support::book::{BlockId, Book, Fingerprint};
+use support::gaps::Gaps;
 use support::inventory::{Coverage, Inventory, Row, Verdict};
 
 /// The chapters whose rows a chapter task has settled: none of their rows may be `pending`. A chapter
@@ -26,10 +28,14 @@ struct Guard<'a> {
     book: &'a Book,
     inventory: &'a Inventory,
     coverage: &'a Coverage,
+    gaps: &'a Gaps,
     settled: &'a [&'a str],
 }
 
 impl Guard<'_> {
+    /// The verdicts whose rows `GAPS.md` section 11 lists: the Book's claim the binary does not meet.
+    const LISTED_VERDICTS: [Verdict; 4] = [Verdict::Refused, Verdict::Diverges, Verdict::Unraised, Verdict::Disputed];
+
     /// The row of `block`'s chapter and position, as it would be written.
     fn corrected(&self, id: &BlockId) -> String {
         Row::first_of(self.book.block(id)).line()
@@ -130,6 +136,44 @@ impl Guard<'_> {
             .collect()
     }
 
+    /// `GAPS.md` section 11 and the inventory agree: every block or claim row that is `refused`,
+    /// `diverges`, `unraised` or `disputed` under a gap has one row of the section with the same gap
+    /// and an owner, and the section has no other row. A `refused` row with no gap is a refusal the
+    /// Book teaches (a faulty model shown to be refused) and has no row; any other verdict needs its
+    /// gap. The gap is an entry of the file.
+    fn section_eleven_disagreements(&self) -> Vec<String> {
+        let mut offences: Vec<String> = self.gaps.malformed_rows().into_iter().map(|line| format!("section 11 has a line that is not a four-cell row: {line}")).collect();
+        let section = self.gaps.rows();
+        let listed: Vec<&Row> = self.inventory.rows().iter().filter(|row| Self::LISTED_VERDICTS.contains(&row.verdict) && (row.gap != "-" || row.verdict != Verdict::Refused)).collect();
+        for row in &listed {
+            if row.gap == "-" {
+                offences.push(format!("{}: a `{}` row names its gap; the row has none", row.id, row.verdict.word()));
+                continue;
+            }
+            match section.iter().filter(|line| line.book == row.id).collect::<Vec<_>>().as_slice() {
+                [] => offences.push(format!("{}: section 11 has no row; add\n| {} | {} | <owner> | <what the binary does today> |", row.id, row.id, row.gap)),
+                [line] => {
+                    if line.gap != row.gap {
+                        offences.push(format!("{}: the row says gap {}, section 11 says {}", row.id, row.gap, line.gap));
+                    }
+                    if line.owner.is_empty() || line.today.is_empty() {
+                        offences.push(format!("{}: section 11 gives no owner or no `Today`", row.id));
+                    }
+                }
+                _ => offences.push(format!("{}: section 11 has the row twice", row.id)),
+            }
+            if !self.gaps.has_entry(&row.gap) {
+                offences.push(format!("{}: the gap {} is no entry of GAPS.md", row.id, row.gap));
+            }
+        }
+        for line in &section {
+            if !listed.iter().any(|row| row.id == line.book) {
+                offences.push(format!("{}: section 11 lists a row the inventory does not hold as refused, diverging, unraised or disputed; remove it", line.book));
+            }
+        }
+        offences
+    }
+
     /// Fails listing `offences`, one per line, under the rule `rule`.
     fn expect_none(rule: &str, offences: Vec<String>) {
         assert!(offences.is_empty(), "{rule}:\n  {}", offences.join("\n  "));
@@ -147,17 +191,18 @@ struct Tree {
     book: Book,
     inventory: Inventory,
     coverage: Coverage,
+    gaps: Gaps,
 }
 
 impl Tree {
     /// The repository's Book, inventory and tests.
     fn read() -> Tree {
-        Tree { book: Book::read(), inventory: Inventory::read(), coverage: Coverage::of_repository() }
+        Tree { book: Book::read(), inventory: Inventory::read(), coverage: Coverage::of_repository(), gaps: Gaps::read() }
     }
 
     /// The rules over this tree, with the chapters the registry settles.
     fn guard(&self) -> Guard<'_> {
-        Guard { book: &self.book, inventory: &self.inventory, coverage: &self.coverage, settled: &SETTLED_CHAPTERS }
+        Guard { book: &self.book, inventory: &self.inventory, coverage: &self.coverage, gaps: &self.gaps, settled: &SETTLED_CHAPTERS }
     }
 }
 
@@ -240,6 +285,13 @@ fn a_model_across_blocks_names_one_test() {
 }
 
 #[test]
+fn refused_rows_and_gaps_section_11_agree() {
+    // RE-02 AC 2: every block or claim the binary refuses, does not meet, never raises or the spec
+    // disputes is listed in `GAPS.md` section 11 under its gap, and the section lists nothing else
+    Guard::expect_none("section 11 of GAPS.md and the inventory agree", Tree::read().guard().section_eleven_disagreements());
+}
+
+#[test]
 fn settled_chapters_have_no_pending_row() {
     // RE-01 AC 4: a chapter its task settled keeps no row pending
     Guard::expect_none("settled chapters have no pending row", Tree::read().guard().pending_in_settled_chapters());
@@ -293,10 +345,16 @@ impl Planted {
         };
         settle(&mut rows[0], Verdict::Run, "piperine/book_demo::runs_demo");
         settle(&mut rows[2], Verdict::Refused, "piperine/book_demo::refuses_demo");
+        rows[2].gap = "L7".to_string();
         settle(&mut rows[3], Verdict::Run, "piperine/book_demo::runs_demo");
         settle(&mut rows[4], Verdict::Run, "piperine/book_demo::runs_demo");
         settle(&mut rows[5], Verdict::Holds, "piperine/book_demo::runs_demo");
         rows
+    }
+
+    /// A `GAPS.md` whose section 11 lists the planted refusal `demo#3` under the gap `L7` and holds `L7` as an entry.
+    fn gaps() -> Gaps {
+        Gaps::from_text("| L7 | a generic module | §8 | `generic module` | L |\n\n## 11. The Book against the binary\n\n| Book | Gap | Owner | Today |\n| ---- | --- | ----- | ----- |\n| demo#3 | L7 | `generics` | `P0001`: a generic module |\n")
     }
 
     /// The inventory that holds `rows`.
@@ -313,8 +371,9 @@ fn the_guard_names_a_block_without_a_row_and_a_row_naming_no_test() {
     let coverage = Coverage::at(tests.path());
     let clean = Planted::rows(&book);
     let inventory = Planted::inventory(&clean);
-    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, settled: &["demo"] };
-    for offences in [guard.rows_against_blocks(), guard.tests_that_do_not_exist(), guard.verdicts_that_do_not_fit(), guard.run_tests_that_do_not_run(), guard.refusals_that_are_not_expected(), guard.models_split_across_tests(), guard.pending_in_settled_chapters()] {
+    let gaps = Planted::gaps();
+    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &gaps, settled: &["demo"] };
+    for offences in [guard.rows_against_blocks(), guard.tests_that_do_not_exist(), guard.verdicts_that_do_not_fit(), guard.run_tests_that_do_not_run(), guard.refusals_that_are_not_expected(), guard.models_split_across_tests(), guard.pending_in_settled_chapters(), guard.section_eleven_disagreements()] {
         assert!(offences.is_empty(), "a clean planted tree breaks no rule: {offences:?}");
     }
 
@@ -325,7 +384,7 @@ fn the_guard_names_a_block_without_a_row_and_a_row_naming_no_test() {
     };
     let judged = |rows: &[Row], rule: &dyn Fn(&Guard) -> Vec<String>| {
         let inventory = Planted::inventory(rows);
-        rule(&Guard { book: &book, inventory: &inventory, coverage: &coverage, settled: &["demo"] })
+        rule(&Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &gaps, settled: &["demo"] })
     };
 
     let without = broken(&|rows| {
@@ -382,4 +441,49 @@ fn the_guard_names_a_block_without_a_row_and_a_row_naming_no_test() {
     let pending = broken(&|rows| rows[0].verdict = Verdict::Pending);
     let found = judged(&pending, &|guard| guard.pending_in_settled_chapters());
     assert_eq!(found, vec!["demo#1: the chapter is settled and the row is still pending"]);
+}
+
+#[test]
+fn the_gaps_guard_names_a_missing_and_an_extra_row() {
+    // RE-02 AC 2: section 11 of GAPS.md against the inventory, on planted text: a row with no line, a
+    // line with no row, a wrong gap, a gap that is no entry, a missing owner, a row with no gap
+    let book = Planted::book();
+    let tests = Planted::tests();
+    let coverage = Coverage::at(tests.path());
+    let clean = Planted::rows(&book);
+    let inventory = Planted::inventory(&clean);
+    let judged = |inventory: &Inventory, gaps: &Gaps| Guard { book: &book, inventory, coverage: &coverage, gaps, settled: &[] }.section_eleven_disagreements();
+    let section = |lines: &str| Gaps::from_text(&format!("| L7 | a generic module | §8 | x | L |\n\n## 11. The Book against the binary\n\n| Book | Gap | Owner | Today |\n| ---- | --- | ----- | ----- |\n{lines}"));
+
+    assert!(judged(&inventory, &Planted::gaps()).is_empty(), "the planted section agrees with the planted inventory");
+
+    let found = judged(&inventory, &section(""));
+    assert_eq!(found, vec!["demo#3: section 11 has no row; add\n| demo#3 | L7 | <owner> | <what the binary does today> |"]);
+
+    let found = judged(&inventory, &section("| demo#3 | L7 | `generics` | refused |\n| demo#9 | L7 | `generics` | refused |\n"));
+    assert_eq!(found, vec!["demo#9: section 11 lists a row the inventory does not hold as refused, diverging, unraised or disputed; remove it"]);
+
+    let found = judged(&inventory, &section("| demo#3 | L8 | `generics` | refused |\n"));
+    assert_eq!(found, vec!["demo#3: the row says gap L7, section 11 says L8"]);
+
+    let mut other = clean.clone();
+    other[2].gap = "L99".to_string();
+    let found = judged(&Planted::inventory(&other), &section("| demo#3 | L99 | `generics` | refused |\n"));
+    assert_eq!(found, vec!["demo#3: the gap L99 is no entry of GAPS.md"]);
+
+    let found = judged(&inventory, &section("| demo#3 | L7 | | refused |\n"));
+    assert_eq!(found, vec!["demo#3: section 11 gives no owner or no `Today`"]);
+
+    let mut nameless = clean.clone();
+    nameless[5].verdict = Verdict::Diverges;
+    let found = judged(&Planted::inventory(&nameless), &section("| demo#3 | L7 | `generics` | refused |\n"));
+    assert_eq!(found, vec!["demo#6: a `diverges` row names its gap; the row has none"]);
+
+    let mut taught = clean.clone();
+    taught[2].gap = "-".to_string();
+    let found = judged(&Planted::inventory(&taught), &section(""));
+    assert!(found.is_empty(), "a refusal the Book teaches has no gap and no line: {found:?}");
+
+    let found = judged(&inventory, &section("| demo#3 | L7 | `generics` | refused |\n| broken |\n"));
+    assert_eq!(found, vec!["section 11 has a line that is not a four-cell row: | broken |"]);
 }

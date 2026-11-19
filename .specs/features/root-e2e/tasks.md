@@ -499,10 +499,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `inventory_guard.rs` holds `refused_rows_and_gaps_section_11_agree` and `the_gaps_guard_names_a_missing_and_an_extra_row` (planted)
-- [ ] `Run docs` passes (no pinned `GAPS.md` text moved)
-- [ ] Gate check passes: Quick (`Run inventory`, `Run docs`)
-- [ ] Test count: 2 new tests
+- [x] `inventory_guard.rs` holds `refused_rows_and_gaps_section_11_agree` and `the_gaps_guard_names_a_missing_and_an_extra_row` (planted)
+- [x] `Run docs` passes (no pinned `GAPS.md` text moved)
+- [x] Gate check passes: Quick (`Run inventory`, `Run docs`)
+- [x] Test count: 2 new tests
 
 **Tests**: integration
 **Gate**: quick
