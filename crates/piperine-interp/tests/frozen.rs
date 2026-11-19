@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use piperine_interp::Interpreter;
 use piperine_ir::{
-    Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, EmitField, Env, Event, EventSource, Expr, InstanceSpec, IrBuilder,
-    LevelPart, NodeRole, Operator, Origin, QuantityRole, Stmt, Stream, StreamField, Terminal, ValueType,
+    Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, EmitField, Env, Event, EventSource, Expr, Hoisted,
+    Inflow, InstanceSpec, Ir, LevelPart, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
+    StreamField, Terminal, ValueType,
 };
 use piperine_ir::Method as M;
 
@@ -22,10 +23,14 @@ mod digital;
 #[allow(dead_code)]
 #[path = "support/models.rs"]
 mod models;
+#[allow(dead_code)]
+#[path = "../../piperine-ir/tests/support/structure.rs"]
+mod structure;
 
 use devices::Devices;
 use digital::{Buck, Dx, Ty};
 use models::{In, Models, View};
+use structure::{ParamEvents, Switching, Written};
 
 #[test]
 fn a_digital_body_is_rejected_by_name() {
@@ -471,4 +476,128 @@ fn the_unknown_nodes_are_refused_by_name() {
         assert!(got.contains(&format!("the IR form `{name}` is not executed by this walk")), "{name}: {got}");
         assert!(got.contains("amended.msl:2:10"), "the origin of the form: {got}");
     }
+}
+
+/// Designs that hold one form of `analog-structure`, each refused by name (R1, AS-17).
+struct Structured;
+
+impl Structured {
+    /// The forms `Interpreter::new` refuses `ir` for, in the order it names them (`holds <form>`).
+    fn refused(ir: Ir) -> Vec<String> {
+        assert_eq!(ir.check(), vec![], "the design itself is well formed");
+        let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a design with a form of analog-structure was accepted") };
+        rejected.entries.iter().filter_map(|e| e.what.split_once(" holds ").map(|(_, rest)| rest.split(':').next().unwrap_or("").to_string())).collect()
+    }
+
+    /// `Top` reads `mid`, the `signal s` of its child `leaf`, and the carrier `q` as `seen`.
+    fn reaching() -> Ir {
+        let at = |line: u32| Origin { file: "reach.msl".into(), line, col: 1 };
+        let mut b = IrBuilder::new();
+        let el = Buck::electrical(&mut b);
+        let node = |name: &str, role| BodyNode { name: name.into(), nature: el, role, init: None, origin: at(1) };
+        let spec = |name: &str, nodes, children| BodySpec { name: name.into(), origin: at(1), params: vec![], nodes, branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children };
+        let leaf = b.body(spec("Leaf", vec![node("p", NodeRole::Port), node("s", NodeRole::Signal)], vec![]));
+        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: at(2) });
+        let child = Child { name: "leaf".into(), body: leaf, nodes: vec![Terminal::Node(0), Terminal::Own(1)], params: vec![], origin: at(5) };
+        let top_body = b.body(spec("Top", vec![node("a", NodeRole::Signal), node("mid", NodeRole::Reached)], vec![child]));
+        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: at(4) });
+        b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } });
+        b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
+        let top = b.next_instance_id();
+        let a = b.node(NodeSpec { path: "Top.a".into(), nature: el, declared_by: top, init: None, origin: at(4) });
+        let top_net = b.net(NetSpec { path: "Top.seen".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: at(4) });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![NodeRef::Node(a), NodeRef::Ground], params: vec![], origin: at(4) });
+        b.bind_nets(top, vec![top_net]);
+        let leaf_id = b.next_instance_id();
+        let s = b.node(NodeSpec { path: "Top.leaf.s".into(), nature: el, declared_by: leaf_id, init: None, origin: at(2) });
+        let q = b.net(NetSpec { path: "Top.leaf.q".into(), ty: ValueType::Bool, declared_by: leaf_id, init: None, origin: at(2) });
+        let leaf_instance = b.instance(InstanceSpec { path: "Top.leaf".into(), name: "leaf".into(), body: leaf, parent: Some(top), nodes: vec![NodeRef::Node(a), NodeRef::Node(s)], params: vec![], origin: at(5) });
+        b.bind_nets(leaf_instance, vec![q]);
+        b.bind_reached_node(top, 1, NodeRef::Node(s));
+        b.bind_reached_net(top, seen, q);
+        b.finish(top)
+    }
+}
+
+#[test]
+fn the_interpreter_refuses_each_analog_structure_form_by_name() {
+    let held = |forms: &[String], form: &str| assert!(forms.iter().any(|f| f == form), "{form} among {forms:?}");
+
+    // a contribution under an `if` (a selector), and the same in a nested block
+    let nested = Switching::ir(BranchKind::Flow, |b| {
+        let (cond, taken) = (Switching::compare(b, BinaryOp::Gt, 0.5), Switching::contribute(b, QuantityRole::Flow, 1.0));
+        Written { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], ..Written::default() }
+    });
+    held(&Structured::refused(nested), "a contribution under a selector");
+
+    // a switch branch: both quantities written at the top of the block, so no selector is named
+    let switch = Switching::ir(BranchKind::Switch, |b| {
+        let (potential, flow) = (Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
+        Written { analog: vec![potential, flow], ..Written::default() }
+    });
+    assert_eq!(Structured::refused(switch), ["a switch branch"]);
+
+    // a module placed in an expression whose node or `analog` block joined the body
+    let hoisted = Added::refused(|b| {
+        let body = Devices::resistor(b);
+        b.hoisted(body, Hoisted { name: "lag".into(), module: "Lag".into(), origin: Amended::at(7) });
+    });
+    assert_eq!(hoisted, ["a module placed in an expression with a node or an analog block"]);
+
+    // a `ddt` that is not a whole addend: a derivative site
+    let derivative = Switching::ir(BranchKind::Flow, |b| {
+        let site = Switching::site(b, None);
+        Written { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..Written::default() }
+    });
+    assert_eq!(Structured::refused(derivative), ["a ddt off a whole addend or with abstol"]);
+
+    // a node and a carrier of a child, read as `inst.name`
+    held(&Structured::refused(Structured::reaching()), "a reached node or carrier (inst.name)");
+
+    // `p.inflow()`: the ammeter branch `(n, p)` measuring port `p`
+    let inflow = Added::refused(|b| {
+        let nodes = Amended::ports(b);
+        let body = b.body(BodySpec {
+            nodes,
+            branches: vec![Branch { plus: Terminal::Node(1), minus: Terminal::Node(0), kind: BranchKind::Potential }],
+            ..Buck::spec("Ammeter", Amended::F, 1)
+        });
+        b.inflow(body, Inflow { port: 0, branch: 0 });
+    });
+    assert_eq!(inflow, ["inflow()"]);
+
+    // `changed()` of a param, and `prev()` of one
+    let changed = ParamEvents::ir(ValueType::Bool, |b| b.expr(Expr::Fired(0), ValueType::Bool, ParamEvents::at()));
+    held(&Structured::refused(changed), "changed() or prev() on a param");
+    held(&Structured::refused(ParamEvents::previous_drive()), "changed() or prev() on a param");
+
+    // a `limit` read under a condition (the site has an `enabled`), and a `bound_step ... when`
+    let limit = Switching::ir(BranchKind::Flow, |b| {
+        let read = Switching::halving_limit(b);
+        let (cond, enabled) = (Switching::compare(b, BinaryOp::Gt, 0.5), Switching::compare(b, BinaryOp::Gt, 0.5));
+        let taken = Switching::contribute_expr(b, QuantityRole::Flow, Operator::Direct, read);
+        let site = Site { name: "lim".into(), origin: Switching::at(), enabled: Some(enabled) };
+        Written { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], locals: Switching::limit_locals(), ..Written::default() }
+    });
+    held(&Structured::refused(limit), "a guarded limit");
+    let capped = Switching::ir(BranchKind::Flow, |b| {
+        let (step, when) = (Switching::ex(b).real(0.5), Switching::compare(b, BinaryOp::Gt, 0.5));
+        let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
+        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+    });
+    held(&Structured::refused(capped), "a bound_step under a selector");
+}
+
+#[test]
+fn an_analog_body_without_new_forms_still_runs_on_the_interpreter() {
+    // The five M1 bodies hold none of the forms: the interpreter accepts them and plans each.
+    let mut b = IrBuilder::new();
+    let resistor = Devices::resistor(&mut b);
+    Devices::capacitor(&mut b);
+    Devices::diode(&mut b);
+    let top = Devices::alone(&mut b, resistor, "R", 1, vec![1000.0]);
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "the design itself is well formed");
+    let interpreter = Interpreter::new(Arc::new(ir)).expect("a body of the M1 subset is accepted");
+    assert!(interpreter.module(resistor).is_some(), "the resistor has a module");
 }
