@@ -101,6 +101,38 @@ fn an_emit_gives_one_record_with_time_instance_stream_and_fields() {
 }
 
 #[test]
+fn maybe_is_decoded_beside_the_fields() {
+    // US-05 AC 1, 2 and §19 rule 1: `maybe` is the last field of the stream's layout, a `bool`
+    // laid out as a carrier; the host reads it into `Record::maybe`, and it is no entry of
+    // `fields`. `s` is `a: f64` (bytes 0..16), `b: bool` (16..18), `maybe` (18..20), 24 bytes
+    let text = design("module M() {}\ndigital for M { on at(1u) { emit!(\"s\", a = 1.5, b = true); } }\n", "    let m = M();\n");
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, &text).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { analysis: Some("op".into()), top: Some("Top".into()), ..Overrides::default() };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let streams = Streams::of(Arc::new(session.ir().clone()));
+    let decode = |maybe: [u8; 2]| {
+        let mut bytes = vec![0u8; 24];
+        bytes[..8].copy_from_slice(&1.5f64.to_le_bytes());
+        bytes[8] = 1;
+        bytes[16..18].copy_from_slice(&[1, 1]);
+        bytes[18..20].copy_from_slice(&maybe);
+        let observation = Observation { path: "Top.m.s".into(), analysis: AnalysisKind::Transient, time: 1e-6, kind: ObservationKind::Record { site: Some((0, 0)), bytes } };
+        streams.decode(&observation).expect("a record").unwrap_or_else(|f| panic!("{f}"))
+    };
+    let fields = [("a".to_string(), Field::Real(1.5)), ("b".to_string(), Field::Bool(true))];
+    let reached = decode([1, 1]);
+    assert!(reached.maybe, "a known true `maybe` byte pair");
+    assert_eq!(reached.fields, fields, "`maybe` is kept out of the fields");
+    let sure = decode([0, 1]);
+    assert!(!sure.maybe, "a known false `maybe`");
+    assert_eq!(sure.fields, fields);
+}
+
+#[test]
 fn records_arrive_in_time_order() {
     // CLI-06 AC 3: timers written at 3 us, 1 us, 2 us arrive at 1, 2, 3 us
     let m = "module M() {}\ndigital for M {\n    on at(3u) { emit!(\"s\", k = 3); }\n    on at(1u) { emit!(\"s\", k = 1); }\n    on at(2u) { emit!(\"s\", k = 2); }\n}\n";

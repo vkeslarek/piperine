@@ -39,7 +39,7 @@ mod tests {
     }
 
     fn record(time: f64, instance: &str, stream: &str, fields: Vec<(&str, Field)>) -> Record {
-        Record { time, instance: instance.into(), stream: stream.into(), fields: fields.into_iter().map(|(n, f)| (n.to_string(), f)).collect() }
+        Record { time, instance: instance.into(), stream: stream.into(), fields: fields.into_iter().map(|(n, f)| (n.to_string(), f)).collect(), maybe: false }
     }
 
     #[test]

@@ -87,26 +87,27 @@ mod tests {
                 ("kind".into(), Field::Text("require".into())),
                 ("lost".into(), Field::Unknown),
             ],
+            maybe: false,
         };
         assert_eq!(
             line(&record),
             "{\"time\":1e-6,\"instance\":\"Step.mon\",\"stream\":\"trip\",\"fields\":{\"v\":0.5,\"ok\":true,\"n\":-7,\"big\":18446744073709551615,\"kind\":\"require\",\"lost\":null}}\n"
         );
         // a record with no field has an empty object
-        let bare = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![] };
+        let bare = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![], maybe: false };
         assert_eq!(line(&bare), "{\"time\":0.0,\"instance\":\"T\",\"stream\":\"s\",\"fields\":{}}\n");
         // string escaping: a quote, a backslash, a line break and a control character
-        let text = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("m".into(), Field::Text("a\"b\\c\nd\u{1}".into()))] };
+        let text = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("m".into(), Field::Text("a\"b\\c\nd\u{1}".into()))], maybe: false };
         assert_eq!(line(&text), "{\"time\":0.0,\"instance\":\"T\",\"stream\":\"s\",\"fields\":{\"m\":\"a\\\"b\\\\c\\nd\\u0001\"}}\n");
         // a real reads back as the same f64: the shortest form is exact
         for v in [0.1, 6.931075e-7, 1.0 / 3.0, 1e300, -2.5e-300, f64::MIN_POSITIVE] {
-            let record = Record { time: v, instance: "T".into(), stream: "s".into(), fields: vec![] };
+            let record = Record { time: v, instance: "T".into(), stream: "s".into(), fields: vec![], maybe: false };
             let text = line(&record);
             let number = text.strip_prefix("{\"time\":").and_then(|t| t.split(',').next()).expect("a time");
             assert_eq!(number.parse::<f64>().expect("a number"), v, "{text}");
         }
         // a value JSON has no number for is a string, never a bare `NaN`
-        let nan = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("x".into(), Field::Real(f64::NAN)), ("y".into(), Field::Real(f64::NEG_INFINITY))] };
+        let nan = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("x".into(), Field::Real(f64::NAN)), ("y".into(), Field::Real(f64::NEG_INFINITY))], maybe: false };
         assert!(line(&nan).contains("\"x\":\"NaN\",\"y\":\"-inf\""), "{}", line(&nan));
     }
 }

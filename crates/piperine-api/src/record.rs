@@ -15,8 +15,8 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use piperine_ir::{EmitField, Ir, Stmt, Stream};
-use piperine_plan::RecordLayout;
+use piperine_ir::{EmitField, Ir, Stmt, Stream, ValueType};
+use piperine_plan::{CarrierLayout, RecordLayout};
 use piperine_solver::protocol::{Observation, ObservationKind, Sink};
 
 use crate::failure::Failure;
@@ -31,6 +31,18 @@ pub struct Record {
     pub instance: String,
     pub stream: String,
     pub fields: Vec<(String, Field)>,
+    /// Whether the record was reached on a path taken under unknown control (§19 rule 1). It is
+    /// no field of the stream: it is not among `fields`.
+    pub maybe: bool,
+}
+
+impl Record {
+    /// Whether the field `name` is known true on a record that was surely reached: a `maybe`
+    /// record never says it, so a `finish` or `fatal` that may not have happened ends nothing
+    /// (§19 Resolution).
+    pub fn surely(&self, name: &str) -> bool {
+        !self.maybe && self.fields.iter().any(|(field, value)| field == name && *value == Field::Bool(true))
+    }
 }
 
 /// The value of one field of a record.
@@ -124,7 +136,7 @@ impl Streams {
             return None;
         }
         let record = self.record(o, *site, bytes).ok()?;
-        record.fields.iter().any(|(name, field)| name == "finish" && *field == Field::Bool(true)).then_some(record.time)
+        record.surely("finish").then_some(record.time)
     }
 
     fn record(&self, o: &Observation, site: Option<(u32, u32)>, bytes: &[u8]) -> Result<Record, Failure> {
@@ -139,6 +151,11 @@ impl Streams {
             let slice = &bytes[offset as usize..(offset + carrier.size) as usize];
             Ok((f.name.clone(), Field::of(Cell::decode(&f.ty, slice)?)))
         };
+        // `maybe` is always known (§19 rule 1); a clear known byte, which no run writes, reads as
+        // not maybe rather than as a guess
+        let maybe_layout = CarrierLayout::of(&ValueType::Bool).ok_or_else(|| refused("no carrier holds a `bool`".into()))?;
+        let maybe_at = layout.maybe_offset() as usize;
+        let maybe = matches!(Cell::decode(&ValueType::Bool, &bytes[maybe_at..maybe_at + maybe_layout.size as usize])?, Cell::Bool(true));
         let fields = match site {
             Some((reaction, statement)) => {
                 let (inst, _) = self.ir.record_at(&o.path, reaction, statement).ok_or_else(|| {
@@ -156,7 +173,7 @@ impl Streams {
             }
             None => (0..stream.fields.len() as u32).map(value).collect::<Result<Vec<_>, Failure>>()?,
         };
-        Ok(Record { time: o.time, instance: instance.clone(), stream: stream.name.clone(), fields })
+        Ok(Record { time: o.time, instance: instance.clone(), stream: stream.name.clone(), fields, maybe })
     }
 }
 

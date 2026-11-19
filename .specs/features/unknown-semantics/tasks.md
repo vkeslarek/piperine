@@ -488,8 +488,8 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `a_reaction_on_a_flagged_guard_reads_the_guard_and_fired` and `a_reaction_with_an_unknown_decision_reads_the_resolution` pass under `**Run planshape**`, and a body with neither has the shape it had (asserted in the same tests)
-- [ ] Gate check passes: Full
+- [x] `a_reaction_on_a_flagged_guard_reads_the_guard_and_fired` and `a_reaction_with_an_unknown_decision_reads_the_resolution` pass under `**Run planshape**`, and a body with neither has the shape it had (asserted in the same tests)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -509,8 +509,8 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `maybe_is_decoded_beside_the_fields` passes under `**Run records**`
-- [ ] Gate check passes: Quick
+- [x] `maybe_is_decoded_beside_the_fields` passes under `**Run records**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
