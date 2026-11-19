@@ -334,10 +334,10 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Creates the target `crates/piperine-plan/tests/structure_shape.rs` (`//!` header: the shape of each `analog-structure` form)
-- [ ] Tests with exactly these names pass in `Run plan`: `a_switch_branch_has_a_flow_pin_and_an_equation_term`, `a_conditional_flow_contribution_reads_its_condition`, `a_switch_equation_is_not_affine`, `a_body_without_new_forms_keeps_its_shape`
-- [ ] Gate check passes: Full (`Run plan`, `cargo test -p piperine-plan`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Creates the target `crates/piperine-plan/tests/structure_shape.rs` (`//!` header: the shape of each `analog-structure` form)
+- [x] Tests with exactly these names pass in `Run plan`: `a_switch_branch_has_a_flow_pin_and_an_equation_term`, `a_conditional_flow_contribution_reads_its_condition`, `a_switch_equation_is_not_affine`, `a_body_without_new_forms_keeps_its_shape`
+- [x] Gate check passes: Full (`Run plan`, `cargo test -p piperine-plan`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

@@ -27,9 +27,7 @@ use piperine_abi::layout::{BIT, F64};
 use crate::digital::{CarrierLayout, Digital, ReactionPlan};
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_ir::{
-    AnalysisKind, Body, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType,
-};
+use piperine_ir::{AnalysisKind, Body, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
 
 /// What one term of the shape computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,7 +39,8 @@ pub enum Term {
     /// A potential branch's `FLOW {plus, minus}` term: its private flow pin.
     Current(u32),
     /// A potential branch's `FLOW {f, GROUND}` term: the potential difference minus the sum of
-    /// its direct addends.
+    /// its direct addends. A switch branch's takes, per solve, the equation of the kind enabled
+    /// in it (a potential source, the flow sum, or zero flow, §11 rule 2).
     Eq(u32),
 }
 
@@ -390,7 +389,7 @@ impl BodyPlan {
         // before them keep their indices.
         let pin_count = body.params().len()
             + body.nodes().len()
-            + body.branches().iter().filter(|b| b.kind == BranchKind::Potential).count()
+            + body.branches().iter().filter(|b| b.kind != BranchKind::Flow).count()
             + usize::from(Self::reads_temperature(body))
             + Self::reads_analysis(body).len();
         let mut next_check = pin_count as u32;
@@ -433,12 +432,11 @@ impl BodyPlan {
         for (b, branch) in body.branches().iter().enumerate() {
             branches.push(match branch.kind {
                 BranchKind::Flow => None,
-                BranchKind::Potential => {
+                // A switch branch has a potential branch's private flow unknown (§11 rule 2).
+                BranchKind::Potential | BranchKind::Switch => {
                     let at = branch_origin(b);
                     Some(s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("b{b}.flow"), role::PRIVATE) }))
                 }
-                // The elaborator emits no switch branch yet: the plan of one is the next step.
-                BranchKind::Switch => panic!("a switch branch has no plan yet"),
             });
         }
 
@@ -512,7 +510,7 @@ impl BodyPlan {
             };
             let b32 = b as u32;
             match (branch.kind, pins.branches[b]) {
-                (BranchKind::Potential, Some(f)) => {
+                (BranchKind::Potential | BranchKind::Switch, Some(f)) => {
                     term(format!("b{b}.flow"), op::FLOW, plus, minus, Term::Current(b32));
                     term(format!("b{b}.eq"), op::FLOW, f, GROUND, Term::Eq(b32));
                     if received[b].ddt {
@@ -573,7 +571,9 @@ impl BodyPlan {
             plan.affine = terms
                 .iter()
                 .map(|t| match t {
-                    Term::Flow(b) | Term::Eq(b) => body.is_affine(*b),
+                    Term::Flow(b) => body.is_affine(*b),
+                    // which kind a switch branch's equation takes is decided per solve (§11 rule 2)
+                    Term::Eq(b) => body.branches()[*b as usize].kind != BranchKind::Switch && body.is_affine(*b),
                     Term::Current(_) => true,
                     Term::Charge(_) => false,
                 })
@@ -614,6 +614,10 @@ impl BodyPlan {
             Term::Eq(b) => {
                 let mut set = ReadSet::target(body, Query::Flow(b));
                 let branch = &body.branches()[b as usize];
+                // a switch branch's equation is `f - Σ flow` or `f` when no potential is enabled
+                if branch.kind == BranchKind::Switch {
+                    set.0.insert(Source::BranchFlow(b));
+                }
                 for end in [branch.plus, branch.minus] {
                     if let Terminal::Node(i) = end {
                         set.0.insert(Source::Node(i));
@@ -709,17 +713,20 @@ impl BodyPlan {
         }
     }
 
-    /// What each branch receives: contributions sit at the top level of the `analog` block.
+    /// What each branch receives from the `analog` block, nested contributions included. A `ddt`
+    /// addend under a condition is a `Charge` term of a flow or potential branch, but not of a
+    /// switch branch: there only an unconditional whole `ddt` addend is (a conditional one is a
+    /// derivative site, design mechanism 2).
     fn received(body: Body<'_>) -> Vec<Received> {
         let ir = body.ir();
         let mut received = vec![Received::default(); body.branches().len()];
-        for id in body.analog().unwrap_or(&[]) {
-            let Stmt::Contribute { branch, addends, .. } = ir.stmt(*id) else { continue };
-            let Some(r) = received.get_mut(*branch as usize) else { continue };
-            for a in addends {
+        for contribution in body.contributions() {
+            let Some(r) = received.get_mut(contribution.branch as usize) else { continue };
+            let switch = body.branches()[contribution.branch as usize].kind == BranchKind::Switch;
+            for a in contribution.addends {
                 match a.operator {
                     Operator::Direct => r.direct = true,
-                    Operator::Ddt => r.ddt = true,
+                    Operator::Ddt => r.ddt |= !switch || contribution.conditions.is_empty(),
                 }
                 if r.origin.is_none() {
                     r.origin = Some(ir.expr_origin(a.value).clone());
