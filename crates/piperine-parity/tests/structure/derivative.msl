@@ -1,0 +1,111 @@
+//! `ddt` off a whole addend: as a factor of a product, bound to a body `let` read by an event, with
+//! an `abstol`, and in the held state of §11.2's `Bounded` (analog-structure AS-07, AS-04 AC 1).
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A potential held at `volts`.
+module Level(p: Electrical) { volts: f64 = 0.0; }
+analog for Level { v(p, gnd) +> volts; }
+
+/// A potential held at `volts` with a unit AC stimulus on top.
+module AcLevel(p: Electrical) { volts: f64 = 0.0; }
+analog for AcLevel { v(p, gnd) +> volts + ac_stim(1.0); }
+
+/// A potential ramping at 1 kV per second.
+module Ramp(p: Electrical) {}
+analog for Ramp { v(p, gnd) +> now() * 1.0e3; }
+
+// -- AS-07 AC 2: `ddt` as a factor of a product with a probe
+
+/// Injects `k * v(c) * dv(a)/dt` into `o`.
+module Mixer(a: Electrical, c: Electrical, o: Electrical) { k: f64 = 1m; }
+analog for Mixer { i(gnd, o) +> k * v(c) * ddt(v(a)); }
+
+module ProductBench() {
+    signal a: Electrical;
+    signal c: Electrical;
+    signal o: Electrical;
+    let ramp = Ramp(a);
+    let held = Level { volts: 2.0 }(c);
+    let mixer = Mixer { k: 1m }(a, c, o);
+    let load = Resistor { r: 1.0 }(o, gnd);
+}
+
+module ProductAcBench() {
+    signal a: Electrical;
+    signal c: Electrical;
+    signal o: Electrical;
+    let source = AcLevel { volts: 0.0 }(a);
+    let held = Level { volts: 2.0 }(c);
+    let mixer = Mixer { k: 1m }(a, c, o);
+    let load = Resistor { r: 1.0 }(o, gnd);
+}
+
+// -- AS-07 AC 4: a `ddt` result read by an event
+
+module Watcher(a: Electrical) {
+    let dv = ddt(v(a));
+}
+digital for Watcher { on at(1m) { emit!("d", x = dv); } }
+
+module EventBench() {
+    signal a: Electrical;
+    let ramp = Ramp(a);
+    let watcher = Watcher(a);
+    let load = Resistor { r: 1k }(a, gnd);
+}
+
+// -- AS-07 AC 5: the `abstol` of a `ddt` term
+
+/// A capacitor whose charge has the absolute tolerance `tol`.
+module ToleranceCapacitor(p: Electrical, n: Electrical) {
+    c: f64 = 1.5915494309189535e-9;
+    tol: f64 = 1e-18;
+}
+analog for ToleranceCapacitor { i(p, n) +> ddt(c * v(p, n), tol); }
+
+module RcBench() {
+    signal vin: Electrical;
+    signal r#out: Electrical = 0.0;
+    let source = Level { volts: 1.0 }(vin);
+    let r1 = Resistor { r: 1000.0 }(vin, r#out);
+    let c1 = ToleranceCapacitor { tol: 1e-18 }(r#out, gnd);
+}
+
+module LooseRcBench() {
+    signal vin: Electrical;
+    signal r#out: Electrical = 0.0;
+    let source = Level { volts: 1.0 }(vin);
+    let r1 = Resistor { r: 1000.0 }(vin, r#out);
+    let c1 = ToleranceCapacitor { tol: 1e-3 }(r#out, gnd);
+}
+
+// -- AS-04 AC 1: §11.2's `Bounded`, held at its bound by a switch branch
+
+/// +1 kV until 2 s and -1 kV after.
+module Square(p: Electrical) {}
+analog for Square { v(p, gnd) +> if now() < 2.0 { 1000.0 } else { -1000.0 }; }
+
+module Bounded(p: Electrical, n: Electrical) {
+    hi: f64 = 1.0;
+    signal xs: State = 0.0;
+    signal at_hi: Bit = false;
+    let drift = v(p, n) * 1e-3;
+}
+analog for Bounded {
+    if at_hi.high() { pos(xs) +> hi; } else { rate(xs) +> ddt(pos(xs)) - drift; }
+}
+digital for Bounded {
+    on above(pos(xs) - hi) { at_hi <- true; }
+    on above(-drift) && at_hi { at_hi <- false; }
+}
+
+module BoundedBench() {
+    signal a: Electrical;
+    let drive = Square(a);
+    let b = Bounded { hi: 1.0 }(a, gnd);
+}

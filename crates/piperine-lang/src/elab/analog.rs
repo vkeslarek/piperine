@@ -197,10 +197,7 @@ impl Elaboration<'_, '_> {
                 self.refuse(scope.file, span, Unlowered::ConditionalStim);
                 None
             }
-            "ddt" => {
-                self.refuse(scope.file, span, Unlowered::DdtOffTop);
-                None
-            }
+            "ddt" => self.lower_derivative(scope, expr, args, origin),
             name => {
                 self.unsupported(scope.file, span, &format!("the core primitive `{name}`"));
                 None

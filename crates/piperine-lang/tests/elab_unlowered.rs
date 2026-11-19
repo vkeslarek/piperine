@@ -78,16 +78,18 @@ fn a_site_or_contribution_under_if_is_p0001() {
 
 #[test]
 fn ddt_off_the_top_of_a_flow_contribution_is_p0001() {
-    for row in [
-        Row { form: "ddt in a product", src: &DdtSource::of("i(p, n) +> 2.0 * ddt(v(p, n));"), names: "a `ddt` that is not a whole addend of a flow contribution", at: "ddt(v(p, n))" },
-        // A `ddt` addend of a potential contribution is lowered from msl-digital T35 on (amendment
-        // A5): that case is a positive one of `elab_mixed::a_potential_contribution_keeps_its_ddt`;
-        // a `ddt` inside a potential contribution's product is still refused.
-        Row { form: "ddt in a product of a potential contribution", src: &DdtSource::of("v(p, n) +> 2.0 * ddt(v(p));"), names: "a `ddt` that is not a whole addend of a flow contribution", at: "ddt(v(p))" },
-        Row { form: "ddt bound to a name", src: &DdtSource::of("let q = ddt(v(p)); i(p, n) +> q;"), names: "a `ddt` that is not a whole addend of a flow contribution", at: "ddt(v(p))" },
-        Row { form: "ddt with a tolerance", src: &DdtSource::of("i(p, n) +> ddt(v(p), 1e-6);"), names: "a `ddt` with a tolerance", at: "ddt(v(p), 1e-6)" },
+    // analog-structure T20 lifted both refusals this test asserted (a `ddt` that is not a whole
+    // addend, a `ddt` with a tolerance): each is a derivative site now (AS-07), one per call, its
+    // rate read as `Expr::Derivative`. Kept under its name; it asserts the lowering.
+    for (form, body) in [
+        ("ddt in a product", "i(p, n) +> 2.0 * ddt(v(p, n));"),
+        ("ddt in a product of a potential contribution", "v(p, n) +> 2.0 * ddt(v(p));"),
+        ("ddt bound to a name", "let q = ddt(v(p)); i(p, n) +> q;"),
+        ("ddt with a tolerance", "i(p, n) +> ddt(v(p), 1e-6);"),
     ] {
-        row.check();
+        let ir = Elab::ir(DdtSource::of(body), "Top");
+        let body = ir.bodies().find(|b| b.name() == "M").expect("the body M");
+        assert_eq!(body.derivatives().len(), 1, "{form}: one site");
     }
 }
 

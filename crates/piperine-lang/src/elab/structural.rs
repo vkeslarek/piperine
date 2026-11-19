@@ -141,12 +141,12 @@ impl<'a, 'd> ParamReads<'a, 'd> {
 /// One contribution of a module's `analog` blocks as written: the two ends of its branch (`None`
 /// is ground, the pair is sorted), its quantity, and the `if` and `match` conditions that enclose
 /// it, outermost first.
-struct WrittenContribution {
-    ends: [Option<DeclId>; 2],
-    quantity: crate::pom::QuantityRole,
-    conditions: Vec<ExprId>,
+pub(super) struct WrittenContribution {
+    pub(super) ends: [Option<DeclId>; 2],
+    pub(super) quantity: crate::pom::QuantityRole,
+    pub(super) conditions: Vec<ExprId>,
     /// The right side of the contribution.
-    rhs: ExprId,
+    pub(super) rhs: ExprId,
 }
 
 /// The walk that lists the contributions of statements with the conditions around them.
@@ -243,7 +243,7 @@ impl Elaboration<'_, '_> {
 
     /// The contributions `module` writes in its `analog` blocks, with the conditions that enclose
     /// each; a condition over the key params `keys` folds and is not one of them.
-    fn written_contributions(&mut self, module: DeclId, keys: &Bindings) -> Vec<WrittenContribution> {
+    pub(super) fn written_contributions(&mut self, module: DeclId, keys: &Bindings) -> Vec<WrittenContribution> {
         let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
         let blocks = data.behaviors.clone();
         let mut walk = ContributionWalk { elaboration: self, keys: keys.clone(), conditions: Vec::new(), found: Vec::new() };
@@ -426,23 +426,11 @@ impl Elaboration<'_, '_> {
             StmtKind::Contribution { lhs, .. } => Some(*lhs),
             _ => None,
         }).collect();
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
-        let behaviors = data.behaviors.clone();
-        let inside = |mut owner: DeclId| loop {
-            if owner == module || behaviors.contains(&owner) {
-                return true;
-            }
-            match self.design.decl_data(owner).parent {
-                Some(parent) => owner = parent,
-                None => return false,
-            }
-        };
         let mut reads = Vec::new();
-        for k in 0..self.design.expr_count() as u32 {
-            let id = ExprId(k);
+        for id in self.module_exprs(module) {
             let node = self.design.expr_node(id);
             let ExprKind::Call { callee, args, .. } = &node.kind else { continue };
-            if written.contains(&id) || self.quantity_role(*callee) != Some(crate::pom::QuantityRole::Flow) || !inside(node.owner) {
+            if written.contains(&id) || self.quantity_role(*callee) != Some(crate::pom::QuantityRole::Flow) {
                 continue;
             }
             let ends: Option<Vec<Option<DeclId>>> = args.iter().map(|a| self.terminal_decl(a.value)).collect();

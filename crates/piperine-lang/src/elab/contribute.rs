@@ -5,15 +5,16 @@
 //! signed leaves, parentheses transparent. Only a chain that holds a `ddt` leaf is flattened: a
 //! sub-sum with no `ddt` in it is one leaf, kept as written, so no floating-point sum is
 //! re-associated. Each `ddt(x)` leaf is its own addend (value `x`); each maximal run of other leaves
-//! is one direct addend, re-joined in source order. A `ddt` anywhere else reaches value lowering,
-//! which refuses it.
+//! is one direct addend, re-joined in source order. A `ddt` that is not a whole addend (off the
+//! top of the chain, under a condition, with an `abstol`) reaches value lowering, which makes it a
+//! derivative site (`derivatives.rs`).
 
 use piperine_ir::{Addend, BinaryOp, Branch, BranchKind, Expr, ExprId as LoweredExpr, Operator, QuantityRole, Stmt, StmtId as LoweredStmt, Terminal, ValueType};
 
 use super::elaborator::Elaboration;
+use super::derivatives::LeafRules;
 use super::lower::Scope;
 use super::selectors::ContributionRecord;
-use super::unlowered::Unlowered;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{self, BinOp, DeclKind, ExprId, ExprKind, Resolution, UnOp};
 use crate::types::Callee;
@@ -57,7 +58,8 @@ impl Elaboration<'_, '_> {
         // A potential contribution is split like a flow one: its `ddt` leaves are `Ddt` addends
         // (amendment A5; abi.md A1 hoists them onto the branch's equation row).
         let mut leaves = Vec::new();
-        self.flatten(rhs, false, &mut leaves);
+        let rules = LeafRules { whole_addends: scope.conditions.is_empty(), lets: &scope.addend_lets.clone() };
+        self.flatten(&rules, rhs, false, &mut leaves);
         let Some(addends) = self.addends(scope, &leaves, reversed) else { return false };
         out.push(self.stmt(Stmt::Contribute { branch, quantity: role, addends }));
         true
@@ -108,26 +110,26 @@ impl Elaboration<'_, '_> {
     }
 
     /// The signed leaves of `expr`, negated when `negated`, appended in source order.
-    fn flatten(&self, expr: ExprId, negated: bool, out: &mut Vec<Leaf>) {
+    fn flatten(&self, rules: &LeafRules, expr: ExprId, negated: bool, out: &mut Vec<Leaf>) {
         let inner = self.peel_parens(expr);
-        if self.is_ddt(inner) {
-            out.push(Leaf { negated, expr: inner, ddt: true });
+        if let Some(call) = self.whole_addend(rules, inner) {
+            out.push(Leaf { negated, expr: call, ddt: true });
             return;
         }
-        if !self.holds_ddt_leaf(inner) {
+        if !self.holds_ddt_leaf(rules, inner) {
             out.push(Leaf { negated, expr: inner, ddt: false });
             return;
         }
         match &self.design.expr_node(inner).kind {
             ExprKind::Binary { op: BinOp::Add, lhs, rhs } => {
-                self.flatten(*lhs, negated, out);
-                self.flatten(*rhs, negated, out);
+                self.flatten(rules, *lhs, negated, out);
+                self.flatten(rules, *rhs, negated, out);
             }
             ExprKind::Binary { op: BinOp::Sub, lhs, rhs } => {
-                self.flatten(*lhs, negated, out);
-                self.flatten(*rhs, !negated, out);
+                self.flatten(rules, *lhs, negated, out);
+                self.flatten(rules, *rhs, !negated, out);
             }
-            ExprKind::Unary { op: UnOp::Neg, expr: operand } => self.flatten(*operand, !negated, out),
+            ExprKind::Unary { op: UnOp::Neg, expr: operand } => self.flatten(rules, *operand, !negated, out),
             // `holds_ddt_leaf` is true only through the three forms above.
             _ => out.push(Leaf { negated, expr: inner, ddt: false }),
         }
@@ -135,20 +137,20 @@ impl Elaboration<'_, '_> {
 
     /// Whether `expr` has a `ddt` call among the leaves of its top-level chain of `+`, `-` and
     /// unary `-`.
-    fn holds_ddt_leaf(&self, expr: ExprId) -> bool {
+    fn holds_ddt_leaf(&self, rules: &LeafRules, expr: ExprId) -> bool {
         let inner = self.peel_parens(expr);
-        if self.is_ddt(inner) {
+        if self.whole_addend(rules, inner).is_some() {
             return true;
         }
         match &self.design.expr_node(inner).kind {
-            ExprKind::Binary { op: BinOp::Add | BinOp::Sub, lhs, rhs } => self.holds_ddt_leaf(*lhs) || self.holds_ddt_leaf(*rhs),
-            ExprKind::Unary { op: UnOp::Neg, expr: operand } => self.holds_ddt_leaf(*operand),
+            ExprKind::Binary { op: BinOp::Add | BinOp::Sub, lhs, rhs } => self.holds_ddt_leaf(rules, *lhs) || self.holds_ddt_leaf(rules, *rhs),
+            ExprKind::Unary { op: UnOp::Neg, expr: operand } => self.holds_ddt_leaf(rules, *operand),
             _ => false,
         }
     }
 
     /// Whether `expr` is a call of the core module `ddt`.
-    fn is_ddt(&self, expr: ExprId) -> bool {
+    pub(super) fn is_ddt(&self, expr: ExprId) -> bool {
         matches!(self.design.expr_node(expr).kind, ExprKind::Call { .. }) && matches!(self.types.callee(expr), Some(Callee::Core(id)) if id.info().name == "ddt")
     }
 
@@ -178,20 +180,13 @@ impl Elaboration<'_, '_> {
         ok.then_some(addends)
     }
 
-    /// The argument of a `ddt` leaf; a second argument (a tolerance) has no place in the IR.
+    /// The argument of a whole-addend `ddt` leaf: a call with one argument (`whole_addend`).
     fn ddt_value(&mut self, scope: &mut Scope, ddt: ExprId) -> Option<LoweredExpr> {
         let node = self.design.expr_node(ddt).clone();
         let ExprKind::Call { args, .. } = &node.kind else { return None };
-        match &args[..] {
-            [x] => {
-                let value = self.lower_expr(scope, x.value)?;
-                self.known_in_analog(scope.file, x.value, value, "the argument of `ddt`")
-            }
-            _ => {
-                self.refuse(scope.file, node.span, Unlowered::DdtTolerance);
-                None
-            }
-        }
+        let [x] = &args[..] else { return None };
+        let value = self.lower_expr(scope, x.value)?;
+        self.known_in_analog(scope.file, x.value, value, "the argument of `ddt`")
     }
 
     /// One run of non-`ddt` leaves re-joined in order, signed relative to its first leaf: the

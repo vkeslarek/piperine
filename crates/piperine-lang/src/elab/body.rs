@@ -96,6 +96,7 @@ impl Elaboration<'_, '_> {
         self.lower_carriers(0, module);
         self.lower_definitions(&scope, module);
         self.hoist_placements(&scope);
+        scope.addend_lets = self.addend_only_ddt_lets(&scope, module);
         let analog = self.lower_analog(&mut scope, module);
         self.decide_branch_kinds(&mut scope);
         self.check_selector_rule(&scope);

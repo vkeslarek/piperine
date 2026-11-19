@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use piperine_ir::{BodyId, Carrier, CarrierRole, ChildValue, Constant, Drive, Event, Reaction, Stream, ValueType};
+use piperine_ir::{BodyId, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Reaction, Stream, ValueType};
 
 use super::consts::{Bindings, Folded};
 use super::elaborator::Elaboration;
@@ -24,6 +24,8 @@ pub(super) struct Structure {
     pub(super) events: Vec<Event>,
     pub(super) reactions: Vec<Reaction>,
     pub(super) streams: Vec<Stream>,
+    /// The derivative sites of the body, in the order their `Expr::Derivative` reads number them.
+    pub(super) derivatives: Vec<Derivative>,
     /// The carriers each child binds at its carrier ports: (child index, one entry per port).
     pub(super) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
     /// The param values of children that read the parent's params: (child, param, value).
@@ -51,12 +53,14 @@ pub(super) struct Frame {
     pub(super) placements: BTreeMap<ExprId, usize>,
     /// The placements whose hoisting failed, already reported.
     pub(super) failed: BTreeSet<ExprId>,
+    /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
+    pub(super) derivatives: BTreeMap<ExprId, u32>,
 }
 
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, prefix: String::new(), carriers: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new() }
+        Frame { module, parent: None, prefix: String::new(), carriers: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new() }
     }
 }
 
@@ -147,6 +151,9 @@ impl Elaboration<'_, '_> {
         }
         for stream in structure.streams {
             self.ir.stream(body, stream);
+        }
+        for derivative in structure.derivatives {
+            self.ir.derivative(body, derivative);
         }
         for (child, carriers) in structure.child_carriers {
             self.ir.bind_child_carriers(body, child, carriers);

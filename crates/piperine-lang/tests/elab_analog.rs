@@ -310,20 +310,19 @@ fn the_device_bodies_equal_the_structural_goldens() {
 
 #[test]
 fn a_ddt_off_the_top_of_a_flow_contribution_is_refused() {
-    // Each form is refused at its `ddt` (T8 words the message): never lowered as if direct.
-    for (body, ddt) in [
-        ("i(p, n) +> 2.0 * ddt(v(p, n));", "ddt(v(p, n))"),
-        // `v(p, n) +> ddt(v(p))` is lowered from msl-digital T35 on (amendment A5, a positive case of
-        // `elab_mixed`); a `ddt` under a product of a potential contribution is still refused.
-        ("v(p, n) +> 3.0 * ddt(v(p));", "ddt(v(p))"),
-        ("let q = ddt(v(p)); i(p, n) +> q;", "ddt(v(p))"),
-        ("i(p, n) +> ddt(v(p), 1e-6);", "ddt(v(p), 1e-6)"),
+    // analog-structure T20 lifted these refusals (AS-07): each form is a derivative site now, its
+    // rate read as `Expr::Derivative`, never lowered as if direct. Kept under its name; it asserts
+    // the lowering.
+    for body in [
+        "i(p, n) +> 2.0 * ddt(v(p, n));",
+        "v(p, n) +> 3.0 * ddt(v(p));",
+        "let q = ddt(v(p)); i(p, n) +> q;",
+        "i(p, n) +> ddt(v(p), 1e-6);",
     ] {
         let src = format!("module M(p: Electrical, n: Electrical) {{ }}\nanalog for M {{ {body} }}\nmodule Top() {{ signal s: Electrical; let m = M {{ }}(s, gnd); }}");
-        let err = Elab::run(&src, "Top").expect_err(body);
-        assert_eq!(Elab::codes(&err), ["P0001"], "{body}");
-        let span = err[0].diagnostic.primary.0;
-        assert_eq!(&src[span.start..span.end], ddt, "{body}");
+        let ir = Elab::ir(&src, "Top");
+        let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
+        assert_eq!(m.derivatives().len(), 1, "{body}");
     }
 }
 

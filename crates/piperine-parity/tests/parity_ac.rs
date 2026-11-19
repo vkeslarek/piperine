@@ -47,3 +47,37 @@ fn compare_on(reference: &Reference, backend: Backend) {
         }
     }
 }
+
+/// The capacitor of the `ac_rc` twin written `2.0 * ddt(0.5 * c * v)` (`tests/structure/`), swept on
+/// the Rust backend against ngspice's reference of the unchanged circuit.
+#[test]
+fn ac_rc_with_a_scaled_derivative() {
+    let reference = Ngspice::from_environment().run("ac_rc");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/structure/ac_rc_scaled.msl");
+    let mut bench = Bench::load_file_on("ac_rc", path, Backend::Rust);
+    let out = bench.node("out");
+    let rows = match &reference {
+        Reference::Golden(golden) => {
+            let rows = golden.complex("ac_rc_ac");
+            golden.expect_rows("ac_rc_ac", &rows, 41);
+            rows
+        }
+        Reference::Skipped => Vec::new(),
+    };
+    let options = match (rows.first(), rows.last()) {
+        (Some((start, _)), Some((stop, _))) => AcSweepAnalysisOptions { start_frequency: *start, stop_frequency: *stop, steps: rows.len(), logarithmic: true },
+        _ => AcSweepAnalysisOptions { start_frequency: 1e3, stop_frequency: 10e6, steps: 41, logarithmic: true },
+    };
+    let mut ac = bench.circuit().ac(Context::default()).expect("ac");
+    let sweep = ac.solve_sweep(options).unwrap_or_else(|error| panic!("ac_rc_scaled: the sweep does not solve: {error}"));
+    let Reference::Golden(golden) = &reference else { return };
+    for ((frequency, wanted), step) in rows.iter().zip(sweep.iter()) {
+        let actual = step.get_node(&out).unwrap_or_else(|| panic!("ac_rc_scaled: no v(out) at {frequency}"));
+        let at = Point::new("ac_rc_scaled", "|v(out)|", Coordinate::Frequency(*frequency)).with_ngspice(golden.version()).with_backend(Backend::Rust.name());
+        ToleranceContract::AC_MAGNITUDE.assert(&at, wanted.magnitude(), actual.norm());
+        if ToleranceContract::phase_applies(wanted.magnitude()) {
+            let at = Point::new("ac_rc_scaled", "arg v(out)", Coordinate::Frequency(*frequency)).with_ngspice(golden.version()).with_backend(Backend::Rust.name());
+            ToleranceContract::AC_PHASE.assert(&at, wanted.phase(), actual.arg());
+        }
+    }
+}

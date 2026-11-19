@@ -57,6 +57,11 @@ pub(super) struct Scope {
     /// The conditions of the arms the code being lowered sits in, outermost first: the selector
     /// of a contribution (§11), read off the same structure `Body::contributions` reads.
     pub(super) conditions: Vec<Condition>,
+    /// The source expression of each plain `let` met so far: a standalone scope (`derivatives.rs`)
+    /// reads a block-local `let` as this expression.
+    pub(super) let_sources: BTreeMap<DeclId, ExprId>,
+    /// The body `let`s that bind a bare `ddt` call and are read only as whole addends.
+    pub(super) addend_lets: std::collections::BTreeSet<DeclId>,
     /// The values of the key params of the body being lowered (`structural.rs`): a condition that
     /// reads only these and constants is folded.
     pub(super) keys: Bindings,
@@ -71,7 +76,7 @@ pub(super) struct Scope {
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
     }
 }
 
@@ -493,6 +498,7 @@ impl Elaboration<'_, '_> {
             PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
             PatKind::Ident { binding, sub: None, .. } => {
                 let local = self.bind_local(scope, binding);
+                scope.let_sources.insert(binding, init);
                 let name = self.design.decl_data(binding).name.as_ref().map(|n| n.text.clone());
                 scope.limit_name = name.map(|n| (self.peel_parens(init), n));
                 let init = self.lower_expr(scope, init);
@@ -628,6 +634,11 @@ impl Elaboration<'_, '_> {
                 None if self.body_let_value(decl).is_some() => {
                     let value = self.body_let_value(decl)?;
                     self.lower_body_let(scope, value)
+                }
+                // A block-local `let` in a standalone scope is its source expression (`derivatives.rs`).
+                None if scope.no_locals && scope.let_sources.contains_key(&decl) => {
+                    let source = scope.let_sources[&decl];
+                    self.lower_expr(scope, source)
                 }
                 None => {
                     self.unsupported(scope.file, node.span, "a name with no value here");

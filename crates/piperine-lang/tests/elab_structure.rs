@@ -251,3 +251,46 @@ fn a_merge_with_ground_binds_the_node_to_ground() {
     assert!(ir.node_at("Top.s").is_none());
     assert_eq!(ir.instance_at("Top.m").expect("m").binding(0), Some(piperine_ir::NodeRef::Ground));
 }
+
+/// The rows of the contributions of body `M`: (quantity, operators of the addends, negations).
+fn rows(ir: &Ir) -> Vec<(QuantityRole, Vec<(piperine_ir::Operator, bool)>)> {
+    body(ir, "M").contributions().iter().map(|c| (c.quantity, c.addends.iter().map(|a| (a.operator, a.negated)).collect())).collect()
+}
+
+/// A device `M(p, n, in clk: Bit, out r: Bit<f64>)` with `items` in its body and `analog` as its `analog` block.
+fn charge_device(items: &str, analog: &str, digital: &str) -> String {
+    format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
+}
+
+#[test]
+fn a_body_let_of_ddt_read_as_an_addend_gives_the_inline_rows() {
+    // AS-07 AC 3 (§8.2.25): a body `let` that binds `ddt(x)` and is read only as an addend is its
+    // expression at the read: the same rows as the inline form, a `Ddt` addend and no site.
+    let inline = Elab::ir(&charge_device("", "i(p, n) +> ddt(c * v(p, n)) + v(p, n) / 1k;", ""), "Top");
+    let through = Elab::ir(&charge_device("let q = ddt(c * v(p, n));", "i(p, n) +> q + v(p, n) / 1k;", ""), "Top");
+    assert_eq!(rows(&through), rows(&inline));
+    assert!(body(&through, "M").derivatives().is_empty() && body(&inline, "M").derivatives().is_empty());
+    assert_eq!(rows(&inline)[0].1, [(piperine_ir::Operator::Ddt, false), (piperine_ir::Operator::Direct, false)]);
+    // Read anywhere else (here also as a factor) it is a site, and the contribution reads its rate.
+    let site = Elab::ir(&charge_device("let q = ddt(c * v(p, n));", "i(p, n) +> 2.0 * q;", ""), "Top");
+    assert_eq!(body(&site, "M").derivatives().len(), 1);
+    assert_eq!(rows(&site)[0].1, [(piperine_ir::Operator::Direct, false)]);
+}
+
+#[test]
+fn a_ddt_read_in_analog_and_in_an_event_is_one_site() {
+    // AS-07 AC 4 (§8.3.3): `let dv = ddt(v(p))` read in the `analog` block and in a reaction is one
+    // instance: one derivative site whose rate both reads name.
+    let src = charge_device("let dv = ddt(v(p));", "i(p, n) +> 2.0 * dv;", "on clk.rise() { r <- dv; }");
+    let ir = Elab::ir(&src, "Top");
+    assert_eq!(body(&ir, "M").derivatives().len(), 1);
+}
+
+#[test]
+fn a_ddt_feedback_through_its_own_result_is_e0353() {
+    // §8.3.6: a core module's result depends directly on its input, so `let y = ddt(f(y))` is a
+    // cycle with no unknown: E0353 naming `y`, before elaboration.
+    let design = Elab::design("module Top() { let y = ddt(2.0 * y); }");
+    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a feedback");
+    assert_eq!(Elab::codes(&found), ["E0353"]);
+}

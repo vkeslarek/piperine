@@ -151,3 +151,31 @@ fn compare_with(fixture: &str, node: &str, reference: &Reference, backend: Backe
         ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
     }
 }
+
+/// The capacitor of the `tran_rc` twin written `2.0 * ddt(0.5 * c * v)` (`tests/structure/`), run on
+/// the Rust backend against ngspice's reference of the unchanged circuit.
+#[test]
+fn tran_rc_with_a_scaled_derivative() {
+    let reference = Ngspice::from_environment().run("tran_rc");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/structure/tran_rc_scaled.msl");
+    let mut bench = Bench::load_file_on("tran_rc", path, Backend::Rust);
+    let out = bench.node("out");
+    let rows = match &reference {
+        Reference::Golden(golden) => {
+            let rows = golden.real("tran_rc_tran");
+            golden.expect_rows("tran_rc_tran", &rows, 100);
+            rows
+        }
+        Reference::Skipped => vec![(0.0, 0.0), (0.1e-6, 0.0)],
+    };
+    let times: Vec<f64> = rows.iter().map(|(t, _)| *t).collect();
+    let result = bench.circuit().transient(TranRun::options(&times), Context::default()).expect("transient").solve().unwrap_or_else(|error| panic!("tran_rc_scaled: the transient does not solve: {error}"));
+    let steps: Vec<_> = result.iter().collect();
+    let waveform = Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).expect("v(out)")).collect());
+    let Reference::Golden(golden) = &reference else { return };
+    for (time, wanted) in rows {
+        let actual = waveform.at(time).unwrap_or_else(|| panic!("tran_rc_scaled: the time {time:e} s lies outside the result"));
+        let at = Point::new("tran_rc_scaled", "v(out)", Coordinate::Time(time)).with_ngspice(golden.version()).with_backend(Backend::Rust.name());
+        ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
+    }
+}

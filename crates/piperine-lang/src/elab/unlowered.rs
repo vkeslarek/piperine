@@ -19,10 +19,6 @@ pub(super) enum Unlowered<'a> {
     ConditionalBoundStep,
     /// An `ac_stim` under an `if`, in a function or in a closure.
     ConditionalStim,
-    /// A `ddt` that is not a whole top-level addend of a contribution.
-    DdtOffTop,
-    /// A `ddt` with a tolerance argument.
-    DdtTolerance,
     /// A placement that sets a name that is no param of the placed module (`m`, `dtemp`).
     PlacementSets(&'a str),
     /// A port of a value type, the expression the caller wrote.
@@ -36,8 +32,6 @@ impl Unlowered<'_> {
             Unlowered::ConditionalLimit => "a `limit` under an `if` or in a closure".to_string(),
             Unlowered::ConditionalBoundStep => "a `bound_step` under an `if`, a `match` or in a nested block".to_string(),
             Unlowered::ConditionalStim => "an `ac_stim` under an `if` or in a closure".to_string(),
-            Unlowered::DdtOffTop => "a `ddt` that is not a whole addend of a flow contribution or of a potential contribution".to_string(),
-            Unlowered::DdtTolerance => "a `ddt` with a tolerance".to_string(),
             Unlowered::PlacementSets(name) => format!("a placement that sets `{name}`"),
             Unlowered::ValueInput => "a value input".to_string(),
         }
