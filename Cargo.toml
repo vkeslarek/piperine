@@ -37,6 +37,10 @@ piperine-api = { path = "crates/piperine-api" }
 piperine-lang = { path = "crates/piperine-lang" }
 piperine-solver = { path = "crates/piperine-solver" }
 piperine-transpile = { path = "crates/piperine-transpile" }
+# The scenarios (`tests/scenarios.rs`) read each twin's command with the binary's own parser and the
+# corpus layout of the parity harness, and hold the table `piperine::` gives to ngspice.
+piperine-cli = { path = "crates/piperine-cli" }
+piperine-parity = { path = "crates/piperine-parity" }
 tempfile = { workspace = true }
 num-complex = { workspace = true }
 

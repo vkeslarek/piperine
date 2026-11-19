@@ -140,8 +140,24 @@ fn root_tests_hold_no_end_to_end_target() {
         .filter(|p| ext(p, "cir") && p.starts_with(tests.join("e2e")))
         .count();
     assert!(cir > 0, "tests/e2e/ lost its .cir fixtures");
-    let rs: Vec<_> = files.iter().filter(|p| ext(p, "rs")).collect();
-    assert!(rs.is_empty(), ".rs files remain under the root tests/: {rs:?}");
+    // Rust under the root `tests/` is a test target the root manifest declares: a top-level
+    // `tests/<name>.rs` (cargo finds it), a `[[test]]` path, or support code of the Book targets
+    // under `tests/book/support/`. Anything else is an end-to-end target hiding in a directory.
+    let manifest = std::fs::read_to_string(repo_root().join("Cargo.toml")).expect("read the root manifest");
+    let declared: Vec<PathBuf> = manifest
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("path = \""))
+        .filter_map(|rest| rest.strip_suffix('"'))
+        .map(|path| repo_root().join(path))
+        .collect();
+    let rs: Vec<_> = files
+        .iter()
+        .filter(|p| ext(p, "rs"))
+        .filter(|p| p.parent() != Some(tests.as_path()))
+        .filter(|p| !declared.contains(p))
+        .filter(|p| !p.starts_with(tests.join("book").join("support")))
+        .collect();
+    assert!(rs.is_empty(), ".rs files under the root tests/ that no root target declares: {rs:?}");
 }
 
 #[test]

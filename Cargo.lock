@@ -1331,7 +1331,9 @@ version = "0.2.0"
 dependencies = [
  "num-complex",
  "piperine-api",
+ "piperine-cli",
  "piperine-lang",
+ "piperine-parity",
  "piperine-solver",
  "piperine-transpile",
  "tempfile",
