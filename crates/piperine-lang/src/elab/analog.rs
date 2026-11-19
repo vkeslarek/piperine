@@ -121,14 +121,7 @@ impl Elaboration<'_, '_> {
             for stmt in nested_stmts(self.design, &behavior.body) {
                 let StmtKind::Contribution { lhs, .. } = self.design.stmt_node(stmt).kind.clone() else { continue };
                 let ExprKind::Call { callee, args, .. } = self.design.expr_node(lhs).kind.clone() else { continue };
-                let potential = match &self.design.expr_node(callee).kind {
-                    ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                        Some(Resolution::Decl(q)) => matches!(&self.design.decl_data(q).kind, DeclKind::Quantity(data) if data.role == crate::pom::QuantityRole::Potential),
-                        Some(Resolution::Builtin(id)) => id.info().name == "potential",
-                        _ => false,
-                    },
-                    _ => false,
-                };
+                let potential = self.quantity_role(callee) == Some(crate::pom::QuantityRole::Potential);
                 if !potential {
                     continue;
                 }

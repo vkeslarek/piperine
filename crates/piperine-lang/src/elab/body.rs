@@ -2,12 +2,13 @@
 //! over the body's own params), its nodes (ports first, then signals, with nature and initial
 //! potential). A body is a function of its module alone: one variant per module in M1.
 
-use piperine_ir::{BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Param, Real};
+use piperine_ir::{BodyId, BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Param, Real};
 
 use super::carriers::{Frame, Structure};
 use super::children::ChildPlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use super::structural::BodyKey;
 use super::lower::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId};
 
@@ -31,12 +32,11 @@ pub(super) struct NodePlan {
     pub(super) origin: Origin,
 }
 
-/// What placement reads of a lowered module: its params, nodes and carriers in body order, and
+/// What placement reads of a lowered module: its nodes and carriers in body order, and
 /// the placements it writes.
 #[derive(Clone)]
 pub(super) struct ModulePlan {
     pub(super) body: piperine_ir::BodyId,
-    pub(super) params: Vec<ParamPlan>,
     pub(super) nodes: Vec<NodePlan>,
     /// Every carrier of the body, in its order: each is bound to one net per instance.
     pub(super) carriers: Vec<Carrier>,
@@ -44,21 +44,46 @@ pub(super) struct ModulePlan {
 }
 
 impl Elaboration<'_, '_> {
-    /// Lower the module `module` to a body and remember its plan.
-    pub(super) fn lower_body(&mut self, module: DeclId) {
+    /// The plan of every param of the modules in `modules`: its name, its folded default and its
+    /// `where`, which placement reads. A default that does not fold is reported once, here.
+    pub(super) fn plan_params(&mut self, modules: &[DeclId]) {
+        for module in modules {
+            let mut plans = Vec::new();
+            for param in self.design.decl_data(*module).children.clone() {
+                let data = self.design.decl_data(param).clone();
+                let DeclKind::Param(p) = &data.kind else { continue };
+                let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+                let default = match p.default {
+                    Some(expr) => match self.consts.value(expr, &Bindings::new()) {
+                        Ok(value) => Some(value),
+                        Err(fault) => {
+                            self.const_fault(&fault, "a param default");
+                            continue;
+                        }
+                    },
+                    None => None,
+                };
+                plans.push(ParamPlan { decl: param, name, default, where_: p.where_ });
+            }
+            self.param_plans.insert(*module, plans);
+        }
+    }
+
+    /// Lower the body `key` of the module `module`, whose key params hold `keys`, and remember
+    /// its plan. `expected` is the id the body was promised (`body_ids`, `BodyVariants`).
+    pub(super) fn lower_body(&mut self, module: DeclId, keys: &Bindings, key: BodyKey, expected: BodyId) {
         let data = self.design.decl_data(module).clone();
-        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let name = self.body_name(&key);
         let mut scope = Scope::new(data.file);
+        scope.keys = keys.clone();
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         for (index, param) in params.iter().enumerate() {
             scope.params.insert(*param, index as u32);
         }
         let mut param_specs = Vec::new();
-        let mut param_plans = Vec::new();
         for param in &params {
-            if let Some((spec, plan)) = self.lower_param(&mut scope, *param) {
+            if let Some(spec) = self.lower_param(&mut scope, module, *param) {
                 param_specs.push(spec);
-                param_plans.push(plan);
             }
         }
         let nodes = self.lower_nodes(&mut scope, module);
@@ -74,7 +99,6 @@ impl Elaboration<'_, '_> {
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
         self.lower_digital(&scope, module);
         let carriers = self.structure.carriers.clone();
-        let expected = self.body_ids.get(&module).copied();
         let body = self.ir.body(BodySpec {
             name,
             origin: self.locator.decl(module),
@@ -87,33 +111,24 @@ impl Elaboration<'_, '_> {
             analog,
             children,
         });
-        debug_assert_eq!(Some(body), expected, "bodies are built in first-reach order");
+        debug_assert_eq!(body, expected, "bodies are built in the order of their ids");
         self.finish_structure(body);
-        self.plans.insert(module, ModulePlan { body, params: param_plans, nodes: node_plans, carriers, children: child_plans });
+        self.plans.insert(key, ModulePlan { body, nodes: node_plans, carriers, children: child_plans });
     }
 
-
-    fn lower_param(&mut self, scope: &mut Scope, param: DeclId) -> Option<(Param, ParamPlan)> {
+    /// The param `param` of `module` as the body has it: its type, its `where` lowered over the
+    /// body's own params, and whether it fixes the body's structure.
+    fn lower_param(&mut self, scope: &mut Scope, module: DeclId, param: DeclId) -> Option<Param> {
         let data = self.design.decl_data(param).clone();
         let DeclKind::Param(p) = &data.kind else { return None };
-        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let plan = self.param_plans.get(&module)?.iter().find(|plan| plan.decl == param)?.clone();
         let ty = self.lower_type(data.file, p.ty)?;
-        let default = match p.default {
-            Some(expr) => match self.consts.value(expr, &Bindings::new()) {
-                Ok(value) => Some(value),
-                Err(fault) => {
-                    self.const_fault(&fault, "a param default");
-                    return None;
-                }
-            },
-            None => None,
-        };
         let check = match p.where_ {
             Some(cond) => Some(self.lower_expr(scope, cond)?),
             None => None,
         };
-        let spec = Param { name: name.clone(), ty, default, check, structural: false, origin: self.locator.decl(param) };
-        Some((spec, ParamPlan { decl: param, name, default, where_: p.where_ }))
+        let structural = self.keys.is_key(module, param);
+        Some(Param { name: plan.name, ty, default: plan.default, check, structural, origin: self.locator.decl(param) })
     }
 
     /// The nodes of a module: ports first, then signals, each with its nature and initial value.

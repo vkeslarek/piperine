@@ -64,18 +64,53 @@ impl Elaboration<'_, '_> {
         out
     }
 
+    /// The `{ name: value }` fields the placement `call` of `module` writes, in source order: the
+    /// fields of the struct template it calls, else the block after the call.
+    pub(super) fn placement_fields(&self, call: ExprId, module: DeclId) -> Vec<FieldInit> {
+        let ExprKind::Call { callee, params, .. } = &self.design.expr_node(call).kind else { return Vec::new() };
+        match &self.design.expr_node(*callee).kind {
+            ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module => fields.clone(),
+            _ => params.clone().unwrap_or_default(),
+        }
+    }
+
+    /// The values the key params of `module` take at the placement written with `fields`: the value
+    /// written, evaluated over the key params of the placing body (`scope.keys`), else the default.
+    /// `None` after a diagnostic (`E0319` for a key param with neither).
+    fn child_key_values(&mut self, scope: &Scope, module: DeclId, fields: &[FieldInit], file: FileId, span: crate::msl::Span) -> Option<Bindings> {
+        let mut values = Bindings::new();
+        let plans = self.param_plans.get(&module).cloned().unwrap_or_default();
+        for key in self.keys.of(module).to_vec() {
+            let written = fields.iter().find(|f| f.res == Resolution::Decl(key));
+            let value = match (written, plans.iter().find(|p| p.decl == key).and_then(|p| p.default)) {
+                (Some(field), _) => match self.consts.value(field.value, &scope.keys) {
+                    Ok(value) => value,
+                    Err(fault) => {
+                        self.const_fault(&fault, "the value of a param that fixes structure");
+                        return None;
+                    }
+                },
+                (None, Some(default)) => default,
+                (None, None) => {
+                    let name = self.design.decl_data(key).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    self.report(file, Diagnostic::new("E0319", format!("the placement leaves the required param `{name}` unbound"), span, "required param not bound"));
+                    return None;
+                }
+            };
+            values.bind(key, value);
+        }
+        Some(values)
+    }
+
     fn lower_child(&mut self, scope: &Scope, call: ExprId, module: DeclId, ordinal: u32, index: u32) -> Option<(Child, ChildPlan)> {
         let node = self.design.expr_node(call).clone();
         let file = self.design.decl_data(node.owner).file;
-        let ExprKind::Call { callee, args, params, class } = &node.kind else { return None };
+        let ExprKind::Call { args, class, .. } = &node.kind else { return None };
         if !matches!(class, CallClass::Instance { module: Some(m), .. } if *m == module) {
             self.unsupported(file, node.span, "a placement through a template value");
             return None;
         }
-        let fields: Vec<FieldInit> = match &self.design.expr_node(*callee).kind {
-            ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module => fields.clone(),
-            _ => params.clone().unwrap_or_default(),
-        };
+        let fields = self.placement_fields(call, module);
         let module_name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let name = self.placement_name(call, &module_name, ordinal);
         let mut ok = true;
@@ -106,7 +141,8 @@ impl Elaboration<'_, '_> {
         if !ok {
             return None;
         }
-        let body = self.body_ids.get(&module).copied()?;
+        let key_values = self.child_key_values(scope, module, &fields, file, node.span)?;
+        let (_, body) = self.request_body(module, &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);
         // SPEC_DEVIATION: `Child::nodes` must bind one terminal per node of the child's body

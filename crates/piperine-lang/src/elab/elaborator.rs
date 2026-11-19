@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 
 use piperine_ir::{BodyId, Ir, IrBuilder, NatureId, ValueType};
 
-use super::body::ModulePlan;
+use super::body::{ModulePlan, ParamPlan};
 use super::carriers::{Frame, Structure};
-use super::consts::ConstEval;
+use super::consts::{Bindings, ConstEval};
 use super::origin::Locator;
+use super::structural::{BodyKey, BodyVariants, KeyParams};
 use super::variants::Variants;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
@@ -58,7 +59,14 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) stmt_continuous: Vec<bool>,
     /// The origin of every IR expression added so far, by id.
     pub(super) expr_origins: Vec<piperine_ir::Origin>,
-    pub(super) plans: BTreeMap<DeclId, ModulePlan>,
+    /// The plan of every body lowered, by module and values of its key params.
+    pub(super) plans: BTreeMap<BodyKey, ModulePlan>,
+    /// The params of each reached module with a body, planned before any body is lowered.
+    pub(super) param_plans: BTreeMap<DeclId, Vec<ParamPlan>>,
+    /// The key params of each reached module with a body (`structural.rs`).
+    pub(super) keys: KeyParams,
+    /// The variants of keyed bodies requested so far.
+    pub(super) body_variants: BodyVariants,
     /// The carriers, drives, events and reactions of the body being lowered.
     pub(super) structure: Structure,
     /// The frames of the body being lowered: frame 0 is its own module.
@@ -82,6 +90,9 @@ impl<'d, 't> Elaboration<'d, 't> {
             stmt_continuous: Vec::new(),
             expr_origins: Vec::new(),
             plans: BTreeMap::new(),
+            param_plans: BTreeMap::new(),
+            keys: KeyParams::default(),
+            body_variants: BodyVariants::default(),
             structure: Structure::default(),
             frames: Vec::new(),
             diagnostics: Vec::new(),
@@ -97,13 +108,22 @@ impl<'d, 't> Elaboration<'d, 't> {
         if self.refuse_digital_forms(&modules) {
             return Err(self.diagnostics);
         }
-        self.body_ids = modules.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
+        self.plan_params(&modules);
+        self.classify_key_params(&modules);
+        // An unkeyed module keeps the id of its place in first-reach order; a keyed module's
+        // variants take the ids after them, on request.
+        let unkeyed: Vec<DeclId> = modules.iter().copied().filter(|m| self.keys.of(*m).is_empty()).collect();
+        self.body_ids = unkeyed.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
+        self.body_variants = BodyVariants::starting_at(unkeyed.len() as u32);
         self.lower_natures(&modules);
-        for module in &modules {
-            self.lower_body(*module);
+        for module in &unkeyed {
+            if let Some(id) = self.body_ids.get(module).copied() {
+                self.lower_body(*module, &Bindings::new(), BodyKey::unkeyed(*module), id);
+            }
         }
-        self.add_functions();
+        self.lower_pending_bodies();
         let top_instance = self.place_top(top);
+        self.add_functions();
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
                 let ir = self.ir.finish(instance);

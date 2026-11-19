@@ -136,10 +136,11 @@ impl Text {
     /// name and none is in an MSL name or in Rust's: `~` a function variant (`rev3~1`), `.` a
     /// hoisted item under its frame (`gate.x`, `require.pass`), `$` a numbered placement or local
     /// (`above$0`, `match$0`). They print as `_v`, `_d` and `_s`: `rev3_v1`, `gate_dx`,
-    /// `above_s0_dinit_s0_dup`, snake-case names (contract.md D9). Two names of one owner that
+    /// `above_s0_dinit_s0_dup`, snake-case names (contract.md D9). The name of a body variant
+    /// (`Sw~short=1,gain=-0.5`) adds `=`, `,` and `-`, printed `_q`, `_c` and `_m`. Two names of one owner that
     /// spell alike are refused where the owner is printed, never shadowed.
     fn spelled(name: &str) -> String {
-        name.replace('~', "_v").replace('.', "_d").replace('$', "_s")
+        name.replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m")
     }
 }
 

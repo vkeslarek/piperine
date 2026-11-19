@@ -130,3 +130,70 @@ fn a_probe_selecting_between_flow_contributions_is_accepted() {
         assert!(Device::kinds(&ir).len() == 1, "{analog}");
     }
 }
+
+/// A switch `Sw(a, b)` whose kind its param `short` fixes: the params-only selector of §11 rule 3.
+const SWITCH: &str = "module Sw(a: Electrical, b: Electrical) { short: f64 = 1.0; }\nanalog for Sw { if short > 0.5 { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; } }\n";
+
+/// The names of the bodies of `ir`, in id order.
+fn body_names(ir: &Ir) -> Vec<String> {
+    ir.bodies().map(|b| b.name().to_string()).collect()
+}
+
+/// The body of `ir` named `name`.
+fn body<'a>(ir: &'a Ir, name: &str) -> piperine_ir::Body<'a> {
+    ir.bodies().find(|b| b.name() == name).unwrap_or_else(|| panic!("no body {name} among {:?}", body_names(ir)))
+}
+
+#[test]
+fn params_only_selectors_fix_the_kind_and_mark_the_params_structural() {
+    // AS-02 AC 3 (§11 rule 3, §8.1.2): every selector depends on `short` only, so the kind is fixed
+    // at elaboration (`short` = 1 selects the potential arm: `Potential`, `short` = 0 the flow arm:
+    // `Flow`), `short` is structural, and the body is the variant of its value.
+    for (short, kind) in [(1.0, BranchKind::Potential), (0.0, BranchKind::Flow)] {
+        let src = format!("{SWITCH}module Top() {{ signal s: Electrical; let m = Sw {{ short: {short:?} }}(s, gnd); }}");
+        let ir = Elab::ir(&src, "Top");
+        let variant = ir.bodies().find(|b| b.name().starts_with("Sw~short=")).expect("a body of the variant");
+        assert_eq!(variant.branches().iter().map(|b| b.kind).collect::<Vec<_>>(), [kind], "short = {short}");
+        assert!(variant.params()[0].structural, "`short` is structural");
+        assert_eq!(variant.contributions().len(), 1, "only the selected arm is lowered");
+        assert!(variant.contributions()[0].conditions.is_empty(), "the folded condition is no condition");
+    }
+}
+
+#[test]
+fn two_instances_with_different_key_values_get_two_bodies() {
+    // One body per distinct value of the key params: two values, two bodies, in request order after
+    // every unkeyed body; the same value twice shares one body.
+    let src = format!("{SWITCH}module Top() {{ signal s: Electrical; signal t: Electrical; signal u: Electrical;\n let a = Sw {{ short: 1.0 }}(s, gnd); let b = Sw {{ short: 0.0 }}(t, gnd); let c = Sw {{ short: 1.0 }}(u, gnd); }}");
+    let ir = Elab::ir(&src, "Top");
+    let names = body_names(&ir);
+    assert_eq!(names.iter().filter(|n| n.starts_with("Sw~short=")).count(), 2, "{names:?}");
+    assert_eq!(names[0], "Top", "the unkeyed body keeps its id: {names:?}");
+    let kinds: Vec<BranchKind> = names.iter().filter(|n| n.starts_with("Sw~")).map(|n| body(&ir, n).branches()[0].kind).collect();
+    assert_eq!(kinds, [BranchKind::Potential, BranchKind::Flow]);
+    let bodies_of: Vec<&str> = ["Top.a", "Top.b", "Top.c"].iter().map(|p| ir.instance_at(p).expect("an instance").body().name()).collect();
+    assert_eq!(bodies_of[0], bodies_of[2]);
+    assert_ne!(bodies_of[0], bodies_of[1]);
+}
+
+#[test]
+fn a_parent_param_feeding_a_key_param_is_a_key() {
+    // A param read by the value a placement gives a key param of its child is a key of the same
+    // class: `Pair.gate` feeds `Sw.short`, so `gate` is structural and `Pair` has a body per value.
+    let src = format!("{SWITCH}module Pair(a: Electrical, b: Electrical) {{ gate: f64 = 1.0; other: f64 = 3.0; let sw = Sw {{ short: gate }}(a, b); }}\nmodule Top() {{ signal s: Electrical; let p = Pair {{ gate: 0.0 }}(s, gnd); }}\n");
+    let ir = Elab::ir(&src, "Top");
+    let pair = ir.bodies().find(|b| b.name().starts_with("Pair~")).expect("a keyed Pair");
+    let structural: Vec<(&str, bool)> = pair.params().iter().map(|p| (p.name.as_str(), p.structural)).collect();
+    assert_eq!(structural, [("gate", true), ("other", false)]);
+    assert!(pair.name().contains("gate=") && !pair.name().contains("other"), "{}", pair.name());
+    assert!(body_names(&ir).iter().any(|n| n.starts_with("Sw~short=")));
+}
+
+#[test]
+fn a_design_without_key_params_keeps_its_body_ids() {
+    // No key param: every body is lowered in first-reach order and keeps its plain name, as before
+    // the variants existed.
+    let ir = Device::ir("i(p, n) +> v(p, n) / 1k;");
+    assert_eq!(body_names(&ir), ["Top", "M"]);
+    assert!(ir.bodies().all(|b| b.params().iter().all(|p| !p.structural)));
+}

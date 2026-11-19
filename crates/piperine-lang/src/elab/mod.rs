@@ -31,6 +31,7 @@ mod place;
 mod reactions;
 mod records;
 mod selectors;
+mod structural;
 mod unlowered;
 mod variants;
 

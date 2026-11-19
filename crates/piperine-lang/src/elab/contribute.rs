@@ -66,24 +66,9 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, node.span, "a contribution target that is not a probe");
             return None;
         };
-        let ExprKind::Path(path) = &self.design.expr_node(*callee).kind else {
+        let Some(role) = self.quantity_role(*callee) else {
             self.unsupported(scope.file, node.span, "a contribution target that is not a probe");
             return None;
-        };
-        let role = match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
-            Resolution::Decl(q) => match &self.design.decl_data(q).kind {
-                DeclKind::Quantity(data) => data.role,
-                _ => {
-                    self.unsupported(scope.file, node.span, "a contribution target that is not a probe");
-                    return None;
-                }
-            },
-            Resolution::Builtin(id) if id.info().name == "flow" => pom::QuantityRole::Flow,
-            Resolution::Builtin(id) if id.info().name == "potential" => pom::QuantityRole::Potential,
-            _ => {
-                self.unsupported(scope.file, node.span, "a contribution target that is not a probe");
-                return None;
-            }
         };
         let role = match role {
             pom::QuantityRole::Flow => QuantityRole::Flow,
@@ -100,6 +85,21 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, node.span, "a contribution to a probe of more than two nodes");
                 None
             }
+        }
+    }
+
+    /// The quantity the call of `callee` reads or contributes: a nature's access alias (`i`, `v`)
+    /// or the built-in `flow` and `potential`; `None` for anything else.
+    pub(super) fn quantity_role(&self, callee: ExprId) -> Option<pom::QuantityRole> {
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
+        match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
+            Resolution::Decl(q) => match &self.design.decl_data(q).kind {
+                DeclKind::Quantity(data) => Some(data.role),
+                _ => None,
+            },
+            Resolution::Builtin(id) if id.info().name == "flow" => Some(pom::QuantityRole::Flow),
+            Resolution::Builtin(id) if id.info().name == "potential" => Some(pom::QuantityRole::Potential),
+            _ => None,
         }
     }
 

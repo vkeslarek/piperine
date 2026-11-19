@@ -8,7 +8,7 @@
 
 use piperine_ir::{CarrierRole, Constant, InstanceId, InstanceSpec, NetId, NetSpec, NodeRef, NodeSpec, Origin, Terminal};
 
-use super::body::ModulePlan;
+use super::body::ParamPlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use crate::msl::{Diagnostic, Span};
@@ -62,8 +62,9 @@ impl Elaboration<'_, '_> {
             self.report(placing.file, Diagnostic::new("E0341", message, placing.span, "recursive placement"));
             return None;
         }
-        let plan = self.plans.get(&placing.module)?.clone();
-        let (params, bindings) = self.bind_params(&placing, &plan)?;
+        let param_plans = self.param_plans.get(&placing.module)?.clone();
+        let (params, bindings) = self.bind_params(&placing, &param_plans)?;
+        let plan = self.body_plan(placing.module, &bindings)?;
         let declared_by = self.ir.next_instance_id();
         let mut ports = placing.ports.iter().copied();
         let mut nodes = Vec::new();
@@ -161,11 +162,11 @@ impl Elaboration<'_, '_> {
     /// The value of each param of the instance, the one given, else the default, and the
     /// bindings its children's param values read. A required param left out is `E0319`; a false
     /// `where` is `E0317`, naming the param's path.
-    fn bind_params(&mut self, placing: &Placing, plan: &ModulePlan) -> Option<(Vec<Constant>, Bindings)> {
+    fn bind_params(&mut self, placing: &Placing, plans: &[ParamPlan]) -> Option<(Vec<Constant>, Bindings)> {
         let mut values = Vec::new();
         let mut bindings = Bindings::new();
         let mut ok = true;
-        for (index, param) in plan.params.iter().enumerate() {
+        for (index, param) in plans.iter().enumerate() {
             let given = placing.given.iter().find(|(i, _, _)| *i as usize == index);
             match given.map(|(_, value, _)| *value).or(param.default) {
                 Some(value) => {
@@ -182,7 +183,7 @@ impl Elaboration<'_, '_> {
         if !ok {
             return None;
         }
-        for (index, param) in plan.params.iter().enumerate() {
+        for (index, param) in plans.iter().enumerate() {
             let Some(cond) = param.where_ else { continue };
             let at = placing.given.iter().find(|(i, _, _)| *i as usize == index).map(|(_, _, expr)| self.design.expr_node(*expr).span).unwrap_or(placing.span);
             match self.consts.value(cond, &bindings) {
