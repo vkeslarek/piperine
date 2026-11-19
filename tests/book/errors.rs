@@ -8,6 +8,7 @@
 #[path = "support"]
 mod support {
     pub mod book;
+    pub mod chapter;
     pub mod inventory;
     pub mod model;
     pub mod records;
@@ -15,28 +16,9 @@ mod support {
 }
 
 use piperine::Overrides;
-use support::book::Book;
-use support::inventory::Inventory;
+use support::chapter::Chapter;
 use support::model::Model;
 use support::refusal::{Refusal, Reported};
-
-/// The Book's text, the inventory, and what a chapter test needs of both.
-struct Chapter {
-    book: Book,
-    inventory: Inventory,
-}
-
-impl Chapter {
-    /// The Book and the inventory as they stand in this repository.
-    fn read() -> Chapter {
-        Chapter { book: Book::read(), inventory: Inventory::read() }
-    }
-
-    /// A lone-file model of the blocks `ids`, written as `file_name`.
-    fn lone(&self, file_name: &str, ids: &[&str]) -> Model {
-        Model::lone(&self.book, &self.inventory, file_name, ids)
-    }
-}
 
 /// The overrides of an operating point of the top `top`, the run a lone file's check makes.
 fn operating_point_of(top: &str) -> Overrides {

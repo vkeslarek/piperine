@@ -544,10 +544,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `welcome.rs` holds `the_rc_step_charges_as_the_book_says` (the step response at 1 us and 2 us, and the `trip` record's time, at the Book's printed precision)
-- [ ] No row of `welcome` is `pending`
-- [ ] Gate check passes: Quick (`Run welcome`, `Run inventory`, `Run claims`)
-- [ ] Test count: written in the commit body
+- [x] `welcome.rs` holds `the_rc_step_charges_as_the_book_says` (the step response at 1 us and 2 us, and the `trip` record's time, at the Book's printed precision)
+- [x] No row of `welcome` is `pending`
+- [x] Gate check passes: Quick (`Run welcome`, `Run inventory`, `Run claims`)
+- [x] Test count: written in the commit body
 
 **Tests**: integration
 **Gate**: quick

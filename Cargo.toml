@@ -66,6 +66,10 @@ path = "tests/book/claims_guard.rs"
 name = "book_errors"
 path = "tests/book/errors.rs"
 
+[[test]]
+name = "book_welcome"
+path = "tests/book/welcome.rs"
+
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked
 # at ~1.1 GB and several run in parallel, so a one-crate change relinking the

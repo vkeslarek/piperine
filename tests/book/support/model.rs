@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use piperine::{Cell, Failure, Overrides, Project, Record, Session, Table};
+use piperine::{Cell, Failure, Metadata, Overrides, Project, Record, Session, Table};
 use piperine_transpile::Settings;
 
 use super::book::Book;
@@ -31,10 +31,12 @@ pub struct Model {
     named: Option<String>,
 }
 
-/// What a run gave: the table of its analysis and the records its streams emitted.
+/// What a run gave: the table of its analysis, the records its streams emitted and what the design
+/// declares (params, top ports, streams).
 pub struct Ran {
     pub table: Table,
     pub records: Vec<Record>,
+    pub metadata: Metadata,
 }
 
 impl Model {
@@ -138,10 +140,11 @@ impl Model {
         };
         let spec = project.request(self.named.as_deref(), &overrides)?;
         let mut session = Session::open(&project, &spec, &Self::settings())?;
+        let metadata = session.metadata();
         let kept = Rc::new(RefCell::new(KeptRecords::default()));
         let table = session.run(kept.clone())?;
         let records = kept.borrow().records().to_vec();
-        Ok(Ran { table, records })
+        Ok(Ran { table, records, metadata })
     }
 
     /// The settings of every run of this target: the compiled backend builds into one cache directory
@@ -198,6 +201,13 @@ impl Ran {
             Cell::Real(value) => *value,
             other => panic!("row {row}, column `{column}`: a real number, found {other:?}"),
         }
+    }
+
+    /// The value of the signal `name` of an operating point (a `signal | value` table). Panics naming
+    /// the signal when the table has no such row.
+    pub fn signal(&self, name: &str) -> f64 {
+        let row = self.table.rows.iter().position(|row| row[0] == Cell::Text(name.to_string())).unwrap_or_else(|| panic!("no signal `{name}` in {:?}", self.table.rows));
+        self.real(row, "value")
     }
 
     /// The records of the stream `stream`, in order.

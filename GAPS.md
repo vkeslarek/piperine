@@ -234,6 +234,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 | ID | Gap | Where | Size |
 | -- | --- | ----- | ---- |
 | D1 | A diagnostic leaves out a part the Book's chapter 11 shows: the help line of `E0150`, the secondary label of `E0163` | `docs/book/content.html` chapter 11, §11 below | S |
+| D2 | A sentence of the Book that the code outran: the code does more than the Book says, so the Book is stale and the user decides (a `disputed` row of §11) | `docs/book/content.html`, §11 below | S |
 
 ---
 
@@ -426,3 +427,4 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | errors#1 | D1 | `root-e2e` | `E0150` gives no help line |
 | errors#2 | D1 | `root-e2e` | `E0163` gives no secondary label on `mod util;` |
 | errors~54e5381d | L40 | `analog-structure` | `E0414` is not raised: a contribution under an `if` is `P0001` on both branches |
+| welcome~5b11a01a | D2 | `user` | the math methods such as `sin` run; the other items of the sentence are `P0001` as written |
