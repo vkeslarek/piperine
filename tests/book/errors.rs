@@ -9,6 +9,7 @@
 mod support {
     pub mod book;
     pub mod chapter;
+    pub mod faulty;
     pub mod inventory;
     pub mod model;
     pub mod records;
@@ -17,54 +18,25 @@ mod support {
 
 use piperine::Overrides;
 use support::chapter::Chapter;
+use support::faulty::Faulty;
 use support::model::Model;
-use support::refusal::{Refusal, Reported};
-
-/// The overrides of an operating point of the top `top`, the run a lone file's check makes.
-fn operating_point_of(top: &str) -> Overrides {
-    Overrides { analysis: Some("op".to_string()), top: Some(top.to_string()), ..Overrides::default() }
-}
-
-/// One faulty model of the chapter, run, and what the tool said of it.
-struct Faulty {
-    source: String,
-    given: Vec<Reported>,
-}
-
-impl Faulty {
-    /// The operating point of the top `top` of the lone file `m.msl` holding `source`, which the tool
-    /// must refuse; panics naming `row` when it runs.
-    fn elaborating(row: &str, source: &str, top: &str) -> Faulty {
-        Faulty::running(row, source, operating_point_of(top))
-    }
-
-    /// The run `overrides` ask of the lone file `m.msl` holding `source`, which must fail.
-    fn running(row: &str, source: &str, overrides: Overrides) -> Faulty {
-        let model = Model::written("m.msl", source);
-        Faulty { source: model.text_of("m.msl"), given: Refusal::reported_by(model.run(overrides), row) }
-    }
-
-    /// The first diagnostic with the code `code`; panics listing what the run gave when there is none.
-    fn first(&self, code: &str) -> &Reported {
-        self.given.iter().find(|reported| reported.code == code).unwrap_or_else(|| panic!("no {code} in {:?}", self.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>()))
-    }
-
-    /// The text of the source that the primary label of the first `code` points at.
-    fn pointed_at(&self, code: &str) -> &str {
-        self.first(code).primary_text(&self.source)
-    }
-}
+use support::refusal::Refusal;
 
 /// The package of the Book's second rendering: `util` is both a dependency and a local module, and
 /// `src/lib.msl` names `util::cells::Cell`.
-fn ambiguous_package() -> Model {
-    Model::example("rc")
-        .with_source("Piperine.toml", "\n[dependencies]\nutil = { path = \"deps/util\" }\n")
-        .with_source("deps/util/Piperine.toml", "[package]\nname = \"util\"\nversion = \"0.1.0\"\n")
-        .with_source("deps/util/src/lib.msl", "pub mod cells;\n")
-        .with_source("deps/util/src/cells.msl", "pub module Cell(p: Electrical) {}\n")
-        .with_source("src/util.msl", "pub module Other(p: Electrical) {}\n")
-        .with_source("src/lib.msl", "mod util;\nuse util::cells::Cell;\n")
+struct AmbiguousPackage;
+
+impl AmbiguousPackage {
+    /// The model of that package, a copy of `examples/rc` with the dependency and the local module added.
+    fn model() -> Model {
+        Model::example("rc")
+            .with_source("Piperine.toml", "\n[dependencies]\nutil = { path = \"deps/util\" }\n")
+            .with_source("deps/util/Piperine.toml", "[package]\nname = \"util\"\nversion = \"0.1.0\"\n")
+            .with_source("deps/util/src/lib.msl", "pub mod cells;\n")
+            .with_source("deps/util/src/cells.msl", "pub module Cell(p: Electrical) {}\n")
+            .with_source("src/util.msl", "pub module Other(p: Electrical) {}\n")
+            .with_source("src/lib.msl", "mod util;\nuse util::cells::Cell;\n")
+    }
 }
 
 /// The bench the Book asks for: a module without ports that places the faulty sample-and-hold,
@@ -88,10 +60,10 @@ fn the_worked_sample_hold_is_refused_with_its_three_codes() {
     // elaboration finds": E0310 on `clk: Bit`, E0430 on `on clk`, E0150 on `+> held`, sorted by position
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
-    let given = Refusal::of(model.run(operating_point_of("Top")), "errors#3");
+    let given = Refusal::of(model.run(Faulty::operating_point_of("Top")), "errors#3");
     let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
     assert_eq!(codes, ["E0310", "E0430", "E0150"], "the three mistakes, top to bottom: {given:?}");
-    Refusal::expect(model.run(operating_point_of("Top")), "errors#3", "E0310", "a port of a discrete nature takes `in` or `out` (§8.1.5)");
+    Refusal::expect(model.run(Faulty::operating_point_of("Top")), "errors#3", "E0310", "a port of a discrete nature takes `in` or `out` (§8.1.5)");
 }
 
 #[test]
@@ -102,7 +74,7 @@ fn the_discrete_read_diagnostic_has_the_parts_the_book_shows() {
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
     let source = model.text_of("sample_hold.msl");
-    let given = Refusal::reported_by(model.run(operating_point_of("Top")), "errors#1");
+    let given = Refusal::reported_by(model.run(Faulty::operating_point_of("Top")), "errors#1");
     let read = given.iter().find(|reported| reported.code == "E0150").expect("E0150 is one of the three");
     assert_eq!(read.primary_text(&source), "held", "the label points at the carrier");
     assert_eq!(read.primary_label, "a discrete carrier read in `analog`");
@@ -116,7 +88,7 @@ fn the_ambiguous_name_diagnostic_has_the_parts_the_book_shows() {
     // ambiguous path and, in the Book, a secondary label on `mod util;` ("the local namespace") and
     // a help line. The tool gives the primary label and the help line, and no secondary label: a
     // missing part, listed in GAPS.md section 11 (Phase 9 adds it)
-    let model = ambiguous_package();
+    let model = AmbiguousPackage::model();
     let source = model.text_of("src/lib.msl");
     let given = Refusal::reported_by(model.of_run("op").run(Overrides::default()), "errors#2");
     let ambiguous = given.iter().find(|reported| reported.code == "E0163").expect("E0163 is given");
@@ -135,7 +107,7 @@ impl Chapter {
     /// The diagnostics the worked example gives, with the source they point into.
     fn worked_example(&self, row: &str) -> Faulty {
         let model = self.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
-        Faulty { source: model.text_of("sample_hold.msl"), given: Refusal::reported_by(model.run(operating_point_of("Top")), row) }
+        Faulty { source: model.text_of("sample_hold.msl"), given: Refusal::reported_by(model.run(Faulty::operating_point_of("Top")), row) }
     }
 }
 
@@ -167,7 +139,7 @@ fn the_three_fixes_make_the_worked_example_elaborate() {
     // errors~2db98d22: "Fix the three lines and the same command prints one `ok` line and exits with
     // 0": `in clk`, `on clk.rise()` and `held.known_or(0.0)` leave no diagnostic and the operating
     // point runs (the `ok` line and the exit status are the binary's, `piperine-cli/commands`)
-    let ran = Model::written("sample_hold.msl", SAMPLE_HOLD_FIXED).run(operating_point_of("Top"));
+    let ran = Model::written("sample_hold.msl", SAMPLE_HOLD_FIXED).run(Faulty::operating_point_of("Top"));
     let table = ran.unwrap_or_else(|failure| panic!("the fixed example is refused: {failure}")).table;
     assert!(!table.rows.is_empty(), "the operating point has rows");
 }
@@ -178,7 +150,7 @@ fn without_an_initial_value_the_output_sits_at_zero_volts() {
     // 0 V before the first clock edge: `held` is unknown and `known_or(0.0)` said what unknown means
     let source = SAMPLE_HOLD_FIXED.replace("signal held: Bit<f64> = 0.0;", "signal held: Bit<f64>;");
     assert_ne!(source, SAMPLE_HOLD_FIXED, "the initial value is gone");
-    let ran = Model::written("sample_hold.msl", &source).run(operating_point_of("Top")).unwrap_or_else(|failure| panic!("it still compiles and runs: {failure}"));
+    let ran = Model::written("sample_hold.msl", &source).run(Faulty::operating_point_of("Top")).unwrap_or_else(|failure| panic!("it still compiles and runs: {failure}"));
     let row = ran.table.rows.iter().position(|row| row[0] == piperine::Cell::Text("Top.b".to_string())).expect("the table has `vout`");
     assert_eq!(ran.real(row, "value"), 0.0, "vout sits at 0 V");
 }
@@ -231,7 +203,7 @@ fn e0162_is_a_name_declared_twice() {
 #[test]
 fn e0163_is_a_name_that_is_a_dependency_and_a_local_item() {
     // errors~39a5ce1d: "E0163: A `use` whose first segment is both a dependency and a local item"
-    let model = ambiguous_package();
+    let model = AmbiguousPackage::model();
     let given = Refusal::of(model.of_run("op").run(Overrides::default()), "errors~39a5ce1d");
     assert!(given.iter().any(|(code, message)| code == "E0163" && message.contains("`util` names both a dependency and an item")), "{given:?}");
 }
@@ -444,11 +416,6 @@ fn e0603_is_a_check_reached_from_analog() {
     assert_eq!(faulty.pointed_at("E0603"), "require(\"x\", true)");
 }
 
-/// The overrides of a transient to `stop` with the step capped at `max_step` on the top `Top`.
-fn transient_of_top(stop: f64, max_step: Option<f64>) -> Overrides {
-    Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(stop), max_step, ..Overrides::default() }
-}
-
 /// The resistor and the source every run-time fixture uses.
 const CIRCUIT_PARTS: &str = "module R(p: Electrical, n: Electrical) { r: f64 = 1000.0; }\nanalog for R { i(p, n) +> v(p, n) / r; }\nmodule V(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for V { v(p, n) +> dc; }\n";
 
@@ -457,7 +424,7 @@ fn e0501_is_microsteps_that_never_go_quiet() {
     // errors~5c44f01d: "E0501: The microsteps at one time never go quiet" (a feedback loop of commits
     // with no delay); the report names the instance and the instant
     let source = "module Top() { signal a: Bit = false; }\ndigital for Top { on at(1u) { a <- true; } on a.changed() { a <- !a; } }\n";
-    let faulty = Faulty::running("errors~5c44f01d", source, transient_of_top(3e-6, None));
+    let faulty = Faulty::running("errors~5c44f01d", source, Faulty::transient_of_top(3e-6, None));
     let run = faulty.first("E0501");
     assert!(run.message.contains("did not go quiet") && run.message.contains("at tick 0") && run.message.contains("Top.a"), "{}", run.message);
 }
@@ -479,7 +446,7 @@ fn e0504_is_a_step_after_a_digital_change_that_does_not_converge() {
     // errors~5c44ed1d: "E0504: The step after a digital change does not converge" (an ideal edge into
     // a circuit with no solution after it): the report names the carrier whose delivery the step reads
     let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical, in go: Bit) {{ }}\nanalog for Chatter {{ i(p, n) +> if go.high() {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; signal go: Bit = false; let r1 = R(n, gnd); let c = Chatter(n, gnd, go); }}\ndigital for Top {{ on at(5e-7) {{ go <- true; }} }}\n");
-    let faulty = Faulty::running("errors~5c44ed1d", &source, transient_of_top(2e-6, Some(1e-8)));
+    let faulty = Faulty::running("errors~5c44ed1d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
     let run = faulty.first("E0504");
     assert!(run.message.contains("it reads the delivery of Top.go") && run.message.contains("at t = 5.0000000"), "{}", run.message);
 }
@@ -507,7 +474,7 @@ fn e0508_is_a_transient_step_that_cannot_be_completed_at_the_smallest_step() {
     // errors~5c44e91d: "E0508: A transient step cannot be completed at the smallest step" (a
     // discontinuity in an `analog` expression): the report names the instant
     let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical) {{ from_time: f64 = 1e-6; }}\nanalog for Chatter {{ i(p, n) +> if now() > from_time {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; let r1 = R(n, gnd); let c = Chatter(n, gnd); }}\n");
-    let faulty = Faulty::running("errors~5c44e91d", &source, transient_of_top(2e-6, Some(1e-8)));
+    let faulty = Faulty::running("errors~5c44e91d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
     let run = faulty.first("E0508");
     assert!(run.message.contains("the step fails at the smallest step") && run.message.contains("at t = 1.0000000"), "{}", run.message);
 }

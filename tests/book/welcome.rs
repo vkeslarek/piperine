@@ -34,9 +34,14 @@ impl Printed {
     }
 }
 
-/// `examples/rc` run as the run `name`, which must succeed.
-fn rc_run(name: &str) -> Ran {
-    Model::example("rc").of_run(name).run(Overrides::default()).unwrap_or_else(|failure| panic!("the run `{name}` of the rc project fails: {failure}"))
+/// The project `piperine new rc` makes, as `examples/rc`.
+struct RcProject;
+
+impl RcProject {
+    /// The run `name` of the project, which must succeed.
+    fn run(name: &str) -> Ran {
+        Model::example("rc").of_run(name).run(Overrides::default()).unwrap_or_else(|failure| panic!("the run `{name}` of the rc project fails: {failure}"))
+    }
 }
 
 #[test]
@@ -67,7 +72,7 @@ fn the_rc_step_charges_as_the_book_says() {
     // "signal vout: Electrical = 0.0 makes a transient start with the output at 0 V"; welcome~7238752c
     // "its monitor saw the output pass 0.5 V at 693.1 ns"; welcome~e7b611bc "The theory puts it at
     // 1 µs · ln 2 = 693.147 ns; ... here 0.04 ns early"
-    let ran = rc_run("step");
+    let ran = RcProject::run("step");
     assert_eq!(ran.table.columns, ["time", "Step.vin", "Step.vout"]);
     assert_eq!(ran.table.rows.len(), 6, "5 us, every microsecond: a row at 0 and one per microsecond");
     for (row, printed) in ["0.000000e0", "1.000000e-6", "2.000000e-6", "3.000000e-6", "4.000000e-6", "5.000000e-6"].iter().enumerate() {
@@ -121,7 +126,7 @@ fn adding_or_removing_an_emit_gives_the_same_waveforms() {
     let chapter = Chapter::read();
     let quiet = chapter.text("welcome#6").replace("        emit!(\"trip\", v = v(a));\n", "");
     assert_ne!(quiet, chapter.text("welcome#6"), "the emit! line is gone");
-    let with_emit = rc_run("step");
+    let with_emit = RcProject::run("step");
     let model = Model::example("rc").with_source("benches/quiet.msl", &quiet);
     let overrides = Overrides { bench: Some("benches/quiet.msl".into()), ..Overrides::default() };
     let without = model.of_run("step").run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
@@ -167,20 +172,25 @@ fn the_inverter_drives_its_output_a_propagation_delay_after_its_input() {
     assert_eq!(edges[1].1, &Field::Bool(false));
 }
 
-/// The bench of welcome#6 (or welcome#17) with `from` replaced by `to`, as a run of the rc project
-/// whose bench is that text; the run must be refused.
-fn refused_mistake(row: &str, bench: &str, from: &str, to: &str, run: Overrides) -> Vec<Reported> {
-    let text = Chapter::read().text(bench);
-    let mistake = text.replace(from, to);
-    assert_ne!(mistake, text, "{row}: `{from}` is in {bench}");
-    let model = Model::example("rc").with_source("benches/mistake.msl", &mistake);
-    Refusal::reported_by(model.of_run("op").run(Overrides { bench: Some("benches/mistake.msl".into()), ..run }), row)
+/// A mistake the chapter's table names: a bench of the Book written wrong.
+struct Mistake;
+
+impl Mistake {
+    /// The bench `bench` of the Book with `from` replaced by `to`, run as the run `op` of the rc
+    /// project whose bench is that text with `run` over it; the run must be refused.
+    fn refused(row: &str, bench: &str, from: &str, to: &str, run: Overrides) -> Vec<Reported> {
+        let text = Chapter::read().text(bench);
+        let mistake = text.replace(from, to);
+        assert_ne!(mistake, text, "{row}: `{from}` is in {bench}");
+        let model = Model::example("rc").with_source("benches/mistake.msl", &mistake);
+        Refusal::reported_by(model.of_run("op").run(Overrides { bench: Some("benches/mistake.msl".into()), ..run }), row)
+    }
 }
 
 #[test]
 fn e0319_a_param_with_no_default_must_be_bound() {
     // welcome~4bc80e1d: "E0319 let r1 = Resistor(vin, vout);": `r` has no default, so it is required
-    let given = refused_mistake("welcome~4bc80e1d", "welcome#6", "Resistor(vin, vout) { r: 1k }", "Resistor(vin, vout)", Overrides::default());
+    let given = Mistake::refused("welcome~4bc80e1d", "welcome#6", "Resistor(vin, vout) { r: 1k }", "Resistor(vin, vout)", Overrides::default());
     assert_eq!(given[0].code, "E0319");
     assert_eq!(given[0].message, "`Step.r1` leaves the required param `r` unbound");
 }
@@ -188,7 +198,7 @@ fn e0319_a_param_with_no_default_must_be_bound() {
 #[test]
 fn e0312_a_port_must_be_connected() {
     // welcome~4bc8171d and welcome~81d65119: "E0312 let c1 = Capacitor(vout) { c: 1n };": every port must be connected
-    let given = refused_mistake("welcome~4bc8171d", "welcome#6", "Capacitor(vout, gnd) { c: 1n }", "Capacitor(vout) { c: 1n }", Overrides::default());
+    let given = Mistake::refused("welcome~4bc8171d", "welcome#6", "Capacitor(vout, gnd) { c: 1n }", "Capacitor(vout) { c: 1n }", Overrides::default());
     assert_eq!(given[0].code, "E0312");
     assert_eq!(given[0].message, "`Capacitor` has 2 port(s), found 1 connection(s)");
 }
@@ -196,7 +206,7 @@ fn e0312_a_port_must_be_connected() {
 #[test]
 fn e0317_a_where_that_is_false_is_refused() {
     // welcome~4bc81c1d: "E0317 Resistor(vin, vout) { r: 0.0 }": the where `r > 0.0` is false
-    let given = refused_mistake("welcome~4bc81c1d", "welcome#6", "{ r: 1k }", "{ r: 0.0 }", Overrides::default());
+    let given = Mistake::refused("welcome~4bc81c1d", "welcome#6", "{ r: 1k }", "{ r: 0.0 }", Overrides::default());
     assert_eq!(given[0].code, "E0317");
     assert_eq!(given[0].message, "the `where` of the param `Step.r1.r` is false for the value 0.0");
 }
@@ -204,7 +214,7 @@ fn e0317_a_where_that_is_false_is_refused() {
 #[test]
 fn e0901_there_is_no_println() {
     // welcome~80317c1d: "E0901 println!(\"vout = {}\", v(vout));": there is no println!
-    let given = refused_mistake("welcome~80317c1d", "welcome#6", "emit!(\"trip\", v = v(a));", "println!(\"vout = {}\", v(a));", Overrides::default());
+    let given = Mistake::refused("welcome~80317c1d", "welcome#6", "emit!(\"trip\", v = v(a));", "println!(\"vout = {}\", v(a));", Overrides::default());
     assert_eq!(given[0].code, "E0901");
     assert_eq!(given[0].message, "macros are not part of the language");
 }
@@ -213,7 +223,7 @@ fn e0901_there_is_no_println() {
 fn e0404_a_commit_belongs_in_a_reaction() {
     // welcome~54e1b21d: "E0404 fired <- true; in the module body": a commit belongs in a reaction
     let run = Overrides { analysis: Some("op".to_string()), ..Overrides::default() };
-    let given = refused_mistake("welcome~54e1b21d", "welcome#17", "signal fired: Bit = false;\n}", "signal fired: Bit = false;\n    fired <- true;\n}", run);
+    let given = Mistake::refused("welcome~54e1b21d", "welcome#17", "signal fired: Bit = false;\n}", "signal fired: Bit = false;\n    fired <- true;\n}", run);
     assert_eq!(given[0].code, "E0404");
     assert_eq!(given[0].message, "a commit (`<-`) in a module body");
 }
