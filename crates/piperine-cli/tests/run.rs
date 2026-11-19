@@ -482,3 +482,19 @@ fn a_fatal_run_prints_its_msg_and_exits_1() {
     let out = piperine_in(dir.path(), shared_cache(), &["run", "fine.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"]);
     assert_eq!(out.status.code(), Some(0), "finish is no failure: {}\n{}", text(&out.stdout), text(&out.stderr));
 }
+
+#[test]
+fn a_maybe_record_prints_maybe_and_a_known_one_does_not() {
+    // US-05 AC 1, 2: `d` is never driven, so `if d { emit!(..) }` is reached under unknown
+    // control: its record line ends with `maybe=true`, JSON Lines carry `"maybe":true`; the
+    // `emit!` under known control prints no `maybe` at all
+    let design = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule M(in d: Bit) {}\ndigital for M { on at(1u) { if d { emit!(\"unsure\", n = 1); } emit!(\"sure\", n = 1); } }\n\nmodule Top() {\n    signal a: Electrical; signal d: Bit;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let m = M(d);\n}\n";
+    let dir = tempfile::tempdir().expect("tmp");
+    std::fs::write(dir.path().join("maybe.msl"), design).expect("maybe.msl");
+    let args = ["run", "maybe.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"];
+    let out = piperine_in(dir.path(), shared_cache(), &args);
+    let stdout = stdout_of(&out);
+    let line = |stream: &str| stdout.lines().find(|l| l.contains(&format!(" {stream} "))).unwrap_or_else(|| panic!("no `{stream}` record in:\n{stdout}")).to_string();
+    assert!(line("unsure").ends_with(" n=1 maybe=true"), "{}", line("unsure"));
+    assert!(line("sure").ends_with(" n=1") && !line("sure").contains("maybe"), "{}", line("sure"));
+}

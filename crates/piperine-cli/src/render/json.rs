@@ -9,7 +9,8 @@ use piperine_api::{Field, Record};
 pub struct JsonRecord;
 
 impl JsonRecord {
-    /// `{"time":..,"instance":"..","stream":"..","fields":{..}}` and a line break. A real is a
+    /// `{"time":..,"instance":"..","stream":"..","fields":{..}}` and a line break, with
+    /// `"maybe":true` after `fields` when the record was reached under unknown control. A real is a
     /// JSON number in Rust's shortest form that reads back as the same `f64` (a real JSON cannot
     /// hold, NaN or an infinity, is the string `"NaN"`, `"inf"` or `"-inf"`), a `bool` a JSON
     /// boolean, an integer a JSON number, a text a JSON string and an unknown value `null`.
@@ -28,7 +29,10 @@ impl JsonRecord {
             };
             write!(out, "{}:{value}", JsonRecord::string(name))?;
         }
-        writeln!(out, "}}}}")
+        // `maybe` is written only when true (§19 rule 1), so no record of a design without unknown
+        // control changes
+        let maybe = if record.maybe { ",\"maybe\":true" } else { "" };
+        writeln!(out, "}}{maybe}}}")
     }
 
     fn real(value: f64) -> String {
@@ -96,6 +100,9 @@ mod tests {
         // a record with no field has an empty object
         let bare = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![], maybe: false };
         assert_eq!(line(&bare), "{\"time\":0.0,\"instance\":\"T\",\"stream\":\"s\",\"fields\":{}}\n");
+        // a record reached under unknown control says so after its fields; a sure one does not
+        let reached = Record { maybe: true, ..bare.clone() };
+        assert_eq!(line(&reached), "{\"time\":0.0,\"instance\":\"T\",\"stream\":\"s\",\"fields\":{},\"maybe\":true}\n");
         // string escaping: a quote, a backslash, a line break and a control character
         let text = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("m".into(), Field::Text("a\"b\\c\nd\u{1}".into()))], maybe: false };
         assert_eq!(line(&text), "{\"time\":0.0,\"instance\":\"T\",\"stream\":\"s\",\"fields\":{\"m\":\"a\\\"b\\\\c\\nd\\u0001\"}}\n");

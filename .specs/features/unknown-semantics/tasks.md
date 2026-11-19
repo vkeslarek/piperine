@@ -662,9 +662,9 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `a_maybe_record_prints_maybe_and_a_known_one_does_not` passes under `**Run clirun**`
-- [ ] `cargo test -p piperine-cli` passes
-- [ ] Gate check passes: Quick
+- [x] `a_maybe_record_prints_maybe_and_a_known_one_does_not` passes under `**Run clirun**`
+- [x] `cargo test -p piperine-cli` passes
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
