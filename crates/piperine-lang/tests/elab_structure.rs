@@ -294,3 +294,14 @@ fn a_ddt_feedback_through_its_own_result_is_e0353() {
     let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a feedback");
     assert_eq!(Elab::codes(&found), ["E0353"]);
 }
+
+#[test]
+fn a_limit_in_a_closure_is_e0350() {
+    // §8.3.4: a core module is not placed in a closure, because its inputs are evaluated at every
+    // solution whatever control flow surrounds it: `limit` in the body of a closure is `E0350`, found
+    // by the type checker before elaboration lowers anything (so no body is built around it).
+    let src = Device::source("let o: Option<f64> = None; let x = o.unwrap_or_else(|| limit(1.0, |n, o| n)); i(p, n) +> x;");
+    let err = Elab::run(&src, "Top").expect_err("a limit in a closure");
+    assert_eq!(Elab::codes(&err), ["E0350"]);
+    assert!(err[0].diagnostic.message.contains("limit"), "{}", err[0].diagnostic.message);
+}

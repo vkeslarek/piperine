@@ -33,7 +33,7 @@ impl<'a> AnalogPrinter<'a> {
         let reads: Vec<(usize, Source)> =
             guard.function.reads.iter().copied().enumerate().filter(|(_, s)| slice.sources.contains(s)).collect();
         t.comment(&format!("{}.analog, the condition of `{name}`", self.body.name()), origin);
-        t.line(&format!("fn {name}_block<R: Real>({}) -> bool {{", self.block_params(&reads)));
+        t.line(&format!("fn {name}_block<R: Real>({}) -> bool {{", self.block_params(&reads)?));
         let mut lines = Vec::new();
         for id in &slice.stmts {
             lines.push(self.values.stmt(*id)?);
@@ -64,23 +64,18 @@ impl<'a> AnalogPrinter<'a> {
         None
     }
 
-    /// `let x = cx_.f64(i);` for each read, `cx_.bool` for a `bool` param.
-    pub(crate) fn bind_reads(&self, reads: &[(usize, Source)]) -> Vec<String> {
-        reads
-            .iter()
-            .map(|(i, s)| {
-                let get = if self.is_bool(*s) { "bool" } else { "f64" };
-                format!("let {} = cx_.{get}({i});", self.read_name(*s))
-            })
-            .collect()
+    /// The `let` that binds each read of a site function from `cx_`, as `decode` does: a real, a
+    /// `bool`, an integer, or a carrier's pin decoded into a value that may be unknown (abi.md F2:
+    /// an analog function may read discrete pins).
+    pub(crate) fn bind_reads(&self, reads: &[(usize, Source)]) -> Result<Vec<String>, Error> {
+        reads.iter().map(|(i, s)| self.decode("cx_", *i, *s)).collect()
     }
 
-    pub(crate) fn block_params(&self, reads: &[(usize, Source)]) -> String {
-        let params: Vec<String> = reads
-            .iter()
-            .map(|(_, s)| format!("{}: {}", self.read_name(*s), if self.is_bool(*s) { "bool" } else { "R" }))
-            .collect();
-        params.join(", ")
+    /// The parameters of a block over the reads it uses, typed as `block_type` types them: `R` for a
+    /// real, `bool`, an integer, `rt::Flagged<T>` for a carrier.
+    pub(crate) fn block_params(&self, reads: &[(usize, Source)]) -> Result<String, Error> {
+        let params: Result<Vec<String>, Error> = reads.iter().map(|(_, s)| Ok(format!("{}: {}", self.read_name(*s), self.block_type(*s)?))).collect();
+        Ok(params?.join(", "))
     }
 
     pub(crate) fn block_args(&self, reads: &[(usize, Source)]) -> String {
@@ -102,7 +97,6 @@ impl<'a> AnalogPrinter<'a> {
         let site = self.body.stims().get(site_index as usize);
         let name = site.map_or_else(|| format!("site{site_index}"), |s| s.name.clone());
         let origin = site.map_or_else(|| self.body.origin(), |s| &s.origin);
-        self.refuse_carrier_reads("ac_stim", &name, origin, &f.reads)?;
         let exprs: Vec<ExprId> = [mag].into_iter().chain(phase).collect();
         let slice = self.slice_of(Mode::Stim(site_index), &exprs, stmt);
         let reads: Vec<(usize, Source)> =
@@ -111,7 +105,7 @@ impl<'a> AnalogPrinter<'a> {
         let mut t = Text::new();
         let returns = if phase.is_some() { "(R, R)" } else { "R" };
         t.comment(&format!("{}.analog, `ac_stim` site `{name}`: its magnitude and phase", self.body.name()), origin);
-        t.line(&format!("fn {name}_stim_block<R: Real>({}) -> {returns} {{", self.block_params(&reads)));
+        t.line(&format!("fn {name}_stim_block<R: Real>({}) -> {returns} {{", self.block_params(&reads)?));
         let mut lines = Vec::new();
         for id in &slice.stmts {
             lines.push(self.values.stmt(*id)?);
@@ -137,7 +131,7 @@ impl<'a> AnalogPrinter<'a> {
             self.function_origin(k)
         ));
         t.line(&format!("fn {name}_stim(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
-        let mut body = self.bind_reads(&reads);
+        let mut body = self.bind_reads(&reads)?;
         let call = format!("Self::{name}_stim_block::<f64>({})", self.block_args(&reads));
         let (re, im) = if phase.is_some() {
             body.push(format!("let (mag_, phase_) = {call};"));
@@ -189,7 +183,7 @@ impl<'a> AnalogPrinter<'a> {
         let reads: Vec<(usize, Source)> = f.reads.iter().copied().enumerate().collect();
         let mut t = Text::new();
         t.comment(&format!("{}.cross {e}: its {name}", self.body.name()), &event.origin);
-        t.line(&format!("fn {name}{e}_block<R: Real>({}) -> R {{", self.block_params(&reads)));
+        t.line(&format!("fn {name}{e}_block<R: Real>({}) -> R {{", self.block_params(&reads)?));
         let value = self.values.expr(value)?;
         t.indented(|t| t.line(&value));
         t.line("}");
@@ -203,7 +197,7 @@ impl<'a> AnalogPrinter<'a> {
             self.function_origin(k)
         ));
         t.line(&format!("fn {name}{e}(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
-        let mut body = self.bind_reads(&reads);
+        let mut body = self.bind_reads(&reads)?;
         body.push(format!("let value_ = Self::{name}{e}_block::<f64>({});", self.block_args(&reads)));
         for (j, w) in f.writes.iter().enumerate() {
             match w {
@@ -246,14 +240,13 @@ impl<'a> AnalogPrinter<'a> {
             return Err(self.unsupported(&format!("bound_step site {site}, found in no top-level statement")));
         };
         let origin = self.ir.expr_origin(value);
-        self.refuse_carrier_reads("bound_step", &site.to_string(), origin, &f.reads)?;
         let slice = self.slice_of(Mode::Cap(site), &[value], stmt);
         let reads: Vec<(usize, Source)> =
             f.reads.iter().copied().enumerate().filter(|(_, s)| slice.sources.contains(s)).collect();
 
         let mut t = Text::new();
         t.comment(&format!("{}.analog, `bound_step` site {site}: its value", self.body.name()), origin);
-        t.line(&format!("fn cap{site}_block<R: Real>({}) -> R {{", self.block_params(&reads)));
+        t.line(&format!("fn cap{site}_block<R: Real>({}) -> R {{", self.block_params(&reads)?));
         let mut lines = Vec::new();
         for id in &slice.stmts {
             lines.push(self.values.stmt(*id)?);
@@ -285,7 +278,7 @@ impl<'a> AnalogPrinter<'a> {
         let mut bound: Vec<(usize, Source)> = reads.iter().chain(&when_reads).copied().collect();
         bound.sort_by_key(|(i, _)| *i);
         bound.dedup_by_key(|(i, _)| *i);
-        let mut body = self.bind_reads(&bound);
+        let mut body = self.bind_reads(&bound)?;
         let call = format!("Self::cap{site}_block::<f64>({})", self.block_args(&reads));
         if guard.is_some() {
             body.push("// §14.10.2: a `bound_step` not executed at this solution caps nothing: +∞ (abi.md, the `CAP` watch)".to_string());
@@ -346,7 +339,7 @@ impl<'a> AnalogPrinter<'a> {
         let reads: Vec<(usize, Source)> = f.reads.iter().copied().enumerate().collect();
         let mut t = Text::new();
         t.comment(&format!("{}.{name}: its `where`", self.body.name()), &param.origin);
-        t.line(&format!("fn {name}_check_block<R: Real>({}) -> bool {{", self.block_params(&reads)));
+        t.line(&format!("fn {name}_check_block<R: Real>({}) -> bool {{", self.block_params(&reads)?));
         let condition = self.values.expr(condition)?;
         t.indented(|t| t.line(&condition));
         t.line("}");
@@ -360,7 +353,7 @@ impl<'a> AnalogPrinter<'a> {
             self.function_origin(k)
         ));
         t.line(&format!("fn {name}_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
-        let mut body = self.bind_reads(&reads);
+        let mut body = self.bind_reads(&reads)?;
         body.push(format!("let ok_ = Self::{name}_check_block::<f64>({});", self.block_args(&reads)));
         for (j, w) in f.writes.iter().enumerate() {
             match w {

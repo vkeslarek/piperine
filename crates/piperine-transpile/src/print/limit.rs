@@ -85,8 +85,6 @@ impl<'a> AnalogPrinter<'a> {
             });
         }
         let name = self.body.limits().get(site_index as usize).map_or_else(|| format!("site{site_index}"), |s| s.name.clone());
-        let at_site = self.body.limits().get(site_index as usize).map_or_else(|| self.body.origin(), |s| &s.origin);
-        self.refuse_carrier_reads("limit", &name, at_site, &f.reads)?;
         let mode = Mode::Limit(site_index);
         let args: Vec<ExprId> = [site.x, site.f].into_iter().chain(site.seed).collect();
         let slice = self.slice_of(mode, &args, site.stmt);
@@ -103,7 +101,7 @@ impl<'a> AnalogPrinter<'a> {
 
         let mut t = Text::new();
         // <site>_limit_block
-        let params = self.block_params(&reads);
+        let params = self.block_params(&reads)?;
         let site_origin = self.body.limits().get(site_index as usize).map_or_else(|| self.body.origin(), |s| &s.origin);
         let returns = if site.seed.is_some() { "(R, impl Fn(R, R) -> R, R)" } else { "(R, impl Fn(R, R) -> R)" };
         t.comment(&format!("{}.analog, `limit` site `{name}`: its input, its function and its seed", self.body.name()), site_origin);
@@ -147,10 +145,7 @@ impl<'a> AnalogPrinter<'a> {
         let mut bound: Vec<(usize, Source)> = reads.iter().chain(&enabled_reads).copied().collect();
         bound.sort_by_key(|(i, _)| *i);
         bound.dedup_by_key(|(i, _)| *i);
-        for (i, s) in &bound {
-            let get = if self.is_bool(*s) { "bool" } else { "f64" };
-            body.push(format!("let {} = cx_.{get}({i});", names[*i]));
-        }
+        body.extend(self.bind_reads(&bound)?);
         let (last, age, is_static) = (&names[last], &names[age], &names[is_static]);
         body.push(format!("let {last} = cx_.f64({});", at(Source::LimitLast(site_index)).unwrap_or_default()));
         body.push(format!("let {age} = cx_.u8({});", at(Source::LimitAge(site_index)).unwrap_or_default()));
@@ -167,7 +162,7 @@ impl<'a> AnalogPrinter<'a> {
             .map(|(i, s)| {
                 if *i < f.slots {
                     format!("Dual::<{}>::seeded({}, {i})", f.slots, names[*i])
-                } else if self.is_bool(*s) {
+                } else if self.is_plain(*s) {
                     names[*i].clone()
                 } else {
                     format!("Dual::<{}>::constant({})", f.slots, names[*i])
@@ -177,12 +172,15 @@ impl<'a> AnalogPrinter<'a> {
         let plain: Vec<String> = reads.iter().map(|(i, _)| names[*i].clone()).collect();
         body.push("// PROPOSED: the input x and its partials, at the iterate".to_string());
         let ignored = if site.seed.is_some() { ", _, _" } else { ", _" };
-        body.push(format!("let (proposed_{ignored}) = Self::{name}_limit_block({});", dual.join(", ")));
+        // A block that reads no real has no argument to infer `R` from: it is named (text of the
+        // twins unchanged, which always have one).
+        let (dual_type, plain_type) = if reads.iter().all(|(_, s)| self.is_plain(*s)) { (format!("::<Dual<{}>>", f.slots), "::<f64>".to_string()) } else { (String::new(), String::new()) };
+        body.push(format!("let (proposed_{ignored}) = Self::{name}_limit_block{dual_type}({});", dual.join(", ")));
         body.push("// the function and the seed, over plain f64".to_string());
         if site.seed.is_some() {
-            body.push(format!("let (_, f_, seed_) = Self::{name}_limit_block({});", plain.join(", ")));
+            body.push(format!("let (_, f_, seed_) = Self::{name}_limit_block{plain_type}({});", plain.join(", ")));
         } else {
-            body.push(format!("let (_, f_) = Self::{name}_limit_block({});", plain.join(", ")));
+            body.push(format!("let (_, f_) = Self::{name}_limit_block{plain_type}({});", plain.join(", ")));
         }
         body.push(
             "// rule `the seed start`: nothing held (AGE 0), or in an equilibrium solve a value held from the last accepted solution (STATIC, AGE 1)"

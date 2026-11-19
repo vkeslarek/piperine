@@ -77,7 +77,7 @@ impl<'p, 'a> DerivativePrinter<'p, 'a> {
         let reads: Vec<(usize, Source)> = f.reads.iter().copied().enumerate().collect();
         let mut t = Text::new();
         t.comment(&format!("{}.derivative {site}: its abstol", printer.body.name()), &derivative.origin);
-        t.line(&format!("fn {name}_block<R: Real>({}) -> R {{", printer.block_params(&reads)));
+        t.line(&format!("fn {name}_block<R: Real>({}) -> R {{", printer.block_params(&reads)?));
         let expression = printer.values.expr(value)?;
         t.indented(|t| t.line(&expression));
         t.line("}");
@@ -91,7 +91,7 @@ impl<'p, 'a> DerivativePrinter<'p, 'a> {
             printer.function_origin(k)
         ));
         t.line(&format!("fn {name}(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
-        let mut body = printer.bind_reads(&reads);
+        let mut body = printer.bind_reads(&reads)?;
         body.push(format!("let value_ = Self::{name}_block::<f64>({});", printer.block_args(&reads)));
         for (j, w) in f.writes.iter().enumerate() {
             match w {

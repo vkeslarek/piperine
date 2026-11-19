@@ -130,3 +130,89 @@ fn an_ac_sweep_takes_the_switch_kind_with_static_false() {
         ToleranceContract::AC_MAGNITUDE.assert(&Point::new("sweep", "|v(a)|", Coordinate::Frequency(step.frequency)), 0.0, step.get_node(&a).expect("v(a)").norm());
     }
 }
+
+/// What the operating point of `top` solves, as the voltage at `a`; the failure text otherwise.
+fn operating_point_result(top: &str) -> Result<f64, String> {
+    let mut running = project().compile(top).unwrap_or_else(|r| panic!("{r}"));
+    let a = NodeIdentifier::Anonymous(running.ir.node_at(&format!("{top}.a")).expect("node a").id().index());
+    match running.circuit.dc(Context::default()).and_then(|mut dc| dc.solve()) {
+        Ok(solved) => Ok(solved.get_node(&a).expect("v(a)")),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[test]
+fn a_limit_under_an_untaken_branch_neither_vetoes_nor_moves() {
+    // AS-06 AC 1 (§14.7.4, abi.md A3): `Stubborn` limits to the last iterate whenever its limit runs,
+    // so a solve that runs it is vetoed at every iterate and never converges. With `en` low the call is
+    // not evaluated: it writes PROPOSED = LIMITED = LAST, the solver sees no gap, and the operating
+    // point is the plain 1 mA into 1 kOhm: 1.0 V.
+    assert_eq!(operating_point_result("StubbornOnBench").is_err(), true, "an enabled limiter that never moves is vetoed forever");
+    let off = operating_point_result("StubbornOffBench").expect("a limit that is not evaluated does not veto");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("stubborn off", "v(a)", Coordinate::OperatingPoint), 1.0, off);
+}
+
+#[test]
+fn a_junction_enabled_after_the_operating_point_reaches_the_rdiode_solution() {
+    // AS-06 AC 1: the limited junction behind 1 kOhm from 5 V is open (v(a) = 5 V) until `en` rises at
+    // 1 us; once it runs, the circuit settles at the operating point of the same junction with no
+    // enable, which is the `rdiode` solution (about 0.7 V).
+    let wanted = operating_point_result("JunctionBench").expect("the ungated junction solves");
+    assert!((0.6..0.8).contains(&wanted), "the rdiode solution is a junction drop: {wanted}");
+    let built = build(&project(), "GatedJunctionBench");
+    let a = NodeIdentifier::Anonymous(built.ir.node_at("GatedJunctionBench.a").expect("node a").id().index());
+    let (_, result) = built.run_with(1.9e-6, 0.1e-6);
+    let points: Vec<(f64, f64)> = result.iter().map(|p| (p.time(), p.get_node(&a).expect("v(a)"))).collect();
+    let before = points.iter().rev().find(|(t, _)| *t < 1e-6 - 1e-12).expect("a point before 1 us");
+    ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("gated junction", "v(a) before", Coordinate::Time(before.0)), 5.0, before.1);
+    let last = points.last().expect("points");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("gated junction", "v(a) after", Coordinate::Time(last.0)), wanted, last.1);
+}
+
+#[test]
+fn a_limit_reads_a_carrier_through_known_or() {
+    // AS-06 AC 2 (abi.md F2): `limit(lv.known_or(0.0), |new, old| new) * 1m` with `lv` = 2.0 into
+    // 1 kOhm: the limiter passes its input, so v(a) = 2 mA * 1 kOhm... 2.0 * 1 mA * 1 kOhm = 2.0 V.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("carrier limit", "v(a)", Coordinate::OperatingPoint), 2.0, operating_point("CarrierLimitBench"));
+}
+
+/// `|v(a)|` of the bench `top` at 100 kHz in an AC sweep of one point.
+fn ac_magnitude(top: &str) -> f64 {
+    let mut running = project().compile(top).unwrap_or_else(|r| panic!("{r}"));
+    let a = NodeIdentifier::Anonymous(running.ir.node_at(&format!("{top}.a")).expect("node a").id().index());
+    let mut ac = running.circuit.ac(Context::default()).expect("ac");
+    let sweep = ac.solve_sweep(AcSweepAnalysisOptions { start_frequency: 1e5, stop_frequency: 1e5, steps: 1, logarithmic: true }).unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+    sweep.iter().next().expect("a point").get_node(&a).expect("v(a)").norm()
+}
+
+#[test]
+fn an_ac_stim_under_an_if_drives_only_when_enabled() {
+    // AS-06 AC 4: `v(a) +> if en.high() { ac_stim(1.0) } else { 0.0 }`: the sweep injects the unit
+    // stimulus with `en` high (|v(a)| = 1) and nothing with it low (|v(a)| = 0): a term in an arm
+    // not taken does not read the stimulus.
+    ToleranceContract::AC_MAGNITUDE.assert(&Point::new("stim on", "|v(a)|", Coordinate::Frequency(1e5)), 1.0, ac_magnitude("StimOnBench"));
+    ToleranceContract::AC_MAGNITUDE.assert(&Point::new("stim off", "|v(a)|", Coordinate::Frequency(1e5)), 0.0, ac_magnitude("StimOffBench"));
+}
+
+#[test]
+fn an_ac_stim_reads_its_magnitude_from_a_carrier() {
+    // AS-06 AC 5: `ac_stim(lv.known_or(0.0))` with `lv` = 3.0 gives |v(a)| = 3.0.
+    ToleranceContract::AC_MAGNITUDE.assert(&Point::new("carrier stim", "|v(a)|", Coordinate::Frequency(1e5)), 3.0, ac_magnitude("CarrierStimBench"));
+}
+
+#[test]
+fn a_bound_step_under_an_if_caps_only_the_steps_that_executed_it() {
+    // AS-01 AC 5 (§14.10.2 and Part V §16.2 rule 5: `bound_step` caps the step that follows the time
+    // point at which it was evaluated): `if ctl.high() { bound_step(1n); }` on a 1 kHz sine with the
+    // host's step limit at 20 ns. Until the solution at which `ctl` is high has been
+    // accepted nothing caps a step (one reaches well over 1 ns); the point after the rise at 1 us is
+    // the first to execute the call, and every step that follows a point from there on is at most 1 ns.
+    let built = build(&project(), "CapperBench");
+    let (_, result) = built.run_with(1.05e-6, 20e-9);
+    let times: Vec<f64> = result.iter().map(|p| p.time()).collect();
+    let first_executed = times.iter().copied().find(|t| *t > 1e-6 + 1e-12).expect("a point after the rise");
+    let before: Vec<f64> = times.windows(2).filter(|w| w[0] < first_executed - 1e-12).map(|w| w[1] - w[0]).collect();
+    let after: Vec<f64> = times.windows(2).filter(|w| w[0] >= first_executed - 1e-12).map(|w| w[1] - w[0]).collect();
+    assert!(before.iter().cloned().fold(0.0, f64::max) > 5e-9, "nothing caps the steps before the call is executed: {before:?}");
+    assert!(after.len() > 5 && after.iter().all(|dt| *dt <= 1e-9 * (1.0 + 1e-9)), "every step after it is capped at 1 ns: {after:?}");
+}

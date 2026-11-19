@@ -14,7 +14,7 @@ use super::compound::EnumLayout;
 use super::consts::{Bindings, Folded};
 use super::known::Flag;
 use super::elaborator::Elaboration;
-use super::selectors::ContributionRecord;
+use super::selectors::{ArmCondition, ContributionRecord};
 use crate::msl::Span;
 use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::{Callee, Method, Ty};
@@ -32,9 +32,16 @@ pub(super) struct Scope {
     pub(super) stims: Vec<Site>,
     /// The branches the contributions name, in order of first contribution.
     pub(super) branches: Vec<Branch>,
-    /// How many `if` branches and closure bodies the code being lowered sits in: a site there
-    /// is not unconditional, which `Ir::check` and the model both forbid.
+    /// How many closure bodies and `Option` method bodies the code being lowered sits in: a
+    /// `limit`, `ac_stim` or `bound_step` there is refused (the conditions of `if` and `match` arms
+    /// are `guards`).
     pub(super) nesting: u32,
+    /// The source form of the conditions of the arms the code sits in, outermost first: what a
+    /// guarded site lowers standalone (`selectors.rs`).
+    pub(super) guards: Vec<ArmCondition>,
+    /// The `bound_step` statements met under a condition or in a nested block, moved to the top of
+    /// the analog block (`analog.rs`).
+    pub(super) hoisted_steps: Vec<LoweredStmt>,
     /// Plain blocks entered below the analog block's own statement list: a contribution there
     /// is not a top-level statement (Part IV §10 rule 8 makes it legal; M1 refuses it).
     pub(super) block_depth: u32,
@@ -76,7 +83,7 @@ pub(super) struct Scope {
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
+        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
     }
 }
 
@@ -235,10 +242,16 @@ impl Elaboration<'_, '_> {
                 // conditional exactly like an `if` arm.
                 let short_circuit = matches!(op, BinOp::And | BinOp::Or);
                 let right = *rhs;
+                let left = *lhs;
                 let lhs = self.lower_expr(scope, *lhs);
-                scope.nesting += u32::from(short_circuit);
+                // `a && b` runs `b` when `a` holds, `a || b` when it does not.
+                if short_circuit {
+                    scope.guards.push(ArmCondition::If { condition: left, holds: matches!(op, BinOp::And) });
+                }
                 let rhs = self.lower_expr(scope, *rhs);
-                scope.nesting -= u32::from(short_circuit);
+                if short_circuit {
+                    scope.guards.pop();
+                }
                 let (lhs, rhs) = (lhs?, rhs?);
                 let flag = self.flags(&[lhs, rhs]);
                 let op = match (Self::binary_op(*op), flag) {
@@ -269,18 +282,21 @@ impl Elaboration<'_, '_> {
                 }
             }
             ExprKind::If { cond, then, else_ } => {
+                let source = *cond;
                 let cond = self.lower_expr(scope, *cond);
-                scope.nesting += 1;
                 let arm = Self::enter_arm(scope, cond, true);
+                scope.guards.push(ArmCondition::If { condition: source, holds: true });
                 let then = self.lower_block(scope, file, &then.stmts, node.span);
+                scope.guards.pop();
                 Self::leave_arm(scope, arm);
                 let arm = Self::enter_arm(scope, cond, false);
+                scope.guards.push(ArmCondition::If { condition: source, holds: false });
                 let otherwise = match else_ {
                     Some(else_) => self.lower_expr(scope, *else_),
                     None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
                 };
+                scope.guards.pop();
                 Self::leave_arm(scope, arm);
-                scope.nesting -= 1;
                 let (cond, then, otherwise) = (cond?, then?, otherwise?);
                 // A condition that may be unknown is kept: the generated code decides it.
                 let ty = self.flags(&[cond, then, otherwise]).wrap(ty);

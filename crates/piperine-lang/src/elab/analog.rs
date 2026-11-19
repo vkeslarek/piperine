@@ -5,7 +5,6 @@ use piperine_ir::{AnalysisKind, Branch, BranchKind, Env, Expr, ExprId as Lowered
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use super::unlowered::Unlowered;
 use crate::pom::nested_stmts;
 use crate::types::Callee;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
@@ -34,6 +33,11 @@ impl Elaboration<'_, '_> {
                 lowered.push(self.stmt(piperine_ir::Stmt::Expr(value)));
             }
             stmts.get_or_insert_with(Vec::new).extend(lowered);
+        }
+        // The `bound_step` calls met under a condition or in a nested block go last, at the top.
+        let steps = std::mem::take(&mut scope.hoisted_steps);
+        if !steps.is_empty() {
+            stmts.get_or_insert_with(Vec::new).extend(steps);
         }
         stmts
     }
@@ -163,40 +167,8 @@ impl Elaboration<'_, '_> {
                 };
                 Some(self.emit(Expr::Env(env), ty, origin))
             }
-            "limit" if scope.nesting == 0 => {
-                let site = scope.limits.len() as u32;
-                let name = match scope.limit_name.take() {
-                    Some((at, name)) if at == expr => name,
-                    _ => format!("limit{site}"),
-                };
-                scope.limits.push(Site { name, origin: origin.clone(), enabled: None });
-                let mut lowered = Vec::new();
-                for arg in args {
-                    lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `limit`")));
-                }
-                let mut lowered = lowered.into_iter();
-                let (x, f, seed) = (lowered.next()??, lowered.next()??, lowered.next().flatten());
-                Some(self.emit(Expr::Limit { site, x, f, seed }, ty, origin))
-            }
-            "ac_stim" if scope.nesting == 0 => {
-                let site = scope.stims.len() as u32;
-                scope.stims.push(Site { name: "ac".to_string(), origin: origin.clone(), enabled: None });
-                let mut lowered = Vec::new();
-                for arg in args {
-                    lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `ac_stim`")));
-                }
-                let mut lowered = lowered.into_iter();
-                let (mag, phase) = (lowered.next()??, lowered.next().flatten());
-                Some(self.emit(Expr::Stim { site, mag, phase }, ty, origin))
-            }
-            "limit" => {
-                self.refuse(scope.file, span, Unlowered::ConditionalLimit);
-                None
-            }
-            "ac_stim" => {
-                self.refuse(scope.file, span, Unlowered::ConditionalStim);
-                None
-            }
+            "limit" => self.lower_limit(scope, expr, args, ty, origin),
+            "ac_stim" => self.lower_stim(scope, expr, args, ty, origin),
             "ddt" => self.lower_derivative(scope, expr, args, origin),
             name => {
                 self.unsupported(scope.file, span, &format!("the core primitive `{name}`"));
@@ -214,6 +186,91 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// A `limit` read as a value. Under a condition (an `if` or `match` arm, the right of `&&` or
+    /// `||`) it carries `enabled`, the conjunction of the enclosing conditions lowered standalone,
+    /// and its `x` and `seed` are lowered standalone too (§14.7.4, §14 rule 9): the solver's `limit`
+    /// function evaluates them whatever control flow surrounds the call. In a closure it is `E0350`
+    /// from the type checker (§8.3.4); in any other nested form (an `Option` method) it is `P0001`.
+    fn lower_limit(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.design.expr_node(expr).span;
+        if !self.core_site_allowed(scope, span, "limit") {
+            return None;
+        }
+        let enabled = self.standalone_guard(scope, span, "a `limit`")?;
+        let site = scope.limits.len() as u32;
+        let name = match scope.limit_name.take() {
+            Some((at, name)) if at == expr => name,
+            _ => format!("limit{site}"),
+        };
+        scope.limits.push(Site { name, origin: origin.clone(), enabled });
+        let (x, f, seed) = match enabled {
+            None => {
+                let mut lowered = Vec::new();
+                for arg in args {
+                    lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `limit`")));
+                }
+                let mut lowered = lowered.into_iter();
+                (lowered.next()??, lowered.next()??, lowered.next().flatten())
+            }
+            Some(_) => {
+                // `f` is a closure whose parameters are locals of the body: it stays where it is.
+                let mut standalone = Self::standalone_scope(scope);
+                let x = self.lower_expr(&mut standalone, *args.first()?).and_then(|v| self.known_in_analog(scope.file, *args.first()?, v, "an argument of `limit`"));
+                let f = self.lower_expr(scope, *args.get(1)?);
+                let seed = match args.get(2) {
+                    Some(seed) => Some(self.lower_expr(&mut standalone, *seed).and_then(|v| self.known_in_analog(scope.file, *seed, v, "an argument of `limit`"))),
+                    None => None,
+                };
+                if !standalone.locals.is_empty() {
+                    self.unsupported(scope.file, span, "a guarded `limit` whose input binds a local");
+                    return None;
+                }
+                let seed = match seed {
+                    Some(seed) => Some(seed?),
+                    None => None,
+                };
+                (x?, f?, seed)
+            }
+        };
+        Some(self.emit(Expr::Limit { site, x, f, seed }, ty, origin))
+    }
+
+    /// An `ac_stim` read as a value. Under a condition its magnitude and phase are lowered
+    /// standalone; it needs no enable, since a term in an arm not taken does not read the stimulus
+    /// (AS-06 AC 4).
+    fn lower_stim(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.design.expr_node(expr).span;
+        if !self.core_site_allowed(scope, span, "ac_stim") {
+            return None;
+        }
+        let site = scope.stims.len() as u32;
+        scope.stims.push(Site { name: "ac".to_string(), origin: origin.clone(), enabled: None });
+        let guarded = !scope.guards.is_empty();
+        let mut standalone = Self::standalone_scope(scope);
+        let mut lowered = Vec::new();
+        for arg in args {
+            let value = if guarded { self.lower_expr(&mut standalone, *arg) } else { self.lower_expr(scope, *arg) };
+            lowered.push(value.and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `ac_stim`")));
+        }
+        if !standalone.locals.is_empty() {
+            self.unsupported(scope.file, span, "a guarded `ac_stim` whose input binds a local");
+            return None;
+        }
+        let mut lowered = lowered.into_iter();
+        let (mag, phase) = (lowered.next()??, lowered.next().flatten());
+        Some(self.emit(Expr::Stim { site, mag, phase }, ty, origin))
+    }
+
+    /// Whether a `limit` or `ac_stim` may stand where `scope` is: not inside an `Option` method
+    /// (`P0001`; a closure is `E0350` from the type checker before this runs).
+    fn core_site_allowed(&mut self, scope: &Scope, span: crate::msl::Span, name: &str) -> bool {
+        if scope.nesting > 0 {
+            self.unsupported(scope.file, span, &format!("a `{name}` inside an `Option` method"));
+            return false;
+        }
+        true
+    }
+
     /// When `expr`, a statement of a block, is `bound_step(dt)` (§14.10): a `BoundStep` appended
     /// to `out`, and `Some(false)` after a diagnostic (a `bound_step` under an `if`, a `match` or
     /// in a nested block is not lowered). `None` for any other expression.
@@ -225,15 +282,30 @@ impl Elaboration<'_, '_> {
             Some(Callee::Core(id)) if id.info().name == "bound_step" => {}
             _ => return None,
         }
-        if scope.nesting > 0 || scope.block_depth > 0 {
-            self.refuse(scope.file, node.span, Unlowered::ConditionalBoundStep);
+        if scope.nesting > 0 {
+            self.unsupported(scope.file, node.span, "a `bound_step` inside a closure or an `Option` method");
             return Some(false);
         }
         let [arg] = &args[..] else { return Some(false) };
-        let value = self.lower_expr(scope, arg.value)?;
+        // Under a condition or in a nested block the call moves to the top of the analog block with
+        // `when`, the conjunction of its conditions (§14.10.2), its step lowered standalone.
+        let nested = !scope.guards.is_empty() || scope.block_depth > 0;
+        let when = if nested { self.standalone_guard(scope, node.span, "a `bound_step`") } else { Some(None) };
+        let Some(when) = when else { return Some(false) };
+        let mut standalone = Self::standalone_scope(scope);
+        let value = if nested { self.lower_expr(&mut standalone, arg.value) } else { self.lower_expr(scope, arg.value) }?;
+        if !standalone.locals.is_empty() {
+            self.unsupported(scope.file, node.span, "a `bound_step` under a condition whose step binds a local");
+            return Some(false);
+        }
         let site = scope.bounds;
         scope.bounds += 1;
-        out.push(self.stmt(piperine_ir::Stmt::BoundStep { site, value, when: None }));
+        let stmt = self.stmt(piperine_ir::Stmt::BoundStep { site, value, when });
+        if nested {
+            scope.hoisted_steps.push(stmt);
+        } else {
+            out.push(stmt);
+        }
         Some(true)
     }
 

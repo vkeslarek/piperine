@@ -30,49 +30,23 @@ impl Row {
 
 #[test]
 fn a_site_or_contribution_under_if_is_p0001() {
-    // A `limit` or `ac_stim` in a `fn` or a closure is `E0450` from the front end (spec rule),
-    // before elaboration; under an `if` of the analog block it reaches this table. (A contribution
-    // under an `if` or in a nested block lowers since analog-structure T16: see
-    // `a_contribution_under_control_flow_lowers_where_it_was_written`.)
-    for row in [
-        Row {
-            form: "limit under if",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let x = if v(p) > 0.0 { limit(v(p), |a, b| a) } else { 0.0 }; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "a `limit` under an `if` or in a closure",
-            at: "limit(v(p), |a, b| a)",
-        },
-        Row {
-            form: "ac_stim under if",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let x = if v(p) > 0.0 { ac_stim(1.0) } else { 0.0 }; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "an `ac_stim` under an `if` or in a closure",
-            at: "ac_stim(1.0)",
-        },
-        Row {
-            form: "limit right of &&",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 && limit(v(p), |a, b| a) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "a `limit` under an `if` or in a closure",
-            at: "limit(v(p), |a, b| a)",
-        },
-        Row {
-            form: "limit right of ||",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 || limit(v(p), |a, b| a) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "a `limit` under an `if` or in a closure",
-            at: "limit(v(p), |a, b| a)",
-        },
-        Row {
-            form: "ac_stim right of &&",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 && ac_stim(1.0) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "an `ac_stim` under an `if` or in a closure",
-            at: "ac_stim(1.0)",
-        },
-        Row {
-            form: "ac_stim right of ||",
-            src: "module M(p: Electrical, n: Electrical) { }\nanalog for M { let c = v(p) > 0.0 || ac_stim(1.0) > 0.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }",
-            names: "an `ac_stim` under an `if` or in a closure",
-            at: "ac_stim(1.0)",
-        },
+    // analog-structure T16 and T21 lifted every refusal this test asserted: a contribution under an
+    // `if` or in a nested block (T16), a `limit` or `ac_stim` under an `if` or on the right of `&&` or
+    // `||` (T21). Kept under its name; each form lowers, a guarded `limit` carrying its `enabled`
+    // (AS-06 AC 1), and a `limit` or `ac_stim` that is not guarded carries none.
+    for (form, body, enabled) in [
+        ("limit under if", "let x = if v(p) > 0.0 { limit(v(p), |a, b| a) } else { 0.0 };", true),
+        ("limit right of &&", "let c = v(p) > 0.0 && limit(v(p), |a, b| a) > 0.0;", true),
+        ("limit right of ||", "let c = v(p) > 0.0 || limit(v(p), |a, b| a) > 0.0;", true),
+        ("ac_stim under if", "let x = if v(p) > 0.0 { ac_stim(1.0) } else { 0.0 };", false),
+        ("ac_stim right of &&", "let c = v(p) > 0.0 && ac_stim(1.0) > 0.0;", false),
+        ("ac_stim right of ||", "let c = v(p) > 0.0 || ac_stim(1.0) > 0.0;", false),
     ] {
-        row.check();
+        let src = format!("module M(p: Electrical, n: Electrical) {{ }}\nanalog for M {{ {body} }}\nmodule Top() {{ signal s: Electrical; let m = M {{ }}(s, gnd); }}");
+        let ir = Elab::ir(&src, "Top");
+        let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
+        assert_eq!(m.limits().iter().all(|site| site.enabled.is_some()) && !m.limits().is_empty(), enabled, "{form}");
+        assert_eq!(m.limits().len() + m.stims().len(), 1, "{form}: one site");
     }
 }
 
@@ -147,7 +121,7 @@ fn a_for_loop_in_a_digital_block_is_p0001() {
 #[test]
 fn a_diagnostic_means_no_ir() {
     // Two refusals in one design: still `Err`, every diagnostic a `P0001`, never a partial `Ir`.
-    let src = "module M(p: Electrical, n: Electrical) { }\nanalog for M { let x = if v(p) > 0.0 { limit(v(p), |a, b| a) } else { 0.0 }; let y = if v(p) > 0.0 { ac_stim(1.0) } else { 0.0 }; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }";
+    let src = "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } on clk.fall() { q[0] <- false; } }";
     let err = Elab::run(src, "Top").expect_err("refused");
     assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));

@@ -21,6 +21,7 @@
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Method as IrMethod, Origin, Stmt, StmtId, UnaryOp, ValueType};
 
 use super::elaborator::Elaboration;
+use super::selectors::ArmCondition;
 use super::known::Flag;
 use super::lower::Scope;
 use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution};
@@ -114,9 +115,7 @@ impl Elaboration<'_, '_> {
             scope.locals.push(Local { name, ty: ty.clone() });
             (Subject::Local(index, ty), Some(vec![self.stmt(Stmt::Let { local: index, init: lowered })]))
         };
-        scope.nesting += 1;
-        let chain = self.arms_chain(scope, &subject, arms, &base, &origin);
-        scope.nesting -= 1;
+        let chain = self.arms_chain(scope, scrutinee, &subject, arms, &base, &origin);
         let chain = chain?;
         Some(match binding {
             Some(stmts) => {
@@ -250,7 +249,7 @@ impl Elaboration<'_, '_> {
 
     /// The `if` chain of `arms` over `subject`, from the last arm back: the last arm, or the
     /// first that matches everything, is the final value.
-    fn arms_chain(&mut self, scope: &mut Scope, subject: &Subject, arms: &[Arm], base: &ValueType, origin: &Origin) -> Option<LoweredExpr> {
+    fn arms_chain(&mut self, scope: &mut Scope, scrutinee: ExprId, subject: &Subject, arms: &[Arm], base: &ValueType, origin: &Origin) -> Option<LoweredExpr> {
         let mut tests = Vec::new();
         let mut bodies = Vec::new();
         let mut ok = true;
@@ -265,10 +264,12 @@ impl Elaboration<'_, '_> {
                 ok = false;
             }
             let own = Self::enter_arm(scope, test, true);
+            scope.guards.push(ArmCondition::MatchArm { scrutinee, earlier: arms[..k].iter().map(|a| a.pat).collect(), pat: (!last).then_some(arm.pat) });
             match self.arm_body(scope, subject, arm) {
                 Some(body) => bodies.push(body),
                 None => ok = false,
             }
+            scope.guards.pop();
             Self::leave_arm(scope, own);
             Self::enter_arm(scope, test, false);
             tests.push(test);
@@ -288,6 +289,27 @@ impl Elaboration<'_, '_> {
             value = self.emit(Expr::If { cond: test, then: body, otherwise: value }, ty, origin.clone());
         }
         Some(value)
+    }
+
+    /// The tests that select the arm of a `match` on `scrutinee` whose pattern is `pat` (`None` for
+    /// the last arm, which has no test) after the arms with the patterns `earlier` did not: one
+    /// `bool` per test, read in `scope`, a scope with no local, so the scrutinee is read again at
+    /// each test (`selectors.rs`, a guarded site's `enabled`). `None` after a diagnostic.
+    pub(super) fn standalone_arm_tests(&mut self, scope: &mut Scope, scrutinee: ExprId, earlier: &[PatId], pat: Option<PatId>) -> Option<Vec<LoweredExpr>> {
+        let subject = if matches!(self.types.ty(scrutinee), Some(Ty::Option(_))) { Subject::RereadPair(scrutinee) } else { Subject::Reread(scrutinee) };
+        let mut tests = Vec::new();
+        for before in earlier {
+            if let Some(test) = self.pattern_test(scope, &subject, *before) {
+                let ty = self.flag(test).wrap(ValueType::Bool);
+                tests.push(self.emit(Expr::Unary { op: UnaryOp::Not, expr: test }, ty, self.expr_origin(scrutinee)));
+            }
+        }
+        if let Some(pat) = pat
+            && let Some(test) = self.pattern_test(scope, &subject, pat)
+        {
+            tests.push(test);
+        }
+        Some(tests)
     }
 
     /// Whether pattern `pat` matches every value (`_`, or an or-pattern holding one), so no arm
@@ -844,17 +866,19 @@ impl Elaboration<'_, '_> {
         let ExprKind::Let { pat, expr } = self.design.expr_node(cond).kind.clone() else { return None };
         let pair = self.lower_option(scope, expr)?;
         let binding = self.some_binding(scope.file, pat)?;
-        scope.nesting += 1;
         let arm = Self::enter_arm(scope, Some(pair.is), true);
+        scope.guards.push(ArmCondition::IfLet);
         let then = self.bound_block(scope, binding, pair.val, &then.stmts, then.span);
+        scope.guards.pop();
         Self::leave_arm(scope, arm);
         let arm = Self::enter_arm(scope, Some(pair.is), false);
+        scope.guards.push(ArmCondition::IfLet);
         let otherwise = match else_ {
             Some(else_) => self.lower_expr(scope, else_),
             None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
         };
+        scope.guards.pop();
         Self::leave_arm(scope, arm);
-        scope.nesting -= 1;
         let (then, otherwise) = (then?, otherwise?);
         let ty = self.flags(&[pair.is, then, otherwise]).wrap(base);
         Some(self.emit(Expr::If { cond: pair.is, then, otherwise }, ty, origin))

@@ -7,6 +7,10 @@ module Resistor(p: Electrical, n: Electrical) {
 }
 analog for Resistor { i(p, n) +> v(p, n) / r; }
 
+/// A potential held at `volts`.
+module Level(p: Electrical) { volts: f64 = 0.0; }
+analog for Level { v(p, gnd) +> volts; }
+
 /// A source of `amps` into `p`.
 module Pump(p: Electrical) { amps: f64 = 1m; }
 analog for Pump { i(gnd, p) +> amps; }
@@ -141,4 +145,123 @@ module SweepBench() {
     let source = Battery { volts: 1.0 }(s);
     let series = Resistor { r: 1k }(s, a);
     let sw = Linearized(a);
+}
+
+// -- AS-06: guarded `limit`, `ac_stim` and `bound_step`, and sites that read a carrier
+
+/// A limiter that never lets the iterate move: whenever it runs, the limited value is the last one,
+/// so the solver vetoes every iterate that proposes another. A `limit` that does not run neither
+/// vetoes nor moves.
+module Stubborn(a: Electrical, in en: Bit) {}
+analog for Stubborn {
+    let x = if en.high() { limit(v(a), |new, old| old) } else { 0.0 };
+    i(a, gnd) +> x + v(a) / 1k;
+}
+
+module StubbornOffBench() {
+    signal a: Electrical;
+    signal en: Bit = false;
+    let load = Stubborn(a, en);
+    let source = Pump { amps: 1m }(a);
+}
+
+module StubbornOnBench() {
+    signal a: Electrical;
+    signal en: Bit = true;
+    let load = Stubborn(a, en);
+    let source = Pump { amps: 1m }(a);
+}
+
+/// The junction of the twins, its limiter under the enable `en`: off, it carries nothing.
+module GatedJunction(a: Electrical, k: Electrical, in en: Bit) {
+    is: f64 = 1e-14;
+}
+analog for GatedJunction {
+    let nvt = vt();
+    let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
+    if en.high() {
+        let vd = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
+        i(a, k) +> is * ((vd / nvt).exp() - 1.0) + gmin() * vd;
+    }
+}
+
+/// The same junction with no enable: the operating point the gated one must reach.
+module Junction(a: Electrical, k: Electrical) {
+    is: f64 = 1e-14;
+}
+analog for Junction {
+    let nvt = vt();
+    let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
+    let vd = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
+    i(a, k) +> is * ((vd / nvt).exp() - 1.0) + gmin() * vd;
+}
+
+module GatedJunctionBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    signal en: Bit;
+    let osc = Osc(en) { f: 500k };
+    let source = Level { volts: 5.0 }(s);
+    let series = Resistor { r: 1k }(s, a);
+    let diode = GatedJunction(a, gnd, en);
+}
+
+module JunctionBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    let source = Level { volts: 5.0 }(s);
+    let series = Resistor { r: 1k }(s, a);
+    let diode = Junction(a, gnd);
+}
+
+/// A `limit` that reads a carrier through `known_or`: 2 mA of `lv` into `a`.
+module CarrierLimited(a: Electrical, in lv: Bit<f64>) {}
+analog for CarrierLimited { i(gnd, a) +> limit(lv.known_or(0.0), |new, old| new) * 1m; }
+
+module CarrierLimitBench() {
+    signal a: Electrical;
+    signal lv: Bit<f64> = 2.0;
+    let source = CarrierLimited(a, lv);
+    let load = Resistor { r: 1k }(a, gnd);
+}
+
+/// A unit AC stimulus that is there only when `en` is high.
+module GatedStim(a: Electrical, in en: Bit) {}
+analog for GatedStim { v(a, gnd) +> if en.high() { ac_stim(1.0) } else { 0.0 }; }
+
+module StimOnBench() {
+    signal a: Electrical;
+    signal en: Bit = true;
+    let source = GatedStim(a, en);
+}
+
+module StimOffBench() {
+    signal a: Electrical;
+    signal en: Bit = false;
+    let source = GatedStim(a, en);
+}
+
+/// A stimulus whose magnitude is the carrier `lv`.
+module CarrierStim(a: Electrical, in lv: Bit<f64>) {}
+analog for CarrierStim { v(a, gnd) +> ac_stim(lv.known_or(0.0)); }
+
+module CarrierStimBench() {
+    signal a: Electrical;
+    signal lv: Bit<f64> = 3.0;
+    let source = CarrierStim(a, lv);
+}
+
+/// A slow sine that caps the step at 1 ns once `ctl` is high.
+module Capper(p: Electrical, in ctl: Bit) {}
+analog for Capper {
+    v(p, gnd) +> (2.0 * 3.141592653589793 * 1k * now()).sin();
+    if ctl.high() { bound_step(1n); }
+}
+
+module CapperBench() {
+    signal a: Electrical;
+    signal ctl: Bit;
+    let osc = Osc(ctl) { f: 500k };
+    let source = Capper(a, ctl);
+    let load = Resistor { r: 1k }(a, gnd);
 }

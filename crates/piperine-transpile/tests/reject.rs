@@ -1,8 +1,8 @@
 //! `Transpiler::new` on an `Ir` that fails `check()` (feature `ir-rust`, RS-01 AC 5, check C5):
 //! no transpiler and so no source, and the error holds the check's entries, each naming an item
 //! and its origin. And a checked form with no lowering yet, refused by name with its path and
-//! origin instead of failing later in the compiler (RS-01 AC 4; check C110; verification F-B6):
-//! a `limit` or `ac_stim` function reading a carrier.
+//! origin instead of failing later in the compiler (RS-01 AC 4; check C110; verification F-B6); the
+//! `limit` or `ac_stim` function reading a carrier that was refused here lowers since analog-structure.
 
 use std::sync::Arc;
 
@@ -43,18 +43,6 @@ fn an_ir_that_fails_check_gives_no_source() {
             assert!(entries.iter().all(|e| !e.item.is_empty() && !e.what.is_empty() && !e.origin.file.is_empty()));
         }
         Err(other) => panic!("expected the check's entries, got {other}"),
-    }
-}
-
-/// The source of the checked design holding the body `make` builds: the transpiler's refusal,
-/// as `(form, path, origin)`.
-fn refusal(make: impl FnOnce(&mut IrBuilder) -> BodyId) -> (String, String, Origin) {
-    let (ir, _) = Alone::design(make);
-    let transpiler = Transpiler::new(Arc::new(ir)).unwrap_or_else(|e| panic!("the design passes check(): {e}"));
-    match transpiler.source() {
-        Ok(_) => panic!("a form with no lowering gave a source"),
-        Err(Error::Unsupported { form, path, origin }) => (form, path, origin),
-        Err(other) => panic!("expected the form refused by name, got {other}"),
     }
 }
 
@@ -110,31 +98,28 @@ fn sampled(b: &mut IrBuilder, limits: Vec<Site>, stims: Vec<Site>, site: fn(&mut
 }
 
 #[test]
-fn a_limit_or_stim_function_reading_a_carrier_is_refused_by_name() {
-    // `let x = limit(<en.high() as a real>, |new, old| new);` at sampled.msl:3:13: the site's
-    // function reads the carrier `en`, which no lowering decodes there (verification F-B6)
-    let (form, path, origin) = refusal(|b| {
+fn a_limit_or_stim_function_reading_a_carrier_lowers() {
+    // analog-structure T21 (AS-06 AC 2, AC 5) lifted the refusal this test asserted (verification
+    // F-B6): a `limit` or `ac_stim` function that reads a carrier (`en.high()` read as a real, the
+    // analog read §3.3.5 allows) is an ordinary read of the site's function, decoded as a `terms`
+    // function decodes it (abi.md F2: an analog function may read discrete pins). The source is
+    // generated and the function names the carrier.
+    let source = |make: fn(&mut IrBuilder) -> BodyId| {
+        let (ir, _) = Alone::design(make);
+        Transpiler::new(Arc::new(ir)).unwrap_or_else(|e| panic!("the design passes check(): {e}")).source().unwrap_or_else(|e| panic!("a function reading a carrier lowers: {e}"))
+    };
+    let limit = source(|b| {
         let limit = |b: &mut IrBuilder, level| {
             let new = b.expr(Expr::Local(1), ValueType::F64, at(3, 40));
-            let f = b.expr(
-                Expr::Closure { params: vec![1, 2], body: new },
-                ValueType::Fn(vec![ValueType::F64; 2], Box::new(ValueType::F64)),
-                at(3, 30),
-            );
+            let f = b.expr(Expr::Closure { params: vec![1, 2], body: new }, ValueType::Fn(vec![ValueType::F64; 2], Box::new(ValueType::F64)), at(3, 30));
             b.expr(Expr::Limit { site: 0, x: level, f, seed: None }, ValueType::F64, at(3, 13))
         };
         sampled(b, vec![Site { name: "lim".into(), origin: at(3, 13), enabled: None }], vec![], limit)
     });
-    assert_eq!(form, "a `limit` function reading the carrier `en`");
-    assert_eq!(path, "body Sampled limit lim");
-    assert_eq!((origin.file.as_str(), origin.line, origin.col), (F, 3, 13));
-
-    // `let x = ac_stim(<en.high() as a real>);` at sampled.msl:3:13: the same for a stimulus
-    let (form, path, origin) = refusal(|b| {
+    assert!(limit.contains("lim_limit_block") && limit.contains("en"), "{limit}");
+    let stim = source(|b| {
         let stim = |b: &mut IrBuilder, level| b.expr(Expr::Stim { site: 0, mag: level, phase: None }, ValueType::F64, at(3, 13));
         sampled(b, vec![], vec![Site { name: "ac".into(), origin: at(3, 13), enabled: None }], stim)
     });
-    assert_eq!(form, "a `ac_stim` function reading the carrier `en`");
-    assert_eq!(path, "body Sampled ac_stim ac");
-    assert_eq!((origin.file.as_str(), origin.line, origin.col), (F, 3, 13));
+    assert!(stim.contains("ac_stim_block") && stim.contains("en"), "{stim}");
 }

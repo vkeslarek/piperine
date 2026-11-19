@@ -122,9 +122,13 @@ module Top() { let d = D { }(gnd, gnd); }";
 
 #[test]
 fn a_site_under_an_if_is_refused_not_mis_lowered() {
+    // analog-structure T21 lifted this refusal (AS-06 AC 1): a `limit` under an `if` is lowered with
+    // the `enabled` of its condition, never as an unconditional site. Kept under its name; it
+    // asserts the lowering.
     let src = "module D(a: Electrical) { }\nanalog for D { let x = if v(a) > 0.0 { limit(v(a), |n, o| n) } else { 0.0 }; }\nmodule Top() { let d = D { }(gnd); }";
-    let err = Elab::run(src, "Top").expect_err("a site is unconditional");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
+    let ir = Elab::ir(src, "Top");
+    let body = ir.bodies().find(|b| b.name() == "D").expect("body D");
+    assert!(body.limits()[0].enabled.is_some(), "a guarded site carries its condition");
 }
 
 /// The block of `text` that starts with the line `head` and goes on over its indented lines.
@@ -376,12 +380,19 @@ module Top() { signal q: Bit<f64>; let a = A { }(); let r = R { }(q); }";
 
 #[test]
 fn bound_step_under_an_if_is_p0001() {
-    // FIX-09 AC 4 (Q4): `bound_step` at the top level only; under an `if`, a `match` or in a nested
-    // block it is refused, `P0001` naming it.
-    for body in ["if v(a) > 0.0 { bound_step(1.0e-9); }", "match v(a) > 0.0 { true => { bound_step(1.0e-9); } false => {} }", "{ bound_step(1.0e-9); }"] {
+    // FIX-09 AC 4 (Q4) refused `bound_step` under an `if`, a `match` or in a nested block; analog-
+    // structure T21 lifts it (AS-01 AC 5, §14.10.2): the call moves to the top of the analog block
+    // and carries `when`, the conjunction of its conditions (none in a plain nested block). Kept
+    // under its name; it asserts the lowering.
+    for (body, guarded) in [("if v(a) > 0.0 { bound_step(1.0e-9); }", true), ("match v(a) > 0.0 { true => { bound_step(1.0e-9); } false => {} }", true), ("{ bound_step(1.0e-9); }", false)] {
         let src = format!("module D(a: Electrical) {{ }}\nanalog for D {{ {body} }}\nmodule Top() {{ let d = D {{ }}(gnd); }}");
-        let err = Elab::run(&src, "Top").expect_err("a conditional bound_step is refused");
-        assert_eq!(Elab::codes(&err), ["P0001"], "{body}");
-        assert!(err[0].diagnostic.message.contains("bound_step"), "{body}: {}", err[0].diagnostic.message);
+        let ir = Elab::ir(&src, "Top");
+        let d = ir.bodies().find(|b| b.name() == "D").expect("body D");
+        let steps: Vec<Option<piperine_ir::ExprId>> = d.analog().expect("a block").iter().filter_map(|s| match ir.stmt(*s) {
+            piperine_ir::Stmt::BoundStep { when, .. } => Some(*when),
+            _ => None,
+        }).collect();
+        assert_eq!(steps.len(), 1, "{body}: one call, at the top of the block");
+        assert_eq!(steps[0].is_some(), guarded, "{body}");
     }
 }

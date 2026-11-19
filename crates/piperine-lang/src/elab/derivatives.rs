@@ -145,7 +145,7 @@ impl Elaboration<'_, '_> {
 
     /// A scope that reads what `scope` names but holds no local (§14 rule 9): a block-local `let`
     /// is read as its source expression, a `match` scrutinee is read at each test.
-    fn standalone_scope(scope: &Scope) -> Scope {
+    pub(super) fn standalone_scope(scope: &Scope) -> Scope {
         let mut standalone = Self::sub_scope(scope);
         standalone.no_locals = true;
         standalone.analog = scope.analog;

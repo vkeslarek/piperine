@@ -26,7 +26,7 @@ use piperine_ir::{BranchKind, Condition, Expr, ExprId as LoweredExpr, QuantityRo
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{DeclKind, FileId};
+use crate::pom::{DeclKind, ExprId, FileId, PatId};
 
 /// One contribution as lowered: its branch, its quantity, the conditions of the arms that enclose
 /// it (outermost first, empty when it is unconditional) and where it was written.
@@ -45,6 +45,19 @@ pub(super) struct SelectorReads {
     /// The first probe, branch flow, derivative or `limit` value it reads, as the diagnostic
     /// names it: what no selector of a potential-capable branch may read.
     pub(super) probe: Option<String>,
+}
+
+/// A condition of an enclosing arm as written, so a guarded site can lower it again with no local
+/// in reach (§14 rule 9): what its `enabled` or `when` is made of.
+#[derive(Clone)]
+pub(super) enum ArmCondition {
+    /// The arm of `if condition` taken when `holds`, or the right operand of `&&` (`holds`) or `||`.
+    If { condition: ExprId, holds: bool },
+    /// The arm of a `match` on `scrutinee` whose pattern is `pat` (`None`: the last arm), reached
+    /// when none of the patterns `earlier` matched.
+    MatchArm { scrutinee: ExprId, earlier: Vec<PatId>, pat: Option<PatId> },
+    /// An arm of `if let`, whose test is the pair of an `Option` read once.
+    IfLet,
 }
 
 impl ContributionRecord {
@@ -186,5 +199,44 @@ impl Elaboration<'_, '_> {
             Expr::Method { receiver, args, .. } => [*receiver].into_iter().chain(args.iter().copied()).collect(),
             _ => Vec::new(),
         }
+    }
+}
+
+impl Elaboration<'_, '_> {
+    /// The conjunction of the conditions of the arms `scope` sits in, lowered standalone (no local
+    /// in reach, §14 rule 9); `Some(None)` when nothing encloses the code, `None` after a diagnostic
+    /// (`P0001` for a condition that may be unknown and for an `if let` arm).
+    pub(super) fn standalone_guard(&mut self, scope: &Scope, span: Span, what: &str) -> Option<Option<LoweredExpr>> {
+        if scope.guards.is_empty() {
+            return Some(None);
+        }
+        let mut standalone = Self::standalone_scope(scope);
+        let mut tests: Vec<LoweredExpr> = Vec::new();
+        for guard in &scope.guards.clone() {
+            match guard {
+                ArmCondition::If { condition, holds } => {
+                    let test = self.lower_expr(&mut standalone, *condition)?;
+                    if self.flag(test) == super::known::Flag::Flagged {
+                        self.unsupported(scope.file, span, &format!("{what} under a condition that may be unknown"));
+                        return None;
+                    }
+                    let origin = self.expr_origin(*condition);
+                    tests.push(if *holds { test } else { self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Not, expr: test }, piperine_ir::ValueType::Bool, origin) });
+                }
+                ArmCondition::MatchArm { scrutinee, earlier, pat } => tests.extend(self.standalone_arm_tests(&mut standalone, *scrutinee, earlier, *pat)?),
+                ArmCondition::IfLet => {
+                    self.unsupported(scope.file, span, &format!("{what} under an `if let`"));
+                    return None;
+                }
+            }
+        }
+        if !standalone.locals.is_empty() {
+            self.unsupported(scope.file, span, &format!("{what} under a condition that binds a local"));
+            return None;
+        }
+        let mut tests = tests.into_iter();
+        let Some(first) = tests.next() else { return Some(None) };
+        let origin = self.expr_origins[first.index()].clone();
+        Some(Some(tests.fold(first, |lhs, rhs| self.emit(Expr::Binary { op: piperine_ir::BinaryOp::And, lhs, rhs }, piperine_ir::ValueType::Bool, origin.clone()))))
     }
 }
