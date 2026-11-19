@@ -430,3 +430,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | welcome~5b11a01a | D2 | `user` | the math methods such as `sin` run; the other items of the sentence are `P0001` as written |
 | from-rust#1 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
 | from-rust~64ee8d1d | D1 | `root-e2e` | `emit!("hello");` in a module body is `E0900` (a syntax error), not `E0601` |
+| values#2 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
+| values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
+| values#15 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
+| values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |

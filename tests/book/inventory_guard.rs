@@ -16,11 +16,11 @@ mod support {
 
 use support::book::{BlockId, Book, Fingerprint};
 use support::gaps::Gaps;
-use support::inventory::{Coverage, Inventory, Row, Verdict};
+use support::inventory::{Coverage, Inventory, Kind, Row, Verdict};
 
 /// The chapters whose rows a chapter task has settled: none of their rows may be `pending`. A chapter
 /// task adds its chapter here; the closing task replaces the registry with the strict rules.
-const SETTLED_CHAPTERS: [&str; 3] = ["errors", "welcome", "from-rust"];
+const SETTLED_CHAPTERS: [&str; 4] = ["errors", "welcome", "from-rust", "values"];
 
 /// The inventory rules, each a method that returns what breaks it, one line per offence, so a
 /// failure names the block and a test can hold the rule on planted input.
@@ -68,7 +68,9 @@ impl Guard<'_> {
     /// block row that runs or is refused.
     fn tests_that_do_not_exist(&self) -> Vec<String> {
         let mut offences = Vec::new();
-        for row in self.inventory.rows().iter().filter(|row| row.covered_by != "-") {
+        // a `refused` claim names the block it is about, which `book_claims` holds
+        let named_tests = |row: &&Row| row.covered_by != "-" && !(row.kind == Kind::Claim && row.verdict == Verdict::Refused);
+        for row in self.inventory.rows().iter().filter(named_tests) {
             if row.verdict == Verdict::Fragment {
                 let whole = self.inventory.row(&row.covered_by);
                 if whole.is_none_or(|whole| !matches!(whole.verdict, Verdict::Run | Verdict::Refused)) {

@@ -37,21 +37,21 @@ block	from-rust#5	765499a926d8b83d	held	piperine-cli/book::every_cli_listing_of_
 block	from-rust#6	cef4b6240f4d6713	shown	-	-	-
 block	from-rust#7	99d13973553af432	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run blinky.msl --analysis transient --stop 3e-6 --print-step 1e-6 --print count
 block	from-rust#8	35ff65aaf710211a	run	piperine/book_from_rust::a_message_with_values_is_a_record_with_a_text_field	-	-
-block	values#1	7174a756ba13fc3a	pending	-	-	-
-block	values#2	775ff75685a16476	pending	-	-	-
-block	values#3	12b765caa91c5cbd	pending	-	-	-
-block	values#4	2bbe7594bd207d1e	pending	-	-	-
-block	values#5	32f78a863ab23b69	pending	-	-	-
-block	values#6	730d64db0c3d7ad5	pending	-	-	-
+block	values#1	7174a756ba13fc3a	run	piperine/book_values::the_statements_wrap_and_convert_as_the_book_says	-	-
+block	values#2	775ff75685a16476	refused	piperine/book_values::a_function_has_the_class_its_body_gives	L53	-
+block	values#3	12b765caa91c5cbd	run	piperine/book_values::optional_arguments_may_be_left_out_or_named	-	-
+block	values#4	2bbe7594bd207d1e	fragment	values#3	-	-
+block	values#5	32f78a863ab23b69	fragment	values#6	-	-
+block	values#6	730d64db0c3d7ad5	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	-
 block	values#7	a07bbc60df4e55a9	shown	-	-	-
 block	values#8	6801c85357a0db7b	shown	-	-	-
 block	values#9	2ab2c4cf88e53d78	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone
-block	values#10	cb2da746f6a4b2ff	pending	-	-	-
+block	values#10	cb2da746f6a4b2ff	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	-
 block	values#11	54c55c5b3fa29637	shown	-	-	-
 block	values#12	2a136951b87674b7	shown	-	-	-
 block	values#13	8add454648a8f9d1	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost
-block	values#14	c53149988f4a97fe	pending	-	-	-
-block	values#15	fb8add290ef4024e	pending	-	-	-
+block	values#14	c53149988f4a97fe	run	piperine/book_values::analog_reads_a_digital_carrier_through_known_or	-	-
+block	values#15	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	67bc373d6833923e	pending	-	-	-
 block	natures#2	6b0d8fdbd0ef2ae9	pending	-	-	-
 block	natures#3	e27df4c2a9cfd359	pending	-	-	-
@@ -257,27 +257,27 @@ claim	from-rust~64ee8d1d	64ee8d1dd4832bd5	diverges	piperine/book_from_rust::e060
 claim	from-rust~399f441d	399f441dbbfb6578	holds	piperine/book_from_rust::e0101_there_are_no_mutable_references	-	E0101
 claim	from-rust~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_from_rust::e0143_there_are_no_default_arguments	-	E0143
 claim	from-rust~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_from_rust::e0161_there_are_no_heap_types	-	E0161
-claim	values~423a2a9a	423a2a9a07b5faca	pending	-	-	This part of the language is Rust, so the chapter moves fast and stops only where MSL differs.
-claim	values~ec65c268	ec65c2683d76cae7	pending	-	-	Arithmetic always wraps.
-claim	values~d5f52d81	d5f52d81d3e7d912	pending	-	-	First, integers come in any width, because hardware does: a 3-bit duty word is a u3, and a 10-bit ADC code a u10.
-claim	values~df08bac4	df08bac412fa5f61	pending	-	-	Second, integer arithmetic wraps the way a register does, in every build; there is no overflow panic to hide a bug in release mode.
-claim	values~9273ae3d	9273ae3d2225da3b	pending	-	-	The prelude gives you the constants Q, K_B, EPS0, PI, E and inf.
-claim	values~c389077a	c389077a09d64172	pending	-	-	The compiler infers a class from the body: a pure function, like diode_current, works anywhere; one that probes a voltage or reads now() works where the solver is running; one that returns Event, like handshake, works where events go; and one that calls emit! works where emit! does.
-claim	values~4b156a2d	4b156a2da44bc9e4	pending	-	-	Passing a plain T wraps it in Some, the one implicit conversion in the language:
-claim	values~d0e86096	d0e860965d39c65b	pending	-	-	This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window.
-claim	values~3c87d509	3c87d5093c5ad414	pending	-	-	if z != zone { emit!(…) } prints only when the zone changes. zone on the right still reads the old value (the commit one line up has not applied yet), which is exactly what makes from = zone, to = z correct.
-claim	values~2931bd2e	2931bd2eba6a730c	pending	-	-	The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration: Under is 0, Ok 1 and Over 2, so from=1 to=0 is Ok to Under.
-claim	values~1aeb5afb	1aeb5afb04fc42e5	pending	-	-	You read the flag with three methods every Repr value has: x.known() gives an Option (None when any level is unknown), x.known_or(d) gives the value or a default, and x.is_known() a bool.
-claim	values~362f6b51	362f6b51760d2ad6	pending	-	-	This adder is placed in a top that gives a the constant 3 and takes b from an in port of its own, which nothing drives. (Osc is the clock from the file above.)
-claim	values~9a0ece05	9a0ece05b8e8447d	pending	-	-	An unknown value prints as x.
-claim	values~267f8cfe	267f8cfefd86bbf2	pending	-	-	Writing v(vout) + held; instead is error E0150, and the diagnostic names the carrier.
-claim	values~39a9371d	39a9371dbc03a3e6	pending	-	-	E0150
-claim	values~399bbd1d	399bbd1dbbf84a3c	pending	-	-	E0112
-claim	values~4bd60d1d	4bd60d1dc68d0e9c	pending	-	-	E0350
-claim	values~39acbe1d	39acbe1dbc06bf22	pending	-	-	E0143
-claim	values~39acbd1d	39acbd1dbc06bd6f	pending	-	-	E0140
-claim	values~39acbf1d	39acbf1dbc06c0d5	pending	-	-	E0142
-claim	values~3998361d	3998361dbbf52f00	pending	-	-	E0123
+claim	values~423a2a9a	423a2a9a07b5faca	prose	-	-	This part of the language is Rust, so the chapter moves fast and stops only where MSL differs.
+claim	values~ec65c268	ec65c2683d76cae7	holds	piperine/book_values::the_statements_wrap_and_convert_as_the_book_says	-	Arithmetic always wraps.
+claim	values~d5f52d81	d5f52d81d3e7d912	holds	piperine/book_values::the_statements_wrap_and_convert_as_the_book_says	-	First, integers come in any width, because hardware does: a 3-bit duty word is a u3, and a 10-bit ADC code a u10.
+claim	values~df08bac4	df08bac412fa5f61	holds	piperine/book_values::the_statements_wrap_and_convert_as_the_book_says	-	Second, integer arithmetic wraps the way a register does, in every build; there is no overflow panic to hide a bug in release mode.
+claim	values~9273ae3d	9273ae3d2225da3b	holds	piperine/book_values::the_prelude_gives_its_constants	-	The prelude gives you the constants Q, K_B, EPS0, PI, E and inf.
+claim	values~c389077a	c389077a09d64172	refused	values#2	L53	The compiler infers a class from the body: a pure function, like diode_current, works anywhere; one that probes a voltage or reads now() works where the solver is running; one that returns Event, like handshake, works where events go; and one that calls emit! works where emit! does.
+claim	values~4b156a2d	4b156a2da44bc9e4	holds	piperine/book_values::optional_arguments_may_be_left_out_or_named	-	Passing a plain T wraps it in Some, the one implicit conversion in the language:
+claim	values~d0e86096	d0e860965d39c65b	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window.
+claim	values~3c87d509	3c87d5093c5ad414	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	if z != zone { emit!(…) } prints only when the zone changes. zone on the right still reads the old value (the commit one line up has not applied yet), which is exactly what makes from = zone, to = z correct.
+claim	values~2931bd2e	2931bd2eba6a730c	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration: Under is 0, Ok 1 and Over 2, so from=1 to=0 is Ok to Under.
+claim	values~1aeb5afb	1aeb5afb04fc42e5	holds	piperine/book_values::the_flag_is_read_with_known_known_or_and_is_known	-	You read the flag with three methods every Repr value has: x.known() gives an Option (None when any level is unknown), x.known_or(d) gives the value or a default, and x.is_known() a bool.
+claim	values~362f6b51	362f6b51760d2ad6	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	This adder is placed in a top that gives a the constant 3 and takes b from an in port of its own, which nothing drives. (Osc is the clock from the file above.)
+claim	values~9a0ece05	9a0ece05b8e8447d	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	An unknown value prints as x.
+claim	values~267f8cfe	267f8cfefd86bbf2	holds	piperine/book_values::analog_reads_a_digital_carrier_through_known_or	-	Writing v(vout) + held; instead is error E0150, and the diagnostic names the carrier.
+claim	values~39a9371d	39a9371dbc03a3e6	holds	piperine/book_values::analog_reads_a_digital_carrier_through_known_or	-	E0150
+claim	values~399bbd1d	399bbd1dbbf84a3c	holds	piperine/book_values::e0112_a_carried_type_needs_repr	-	E0112
+claim	values~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_values::e0350_a_fn_cannot_hold_ddt	-	E0350
+claim	values~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_values::e0143_there_are_no_default_arguments	-	E0143
+claim	values~39acbd1d	39acbd1dbc06bd6f	holds	piperine/book_values::e0140_a_named_argument_must_name_an_optional_parameter	-	E0140
+claim	values~39acbf1d	39acbf1dbc06c0d5	holds	piperine/book_values::e0142_a_positional_argument_cannot_follow_a_named_one	-	E0142
+claim	values~3998361d	3998361dbbf52f00	unraised	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	E0123
 claim	natures~b91f6505	b91f650573b09f15	pending	-	-	By the end of this chapter you can pick the right kind of wire for a job, declare signals and ports of every kind, and build a shared open-drain line that several modules drive, with a monitor that prints every change of it.
 claim	natures~cd4205d5	cd4205d55ed90e62	pending	-	-	Every carrier has a nature, and the nature answers two questions: what does it hold, and what happens when several modules drive it.
 claim	natures~c82d9d81	c82d9d814a2989c0	pending	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.
@@ -555,8 +555,8 @@ claim	welcome~f510779c	f510779cbb1f6161	holds	piperine/book_welcome::the_rc_step
 claim	welcome~4ecc9f35	4ecc9f3574b7bae5	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	An operating point holds nothing, which is why op printed 1 V for the same node.
 claim	welcome~6c6cac8d	6c6cac8dc767660a	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	The bench has a reaction of its own this time, on a crossing again, and E is the constant e: the record is written when vout rises through 63.2 % of the step.
 claim	welcome~ca1522ff	ca1522ffac1e1026	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	One time constant after the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
-claim	values~8ad56d03	8ad56d032086a4c3	pending	-	-	The source is a ramp of 1 V/µs, so the node walks through all three zones.
-claim	values~6ecca079	6ecca0792312a11d	pending	-	-	The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is near 0.5, 1.5 and 2.5 V:
+claim	values~8ad56d03	8ad56d032086a4c3	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	The source is a ramp of 1 V/µs, so the node walks through all three zones.
+claim	values~6ecca079	6ecca0792312a11d	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is near 0.5, 1.5 and 2.5 V:
 claim	natures~6a449552	6a4495522518bc52	pending	-	-	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
 claim	modules~d3ff187c	d3ff187cb9877521	pending	-	-	For the ladder with a 1 V step, estimate when each tap passes 0.5 V before you look at the half stream.
 claim	modules~1a89f2ad	1a89f2adc283d8ec	pending	-	-	A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times r · c for the three taps: about 2.1, 3.5 and 4.1 µs after the step.
