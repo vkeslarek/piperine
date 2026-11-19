@@ -208,16 +208,16 @@ block	cli#45	1c66b4b4d5d7a1e2	shown	-	-	-
 block	cli#46	47b905ff64d8b849	shown	-	-	-
 block	cli#47	0864d88b35e61a2b	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run startup
 block	cli#48	0d76250cc10f06b4	shown	-	-	-
-block	cheatsheet#1	35f08adcbe452e09	pending	-	-	-
-block	cheatsheet#2	383dda9a42c27bf9	pending	-	-	-
-block	cheatsheet#3	4191faccce1565bc	pending	-	-	-
-block	cheatsheet#4	dbde27824bc2538e	pending	-	-	-
-block	cheatsheet#5	15061b41d46dacbf	pending	-	-	-
-block	cheatsheet#6	6cf0d43b3a0501ec	pending	-	-	-
-block	cheatsheet#7	8bb8999b182e071e	pending	-	-	-
-block	cheatsheet#8	c2d75bfd6e731da6	pending	-	-	-
-block	cheatsheet#9	ea8278e7ba785b91	pending	-	-	-
-block	cheatsheet#10	922342b0e4390458	pending	-	-	-
+block	cheatsheet#1	35f08adcbe452e09	run	piperine/book_cheatsheet::the_nature_card_is_the_standard_librarys	-	-
+block	cheatsheet#2	383dda9a42c27bf9	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_const_generic	L30	-
+block	cheatsheet#3	4191faccce1565bc	refused	piperine/book_cheatsheet::the_body_items_card_is_refused_for_its_generation	L31	-
+block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_card_runs	-	-
+block	cheatsheet#5	15061b41d46dacbf	refused	piperine/book_cheatsheet::the_digital_card_is_refused_for_its_settle_reaction	L52	-
+block	cheatsheet#6	6cf0d43b3a0501ec	fragment	mixed#7	-	-
+block	cheatsheet#7	8bb8999b182e071e	refused	piperine/book_cheatsheet::the_debug_prints_card_is_refused_for_settle_and_the_analog_trace	L49	-
+block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_generic_module_and_its_placements	L32	-
+block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
+block	cheatsheet#10	922342b0e4390458	refused	piperine/book_cheatsheet::the_files_card_is_refused_for_its_table_and_its_statement	L57	-
 block	cheatsheet#11	6aa7d49559ddcad2	shown	-	-	-
 block	cheatsheet#12	7b3f0b719a47144e	shown	-	-	-
 block	cheatsheet#13	1fbd01e9a89541fd	shown	-	-	-
@@ -545,7 +545,7 @@ claim	structure~b45cc292	b45cc292b6849768	pending	-	-	It knows neither the langu
 claim	structure~f9cbf76a	f9cbf76a7374932d	pending	-	-	It prints the design as Rust, compiles it once with rustc, keeps the result in a cache and loads it.
 claim	structure~58f974e3	58f974e3566763f4	pending	-	-	Until it is, piperine check gives the same diagnostics on the command line.
 claim	structure~00d9ae38	00d9ae382cd12fca	pending	-	-	Everything that crosses between analog and digital is an event the owner of time carries.
-claim	cheatsheet~a9561024	a956102475bf9f2b	pending	-	-	Yours hides both, except a core name (E0457).
+claim	cheatsheet~a9561024	a956102475bf9f2b	holds	piperine/book_cheatsheet::a_name_of_yours_hides_the_library_but_not_the_core	-	Yours hides both, except a core name (E0457).
 claim	welcome~37aa8247	37aa824721bf86c4	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	At rest no current flows, so the output sits at the source's 1 V.
 claim	welcome~937d7801	937d7801efa02527	holds	piperine/book_welcome::the_rc_step_charges_as_the_book_says	-	The second run is a transient of 5 µs, printed every microsecond:
 claim	welcome~566f4f37	566f4f373e49124b	holds	piperine/book_welcome::the_rc_step_charges_as_the_book_says	-	That is a capacitor charging through a resistor: 63 % after one time constant r · c = 1 µs, 86 % after two.

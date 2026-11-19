@@ -493,3 +493,10 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | core-std#8 | L30 | `generics` | `Reg` placing `Setup(clk, d) { ts: 100p }` is `P0001`: `Setup<T: Repr>` is a generic module |
 | core-std#10 | L28 | `params-and-io` | `Watchdog` is `P0001` on `limit: u16`; with the param written as a literal the watchdog runs and ends the run at the fourth edge |
 | core-std~6e04c51d | L18 | `unknown-semantics` | `E0702` is not raised: `logic("10z1")` is `P0001`, a generic function of the standard library |
+| cheatsheet#2 | L30 | `generics` | `module M<const N: usize>(..)` placed as `M::<2>` is `P0001`: generic module |
+| cheatsheet#3 | L31 | `generics` | the `for k in 0..N { .. }` of the body items is `P0001`: generation in a module body; the instance, the named expression and the definitions around it are accepted |
+| cheatsheet#5 | L52 | `unknown-semantics-events` | `on settle { require(..) }` is `P0001`: built-in `settle` |
+| cheatsheet#7 | L49 | `analog-operators` | `on settle` is `P0001` (L52) and the `emit!("newton", ..)` in `analog` is `P0001` (L49) |
+| cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
+| cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
+| cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0900` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |

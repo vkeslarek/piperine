@@ -106,6 +106,10 @@ path = "tests/book/packages.rs"
 name = "book_core_std"
 path = "tests/book/core_std.rs"
 
+[[test]]
+name = "book_cheatsheet"
+path = "tests/book/cheatsheet.rs"
+
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked
 # at ~1.1 GB and several run in parallel, so a one-crate change relinking the
