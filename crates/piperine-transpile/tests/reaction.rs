@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use piperine_abi::caller::{CallError, Commit, Handle};
 use piperine_abi::raw::{Cell, List, Module, Statement, cell, commit_flag, status, statement_flag};
 use piperine_abi::raw::{ambient, part};
-use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, Ir, IrBuilder, Origin, ValueType};
+use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, Ir, IrBuilder, LevelPart, MathFn, Origin, ValueType};
 use piperine_plan::{Mode, Modules, Source};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
@@ -72,6 +72,61 @@ fn order(b: &mut IrBuilder) -> BodyId {
     let delay = x.real(1e-9);
     let last = x.commit(3, yes, Some(delay));
     Buck::reaction(b, body, vec![rise], vec![first, branch, last], vec![], F, 3);
+    body
+}
+
+/// The `Tables` body (react.msl:60): each form of §22.1 and the math of §3.3.2 on values that may
+/// be unknown, committed through one statement each.
+///
+/// ```text
+/// on clk.rise() {
+///     lv <- a.level(0).unwrap_or(false);   // the value half of `level`
+///     lk <- a.level(0).is_some();          // the `is` half
+///     mg <- merge(a, b);
+///     sm <- same(a, b);
+///     cs <- cast::<u8, i8>(a);
+///     ex <- x.exp();
+///     kf <- a.known_or(b);                 // a default that may itself be unknown
+/// }
+/// ```
+fn tables(b: &mut IrBuilder) -> BodyId {
+    let body = b.body(Buck::spec("Tables", F, 60));
+    for (name, ty, role, col) in [
+        ("clk", ValueType::Bool, CarrierRole::In, 20),
+        ("a", Ty::u(8), CarrierRole::In, 21),
+        ("b", Ty::u(8), CarrierRole::In, 22),
+        ("x", ValueType::F64, CarrierRole::In, 23),
+        ("lv", ValueType::Bool, CarrierRole::Out, 24),
+        ("lk", ValueType::Bool, CarrierRole::Out, 25),
+        ("mg", Ty::u(8), CarrierRole::Out, 26),
+        ("sm", ValueType::Bool, CarrierRole::Out, 27),
+        ("cs", Ty::i(8), CarrierRole::Out, 28),
+        ("ex", ValueType::F64, CarrierRole::Out, 29),
+        ("kf", Ty::u(8), CarrierRole::Out, 30),
+    ] {
+        b.carrier(body, Buck::carrier(name, ty, role, None, F, 60, col));
+    }
+    let rise = Buck::rise(b, body, 0, F, 61, 8);
+    let mut x = Dx::new(b, F, 62, 9);
+    let mut stmts = Vec::new();
+    let (a, bb) = (x.carrier(1, Ty::u(8)), x.carrier(2, Ty::u(8)));
+    let zero = x.int(0, Ty::u(32));
+    let value = x.level(a, zero, LevelPart::Value, ValueType::Bool);
+    stmts.push(x.commit(4, value, None));
+    let known = x.level(a, zero, LevelPart::Is, ValueType::Bool);
+    stmts.push(x.commit(5, known, None));
+    let merged = x.merge(a, bb, Ty::flagged(Ty::u(8)));
+    stmts.push(x.commit(6, merged, None));
+    let same = x.same(a, bb);
+    stmts.push(x.commit(7, same, None));
+    let recast = x.level_cast(a, Ty::i(8), None, Ty::flagged(Ty::i(8)));
+    stmts.push(x.commit(8, recast, None));
+    let v = x.carrier(3, ValueType::F64);
+    let exp = x.math(MathFn::Exp, v, Ty::flagged(ValueType::F64));
+    stmts.push(x.commit(9, exp, None));
+    let either = x.known_or(a, bb, Ty::flagged(Ty::u(8)));
+    stmts.push(x.commit(10, either, None));
+    Buck::reaction(b, body, vec![rise], stmts, vec![], F, 61);
     body
 }
 
@@ -187,7 +242,7 @@ fn design() -> &'static Mutex<Design> {
     static DESIGN: OnceLock<Mutex<Design>> = OnceLock::new();
     DESIGN.get_or_init(|| {
         let mut b = IrBuilder::new();
-        for make in [order, guarded, late, seven, divide] {
+        for make in [order, guarded, late, seven, divide, tables] {
             make(&mut b);
         }
         let ir = Arc::new(Alone::finish(b));
@@ -320,6 +375,38 @@ fn an_unknown_condition_merges_both_arms() {
     let (result, made) = react_flagged(&mut h, 0, &[("clk", known(&[1])), ("d", known(&[1])), ("resolution", tick)]);
     result.expect("a known condition runs");
     assert_eq!(made, [(0, known(&[9]), 0.0, 0), (1, known(&[1]), 0.0, 0)]);
+}
+
+#[test]
+fn level_merge_same_and_recast_compute_their_tables() {
+    // §22.1 and §3.3.2, one commit per form, statements 0 to 6: `lv`, `lk`, `mg`, `sm`, `cs`,
+    // `ex`, `kf`. The cases are written from the rules, each cited
+    let mut h = instance("Tables");
+    let run = |h: &mut Handle, a: Vec<u8>, b: Vec<u8>, x: Vec<u8>| {
+        let (result, made) = react(h, 0, &[("clk", known(&[1])), ("a", a), ("b", b), ("x", x)]);
+        result.expect("the reaction runs");
+        made.into_iter().map(|(statement, bytes, _)| (statement, bytes)).collect::<Vec<_>>()
+    };
+    // a = 5 (0b101), b = 6, x = 0.0, all known. `a.level(0)` is known and is bit 0, 1 (§3.3.14);
+    // merge of two different values is unknown (§22.1.2 rule 1); `same` of different values is
+    // false (§22.1.4); the cast keeps the bits, so 5 as an `i8` (§22.1.3); `exp(0.0)` is 1.0;
+    // `known_or` of a known value is that value
+    assert_eq!(
+        run(&mut h, known(&[5]), known(&[6]), known_real(0.0)),
+        [(0, known(&[1])), (1, known(&[1])), (2, unknown(2)), (3, known(&[0])), (4, known(&[5])), (5, known_real(1.0)), (6, known(&[5]))]
+    );
+    // a unknown: every level of it is a known `None` (is = false, value = false, §3.3.4), the merge
+    // and the cast are unknown, `same` of an unknown and a known value is false, `exp` of an
+    // unknown real is unknown (§3.3.2), `known_or` gives the default, 6, with its flag
+    assert_eq!(
+        run(&mut h, unknown(2), known(&[6]), unknown(16)),
+        [(0, known(&[0])), (1, known(&[0])), (2, unknown(2)), (3, known(&[0])), (4, unknown(2)), (5, unknown(16)), (6, known(&[6]))]
+    );
+    // both unknown: two unknown values are the same (§22.1.4), and `known_or` gives an unknown
+    // default with its flag (§22.1.1 rule 4)
+    let both = run(&mut h, unknown(2), unknown(2), known_real(2.0));
+    assert_eq!(both[3], (3, known(&[1])));
+    assert_eq!(both[6], (6, unknown(2)));
 }
 
 #[test]

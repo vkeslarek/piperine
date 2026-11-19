@@ -27,7 +27,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
-use piperine_ir::{AnalysisKind, 
+use piperine_ir::{AnalysisKind, LevelPart,
     BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream,
     Terminal, UnaryOp, ValueType,
 };
@@ -625,12 +625,13 @@ impl<'a> ValuePrinter<'a> {
             Expr::Env(env) => atom(self.read(Self::env_name(*env))),
             // the event pin's `CHANGED` byte of this microstep, bound as a `bool` (abi.md §4.1)
             Expr::Fired(k) => atom(self.read(&Text::generated(&format!("event{k}_fired")))),
-            // `level`, `merge`, `same` and `cast` have a runtime (`rt::Flagged`) but no lowering yet:
-            // refused by name, never printed as something else (the generated code comes with T20)
-            Expr::Level { .. } => Err(self.unsupported(e, "`level`")),
-            Expr::Merge { .. } => Err(self.unsupported(e, "`merge`")),
-            Expr::Same { .. } => Err(self.unsupported(e, "`same`")),
-            Expr::LevelCast { .. } => Err(self.unsupported(e, "`cast`")),
+            // the forms of §22.1, each a method of `rt::Flagged` (or the `Merge` trait, named by
+            // its path so no import decides it): every operand is lifted to a value that may be
+            // unknown
+            Expr::Level { value, index, part } => self.level(e, *value, *index, *part),
+            Expr::Merge { a, b } => atom(format!("rt::flag::Merge::merge({}, {})", self.flagged(*a)?.text, self.flagged(*b)?.text)),
+            Expr::Same { a, b } => atom(format!("{}.same({})", self.flagged(*a)?.at(Prec::Atom), self.flagged(*b)?.text)),
+            Expr::LevelCast { expr, to, tags } => self.level_cast(e, *expr, to, tags.as_deref()),
             Expr::Unwrap { is, value, message } => {
                 let message = message.as_ref().map_or_else(|| "None".to_string(), |m| format!("Some({m:?})"));
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
@@ -678,15 +679,16 @@ impl<'a> ValuePrinter<'a> {
                 let [arg] = args.as_slice() else {
                     return Err(self.unsupported(e, "a math function with other than one argument"));
                 };
-                if Self::is_flagged(self.ir.expr_type(*arg)) {
-                    return Err(self.unsupported(e, "a math function of a value that may be unknown"));
-                }
                 let name = match f {
                     MathFn::Exp => "exp",
                     MathFn::Ln => "ln",
                     MathFn::Sqrt => "sqrt",
                     MathFn::Abs => "abs",
                 };
+                // unknown in, unknown out (§3.3.2): the function of the value when there is one
+                if Self::is_flagged(self.ir.expr_type(*arg)) {
+                    return atom(format!("{}.map(|v_| v_.{name}())", self.piece(*arg)?.at(Prec::Atom)));
+                }
                 atom(format!("{}.{name}()", self.piece(*arg)?.at(Prec::Atom)))
             }
             Expr::Closure { params, body } => {
@@ -724,6 +726,10 @@ impl<'a> ValuePrinter<'a> {
                 }
                 let default_type = self.ir.expr_type(*default);
                 let d = self.piece(*default)?;
+                // a default that may itself be unknown gives its own flag (§22.1.1 rule 4)
+                if Self::is_flagged(default_type) {
+                    return atom(format!("{}.known_or_flagged({})", self.piece(*value)?.at(Prec::Atom), d.text));
+                }
                 if *default_type == ValueType::F64 && !self.plain && !self.flagged_reals {
                     // the default is an `R`; the value is a plain `f64`
                     atom(format!("R::constant({}.known_or({}.value()))", self.piece(*value)?.at(Prec::Atom), d.at(Prec::Atom)))
@@ -746,6 +752,36 @@ impl<'a> ValuePrinter<'a> {
                 }
             }
         }
+    }
+
+    /// One half of `value.level(index)` (§3.3.4): `.0` says the level is known, `.1` is its value.
+    /// The pair is of values that may be unknown; a known index makes both known (§3.3.14), and
+    /// the half is then the plain `bool` the IR types it as.
+    fn level(&self, e: ExprId, value: ExprId, index: ExprId, part: LevelPart) -> Result<Piece, Error> {
+        let half = if part == LevelPart::Is { 0 } else { 1 };
+        let call = format!("{}.level({}, {:?}).{half}", self.flagged(value)?.at(Prec::Atom), self.flagged(index)?.text, self.at(e));
+        let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or(false)") };
+        Ok(Piece::new(text, Prec::Atom))
+    }
+
+    /// `cast::<A, B>(x)` (§22.1.3): the levels of `x` under `to`, `recast` with the tags `to`
+    /// decodes when it is an enum. A result the IR types as known has no tag that may be missing,
+    /// so it is the value itself.
+    fn level_cast(&self, e: ExprId, expr: ExprId, to: &ValueType, tags: Option<&[i128]>) -> Result<Piece, Error> {
+        let target = self.pin_type(to)?;
+        let tags = match tags {
+            Some(tags) => format!("Some(&[{}][..])", tags.iter().map(|t| format!("{t}i128")).collect::<Vec<_>>().join(", ")),
+            None => "None".to_string(),
+        };
+        let call = format!("{}.recast::<{target}>({tags})", self.flagged(expr)?.at(Prec::Atom));
+        let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or(Default::default())") };
+        Ok(Piece::new(text, Prec::Atom))
+    }
+
+    /// `file:line:col` of `e`.
+    fn at(&self, e: ExprId) -> String {
+        let o = self.ir.expr_origin(e);
+        format!("{}:{}:{}", o.file, o.line, o.col)
     }
 
     /// `expr as to`.

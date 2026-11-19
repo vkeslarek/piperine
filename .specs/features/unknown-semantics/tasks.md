@@ -597,8 +597,8 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `level_merge_same_and_recast_compute_their_tables` (a hand-built reaction committing each node's result) passes under `**Run reaction**`
-- [ ] Gate check passes: Full
+- [x] `level_merge_same_and_recast_compute_their_tables` (a hand-built reaction committing each node's result) passes under `**Run reaction**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
