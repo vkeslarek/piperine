@@ -551,9 +551,9 @@ T33 → T34 → T35
 
 **Done when**:
 
-- [ ] `a_function_and_a_definition_merge_an_unknown_if` passes under `**Run sourceunknowns**` (new target with its `//!` header and fixtures in `tests/unknowns/`)
-- [ ] Every buck target passes
-- [ ] Gate check passes: Full
+- [x] `a_function_and_a_definition_merge_an_unknown_if` passes under `**Run sourceunknowns**` (new target with its `//!` header and fixtures in `tests/unknowns/`)
+- [x] Every buck target passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

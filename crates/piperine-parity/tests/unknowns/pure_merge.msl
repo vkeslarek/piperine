@@ -1,0 +1,17 @@
+//! An `if` on a value that may be unknown in code that commits nothing: a function and a definition
+//! (MSL §3.3.3, US-04 AC 10). `d` is never driven, so it is unknown for the whole run.
+
+/// `1` when `c` is true, `2` when it is false: its variant for a `c` that may be unknown merges.
+fn pick(c: bool) -> u8 { if c { 1 } else { 2 } }
+
+module Pick(in d: Bit, out y: Bit<u8>, out z: Bit<u8>) {
+    /// Different arms: an unknown `d` makes the value unknown.
+    y = pick(d);
+    /// Equal arms: both paths agree, so the merge is that value, known.
+    z = if d { 3 } else { 3 };
+}
+
+module PickBench() {
+    signal d: Bit; signal y: Bit<u8>; signal z: Bit<u8>;
+    let m = Pick(d, y, z);
+}

@@ -17,9 +17,11 @@
 //! Phase B forms. A value that may be unknown is `rt::Flagged<T>`, an integer `rt::UInt<N>` or
 //! `rt::Int<N>`, all named by their `rt::` path in the text. An operand that is not unknown is
 //! lifted (`rt::Flagged::known(x)`) where the other operand, or the place it flows to, may be.
-//! An `if` on an unknown condition is `if c.decide("<origin>")? { … }`, so a function that holds
-//! one returns `Result<T, Fault>` and a call to it ends in `?`; analog code has no `?` and refuses
-//! such an `if`. In the digital printers a real is a plain `f64`; in an `analog` block and in an
+//! An `if` on an unknown condition is the merge of §3.3.3: `c.choose(|| { A }, || { B })` in code
+//! that commits nothing (a function, a drive, an event, an arming), so a function holding one
+//! returns its value and a call to it is a plain call; a reaction still decides it with
+//! `c.decide("<origin>")?` until it merges its commits (`Commits::branch`). Analog code has no
+//! merge of duals and refuses such an `if`. In the digital printers a real is a plain `f64`; in an `analog` block and in an
 //! IR function it is `R`.
 
 use std::cell::{Cell, RefCell};
@@ -99,6 +101,9 @@ pub struct ValuePrinter<'a> {
     flagged_reals: bool,
     /// Whether the code may use `?`: it runs in a function returning `Result<_, Fault>`.
     faults: bool,
+    /// Whether an `if` on a condition that may be unknown has a lowering here (§3.3.3): every
+    /// owner but an `analog` block, whose reals are duals that `Flagged` cannot merge.
+    merges: bool,
     /// Whether a commit has a place to go: the code of a reaction.
     commits: bool,
     /// The carrier and `min_after` of each commit printed so far, in printing order: the order
@@ -149,7 +154,8 @@ impl<'a> ValuePrinter<'a> {
             analog: None,
             plain: false,
             flagged_reals: false,
-            faults: true,
+            faults: false,
+            merges: true,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
@@ -176,6 +182,7 @@ impl<'a> ValuePrinter<'a> {
             plain: false,
             flagged_reals: false,
             faults: false,
+            merges: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
@@ -184,9 +191,9 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// The printer of the code of a drive or an event of `body`: its locals are the body's, a
-    /// real is a plain `f64`, and an unknown `if` is a `Fault`.
+    /// real is a plain `f64`, and an unknown `if` merges.
     pub fn of_digital(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
-        ValuePrinter { plain: true, faults: true, ..Self::of_body(ir, body) }
+        ValuePrinter { plain: true, faults: true, merges: true, ..Self::of_body(ir, body) }
     }
 
     /// The printer of an expression a placement gives a child's param (`ChildValue::Expr`): over
@@ -306,9 +313,7 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// `function` as one Rust `fn` under its comment: its params, then one trailing param per
-    /// environment read it makes. It is generic over `Real` when a real appears in it, returns
-    /// `Result<_, Fault>` when it holds an `if` on an unknown condition, directly or through a
-    /// call.
+    /// environment read it makes. It is generic over `Real` when a real appears in it.
     pub fn function(ir: &'a Ir, function: FunctionId) -> Result<String, Error> {
         let f = ir.function(function);
         let printer = Self::of_function(ir, function);
@@ -323,13 +328,11 @@ impl<'a> ValuePrinter<'a> {
             params.push(format!("{}: {ty}", Self::env_name(*env)));
         }
         let ret = printer.rust_type(f.ret(), &format!("{} return", printer.path))?;
-        let faulting = Self::faults(ir, function);
         let generic = if Self::is_generic(ir, function) { "<R: Real>" } else { "" };
-        let returns = if faulting { format!("Result<{ret}, Fault>") } else { ret };
         let mut t = Text::new();
         t.comment(&printer.path, f.origin());
-        t.line(&format!("fn {}{generic}({}) -> {returns} {{", Text::ident(f.name()), params.join(", ")));
-        let body = printer.function_body(f.body(), f.ret(), faulting)?;
+        t.line(&format!("fn {}{generic}({}) -> {ret} {{", Text::ident(f.name()), params.join(", ")));
+        let body = printer.function_body(f.body(), f.ret())?;
         t.indented(|t| t.line(&body));
         t.line("}");
         Ok(t.finish())
@@ -345,33 +348,8 @@ impl<'a> ValuePrinter<'a> {
             || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_)))
     }
 
-    /// Whether `function` holds an `if` on an unknown condition, directly or through a call.
-    pub fn faults(ir: &Ir, function: FunctionId) -> bool {
-        let mut seen = BTreeSet::new();
-        let mut functions = vec![function];
-        while let Some(f) = functions.pop() {
-            if !seen.insert(f.index()) {
-                continue;
-            }
-            let mut exprs = vec![ir.function(f).body()];
-            while let Some(e) = exprs.pop() {
-                match ir.expr(e) {
-                    Expr::If { cond, .. } if Self::is_flagged(ir.expr_type(*cond)) => return true,
-                    Expr::Call { function, args } => {
-                        functions.push(*function);
-                        exprs.extend(args);
-                    }
-                    other => Self::children(ir, other, &mut exprs),
-                }
-            }
-        }
-        false
-    }
-
-    /// The body of a function: its statements, then its value, wrapped in `Ok(…)` when the
-    /// function returns a `Result`.
-    fn function_body(&self, e: ExprId, ret: &ValueType, faulting: bool) -> Result<String, Error> {
-        let wrap = |value: String| if faulting { format!("Ok({value})") } else { value };
+    /// The body of a function: its statements, then its value.
+    fn function_body(&self, e: ExprId, ret: &ValueType) -> Result<String, Error> {
         match self.ir.expr(e) {
             Expr::Block { stmts, value } => {
                 let mut lines = Vec::with_capacity(stmts.len() + 1);
@@ -379,13 +357,12 @@ impl<'a> ValuePrinter<'a> {
                     lines.push(self.stmt(*s)?);
                 }
                 match value {
-                    Some(v) => lines.push(wrap(self.typed(*v, ret)?.text)),
-                    None if faulting => lines.push("Ok(())".to_string()),
+                    Some(v) => lines.push(self.typed(*v, ret)?.text),
                     None => {}
                 }
                 Ok(lines.join("\n"))
             }
-            _ => Ok(wrap(self.typed(e, ret)?.text)),
+            _ => Ok(self.typed(e, ret)?.text),
         }
     }
 
@@ -682,7 +659,7 @@ impl<'a> ValuePrinter<'a> {
                 Ok(Piece::new(format!("{sign}{operand}"), Prec::Unary))
             }
             Expr::Binary { op, lhs, rhs } => self.binary(e, *op, *lhs, *rhs),
-            Expr::If { cond, then, otherwise } => Ok(Piece::new(self.if_else(e, *cond, *then, *otherwise)?, Prec::Low)),
+            Expr::If { cond, then, otherwise } => self.if_else(e, *cond, *then, *otherwise),
             Expr::Block { stmts, value } => {
                 let ty = self.ir.expr_type(e);
                 let lines = self.block_lines(stmts, *value, ty)?;
@@ -701,14 +678,7 @@ impl<'a> ValuePrinter<'a> {
                 printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
                 // a generic function called with nothing to fix its `Real` type names it
                 let real = if printed.is_empty() && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
-                let call = format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", "));
-                if !Self::faults(self.ir, *function) {
-                    return atom(call);
-                }
-                if !self.faults {
-                    return Err(self.unsupported(e, "a call that may fault (an `if` on an unknown condition) in analog code"));
-                }
-                atom(format!("{call}?"))
+                atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
             }
             Expr::Math { f, args } => {
                 let [arg] = args.as_slice() else {
@@ -973,9 +943,13 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// `if c {` arm `} else {` arm `}`; an `else` arm that is itself an `if` chains as `else if`,
-    /// and a unit `if` with no `else` to speak of has none. The condition of an unknown `if` is
-    /// `c.decide("<origin>")?`.
-    fn if_else(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<String, Error> {
+    /// and a unit `if` with no `else` to speak of has none. An `if` on a condition that may be
+    /// unknown is the merge of §3.3.3: `choose` where nothing is committed; a reaction decides
+    /// it with `c.decide("<origin>")?`.
+    fn if_else(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
+        if self.merges_on(cond) {
+            return self.choose(e, cond, then, otherwise);
+        }
         let ty = self.ir.expr_type(e);
         let condition = if Self::is_flagged(self.ir.expr_type(cond)) {
             if !self.faults {
@@ -991,13 +965,38 @@ impl<'a> ValuePrinter<'a> {
         let mut text = format!("if {condition} {{\n{}\n}}", Self::indent(&self.arm(then, ty)?));
         match self.ir.expr(otherwise) {
             Expr::Unit if *ty == ValueType::Unit => {}
-            Expr::If { cond, then, otherwise: next } => {
+            // an `else if` chains only while its own condition is no merge: `choose` is an
+            // expression, so it goes inside the `else` block
+            Expr::If { cond, then, otherwise: next } if !self.merges_on(*cond) => {
                 text.push_str(" else ");
-                text.push_str(&self.if_else(otherwise, *cond, *then, *next)?);
+                text.push_str(&self.if_else(otherwise, *cond, *then, *next)?.text);
             }
             _ => text.push_str(&format!(" else {{\n{}\n}}", Self::indent(&self.arm(otherwise, ty)?))),
         }
-        Ok(text)
+        Ok(Piece::new(text, Prec::Low))
+    }
+
+    /// Whether an `if` on `cond` is printed as a merge by `choose`: its condition may be unknown
+    /// and the code commits nothing, so it has no `Commits` to join.
+    fn merges_on(&self, cond: ExprId) -> bool {
+        Self::is_flagged(self.ir.expr_type(cond)) && !self.commits
+    }
+
+    /// `c.choose(|| { A }, || { B })`, the merge of §3.3.3 in code that commits nothing: a known
+    /// condition runs one arm, an unknown one runs both and merges their values. Analog code has
+    /// no merge of duals and refuses it.
+    fn choose(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
+        if !self.merges {
+            return Err(self.unsupported(e, "an `if` on an unknown condition in analog code"));
+        }
+        let ty = self.ir.expr_type(e);
+        let text = format!(
+            "{}.choose(|| {{\n{}\n}}, || {{\n{}\n}})",
+            self.piece(cond)?.at(Prec::Atom),
+            Self::indent(&self.arm(then, ty)?),
+            Self::indent(&self.arm(otherwise, ty)?)
+        );
+        Ok(Piece::new(text, Prec::Atom))
     }
 
     /// The inside of a pair of braces: a block's lines without its braces, any other expression
@@ -1449,17 +1448,17 @@ fn rev3_v1(k: rt::Flagged<rt::UInt<3>>) -> rt::Flagged<rt::UInt<3>> {
 ";
         assert_eq!(function(&ir, "rev3~1"), rev3_flagged_text);
 
-        // the same `if` on a comparison that may be unknown: `decide` names the `if`
-        // (dpwm.msl:21:5), so the function returns `Result` and wraps its value in `Ok`; the
-        // known branches are lifted to the `if`'s type
+        // the same `if` on a comparison that may be unknown is the merge of §3.3.3: `choose` runs
+        // one arm, or both and merges them, and the function returns its value plain (no
+        // `Result`); the known branches are lifted to the `if`'s type
         let dithered_flagged_text = "\
 // fn dithered_width~01 @ dpwm.msl:18:1
-fn dithered_width_v01(duty: rt::UInt<12>, frame: rt::Flagged<rt::UInt<3>>) -> Result<rt::Flagged<rt::UInt<9>>, Fault> {
+fn dithered_width_v01(duty: rt::UInt<12>, frame: rt::Flagged<rt::UInt<3>>) -> rt::Flagged<rt::UInt<9>> {
     let coarse = (duty >> rt::Int::<32>::new(3)).to_uint::<9>();
     let fine = (duty & rt::UInt::<12>::new(7)).to_uint::<3>();
-    Ok(if rev3_v1(frame).less(rt::Flagged::known(fine)).decide(\"dpwm.msl:21:5\")? {
+    rev3_v1(frame).less(rt::Flagged::known(fine)).choose(|| {
         rt::Flagged::known(coarse + rt::UInt::<9>::new(1))
-    } else {
+    }, || {
         rt::Flagged::known(coarse)
     })
 }
