@@ -50,6 +50,12 @@ num-complex = { workspace = true }
 name = "host_ii"
 path = "crates/piperine-api/tests/root_surface/host_ii.rs"
 
+# The Book's inventory guard (`feature root-e2e`): a repository-policy proof over the Book's text, so it
+# sits under `tests/book/` with the support modules the Book targets share.
+[[test]]
+name = "book_inventory"
+path = "tests/book/inventory_guard.rs"
+
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked
 # at ~1.1 GB and several run in parallel, so a one-crate change relinking the

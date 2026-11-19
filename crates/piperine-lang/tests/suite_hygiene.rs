@@ -646,7 +646,8 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// fails, and a registered entry that vanishes or stops needing its exemption
 /// fails just as loudly.
 ///
-/// Three entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
+/// Registered now: `book/inventory_guard.rs`, which is the Book inventory guard (feature `root-e2e`, RE-01):
+/// the Book's blocks against `tests/book/inventory.tsv`, a text-only policy proof. Registered before it: `ngspice_parity_matrix.rs` is the ngspice model × domain
 /// coverage registry (NGP-15/MD-31): a repo-policy proof in the
 /// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
 /// `tests/e2e/twins/` and the golden targets — so it links no workspace crate,
@@ -661,7 +662,11 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// source scrape, no workspace crate linked either. An entry added here must move the expected
 /// set in [`root_targets_match_the_naming_rule`] with it, so the exemption
 /// cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 0] = [];
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 1] = [(
+    "book/inventory_guard.rs",
+    "the Book inventory guard (root-e2e T12): a repo-policy proof over `docs/book/content.html` and \
+     `tests/book/inventory.tsv`, so it links no workspace crate",
+)];
 
 fn registered_root_exemption(file: &str) -> Option<&'static str> {
     ROOT_TARGET_EXEMPTIONS.iter().find(|(name, _)| *name == file).map(|(_, why)| *why)
